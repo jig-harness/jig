@@ -13,11 +13,12 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { claimWasTakenOver, inspect, roundFingerprint } from "../scripts/drive";
 import {
   LEAVE_OPEN_MARKER,
@@ -61,6 +62,9 @@ import {
   hold,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
 
 useDrivePrSuite();
 
@@ -79,18 +83,18 @@ describe("drive-status.ts surfaces drive-state.ts’s stderr", () => {
     const { dir, stateDir } = writeFixture({ threads: [], reviewedSha: HEAD });
     writeFileSync(join(stateDir, "drive-pr-999.json"), '{"pr": 999, "rounds"');
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-status.ts"),
         "999",
         "--json",
         "--once",
         "--head",
         HEAD,
-      ],
+      ),
       {
         env: {
           ...process.env,
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
         },
@@ -143,18 +147,18 @@ describe("drive-status.ts surfaces drive-state.ts’s stderr", () => {
         }),
       );
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive-status.ts"),
           "999",
           "--json",
           "--once",
           "--head",
           HEAD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_SESSION: String(process.pid),
@@ -206,7 +210,13 @@ describe("drive-status.ts surfaces drive-state.ts’s stderr", () => {
     try {
       // A live OTHER session in this same tree takes the lease first.
       const seed = Bun.spawnSync(
-        [join(SCRIPTS, "drive-state.ts"), "phase", "999", "--set", "triage"],
+        scriptArgv(
+          join(SCRIPTS, "drive-state.ts"),
+          "phase",
+          "999",
+          "--set",
+          "triage",
+        ),
         {
           env: {
             ...process.env,
@@ -220,18 +230,18 @@ describe("drive-status.ts surfaces drive-state.ts’s stderr", () => {
       expect(seed.exitCode).toBe(0);
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive-status.ts"),
           "999",
           "--json",
           "--once",
           "--head",
           HEAD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_SESSION: String(process.pid),
@@ -249,7 +259,13 @@ describe("drive-status.ts surfaces drive-state.ts’s stderr", () => {
       expect(JSON.parse(out.trim()).state).toBe("SESSION_LEASE_HELD");
       // The refusal's own diagnostic, verbatim from the layer that made it.
       expect(stderr).toContain(`pid ${holder.pid}`);
-      expect(stderr).toContain(`ps -p ${holder.pid}`);
+      expect(stderr).toContain(
+        // Windows has no ps; the refusal names its own process probe there.
+        byPlatform("Windows has no ps", {
+          windows: `Get-Process -Id ${holder.pid}`,
+          posix: `ps -p ${holder.pid}`,
+        }),
+      );
       expect(stderr).toContain("clear-lease 999");
     } finally {
       holder.kill();
@@ -274,7 +290,13 @@ describe("drive-status.ts surfaces drive-state.ts’s stderr", () => {
     });
     try {
       const seed = Bun.spawnSync(
-        [join(SCRIPTS, "drive-state.ts"), "phase", "999", "--set", "triage"],
+        scriptArgv(
+          join(SCRIPTS, "drive-state.ts"),
+          "phase",
+          "999",
+          "--set",
+          "triage",
+        ),
         {
           env: {
             ...process.env,
@@ -291,7 +313,7 @@ describe("drive-status.ts surfaces drive-state.ts’s stderr", () => {
       // this test would pass without exercising the branch at all.
       const env = {
         ...process.env,
-        PATH: `${binDir}:${process.env.PATH}`,
+        PATH: `${binDir}${delimiter}${process.env.PATH}`,
         DRIVE_PR_FIXTURES: dir,
         DRIVE_PR_STATE_DIR: stateDir,
         DRIVE_PR_SESSION: String(process.pid),
@@ -299,7 +321,7 @@ describe("drive-status.ts surfaces drive-state.ts’s stderr", () => {
       delete (env as Record<string, string | undefined>).DRIVE_PR_TARGET;
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive-status.ts"),
           "999",
           "--json",
@@ -308,7 +330,7 @@ describe("drive-status.ts surfaces drive-state.ts’s stderr", () => {
           "--bump-attempt",
           "--head",
           HEAD,
-        ],
+        ),
         { env, stdout: "pipe", stderr: "pipe" },
       );
       const [out, stderr, exitCode] = await Promise.all([
@@ -319,7 +341,13 @@ describe("drive-status.ts surfaces drive-state.ts’s stderr", () => {
       expect(exitCode).toBe(11);
       expect(JSON.parse(out.trim()).state).toBe("SESSION_LEASE_HELD");
       expect(stderr).toContain(`pid ${holder.pid}`);
-      expect(stderr).toContain(`ps -p ${holder.pid}`);
+      expect(stderr).toContain(
+        // Windows has no ps; the refusal names its own process probe there.
+        byPlatform("Windows has no ps", {
+          windows: `Get-Process -Id ${holder.pid}`,
+          posix: `ps -p ${holder.pid}`,
+        }),
+      );
       expect(stderr).toContain("clear-lease 999");
     } finally {
       holder.kill();
@@ -417,11 +445,16 @@ describe("drive-status.ts terminal states", () => {
       });
       const enumerate = (flags: string[]) => {
         const r = Bun.spawnSync(
-          [join(SCRIPTS, "summary-findings.ts"), "999", "--json", ...flags],
+          scriptArgv(
+            join(SCRIPTS, "summary-findings.ts"),
+            "999",
+            "--json",
+            ...flags,
+          ),
           {
             env: {
               ...process.env,
-              PATH: `${binDir}:${process.env.PATH}`,
+              PATH: `${binDir}${delimiter}${process.env.PATH}`,
               DRIVE_PR_FIXTURES: dir,
               ...noReviewerEnv(["example-review[bot]"]),
             },
@@ -446,15 +479,19 @@ describe("drive-status.ts terminal states", () => {
       // A `gh` that always fails: any read of the PR's comments is an error.
       const failingBin = mkdtempSync(join(tmpdir(), "drive-no-gh-"));
       scratchDirs.push(failingBin);
-      writeFileSync(join(failingBin, "gh"), "#!/bin/sh\nexit 1\n");
-      chmodSync(join(failingBin, "gh"), 0o755);
+      writeFakeProgram(join(failingBin, "gh"), "#!/bin/sh\nexit 1\n");
       const enumerate = (flags: string[]) => {
         const r = Bun.spawnSync(
-          [join(SCRIPTS, "summary-findings.ts"), "999", "--json", ...flags],
+          scriptArgv(
+            join(SCRIPTS, "summary-findings.ts"),
+            "999",
+            "--json",
+            ...flags,
+          ),
           {
             env: {
               ...process.env,
-              PATH: `${failingBin}:${process.env.PATH}`,
+              PATH: `${failingBin}${delimiter}${process.env.PATH}`,
               JIG_GH_CACHE: "off",
               ...noReviewerEnv(),
             },
@@ -530,11 +567,14 @@ describe("drive-status.ts --bump-attempt", () => {
     stateDir: string,
     args: string[],
   ): Promise<{ stdout: string; exitCode: number }> {
-    const proc = Bun.spawn([join(SCRIPTS, "drive-state.ts"), ...args], {
-      env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawn(
+      scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
+      {
+        env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     const [stdout, exitCode] = await Promise.all([
       new Response(proc.stdout).text(),
       proc.exited,
@@ -632,12 +672,15 @@ describe("drive-status.ts structuralEscalationDue", () => {
     stateDir: string,
     args: string[],
   ): Promise<{ stdout: string; exitCode: number }> {
-    const proc = Bun.spawn([join(SCRIPTS, "drive-state.ts"), ...args], {
-      env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawn(
+      scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
+      {
+        env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     const [stdout, exitCode] = await Promise.all([
       new Response(proc.stdout).text(),
       proc.exited,
@@ -1566,18 +1609,18 @@ describe("drive-status.ts publishes the fleet-health advisory", () => {
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive-status.ts"),
           "999",
           "--once",
           "--no-reconcile",
           "--head",
           HEAD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DEV_DASHBOARD_DIR: dashDir,
@@ -2244,18 +2287,18 @@ describe("drive-status.ts terminal witness — the PR merges mid-evaluation", ()
     });
     await park(stateDir, "PRRT_parked", "thread");
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-status.ts"),
         "999",
         "--json",
         "--once",
         "--head",
         HEAD,
-      ],
+      ),
       {
         env: {
           ...process.env,
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
         },
@@ -2343,7 +2386,7 @@ describe("drive-status.ts reports counts it never measured as null", () => {
     const { dir, stateDir } = writeFixture({ threads: [], reviewedSha: HEAD });
     for (const key of ["zzz-parked-last", "aaa-parked-first"]) {
       const parked = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive-state.ts"),
           "park",
           "999",
@@ -2353,7 +2396,7 @@ describe("drive-status.ts reports counts it never measured as null", () => {
           "finding",
           "--reason",
           "planted out of order",
-        ],
+        ),
         {
           env: { ...gitCleanEnv(), DRIVE_PR_STATE_DIR: stateDir },
           stdout: "ignore",
@@ -2543,21 +2586,28 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
   ): Promise<{ local: string; localSource: string; stderr: string }> {
     const { dir, stateDir } = writeFixture({ threads: [] });
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-status.ts"),
         "999",
         "--json",
         "--once",
         ...extraArgs,
-      ],
+      ),
       {
         cwd,
         env: {
           ...gitCleanEnv(),
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
           ...env,
+          // A driver names its tree in git's own spelling (symlinks and 8.3
+          // short names resolved), which is what the script compares it to.
+          ...(env.DRIVE_PR_WORKTREE === undefined
+            ? {}
+            : {
+                DRIVE_PR_WORKTREE: realpathSync.native(env.DRIVE_PR_WORKTREE),
+              }),
         },
         stdout: "pipe",
         stderr: "pipe",
@@ -2805,7 +2855,7 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
     const cond = hangsOn
       .map((arg, i) => `[ "\${${i + 1}:-}" = "${arg}" ]`)
       .join(" && ");
-    writeFileSync(
+    writeFakeProgram(
       stubPath,
       [
         "#!/usr/bin/env bash",
@@ -2817,7 +2867,6 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
         "",
       ].join("\n"),
     );
-    chmodSync(stubPath, 0o755);
     return dir;
   }
 
@@ -2832,7 +2881,7 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
     const r = await measureFrom(scratchClean.dir, {
       DRIVE_PR_WORKTREE: scratchClean.dir,
       GIT_CALL_TIMEOUT: "1",
-      PATH: `${gitStubDir}:${binDir}:${process.env.PATH}`,
+      PATH: `${gitStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
     });
     const elapsed = Date.now() - started;
     expect(r.localSource).toBe("unavailable");
@@ -2848,7 +2897,7 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
     const r = await measureFrom(scratchClean.dir, {
       DRIVE_PR_WORKTREE: scratchClean.dir,
       GIT_CALL_TIMEOUT: "1",
-      PATH: `${gitStubDir}:${binDir}:${process.env.PATH}`,
+      PATH: `${gitStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
     });
     const elapsed = Date.now() - started;
     // `rev-parse HEAD` still succeeds (real git, real SHA) before the
@@ -3370,18 +3419,18 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
   it("mode 3: PR-head replication lag is not judged at all", async () => {
     const { dir, stateDir } = writeFixture({ threads: [], head: PREV });
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-status.ts"),
         "999",
         "--json",
         "--once",
         "--head",
         HEAD,
-      ],
+      ),
       {
         env: {
           ...process.env,
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
         },
@@ -3557,18 +3606,18 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
     });
     await park(stateDir, "PRRT_parked", "thread");
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-status.ts"),
         "999",
         "--json",
         "--once",
         "--head",
         HEAD,
-      ],
+      ),
       {
         env: {
           ...process.env,
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
         },
@@ -3594,18 +3643,18 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
     });
     writeFileSync(join(stateDir, "drive-pr-999.json"), "not json at all");
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-status.ts"),
         "999",
         "--json",
         "--once",
         "--head",
         HEAD,
-      ],
+      ),
       {
         env: {
           ...process.env,
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
         },
@@ -3828,18 +3877,18 @@ describe("drive-status.ts refuses to converge — the measured false-convergence
     const blocked = join(dir, "unwritable-state");
     writeFileSync(blocked, "not a directory");
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-status.ts"),
         "999",
         "--json",
         "--once",
         "--head",
         HEAD,
-      ],
+      ),
       {
         env: {
           ...process.env,
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: blocked,
         },
@@ -3993,18 +4042,18 @@ describe("drive-status.ts HITL parking", () => {
     });
     await park(stateDir, "PRRT_parked", "thread");
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-status.ts"),
         "999",
         "--json",
         "--once",
         "--head",
         HEAD,
-      ],
+      ),
       {
         env: {
           ...process.env,
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
         },
@@ -4031,18 +4080,18 @@ describe("drive-status.ts HITL parking", () => {
     });
     await park(stateDir, "PRRT_parked", "thread");
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-status.ts"),
         "999",
         "--json",
         "--once",
         "--head",
         HEAD,
-      ],
+      ),
       {
         env: {
           ...process.env,
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
         },
@@ -4111,7 +4160,7 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
 
   async function heldKeysIn(stateDir: string): Promise<string> {
     const proc = Bun.spawn(
-      [join(SCRIPTS, "drive-state.ts"), "held-keys", "999"],
+      scriptArgv(join(SCRIPTS, "drive-state.ts"), "held-keys", "999"),
       {
         env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
         stdout: "pipe",
@@ -4137,11 +4186,14 @@ describe("drive-status.ts reconciles replied threads on every pass", () => {
   async function heldIn(
     stateDir: string,
   ): Promise<Array<Record<string, unknown>>> {
-    const proc = Bun.spawn([join(SCRIPTS, "drive-state.ts"), "held", "999"], {
-      env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawn(
+      scriptArgv(join(SCRIPTS, "drive-state.ts"), "held", "999"),
+      {
+        env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     const [out, code] = await Promise.all([
       new Response(proc.stdout).text(),
       proc.exited,

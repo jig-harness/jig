@@ -36,6 +36,7 @@ import {
   repairInbox,
   unseenMessages,
 } from "../scripts/lib/state/mailbox.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 let dir: string;
 
@@ -61,18 +62,26 @@ describe("readMailboxFile", () => {
     expect(r.kind).toBe("unreadable");
   });
 
-  it("reports unreadable, not absent, when a path COMPONENT exists but is not a directory (ENOTDIR)", async () => {
-    // POSIX raises ENOTDIR only when something exists at a path component
-    // that traversal needs to descend through but is the WRONG type (a
-    // regular file sitting where a directory belongs) — never for
-    // "genuinely nothing there", which ENOENT already covers on its own.
-    // Treating ENOTDIR as `absent` folded a broken mailbox location as
-    // CLEAR.
-    const brokenMailboxDir = join(dir, "broken-mailbox");
-    writeFileSync(brokenMailboxDir, "this is a file, not a directory");
-    const r = readMailboxFile(join(brokenMailboxDir, "inbox.jsonl"));
-    expect(r.kind).toBe("unreadable");
-  });
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "Windows reports ENOENT, not ENOTDIR, for a path below a regular file, so the broken location is read as absent",
+    ),
+  )(
+    "reports unreadable, not absent, when a path COMPONENT exists but is not a directory (ENOTDIR)",
+    async () => {
+      // POSIX raises ENOTDIR only when something exists at a path component
+      // that traversal needs to descend through but is the WRONG type (a
+      // regular file sitting where a directory belongs) — never for
+      // "genuinely nothing there", which ENOENT already covers on its own.
+      // Treating ENOTDIR as `absent` folded a broken mailbox location as
+      // CLEAR.
+      const brokenMailboxDir = join(dir, "broken-mailbox");
+      writeFileSync(brokenMailboxDir, "this is a file, not a directory");
+      const r = readMailboxFile(join(brokenMailboxDir, "inbox.jsonl"));
+      expect(r.kind).toBe("unreadable");
+    },
+  );
 });
 
 /** Unwraps the `ok: true` case, throwing (with a useful message) otherwise. */
@@ -572,201 +581,241 @@ describe("appendLine durability (fsync after append)", () => {
     }
   });
 
-  it("fsyncs the containing directory only when creating the mailbox file for the first time, not on every append", async () => {
-    // The FILE's own fsync does not make the DIRECTORY ENTRY pointing at
-    // it durable -- that only matters the first time inbox.jsonl is
-    // created, not on a later append to an already-durable file.
-    const actualFs = await import("node:fs");
-    const realOpenSync = actualFs.openSync;
-    const realFs = { ...actualFs };
-    let dirOpenCount = 0;
-    mock.module("node:fs", () => ({
-      ...realFs,
-      openSync: (path: string, flags: string) => {
-        if (flags === "r" && path === dir) dirOpenCount += 1;
-        return realOpenSync(path, flags);
-      },
-    }));
-    try {
-      await appendNote(dir, "999", "orchestrator", "first"); // creates inbox.jsonl
-      expect(dirOpenCount).toBe(1);
-      await appendNote(dir, "999", "orchestrator", "second"); // appends to an existing file
-      expect(dirOpenCount).toBe(1); // unchanged — no repeated directory fsync
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the directory fsync is skipped on Windows (opening a directory fails with EPERM), so the directory open this test observes never happens",
+    ),
+  )(
+    "fsyncs the containing directory only when creating the mailbox file for the first time, not on every append",
+    async () => {
+      // The FILE's own fsync does not make the DIRECTORY ENTRY pointing at
+      // it durable -- that only matters the first time inbox.jsonl is
+      // created, not on a later append to an already-durable file.
+      const actualFs = await import("node:fs");
+      const realOpenSync = actualFs.openSync;
+      const realFs = { ...actualFs };
+      let dirOpenCount = 0;
+      mock.module("node:fs", () => ({
+        ...realFs,
+        openSync: (path: string, flags: string) => {
+          if (flags === "r" && path === dir) dirOpenCount += 1;
+          return realOpenSync(path, flags);
+        },
+      }));
+      try {
+        await appendNote(dir, "999", "orchestrator", "first"); // creates inbox.jsonl
+        expect(dirOpenCount).toBe(1);
+        await appendNote(dir, "999", "orchestrator", "second"); // appends to an existing file
+        expect(dirOpenCount).toBe(1); // unchanged — no repeated directory fsync
+      } finally {
+        mock.module("node:fs", () => realFs);
+      }
+    },
+  );
 
-  it("fsyncs every newly created ancestor directory, not just the immediate parent, when multiple levels are missing", async () => {
-    // Fresh evidence beyond the single-level fix above: `mkdirSync`'s own
-    // `recursive: true` can create MULTIPLE missing levels in one call
-    // (mirroring `.context/drive-mailbox` both being absent on a fresh
-    // worktree). Fsyncing only `dirname(path)` (the mailbox directory
-    // itself) would leave its OWN entry — in ITS now-also-new parent —
-    // undurable, so a power loss could discard the whole newly created
-    // mailbox directory tree even though the file inside it was fsynced.
-    const nestedContext = join(dir, "nested-context");
-    const nestedMailbox = join(nestedContext, "drive-mailbox");
-    expect(existsSync(nestedContext)).toBe(false);
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the directory fsync is skipped on Windows (opening a directory fails with EPERM), so the directory open this test observes never happens",
+    ),
+  )(
+    "fsyncs every newly created ancestor directory, not just the immediate parent, when multiple levels are missing",
+    async () => {
+      // Fresh evidence beyond the single-level fix above: `mkdirSync`'s own
+      // `recursive: true` can create MULTIPLE missing levels in one call
+      // (mirroring `.context/drive-mailbox` both being absent on a fresh
+      // worktree). Fsyncing only `dirname(path)` (the mailbox directory
+      // itself) would leave its OWN entry — in ITS now-also-new parent —
+      // undurable, so a power loss could discard the whole newly created
+      // mailbox directory tree even though the file inside it was fsynced.
+      const nestedContext = join(dir, "nested-context");
+      const nestedMailbox = join(nestedContext, "drive-mailbox");
+      expect(existsSync(nestedContext)).toBe(false);
 
-    const actualFs = await import("node:fs");
-    const realOpenSync = actualFs.openSync;
-    const realFs = { ...actualFs };
-    const fsyncedDirs = new Set<string>();
-    mock.module("node:fs", () => ({
-      ...realFs,
-      openSync: (path: string, flags: string) => {
-        if (flags === "r") fsyncedDirs.add(path);
-        return realOpenSync(path, flags);
-      },
-    }));
+      const actualFs = await import("node:fs");
+      const realOpenSync = actualFs.openSync;
+      const realFs = { ...actualFs };
+      const fsyncedDirs = new Set<string>();
+      mock.module("node:fs", () => ({
+        ...realFs,
+        openSync: (path: string, flags: string) => {
+          if (flags === "r") fsyncedDirs.add(path);
+          return realOpenSync(path, flags);
+        },
+      }));
 
-    try {
-      await appendNote(nestedMailbox, "999", "orchestrator", "hello");
-      // All three levels fsynced: the mailbox dir itself (the file's own
-      // entry), its newly created parent (the mailbox dir's own entry),
-      // and the PRE-EXISTING grandparent (the new parent's own entry).
-      expect(fsyncedDirs.has(nestedMailbox)).toBe(true);
-      expect(fsyncedDirs.has(nestedContext)).toBe(true);
-      expect(fsyncedDirs.has(dir)).toBe(true);
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
+      try {
+        await appendNote(nestedMailbox, "999", "orchestrator", "hello");
+        // All three levels fsynced: the mailbox dir itself (the file's own
+        // entry), its newly created parent (the mailbox dir's own entry),
+        // and the PRE-EXISTING grandparent (the new parent's own entry).
+        expect(fsyncedDirs.has(nestedMailbox)).toBe(true);
+        expect(fsyncedDirs.has(nestedContext)).toBe(true);
+        expect(fsyncedDirs.has(dir)).toBe(true);
+      } finally {
+        mock.module("node:fs", () => realFs);
+      }
+    },
+  );
 
-  it("fsyncs the parent and grandparent unconditionally, even when THIS call's own mkdirSync reports nothing was created — closes the concurrent-first-sender race", async () => {
-    // Simulates the concurrent-first-sender race: a CONCURRENT sender creates
-    // the whole directory chain moments before this call's own mkdirSync runs
-    // (so mkdirSync here legitimately returns `undefined` — the whole chain
-    // already exists by the time THIS process calls it) — yet the
-    // parent/grandparent directory entries are STILL newly created (by the
-    // other sender) and still need fsyncing, which this process has no way to
-    // know from its own mkdirSync return value alone. An earlier fix relied on
-    // exactly that return value and would have fsynced only `nestedMailbox`
-    // here, missing both ancestors.
-    const nestedContext = join(dir, "raced-context");
-    const nestedMailbox = join(nestedContext, "drive-mailbox");
-    mkdirSync(nestedMailbox, { recursive: true }); // the "concurrent sender" already created it
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the directory fsync is skipped on Windows (opening a directory fails with EPERM), so the directory open this test observes never happens",
+    ),
+  )(
+    "fsyncs the parent and grandparent unconditionally, even when THIS call's own mkdirSync reports nothing was created — closes the concurrent-first-sender race",
+    async () => {
+      // Simulates the concurrent-first-sender race: a CONCURRENT sender creates
+      // the whole directory chain moments before this call's own mkdirSync runs
+      // (so mkdirSync here legitimately returns `undefined` — the whole chain
+      // already exists by the time THIS process calls it) — yet the
+      // parent/grandparent directory entries are STILL newly created (by the
+      // other sender) and still need fsyncing, which this process has no way to
+      // know from its own mkdirSync return value alone. An earlier fix relied on
+      // exactly that return value and would have fsynced only `nestedMailbox`
+      // here, missing both ancestors.
+      const nestedContext = join(dir, "raced-context");
+      const nestedMailbox = join(nestedContext, "drive-mailbox");
+      mkdirSync(nestedMailbox, { recursive: true }); // the "concurrent sender" already created it
 
-    const actualFs = await import("node:fs");
-    const realOpenSync = actualFs.openSync;
-    const realFs = { ...actualFs };
-    const fsyncedDirs = new Set<string>();
-    mock.module("node:fs", () => ({
-      ...realFs,
-      openSync: (path: string, flags: string) => {
-        if (flags === "r") fsyncedDirs.add(path);
-        return realOpenSync(path, flags);
-      },
-    }));
+      const actualFs = await import("node:fs");
+      const realOpenSync = actualFs.openSync;
+      const realFs = { ...actualFs };
+      const fsyncedDirs = new Set<string>();
+      mock.module("node:fs", () => ({
+        ...realFs,
+        openSync: (path: string, flags: string) => {
+          if (flags === "r") fsyncedDirs.add(path);
+          return realOpenSync(path, flags);
+        },
+      }));
 
-    try {
-      await appendNote(nestedMailbox, "999", "orchestrator", "hello");
-      expect(fsyncedDirs.has(nestedMailbox)).toBe(true);
-      expect(fsyncedDirs.has(nestedContext)).toBe(true);
-      expect(fsyncedDirs.has(dir)).toBe(true);
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
+      try {
+        await appendNote(nestedMailbox, "999", "orchestrator", "hello");
+        expect(fsyncedDirs.has(nestedMailbox)).toBe(true);
+        expect(fsyncedDirs.has(nestedContext)).toBe(true);
+        expect(fsyncedDirs.has(dir)).toBe(true);
+      } finally {
+        mock.module("node:fs", () => realFs);
+      }
+    },
+  );
 
-  it("flushes every ancestor created by a $DRIVE_PR_MAILBOX_DIR override deeper than the default two-level layout", async () => {
-    // The fixed two-level floor (mailboxDir() === worktreeRoot/.context/
-    // drive-mailbox) only bounds the DEFAULT production layout. Under the
-    // test/operator override, `resolveMailboxDir()` permits an arbitrarily deep
-    // path, and mkdirSync's own recursive create walks as far up as it needs to
-    // — a chain missing MORE than two levels would leave the higher, still-new
-    // ancestors unfsynced if the walk stopped at the fixed floor alone.
-    const level1 = join(dir, "override-l1");
-    const level2 = join(level1, "override-l2");
-    const level3 = join(level2, "override-l3");
-    const nestedMailbox = join(level3, "drive-mailbox");
-    expect(existsSync(level1)).toBe(false);
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the directory fsync is skipped on Windows (opening a directory fails with EPERM), so the directory open this test observes never happens",
+    ),
+  )(
+    "flushes every ancestor created by a $DRIVE_PR_MAILBOX_DIR override deeper than the default two-level layout",
+    async () => {
+      // The fixed two-level floor (mailboxDir() === worktreeRoot/.context/
+      // drive-mailbox) only bounds the DEFAULT production layout. Under the
+      // test/operator override, `resolveMailboxDir()` permits an arbitrarily deep
+      // path, and mkdirSync's own recursive create walks as far up as it needs to
+      // — a chain missing MORE than two levels would leave the higher, still-new
+      // ancestors unfsynced if the walk stopped at the fixed floor alone.
+      const level1 = join(dir, "override-l1");
+      const level2 = join(level1, "override-l2");
+      const level3 = join(level2, "override-l3");
+      const nestedMailbox = join(level3, "drive-mailbox");
+      expect(existsSync(level1)).toBe(false);
 
-    const actualFs = await import("node:fs");
-    const realOpenSync = actualFs.openSync;
-    const realFs = { ...actualFs };
-    const fsyncedDirs = new Set<string>();
-    mock.module("node:fs", () => ({
-      ...realFs,
-      openSync: (path: string, flags: string) => {
-        if (flags === "r") fsyncedDirs.add(path);
-        return realOpenSync(path, flags);
-      },
-    }));
+      const actualFs = await import("node:fs");
+      const realOpenSync = actualFs.openSync;
+      const realFs = { ...actualFs };
+      const fsyncedDirs = new Set<string>();
+      mock.module("node:fs", () => ({
+        ...realFs,
+        openSync: (path: string, flags: string) => {
+          if (flags === "r") fsyncedDirs.add(path);
+          return realOpenSync(path, flags);
+        },
+      }));
 
-    try {
-      await appendNote(nestedMailbox, "999", "orchestrator", "hello");
-      // Every level from the mailbox dir up through the pre-existing
-      // `dir` is fsynced — four levels, past the fixed three-level floor.
-      expect(fsyncedDirs.has(nestedMailbox)).toBe(true);
-      expect(fsyncedDirs.has(level3)).toBe(true);
-      expect(fsyncedDirs.has(level2)).toBe(true);
-      expect(fsyncedDirs.has(level1)).toBe(true);
-      expect(fsyncedDirs.has(dir)).toBe(true);
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
+      try {
+        await appendNote(nestedMailbox, "999", "orchestrator", "hello");
+        // Every level from the mailbox dir up through the pre-existing
+        // `dir` is fsynced — four levels, past the fixed three-level floor.
+        expect(fsyncedDirs.has(nestedMailbox)).toBe(true);
+        expect(fsyncedDirs.has(level3)).toBe(true);
+        expect(fsyncedDirs.has(level2)).toBe(true);
+        expect(fsyncedDirs.has(level1)).toBe(true);
+        expect(fsyncedDirs.has(dir)).toBe(true);
+      } finally {
+        mock.module("node:fs", () => realFs);
+      }
+    },
+  );
 
-  it("cleans up a file it created when write/fsync/close then fails, so a retry correctly re-observes absent and re-runs the ancestor fsyncs", async () => {
-    // Without cleanup, a failed FIRST append that already created the
-    // file (openSync('a') creates transparently, whether or not the file
-    // existed) leaves an empty/partial file behind. A later, otherwise-
-    // successful retry would then observe existing.kind === 'ok' — not
-    // 'absent' — setting fileIsNew false and skipping the ancestor-
-    // directory fsyncs entirely, even though nobody has ever run them.
-    const path = inboxPath(dir);
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the directory fsync is skipped on Windows (opening a directory fails with EPERM), so the directory open this test observes never happens",
+    ),
+  )(
+    "cleans up a file it created when write/fsync/close then fails, so a retry correctly re-observes absent and re-runs the ancestor fsyncs",
+    async () => {
+      // Without cleanup, a failed FIRST append that already created the
+      // file (openSync('a') creates transparently, whether or not the file
+      // existed) leaves an empty/partial file behind. A later, otherwise-
+      // successful retry would then observe existing.kind === 'ok' — not
+      // 'absent' — setting fileIsNew false and skipping the ancestor-
+      // directory fsyncs entirely, even though nobody has ever run them.
+      const path = inboxPath(dir);
 
-    const actualFs = await import("node:fs");
-    const realWriteSync = actualFs.writeSync;
-    const realFs = { ...actualFs };
-    let failNextWrite = true;
-    mock.module("node:fs", () => ({
-      ...realFs,
-      writeSync: (
-        fd: number,
-        buffer: Uint8Array,
-        offset?: number,
-        length?: number,
-        position?: number | null,
-      ) => {
-        if (failNextWrite) {
-          failNextWrite = false;
-          throw new Error("simulated ENOSPC mid-write");
-        }
-        return realWriteSync(fd, buffer, offset, length, position);
-      },
-    }));
-    try {
-      await expect(
-        appendNote(dir, "999", "orchestrator", "first attempt"),
-      ).rejects.toThrow("simulated ENOSPC mid-write");
-      // The failed attempt's file must be cleaned up, restoring `absent`
-      // for the next attempt to correctly re-observe.
-      expect(existsSync(path)).toBe(false);
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
+      const actualFs = await import("node:fs");
+      const realWriteSync = actualFs.writeSync;
+      const realFs = { ...actualFs };
+      let failNextWrite = true;
+      mock.module("node:fs", () => ({
+        ...realFs,
+        writeSync: (
+          fd: number,
+          buffer: Uint8Array,
+          offset?: number,
+          length?: number,
+          position?: number | null,
+        ) => {
+          if (failNextWrite) {
+            failNextWrite = false;
+            throw new Error("simulated ENOSPC mid-write");
+          }
+          return realWriteSync(fd, buffer, offset, length, position);
+        },
+      }));
+      try {
+        await expect(
+          appendNote(dir, "999", "orchestrator", "first attempt"),
+        ).rejects.toThrow("simulated ENOSPC mid-write");
+        // The failed attempt's file must be cleaned up, restoring `absent`
+        // for the next attempt to correctly re-observe.
+        expect(existsSync(path)).toBe(false);
+      } finally {
+        mock.module("node:fs", () => realFs);
+      }
 
-    const realOpenSync = actualFs.openSync;
-    const fsyncedDirs = new Set<string>();
-    mock.module("node:fs", () => ({
-      ...realFs,
-      openSync: (p: string, flags: string) => {
-        if (flags === "r") fsyncedDirs.add(p);
-        return realOpenSync(p, flags);
-      },
-    }));
-    try {
-      await appendNote(dir, "999", "orchestrator", "retry");
-      // The retry correctly re-observed `absent` (thanks to the cleanup
-      // above) and ran the ancestor-directory fsync this time.
-      expect(fsyncedDirs.has(dir)).toBe(true);
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
+      const realOpenSync = actualFs.openSync;
+      const fsyncedDirs = new Set<string>();
+      mock.module("node:fs", () => ({
+        ...realFs,
+        openSync: (p: string, flags: string) => {
+          if (flags === "r") fsyncedDirs.add(p);
+          return realOpenSync(p, flags);
+        },
+      }));
+      try {
+        await appendNote(dir, "999", "orchestrator", "retry");
+        // The retry correctly re-observed `absent` (thanks to the cleanup
+        // above) and ran the ancestor-directory fsync this time.
+        expect(fsyncedDirs.has(dir)).toBe(true);
+      } finally {
+        mock.module("node:fs", () => realFs);
+      }
+    },
+  );
 });
 
 describe("repairInbox dry-run is genuinely read-only", () => {
@@ -936,20 +985,28 @@ describe("repairInbox", () => {
     }
   });
 
-  it("fails CLOSED, not a clean absent result, when the mailbox directory's own PARENT exists but is not a directory (ENOTDIR)", async () => {
-    // The sibling of readMailboxFile's own ENOTDIR handling, at the directory
-    // level rather than the file level: `lstatSync(dir)` raises ENOTDIR when
-    // `dir`'s PARENT exists but is the wrong type (a regular file, not a
-    // directory) — a broken location, never a genuinely absent one. This
-    // module's own comment on the lstatSync call below claims it "mirrors
-    // readMailboxFile's own absent/unreadable split so the two agree" — this
-    // test is what keeps that claim true.
-    const notADirectory = join(dir, "not-a-directory");
-    writeFileSync(notADirectory, "this is a file, not a directory");
-    const brokenMailboxDir = join(notADirectory, "drive-mailbox");
-    const r = await repairInbox(brokenMailboxDir, false);
-    expect(r.ok).toBe(false);
-  });
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "Windows reports ENOENT, not ENOTDIR, for a path below a regular file, so the broken location is read as absent",
+    ),
+  )(
+    "fails CLOSED, not a clean absent result, when the mailbox directory's own PARENT exists but is not a directory (ENOTDIR)",
+    async () => {
+      // The sibling of readMailboxFile's own ENOTDIR handling, at the directory
+      // level rather than the file level: `lstatSync(dir)` raises ENOTDIR when
+      // `dir`'s PARENT exists but is the wrong type (a regular file, not a
+      // directory) — a broken location, never a genuinely absent one. This
+      // module's own comment on the lstatSync call below claims it "mirrors
+      // readMailboxFile's own absent/unreadable split so the two agree" — this
+      // test is what keeps that claim true.
+      const notADirectory = join(dir, "not-a-directory");
+      writeFileSync(notADirectory, "this is a file, not a directory");
+      const brokenMailboxDir = join(notADirectory, "drive-mailbox");
+      const r = await repairInbox(brokenMailboxDir, false);
+      expect(r.ok).toBe(false);
+    },
+  );
 
   it("fails CLOSED on both dry-run and a real repair when the mailbox path itself exists as a regular FILE, not a directory", async () => {
     // `lstatSync(dir)` succeeding only proves SOMETHING exists at `dir` —

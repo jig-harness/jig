@@ -159,7 +159,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { basename, relative, resolve } from "node:path";
+import { basename, delimiter, relative, resolve } from "node:path";
 import * as ts from "typescript/unstable/ast";
 import {
   API,
@@ -632,7 +632,7 @@ function corpusFiles(): readonly { unit: CorpusFile; path: string }[] {
   if (override) {
     const requiredIdentifiers = testRequiredIdentifiers();
     return override
-      .split(":")
+      .split(delimiter)
       .filter(Boolean)
       .map((entry) => {
         const parts = entry.split("=");

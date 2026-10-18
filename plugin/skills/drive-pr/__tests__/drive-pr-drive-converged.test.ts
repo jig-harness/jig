@@ -5,9 +5,9 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { passExitDisposition } from "../scripts/drive";
 
 import {
@@ -18,6 +18,7 @@ import {
   makeRebasePausedRepo,
   writeFixture,
   useDrivePrSuite,
+  binDir,
 } from "./drive-pr-harness.ts";
 import {
   PASS_LOUD,
@@ -26,6 +27,7 @@ import {
   runDriveIn,
   state,
 } from "./drive-loop-harness.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 useDrivePrSuite();
 
@@ -352,7 +354,7 @@ describe("drive.ts loop control", () => {
     if (!realGit) throw new Error("no git on PATH to wrap for this probe");
     const gitBinDir = mkdtempSync(join(tmpdir(), "drive-pr-drive-git-stub-"));
     const gitStubPath = join(gitBinDir, "git");
-    writeFileSync(
+    writeFakeProgram(
       gitStubPath,
       [
         "#!/usr/bin/env bash",
@@ -364,13 +366,17 @@ describe("drive.ts loop control", () => {
         "",
       ].join("\n"),
     );
-    chmodSync(gitStubPath, 0o755);
     const started = Date.now();
     const r = await runDrive(
       { threads: [], reviewedSha: dirty.head, head: dirty.head },
       ["--no-head-sync", "--", ...PASS_NOOP],
       dirty.dir,
-      { extraBinDir: gitBinDir, env: { GIT_CALL_TIMEOUT: "1" } },
+      {
+        env: {
+          GIT_CALL_TIMEOUT: "1",
+          PATH: [gitBinDir, binDir, process.env.PATH].join(delimiter),
+        },
+      },
     );
     const elapsed = Date.now() - started;
     expect(r.exitCode).toBe(12);

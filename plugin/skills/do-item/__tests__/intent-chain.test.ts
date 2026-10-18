@@ -907,10 +907,10 @@ describe("main", () => {
       });
       expectSpawnExit(writer, 0);
       const summary = JSON.parse(writer.stdout.toString());
-      // realpathSync: `git rev-parse --show-toplevel` resolves symlinks
-      // (macOS's /var → /private/var), while mkdtempSync's return value does
-      // not — the same normalization the sibling handoff.ts test applies.
-      const realRepo = realpathSync(repo);
+      // realpathSync.native: `git rev-parse --show-toplevel` resolves symlinks
+      // (macOS's /var → /private/var) and 8.3 short names (Windows), while
+      // mkdtempSync's return value does not.
+      const realRepo = realpathSync.native(repo);
       expect(summary.path).toBe(
         join(realRepo, ".context", "intent-chain", "ENG-9001.md"),
       );
@@ -977,7 +977,7 @@ describe("main", () => {
       const sessionCopy = () =>
         readFileSync(
           join(
-            realpathSync(repo),
+            realpathSync.native(repo),
             ".context",
             "refocus-state",
             "batch-session.intent-chain.md",
@@ -999,7 +999,11 @@ describe("main", () => {
       expect(first.exitCode, first.stderr.toString()).toBe(0);
       const original = sessionCopy();
       expect(original).toContain("Selected child scope.");
-      const chainDir = join(realpathSync(repo), ".context", "intent-chain");
+      const chainDir = join(
+        realpathSync.native(repo),
+        ".context",
+        "intent-chain",
+      );
       for (const id of ["ENG-9401", "ENG-9402", "ENG-9403"]) {
         const solo = runWriter(
           repo,
@@ -1067,7 +1071,7 @@ describe("main", () => {
       );
       expect(first.exitCode, first.stderr.toString()).toBe(0);
       const sessionPath = join(
-        realpathSync(repo),
+        realpathSync.native(repo),
         ".context",
         "refocus-state",
         "same-session.intent-chain.md",
@@ -1113,7 +1117,7 @@ describe("main", () => {
         env,
       );
       expect(first.exitCode, first.stderr.toString()).toBe(0);
-      const root = realpathSync(repo);
+      const root = realpathSync.native(repo);
       const sessionPath = join(
         root,
         ".context",
@@ -1176,7 +1180,7 @@ describe("main", () => {
   it("--clear-session removes only this session's copy, and a missing copy is already clear", () => {
     const repo = mkdtempSync(join(tmpdir(), "intent-chain-clear-"));
     try {
-      const root = realpathSync(repo);
+      const root = realpathSync.native(repo);
       const stateDir = join(root, ".context", "refocus-state");
       const batch = {
         mode: "batch",
@@ -1238,7 +1242,7 @@ describe("main", () => {
     try {
       // A directory where the copy would be: unlink refuses it.
       const blocked = join(
-        realpathSync(repo),
+        realpathSync.native(repo),
         ".context",
         "refocus-state",
         "stuck.intent-chain.md",
@@ -1268,7 +1272,11 @@ describe("main", () => {
         ],
       });
       expectSpawnExit(writer, 0);
-      const chainDir = join(realpathSync(repo), ".context", "intent-chain");
+      const chainDir = join(
+        realpathSync.native(repo),
+        ".context",
+        "intent-chain",
+      );
       const anchorText = readFileSync(join(chainDir, "ENG-411.md"), "utf8");
       for (const alias of ["ENG-412", "ENG-420"]) {
         expect(readFileSync(join(chainDir, `${alias}.md`), "utf8")).toBe(
@@ -1291,7 +1299,11 @@ describe("main", () => {
         items: [{ identifier: "ENG-421", title: "not a batch" }],
       });
       expectSpawnExit(writer, 0);
-      const chainDir = join(realpathSync(repo), ".context", "intent-chain");
+      const chainDir = join(
+        realpathSync.native(repo),
+        ".context",
+        "intent-chain",
+      );
       expect(existsSync(join(chainDir, "ENG-420.md"))).toBe(true);
       expect(existsSync(join(chainDir, "ENG-421.md"))).toBe(false);
       // An explicit `mode: 'issue'` is the same case, not just an absent mode.
@@ -1310,7 +1322,11 @@ describe("main", () => {
   it("keys the session snapshot on CODEX_THREAD_ID under Codex, and prefers CLAUDE_CODE_SESSION_ID when both are set", () => {
     const repo = mkdtempSync(join(tmpdir(), "intent-chain-codex-"));
     try {
-      const stateDir = join(realpathSync(repo), ".context", "refocus-state");
+      const stateDir = join(
+        realpathSync.native(repo),
+        ".context",
+        "refocus-state",
+      );
       // Codex: no CLAUDE_* name at all, only its own thread id.
       const codex = runWriter(
         repo,
@@ -1369,7 +1385,11 @@ describe("main", () => {
           },
         );
       expectSpawnExit(writer("ENG-9101"), 0);
-      const stateDir = join(realpathSync(repo), ".context", "refocus-state");
+      const stateDir = join(
+        realpathSync.native(repo),
+        ".context",
+        "refocus-state",
+      );
       const used = join(stateDir, "retention-sess.intent-chain.md");
       const unused = join(stateDir, "unused-sess.intent-chain.md");
       writeFileSync(unused, readFileSync(used));
@@ -1417,7 +1437,11 @@ describe("main", () => {
           },
         );
       expectSpawnExit(writer("ENG-9301"), 0);
-      const chainDir = join(realpathSync(repo), ".context", "intent-chain");
+      const chainDir = join(
+        realpathSync.native(repo),
+        ".context",
+        "intent-chain",
+      );
       const daysAgo = (n: number) =>
         new Date(Date.now() - n * 24 * 60 * 60 * 1000);
       const pin20 = join(chainDir, "pr.42.md");
@@ -1445,7 +1469,11 @@ describe("main", () => {
     try {
       // A directory where `.current` belongs makes the pointer's rename fail
       // while the content write before it succeeds.
-      const chainDir = join(realpathSync(repo), ".context", "intent-chain");
+      const chainDir = join(
+        realpathSync.native(repo),
+        ".context",
+        "intent-chain",
+      );
       mkdirSync(join(chainDir, ".current"), { recursive: true });
       const writer = runWriter(repo, {
         issue: { identifier: "ENG-9002", description: issueMd({}) },

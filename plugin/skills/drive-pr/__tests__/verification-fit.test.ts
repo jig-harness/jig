@@ -475,7 +475,7 @@ describe("verification-fit.ts against a throwaway repo (non-ancestor base, crede
       ],
       tempRepo,
     );
-    Bun.write(join(tempRepo, "root.txt"), "root");
+    writeFileSync(join(tempRepo, "root.txt"), "root");
     execGit(["add", "."], tempRepo);
     execGit(["commit", "-q", "-m", "root"], tempRepo);
     const rootSha = execGit(["rev-parse", "HEAD"], tempRepo);
@@ -483,14 +483,14 @@ describe("verification-fit.ts against a throwaway repo (non-ancestor base, crede
     // A commit on a divergent branch — exists in the repo, but is NOT an
     // ancestor of main's tip.
     execGit(["checkout", "-q", "-b", "side", rootSha], tempRepo);
-    Bun.write(join(tempRepo, "side.txt"), "side");
+    writeFileSync(join(tempRepo, "side.txt"), "side");
     execGit(["add", "."], tempRepo);
     execGit(["commit", "-q", "-m", "side"], tempRepo);
     sideSha = execGit(["rev-parse", "HEAD"], tempRepo);
 
     // Back to main, one more commit so main's tip differs from the root.
     execGit(["checkout", "-q", "main"], tempRepo);
-    Bun.write(join(tempRepo, "main2.txt"), "main2");
+    writeFileSync(join(tempRepo, "main2.txt"), "main2");
     execGit(["add", "."], tempRepo);
     execGit(["commit", "-q", "-m", "main2"], tempRepo);
     mainSha = execGit(["rev-parse", "HEAD"], tempRepo);

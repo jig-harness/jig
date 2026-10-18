@@ -19,18 +19,20 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import {
   appendDirective,
   holdAbortUnmarkedSentinel,
   inboxPath,
 } from "../scripts/lib/state/mailbox.ts";
 import { recheckHookEntry } from "./push-hold-recheck-hook.ts";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
 
 async function runScript(env: Record<string, string>) {
-  const proc = Bun.spawn([join(SCRIPTS, "push-hold-recheck.ts")], {
+  const proc = Bun.spawn(scriptArgv(join(SCRIPTS, "push-hold-recheck.ts")), {
     // Not `...process.env` alone: an ambient DRIVE_PR_* from a live drive
     // running this suite would otherwise leak into the probe.
     env: {
@@ -209,12 +211,18 @@ describe("the pre-push hook entry for the hold recheck", () => {
       const stubDir = mkdtempSync(join(tmpdir(), "drive-pr-hold-recheck-bun-"));
       try {
         const ran = join(stubDir, "bun-ran");
-        writeFileSync(
+        writeFakeProgram(
           join(stubDir, "bun"),
           `#!/bin/sh\n: > "${ran}"\nexit 99\n`,
-          { mode: 0o755 },
         );
-        const r = run({ PATH: `${stubDir}:/usr/bin:/bin` });
+        const r = run({
+          PATH: [
+            stubDir,
+            dirname(Bun.which("sh") ?? "/bin/sh"),
+            "/usr/bin",
+            "/bin",
+          ].join(delimiter),
+        });
         expect(r.exitCode).toBe(0);
         expect(existsSync(ran)).toBe(false);
       } finally {

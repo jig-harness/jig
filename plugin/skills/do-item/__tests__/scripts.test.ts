@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { load as loadYaml } from "../../../shared/yaml.ts";
 import { parseCatalog } from "../../drive-pr/scripts/lib/change-areas-catalog.ts";
 import {
@@ -19,6 +19,7 @@ import {
   parseAgentRouting,
 } from "../scripts/determine_agent.ts";
 import { parseArgs } from "../scripts/lib/cli.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
 const OVERLAY = join(import.meta.dir, "fixtures", "overlay.yaml");
@@ -248,9 +249,7 @@ describe("the CLI wrappers", () => {
   let stubBin: string;
   beforeAll(() => {
     stubBin = mkdtempSync(join(tmpdir(), "do-item-stub-"));
-    writeFileSync(join(stubBin, "linear"), "#!/bin/sh\nexit 1\n", {
-      mode: 0o755,
-    });
+    writeFakeProgram(join(stubBin, "linear"), "#!/bin/sh\nexit 1\n");
   });
   afterAll(() => {
     rmSync(stubBin, { recursive: true, force: true });
@@ -272,7 +271,10 @@ describe("the CLI wrappers", () => {
       const r = spawnSync(process.execPath, [join(SCRIPTS, rel), ...args], {
         encoding: "utf8",
         input: stdin,
-        env: { ...gitCleanEnv(), PATH: `${stubBin}:${process.env.PATH}` },
+        env: {
+          ...gitCleanEnv(),
+          PATH: `${stubBin}${delimiter}${process.env.PATH}`,
+        },
       });
       // Each wrapper prints a JSON document even when its CLI is absent.
       expect({ rel, status: r.status }).toEqual({ rel, status });
@@ -297,7 +299,10 @@ describe("the CLI wrappers", () => {
         {
           encoding: "utf8",
           input: stdin,
-          env: { ...gitCleanEnv(), PATH: `${stubBin}:${process.env.PATH}` },
+          env: {
+            ...gitCleanEnv(),
+            PATH: `${stubBin}${delimiter}${process.env.PATH}`,
+          },
         },
       );
       expect({ what, status: r.status }).toEqual({ what, status: 2 });
@@ -407,7 +412,10 @@ describe("the CLI wrappers", () => {
       const r = spawnSync(process.execPath, [join(SCRIPTS, rel), ...args], {
         encoding: "utf8",
         input: stdin,
-        env: { ...gitCleanEnv(), PATH: `${stubBin}:${process.env.PATH}` },
+        env: {
+          ...gitCleanEnv(),
+          PATH: `${stubBin}${delimiter}${process.env.PATH}`,
+        },
       });
       expect({ rel, what, status: r.status }).toEqual({
         rel,
@@ -645,17 +653,19 @@ describe("get_issue.ts reads the issue through the tracker", () => {
   const run = (payload: string, extra: string[] = []) => {
     const bin = mkdtempSync(join(tmpdir(), "do-item-linear-"));
     dirs.push(bin);
-    writeFileSync(
+    writeFakeProgram(
       join(bin, "linear"),
       linearApiStub([{ operation: ISSUE_OP, variables: ISSUE_VARS, payload }]),
-      { mode: 0o755 },
     );
     const r = spawnSync(
       process.execPath,
       [join(SCRIPTS, "get_issue.ts"), "ENG-1", ...extra],
       {
         encoding: "utf8",
-        env: { ...gitCleanEnv(), PATH: `${bin}:${process.env.PATH}` },
+        env: {
+          ...gitCleanEnv(),
+          PATH: `${bin}${delimiter}${process.env.PATH}`,
+        },
       },
     );
     return {
@@ -919,9 +929,7 @@ describe("list_comments.ts", () => {
   let stubBin: string;
   beforeAll(() => {
     stubBin = mkdtempSync(join(tmpdir(), "do-item-comments-stub-"));
-    writeFileSync(join(stubBin, "linear"), "#!/bin/sh\nexit 1\n", {
-      mode: 0o755,
-    });
+    writeFakeProgram(join(stubBin, "linear"), "#!/bin/sh\nexit 1\n");
   });
   afterAll(() => {
     rmSync(stubBin, { recursive: true, force: true });
@@ -933,7 +941,10 @@ describe("list_comments.ts", () => {
       [join(SCRIPTS, "list_comments.ts"), "ENG-1"],
       {
         encoding: "utf8",
-        env: { ...gitCleanEnv(), PATH: `${stubBin}:${process.env.PATH}` },
+        env: {
+          ...gitCleanEnv(),
+          PATH: `${stubBin}${delimiter}${process.env.PATH}`,
+        },
       },
     );
     expect(r.status).toBe(1);
@@ -954,20 +965,22 @@ describe("list_comments.ts", () => {
   ) => {
     const bin = mkdtempSync(join(tmpdir(), "do-item-comments-"));
     dirs.push(bin);
-    writeFileSync(
+    writeFakeProgram(
       join(bin, "linear"),
       linearApiStub([
         { operation: OP, variables: '{"id":"ENG-1","after":null}', payload },
         ...more.map((m) => ({ operation: OP, ...m })),
       ]),
-      { mode: 0o755 },
     );
     return spawnSync(
       process.execPath,
       [join(SCRIPTS, "list_comments.ts"), "ENG-1"],
       {
         encoding: "utf8",
-        env: { ...gitCleanEnv(), PATH: `${bin}:${process.env.PATH}` },
+        env: {
+          ...gitCleanEnv(),
+          PATH: `${bin}${delimiter}${process.env.PATH}`,
+        },
       },
     );
   };
@@ -1083,11 +1096,11 @@ describe("tracker.ts", () => {
   ) => {
     const bin = mkdtempSync(join(tmpdir(), "do-item-tracker-"));
     dirs.push(bin);
-    writeFileSync(join(bin, "linear"), linearApiStub(cases), { mode: 0o755 });
+    writeFakeProgram(join(bin, "linear"), linearApiStub(cases));
     return spawnSync(process.execPath, [join(SCRIPTS, "tracker.ts"), ...args], {
       encoding: "utf8",
       input,
-      env: { ...gitCleanEnv(), PATH: `${bin}:${process.env.PATH}` },
+      env: { ...gitCleanEnv(), PATH: `${bin}${delimiter}${process.env.PATH}` },
     });
   };
 

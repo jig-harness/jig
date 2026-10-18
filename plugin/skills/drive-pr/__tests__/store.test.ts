@@ -43,6 +43,11 @@ function gitCleanEnv(
   for (const [k, v] of Object.entries(extra)) {
     if (v === undefined) delete env[k];
     else env[k] = v;
+    // Windows' home directory is USERPROFILE, not HOME.
+    if (k === "HOME") {
+      if (v === undefined) delete env.USERPROFILE;
+      else env.USERPROFILE = v;
+    }
   }
   return env;
 }

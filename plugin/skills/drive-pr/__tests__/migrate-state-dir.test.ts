@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { ExitError } from "../scripts/lib/cli.ts";
 import {
   type ArtifactFamily,
@@ -31,6 +31,7 @@ import {
   planRootMigration,
   runProbe,
 } from "../scripts/migrate-state-dir.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 /**
  * Mirrors migrate-state-dir.ts's own `migrationJournalPath` (not exported).
@@ -269,7 +270,7 @@ describe("--from: migrating a whole state root", () => {
   it("parses --from with the default state root as the destination", () => {
     expect(parseCliArgs(["--from", "/abs/old-root"])).toEqual({
       roots: true,
-      source: "/abs/old-root",
+      source: resolve("/abs/old-root"),
       destination: defaultStateRootDir(),
       json: false,
       timeoutMs: undefined,
@@ -282,7 +283,7 @@ describe("--from: migrating a whole state root", () => {
   it("expands ~ and honours --to", () => {
     const parsed = parseCliArgs(["--from", "~/old", "--to", "/abs/new"]);
     expect(parsed.source).toBe(join(homedir(), "old"));
-    expect(parsed.destination).toBe("/abs/new");
+    expect(parsed.destination).toBe(resolve("/abs/new"));
   });
 
   it("refuses --from mixed with positionals, or --to alone", () => {
@@ -560,32 +561,43 @@ describe("migrateStateDir", () => {
     expect(existsSync(source)).toBe(true);
   });
 
-  it("uses copy-verify-remove across filesystems and preserves nested lock contents", async () => {
-    const root = scratch();
-    const source = join(root, "source");
-    const destination = join(root, "destination");
-    mkdirSync(source);
-    const staleLock = join(source, "pr-drive-42.lock");
-    mkdirSync(staleLock);
-    writeFileSync(join(staleLock, "claim.dead"), "999999 local-host\n");
-    writeFileSync(join(source, "drive-pr-42.json"), "state");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the cross-filesystem copy fsyncs each copied file through a read-only handle (fsyncTreeBestEffort), which fails with EPERM on Windows",
+    ),
+  )(
+    "uses copy-verify-remove across filesystems and preserves nested lock contents",
+    async () => {
+      const root = scratch();
+      const source = join(root, "source");
+      const destination = join(root, "destination");
+      mkdirSync(source);
+      const staleLock = join(source, "pr-drive-42.lock");
+      mkdirSync(staleLock);
+      writeFileSync(join(staleLock, "claim.dead"), "999999 local-host\n");
+      writeFileSync(join(source, "drive-pr-42.json"), "state");
 
-    const report = await migrateStateDir(source, destination, {
-      assertSchedulerDisabled: schedulerDisabled,
-      forceCrossFilesystem: true,
-      isClaimLive: () => false,
-    });
+      const report = await migrateStateDir(source, destination, {
+        assertSchedulerDisabled: schedulerDisabled,
+        forceCrossFilesystem: true,
+        isClaimLive: () => false,
+      });
 
-    expect(report.mode).toBe("copy-verify-remove");
-    expect(enumerateStateArtifacts(source).artifacts).toEqual([]);
-    expect(
-      readFileSync(join(destination, "pr-drive-42.lock", "claim.dead"), "utf8"),
-    ).toBe("999999 local-host\n");
-    expect(readdirSync(destination).sort()).toEqual([
-      "drive-pr-42.json",
-      "pr-drive-42.lock",
-    ]);
-  });
+      expect(report.mode).toBe("copy-verify-remove");
+      expect(enumerateStateArtifacts(source).artifacts).toEqual([]);
+      expect(
+        readFileSync(
+          join(destination, "pr-drive-42.lock", "claim.dead"),
+          "utf8",
+        ),
+      ).toBe("999999 local-host\n");
+      expect(readdirSync(destination).sort()).toEqual([
+        "drive-pr-42.json",
+        "pr-drive-42.lock",
+      ]);
+    },
+  );
 
   it("refuses up front, before touching the destination, when source is itself a mount point on the cross-filesystem path", async () => {
     // `quarantineSourceArtifacts` stages its safety-net quarantine directory in
@@ -847,106 +859,131 @@ describe("migrateStateDir", () => {
     expect(existsSync(destination) ? readdirSync(destination) : []).toEqual([]);
   });
 
-  it("publishes a verified cross-filesystem population as one directory rename", async () => {
-    const root = scratch();
-    const source = join(root, "source");
-    const destination = join(root, "destination");
-    mkdirSync(source);
-    writeFileSync(join(source, "drive-pr-42.json"), "state");
-    writeFileSync(join(source, "drive-pr-42.log"), "log");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the cross-filesystem copy fsyncs each copied file through a read-only handle (fsyncTreeBestEffort), which fails with EPERM on Windows",
+    ),
+  )(
+    "publishes a verified cross-filesystem population as one directory rename",
+    async () => {
+      const root = scratch();
+      const source = join(root, "source");
+      const destination = join(root, "destination");
+      mkdirSync(source);
+      writeFileSync(join(source, "drive-pr-42.json"), "state");
+      writeFileSync(join(source, "drive-pr-42.log"), "log");
 
-    await expect(
-      migrateStateDir(source, destination, {
-        assertSchedulerDisabled: schedulerDisabled,
-        forceCrossFilesystem: true,
-        beforeCrossFilesystemPublish: () => {
-          throw new Error("simulated interruption before atomic publish");
-        },
-      }),
-    ).rejects.toThrow("simulated interruption before atomic publish");
-    expect(existsSync(destination)).toBe(false);
-    expect(readdirSync(source).sort()).toEqual([
-      "drive-pr-42.json",
-      "drive-pr-42.log",
-    ]);
-    expect(
-      readdirSync(root).filter((name) => name.includes(".drive-pr-migrate-")),
-    ).toEqual([]);
-  });
+      await expect(
+        migrateStateDir(source, destination, {
+          assertSchedulerDisabled: schedulerDisabled,
+          forceCrossFilesystem: true,
+          beforeCrossFilesystemPublish: () => {
+            throw new Error("simulated interruption before atomic publish");
+          },
+        }),
+      ).rejects.toThrow("simulated interruption before atomic publish");
+      expect(existsSync(destination)).toBe(false);
+      expect(readdirSync(source).sort()).toEqual([
+        "drive-pr-42.json",
+        "drive-pr-42.log",
+      ]);
+      expect(
+        readdirSync(root).filter((name) => name.includes(".drive-pr-migrate-")),
+      ).toEqual([]);
+    },
+  );
 
-  it("checks cancellation once more before the cross-filesystem journal write and publish", async () => {
-    // The identity-verification loop right after the verified copy was fully
-    // synchronous with no signal check anywhere between it and the journal
-    // write / publish rename — a signal that fired in that window went
-    // unobserved straight through both, completing a "cancelled" migration
-    // anyway. `beforeCrossFilesystemPublish` fires at exactly that boundary, so
-    // aborting from inside it (without throwing) proves the new check
-    // downstream of the hook is what catches this — the pre-fix code had
-    // nothing left to catch it with.
-    const root = scratch();
-    const source = join(root, "source");
-    const destination = join(root, "destination");
-    mkdirSync(source);
-    writeFileSync(join(source, "drive-pr-42.json"), "state");
-    const controller = new AbortController();
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the cross-filesystem copy fsyncs each copied file through a read-only handle (fsyncTreeBestEffort), which fails with EPERM on Windows",
+    ),
+  )(
+    "checks cancellation once more before the cross-filesystem journal write and publish",
+    async () => {
+      // The identity-verification loop right after the verified copy was fully
+      // synchronous with no signal check anywhere between it and the journal
+      // write / publish rename — a signal that fired in that window went
+      // unobserved straight through both, completing a "cancelled" migration
+      // anyway. `beforeCrossFilesystemPublish` fires at exactly that boundary, so
+      // aborting from inside it (without throwing) proves the new check
+      // downstream of the hook is what catches this — the pre-fix code had
+      // nothing left to catch it with.
+      const root = scratch();
+      const source = join(root, "source");
+      const destination = join(root, "destination");
+      mkdirSync(source);
+      writeFileSync(join(source, "drive-pr-42.json"), "state");
+      const controller = new AbortController();
 
-    await expect(
-      migrateStateDir(source, destination, {
-        assertSchedulerDisabled: schedulerDisabled,
-        forceCrossFilesystem: true,
-        signal: controller.signal,
-        beforeCrossFilesystemPublish: () => {
-          controller.abort(new Error("cancelled before journal"));
-        },
-      }),
-    ).rejects.toThrow("migration cancelled");
-    // Nothing published, nothing recorded, nothing left half-done.
-    expect(existsSync(destination)).toBe(false);
-    expect(existsSync(journalPath(source))).toBe(false);
-    expect(
-      readdirSync(root).filter((name) => name.includes(".drive-pr-migrate-")),
-    ).toEqual([]);
-    expect(readFileSync(join(source, "drive-pr-42.json"), "utf8")).toBe(
-      "state",
-    );
-  });
+      await expect(
+        migrateStateDir(source, destination, {
+          assertSchedulerDisabled: schedulerDisabled,
+          forceCrossFilesystem: true,
+          signal: controller.signal,
+          beforeCrossFilesystemPublish: () => {
+            controller.abort(new Error("cancelled before journal"));
+          },
+        }),
+      ).rejects.toThrow("migration cancelled");
+      // Nothing published, nothing recorded, nothing left half-done.
+      expect(existsSync(destination)).toBe(false);
+      expect(existsSync(journalPath(source))).toBe(false);
+      expect(
+        readdirSync(root).filter((name) => name.includes(".drive-pr-migrate-")),
+      ).toEqual([]);
+      expect(readFileSync(join(source, "drive-pr-42.json"), "utf8")).toBe(
+        "state",
+      );
+    },
+  );
 
-  it("rolls back an interrupted source quarantine after cross-filesystem publication", async () => {
-    const root = scratch();
-    const source = join(root, "source");
-    const destination = join(root, "destination");
-    mkdirSync(source);
-    writeFileSync(join(source, "drive-pr-42.json"), "state");
-    writeFileSync(join(source, "drive-pr-42.log"), "log");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the cross-filesystem copy fsyncs each copied file through a read-only handle (fsyncTreeBestEffort), which fails with EPERM on Windows",
+    ),
+  )(
+    "rolls back an interrupted source quarantine after cross-filesystem publication",
+    async () => {
+      const root = scratch();
+      const source = join(root, "source");
+      const destination = join(root, "destination");
+      mkdirSync(source);
+      writeFileSync(join(source, "drive-pr-42.json"), "state");
+      writeFileSync(join(source, "drive-pr-42.log"), "log");
 
-    await expect(
-      migrateStateDir(source, destination, {
-        assertSchedulerDisabled: schedulerDisabled,
-        forceCrossFilesystem: true,
-        beforeSourceQuarantineMove: (_name, index) => {
-          if (index === 1) throw new Error("simulated source removal failure");
-        },
-      }),
-    ).rejects.toThrow("simulated source removal failure");
-    expect(readdirSync(source).sort()).toEqual([
-      "drive-pr-42.json",
-      "drive-pr-42.log",
-    ]);
-    expect(readdirSync(destination).sort()).toEqual([
-      "drive-pr-42.json",
-      "drive-pr-42.log",
-    ]);
-    expect(
-      readdirSync(root).filter((name) =>
-        name.startsWith(".drive-pr-source-removal-"),
-      ),
-    ).toEqual([]);
-    // The journal must SURVIVE this rollback: `destination` was already
-    // durably published before quarantine started, so a fully-restored
-    // `source` leaves two complete populations, not a reverted migration —
-    // the journal is the only durable record of that split state.
-    expect(existsSync(journalPath(source))).toBe(true);
-  });
+      await expect(
+        migrateStateDir(source, destination, {
+          assertSchedulerDisabled: schedulerDisabled,
+          forceCrossFilesystem: true,
+          beforeSourceQuarantineMove: (_name, index) => {
+            if (index === 1)
+              throw new Error("simulated source removal failure");
+          },
+        }),
+      ).rejects.toThrow("simulated source removal failure");
+      expect(readdirSync(source).sort()).toEqual([
+        "drive-pr-42.json",
+        "drive-pr-42.log",
+      ]);
+      expect(readdirSync(destination).sort()).toEqual([
+        "drive-pr-42.json",
+        "drive-pr-42.log",
+      ]);
+      expect(
+        readdirSync(root).filter((name) =>
+          name.startsWith(".drive-pr-source-removal-"),
+        ),
+      ).toEqual([]);
+      // The journal must SURVIVE this rollback: `destination` was already
+      // durably published before quarantine started, so a fully-restored
+      // `source` leaves two complete populations, not a reverted migration —
+      // the journal is the only durable record of that split state.
+      expect(existsSync(journalPath(source))).toBe(true);
+    },
+  );
 
   it("rolls back an interrupted same-filesystem move", async () => {
     const root = scratch();
@@ -1007,51 +1044,67 @@ describe("migrateStateDir", () => {
     expect(report.mode).toBe("rename");
   });
 
-  it("reports non-fatal warnings when quarantine cleanup fails after publication", async () => {
-    const root = scratch();
-    const source = join(root, "source");
-    const destination = join(root, "destination");
-    mkdirSync(source);
-    writeFileSync(join(source, "drive-pr-42.json"), "state");
-    writeFileSync(join(source, "drive-pr-42.log"), "log");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the cross-filesystem copy fsyncs each copied file through a read-only handle (fsyncTreeBestEffort), which fails with EPERM on Windows",
+    ),
+  )(
+    "reports non-fatal warnings when quarantine cleanup fails after publication",
+    async () => {
+      const root = scratch();
+      const source = join(root, "source");
+      const destination = join(root, "destination");
+      mkdirSync(source);
+      writeFileSync(join(source, "drive-pr-42.json"), "state");
+      writeFileSync(join(source, "drive-pr-42.log"), "log");
 
-    const report = await migrateStateDir(source, destination, {
-      assertSchedulerDisabled: schedulerDisabled,
-      forceCrossFilesystem: true,
-      beforeQuarantineCleanup: () => {
-        throw new Error("simulated cleanup failure");
-      },
-    });
+      const report = await migrateStateDir(source, destination, {
+        assertSchedulerDisabled: schedulerDisabled,
+        forceCrossFilesystem: true,
+        beforeQuarantineCleanup: () => {
+          throw new Error("simulated cleanup failure");
+        },
+      });
 
-    expect(report.mode).toBe("copy-verify-remove");
-    expect(report.warnings.length).toBe(1);
-    expect(report.warnings[0]).toContain("simulated cleanup failure");
-    expect(enumerateStateArtifacts(source).artifacts).toEqual([]);
-    expect(readdirSync(destination).sort()).toEqual([
-      "drive-pr-42.json",
-      "drive-pr-42.log",
-    ]);
-  });
+      expect(report.mode).toBe("copy-verify-remove");
+      expect(report.warnings.length).toBe(1);
+      expect(report.warnings[0]).toContain("simulated cleanup failure");
+      expect(enumerateStateArtifacts(source).artifacts).toEqual([]);
+      expect(readdirSync(destination).sort()).toEqual([
+        "drive-pr-42.json",
+        "drive-pr-42.log",
+      ]);
+    },
+  );
 
-  it("publishes cross-filesystem onto a pre-existing empty destination", async () => {
-    const root = scratch();
-    const source = join(root, "source");
-    const destination = join(root, "destination");
-    mkdirSync(source);
-    mkdirSync(destination);
-    writeFileSync(join(source, "drive-pr-42.json"), "state");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "on Windows a cross-filesystem migration refuses a pre-existing destination (rename cannot replace a directory), and the copy's file fsync fails with EPERM",
+    ),
+  )(
+    "publishes cross-filesystem onto a pre-existing empty destination",
+    async () => {
+      const root = scratch();
+      const source = join(root, "source");
+      const destination = join(root, "destination");
+      mkdirSync(source);
+      mkdirSync(destination);
+      writeFileSync(join(source, "drive-pr-42.json"), "state");
 
-    const report = await migrateStateDir(source, destination, {
-      assertSchedulerDisabled: schedulerDisabled,
-      forceCrossFilesystem: true,
-    });
+      const report = await migrateStateDir(source, destination, {
+        assertSchedulerDisabled: schedulerDisabled,
+        forceCrossFilesystem: true,
+      });
 
-    expect(report.mode).toBe("copy-verify-remove");
-    expect(readFileSync(join(destination, "drive-pr-42.json"), "utf8")).toBe(
-      "state",
-    );
-    expect(enumerateStateArtifacts(source).artifacts).toEqual([]);
-  });
+      expect(report.mode).toBe("copy-verify-remove");
+      expect(readFileSync(join(destination, "drive-pr-42.json"), "utf8")).toBe(
+        "state",
+      );
+      expect(enumerateStateArtifacts(source).artifacts).toEqual([]);
+    },
+  );
 
   it("rejects a pre-existing destination for a cross-filesystem migration on Windows", async () => {
     const root = scratch();
@@ -1089,21 +1142,29 @@ describe("migrateStateDir", () => {
     expect(report.mode).toBe("rename");
   });
 
-  it("still allows a cross-filesystem migration onto a new (non-pre-existing) destination on Windows", async () => {
-    const root = scratch();
-    const source = join(root, "source");
-    const destination = join(root, "destination");
-    mkdirSync(source);
-    writeFileSync(join(source, "drive-pr-42.json"), "state");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the cross-filesystem copy fsyncs each copied file through a read-only handle (fsyncTreeBestEffort), which fails with EPERM on Windows",
+    ),
+  )(
+    "still allows a cross-filesystem migration onto a new (non-pre-existing) destination on Windows",
+    async () => {
+      const root = scratch();
+      const source = join(root, "source");
+      const destination = join(root, "destination");
+      mkdirSync(source);
+      writeFileSync(join(source, "drive-pr-42.json"), "state");
 
-    const report = await migrateStateDir(source, destination, {
-      assertSchedulerDisabled: schedulerDisabled,
-      forceCrossFilesystem: true,
-      platform: "win32",
-    });
-    expect(report.mode).toBe("copy-verify-remove");
-    expect(enumerateStateArtifacts(source).artifacts).toEqual([]);
-  });
+      const report = await migrateStateDir(source, destination, {
+        assertSchedulerDisabled: schedulerDisabled,
+        forceCrossFilesystem: true,
+        platform: "win32",
+      });
+      expect(report.mode).toBe("copy-verify-remove");
+      expect(enumerateStateArtifacts(source).artifacts).toEqual([]);
+    },
+  );
 
   it("detects destination substitution before a same-filesystem move", async () => {
     const root = scratch();
@@ -1145,61 +1206,77 @@ describe("migrateStateDir", () => {
     expect(existsSync(destination)).toBe(false);
   });
 
-  it("propagates a durability fsync failure as fatal rather than a warning", async () => {
-    const root = scratch();
-    const source = join(root, "source");
-    const destination = join(root, "destination");
-    mkdirSync(source);
-    writeFileSync(join(source, "drive-pr-42.json"), "state");
-    writeFileSync(join(source, "drive-pr-42.log"), "log");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the cross-filesystem copy fsyncs each copied file through a read-only handle (fsyncTreeBestEffort), which fails with EPERM on Windows",
+    ),
+  )(
+    "propagates a durability fsync failure as fatal rather than a warning",
+    async () => {
+      const root = scratch();
+      const source = join(root, "source");
+      const destination = join(root, "destination");
+      mkdirSync(source);
+      writeFileSync(join(source, "drive-pr-42.json"), "state");
+      writeFileSync(join(source, "drive-pr-42.log"), "log");
 
-    await expect(
-      migrateStateDir(source, destination, {
+      await expect(
+        migrateStateDir(source, destination, {
+          assertSchedulerDisabled: schedulerDisabled,
+          forceCrossFilesystem: true,
+          beforeSourceDurabilitySync: () => {
+            throw new Error("simulated durability fsync failure");
+          },
+        }),
+      ).rejects.toThrow("simulated durability fsync failure");
+      // Destination is already published and correct — the failure is purely
+      // about whether source's emptiness durably survives a crash.
+      expect(readdirSync(destination).sort()).toEqual([
+        "drive-pr-42.json",
+        "drive-pr-42.log",
+      ]);
+      // The quarantine backup must NOT have been removed: with the durability
+      // fsync itself unproven, deleting the only remaining copy of the
+      // pre-fsync state would be the exact data-loss risk this split exists to
+      // prevent.
+      expect(
+        readdirSync(root).filter((name) =>
+          name.startsWith(".drive-pr-source-removal-"),
+        ).length,
+      ).toBe(1);
+    },
+  );
+
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the cross-filesystem copy fsyncs each copied file through a read-only handle (fsyncTreeBestEffort), which fails with EPERM on Windows",
+    ),
+  )(
+    "still reports non-fatal warnings when only cleanup (post-durability) fails",
+    async () => {
+      const root = scratch();
+      const source = join(root, "source");
+      const destination = join(root, "destination");
+      mkdirSync(source);
+      writeFileSync(join(source, "drive-pr-42.json"), "state");
+
+      const report = await migrateStateDir(source, destination, {
         assertSchedulerDisabled: schedulerDisabled,
         forceCrossFilesystem: true,
         beforeSourceDurabilitySync: () => {
-          throw new Error("simulated durability fsync failure");
+          // No-op: durability sync itself succeeds.
         },
-      }),
-    ).rejects.toThrow("simulated durability fsync failure");
-    // Destination is already published and correct — the failure is purely
-    // about whether source's emptiness durably survives a crash.
-    expect(readdirSync(destination).sort()).toEqual([
-      "drive-pr-42.json",
-      "drive-pr-42.log",
-    ]);
-    // The quarantine backup must NOT have been removed: with the durability
-    // fsync itself unproven, deleting the only remaining copy of the
-    // pre-fsync state would be the exact data-loss risk this split exists to
-    // prevent.
-    expect(
-      readdirSync(root).filter((name) =>
-        name.startsWith(".drive-pr-source-removal-"),
-      ).length,
-    ).toBe(1);
-  });
+        beforeQuarantineCleanup: () => {
+          throw new Error("simulated cleanup-only failure");
+        },
+      });
 
-  it("still reports non-fatal warnings when only cleanup (post-durability) fails", async () => {
-    const root = scratch();
-    const source = join(root, "source");
-    const destination = join(root, "destination");
-    mkdirSync(source);
-    writeFileSync(join(source, "drive-pr-42.json"), "state");
-
-    const report = await migrateStateDir(source, destination, {
-      assertSchedulerDisabled: schedulerDisabled,
-      forceCrossFilesystem: true,
-      beforeSourceDurabilitySync: () => {
-        // No-op: durability sync itself succeeds.
-      },
-      beforeQuarantineCleanup: () => {
-        throw new Error("simulated cleanup-only failure");
-      },
-    });
-
-    expect(report.warnings.length).toBe(1);
-    expect(report.warnings[0]).toContain("simulated cleanup-only failure");
-  });
+      expect(report.warnings.length).toBe(1);
+      expect(report.warnings[0]).toContain("simulated cleanup-only failure");
+    },
+  );
 
   it("refuses to start when a previous migration left a stale journal", async () => {
     const root = scratch();
@@ -1260,20 +1337,28 @@ describe("migrateStateDir", () => {
     expect(existsSync(journalPath(source))).toBe(false);
   });
 
-  it("removes the journal after a cross-filesystem migration completes", async () => {
-    const root = scratch();
-    const source = join(root, "source");
-    const destination = join(root, "destination");
-    mkdirSync(source);
-    writeFileSync(join(source, "drive-pr-42.json"), "state");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the cross-filesystem copy fsyncs each copied file through a read-only handle (fsyncTreeBestEffort), which fails with EPERM on Windows",
+    ),
+  )(
+    "removes the journal after a cross-filesystem migration completes",
+    async () => {
+      const root = scratch();
+      const source = join(root, "source");
+      const destination = join(root, "destination");
+      mkdirSync(source);
+      writeFileSync(join(source, "drive-pr-42.json"), "state");
 
-    await migrateStateDir(source, destination, {
-      assertSchedulerDisabled: schedulerDisabled,
-      forceCrossFilesystem: true,
-    });
+      await migrateStateDir(source, destination, {
+        assertSchedulerDisabled: schedulerDisabled,
+        forceCrossFilesystem: true,
+      });
 
-    expect(existsSync(journalPath(source))).toBe(false);
-  });
+      expect(existsSync(journalPath(source))).toBe(false);
+    },
+  );
 
   it("removes the journal once a same-filesystem rollback fully succeeds", async () => {
     const root = scratch();
@@ -1318,71 +1403,87 @@ describe("migrateStateDir", () => {
     expect(existsSync(journalPath(source))).toBe(true);
   });
 
-  it("survives a crash in the window between cross-filesystem publish and the quarantine call", async () => {
-    const root = scratch();
-    const source = join(root, "source");
-    const destination = join(root, "destination");
-    mkdirSync(source);
-    writeFileSync(join(source, "drive-pr-42.json"), "state");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the cross-filesystem copy fsyncs each copied file through a read-only handle (fsyncTreeBestEffort), which fails with EPERM on Windows",
+    ),
+  )(
+    "survives a crash in the window between cross-filesystem publish and the quarantine call",
+    async () => {
+      const root = scratch();
+      const source = join(root, "source");
+      const destination = join(root, "destination");
+      mkdirSync(source);
+      writeFileSync(join(source, "drive-pr-42.json"), "state");
 
-    await expect(
-      migrateStateDir(source, destination, {
-        assertSchedulerDisabled: schedulerDisabled,
-        forceCrossFilesystem: true,
-        afterCrossFilesystemPublish: () => {
-          throw new Error("simulated crash between publish and quarantine");
-        },
-      }),
-    ).rejects.toThrow("simulated crash between publish and quarantine");
-    // Destination is durably published (the publish rename already
-    // completed); the journal must still exist to describe that in-flight
-    // state.
-    expect(readFileSync(join(destination, "drive-pr-42.json"), "utf8")).toBe(
-      "state",
-    );
-    expect(existsSync(journalPath(source))).toBe(true);
-  });
+      await expect(
+        migrateStateDir(source, destination, {
+          assertSchedulerDisabled: schedulerDisabled,
+          forceCrossFilesystem: true,
+          afterCrossFilesystemPublish: () => {
+            throw new Error("simulated crash between publish and quarantine");
+          },
+        }),
+      ).rejects.toThrow("simulated crash between publish and quarantine");
+      // Destination is durably published (the publish rename already
+      // completed); the journal must still exist to describe that in-flight
+      // state.
+      expect(readFileSync(join(destination, "drive-pr-42.json"), "utf8")).toBe(
+        "state",
+      );
+      expect(existsSync(journalPath(source))).toBe(true);
+    },
+  );
 
-  it("leaves the journal in place across the whole cross-filesystem publish, not only during quarantine", async () => {
-    const root = scratch();
-    const source = join(root, "source");
-    const destination = join(root, "destination");
-    mkdirSync(source);
-    writeFileSync(join(source, "drive-pr-42.json"), "state");
-    writeFileSync(join(source, "drive-pr-42.log"), "log");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the cross-filesystem copy fsyncs each copied file through a read-only handle (fsyncTreeBestEffort), which fails with EPERM on Windows",
+    ),
+  )(
+    "leaves the journal in place across the whole cross-filesystem publish, not only during quarantine",
+    async () => {
+      const root = scratch();
+      const source = join(root, "source");
+      const destination = join(root, "destination");
+      mkdirSync(source);
+      writeFileSync(join(source, "drive-pr-42.json"), "state");
+      writeFileSync(join(source, "drive-pr-42.log"), "log");
 
-    await expect(
-      migrateStateDir(source, destination, {
-        assertSchedulerDisabled: schedulerDisabled,
-        forceCrossFilesystem: true,
-        beforeSourceQuarantineMove: (_name, index) => {
-          if (index === 1) {
-            // Destroy index 0's already-quarantined copy so ITS rollback
-            // (rename from quarantine back to source) fails — the exact
-            // "crash-adjacent" shape: destination is durably published, source
-            // is partway drained, and the journal is the only surviving record.
-            const quarantineDir = readdirSync(root).find((name) =>
-              name.startsWith(".drive-pr-source-removal-"),
-            );
-            if (quarantineDir === undefined) {
-              throw new Error("test setup: quarantine dir not found");
+      await expect(
+        migrateStateDir(source, destination, {
+          assertSchedulerDisabled: schedulerDisabled,
+          forceCrossFilesystem: true,
+          beforeSourceQuarantineMove: (_name, index) => {
+            if (index === 1) {
+              // Destroy index 0's already-quarantined copy so ITS rollback
+              // (rename from quarantine back to source) fails — the exact
+              // "crash-adjacent" shape: destination is durably published, source
+              // is partway drained, and the journal is the only surviving record.
+              const quarantineDir = readdirSync(root).find((name) =>
+                name.startsWith(".drive-pr-source-removal-"),
+              );
+              if (quarantineDir === undefined) {
+                throw new Error("test setup: quarantine dir not found");
+              }
+              rmSync(join(root, quarantineDir, "drive-pr-42.json"), {
+                force: true,
+              });
+              throw new Error("simulated source removal failure");
             }
-            rmSync(join(root, quarantineDir, "drive-pr-42.json"), {
-              force: true,
-            });
-            throw new Error("simulated source removal failure");
-          }
-        },
-      }),
-    ).rejects.toThrow("rollback was incomplete");
-    // Destination already carries the full, correctly published copy —
-    // untouched by the failed quarantine phase.
-    expect(readdirSync(destination).sort()).toEqual([
-      "drive-pr-42.json",
-      "drive-pr-42.log",
-    ]);
-    expect(existsSync(journalPath(source))).toBe(true);
-  });
+          },
+        }),
+      ).rejects.toThrow("rollback was incomplete");
+      // Destination already carries the full, correctly published copy —
+      // untouched by the failed quarantine phase.
+      expect(readdirSync(destination).sort()).toEqual([
+        "drive-pr-42.json",
+        "drive-pr-42.log",
+      ]);
+      expect(existsSync(journalPath(source))).toBe(true);
+    },
+  );
 
   it("gives sibling sources under one parent distinct journal paths", async () => {
     const root = scratch();
@@ -1793,29 +1894,38 @@ describe("migrateStateDir", () => {
     expect(existsSync(otherLockPath)).toBe(true);
   });
 
-  it("leaves the destination lock in place when a cross-filesystem rollback leaves the destination populated", async () => {
-    const root = scratch();
-    const source = join(root, "source");
-    const destination = join(root, "destination");
-    mkdirSync(source);
-    writeFileSync(join(source, "drive-pr-42.json"), "state");
-    writeFileSync(join(source, "drive-pr-42.log"), "log");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the cross-filesystem copy fsyncs each copied file through a read-only handle (fsyncTreeBestEffort), which fails with EPERM on Windows",
+    ),
+  )(
+    "leaves the destination lock in place when a cross-filesystem rollback leaves the destination populated",
+    async () => {
+      const root = scratch();
+      const source = join(root, "source");
+      const destination = join(root, "destination");
+      mkdirSync(source);
+      writeFileSync(join(source, "drive-pr-42.json"), "state");
+      writeFileSync(join(source, "drive-pr-42.log"), "log");
 
-    await expect(
-      migrateStateDir(source, destination, {
-        assertSchedulerDisabled: schedulerDisabled,
-        forceCrossFilesystem: true,
-        beforeSourceQuarantineMove: (_name, index) => {
-          if (index === 1) throw new Error("simulated source removal failure");
-        },
-      }),
-    ).rejects.toThrow("simulated source removal failure");
-    // Destination is already durably published — the destination lock must
-    // remain, matching the source journal's own retention in this exact
-    // scenario.
-    expect(readdirSync(destination).length).toBeGreaterThan(0);
-    expect(existsSync(destinationLockPath(destination))).toBe(true);
-  });
+      await expect(
+        migrateStateDir(source, destination, {
+          assertSchedulerDisabled: schedulerDisabled,
+          forceCrossFilesystem: true,
+          beforeSourceQuarantineMove: (_name, index) => {
+            if (index === 1)
+              throw new Error("simulated source removal failure");
+          },
+        }),
+      ).rejects.toThrow("simulated source removal failure");
+      // Destination is already durably published — the destination lock must
+      // remain, matching the source journal's own retention in this exact
+      // scenario.
+      expect(readdirSync(destination).length).toBeGreaterThan(0);
+      expect(existsSync(destinationLockPath(destination))).toBe(true);
+    },
+  );
 
   it("releases the destination lock when a same-filesystem rollback leaves the destination empty", async () => {
     const root = scratch();

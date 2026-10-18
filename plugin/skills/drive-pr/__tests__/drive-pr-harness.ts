@@ -8,7 +8,6 @@
 
 import { afterAll, beforeAll, expect } from "bun:test";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -17,7 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { resolveActor } from "../scripts/lib/state/actor";
 import { freshState } from "../scripts/lib/state/schema";
 import { worktreeLockName } from "../scripts/lib/state/store";
@@ -25,6 +24,8 @@ import { worktreeLockName } from "../scripts/lib/state/store";
 // production floor, so raising it cannot silently leave a probe sitting
 // underneath it and passing vacuously.
 import { STALLED_MIN_AGE_SEC } from "../scripts/lib/status/evaluate";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 export const SCRIPTS = join(import.meta.dir, "..", "scripts");
 export const REPO_ROOT = join(import.meta.dir, "..", "..", "..", "..");
@@ -626,6 +627,8 @@ export function gitCleanEnv(): Record<string, string> {
   // Set AFTER the copy, unconditionally, so it wins over whatever the real
   // process.env carries — see `suiteHome`'s own doc comment for why.
   env.HOME = suiteHome;
+  // Windows' home directory is USERPROFILE, not HOME.
+  env.USERPROFILE = suiteHome;
   return env;
 }
 
@@ -689,6 +692,7 @@ export function makeScratchRepo(name: string): {
   git("config", "user.email", "probe@example.invalid");
   git("config", "user.name", "drive-pr probe");
   git("config", "commit.gpgsign", "false");
+  git("config", "core.autocrlf", "false");
   git("config", "core.hooksPath", "/dev/null");
   writeFileSync(join(dir, "seed.txt"), `${name}\n`);
   git("add", "-A");
@@ -726,6 +730,7 @@ export function makeUnresolvedMergeRepo(name: string): {
   git("config", "user.email", "probe@example.invalid");
   git("config", "user.name", "drive-pr probe");
   git("config", "commit.gpgsign", "false");
+  git("config", "core.autocrlf", "false");
   git("config", "core.hooksPath", "/dev/null");
   writeFileSync(join(dir, "f.txt"), "base\n");
   git("add", "-A");
@@ -775,6 +780,7 @@ export function makeRebasePausedRepo(name: string): {
   git("config", "user.email", "probe@example.invalid");
   git("config", "user.name", "drive-pr probe");
   git("config", "commit.gpgsign", "false");
+  git("config", "core.autocrlf", "false");
   git("config", "core.hooksPath", "/dev/null");
   writeFileSync(join(dir, "f.txt"), "commit1\n");
   git("add", "-A");
@@ -788,6 +794,8 @@ export function makeRebasePausedRepo(name: string): {
   // OUTSIDE `dir`, or it lands as an untracked file inside the very repo
   // this helper is trying to leave clean.
   const seqEditorPath = join(tmpRoot, `${name}-seq-editor.sh`);
+  // Git runs the editor by its exact name, through its own shell, which on
+  // Windows wants forward slashes.
   writeFileSync(
     seqEditorPath,
     [
@@ -795,11 +803,14 @@ export function makeRebasePausedRepo(name: string): {
       'sed -e "1s/^pick/edit/" "$1" > "$1.tmp" && mv "$1.tmp" "$1"',
       "",
     ].join("\n"),
+    { mode: 0o755 },
   );
-  chmodSync(seqEditorPath, 0o755);
   Bun.spawnSync(["git", "rebase", "-i", "HEAD~2"], {
     cwd: dir,
-    env: { ...env, GIT_SEQUENCE_EDITOR: seqEditorPath },
+    env: {
+      ...env,
+      GIT_SEQUENCE_EDITOR: seqEditorPath.replaceAll("\\", "/"),
+    },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -856,6 +867,7 @@ export function makeBaseSyncMergeRepo(name: string): {
   git("config", "user.email", "probe@example.invalid");
   git("config", "user.name", "drive-pr probe");
   git("config", "commit.gpgsign", "false");
+  git("config", "core.autocrlf", "false");
   git("config", "core.hooksPath", "/dev/null");
 
   writeFileSync(join(dir, "seed.txt"), `${name}\n`);
@@ -927,6 +939,7 @@ export function makeRenameRepo(name: string): {
   git("config", "user.email", "probe@example.invalid");
   git("config", "user.name", "drive-pr probe");
   git("config", "commit.gpgsign", "false");
+  git("config", "core.autocrlf", "false");
   git("config", "core.hooksPath", "/dev/null");
 
   writeFileSync(join(dir, "old-name.txt"), `${name}\n`);
@@ -2042,8 +2055,7 @@ echo "gh-stub: unhandled api call $*" >&2
 exit 1
 `;
     const ghPath = join(binDir, "gh");
-    writeFileSync(ghPath, stub);
-    chmodSync(ghPath, 0o755);
+    writeFakeProgram(ghPath, stub);
   });
 
   afterAll(() => {
@@ -2514,7 +2526,7 @@ export async function probeIn(
   } = {},
 ): Promise<ProbeResult> {
   const proc = Bun.spawn(
-    [
+    scriptArgv(
       join(SCRIPTS, "drive-status.ts"),
       "999",
       "--json",
@@ -2540,11 +2552,11 @@ export async function probeIn(
       "--head",
       head,
       ...extraArgs,
-    ],
+    ),
     {
       env: {
         ...process.env,
-        PATH: `${binDir}:${process.env.PATH}`,
+        PATH: `${binDir}${delimiter}${process.env.PATH}`,
         DRIVE_PR_FIXTURES: dir,
         DRIVE_PR_STATE_DIR: stateDir,
         ...opts.env,
@@ -2583,7 +2595,7 @@ export async function park(
   kind: "thread" | "finding",
 ) {
   const proc = Bun.spawn(
-    [
+    scriptArgv(
       join(SCRIPTS, "drive-state.ts"),
       "park",
       "999",
@@ -2593,7 +2605,7 @@ export async function park(
       kind,
       "--reason",
       "arbiter escalated",
-    ],
+    ),
     {
       env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
       stdout: "pipe",
@@ -2616,7 +2628,7 @@ export async function hold(
   commentUrl = "https://github.com/o/r/pull/999#discussion_r1",
 ) {
   const proc = Bun.spawn(
-    [
+    scriptArgv(
       join(SCRIPTS, "drive-state.ts"),
       "hold",
       "999",
@@ -2627,7 +2639,7 @@ export async function hold(
       "--outcome",
       "accepted",
       ...(kind === "thread" ? ["--comment-url", commentUrl] : []),
-    ],
+    ),
     {
       env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
       stdin: kind === "finding" ? "pipe" : undefined,

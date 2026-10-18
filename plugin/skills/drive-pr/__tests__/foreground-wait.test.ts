@@ -10,9 +10,18 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, delimiter } from "node:path";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 const SCRIPT = resolve(import.meta.dir, "../scripts/foreground-wait.ts");
+
+// The runner finds, supervises and ends the command's process tree through
+// `ps -A` and POSIX signals, which Git for Windows' `ps` and Windows lack.
+const NO_PS = skipsOnWindows(
+  "process-lifecycle",
+  "the runner reads the process tree with `ps -A -o pid=,ppid=` and ends it with POSIX signals",
+);
 
 // Each case spawns several bun processes; the 5s default is too tight under load.
 const T = 60_000;
@@ -98,7 +107,7 @@ describe("foreground-wait.ts", () => {
   const run = (...args: string[]) => runWith({}, ...args);
   const out = (r: ReturnType<typeof run>) => r.stdout.toString();
 
-  test(
+  test.skipIf(NO_PS)(
     "relays the output; a failing command is reported apart from control codes",
     () => {
       expect(run("launch", "--", "sh", "-c", "echo hi; exit 7").exitCode).toBe(
@@ -112,7 +121,7 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
+  test.skipIf(NO_PS)(
     "a command exiting 20 or 21 is a finished command, not a control state",
     () => {
       for (const code of [20, 21]) {
@@ -129,7 +138,7 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
+  test.skipIf(NO_PS)(
     "a successful command exits wait with 0",
     () => {
       expect(run("launch", "--", "true").exitCode).toBe(0);
@@ -138,7 +147,7 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
+  test.skipIf(NO_PS)(
     "a launch beside a live one is refused, and wait reports still-running",
     () => {
       expect(run("launch", "--", "sleep", "30").exitCode).toBe(0);
@@ -150,7 +159,7 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
+  test.skipIf(NO_PS)(
     "concurrent launches: exactly one wins the claim",
     async () => {
       const procs = Array.from({ length: 4 }, () =>
@@ -169,7 +178,7 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
+  test.skipIf(NO_PS)(
     "a failed spawn surfaces its message and status once",
     () => {
       expect(run("launch", "--", "/nonexistent/fgwait-cmd").exitCode).toBe(0);
@@ -181,7 +190,7 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
+  test.skipIf(NO_PS)(
     "repeated waits relay only output not yet shown",
     () => {
       expect(
@@ -199,7 +208,7 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
+  test.skipIf(NO_PS)(
     "a runner killed mid-command is not running forever: wait reports 21 once nothing is alive",
     async () => {
       expect(run("launch", "--", "sleep", "30").exitCode).toBe(0);
@@ -217,7 +226,7 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
+  test.skipIf(NO_PS)(
     "runner and command stay in the pass group: cancelling the group stops both",
     async () => {
       // Stand-in for the driver's pass group: its own leader, like drive.ts's pass.
@@ -245,7 +254,7 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
+  test.skipIf(NO_PS)(
     "a pass that never waits cannot leave the command running past the runner deadline",
     async () => {
       expect(
@@ -272,7 +281,7 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
+  test.skipIf(NO_PS)(
     "the deadline also ends a SIGTERM-resistant descendant before a result is published",
     async () => {
       const gate = join(cwd, "witness.gate");
@@ -322,7 +331,7 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
+  test.skipIf(NO_PS)(
     "the deadline SIGTERMs a previously tracked descendant, so its cleanup handler runs",
     async () => {
       // The descendant is observed by the periodic tracker (every 200ms) well
@@ -345,7 +354,7 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
+  test.skipIf(NO_PS)(
     "a command that exits on its own leaves no tracked descendant running when the result is published",
     async () => {
       // The periodic tracker (every 200ms) captures the descendant; the
@@ -370,7 +379,7 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
+  test.skipIf(NO_PS)(
     "a descendant recovered after a failed process snapshot still gets SIGTERM before SIGKILL",
     async () => {
       // `ps` fails from before the deadline (3s) until released, so termination
@@ -380,16 +389,15 @@ describe("foreground-wait.ts", () => {
       const shim = join(cwd, "shim");
       mkdirSync(shim);
       const flag = join(cwd, "psbroken");
-      writeFileSync(
+      writeFakeProgram(
         join(shim, "ps"),
         `#!/bin/sh\n[ -e "${flag}" ] && exit 1\nexec /bin/ps "$@"\n`,
-        { mode: 0o755 },
       );
       expect(
         runWith(
           {
             DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "3",
-            PATH: `${shim}:${process.env.PATH}`,
+            PATH: `${shim}${delimiter}${process.env.PATH}`,
           },
           "launch",
           "--",
@@ -409,7 +417,7 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
+  test.skipIf(NO_PS)(
     "the deadline settles even when a re-parented descendant holds the output pipes open",
     async () => {
       // The shell exits at once; its background child outlives it, inherits the
@@ -447,7 +455,7 @@ describe("foreground-wait.ts", () => {
   );
 
   // Root ignores mode bits, so chmod 444 cannot make the append fail.
-  test.skipIf(process.getuid?.() === 0)(
+  test.skipIf(NO_PS || process.getuid?.() === 0)(
     "a log that cannot be written ends the command instead of leaving it unsupervised",
     async () => {
       // Replace the log with a read-only file: appends fail (EACCES) while the
@@ -495,7 +503,7 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
+  test.skipIf(NO_PS)(
     "retained output is bounded at the writer and the truncation is reported",
     () => {
       // 20 MiB of output against a 16 MiB retention cap.

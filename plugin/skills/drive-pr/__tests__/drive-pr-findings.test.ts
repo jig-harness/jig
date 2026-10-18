@@ -6,7 +6,6 @@
 import { describe, expect, it } from "bun:test";
 import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
-  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -20,7 +19,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { ExitError } from "../scripts/lib/cli";
 import { LEAVE_OPEN_MARKER } from "../scripts/lib/outcome.ts";
 import {
@@ -53,6 +52,8 @@ import {
   writeFixture,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 useDrivePrSuite();
 
@@ -87,12 +88,12 @@ describe("answer-summary-finding.ts", () => {
     });
     opts.seed?.(stateDir);
     const proc = Bun.spawn(
-      [join(SCRIPTS, "answer-summary-finding.ts"), ...args, "999"],
+      scriptArgv(join(SCRIPTS, "answer-summary-finding.ts"), ...args, "999"),
       {
         cwd: opts.cwd,
         env: {
           ...gitCleanEnv(),
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           // The script consults the session lease before it posts, so
           // every probe needs a state dir of its own. Left
@@ -534,13 +535,13 @@ describe("answer-summary-finding.ts", () => {
           // allowed branch.
           seed: (stateDir) => {
             const seed = Bun.spawnSync(
-              [
+              scriptArgv(
                 join(SCRIPTS, "drive-state.ts"),
                 "phase",
                 "999",
                 "--set",
                 "triage",
-              ],
+              ),
               {
                 env: {
                   ...gitCleanEnv(),
@@ -615,7 +616,13 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
 
   function seedLease(stateDir: string, pr: string, pid: number): void {
     const seed = Bun.spawnSync(
-      [join(SCRIPTS, "drive-state.ts"), "phase", pr, "--set", "triage"],
+      scriptArgv(
+        join(SCRIPTS, "drive-state.ts"),
+        "phase",
+        pr,
+        "--set",
+        "triage",
+      ),
       {
         env: {
           ...gitCleanEnv(),
@@ -639,32 +646,35 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     args: string[],
     env: Record<string, string> = {},
   ) {
-    const proc = Bun.spawn([join(SCRIPTS, "assert-post-allowed.ts"), ...args], {
-      env: {
-        ...gitCleanEnv(),
-        DRIVE_PR_STATE_DIR: stateDir,
-        DRIVE_PR_SESSION: String(process.pid),
-        // PINNED to this test's own directory, never inherited. `gitCleanEnv()`
-        // strips only `GIT_*`, so every other ambient variable passes through
-        // — and if this suite runs under a live `drive.ts` orchestration, that
-        // driver exported `$DRIVE_PR_STATE_DIR_IDENTITY` for ITS OWN state
-        // directory. Inherited here it names a different directory than the
-        // per-test one, so every test would refuse for a reason that has
-        // nothing to do with what it asserts.
-        //
-        // A correct baseline rather than an empty one, because the override
-        // path REQUIRES one: `$DRIVE_PR_STATE_DIR` without
-        // `$DRIVE_PR_STATE_DIR_IDENTITY` is a superseded driver and refuses.
-        // So the default here is what a current `drive.ts` would have
-        // exported for this fixture. `...env` still overrides, so a test that
-        // wants a stale, malformed or absent baseline sets one explicitly.
-        DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
-        DRIVE_PR_SESSION_STARTED: "",
-        ...env,
+    const proc = Bun.spawn(
+      scriptArgv(join(SCRIPTS, "assert-post-allowed.ts"), ...args),
+      {
+        env: {
+          ...gitCleanEnv(),
+          DRIVE_PR_STATE_DIR: stateDir,
+          DRIVE_PR_SESSION: String(process.pid),
+          // PINNED to this test's own directory, never inherited. `gitCleanEnv()`
+          // strips only `GIT_*`, so every other ambient variable passes through
+          // — and if this suite runs under a live `drive.ts` orchestration, that
+          // driver exported `$DRIVE_PR_STATE_DIR_IDENTITY` for ITS OWN state
+          // directory. Inherited here it names a different directory than the
+          // per-test one, so every test would refuse for a reason that has
+          // nothing to do with what it asserts.
+          //
+          // A correct baseline rather than an empty one, because the override
+          // path REQUIRES one: `$DRIVE_PR_STATE_DIR` without
+          // `$DRIVE_PR_STATE_DIR_IDENTITY` is a superseded driver and refuses.
+          // So the default here is what a current `drive.ts` would have
+          // exported for this fixture. `...env` still overrides, so a test that
+          // wants a stale, malformed or absent baseline sets one explicitly.
+          DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
+          DRIVE_PR_SESSION_STARTED: "",
+          ...env,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
       },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    );
     const [stderr, exitCode] = await Promise.all([
       new Response(proc.stderr).text(),
       proc.exited,
@@ -688,15 +698,18 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     };
     delete env.DRIVE_PR_STATE_DIR;
     delete env.DRIVE_PR_STATE_DIR_IDENTITY;
-    const proc = Bun.spawn([join(SCRIPTS, "assert-post-allowed.ts"), ...args], {
-      env,
-      // The repo root, so the non-override path resolves a REAL git common
-      // dir — the whole point of this helper is to exercise that resolution
-      // rather than an injected one.
-      cwd: join(import.meta.dir, "..", "..", "..", ".."),
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawn(
+      scriptArgv(join(SCRIPTS, "assert-post-allowed.ts"), ...args),
+      {
+        env,
+        // The repo root, so the non-override path resolves a REAL git common
+        // dir — the whole point of this helper is to exercise that resolution
+        // rather than an injected one.
+        cwd: join(import.meta.dir, "..", "..", "..", ".."),
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     const [stderr, exitCode] = await Promise.all([
       new Response(proc.stderr).text(),
       proc.exited,
@@ -1041,7 +1054,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     // probe above is which failure git produced.
     const outside = mkdtempSync(join(tmpdir(), "fence-outside-repo-"));
     const ok = Bun.spawn(
-      [join(SCRIPTS, "assert-post-allowed.ts"), "--pr", "999"],
+      scriptArgv(join(SCRIPTS, "assert-post-allowed.ts"), "--pr", "999"),
       {
         cwd: outside,
         env: {
@@ -1084,7 +1097,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     expect(() => lstatSync(join(lost, ".git"))).not.toThrow();
 
     const refused = Bun.spawn(
-      [join(SCRIPTS, "assert-post-allowed.ts"), "--pr", "999"],
+      scriptArgv(join(SCRIPTS, "assert-post-allowed.ts"), "--pr", "999"),
       {
         cwd: lost,
         env: {
@@ -1830,18 +1843,21 @@ describe("resolve-held-thread.ts", () => {
      */
     sessionless = false,
   ) {
-    const proc = Bun.spawn([join(SCRIPTS, "drive-state.ts"), ...args], {
-      cwd,
-      env: {
-        ...gitCleanEnv(),
-        DRIVE_PR_STATE_DIR: stateDir,
-        DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
-        ...(sessionless ? { DRIVE_PR_SESSION: "", CLAUDE_PID: "" } : {}),
+    const proc = Bun.spawn(
+      scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
+      {
+        cwd,
+        env: {
+          ...gitCleanEnv(),
+          DRIVE_PR_STATE_DIR: stateDir,
+          DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
+          ...(sessionless ? { DRIVE_PR_SESSION: "", CLAUDE_PID: "" } : {}),
+        },
+        stdin: stdin !== undefined ? "pipe" : undefined,
+        stdout: "pipe",
+        stderr: "pipe",
       },
-      stdin: stdin !== undefined ? "pipe" : undefined,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    );
     if (stdin !== undefined) {
       proc.stdin.write(stdin);
       proc.stdin.end();
@@ -1868,11 +1884,14 @@ describe("resolve-held-thread.ts", () => {
   }
 
   async function readState(stateDir: string, args: string[]) {
-    const proc = Bun.spawn([join(SCRIPTS, "drive-state.ts"), ...args], {
-      env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawn(
+      scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
+      {
+        env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     const [stdout, exitCode] = await Promise.all([
       new Response(proc.stdout).text(),
       proc.exited,
@@ -1908,12 +1927,12 @@ describe("resolve-held-thread.ts", () => {
       writeFileSync(join(dir, name), content);
     }
     const proc = Bun.spawn(
-      [join(SCRIPTS, "resolve-held-thread.ts"), ...args, "999"],
+      scriptArgv(join(SCRIPTS, "resolve-held-thread.ts"), ...args, "999"),
       {
         cwd: opts.cwd,
         env: {
           ...gitCleanEnv(),
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
           // claim-held mutates state, so — like every other
@@ -2418,19 +2437,19 @@ describe("resolve-held-thread.ts", () => {
     parsed.data.repository.pullRequest.reviewThreads.nodes[0].comments.pageInfo.hasNextPage = true;
     writeFileSync(threadsPath, JSON.stringify(parsed));
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(SCRIPTS, "resolve-held-thread.ts"),
         "--key",
         "PRRT_a",
         "--pushed-sha",
         scratchClean.head,
         "999",
-      ],
+      ),
       {
         cwd: scratchClean.dir,
         env: {
           ...gitCleanEnv(),
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -2494,19 +2513,19 @@ describe("resolve-held-thread.ts", () => {
       null;
     writeFileSync(threadsPath, JSON.stringify(parsed));
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(SCRIPTS, "resolve-held-thread.ts"),
         "--key",
         "PRRT_a",
         "--pushed-sha",
         scratchClean.head,
         "999",
-      ],
+      ),
       {
         cwd: scratchClean.dir,
         env: {
           ...gitCleanEnv(),
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -2946,7 +2965,7 @@ describe("finish-round.ts", () => {
     const bin = join(dir, "gitbin");
     mkdirSync(bin, { recursive: true });
     const p = join(bin, "git");
-    writeFileSync(
+    writeFakeProgram(
       p,
       [
         "#!/usr/bin/env bash",
@@ -2960,7 +2979,6 @@ describe("finish-round.ts", () => {
         "",
       ].join("\n"),
     );
-    chmodSync(p, 0o755);
     return bin;
   }
 
@@ -3172,13 +3190,19 @@ describe("finish-round.ts", () => {
     args: string[],
     stdin?: string,
   ): Promise<string> {
-    const proc = Bun.spawn([join(SCRIPTS, "drive-state.ts"), ...args], {
-      cwd,
-      env: { ...stateEnv(stateDir, fixtureDir), PATH: process.env.PATH ?? "" },
-      stdin: stdin !== undefined ? "pipe" : undefined,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawn(
+      scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
+      {
+        cwd,
+        env: {
+          ...stateEnv(stateDir, fixtureDir),
+          PATH: process.env.PATH ?? "",
+        },
+        stdin: stdin !== undefined ? "pipe" : undefined,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     if (stdin !== undefined) {
       proc.stdin.write(stdin);
       proc.stdin.end();
@@ -3232,12 +3256,17 @@ describe("finish-round.ts", () => {
     const gitBin = recordingGit(dir, pushLog);
     await opts.seedState?.({ stateDir, fixtureDir: dir, cwd: repo.dir });
     const proc = Bun.spawn(
-      [join(SCRIPTS, "finish-round.ts"), "999", "--json", ...(opts.args ?? [])],
+      scriptArgv(
+        join(SCRIPTS, "finish-round.ts"),
+        "999",
+        "--json",
+        ...(opts.args ?? []),
+      ),
       {
         cwd: repo.dir,
         env: {
           ...stateEnv(stateDir, dir),
-          PATH: `${gitBin}:${binDir}:${process.env.PATH}`,
+          PATH: `${gitBin}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
         },
         stdout: "pipe",
@@ -3649,12 +3678,12 @@ describe("finish-round.ts", () => {
     // here as 1 (finish-round already counted this head, so the counting call
     // finds `lastCountedHead` equal and returns), never as 2.
     const counting = Bun.spawn(
-      [join(SCRIPTS, "drive-status.ts"), "999", "--json", "--once"],
+      scriptArgv(join(SCRIPTS, "drive-status.ts"), "999", "--json", "--once"),
       {
         cwd: cwdSeen,
         env: {
           ...stateEnv(stateDirSeen, fixtureSeen),
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: fixtureSeen,
         },
         stdout: "pipe",
@@ -5138,7 +5167,7 @@ describe("list-unresolved-threads.ts", () => {
       ],
     });
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(
           SCRIPTS,
           "..",
@@ -5148,11 +5177,11 @@ describe("list-unresolved-threads.ts", () => {
           "list-unresolved-threads.ts",
         ),
         "999",
-      ],
+      ),
       {
         env: {
           ...process.env,
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
         },
         stdout: "pipe",
@@ -5256,7 +5285,7 @@ describe("list-unresolved-threads.ts", () => {
       }),
     );
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(
           SCRIPTS,
           "..",
@@ -5266,11 +5295,11 @@ describe("list-unresolved-threads.ts", () => {
           "list-unresolved-threads.ts",
         ),
         "999",
-      ],
+      ),
       {
         env: {
           ...process.env,
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
         },
         stdout: "pipe",
@@ -5310,7 +5339,7 @@ describe("list-unresolved-threads.ts", () => {
   it("requests authorAssociation in the GraphQL comments selection", async () => {
     const { dir } = writeFixture({ threads: [] });
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(
           SCRIPTS,
           "..",
@@ -5320,11 +5349,11 @@ describe("list-unresolved-threads.ts", () => {
           "list-unresolved-threads.ts",
         ),
         "999",
-      ],
+      ),
       {
         env: {
           ...process.env,
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
         },
         stdout: "pipe",

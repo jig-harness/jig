@@ -1,6 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import {
-  chmodSync,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -8,13 +7,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import {
   mergeRequiredChecks,
   protectionContexts,
   rulesetContexts,
 } from "../scripts/lib/ci-policy.ts";
 import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const HEAD = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const CI_HOLD = join(import.meta.dir, "..", "scripts", "ci-hold.ts");
@@ -259,7 +260,7 @@ function noHoldRepo(opts: {
   ]);
   const stacked = opts.pulls === STACKED_ON_MAIN;
   const gh = join(bin, "gh");
-  writeFileSync(
+  writeFakeProgram(
     gh,
     `#!/bin/sh
 printf '%s\\n' "$*" >> '${log}'
@@ -292,11 +293,10 @@ case "$*" in
 esac
 `,
   );
-  chmodSync(gh, 0o755);
   return {
     env: {
       ...process.env,
-      PATH: `${bin}:${process.env.PATH ?? ""}`,
+      PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
       JIG_OVERLAY: overlay,
       DRIVE_PR_STATE_DIR: stateDir,
       DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
@@ -313,7 +313,7 @@ function run(
   cwd?: string,
 ): { code: number; stdout: string; stderr: string } {
   const result = Bun.spawnSync(
-    [CI_HOLD, ...args, "999", "--expect-head", HEAD],
+    scriptArgv(CI_HOLD, ...args, "999", "--expect-head", HEAD),
     {
       cwd,
       env,
@@ -354,7 +354,7 @@ function seedHold(
   eventId: string,
 ): void {
   const seeded = Bun.spawnSync(
-    [
+    scriptArgv(
       join(import.meta.dir, "..", "scripts", "drive-state.ts"),
       "set-ci-hold",
       "999",
@@ -370,7 +370,7 @@ function seedHold(
       "2026-09-10T10:00:00Z",
       "--check-run-watermark",
       "42",
-    ],
+    ),
     { env, stdout: "pipe", stderr: "pipe" },
   );
   expect(seeded.exitCode).toBe(0);
@@ -787,11 +787,11 @@ describe("hold label configuration changes", () => {
     const file = join(repo.stateDir, "drive-pr-999.json");
     writeFileSync(file, '{"pr":999');
     const reset = Bun.spawnSync(
-      [
+      scriptArgv(
         join(import.meta.dir, "..", "scripts", "drive-state.ts"),
         "reset",
         "999",
-      ],
+      ),
       { env: repo.env, stdout: "pipe", stderr: "pipe" },
     );
     expect(reset.exitCode).toBe(9);
@@ -882,7 +882,7 @@ describe("CI policy configuration errors", () => {
   it("refuses to drop a hold an earlier drive still owns", () => {
     const repo = noHoldRepo({ overlay: DERIVED, runs: [] });
     const seeded = Bun.spawnSync(
-      [
+      scriptArgv(
         join(import.meta.dir, "..", "scripts", "drive-state.ts"),
         "set-ci-hold",
         "999",
@@ -898,7 +898,7 @@ describe("CI policy configuration errors", () => {
         "2026-09-10T10:00:00Z",
         "--check-run-watermark",
         "42",
-      ],
+      ),
       { env: repo.env, stdout: "pipe", stderr: "pipe" },
     );
     expect(seeded.exitCode).toBe(0);
@@ -915,13 +915,13 @@ describe("CI policy configuration errors", () => {
 describe("drive-state.ts set-verified without a hold label", () => {
   function verify(env: Record<string, string | undefined>): number {
     return Bun.spawnSync(
-      [
+      scriptArgv(
         join(import.meta.dir, "..", "scripts", "drive-state.ts"),
         "set-verified",
         "999",
         "--sha",
         HEAD,
-      ],
+      ),
       { env, stdout: "pipe", stderr: "pipe" },
     ).exitCode;
   }

@@ -23,6 +23,10 @@ import {
   withFileLock,
   writePickup,
 } from "../scripts/lib/intent-chain-pickup.ts";
+import {
+  exceptOnWindows,
+  skipsOnWindows,
+} from "../../../../lib/test-helpers/windows-skip.ts";
 
 let dir: string;
 const text = "<!-- refocus-arm: on -->\nOriginal batch scope.";
@@ -59,7 +63,11 @@ describe("immutable pickup sources", () => {
       identifiers: ["ENG-7", "ENG-8"],
       text,
     });
-    expect(statSync(file(token)).mode & 0o777).toBe(0o600);
+    // Windows reports 0o666 for any writable file; the owner-only mode is
+    // enforced by POSIX permissions only.
+    exceptOnWindows("Windows reports 0o666 for any writable file", () =>
+      expect(statSync(file(token)).mode & 0o777).toBe(0o600),
+    );
   });
 
   it("repeated identical writes reuse the inode and renew retention", () => {
@@ -209,10 +217,14 @@ describe("immutable pickup sources", () => {
     rmSync(file(token));
     const target = join(dir, "target.json");
     writeFileSync(target, body);
-    symlinkSync(target, file(token));
-    expect(() => readPickup(dir, token)).toThrow();
-    expect(() => writePickup(dir, ["ENG-7"], text)).toThrow();
-    rmSync(file(token));
+    // Windows has no O_NOFOLLOW, so the helper reads through a symlink there;
+    // the file-system piece of the Windows work lifts this guard.
+    exceptOnWindows("Windows has no O_NOFOLLOW", () => {
+      symlinkSync(target, file(token));
+      expect(() => readPickup(dir, token)).toThrow();
+      expect(() => writePickup(dir, ["ENG-7"], text)).toThrow();
+      rmSync(file(token));
+    });
     mkdirSync(file(token));
     expect(() => readPickup(dir, token)).toThrow("regular file");
     expect(() => readPickup(dir, "f".repeat(64))).toThrow();
@@ -234,7 +246,12 @@ describe("immutable pickup sources", () => {
     ).toThrow("byte bound");
   });
 
-  it("refuses a FIFO without waiting for a writer", async () => {
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "mkfifo and named-pipe files do not exist on Windows, so the FIFO cannot be created; a Windows equivalent of the check is unverified",
+    ),
+  )("refuses a FIFO without waiting for a writer", async () => {
     const token = "a".repeat(64);
     mkdirSync(join(dir, "pickups"));
     const made = Bun.spawnSync(["mkfifo", file(token)]);

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import {
-  chmodSync,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -8,7 +7,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import {
   ciHoldTransitions,
   completedHoldPrecondition,
@@ -21,6 +20,8 @@ import {
 } from "../scripts/lib/ci-hold.ts";
 import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
 import { freshState, isUsableState } from "../scripts/lib/state/schema.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
 const HEAD = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 /** The hold label and required checks of the suite's consumer configuration. */
@@ -71,7 +72,7 @@ case "$1 $2" in
   *) echo "unexpected fake gh command: $*" >&2; exit 2 ;;
 esac
 `;
-  writeFileSync(path, guard + body);
+  writeFakeProgram(path, guard + body);
 }
 
 describe("ci:hold evidence", () => {
@@ -80,7 +81,6 @@ describe("ci:hold evidence", () => {
     try {
       const path = join(dir, "gh");
       writeGhStub(path, "echo accepted\n");
-      chmodSync(path, 0o755);
       const wrong = Bun.spawnSync([
         path,
         "pr",
@@ -112,7 +112,6 @@ describe("ci:hold evidence", () => {
     try {
       const path = join(dir, "gh");
       writeGhStub(path, "echo accepted\n");
-      chmodSync(path, 0o755);
       const result = Bun.spawnSync([
         path,
         "pr",
@@ -133,7 +132,6 @@ describe("ci:hold evidence", () => {
     try {
       const path = join(dir, "gh");
       writeGhStub(path, "echo accepted\n");
-      chmodSync(path, 0o755);
       const result = Bun.spawnSync([
         path,
         "pr",
@@ -156,7 +154,6 @@ describe("ci:hold evidence", () => {
     try {
       const path = join(dir, "gh");
       writeGhStub(path, "echo accepted\n");
-      chmodSync(path, 0o755);
       const result = Bun.spawnSync([path, "pr", "view", "999", "--json", ""]);
       expect(result.exitCode).toBe(2);
       expect(result.stderr.toString()).toContain("missing flag value");
@@ -170,7 +167,6 @@ describe("ci:hold evidence", () => {
     try {
       const path = join(dir, "gh");
       writeGhStub(path, "echo accepted\n");
-      chmodSync(path, 0o755);
       const result = Bun.spawnSync([
         path,
         "api",
@@ -190,7 +186,6 @@ describe("ci:hold evidence", () => {
     try {
       const path = join(dir, "gh");
       writeGhStub(path, "echo accepted\n");
-      chmodSync(path, 0o755);
       for (const endpoint of [
         "repos/{owner}/{repo}/issues/999/timeline?per_page=100",
         `repos/{owner}/{repo}/commits/${HEAD}/check-runs?per_page=100`,
@@ -222,7 +217,6 @@ describe("ci:hold evidence", () => {
     try {
       const path = join(dir, "gh");
       writeGhStub(path, "echo accepted\n");
-      chmodSync(path, 0o755);
       for (const endpoint of [
         "repos/{owner}/{repo}/issues/998/timeline?per_page=100",
         `repos/{owner}/{repo}/commits/${"b".repeat(40)}/check-runs?per_page=100`,
@@ -248,7 +242,6 @@ describe("ci:hold evidence", () => {
     try {
       const path = join(dir, "gh");
       writeGhStub(path, "echo accepted\n");
-      chmodSync(path, 0o755);
       const result = Bun.spawnSync([
         path,
         "api",
@@ -268,7 +261,6 @@ describe("ci:hold evidence", () => {
     try {
       const path = join(dir, "gh");
       writeGhStub(path, "echo accepted\n");
-      chmodSync(path, 0o755);
       const result = Bun.spawnSync([
         path,
         "pr",
@@ -289,7 +281,6 @@ describe("ci:hold evidence", () => {
     try {
       const path = join(dir, "gh");
       writeGhStub(path, "echo accepted\n");
-      chmodSync(path, 0o755);
       for (const args of [
         ["pr", "edit", "999"],
         [
@@ -877,7 +868,6 @@ case "$1" in
 esac
 `,
     );
-    chmodSync(gh, 0o755);
     return { bin, stateDir };
   }
 
@@ -887,11 +877,14 @@ esac
     args: string[],
   ): ReturnType<typeof Bun.spawnSync> {
     return Bun.spawnSync(
-      [join(import.meta.dir, "..", "scripts", "drive-state.ts"), ...args],
+      scriptArgv(
+        join(import.meta.dir, "..", "scripts", "drive-state.ts"),
+        ...args,
+      ),
       {
         env: {
           ...process.env,
-          PATH: `${bin}:${process.env.PATH ?? ""}`,
+          PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
           JIG_OVERLAY: HOLD_OVERLAY,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
@@ -992,7 +985,6 @@ case "$1" in
 esac
 `,
     );
-    chmodSync(gh, 0o755);
     const result = invoke(bin, stateDir, [
       "set-verified",
       "999",
@@ -1048,7 +1040,6 @@ case "$1" in
 esac
 `,
     );
-    chmodSync(gh, 0o755);
     const result = invoke(bin, stateDir, [
       "set-verified",
       "999",
@@ -1112,7 +1103,6 @@ case "$1" in
 esac
 `,
     );
-    chmodSync(gh, 0o755);
     const result = invoke(bin, stateDir, [
       "set-verified",
       "999",
@@ -1179,7 +1169,6 @@ case "$1" in
 esac
 `,
     );
-    chmodSync(gh, 0o755);
     const result = invoke(bin, stateDir, [
       "set-verified",
       "999",
@@ -1422,7 +1411,6 @@ case "$1" in
 esac
 `,
     );
-    chmodSync(gh, 0o755);
     writeFileSync(
       join(stateDir, "drive-pr-999.json"),
       JSON.stringify({ pr: 999, round: 3 }),
@@ -1454,7 +1442,6 @@ case "$1" in
 esac
 `,
     );
-    chmodSync(gh, 0o755);
     // `ciHold` is a bare string, not null and not a held-transition object —
     // an unrecognized shape neither `ownsCiHold` nor `hasCiHoldEvidence` can
     // read a phase out of.
@@ -1482,7 +1469,6 @@ esac
       gh,
       `#!/bin/sh\ncase "$*" in\n  *timeline*) echo "should not be called" >&2; exit 1 ;;\n  *) printf '%s\\n' '{"state":"OPEN","headRefOid":"${HEAD}","labels":[]}' ;;\nesac\n`,
     );
-    chmodSync(gh, 0o755);
     writeFileSync(
       join(stateDir, "drive-pr-999.json"),
       JSON.stringify({ pr: 999, round: 3, ciHold: null }),
@@ -1516,7 +1502,6 @@ case "$1" in
 esac
 `,
     );
-    chmodSync(gh, 0o755);
     // Truncated before "ciHold" is ever written — the field is entirely
     // absent from the bytes, not merely malformed.
     writeFileSync(
@@ -1554,7 +1539,6 @@ case "$1" in
 esac
 `,
     );
-    chmodSync(gh, 0o755);
     writeFileSync(
       join(stateDir, "drive-pr-999.json"),
       '{"pr":999,"round":3,"lastPushedSha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"',
@@ -1586,7 +1570,6 @@ case "$1" in
 esac
 `,
     );
-    chmodSync(gh, 0o755);
     return { bin, stateDir };
   }
 
@@ -1596,18 +1579,18 @@ esac
     requireSuccess = false,
   ): ReturnType<typeof Bun.spawnSync> {
     return Bun.spawnSync(
-      [
+      scriptArgv(
         join(import.meta.dir, "..", "scripts", "ci-hold.ts"),
         "final-ready",
         "999",
         "--expect-head",
         HEAD,
         ...(requireSuccess ? ["--require-success"] : []),
-      ],
+      ),
       {
         env: {
           ...process.env,
-          PATH: `${bin}:${process.env.PATH ?? ""}`,
+          PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
           JIG_OVERLAY: HOLD_OVERLAY,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
@@ -1728,7 +1711,6 @@ case "$1" in
 esac
 `,
     );
-    chmodSync(gh, 0o755);
     // The DEFAULT path never reads commit statuses at all — only
     // --require-success does.
     expect(invoke(bin, stateDir, false).exitCode).toBe(0);
@@ -1773,7 +1755,6 @@ case "$1" in
 esac
 `,
     );
-    chmodSync(gh, 0o755);
     expect(invoke(bin, stateDir, true).exitCode).toBe(4);
   });
 
@@ -1865,7 +1846,6 @@ case "$1" in
 esac
 `,
     );
-    chmodSync(gh, 0o755);
     expect(invoke(bin, stateDir, true).exitCode).toBe(4);
   });
 
@@ -1923,7 +1903,6 @@ case "$1" in
 esac
 `,
     );
-    chmodSync(gh, 0o755);
     expect(invoke(bin, stateDir, true).exitCode).toBe(4);
   });
 
@@ -1964,7 +1943,6 @@ case "$1" in
 esac
 `,
     );
-    chmodSync(gh, 0o755);
     return { bin, stateDir };
   }
 

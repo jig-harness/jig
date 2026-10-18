@@ -17,7 +17,6 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -26,7 +25,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
 const SCRIPT = join(SCRIPTS, "reconcile-replied-threads.ts");
@@ -249,8 +249,7 @@ echo "gh-stub: unhandled: $*" >&2
 exit 1
 `;
   const ghPath = join(binDir, "gh");
-  writeFileSync(ghPath, stub);
-  chmodSync(ghPath, 0o755);
+  writeFakeProgram(ghPath, stub);
 });
 
 afterAll(() => {
@@ -373,7 +372,7 @@ function runTs(
     cwd: scratchWorktree,
     env: {
       ...scrubbedGitEnv(),
-      PATH: `${ghDir}:${process.env.PATH}`,
+      PATH: `${ghDir}${delimiter}${process.env.PATH}`,
       RRT_FIXTURES: fixtureDir,
       DRIVE_PR_STATE_DIR: stateDir,
     },
@@ -1387,7 +1386,7 @@ describe("reconcile-replied-threads.ts", () => {
     const leanDir = join(dir, "lean-bin");
     mkdirSync(leanDir);
     const lean = join(leanDir, "gh");
-    writeFileSync(
+    writeFakeProgram(
       lean,
       `#!/bin/sh
 case "$1 $2" in
@@ -1397,7 +1396,6 @@ case "$1 $2" in
 esac
 `,
     );
-    chmodSync(lean, 0o755);
     const { stderr, exitCode } = run(["--all-open"], dir, stateDir, leanDir);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("exactly 1000 open PRs");

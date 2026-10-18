@@ -27,7 +27,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -40,7 +39,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import {
   anchorOf,
   classify,
@@ -55,6 +54,7 @@ import {
   resolveRealPathBestEffort,
   retirementStillSafe,
 } from "../scripts/reap-state.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const REAP = join(import.meta.dir, "..", "scripts", "reap-state.ts");
 const DAY_MS = 86_400_000;
@@ -74,8 +74,7 @@ function shimDir(name: string, tools: Record<string, string>): string {
   mkdirSync(dir, { recursive: true });
   for (const [tool, body] of Object.entries(tools)) {
     const p = join(dir, tool);
-    writeFileSync(p, `#!/bin/sh\n${body}\n`);
-    chmodSync(p, 0o755);
+    writeFakeProgram(p, `#!/bin/sh\n${body}\n`);
   }
   return dir;
 }
@@ -115,7 +114,7 @@ async function runReap(
     DRIVE_PR_STATE_DIR: opts.stateDir,
     ...(opts.ghDir === undefined
       ? {}
-      : { PATH: `${opts.ghDir}:${process.env.PATH ?? ""}` }),
+      : { PATH: `${opts.ghDir}${delimiter}${process.env.PATH ?? ""}` }),
     ...opts.env,
   });
   const proc = Bun.spawn([process.execPath, REAP, ...args], {
@@ -1539,7 +1538,7 @@ describe("entry-count warning — the count compaction cannot reduce", () => {
       cwd: repo,
       env: cleanEnv({
         DRIVE_PR_STATE_DIR: d,
-        PATH: `${slowGitDir}:${process.env.PATH ?? ""}`,
+        PATH: `${slowGitDir}${delimiter}${process.env.PATH ?? ""}`,
         GIT_CALL_TIMEOUT: "1",
       }),
       stdout: "pipe",
@@ -1780,7 +1779,7 @@ describe("the delete-run lock — serialising the sweep and final snapshot publi
         // never fires first and short-circuits the wait this test depends
         // on.
         GH_CALL_TIMEOUT: "50",
-        PATH: `${ghDir}:${process.env.PATH ?? ""}`,
+        PATH: `${ghDir}${delimiter}${process.env.PATH ?? ""}`,
       }),
       stdout: "pipe",
       stderr: "pipe",

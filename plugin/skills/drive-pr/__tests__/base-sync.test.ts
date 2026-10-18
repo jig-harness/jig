@@ -14,7 +14,7 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import {
   alreadyPushing,
   type GhRunner,
@@ -23,6 +23,7 @@ import {
   worktreeClean,
 } from "../scripts/base-sync.ts";
 import type { GitRunner } from "../scripts/lib/base-drift.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const BASE_SYNC = join(import.meta.dir, "..", "scripts", "base-sync.ts");
 
@@ -391,13 +392,12 @@ describe("--base validation", () => {
   } {
     const probeDir = mkdtempSync(join(tmpdir(), "base-sync-base-flag-"));
     const marker = join(probeDir, "gh-was-called");
-    writeFileSync(
+    writeFakeProgram(
       join(probeDir, "gh"),
       `#!/bin/sh\ntouch ${JSON.stringify(marker)}\nexit 1\n`,
-      { mode: 0o755 },
     );
     const env = scrubbedGitEnv({
-      PATH: `${probeDir}:${process.env.PATH ?? ""}`,
+      PATH: `${probeDir}${delimiter}${process.env.PATH ?? ""}`,
       GH_CALL_TIMEOUT: "1",
     });
     delete env.DRIVE_PR_TARGET;
@@ -418,33 +418,18 @@ describe("--base validation", () => {
   // `refs/heads/other` locally as a side effect of the fetch this test must
   // never reach.
   //
-  // Both `it`s below are POSIX-only: `runBaseSync`'s `gh` stub is an
-  // extensionless `#!/bin/sh` script made executable via a POSIX mode bit,
-  // and PATH lookup relying on that bit is not how Windows resolves an
-  // executable — so this test would fail there for a reason having nothing
-  // to do with the behavior under test.
-  // Skipped rather than reimplemented on a `.cmd`/`.ps1` stub: every other
-  // test in this file already spawns the real script cross-platform through
-  // `proc.ts`'s own seam, and only this stubbed-`gh`-on-PATH shape is
-  // POSIX-specific.
-  (process.platform === "win32" ? it.skip : it)(
-    "refuses a refspec-shaped --base before ever calling gh",
-    () => {
-      const r = runBaseSync(["--base", "source:refs/heads/other", "999999"]);
-      expect(r.exitCode).toBe(2);
-      expect(r.stderr).toContain("not a valid branch name");
-      expect(r.ghCalled).toBe(false);
-    },
-  );
+  it("refuses a refspec-shaped --base before ever calling gh", () => {
+    const r = runBaseSync(["--base", "source:refs/heads/other", "999999"]);
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain("not a valid branch name");
+    expect(r.ghCalled).toBe(false);
+  });
 
-  (process.platform === "win32" ? it.skip : it)(
-    "accepts a plain branch name and proceeds to resolve the PR",
-    () => {
-      const r = runBaseSync(["--base", "develop", "999999"]);
-      expect(r.stderr).not.toContain("not a valid branch name");
-      expect(r.ghCalled).toBe(true);
-    },
-  );
+  it("accepts a plain branch name and proceeds to resolve the PR", () => {
+    const r = runBaseSync(["--base", "develop", "999999"]);
+    expect(r.stderr).not.toContain("not a valid branch name");
+    expect(r.ghCalled).toBe(true);
+  });
 });
 
 describe("importing base-sync.ts does not run main()", () => {
@@ -462,36 +447,29 @@ describe("importing base-sync.ts does not run main()", () => {
   // since it is never unref'd) has settled — the same "spawns no gh" pattern
   // resolve-review-comments/__tests__/scripts.test.ts uses for its own script
   // family.
-  // POSIX-only, the same reason as the `--base validation` tests above: an
-  // extensionless `#!/bin/sh` `gh` stub made executable via a POSIX mode bit is
-  // not how Windows PATH resolution works.
-  (process.platform === "win32" ? it.skip : it)(
-    "spawns no gh and prints nothing to stderr",
-    () => {
-      const probeDir = mkdtempSync(join(tmpdir(), "base-sync-import-"));
-      const marker = join(probeDir, "gh-was-called");
-      writeFileSync(
-        join(probeDir, "gh"),
-        `#!/bin/sh\ntouch ${JSON.stringify(marker)}\nexit 1\n`,
-        { mode: 0o755 },
-      );
-      const r = Bun.spawnSync(
-        [process.execPath, "-e", `import(${JSON.stringify(BASE_SYNC)})`],
-        {
-          env: scrubbedGitEnv({
-            PATH: `${probeDir}:${process.env.PATH ?? ""}`,
-            GH_CALL_TIMEOUT: "1",
-          }),
-        },
-      );
-      const stderr = r.stderr.toString().slice(0, 400);
-      expect({ ghCalled: existsSync(marker), stderr }).toEqual({
-        ghCalled: false,
-        stderr: "",
-      });
-      rmSync(probeDir, { recursive: true, force: true });
-    },
-  );
+  it("spawns no gh and prints nothing to stderr", () => {
+    const probeDir = mkdtempSync(join(tmpdir(), "base-sync-import-"));
+    const marker = join(probeDir, "gh-was-called");
+    writeFakeProgram(
+      join(probeDir, "gh"),
+      `#!/bin/sh\ntouch ${JSON.stringify(marker)}\nexit 1\n`,
+    );
+    const r = Bun.spawnSync(
+      [process.execPath, "-e", `import(${JSON.stringify(BASE_SYNC)})`],
+      {
+        env: scrubbedGitEnv({
+          PATH: `${probeDir}${delimiter}${process.env.PATH ?? ""}`,
+          GH_CALL_TIMEOUT: "1",
+        }),
+      },
+    );
+    const stderr = r.stderr.toString().slice(0, 400);
+    expect({ ghCalled: existsSync(marker), stderr }).toEqual({
+      ghCalled: false,
+      stderr: "",
+    });
+    rmSync(probeDir, { recursive: true, force: true });
+  });
 });
 
 describe("unmerged-path detection distinguishes a hook block from a real conflict", () => {
@@ -532,70 +510,65 @@ describe("unmerged-path detection distinguishes a hook block from a real conflic
     return run(dir, ["rev-parse", "-q", "--verify", "MERGE_HEAD"]).code === 0;
   }
 
-  (process.platform === "win32" ? it.skip : it)(
-    "is empty when a pre-merge-commit hook blocks an otherwise-clean merge",
-    () => {
-      const dir = initRepo();
-      run(dir, ["checkout", "-q", "-b", "feature"]);
-      writeFileSync(join(dir, "feature-only.txt"), "feature\n");
-      run(dir, ["add", "."]);
-      run(dir, ["commit", "-q", "-m", "feature"]);
-      run(dir, ["checkout", "-q", "main"]);
-      writeFileSync(join(dir, "main-only.txt"), "main\n");
-      run(dir, ["add", "."]);
-      run(dir, ["commit", "-q", "-m", "main-side"]);
-      writeFileSync(
-        join(dir, ".git", "hooks", "pre-merge-commit"),
-        "#!/bin/sh\nexit 1\n",
-        { mode: 0o755 },
-      );
+  it("is empty when a pre-merge-commit hook blocks an otherwise-clean merge", () => {
+    const dir = initRepo();
+    run(dir, ["checkout", "-q", "-b", "feature"]);
+    writeFileSync(join(dir, "feature-only.txt"), "feature\n");
+    run(dir, ["add", "."]);
+    run(dir, ["commit", "-q", "-m", "feature"]);
+    run(dir, ["checkout", "-q", "main"]);
+    writeFileSync(join(dir, "main-only.txt"), "main\n");
+    run(dir, ["add", "."]);
+    run(dir, ["commit", "-q", "-m", "main-side"]);
+    // Git runs a hook by its exact name, with its own shell on Windows.
+    writeFileSync(
+      join(dir, ".git", "hooks", "pre-merge-commit"),
+      "#!/bin/sh\nexit 1\n",
+      { mode: 0o755 },
+    );
 
-      const merge = run(dir, [
-        "merge",
-        "--no-ff",
-        "--no-edit",
-        "-m",
-        "merge feature",
-        "feature",
-      ]);
+    const merge = run(dir, [
+      "merge",
+      "--no-ff",
+      "--no-edit",
+      "-m",
+      "merge feature",
+      "feature",
+    ]);
 
-      expect(merge.code).not.toBe(0);
-      expect(mergeHeadPresent(dir)).toBe(true);
-      expect(unmergedPaths(dir)).toBe("");
+    expect(merge.code).not.toBe(0);
+    expect(mergeHeadPresent(dir)).toBe(true);
+    expect(unmergedPaths(dir)).toBe("");
 
-      run(dir, ["merge", "--abort"]);
-      rmSync(dir, { recursive: true, force: true });
-    },
-  );
+    run(dir, ["merge", "--abort"]);
+    rmSync(dir, { recursive: true, force: true });
+  });
 
-  (process.platform === "win32" ? it.skip : it)(
-    "is non-empty when the merge leaves a real textual conflict",
-    () => {
-      const dir = initRepo();
-      run(dir, ["checkout", "-q", "-b", "feature"]);
-      writeFileSync(join(dir, "shared.txt"), "feature-change\n");
-      run(dir, ["add", "."]);
-      run(dir, ["commit", "-q", "-m", "feature"]);
-      run(dir, ["checkout", "-q", "main"]);
-      writeFileSync(join(dir, "shared.txt"), "main-change\n");
-      run(dir, ["add", "."]);
-      run(dir, ["commit", "-q", "-m", "main-side"]);
+  it("is non-empty when the merge leaves a real textual conflict", () => {
+    const dir = initRepo();
+    run(dir, ["checkout", "-q", "-b", "feature"]);
+    writeFileSync(join(dir, "shared.txt"), "feature-change\n");
+    run(dir, ["add", "."]);
+    run(dir, ["commit", "-q", "-m", "feature"]);
+    run(dir, ["checkout", "-q", "main"]);
+    writeFileSync(join(dir, "shared.txt"), "main-change\n");
+    run(dir, ["add", "."]);
+    run(dir, ["commit", "-q", "-m", "main-side"]);
 
-      const merge = run(dir, [
-        "merge",
-        "--no-ff",
-        "--no-edit",
-        "-m",
-        "merge feature",
-        "feature",
-      ]);
+    const merge = run(dir, [
+      "merge",
+      "--no-ff",
+      "--no-edit",
+      "-m",
+      "merge feature",
+      "feature",
+    ]);
 
-      expect(merge.code).not.toBe(0);
-      expect(mergeHeadPresent(dir)).toBe(true);
-      expect(unmergedPaths(dir)).toBe("shared.txt");
+    expect(merge.code).not.toBe(0);
+    expect(mergeHeadPresent(dir)).toBe(true);
+    expect(unmergedPaths(dir)).toBe("shared.txt");
 
-      run(dir, ["merge", "--abort"]);
-      rmSync(dir, { recursive: true, force: true });
-    },
-  );
+    run(dir, ["merge", "--abort"]);
+    rmSync(dir, { recursive: true, force: true });
+  });
 });

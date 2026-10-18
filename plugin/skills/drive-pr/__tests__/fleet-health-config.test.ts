@@ -243,17 +243,17 @@ describe("the snapshot directory", () => {
       "/tmp/dash",
     );
     expect(dashboardDir({}, "/home/u")).toBe(
-      "/home/u/.local/state/jig/dashboard",
+      join("/home/u", ".local", "state", "jig", "dashboard"),
     );
     overlay("fleet_health:\n  snapshot_dir: ~/panels\n");
-    expect(dashboardDir({}, "/home/u")).toBe("/home/u/panels");
+    expect(dashboardDir({}, "/home/u")).toBe(join("/home/u", "panels"));
     overlay("fleet_health:\n  snapshot_dir: var/panels\n");
     expect(dashboardDir({}, "/home/u")).toBe(join(repo, "var/panels"));
   });
 
   it("expands ~ alone and ~/ prefixes only", () => {
     expect(expandDir("~", "/home/u")).toBe("/home/u");
-    expect(expandDir("~/x", "/home/u")).toBe("/home/u/x");
+    expect(expandDir("~/x", "/home/u")).toBe(join("/home/u", "x"));
     expect(expandDir("/abs/x", "/home/u")).toBe("/abs/x");
   });
 });

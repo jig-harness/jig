@@ -1,13 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, delimiter } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { emptyReport } from "../scripts/lib/status/evaluate.ts";
 import {
   WaitingEvaluationCache,
   waitingChecksMaxAgeMs,
 } from "../scripts/lib/status/waiting-cache.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const HEAD = "a".repeat(40);
 const ctx = {
@@ -278,7 +279,7 @@ if (args[0] === 'pr' && args[1] === 'view') {
   } else console.log(JSON.stringify([body]));
 } else process.exit(2);
 `;
-    writeFileSync(join(dir, "gh"), fakeGh, { mode: 0o755 });
+    writeFakeProgram(join(dir, "gh"), fakeGh);
     writeFileSync(join(dir, "phase"), "open");
     const script = `
 import { writeFileSync } from 'node:fs';
@@ -300,7 +301,7 @@ console.log(JSON.stringify(results));
       cwd: dir,
       env: {
         ...fixtureEnv,
-        PATH: `${dir}:${process.env.PATH}`,
+        PATH: `${dir}${delimiter}${process.env.PATH}`,
         FIXTURE_DIR: dir,
         // The drive waits only on a reviewer the repository names.
         DRIVE_PR_REVIEWER_APP: "example-review",

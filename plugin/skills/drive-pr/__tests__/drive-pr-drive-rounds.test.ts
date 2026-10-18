@@ -16,7 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, delimiter } from "node:path";
 import {
   MAILBOX_PAUSE_TIMEOUT_EXIT,
   MAILBOX_STOPPED_EXIT,
@@ -49,6 +49,7 @@ import {
   runDrive,
   runDriveIn,
 } from "./drive-loop-harness.ts";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
 useDrivePrSuite();
 
@@ -125,7 +126,7 @@ describe("drive.ts loop control", () => {
       const passRelease = join(dir, "pass-release");
       await appendDirective(mailboxDir, "999", "test", "pause");
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -133,12 +134,12 @@ describe("drive.ts loop control", () => {
           "sh",
           "-c",
           `echo start > '${passStarted}'; n=0; while [ ! -e '${passRelease}' ] && [ $n -lt 200 ]; do sleep 0.05; n=$((n+1)); done; echo done > '${passFinished}'; echo 'pass for 999' >&2`,
-        ],
+        ),
         {
           cwd: scratchClean.dir,
           env: {
             ...gitCleanEnv(),
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -190,18 +191,18 @@ describe("drive.ts loop control", () => {
       // A competing invocation against the SAME PR must still be refused —
       // a pause holds the lock, it does not release it.
       const competitor = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           cwd: scratchClean.dir,
           env: {
             ...gitCleanEnv(),
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -536,7 +537,7 @@ describe("drive.ts loop control", () => {
       const { dir, stateDir } = writeFixture({ threads: [] });
       writeFileSync(join(stateDir, "drive-pr-999.json"), "not usable state");
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -544,11 +545,11 @@ describe("drive.ts loop control", () => {
           "never",
           "--",
           ...PASS_ECHO_DIAL,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -589,11 +590,17 @@ describe("drive.ts loop control", () => {
     });
     await park(stateDir, "PRRT_parked", "thread");
     const proc = Bun.spawn(
-      [join(SCRIPTS, "drive.ts"), "999", "--no-head-sync", "--", ...PASS_LOUD],
+      scriptArgv(
+        join(SCRIPTS, "drive.ts"),
+        "999",
+        "--no-head-sync",
+        "--",
+        ...PASS_LOUD,
+      ),
       {
         env: {
           ...process.env,
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -632,13 +639,13 @@ describe("drive.ts loop control", () => {
         "--max-rounds",
         "1",
         "--",
-        "sh",
-        "-c",
-        `: pass for 999; printf '%s %s' "$DRIVE_PR_SESSION" "$PPID" > ${JSON.stringify(marker)}`,
+        process.execPath,
+        "-e",
+        `/* pass for 999 */ require("node:fs").writeFileSync(${JSON.stringify(marker)}, process.env.DRIVE_PR_SESSION + " " + process.ppid)`,
       ],
     );
     expect(r.exitCode).toBeDefined();
-    // `$PPID` inside the pass IS the driver: the pass is spawned by this
+    // The pass's parent pid IS the driver: the pass is spawned by this
     // process (detached into its own process group, but still its child). So
     // asserting the two are equal pins "the exported session is the DRIVER's
     // pid", not merely "something numeric was exported".
@@ -715,7 +722,8 @@ describe("drive.ts loop control", () => {
         `: pass for 999; printf '%s' "$DRIVE_PR_STATE_DIR" > ${JSON.stringify(marker)}`,
       ],
       repo.dir,
-      { env: { DRIVE_PR_STATE_DIR: "" } },
+      // Windows' home directory is USERPROFILE, not HOME.
+      { env: { DRIVE_PR_STATE_DIR: "", USERPROFILE: suiteHome } },
     );
     expect(r.exitCode).toBeDefined();
     const exported = readFileSync(marker, "utf8");
@@ -758,7 +766,7 @@ describe("drive.ts loop control", () => {
     });
     const env = {
       ...process.env,
-      PATH: `${binDir}:${process.env.PATH}`,
+      PATH: `${binDir}${delimiter}${process.env.PATH}`,
       DRIVE_PR_FIXTURES: dir,
       DRIVE_PR_STATE_DIR: stateDir,
       DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -770,7 +778,7 @@ describe("drive.ts loop control", () => {
     };
     const once = async () => {
       const p = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -778,7 +786,7 @@ describe("drive.ts loop control", () => {
           "2",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         { env, stdout: "pipe", stderr: "pipe" },
       );
       const [stderr, exitCode] = await Promise.all([
@@ -829,11 +837,13 @@ describe("drive.ts loop control", () => {
       );
     };
 
+    // Ten real rounds: where a round costs seconds, the suite's default
+    // timeout ends the drive before it reaches its budget.
     it("is 10 when neither the flag nor the setting names one", async () => {
       const r = await drive([]);
       expect(r.exitCode).toBe(6);
       expect(r.stderr).toContain("--- round 10/10 on PR #999 ---");
-    });
+    }, 120_000);
 
     it("sets the budget when the flag is absent", async () => {
       const r = await drive([], 2);
@@ -918,14 +928,14 @@ describe("drive.ts loop control", () => {
     seedRounds(stateDir, 3, PREV);
     const env = {
       ...process.env,
-      PATH: `${binDir}:${process.env.PATH}`,
+      PATH: `${binDir}${delimiter}${process.env.PATH}`,
       DRIVE_PR_FIXTURES: dir,
       DRIVE_PR_STATE_DIR: stateDir,
       DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
     };
     const at = async (max: string) => {
       const p = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -933,7 +943,7 @@ describe("drive.ts loop control", () => {
           max,
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         { env, stdout: "pipe", stderr: "pipe" },
       );
       const [stderr, exitCode] = await Promise.all([

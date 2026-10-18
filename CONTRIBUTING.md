@@ -422,12 +422,34 @@ work as part of the plugin:
   `allowed-tools`, `argument-hint`) are ignored by the other.
 - **Tests:** keep the skill's tests in `plugin/skills/<name>/__tests__/`; extend
   `tools/plugin/plugin.test.ts` when the skill reads consumer files. A suite
-  that needs a POSIX system is listed in `POSIX_ONLY_SUITES` in
+  that can only run on a POSIX system is listed in `POSIX_ONLY_SUITES` in
   [scripts/gates.ts](scripts/gates.ts), with the reason, so Windows CI
   leaves it out; a suite too long for the gate job goes in `SEPARATE_SUITES`
   and gets its own sharded job in
   [the gates workflow](.github/workflows/gates.yml) and
-  [the nightly workflow](.github/workflows/nightly.yml).
+  [the nightly workflow](.github/workflows/nightly.yml), which also runs it on
+  Windows. A test that runs on Windows stands in for `gh`, `git` or `claude`
+  with `writeFakeProgram` from
+  [lib/test-helpers/fake-program.ts](lib/test-helpers/fake-program.ts), runs a
+  script with `scriptArgv` from
+  [lib/test-helpers/script-argv.ts](lib/test-helpers/script-argv.ts), and
+  extends `PATH` with `path.delimiter`. A test that cannot pass on Windows yet
+  skips with `skipsOnWindows` from
+  [lib/test-helpers/windows-skip.ts](lib/test-helpers/windows-skip.ts), which
+  names the piece of Windows work (listed in
+  [design/plan.md](design/plan.md)) that lifts the skip. Any other branch on
+  Windows in those suites goes through the same file and says why:
+  `exceptOnWindows(reason, check)` for an assertion only a POSIX system can
+  enforce, and `byPlatform(reason, { windows, posix })` for a value that
+  differs. Both work only inside a running test, so neither can skip one, and
+  a test that calls either must assert something on the platform it runs on:
+  a test whose every check is POSIX-only, or that returns before asserting
+  anything, fails. A test in
+  [windows-skip.test.ts](lib/test-helpers/windows-skip.test.ts) refuses
+  every other `===`, `!==` or `case` comparison with `"win32"` in those
+  suites, comments and parentheses included; a platform check written
+  another way, such as `["win32"].includes(process.platform)`, is for review
+  to catch.
 - **Agents:** put them in `plugin/agents/<name>.md` with `name: <name>` in
   the frontmatter. Claude Code loads that folder without a manifest entry;
   do not add an `agents` key to the manifest, which would replace the

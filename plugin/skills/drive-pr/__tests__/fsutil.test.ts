@@ -26,6 +26,10 @@ import {
   ExclusiveWriteOwnFailure,
   fsyncFileSync,
 } from "../scripts/lib/state/fsutil.ts";
+import {
+  exceptOnWindows,
+  skipsOnWindows,
+} from "../../../../lib/test-helpers/windows-skip.ts";
 
 let dir: string;
 
@@ -173,90 +177,106 @@ describe("atomicWrite", () => {
     }
   });
 
-  it("propagates a genuine directory-fsync durability failure (EIO) rather than reporting success", async () => {
-    dir = mkdtempSync(join(tmpdir(), "fsutil-atomic-write-dirfsync-eio-"));
-    const target = join(dir, "file.json");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "atomicWrite skips the directory fsync on Windows (opening a directory fails with EPERM), so a directory fsync or open failure is never observed",
+    ),
+  )(
+    "propagates a genuine directory-fsync durability failure (EIO) rather than reporting success",
+    async () => {
+      dir = mkdtempSync(join(tmpdir(), "fsutil-atomic-write-dirfsync-eio-"));
+      const target = join(dir, "file.json");
 
-    const actualFs = await import("node:fs");
-    const realOpenSync = actualFs.openSync;
-    const realFsyncSync = actualFs.fsyncSync;
-    const realFs = { ...actualFs };
+      const actualFs = await import("node:fs");
+      const realOpenSync = actualFs.openSync;
+      const realFsyncSync = actualFs.fsyncSync;
+      const realFs = { ...actualFs };
 
-    // EIO is a real durability signal, not an "unsupported operation" — an
-    // earlier blanket catch swallowed this identically to ENOTSUP, which meant
-    // `atomicWrite` could report success on a rename whose directory entry was
-    // never actually made durable.
-    let dirFd = -1;
-    mock.module("node:fs", () => ({
-      ...realFs,
-      openSync: (path: string, flags: string) => {
-        const fd = realOpenSync(path, flags);
-        if (flags === "r" && path === dir) dirFd = fd;
-        return fd;
-      },
-      fsyncSync: (fd: number) => {
-        if (fd === dirFd) {
-          const err = new Error(
-            "simulated directory fsync failure",
-          ) as NodeJS.ErrnoException;
-          err.code = "EIO";
-          throw err;
-        }
-        return realFsyncSync(fd);
-      },
-    }));
+      // EIO is a real durability signal, not an "unsupported operation" — an
+      // earlier blanket catch swallowed this identically to ENOTSUP, which meant
+      // `atomicWrite` could report success on a rename whose directory entry was
+      // never actually made durable.
+      let dirFd = -1;
+      mock.module("node:fs", () => ({
+        ...realFs,
+        openSync: (path: string, flags: string) => {
+          const fd = realOpenSync(path, flags);
+          if (flags === "r" && path === dir) dirFd = fd;
+          return fd;
+        },
+        fsyncSync: (fd: number) => {
+          if (fd === dirFd) {
+            const err = new Error(
+              "simulated directory fsync failure",
+            ) as NodeJS.ErrnoException;
+            err.code = "EIO";
+            throw err;
+          }
+          return realFsyncSync(fd);
+        },
+      }));
 
-    try {
-      // The rename itself already landed — this asserts the ERROR
-      // propagates, not that the write was undone.
-      expect(() => atomicWrite(target, "content\n")).toThrow(
-        "simulated directory fsync failure",
-      );
-      expect(readFileSync(target, "utf8")).toBe("content\n");
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
+      try {
+        // The rename itself already landed — this asserts the ERROR
+        // propagates, not that the write was undone.
+        expect(() => atomicWrite(target, "content\n")).toThrow(
+          "simulated directory fsync failure",
+        );
+        expect(readFileSync(target, "utf8")).toBe("content\n");
+      } finally {
+        mock.module("node:fs", () => realFs);
+      }
+    },
+  );
 
-  it("propagates a failure to even OPEN the directory, regardless of its error code, rather than misclassifying it as an unsupported fsync", async () => {
-    dir = mkdtempSync(join(tmpdir(), "fsutil-atomic-write-diropen-einval-"));
-    const target = join(dir, "file.json");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "atomicWrite skips the directory fsync on Windows (opening a directory fails with EPERM), so a directory fsync or open failure is never observed",
+    ),
+  )(
+    "propagates a failure to even OPEN the directory, regardless of its error code, rather than misclassifying it as an unsupported fsync",
+    async () => {
+      dir = mkdtempSync(join(tmpdir(), "fsutil-atomic-write-diropen-einval-"));
+      const target = join(dir, "file.json");
 
-    const actualFs = await import("node:fs");
-    const realOpenSync = actualFs.openSync;
-    const realFs = { ...actualFs };
+      const actualFs = await import("node:fs");
+      const realOpenSync = actualFs.openSync;
+      const realFs = { ...actualFs };
 
-    // The ENOTSUP/EOPNOTSUPP/EINVAL allowlist exists for "fsync is not
-    // possible on this fd" — a statement about `fsyncSync`. An OPEN
-    // failure carrying one of those same codes is a DIFFERENT problem
-    // (fsync was never even attempted) and must not be swallowed by the
-    // same allowlist, even though it shares a code with a case that
-    // legitimately is.
-    mock.module("node:fs", () => ({
-      ...realFs,
-      openSync: (path: string, flags: string) => {
-        if (flags === "r" && path === dir) {
-          const err = new Error(
-            "simulated directory open failure",
-          ) as NodeJS.ErrnoException;
-          err.code = "EINVAL";
-          throw err;
-        }
-        return realOpenSync(path, flags);
-      },
-    }));
+      // The ENOTSUP/EOPNOTSUPP/EINVAL allowlist exists for "fsync is not
+      // possible on this fd" — a statement about `fsyncSync`. An OPEN
+      // failure carrying one of those same codes is a DIFFERENT problem
+      // (fsync was never even attempted) and must not be swallowed by the
+      // same allowlist, even though it shares a code with a case that
+      // legitimately is.
+      mock.module("node:fs", () => ({
+        ...realFs,
+        openSync: (path: string, flags: string) => {
+          if (flags === "r" && path === dir) {
+            const err = new Error(
+              "simulated directory open failure",
+            ) as NodeJS.ErrnoException;
+            err.code = "EINVAL";
+            throw err;
+          }
+          return realOpenSync(path, flags);
+        },
+      }));
 
-    try {
-      expect(() => atomicWrite(target, "content\n")).toThrow(
-        "simulated directory open failure",
-      );
-      // The rename itself already landed — asserts the ERROR propagates,
-      // not that the write was undone.
-      expect(readFileSync(target, "utf8")).toBe("content\n");
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
+      try {
+        expect(() => atomicWrite(target, "content\n")).toThrow(
+          "simulated directory open failure",
+        );
+        // The rename itself already landed — asserts the ERROR propagates,
+        // not that the write was undone.
+        expect(readFileSync(target, "utf8")).toBe("content\n");
+      } finally {
+        mock.module("node:fs", () => realFs);
+      }
+    },
+  );
 
   it("preserves the primary write/fsync error over a close failure, rather than letting the close error replace it", async () => {
     dir = mkdtempSync(join(tmpdir(), "fsutil-atomic-write-close-masks-"));
@@ -560,7 +580,12 @@ describe("atomicWrite", () => {
 });
 
 describe("fsyncFileSync", () => {
-  it("does not throw on an existing, already-flushed file", () => {
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "fsyncFileSync opens the file read-only and fsync on a read-only handle fails with EPERM on Windows",
+    ),
+  )("does not throw on an existing, already-flushed file", () => {
     dir = mkdtempSync(join(tmpdir(), "fsutil-fsync-file-"));
     const target = join(dir, "file.txt");
     writeFileSyncReal(target, "content\n");
@@ -699,7 +724,11 @@ describe("createExclusiveDurable", () => {
     try {
       createExclusiveDurable(target, "content\n");
       expect(fsyncedPaths.some((p) => p.startsWith(`${target}.`))).toBe(true);
-      expect(fsyncedPaths).toContain(dir);
+      // Windows skips the directory fsync (opening a directory fails with
+      // EPERM there); the file-system piece of the Windows work lifts this guard.
+      exceptOnWindows("Windows cannot open a directory to fsync it", () =>
+        expect(fsyncedPaths).toContain(dir),
+      );
       expect(readFileSync(target, "utf8")).toBe("content\n");
       // The temp file is disposable once linked — nothing but the target
       // itself should remain in the directory afterward.
@@ -741,50 +770,59 @@ describe("createExclusiveDurable", () => {
     }
   });
 
-  it("reports a post-link directory-fsync failure as ExclusiveDurabilityUnconfirmed, distinct from ExclusiveWriteOwnFailure, and leaves the already-published target in place", async () => {
-    // The gap this closes: the publishing
-    // `link` can succeed and THEN the trailing `fsyncDirectoryBestEffort`
-    // call can fail (EIO/ENOSPC on the directory fd) — a failure shape that
-    // is neither "this call's own write never landed" (ExclusiveWriteOwnFailure)
-    // nor a racing EEXIST. `persistedCloneId` must be able to tell this case
-    // apart from both so it doesn't adopt an unconfirmed publish as though a
-    // racing winner had vouched for it.
-    dir = mkdtempSync(join(tmpdir(), "fsutil-exclusive-create-dirfsync-"));
-    const target = join(dir, "id-file");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the post-link directory fsync is skipped on Windows (opening a directory fails with EPERM), so its failure is never observed",
+    ),
+  )(
+    "reports a post-link directory-fsync failure as ExclusiveDurabilityUnconfirmed, distinct from ExclusiveWriteOwnFailure, and leaves the already-published target in place",
+    async () => {
+      // The gap this closes: the publishing
+      // `link` can succeed and THEN the trailing `fsyncDirectoryBestEffort`
+      // call can fail (EIO/ENOSPC on the directory fd) — a failure shape that
+      // is neither "this call's own write never landed" (ExclusiveWriteOwnFailure)
+      // nor a racing EEXIST. `persistedCloneId` must be able to tell this case
+      // apart from both so it doesn't adopt an unconfirmed publish as though a
+      // racing winner had vouched for it.
+      dir = mkdtempSync(join(tmpdir(), "fsutil-exclusive-create-dirfsync-"));
+      const target = join(dir, "id-file");
 
-    const actualFs = await import("node:fs");
-    const realOpenSync = actualFs.openSync;
-    const realFsyncSync = actualFs.fsyncSync;
-    const realFs = { ...actualFs };
+      const actualFs = await import("node:fs");
+      const realOpenSync = actualFs.openSync;
+      const realFsyncSync = actualFs.fsyncSync;
+      const realFs = { ...actualFs };
 
-    let dirFd = -1;
-    mock.module("node:fs", () => ({
-      ...realFs,
-      openSync: (path: string, flags: string) => {
-        const fd = realOpenSync(path, flags);
-        if (path === dir && flags === "r") dirFd = fd;
-        return fd;
-      },
-      fsyncSync: (fd: number) => {
-        if (fd === dirFd) throw new Error("simulated directory fsync failure");
-        return realFsyncSync(fd);
-      },
-    }));
+      let dirFd = -1;
+      mock.module("node:fs", () => ({
+        ...realFs,
+        openSync: (path: string, flags: string) => {
+          const fd = realOpenSync(path, flags);
+          if (path === dir && flags === "r") dirFd = fd;
+          return fd;
+        },
+        fsyncSync: (fd: number) => {
+          if (fd === dirFd)
+            throw new Error("simulated directory fsync failure");
+          return realFsyncSync(fd);
+        },
+      }));
 
-    try {
       try {
-        createExclusiveDurable(target, "content\n");
-        throw new Error("expected createExclusiveDurable to throw");
-      } catch (e) {
-        expect(e).toBeInstanceOf(ExclusiveDurabilityUnconfirmed);
-        expect(e).not.toBeInstanceOf(ExclusiveWriteOwnFailure);
+        try {
+          createExclusiveDurable(target, "content\n");
+          throw new Error("expected createExclusiveDurable to throw");
+        } catch (e) {
+          expect(e).toBeInstanceOf(ExclusiveDurabilityUnconfirmed);
+          expect(e).not.toBeInstanceOf(ExclusiveWriteOwnFailure);
+        }
+        // The link already published the target with this call's own
+        // content — unlike the own-failure-before-publish case above, there
+        // is nothing to roll back, and nothing safe to delete either.
+        expect(readFileSync(target, "utf8")).toBe("content\n");
+      } finally {
+        mock.module("node:fs", () => realFs);
       }
-      // The link already published the target with this call's own
-      // content — unlike the own-failure-before-publish case above, there
-      // is nothing to roll back, and nothing safe to delete either.
-      expect(readFileSync(target, "utf8")).toBe("content\n");
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
+    },
+  );
 });

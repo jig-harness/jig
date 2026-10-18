@@ -21,7 +21,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -32,7 +31,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
 const SCRIPT = join(SCRIPTS, "triage-thread.ts");
@@ -164,8 +164,7 @@ echo "gh-stub: unhandled: $*" >&2
 exit 1
 `;
   const ghPath = join(binDir, "gh");
-  writeFileSync(ghPath, stub);
-  chmodSync(ghPath, 0o755);
+  writeFakeProgram(ghPath, stub);
 });
 
 afterAll(() => {
@@ -251,7 +250,7 @@ function runTriage(
     cwd: scratchWorktree,
     env: withStateDirIdentity({
       ...scrubbedGitEnv(),
-      PATH: `${binDir}:${process.env.PATH}`,
+      PATH: `${binDir}${delimiter}${process.env.PATH}`,
       TRT_FIXTURES: fixtureDir,
       DRIVE_PR_STATE_DIR: stateDir,
       GH_CALL_TIMEOUT: "20",
@@ -294,7 +293,7 @@ function postReplyDirectly(
     cwd: scratchWorktree,
     env: withStateDirIdentity({
       ...scrubbedGitEnv(),
-      PATH: `${binDir}:${process.env.PATH}`,
+      PATH: `${binDir}${delimiter}${process.env.PATH}`,
       TRT_FIXTURES: fixtureDir,
       DRIVE_PR_STATE_DIR: stateDir,
       GH_CALL_TIMEOUT: "20",

@@ -35,6 +35,8 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { ExitError } from "../scripts/lib/cli.ts";
 import { createLock, sweepLockQuarantine } from "../scripts/lib/state/lock.ts";
+import { fileURLToPath } from "node:url";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 let dir: string;
 let file: string;
@@ -785,28 +787,36 @@ describe("sweepLockQuarantine", () => {
     expect(readFileSync(decoy, "utf8")).toBe("unrelated");
   });
 
-  it("a rename onto a compacted entry still fails outright — the fence survives compaction", async () => {
-    // The property this whole function depends on: `tombstone()` makes a
-    // quarantine path permanently non-empty so `rename(2)` refuses to
-    // replace it (`quarantinePath`'s own doc comment). Compacting the
-    // directory into a file must preserve exactly that — a directory
-    // renamed onto an existing regular file fails with ENOTDIR, not silent
-    // replacement.
-    const solo = createLock(file, "test", "999");
-    await solo.acquire();
-    const ownMarker = readdirSync(lock).find((f) => f.startsWith("owner."));
-    if (ownMarker === undefined) throw new Error("no owner marker");
-    solo.release();
-    const doomed = `${lock}.stale.${ownMarker}`;
-    sweepLockQuarantine(file);
-    expect(statSync(doomed).isDirectory()).toBe(false);
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "rename of a directory onto an existing regular file succeeds on Windows instead of failing with ENOTDIR, so the compacted-entry fence does not hold",
+    ),
+  )(
+    "a rename onto a compacted entry still fails outright — the fence survives compaction",
+    async () => {
+      // The property this whole function depends on: `tombstone()` makes a
+      // quarantine path permanently non-empty so `rename(2)` refuses to
+      // replace it (`quarantinePath`'s own doc comment). Compacting the
+      // directory into a file must preserve exactly that — a directory
+      // renamed onto an existing regular file fails with ENOTDIR, not silent
+      // replacement.
+      const solo = createLock(file, "test", "999");
+      await solo.acquire();
+      const ownMarker = readdirSync(lock).find((f) => f.startsWith("owner."));
+      if (ownMarker === undefined) throw new Error("no owner marker");
+      solo.release();
+      const doomed = `${lock}.stale.${ownMarker}`;
+      sweepLockQuarantine(file);
+      expect(statSync(doomed).isDirectory()).toBe(false);
 
-    const impostor = `${dir}/impostor-dir`;
-    mkdirSync(impostor);
-    expect(() => renameSync(impostor, doomed)).toThrow();
-    // Untouched by the failed attempt.
-    expect(readFileSync(doomed, "utf8")).toBe("");
-  });
+      const impostor = `${dir}/impostor-dir`;
+      mkdirSync(impostor);
+      expect(() => renameSync(impostor, doomed)).toThrow();
+      // Untouched by the failed attempt.
+      expect(readFileSync(doomed, "utf8")).toBe("");
+    },
+  );
 
   it("is a no-op when the state directory itself does not exist", () => {
     const missing = join(dir, "nowhere", "drive-pr-999.json");
@@ -1024,8 +1034,9 @@ describe("sweepLockQuarantine", () => {
 });
 
 it("acquires a recovered stale lock before a full polling interval consumes the deadline", () => {
-  const modulePath = new URL("../scripts/lib/state/lock.ts", import.meta.url)
-    .pathname;
+  const modulePath = fileURLToPath(
+    new URL("../scripts/lib/state/lock.ts", import.meta.url),
+  );
   mkdirSync(lock);
   writeFileSync(join(lock, "owner.abandoned"), "");
   ageLock(lock, 10);

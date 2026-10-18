@@ -16,7 +16,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 
 import {
   type DriverOnlyStateName,
@@ -40,6 +40,7 @@ import {
   runCheck,
   scanOutOfBandNamePairings,
 } from "./terminal-states-consistency.ts";
+import { fileURLToPath } from "node:url";
 
 afterAll(closeTypeScriptService);
 
@@ -76,7 +77,7 @@ describe("runCheck — forms that MUST be read correctly", () => {
     fn: () => Promise<void> | void,
   ): Promise<void> => {
     const previous = process.env.DRIVE_PR_TERMINAL_STATES_TEST_FILES;
-    process.env.DRIVE_PR_TERMINAL_STATES_TEST_FILES = entries.join(":");
+    process.env.DRIVE_PR_TERMINAL_STATES_TEST_FILES = entries.join(delimiter);
     const error = console.error;
     const log = console.log;
     console.error = () => {};
@@ -450,7 +451,7 @@ describe("runCheck — drift MUST be caught", () => {
     fn: () => Promise<void> | void,
   ): Promise<void> => {
     const previous = process.env.DRIVE_PR_TERMINAL_STATES_TEST_FILES;
-    process.env.DRIVE_PR_TERMINAL_STATES_TEST_FILES = entries.join(":");
+    process.env.DRIVE_PR_TERMINAL_STATES_TEST_FILES = entries.join(delimiter);
     const error = console.error;
     const log = console.log;
     console.error = () => {};
@@ -1000,7 +1001,7 @@ describe("driverOnlyExitBindings — requires a real module for live export valu
   const dir = mkdtempSync(join(tmpdir(), "drive-pr-terminal-states-module-"));
 
   test("reads all real driver-only values from the actual drive.ts", () => {
-    const path = new URL("../scripts/drive.ts", import.meta.url).pathname;
+    const path = fileURLToPath(new URL("../scripts/drive.ts", import.meta.url));
     const bindings = driverOnlyExitBindings(path);
     expect(bindings).toHaveLength(8);
     const byName = Object.fromEntries(
@@ -1456,8 +1457,9 @@ describe("outOfBandExitBindings — requires a real module for live export value
   );
 
   test("reads all real out-of-band values from the actual lease.ts", () => {
-    const path = new URL("../scripts/lib/state/lease.ts", import.meta.url)
-      .pathname;
+    const path = fileURLToPath(
+      new URL("../scripts/lib/state/lease.ts", import.meta.url),
+    );
     const bindings = outOfBandExitBindings(path);
     expect(bindings).toHaveLength(2);
     const byName = Object.fromEntries(

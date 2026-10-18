@@ -16,9 +16,11 @@ import { join, relative } from "node:path";
 import { ExitError } from "../scripts/lib/cli.ts";
 import { gitIdentityEnv } from "../scripts/lib/proc.ts";
 import { resolveStateDir } from "../scripts/lib/state/store.ts";
+import { fileURLToPath } from "node:url";
 
-const LEASE_TS = new URL("../scripts/lib/state/lease.ts", import.meta.url)
-  .pathname;
+const LEASE_TS = fileURLToPath(
+  new URL("../scripts/lib/state/lease.ts", import.meta.url),
+);
 
 // Captured once, before any test runs — never re-read inside `afterEach`,
 // which would just capture whatever the PREVIOUS test left behind. A machine

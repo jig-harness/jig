@@ -32,6 +32,7 @@ import {
   publishMigratedMarker,
   reconfirmMarkerDurably,
 } from "../scripts/migrate-legacy-state.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 function gitCleanEnv(
   extra: Record<string, string | undefined> = {},
@@ -45,6 +46,11 @@ function gitCleanEnv(
   for (const [k, v] of Object.entries(extra)) {
     if (v === undefined) delete env[k];
     else env[k] = v;
+    // Windows' home directory is USERPROFILE, not HOME.
+    if (k === "HOME") {
+      if (v === undefined) delete env.USERPROFILE;
+      else env.USERPROFILE = v;
+    }
   }
   return env;
 }
@@ -161,7 +167,12 @@ describe("migrate-legacy-state.ts", () => {
     expect(existsSync(join(newDir, ".migrated-from-legacy"))).toBe(true);
   });
 
-  it("is idempotent — a second run is a fast no-op", () => {
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the second run re-confirms the marker with fsyncFileSync, which fails with EPERM on Windows (fsync on a read-only handle)",
+    ),
+  )("is idempotent — a second run is a fast no-op", () => {
     const repo = makeRepo("idempotent");
     const home = mkdtempSync(join(tmpdir(), "migrate-legacy-state-test-home-"));
     cleanupDirs.push(repo, home);
@@ -708,56 +719,64 @@ describe("publishMigratedMarker", () => {
     expect(existsSync(marker)).toBe(true);
   });
 
-  it("durably publishes the marker via createExclusiveDurable — fsyncs its containing directory and leaves no temp-file residue", async () => {
-    // The migrated content and legacy-source deletions are both explicitly
-    // fsynced, but the marker itself used to be only written and closed — a
-    // crash right after this function returned could lose it while the
-    // migration it certifies survives, and the retained lock/quarantine debris
-    // then makes legacyFootprint() nonempty on restart, refusing an otherwise
-    // complete migration.
-    //
-    // A later fix replaced the bare `writeFileSync(marker, '')` with
-    // `createExclusiveDurable(marker, '')` (fsutil.ts) — a SEPARATE fix, for
-    // the symlink-follow gap the test below exercises, not for this one — which
-    // happens to change how content durability is achieved:
-    // `createExclusiveDurable` fsyncs its content via the temp file's own
-    // still-open write descriptor (opened `wx`) rather than a later
-    // `openSync(marker, 'r')` re-open of the published path, so that specific
-    // call no longer occurs at all. What remains directly observable and still
-    // this function's own responsibility is the CONTAINING DIRECTORY's fsync
-    // (`fsyncDirectoryBestEffort`, called by `createExclusiveDurable` after the
-    // publishing `link`) and that a successful publish leaves no temp-file
-    // residue behind.
-    const legacyDir = mkdtempSync(
-      join(tmpdir(), "publish-marker-fsync-legacy-"),
-    );
-    const newDir = mkdtempSync(join(tmpdir(), "publish-marker-fsync-new-"));
-    cleanupDirs.push(legacyDir, newDir);
-    const marker = join(newDir, ".migrated-from-legacy");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the directory fsync is skipped on Windows (opening a directory fails with EPERM), so the directory open this test observes never happens",
+    ),
+  )(
+    "durably publishes the marker via createExclusiveDurable — fsyncs its containing directory and leaves no temp-file residue",
+    async () => {
+      // The migrated content and legacy-source deletions are both explicitly
+      // fsynced, but the marker itself used to be only written and closed — a
+      // crash right after this function returned could lose it while the
+      // migration it certifies survives, and the retained lock/quarantine debris
+      // then makes legacyFootprint() nonempty on restart, refusing an otherwise
+      // complete migration.
+      //
+      // A later fix replaced the bare `writeFileSync(marker, '')` with
+      // `createExclusiveDurable(marker, '')` (fsutil.ts) — a SEPARATE fix, for
+      // the symlink-follow gap the test below exercises, not for this one — which
+      // happens to change how content durability is achieved:
+      // `createExclusiveDurable` fsyncs its content via the temp file's own
+      // still-open write descriptor (opened `wx`) rather than a later
+      // `openSync(marker, 'r')` re-open of the published path, so that specific
+      // call no longer occurs at all. What remains directly observable and still
+      // this function's own responsibility is the CONTAINING DIRECTORY's fsync
+      // (`fsyncDirectoryBestEffort`, called by `createExclusiveDurable` after the
+      // publishing `link`) and that a successful publish leaves no temp-file
+      // residue behind.
+      const legacyDir = mkdtempSync(
+        join(tmpdir(), "publish-marker-fsync-legacy-"),
+      );
+      const newDir = mkdtempSync(join(tmpdir(), "publish-marker-fsync-new-"));
+      cleanupDirs.push(legacyDir, newDir);
+      const marker = join(newDir, ".migrated-from-legacy");
 
-    const actualFs = await import("node:fs");
-    const realFs = { ...actualFs };
-    const openedForSync: string[] = [];
-    mock.module("node:fs", () => ({
-      ...realFs,
-      openSync: (p: string, flags: string) => {
-        if (flags === "r") openedForSync.push(p);
-        return realFs.openSync(p, flags);
-      },
-    }));
-    try {
-      const result = publishMigratedMarker(legacyDir, marker);
-      expect(result.ok).toBe(true);
-      expect(openedForSync).toContain(newDir);
-      // Nothing survives in `newDir` but the published marker itself — the
-      // temp file `createExclusiveDurable` staged content in before
-      // publishing was disposed of, not left behind as debris.
-      expect(readdirSync(newDir)).toEqual([".migrated-from-legacy"]);
-      expect(readFileSync(marker, "utf8")).toBe("");
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
+      const actualFs = await import("node:fs");
+      const realFs = { ...actualFs };
+      const openedForSync: string[] = [];
+      mock.module("node:fs", () => ({
+        ...realFs,
+        openSync: (p: string, flags: string) => {
+          if (flags === "r") openedForSync.push(p);
+          return realFs.openSync(p, flags);
+        },
+      }));
+      try {
+        const result = publishMigratedMarker(legacyDir, marker);
+        expect(result.ok).toBe(true);
+        expect(openedForSync).toContain(newDir);
+        // Nothing survives in `newDir` but the published marker itself — the
+        // temp file `createExclusiveDurable` staged content in before
+        // publishing was disposed of, not left behind as debris.
+        expect(readdirSync(newDir)).toEqual([".migrated-from-legacy"]);
+        expect(readFileSync(marker, "utf8")).toBe("");
+      } finally {
+        mock.module("node:fs", () => realFs);
+      }
+    },
+  );
 
   it("refuses to publish, without writing the marker, when a drive.ts single-instance lock is present at publish time", () => {
     const legacyDir = mkdtempSync(
@@ -1250,58 +1269,73 @@ describe("publishMigratedMarker", () => {
     );
   });
 
-  it("propagates a verification failure from the final plain-sibling refresh rather than publishing over it", async () => {
-    // A refresh that cannot confirm its own bytes is exactly the case this
-    // function must not paper over: publishing the marker afterward would
-    // certify a migrated copy this run never actually verified. Modelled
-    // the same way `copyPlainSiblingBestEffort`'s own TOCTOU test is —
-    // injecting a concurrent append at the exact read `atomicWrite`'s
-    // post-rename directory fsync performs, so the refresh's own two
-    // verification reads land on either side of it.
-    const actualFs = await import("node:fs");
-    const realFs = { ...actualFs };
-    const legacyDir = mkdtempSync(
-      join(tmpdir(), "publish-marker-plain-refresh-toctou-legacy-"),
-    );
-    const newDir = mkdtempSync(
-      join(tmpdir(), "publish-marker-plain-refresh-toctou-new-"),
-    );
-    cleanupDirs.push(legacyDir, newDir);
-    const marker = join(newDir, ".migrated-from-legacy");
-    const name = "drive-pr-4172.log";
-    const src = join(legacyDir, name);
-    writeFileSync(src, "round 1\n");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the directory fsync is skipped on Windows (opening a directory fails with EPERM), so the directory open this test observes never happens",
+    ),
+  )(
+    "propagates a verification failure from the final plain-sibling refresh rather than publishing over it",
+    async () => {
+      // A refresh that cannot confirm its own bytes is exactly the case this
+      // function must not paper over: publishing the marker afterward would
+      // certify a migrated copy this run never actually verified. Modelled
+      // the same way `copyPlainSiblingBestEffort`'s own TOCTOU test is —
+      // injecting a concurrent append at the exact read `atomicWrite`'s
+      // post-rename directory fsync performs, so the refresh's own two
+      // verification reads land on either side of it.
+      const actualFs = await import("node:fs");
+      const realFs = { ...actualFs };
+      const legacyDir = mkdtempSync(
+        join(tmpdir(), "publish-marker-plain-refresh-toctou-legacy-"),
+      );
+      const newDir = mkdtempSync(
+        join(tmpdir(), "publish-marker-plain-refresh-toctou-new-"),
+      );
+      cleanupDirs.push(legacyDir, newDir);
+      const marker = join(newDir, ".migrated-from-legacy");
+      const name = "drive-pr-4172.log";
+      const src = join(legacyDir, name);
+      writeFileSync(src, "round 1\n");
 
-    mock.module("node:fs", () => ({
-      ...realFs,
-      openSync: (p: string, flags: string) => {
-        if (flags === "r" && p === newDir) {
-          realFs.appendFileSync(src, "round 2 (concurrent)\n");
-        }
-        return realFs.openSync(p, flags);
-      },
-    }));
-    try {
-      let threw: unknown;
+      mock.module("node:fs", () => ({
+        ...realFs,
+        openSync: (p: string, flags: string) => {
+          if (flags === "r" && p === newDir) {
+            realFs.appendFileSync(src, "round 2 (concurrent)\n");
+          }
+          return realFs.openSync(p, flags);
+        },
+      }));
       try {
-        publishMigratedMarker(legacyDir, marker);
-      } catch (e) {
-        threw = e;
+        let threw: unknown;
+        try {
+          publishMigratedMarker(legacyDir, marker);
+        } catch (e) {
+          threw = e;
+        }
+        expect(threw).toBeInstanceOf(ExitError);
+        // Never published over the unverified refresh.
+        expect(existsSync(marker)).toBe(false);
+        // Retain-source held even on this failure path — the concurrently
+        // appended bytes are not lost, there is no delete step to lose them to.
+        expect(readFileSync(src, "utf8")).toBe(
+          "round 1\nround 2 (concurrent)\n",
+        );
+      } finally {
+        mock.module("node:fs", () => realFs);
       }
-      expect(threw).toBeInstanceOf(ExitError);
-      // Never published over the unverified refresh.
-      expect(existsSync(marker)).toBe(false);
-      // Retain-source held even on this failure path — the concurrently
-      // appended bytes are not lost, there is no delete step to lose them to.
-      expect(readFileSync(src, "utf8")).toBe("round 1\nround 2 (concurrent)\n");
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
+    },
+  );
 });
 
 describe("reconfirmMarkerDurably", () => {
-  it("fsyncs the marker file and its containing directory", async () => {
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "fsyncFileSync opens the file read-only and fsync on a read-only handle fails with EPERM on Windows, and the directory fsync is skipped",
+    ),
+  )("fsyncs the marker file and its containing directory", async () => {
     // main()'s "already migrated, nothing to do" fast path used to trust the
     // marker's mere existence as proof its original publish was durably
     // confirmed.
@@ -1352,79 +1386,95 @@ describe("copyAndRemove", () => {
     );
   });
 
-  it("fsyncs legacyDir after removing src, both in the fresh-copy and the resumable path", async () => {
-    // `rmSync(src)` alone does not make the deletion durable — a crash right
-    // after it can leave the unlink uncommitted while `dst` and the eventual
-    // migrated marker survive, resurrecting `src` on the next boot. Modelled by
-    // spying on `openSync` (what `fsyncDirectoryBestEffort` calls first) rather
-    // than asserting on-disk state, since a successful fsync has no observable
-    // side effect through the public filesystem API.
-    const actualFs = await import("node:fs");
-    const realFs = { ...actualFs };
-    const openedForSync: string[] = [];
-    mock.module("node:fs", () => ({
-      ...realFs,
-      openSync: (p: string, flags: string) => {
-        if (flags === "r") openedForSync.push(p);
-        return realFs.openSync(p, flags);
-      },
-    }));
-    try {
-      const freshLegacy = mkdtempSync(
-        join(tmpdir(), "copy-and-remove-fsync-fresh-legacy-"),
-      );
-      const freshNew = mkdtempSync(
-        join(tmpdir(), "copy-and-remove-fsync-fresh-new-"),
-      );
-      cleanupDirs.push(freshLegacy, freshNew);
-      writeFileSync(join(freshLegacy, "drive-pr-4172.json"), '{"rounds":1}');
-      copyAndRemove(freshLegacy, freshNew, "drive-pr-4172.json");
-      expect(openedForSync).toContain(freshLegacy);
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "fsyncFileSync opens the file read-only and fsync on a read-only handle fails with EPERM on Windows, and the directory fsync is skipped",
+    ),
+  )(
+    "fsyncs legacyDir after removing src, both in the fresh-copy and the resumable path",
+    async () => {
+      // `rmSync(src)` alone does not make the deletion durable — a crash right
+      // after it can leave the unlink uncommitted while `dst` and the eventual
+      // migrated marker survive, resurrecting `src` on the next boot. Modelled by
+      // spying on `openSync` (what `fsyncDirectoryBestEffort` calls first) rather
+      // than asserting on-disk state, since a successful fsync has no observable
+      // side effect through the public filesystem API.
+      const actualFs = await import("node:fs");
+      const realFs = { ...actualFs };
+      const openedForSync: string[] = [];
+      mock.module("node:fs", () => ({
+        ...realFs,
+        openSync: (p: string, flags: string) => {
+          if (flags === "r") openedForSync.push(p);
+          return realFs.openSync(p, flags);
+        },
+      }));
+      try {
+        const freshLegacy = mkdtempSync(
+          join(tmpdir(), "copy-and-remove-fsync-fresh-legacy-"),
+        );
+        const freshNew = mkdtempSync(
+          join(tmpdir(), "copy-and-remove-fsync-fresh-new-"),
+        );
+        cleanupDirs.push(freshLegacy, freshNew);
+        writeFileSync(join(freshLegacy, "drive-pr-4172.json"), '{"rounds":1}');
+        copyAndRemove(freshLegacy, freshNew, "drive-pr-4172.json");
+        expect(openedForSync).toContain(freshLegacy);
 
-      const resumableLegacy = mkdtempSync(
-        join(tmpdir(), "copy-and-remove-fsync-resumable-legacy-"),
+        const resumableLegacy = mkdtempSync(
+          join(tmpdir(), "copy-and-remove-fsync-resumable-legacy-"),
+        );
+        const resumableNew = mkdtempSync(
+          join(tmpdir(), "copy-and-remove-fsync-resumable-new-"),
+        );
+        cleanupDirs.push(resumableLegacy, resumableNew);
+        writeFileSync(
+          join(resumableLegacy, "drive-pr-4172.json"),
+          '{"rounds":1}',
+        );
+        writeFileSync(join(resumableNew, "drive-pr-4172.json"), '{"rounds":1}');
+        openedForSync.length = 0;
+        copyAndRemove(resumableLegacy, resumableNew, "drive-pr-4172.json");
+        expect(openedForSync).toContain(resumableLegacy);
+      } finally {
+        mock.module("node:fs", () => realFs);
+      }
+    },
+  );
+
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "fsyncFileSync opens the file read-only and fsync on a read-only handle fails with EPERM on Windows",
+    ),
+  )(
+    "is resumable when the destination already exists with IDENTICAL content — the retry-after-reappeared-content case",
+    () => {
+      // A retry after `publishMigratedMarker` refused on `reappeared-content`
+      // (some OTHER family member, not this anchor) re-enters `main()`, which
+      // calls this function again for an anchor that already migrated cleanly on
+      // the earlier attempt. `dst` already holding byte-identical content is the
+      // resumable case — this anchor's copy is done, only the reappeared legacy
+      // leftover needs clearing.
+      const legacyDir = mkdtempSync(
+        join(tmpdir(), "copy-and-remove-resumable-legacy-"),
       );
-      const resumableNew = mkdtempSync(
-        join(tmpdir(), "copy-and-remove-fsync-resumable-new-"),
+      const newDir = mkdtempSync(
+        join(tmpdir(), "copy-and-remove-resumable-new-"),
       );
-      cleanupDirs.push(resumableLegacy, resumableNew);
-      writeFileSync(
-        join(resumableLegacy, "drive-pr-4172.json"),
+      cleanupDirs.push(legacyDir, newDir);
+      writeFileSync(join(legacyDir, "drive-pr-4172.json"), '{"rounds":1}');
+      writeFileSync(join(newDir, "drive-pr-4172.json"), '{"rounds":1}');
+
+      copyAndRemove(legacyDir, newDir, "drive-pr-4172.json");
+
+      expect(existsSync(join(legacyDir, "drive-pr-4172.json"))).toBe(false);
+      expect(readFileSync(join(newDir, "drive-pr-4172.json"), "utf8")).toBe(
         '{"rounds":1}',
       );
-      writeFileSync(join(resumableNew, "drive-pr-4172.json"), '{"rounds":1}');
-      openedForSync.length = 0;
-      copyAndRemove(resumableLegacy, resumableNew, "drive-pr-4172.json");
-      expect(openedForSync).toContain(resumableLegacy);
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
-
-  it("is resumable when the destination already exists with IDENTICAL content — the retry-after-reappeared-content case", () => {
-    // A retry after `publishMigratedMarker` refused on `reappeared-content`
-    // (some OTHER family member, not this anchor) re-enters `main()`, which
-    // calls this function again for an anchor that already migrated cleanly on
-    // the earlier attempt. `dst` already holding byte-identical content is the
-    // resumable case — this anchor's copy is done, only the reappeared legacy
-    // leftover needs clearing.
-    const legacyDir = mkdtempSync(
-      join(tmpdir(), "copy-and-remove-resumable-legacy-"),
-    );
-    const newDir = mkdtempSync(
-      join(tmpdir(), "copy-and-remove-resumable-new-"),
-    );
-    cleanupDirs.push(legacyDir, newDir);
-    writeFileSync(join(legacyDir, "drive-pr-4172.json"), '{"rounds":1}');
-    writeFileSync(join(newDir, "drive-pr-4172.json"), '{"rounds":1}');
-
-    copyAndRemove(legacyDir, newDir, "drive-pr-4172.json");
-
-    expect(existsSync(join(legacyDir, "drive-pr-4172.json"))).toBe(false);
-    expect(readFileSync(join(newDir, "drive-pr-4172.json"), "utf8")).toBe(
-      '{"rounds":1}',
-    );
-  });
+    },
+  );
 
   it("refuses rather than overwriting when the destination already exists with DIFFERENT content — two independent copies now disagree", () => {
     // The failure mode this guards: without it, `copyFileSync` overwrites
@@ -1458,53 +1508,63 @@ describe("copyAndRemove", () => {
     );
   });
 
-  it("refuses to delete src on the RESUMABLE path when a concurrent writer appends between the byte-compare and the delete", async () => {
-    // An unlocked plain-file caller (drive.ts's bare appendFileSync for its
-    // log, orphans.ts's bare writeFileSync for .orphan-warned) can write to
-    // `src` during the fsync calls between the byte-compare and `rmSync` —
-    // silently losing the appended bytes. Modelled the same way as the
-    // fsync-spy test above: intercepting `openSync` — what
-    // `fsyncDirectoryBestEffort` calls first — to inject the concurrent write
-    // exactly where the real race lands, right before the re-check this fix
-    // adds.
-    const actualFs = await import("node:fs");
-    const realFs = { ...actualFs };
-    const legacyDir = mkdtempSync(
-      join(tmpdir(), "copy-and-remove-toctou-resumable-legacy-"),
-    );
-    const newDir = mkdtempSync(
-      join(tmpdir(), "copy-and-remove-toctou-resumable-new-"),
-    );
-    cleanupDirs.push(legacyDir, newDir);
-    const src = join(legacyDir, "drive-pr-4172.log");
-    writeFileSync(src, "round 1\n");
-    writeFileSync(join(newDir, "drive-pr-4172.log"), "round 1\n");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "fsyncFileSync opens the file read-only and fsync on a read-only handle fails with EPERM on Windows",
+    ),
+  )(
+    "refuses to delete src on the RESUMABLE path when a concurrent writer appends between the byte-compare and the delete",
+    async () => {
+      // An unlocked plain-file caller (drive.ts's bare appendFileSync for its
+      // log, orphans.ts's bare writeFileSync for .orphan-warned) can write to
+      // `src` during the fsync calls between the byte-compare and `rmSync` —
+      // silently losing the appended bytes. Modelled the same way as the
+      // fsync-spy test above: intercepting `openSync` — what
+      // `fsyncDirectoryBestEffort` calls first — to inject the concurrent write
+      // exactly where the real race lands, right before the re-check this fix
+      // adds.
+      const actualFs = await import("node:fs");
+      const realFs = { ...actualFs };
+      const legacyDir = mkdtempSync(
+        join(tmpdir(), "copy-and-remove-toctou-resumable-legacy-"),
+      );
+      const newDir = mkdtempSync(
+        join(tmpdir(), "copy-and-remove-toctou-resumable-new-"),
+      );
+      cleanupDirs.push(legacyDir, newDir);
+      const src = join(legacyDir, "drive-pr-4172.log");
+      writeFileSync(src, "round 1\n");
+      writeFileSync(join(newDir, "drive-pr-4172.log"), "round 1\n");
 
-    mock.module("node:fs", () => ({
-      ...realFs,
-      openSync: (p: string, flags: string) => {
-        if (flags === "r" && p === newDir) {
-          realFs.appendFileSync(src, "round 2 (concurrent)\n");
-        }
-        return realFs.openSync(p, flags);
-      },
-    }));
-    try {
-      let threw: unknown;
+      mock.module("node:fs", () => ({
+        ...realFs,
+        openSync: (p: string, flags: string) => {
+          if (flags === "r" && p === newDir) {
+            realFs.appendFileSync(src, "round 2 (concurrent)\n");
+          }
+          return realFs.openSync(p, flags);
+        },
+      }));
       try {
-        copyAndRemove(legacyDir, newDir, "drive-pr-4172.log");
-      } catch (e) {
-        threw = e;
+        let threw: unknown;
+        try {
+          copyAndRemove(legacyDir, newDir, "drive-pr-4172.log");
+        } catch (e) {
+          threw = e;
+        }
+        expect(threw).toBeInstanceOf(ExitError);
+        expect((threw as ExitError).code).toBe(1);
+        // The concurrently-appended bytes must survive — proof nothing was
+        // silently deleted out from under the writer.
+        expect(readFileSync(src, "utf8")).toBe(
+          "round 1\nround 2 (concurrent)\n",
+        );
+      } finally {
+        mock.module("node:fs", () => realFs);
       }
-      expect(threw).toBeInstanceOf(ExitError);
-      expect((threw as ExitError).code).toBe(1);
-      // The concurrently-appended bytes must survive — proof nothing was
-      // silently deleted out from under the writer.
-      expect(readFileSync(src, "utf8")).toBe("round 1\nround 2 (concurrent)\n");
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
+    },
+  );
 
   it("refuses to delete src on the FRESH-COPY path when a concurrent writer appends between the byte-compare and the delete", async () => {
     // No fsync sits between this branch's own compare (`a`/`b`, both read
@@ -1660,56 +1720,64 @@ describe("copyAndRemove", () => {
     expect(existsSync(join(legacyDir, "drive-pr-4172.json"))).toBe(true);
   });
 
-  it("refuses to delete src on the RESUMABLE path when it is swapped for a symlink between the byte-compare and the delete", async () => {
-    // Same substitution race as the concurrent-append tests above, but for
-    // the real-file invariant rather than byte content: a symlink swapped
-    // in after the entry check and before the final re-check, pointing at
-    // content that happens to byte-match, must still be caught.
-    const actualFs = await import("node:fs");
-    const realFs = { ...actualFs };
-    const legacyDir = mkdtempSync(
-      join(tmpdir(), "copy-and-remove-toctou-symlink-resumable-legacy-"),
-    );
-    const newDir = mkdtempSync(
-      join(tmpdir(), "copy-and-remove-toctou-symlink-resumable-new-"),
-    );
-    cleanupDirs.push(legacyDir, newDir);
-    const src = join(legacyDir, "drive-pr-4172.log");
-    const elsewhereDir = mkdtempSync(
-      join(tmpdir(), "copy-and-remove-toctou-symlink-swapped-in-"),
-    );
-    cleanupDirs.push(elsewhereDir);
-    const elsewhereTarget = join(elsewhereDir, "swapped-in.log");
-    writeFileSync(src, "round 1\n");
-    writeFileSync(elsewhereTarget, "round 1\n");
-    writeFileSync(join(newDir, "drive-pr-4172.log"), "round 1\n");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "fsyncFileSync opens the file read-only and fsync on a read-only handle fails with EPERM on Windows",
+    ),
+  )(
+    "refuses to delete src on the RESUMABLE path when it is swapped for a symlink between the byte-compare and the delete",
+    async () => {
+      // Same substitution race as the concurrent-append tests above, but for
+      // the real-file invariant rather than byte content: a symlink swapped
+      // in after the entry check and before the final re-check, pointing at
+      // content that happens to byte-match, must still be caught.
+      const actualFs = await import("node:fs");
+      const realFs = { ...actualFs };
+      const legacyDir = mkdtempSync(
+        join(tmpdir(), "copy-and-remove-toctou-symlink-resumable-legacy-"),
+      );
+      const newDir = mkdtempSync(
+        join(tmpdir(), "copy-and-remove-toctou-symlink-resumable-new-"),
+      );
+      cleanupDirs.push(legacyDir, newDir);
+      const src = join(legacyDir, "drive-pr-4172.log");
+      const elsewhereDir = mkdtempSync(
+        join(tmpdir(), "copy-and-remove-toctou-symlink-swapped-in-"),
+      );
+      cleanupDirs.push(elsewhereDir);
+      const elsewhereTarget = join(elsewhereDir, "swapped-in.log");
+      writeFileSync(src, "round 1\n");
+      writeFileSync(elsewhereTarget, "round 1\n");
+      writeFileSync(join(newDir, "drive-pr-4172.log"), "round 1\n");
 
-    mock.module("node:fs", () => ({
-      ...realFs,
-      openSync: (p: string, flags: string) => {
-        if (flags === "r" && p === newDir) {
-          realFs.rmSync(src, { force: true });
-          realFs.symlinkSync(elsewhereTarget, src);
-        }
-        return realFs.openSync(p, flags);
-      },
-    }));
-    try {
-      let threw: unknown;
+      mock.module("node:fs", () => ({
+        ...realFs,
+        openSync: (p: string, flags: string) => {
+          if (flags === "r" && p === newDir) {
+            realFs.rmSync(src, { force: true });
+            realFs.symlinkSync(elsewhereTarget, src);
+          }
+          return realFs.openSync(p, flags);
+        },
+      }));
       try {
-        copyAndRemove(legacyDir, newDir, "drive-pr-4172.log");
-      } catch (e) {
-        threw = e;
+        let threw: unknown;
+        try {
+          copyAndRemove(legacyDir, newDir, "drive-pr-4172.log");
+        } catch (e) {
+          threw = e;
+        }
+        expect(threw).toBeInstanceOf(ExitError);
+        expect((threw as ExitError).code).toBe(1);
+        // The swapped-in symlink survives untouched — proof nothing was
+        // deleted on the strength of a real-file check that ran too early.
+        expect(realFs.lstatSync(src).isSymbolicLink()).toBe(true);
+      } finally {
+        mock.module("node:fs", () => realFs);
       }
-      expect(threw).toBeInstanceOf(ExitError);
-      expect((threw as ExitError).code).toBe(1);
-      // The swapped-in symlink survives untouched — proof nothing was
-      // deleted on the strength of a real-file check that ran too early.
-      expect(realFs.lstatSync(src).isSymbolicLink()).toBe(true);
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
+    },
+  );
 
   it("never follows a symlink swapped in at dst between the initial entryPresent check and the write, on the FRESH-COPY path", async () => {
     // copyPlainSiblingBestEffort below had the identically-shaped gap; this
@@ -1799,58 +1867,68 @@ describe("copyPlainSiblingBestEffort", () => {
     expect(readFileSync(src, "utf8")).toBe("round 1\n");
   });
 
-  it("a concurrent append during the copy is never lost, because src is never deleted — even when the torn copy is (correctly) rejected", async () => {
-    // The exact interleaving: an unlocked writer (drive.ts's bare
-    // appendFileSync, or orphans.ts's bare writeFileSync for .orphan-warned)
-    // appends while a copy is in flight. `copyAndRemove`'s re-read narrows the
-    // window between the last re-read and a delete, but cannot close it (see
-    // the two "refuses to delete src ... when a concurrent writer appends"
-    // tests above); this function sidesteps the whole class instead, by never
-    // reaching a delete at all. The append still makes the just-taken copy
-    // stale, so verification still (correctly) refuses to publish it — that
-    // part of the behavior is unchanged and appropriate for a best-effort copy.
-    // What changed is the consequence: `src` — the only place a retry can
-    // recover the appended bytes from — is never touched, where the old
-    // copy-then-delete idiom would have destroyed it. Modelled the same way as
-    // the tests above — intercepting `openSync` to inject the concurrent write
-    // exactly where the real race would land, immediately before this
-    // function's own directory fsync.
-    const actualFs = await import("node:fs");
-    const realFs = { ...actualFs };
-    const legacyDir = mkdtempSync(
-      join(tmpdir(), "copy-plain-sibling-toctou-legacy-"),
-    );
-    const newDir = mkdtempSync(
-      join(tmpdir(), "copy-plain-sibling-toctou-new-"),
-    );
-    cleanupDirs.push(legacyDir, newDir);
-    const src = join(legacyDir, "drive-pr-4172.log");
-    writeFileSync(src, "round 1\n");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "fsyncFileSync opens the file read-only and fsync on a read-only handle fails with EPERM on Windows",
+    ),
+  )(
+    "a concurrent append during the copy is never lost, because src is never deleted — even when the torn copy is (correctly) rejected",
+    async () => {
+      // The exact interleaving: an unlocked writer (drive.ts's bare
+      // appendFileSync, or orphans.ts's bare writeFileSync for .orphan-warned)
+      // appends while a copy is in flight. `copyAndRemove`'s re-read narrows the
+      // window between the last re-read and a delete, but cannot close it (see
+      // the two "refuses to delete src ... when a concurrent writer appends"
+      // tests above); this function sidesteps the whole class instead, by never
+      // reaching a delete at all. The append still makes the just-taken copy
+      // stale, so verification still (correctly) refuses to publish it — that
+      // part of the behavior is unchanged and appropriate for a best-effort copy.
+      // What changed is the consequence: `src` — the only place a retry can
+      // recover the appended bytes from — is never touched, where the old
+      // copy-then-delete idiom would have destroyed it. Modelled the same way as
+      // the tests above — intercepting `openSync` to inject the concurrent write
+      // exactly where the real race would land, immediately before this
+      // function's own directory fsync.
+      const actualFs = await import("node:fs");
+      const realFs = { ...actualFs };
+      const legacyDir = mkdtempSync(
+        join(tmpdir(), "copy-plain-sibling-toctou-legacy-"),
+      );
+      const newDir = mkdtempSync(
+        join(tmpdir(), "copy-plain-sibling-toctou-new-"),
+      );
+      cleanupDirs.push(legacyDir, newDir);
+      const src = join(legacyDir, "drive-pr-4172.log");
+      writeFileSync(src, "round 1\n");
 
-    mock.module("node:fs", () => ({
-      ...realFs,
-      openSync: (p: string, flags: string) => {
-        if (flags === "r" && p === newDir) {
-          realFs.appendFileSync(src, "round 2 (concurrent)\n");
-        }
-        return realFs.openSync(p, flags);
-      },
-    }));
-    try {
-      let threw: unknown;
+      mock.module("node:fs", () => ({
+        ...realFs,
+        openSync: (p: string, flags: string) => {
+          if (flags === "r" && p === newDir) {
+            realFs.appendFileSync(src, "round 2 (concurrent)\n");
+          }
+          return realFs.openSync(p, flags);
+        },
+      }));
       try {
-        copyPlainSiblingBestEffort(legacyDir, newDir, "drive-pr-4172.log");
-      } catch (e) {
-        threw = e;
+        let threw: unknown;
+        try {
+          copyPlainSiblingBestEffort(legacyDir, newDir, "drive-pr-4172.log");
+        } catch (e) {
+          threw = e;
+        }
+        expect(threw).toBeInstanceOf(ExitError);
+        // The concurrently-appended bytes survive in the legacy original —
+        // there is no delete step for them to be lost to, torn copy or not.
+        expect(readFileSync(src, "utf8")).toBe(
+          "round 1\nround 2 (concurrent)\n",
+        );
+      } finally {
+        mock.module("node:fs", () => realFs);
       }
-      expect(threw).toBeInstanceOf(ExitError);
-      // The concurrently-appended bytes survive in the legacy original —
-      // there is no delete step for them to be lost to, torn copy or not.
-      expect(readFileSync(src, "utf8")).toBe("round 1\nround 2 (concurrent)\n");
-    } finally {
-      mock.module("node:fs", () => realFs);
-    }
-  });
+    },
+  );
 
   it("overwrites an existing destination unconditionally — these files only ever grow by append", () => {
     const legacyDir = mkdtempSync(

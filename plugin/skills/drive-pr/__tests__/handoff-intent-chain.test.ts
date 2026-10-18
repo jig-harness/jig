@@ -303,7 +303,12 @@ describe("handoff intent-chain section", () => {
         });
         expect(r.exitCode).toBe(0);
         const out = r.stdout.toString().trim();
-        expect(out.startsWith(handoffDir ?? realpathSync(repo))).toBe(true);
+        // .native: tmpdir is an 8.3 short path on Windows, git prints the long one.
+        expect(
+          realpathSync
+            .native(out)
+            .startsWith(realpathSync.native(handoffDir ?? repo)),
+        ).toBe(true);
         expect(readFileSync(out, "utf8")).toContain("Worktree chain.");
       }
     } finally {
@@ -452,8 +457,11 @@ describe("handoff intent-chain section", () => {
       });
       expect(r.exitCode).toBe(0);
       const out = r.stdout.toString().trim();
-      // realpath: tmpdir may be a symlink (macOS /var -> /private/var).
-      expect(realpathSync(out).startsWith(realpathSync(driven))).toBe(true);
+      // realpath: tmpdir may be a symlink (macOS /var -> /private/var) or an
+      // 8.3 short path (Windows); .native resolves both.
+      expect(
+        realpathSync.native(out).startsWith(realpathSync.native(driven)),
+      ).toBe(true);
       const text = readFileSync(out, "utf8");
       expect(text).toContain("The driven tree's pin.");
       expect(text).not.toContain("The other checkout's pin.");

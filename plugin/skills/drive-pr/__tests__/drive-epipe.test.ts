@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import {
   binDir,
   gitCleanEnv,
@@ -16,13 +16,19 @@ import {
   writeFixture,
 } from "./drive-pr-harness.ts";
 import { DRIVE_PACING_ENV, PASS_NOOP } from "./drive-loop-harness.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 useDrivePrSuite();
 
 // A shell pipeline: `head` reads the drive's first line and exits, closing
 // the pipe the drive goes on writing to; the drive's own exit status comes
 // back on standard error.
-describe.skipIf(process.platform === "win32")("a closed console", () => {
+describe.skipIf(
+  skipsOnWindows(
+    "process-lifecycle",
+    "a closed pipe to the driver is a POSIX SIGPIPE",
+  ),
+)("a closed console", () => {
   it("does not stop the drive, and the driver log records how it ended", async () => {
     const { dir, stateDir } = writeFixture({
       threads: [],
@@ -45,7 +51,7 @@ describe.skipIf(process.platform === "win32")("a closed console", () => {
         cwd: scratchClean.dir,
         env: {
           ...gitCleanEnv(),
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -88,7 +94,7 @@ describe.skipIf(process.platform === "win32")("a closed console", () => {
         cwd: scratchClean.dir,
         env: {
           ...gitCleanEnv(),
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),

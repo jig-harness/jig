@@ -31,6 +31,7 @@ import {
   isUsableState,
   withProgress,
 } from "../scripts/lib/state/schema.ts";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
 const DRIVE_STATE = join(SCRIPTS, "drive-state.ts");
@@ -71,7 +72,7 @@ async function driveState(
   stateDir: string,
   args: string[],
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn([DRIVE_STATE, ...args], {
+  const proc = Bun.spawn(scriptArgv(DRIVE_STATE, ...args), {
     env: cleanEnv({ DRIVE_PR_STATE_DIR: stateDir }),
     stdout: "pipe",
     stderr: "pipe",

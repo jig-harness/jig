@@ -7,7 +7,6 @@ import { describe, expect, it, spyOn } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -20,7 +19,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, join, resolve, delimiter } from "node:path";
 import { ExitError } from "../scripts/lib/cli";
 import { pidCheckCommand } from "../scripts/lib/proc";
 import { resolveActor } from "../scripts/lib/state/actor";
@@ -60,6 +59,12 @@ import {
   makeScratchRepo,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import {
+  byPlatform,
+  exceptOnWindows,
+} from "../../../../lib/test-helpers/windows-skip.ts";
 
 useDrivePrSuite();
 
@@ -81,12 +86,15 @@ describe("drive-state.ts durability", () => {
     // make it resolve a DIFFERENT actor than the module-level ACTOR the
     // tree-lease tests assert against — reading their own assertions as
     // passing or failing for the wrong reason rather than the one under test.
-    const proc = Bun.spawn([join(SCRIPTS, "drive-state.ts"), ...args], {
-      env: { ...gitCleanEnv(), DRIVE_PR_STATE_DIR: dir, ...env },
-      stdin: stdin !== undefined ? "pipe" : undefined,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawn(
+      scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
+      {
+        env: { ...gitCleanEnv(), DRIVE_PR_STATE_DIR: dir, ...env },
+        stdin: stdin !== undefined ? "pipe" : undefined,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     if (stdin !== undefined) {
       proc.stdin.write(stdin);
       proc.stdin.end();
@@ -98,6 +106,13 @@ describe("drive-state.ts durability", () => {
     ]);
     return { stdout: stdout.trim(), stderr, exitCode };
   }
+
+  /**
+   * A directory as git's `--show-toplevel` spells it, and as the product prints
+   * it: symlinks and 8.3 short names resolved, forward slashes.
+   */
+  const gitPathOf = (p: string): string =>
+    realpathSync.native(p).replaceAll("\\", "/");
 
   /**
    * Two linked worktrees of one clone, therefore ONE shared drive state — the
@@ -140,7 +155,17 @@ describe("drive-state.ts durability", () => {
     // PR-wide admission gate that difference decides whether a second worktree
     // is admitted at all. A probe whose subject changes with the harness that
     // runs it is a probe that proves whatever the machine felt like proving.
-    return { a: dir, b, env: { ...env, DRIVE_PR_SESSION: "", CLAUDE_PID: "" } };
+    // Windows' home directory is USERPROFILE, not HOME.
+    return {
+      a: dir,
+      b,
+      env: {
+        ...env,
+        DRIVE_PR_SESSION: "",
+        CLAUDE_PID: "",
+        USERPROFILE: suiteHome,
+      },
+    };
   }
 
   /**
@@ -156,13 +181,16 @@ describe("drive-state.ts durability", () => {
     args: string[],
     stdin?: string,
   ) {
-    const p = Bun.spawnSync([join(SCRIPTS, "drive-state.ts"), ...args], {
-      cwd,
-      env,
-      stdin: stdin === undefined ? undefined : Buffer.from(stdin),
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const p = Bun.spawnSync(
+      scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
+      {
+        cwd,
+        env,
+        stdin: stdin === undefined ? undefined : Buffer.from(stdin),
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     return {
       exitCode: p.exitCode,
       stdout: p.stdout.toString(),
@@ -600,12 +628,15 @@ describe("drive-state.ts durability", () => {
       stderr: "pipe",
     });
     const run = (cwd: string, args: string[]) => {
-      const p = Bun.spawnSync([join(SCRIPTS, "drive-state.ts"), ...args], {
-        cwd,
-        env,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+      const p = Bun.spawnSync(
+        scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
+        {
+          cwd,
+          env,
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
       return p.stdout.toString().trim();
     };
     // Park in the MAIN worktree…
@@ -666,22 +697,25 @@ describe("drive-state.ts durability", () => {
     // `bump-round` would have written before the clone-wide move — this is the
     // orphan, not a fixture artefact.
     Bun.spawnSync(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-state.ts"),
         "bump-round",
         "999",
         "--head",
         "aaaaaaa",
-      ],
+      ),
       { cwd: linked, env: { ...env, DRIVE_PR_STATE_DIR: privateDir } },
     );
     const run = () =>
-      Bun.spawnSync([join(SCRIPTS, "drive-state.ts"), "rounds", "999"], {
-        cwd: linked,
-        env,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+      Bun.spawnSync(
+        scriptArgv(join(SCRIPTS, "drive-state.ts"), "rounds", "999"),
+        {
+          cwd: linked,
+          env,
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
     const first = run();
     const second = run();
     const third = run();
@@ -731,18 +765,18 @@ describe("drive-state.ts durability", () => {
       .stdout.toString()
       .trim();
     Bun.spawnSync(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-state.ts"),
         "bump-round",
         "999",
         "--head",
         "aaaaaaa",
-      ],
+      ),
       { cwd: worktreeA, env: { ...env, DRIVE_PR_STATE_DIR: privateDirA } },
     );
     // Resumed from B, which has never seen this PR.
     const r = Bun.spawnSync(
-      [join(SCRIPTS, "drive-state.ts"), "rounds", "999"],
+      scriptArgv(join(SCRIPTS, "drive-state.ts"), "rounds", "999"),
       {
         cwd: worktreeB,
         env,
@@ -833,17 +867,17 @@ describe("drive-state.ts durability", () => {
       .stdout.toString()
       .trim();
     Bun.spawnSync(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-state.ts"),
         "bump-round",
         "999",
         "--head",
         "aaaaaaa",
-      ],
+      ),
       { cwd: linked, env: { ...env, DRIVE_PR_STATE_DIR: privateDir } },
     );
     const r = Bun.spawnSync(
-      [join(SCRIPTS, "drive-state.ts"), "rounds", "999"],
+      scriptArgv(join(SCRIPTS, "drive-state.ts"), "rounds", "999"),
       {
         cwd: linked,
         env,
@@ -906,17 +940,17 @@ describe("drive-state.ts durability", () => {
       .stdout.toString()
       .trim();
     Bun.spawnSync(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-state.ts"),
         "bump-round",
         "999",
         "--head",
         "aaaaaaa",
-      ],
+      ),
       { cwd: linked, env: { ...env, DRIVE_PR_STATE_DIR: privateDir } },
     );
     const r = Bun.spawnSync(
-      [join(SCRIPTS, "drive-state.ts"), "rounds", "999"],
+      scriptArgv(join(SCRIPTS, "drive-state.ts"), "rounds", "999"),
       {
         cwd: linked,
         env,
@@ -993,22 +1027,25 @@ describe("drive-state.ts durability", () => {
       .stdout.toString()
       .trim();
     Bun.spawnSync(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-state.ts"),
         "bump-round",
         "999",
         "--head",
         "aaaaaaa",
-      ],
+      ),
       { cwd: linked, env: { ...env, DRIVE_PR_STATE_DIR: privateDir } },
     );
     const run = () =>
-      Bun.spawnSync([join(SCRIPTS, "drive-state.ts"), "rounds", "999"], {
-        cwd: linked,
-        env,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+      Bun.spawnSync(
+        scriptArgv(join(SCRIPTS, "drive-state.ts"), "rounds", "999"),
+        {
+          cwd: linked,
+          env,
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
     expect(run().stderr.toString()).toContain("worktree-private one exists");
     const marker = join(commonDir, ".drive-pr-999.orphan-warned");
     // A delivered warning leaves a NON-empty marker and stays quiet.
@@ -1058,13 +1095,13 @@ describe("drive-state.ts durability", () => {
       .stdout.toString()
       .trim();
     Bun.spawnSync(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-state.ts"),
         "bump-round",
         "999",
         "--head",
         "aaaaaaa",
-      ],
+      ),
       { cwd: linked, env: { ...env, DRIVE_PR_STATE_DIR: privateDir } },
     );
     // A QUIET caller runs first — stderr genuinely redirected to /dev/null by
@@ -1084,7 +1121,7 @@ describe("drive-state.ts durability", () => {
     );
     // …so the first caller a human can actually read still gets the warning.
     const visible = Bun.spawnSync(
-      [join(SCRIPTS, "drive-state.ts"), "rounds", "999"],
+      scriptArgv(join(SCRIPTS, "drive-state.ts"), "rounds", "999"),
       { cwd: linked, env, stdout: "pipe", stderr: "pipe" },
     );
     expect(visible.stderr.toString()).toContain("worktree-private one exists");
@@ -1115,17 +1152,17 @@ describe("drive-state.ts durability", () => {
       .stdout.toString()
       .trim();
     Bun.spawnSync(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-state.ts"),
         "bump-round",
         "999",
         "--head",
         "aaaaaaa",
-      ],
+      ),
       { cwd: linked, env: { ...env, DRIVE_PR_STATE_DIR: privateDir } },
     );
     const run = (args: string[]) =>
-      Bun.spawnSync([join(SCRIPTS, "drive-state.ts"), ...args], {
+      Bun.spawnSync(scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args), {
         cwd: linked,
         env,
         stdout: "pipe",
@@ -1174,12 +1211,11 @@ describe("drive-state.ts durability", () => {
     const d = stateDirFor("reset");
     const ghRoot = mkdtempSync(join(tmpdir(), "drive-state-reset-gh-"));
     const ghBin = join(ghRoot, "gh");
-    writeFileSync(
+    writeFakeProgram(
       ghBin,
       `#!/bin/sh\ncase "$*" in\n  *timeline*) printf '%s\\n' '[[]]' ;;\n  *) exit 1 ;;\nesac\n`,
     );
-    chmodSync(ghBin, 0o755);
-    const ghEnv = { PATH: `${ghRoot}:${process.env.PATH ?? ""}` };
+    const ghEnv = { PATH: `${ghRoot}${delimiter}${process.env.PATH ?? ""}` };
     writeFileSync(join(d, "drive-pr-999.json"), "not json at all");
     expect((await state(d, ["reset", "999"], ghEnv)).exitCode).toBe(0);
     expect((await state(d, ["rounds", "999"])).stdout).toBe("0");
@@ -1418,7 +1454,12 @@ describe("drive-state.ts durability", () => {
         },
       );
       await holder.exited;
-      expect(holder.signalCode).toBe("SIGKILL");
+      // Killed by SIGKILL where signals exist. On Windows, Git Bash's
+      // `kill -9 $$` ends the shell with status 0, so there the recovery
+      // below is the only check.
+      exceptOnWindows("Git Bash's kill -9 $$ exits 0 on Windows", () =>
+        expect(holder.signalCode !== null || holder.exitCode !== 0).toBe(true),
+      );
 
       const recovered = JSON.parse((await state(d, ["held", "999"])).stdout);
       expect(recovered).toEqual([
@@ -1950,7 +1991,7 @@ describe("drive-state.ts durability", () => {
       const d = stateDirFor("ready-claim-recheck");
       const signal = join(d, "claim-read-done");
       const proc = Bun.spawn(
-        [join(SCRIPTS, "drive-state.ts"), "claim-ready-mark", "999"],
+        scriptArgv(join(SCRIPTS, "drive-state.ts"), "claim-ready-mark", "999"),
         {
           env: {
             ...process.env,
@@ -4816,7 +4857,13 @@ describe("drive-state.ts durability", () => {
         // about, so the pid, the liveness probe and the way out are all part of
         // the contract — not decoration.
         expect(refused.stderr).toContain(`pid ${a.pid}`);
-        expect(refused.stderr).toContain(`ps -p ${a.pid}`);
+        expect(refused.stderr).toContain(
+          // Windows has no ps; the refusal names its own process probe there.
+          byPlatform("Windows has no ps", {
+            windows: `Get-Process -Id ${a.pid}`,
+            posix: `ps -p ${a.pid}`,
+          }),
+        );
         expect(refused.stderr).toContain("clear-lease 999");
       } finally {
         a.stop();
@@ -5582,7 +5629,11 @@ describe("drive-state.ts durability", () => {
       expect(pidCheckCommand(42, other, "")).toBeNull();
       // Locally there is nothing to guess, so no `platform` is needed.
       const localExpected =
-        process.platform === "win32" ? "Get-Process -Id 42" : "ps -p 42";
+        // Windows has no ps, so the local probe there is Get-Process.
+        byPlatform("Windows has no ps", {
+          windows: "Get-Process -Id 42",
+          posix: "ps -p 42",
+        });
       expect(pidCheckCommand(42, hostname())).toBe(localExpected);
       expect(pidCheckCommand(42, "")).toBe(localExpected);
     });
@@ -6342,11 +6393,11 @@ describe("drive-state.ts durability", () => {
         // The actor is a sha256 prefix, so a refusal carrying only that tells
         // the reader which tree in the one form they cannot act on.
         expect(fromB.stderr).toContain(`pid ${sessionA.pid}`);
-        // `realpathSync`, because git's `--show-toplevel` resolves symlinks and
+        // `gitPathOf`, because git's `--show-toplevel` resolves symlinks and
         // the macOS temp root is one (`/var` → `/private/var`). Comparing the
         // unresolved path passes on Linux and fails here for a reason that has
         // nothing to do with the behaviour under test.
-        expect(fromB.stderr).toContain(realpathSync(a));
+        expect(fromB.stderr).toContain(gitPathOf(a));
         expect(fromB.stderr).toContain("clear-lease 999 --all");
 
         // NOTHING was written by the refused tree — not the hold, and not a
@@ -6706,7 +6757,13 @@ describe("drive-state.ts durability", () => {
         // which is the same hook the takeover probes use.
         const signal = join(d, "in-locked-section");
         const proc = Bun.spawn(
-          [join(SCRIPTS, "drive-state.ts"), "phase", "999", "--set", "triage"],
+          scriptArgv(
+            join(SCRIPTS, "drive-state.ts"),
+            "phase",
+            "999",
+            "--set",
+            "triage",
+          ),
           {
             env: {
               ...process.env,
@@ -6773,7 +6830,13 @@ describe("drive-state.ts durability", () => {
       const sessionless = { DRIVE_PR_SESSION: "", CLAUDE_PID: "" };
       const signal = join(d, "in-locked-section");
       const proc = Bun.spawn(
-        [join(SCRIPTS, "drive-state.ts"), "phase", "999", "--set", "triage"],
+        scriptArgv(
+          join(SCRIPTS, "drive-state.ts"),
+          "phase",
+          "999",
+          "--set",
+          "triage",
+        ),
         {
           env: {
             ...process.env,
@@ -7096,7 +7159,7 @@ describe("drive-state.ts durability", () => {
         ) as { pid: number; worktree: string; self: boolean }[];
         expect(fromB).toHaveLength(1);
         expect(fromB[0]?.pid).toBe(sessionA.pid);
-        expect(fromB[0]?.worktree).toBe(realpathSync(a));
+        expect(fromB[0]?.worktree).toBe(gitPathOf(a));
         expect(fromB[0]?.self).toBe(false);
 
         // …and the same read from A calls it its own.
@@ -7139,7 +7202,7 @@ describe("drive-state.ts durability", () => {
         // The operator is overruling a LIVE claim, so the record they are
         // overruling is the evidence for whether that was right.
         expect(cleared.stderr).toContain(`pid ${sessionA.pid}`);
-        expect(cleared.stderr).toContain(realpathSync(a));
+        expect(cleared.stderr).toContain(gitPathOf(a));
 
         expect(drive(b, eb, ["phase", "999", "--set", "triage"]).exitCode).toBe(
           0,
@@ -7750,7 +7813,13 @@ describe("drive-state.ts durability", () => {
         const sessionless = { DRIVE_PR_SESSION: "", CLAUDE_PID: "" };
         const signal = join(d, "in-locked-section-tree-fence");
         const proc = Bun.spawn(
-          [join(SCRIPTS, "drive-state.ts"), "phase", "999", "--set", "triage"],
+          scriptArgv(
+            join(SCRIPTS, "drive-state.ts"),
+            "phase",
+            "999",
+            "--set",
+            "triage",
+          ),
           {
             env: {
               ...process.env,
@@ -7833,7 +7902,7 @@ describe("drive-state.ts durability", () => {
         env: Record<string, string> = {},
       ) {
         const proc = Bun.spawn(
-          [join(SCRIPTS, "release-sessionless-lease.ts"), ...args],
+          scriptArgv(join(SCRIPTS, "release-sessionless-lease.ts"), ...args),
           {
             // gitCleanEnv() for the reason `state()` gives: the script resolves
             // the actor through `git rev-parse`, and an inherited GIT_DIR would
@@ -7858,7 +7927,7 @@ describe("drive-state.ts durability", () => {
         args: string[],
       ) {
         const p = Bun.spawnSync(
-          [join(SCRIPTS, "release-sessionless-lease.ts"), ...args],
+          scriptArgv(join(SCRIPTS, "release-sessionless-lease.ts"), ...args),
           { cwd, env, stdout: "pipe", stderr: "pipe" },
         );
         return {
@@ -7991,7 +8060,13 @@ describe("drive-state.ts durability", () => {
         const sessionless = { DRIVE_PR_SESSION: "", CLAUDE_PID: "" };
         const signal = join(d, "in-locked-section-release");
         const proc = Bun.spawn(
-          [join(SCRIPTS, "drive-state.ts"), "phase", "999", "--set", "triage"],
+          scriptArgv(
+            join(SCRIPTS, "drive-state.ts"),
+            "phase",
+            "999",
+            "--set",
+            "triage",
+          ),
           {
             env: {
               ...process.env,
@@ -8886,7 +8961,8 @@ describe("drive-state.ts durability", () => {
       try {
         expect(existsSync(newDir)).toBe(false);
         const r = Bun.spawnSync([process.execPath, probeScript], {
-          env: { ...gitCleanEnv(), HOME: fakeHome },
+          // Windows' home directory is USERPROFILE, not HOME.
+          env: { ...gitCleanEnv(), HOME: fakeHome, USERPROFILE: fakeHome },
           stdout: "pipe",
           stderr: "pipe",
         });
@@ -9095,7 +9171,7 @@ describe("drive-state.ts durability", () => {
       let exitedPromise: Promise<number> | undefined;
       try {
         proc = Bun.spawn(
-          [
+          scriptArgv(
             join(SCRIPTS, "drive-state.ts"),
             "hold",
             "999",
@@ -9107,7 +9183,7 @@ describe("drive-state.ts durability", () => {
             "accepted",
             "--comment-url",
             "https://example.invalid/thread-b-reply",
-          ],
+          ),
           {
             cwd: b,
             env: { ...env, DRIVE_PR_SESSION: String(process.pid) },

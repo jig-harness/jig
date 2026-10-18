@@ -8,6 +8,7 @@ import { expect, it } from "bun:test";
 import { join } from "node:path";
 import * as review from "../../../shared/proc.ts";
 import * as drive from "../scripts/lib/proc.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 it("re-exports the shared timeout reader rather than a copy", () => {
   expect(drive.readTimeoutEnv).toBe(review.readTimeoutEnv);
@@ -38,7 +39,9 @@ console.log(["SIGINT", "SIGTERM", "SIGHUP"].map((s) => process.listenerCount(s))
 });
 
 // POSIX process groups and pgrep.
-it.skipIf(process.platform === "win32")(
+it.skipIf(
+  skipsOnWindows("process-lifecycle", "POSIX process groups and pgrep"),
+)(
   "a deadlined child is cancelled through the shared registry",
   async () => {
     // A child with a deadline runs in its own process group, which only the

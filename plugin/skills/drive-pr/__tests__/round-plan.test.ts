@@ -7,17 +7,13 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, delimiter } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gatesOnlyPlan } from "../scripts/round-plan.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 const ROUND_PLAN = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -61,7 +57,7 @@ describe("round-plan.ts unconcluded git operation guard", () => {
     out.GIT_CONFIG_GLOBAL = "/dev/null";
     out.GIT_CONFIG_NOSYSTEM = "1";
     out.JIG_OVERLAY = join(dir, ".config", "jig.yaml");
-    out.PATH = `${bin}:${process.env.PATH ?? ""}`;
+    out.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
     return out;
   }
 
@@ -119,7 +115,7 @@ describe("round-plan.ts unconcluded git operation guard", () => {
     // A fake `gh` for a branch with no pull request, so the plan diffs
     // against the integration branch; every other call fails.
     bin = mkdtempSync(join(tmpdir(), "round-plan-op-guard-bin-"));
-    writeFileSync(
+    writeFakeProgram(
       join(bin, "gh"),
       `#!/bin/sh
 case "$*" in
@@ -128,7 +124,6 @@ case "$*" in
 esac
 `,
     );
-    chmodSync(join(bin, "gh"), 0o755);
     mustGit("init", "-q", "-b", "main");
     // A stub resolver emitting the minimal contract round-plan.ts reads, so
     // the clean case reaches the printed plan without the real catalog.
@@ -160,14 +155,24 @@ process.stdout.write(JSON.stringify({ validation: { localChecks: ['echo stub-che
     rmSync(bin, { recursive: true, force: true });
   });
 
-  it("resolves a plan on a clean tree", () => {
+  it.skipIf(
+    skipsOnWindows(
+      "git-bash",
+      "the overlay-configured validation_plan_command runs through cmd.exe, which mangles its double-quoted executable path",
+    ),
+  )("resolves a plan on a clean tree", () => {
     const r = roundPlan();
     expect(r.stderr).not.toContain("unconcluded git operation");
     expect(r.code).toBe(0);
     expect(r.stdout).toContain("echo stub-check");
   });
 
-  it("runs the configured load guard before printing the plan", () => {
+  it.skipIf(
+    skipsOnWindows(
+      "git-bash",
+      "the overlay-configured validation_plan_command runs through cmd.exe, which mangles its double-quoted executable path",
+    ),
+  )("runs the configured load guard before printing the plan", () => {
     writeOverlay({
       repository: { base_branch: "develop" },
       drive: {
@@ -182,7 +187,12 @@ process.stdout.write(JSON.stringify({ validation: { localChecks: ['echo stub-che
     expect(r.stdout).toContain("echo stub-check");
   });
 
-  it("prints a warning naming a load guard that fails, and still plans", () => {
+  it.skipIf(
+    skipsOnWindows(
+      "git-bash",
+      "the overlay-configured validation_plan_command runs through cmd.exe, which mangles its double-quoted executable path",
+    ),
+  )("prints a warning naming a load guard that fails, and still plans", () => {
     writeOverlay({
       repository: { base_branch: "develop" },
       drive: {
@@ -272,7 +282,7 @@ process.stdout.write(JSON.stringify({ validation: { localChecks: ['echo stub-che
   it("fails closed when the git-dir probe itself cannot run", () => {
     const binDir = mkdtempSync(join(tmpdir(), "round-plan-op-guard-bin-"));
     const gitStub = join(binDir, "git");
-    writeFileSync(
+    writeFakeProgram(
       gitStub,
       `#!/usr/bin/env bash
 case "$1 $2" in
@@ -282,11 +292,10 @@ case "$1 $2" in
 esac
 `,
     );
-    chmodSync(gitStub, 0o755);
     try {
       const r = Bun.spawnSync([process.execPath, ROUND_PLAN], {
         cwd: dir,
-        env: { ...env(), PATH: `${binDir}:${env().PATH}` },
+        env: { ...env(), PATH: `${binDir}${delimiter}${env().PATH}` },
         stdout: "pipe",
         stderr: "pipe",
       });
@@ -334,7 +343,7 @@ describe("a stacked layer's round base", () => {
     out.GIT_AUTHOR_EMAIL = "probe@example.invalid";
     out.GIT_COMMITTER_NAME = "round-plan probe";
     out.GIT_COMMITTER_EMAIL = "probe@example.invalid";
-    out.PATH = `${bin}:${process.env.PATH ?? ""}`;
+    out.PATH = `${bin}${delimiter}${process.env.PATH ?? ""}`;
     out.FAKE_PR_BASE = base ?? "";
     out.FAKE_PR_COUNT = fake.pulls ?? "1";
     out.FAKE_REPO_NAME = fake.repo ?? "widgets";
@@ -393,7 +402,7 @@ describe("a stacked layer's round base", () => {
     dir = mkdtempSync(join(tmpdir(), "round-plan-stack-"));
     home = mkdtempSync(join(tmpdir(), "round-plan-stack-home-"));
     bin = mkdtempSync(join(tmpdir(), "round-plan-stack-bin-"));
-    writeFileSync(
+    writeFakeProgram(
       join(bin, "gh"),
       `#!/bin/sh
 case "$*" in
@@ -406,7 +415,6 @@ case "$*" in
 esac
 `,
     );
-    chmodSync(join(bin, "gh"), 0o755);
     mustGit("init", "-q", "-b", "develop");
     mustGit("remote", "add", "origin", "https://github.com/acme/widgets.git");
     mkdirSync(join(dir, ".config"), { recursive: true });

@@ -26,6 +26,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cloneKey, peekCloneKey } from "../scripts/lib/state/clone-key.ts";
 import { createExclusiveDurable } from "../scripts/lib/state/fsutil.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 describe("cloneKey", () => {
   it("is deterministic for the same path", () => {
@@ -185,47 +186,56 @@ describe("cloneKey", () => {
     }
   });
 
-  it("refuses to trust its own publish when the post-link directory fsync fails, rather than treating it as a raced winner", async () => {
-    // The gap this closes: when
-    // `createExclusiveDurable`'s publishing `link` succeeds but the
-    // FOLLOWING directory fsync then fails, the old code here caught
-    // whatever `createExclusiveDurable` threw, re-read the target — which
-    // now has THIS call's own just-linked content — and returned it as if
-    // another process had won a genuine race. `cloneKey` must instead
-    // refuse outright, since this call cannot vouch for the directory
-    // entry's durability and no racing winner is actually involved.
-    const dir = mkdtempSync(join(tmpdir(), "clone-key-dirfsync-fail-"));
-    const target = join(dir, "drive-pr-clone-id");
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the post-link directory fsync is skipped on Windows (opening a directory fails with EPERM), so its failure is never observed",
+    ),
+  )(
+    "refuses to trust its own publish when the post-link directory fsync fails, rather than treating it as a raced winner",
+    async () => {
+      // The gap this closes: when
+      // `createExclusiveDurable`'s publishing `link` succeeds but the
+      // FOLLOWING directory fsync then fails, the old code here caught
+      // whatever `createExclusiveDurable` threw, re-read the target — which
+      // now has THIS call's own just-linked content — and returned it as if
+      // another process had won a genuine race. `cloneKey` must instead
+      // refuse outright, since this call cannot vouch for the directory
+      // entry's durability and no racing winner is actually involved.
+      const dir = mkdtempSync(join(tmpdir(), "clone-key-dirfsync-fail-"));
+      const target = join(dir, "drive-pr-clone-id");
 
-    const actualFs = await import("node:fs");
-    const realOpenSync = actualFs.openSync;
-    const realFsyncSync = actualFs.fsyncSync;
-    const realFs = { ...actualFs };
+      const actualFs = await import("node:fs");
+      const realOpenSync = actualFs.openSync;
+      const realFsyncSync = actualFs.fsyncSync;
+      const realFs = { ...actualFs };
 
-    let dirFd = -1;
-    mock.module("node:fs", () => ({
-      ...realFs,
-      openSync: (path: string, flags: string) => {
-        const fd = realOpenSync(path, flags);
-        if (path === dir && flags === "r") dirFd = fd;
-        return fd;
-      },
-      fsyncSync: (fd: number) => {
-        if (fd === dirFd) throw new Error("simulated directory fsync failure");
-        return realFsyncSync(fd);
-      },
-    }));
+      let dirFd = -1;
+      mock.module("node:fs", () => ({
+        ...realFs,
+        openSync: (path: string, flags: string) => {
+          const fd = realOpenSync(path, flags);
+          if (path === dir && flags === "r") dirFd = fd;
+          return fd;
+        },
+        fsyncSync: (fd: number) => {
+          if (fd === dirFd)
+            throw new Error("simulated directory fsync failure");
+          return realFsyncSync(fd);
+        },
+      }));
 
-    try {
-      expect(() => cloneKey(dir)).toThrow();
-      // The link already landed — this call's own content is really there —
-      // so refusing must not have deleted it out from under a later retry.
-      expect(existsSync(target)).toBe(true);
-    } finally {
-      mock.module("node:fs", () => realFs);
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+      try {
+        expect(() => cloneKey(dir)).toThrow();
+        // The link already landed — this call's own content is really there —
+        // so refusing must not have deleted it out from under a later retry.
+        expect(existsSync(target)).toBe(true);
+      } finally {
+        mock.module("node:fs", () => realFs);
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("never exposes the target file before its content is complete — the write lands on a temp path, not the target", async () => {
     // The earlier direct-`wx`-on-target implementation created the target's own

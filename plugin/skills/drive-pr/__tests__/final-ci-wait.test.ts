@@ -1,12 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, delimiter } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   type FinalCiSignals,
   FinalCiWait,
 } from "../scripts/lib/final-ci-wait.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const HEAD = "a".repeat(40);
 type Sig = Omit<FinalCiSignals, "observedAt">;
@@ -204,7 +205,7 @@ it("default final-CI signals use conditional HTTP and invalidate waits on transp
     });
     expectSpawnExit(init, 0, "hermetic fixture git init");
     writeFileSync(join(dir, "phase"), "open");
-    writeFileSync(
+    writeFakeProgram(
       join(dir, "gh"),
       String.raw`#!${process.execPath}
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -226,7 +227,6 @@ process.stdout.write('HTTP/2.0 ' + status + ' fixture\r\nEtag: ' + tag + '\r\n\r
 if (status === 200) process.stdout.write(JSON.stringify(body));
 process.exit(status === 200 ? 0 : 1);
 `,
-      { mode: 0o755 },
     );
     const script = `
 import { writeFileSync } from 'node:fs';
@@ -257,7 +257,7 @@ console.log(JSON.stringify(results));
       cwd: dir,
       env: {
         ...fixtureEnv,
-        PATH: `${dir}:${process.env.PATH}`,
+        PATH: `${dir}${delimiter}${process.env.PATH}`,
         FIXTURE_DIR: dir,
         JIG_GH_CACHE_DIR: join(dir, "cache"),
         JIG_GH_CACHE: "on",

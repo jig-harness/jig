@@ -24,7 +24,6 @@ import {
   it,
 } from "bun:test";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -33,8 +32,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { readPrState } from "../scripts/lib/pr-state.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const STUB = `#!/usr/bin/env bash
 D="\${GH_STUB_DIR:?GH_STUB_DIR not set}"
@@ -92,8 +92,7 @@ beforeAll(() => {
   tmpRoot = mkdtempSync(join(tmpdir(), "pr-state-"));
   binDir = join(tmpRoot, "bin");
   mkdirSync(binDir);
-  writeFileSync(join(binDir, "gh"), STUB);
-  chmodSync(join(binDir, "gh"), 0o755);
+  writeFakeProgram(join(binDir, "gh"), STUB);
   for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
 });
 
@@ -108,7 +107,7 @@ afterAll(() => {
 beforeEach(() => {
   fixDir = join(tmpRoot, `fix-${++seq}`);
   mkdirSync(fixDir);
-  process.env.PATH = `${binDir}:${savedEnv.PATH}`;
+  process.env.PATH = `${binDir}${delimiter}${savedEnv.PATH}`;
   process.env.GH_STUB_DIR = fixDir;
   process.env.GH_CALL_TIMEOUT = "20";
   // Off beats an inherited JIG_GH_CACHE_DIR, which itself beats NODE_ENV=test.

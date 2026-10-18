@@ -39,6 +39,20 @@ import {
 } from "../scripts/lib/claim.ts";
 import { ExitError } from "../scripts/lib/cli.ts";
 import { freshState } from "../scripts/lib/state/schema.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
+
+// The listing advertises `--stop` only where `ps` can verify the pid; on
+// Windows it prints "unavailable" instead.
+const STOP_HINTED = !skipsOnWindows(
+  "process-lifecycle",
+  "--stop and its hint need `ps` to verify the driver's pid",
+);
+
+const NO_PS = skipsOnWindows(
+  "process-lifecycle",
+  "--stop verifies the driver's pid with `ps`, and the WEDGED verdict looks for a pass child in the process table",
+);
 
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
 const DRIVES = join(SCRIPTS, "drives.ts");
@@ -62,7 +76,12 @@ function cleanEnv(extra: Record<string, string>): Record<string, string> {
     if (k.startsWith("GIT_") || v === undefined) continue;
     env[k] = v;
   }
-  return { ...env, ...extra };
+  // Windows' home directory is USERPROFILE, not HOME.
+  return {
+    ...env,
+    ...extra,
+    ...(extra.HOME === undefined ? {} : { USERPROFILE: extra.HOME }),
+  };
 }
 
 async function runDrives(
@@ -278,7 +297,7 @@ describe("drives.ts listing", () => {
     expect(r.stdout).toContain(DIAG.worktree);
     expect(r.stdout).toContain(DIAG.log);
     expect(r.stdout).toContain("PR #4242 + worktree");
-    expect(r.stdout).toContain("--stop 4242");
+    if (STOP_HINTED) expect(r.stdout).toContain("--stop 4242");
     // The resolved billing account, with its vendor and
     // provenance, alongside the rest of the diagnostics.
     expect(r.stdout).toContain(
@@ -516,7 +535,7 @@ describe("drives.ts listing", () => {
       stateDir,
       env: { DRIVE_PR_SESSION: String(process.pid + 1) },
     });
-    expect(foreign.stdout).toContain("--stop 4242");
+    if (STOP_HINTED) expect(foreign.stdout).toContain("--stop 4242");
     expect(foreign.stdout).not.toContain("withheld");
   });
 
@@ -621,7 +640,7 @@ describe("drives.ts listing", () => {
     });
     const r = await runDrives([], { stateDir });
     expect(r.exitCode).toBe(0);
-    expect(r.stdout).toContain("--stop 4242");
+    if (STOP_HINTED) expect(r.stdout).toContain("--stop 4242");
     expect(r.stdout).toContain("diagnostics claim PR #999");
     expect(r.stdout).not.toContain("--stop 999");
   });
@@ -728,7 +747,7 @@ describe("drives.ts --here (the SessionStart banner)", () => {
     expect(r.stdout).toContain("LIVE drive loop is working THIS worktree");
     expect(r.stdout).toContain("driving PR #4242");
     expect(r.stdout).toContain(DIAG.log);
-    expect(r.stdout).toContain("--stop 4242");
+    if (STOP_HINTED) expect(r.stdout).toContain("--stop 4242");
   });
 
   it("tells a PASS the banner is its OWN parent driver, and withholds the bystander advice", async () => {
@@ -772,7 +791,7 @@ describe("drives.ts --here (the SessionStart banner)", () => {
     expect(foreign.stdout).toContain(
       "LIVE drive loop is working THIS worktree",
     );
-    expect(foreign.stdout).toContain("--stop 4242");
+    if (STOP_HINTED) expect(foreign.stdout).toContain("--stop 4242");
     expect(foreign.stdout).not.toContain("YOUR OWN parent driver");
   });
 
@@ -936,128 +955,143 @@ describe("drives.ts --stop", () => {
     }
   }
 
-  it("SIGTERMs the live driver and witnesses it leave", async () => {
-    const stateDir = freshStateDir();
-    const child = markerDriver();
-    try {
-      // `started` is stamped AFTER spawning the child, as in reality: the
-      // driver process starts, then acquires and writes its claim. The claim
-      // binding in stop() compares exactly these two instants.
-      plantLock(stateDir, "pr-drive-555.lock", {
-        "claim.aaaa": formatClaim(child.pid, hostname(), {
-          ...DIAG,
-          pr: "555",
-          started: new Date().toISOString(),
-        }),
-      });
-      const r = await runDrives(["--stop", "555"], { stateDir });
-      expect(r.exitCode).toBe(0);
-      expect(r.stdout).toContain(`sent SIGTERM to driver pid ${child.pid}`);
-      expect(r.stdout).toContain("stopped");
-    } finally {
-      child.kill();
-      await child.exited;
-    }
-  });
+  it.skipIf(NO_PS)(
+    "SIGTERMs the live driver and witnesses it leave",
+    async () => {
+      const stateDir = freshStateDir();
+      const child = markerDriver();
+      try {
+        // `started` is stamped AFTER spawning the child, as in reality: the
+        // driver process starts, then acquires and writes its claim. The claim
+        // binding in stop() compares exactly these two instants.
+        plantLock(stateDir, "pr-drive-555.lock", {
+          "claim.aaaa": formatClaim(child.pid, hostname(), {
+            ...DIAG,
+            pr: "555",
+            started: new Date().toISOString(),
+          }),
+        });
+        const r = await runDrives(["--stop", "555"], { stateDir });
+        expect(r.exitCode).toBe(0);
+        expect(r.stdout).toContain(`sent SIGTERM to driver pid ${child.pid}`);
+        expect(r.stdout).toContain("stopped");
+      } finally {
+        child.kill();
+        await child.exited;
+      }
+    },
+  );
 
-  it("refuses a live drive.ts process that started after the claim was written — argv alone never authorizes", async () => {
-    // The recycled-pid case DRIVER_CMD cannot catch: the pid now runs a
-    // GENUINE driver (of some other PR), so its argv passes. The claim
-    // binding refuses it — a process that started after the claim's
-    // acquisition timestamp cannot be the process that wrote the claim.
-    const stateDir = freshStateDir();
-    const child = markerDriver();
-    try {
-      plantLock(stateDir, "pr-drive-552.lock", {
-        "claim.aaaa": formatClaim(child.pid, hostname(), {
-          ...DIAG,
-          pr: "552",
-          started: new Date(Date.now() - 3_600_000).toISOString(),
-        }),
-      });
-      const r = await runDrives(["--stop", "552"], { stateDir });
-      expect(r.exitCode).toBe(1);
-      expect(r.stdout).toContain("started after the claim");
-      expect(aliveNow(child.pid)).toBe(true);
-    } finally {
-      child.kill();
-      await child.exited;
-    }
-  });
+  it.skipIf(NO_PS)(
+    "refuses a live drive.ts process that started after the claim was written — argv alone never authorizes",
+    async () => {
+      // The recycled-pid case DRIVER_CMD cannot catch: the pid now runs a
+      // GENUINE driver (of some other PR), so its argv passes. The claim
+      // binding refuses it — a process that started after the claim's
+      // acquisition timestamp cannot be the process that wrote the claim.
+      const stateDir = freshStateDir();
+      const child = markerDriver();
+      try {
+        plantLock(stateDir, "pr-drive-552.lock", {
+          "claim.aaaa": formatClaim(child.pid, hostname(), {
+            ...DIAG,
+            pr: "552",
+            started: new Date(Date.now() - 3_600_000).toISOString(),
+          }),
+        });
+        const r = await runDrives(["--stop", "552"], { stateDir });
+        expect(r.exitCode).toBe(1);
+        expect(r.stdout).toContain("started after the claim");
+        expect(aliveNow(child.pid)).toBe(true);
+      } finally {
+        child.kill();
+        await child.exited;
+      }
+    },
+  );
 
-  it("refuses a claim whose acquisition time is in the future — a future bound accepts every process", async () => {
-    // `procStart > future + slack` is false for ANY process, so a recycled
-    // pid wearing a clock-skewed or corrupt claim would pass the binding.
-    // Fixture passes every other
-    // clause — driver argv, local host, live pid, readable etime — so the
-    // future timestamp is the sole decider.
-    const stateDir = freshStateDir();
-    const child = markerDriver();
-    try {
-      plantLock(stateDir, "pr-drive-549.lock", {
-        "claim.aaaa": formatClaim(child.pid, hostname(), {
-          ...DIAG,
-          pr: "549",
-          started: new Date(Date.now() + 3_600_000).toISOString(),
-        }),
-      });
-      const r = await runDrives(["--stop", "549"], { stateDir });
-      expect(r.exitCode).toBe(1);
-      expect(r.stdout).toContain("in the future");
-      expect(aliveNow(child.pid)).toBe(true);
-    } finally {
-      child.kill();
-      await child.exited;
-    }
-  });
+  it.skipIf(NO_PS)(
+    "refuses a claim whose acquisition time is in the future — a future bound accepts every process",
+    async () => {
+      // `procStart > future + slack` is false for ANY process, so a recycled
+      // pid wearing a clock-skewed or corrupt claim would pass the binding.
+      // Fixture passes every other
+      // clause — driver argv, local host, live pid, readable etime — so the
+      // future timestamp is the sole decider.
+      const stateDir = freshStateDir();
+      const child = markerDriver();
+      try {
+        plantLock(stateDir, "pr-drive-549.lock", {
+          "claim.aaaa": formatClaim(child.pid, hostname(), {
+            ...DIAG,
+            pr: "549",
+            started: new Date(Date.now() + 3_600_000).toISOString(),
+          }),
+        });
+        const r = await runDrives(["--stop", "549"], { stateDir });
+        expect(r.exitCode).toBe(1);
+        expect(r.stdout).toContain("in the future");
+        expect(aliveNow(child.pid)).toBe(true);
+      } finally {
+        child.kill();
+        await child.exited;
+      }
+    },
+  );
 
-  it("refuses a live claim with no diagnostics line — nothing binds the pid to the claim", async () => {
-    // Fail-closed-conjunction fixture: the child's argv passes DRIVER_CMD,
-    // the host is local, the pid is alive and the claim is fresh — the
-    // ABSENT diagnostics line is the sole decider. An older claim
-    // has no acquisition timestamp, so the pid cannot be bound to it and
-    // must not be signaled.
-    const stateDir = freshStateDir();
-    const child = markerDriver();
-    try {
-      plantLock(stateDir, "pr-drive-551.lock", {
-        "claim.aaaa": `${child.pid} ${hostname()}\n`,
-      });
-      const r = await runDrives(["--stop", "551"], { stateDir });
-      expect(r.exitCode).toBe(1);
-      expect(r.stdout).toContain("no diagnostics line");
-      expect(aliveNow(child.pid)).toBe(true);
-    } finally {
-      child.kill();
-      await child.exited;
-    }
-  });
+  it.skipIf(NO_PS)(
+    "refuses a live claim with no diagnostics line — nothing binds the pid to the claim",
+    async () => {
+      // Fail-closed-conjunction fixture: the child's argv passes DRIVER_CMD,
+      // the host is local, the pid is alive and the claim is fresh — the
+      // ABSENT diagnostics line is the sole decider. An older claim
+      // has no acquisition timestamp, so the pid cannot be bound to it and
+      // must not be signaled.
+      const stateDir = freshStateDir();
+      const child = markerDriver();
+      try {
+        plantLock(stateDir, "pr-drive-551.lock", {
+          "claim.aaaa": `${child.pid} ${hostname()}\n`,
+        });
+        const r = await runDrives(["--stop", "551"], { stateDir });
+        expect(r.exitCode).toBe(1);
+        expect(r.stdout).toContain("no diagnostics line");
+        expect(aliveNow(child.pid)).toBe(true);
+      } finally {
+        child.kill();
+        await child.exited;
+      }
+    },
+  );
 
-  it("refuses to signal a live pid whose command is not a drive.ts driver (recycled pid)", async () => {
-    // A crashed driver's pid can be recycled to a stranger inside the
-    // staleness window; the claim then reads live but the pid is not the
-    // driver. The stranger must survive the --stop.
-    const stateDir = freshStateDir();
-    const child = Bun.spawn(["sleep", "300"], {
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    try {
-      plantLock(stateDir, "pr-drive-554.lock", {
-        "claim.aaaa": formatClaim(child.pid, hostname(), {
-          ...DIAG,
-          pr: "554",
-        }),
+  it.skipIf(NO_PS)(
+    "refuses to signal a live pid whose command is not a drive.ts driver (recycled pid)",
+    async () => {
+      // A crashed driver's pid can be recycled to a stranger inside the
+      // staleness window; the claim then reads live but the pid is not the
+      // driver. The stranger must survive the --stop.
+      const stateDir = freshStateDir();
+      const child = Bun.spawn(["sleep", "300"], {
+        stdout: "ignore",
+        stderr: "ignore",
       });
-      const r = await runDrives(["--stop", "554"], { stateDir });
-      expect(r.exitCode).toBe(1);
-      expect(r.stdout).toContain("does not look like a drive.ts driver");
-      expect(aliveNow(child.pid)).toBe(true);
-    } finally {
-      child.kill();
-      await child.exited;
-    }
-  });
+      try {
+        plantLock(stateDir, "pr-drive-554.lock", {
+          "claim.aaaa": formatClaim(child.pid, hostname(), {
+            ...DIAG,
+            pr: "554",
+          }),
+        });
+        const r = await runDrives(["--stop", "554"], { stateDir });
+        expect(r.exitCode).toBe(1);
+        expect(r.stdout).toContain("does not look like a drive.ts driver");
+        expect(aliveNow(child.pid)).toBe(true);
+      } finally {
+        child.kill();
+        await child.exited;
+      }
+    },
+  );
 
   it("fails closed when ps cannot answer for a live pid — refuses, never signals on the claim alone", async () => {
     // `ps` missing (the documented Windows path) or failing transiently must
@@ -1107,9 +1141,7 @@ describe("drives.ts --stop", () => {
       // Absolute path in the shim: its own $PATH is the crippled one, so a
       // bare `sleep` would fail instantly and the fixture would exercise the
       // ps-FAILED branch instead of the ps-HUNG one.
-      writeFileSync(join(shim, "ps"), "#!/bin/sh\nexec /bin/sleep 300\n", {
-        mode: 0o755,
-      });
+      writeFakeProgram(join(shim, "ps"), "#!/bin/sh\nexec /bin/sleep 300\n");
       plantLock(stateDir, "pr-drive-550.lock", {
         "claim.aaaa": formatClaim(child.pid, hostname(), {
           ...DIAG,
@@ -1163,52 +1195,55 @@ describe("drives.ts --stop", () => {
     expect(broken.stdout).toContain("refusing to guess");
   });
 
-  it("falls back to the legacy directory when resolveStateDir() refuses on the very lock --stop needs to reach", async () => {
-    // The deadlock this closes: an older driver's own single-instance
-    // lock, still sitting in the legacy `--git-common-dir`, is EXACTLY the
-    // unmigrated footprint `ensureMigratedFromLegacy` refuses on — so
-    // `resolveStateDir()` (which `--stop` called first, before this fix)
-    // throws before `stop()` ever runs, leaving no way to reach the very
-    // driver `--stop` exists to reach. No `DRIVE_PR_STATE_DIR` override here
-    // — that would bypass `resolveStateDir()` entirely and prove nothing
-    // about the fallback.
-    const repo = mkdtempSync(join(tmpdir(), "drives-stop-legacy-repo-"));
-    const home = mkdtempSync(join(tmpdir(), "drives-stop-legacy-home-"));
-    const gitEnv = cleanEnv({ HOME: home });
-    const git = (...args: string[]) =>
-      Bun.spawnSync(["git", ...args], { cwd: repo, env: gitEnv });
-    git("init", "-q", "-b", "main");
-    git("config", "user.email", "drives-stop-probe@example.invalid");
-    git("config", "user.name", "drives --stop probe");
-    const legacyDir = join(repo, ".git");
-    const child = markerDriver();
-    try {
-      // This lock IS the unmigrated footprint: `legacyFootprint` recognizes
-      // `pr-drive-<n>.lock` on sight, so `ensureMigratedFromLegacy` refuses
-      // the plain `resolveStateDir()` path on the very driver this test then
-      // asks `--stop` to reach.
-      plantLock(legacyDir, "pr-drive-555.lock", {
-        "claim.aaaa": formatClaim(child.pid, hostname(), {
-          ...DIAG,
-          pr: "555",
-          started: new Date().toISOString(),
-        }),
-      });
-      const r = await runDrives(["--stop", "555"], {
-        stateDir: null,
-        cwd: repo,
-        env: { HOME: home },
-      });
-      expect(r.exitCode).toBe(0);
-      expect(r.stdout).toContain(`sent SIGTERM to driver pid ${child.pid}`);
-      expect(r.stdout).toContain("stopped");
-    } finally {
-      child.kill();
-      await child.exited;
-      rmSync(repo, { recursive: true, force: true });
-      rmSync(home, { recursive: true, force: true });
-    }
-  });
+  it.skipIf(NO_PS)(
+    "falls back to the legacy directory when resolveStateDir() refuses on the very lock --stop needs to reach",
+    async () => {
+      // The deadlock this closes: an older driver's own single-instance
+      // lock, still sitting in the legacy `--git-common-dir`, is EXACTLY the
+      // unmigrated footprint `ensureMigratedFromLegacy` refuses on — so
+      // `resolveStateDir()` (which `--stop` called first, before this fix)
+      // throws before `stop()` ever runs, leaving no way to reach the very
+      // driver `--stop` exists to reach. No `DRIVE_PR_STATE_DIR` override here
+      // — that would bypass `resolveStateDir()` entirely and prove nothing
+      // about the fallback.
+      const repo = mkdtempSync(join(tmpdir(), "drives-stop-legacy-repo-"));
+      const home = mkdtempSync(join(tmpdir(), "drives-stop-legacy-home-"));
+      const gitEnv = cleanEnv({ HOME: home });
+      const git = (...args: string[]) =>
+        Bun.spawnSync(["git", ...args], { cwd: repo, env: gitEnv });
+      git("init", "-q", "-b", "main");
+      git("config", "user.email", "drives-stop-probe@example.invalid");
+      git("config", "user.name", "drives --stop probe");
+      const legacyDir = join(repo, ".git");
+      const child = markerDriver();
+      try {
+        // This lock IS the unmigrated footprint: `legacyFootprint` recognizes
+        // `pr-drive-<n>.lock` on sight, so `ensureMigratedFromLegacy` refuses
+        // the plain `resolveStateDir()` path on the very driver this test then
+        // asks `--stop` to reach.
+        plantLock(legacyDir, "pr-drive-555.lock", {
+          "claim.aaaa": formatClaim(child.pid, hostname(), {
+            ...DIAG,
+            pr: "555",
+            started: new Date().toISOString(),
+          }),
+        });
+        const r = await runDrives(["--stop", "555"], {
+          stateDir: null,
+          cwd: repo,
+          env: { HOME: home },
+        });
+        expect(r.exitCode).toBe(0);
+        expect(r.stdout).toContain(`sent SIGTERM to driver pid ${child.pid}`);
+        expect(r.stdout).toContain("stopped");
+      } finally {
+        child.kill();
+        await child.exited;
+        rmSync(repo, { recursive: true, force: true });
+        rmSync(home, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("does NOT fall back to the legacy directory on a resolveStateDir() failure that is not the migration guard", async () => {
     // An over-broad version of the fallback caught ANY resolveStateDir()
@@ -1466,50 +1501,62 @@ describe("a foreign-host claim never walks the LOCAL process table", () => {
 });
 
 describe("--doctor / --json WEDGED end-to-end", () => {
-  it("a live claim with stale progress and no pass child classifies WEDGED, with a working --stop recovery", async () => {
-    const stateDir = freshStateDir();
-    const claim = formatClaim(process.pid, hostname(), { ...DIAG, pr: "7010" });
-    plantLock(stateDir, "pr-drive-7010.lock", { "claim.aaaa": claim });
-    const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60_000).toISOString();
-    writeFileSync(
-      join(stateDir, "drive-pr-7010.json"),
-      JSON.stringify({ ...freshState(7010), lastProgressAt: fourHoursAgo }),
-    );
+  it.skipIf(NO_PS)(
+    "a live claim with stale progress and no pass child classifies WEDGED, with a working --stop recovery",
+    async () => {
+      const stateDir = freshStateDir();
+      const claim = formatClaim(process.pid, hostname(), {
+        ...DIAG,
+        pr: "7010",
+      });
+      plantLock(stateDir, "pr-drive-7010.lock", { "claim.aaaa": claim });
+      const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60_000).toISOString();
+      writeFileSync(
+        join(stateDir, "drive-pr-7010.json"),
+        JSON.stringify({ ...freshState(7010), lastProgressAt: fourHoursAgo }),
+      );
 
-    // Plain --json, not --doctor --json: WEDGED must be reachable through
-    // the SAME classification pass the plain listing already runs
-    // unconditionally, not only through the doctor-specific surfaces.
-    const r = await runDrives(["--json"], { stateDir });
-    expect(r.exitCode).toBe(0);
-    const parsed = JSON.parse(r.stdout) as {
-      rows: Array<{
-        key: string;
-        doctor: { verdict: string; recovery: string | null } | null;
-      }>;
-    };
-    const row = parsed.rows.find((x) => x.key === "7010");
-    expect(row?.doctor?.verdict).toBe("WEDGED");
-    expect(row?.doctor?.recovery).toContain("--stop 7010");
-  });
+      // Plain --json, not --doctor --json: WEDGED must be reachable through
+      // the SAME classification pass the plain listing already runs
+      // unconditionally, not only through the doctor-specific surfaces.
+      const r = await runDrives(["--json"], { stateDir });
+      expect(r.exitCode).toBe(0);
+      const parsed = JSON.parse(r.stdout) as {
+        rows: Array<{
+          key: string;
+          doctor: { verdict: string; recovery: string | null } | null;
+        }>;
+      };
+      const row = parsed.rows.find((x) => x.key === "7010");
+      expect(row?.doctor?.verdict).toBe("WEDGED");
+      expect(row?.doctor?.recovery).toContain("--stop 7010");
+    },
+  );
 
-  it("the PLAIN human listing (no --doctor) prints the stalled line on a WEDGED live row", async () => {
-    // `printHuman`'s own `⚠ stalled:` line: both this and the --json case
-    // above must read off the SAME `.doctor` field `attachDoctorVerdicts`
-    // populates unconditionally.
-    const stateDir = freshStateDir();
-    const claim = formatClaim(process.pid, hostname(), { ...DIAG, pr: "7011" });
-    plantLock(stateDir, "pr-drive-7011.lock", { "claim.aaaa": claim });
-    const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60_000).toISOString();
-    writeFileSync(
-      join(stateDir, "drive-pr-7011.json"),
-      JSON.stringify({ ...freshState(7011), lastProgressAt: fourHoursAgo }),
-    );
-    const r = await runDrives([], { stateDir });
-    expect(r.exitCode).toBe(0);
-    expect(r.stdout).toContain("PR #7011 — LIVE");
-    expect(r.stdout).toContain("⚠ stalled:");
-    expect(r.stdout).toContain("no pass process is running");
-  });
+  it.skipIf(NO_PS)(
+    "the PLAIN human listing (no --doctor) prints the stalled line on a WEDGED live row",
+    async () => {
+      // `printHuman`'s own `⚠ stalled:` line: both this and the --json case
+      // above must read off the SAME `.doctor` field `attachDoctorVerdicts`
+      // populates unconditionally.
+      const stateDir = freshStateDir();
+      const claim = formatClaim(process.pid, hostname(), {
+        ...DIAG,
+        pr: "7011",
+      });
+      plantLock(stateDir, "pr-drive-7011.lock", { "claim.aaaa": claim });
+      const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60_000).toISOString();
+      writeFileSync(
+        join(stateDir, "drive-pr-7011.json"),
+        JSON.stringify({ ...freshState(7011), lastProgressAt: fourHoursAgo }),
+      );
+      const r = await runDrives([], { stateDir });
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toContain("PR #7011 — LIVE");
+      expect(r.stdout).toContain("⚠ stalled:");
+      expect(r.stdout).toContain("no pass process is running");
+    },
+  );
 });
 
 describe("printHuman surfaces DEAD_WITH_LEFTOVERS on a stale row", () => {

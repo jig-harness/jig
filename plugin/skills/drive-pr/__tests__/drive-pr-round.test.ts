@@ -5,7 +5,6 @@
 
 import { afterEach, beforeAll, describe, expect, it } from "bun:test";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -14,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import {
   changedFilesSince,
   changedFilesSinceExcludingMerges,
@@ -25,6 +24,7 @@ import {
   stateDirIdentityToken,
   treeLeasePathFor,
 } from "../scripts/lib/state/lease";
+import { worktreeRoot } from "../scripts/lib/state/actor";
 import { createLock } from "../scripts/lib/state/lock";
 import { appendDirective } from "../scripts/lib/state/mailbox";
 
@@ -49,8 +49,33 @@ import {
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
 import { recheckHookEntry } from "./push-hold-recheck-hook.ts";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import {
+  byPlatform,
+  skipsOnWindows,
+} from "../../../../lib/test-helpers/windows-skip.ts";
 
 useDrivePrSuite();
+
+/** A path as a shell script inside double quotes reads it on every platform. */
+const shellPath = (p: string): string => p.replaceAll("\\", "/");
+
+/** The real `git`, for a stub that wraps it from a shell script. */
+function realGitForShell(): string {
+  const real = Bun.which("git");
+  if (!real) throw new Error("no git on PATH to wrap for this probe");
+  return shellPath(real);
+}
+
+const NO_TREE_KILL = skipsOnWindows(
+  "process-lifecycle",
+  "killing a process on Windows does not reach its children, so a hung or slow child process tree outlives the deadline",
+);
+const NO_QUOTE_NAMES = skipsOnWindows(
+  "file-system",
+  "a double quote is not a legal file-name character on Windows, so the file cannot be created",
+);
 
 describe("announce-merge-ready.ts", () => {
   // The announcement's literal opening line, as the script composes it. The
@@ -170,11 +195,11 @@ describe("announce-merge-ready.ts", () => {
           `await import(${JSON.stringify(join(SCRIPTS, "announce-merge-ready.ts"))});`,
           "",
         ].join("\n"),
+        { mode: 0o755 },
       );
-      chmodSync(entryScript, 0o755);
     }
     const proc = Bun.spawn(
-      [entryScript, "999", ...(opts.dryRun ? ["--dry-run"] : [])],
+      scriptArgv(entryScript, "999", ...(opts.dryRun ? ["--dry-run"] : [])),
       {
         // A scratch repo, never the real checkout: the script refuses to
         // announce over a dirty tree, and the real checkout is dirty whenever
@@ -184,7 +209,7 @@ describe("announce-merge-ready.ts", () => {
         cwd: opts.cwd ?? scratchClean.dir,
         env: {
           ...gitCleanEnv(),
-          PATH: `${opts.extraBinDir ? `${opts.extraBinDir}:` : ""}${binDir}:${process.env.PATH}`,
+          PATH: `${opts.extraBinDir ? `${opts.extraBinDir}${delimiter}` : ""}${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_STATE_DIR_IDENTITY: stateDirIdentityToken(stateDir),
@@ -289,20 +314,23 @@ describe("announce-merge-ready.ts", () => {
 
   it("refuses a green aggregate without PR-global final verification", async () => {
     const { dir, stateDir } = writeFixture(CONVERGED);
-    const proc = Bun.spawn([join(SCRIPTS, "announce-merge-ready.ts"), "999"], {
-      cwd: scratchClean.dir,
-      env: {
-        ...gitCleanEnv(),
-        PATH: `${binDir}:${process.env.PATH}`,
-        DRIVE_PR_FIXTURES: dir,
-        DRIVE_PR_STATE_DIR: stateDir,
-        DRIVE_PR_MERGE_MARKER_FIXTURE: `<!-- drive-pr-merge-ready: ${CONVERGED.head} -->`,
-        DRIVE_PR_ANNOUNCE_OPENER_FIXTURE: OPENER,
+    const proc = Bun.spawn(
+      scriptArgv(join(SCRIPTS, "announce-merge-ready.ts"), "999"),
+      {
+        cwd: scratchClean.dir,
+        env: {
+          ...gitCleanEnv(),
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
+          DRIVE_PR_FIXTURES: dir,
+          DRIVE_PR_STATE_DIR: stateDir,
+          DRIVE_PR_MERGE_MARKER_FIXTURE: `<!-- drive-pr-merge-ready: ${CONVERGED.head} -->`,
+          DRIVE_PR_ANNOUNCE_OPENER_FIXTURE: OPENER,
+        },
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
       },
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    );
     const [stderr, exitCode] = await Promise.all([
       new Response(proc.stderr).text(),
       proc.exited,
@@ -785,98 +813,100 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("uncommitted state");
   });
 
-  it("the worktree cleanliness check refuses on a TIMEOUT rather than hanging", async () => {
-    // `checkWorktreeClean()`'s `git status --porcelain` call carried no
-    // deadline: a stalled filesystem or a lock held by another process could
-    // hang the announcement indefinitely instead of returning the documented
-    // unreadable-tree refusal. This wraps `git` with a stub that hangs ONLY on
-    // `status --porcelain` — every other git call (drive-status.ts's own
-    // `rev-parse HEAD`, etc.) still reaches the REAL binary, or the probe
-    // would time out for the wrong reason before ever reaching the call this
-    // targets.
-    const dirty = makeScratchRepo("scratch-announce-git-status-hang");
-    const realGit = Bun.which("git");
-    if (!realGit) throw new Error("no git on PATH to wrap for this probe");
-    const gitBinDir = mkdtempSync(join(tmpdir(), "drive-pr-git-stub-"));
-    const gitStubPath = join(gitBinDir, "git");
-    writeFileSync(
-      gitStubPath,
-      [
-        "#!/usr/bin/env bash",
-        'if [ "${1:-}" = "status" ] && [ "${2:-}" = "--porcelain" ]; then',
-        "  sleep 30",
-        "  exit 0",
-        "fi",
-        `exec "${realGit}" "$@"`,
-        "",
-      ].join("\n"),
-    );
-    chmodSync(gitStubPath, 0o755);
-    const started = Date.now();
-    const r = await announce(
-      { threads: [], reviewedSha: dirty.head, head: dirty.head },
-      false,
-      {
-        cwd: dirty.dir,
-        extraBinDir: gitBinDir,
-        env: { GIT_CALL_TIMEOUT: "1" },
-      },
-    );
-    const elapsed = Date.now() - started;
-    expect(r.posted).toBe(false);
-    expect(r.exitCode).not.toBe(0);
-    expect(r.stderr).toContain("cannot read the working tree");
-    expect({
-      boundedWellBeforeTheStubsSleepFinished: elapsed < 15_000,
-    }).toEqual({ boundedWellBeforeTheStubsSleepFinished: true });
-  });
+  it.skipIf(NO_TREE_KILL)(
+    "the worktree cleanliness check refuses on a TIMEOUT rather than hanging",
+    async () => {
+      // `checkWorktreeClean()`'s `git status --porcelain` call carried no
+      // deadline: a stalled filesystem or a lock held by another process could
+      // hang the announcement indefinitely instead of returning the documented
+      // unreadable-tree refusal. This wraps `git` with a stub that hangs ONLY on
+      // `status --porcelain` — every other git call (drive-status.ts's own
+      // `rev-parse HEAD`, etc.) still reaches the REAL binary, or the probe
+      // would time out for the wrong reason before ever reaching the call this
+      // targets.
+      const dirty = makeScratchRepo("scratch-announce-git-status-hang");
+      const realGit = realGitForShell();
+      const gitBinDir = mkdtempSync(join(tmpdir(), "drive-pr-git-stub-"));
+      const gitStubPath = join(gitBinDir, "git");
+      writeFakeProgram(
+        gitStubPath,
+        [
+          "#!/usr/bin/env bash",
+          'if [ "${1:-}" = "status" ] && [ "${2:-}" = "--porcelain" ]; then',
+          "  sleep 30",
+          "  exit 0",
+          "fi",
+          `exec "${realGit}" "$@"`,
+          "",
+        ].join("\n"),
+      );
+      const started = Date.now();
+      const r = await announce(
+        { threads: [], reviewedSha: dirty.head, head: dirty.head },
+        false,
+        {
+          cwd: dirty.dir,
+          extraBinDir: gitBinDir,
+          env: { GIT_CALL_TIMEOUT: "1" },
+        },
+      );
+      const elapsed = Date.now() - started;
+      expect(r.posted).toBe(false);
+      expect(r.exitCode).not.toBe(0);
+      expect(r.stderr).toContain("cannot read the working tree");
+      expect({
+        boundedWellBeforeTheStubsSleepFinished: elapsed < 15_000,
+      }).toEqual({ boundedWellBeforeTheStubsSleepFinished: true });
+    },
+  );
 
-  it("the unconcluded-git-op probe itself refuses on a TIMEOUT rather than hanging", async () => {
-    // The FIRST call `checkWorktreeClean()` makes (`unconcludedGitOpMarker`)
-    // needs its own deadline, distinct from the later `git status --porcelain`
-    // call the sibling probe above targets — a synchronous `existsSync()`
-    // inside that helper had no deadline at all, and folding the whole check
-    // into one bounded subprocess is what closed it. This stub hangs ONLY on
-    // `rev-parse --git-dir` — the one call that helper's own script makes — so
-    // the probe pins THIS call, not the status one.
-    const dirty = makeScratchRepo("scratch-announce-git-rev-parse-hang");
-    const realGit = Bun.which("git");
-    if (!realGit) throw new Error("no git on PATH to wrap for this probe");
-    const gitBinDir = mkdtempSync(
-      join(tmpdir(), "drive-pr-git-revparse-stub-"),
-    );
-    const gitStubPath = join(gitBinDir, "git");
-    writeFileSync(
-      gitStubPath,
-      [
-        "#!/usr/bin/env bash",
-        'if [ "${1:-}" = "rev-parse" ] && [ "${2:-}" = "--git-dir" ]; then',
-        "  sleep 30",
-        "  exit 0",
-        "fi",
-        `exec "${realGit}" "$@"`,
-        "",
-      ].join("\n"),
-    );
-    chmodSync(gitStubPath, 0o755);
-    const started = Date.now();
-    const r = await announce(
-      { threads: [], reviewedSha: dirty.head, head: dirty.head },
-      false,
-      {
-        cwd: dirty.dir,
-        extraBinDir: gitBinDir,
-        env: { GIT_CALL_TIMEOUT: "1" },
-      },
-    );
-    const elapsed = Date.now() - started;
-    expect(r.posted).toBe(false);
-    expect(r.exitCode).not.toBe(0);
-    expect(r.stderr).toContain("cannot read the working tree");
-    expect({
-      boundedWellBeforeTheStubsSleepFinished: elapsed < 15_000,
-    }).toEqual({ boundedWellBeforeTheStubsSleepFinished: true });
-  });
+  it.skipIf(NO_TREE_KILL)(
+    "the unconcluded-git-op probe itself refuses on a TIMEOUT rather than hanging",
+    async () => {
+      // The FIRST call `checkWorktreeClean()` makes (`unconcludedGitOpMarker`)
+      // needs its own deadline, distinct from the later `git status --porcelain`
+      // call the sibling probe above targets — a synchronous `existsSync()`
+      // inside that helper had no deadline at all, and folding the whole check
+      // into one bounded subprocess is what closed it. This stub hangs ONLY on
+      // `rev-parse --git-dir` — the one call that helper's own script makes — so
+      // the probe pins THIS call, not the status one.
+      const dirty = makeScratchRepo("scratch-announce-git-rev-parse-hang");
+      const realGit = realGitForShell();
+      const gitBinDir = mkdtempSync(
+        join(tmpdir(), "drive-pr-git-revparse-stub-"),
+      );
+      const gitStubPath = join(gitBinDir, "git");
+      writeFakeProgram(
+        gitStubPath,
+        [
+          "#!/usr/bin/env bash",
+          'if [ "${1:-}" = "rev-parse" ] && [ "${2:-}" = "--git-dir" ]; then',
+          "  sleep 30",
+          "  exit 0",
+          "fi",
+          `exec "${realGit}" "$@"`,
+          "",
+        ].join("\n"),
+      );
+      const started = Date.now();
+      const r = await announce(
+        { threads: [], reviewedSha: dirty.head, head: dirty.head },
+        false,
+        {
+          cwd: dirty.dir,
+          extraBinDir: gitBinDir,
+          env: { GIT_CALL_TIMEOUT: "1" },
+        },
+      );
+      const elapsed = Date.now() - started;
+      expect(r.posted).toBe(false);
+      expect(r.exitCode).not.toBe(0);
+      expect(r.stderr).toContain("cannot read the working tree");
+      expect({
+        boundedWellBeforeTheStubsSleepFinished: elapsed < 15_000,
+      }).toEqual({ boundedWellBeforeTheStubsSleepFinished: true });
+    },
+  );
 
   it("still detects an untracked leftover under status.showUntrackedFiles=no", async () => {
     // `git status --porcelain` alone inherits `status.showUntrackedFiles` from
@@ -1024,14 +1054,13 @@ describe("announce-merge-ready.ts", () => {
     // else is stubbed.
     const dirty = makeScratchRepo("scratch-announce-intracheck-head-drift");
     const reviewedHead = dirty.head;
-    const realGit = Bun.which("git");
-    if (!realGit) throw new Error("no git on PATH to wrap for this probe");
+    const realGit = realGitForShell();
     const gitBinDir = mkdtempSync(
       join(tmpdir(), "drive-pr-intracheck-git-stub-"),
     );
     const gitStubPath = join(gitBinDir, "git");
-    const markerFile = join(gitBinDir, "answered-once");
-    writeFileSync(
+    const markerFile = shellPath(join(gitBinDir, "answered-once"));
+    writeFakeProgram(
       gitStubPath,
       [
         "#!/usr/bin/env bash",
@@ -1047,7 +1076,6 @@ describe("announce-merge-ready.ts", () => {
         "",
       ].join("\n"),
     );
-    chmodSync(gitStubPath, 0o755);
     const r = await announce(
       { threads: [], reviewedSha: reviewedHead, head: reviewedHead },
       false,
@@ -1293,12 +1321,12 @@ describe("announce-merge-ready.ts", () => {
     writeVerifiedSha(stateDir, CONVERGED.head ?? HEAD);
     writeFileSync(join(dir, "stale-announcement"), PREV);
     const proc = Bun.spawn(
-      [join(SCRIPTS, "announce-merge-ready.ts"), "999", "--dry-run"],
+      scriptArgv(join(SCRIPTS, "announce-merge-ready.ts"), "999", "--dry-run"),
       {
         cwd: scratchClean.dir,
         env: {
           ...gitCleanEnv(),
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_ANNOUNCE_OPENER_FIXTURE: OPENER,
@@ -1509,7 +1537,7 @@ describe("summary-findings marker overrides", () => {
  */
 function prBaseGh(): string {
   const dir = mkdtempSync(join(tmpRoot, "pr-base-gh-"));
-  writeFileSync(
+  writeFakeProgram(
     join(dir, "gh"),
     `#!/bin/sh
 case "$*" in
@@ -1520,7 +1548,6 @@ case "$*" in
 esac
 `,
   );
-  chmodSync(join(dir, "gh"), 0o755);
   return dir;
 }
 
@@ -1566,88 +1593,99 @@ describe("round-delta.ts", () => {
   // for exactly the files whose names make this matter. `-z` NUL-delimits
   // every entry with no quoting at all, so this reproduces the reviewer's own
   // repro script directly against the real functions.
-  it("changedFilesSinceExcludingMerges resolves a filename containing a literal double-quote unescaped", async () => {
-    const dir = mkdtempSync(join(tmpRoot, "round-delta-quote-"));
-    const env = gitCleanEnv();
-    const git = (...args: string[]) =>
-      Bun.spawnSync(["git", ...args], {
-        cwd: dir,
-        env,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-    git("init", "-q", "-b", "main");
-    git("config", "user.email", "probe@example.invalid");
-    git("config", "user.name", "drive-pr probe");
-    git("config", "commit.gpgsign", "false");
-    git("config", "core.hooksPath", "/dev/null");
-    writeFileSync(join(dir, "seed.ts"), "seed\n");
-    git("add", "-A");
-    git("commit", "-qm", "seed", "--no-verify");
-    const since = git("rev-parse", "HEAD").stdout.toString().trim();
-    // `changedFilesSinceExcludingMerges` excludes everything reachable from
-    // `origin/develop` — give it one, pointed at the same seed commit, so
-    // the quoted-path commit below is the only thing "this round" touched.
-    git("update-ref", "refs/remotes/origin/develop", since);
-    const quotedName = 'a"b.ts';
-    writeFileSync(join(dir, quotedName), "quoted\n");
-    git("add", "-A");
-    git("commit", "-qm", "quoted path", "--no-verify");
+  it.skipIf(NO_QUOTE_NAMES)(
+    "changedFilesSinceExcludingMerges resolves a filename containing a literal double-quote unescaped",
+    async () => {
+      const dir = mkdtempSync(join(tmpRoot, "round-delta-quote-"));
+      const env = gitCleanEnv();
+      const git = (...args: string[]) =>
+        Bun.spawnSync(["git", ...args], {
+          cwd: dir,
+          env,
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+      git("init", "-q", "-b", "main");
+      git("config", "user.email", "probe@example.invalid");
+      git("config", "user.name", "drive-pr probe");
+      git("config", "commit.gpgsign", "false");
+      git("config", "core.autocrlf", "false");
+      git("config", "core.hooksPath", "/dev/null");
+      writeFileSync(join(dir, "seed.ts"), "seed\n");
+      git("add", "-A");
+      git("commit", "-qm", "seed", "--no-verify");
+      const since = git("rev-parse", "HEAD").stdout.toString().trim();
+      // `changedFilesSinceExcludingMerges` excludes everything reachable from
+      // `origin/develop` — give it one, pointed at the same seed commit, so
+      // the quoted-path commit below is the only thing "this round" touched.
+      git("update-ref", "refs/remotes/origin/develop", since);
+      const quotedName = 'a"b.ts';
+      writeFileSync(join(dir, quotedName), "quoted\n");
+      git("add", "-A");
+      git("commit", "-qm", "quoted path", "--no-verify");
 
-    addOrigin(dir);
-    const result = await inScrubbedEnv(
-      { PATH: `${prBaseGh()}:${process.env.PATH}` },
-      () => changedFilesSinceExcludingMerges(dir, "999", since, 30),
-    );
-    expect(result).not.toBeNull();
-    expect(result).toContain(quotedName);
-  });
+      addOrigin(dir);
+      const result = await inScrubbedEnv(
+        { PATH: `${prBaseGh()}${delimiter}${process.env.PATH}` },
+        () => changedFilesSinceExcludingMerges(dir, "999", since, 30),
+      );
+      expect(result).not.toBeNull();
+      expect(result).toContain(quotedName);
+    },
+  );
 
-  it("changedFilesSince resolves a filename containing a literal double-quote unescaped", async () => {
-    const dir = mkdtempSync(join(tmpRoot, "round-delta-quote-diff-"));
-    const env = gitCleanEnv();
-    const git = (...args: string[]) =>
-      Bun.spawnSync(["git", ...args], {
-        cwd: dir,
-        env,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-    git("init", "-q", "-b", "main");
-    git("config", "user.email", "probe@example.invalid");
-    git("config", "user.name", "drive-pr probe");
-    git("config", "commit.gpgsign", "false");
-    git("config", "core.hooksPath", "/dev/null");
-    writeFileSync(join(dir, "seed.ts"), "seed\n");
-    git("add", "-A");
-    git("commit", "-qm", "seed", "--no-verify");
-    const since = git("rev-parse", "HEAD").stdout.toString().trim();
-    const quotedName = 'a"b.ts';
-    writeFileSync(join(dir, quotedName), "quoted\n");
-    git("add", "-A");
-    git("commit", "-qm", "quoted path", "--no-verify");
+  it.skipIf(NO_QUOTE_NAMES)(
+    "changedFilesSince resolves a filename containing a literal double-quote unescaped",
+    async () => {
+      const dir = mkdtempSync(join(tmpRoot, "round-delta-quote-diff-"));
+      const env = gitCleanEnv();
+      const git = (...args: string[]) =>
+        Bun.spawnSync(["git", ...args], {
+          cwd: dir,
+          env,
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+      git("init", "-q", "-b", "main");
+      git("config", "user.email", "probe@example.invalid");
+      git("config", "user.name", "drive-pr probe");
+      git("config", "commit.gpgsign", "false");
+      git("config", "core.autocrlf", "false");
+      git("config", "core.hooksPath", "/dev/null");
+      writeFileSync(join(dir, "seed.ts"), "seed\n");
+      git("add", "-A");
+      git("commit", "-qm", "seed", "--no-verify");
+      const since = git("rev-parse", "HEAD").stdout.toString().trim();
+      const quotedName = 'a"b.ts';
+      writeFileSync(join(dir, quotedName), "quoted\n");
+      git("add", "-A");
+      git("commit", "-qm", "quoted path", "--no-verify");
 
-    const result = await inScrubbedEnv({}, () =>
-      changedFilesSince(dir, since, 30),
-    );
-    expect(result).not.toBeNull();
-    expect(result).toContain(quotedName);
-  });
+      const result = await inScrubbedEnv({}, () =>
+        changedFilesSince(dir, since, 30),
+      );
+      expect(result).not.toBeNull();
+      expect(result).toContain(quotedName);
+    },
+  );
 });
 
 describe("round-plan.ts", () => {
   async function roundPlan(args: string[], stateDir: string, repo: string) {
     addOrigin(repo);
-    const proc = Bun.spawn([join(SCRIPTS, "round-plan.ts"), "999", ...args], {
-      cwd: repo,
-      env: {
-        ...gitCleanEnv(),
-        PATH: `${prBaseGh()}:${binDir}:${process.env.PATH}`,
-        DRIVE_PR_STATE_DIR: stateDir,
+    const proc = Bun.spawn(
+      scriptArgv(join(SCRIPTS, "round-plan.ts"), "999", ...args),
+      {
+        cwd: repo,
+        env: {
+          ...gitCleanEnv(),
+          PATH: `${prBaseGh()}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
+          DRIVE_PR_STATE_DIR: stateDir,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
       },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    );
     const [stdout, stderr, exitCode] = await Promise.all([
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
@@ -1776,6 +1814,7 @@ describe("round-plan.ts", () => {
       repo = mkdtempSync(join(tmpRoot, "rp-repo-"));
       git(["init", "-q", "-b", "main"]);
       git(["config", "commit.gpgsign", "false"]);
+      git(["config", "core.autocrlf", "false"]);
       git(["config", "core.hooksPath", "/dev/null"]);
       writeFileSync(join(repo, "seed.txt"), "seed\n");
       git(["add", "-A"]);
@@ -1864,17 +1903,20 @@ ${second}
       shimDir: string,
       args: string[] = ["--json"],
     ) => {
-      const proc = Bun.spawn([join(SCRIPTS, "round-plan.ts"), "999", ...args], {
-        cwd: repo,
-        env: {
-          ...gitCleanEnv(),
-          ...IDENTITY,
-          PATH: `${shimDir}:${prBaseGh()}:${binDir}:${process.env.PATH}`,
-          DRIVE_PR_STATE_DIR: stateDir,
+      const proc = Bun.spawn(
+        scriptArgv(join(SCRIPTS, "round-plan.ts"), "999", ...args),
+        {
+          cwd: repo,
+          env: {
+            ...gitCleanEnv(),
+            ...IDENTITY,
+            PATH: `${shimDir}${delimiter}${prBaseGh()}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
+            DRIVE_PR_STATE_DIR: stateDir,
+          },
+          stdout: "pipe",
+          stderr: "pipe",
         },
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+      );
       const [stdout, stderr, exitCode] = await Promise.all([
         new Response(proc.stdout).text(),
         new Response(proc.stderr).text(),
@@ -2046,40 +2088,60 @@ ${second}
       expect(plan.testboxDecision.required).toBe(true);
     });
 
-    it("names the configured plan command when its program is missing", async () => {
-      // The plan command runs through the shell, which reports a missing
-      // program as exit 127; the message names the configuration field the
-      // operator has to look at. The stub resolver is written but
-      // unreachable — a PATH with no `bun` on it is the whole probe.
-      const stateDir = mkdtempSync(join(tmpRoot, "rp-nobun-"));
-      const dir = resolverShim({ body: DELTA_FULL });
-      // Launched by ABSOLUTE runtime path, not through the `#!/usr/bin/env bun`
-      // shebang: the shebang needs bun on PATH too, so it would fail at 127
-      // before round-plan.ts ran a line, and the probe would pass for the wrong
-      // reason. The script runs; only the resolver's `bun` is missing.
-      const proc = Bun.spawn(
-        [process.execPath, join(SCRIPTS, "round-plan.ts"), "999", "--json"],
-        {
-          cwd: repo,
-          env: {
-            ...gitCleanEnv(),
-            ...IDENTITY,
-            // `binDir` carries the gh/git stubs this harness needs; what it does
-            // NOT carry is bun.
-            PATH: `${dir}:${prBaseGh()}:${binDir}:/usr/bin:/bin`,
-            DRIVE_PR_STATE_DIR: stateDir,
+    it.skipIf(
+      skipsOnWindows(
+        "git-bash",
+        "the configured command runs through cmd.exe, which reports a missing program as a shell that could not be started, not as a failed command",
+      ),
+    )(
+      "names the configured plan command when its program is missing",
+      async () => {
+        // The plan command runs through the shell, which reports a missing
+        // program as exit 127; the message names the configuration field the
+        // operator has to look at. The stub resolver is written but
+        // unreachable — a PATH with no `bun` on it is the whole probe.
+        const stateDir = mkdtempSync(join(tmpRoot, "rp-nobun-"));
+        const dir = resolverShim({ body: DELTA_FULL });
+        // Launched by ABSOLUTE runtime path, not through the `#!/usr/bin/env bun`
+        // shebang: the shebang needs bun on PATH too, so it would fail at 127
+        // before round-plan.ts ran a line, and the probe would pass for the wrong
+        // reason. The script runs; only the resolver's `bun` is missing.
+        const proc = Bun.spawn(
+          [process.execPath, join(SCRIPTS, "round-plan.ts"), "999", "--json"],
+          {
+            cwd: repo,
+            env: {
+              ...gitCleanEnv(),
+              ...IDENTITY,
+              // `binDir` carries the gh/git stubs this harness needs; what it does
+              // NOT carry is bun. The system directories supply the shell (and, on
+              // Windows, the real git and sh, which live apart from any bun).
+              PATH: [
+                dir,
+                prBaseGh(),
+                binDir,
+                // Windows keeps git and sh in Git for Windows' own directories.
+                ...byPlatform("Windows keeps git and sh apart", {
+                  windows: [Bun.which("git"), Bun.which("sh")].map((p) =>
+                    dirname(p as string),
+                  ),
+                  posix: ["/usr/bin", "/bin"],
+                }),
+              ].join(delimiter),
+              DRIVE_PR_STATE_DIR: stateDir,
+            },
+            stdout: "pipe",
+            stderr: "pipe",
           },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
-      const [stderr, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
-      expect(exitCode).toBe(1);
-      expect(stderr).toContain("drive.validation_plan_command failed");
-    });
+        );
+        const [stderr, exitCode] = await Promise.all([
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
+        expect(exitCode).toBe(1);
+        expect(stderr).toContain("drive.validation_plan_command failed");
+      },
+    );
 
     // The decay argument is built entirely on `validation.testbox.required`, so
     // the read has to be as fail-closed as the argument claims to be. A bare
@@ -2157,10 +2219,8 @@ process.exit(0);
      */
     const gitShimFailingDiffFor = (rev: string) => {
       const dir = mkdtempSync(join(tmpRoot, "rp-shim-git-"));
-      const real = Bun.spawnSync(["/usr/bin/which", "git"], { stdout: "pipe" })
-        .stdout.toString()
-        .trim();
-      writeFileSync(
+      const real = realGitForShell();
+      writeFakeProgram(
         join(dir, "git"),
         `#!/usr/bin/env bash
 diffish=0
@@ -2173,10 +2233,9 @@ if [ "$diffish" = "1" ]; then
     fi
   done
 fi
-exec ${real} "$@"
+exec "${real}" "$@"
 `,
       );
-      chmodSync(join(dir, "git"), 0o755);
       return dir;
     };
 
@@ -2186,13 +2245,13 @@ exec ${real} "$@"
     // entirely the wrong reason.
     const planWithGitShim = async (stateDir: string, gitDir: string) => {
       const proc = Bun.spawn(
-        [join(SCRIPTS, "round-plan.ts"), "999", "--json"],
+        scriptArgv(join(SCRIPTS, "round-plan.ts"), "999", "--json"),
         {
           cwd: repo,
           env: {
             ...gitCleanEnv(),
             ...IDENTITY,
-            PATH: `${gitDir}:${resolverShim({ body: DELTA_FULL })}:${prBaseGh()}:${binDir}:${process.env.PATH}`,
+            PATH: `${gitDir}${delimiter}${resolverShim({ body: DELTA_FULL })}${delimiter}${prBaseGh()}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_STATE_DIR: stateDir,
           },
           stdout: "pipe",
@@ -2263,13 +2322,13 @@ exec ${real} "$@"
     // list is empty by construction rather than by hoping this worktree is
     // clean (it is not, mid-round).
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(SCRIPTS, "round-plan.ts"),
         "999",
         "--since",
         scratchClean.head,
         "--json",
-      ],
+      ),
       {
         cwd: scratchClean.dir,
         // gitCleanEnv, not process.env: a git hook exports GIT_DIR and
@@ -2279,7 +2338,7 @@ exec ${real} "$@"
         // failed at commit time — measured, not hypothesised.
         env: {
           ...gitCleanEnv(),
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_STATE_DIR: stateDir,
         },
         stdout: "pipe",
@@ -2323,17 +2382,17 @@ describe("drive-status.ts PR-target channel", () => {
     // test for 999 while targeting 1234.
     const { dir, stateDir } = writeFixture({ threads: [] });
     const proc = Bun.spawn(
-      [
+      scriptArgv(
         join(SCRIPTS, "drive-status.ts"),
         "999",
         "--json",
         "--once",
         "--no-head-sync",
-      ],
+      ),
       {
         env: {
           ...process.env,
-          PATH: `${binDir}:${process.env.PATH}`,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
           DRIVE_PR_TARGET: "1234",
@@ -2417,9 +2476,11 @@ describe("guarded-push.ts", () => {
     const gitStub = join(dir, "bin");
     mkdirSync(gitStub, { recursive: true });
     const p = join(gitStub, "git");
+    // Exactly the root `ACTOR` was derived from, in git's own spelling.
+    const toplevel = shellPath(await worktreeRoot());
     const hookFile = join(dir, "pre-push-hook.sh");
     if (opts.prePushHook) writeFileSync(hookFile, opts.prePushHook);
-    writeFileSync(
+    writeFakeProgram(
       p,
       [
         "#!/usr/bin/env bash",
@@ -2438,7 +2499,7 @@ describe("guarded-push.ts", () => {
         // one this suite's own `ACTOR` constant resolved, so a probe that
         // seeds a lease under `ACTOR` would look for it under a path this
         // process can never compute, and read as absent unconditionally.
-        `if [ "\${1:-}" = "rev-parse" ] && [ "\${2:-}" = "--show-toplevel" ]; then echo "${process.cwd()}"; exit 0; fi`,
+        `if [ "\${1:-}" = "rev-parse" ] && [ "\${2:-}" = "--show-toplevel" ]; then echo "${toplevel}"; exit 0; fi`,
         `if [ "\${1:-}" = "rev-parse" ]; then echo "${localHead}"; exit 0; fi`,
         'if [ "${1:-}" = "remote" ]; then',
         pushUrls === null
@@ -2477,13 +2538,12 @@ describe("guarded-push.ts", () => {
         'echo "   abc..def  HEAD -> main"',
       ].join("\n"),
     );
-    chmodSync(p, 0o755);
     const proc = Bun.spawn(
-      [join(SCRIPTS, "guarded-push.ts"), ...(opts.args ?? ["999"])],
+      scriptArgv(join(SCRIPTS, "guarded-push.ts"), ...(opts.args ?? ["999"])),
       {
         env: {
           ...process.env,
-          PATH: `${gitStub}:${binDir}:${process.env.PATH}`,
+          PATH: `${gitStub}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           // Keep the post-push verification poll short in tests; production
           // defaults to 10 × 6s to ride out replication lag.
@@ -2828,64 +2888,70 @@ describe("guarded-push.ts", () => {
     });
   });
 
-  it("the deadline kills the process TREE, not just the child it signalled", async () => {
-    // Returning promptly is not the same as having stopped the work. `git
-    // push` runs the pre-push hook, and that hook runs the build and test
-    // suites — a deadline that reports "killed" while those keep running
-    // leaves them consuming the machine and producing side effects after the
-    // driver has moved on.
-    //
-    // The stub's `sleep` is a genuine grandchild, and it writes the marker
-    // only if it lives to finish. Waiting past its full duration before
-    // looking is what makes the absence of the marker mean "killed" rather
-    // than "not written yet". The kill grace is shortened to 500ms, so the
-    // tree is gone by ~1.5s, well before the 3s sleep would finish.
-    const r = await guardedPush(
-      { threads: [] },
-      {
-        slowPushSec: 3,
-        env: {
-          DRIVE_PR_PUSH_TIMEOUT: "1",
-          DRIVE_PR_KILL_ESCALATE_MS: "500",
+  it.skipIf(NO_TREE_KILL)(
+    "the deadline kills the process TREE, not just the child it signalled",
+    async () => {
+      // Returning promptly is not the same as having stopped the work. `git
+      // push` runs the pre-push hook, and that hook runs the build and test
+      // suites — a deadline that reports "killed" while those keep running
+      // leaves them consuming the machine and producing side effects after the
+      // driver has moved on.
+      //
+      // The stub's `sleep` is a genuine grandchild, and it writes the marker
+      // only if it lives to finish. Waiting past its full duration before
+      // looking is what makes the absence of the marker mean "killed" rather
+      // than "not written yet". The kill grace is shortened to 500ms, so the
+      // tree is gone by ~1.5s, well before the 3s sleep would finish.
+      const r = await guardedPush(
+        { threads: [] },
+        {
+          slowPushSec: 3,
+          env: {
+            DRIVE_PR_PUSH_TIMEOUT: "1",
+            DRIVE_PR_KILL_ESCALATE_MS: "500",
+          },
         },
-      },
-    );
-    expect(r.exitCode).toBe(1);
-    await new Promise((res) => setTimeout(res, 3500));
-    expect({ grandchildSurvived: existsSync(r.survivorMarker) }).toEqual({
-      grandchildSurvived: false,
-    });
-  });
+      );
+      expect(r.exitCode).toBe(1);
+      await new Promise((res) => setTimeout(res, 3500));
+      expect({ grandchildSurvived: existsSync(r.survivorMarker) }).toEqual({
+        grandchildSurvived: false,
+      });
+    },
+  );
 
-  it("escalates to SIGKILL even when the child exits before the grace elapses", async () => {
-    // The tree kill above is delivered by a two-second escalation timer, and
-    // `settle` clears that timer. A child that exits promptly on SIGTERM while
-    // a descendant survives WITHOUT holding the captured streams therefore
-    // fires 'close' first and cancels the only SIGKILL the group was going to
-    // get — the wrapper reports 124 while the descendant runs on, which is the
-    // exact leak the group kill exists to close.
-    //
-    // 'background' is what makes the child exit early: the grandchild's stdio
-    // goes to /dev/null, so nothing but bash holds the pipes. The grace is
-    // shortened to 500ms — still ample for bash to exit on the SIGTERM
-    // first — and the 3s sleep still outlasts the kill.
-    const r = await guardedPush(
-      { threads: [] },
-      {
-        slowPushSec: 3,
-        slowPushStyle: "background",
-        env: {
-          DRIVE_PR_PUSH_TIMEOUT: "1",
-          DRIVE_PR_KILL_ESCALATE_MS: "500",
+  it.skipIf(NO_TREE_KILL)(
+    "escalates to SIGKILL even when the child exits before the grace elapses",
+    async () => {
+      // The tree kill above is delivered by a two-second escalation timer, and
+      // `settle` clears that timer. A child that exits promptly on SIGTERM while
+      // a descendant survives WITHOUT holding the captured streams therefore
+      // fires 'close' first and cancels the only SIGKILL the group was going to
+      // get — the wrapper reports 124 while the descendant runs on, which is the
+      // exact leak the group kill exists to close.
+      //
+      // 'background' is what makes the child exit early: the grandchild's stdio
+      // goes to /dev/null, so nothing but bash holds the pipes. The grace is
+      // shortened to 500ms — still ample for bash to exit on the SIGTERM
+      // first — and the 3s sleep still outlasts the kill.
+      const r = await guardedPush(
+        { threads: [] },
+        {
+          slowPushSec: 3,
+          slowPushStyle: "background",
+          env: {
+            DRIVE_PR_PUSH_TIMEOUT: "1",
+            DRIVE_PR_KILL_ESCALATE_MS: "500",
+          },
         },
-      },
-    );
-    expect(r.exitCode).toBe(1);
-    await new Promise((res) => setTimeout(res, 3500));
-    expect({ grandchildSurvived: existsSync(r.survivorMarker) }).toEqual({
-      grandchildSurvived: false,
-    });
-  });
+      );
+      expect(r.exitCode).toBe(1);
+      await new Promise((res) => setTimeout(res, 3500));
+      expect({ grandchildSurvived: existsSync(r.survivorMarker) }).toEqual({
+        grandchildSurvived: false,
+      });
+    },
+  );
 
   it("refuses a DRIVE_PR_PUSH_TIMEOUT of 0 rather than pushing unbounded", async () => {
     // Same refusal GH_CALL_TIMEOUT carries, and for the same reason: `0`

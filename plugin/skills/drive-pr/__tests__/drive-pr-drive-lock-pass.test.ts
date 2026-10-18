@@ -6,7 +6,6 @@
 
 import { describe, expect, it } from "bun:test";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -18,7 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { MAILBOX_STOPPED_EXIT, QUOTA_PARKED_EXIT } from "../scripts/drive";
 import { DRIVER_LOG_MAX_BYTES } from "../scripts/lib/driver-log.ts";
 import { claudeAdapter } from "../scripts/lib/quota/claude.ts";
@@ -37,6 +36,14 @@ import {
   pollUntil,
   simulateTakeover,
 } from "./drive-loop-harness.ts";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
+
+const NO_SIGNALS = skipsOnWindows(
+  "process-lifecycle",
+  "a signal to the driver is TerminateProcess on Windows, so its handler never runs, and the pass has no process group to kill",
+);
 
 useDrivePrSuite();
 
@@ -57,17 +64,17 @@ describe("drive.ts loop control", () => {
       });
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             // Nobody holds the worktree lock, so it is taken and only the PR
@@ -148,7 +155,7 @@ describe("drive.ts loop control", () => {
       });
       const { worktree } = lockDirs(dir, stateDir);
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -156,11 +163,11 @@ describe("drive.ts loop control", () => {
           "1",
           "--",
           ...passWithLateGrandchild(dir),
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -197,7 +204,7 @@ describe("drive.ts loop control", () => {
       const { worktree } = lockDirs(dir, stateDir);
       const logPath = join(stateDir, "drive-pr-999.log");
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -205,11 +212,11 @@ describe("drive.ts loop control", () => {
           "1",
           "--",
           ...passWithLateGrandchild(dir),
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -325,7 +332,7 @@ describe("drive.ts loop control", () => {
       // A pass that fails without writing any transcript of its own. The only
       // wall on disk is the pre-existing one.
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -336,11 +343,11 @@ describe("drive.ts loop control", () => {
           "-e",
           "process.exit(1)",
           "--pr-999",
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -386,7 +393,7 @@ describe("drive.ts loop control", () => {
       mkdirSync(join(claudeProjectsDir, "proj"), { recursive: true });
 
       const stubPath = join(dir, "claude");
-      writeFileSync(
+      writeFakeProgram(
         stubPath,
         [
           "#!/usr/bin/env bun",
@@ -419,10 +426,9 @@ describe("drive.ts loop control", () => {
           "process.exit(1);",
         ].join("\n"),
       );
-      chmodSync(stubPath, 0o755);
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -431,11 +437,11 @@ describe("drive.ts loop control", () => {
           "--",
           stubPath,
           "--pr-999",
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -551,7 +557,7 @@ describe("drive.ts loop control", () => {
       );
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -572,12 +578,12 @@ describe("drive.ts loop control", () => {
           // name the PR the driver was given, or drive.ts refuses to run
           // it at all.
           "--pr-999",
-        ],
+        ),
         {
           // No `cwd` override — see the comment on `cwdDir` above.
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -718,7 +724,7 @@ describe("drive.ts loop control", () => {
       );
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -731,11 +737,11 @@ describe("drive.ts loop control", () => {
           cwdDir,
           passDonePath,
           "--pr-999",
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -841,7 +847,7 @@ describe("drive.ts loop control", () => {
       );
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -854,11 +860,11 @@ describe("drive.ts loop control", () => {
           cwdDir,
           passDonePath,
           "--pr-999",
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -969,7 +975,7 @@ describe("drive.ts loop control", () => {
       );
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -982,11 +988,11 @@ describe("drive.ts loop control", () => {
           cwdDir,
           passDonePath,
           "--pr-999",
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -1072,7 +1078,7 @@ describe("drive.ts loop control", () => {
       );
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -1085,11 +1091,11 @@ describe("drive.ts loop control", () => {
           cwdDir,
           passDonePath,
           "--pr-999",
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -1376,9 +1382,8 @@ describe("drive.ts loop control", () => {
       const claudeStubDir = mkdtempSync(
         join(tmpdir(), "drive-pr-claude-stub-"),
       );
-      writeFileSync(
-        join(claudeStubDir, "claude"),
-        // `candidateFiles` (`lib/quota/claude.ts`) scans `root/<subdir>/*.jsonl`
+      writeFakeProgram(
+        join(claudeStubDir, "claude"), // `candidateFiles` (`lib/quota/claude.ts`) scans `root/<subdir>/*.jsonl`
         // — a `.jsonl` sitting directly in the root itself is never found —
         // so the transcript is written one level under `claudeProjectsDir`,
         // matching `attemptQuotaWallSleepInterrupt`'s own
@@ -1388,7 +1393,6 @@ describe("drive.ts loop control", () => {
         // without it the transcript record carries no `sessionId` at all and
         // the quota adapter discards it as unattributable to this pass.
         `#!/bin/sh\nexec bun ${JSON.stringify(helperPath)} ${JSON.stringify(join(claudeProjectsDir, "proj"))} ${JSON.stringify(passDonePath)} "$@"\n`,
-        { mode: 0o755 },
       );
 
       const claudeConfigDir = mkdtempSync(
@@ -1403,7 +1407,7 @@ describe("drive.ts loop control", () => {
       );
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -1416,11 +1420,11 @@ describe("drive.ts loop control", () => {
           "claude",
           "-p",
           "/drive-pr 999",
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${claudeStubDir}:${binDir}:${process.env.PATH}`,
+            PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -1480,7 +1484,7 @@ describe("drive.ts loop control", () => {
       }
     }, 15000);
 
-    it.each(["SIGTERM", "SIGHUP"] as const)(
+    it.skipIf(NO_SIGNALS).each(["SIGTERM", "SIGHUP"] as const)(
       "stops the pass BEFORE releasing the locks on %s",
       async (signal) => {
         // A signal delivered to the driver pid alone — a supervisor, `kill
@@ -1492,7 +1496,7 @@ describe("drive.ts loop control", () => {
         });
         const { worktree, pr } = lockDirs(dir, stateDir);
         const proc = Bun.spawn(
-          [
+          scriptArgv(
             join(SCRIPTS, "drive.ts"),
             "999",
             "--no-head-sync",
@@ -1500,11 +1504,11 @@ describe("drive.ts loop control", () => {
             "1",
             "--",
             ...passWithLateGrandchild(dir),
-          ],
+          ),
           {
             env: {
               ...process.env,
-              PATH: `${binDir}:${process.env.PATH}`,
+              PATH: `${binDir}${delimiter}${process.env.PATH}`,
               DRIVE_PR_FIXTURES: dir,
               DRIVE_PR_STATE_DIR: stateDir,
               DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -1535,55 +1539,59 @@ describe("drive.ts loop control", () => {
       15000,
     );
 
-    it("kills the pass GROUP even when the leader closes first", async () => {
-      // `settle` clears the stop's escalation timer, so a leader that exits on
-      // the SIGTERM cancels the scheduled group SIGKILL — and a descendant that
-      // IGNORES SIGTERM then survives while `exited` resolves, telling the
-      // driver the pass is gone.
-      // The leader here exits promptly; the grandchild traps TERM and would
-      // write its marker four seconds later if only the timer stood behind it
-      // — longer than the stop's two-second escalation grace, so a group
-      // SIGKILL that does fire lands while it still sleeps.
-      const { dir, stateDir } = writeFixture({
-        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
-      });
-      const { worktree } = lockDirs(dir, stateDir);
-      const proc = Bun.spawn(
-        [
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "1",
-          "--",
-          "sh",
-          "-c",
-          `: pass for 999; sh -c 'trap "" TERM; sleep 4; : > ${JSON.stringify(join(dir, "pass-late"))}' & ` +
-            `: > ${JSON.stringify(join(dir, "pass-started"))}; wait`,
-        ],
-        {
-          env: {
-            ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
+    it.skipIf(NO_SIGNALS)(
+      "kills the pass GROUP even when the leader closes first",
+      async () => {
+        // `settle` clears the stop's escalation timer, so a leader that exits on
+        // the SIGTERM cancels the scheduled group SIGKILL — and a descendant that
+        // IGNORES SIGTERM then survives while `exited` resolves, telling the
+        // driver the pass is gone.
+        // The leader here exits promptly; the grandchild traps TERM and would
+        // write its marker four seconds later if only the timer stood behind it
+        // — longer than the stop's two-second escalation grace, so a group
+        // SIGKILL that does fire lands while it still sleeps.
+        const { dir, stateDir } = writeFixture({
+          threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+        });
+        const { worktree } = lockDirs(dir, stateDir);
+        const proc = Bun.spawn(
+          scriptArgv(
+            join(SCRIPTS, "drive.ts"),
+            "999",
+            "--no-head-sync",
+            "--max-rounds",
+            "1",
+            "--",
+            "sh",
+            "-c",
+            `: pass for 999; sh -c 'trap "" TERM; sleep 4; : > ${JSON.stringify(join(dir, "pass-late"))}' & ` +
+              `: > ${JSON.stringify(join(dir, "pass-started"))}; wait`,
+          ),
+          {
+            env: {
+              ...process.env,
+              PATH: `${binDir}${delimiter}${process.env.PATH}`,
+              DRIVE_PR_FIXTURES: dir,
+              DRIVE_PR_STATE_DIR: stateDir,
+              DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+              DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
+            },
+            stdout: "pipe",
+            stderr: "pipe",
           },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
-      const startedAt = await awaitPassStart(dir);
-      simulateTakeover(worktree, "successor02");
-      const [, exitCode] = await Promise.all([
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
-      expect(exitCode).toBe(11);
-      await outwaitGrandchild(startedAt, 4);
-      expect(existsSync(join(dir, "pass-late"))).toBe(false);
-    }, 15000);
+        );
+        const startedAt = await awaitPassStart(dir);
+        simulateTakeover(worktree, "successor02");
+        const [, exitCode] = await Promise.all([
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
+        expect(exitCode).toBe(11);
+        await outwaitGrandchild(startedAt, 4);
+        expect(existsSync(join(dir, "pass-late"))).toBe(false);
+      },
+      15000,
+    );
 
     it("a SECOND signal leaves the locks rather than releasing them under a live pass", async () => {
       // The forced-exit branch ran `process.exit()` with `held` still
@@ -1595,7 +1603,7 @@ describe("drive.ts loop control", () => {
       });
       const { worktree, pr } = lockDirs(dir, stateDir);
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -1613,11 +1621,11 @@ describe("drive.ts loop control", () => {
           // escalation SIGKILL, which is a window wide enough to be certain.
           `: pass for 999; trap "" TERM; : > ${JSON.stringify(join(dir, "pass-started"))}; ` +
             "n=0; while [ $n -lt 100 ]; do sleep 0.1; n=$((n+1)); done",
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),

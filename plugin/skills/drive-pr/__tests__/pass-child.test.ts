@@ -39,6 +39,7 @@ import {
   type ProcRow,
   parsePassChildRows,
 } from "../scripts/lib/pass-child.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 const HAS_BASH = (() => {
   try {
@@ -52,7 +53,11 @@ const HAS_BASH = (() => {
 // bash's `exec -a` to plant a chosen argv[0] onto a long-lived process — both
 // are POSIX-only, matching `lib/pass-child.ts`'s own scope (no `/proc`
 // dependency, but no Windows support either, same as `drives.ts --stop`).
-const posixIt = process.platform !== "win32" && HAS_BASH ? it : it.skip;
+const posixIt =
+  !skipsOnWindows("process-lifecycle", "hasPassChild reads POSIX ps") &&
+  HAS_BASH
+    ? it
+    : it.skip;
 
 describe("parsePassChildRows", () => {
   it("parses pid, ppid and the remainder of the line as args", () => {

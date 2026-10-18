@@ -7,7 +7,6 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -20,7 +19,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { writePickup } from "../../do-item/scripts/lib/intent-chain-pickup.ts";
 import {
   type CaptureInput,
@@ -34,6 +33,8 @@ import {
   intentChainSection,
   prCaptureFileName,
 } from "../scripts/lib/state/handoff.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { exceptOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 let ctx: string;
 let pickups: Map<string, string>;
@@ -417,7 +418,11 @@ describe("captureIntentChain — an item-named branch", () => {
     expect(readFileSync(pinPath(), "utf8")).toBe(
       readFileSync(join(chainDir(), "ENG-7.md"), "utf8"),
     );
-    expect(statSync(pinPath()).mode & 0o777).toBe(0o600);
+    // Windows reports 0o666 for any writable file; the owner-only mode is
+    // enforced by POSIX permissions only.
+    exceptOnWindows("Windows reports 0o666 for any writable file", () =>
+      expect(statSync(pinPath()).mode & 0o777).toBe(0o600),
+    );
   });
 
   it("does not consult .current or the PR body when the branch names the item", () => {
@@ -784,7 +789,7 @@ describe("capture-intent-chain.ts (CLI)", () => {
     sh(["git", "checkout", "-q", "-b", branch]);
     const bin = join(repo, "stub-bin");
     mkdirSync(bin);
-    writeFileSync(
+    writeFakeProgram(
       join(bin, "gh"),
       [
         "#!/bin/sh",
@@ -795,8 +800,7 @@ describe("capture-intent-chain.ts (CLI)", () => {
     );
     if (prJson !== null)
       writeFileSync(join(repo, ".gh-stub.json"), JSON.stringify(prJson));
-    chmodSync(join(bin, "gh"), 0o755);
-    env.PATH = `${bin}:${env.PATH ?? ""}`;
+    env.PATH = `${bin}${delimiter}${env.PATH ?? ""}`;
     env.DRIVE_PR_HANDOFF_DIR = join(repo, ".context");
     delete env.DRIVE_PR_INTENT_CHAIN_DIR;
     return { repo, env };
@@ -952,7 +956,7 @@ describe("capture-intent-chain.ts (CLI)", () => {
   it("exits 1 when the PR cannot be read", () => {
     const { repo, env } = scratch("feature/ENG-77-thing", {});
     try {
-      writeFileSync(join(repo, "stub-bin", "gh"), "#!/bin/sh\nexit 1\n");
+      writeFakeProgram(join(repo, "stub-bin", "gh"), "#!/bin/sh\nexit 1\n");
       const r = Bun.spawnSync([process.execPath, script, "42"], {
         cwd: repo,
         env,

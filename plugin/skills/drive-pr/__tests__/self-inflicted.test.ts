@@ -15,7 +15,6 @@
 
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import {
-  chmodSync,
   mkdirSync,
   mkdtempSync,
   realpathSync,
@@ -23,14 +22,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join, delimiter } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { ghRepoEnv, gitIdentityEnv, resolvePr } from "../scripts/lib/proc.ts";
 import {
   gitDeps,
   labelRecord,
   labelSummaryFinding,
 } from "../scripts/self-inflicted.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const SCRIPTS = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts");
 
@@ -448,6 +448,7 @@ beforeAll(() => {
   execGit(["config", "user.email", "test@example.invalid"]);
   execGit(["config", "user.name", "Test"]);
   execGit(["config", "commit.gpgsign", "false"]);
+  execGit(["config", "core.autocrlf", "false"]);
   mkdirSync(join(repo, "src"), { recursive: true });
   writeFileSync(join(repo, "src/a.ts"), "line1\nline2\nline3\n");
   // Present in the head tree but NEVER touched by the feature branch — the
@@ -805,6 +806,7 @@ describe("gitDeps — prPaths ignores base-only churn on an unmerged, advanced b
     execIn(repo, ["config", "user.email", "test@example.invalid"]);
     execIn(repo, ["config", "user.name", "Test"]);
     execIn(repo, ["config", "commit.gpgsign", "false"]);
+    execIn(repo, ["config", "core.autocrlf", "false"]);
     writeFileSync(join(repo, "shared.ts"), "base\n");
     execIn(repo, ["add", "-A"]);
     execIn(repo, ["commit", "-q", "-m", "base"]);
@@ -1604,29 +1606,26 @@ describe("resolvePr — cwd routes to the named repository, not the ambient one"
 
   beforeAll(() => {
     stubBinDir = mkdtempSync(join(tmpdir(), "drive-pr-resolvepr-stub-"));
-    // Resolved through `realpathSync`: on macOS `os.tmpdir()` sits under
-    // `/var/folders/...`, a symlink to `/private/var/folders/...`, and a
-    // spawned shell's `pwd` reports the RESOLVED path — comparing the
-    // unresolved form against it would never match (measured here).
-    repoA = realpathSync(mkdtempSync(join(tmpdir(), "drive-pr-resolvepr-a-")));
-    repoB = realpathSync(mkdtempSync(join(tmpdir(), "drive-pr-resolvepr-b-")));
+    repoA = mkdtempSync(join(tmpdir(), "drive-pr-resolvepr-a-"));
+    repoB = mkdtempSync(join(tmpdir(), "drive-pr-resolvepr-b-"));
     // Answers a bare `gh pr view --json number -q .number` with a number that
     // names WHICH directory it was invoked from — the only way to observe
-    // which `cwd` the call actually carried.
+    // which `cwd` the call actually carried. The directory is identified by a
+    // marker file, not by comparing `pwd` with a path: a shell reports the
+    // resolved path on macOS (`/private/var/...`) and an msys-style one on
+    // Windows (`/c/Users/...`), so no path string matches across platforms.
+    writeFileSync(join(repoA, "gh-stub-number"), "111\n");
+    writeFileSync(join(repoB, "gh-stub-number"), "222\n");
     const stub = `#!/bin/sh
 if [ "$1" = "pr" ] && [ "$2" = "view" ] && [ "$3" = "--json" ]; then
-  case "$(pwd)" in
-    "${repoA}") echo "111"; exit 0 ;;
-    "${repoB}") echo "222"; exit 0 ;;
-    *) echo "gh-stub: unexpected cwd: $(pwd)" >&2; exit 1 ;;
-  esac
+  if [ -f ./gh-stub-number ]; then cat ./gh-stub-number; exit 0; fi
+  echo "gh-stub: unexpected cwd: $(pwd)" >&2; exit 1
 fi
 echo "gh-stub: unhandled command: $*" >&2
 exit 1
 `;
     const ghPath = join(stubBinDir, "gh");
-    writeFileSync(ghPath, GH_FLAG_GUARD + stub);
-    chmodSync(ghPath, 0o755);
+    writeFakeProgram(ghPath, GH_FLAG_GUARD + stub);
   });
 
   afterAll(() => {
@@ -1641,7 +1640,7 @@ exit 1
   // to the stub the same way a CLI probe's `env` would.
   function withStubPath<T>(fn: () => Promise<T>): Promise<T> {
     const original = process.env.PATH;
-    process.env.PATH = `${stubBinDir}:${original ?? ""}`;
+    process.env.PATH = `${stubBinDir}${delimiter}${original ?? ""}`;
     return fn().finally(() => {
       process.env.PATH = original;
     });
@@ -1692,8 +1691,7 @@ echo "gh-stub: unhandled command: $*" >&2
 exit 1
 `;
     const ghPath = join(stubBinDir, "gh");
-    writeFileSync(ghPath, GH_FLAG_GUARD + stub);
-    chmodSync(ghPath, 0o755);
+    writeFakeProgram(ghPath, GH_FLAG_GUARD + stub);
   });
 
   afterAll(() => {
@@ -1704,7 +1702,7 @@ exit 1
   it("does not forward an ambient GH_REPO to the cwd-bound gh call", async () => {
     const originalPath = process.env.PATH;
     const originalGhRepo = process.env.GH_REPO;
-    process.env.PATH = `${stubBinDir}:${originalPath ?? ""}`;
+    process.env.PATH = `${stubBinDir}${delimiter}${originalPath ?? ""}`;
     process.env.GH_REPO = "attacker-owner/attacker-repo";
     try {
       expect(await resolvePr("", repoA)).toBe("clean");
@@ -1772,8 +1770,7 @@ describe("resolveBaseRef — origin verification and fetch failure are UNRESOLVE
 
   function writeGhStub(script: string): void {
     const ghPath = join(stubBinDir, "gh");
-    writeFileSync(ghPath, GH_FLAG_GUARD + script);
-    chmodSync(ghPath, 0o755);
+    writeFakeProgram(ghPath, GH_FLAG_GUARD + script);
   }
 
   // A second, local-only "remote" repository — never reached over the network
@@ -1795,6 +1792,7 @@ describe("resolveBaseRef — origin verification and fetch failure are UNRESOLVE
     execIn(baseRefRepo, ["config", "user.email", "test@example.invalid"]);
     execIn(baseRefRepo, ["config", "user.name", "Test"]);
     execIn(baseRefRepo, ["config", "commit.gpgsign", "false"]);
+    execIn(baseRefRepo, ["config", "core.autocrlf", "false"]);
     writeFileSync(join(baseRefRepo, "a.ts"), "line1\n");
     execIn(baseRefRepo, ["add", "-A"]);
     execIn(baseRefRepo, ["commit", "-q", "-m", "init"]);
@@ -1882,7 +1880,7 @@ exit 1
         env: {
           ...scrubbedGitEnv(),
           DRIVE_PR_BASE_REF: "",
-          PATH: `${stubBinDir}:${process.env.PATH ?? ""}`,
+          PATH: `${stubBinDir}${delimiter}${process.env.PATH ?? ""}`,
         },
       },
     );
@@ -1933,7 +1931,14 @@ exit 1
       // one) rather than depending on network reachability, and that failure
       // must not be read as "proceed with whatever origin/develop is already
       // on disk".
-      execIn(baseRefRepo, ["remote", "add", "origin", fetchFailOrigin]);
+      // Added as a file URL: `repoOfUrl` reads `owner/name` out of git URL
+      // forms, and a Windows drive-letter path is not one.
+      execIn(baseRefRepo, [
+        "remote",
+        "add",
+        "origin",
+        pathToFileURL(fetchFailOrigin).href,
+      ]);
       try {
         const r = await runWithStub();
         expect(r.exitCode).toBe(0);

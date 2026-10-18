@@ -26,6 +26,8 @@ import {
   unwrapResponse,
 } from "../scripts/lib/tracker/linear.ts";
 import { CANONICAL_STATES } from "../scripts/lib/tracker/port.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 /**
  * Whether a process has ended within `ms`: gone from the process table, or
@@ -267,9 +269,7 @@ describe("Linear transport", () => {
     function client(out: string, code: number): string {
       dir = mkdtempSync(join(tmpdir(), "linear-cli-"));
       const bin = join(dir, "linear");
-      writeFileSync(bin, `#!/bin/sh\nprintf '%s' '${out}'\nexit ${code}\n`, {
-        mode: 0o755,
-      });
+      writeFakeProgram(bin, `#!/bin/sh\nprintf '%s' '${out}'\nexit ${code}\n`);
       return bin;
     }
 
@@ -286,7 +286,7 @@ describe("Linear transport", () => {
     it("kills the client when the caller's signal aborts", async () => {
       dir = mkdtempSync(join(tmpdir(), "linear-cli-"));
       const bin = join(dir, "linear");
-      writeFileSync(bin, "#!/bin/sh\nexec sleep 30\n", { mode: 0o755 });
+      writeFakeProgram(bin, "#!/bin/sh\nexec sleep 30\n");
       const controller = new AbortController();
       // The client runs without blocking the event loop, so this timer fires.
       setTimeout(() => controller.abort(new Error("deadline")), 50);
@@ -297,14 +297,18 @@ describe("Linear transport", () => {
       expect(Date.now() - started).toBeLessThan(5_000);
     });
 
-    it("ends a client whose descendant holds its output open", async () => {
+    it.skipIf(
+      skipsOnWindows(
+        "process-lifecycle",
+        "the cancel's `taskkill /t` leaves the client's descendant running, so the output pipe stays open",
+      ),
+    )("ends a client whose descendant holds its output open", async () => {
       dir = mkdtempSync(join(tmpdir(), "linear-cli-"));
       const bin = join(dir, "linear");
       const pidFile = join(dir, "descendant.pid");
-      writeFileSync(
+      writeFakeProgram(
         bin,
         `#!/bin/sh\nsleep 30 &\necho $! > '${pidFile}'\nwait\n`,
-        { mode: 0o755 },
       );
       const controller = new AbortController();
       // Cancel once the descendant exists, however slowly the shell starts.
@@ -331,9 +335,10 @@ describe("Linear transport", () => {
       dir = mkdtempSync(join(tmpdir(), "linear-cli-"));
       const bin = join(dir, "linear");
       const pidFile = join(dir, "client.pid");
-      writeFileSync(bin, `#!/bin/sh\necho $$ > '${pidFile}'\nexec sleep 30\n`, {
-        mode: 0o755,
-      });
+      writeFakeProgram(
+        bin,
+        `#!/bin/sh\necho $$ > '${pidFile}'\nexec sleep 30\n`,
+      );
       const caller = join(dir, "caller.ts");
       writeFileSync(
         caller,
@@ -361,9 +366,7 @@ describe("Linear transport", () => {
     it("stops a client that prints more than it can hold", async () => {
       dir = mkdtempSync(join(tmpdir(), "linear-cli-"));
       const bin = join(dir, "linear");
-      writeFileSync(bin, "#!/bin/sh\nhead -c 70000000 /dev/zero\n", {
-        mode: 0o755,
-      });
+      writeFakeProgram(bin, "#!/bin/sh\nhead -c 70000000 /dev/zero\n");
       await expect(cliTransport(bin)("query { ok }", {})).rejects.toThrow(
         "more output than can be held",
       );

@@ -148,9 +148,9 @@ drive-pr suite only when its changes need it, as Jig's
 [change-area catalog](.config/change-areas.yaml) resolves them: when the
 drive-pr skill or something it depends on changed. A push to `main` runs
 everything. macOS and Windows run once a day, against `main`, in the nightly
-workflow: the gate set and the website's tests on both, the drive-pr suite
-on macOS, and Windows leaves out the POSIX-only suites ([scripts/gates.ts](scripts/gates.ts) says
-which and why).
+workflow: the gate set, the drive-pr suite and the website's tests on both
+(Windows leaves out only the POSIX-only suites, which [scripts/gates.ts](scripts/gates.ts)
+lists with the reason).
 The tests use Bun's built-in runner; `bun run test` runs them alone, one test
 file per processor core at a time, with the per-test timeout the slower suites
 need. `bun run format` formats TypeScript and configuration; `bun run build`

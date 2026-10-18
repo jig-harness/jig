@@ -21,15 +21,9 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
-import {
-  chmodSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import {
   buildJsonPayload,
   type Decline,
@@ -46,6 +40,7 @@ import {
 } from "../scripts/defect-escape.ts";
 import { baselineDocPath } from "../scripts/lib/escape-baseline.ts";
 import { gitIdentityEnv } from "../scripts/lib/proc.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 // Reuses the production scrubber, not a private copy of `GIT_LOCATION_VARS`.
 // This fixture wants "every variable git actually reads for repository
@@ -118,6 +113,9 @@ beforeEach(() => {
   execGit(["init", "-q"]);
   execGit(["config", "user.email", "t@t.example"]);
   execGit(["config", "user.name", "Test"]);
+  // Git for Windows converts line endings by default, which makes a fixture
+  // commit warn on stderr and a later checkout see a file as modified.
+  execGit(["config", "core.autocrlf", "false"]);
 });
 
 afterEach(() => {
@@ -126,14 +124,14 @@ afterEach(() => {
 
 describe("renameHistoryOf — a real --follow walk", () => {
   it("traces a genuine multi-hop rename with an intervening edit", () => {
-    Bun.write(join(repo, "a.ts"), "line1\n");
+    writeFileSync(join(repo, "a.ts"), "line1\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
 
     execGit(["mv", "a.ts", "b.ts"]);
     commitAt("2026-01-02T00:00:00", "rename a to b");
 
-    Bun.write(join(repo, "b.ts"), "line1\nline2\n");
+    writeFileSync(join(repo, "b.ts"), "line1\nline2\n");
     execGit(["add", "b.ts"]);
     commitAt("2026-01-03T00:00:00", "edit b.ts");
 
@@ -152,7 +150,7 @@ describe("renameHistoryOf — a real --follow walk", () => {
     // (verified against real git, outside this suite) — this fixture proves
     // the production code's own status-walk stops it, not a hand-written
     // double of that logic.
-    Bun.write(join(repo, "a.ts"), "original content\n");
+    writeFileSync(join(repo, "a.ts"), "original content\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
 
@@ -162,7 +160,7 @@ describe("renameHistoryOf — a real --follow walk", () => {
     execGit(["rm", "-q", "b.ts"]);
     commitAt("2026-01-03T00:00:00", "delete b.ts");
 
-    Bun.write(join(repo, "b.ts"), "totally unrelated content\n");
+    writeFileSync(join(repo, "b.ts"), "totally unrelated content\n");
     execGit(["add", "b.ts"]);
     commitAt("2026-01-04T00:00:00", "add unrelated b.ts");
 
@@ -171,7 +169,7 @@ describe("renameHistoryOf — a real --follow walk", () => {
   });
 
   it("bounds the walk by --since, excluding a rename that predates it", async () => {
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
 
@@ -192,7 +190,7 @@ describe("renameHistoryOf — a real --follow walk", () => {
   });
 
   it("bounds the walk by --until, excluding a rename that postdates it", async () => {
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
 
@@ -217,7 +215,7 @@ describe("renameHistoryOf — a real --follow walk", () => {
     // (`"b-\303\251.ts"` for `b-é.ts`), and a tab-split regex over that
     // output compares the quoted literal against the plain tracked name,
     // which can never match — silently discarding the chain.
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
 
@@ -235,7 +233,7 @@ describe("renameHistoryOf — a real --follow walk", () => {
     // (rather than processed unconditionally and only gated on whether their
     // OWN rename gets added to the output), the walk reaches straight
     // through to the real, but now-unrelated, a.ts->b.ts rename.
-    Bun.write(join(repo, "a.ts"), "original\n");
+    writeFileSync(join(repo, "a.ts"), "original\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
 
@@ -246,7 +244,7 @@ describe("renameHistoryOf — a real --follow walk", () => {
     execGit(["rm", "-q", "b.ts"]);
     commitAt("2026-01-04T00:00:00", "delete b.ts (AFTER until)");
 
-    Bun.write(join(repo, "b.ts"), "unrelated recreation\n");
+    writeFileSync(join(repo, "b.ts"), "unrelated recreation\n");
     execGit(["add", "b.ts"]);
     commitAt("2026-01-05T00:00:00", "add unrelated b.ts (AFTER until)");
 
@@ -263,14 +261,14 @@ describe("renameHistoryOf — a real --follow walk", () => {
     // finding describes. A `break` at the first commit older than `since`
     // would hit the Jan-1 tip first and never reach the in-window Jan-3
     // rename sitting right behind it.
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-03T00:00:00", "add a.ts");
 
     execGit(["mv", "a.ts", "b.ts"]);
     commitAt("2026-01-03T00:00:00", "rename a to b (dated Jan 3)");
 
-    Bun.write(join(repo, "b.ts"), "x\nmore\n");
+    writeFileSync(join(repo, "b.ts"), "x\nmore\n");
     execGit(["add", "b.ts"]);
     commitAt(
       "2026-01-01T00:00:00",
@@ -290,7 +288,7 @@ describe("renameHistoryOf — a real --follow walk", () => {
 
 describe("renameEquivalents — per-occurrence identity, never collapsed by pathname", () => {
   it("matches a candidate whose own trace shows the decline path", async () => {
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
 
@@ -329,7 +327,7 @@ describe("renameEquivalents — per-occurrence identity, never collapsed by path
     // include it (a match) — from the exact same underlying `git log`
     // history, discriminated only by each candidate's own per-occurrence
     // bound (a fixture supplying only one candidate could not catch this).
-    Bun.write(join(repo, "a.ts"), "original\n");
+    writeFileSync(join(repo, "a.ts"), "original\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add original a.ts");
 
@@ -365,11 +363,11 @@ describe("renameEquivalents — per-occurrence identity, never collapsed by path
     // early, then deleted; a later, unrelated rename creates a second b.ts.
     // The candidate's own anchor (its accepted thread's createdAt) must stay
     // BEFORE that later rename for the match to be correctly excluded.
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts (decline anchors here)");
 
-    Bun.write(join(repo, "b.ts"), "unrelated original\n");
+    writeFileSync(join(repo, "b.ts"), "unrelated original\n");
     execGit(["add", "b.ts"]);
     commitAt("2026-01-02T00:00:00", "add unrelated original b.ts");
 
@@ -402,14 +400,14 @@ describe("renameEquivalents — per-occurrence identity, never collapsed by path
 
 describe("renameHistoryFromRevision — ancestry-bounded walk, no date heuristic", () => {
   it("traces a multi-hop rename from a specific headOid, same stop-condition logic as renameHistoryOf", async () => {
-    Bun.write(join(repo, "a.ts"), "line1\n");
+    writeFileSync(join(repo, "a.ts"), "line1\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
 
     execGit(["mv", "a.ts", "b.ts"]);
     commitAt("2026-01-02T00:00:00", "rename a to b");
 
-    Bun.write(join(repo, "b.ts"), "line1\nline2\n");
+    writeFileSync(join(repo, "b.ts"), "line1\nline2\n");
     execGit(["add", "b.ts"]);
     commitAt("2026-01-03T00:00:00", "edit b.ts");
 
@@ -423,7 +421,7 @@ describe("renameHistoryFromRevision — ancestry-bounded walk, no date heuristic
   });
 
   it("cannot see a rename that postdates headOid — ancestry bounds the walk with no --until needed", async () => {
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
     const beforeRename = revParse("HEAD");
@@ -440,7 +438,7 @@ describe("renameHistoryFromRevision — ancestry-bounded walk, no date heuristic
   });
 
   it("stops at a delete/recreate boundary, same as renameHistoryOf", async () => {
-    Bun.write(join(repo, "a.ts"), "original content\n");
+    writeFileSync(join(repo, "a.ts"), "original content\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
 
@@ -450,7 +448,7 @@ describe("renameHistoryFromRevision — ancestry-bounded walk, no date heuristic
     execGit(["rm", "-q", "b.ts"]);
     commitAt("2026-01-03T00:00:00", "delete b.ts");
 
-    Bun.write(join(repo, "b.ts"), "totally unrelated content\n");
+    writeFileSync(join(repo, "b.ts"), "totally unrelated content\n");
     execGit(["add", "b.ts"]);
     commitAt("2026-01-04T00:00:00", "add unrelated b.ts");
     const headOid = revParse("HEAD");
@@ -473,7 +471,7 @@ describe("renameHistoryFromRevision — ancestry-bounded walk, no date heuristic
 
 describe("renameEquivalents — revision-based match preferred over committer date", () => {
   it("matches via ancestry when both sides carry a reviewedHeadOid", async () => {
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
     const declineHeadOid = revParse("HEAD");
@@ -507,7 +505,7 @@ describe("renameEquivalents — revision-based match preferred over committer da
     // reviewed head, so that incarnation of the pathname was already gone
     // by the time the decline observed a.ts as a live file — it cannot be
     // the same lineage.
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts (unrelated lineage)");
 
@@ -515,7 +513,7 @@ describe("renameEquivalents — revision-based match preferred over committer da
     commitAt("2026-01-02T00:00:00", "rename a to b, BEFORE decline head");
     const candidateHeadOid = revParse("HEAD");
 
-    Bun.write(join(repo, "unrelated.ts"), "y\n");
+    writeFileSync(join(repo, "unrelated.ts"), "y\n");
     execGit(["add", "unrelated.ts"]);
     commitAt("2026-01-03T00:00:00", "decline anchors here, after the rename");
     const declineHeadOid = revParse("HEAD");
@@ -543,7 +541,7 @@ describe("renameEquivalents — revision-based match preferred over committer da
     // `since` bound would read as "before the decline even existed" and wrongly
     // exclude — even though the rename is a genuine, direct CHILD of the
     // decline's own reviewed head in the commit graph.
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-06-01T00:00:00", "add a.ts — decline anchors here");
     const declineHeadOid = revParse("HEAD");
@@ -596,7 +594,7 @@ describe("renameEquivalents — revision-based match preferred over committer da
   });
 
   it("falls back to the date-based path per-pair when only one side has a reviewedHeadOid", async () => {
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
 
@@ -636,7 +634,7 @@ describe("renameEquivalents — revision-based match preferred over committer da
     // within days — even though GraphQL still serves its oid. Presence of an
     // OID string is not evidence the revision walk can run; the pair must fall
     // back to `dateMatch`, not silently drop.
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
     const declineHeadOid = revParse("HEAD");
@@ -669,7 +667,7 @@ describe("renameEquivalents — revision-based match preferred over committer da
   });
 
   it("falls back to the date-based path when the DECLINE OID is present but unreachable locally", async () => {
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
 
@@ -727,7 +725,7 @@ describe("renameEquivalents — ancestry direction under squash-merge topology",
   // produces the match.
 
   it("does not exclude (WIDENS-never-NARROWS default) when the rename lands on develop after the decline forked its own dead-end branch", async () => {
-    Bun.write(join(repo, "unrelated.ts"), "base\n");
+    writeFileSync(join(repo, "unrelated.ts"), "base\n");
     execGit(["add", "unrelated.ts"]);
     commitAt("2026-01-01T00:00:00", "base: add unrelated.ts");
     const base = revParse("HEAD");
@@ -737,7 +735,7 @@ describe("renameEquivalents — ancestry direction under squash-merge topology",
     // squash-merged PR's branch tip looks like once its branch is deleted:
     // reachable only via this exact oid, not via `develop`'s own history.
     execGit(["checkout", "-q", "-b", "decline-branch", base]);
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-02T00:00:00", "decline's own raw PR commit — add a.ts");
     const declineHeadOid = revParse("HEAD");
@@ -750,7 +748,7 @@ describe("renameEquivalents — ancestry direction under squash-merge topology",
     // depending on the environment's git config.
     execGit(["checkout", "-q", base]);
     execGit(["checkout", "-q", "-B", "develop-line"]);
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt(
       "2026-01-03T00:00:00",
@@ -780,12 +778,12 @@ describe("renameEquivalents — ancestry direction under squash-merge topology",
   });
 
   it("excludes a rename that already landed BEFORE the decline forked its own dead-end branch off it", async () => {
-    Bun.write(join(repo, "unrelated.ts"), "base\n");
+    writeFileSync(join(repo, "unrelated.ts"), "base\n");
     execGit(["add", "unrelated.ts"]);
     commitAt("2026-01-01T00:00:00", "base: add unrelated.ts");
 
     // An EARLIER, unrelated rename lands on develop first.
-    Bun.write(join(repo, "a.ts"), "earlier unrelated content\n");
+    writeFileSync(join(repo, "a.ts"), "earlier unrelated content\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-02T00:00:00", "add an earlier, unrelated a.ts");
     execGit(["mv", "a.ts", "b.ts"]);
@@ -797,7 +795,7 @@ describe("renameEquivalents — ancestry direction under squash-merge topology",
     // already renamed away. `candidateHeadOid`'s rename IS an ancestor of
     // this branch's fork point, so it cannot be the same lineage.
     execGit(["checkout", "-q", "-b", "decline-branch"]);
-    Bun.write(join(repo, "a.ts"), "decline’s own fresh, reused a.ts\n");
+    writeFileSync(join(repo, "a.ts"), "decline’s own fresh, reused a.ts\n");
     execGit(["add", "a.ts"]);
     commitAt(
       "2026-01-04T00:00:00",
@@ -852,13 +850,12 @@ if [[ "$#" -ne 2 || "$1" != api ||
   echo "gh-stub: unexpected command or flag: $*" >&2; exit 2
 fi
 `;
-    writeFileSync(ghPath, guard + script);
-    chmodSync(ghPath, 0o755);
+    writeFakeProgram(ghPath, guard + script);
   }
 
   async function withStubPath<T>(fn: () => Promise<T>): Promise<T> {
     const original = process.env.PATH;
-    process.env.PATH = `${stubBinDir}:${original ?? ""}`;
+    process.env.PATH = `${stubBinDir}${delimiter}${original ?? ""}`;
     try {
       return await fn();
     } finally {
@@ -894,20 +891,20 @@ fi
     declineHeadOid: string;
     candidateHeadOid: string;
   } {
-    Bun.write(join(repo, "unrelated.ts"), "base\n");
+    writeFileSync(join(repo, "unrelated.ts"), "base\n");
     execGit(["add", "unrelated.ts"]);
     commitAt("2026-01-01T00:00:00", "base: add unrelated.ts");
     const base = revParse("HEAD");
 
     execGit(["checkout", "-q", "-b", "decline-branch", base]);
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-02T00:00:00", "decline's own raw PR commit — add a.ts");
     const declineHeadOid = revParse("HEAD");
 
     execGit(["checkout", "-q", base]);
     execGit(["checkout", "-q", "-B", "develop-line"]);
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt(
       "2026-01-03T00:00:00",
@@ -1198,7 +1195,7 @@ echo "gh-stub: simulated failure" >&2
 exit 1
 `);
 
-    Bun.write(join(repo, "unrelated.ts"), "base\n");
+    writeFileSync(join(repo, "unrelated.ts"), "base\n");
     execGit(["add", "unrelated.ts"]);
     commitAt("2026-01-01T00:00:00", "base: add unrelated.ts");
     const base = revParse("HEAD");
@@ -1214,14 +1211,14 @@ exit 1
       const a = `a${i}.ts`;
       const b = `b${i}.ts`;
       execGit(["checkout", "-q", "-b", `decline-branch-${i}`, base]);
-      Bun.write(join(repo, a), "x\n");
+      writeFileSync(join(repo, a), "x\n");
       execGit(["add", a]);
       commitAt("2026-01-02T00:00:00", `decline's own raw PR commit — add ${a}`);
       const declineHeadOid = revParse("HEAD");
 
       execGit(["checkout", "-q", base]);
       execGit(["checkout", "-q", "-B", `develop-line-${i}`]);
-      Bun.write(join(repo, a), "x\n");
+      writeFileSync(join(repo, a), "x\n");
       execGit(["add", a]);
       commitAt(
         "2026-01-03T00:00:00",
@@ -1301,7 +1298,7 @@ echo "gh-stub: simulated failure" >&2
 exit 1
 `);
 
-    Bun.write(join(repo, "unrelated.ts"), "base\n");
+    writeFileSync(join(repo, "unrelated.ts"), "base\n");
     execGit(["add", "unrelated.ts"]);
     commitAt("2026-01-01T00:00:00", "base: add unrelated.ts");
     const base = revParse("HEAD");
@@ -1318,14 +1315,14 @@ exit 1
       const a = `a${i}.ts`;
       const b = `b${i}.ts`;
       execGit(["checkout", "-q", "-b", `decline-branch-${i}`, base]);
-      Bun.write(join(repo, a), "x\n");
+      writeFileSync(join(repo, a), "x\n");
       execGit(["add", a]);
       commitAt("2026-01-02T00:00:00", `decline's own raw PR commit — add ${a}`);
       const declineHeadOid = revParse("HEAD");
 
       execGit(["checkout", "-q", base]);
       execGit(["checkout", "-q", "-B", `develop-line-${i}`]);
-      Bun.write(join(repo, a), "x\n");
+      writeFileSync(join(repo, a), "x\n");
       execGit(["add", a]);
       commitAt(
         "2026-01-03T00:00:00",
@@ -1414,7 +1411,7 @@ describe("renameCandidateKey — headOid is part of candidate identity", () => {
     // batched submission — while carrying different originalCommit oids,
     // which changes whether revisionMatch accepts or excludes each one
     // independently.
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-01T00:00:00", "add a.ts");
     const declineHeadOid = revParse("HEAD");
@@ -1467,12 +1464,12 @@ describe("renameEquivalents — falls back on a shallow clone", () => {
     // from `tip` while being invisible walking from `candidateHeadOid`,
     // even though both point into the SAME clone. Reproduced against real
     // git, not asserted.
-    Bun.write(join(repo, "unrelated.ts"), "x\n");
+    writeFileSync(join(repo, "unrelated.ts"), "x\n");
     execGit(["add", "unrelated.ts"]);
     commitAt("2026-01-01T00:00:00", "commit0: develop base");
     const declineHeadOid = revParse("HEAD");
 
-    Bun.write(join(repo, "a.ts"), "x\n");
+    writeFileSync(join(repo, "a.ts"), "x\n");
     execGit(["add", "a.ts"]);
     commitAt("2026-01-02T00:00:00", "commit1: add a.ts");
 
@@ -1482,14 +1479,14 @@ describe("renameEquivalents — falls back on a shallow clone", () => {
       "commit2: rename a to b (squash-landed on develop)",
     );
 
-    Bun.write(join(repo, "b.ts"), "x\nmore\n");
+    writeFileSync(join(repo, "b.ts"), "x\nmore\n");
     execGit(["add", "b.ts"]);
     commitAt("2026-01-04T00:00:00", "commit3: develop tip");
     const developTip = revParse("HEAD");
 
     // The candidate's OWN PR branch forks from develop's tip.
     execGit(["checkout", "-q", "-b", "candidate-branch"]);
-    Bun.write(join(repo, "unrelated2.ts"), "z\n");
+    writeFileSync(join(repo, "unrelated2.ts"), "z\n");
     execGit(["add", "unrelated2.ts"]);
     commitAt("2026-01-05T00:00:00", "candidate's own PR commit");
     const candidateHeadOid = revParse("HEAD");
@@ -1497,6 +1494,7 @@ describe("renameEquivalents — falls back on a shallow clone", () => {
     const shallow = mkdtempSync(join(tmpdir(), "defect-escape-shallow-"));
     try {
       execGitIn(shallow, ["init", "-q"]);
+      execGitIn(shallow, ["config", "core.autocrlf", "false"]);
       execGitIn(shallow, ["remote", "add", "origin", repo]);
       // develop's tip: fetched FULL (no depth limit) — sees the real rename.
       execGitIn(shallow, ["fetch", "-q", "origin", developTip]);

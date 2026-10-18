@@ -1325,7 +1325,7 @@ function suiteJobShapeAllowed(job: SuiteJob, contract: SuiteContract) {
 /**
  * The `os` values a job's `matrix.include` runs on. The job runs on each row's
  * `runner`, not its `os`, so a row counts only when its runner names that
- * platform (`blacksmith-6vcpu-macos-latest` for `macos`).
+ * platform (`macos-latest` for `macos`).
  */
 function matrixPlatforms(job: SuiteJob): string[] {
   const include = job.strategy?.matrix?.include;
@@ -1679,17 +1679,30 @@ test("every suite the gate job leaves out runs in a CI job of its own or a selec
     }
   }
   // The nightly run stands in for macOS and Windows, so a separate suite that
-  // is not POSIX-only runs there on both.
+  // is not POSIX-only runs there on both: the website job's matrix holds a row
+  // per platform, and the drive-pr suite has a job per platform.
   const { POSIX_ONLY_SUITES } = await import("./gates.ts");
   const nightly = read("nightly.yml");
   for (const suite of SEPARATE_SUITES.filter(
     (s) => !POSIX_ONLY_SUITES.includes(s),
   )) {
-    const job = suite === "website/**" ? "website" : "drive-pr-suite";
-    expect(matrixPlatforms(nightly.jobs[job] ?? {}).sort()).toEqual([
-      "macos",
-      "windows",
-    ]);
+    if (suite === "website/**") {
+      expect(matrixPlatforms(nightly.jobs.website ?? {}).sort()).toEqual([
+        "macos",
+        "windows",
+      ]);
+      continue;
+    }
+    const dir = suite.replace(/\*\*$/, "");
+    for (const [job, platform] of [
+      ["drive-pr-suite", "macos"],
+      ["drive-pr-suite-windows", "windows"],
+    ] as const) {
+      expect(
+        workflowRunsSuite(nightly, job, dir, { on: NIGHTLY_TRIGGERS }),
+      ).toBe(true);
+      expect(nightly.jobs[job]?.["runs-on"]).toContain(platform);
+    }
   }
   const { jobs } = read("gates.yml");
   expect(

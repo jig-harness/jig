@@ -13,7 +13,7 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { load as loadYaml } from "../../../shared/yaml.ts";
 
 import {
@@ -30,6 +30,8 @@ import {
   runDriveIn,
   state,
 } from "./drive-loop-harness.ts";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 useDrivePrSuite();
 
@@ -47,17 +49,20 @@ describe("mark-ready.ts", () => {
     args: string[] = [],
     env: Record<string, string> = {},
   ) {
-    const proc = Bun.spawn([join(SCRIPTS, "mark-ready.ts"), "999", ...args], {
-      env: {
-        ...process.env,
-        PATH: `${binDir}:${process.env.PATH}`,
-        DRIVE_PR_FIXTURES: dir,
-        DRIVE_PR_STATE_DIR: stateDir,
-        ...env,
+    const proc = Bun.spawn(
+      scriptArgv(join(SCRIPTS, "mark-ready.ts"), "999", ...args),
+      {
+        env: {
+          ...process.env,
+          PATH: `${binDir}${delimiter}${process.env.PATH}`,
+          DRIVE_PR_FIXTURES: dir,
+          DRIVE_PR_STATE_DIR: stateDir,
+          ...env,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
       },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    );
     const [stdout, stderr, exitCode] = await Promise.all([
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
@@ -68,11 +73,14 @@ describe("mark-ready.ts", () => {
 
   /** Any drive-state.ts command against this describe block's state dir. */
   async function markReadyState(stateDir: string, args: string[]) {
-    const proc = Bun.spawn([join(SCRIPTS, "drive-state.ts"), ...args], {
-      env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawn(
+      scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
+      {
+        env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     const [stdout, stderr, exitCode] = await Promise.all([
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
@@ -83,7 +91,7 @@ describe("mark-ready.ts", () => {
 
   async function readyMarked(stateDir: string): Promise<string> {
     const proc = Bun.spawn(
-      [join(SCRIPTS, "drive-state.ts"), "ready-marked", "999"],
+      scriptArgv(join(SCRIPTS, "drive-state.ts"), "ready-marked", "999"),
       {
         env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
         stdout: "pipe",
@@ -531,28 +539,36 @@ describe("mark-ready.ts", () => {
     expect(calls(dir)).toEqual([]);
   });
 
-  it("fails closed when recording an ALREADY-Ready PR does not stick", async () => {
-    // The branch that used to fire the record and never look at the result.
-    // Leaving it at 0 is not the cost-only outcome it looks like: this drive
-    // then owes no transition with no durable evidence of it, so a later round
-    // — after a human converts the PR BACK to draft — reads 0, sees a draft,
-    // and re-marks it, undoing that decision.
-    const { dir, stateDir } = writeFixture({ threads: [] });
-    // A READABLE state that cannot be WRITTEN — the shape that separates this
-    // branch from the earlier unreadable-state refusal. The store writes a
-    // temp file beside the target and renames it, so a read-only state
-    // directory fails every write and no read.
-    await markReadyState(stateDir, ["phase", "999", "--set", "probe"]);
-    chmodSync(stateDir, 0o555);
-    try {
-      const r = await markReady(dir, stateDir);
-      expect(r.exitCode).toBe(1);
-      expect(r.stderr).toContain("recording that durably failed");
-      expect(calls(dir)).toEqual([]);
-    } finally {
-      chmodSync(stateDir, 0o755);
-    }
-  });
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "chmod 0555 on the state directory does not make it read-only on Windows, so the write failure the test forces never happens",
+    ),
+  )(
+    "fails closed when recording an ALREADY-Ready PR does not stick",
+    async () => {
+      // The branch that used to fire the record and never look at the result.
+      // Leaving it at 0 is not the cost-only outcome it looks like: this drive
+      // then owes no transition with no durable evidence of it, so a later round
+      // — after a human converts the PR BACK to draft — reads 0, sees a draft,
+      // and re-marks it, undoing that decision.
+      const { dir, stateDir } = writeFixture({ threads: [] });
+      // A READABLE state that cannot be WRITTEN — the shape that separates this
+      // branch from the earlier unreadable-state refusal. The store writes a
+      // temp file beside the target and renames it, so a read-only state
+      // directory fails every write and no read.
+      await markReadyState(stateDir, ["phase", "999", "--set", "probe"]);
+      chmodSync(stateDir, 0o555);
+      try {
+        const r = await markReady(dir, stateDir);
+        expect(r.exitCode).toBe(1);
+        expect(r.stderr).toContain("recording that durably failed");
+        expect(calls(dir)).toEqual([]);
+      } finally {
+        chmodSync(stateDir, 0o755);
+      }
+    },
+  );
 });
 
 describe("drive.ts loop control", () => {

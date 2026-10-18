@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { hostname } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import {
   SCRIPTS,
   WORKTREE_LOCK,
@@ -24,6 +24,7 @@ import {
   gitCleanEnv,
   writeFixture,
 } from "./drive-pr-harness.ts";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
 /**
  * drive.ts's fixed waits, compressed for every drive `runDriveIn` spawns
@@ -64,24 +65,27 @@ export async function runDriveIn(
     extraBinDir?: string;
   } = {},
 ) {
-  const proc = Bun.spawn([join(SCRIPTS, "drive.ts"), "999", ...args], {
-    cwd: cwd ?? scratchClean.dir,
-    // gitCleanEnv, not process.env: a git hook exports GIT_DIR and
-    // GIT_INDEX_FILE, and inheriting them makes every git call inside the
-    // spawned script — including the converged clean-tree check — operate
-    // on the REAL repository instead of the scratch cwd.
-    env: {
-      ...gitCleanEnv(),
-      PATH: `${opts.extraBinDir ? `${opts.extraBinDir}:` : ""}${binDir}:${process.env.PATH}`,
-      DRIVE_PR_FIXTURES: dir,
-      DRIVE_PR_STATE_DIR: stateDir,
-      DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-      ...DRIVE_PACING_ENV,
-      ...(opts.env ?? {}),
+  const proc = Bun.spawn(
+    scriptArgv(join(SCRIPTS, "drive.ts"), "999", ...args),
+    {
+      cwd: cwd ?? scratchClean.dir,
+      // gitCleanEnv, not process.env: a git hook exports GIT_DIR and
+      // GIT_INDEX_FILE, and inheriting them makes every git call inside the
+      // spawned script — including the converged clean-tree check — operate
+      // on the REAL repository instead of the scratch cwd.
+      env: {
+        ...gitCleanEnv(),
+        PATH: `${opts.extraBinDir ? `${opts.extraBinDir}${delimiter}` : ""}${binDir}${delimiter}${process.env.PATH}`,
+        DRIVE_PR_FIXTURES: dir,
+        DRIVE_PR_STATE_DIR: stateDir,
+        DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+        ...DRIVE_PACING_ENV,
+        ...(opts.env ?? {}),
+      },
+      stdout: "pipe",
+      stderr: "pipe",
     },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  );
   const [stderr, exitCode] = await Promise.all([
     new Response(proc.stderr).text(),
     proc.exited,
@@ -104,7 +108,7 @@ export async function runDrive(
 
 /** Read one field back out of the durable state a drive just wrote. */
 export async function state(stateDir: string, args: string[], cwd?: string) {
-  const proc = Bun.spawn([join(SCRIPTS, "drive-state.ts"), ...args], {
+  const proc = Bun.spawn(scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args), {
     cwd,
     env: {
       // gitCleanEnv(), not process.env: this suite runs inside a live

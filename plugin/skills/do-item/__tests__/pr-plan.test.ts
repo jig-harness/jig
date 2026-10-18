@@ -7,13 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -22,6 +16,7 @@ import {
   measureChange,
   shellQuote,
 } from "../scripts/pr-plan.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const SCRIPT = join(import.meta.dir, "..", "scripts", "pr-plan.ts");
 
@@ -101,8 +96,7 @@ function fakeGh(f: FakeGh): void {
     `  *) echo "unexpected gh $*" >&2; exit 3 ;;`,
     "esac",
   ].join("\n");
-  writeFileSync(join(bin, "gh"), `${script}\n`);
-  chmodSync(join(bin, "gh"), 0o755);
+  writeFakeProgram(join(bin, "gh"), `${script}\n`);
 }
 
 function overlay(text: string): void {
@@ -502,11 +496,10 @@ describe("pr-plan.ts open", () => {
       const realGit = spawnSync("sh", ["-c", "command -v git"], {
         encoding: "utf8",
       }).stdout.trim();
-      writeFileSync(
+      writeFakeProgram(
         join(bin, "git"),
         `#!/bin/sh\nfor a in "$@"; do [ "$a" = show-ref ] && exit 124; done\nexec "${realGit}" "$@"\n`,
       );
-      chmodSync(join(bin, "git"), 0o755);
       fakeGh({
         pulls: below,
         ghStack: true,

@@ -372,21 +372,22 @@ is next: Herdr is the workspace runtime Jig's tooling targets first
 The skills are TypeScript run by Bun, which runs natively on macOS, Linux
 and Windows ([ADR-0001](../docs/adr/ADR-0001-bun-typescript-toolchain.md)).
 Every pull request to Jig is tested on Linux, and `main` on macOS and Windows
-every night, where Windows leaves out the suites listed in
+every night, where Windows leaves out only the suites listed in
 `POSIX_ONLY_SUITES` in [scripts/gates.ts](../scripts/gates.ts).
 
 | Part | macOS | Linux | Windows | Why |
 | --- | --- | --- | --- | --- |
-| `drive-pr` | yes | yes | no | Supervises its agent processes through [POSIX](../GLOSSARY.md) process groups and signals, and finds them with `ps` |
-| `do-item` | yes | yes | not tested | Its pickup record uses hard links and owner-only file modes, and its suite is POSIX-only |
+| `drive-pr` | yes | yes | no | Supervises its agent processes through [POSIX](../GLOSSARY.md) process groups and signals, and finds them with `ps`; its suite runs on Windows every night, with the tests that need that work skipped |
+| `do-item` | yes | yes | no | Its pickup record uses hard links and owner-only file modes; its suite runs on Windows every night, with the tests that need that work skipped |
 | The launcher | yes | no | no | Its one provider, Conductor, is a macOS app |
 | Every other skill | yes | yes | yes | — |
-| Developing Jig (`bun run gates`) | yes | yes | yes, without the POSIX-only suites | — |
+| Developing Jig (`bun run gates`) | yes | yes | yes, without the launcher's suite | — |
 
 The supervision code already has Windows branches (it stops a process tree
 with `taskkill` and runs commands through `cmd.exe`); what is left is finding
-and waiting on a pass's processes without `ps` and POSIX signals, and a
-Windows CI job that runs the drive's suite. On every system, Jig keeps its
+and waiting on a pass's processes without `ps` and POSIX signals, state and
+locks that hold up on Windows file systems, and the skills' instructions
+under Git Bash. On every system, Jig keeps its
 state under `~/.local/state/jig` and `~/.cache/jig` in the home folder,
 rather than in each system's own application-data folder. Windows support
 for the drive and `do-item` is listed under the roadmap's later work; until

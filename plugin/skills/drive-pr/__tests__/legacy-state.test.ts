@@ -27,6 +27,7 @@ import {
   legacyFootprint,
   migratedMarkerPath,
 } from "../scripts/lib/state/legacy-state.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 function scratchDir(name: string): string {
   return mkdtempSync(join(tmpdir(), `legacy-state-${name}-`));
@@ -115,114 +116,138 @@ describe("legacyFootprint", () => {
 });
 
 describe("ensureMigratedFromLegacy", () => {
-  it("fsyncs the parent directory after creating a brand-new state directory", async () => {
-    // `mkdirSync` alone does not make the new directory ENTRY durable — a crash
-    // right after it, before its parent's own entry for it commits, can lose
-    // `newDir` even though every write later fsynced inside it was individually
-    // durable. Spies on `openSync` (what `fsyncDirectoryBestEffort` calls
-    // first) since a successful fsync has no other observable side effect.
-    const legacy = scratchDir("fsync-new-legacy");
-    const parent = scratchDir("fsync-new-parent");
-    const newDir = join(parent, "new");
-    try {
-      const actualFs = await import("node:fs");
-      const realFs = { ...actualFs };
-      const openedForSync: string[] = [];
-      mock.module("node:fs", () => ({
-        ...realFs,
-        openSync: (p: string, flags: string) => {
-          if (flags === "r") openedForSync.push(p);
-          return realFs.openSync(p, flags);
-        },
-      }));
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the directory fsync is skipped on Windows (opening a directory fails with EPERM), so the directory open this test observes never happens",
+    ),
+  )(
+    "fsyncs the parent directory after creating a brand-new state directory",
+    async () => {
+      // `mkdirSync` alone does not make the new directory ENTRY durable — a crash
+      // right after it, before its parent's own entry for it commits, can lose
+      // `newDir` even though every write later fsynced inside it was individually
+      // durable. Spies on `openSync` (what `fsyncDirectoryBestEffort` calls
+      // first) since a successful fsync has no other observable side effect.
+      const legacy = scratchDir("fsync-new-legacy");
+      const parent = scratchDir("fsync-new-parent");
+      const newDir = join(parent, "new");
       try {
-        writeFileSync(join(legacy, "HEAD"), "ref: refs/heads/main\n");
-        ensureMigratedFromLegacy(legacy, newDir);
-        expect(openedForSync).toContain(parent);
+        const actualFs = await import("node:fs");
+        const realFs = { ...actualFs };
+        const openedForSync: string[] = [];
+        mock.module("node:fs", () => ({
+          ...realFs,
+          openSync: (p: string, flags: string) => {
+            if (flags === "r") openedForSync.push(p);
+            return realFs.openSync(p, flags);
+          },
+        }));
+        try {
+          writeFileSync(join(legacy, "HEAD"), "ref: refs/heads/main\n");
+          ensureMigratedFromLegacy(legacy, newDir);
+          expect(openedForSync).toContain(parent);
+        } finally {
+          mock.module("node:fs", () => realFs);
+        }
       } finally {
-        mock.module("node:fs", () => realFs);
+        rmSync(legacy, { recursive: true, force: true });
+        rmSync(parent, { recursive: true, force: true });
       }
-    } finally {
-      rmSync(legacy, { recursive: true, force: true });
-      rmSync(parent, { recursive: true, force: true });
-    }
-  });
+    },
+  );
 
-  it("STILL fsyncs the parent when newDir already existed — presence alone is not proof a prior fsync completed", async () => {
-    // A prior call could have had mkdirSync succeed and then crash (or its own
-    // fsync throw and abort) before ever confirming newDir's entry — leaving
-    // newDir visible on this retry. Skipping the fsync merely because the
-    // directory already exists would let that unconfirmed entry stay
-    // unconfirmed forever; a retry must always reconfirm dirname(newDir).
-    const legacy = scratchDir("fsync-existing-legacy");
-    const parent = scratchDir("fsync-existing-parent");
-    const newDir = join(parent, "new");
-    mkdirSync(newDir, { recursive: true });
-    try {
-      const actualFs = await import("node:fs");
-      const realFs = { ...actualFs };
-      const openedForSync: string[] = [];
-      mock.module("node:fs", () => ({
-        ...realFs,
-        openSync: (p: string, flags: string) => {
-          if (flags === "r") openedForSync.push(p);
-          return realFs.openSync(p, flags);
-        },
-      }));
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the directory fsync is skipped on Windows (opening a directory fails with EPERM), so the directory open this test observes never happens",
+    ),
+  )(
+    "STILL fsyncs the parent when newDir already existed — presence alone is not proof a prior fsync completed",
+    async () => {
+      // A prior call could have had mkdirSync succeed and then crash (or its own
+      // fsync throw and abort) before ever confirming newDir's entry — leaving
+      // newDir visible on this retry. Skipping the fsync merely because the
+      // directory already exists would let that unconfirmed entry stay
+      // unconfirmed forever; a retry must always reconfirm dirname(newDir).
+      const legacy = scratchDir("fsync-existing-legacy");
+      const parent = scratchDir("fsync-existing-parent");
+      const newDir = join(parent, "new");
+      mkdirSync(newDir, { recursive: true });
       try {
-        writeFileSync(join(legacy, "HEAD"), "ref: refs/heads/main\n");
-        ensureMigratedFromLegacy(legacy, newDir);
-        expect(openedForSync).toContain(parent);
+        const actualFs = await import("node:fs");
+        const realFs = { ...actualFs };
+        const openedForSync: string[] = [];
+        mock.module("node:fs", () => ({
+          ...realFs,
+          openSync: (p: string, flags: string) => {
+            if (flags === "r") openedForSync.push(p);
+            return realFs.openSync(p, flags);
+          },
+        }));
+        try {
+          writeFileSync(join(legacy, "HEAD"), "ref: refs/heads/main\n");
+          ensureMigratedFromLegacy(legacy, newDir);
+          expect(openedForSync).toContain(parent);
+        } finally {
+          mock.module("node:fs", () => realFs);
+        }
       } finally {
-        mock.module("node:fs", () => realFs);
+        rmSync(legacy, { recursive: true, force: true });
+        rmSync(parent, { recursive: true, force: true });
       }
-    } finally {
-      rmSync(legacy, { recursive: true, force: true });
-      rmSync(parent, { recursive: true, force: true });
-    }
-  });
+    },
+  );
 
-  it("fsyncs EVERY newly created ancestor, not just newDir’s immediate parent — the multi-level case", async () => {
-    // `{ recursive: true }` can create several path components at once (a fresh
-    // $HOME with no `~/.local/state/jig` at all yet creates it,
-    // `drive-pr`, and the clone directory in one `mkdirSync` call). Fsyncing
-    // only `dirname(newDir)` protects the deepest entry alone — the newly
-    // created intermediate levels' own entries in THEIR parents would still be
-    // uncommitted.
-    const legacy = scratchDir("fsync-multilevel-legacy");
-    const root = scratchDir("fsync-multilevel-root");
-    // Three levels new: root/a, root/a/b, root/a/b/c (== newDir).
-    const level1 = join(root, "a");
-    const level2 = join(level1, "b");
-    const newDir = join(level2, "c");
-    try {
-      const actualFs = await import("node:fs");
-      const realFs = { ...actualFs };
-      const openedForSync: string[] = [];
-      mock.module("node:fs", () => ({
-        ...realFs,
-        openSync: (p: string, flags: string) => {
-          if (flags === "r") openedForSync.push(p);
-          return realFs.openSync(p, flags);
-        },
-      }));
+  it.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "the directory fsync is skipped on Windows (opening a directory fails with EPERM), so the directory open this test observes never happens",
+    ),
+  )(
+    "fsyncs EVERY newly created ancestor, not just newDir’s immediate parent — the multi-level case",
+    async () => {
+      // `{ recursive: true }` can create several path components at once (a fresh
+      // $HOME with no `~/.local/state/jig` at all yet creates it,
+      // `drive-pr`, and the clone directory in one `mkdirSync` call). Fsyncing
+      // only `dirname(newDir)` protects the deepest entry alone — the newly
+      // created intermediate levels' own entries in THEIR parents would still be
+      // uncommitted.
+      const legacy = scratchDir("fsync-multilevel-legacy");
+      const root = scratchDir("fsync-multilevel-root");
+      // Three levels new: root/a, root/a/b, root/a/b/c (== newDir).
+      const level1 = join(root, "a");
+      const level2 = join(level1, "b");
+      const newDir = join(level2, "c");
       try {
-        writeFileSync(join(legacy, "HEAD"), "ref: refs/heads/main\n");
-        ensureMigratedFromLegacy(legacy, newDir);
-        // Every ancestor's own PARENT is fsynced — root (protects `a`'s
-        // entry), level1 (protects `b`'s entry), level2 (protects `c`'s
-        // entry, == newDir's immediate parent, the single-level case).
-        expect(openedForSync).toContain(root);
-        expect(openedForSync).toContain(level1);
-        expect(openedForSync).toContain(level2);
+        const actualFs = await import("node:fs");
+        const realFs = { ...actualFs };
+        const openedForSync: string[] = [];
+        mock.module("node:fs", () => ({
+          ...realFs,
+          openSync: (p: string, flags: string) => {
+            if (flags === "r") openedForSync.push(p);
+            return realFs.openSync(p, flags);
+          },
+        }));
+        try {
+          writeFileSync(join(legacy, "HEAD"), "ref: refs/heads/main\n");
+          ensureMigratedFromLegacy(legacy, newDir);
+          // Every ancestor's own PARENT is fsynced — root (protects `a`'s
+          // entry), level1 (protects `b`'s entry), level2 (protects `c`'s
+          // entry, == newDir's immediate parent, the single-level case).
+          expect(openedForSync).toContain(root);
+          expect(openedForSync).toContain(level1);
+          expect(openedForSync).toContain(level2);
+        } finally {
+          mock.module("node:fs", () => realFs);
+        }
       } finally {
-        mock.module("node:fs", () => realFs);
+        rmSync(legacy, { recursive: true, force: true });
+        rmSync(root, { recursive: true, force: true });
       }
-    } finally {
-      rmSync(legacy, { recursive: true, force: true });
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
+    },
+  );
 
   it("proceeds and writes the marker when the legacy dir has nothing to migrate", () => {
     const legacy = scratchDir("empty-legacy");

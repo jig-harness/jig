@@ -36,16 +36,12 @@ import { checkSupplyChainLockstep } from "./check-supply-chain-lockstep.ts";
 const root = join(import.meta.dir, "..");
 
 /**
- * Suites that need a POSIX system: they stand in for commands with Bash
- * scripts and read process state through `ps`, `/proc` and POSIX signals, or
- * (the launcher's) put a `/bin/sh` stub on `PATH` and check file modes, so
- * they cannot run on Windows. Windows runs every other suite.
+ * Suites that need a POSIX system: the launcher's put a `/bin/sh` stub on
+ * `PATH` and check file modes, so they cannot run on Windows. Windows runs
+ * every other suite; a test inside one that needs POSIX skips itself on win32
+ * and names the work that lifts the skip.
  */
-export const POSIX_ONLY_SUITES = [
-  "plugin/skills/drive-pr/**",
-  "plugin/skills/do-item/**",
-  "tools/launcher/**",
-];
+export const POSIX_ONLY_SUITES = ["tools/launcher/**"];
 
 /**
  * Suites that run in their own CI job (`.github/workflows/gates.yml` and `nightly.yml`), which

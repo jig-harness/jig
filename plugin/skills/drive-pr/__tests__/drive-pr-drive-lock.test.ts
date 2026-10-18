@@ -23,7 +23,7 @@ import {
   writeSync,
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, delimiter } from "node:path";
 
 import {
   SCRIPTS,
@@ -44,6 +44,14 @@ import {
   simulateTakeover,
   worktreeLockNameFor,
 } from "./drive-loop-harness.ts";
+import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
+
+const NO_DIR_MODES = skipsOnWindows(
+  "file-system",
+  "chmod 0555 on a lock directory does not make it read-only on Windows, so the write failure the test forces never happens",
+);
 
 useDrivePrSuite();
 
@@ -65,17 +73,17 @@ describe("drive.ts loop control", () => {
       });
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -111,17 +119,17 @@ describe("drive.ts loop control", () => {
       });
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -158,17 +166,17 @@ describe("drive.ts loop control", () => {
       });
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -202,17 +210,17 @@ describe("drive.ts loop control", () => {
       });
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -242,17 +250,17 @@ describe("drive.ts loop control", () => {
       mkdirSync(worktree, { recursive: true });
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -296,7 +304,7 @@ describe("drive.ts loop control", () => {
         `: pass for 999; rm -rf ${q(worktree)} && mkdir -p ${q(worktree)} && printf '1 %s\\n' ${q(hostname())} > ${q(join(worktree, "claim.successor1"))}; exit 0`,
       ];
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -304,11 +312,11 @@ describe("drive.ts loop control", () => {
           "1",
           "--",
           ...swap,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -365,17 +373,17 @@ describe("drive.ts loop control", () => {
       plantStaleLock(worktree, "stale0001");
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -406,7 +414,9 @@ describe("drive.ts loop control", () => {
     // already portable, and the interleaving this one exists to force can
     // still be reasoned about from the code's own generation-naming
     // argument (see `retire`'s doc) even where it cannot be reproduced.
-    (process.platform === "win32" ? it.skip : it)(
+    (skipsOnWindows("file-system", "the rename interleaving is POSIX-only")
+      ? it.skip
+      : it)(
       "retires the generation it OBSERVED, never the path it sits at",
       async () => {
         // The rename interleaving, made deterministic. Contender A quarantined
@@ -432,17 +442,17 @@ describe("drive.ts loop control", () => {
         execFileSync("mkfifo", [fifo]);
 
         const proc = Bun.spawn(
-          [
+          scriptArgv(
             join(SCRIPTS, "drive.ts"),
             "999",
             "--no-head-sync",
             "--",
             ...PASS_LOUD,
-          ],
+          ),
           {
             env: {
               ...process.env,
-              PATH: `${binDir}:${process.env.PATH}`,
+              PATH: `${binDir}${delimiter}${process.env.PATH}`,
               DRIVE_PR_FIXTURES: dir,
               DRIVE_PR_STATE_DIR: stateDir,
               DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -491,17 +501,17 @@ describe("drive.ts loop control", () => {
       const { worktree, pr } = lockDirs(dir, stateDir);
       for (let round = 0; round < 3; round++) {
         const proc = Bun.spawn(
-          [
+          scriptArgv(
             join(SCRIPTS, "drive.ts"),
             "999",
             "--no-head-sync",
             "--",
             ...PASS_LOUD,
-          ],
+          ),
           {
             env: {
               ...process.env,
-              PATH: `${binDir}:${process.env.PATH}`,
+              PATH: `${binDir}${delimiter}${process.env.PATH}`,
               DRIVE_PR_FIXTURES: dir,
               DRIVE_PR_STATE_DIR: stateDir,
               DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -544,17 +554,17 @@ describe("drive.ts loop control", () => {
       });
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -587,17 +597,17 @@ describe("drive.ts loop control", () => {
       mkdirSync(emptyStaging, { recursive: true }); // no claim file inside
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -638,17 +648,17 @@ describe("drive.ts loop control", () => {
       utimesSync(recycledStaging, oldMs, oldMs);
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -682,17 +692,17 @@ describe("drive.ts loop control", () => {
       });
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -724,17 +734,17 @@ describe("drive.ts loop control", () => {
       });
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -774,17 +784,17 @@ describe("drive.ts loop control", () => {
       utimesSync(oldForeignStaging, oldMs, oldMs);
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -824,17 +834,17 @@ describe("drive.ts loop control", () => {
       utimesSync(oldForeignStaging, oldMs, oldMs);
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -875,17 +885,17 @@ describe("drive.ts loop control", () => {
       );
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -921,17 +931,17 @@ describe("drive.ts loop control", () => {
       });
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -986,7 +996,7 @@ describe("drive.ts loop control", () => {
         `: pass for 999; rm -f ${q(worktree)}/claim.*; printf '1 %s\\n' ${q(hostname())} > ${q(join(worktree, "claim.successor2"))}; exit 0`,
       ];
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -994,11 +1004,11 @@ describe("drive.ts loop control", () => {
           "1",
           "--",
           ...plant,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -1030,17 +1040,17 @@ describe("drive.ts loop control", () => {
       });
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
           "--",
           ...PASS_LOUD,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             // A DIFFERENT handoff dir from the one the live holder used. Under
@@ -1078,7 +1088,7 @@ describe("drive.ts loop control", () => {
       // the heartbeat inside the window.
       const started = join(dir, "pass-started");
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -1088,11 +1098,11 @@ describe("drive.ts loop control", () => {
           "sh",
           "-c",
           `: pass for 999; : > ${JSON.stringify(started)}; sleep 5; exit 0`,
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${binDir}:${process.env.PATH}`,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -1159,10 +1169,9 @@ describe("drive.ts loop control", () => {
         join(tmpdir(), "drive-pr-claude-stub-"),
       );
       const startedMarker = join(dir, "claude-pass-started");
-      writeFileSync(
+      writeFakeProgram(
         join(claudeStubDir, "claude"),
         `#!/bin/sh\n: > ${JSON.stringify(startedMarker)}\nsleep 5\nexit 0\n`,
-        { mode: 0o755 },
       );
 
       const claudeConfigDir = mkdtempSync(
@@ -1177,7 +1186,7 @@ describe("drive.ts loop control", () => {
       );
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -1187,11 +1196,11 @@ describe("drive.ts loop control", () => {
           "claude",
           "-p",
           "/drive-pr 999",
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${claudeStubDir}:${binDir}:${process.env.PATH}`,
+            PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -1290,10 +1299,9 @@ describe("drive.ts loop control", () => {
         join(tmpdir(), "drive-pr-claude-stub-"),
       );
       const startedMarker = join(dir, "claude-pass-started");
-      writeFileSync(
+      writeFakeProgram(
         join(claudeStubDir, "claude"),
         `#!/bin/sh\n: > ${JSON.stringify(startedMarker)}\nsleep 5\nexit 0\n`,
-        { mode: 0o755 },
       );
 
       const claudeConfigDir = mkdtempSync(
@@ -1308,7 +1316,7 @@ describe("drive.ts loop control", () => {
       );
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -1318,11 +1326,11 @@ describe("drive.ts loop control", () => {
           "claude",
           "-p",
           "/drive-pr 999",
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${claudeStubDir}:${binDir}:${process.env.PATH}`,
+            PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -1394,10 +1402,9 @@ describe("drive.ts loop control", () => {
         join(tmpdir(), "drive-pr-claude-stub-"),
       );
       const startedMarker = join(dir, "claude-pass-started");
-      writeFileSync(
+      writeFakeProgram(
         join(claudeStubDir, "claude"),
         `#!/bin/sh\n: > ${JSON.stringify(startedMarker)}\nsleep 1\nexit 0\n`,
-        { mode: 0o755 },
       );
 
       const claudeConfigDir = mkdtempSync(
@@ -1412,7 +1419,7 @@ describe("drive.ts loop control", () => {
       );
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -1422,11 +1429,11 @@ describe("drive.ts loop control", () => {
           "claude",
           "-p",
           "/drive-pr 999",
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${claudeStubDir}:${binDir}:${process.env.PATH}`,
+            PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -1541,10 +1548,9 @@ describe("drive.ts loop control", () => {
       // touches `secondMarker` — so the SECOND marker's existence is proof a
       // second pass was actually dispatched, not merely that the script ran
       // twice for some other reason.
-      writeFileSync(
+      writeFakeProgram(
         join(claudeStubDir, "claude"),
         `#!/bin/sh\nif [ -e ${JSON.stringify(firstMarker)} ]; then : > ${JSON.stringify(secondMarker)}; else : > ${JSON.stringify(firstMarker)}; fi\nsleep 1\nexit 0\n`,
-        { mode: 0o755 },
       );
 
       const claudeConfigDir = mkdtempSync(
@@ -1559,7 +1565,7 @@ describe("drive.ts loop control", () => {
       );
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--keep-draft",
@@ -1570,7 +1576,7 @@ describe("drive.ts loop control", () => {
           "claude",
           "-p",
           "/drive-pr 999",
-        ],
+        ),
         {
           // The fixture's `reviewedSha`/`head` are `scratchClean.head` — a
           // real SHA in the SCRATCH repo, not this test process's own cwd.
@@ -1582,7 +1588,7 @@ describe("drive.ts loop control", () => {
           cwd: scratchClean.dir,
           env: {
             ...process.env,
-            PATH: `${claudeStubDir}:${binDir}:${process.env.PATH}`,
+            PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -1717,40 +1723,42 @@ describe("drive.ts loop control", () => {
       // own 5s, not this file's `--timeout 30000`.
     }, 45000);
 
-    it("spawns the next pass anyway once every pre-spawn identity-rewrite retry is exhausted, warning about a possibly-stale display rather than blocking on a DISPLAY value", async () => {
-      // This is deliberate (see the pre-spawn retry loop's own
-      // comment in drive.ts): a filesystem stuck longer than the bounded
-      // retries must not stop the drive from ever spawning another pass over
-      // what is only ever a DISPLAY value. This test covers the fall-through
-      // that decision actually produces — every retry exhausted, and the pass
-      // spawns anyway with the stale-display warning on stderr. Simulate a
-      // stuck filesystem by chmod'ing both lock directories read-only from
-      // INSIDE round 1's own stub pass — deterministic, no timing race against
-      // a live process required — then confirm round 2 still spawns.
-      const { dir, stateDir } = writeFixture({
-        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
-      });
-      const { worktree, pr } = lockDirs(dir, stateDir);
+    it.skipIf(NO_DIR_MODES)(
+      "spawns the next pass anyway once every pre-spawn identity-rewrite retry is exhausted, warning about a possibly-stale display rather than blocking on a DISPLAY value",
+      async () => {
+        // This is deliberate (see the pre-spawn retry loop's own
+        // comment in drive.ts): a filesystem stuck longer than the bounded
+        // retries must not stop the drive from ever spawning another pass over
+        // what is only ever a DISPLAY value. This test covers the fall-through
+        // that decision actually produces — every retry exhausted, and the pass
+        // spawns anyway with the stale-display warning on stderr. Simulate a
+        // stuck filesystem by chmod'ing both lock directories read-only from
+        // INSIDE round 1's own stub pass — deterministic, no timing race against
+        // a live process required — then confirm round 2 still spawns.
+        const { dir, stateDir } = writeFixture({
+          threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+        });
+        const { worktree, pr } = lockDirs(dir, stateDir);
 
-      const claudeStubDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-stub-"),
-      );
-      const passCountFile = join(dir, "pass-count");
-      const round2Marker = join(dir, "round2-started");
+        const claudeStubDir = mkdtempSync(
+          join(tmpdir(), "drive-pr-claude-stub-"),
+        );
+        const passCountFile = join(dir, "pass-count");
+        const round2Marker = join(dir, "round2-started");
 
-      const claudeConfigDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-config-"),
-      );
-      const claudeJsonPath = join(claudeConfigDir, ".claude.json");
-      writeFileSync(
-        claudeJsonPath,
-        JSON.stringify({
-          oauthAccount: { emailAddress: "before@example.com" },
-        }),
-      );
-      writeFileSync(
-        join(claudeStubDir, "claude"),
-        `#!/bin/sh
+        const claudeConfigDir = mkdtempSync(
+          join(tmpdir(), "drive-pr-claude-config-"),
+        );
+        const claudeJsonPath = join(claudeConfigDir, ".claude.json");
+        writeFileSync(
+          claudeJsonPath,
+          JSON.stringify({
+            oauthAccount: { emailAddress: "before@example.com" },
+          }),
+        );
+        writeFakeProgram(
+          join(claudeStubDir, "claude"),
+          `#!/bin/sh
 n=$(( $(cat ${JSON.stringify(passCountFile)} 2>/dev/null || echo 0) + 1 ))
 echo "$n" > ${JSON.stringify(passCountFile)}
 if [ "$n" = "1" ]; then
@@ -1762,76 +1770,76 @@ else
 fi
 exit 0
 `,
-        { mode: 0o755 },
-      );
-
-      const proc = Bun.spawn(
-        [
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "2",
-          "--",
-          "claude",
-          "-p",
-          "/drive-pr 999",
-        ],
-        {
-          env: {
-            ...process.env,
-            PATH: `${claudeStubDir}:${binDir}:${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            CLAUDE_CONFIG_DIR: claudeConfigDir,
-            CLAUDE_CODE_OAUTH_TOKEN: "",
-            // Far longer than this test ever runs — only the pre-spawn
-            // retry loop and the pass-exit refresh should ever touch the
-            // now-read-only lock directories, never the heartbeat timer.
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "60000",
-            // The single fixture thread is never resolved by either stub
-            // invocation, so both rounds report an identical fingerprint —
-            // disabled here because this probe's subject is the identity
-            // fallback, not the (separately covered) stall-stop behavior.
-            DRIVE_PR_STALL_ROUNDS: "0",
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
-
-      try {
-        const [stderr, exitCode] = await Promise.all([
-          new Response(proc.stderr).text(),
-          proc.exited,
-        ]);
-        expect(exitCode).toBe(6);
-        expect(stderr).toContain(
-          "the account-identity claim rewrite did not land before this spawn — proceeding with a possibly-stale display",
         );
-        // The exhausted retries did not block the round loop: round 2 still
-        // spawned its own pass.
-        expect(existsSync(round2Marker)).toBe(true);
-      } finally {
-        // Best-effort: the stub itself restores write permission before its
-        // round-2 exit, and a normal drive exit then retires (removes) both
-        // lock directories on its way out — so neither path here is
-        // guaranteed to still exist by the time a failed assertion above
-        // lands here instead.
-        for (const d of [worktree, pr]) {
-          try {
-            chmodSync(d, 0o755);
-          } catch {
-            // Already gone (normal release) or never existed this run.
+
+        const proc = Bun.spawn(
+          scriptArgv(
+            join(SCRIPTS, "drive.ts"),
+            "999",
+            "--no-head-sync",
+            "--max-rounds",
+            "2",
+            "--",
+            "claude",
+            "-p",
+            "/drive-pr 999",
+          ),
+          {
+            env: {
+              ...process.env,
+              PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
+              DRIVE_PR_FIXTURES: dir,
+              DRIVE_PR_STATE_DIR: stateDir,
+              DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+              CLAUDE_CONFIG_DIR: claudeConfigDir,
+              CLAUDE_CODE_OAUTH_TOKEN: "",
+              // Far longer than this test ever runs — only the pre-spawn
+              // retry loop and the pass-exit refresh should ever touch the
+              // now-read-only lock directories, never the heartbeat timer.
+              DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "60000",
+              // The single fixture thread is never resolved by either stub
+              // invocation, so both rounds report an identical fingerprint —
+              // disabled here because this probe's subject is the identity
+              // fallback, not the (separately covered) stall-stop behavior.
+              DRIVE_PR_STALL_ROUNDS: "0",
+            },
+            stdout: "pipe",
+            stderr: "pipe",
+          },
+        );
+
+        try {
+          const [stderr, exitCode] = await Promise.all([
+            new Response(proc.stderr).text(),
+            proc.exited,
+          ]);
+          expect(exitCode).toBe(6);
+          expect(stderr).toContain(
+            "the account-identity claim rewrite did not land before this spawn — proceeding with a possibly-stale display",
+          );
+          // The exhausted retries did not block the round loop: round 2 still
+          // spawned its own pass.
+          expect(existsSync(round2Marker)).toBe(true);
+        } finally {
+          // Best-effort: the stub itself restores write permission before its
+          // round-2 exit, and a normal drive exit then retires (removes) both
+          // lock directories on its way out — so neither path here is
+          // guaranteed to still exist by the time a failed assertion above
+          // lands here instead.
+          for (const d of [worktree, pr]) {
+            try {
+              chmodSync(d, 0o755);
+            } catch {
+              // Already gone (normal release) or never existed this run.
+            }
           }
+          proc.kill();
+          await proc.exited;
+          rmSync(claudeStubDir, { recursive: true, force: true });
+          rmSync(claudeConfigDir, { recursive: true, force: true });
         }
-        proc.kill();
-        await proc.exited;
-        rmSync(claudeStubDir, { recursive: true, force: true });
-        rmSync(claudeConfigDir, { recursive: true, force: true });
-      }
-    });
+      },
+    );
 
     it("heals a resurrected claim at the pass-exit rewrite instead of trusting `touchLock`'s own next tick, which cannot see it", async () => {
       // Narrowing the check-to-rename gap cannot close it, and `touchLock`'s
@@ -1852,10 +1860,9 @@ exit 0
         join(tmpdir(), "drive-pr-claude-stub-"),
       );
       const startedMarker = join(dir, "claude-pass-started");
-      writeFileSync(
+      writeFakeProgram(
         join(claudeStubDir, "claude"),
         `#!/bin/sh\n: > ${JSON.stringify(startedMarker)}\nsleep 1\nexit 0\n`,
-        { mode: 0o755 },
       );
 
       const claudeConfigDir = mkdtempSync(
@@ -1870,7 +1877,7 @@ exit 0
       );
 
       const proc = Bun.spawn(
-        [
+        scriptArgv(
           join(SCRIPTS, "drive.ts"),
           "999",
           "--no-head-sync",
@@ -1880,11 +1887,11 @@ exit 0
           "claude",
           "-p",
           "/drive-pr 999",
-        ],
+        ),
         {
           env: {
             ...process.env,
-            PATH: `${claudeStubDir}:${binDir}:${process.env.PATH}`,
+            PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
             DRIVE_PR_FIXTURES: dir,
             DRIVE_PR_STATE_DIR: stateDir,
             DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
@@ -1943,159 +1950,164 @@ exit 0
       }
     });
 
-    it("retries every held lock independently, not just the first one to reach `fresh`", async () => {
-      // An earlier revision compared `fresh` against only the FIRST lock
-      // with a diag (`locks.find(...)`) and returned once THAT ONE matched
-      // — so once one lock's rewrite succeeded, a sibling lock's own
-      // transient write failure went permanently unretried: the next
-      // tick's shared check saw the first lock already agreeing with
-      // `fresh` and never looked at the second lock again. Block the PR
-      // lock's own directory (a permission failure stands in for any
-      // transient write failure) while the worktree lock stays writable,
-      // trigger a real account change, and confirm the PR lock's claim
-      // still catches up once unblocked — the old code could never do that
-      // once the worktree lock got there first.
-      const { dir, stateDir } = writeFixture({
-        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
-      });
-      const { worktree, pr } = lockDirs(dir, stateDir);
+    it.skipIf(NO_DIR_MODES)(
+      "retries every held lock independently, not just the first one to reach `fresh`",
+      async () => {
+        // An earlier revision compared `fresh` against only the FIRST lock
+        // with a diag (`locks.find(...)`) and returned once THAT ONE matched
+        // — so once one lock's rewrite succeeded, a sibling lock's own
+        // transient write failure went permanently unretried: the next
+        // tick's shared check saw the first lock already agreeing with
+        // `fresh` and never looked at the second lock again. Block the PR
+        // lock's own directory (a permission failure stands in for any
+        // transient write failure) while the worktree lock stays writable,
+        // trigger a real account change, and confirm the PR lock's claim
+        // still catches up once unblocked — the old code could never do that
+        // once the worktree lock got there first.
+        const { dir, stateDir } = writeFixture({
+          threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+        });
+        const { worktree, pr } = lockDirs(dir, stateDir);
 
-      const claudeStubDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-stub-"),
-      );
-      const startedMarker = join(dir, "claude-pass-started");
-      writeFileSync(
-        join(claudeStubDir, "claude"),
-        `#!/bin/sh\n: > ${JSON.stringify(startedMarker)}\nsleep 1\nexit 0\n`,
-        { mode: 0o755 },
-      );
+        const claudeStubDir = mkdtempSync(
+          join(tmpdir(), "drive-pr-claude-stub-"),
+        );
+        const startedMarker = join(dir, "claude-pass-started");
+        writeFakeProgram(
+          join(claudeStubDir, "claude"),
+          `#!/bin/sh\n: > ${JSON.stringify(startedMarker)}\nsleep 1\nexit 0\n`,
+        );
 
-      const claudeConfigDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-claude-config-"),
-      );
-      const claudeJsonPath = join(claudeConfigDir, ".claude.json");
-      writeFileSync(
-        claudeJsonPath,
-        JSON.stringify({
-          oauthAccount: { emailAddress: "before@example.com" },
-        }),
-      );
-
-      const proc = Bun.spawn(
-        [
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          "1",
-          "--",
-          "claude",
-          "-p",
-          "/drive-pr 999",
-        ],
-        {
-          env: {
-            ...process.env,
-            PATH: `${claudeStubDir}:${binDir}:${process.env.PATH}`,
-            DRIVE_PR_FIXTURES: dir,
-            DRIVE_PR_STATE_DIR: stateDir,
-            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-            CLAUDE_CONFIG_DIR: claudeConfigDir,
-            CLAUDE_CODE_OAUTH_TOKEN: "",
-            // Short enough that several ticks land in the window between
-            // the pass exiting and this process deciding it has hit
-            // --max-rounds — the retry has to survive more than one tick.
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "10",
-          },
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      );
-
-      let prBlocked = false;
-      try {
-        const running = await pollUntil(() => existsSync(startedMarker), 400);
-        expect(running).toBe(true);
-
-        // Block the PR lock directory's writes while the pass sleeps — a
-        // stand-in for a transient write failure specifically on this lock.
-        chmodSync(pr, 0o500);
-        prBlocked = true;
-
-        // Confirm the permission bits actually block a write in THIS
-        // environment before trusting them as the failure injection below —
-        // a privileged (e.g. root) test process ignores file-mode write
-        // permission entirely, which would let both claims catch up
-        // immediately and leave every assertion past this point vacuously
-        // true regardless of whether the per-lock retry fix below is even
-        // present.
-        const writeProbe = join(pr, `write-probe.${process.pid}`);
-        let probeBlocked = false;
-        try {
-          writeFileSync(writeProbe, "x");
-          rmSync(writeProbe, { force: true });
-        } catch {
-          probeBlocked = true;
-        }
-        expect(probeBlocked).toBe(true);
-
+        const claudeConfigDir = mkdtempSync(
+          join(tmpdir(), "drive-pr-claude-config-"),
+        );
+        const claudeJsonPath = join(claudeConfigDir, ".claude.json");
         writeFileSync(
           claudeJsonPath,
           JSON.stringify({
-            oauthAccount: { emailAddress: "after@example.com" },
+            oauthAccount: { emailAddress: "before@example.com" },
           }),
         );
 
-        const readAccountEmail = (dirPath: string): string | undefined => {
-          try {
-            const held = claimsIn(dirPath);
-            if (held.length !== 1) return undefined;
-            const text = readFileSync(join(dirPath, held[0] as string), "utf8");
-            const secondLine = text.split("\n")[1] ?? "";
-            const parsed = JSON.parse(secondLine) as {
-              account?: { account?: string };
-            };
-            return parsed.account?.account;
-          } catch {
-            return undefined;
-          }
-        };
-
-        // The worktree lock is writable throughout, so it should catch up
-        // even though the PR lock cannot.
-        const worktreeCaughtUp = await pollUntil(
-          () => readAccountEmail(worktree) === "after@example.com",
-          400,
-          10,
+        const proc = Bun.spawn(
+          scriptArgv(
+            join(SCRIPTS, "drive.ts"),
+            "999",
+            "--no-head-sync",
+            "--max-rounds",
+            "1",
+            "--",
+            "claude",
+            "-p",
+            "/drive-pr 999",
+          ),
+          {
+            env: {
+              ...process.env,
+              PATH: `${claudeStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
+              DRIVE_PR_FIXTURES: dir,
+              DRIVE_PR_STATE_DIR: stateDir,
+              DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+              CLAUDE_CONFIG_DIR: claudeConfigDir,
+              CLAUDE_CODE_OAUTH_TOKEN: "",
+              // Short enough that several ticks land in the window between
+              // the pass exiting and this process deciding it has hit
+              // --max-rounds — the retry has to survive more than one tick.
+              DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "10",
+            },
+            stdout: "pipe",
+            stderr: "pipe",
+          },
         );
-        expect(worktreeCaughtUp).toBe(true);
 
-        // Unblock the PR lock and confirm it ALSO eventually catches up —
-        // the fix's whole point: a lock that missed one rewrite keeps
-        // retrying on every later tick rather than being masked by a
-        // sibling lock that already agrees with `fresh`.
-        chmodSync(pr, 0o700);
-        prBlocked = false;
+        let prBlocked = false;
+        try {
+          const running = await pollUntil(() => existsSync(startedMarker), 400);
+          expect(running).toBe(true);
 
-        const prCaughtUp = await pollUntil(
-          () => readAccountEmail(pr) === "after@example.com",
-          400,
-          10,
-        );
-        expect(prCaughtUp).toBe(true);
-      } finally {
-        if (prBlocked) {
+          // Block the PR lock directory's writes while the pass sleeps — a
+          // stand-in for a transient write failure specifically on this lock.
+          chmodSync(pr, 0o500);
+          prBlocked = true;
+
+          // Confirm the permission bits actually block a write in THIS
+          // environment before trusting them as the failure injection below —
+          // a privileged (e.g. root) test process ignores file-mode write
+          // permission entirely, which would let both claims catch up
+          // immediately and leave every assertion past this point vacuously
+          // true regardless of whether the per-lock retry fix below is even
+          // present.
+          const writeProbe = join(pr, `write-probe.${process.pid}`);
+          let probeBlocked = false;
           try {
-            chmodSync(pr, 0o700);
+            writeFileSync(writeProbe, "x");
+            rmSync(writeProbe, { force: true });
           } catch {
-            // best-effort — nothing further to clean up if this itself fails
+            probeBlocked = true;
           }
+          expect(probeBlocked).toBe(true);
+
+          writeFileSync(
+            claudeJsonPath,
+            JSON.stringify({
+              oauthAccount: { emailAddress: "after@example.com" },
+            }),
+          );
+
+          const readAccountEmail = (dirPath: string): string | undefined => {
+            try {
+              const held = claimsIn(dirPath);
+              if (held.length !== 1) return undefined;
+              const text = readFileSync(
+                join(dirPath, held[0] as string),
+                "utf8",
+              );
+              const secondLine = text.split("\n")[1] ?? "";
+              const parsed = JSON.parse(secondLine) as {
+                account?: { account?: string };
+              };
+              return parsed.account?.account;
+            } catch {
+              return undefined;
+            }
+          };
+
+          // The worktree lock is writable throughout, so it should catch up
+          // even though the PR lock cannot.
+          const worktreeCaughtUp = await pollUntil(
+            () => readAccountEmail(worktree) === "after@example.com",
+            400,
+            10,
+          );
+          expect(worktreeCaughtUp).toBe(true);
+
+          // Unblock the PR lock and confirm it ALSO eventually catches up —
+          // the fix's whole point: a lock that missed one rewrite keeps
+          // retrying on every later tick rather than being masked by a
+          // sibling lock that already agrees with `fresh`.
+          chmodSync(pr, 0o700);
+          prBlocked = false;
+
+          const prCaughtUp = await pollUntil(
+            () => readAccountEmail(pr) === "after@example.com",
+            400,
+            10,
+          );
+          expect(prCaughtUp).toBe(true);
+        } finally {
+          if (prBlocked) {
+            try {
+              chmodSync(pr, 0o700);
+            } catch {
+              // best-effort — nothing further to clean up if this itself fails
+            }
+          }
+          proc.kill();
+          await proc.exited;
+          rmSync(claudeStubDir, { recursive: true, force: true });
+          rmSync(claudeConfigDir, { recursive: true, force: true });
         }
-        proc.kill();
-        await proc.exited;
-        rmSync(claudeStubDir, { recursive: true, force: true });
-        rmSync(claudeConfigDir, { recursive: true, force: true });
-      }
-    });
+      },
+    );
   });
 });
