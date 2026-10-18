@@ -289,6 +289,29 @@ changes are marked **Breaking** and say what a consumer changes.
   deleted mid-read.
 - Renovate no longer reads the pinned, drifted and malformed versions inside `fixtures/` folders as Jig's own dependencies, so the Dependency Dashboard stops offering updates that would break the gates' test inputs and no longer reports a failed lookup for a fixture workflow.
 
+## [0.56.1] - 2026-10-18
+
+### Added
+
+- The plugin guide opens with [Set up from an agent session](plugin/README.md#set-up-from-an-agent-session):
+  a prompt to paste into Claude Code or Codex in the repository you want
+  to adopt Jig in. The agent checks whether the plugin is installed and runs
+  the first audit if it is; otherwise it checks the requirements, gives you
+  the install command to run, and stops.
+- Website: a getting-started page at `/adopt/` hands the setup to your agent,
+  or walks you from nothing installed to a first audit, then to the guide
+  for your repository. The home page links to it, and the root `llms.txt`
+  lists it first, under "Start here".
+
+### Changed
+
+- Website: everything about adopting Jig is one section under **Adopt**,
+  with a switch between its pages. The existing-repository guide moved to
+  `/adopt/existing/`, and the plugin's pages moved from `/plugin/` to
+  `/adopt/plugin/`, `/adopt/configuration/` and `/adopt/extending/`. The
+  "Install" navigation item is gone, and `/plugin/llms.txt` is merged into
+  `/adopt/llms.txt`.
+
 ## [0.56.0] - 2026-10-18
 
 ### Added
@@ -2823,7 +2846,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.56.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.56.1...HEAD
+[0.56.1]: https://github.com/docomply/jig/compare/v0.56.0...v0.56.1
 [0.56.0]: https://github.com/docomply/jig/compare/v0.55.0...v0.56.0
 [0.55.0]: https://github.com/docomply/jig/compare/v0.54.0...v0.55.0
 [0.54.0]: https://github.com/docomply/jig/compare/v0.53.0...v0.54.0
