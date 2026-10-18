@@ -107,13 +107,6 @@ const DESIGN_STAGE: Record<string, number> = {
  */
 export const NOT_BUILT: Record<string, Actor[]> = {
   a5: [{ kind: "todo", item: "Later", text: "epic planning on the tracker" }],
-  b3: [
-    {
-      kind: "todo",
-      item: "13",
-      text: "batching small items into one pull request",
-    },
-  ],
   b6: [
     {
       kind: "todo",

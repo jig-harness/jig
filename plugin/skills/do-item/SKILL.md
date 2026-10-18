@@ -90,7 +90,7 @@ The skill acts on a few labels as process signals, by role:
 | `followup` | `pr-followup` | An issue filed from a review finding |
 | `bug` | `bug`, `type:bug` | A bug |
 | `pattern_prefix` | `pattern:` | A recurring pattern, `<prefix><slug>` |
-| `batch_sizes` | `xs`, `small`, `medium` | Sizes the batch check may group |
+| `batch_sizes` | `xs`, `small`, `medium` | Sizes the batch check (`/jig:work-batch`) may group |
 | `extractable_tails` | `<hitl>:legal`, `<hitl>:tactical`, `<manual_ops>`, `<followup>` | Open sub-issues an epic may hand off instead of finishing |
 
 This document writes each label by its default name; read it as the
@@ -188,9 +188,10 @@ the turn. Never pick on the user's behalf.
 - **Upstream**: whatever picks the work — the consumer's planning tooling or
   a human — decides *which* issue to pick up. New issues are filed with
   `issue_tracker.file_command`.
-- **Sideways**: if the consumer has a batching skill, a small issue whose
-  change area has siblings may be better closed together with them in one PR.
-  Step 4a checks and *suggests*; it never batches silently.
+- **Sideways**: a small issue whose change area has siblings may be better
+  closed together with them in one PR, by
+  [`/jig:work-batch`](../work-batch/SKILL.md). Step 4a checks and
+  *suggests*; it never batches silently.
 - **Downstream**: this skill opens the PR and arms
   `/jig:drive-pr`, which owns every review round from there.
 
@@ -365,6 +366,18 @@ blocks the work: say in the status message that the snapshot was not written
 but an alias or pointer write failed, so a reader may see a stale or missing
 chain) — and continue.
 
+A session that gives up the work it picked up (a batch whose every issue
+was released, for one) removes its copy, so Refocus stops putting that work
+in front of it; item snapshots and pickup archives stay:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/intent-chain.ts" --clear-session
+```
+
+It prints `{ sessionPath, removed }`; a missing copy, or no session id, is
+already clear. Exit `1` means the copy exists and could not be removed: say
+so, since Refocus will keep injecting it.
+
 **When no hooks are loaded** (a harness without a hook system, or hooks not
 yet trusted): if the arm is `on`, re-read the writer's `sessionPath` after
 every compaction and before each review round, and answer its questions
@@ -384,20 +397,26 @@ findings against the issue. The status writes, scripts, templates and gate
 routing below remain **exact**.
 
 > **Batch check (issues carrying any label in the repository's
-> `batch_sizes` list, by default `xs`, `small` or `medium`), only if the
-> consumer has a batching skill.** Review cost is largely per PR, so several
-> small closures sharing one review cycle cost about what one does, and
-> parallel single-issue PRs over the same files become merge conflicts. Run
-> the batching skill's candidate check for this issue, telling it this
-> issue's repository and, when Step 1 shows the issue is already assigned to
-> you, that it is claimed by you — otherwise the check may read the anchor
-> issue itself as someone else's work and drop it from its own proposal. If
-> it proposes three or more coherent siblings, **suggest** the batch, naming
-> the keys, and let the human or the prompt decide. Never batch silently: the
-> human asked for this issue. Skip the check, and say so, when the issue
-> carries a sensitivity flag or is **urgent** priority: a batch built around
-> it could only proceed by deprioritising the very issue you were asked to
-> complete.
+> `batch_sizes` list, by default `xs`, `small` or `medium`).** Review cost is
+> largely per PR, so several small closures sharing one review cycle cost
+> about what one does, and parallel single-issue PRs over the same files
+> become merge conflicts. Run [`/jig:work-batch`](../work-batch/SKILL.md)'s
+> proposal for this issue; it reads the tracker and changes nothing:
+>
+> ```bash
+> bun "${CLAUDE_SKILL_DIR}/../work-batch/scripts/candidates.ts" <KEY> [--claimed <KEY>]
+> ```
+>
+> Pass `--claimed <KEY>` when Step 1 shows the issue is already assigned to
+> you; otherwise the proposal reads the anchor issue itself as someone
+> else's work and refuses it. If it proposes three or more coherent
+> siblings, **suggest** the batch, naming the keys, and let the
+> human or the prompt decide; a yes hands the issue to `/jig:work-batch`.
+> Never batch silently: the human asked for this issue. Skip the check, and
+> say so, when the issue carries a sensitivity flag or is **urgent**
+> priority: a batch built around it could only proceed by deprioritising the
+> very issue you were asked to complete. A refusal from the proposal (exit
+> `2`) means no batch: continue alone.
 
 > **Bug pattern pre-scout (bug issues without pattern evidence).** Run only
 > if all hold: (a) the issue carries the bug type label; (b) its body has no
@@ -1284,4 +1303,4 @@ Without such a runner, ask as in [Asking the user](#asking-the-user).
 | `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
 | `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (stdin) | JSON decision (`verdict`, `parentState`, `parentStateName`, `reason`) |
 | `pr-plan.ts` | Apply the pull-request policy: a branch name, or the plan for opening the current branch's PR | `branch --issue <KEY> --title <title>`, or `open [--issue <KEY>] [--stack-on <branch>] [--accept-oversize <reason>]` | Branch name, or the plan (text or `--json`); exit `3` when the policy refuses |
-| `intent-chain.ts` | Write the Refocus intent-chain snapshot (Step 3.5) | `IntentChainInput` JSON (stdin or `--input`) | Snapshot files and a JSON summary (`path`, `sessionPath`, `pickupId`, `chars`, `arm`, `truncated`, `pointerErrors`) |
+| `intent-chain.ts` | Write the Refocus intent-chain snapshot (Step 3.5); `--clear-session` removes this session's copy | `IntentChainInput` JSON (stdin or `--input`); nothing with `--clear-session` | Snapshot files and a JSON summary (`path`, `sessionPath`, `pickupId`, `chars`, `arm`, `truncated`, `pointerErrors`); with `--clear-session`, `{ sessionPath, removed }` |

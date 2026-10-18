@@ -1173,6 +1173,88 @@ describe("main", () => {
     }
   });
 
+  it("--clear-session removes only this session's copy, and a missing copy is already clear", () => {
+    const repo = mkdtempSync(join(tmpdir(), "intent-chain-clear-"));
+    try {
+      const root = realpathSync(repo);
+      const stateDir = join(root, ".context", "refocus-state");
+      const batch = {
+        mode: "batch",
+        issue: { identifier: "ENG-9801" },
+        items: [{ identifier: "ENG-9801" }, { identifier: "ENG-9802" }],
+      };
+      const mine = runWriter(repo, batch, { CODEX_THREAD_ID: "batch-mine" });
+      expectSpawnExit(mine, 0, "pickup in this session");
+      const other = runWriter(repo, batch, { CODEX_THREAD_ID: "batch-other" });
+      expectSpawnExit(other, 0, "pickup in another session");
+
+      const clear = runWriter(repo, null, { CODEX_THREAD_ID: "batch-mine" }, [
+        "--clear-session",
+      ]);
+      expectSpawnExit(clear, 0, "clear");
+      const minePath = join(stateDir, "batch-mine.intent-chain.md");
+      expect(JSON.parse(clear.stdout.toString())).toEqual({
+        sessionPath: minePath,
+        removed: true,
+      });
+      expect(existsSync(minePath)).toBe(false);
+      // Another session's copy and the item snapshots stay.
+      expect(existsSync(join(stateDir, "batch-other.intent-chain.md"))).toBe(
+        true,
+      );
+      expect(
+        existsSync(join(root, ".context", "intent-chain", "ENG-9801.md")),
+      ).toBe(true);
+
+      const again = runWriter(repo, null, { CODEX_THREAD_ID: "batch-mine" }, [
+        "--clear-session",
+      ]);
+      expectSpawnExit(again, 0, "clear again");
+      expect(JSON.parse(again.stdout.toString()).removed).toBe(false);
+
+      const noSession = runWriter(repo, null, {}, ["--clear-session"]);
+      expectSpawnExit(noSession, 0, "clear without a session");
+      expect(JSON.parse(noSession.stdout.toString())).toEqual({
+        sessionPath: null,
+        removed: false,
+      });
+
+      const mixed = runWriter(repo, null, { CODEX_THREAD_ID: "batch-other" }, [
+        "--clear-session",
+        "--input",
+        "chain.json",
+      ]);
+      expectSpawnExit(mixed, 2, "clear with a pickup option");
+      expect(existsSync(join(stateDir, "batch-other.intent-chain.md"))).toBe(
+        true,
+      );
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("--clear-session fails when the copy cannot be removed", () => {
+    const repo = mkdtempSync(join(tmpdir(), "intent-chain-clear-fail-"));
+    try {
+      // A directory where the copy would be: unlink refuses it.
+      const blocked = join(
+        realpathSync(repo),
+        ".context",
+        "refocus-state",
+        "stuck.intent-chain.md",
+      );
+      mkdirSync(join(blocked, "inside"), { recursive: true });
+      const clear = runWriter(repo, null, { CODEX_THREAD_ID: "stuck" }, [
+        "--clear-session",
+      ]);
+      expectSpawnExit(clear, 1, "clear of an unremovable copy");
+      expect(clear.stderr.toString()).toContain("cannot remove");
+      expect(existsSync(blocked)).toBe(true);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   it("also writes the snapshot under every batch item and the selected sub-issue, so a branch named after either resolves it", () => {
     const repo = mkdtempSync(join(tmpdir(), "intent-chain-alias-"));
     try {

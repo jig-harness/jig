@@ -22,6 +22,7 @@ Contents: [the file](#the-file) ·
 [`gates`](#gates) · [`review`](#review) · [`repository`](#repository) ·
 [`pull_requests`](#pull_requests) · [`drive`](#drive) · [`ci`](#ci) ·
 [`issue_tracker`](#issue_tracker) · [`do_item`](#do_item) ·
+[`work_batch`](#work_batch) ·
 [`fleet_health`](#fleet_health) ·
 [`reflection`](#reflection) · [`changelog`](#changelog) ·
 [`code_stats`](#code_stats) ·
@@ -175,13 +176,13 @@ How review threads are resolved and how the drive recognises its AI reviewer.
 | `review.job_pattern` | regular expression, or `null` | Reviewer checks recognised by name | resolve-review-comments | Which check runs the review skill waits on. Setting it requires `review.required_checks`. `--job-pattern` overrides it |
 | `review.required_checks` | list of distinct check names | none | resolve-review-comments | Reviewer checks that must each complete before a round is judged. Required when `review.job_pattern` is set. Unrelated to `ci.required_checks` |
 | `review.deferral_team` | team key | **Required by `resolve-review-comments`** | resolve-review-comments | Tracker team that deferred findings are filed into. `--team` overrides it |
-| `review.repo_label` | label | Empty, which fails unless `--repo-label` is given | resolve-review-comments | Repository label put on filed follow-ups; must be one of `review.taxonomy.repos` |
+| `review.repo_label` | label | Empty, which fails unless `--repo-label` is given | resolve-review-comments, work-batch | Repository label put on filed follow-ups, and the one a batch item must carry; must be one of `review.taxonomy.repos` |
 | `review.repo_slug` | `owner/name` | Empty, which fails unless `--repo-slug` is given | resolve-review-comments | Repository whose links a deferred finding must point into |
-| `review.taxonomy.types` | list of labels | none | resolve-review-comments | Type labels a follow-up may carry. Requires `ownership_prefixes` |
-| `review.taxonomy.repos` | list of labels | none | resolve-review-comments, drive-pr (fleet health) | Repository labels a follow-up may carry. Requires `ownership_prefixes` |
-| `review.taxonomy.sizes` | list of labels | `[xs, small]` | resolve-review-comments | Size labels a batch of follow-ups may carry |
+| `review.taxonomy.types` | list of labels | none | resolve-review-comments, work-batch | Type labels a follow-up may carry, one of which a batch item must carry. Requires `ownership_prefixes` |
+| `review.taxonomy.repos` | list of labels | none | resolve-review-comments, drive-pr (fleet health), work-batch | Repository labels a follow-up may carry. Requires `ownership_prefixes` |
+| `review.taxonomy.sizes` | list of labels | `[xs, small]` | resolve-review-comments, work-batch | Size labels a batch of follow-ups may carry |
 | `review.taxonomy.categories` | list of names | only `unknown` | resolve-review-comments | Allowed finding categories |
-| `review.taxonomy.context_prefixes` | list of prefixes | none | resolve-review-comments | Prefixes of labels carried from the pull request onto its follow-ups. Requires `ownership_prefixes` |
+| `review.taxonomy.context_prefixes` | list of prefixes | none | resolve-review-comments, work-batch | Prefixes of labels carried from the pull request onto its follow-ups. Requires `ownership_prefixes` |
 | `review.taxonomy.ownership_prefixes` | list of prefixes | none | resolve-review-comments | Prefixes of ownership labels; two findings share a batch only when these agree. Required when `types`, `repos` or `context_prefixes` is set |
 | `review.taxonomy.provenance_label` | label | `pr-followup` | resolve-review-comments, drive-pr (fleet health) | Older name for `issue_tracker.labels.followup`, still read when that is unset; the two may not disagree |
 | `review.taxonomy.epic_label` | label | `epic` | resolve-review-comments, drive-pr (fleet health) | Older name for `issue_tracker.labels.epic`, still read when that is unset; the two may not disagree |
@@ -304,7 +305,7 @@ not resolve it either.
 |-------|------|-------------|---------|--------------|
 | `drive.validation_plan_command` | shell command | The plan is `gates.command` alone | drive-pr, fix-ci, resolve-conflicts, review, descar | Reads changed files (one per line) on stdin and prints the validation plan as JSON on stdout. The change-areas skill's resolver prints such a plan from the catalog: `bun <plugin>/skills/change-areas/scripts/resolve.ts --files - --format json`, or the repository's own [composer](../GLOSSARY.md) around it |
 | `drive.load_guard_command` | shell command | No load guard | drive-pr | Waits until the machine can take heavy checks |
-| `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing | drive-pr, do-item, review, decide, change-areas | The repository's [change-area catalog](../GLOSSARY.md) (YAML with an `areas:` map). The [change-areas](skills/change-areas/README.md) skill validates the whole catalog against [its schema](skills/change-areas/README.md#the-catalog) and resolves a change against it. The plugin reads each area's `paths` and `generated[].source` globs, `labels`, `tracker.labels` and `tracker.flags` (`linear:` is the older spelling of the `tracker:` block) and `agent`, through one reader that refuses an area whose globs, labels or `tracker` block are malformed, with the field at fault; `agent` and the rest of the area are passed through unchecked. `determine_agent.ts --catalog` overrides it for one run |
+| `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing | drive-pr, do-item, review, decide, work-batch, change-areas | The repository's [change-area catalog](../GLOSSARY.md) (YAML with an `areas:` map). The [change-areas](skills/change-areas/README.md) skill validates the whole catalog against [its schema](skills/change-areas/README.md#the-catalog) and resolves a change against it. The plugin reads each area's `paths` and `generated[].source` globs, `labels`, `tracker.labels` and `tracker.flags` (`linear:` is the older spelling of the `tracker:` block) and `agent`, through one reader that refuses an area whose globs, labels or `tracker` block are malformed, with the field at fault; `agent` and the rest of the area are passed through unchecked. `determine_agent.ts --catalog` overrides it for one run |
 | `drive.reviews_drafts` | `true`, `false` | Unknown | drive-pr, do-item | Whether the AI reviewer reviews draft pull requests. The drive uses it to explain a draft waiting for a review; `false` also makes new pull requests open Ready unless `pull_requests.open_as` says otherwise |
 | `drive.max_rounds` | whole number ≥ 1 | `10` | drive-pr | The default round budget of a drive: how many review rounds it runs before it stops unconverged (exit `6`). The `--max-rounds` flag overrides it for one run. A value that is not a whole number of at least 1 stops the drive, unless the flag names the budget |
 | `drive.escape_baseline_doc` | path, relative to the root | `docs/review-loop-baseline.md` | drive-pr | Document recording the human-judged defect-escape baseline that the loop-cost reports compare against |
@@ -320,16 +321,16 @@ not resolve it either.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `issue_tracker.adapter` | adapter name | `linear` | do-item, drive-pr, decide | Which [tracker adapter](../GLOSSARY.md) answers. `linear` is the only one today; it reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client |
-| `issue_tracker.team` | team key such as `ENG` | **Required by the tracker scripts**; elsewhere issue keys are not recognised | do-item, drive-pr, review | The key issue identifiers carry (`ENG` for `ENG-123`) |
-| `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read) | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate` |
-| `issue_tracker.labels.epic` | label | `review.taxonomy.epic_label`, else `epic` | do-item, resolve-review-comments, drive-pr (fleet health) | Marks an issue whose sub-issues are worked one at a time |
-| `issue_tracker.labels.hitl` | label | `hitl` | do-item, decide | The human-in-the-loop flag; its facets are `<hitl>:<stakeholder>` |
-| `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item | A step a person performs outside the code; caps an epic at `ops_pending` |
-| `issue_tracker.labels.followup` | label | `review.taxonomy.provenance_label`, else `pr-followup` | do-item, resolve-review-comments, drive-pr (fleet health) | Marks an issue filed from a review finding |
+| `issue_tracker.adapter` | adapter name | `linear` | do-item, drive-pr, decide, work-batch | Which [tracker adapter](../GLOSSARY.md) answers. `linear` is the only one today; it reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client |
+| `issue_tracker.team` | team key such as `ENG` | **Required by the tracker scripts**; elsewhere issue keys are not recognised | do-item, drive-pr, review, work-batch | The key issue identifiers carry (`ENG` for `ENG-123`) |
+| `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read), work-batch | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate` |
+| `issue_tracker.labels.epic` | label | `review.taxonomy.epic_label`, else `epic` | do-item, resolve-review-comments, drive-pr (fleet health), work-batch | Marks an issue whose sub-issues are worked one at a time |
+| `issue_tracker.labels.hitl` | label | `hitl` | do-item, decide, work-batch | The human-in-the-loop flag; its facets are `<hitl>:<stakeholder>` |
+| `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item, work-batch | A step a person performs outside the code; caps an epic at `ops_pending` |
+| `issue_tracker.labels.followup` | label | `review.taxonomy.provenance_label`, else `pr-followup` | do-item, resolve-review-comments, drive-pr (fleet health), work-batch | Marks an issue filed from a review finding |
 | `issue_tracker.labels.bug` | list of labels | `[bug, type:bug]` | do-item | Any of these marks a bug |
 | `issue_tracker.labels.pattern_prefix` | text | `pattern:` | do-item, reflect, review-reflections | A recurring pattern's label is `<prefix><slug>`; a reflection class's issue is `<prefix><class>` |
-| `issue_tracker.labels.batch_sizes` | list of labels | `[xs, small, medium]` | do-item | Sizes whose issues the batch check may group into one pull request |
+| `issue_tracker.labels.batch_sizes` | list of labels | `[xs, small, medium]` | do-item, work-batch | Sizes whose issues the batch check may group into one pull request |
 | `issue_tracker.labels.extractable_tails` | list of labels | `<hitl>:legal`, `<hitl>:tactical`, `<manual_ops>`, `<followup>` | do-item | Open sub-issues an epic may hand off instead of finishing |
 | `issue_tracker.file_command` | text | Ask the user to file the issue | do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections | How an agent files a new issue by hand, such as a slash command |
 
@@ -344,8 +345,8 @@ same), rather than running without the repository's routing and gates.
 | `do_item.agents.default` | agent name | `general-purpose` | do-item | Agent that implements an issue no rule routes |
 | `do_item.agents.integrator` | agent name | `do_item.agents.default` | do-item | Agent that coordinates when more than two agents match |
 | `do_item.agents.catalog` | map from catalog agent name to agent | none | do-item | Translates the change-area catalog's `agent` values into the repository's agent names |
-| `do_item.agents.codearea_areas` | map from issue label to area key | none | do-item | Routes an issue to a change area by label |
-| `do_item.agents.labels` | map from issue label to agent | none | do-item | Label routing when the catalog gives no answer |
+| `do_item.agents.codearea_areas` | map from issue label to area key | none | do-item, work-batch | Routes an issue to a change area by label; these labels name the area a batch is drawn from |
+| `do_item.agents.labels` | map from issue label to agent | none | do-item, work-batch | Label routing when the catalog gives no answer |
 | `do_item.agents.title_keywords` | map from keyword to agent | none | do-item | Last-resort routing on a case-insensitive title match |
 | `do_item.scouts` | map from agent to a list of scouts | none | do-item | Scouts that run before each agent. The key is the **agent**, not a label |
 | `do_item.gates` | list of `{labels, paths, skill}` | none | do-item | Review skills that must approve a change before it is pushed, when the issue carries one of the `labels` or the change touches one of the `paths` |
@@ -353,6 +354,30 @@ same), rather than running without the repository's routing and gates.
 
 The routing order and the gates are explained in
 [do-item's SKILL.md](skills/do-item/SKILL.md).
+
+## `work_batch`
+
+How `work-batch` sizes and ranks a batch of small issues for one pull
+request. The labels it reads come from the sections above: the batchable
+sizes and label roles from `issue_tracker.labels`, the repository, type and
+context labels from `review`, the labels that name an area from
+`do_item.agents.codearea_areas`, and the catalog's flags from
+`drive.change_areas_catalog`.
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `work_batch.point_budget` | whole number ≥ 1 | `16` | work-batch | The main limit: the points a batch may cost. `--budget` overrides it for one run |
+| `work_batch.size_points` | map from batchable size to a whole number ≥ 1 | `{xs: 1, small: 2, medium: 6}` | work-batch | What each batchable size costs. Its keys must be exactly `issue_tracker.labels.batch_sizes`; set it whenever those differ from the default sizes |
+| `work_batch.max_items` | whole number ≥ 1 | `6` | work-batch | The item limit: how many issues one review round holds. `--limit` overrides it for one run |
+| `work_batch.solo_flags` | list of labels | none | work-batch | Labels added to the solo-only flags, which are otherwise derived: `issue_tracker.labels.hitl` and its facets, `issue_tracker.labels.manual_ops`, and every catalog area's `tracker.flags`. No setting removes a derived one |
+| `work_batch.sizes` | list of labels | none: the labelling-gap report is off, and the known sizes are the batchable sizes and `review.taxonomy.sizes` | work-batch | Every size label, batchable or not, so an issue with no size label can be told from one too large to batch, and two sizes on one issue are caught. Without it, a size label named nowhere (a `large` the repository never lists) is not recognised as a size, so `small` beside it reads as `small`. Must include every batchable size; `review.taxonomy.sizes` is always added to it |
+| `work_batch.ranking.sizes` | map from batchable size to a whole number ≥ 0 | `{xs: 2, small: 1, medium: 0}` | work-batch | The score of each batchable size; a size it leaves out scores 0 |
+| `work_batch.ranking.provenance` | whole number ≥ 0 | `3` | work-batch | The score of the follow-up label (`issue_tracker.labels.followup`) |
+| `work_batch.ranking.shared_area_label` | whole number ≥ 0 | `1` | work-batch | The score of each shared area label an issue carries |
+
+An unknown field in `work_batch` or `work_batch.ranking` is refused. The
+[work-batch README](skills/work-batch/README.md) explains the budget, the
+ranking and the solo-only flags.
 
 ## `fleet_health`
 
@@ -705,6 +730,16 @@ do_item:
   gates:
     - { labels: [db-migration], paths: ["migrations/**"], skill: db-migration-review }
   execution_plan_block: execution-plan-v1
+work_batch:
+  point_budget: 16
+  size_points: { xs: 1, small: 2, medium: 6 }   # keys: exactly issue_tracker.labels.batch_sizes
+  max_items: 6
+  solo_flags: [privacy-review]           # added to the derived solo-only flags
+  sizes: [xs, small, medium, large, xl]
+  ranking:
+    sizes: { xs: 2, small: 1, medium: 0 }
+    provenance: 3
+    shared_area_label: 1
 fleet_health:
   config: .config/fleet-health.yaml
   snapshot_dir: ~/.local/state/jig/dashboard

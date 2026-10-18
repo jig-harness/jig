@@ -1789,7 +1789,7 @@ The plugin reads the change-area catalog through one reader.
   match it, and returns each area's `tracker.labels` (alone, and joined to
   the area's own `labels`) and `tracker.flags`, reading `linear.labels` and
   `linear.flags` as the older spelling. It is step 3 of the `work-batch`
-  build order ([design/work-batch.md](design/work-batch.md)): the batching
+  build order (`design/work-batch.md`): the batching
   skill will read area flags through it.
 
 ### Changed
@@ -2272,7 +2272,7 @@ change.
 ## [0.18.0] - 2026-10-13
 
 The groundwork for batching several small issues into one pull request
-([design/work-batch.md](design/work-batch.md), [ROADMAP.md](ROADMAP.md) item
+(`design/work-batch.md`, [ROADMAP.md](ROADMAP.md) item
 13). Nothing a consumer has configured stops working.
 
 ### Added
@@ -2285,7 +2285,7 @@ The groundwork for batching several small issues into one pull request
   were truncated. The Linear adapter implements them, refuses an empty label
   condition, which would read every open issue, and fails a read whose
   priority or children page it cannot read.
-- [design/work-batch.md](design/work-batch.md): the design of a `work-batch`
+- `design/work-batch.md`: the design of a `work-batch`
   skill, moved from a working repository that uses it.
 
 ### Changed

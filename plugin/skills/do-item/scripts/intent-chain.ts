@@ -16,6 +16,13 @@
  * Usage:
  *     bun intent-chain.ts < chain.json
  *     bun intent-chain.ts --input chain.json --out /tmp/intent-chain.md
+ *     bun intent-chain.ts --clear-session
+ *
+ * `--clear-session` writes nothing: it removes this session's copy, so
+ * Refocus stops putting work in front of the agent that the session no
+ * longer owns (a batch whose every item was released). It prints
+ * `{ sessionPath, removed }`; a session with no copy, or no session id,
+ * is already clear. Exit 1 when the copy exists and cannot be removed.
  *
  * Exit codes: 0 written, 2 usage, 1 unreadable input, unwritable output, or
  * a PARTIAL write — the content landed but a companion write below
@@ -92,7 +99,7 @@ export interface ChainIssue {
 }
 
 export interface IntentChainInput {
-  /** `issue` (default) for a single work item, `batch` for `/work-batch`. */
+  /** `issue` (default) for a single work item, `batch` for `/jig:work-batch`. */
   mode?: "issue" | "batch";
   epic?: ChainIssue | null;
   /** The issue being worked; in batch mode, the batch's anchor. */
@@ -714,8 +721,10 @@ export function isIntentChainInput(v: unknown): v is IntentChainInput {
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 
-const USAGE =
-  "usage: intent-chain.ts [--input <path>] [--out <path>]   (JSON on stdin when --input is absent)";
+const USAGE = [
+  "usage: intent-chain.ts [--input <path>] [--out <path>]   (JSON on stdin when --input is absent)",
+  "       intent-chain.ts --clear-session",
+].join("\n");
 
 /** Item and session snapshots unused for this window are pruned on writes.
  * drive-pr refreshes its PR pins when it renders them; Refocus refreshes its
@@ -861,7 +870,7 @@ function pruneStale(dir: string): void {
 
 /**
  * Every OTHER identifier a branch for this work may legitimately be named
- * after: a batch's items (`/work-batch` names the branch after its
+ * after: a batch's items (`/jig:work-batch` names the branch after its
  * highest-priority item, not the anchor) and a selected sub-issue
  * (`/do-item` keeps the parent as `issue` and adds the child as
  * `subIssue`). Non-PR source lookup resolves the branch identifier, so each gets a
@@ -872,7 +881,7 @@ export function aliasIdentifiers(
   identifier: string,
 ): string[] {
   // `items` is a batch-only field (`/do-item` Step 3.5 sends it only from
-  // `/work-batch`): honoured for aliasing only in batch mode, so a malformed
+  // `/jig:work-batch`): honoured for aliasing only in batch mode, so a malformed
   // single-issue input carrying `items` cannot overwrite another item's stored
   // chain.
   const ids = [
@@ -886,6 +895,57 @@ export function aliasIdentifiers(
   ];
 }
 
+/**
+ * Remove this session's copy and say what was removed. A missing copy is
+ * already the state asked for; a copy that stays is a failure, since
+ * Refocus would keep injecting it.
+ */
+export function clearSessionSnapshot(): number {
+  const sessionId = currentSessionId();
+  if (!sessionId) {
+    console.log(JSON.stringify({ sessionPath: null, removed: false }));
+    return 0;
+  }
+  const path = sessionSnapshotPath(repoRoot(), sessionId);
+  try {
+    unlinkSync(path);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      console.log(JSON.stringify({ sessionPath: path, removed: false }));
+      return 0;
+    }
+    console.error(
+      `intent-chain: cannot remove session snapshot ${path}: ${(err as Error).message}`,
+    );
+    return 1;
+  }
+  console.log(JSON.stringify({ sessionPath: path, removed: true }));
+  return 0;
+}
+
+/** `--clear-session`, which takes no other argument. */
+function clearSessionCommand(argv: string[]): number {
+  const parsed = parseArgs(argv, {
+    flags: ["clear-session"],
+    values: [],
+    usage: USAGE,
+    noPositional: true,
+  });
+  if (!parsed.ok) {
+    console.error(parsed.message);
+    return 2;
+  }
+  return clearSessionSnapshot();
+}
+
+/** The command line: a pickup (`main`), or `--clear-session`. */
+export function cli(argv: string[]): number {
+  return argv.includes("--clear-session")
+    ? clearSessionCommand(argv)
+    : main(argv);
+}
+
+/** A pickup: render the chain and write the snapshot and its companions. */
 export function main(argv: string[]): number {
   const parsed = parseArgs(argv, {
     flags: [],
@@ -1014,4 +1074,4 @@ export function main(argv: string[]): number {
   return 0;
 }
 
-if (import.meta.main) process.exit(main(process.argv.slice(2)));
+if (import.meta.main) process.exit(cli(process.argv.slice(2)));

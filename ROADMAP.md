@@ -91,12 +91,6 @@ Jira, and a plan file kept in the repository, beside Linear. The
 reach Linear for directly: creating and searching issues, adding labels and
 attaching files.
 
-### 13. Batching small issues into one pull request (`work-batch`)
-
-A `work-batch` skill that groups several small, independent issues from one
-area of the code into one pull request, one commit each, and drives it once,
-so small fixes do not each pay for a full review.
-
 ### 15. M14 Testing strategy: the rest
 
 [M14](modules/M14-testing-strategy/README.md) gains exception lists that prune

@@ -18,11 +18,12 @@ The skills come in groups, each in the order its skills are used. The
 last column says how a skill connects to the others: what starts it, what it
 runs, what it hands over to.
 
-**Deliver a change.** One item of work, from the tracker to a merged pull request. `do-item` opens the pull request and arms `drive-pr`; `drive-pr` runs one `resolve-review-comments` pass per review round, works a conflict through `resolve-conflicts`, and repairs red CI in its own repair round; `fix-ci` is the repair by hand when no drive runs or its budget is spent. Each also works by hand.
+**Deliver a change.** One item of work, from the tracker to a merged pull request. `do-item` opens the pull request and arms `drive-pr`, and `work-batch` does the same for several small issues closed in one pull request; `drive-pr` runs one `resolve-review-comments` pass per review round, works a conflict through `resolve-conflicts`, and repairs red CI in its own repair round; `fix-ci` is the repair by hand when no drive runs or its budget is spent. Each also works by hand.
 
 | Skill | What it does | Invoke as | Works with |
 |-------|--------------|-----------|------------|
 | [do-item](skills/do-item/SKILL.md) | Picks up one work item from whatever the tracker adapter reads (an issue tracker today, a plan file in future), routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/jig:do-item` | Starts [drive-pr](skills/drive-pr/README.md) on the pull request it opens; runs its own pre-pull-request review in the same tiers as [review](skills/review/SKILL.md), plus each review skill its declared gates name; escalates a dilemma to [decide](skills/decide/SKILL.md) |
+| [work-batch](skills/work-batch/README.md) | Groups several small, independent issues from one area of the code into one pull request, one commit each: proposes a ranked batch within a point budget, holds back every issue a sensitivity flag makes solo-only, claims the batch, opens the pull request and drives it once; after the merge, closes out every issue in it | `/jig:work-batch` | The batched form of [do-item](skills/do-item/SKILL.md), whose batch check suggests it; opens the pull request under do-item's pull-request policy and starts [drive-pr](skills/drive-pr/README.md) on it |
 | [drive-pr](skills/drive-pr/README.md) | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving | `/jig:drive-pr` | Started by [do-item](skills/do-item/SKILL.md); runs [resolve-review-comments](skills/resolve-review-comments/README.md) every review round; calls [resolve-conflicts](skills/resolve-conflicts/SKILL.md) when the branch conflicts; repairs red CI in its own repair round, with the repository's CI-repair skill if it has one |
 | [resolve-review-comments](skills/resolve-review-comments/README.md) | Walks every unresolved pull-request review thread to an explicit outcome, fixes, verifies, and resolves; repeats until reviewers settle | `/jig:resolve-review-comments` | One review round of [drive-pr](skills/drive-pr/README.md); hands contested findings to the `review-arbiter` agent and design questions to [decide](skills/decide/SKILL.md) |
 | [resolve-conflicts](skills/resolve-conflicts/SKILL.md) | Resolves a stopped merge, rebase or cherry-pick: names each side by role, traces why each side changed, regenerates lockfiles and generated files, records every decision in the commit message and checks that no change was silently dropped | `/jig:resolve-conflicts` | Runs in [drive-pr](skills/drive-pr/README.md)'s conflict round; [fix-ci](skills/fix-ci/SKILL.md) takes over for checks that fail after the merge |
@@ -379,6 +380,10 @@ do_item:
   gates:                      # extra review skills a pickup must run first
     - { labels: [db-migration], paths: ["migrations/**"], skill: db-migration-review }
   execution_plan_block: execution-plan-v1   # fenced block name read from an epic's description
+work_batch:                   # how work-batch sizes a batch
+  point_budget: 16            # default 16
+  max_items: 6                # default 6
+  sizes: [xs, small, medium, large, xl]     # example, no default: every size label, for the labelling-gap report; unset, that report is off
 fleet_health:
   config: .config/fleet-health.yaml         # fleet-health settings file
   snapshot_dir: ~/.local/state/jig/dashboard   # where snapshots are written; `~` is expanded
@@ -506,8 +511,10 @@ them together.
 ## Call a skill's scripts from repository code
 
 Normally only the agent runs a skill's scripts. When a repository's own code
-also needs them (for example a sibling skill that imports a shared module, or
-a status board that runs `await-round.ts`), it must find the installed copy,
+also needs them (for example a sibling skill that imports a shared module, a
+status board that runs `await-round.ts`, or a dashboard that asks
+`work-batch`'s `candidates.ts --eligibility` which issues may be batched), it
+must find the installed copy,
 because the repository holds none. Look in this order and fail
 with a clear message when none is found:
 

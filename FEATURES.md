@@ -52,8 +52,11 @@ walks every unresolved thread to an explicit outcome and `resolve-conflicts`
 settles a stopped merge or rebase so both sides' intent survives; when
 continuous integration ([CI](GLOSSARY.md)) turns red, the drive runs a repair round of its own, within a budget. A person
 merges. Outside a drive, `fix-ci` fixes a failed run from its log.
+`work-batch` carries several small items from one area of the code the same
+way, in one pull request with one commit each, so their review is paid once.
 
 - **Skills:** [`do-item`](plugin/skills/do-item/SKILL.md),
+  [`work-batch`](plugin/skills/work-batch/README.md),
   [`drive-pr`](plugin/skills/drive-pr/README.md),
   [`resolve-review-comments`](plugin/skills/resolve-review-comments/README.md),
   [`fix-ci`](plugin/skills/fix-ci/SKILL.md),
@@ -61,8 +64,7 @@ merges. Outside a drive, `fix-ci` fixes a failed run from its log.
 - **Practice:** [M7](modules/M7-pr-lifecycle-review/),
   [M9](modules/M9-tasks-memory/)
 - **On the roadmap:** a converged drive arming the merge it certified
-  (roadmap item 9); batching small items into one pull request (roadmap
-  item 13); the drive's CI-repair round running `fix-ci` (Later)
+  (roadmap item 9); the drive's CI-repair round running `fix-ci` (Later)
 
 ## Review in tiers, with an arbiter for contested findings
 

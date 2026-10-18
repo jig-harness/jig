@@ -177,7 +177,7 @@ The plugin runs that loop as a line of stations, one work item at a time:
 |---|---------|--------------|--------|
 | 1 | Pick up | A tracker item becomes a branch, a workspace and a plan, routed to the right agent; an epic is worked one sub-issue at a time | [`do-item`](plugin/skills/do-item/SKILL.md); the tracker's "open in coding agent" button through the [launcher](tools/launcher/README.md) |
 | 2 | Build | The change, its validation plan, and a review before the first push: tiered, except that a change under 20 non-test lines skips the tiers but keeps the specialist reviews its change areas require and the runbook pass whenever a prescribed operator command changes ([`do-item`](plugin/skills/do-item/SKILL.md) states the rule) | `do-item`, [`review`](plugin/skills/review/SKILL.md) |
-| 3 | Open | A pull request shaped by the repository's declared policy (draft or Ready, base, stacking, size) | `do-item` |
+| 3 | Open | A pull request shaped by the repository's declared policy (draft or Ready, base, stacking, size); several small items from one area can share one | `do-item`; [`work-batch`](plugin/skills/work-batch/README.md) for a batch |
 | 4 | Drive | Review rounds run unattended: wait for the reviewers, give every finding one recorded outcome, fix, verify, push, resolve; contested findings go to an arbiter | [`drive-pr`](plugin/skills/drive-pr/README.md), [`resolve-review-comments`](plugin/skills/resolve-review-comments/README.md), the [`review-arbiter`](plugin/agents/review-arbiter.md) agent |
 | 5 | Repair | Red CI or a conflict with the base: a bounded repair round, then check again | `drive-pr` with [`resolve-conflicts`](plugin/skills/resolve-conflicts/SKILL.md); [`fix-ci`](plugin/skills/fix-ci/SKILL.md) run on its own (the drive's CI repair does not use it yet, ROADMAP.md, Later) |
 | 6 | Merge | A person merges | a person |
@@ -185,12 +185,12 @@ The plugin runs that loop as a line of stations, one work item at a time:
 
 Follow-up items enter the line again at station 1, so the execution level is
 itself a loop. `drive-pr` stops on one named end state (converged, waiting on
-a person, conflicting, …) and never approves or merges. On the roadmap:
-batching small items into one pull request (ROADMAP.md item 13), a converged
-drive arming the merge it certified (item 9, which changes "a person merges"
-and is decided on its own), and a skill that runs the post-merge stage
-[M7](modules/M7-pr-lifecycle-review/README.md) states, which settles what a
-merge still owes beyond the follow-ups station 7 files (item 17).
+a person, conflicting, …) and never approves or merges. On the roadmap: a
+converged drive arming the merge it certified (ROADMAP.md item 9, which
+changes "a person merges" and is decided on its own), and a skill that runs
+the post-merge stage [M7](modules/M7-pr-lifecycle-review/README.md) states,
+which settles what a merge still owes beyond the follow-ups station 7 files
+(item 17).
 
 ## The learning loop (wraps both)
 

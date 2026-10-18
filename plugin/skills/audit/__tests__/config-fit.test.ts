@@ -645,6 +645,68 @@ fix_ci:
     );
   });
 
+  test("work_batch.size_points prices exactly the batchable sizes", () => {
+    const findings = (yaml: string) =>
+      fit({ ".config/jig.yaml": yaml }).report.findings.filter(
+        (f) =>
+          f.id === "rule:work_batch.size_points" ||
+          f.id === "rejected:work-batch",
+      );
+    const sizes = `issue_tracker:
+  labels:
+    batch_sizes: [s, m]
+`;
+    // The defaults price xs, small and medium, the default batchable sizes.
+    expect(findings("gates:\n  command: bun run gates\n")).toEqual([]);
+    // Other sizes need their own points; a warning until the skill is set up.
+    expect(findings(sizes)).toEqual([
+      {
+        id: "rule:work_batch.size_points",
+        severity: "warning",
+        message: expect.stringContaining("work_batch.size_points must be set"),
+      },
+    ]);
+    expect(
+      findings(`${sizes}work_batch:\n  size_points: { s: 1, m: 3, l: 9 }\n`),
+    ).toEqual([
+      {
+        id: "rule:work_batch.size_points",
+        severity: "error",
+        message: expect.stringContaining("must price exactly"),
+      },
+    ]);
+    expect(
+      findings(`${sizes}work_batch:\n  size_points: { m: 3, s: 1 }\n`),
+    ).toEqual([]);
+    // The rest of the section is checked as the skill checks it.
+    expect(
+      findings(
+        `${sizes}work_batch:\n  size_points: { m: 3, s: 1 }\n  sizes: [s, l]\n`,
+      ).map((f) => f.id),
+    ).toEqual(["rejected:work-batch"]);
+  });
+
+  test("a work_batch section without sizes is warned about", () => {
+    const sizes = (yaml: string) =>
+      fit({ ".config/jig.yaml": yaml }).report.findings.filter(
+        (f) => f.id === "rule:work_batch.sizes",
+      );
+    expect(sizes("gates:\n  command: bun run gates\n")).toEqual([]);
+    expect(sizes("work_batch:\n  max_items: 4\n")).toEqual([
+      {
+        id: "rule:work_batch.sizes",
+        severity: "warning",
+        message: expect.stringContaining("without work_batch.sizes"),
+      },
+    ]);
+    expect(sizes("work_batch:\n  sizes:\n")).toEqual([
+      expect.objectContaining({ id: "rule:work_batch.sizes" }),
+    ]);
+    expect(sizes("work_batch:\n  sizes: [xs, small, medium, large]\n")).toEqual(
+      [],
+    );
+  });
+
   describe("labels against the label taxonomy", () => {
     const taxonomy = `version: 1
 types:

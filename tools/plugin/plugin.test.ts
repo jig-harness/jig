@@ -1130,6 +1130,86 @@ console.log(JSON.stringify({ areas: areasOf("src/rpc/x.ts", c), flags: c.get("ap
   ]);
 });
 
+test("work-batch's eligibility mode reads the consumer's labels and catalog from the plugin copy", () => {
+  const consumer = consumerRepo(
+    "work-batch",
+    `issue_tracker:
+  labels:
+    hitl: needs-human
+do_item:
+  agents:
+    codearea_areas: { "area:api": api, "area:web": web }
+drive:
+  change_areas_catalog: .config/change-areas.yaml
+work_batch:
+  solo_flags: [privacy-review]
+`,
+  );
+  writeFileSync(
+    join(consumer, ".config", "change-areas.yaml"),
+    `areas:
+  api:
+    paths: ["src/api/**"]
+    tracker:
+      labels: [area:api]
+      flags: [contract-review]
+  web:
+    paths: ["src/web/**"]
+    tracker:
+      labels: [area:web]
+`,
+  );
+  const issue = (identifier: string, labels: string[]) => ({
+    identifier,
+    title: identifier,
+    url: null,
+    priority: 3,
+    createdAt: "2026-01-01T00:00:00Z",
+    state: { id: "s", name: "Backlog", type: "backlog" },
+    assignee: null,
+    labels,
+    hasOpenChildren: false,
+    truncated: [],
+  });
+  const run = spawnSync(
+    process.execPath,
+    [
+      join(
+        scratch,
+        "cache",
+        "skills",
+        "work-batch",
+        "scripts",
+        "candidates.ts",
+      ),
+      "--eligibility",
+    ],
+    {
+      cwd: consumer,
+      env,
+      encoding: "utf8",
+      input: JSON.stringify([
+        issue("TASK-1", ["small", "area:web"]),
+        issue("TASK-2", ["small", "area:api", "contract-review"]),
+        issue("TASK-3", ["small", "area:web", "needs-human:legal"]),
+        issue("TASK-4", ["small", "area:api"]),
+      ]),
+    },
+  );
+  expectSpawnExit({ ...run, exitCode: run.status }, 0);
+  const report = JSON.parse(run.stdout);
+  expect(report.policy.soloFlags).toEqual([
+    "contract-review",
+    "manual-ops",
+    "needs-human",
+    "privacy-review",
+  ]);
+  expect(report.verdicts.map((v: { eligible: boolean }) => v.eligible)).toEqual(
+    [true, false, false, false],
+  );
+  expect(report.verdicts[3].reason.kind).toBe("solo-area");
+});
+
 test("the audit reads its schema, criteria and version from the plugin copy", () => {
   const consumer = consumerRepo("audit", "gates:\n  comand: make check\n");
   const commit = spawnSync(

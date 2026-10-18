@@ -207,7 +207,7 @@ Each class ends in exactly one of two states, and "nothing found" is neither:
 closing one removes a whole line from the board; otherwise clear the
 operations that can be cleared now (a step waiting only on a person who is
 here, a drill, a sign-off); otherwise take a batch of small items together
-([batching small issues into one pull request](https://github.com/docomply/jig/blob/main/ROADMAP.md#13-batching-small-issues-into-one-pull-request-work-batch)).
+([batching small issues into one pull request](https://github.com/docomply/jig/blob/main/plugin/skills/work-batch/README.md)).
 A computed ranking proposes the shortlist; a person picks from it.
 
 Fixes the pass finds go in one follow-up pull request, not one each. Run

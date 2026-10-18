@@ -1334,6 +1334,17 @@ make, use the entry's term instead.
   them under "What still assumes Linear". Linear's adapter is built;
   adapters for Jira and for a plan file kept in the repository are planned
   ([ROADMAP.md](ROADMAP.md) item 12).
+- **Batch** — several small, independent issues from one area of the code
+  closed by one pull request, with one commit for each issue, so the review
+  is paid once instead of once per issue
+  ([work-batch](plugin/skills/work-batch/README.md)).
+- **Batch anchor** — what a batch is drawn from: an area of the
+  *change-area catalog*, a path in the repository, an epic, or one issue
+  whose area's other open issues join it.
+- **Solo-only issue** — an issue that never joins a *batch* because it
+  carries a *sensitivity flag*, the human-in-the-loop label or the
+  manual-operations label: each starts a review gate or a human step that
+  would apply to every other change in the pull request.
 - **Launcher** — the program an issue tracker's "open in coding agent" button
   runs. Jig's assigns the issue to whoever opened it, saves the whole
   issue to a file the agent reads, chooses the repository from the issue's

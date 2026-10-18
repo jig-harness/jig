@@ -47,6 +47,14 @@ import {
   parseCodeStatsConfig,
 } from "../../code-stats/scripts/lib/config.ts";
 import { KINDS as CODE_STATS_KINDS } from "../../code-stats/scripts/lib/model.ts";
+import {
+  DEFAULT_MAX_ITEMS,
+  DEFAULT_POINT_BUDGET,
+  DEFAULT_RANKING,
+  RANKING_FIELDS,
+  WORK_BATCH_FIELDS,
+  parseWorkBatchSection,
+} from "../../work-batch/scripts/lib/policy.ts";
 import { runScript } from "./helpers.ts";
 
 const plugin = join(import.meta.dir, "..", "..", "..");
@@ -162,6 +170,12 @@ test("its complete example's code_stats section passes the skill", () => {
   ).not.toThrow();
 });
 
+test("its complete example's work_batch section passes the skill", () => {
+  const example = completeExample();
+  const { batchSizes } = parseTrackerConfig(example).labels;
+  expect(() => parseWorkBatchSection(example, batchSizes)).not.toThrow();
+});
+
 describe("the reading skills", () => {
   test("accept the value sets the schema lists", () => {
     expect(field("pull_requests.stacking")?.values).toEqual([
@@ -223,6 +237,10 @@ describe("the reading skills", () => {
       "changelog.release.push": CHANGELOG_DEFAULTS.push,
       "changelog.release.branch": CHANGELOG_DEFAULTS.branch,
       "code_stats.default_area": CODE_STATS_DEFAULT_AREA,
+      "work_batch.point_budget": DEFAULT_POINT_BUDGET,
+      "work_batch.max_items": DEFAULT_MAX_ITEMS,
+      "work_batch.ranking.provenance": DEFAULT_RANKING.provenance,
+      "work_batch.ranking.shared_area_label": DEFAULT_RANKING.sharedAreaLabel,
     });
   });
 
@@ -242,6 +260,14 @@ describe("the reading skills", () => {
     expect(under("issue_tracker.labels").sort()).toEqual(
       [...LABEL_ROLES].sort(),
     );
+    expect(under("work_batch.ranking").sort()).toEqual(
+      [...RANKING_FIELDS].sort(),
+    );
+    expect(
+      [
+        ...new Set(under("work_batch").map((path) => path.split(".")[0])),
+      ].sort(),
+    ).toEqual([...WORK_BATCH_FIELDS].sort());
     for (const prefix of schema.strict)
       expect([
         prefix,

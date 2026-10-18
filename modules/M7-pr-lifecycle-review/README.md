@@ -202,7 +202,7 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    - **Next step**: picked with a bias toward closure. Finish a nearly-done
      epic first; otherwise clear the operations that can be cleared;
      otherwise take a batch of small items
-     ([ROADMAP item 13](../../ROADMAP.md#13-batching-small-issues-into-one-pull-request-work-batch)).
+     ([`/jig:work-batch`](../../plugin/skills/work-batch/README.md)).
      A computed ranking proposes the shortlist; picking from it is a human
      decision. It is not owed only when the tracker shows no open work.
 

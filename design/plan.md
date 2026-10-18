@@ -228,25 +228,6 @@ and `do-item`'s parent-status reconciliation reads the interface's answers
 instead of Linear's. [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker)
 lists what still assumes Linear.
 
-### 13. Batching small issues into one pull request (`work-batch`)
-
-A `work-batch` skill that groups several small, independent issues from one
-area of the code into one pull request, with one commit for each, and drives
-it once: review cost is paid per pull request, so batching closes small
-issues faster than one pull request each. It moves from a working repository
-that uses it today, with that repository's labels turned into configuration;
-[design/work-batch.md](work-batch.md) has the procedure, the
-configuration and the build order. The tracker reads it needs, the
-tracker-neutral catalog key and the plugin's shared catalog reader are built.
-Done when:
-
-- `work-batch` is in the plugin with its tests, reading every label through
-  configuration, and the working repository's copy is deleted;
-- no setting can remove a solo-only flag that the hitl or manual-ops label
-  roles or the catalog's `tracker.flags` supply;
-- `do-item`'s batch check names `/jig:work-batch`;
-- the audit skill's schema and fit check cover the `work_batch` section.
-
 ### 15. M14 Testing strategy: the rest
 
 [M14](../modules/M14-testing-strategy/README.md) states test tiers with budgets,

@@ -49,6 +49,8 @@ strict:
   - resolve_conflicts
   - reflection
   - code_stats
+  - work_batch
+  - work_batch.ranking
 
 # Sections a skill refuses outright, with what to do instead.
 refused:
@@ -79,7 +81,7 @@ fields:
     read_by: [resolve-review-comments]
   review.repo_label:
     type: string
-    read_by: [resolve-review-comments]
+    read_by: [resolve-review-comments, work-batch]
     repository_only: true
   review.repo_slug:
     type: string
@@ -91,19 +93,19 @@ fields:
     items: string
     distinct: true
     nonempty: true
-    read_by: [resolve-review-comments]
+    read_by: [resolve-review-comments, work-batch]
   review.taxonomy.repos:
     type: list
     items: string
     distinct: true
     nonempty: true
-    read_by: [resolve-review-comments, drive-pr]
+    read_by: [resolve-review-comments, drive-pr, work-batch]
   review.taxonomy.sizes:
     type: list
     items: string
     distinct: true
     nonempty: true
-    read_by: [resolve-review-comments]
+    read_by: [resolve-review-comments, work-batch]
   review.taxonomy.categories:
     type: list
     items: string
@@ -115,7 +117,7 @@ fields:
     items: string
     distinct: true
     nonempty: true
-    read_by: [resolve-review-comments]
+    read_by: [resolve-review-comments, work-batch]
   review.taxonomy.ownership_prefixes:
     type: list
     items: string
@@ -201,7 +203,7 @@ fields:
   drive.change_areas_catalog:
     type: path
     exists: expected
-    read_by: [drive-pr, do-item, review, decide, change-areas]
+    read_by: [drive-pr, do-item, review, decide, work-batch, change-areas]
   drive.reviews_drafts:
     type: boolean
     read_by: [drive-pr, do-item]
@@ -230,28 +232,28 @@ fields:
     type: enum
     values: [linear]
     default: linear
-    read_by: [do-item, drive-pr, decide]
+    read_by: [do-item, drive-pr, decide, work-batch]
   issue_tracker.team:
     type: string
     pattern: "^[A-Z][A-Z0-9]*$"
-    read_by: [do-item, drive-pr, review]
+    read_by: [do-item, drive-pr, review, work-batch]
     repository_only: true
   issue_tracker.states:
     type: map
     keys: [triage, backlog, todo, in_progress, in_review, ops_pending, done, canceled, duplicate]
-    read_by: [do-item]
+    read_by: [do-item, work-batch]
   issue_tracker.labels.epic:
     type: string
-    read_by: [do-item, resolve-review-comments, drive-pr]
+    read_by: [do-item, resolve-review-comments, drive-pr, work-batch]
   issue_tracker.labels.hitl:
     type: string
-    read_by: [do-item, decide]
+    read_by: [do-item, decide, work-batch]
   issue_tracker.labels.manual_ops:
     type: string
-    read_by: [do-item]
+    read_by: [do-item, work-batch]
   issue_tracker.labels.followup:
     type: string
-    read_by: [do-item, resolve-review-comments, drive-pr]
+    read_by: [do-item, resolve-review-comments, drive-pr, work-batch]
   issue_tracker.labels.bug:
     type: list
     items: string
@@ -265,7 +267,7 @@ fields:
     type: list
     items: string
     distinct: true
-    read_by: [do-item]
+    read_by: [do-item, work-batch]
   issue_tracker.labels.extractable_tails:
     type: list
     items: string
@@ -286,10 +288,10 @@ fields:
     read_by: [do-item]
   do_item.agents.codearea_areas:
     type: map
-    read_by: [do-item]
+    read_by: [do-item, work-batch]
   do_item.agents.labels:
     type: map
-    read_by: [do-item]
+    read_by: [do-item, work-batch]
   do_item.agents.title_keywords:
     type: map
     read_by: [do-item]
@@ -309,6 +311,54 @@ fields:
     type: string
     default: execution-plan-v1
     read_by: [do-item]
+
+  work_batch.point_budget:
+    type: integer
+    min: 1
+    default: 16
+    read_by: [work-batch]
+    since: next
+  work_batch.size_points:
+    type: map
+    values_type: integer
+    read_by: [work-batch]
+    since: next
+  work_batch.max_items:
+    type: integer
+    min: 1
+    default: 6
+    read_by: [work-batch]
+    since: next
+  work_batch.solo_flags:
+    type: list
+    items: string
+    distinct: true
+    read_by: [work-batch]
+    since: next
+  work_batch.sizes:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [work-batch]
+    since: next
+  work_batch.ranking.sizes:
+    type: map
+    values_type: integer
+    read_by: [work-batch]
+    since: next
+  work_batch.ranking.provenance:
+    type: integer
+    min: 0
+    default: 3
+    read_by: [work-batch]
+    since: next
+  work_batch.ranking.shared_area_label:
+    type: integer
+    min: 0
+    default: 1
+    read_by: [work-batch]
+    since: next
 
   fleet_health.config:
     type: path

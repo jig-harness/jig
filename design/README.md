@@ -56,7 +56,6 @@ with the review.
 | [Reflection stores](reflection.md) | Later: the Jira store |
 | [The `changelog` skill](changelog.md) | 4 |
 | [The audit experience](audit-experience.md) | 8 |
-| [Batching small issues](work-batch.md) | 13 |
 | [The jig-harness.dev website](website.md) | 18 |
 
 ## Starting a design

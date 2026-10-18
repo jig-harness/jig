@@ -84,6 +84,11 @@ import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
 import { detectPackageManager } from "../../fix-ci/scripts/consumer-config.ts";
 import { journalPath } from "../../reflect/scripts/lib/context.ts";
 import { parseReflection } from "../../reflect/scripts/lib/settings.ts";
+import {
+  parseWorkBatchSection,
+  sizePointsMismatch,
+} from "../../work-batch/scripts/lib/policy.ts";
+import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { load } from "../../../shared/yaml.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
@@ -749,7 +754,61 @@ function crossFieldRules(config: Config): Finding[] {
       severity: "error",
       message: `review.repo_label ${repoLabel} is not one of review.taxonomy.repos`,
     });
+  findings.push(...sizePointsFindings(config));
+  findings.push(...workBatchSizesFindings(config));
   return findings;
+}
+
+/**
+ * A `work_batch` section without `sizes`: work-batch then knows only the
+ * batchable sizes and `review.taxonomy.sizes`, so a larger size label the
+ * repository never lists is not recognised beside a batchable one.
+ */
+function workBatchSizesFindings(config: Config): Finding[] {
+  if (at(config, "work_batch") === undefined) return [];
+  // A null `sizes` reads as unset, so it leaves the same gap.
+  if (at(config, "work_batch.sizes") != null) return [];
+  return [
+    {
+      id: "rule:work_batch.sizes",
+      severity: "warning",
+      message:
+        "work_batch is configured without work_batch.sizes: list every size label, batchable or not, or an issue carrying a batchable size beside an unlisted larger one is batched, and no labelling gaps are reported",
+    },
+  ];
+}
+
+/** The batchable sizes the file sets or defaults to; `null` when the labels do not parse. */
+function batchSizesOf(config: Config): string[] | null {
+  try {
+    return parseTrackerLabels(config).batchSizes;
+  } catch (e) {
+    // The tracker validation below reports the labels themselves.
+    swallow(e, "the issue-tracker labels are reported by the tracker check");
+    return null;
+  }
+}
+
+/**
+ * `work_batch.size_points` must price exactly the batchable sizes. An error
+ * when the repository configures `work_batch`; a warning when it only
+ * changed the batchable sizes, since work-batch then refuses to run until the
+ * points are set.
+ */
+function sizePointsFindings(config: Config): Finding[] {
+  const batchSizes = batchSizesOf(config);
+  if (batchSizes === null) return [];
+  const points = at(config, "work_batch.size_points");
+  const keys = isRecord(points) ? Object.keys(points) : null;
+  const mismatch = sizePointsMismatch(keys, batchSizes);
+  if (mismatch === null) return [];
+  return [
+    {
+      id: "rule:work_batch.size_points",
+      severity: at(config, "work_batch") === undefined ? "warning" : "error",
+      message: mismatch,
+    },
+  ];
 }
 
 /**
@@ -783,6 +842,10 @@ function skillValidation(
   attempt("adr", () => adrConfig(path));
   attempt("changelog", () => changelogValidation(config, root));
   attempt("code-stats", () => parseCodeStatsConfig(config.code_stats));
+  // The size points are the cross-field rule's to report.
+  const batchSizes = batchSizesOf(config);
+  if (batchSizes !== null && sizePointsFindings(config).length === 0)
+    attempt("work-batch", () => parseWorkBatchSection(config, batchSizes));
   attempt("reflect", () => {
     const reflection = parseReflection(config.reflection, root);
     const journal = reflection.journal ?? null;
