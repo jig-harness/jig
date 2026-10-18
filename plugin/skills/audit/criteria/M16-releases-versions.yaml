@@ -31,7 +31,7 @@ criteria:
       - "a contributor-facing doc or the changelog's own opening names the released artifact(s), the changelog of each and the file or tag that holds each version"
       - "a written rule says what gets an entry (a change its consumers notice) and what does not (CI, refactors, the repository's own tooling or website), and how the bump is chosen (semantic versioning or the repository's own scheme)"
       - "a changelog that records changes no consumer sees (CI tweaks, website work, internal tooling) as entries is evidence the rule is missing or not followed"
-    since: next
+    since: 0.59.0
 
   - id: each-release-tagged
     level: lite
@@ -43,7 +43,7 @@ criteria:
     observe:
       - "the changelog's release headings or the registry's versions each have a matching tag (git tag --list, or the host's tags page)"
       - "a monorepo's tags name the artifact as well as the version (<artifact>@1.2.0, <artifact>/v1.2.0)"
-    since: next
+    since: 0.59.0
 
   - id: version-set-after-merge-by-one-run
     level: standard
@@ -105,7 +105,7 @@ criteria:
           - "ci/pipeline*.yml"
           - "ci/pipeline*.yaml"
           - ".onedev-buildspec.yml"
-    since: next
+    since: 0.59.0
 
   - id: shipped-change-requires-release
     level: standard
@@ -122,7 +122,7 @@ criteria:
     probe:
       mechanical:
         files: *ci-config
-    since: next
+    since: 0.59.0
 
   - id: changelog-and-version-per-artifact
     level: standard
@@ -136,7 +136,7 @@ criteria:
       - "each released package or tool has its own changelog and version (a CHANGELOG.md beside each package manifest, a release-please manifest, Changesets' per-package changelogs, Nx Release's projects)"
       - "a change record names the artifacts it changes and the bump for each, and tags carry the artifact's name"
       - "artifacts that always release together at one version (one product under two manifests) count as one artifact"
-    since: next
+    since: 0.59.0
 
   - id: release-tag-after-verification
     level: strict
@@ -153,7 +153,7 @@ criteria:
     probe:
       mechanical:
         files: *ci-config
-    since: next
+    since: 0.59.0
 
   - id: release-identity-narrowed
     level: strict
@@ -170,4 +170,4 @@ criteria:
       - "its key is a secret of a deployment environment restricted to the integration branch, and the job that reads it runs nothing from the repository"
       - "or: the release tool opens a release pull request and no automation bypasses the integration branch's rules"
       - "the changelog skill's release-access.ts reports what GitHub's rulesets allow for the release identity"
-    since: next
+    since: 0.59.0
