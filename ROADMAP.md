@@ -128,7 +128,9 @@ GitHub.
   ([what it covers](plugin/EXTENDING.md#forge-github)).
 - **CI logs from other providers.** `fix-ci` downloads a failed run from
   GitHub Actions only (any CI's saved log already works with `--log`).
-- **Windows for `drive-pr` and `do-item`.**
+- **Windows for `drive-pr` and `do-item`.** Both skills, and the skills
+  they invoke, on native Windows: first under Claude Code with Git for
+  Windows' Bash, then under PowerShell for Codex.
 - **Drive loop follow-ups.** A drive's CI-repair round running `fix-ci`,
   through a `fix-ci` mode that stops before pushing so the drive does the
   push itself.

@@ -315,9 +315,59 @@ repository with one released artifact. What is left:
 - **CI logs from other providers.** `fix-ci` finds and downloads a failed run
   through GitHub Actions only (any CI's saved log already works with
   `--log`); a provider interface for those two steps.
-- **Windows for `drive-pr` and `do-item`.** Finding and waiting on a pass's
-  processes without `ps` and POSIX signals, `do-item`'s pickup record without
-  owner-only file modes, and a Windows CI job for both suites.
+- **Windows for `drive-pr` and `do-item`.** Both skills, and the skills
+  they invoke, running on native Windows under Claude Code with Git for
+  Windows' Bash first, and under PowerShell (Codex on Windows) later. Much
+  of the code already handles Windows: a pass is never detached and its
+  tree ends with `taskkill /T`, the clone key is not a path, and the pass is
+  spawned without a shell. Neither suite has run on Windows yet
+  (`scripts/gates.ts` lists both as POSIX-only). The steps land in this
+  order, steps 1 and 2 as one pull request because both change the process
+  runner (`proc.ts`), each later step as its own:
+  1. **A Windows test harness.** A fake-program helper that works on every
+     platform (a Bun script with a `.cmd` wrapper on Windows) in place of
+     the `#!/bin/sh` stubs, mode and `/tmp` assertions dropped on Windows,
+     and both suites on a Windows nightly job, each remaining Windows skip
+     naming the step that lifts it. Windows runs a `.cmd` or `.bat` file
+     only through `cmd.exe`, which the process runner's shell-less `spawn`
+     never starts, so the runner first gains a launch path for them: a
+     resolved `.cmd` started as `cmd.exe /d /s /c` with every argument
+     quoted for `cmd.exe`'s own rules, tested with arguments holding
+     spaces, quotes, `%` and `^`. The fake programs and step 4's pass
+     command both start through it.
+  2. **A pass's processes without `ps` and POSIX signals.** One process-table
+     source (`ps` on POSIX, `Win32_Process` through PowerShell on Windows)
+     for `foreground-wait`, `pass-child --doctor`, the group check in
+     `proc.ts` and `drives.ts --stop`; a stop that does not need a signal
+     (the driver polls for a stop request and releases its own locks); the
+     tree snapshotted before a forced kill so a stop only reports the tree
+     gone when it is; no re-raising of signals Windows cannot deliver; and
+     the platform in a claim's owner, so a WSL and a native driver on one
+     worktree do not read each other as dead. Today `foreground-wait`
+     never settles once its deadline fires, and `--stop` refuses.
+  3. **State, locks and paths.** Renames retried while another process
+     holds the target open, lock renames retried before reading as
+     claimed, both sides of a worktree's identity normalised before
+     hashing (a mismatch makes a live worktree look deleted), `drive.ts`
+     started through `import.meta.main`, the pickup record's no-link guard
+     kept where `O_NOFOLLOW` does not exist, and a clear error on a volume
+     without hard links.
+  4. **The skills under Git Bash.** Every script command led by `bun`, the
+     `ps`, `setsid` and `nohup` instructions replaced by the scripts' own
+     commands, the pass command resolved through
+     [`PATHEXT`](../GLOSSARY.md) (an npm-installed agent CLI is a `.cmd`)
+     and started through step 1's launch path, `fix-ci`'s setup command run
+     under a POSIX shell, and the platform support stated in the skills'
+     READMEs. Done when a pickup, a driven round and a stop work end to end
+     on a Windows machine.
+  5. **Job Objects** (optional, decided after step 2): each pass in a
+     Windows [Job Object](../GLOSSARY.md), for a kill no directly started
+     descendant escapes and a sound check that the tree is gone; or a recorded decision that step 2's snapshot
+     is enough.
+  6. **PowerShell** (later): the shell constructs in the skills' instructions
+     (`$(…)`, heredocs, pipes into `grep` or `tail`, `test`, `mktemp`, and
+     `review`'s file-set logic) moved into the scripts they feed, so the
+     skills run under Codex on Windows without Git Bash.
 - **Gates and workspace infrastructure.** Cross-worktree locks and
   test infrastructure, remote gates, and a runnable form of
   [M12](../modules/M12-parallel-agent-ergonomics/README.md)'s workspace lifecycle.

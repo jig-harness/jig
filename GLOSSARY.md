@@ -1336,6 +1336,17 @@ make, use the entry's term instead.
   code that relies on it needs a separate path there.
 - **WSL (Windows Subsystem for Linux)** — a Linux system that runs inside
   Windows. Tools that need *POSIX* run there unchanged.
+- **PATHEXT** — the Windows environment variable listing the file endings
+  (`.exe`, `.cmd`, `.bat`, …) that count as runnable programs. Windows finds
+  a command typed without an ending by trying each one in turn, so `claude`
+  can name `claude.cmd`; a program that starts commands itself has to do the
+  same search.
+- **Job Object** — a Windows grouping of processes that the system can end
+  together. A process a job member starts directly joins the job unless the
+  job allows it to break away, and ending the job stops every process in it,
+  which a *POSIX* process group does not guarantee. Work a member asks
+  another service to start (through WMI's `Win32_Process.Create`, for one)
+  is not in the job and survives it.
 - **Hard link** — another filesystem name for the same file. Creating the name
   atomically lets a lock claim publish a complete owner record in one operation.
 - **Subagent (plugin agent)** — a separately prompted helper with its own
