@@ -299,6 +299,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.58.1] - 2026-10-18
+
+### Changed
+
+- The [`resolve-review-comments`](plugin/skills/resolve-review-comments/README.md#outcomes) page now has a table of the review outcomes: when each applies, whether code changes, when the thread resolves, what it leaves behind and what it says about the reviewer, and how the outcomes feed planning, reviewer scoring and the learning loop. [FACTORY.md](FACTORY.md), [M7](modules/M7-pr-lifecycle-review/README.md) and [M8](modules/M8-learning-loop/README.md) name every outcome and link the table.
+
 ## [0.58.0] - 2026-10-18
 
 ### Added
@@ -2921,7 +2927,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.58.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.58.1...HEAD
+[0.58.1]: https://github.com/docomply/jig/compare/v0.58.0...v0.58.1
 [0.58.0]: https://github.com/docomply/jig/compare/v0.57.0...v0.58.0
 [0.57.0]: https://github.com/docomply/jig/compare/v0.56.1...v0.57.0
 [0.56.1]: https://github.com/docomply/jig/compare/v0.56.0...v0.56.1
