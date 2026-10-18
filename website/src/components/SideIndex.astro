@@ -11,13 +11,12 @@ interface Item {
 interface Props {
   title: string;
   items: Item[];
-  mono?: boolean;
 }
-const { title, items, mono = false } = Astro.props;
+const { title, items } = Astro.props;
 const current = items.find((i) => i.current);
 ---
 
-<nav class:list={["side", { mono }]} aria-label={title}>
+<nav class="side" aria-label={title}>
   <details open class="wide-open">
     <summary>
       <span class="label">{title}</span>
@@ -39,9 +38,22 @@ const current = items.find((i) => i.current);
 </nav>
 
 <script>
-  // On a phone the index starts folded; on a wide screen it stays open.
-  if (window.matchMedia("(max-width: 1079px)").matches)
-    for (const d of document.querySelectorAll<HTMLDetailsElement>(".side details")) d.open = false;
+  // On a phone the index starts folded; on a wide screen it stays open, with
+  // the current page scrolled into the part of a long list that shows. A
+  // window resized across the breakpoint folds or opens it again.
+  const narrow = window.matchMedia("(max-width: 1079px)");
+  const fit = () => {
+    for (const side of document.querySelectorAll<HTMLElement>(".side")) {
+      const details = side.querySelector("details");
+      if (details) details.open = !narrow.matches;
+      if (narrow.matches) continue;
+      const here = side.querySelector<HTMLElement>("a[aria-current='page']");
+      if (here && here.offsetTop + here.offsetHeight > side.clientHeight)
+        side.scrollTop = here.offsetTop - (side.clientHeight - here.offsetHeight) / 2;
+    }
+  };
+  narrow.addEventListener("change", fit);
+  fit();
 
   // An index of in-page anchors marks the section being read: the last one
   // whose top has risen into the upper third of the screen, or to where an
@@ -85,8 +97,13 @@ const current = items.find((i) => i.current);
     max-width: 300px;
     min-width: 0;
     position: sticky;
-    top: 84px;
+    top: var(--sticky-top);
     align-self: flex-start;
+    /* A list longer than the window scrolls within it. */
+    max-height: calc(100vh - var(--sticky-top) - 16px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
   }
   summary {
     display: flex;
@@ -130,16 +147,12 @@ const current = items.find((i) => i.current);
     background: var(--sunk);
     box-shadow: inset 2px 0 0 var(--accent);
   }
-  .mono a {
-    font-family: var(--mono);
-    font-size: 13.5px;
-    display: block;
-  }
   @media (max-width: 1079px) {
     .side {
       position: static;
       flex: 1 1 100%;
       max-width: none;
+      max-height: none;
       border: 1px solid var(--line);
       border-radius: var(--r-card);
       background: var(--card);

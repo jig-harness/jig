@@ -1,5 +1,4 @@
 ---
-import FactoryNav from "../../components/factory/FactoryNav.astro";
 import Provides from "../../components/factory/Provides.astro";
 import Scaffold from "../../components/factory/Scaffold.astro";
 import Base from "../../layouts/Base.astro";
@@ -17,7 +16,6 @@ const jobs = factory().jobs.length;
       <h1 class="display">{countWord(jobs, true)} jobs the scaffolding does, and what Jig provides to build it.</h1>
       <p class="muted small">Every station in <a href="/factory/">the overview</a> stands on this. The modules that build each job are on <a href="/modules/">the module map</a>.</p>
     </div>
-    <FactoryNav current="scaffolding" />
     <Scaffold />
     <Provides />
   </section>

@@ -1,6 +1,5 @@
 ---
 import DesignLevel from "../../components/factory/DesignLevel.astro";
-import FactoryNav from "../../components/factory/FactoryNav.astro";
 import Base from "../../layouts/Base.astro";
 import { factory } from "../../lib/data/index.ts";
 import { mdInline } from "../../lib/markdown.ts";
@@ -20,7 +19,6 @@ const hands = level ? await mdInline(level.handsOn, "FACTORY.md") : "";
       <h1 class="display">Design and planning: the feature pipeline.</h1>
       <p class="muted small">The unit of work is <span set:html={unit} />; what the level hands on is <span set:html={hands} />. <a href="/factory/#levels">Both levels, in figure 2</a>.</p>
     </div>
-    <FactoryNav current="design" />
     <DesignLevel />
   </section>
 </Base>

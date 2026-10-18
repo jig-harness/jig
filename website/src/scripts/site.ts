@@ -1,7 +1,8 @@
 /**
  * The site's few interactions, each an enhancement of a page that reads
- * fully without it: the theme switch, Copy buttons, term definitions beside
- * a term, and search. Definitions and the search index load on first use.
+ * fully without it: the theme switch, the section bar's scroll, Copy
+ * buttons, term definitions beside a term, and search. Definitions and the
+ * search index load on first use.
  */
 
 // ---------- theme: the system's until the reader picks light or dark ----------
@@ -51,6 +52,39 @@ document.addEventListener("click", (event) => {
   if (target.closest("[data-theme-switch]"))
     chooseTheme(themeInEffect() === "light" ? "dark" : "light");
 });
+
+// ---------- the section bar shows its current page ----------
+// On a narrow screen the bar scrolls sideways; it starts at the page the
+// reader is on.
+{
+  const row = document.querySelector<HTMLElement>(".section-row");
+  const here = row?.querySelector<HTMLElement>("a[aria-current='page']");
+  if (row && here && here.offsetLeft + here.offsetWidth > row.clientWidth)
+    row.scrollLeft = here.offsetLeft - (row.clientWidth - here.offsetWidth) / 2;
+}
+
+// ---------- a header sub-menu closes on Escape ----------
+// Escape closes the open menu and puts focus on its entry. Hover and focus
+// each open the menu, so it stays closed until both the pointer and focus
+// have left the entry, and opens again the next time either comes back.
+for (const item of document.querySelectorAll<HTMLElement>(".nav-item")) {
+  const reopen = () => item.classList.remove("dismissed");
+  item.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || item.classList.contains("dismissed")) return;
+    item.classList.add("dismissed");
+    item.querySelector<HTMLElement>(".has-sub")?.focus();
+  });
+  item.addEventListener("mouseleave", () => {
+    if (!item.contains(document.activeElement)) reopen();
+  });
+  item.addEventListener("focusout", (event) => {
+    if (
+      !item.contains(event.relatedTarget as Node | null) &&
+      !item.matches(":hover")
+    )
+      reopen();
+  });
+}
 
 // ---------- Copy buttons ----------
 document.addEventListener("click", (event) => {

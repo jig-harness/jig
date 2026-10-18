@@ -42,7 +42,6 @@ const hasContract = entry.id.endsWith("/README");
   <section class="page wrap with-side">
     <SideIndex
       title={`${all.filter((s) => !s.agent).length} skills, 1 agent`}
-      mono
       items={all.map((s) => ({ label: s.name, href: `/skills/${s.name}/`, current: s.name === name }))}
     />
     <article class="main" style="--main-max:800px">

@@ -1,5 +1,4 @@
 ---
-import AdoptTabs from "../../components/AdoptTabs.astro";
 import LevelGlyph from "../../components/LevelGlyph.astro";
 import PlanRail from "../../components/PlanRail.astro";
 import SectionHead from "../../components/SectionHead.astro";
@@ -30,7 +29,6 @@ const grandfatheringHtml = await md(b.grandfathering, FROM);
 <Base title="Adopt Jig in an existing repository" description="Decide how far to go, then climb one rung at a time: the audit, the ladder, and your plan.">
   <section class="page wrap with-side">
     <article class="main" style="--main-max:880px">
-      <AdoptTabs current="existing" />
       <div class="banner" role="status" data-handed-over hidden>
         <strong>Someone chose <span data-profile-name></span> for your repository.</strong> Below is what that means, in the order to do it. Step 1 takes one command.
       </div>

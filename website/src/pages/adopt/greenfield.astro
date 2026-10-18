@@ -1,5 +1,4 @@
 ---
-import AdoptTabs from "../../components/AdoptTabs.astro";
 import ModChip from "../../components/ModChip.astro";
 import PlanRail from "../../components/PlanRail.astro";
 import SectionHead from "../../components/SectionHead.astro";
@@ -24,7 +23,6 @@ const moves = await Promise.all(g.moves.map(async (m) => ({ n: m.n, html: await 
 <Base title="Adopt Jig in a new project" description="Run the kickoff, and hand each phase to the module that governs it.">
   <section class="page wrap with-side">
     <article class="main" style="--main-max:880px">
-      <AdoptTabs current="new" />
       <div class="banner" role="status" data-handed-over hidden>
         <strong>Someone chose <span data-profile-name></span> for this new project.</strong> Run the kickoff below; at phase 5, adopt the modules in Your plan.
       </div>

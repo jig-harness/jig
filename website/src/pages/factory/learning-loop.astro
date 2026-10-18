@@ -1,5 +1,4 @@
 ---
-import FactoryNav from "../../components/factory/FactoryNav.astro";
 import Flywheel from "../../components/factory/Flywheel.astro";
 import Plate from "../../components/Plate.astro";
 import Base from "../../layouts/Base.astro";
@@ -20,7 +19,6 @@ const learningHtml = await mdInline(factory().learning, "FACTORY.md");
       </div>
       <span class="intro-plate"><Plate name="flywheel" width="100%" /></span>
     </div>
-    <FactoryNav current="learning" />
     <Flywheel />
   </section>
 </Base>

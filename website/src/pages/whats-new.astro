@@ -196,8 +196,8 @@ const groups = await Promise.all(
   }
   .roadmap {
     position: sticky;
-    top: 84px;
-    max-height: calc(100vh - 100px);
+    top: var(--sticky-top);
+    max-height: calc(100vh - var(--sticky-top) - 16px);
     overflow: auto;
     min-width: 0;
   }

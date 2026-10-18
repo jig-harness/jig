@@ -1,5 +1,4 @@
 ---
-import AdoptTabs from "../../components/AdoptTabs.astro";
 import SideIndex from "../../components/SideIndex.astro";
 import Base from "../../layouts/Base.astro";
 import { md, mdInline } from "../../lib/markdown.ts";
@@ -34,7 +33,6 @@ const introHtml = await md(intro.slice(0, 2).join("\n\n"), FROM);
   <section class="page wrap with-side">
     <SideIndex title="On this page" items={rest.map((r) => ({ label: r.label, href: `#${r.id}` }))} />
     <article class="main">
-      <AdoptTabs current="plugin" />
       <span class="eyebrow">Adopt · the plugin</span>
       <h1 class="display">The jig plugin, once it is installed.</h1>
       <div class="prose lede-block" set:html={introHtml} />
@@ -67,7 +65,6 @@ const introHtml = await md(intro.slice(0, 2).join("\n\n"), FROM);
     border-top: 1px solid var(--line);
     padding-top: 14px;
     margin-top: 32px;
-    scroll-margin-top: 84px;
   }
   .part h2 {
     font-family: var(--serif);

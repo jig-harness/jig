@@ -67,7 +67,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 | `/factory/scaffolding/` | FACTORY.md, CONFIGURATION.md | the jobs with the modules that build each, when each verification module acts along a session, running many agents at once, and what Jig provides: the configuration layers and the tracker interface |
 | `/factory/design/`, `/factory/execution/` | FACTORY.md | one level each: its stations as a row with handoffs, the stages or the pull-request loop in text, the skills that run them or the station table |
 | `/factory/learning-loop/` | FACTORY.md, M8's README | the miss-to-lens flywheel step by step, its two companion cycles, and what triggers reflection |
-| `/adopt/` | plugin/README.md | getting started: the prompt that hands the setup to an agent, then the stations from nothing installed to a first audit, then the guides for an existing repository and a new project; a page switch joins it to the section's other pages |
+| `/adopt/` | plugin/README.md | getting started: the prompt that hands the setup to an agent, then the stations from nothing installed to a first audit, then the guides for an existing repository and a new project |
 | `/adopt/existing/`, `/adopt/greenfield/` | adoption/*.md, profiles | the guides with the plan rail: the chosen profile's modules in order, linked to their levels, and a hand-off link that keeps the profile (`?profile=`) |
 | `/adopt/plugin/`, `/adopt/configuration/`, `/adopt/extending/` | plugin/README.md, CONFIGURATION.md, EXTENDING.md | the plugin README's sections getting started does not render; the configuration reference; the extending guide |
 | `/skills/`, `/skills/<name>/`, `/skills/<name>/skill/` | plugin README tables, each skill's README or SKILL.md | what each skill runs (stations and modules), the stations no skill runs, each skill's own page, and its agent contract where the page is its README |
@@ -123,6 +123,16 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
   footer, so the page stands on it.
   Each closed set (levels, rungs, actors, scaffolding jobs) has one mapping
   site-wide and is never told apart by color alone.
+- **Navigation**: the header stays at the top of the window. A section with
+  pages of its own (the factory, adopt) lists them under its entry in
+  `NAV` (`website/src/lib/site.ts`); the header opens that list under the
+  entry on hover or keyboard focus, and on each of the section's pages
+  holds it as a bar below itself, the current page marked, so the reader
+  sees where they are among the section's pages however far they scroll.
+  A page's own index of its sections or of its family's pages (the skills,
+  the principles) is the side index, one design wherever it appears; a
+  list taller than the window scrolls within it. Sticky rails and anchor
+  jumps stop below the header through `--sticky-top` (`global.css`).
 - **Marks**: the frame mark (`public/brand/jig-frame-*.svg`, inlined in the
   header so it follows the theme), and the square marks without letters for
   favicons and avatars (`public/brand/jig-mark-{light,dark,accent,adaptive}.svg`,

@@ -34,12 +34,44 @@ export function currentRelease(): Release {
   return { version, date: heading.exec(read("CHANGELOG.md"))?.[1] ?? "" };
 }
 
+export interface NavLink {
+  label: string;
+  href: string;
+}
+
+/** A top-level entry; a section with pages of its own lists them, its
+    landing page first. */
+export interface NavEntry extends NavLink {
+  pages?: readonly NavLink[];
+}
+
 /* What Jig is and its scope, then the steps of putting it to use, then the
    reference behind it, each deeper into the detail. */
-export const NAV: readonly { label: string; href: string }[] = [
+export const NAV: readonly NavEntry[] = [
   { label: "Features", href: "/features/" },
-  { label: "Factory", href: "/factory/" },
-  { label: "Adopt", href: "/adopt/" },
+  {
+    label: "Factory",
+    href: "/factory/",
+    pages: [
+      { label: "Overview", href: "/factory/" },
+      { label: "Scaffolding", href: "/factory/scaffolding/" },
+      { label: "A · Design and planning", href: "/factory/design/" },
+      { label: "B · Execution", href: "/factory/execution/" },
+      { label: "Learning loop", href: "/factory/learning-loop/" },
+    ],
+  },
+  {
+    label: "Adopt",
+    href: "/adopt/",
+    pages: [
+      { label: "Getting started", href: "/adopt/" },
+      { label: "Existing repository", href: "/adopt/existing/" },
+      { label: "New project", href: "/adopt/greenfield/" },
+      { label: "The plugin", href: "/adopt/plugin/" },
+      { label: "Configuration", href: "/adopt/configuration/" },
+      { label: "Extending", href: "/adopt/extending/" },
+    ],
+  },
   { label: "Modules", href: "/modules/" },
   { label: "Skills", href: "/skills/" },
   { label: "Principles", href: "/principles/" },

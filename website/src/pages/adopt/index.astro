@@ -1,5 +1,4 @@
 ---
-import AdoptTabs from "../../components/AdoptTabs.astro";
 import AuditSpecimen from "../../components/AuditSpecimen.astro";
 import SideIndex from "../../components/SideIndex.astro";
 import SkillCommand from "../../components/SkillCommand.astro";
@@ -48,7 +47,6 @@ const auditStation = `st-${stations.length + 1}`;
       ]}
     />
     <article class="main">
-      <AdoptTabs current="start" />
       <span class="eyebrow">Adopt Jig · getting started</span>
       <h1 class="display">From nothing installed to your first audit.</h1>
       <p class="lede-p">
@@ -112,14 +110,12 @@ const auditStation = `st-${stations.length + 1}`;
   }
   .anchor {
     display: block;
-    scroll-margin-top: 84px;
   }
   .agent {
     margin-top: 28px;
     padding: 18px 20px;
     background: var(--accent-soft);
     border-radius: var(--r-card);
-    scroll-margin-top: 84px;
   }
   .agent h2,
   .yourself,
@@ -136,7 +132,6 @@ const auditStation = `st-${stations.length + 1}`;
     border-top: 1px solid var(--line);
     padding-top: 14px;
     margin-top: 28px;
-    scroll-margin-top: 84px;
   }
   .station h3 {
     font-family: var(--serif);
@@ -152,7 +147,6 @@ const auditStation = `st-${stations.length + 1}`;
   }
   .guides {
     margin-top: 44px;
-    scroll-margin-top: 84px;
   }
   .cards {
     display: grid;

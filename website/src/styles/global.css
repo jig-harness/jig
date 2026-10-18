@@ -78,10 +78,19 @@
   box-sizing: border-box;
 }
 
+/* Where a sticky rail or an anchor jump stops: below the sticky header, and
+   below the section bar it holds on a page of a section. */
+:root {
+  --sticky-top: 84px;
+}
+:root:has(.section-bar) {
+  --sticky-top: 128px;
+}
+
 html {
   background: var(--bg);
   color: var(--ink);
-  scroll-padding-top: 84px;
+  scroll-padding-top: var(--sticky-top);
 }
 
 body {

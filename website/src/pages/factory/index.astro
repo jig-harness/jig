@@ -1,7 +1,6 @@
 ---
 import CrossSection from "../../components/CrossSection.astro";
 import Boundary from "../../components/factory/Boundary.astro";
-import FactoryNav from "../../components/factory/FactoryNav.astro";
 import Stations from "../../components/factory/Stations.astro";
 import Plate from "../../components/Plate.astro";
 import Base from "../../layouts/Base.astro";
@@ -28,7 +27,6 @@ const mapHtml = await mdInline(f.intro[f.intro.length - 1] ?? "", "FACTORY.md");
       </div>
       <span class="intro-plate"><Plate name="hall" tone={0.72} /></span>
     </div>
-    <FactoryNav current="overview" />
     <CrossSection variant="full" />
     <Stations />
     <Boundary />
