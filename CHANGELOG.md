@@ -310,6 +310,18 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.61.1] - 2026-10-18
+
+### Changed
+
+- The `drive-pr` and `do-item` test suites now run on Windows in the nightly
+  workflow, the `drive-pr` suite as its own sharded job and `do-item` inside
+  the gate set. The tests that need work the skills do not have yet (finding
+  and stopping a pass's processes without `ps` and POSIX signals, state and
+  locks for Windows file systems, the skills under Git Bash) skip on Windows
+  and name the piece of work that lifts each skip. Neither skill's behaviour
+  changes.
+
 ## [0.61.0] - 2026-10-18
 
 ### Added
@@ -3056,7 +3068,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/docomply/jig/compare/v0.61.0...HEAD
+[Unreleased]: https://github.com/docomply/jig/compare/v0.61.1...HEAD
+[0.61.1]: https://github.com/docomply/jig/compare/v0.61.0...v0.61.1
 [0.61.0]: https://github.com/docomply/jig/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/docomply/jig/compare/v0.59.0...v0.60.0
 [0.59.0]: https://github.com/docomply/jig/compare/v0.58.1...v0.59.0
