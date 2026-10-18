@@ -317,48 +317,48 @@ fields:
     min: 1
     default: 16
     read_by: [work-batch]
-    since: next
+    since: 0.57.0
   work_batch.size_points:
     type: map
     values_type: integer
     read_by: [work-batch]
-    since: next
+    since: 0.57.0
   work_batch.max_items:
     type: integer
     min: 1
     default: 6
     read_by: [work-batch]
-    since: next
+    since: 0.57.0
   work_batch.solo_flags:
     type: list
     items: string
     distinct: true
     read_by: [work-batch]
-    since: next
+    since: 0.57.0
   work_batch.sizes:
     type: list
     items: string
     distinct: true
     nonempty: true
     read_by: [work-batch]
-    since: next
+    since: 0.57.0
   work_batch.ranking.sizes:
     type: map
     values_type: integer
     read_by: [work-batch]
-    since: next
+    since: 0.57.0
   work_batch.ranking.provenance:
     type: integer
     min: 0
     default: 3
     read_by: [work-batch]
-    since: next
+    since: 0.57.0
   work_batch.ranking.shared_area_label:
     type: integer
     min: 0
     default: 1
     read_by: [work-batch]
-    since: next
+    since: 0.57.0
 
   fleet_health.config:
     type: path
