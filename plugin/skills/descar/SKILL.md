@@ -14,8 +14,8 @@ allowed-tools:
 # De-scarring a promoted document
 
 Removes the archaeology from a document so its body is a live statement of what
-is true now. [De-scarring](https://github.com/docomply/jig/blob/main/GLOSSARY.md) is the rule in Jig's
-docs-governance module ([M4](https://github.com/docomply/jig/blob/main/modules/M4-docs-governance/README.md)):
+is true now. [De-scarring](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is the rule in Jig's
+docs-governance module ([M4](https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/README.md)):
 an approved document carries no trace of the review or the edits that produced
 it. M4 gives the rule and a lint for its mechanical part; this skill is the
 operating procedure for the part a lint cannot do.

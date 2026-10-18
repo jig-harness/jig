@@ -417,12 +417,12 @@ test("setup recognises where a marketplace is registered from", () => {
       {
         name: "jig",
         source: "git",
-        url: "https://github.com/docomply/jig.git",
+        url: "https://github.com/jig-harness/jig.git",
         ref: "v0.2.0",
       },
     ]),
   ).toEqual({
-    location: "https://github.com/docomply/jig.git#v0.2.0",
+    location: "https://github.com/jig-harness/jig.git#v0.2.0",
     git: true,
   });
   expect(
@@ -442,7 +442,7 @@ test("setup recognises where a marketplace is registered from", () => {
   expect(sameSource(`${DEFAULT_SOURCE}#v0.2.0`, DEFAULT_SOURCE)).toBe(true);
   // A requested release must not be satisfied by an unpinned registration.
   expect(sameSource(DEFAULT_SOURCE, `${DEFAULT_SOURCE}#v0.2.0`)).toBe(false);
-  expect(sameSource("https://github.com/docomply/jig", DEFAULT_SOURCE)).toBe(
+  expect(sameSource("https://github.com/jig-harness/jig", DEFAULT_SOURCE)).toBe(
     true,
   );
   expect(

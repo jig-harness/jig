@@ -1,0 +1,29 @@
+name: Bug
+description: Something Jig does today is wrong.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Plugin version
+      description: From `claude plugin list` or `codex plugin list`, or the tag you pinned.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The skill or gate, the command you ran, and what it did. Paste output in a code block. Leave out anything from your repository you would not publish.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: tools
+    attributes:
+      label: Agent tool and operating system
+      placeholder: Claude Code 2.1.300 on macOS 26; Codex 0.160 on Ubuntu 24.04

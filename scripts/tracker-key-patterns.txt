@@ -1,34 +1,42 @@
 # References that must not appear in repository content: the original
-# repository's issue-tracker keys and its organization's name. One extended
-# regular expression per line; `(?i)` makes a line case-insensitive. See
-# check-no-tracker-refs.ts.
+# repository's issue-tracker keys and the name of the organization Jig
+# learned from. One extended regular expression per line; `(?i)` makes a
+# line case-insensitive. See check-no-tracker-refs.ts.
 #
-# Those values come from the scanned repository's `.config/jig.yaml`, so this
-# file spells out neither: `{{team}}` stands for `issue_tracker.team` and
-# `{{owner}}` for the owner part of `review.repo_slug`. Changing either field
-# changes what the gate forbids, so a test pins both by digest. The gate does
-# not scan the pattern file it reads, and a test checks that this one
-# contains nothing its own patterns reject.
+# Those values come from the scanned repository itself, so this file spells
+# out neither: `{{team}}` stands for `issue_tracker.team` in
+# `.config/jig.yaml` and `{{licensor}}` for the name on NOTICE's copyright
+# line, the organization that holds Jig's copyright. Changing either changes
+# what the gate forbids, so a test pins both by digest. The gate does not
+# scan the pattern file it reads, and a test checks that this one contains
+# nothing its own patterns reject.
 \b{{team}}-[0-9]+\b
 # The same key folded into a name: `<team>1234-main`, `PRE_<TEAM>_1234_ACCOUNT`,
 # `feature/<team>-42-fix`. A separator makes any number a key; without one,
 # three digits are needed, so a word such as `<team>12` stays allowed.
 (?i)(?<![a-z0-9]){{team}}([-_][0-9]+|[0-9]{3,})(?![0-9])
-(?i){{owner}}
+(?i){{licensor}}
 #
 # Allowed: the text an allow pattern (`!`) matches, tested against
 # `<relative path>:<line>`. Only the matched text is exempt, so a pattern
 # covers the permitted occurrence itself, not the line it sits on.
 #
-# The repository's own address, as a whole URL: it starts at
-# `https://` with nothing joined on before it, so a host such as
-# `notgithub.com` stays rejected, and the name ends there (optionally as
-# `.git`) with no further name character after it, so a sibling such as
-# `jig-other` or `jig..private` stays rejected while a sentence
-# may still end on the address.
-!(?<![-+.\w])https://github\.com/{{owner}}/jig(\.git)?(?![-\w])(?!\.[-.\w])
+# The copyright line of NOTICE, which names the licensor by definition, of
+# plugin/NOTICE, its byte copy, and of the MIT No Attribution licence text.
+!^(plugin/)?NOTICE:Copyright [0-9]{4} {{licensor}}$
+!^LICENSE-MIT-0:Copyright [0-9]{4} {{licensor}}$
 # The publisher fields of the plugin and marketplace manifests.
-!(?i)^(plugin/\.(claude|codex)-plugin/plugin|\.claude-plugin/marketplace)\.json:\s*"(author|owner|developerName)":\s*(\{\s*"name":\s*)?"{{owner}}"
+!(?i)^(plugin/\.(claude|codex)-plugin/plugin|\.claude-plugin/marketplace)\.json:\s*"(author|owner|developerName)":\s*(\{\s*"name":\s*)?"{{licensor}}"
 # This repository's own values as a consumer of its skills: real account,
 # team and repository names, which is what configuration is for.
 !^\.config/jig\.yaml:.*
+# History records the address the repository had: the changelog keeps the
+# repository's earlier address, as a whole URL (it starts at `https://` with
+# nothing joined on before it, and the name ends there, optionally as
+# `.git`, with no further name character after it, so a sibling such as
+# `jig-other` stays rejected). The file is named in a lookbehind so that
+# only the address is exempt, not the text before it on the line.
+!(?i)(?<=^CHANGELOG\.md:.*)(?<![-+.\w])https://github\.com/{{licensor}}/jig(\.git)?(?![-\w])(?!\.[-.\w])
+# ADR-0006 records who holds the copyright and what reverts if they cannot
+# carry it, so it names the licensor.
+!(?i)(?<=^docs/adr/ADR-0006-[^:]*:.*){{licensor}}

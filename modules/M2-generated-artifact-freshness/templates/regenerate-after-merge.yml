@@ -59,9 +59,9 @@
 #     workflow-convention lint of M13 checks the pins.
 #
 # The practice:
-#   https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/README.md
+#   https://github.com/jig-harness/jig/blob/main/modules/M2-generated-artifact-freshness/README.md
 # Other providers:
-#   https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/mappings.md
+#   https://github.com/jig-harness/jig/blob/main/modules/M2-generated-artifact-freshness/mappings.md
 name: Regenerate <artifact>
 
 on:

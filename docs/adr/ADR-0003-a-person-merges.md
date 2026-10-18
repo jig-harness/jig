@@ -4,8 +4,8 @@ type: adr
 status: amended
 description: "Agents open, review and drive Jig's pull requests; only a person merges them"
 lifecycle: permanent
-version: "1.1"
-last_updated: 2026-10-15
+version: "1.2"
+last_updated: 2026-10-18
 owner: maintainers
 decision_date: 2026-10-11
 supersedes: ~
@@ -72,3 +72,13 @@ version ([ADR-0004](ADR-0004-change-notes-released-after-the-merge.md)).
 That commit is not a merge: it writes what a person's merge already
 implies, so a person still merges every pull request.
 `scripts/check-branch-protection.ts` reads the ruleset.
+
+### 2026-10-18 — the rule is also the supply-chain control of a public repository (v1.2)
+
+Touches the Context and Consequences sections. The repository is public and
+both agent tools install the plugin from `main`, so a merge reaches every
+machine on its next update, including machines outside the maintainers'
+organization. A person merging is therefore the control that keeps a
+change nobody vetted out of every consumer's shell, not only the quality
+check it was while the repository was private; [SECURITY.md](../../SECURITY.md)
+states it to consumers. The decision and its extraction are unchanged.

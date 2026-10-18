@@ -421,4 +421,4 @@ runs the release step locally, `scripts/check-changelog.ts` runs the check in
 `scripts/check-branch-protection.ts` reads main's rulesets through
 `github-rules.ts`. The self-tests are in [`../__tests__/`](../__tests__/).
 The practice is
-[M12's change records](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md).
+[M12's change records](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md).

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/jig-harness/jig/discussions
+    about: Ask how something works, or float an idea before it becomes work.
+  - name: Security vulnerability
+    url: https://github.com/jig-harness/jig/security/advisories/new
+    about: Report it privately; see SECURITY.md. Never as a public issue.

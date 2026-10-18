@@ -3,11 +3,11 @@
 > Copy this into your repository (e.g. `docs/development/testing.md`), fill in
 > the tables, delete what does not apply, and point your agent instruction
 > file at it. It is the tool-independent contract from Jig's
-> [M14 testing strategy](https://github.com/docomply/jig/blob/main/modules/M14-testing-strategy/README.md);
+> [M14 testing strategy](https://github.com/jig-harness/jig/blob/main/modules/M14-testing-strategy/README.md);
 > the tools for each rule, per language, are in its
-> [mappings](https://github.com/docomply/jig/blob/main/modules/M14-testing-strategy/mappings.md).
+> [mappings](https://github.com/jig-harness/jig/blob/main/modules/M14-testing-strategy/mappings.md).
 > Terms are defined in Jig's
-> [glossary](https://github.com/docomply/jig/blob/main/GLOSSARY.md).
+> [glossary](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).
 
 ## Tiers
 
@@ -26,7 +26,7 @@ The full-sweep workflow carries the marker `# test-tier: end-to-end`, and
 change, `<cheap stand-in, e.g. "the end-to-end images build">` runs instead.
 End-to-end tests that are the only check of a journey are not part of the
 sweep: they run on every push to the default branch, where the `verified`
-pointer waits for them ([M10](https://github.com/docomply/jig/blob/main/modules/M10-environments-deploy/README.md)).
+pointer waits for them ([M10](https://github.com/jig-harness/jig/blob/main/modules/M10-environments-deploy/README.md)).
 
 ## Rules for every test
 
@@ -109,7 +109,7 @@ merge is blocked on a per-file coverage number.
 ## Suppression tokens
 
 Register these in the suppression-token registry
-([M1 template](https://github.com/docomply/jig/blob/main/modules/M1-gates-enforcement-ladder/templates/suppression-registry.md)):
+([M1 template](https://github.com/jig-harness/jig/blob/main/modules/M1-gates-enforcement-ladder/templates/suppression-registry.md)):
 
 | Token | Suppresses (gate) | Placement | Justification required |
 |-------|-------------------|-----------|------------------------|

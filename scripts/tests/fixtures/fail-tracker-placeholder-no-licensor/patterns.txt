@@ -1,0 +1,2 @@
+# Fixture patterns: the licensor named in NOTICE.
+(?i){{licensor}}

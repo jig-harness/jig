@@ -12,7 +12,7 @@
 # pointed at nothing must not pass) or a *.test.ts test could not run
 # because `bun` is not on PATH; otherwise 0.
 #
-# The practice: https://github.com/docomply/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md
+# The practice: https://github.com/jig-harness/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md
 set -uo pipefail
 
 dir="${1:-.claude/hooks}"

@@ -7,7 +7,7 @@
 > drift-prone area that no gate fully covers has a named cadence, a last-audited
 > date and an owner, and an area audited only by hand is tracked as a gap in
 > tooling.** Background:
-> [M8](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/README.md#the-audit-catalog-areas-no-gate-covers).
+> [M8](https://github.com/jig-harness/jig/blob/main/modules/M8-learning-loop/README.md#the-audit-catalog-areas-no-gate-covers).
 
 ## Which areas belong here
 

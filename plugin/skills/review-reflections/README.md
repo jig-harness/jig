@@ -46,7 +46,7 @@ The findings the repository it runs in would fix:
    does, for the owners in scope: run in the Jig repository, it escalates
    findings about Jig's skills to Jig's tracker. A class's issue is the one
    carrying that owner's
-   [owner marker](https://github.com/docomply/jig/blob/main/GLOSSARY.md) in
+   [owner marker](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) in
    its description, and a newly filed issue gets the marker the plan names; an
    issue without it, such as one filed before the marker existed, is not
    attached to, and the next escalation files a new one.

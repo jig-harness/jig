@@ -15,7 +15,7 @@ learns it again. This skill writes it down: each session records its findings,
 the findings of every session and repository accumulate in one shared store,
 and [`/jig:review-reflections`](../review-reflections/SKILL.md) later turns them
 into changes a person approves. It is the session-reflection cycle of
-[M8 (learning loop)](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/README.md).
+[M8 (learning loop)](https://github.com/jig-harness/jig/blob/main/modules/M8-learning-loop/README.md).
 
 How the records work (the event log, the journal, the store contract and its
 stores) is described for people in [README.md](README.md). This file is the
@@ -39,7 +39,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/reflect.ts" status
 `{"on": false}` means no configuration layer has a `reflection` section (or it
 says `enabled: false`). Say so in one line, with how to turn it on (a
 `reflection:` section in `~/.jig/jig.yaml`, see the plugin's
-[configuration reference](https://github.com/docomply/jig/blob/main/plugin/CONFIGURATION.md#reflection)),
+[configuration reference](https://github.com/jig-harness/jig/blob/main/plugin/CONFIGURATION.md#reflection)),
 and stop. Do not write findings anywhere else.
 
 ## 1. Gather

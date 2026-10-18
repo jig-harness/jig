@@ -1,0 +1,23 @@
+name: Proposed change
+description: A practice, mapping, adapter or skill change that needs a decision before the work (CONTRIBUTING.md § Outside contributions).
+labels: [proposal]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What goes wrong without the change, for whom. Plain language first.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: The proposal
+      description: The invariant it states or changes, and the implementation per ecosystem if it has one. A tool that speaks an extension contract can live in its own repository; say if that is the better home.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Where it has worked
+      description: Jig brings in practices a working repository has validated. Say where this one ran and what it caught, without naming material you cannot share.

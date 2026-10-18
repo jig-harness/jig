@@ -212,7 +212,7 @@ export function readmeLead(readme: string): { summary: string; intro: string } {
 /** The root index: what Jig is, and a link to each section's file. */
 export function rootFile(summary: string, intro: string): LlmsFile {
   return {
-    title: "Jig",
+    title: "Jig Harness",
     summary,
     intro: `${intro} An agent asked to set Jig up in a repository starts with the getting-started page under Start here. Each section below has its own llms.txt listing its pages. Every page is also served as Markdown, at its address with index.md added or to a request that asks for text/markdown.`,
     groups: [

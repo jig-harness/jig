@@ -9,7 +9,7 @@ allowed-tools: "Read Edit Write Grep Glob Bash(git *) Bash(gh pr view *) Bash(bu
 
 When git combines two lines of work (a merge, a rebase, a cherry-pick or a
 revert) and both changed the same lines, it stops and leaves the file with
-**[conflict markers](https://github.com/docomply/jig/blob/main/GLOSSARY.md)**
+**[conflict markers](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)**
 around each region it could not combine. Resolving them by reading the markers alone fails in recurring ways: one side's change is
 silently dropped (taking one side's whole file also discards that side's
 other edits git had already merged cleanly), "ours" and "theirs" are confused
@@ -20,13 +20,13 @@ product disagreement is settled by an agent without anyone noticing.
 
 This skill gives the resolution a structure and checks it before it is
 concluded. It belongs to the pull-request lifecycle of Jig module
-[M7 (PR lifecycle & review)](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md):
+[M7 (PR lifecycle & review)](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md):
 a pull request that conflicts with its base cannot merge, and the resolution
 is part of the change its reviewers see.
 
 **The invariant.** A conflict resolution keeps the intent of both sides, or
 records which side's change it dropped and why. Derived files (lockfiles and
-[generated artifacts](https://github.com/docomply/jig/blob/main/GLOSSARY.md))
+[generated artifacts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md))
 are regenerated from their resolved sources, never merged by hand. Every
 decision is recorded where reviewers see it: the merge commit message. The
 resolution is validated before it is concluded and pushed. A conflict whose
@@ -34,7 +34,7 @@ right answer is a product decision goes to a human.
 
 Jig maintains this procedure and ships it in the `jig` plugin.
 A repository adds its own generated files in `.config/jig.yaml`
-(the [consumer overlay](https://github.com/docomply/jig/blob/main/GLOSSARY.md));
+(the [consumer overlay](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md));
 without that file the skill works on its defaults.
 
 ### Paths and working directory
@@ -67,7 +67,7 @@ side so you never have to work it out:
 | cherry-pick | the checked-out branch | the commit being picked |
 | revert | the checked-out branch | the state before the commit being reverted |
 
-The **[merge base](https://github.com/docomply/jig/blob/main/GLOSSARY.md)** is the commit both sides started from; a side's *change*
+The **[merge base](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)** is the commit both sides started from; a side's *change*
 is what it did relative to the merge base. The **integration side** is the
 side that carries the base branch or upstream: `theirs` when you merge the
 base branch into a feature branch, `ours` in a rebase. Derived files start

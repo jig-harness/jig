@@ -61,9 +61,9 @@ These pass the keep test and must survive de-scarring:
   makes them overdue.
 
 Two exemptions are structural, not judgment calls: architecture decision
-records ([ADRs](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) record their evolution in the body by
+records ([ADRs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) record their evolution in the body by
 design (an `## Amendments` section and `status: amended`; see
-[M5](https://github.com/docomply/jig/blob/main/modules/M5-adr-practice/README.md)), and documents whose
+[M5](https://github.com/jig-harness/jig/blob/main/modules/M5-adr-practice/README.md)), and documents whose
 *subject* is the review process are exempted from the lint by path or by
 `descar_allow: true` in their frontmatter.
 
@@ -77,7 +77,7 @@ destination by what the content is:
 | How a decision evolved | The ADR's `## Amendments` section (`status: amended`) |
 | A whole document replaced by another | Archive the predecessor with `superseded_by:` pointing at the successor; the successor carries `supersedes:` pointing back. `archive/` and `superseded_by:` go on the *replaced* document, never on the current one, and only when a real successor exists |
 | What changed within one document | A short `## Version history` section: *what* changed, dated; never reviewer names, resolution phrasing or struck text |
-| What changed across documents, and why | The wiki's activity log (`log.md` in the [M4](https://github.com/docomply/jig/blob/main/modules/M4-docs-governance/README.md) layout): **one line per document per pass** |
+| What changed across documents, and why | The wiki's activity log (`log.md` in the [M4](https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/README.md) layout): **one line per document per pass** |
 | A companion record of findings | A review record, an audit document, a design-decisions note |
 | The issue that tracked the change | Reference it by its key; do not restate its discussion |
 | A completed-work (S3) row whose closure anchor is verified (below) | Nowhere: the anchor already **is** the durable record |

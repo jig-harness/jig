@@ -1,7 +1,7 @@
 # `/jig:code-stats`: what a repository is made of
 
 How much of a repository is shipped product code, and how much is tests,
-tooling, agent [scaffolding](https://github.com/docomply/jig/blob/main/GLOSSARY.md),
+tooling, agent [scaffolding](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
 documentation, build or deployment files? In which languages, and in which
 modules? Without a tool, each team answers with a one-off script that counts
 everything as "code", so a repository with a large generated client, a
@@ -17,22 +17,22 @@ for a repository, a few values in `.config/jig.yaml` fix it, and
 ## What it measures
 
 Every tracked file gets one value in each of the
-[code-stats dimensions](https://github.com/docomply/jig/blob/main/GLOSSARY.md):
+[code-stats dimensions](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
 
 - **Area**: what the file is *for*. The first area rule that matches wins;
   a file no rule matches falls to the default area, `production`.
 - **Kind**: what the file *is*: `code`, `test`, `docs`, `config`, `data`,
-  `generated`, `fixture` (a [test fixture](https://github.com/docomply/jig/blob/main/GLOSSARY.md): data a test reads), `asset` (binary or media),
+  `generated`, `fixture` (a [test fixture](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): data a test reads), `asset` (binary or media),
   `vendored` (another project's code kept in this one) or `other`.
 - **Language**: from the file's extension; for a file without one, from its
-  [shebang line](https://github.com/docomply/jig/blob/main/GLOSSARY.md)
+  [shebang line](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   (`#!/usr/bin/env python3`); and a `linguist-language`
-  [git attribute](https://github.com/docomply/jig/blob/main/GLOSSARY.md) in `.gitattributes` overrides both.
+  [git attribute](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) in `.gitattributes` overrides both.
 - **Module**: the deepest module folder that holds the file, from the
-  repository's [workspace manifests](https://github.com/docomply/jig/blob/main/GLOSSARY.md) (below), or from `code_stats.modules`.
+  repository's [workspace manifests](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (below), or from `code_stats.modules`.
 
 And its counts: bytes, all lines, blank lines, comment lines, and
-[LOC (lines of code)](https://github.com/docomply/jig/blob/main/GLOSSARY.md): lines that are neither blank nor only a comment. Binary and media
+[LOC (lines of code)](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): lines that are neither blank nor only a comment. Binary and media
 files are sized but not line-counted; so is a text file over 20 MiB, which
 is still classified from its first 8 KiB.
 
@@ -153,7 +153,7 @@ The layers, lowest precedence first; a later layer overrides an earlier one.
    jest, vitest, pytest and Gradle declare).
 3. **The `code_stats` configuration**: the areas, the default area, and kind
    globs checked before built-in detection.
-4. **The [classify command](https://github.com/docomply/jig/blob/main/GLOSSARY.md)**, when the repository supplies one.
+4. **The [classify command](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)**, when the repository supplies one.
 
 ### Kinds
 
@@ -315,7 +315,7 @@ is not build: a root-level one is `repo-config`. Test configuration, such as
 ### Database
 
 The `database` area takes schema definitions
-([DDL, data definition language](https://github.com/docomply/jig/blob/main/GLOSSARY.md))
+([DDL, data definition language](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md))
 and migrations, by the tool or convention that writes them. The specific
 tools come first, so `--explain` names the most specific one. A plain `.sql`
 file is not schema by itself (it may be a query), so no rule takes every

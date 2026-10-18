@@ -12,7 +12,7 @@ ranking the measurement exists to produce. A `docs/reflection-archive.md` that
 nobody reads still does that job.
 
 Records are written by
-[`reflection-trigger.ts`](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/reference/reflection-trigger/reflection-trigger.ts), which fires when a
+[`reflection-trigger.ts`](https://github.com/jig-harness/jig/blob/main/modules/M8-learning-loop/reference/reflection-trigger/reflection-trigger.ts), which fires when a
 change takes at least `ROUND_THRESHOLD` review rounds to converge. It fills in
 the two machine-written fields (`change:`, `rounds:`) and leaves the two
 judgement fields blank for you.

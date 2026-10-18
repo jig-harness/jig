@@ -11,7 +11,7 @@ nothing because no one wrote down what the last one found.
 polished HTML report of where the repository stands against the profile the
 team aims for, with prioritized, actionable recommendations the team accepts,
 refines or declines in place and hands back to the agent. It is the brownfield entry point
-([principle 6](https://github.com/docomply/jig/blob/main/principles/06-audit-first.md)),
+([principle 6](https://github.com/jig-harness/jig/blob/main/principles/06-audit-first.md)),
 and because it records what it found in the repository itself, every later run
 is a regression check: it reports what was fixed, what slipped, and what Jig
 added since, and it does not repeat a recommendation the team declined.

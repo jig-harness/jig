@@ -8,9 +8,9 @@ allowed-tools: "Read Write Edit Grep Glob Bash(bun *) Bash(git *) Bash(gh *)"
 
 # Architecture decision records
 
-Manage architecture decision records ([ADRs](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) and the
+Manage architecture decision records ([ADRs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) and the
 rules extracted from them. Jig's ADR module
-([M5](https://github.com/docomply/jig/blob/main/modules/M5-adr-practice/README.md)) defines the practice: one
+([M5](https://github.com/jig-harness/jig/blob/main/modules/M5-adr-practice/README.md)) defines the practice: one
 short numbered record per decision, changed only by amendment or supersession,
 with every pattern-checkable decision turned into a rule a gate enforces.
 
@@ -62,7 +62,7 @@ and stop.
    either way, check that no open pull request already adds the same number.
 2. Use the repository's own template when it has one (a template file in the
    records directory, or one named in its docs). Otherwise use this skeleton,
-   which matches M5's [template](https://github.com/docomply/jig/blob/main/modules/M5-adr-practice/templates/ADR-template.md)
+   which matches M5's [template](https://github.com/jig-harness/jig/blob/main/modules/M5-adr-practice/templates/ADR-template.md)
    and the frontmatter M4's schema checks:
 
    ```markdown
@@ -129,7 +129,7 @@ An approved record is never rewritten silently: it changes by a dated
 **Trigger:** a record is created or updated.
 
 When the repository has no rules file, say so and stop this workflow; suggest
-adopting M5's [`adr-rules.yaml`](https://github.com/docomply/jig/blob/main/modules/M5-adr-practice/templates/adr-rules.yaml)
+adopting M5's [`adr-rules.yaml`](https://github.com/jig-harness/jig/blob/main/modules/M5-adr-practice/templates/adr-rules.yaml)
 and its interpreter, and create one only if the user agrees.
 
 1. Read the record.

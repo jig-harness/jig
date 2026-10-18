@@ -10,7 +10,7 @@
 import { posix } from "node:path";
 import { START_ANCHORS } from "./plugin-guide.ts";
 
-export const REPO_URL = "https://github.com/docomply/jig";
+export const REPO_URL = "https://github.com/jig-harness/jig";
 const REPO_BLOB = `${REPO_URL}/blob/main/`;
 const REPO_TREE = `${REPO_URL}/tree/main/`;
 

@@ -8,17 +8,17 @@ quiet ways: a session declares the PR finished while a reviewer is still
 running, a fix is pushed to a PR that has already merged, or a long drive dies
 with its context and nobody notices.
 
-**What it does.** `/jig:drive-pr` is a [PR drive loop](https://github.com/docomply/jig/blob/main/GLOSSARY.md): it runs a PR's [review rounds](https://github.com/docomply/jig/blob/main/GLOSSARY.md) unattended until the PR reaches exactly one [terminal state](https://github.com/docomply/jig/blob/main/GLOSSARY.md). Each round it waits for the reviewers to settle, triages every finding to one recorded outcome, implements the accepted fixes, runs the validation plan for the change, pushes, resolves the answered threads, and repeats. Each round is a fresh agent process, so a long drive never depends on one session surviving.
+**What it does.** `/jig:drive-pr` is a [PR drive loop](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): it runs a PR's [review rounds](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) unattended until the PR reaches exactly one [terminal state](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). Each round it waits for the reviewers to settle, triages every finding to one recorded outcome, implements the accepted fixes, runs the validation plan for the change, pushes, resolves the answered threads, and repeats. Each round is a fresh agent process, so a long drive never depends on one session surviving.
 
 A few behaviours worth knowing before you arm one:
 
-- **Drafts.** It works [draft PRs](https://github.com/docomply/jig/blob/main/GLOSSARY.md) from the start and marks them Ready for review after its first completed round (or the round, or the convergence, `pull_requests.mark_ready` names), so reviewers that skip drafts (often billed per review) see an already-cleaned head.
-- **CI.** Before reporting success it waits for the repository's [required checks](https://github.com/docomply/jig/blob/main/GLOSSARY.md) in continuous integration (CI) to pass on the exact final commit. A repository whose CI is expensive can opt into a [CI hold](#ci-hold), which skips the heavy jobs between review rounds and runs them in full once at the end.
+- **Drafts.** It works [draft PRs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) from the start and marks them Ready for review after its first completed round (or the round, or the convergence, `pull_requests.mark_ready` names), so reviewers that skip drafts (often billed per review) see an already-cleaned head.
+- **CI.** Before reporting success it waits for the repository's [required checks](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) in continuous integration (CI) to pass on the exact final commit. A repository whose CI is expensive can opt into a [CI hold](#ci-hold), which skips the heavy jobs between review rounds and runs them in full once at the end.
 - **Repairs.** When that final CI comes back red, or the PR conflicts with its base and no findings are left, it runs a bounded **repair round** (a CI repair, or a base merge with conflict resolution) and checks again, stopping only once that budget is spent.
-- **Stops.** It stops on a state it names precisely — convergence verified against the exact commit, a merged or closed PR, a conflict it could not resolve, findings that need a human decision ([HITL](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) — or on one of the operational stops in [the exit table](#the-exit-states--what-you-do-now).
+- **Stops.** It stops on a state it names precisely — convergence verified against the exact commit, a merged or closed PR, a conflict it could not resolve, findings that need a human decision ([HITL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) — or on one of the operational stops in [the exit table](#the-exit-states--what-you-do-now).
 - **Limits.** It never approves, never merges, and never bypasses a hook.
 
-The practice it implements is Jig's [M7 — PR lifecycle & review](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md); its loop-cost reports belong to [M11 — Process observability](https://github.com/docomply/jig/blob/main/modules/M11-process-observability/README.md).
+The practice it implements is Jig's [M7 — PR lifecycle & review](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md); its loop-cost reports belong to [M11 — Process observability](https://github.com/jig-harness/jig/blob/main/modules/M11-process-observability/README.md).
 
 This page is for **you, the human** — the operator contract agents follow is the skill itself: [`SKILL.md`](SKILL.md) and [`terminal-states.md`](references/terminal-states.md).
 
@@ -57,7 +57,7 @@ the drive reads best-effort and replaces with the default when mistyped.
 | `repository.base_branch` | The integration branch. A round diffs against its pull request's own base (`origin/<base>`), so a stacked layer's plan and change set cover that layer alone; it diffs against this branch only on a branch known to have no pull request (a detached HEAD has to name its pull request). A pull request whose base cannot be read or fetched, or whose repository is not `origin`'s, is refused rather than diffed against another branch. A walk down a stack for its required checks stops here. `DRIVE_PR_BASE_BRANCH` overrides it | Derived: the clone's `origin/HEAD` when it has one, else `gh repo view --json defaultBranchRef`, cached per process |
 | `drive.validation_plan_command` | A command that reads the changed files (one per line) on stdin and prints the validation plan as JSON on stdout: `{validation: {localChecks: [...], verificationChecks: [...], testbox: {required, command, warmupCommand, requiredBy}}, reviewSkills: [...]}`. `round-plan.ts` runs it through the shell from the repository root | Unset: the plan is the single local check `gates.command` |
 | `drive.load_guard_command` | A command `round-plan.ts` runs (in text mode) before printing the plan, which waits until the machine's load allows heavy checks | Unset: no load guard |
-| `drive.change_areas_catalog` | Path, relative to the repository root or absolute, to a [change-area catalog](https://github.com/docomply/jig/blob/main/GLOSSARY.md): YAML whose `areas:` map holds area key → `{paths: [globs], ...}`. `verification-fit.ts` validates `--area` against its keys, and refuses (exit 2, naming the field) a catalog whose `paths`, `generated[].source`, `labels` or `tracker` fields are malformed; the rest of the catalog schema is not checked | Unset: `--area` is recorded unchecked and the script reports the catalog as not configured |
+| `drive.change_areas_catalog` | Path, relative to the repository root or absolute, to a [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): YAML whose `areas:` map holds area key → `{paths: [globs], ...}`. `verification-fit.ts` validates `--area` against its keys, and refuses (exit 2, naming the field) a catalog whose `paths`, `generated[].source`, `labels` or `tracker` fields are malformed; the rest of the catalog schema is not checked | Unset: `--area` is recorded unchecked and the script reports the catalog as not configured |
 | `drive.reviews_drafts` | `true` or `false`: does the AI reviewer review draft PRs. The drive uses it only to explain a draft PR that has no reviewer check run yet (`/jig:do-item` also reads it to decide whether new PRs open as drafts) | Unset: unknown, and no hint is given |
 | `ci.required_checks` | The exact check names that must complete on the converged head before the drive certifies it (and, with a hold, that must run again after the hold is removed). `[]` means none: the drive relies on the overall CI verdict alone, which is green even when no CI has registered on the head. Without a hold, the drive judges each required check as branch protection does: a skipped or neutral result passes, and a legacy commit status of that name can stand in for a check run. With a hold, required checks must be check runs, since only a run's id proves it ran after the hold was removed. Unrelated to `review.required_checks`, which names the review skill's reviewer checks | Derived: the checks the pull request's base branch requires, from classic branch protection and active rulesets together. For a stacked layer, whose base is a feature branch, the checks of the branch the stack's bottom layer targets are added to the base's own. A check that protection pins to a GitHub App counts only when that app publishes it, as a check run or a commit status; a check pinned to several apps (classic protection to one, a ruleset to another) needs a passing result from each. When the base requires none, the drive also waits until some non-reviewer CI has registered on the head; where a reviewer is expected, a commit status named like the reviewer's check does not count. A base branch, integration branch, stack or protection that cannot be read is an error that asks for this field; the drive never falls back to another branch's protection |
 | `ci.hold_label` | A label the repository's workflows honour on intermediate pushes: while it is present they skip their expensive jobs, and removing it runs them in full (see [§ CI hold](#ci-hold)). Requires `ci.required_checks`, listing only checks that run again when the label is removed | Unset: no hold. Every push runs the repository's normal CI and the drive never adds or removes a label |
@@ -151,7 +151,7 @@ expensive for that can let the drive suppress it between review rounds:
 1. Name a label in `ci.hold_label` and list `ci.required_checks`.
 2. Make every workflow that reports a required check, and every one with
    expensive jobs, honour it in the shape
-   [M13's piece 7](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/README.md#7-hold)
+   [M13's piece 7](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/README.md#7-hold)
    states. Trigger on `labeled` and `unlabeled` beside `opened`,
    `synchronize` and `reopened` (listing any type replaces the defaults):
    without `labeled`, applying the label starts no run and every required
@@ -166,7 +166,7 @@ expensive for that can let the drive suppress it between review rounds:
    required check while the label is present, from the run the label's
    application starts onward, with a message naming the label, so a held
    head is visibly not mergeable throughout. M13's
-   [workflow-convention lint](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/reference/workflow-conventions/README.md#ci-hold)
+   [workflow-convention lint](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/reference/workflow-conventions/README.md#ci-hold)
    checks all three.
 
 The drive then adds the label before its first intermediate push, once the
@@ -424,7 +424,7 @@ If a drive died mid-round hours ago, just re-arm — recovery is the designed pa
 ## Timing traces
 
 Set `JIG_TRACE=1` when starting a drive to see where its time goes. The runtime
-writes one JSON object per completed [trace span](https://github.com/docomply/jig/blob/main/GLOSSARY.md) under
+writes one JSON object per completed [trace span](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) under
 `~/.local/state/jig/traces/<date>/`. `JIG_TRACE_FILE` enables the same records
 at a chosen file path. The drive and its children share a trace through
 `TRACEPARENT`, so command calls can be followed back to the pass or wait that

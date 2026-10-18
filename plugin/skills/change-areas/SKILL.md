@@ -7,12 +7,12 @@ allowed-tools: "Read Bash(bun *) Bash(git *)"
 
 # Change areas: what a change touches, and what it owes
 
-A [change-area catalog](https://github.com/docomply/jig/blob/main/GLOSSARY.md)
+A [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 maps the repository's paths to named areas, and each area to what a change
 there owes: the checks to run, the reviews to invoke, the tracker labels to
 apply, the actions to take after a deploy. This skill resolves a change
 against it and checks it. It is the runnable form of module
-[M3](https://github.com/docomply/jig/blob/main/modules/M3-change-area-catalog/README.md).
+[M3](https://github.com/jig-harness/jig/blob/main/modules/M3-change-area-catalog/README.md).
 The human's page is [README.md](README.md).
 
 **The rule the catalog exists for:** a path's classification is stated
@@ -29,7 +29,7 @@ would expand the unset variable to an empty string.
 
 Run every command from the root of the repository. The catalog is the
 repository's `drive.change_areas_catalog`
-([configuration](https://github.com/docomply/jig/blob/main/plugin/CONFIGURATION.md));
+([configuration](https://github.com/jig-harness/jig/blob/main/plugin/CONFIGURATION.md));
 `--catalog <path>` names another. When neither is set the scripts exit 2 and
 say so: ask the user where the catalog is, do not guess. A repository with
 its own wrapper around these scripts (a composer, see the README) runs that

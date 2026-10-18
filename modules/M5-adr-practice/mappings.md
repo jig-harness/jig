@@ -44,7 +44,7 @@ jobs:
         with: { bun-version: <bun-version> }
       - name: Skeleton files need recorded authority (blocking)
         run: |
-          git clone -q https://github.com/docomply/jig "$RUNNER_TEMP/jig"
+          git clone -q https://github.com/jig-harness/jig "$RUNNER_TEMP/jig"
           git -C "$RUNNER_TEMP/jig" checkout -q --detach <jig-commit-sha>
           : > "$RUNNER_TEMP/bunfig.toml"
           bun --config="$RUNNER_TEMP/bunfig.toml" --no-env-file \
@@ -94,7 +94,7 @@ skeleton:
   image: <image-with-bun-and-git>@sha256:<digest>
   variables: { GIT_DEPTH: 0 }
   script:
-    - jig="$(mktemp -d)/jig" && git clone -q https://github.com/docomply/jig "$jig"
+    - jig="$(mktemp -d)/jig" && git clone -q https://github.com/jig-harness/jig "$jig"
     - git -C "$jig" checkout -q --detach <jig-commit-sha>
     - bunfig="$(mktemp)"
     - bun --config="$bunfig" --no-env-file "$jig/modules/M5-adr-practice/reference/skeleton-gate/check-skeleton-adr.ts" --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --head "${CI_MERGE_REQUEST_SOURCE_BRANCH_SHA:-$CI_COMMIT_SHA}"

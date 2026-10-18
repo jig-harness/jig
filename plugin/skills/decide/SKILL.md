@@ -24,9 +24,9 @@ next session can find it.
 
 This skill is that contract. Its most valuable outcome is the cheapest one:
 **discovering the question was already settled** and citing the ADR
-([architecture decision record](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) that settled it. The
+([architecture decision record](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) that settled it. The
 records themselves follow Jig's ADR practice module
-([M5](https://github.com/docomply/jig/blob/main/modules/M5-adr-practice/README.md)):
+([M5](https://github.com/jig-harness/jig/blob/main/modules/M5-adr-practice/README.md)):
 this skill checks a new question against them first, and hands a ruling
 that clears the [ADR bar](#phase-4--route-the-outcome) to `/jig:adr`.
 

@@ -1,11 +1,11 @@
 # Maturity criteria
 
-One file per [module](https://github.com/docomply/jig/blob/main/modules/README.md),
+One file per [module](https://github.com/jig-harness/jig/blob/main/modules/README.md),
 `M<n>-<name>.yaml`, in one format, so the audit scores every module the same
 way. Criteria are observable repository facts (a file exists, a CI job is
 present, a hook is configured), never judgments of quality, and each is scored
 on the enforcement ladder (see the
-[glossary](https://github.com/docomply/jig/blob/main/GLOSSARY.md)):
+[glossary](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)):
 `absent` → `convention` → `mechanical`.
 
 ```yaml

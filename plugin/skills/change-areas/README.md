@@ -6,17 +6,17 @@ answer to these, every consumer keeps its own list of paths: the CI
 workflow has a regular expression, the review checklist a table, the
 pre-commit hook a glob list, and each drifts from the others until a change
 to a shared library skips the job that would have caught its break. The
-[change-area catalog](https://github.com/docomply/jig/blob/main/GLOSSARY.md)
+[change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 is the one file that names the repository's areas and their paths; this
 skill resolves a change against it and prints what the change owes, in the
 form each consumer reads. It is the runnable form of module
-[M3](https://github.com/docomply/jig/blob/main/modules/M3-change-area-catalog/README.md).
+[M3](https://github.com/jig-harness/jig/blob/main/modules/M3-change-area-catalog/README.md).
 
 ## Usage
 
 Run from the repository root. The catalog is the repository's
 `drive.change_areas_catalog`
-([configuration](https://github.com/docomply/jig/blob/main/plugin/CONFIGURATION.md)),
+([configuration](https://github.com/jig-harness/jig/blob/main/plugin/CONFIGURATION.md)),
 or the file `--catalog <path>` names.
 
 ```bash
@@ -79,7 +79,7 @@ commit since the last verified one; there is no default for it.
 
 ## Formats
 
-- **`json`**: `changedFiles`, `seedAreas` (the [seed areas](https://github.com/docomply/jig/blob/main/GLOSSARY.md): the areas a file
+- **`json`**: `changedFiles`, `seedAreas` (the [seed areas](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): the areas a file
   matches directly), `areas` (the seeds and every area their `impliedBy` closure
   reaches), `flags` (every area: affected or not), `postDeploy`, `review`,
   `reviewSkills`, `linear` (tracker labels and flags), `validation` and
@@ -135,7 +135,7 @@ direction only) and `deployTier`. Optional blocks:
 |---|---|---|
 | `notes` | text | people |
 | `validation` | `{ profile?, ownTests?, notes? }` | the validation plan |
-| `generated` | list of `{ outputs, source, command, check, notes? }`, M2's [inventory format](https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/README.md) | the validation plan, `generated` |
+| `generated` | list of `{ outputs, source, command, check, notes? }`, M2's [inventory format](https://github.com/jig-harness/jig/blob/main/modules/M2-generated-artifact-freshness/README.md) | the validation plan, `generated` |
 | `review` | `{ skills, notes? }` | `review`, `reviewSkills`, the review table |
 | `postDeploy` | list of `{ action, when, envs, notes? }` | `postDeploy`, the checklist |
 | `tracker` | `{ labels?, flags? }`; `linear` is its older spelling, not both | `linear` |
@@ -171,7 +171,7 @@ not a directory or holds a file its own area's paths do not match.
 A repository whose catalog needs more than the generic mechanism (its own
 fields, its own validation policy, extra GitHub outputs) writes a small
 script that calls the library with its values, its
-[composer](https://github.com/docomply/jig/blob/main/GLOSSARY.md):
+[composer](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
 
 ```ts
 import { runMain } from "<skill-dir>/../../shared/cli.ts";
@@ -210,7 +210,7 @@ runMain("change-areas", () =>
   area.
 
 Jig's own
-[`scripts/change-areas.ts`](https://github.com/docomply/jig/blob/main/scripts/change-areas.ts)
+[`scripts/change-areas.ts`](https://github.com/jig-harness/jig/blob/main/scripts/change-areas.ts)
 builds on the library rather than calling `runCli`: it keeps its own command
 line and outputs, and reads its catalog through the library's schema,
 resolver and checks, with `reviewRisk` as its field.
@@ -224,5 +224,5 @@ resolver and checks, with `reviewRisk` as its field.
 | 2 | a usage error (an event with no diff here, or a flag for another event's diff, included), a catalog that is missing, unreadable or invalid in its schema, its `impliedBy` graph or its output names, or a validation plan its profiles cannot make | a usage error, a catalog that is missing or cannot be parsed, or a repository whose files cannot be listed |
 
 A git failure never reads as an empty change, so a pre-push gate built on
-the resolver [fails closed](https://github.com/docomply/jig/blob/main/GLOSSARY.md);
+the resolver [fails closed](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md);
 an empty `--files` list is the one empty change, and means nothing changed.

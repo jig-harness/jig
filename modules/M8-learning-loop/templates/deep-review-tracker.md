@@ -1,6 +1,6 @@
 # Deep-review tracker
 
-> TEMPLATE — optional; copy next to your [audit catalog](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/templates/AUDIT-CATALOG.md)
+> TEMPLATE — optional; copy next to your [audit catalog](https://github.com/jig-harness/jig/blob/main/modules/M8-learning-loop/templates/AUDIT-CATALOG.md)
 > (e.g. `docs/review/DEEP-REVIEW-TRACKER.md`) when you run deep reviews: a
 > whole area examined along a fixed list of dimensions (correctness, security,
 > accessibility, whatever your areas need). Without it, adding a dimension

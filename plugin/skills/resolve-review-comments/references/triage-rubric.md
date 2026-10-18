@@ -577,7 +577,7 @@ Arbiter ground rules (enforced by its agent definition):
   implementation. Route it to the Review Arbiter or park it for the human, but
   the arbiter may only assess it and must rule `escalate`, never `fix-now` —
   its ruling is not the human approval this guardrail requires.
-- **Nor does it add or change a rule inside a [human-decided span](https://github.com/docomply/jig/blob/main/GLOSSARY.md).** The
+- **Nor does it add or change a rule inside a [human-decided span](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).** The
   guardrail above covers the decided *value*; a fix can also leave the value
   alone and add or change a **normative rule** (a "must", a limit, an
   exception, a condition) inside a section the PR records as a human decision.

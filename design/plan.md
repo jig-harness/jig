@@ -450,9 +450,6 @@ in that consumer's configuration.
 
 These need a human decision before the work that depends on them starts.
 
-- **Publishing.** Jig is private, under the Apache-2.0 licence with MIT-0
-  templates; whether and when to open the repository, whole or per module,
-  is still a human decision.
 - **Plan-file tracker format**: one file for the whole plan, or one per item.
 - **Optional tracker operations**: whether the tracker interface's reporting
   operations may be optional for an adapter that cannot answer them.

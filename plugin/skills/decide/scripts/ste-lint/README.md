@@ -1,7 +1,7 @@
 # Simplified Technical English linter
 
 Advisory linter for text that asks a human to decide. It checks the
-structural rules of [Simplified Technical English](https://github.com/docomply/jig/blob/main/GLOSSARY.md):
+structural rules of [Simplified Technical English](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
 short sentences, active verbs, no semicolons, one word for one action. The
 rules it checks, and how to use it, live in one place:
 [`human-call-elaboration.md` § Writing rules](../../references/human-call-elaboration.md#writing-rules-for-text-that-asks-a-human-to-decide).
@@ -36,7 +36,7 @@ code is `1` when hard findings exceed the baseline, and `0` otherwise.
   translation replaces both files.
 - The translation reproduces the Python output exactly. The comparison is
   recorded in
-  [`scripts/migration-parity.md`](https://github.com/docomply/jig/blob/main/scripts/migration-parity.md#simplified-technical-english-linter),
+  [`scripts/migration-parity.md`](https://github.com/jig-harness/jig/blob/main/scripts/migration-parity.md#simplified-technical-english-linter),
   and the Python output for each test fixture is kept as a golden file in
   `../../__tests__/fixtures/ste-lint/`.
 - To take an upstream change: translate it into the upstream section of

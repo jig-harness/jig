@@ -83,7 +83,7 @@ value. Write inside it:
   block-scalar header.
 
 The checker's self-test is the exhaustive list, a fixture for each construct
-([frontmatter check](https://github.com/docomply/jig/blob/main/modules/M4-docs-governance/reference/frontmatter-check/README.md#supported-yaml-subset)).
+([frontmatter check](https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/reference/frontmatter-check/README.md#supported-yaml-subset)).
 
 ## Navigation is generated
 

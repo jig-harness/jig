@@ -1,7 +1,10 @@
-# Fixture patterns: the configured team key and owner.
+# Fixture patterns: the configured team key and owner, and the licensor.
 \b{{team}}-[0-9]+\b
 (?i){{owner}}
+(?i){{licensor}}
 # The project's own address may be named.
 !(?i)^readme\.md:.*example\.com/{{owner}}/widget
 # The configuration names the owner, which is what it is for.
 !^\.config/jig\.yaml:.*
+# The copyright line names the licensor by definition.
+!^NOTICE:Copyright [0-9]{4} {{licensor}}$

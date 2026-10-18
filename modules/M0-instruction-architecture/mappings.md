@@ -151,7 +151,7 @@ steps:
   - uses: actions/checkout@<full-commit-sha> # v6
   - uses: actions/checkout@<full-commit-sha> # v6
     with:
-      repository: <owner/name> # of https://github.com/docomply/jig
+      repository: <owner/name> # of https://github.com/jig-harness/jig
       ref: <jig-full-commit-sha>
       path: jig
   - uses: jdx/mise-action@<full-commit-sha> # v3 (installs the pinned Bun)
@@ -171,7 +171,7 @@ context-budget:
   stage: .pre
   image: oven/bun:<version>
   script:
-    - git clone https://github.com/docomply/jig.git jig
+    - git clone https://github.com/jig-harness/jig.git jig
     - git -C jig checkout <jig-full-commit-sha>
     - bun jig/modules/M0-instruction-architecture/reference/context-budget/check-instruction-chain.ts .
     - bun jig/modules/M0-instruction-architecture/reference/context-budget/check-discovery-budget.ts --skills .claude/skills --agents .claude/agents

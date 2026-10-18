@@ -1,7 +1,7 @@
 # Audit methodology
 
 Four steps, executable by any capable agent runtime with read access to the
-target repo. Terms: [GLOSSARY.md](https://github.com/docomply/jig/blob/main/GLOSSARY.md).
+target repo. Terms: [GLOSSARY.md](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).
 
 ## 1. Fan out parallel surveys
 
@@ -34,7 +34,7 @@ surface in the target.)
 
 ## 2. Detect the stack and repository-host enforcement
 
-Derive, don't ask ([principle 1](https://github.com/docomply/jig/blob/main/principles/01-principles-over-tools.md)):
+Derive, don't ask ([principle 1](https://github.com/jig-harness/jig/blob/main/principles/01-principles-over-tools.md)):
 package manager from lockfiles; task runner and monorepo layout from config
 files; CI provider from workflow directories; hook manager from its config;
 issue tracker and review bots from references in configs, docs, and PR
@@ -132,7 +132,7 @@ audit sheet from it. The source holds what the record does not:
 The sheet adds the rest from the record: each module's level, its target
 under the team's [profile](../profiles.yaml) and the criteria left to reach
 it, in the profile file's adoption order, which is
-[brownfield adoption](https://github.com/docomply/jig/blob/main/adoption/brownfield.md)'s
+[brownfield adoption](https://github.com/jig-harness/jig/blob/main/adoption/brownfield.md)'s
 default order (fix drift first, then the modules one rung at a time).
 
 Rules: no finding without file-path evidence; distinguish *verified* facts

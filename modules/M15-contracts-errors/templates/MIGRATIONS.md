@@ -4,11 +4,11 @@
 > `docs/development/migrations.md`), fill in the placeholders, delete what
 > does not apply, and point your agent instruction file at it. It is the
 > migration half of the contract in Jig's
-> [M15 contracts and error handling](https://github.com/docomply/jig/blob/main/modules/M15-contracts-errors/README.md);
+> [M15 contracts and error handling](https://github.com/jig-harness/jig/blob/main/modules/M15-contracts-errors/README.md);
 > the checks per migration tool and the parser per database are in its
-> [mappings](https://github.com/docomply/jig/blob/main/modules/M15-contracts-errors/mappings.md#migration-discipline).
+> [mappings](https://github.com/jig-harness/jig/blob/main/modules/M15-contracts-errors/mappings.md#migration-discipline).
 > Terms are defined in Jig's
-> [glossary](https://github.com/docomply/jig/blob/main/GLOSSARY.md).
+> [glossary](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).
 
 ## Where and how
 
@@ -18,7 +18,7 @@ Migrations live in `<db/migrations/>` and run with `<bun db:migrate up>`
 (`<the tool's journal, changelog or revision chain>`) lands in the same
 commit, its order key one past the current highest and every field the
 runner reads explicit; the fields per tool are in the
-[mappings](https://github.com/docomply/jig/blob/main/modules/M15-contracts-errors/mappings.md#migration-discipline).
+[mappings](https://github.com/jig-harness/jig/blob/main/modules/M15-contracts-errors/mappings.md#migration-discipline).
 The runner records each file's hash when it applies it.
 
 Before writing a migration with a statement the database will not run inside
@@ -59,7 +59,7 @@ wraps what it applies and which statements need their own path.
 
 | Rule | Check | Where it runs |
 |------|-------|---------------|
-| Immutable once merged, at merge time | `<scripts/check-no-migration-edits.ts --base origin/main db/migrations>` (Jig's [reference gate](https://github.com/docomply/jig/blob/main/modules/M15-contracts-errors/reference/migration-immutability/README.md)) | pre-push; CI on every pull request |
+| Immutable once merged, at merge time | `<scripts/check-no-migration-edits.ts --base origin/main db/migrations>` (Jig's [reference gate](https://github.com/jig-harness/jig/blob/main/modules/M15-contracts-errors/reference/migration-immutability/README.md)) | pre-push; CI on every pull request |
 | Immutable once applied, at apply time | `<the runner's own validation, or the wrapper's hash check>` | every `<db:migrate up>` and `<db:migrate status>`, in every environment |
 | The ledger and the files match | `<scripts/check-migration-ledger.ts>` | pre-push; CI |
 | Structure only | `<scripts/check-migrations-structure-only.ts>` over `<db/migrations/>` with `<db/migration-data-allowlist.txt>` | pre-push; CI |

@@ -53,7 +53,7 @@ Print a short prompt to run the reflection step so those lessons enter the
 learning loop instead of vanishing. Keep the prompt a **nudge**, not a blocker —
 teardown should never fail because someone hasn't reflected. What may block it
 is losing what was already captured: with Jig's
-[`reflect`](https://github.com/docomply/jig/blob/main/plugin/skills/reflect/README.md)
+[`reflect`](https://github.com/jig-harness/jig/blob/main/plugin/skills/reflect/README.md)
 skill, findings noted in this worktree's journal but not yet sent to the store
 live in the worktree's git directory, which the removal deletes. The hook parks
 them where the next reflection in any worktree of the repository picks them up,

@@ -21,7 +21,7 @@ export { OVERLAY_RELPATH };
 
 /** Where to read about adopting the skill, quoted in configuration errors. */
 const ADOPTION_DOC =
-  "https://github.com/docomply/jig/blob/main/plugin/README.md#configure-a-repository";
+  "https://github.com/jig-harness/jig/blob/main/plugin/README.md#configure-a-repository";
 
 export interface ReviewConfig {
   bots?: string[];

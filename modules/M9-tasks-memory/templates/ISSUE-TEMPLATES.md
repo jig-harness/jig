@@ -2,7 +2,7 @@
 
 Copyable skeletons for the two units of team-visible work: an **epic** (a
 coordinating parent) and a **sub-issue** (a single deliverable). Both carry the
-mandatory taxonomy from [`label-taxonomy.yaml`](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/templates/label-taxonomy.yaml) — a `type`,
+mandatory taxonomy from [`label-taxonomy.yaml`](https://github.com/jig-harness/jig/blob/main/modules/M9-tasks-memory/templates/label-taxonomy.yaml) — a `type`,
 a `status`, and zero or more `flags` — plus a `priority` and a `category`, and
 both are tool-independent: paste them
 into whatever tracker you use, or wire them as that tracker's issue template.
@@ -21,7 +21,7 @@ These rules make the skeletons more than boilerplate:
   not part of `label-taxonomy.yaml`, whose schema holds only types, statuses
   and flags: it is your repository's own list, kept beside the taxonomy
   (where Jig's tooling reads it:
-  [mappings.md](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/mappings.md#issue-trackers--the-work-item-rules)).
+  [mappings.md](https://github.com/jig-harness/jig/blob/main/modules/M9-tasks-memory/mappings.md#issue-trackers--the-work-item-rules)).
   An issue filed without either is unranked, not low priority.
 - **A flag goes on the item that ships the change.** A flag that fires a gate
   belongs on the sub-issue whose pull request makes the change, never on the
@@ -118,5 +118,5 @@ default triggers so a template user does not have to reopen the taxonomy.
 | `docs-required` | a docs update that blocks `done` until complete |
 | `hitl` | revokes autonomous execution/merge — a human must act |
 
-Prune or extend this to match your own [`label-taxonomy.yaml`](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/templates/label-taxonomy.yaml);
+Prune or extend this to match your own [`label-taxonomy.yaml`](https://github.com/jig-harness/jig/blob/main/modules/M9-tasks-memory/templates/label-taxonomy.yaml);
 the taxonomy file is the source of truth, this table is a convenience copy.

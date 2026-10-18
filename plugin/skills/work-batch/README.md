@@ -25,7 +25,7 @@ Contents: [the procedure](#the-procedure) · [anchors](#anchors) ·
 
 ## The procedure
 
-1. **Propose.** A script takes a [batch anchor](https://github.com/docomply/jig/blob/main/GLOSSARY.md) (an area
+1. **Propose.** A script takes a [batch anchor](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (an area
    of the code, a path, an epic or one issue; see [anchors](#anchors)), reads
    the open issues that match it, holds back every issue that may not join a
    batch, ranks the rest and fills a batch up to a [size budget](#batch-size).
@@ -46,7 +46,7 @@ Contents: [the procedure](#the-procedure) · [anchors](#anchors) ·
    `in_progress`, assigns itself and comments on each one, naming the other
    issues in the batch. It records each issue's state and assignee as they
    were before the claim, for a release in step 4, and writes the batch form
-   of the [intent chain](https://github.com/docomply/jig/blob/main/GLOSSARY.md).
+   of the [intent chain](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).
 4. **Implement.** One commit for each issue, each one validated before it is
    committed. A bug gets the same sibling scout `do-item` runs for a single
    bug. When the batch has grown past its budget after implementing, it is
@@ -74,7 +74,7 @@ Contents: [the procedure](#the-procedure) · [anchors](#anchors) ·
 | Epic | The epic's open children |
 | One issue | Open issues sharing its area-naming label; the issue itself is kept first when it is eligible, and an ineligible one ends the proposal with a recommendation to work it alone |
 
-The area and path anchors read the [change-area catalog](https://github.com/docomply/jig/blob/main/GLOSSARY.md)
+The area and path anchors read the [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 (`drive.change_areas_catalog`): the same `tracker.labels` that label an issue
 for an area define which issues belong to it, so there is one answer, not a
 second hand-kept list. A path belongs to the areas whose own `paths` match it
@@ -92,11 +92,11 @@ proposing a batch of unrelated issues.
 
 ## Solo-only issues
 
-A [solo-only issue](https://github.com/docomply/jig/blob/main/GLOSSARY.md) never joins a batch. Its
-[sensitivity flag](https://github.com/docomply/jig/blob/main/GLOSSARY.md) starts a review gate or a human step
+A [solo-only issue](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) never joins a batch. Its
+[sensitivity flag](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) starts a review gate or a human step
 that applies to the whole pull request: a database migration review, an
 interface-contract review, a privacy review, a manual operation after merge,
-or a decision that is a human's to make ([HITL](https://github.com/docomply/jig/blob/main/GLOSSARY.md)). In a
+or a decision that is a human's to make ([HITL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)). In a
 batch, that gate would run over five unrelated changes, or all six issues
 would wait for the one human.
 
@@ -158,7 +158,7 @@ the same order on every machine.
 ## Tracker reads
 
 The proposal reads the tracker only through the
-[tracker interface](https://github.com/docomply/jig/blob/main/GLOSSARY.md): open issues filtered by several
+[tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): open issues filtered by several
 label conditions, the open children of an issue, and one issue in the same
 form. Each result carries what eligibility and ranking read: priority,
 creation time, the state and the assignee with their ids, every label,

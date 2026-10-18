@@ -1,11 +1,11 @@
-![Jig](assets/brand/jig-frame.svg)
+![Jig Harness](assets/brand/jig-frame.svg)
 
-# Jig
+# Jig Harness
 
 **A jig for AI coding agents: modular delivery practices, shared skills and gates, and an auditor that scores your repository.**
 
-Jig is a modular collection of software-delivery practices for teams that
-build and maintain software with AI coding agents. A jig, in a workshop, holds
+Jig Harness, Jig for short, is a modular collection of software-delivery
+practices for teams that build and maintain software with AI coding agents. A jig, in a workshop, holds
 the work and guides the tool so every cut comes out the same; these skills and
 gates do that for agents. It is deliberately
 **vendor-agnostic** (the principles matter, not the specific tools) and
@@ -78,6 +78,7 @@ language in **[GLOSSARY.md](GLOSSARY.md)** — start there whenever a word like
 | [ROADMAP.md](ROADMAP.md) | Open work, in priority order |
 | [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How a change to Jig is made, checked and merged |
+| [GOVERNANCE.md](GOVERNANCE.md), [SECURITY.md](SECURITY.md), [TRADEMARK.md](TRADEMARK.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Who decides, how to report a vulnerability, what you may do with the name, how we treat each other |
 | [docs/](docs/README.md) | Jig's own documents: kinds, decision records, defaults |
 | [design/](design/README.md) | Designs of roadmap items, until they are built |
 | [principles/](principles/) | The seven design principles behind everything here |
@@ -99,8 +100,12 @@ Jig is distilled from a production codebase built with AI agents, and
 the repositories that use it keep feeding lessons back
 (see [principles/05-learning-loop.md](principles/05-learning-loop.md)).
 
-The repository is private; whether and when to publish it, whole or per
-module, is still open.
+Jig is before 1.0: a minor version may change what a skill does or a
+configuration field means, and the [change note](changes/README.md) of
+each release says so. Pin the plugin to a release tag if you want to choose
+when that reaches you ([plugin/README.md](plugin/README.md#update-pin-or-remove)).
+One maintainer decides what goes in, and agents write most of the changes
+([GOVERNANCE.md](GOVERNANCE.md)).
 
 ## Licence
 
@@ -111,7 +116,12 @@ are under [MIT No Attribution](LICENSE-MIT-0), so a copy needs no notice.
 vendors, each with its licence. Contributions from outside the maintainers
 sign off each commit under the
 [Developer Certificate of Origin](GLOSSARY.md)
-([CONTRIBUTING.md](CONTRIBUTING.md#outside-contributions)).
+([CONTRIBUTING.md](CONTRIBUTING.md#outside-contributions)); no contributor
+licence agreement is asked for, and the licence will not change
+([GOVERNANCE.md](GOVERNANCE.md#licence-copyright-and-name)). The name Jig
+and the logo are trademarks held apart from the code
+([TRADEMARK.md](TRADEMARK.md)). Report a vulnerability privately
+([SECURITY.md](SECURITY.md)).
 
 ## Working on Jig
 

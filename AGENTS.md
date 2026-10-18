@@ -69,7 +69,9 @@ Read in this order when starting a session here:
   comments, test names and test data alike, and none of its domain content
   (when in doubt, leave it out and note the gap). Rationale must stand on its own, at the code or in the module
   documentation. Enforced by `scripts/check-no-tracker-refs.ts`, with its
-  patterns and allowed places in `scripts/tracker-key-patterns.txt`.
+  patterns and allowed places in `scripts/tracker-key-patterns.txt`. The
+  licensor [NOTICE](NOTICE) names is the one organization the gate allows,
+  in the places the pattern file lists.
 - **De-scarring.** Final documents and code comments carry no review-finding
   traces, reviewer dialogue, or "addressed/fixed" annotations — that history
   lives in PRs and issues. State the rule as it is now, not the change that

@@ -66,7 +66,7 @@ sense, and the template stays in the module.
   `mappings.md` recipes say which.
 - **`templates/`** (in a module or in a skill) are copied into other
   repositories: links in them are absolute
-  (`https://github.com/docomply/jig/blob/main/…`, a template that lives in a
+  (`https://github.com/jig-harness/jig/blob/main/…`, a template that lives in a
   skill included: `…/main/plugin/skills/<skill>/templates/…`) because a
   relative link breaks once copied. The Markdown gates skip `templates/`, so
   check those links by hand. Templates are licensed MIT No Attribution, so

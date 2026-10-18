@@ -9,7 +9,7 @@ review:
   reviewer_app: docomply-review
   deferral_team: DOC
   repo_label: jig
-  repo_slug: docomply/jig
+  repo_slug: jig-harness/jig
   taxonomy:
     types: [bug, feature, infra, docs, chore]
     repos:

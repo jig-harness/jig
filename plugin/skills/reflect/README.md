@@ -13,7 +13,7 @@ and gates.
 
 `/jig:reflect` records; [`/jig:review-reflections`](../review-reflections/README.md)
 reviews. Together they are the runnable form of the session-reflection cycle in
-[M8](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/README.md). The agent's procedure is in
+[M8](https://github.com/jig-harness/jig/blob/main/modules/M8-learning-loop/README.md). The agent's procedure is in
 [SKILL.md](SKILL.md); this page describes how the records work.
 
 Contents: [the loop](#the-loop) · [turning it on](#turning-it-on) ·
@@ -87,7 +87,7 @@ two concurrent writers finished first. And a finding leaves the journal only
 once the store has it.
 
 There are two kinds of event, each one JSON object, written one per line in
-the [JSONL](https://github.com/docomply/jig/blob/main/GLOSSARY.md) format:
+the [JSONL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) format:
 
 ```json
 {"v":1,"type":"finding","id":"20261012T150405Z-8f3a1c2e9b7d4a60","at":"2026-10-12T15:04:05Z",
@@ -111,7 +111,7 @@ the [JSONL](https://github.com/docomply/jig/blob/main/GLOSSARY.md) format:
 | Field | Holds |
 |-------|-------|
 | `change` | Where the finding came from: the repository (its `origin` remote without protocol or `.git`, or, without one, `local/<folder>-<hash>`, the hash taken from the folder's path), the branch, and the pull request and issue when known. The issue is read from the branch name with the repository's `issue_tracker.team` |
-| `kind` | `error` (something went wrong or cost time), `opportunity` (something could work better) or `unhelpful-content` ([instruction text that cost context without helping](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) |
+| `kind` | `error` (something went wrong or cost time), `opportunity` (something could work better) or `unhelpful-content` ([instruction text that cost context without helping](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) |
 | `severity` | `high`, `medium` or `low`; for an opportunity or unhelpful content, its priority on the same scale |
 | `class` | A short kebab-case name for the failure shape, not the incident: `narrow-fix-per-round`, `instruction-missing-precondition`. Findings of one class are counted together, so a class already in the store is reused when it fits |
 | `target` | What the finding is about: `{"scope":"repository","name":"AGENTS.md"}` for the repository's own scaffolding, `{"scope":"tool","tool":"jig","name":"drive-pr"}` for a shared tool |
@@ -241,7 +241,7 @@ already holds part of, so a send mark is always read from the journal.
 Parking
 runs even with reflection off, on the journal the section still names beside
 `enabled: false`, so findings noted while it was on are kept. A removal hook runs it and refuses the removal when it fails
-([M12's worktree hooks](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/templates/worktree-hooks.md)).
+([M12's worktree hooks](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/templates/worktree-hooks.md)).
 
 ## Escalation
 
@@ -255,10 +255,10 @@ For a class with an open tracker issue labelled
 by default) that is this repository's own, a new finding of that class owned by this repository is stored
 with an `escalated` decision naming the issue, and a comment on the issue
 lists it. The issue is found through the repository's
-[tracker interface](https://github.com/docomply/jig/blob/main/GLOSSARY.md).
+[tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).
 The label is shared by every repository filing into the tracker's team, so it
 does not say whose issue it is: the issue carries an
-[owner marker](https://github.com/docomply/jig/blob/main/GLOSSARY.md), the
+[owner marker](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), the
 line `Jig owner: <owner>` with the owner percent-encoded, in its description
 (the plan's `owner_marker`, written when the issue is filed), and only an
 issue with the asking owner's marker counts. An issue without it, such as one filed before the marker existed, is
@@ -496,7 +496,7 @@ Only when reflection is on; when it is off nothing below happens.
 | [`drive-pr`](../drive-pr/README.md) | `drive-status.ts` reports `reflectDue`, and `drive.ts` arms `$DRIVE_PR_REFLECT_DUE`, when the review rounds since the last reflection pass the threshold; the pass runs `/jig:reflect` and records it with `drive-state.ts set-reflected` |
 | [`resolve-review-comments`](../resolve-review-comments/README.md) | `await-round.ts`, at wind-down after a pull request took more than `REFLECT_THRESHOLD` rounds, notes the round count in the journal (a `review-took-many-rounds` finding with an id derived from the pull request) and asks for `/jig:reflect`; the drive's rounds pass through it too |
 | [`do-item`](../do-item/SKILL.md) | Asks for `/jig:reflect` when a recurring pattern scout finds a class of problem |
-| [M12 worktree removal](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/templates/worktree-hooks.md) | The removal hook asks for `/jig:reflect` and runs `journal.ts park`, refusing the removal when parking fails |
+| [M12 worktree removal](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/templates/worktree-hooks.md) | The removal hook asks for `/jig:reflect` and runs `journal.ts park`, refusing the removal when parking fails |
 
 ## Scripts
 

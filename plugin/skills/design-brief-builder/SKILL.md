@@ -18,7 +18,7 @@ external Claude Design session. The design work itself happens in that
 session; this skill produces the *inputs* and runs the audit gate that decides
 whether they are ready to submit. It runs the first step of the
 design-prototype loop in Jig's feature-delivery pipeline module
-([M6](https://github.com/docomply/jig/blob/main/modules/M6-feature-delivery-pipeline/README.md)).
+([M6](https://github.com/jig-harness/jig/blob/main/modules/M6-feature-delivery-pipeline/README.md)).
 The bundle targets Claude Design, the one external design tool supported so
 far, and its upload limits shape the bundle.
 
@@ -92,7 +92,7 @@ Pick per the brief type:
 | `reference-specs/*` | A readable copy of every source the brief binds to or cites: the token export, the cited design-language sections, specs, ADRs, tracker issues, schema excerpts | ✅ | ✅ |
 | `logo.svg` | The product's logo mark from the kit, or without a kit from the repository's own brand assets; omit it if there is none | optional | optional |
 
-An ADR is an [architecture decision record](https://github.com/docomply/jig/blob/main/GLOSSARY.md): a short numbered document that
+An ADR is an [architecture decision record](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): a short numbered document that
 records one design decision and its reason.
 
 The bundle is the external session's only input: it cannot read the

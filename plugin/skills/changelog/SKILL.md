@@ -9,16 +9,16 @@ allowed-tools: "Read Write Edit Grep Glob Bash(bun *) Bash(git *)"
 
 Many pull requests open at once cannot all edit the changelog and the version:
 each merge would put every other pull request in conflict. So a pull request
-adds a [change note](https://github.com/docomply/jig/blob/main/GLOSSARY.md),
+adds a [change note](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
 a small file of its own, and a release step on the integration branch writes
 the notes into the changelog, moves the version and deletes the notes after
 the merge. This skill is the agent's side of that: when a change needs a note,
 how to write one a reader of the changelog can use, the commands that check
 a branch and show what the next release will be, and the guided setup that
 turns it on in a repository, CI included. The practices are Jig's
-[M12](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md)
+[M12](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md)
 (no two pull requests edit the same lines) and
-[M16](https://github.com/docomply/jig/blob/main/modules/M16-releases-versions/README.md)
+[M16](https://github.com/jig-harness/jig/blob/main/modules/M16-releases-versions/README.md)
 (releases and versions); the human's page is [README.md](README.md).
 
 Jig maintains this procedure and ships it in the `jig` plugin. The repository

@@ -29,7 +29,7 @@ oracle catches a miss
 
 ### 1. Classify
 
-Bucket the miss against the [miss taxonomy](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/templates/miss-taxonomy.yaml) — a closed
+Bucket the miss against the [miss taxonomy](https://github.com/jig-harness/jig/blob/main/modules/M8-learning-loop/templates/miss-taxonomy.yaml) — a closed
 vocabulary. A fixed vocabulary is what makes patterns countable: "a third of our
 misses are error-path bugs" is only visible if every miss carries a category.
 
@@ -42,7 +42,7 @@ exactly as ADR numbers do, so guard it the same way.
 
 ### 3. Reconstruct as a pre-fix fixture
 
-Add a [corpus](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/templates/corpus.yaml) entry that pins the commit **before** the fix and
+Add a [corpus](https://github.com/jig-harness/jig/blob/main/modules/M8-learning-loop/templates/corpus.yaml) entry that pins the commit **before** the fix and
 records the finding the reviewer *should* have produced. Pre-fix is the whole
 point: a fixture pinned after the fix passes trivially and proves nothing. Mark
 it `required: false` — it is not yet a gate.
@@ -66,12 +66,12 @@ this step exists to prevent.
 ### 6. Measure
 
 Track the lens's recall, precision, and cost *marginally* against your oracles —
-the [parity report](https://github.com/docomply/jig/tree/main/modules/M8-learning-loop/reference/parity-report). Two numbers drive decisions:
+the [parity report](https://github.com/jig-harness/jig/tree/main/modules/M8-learning-loop/reference/parity-report). Two numbers drive decisions:
 
 | Signal | Decision it drives |
 |--------|--------------------|
 | `missed_blockers` (oracle caught a blocker the reviewer didn't) | a reopened lever; possibly a vendor you can't yet drop |
-| precision (share of a lens's findings that are real) | promote the lens to blocking (clears [M7](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review)'s bar), keep it advisory, or kill it |
+| precision (share of a lens's findings that are real) | promote the lens to blocking (clears [M7](https://github.com/jig-harness/jig/tree/main/modules/M7-pr-lifecycle-review)'s bar), keep it advisory, or kill it |
 
 A lens that fires mostly false positives is *removed* — a noisy lens costs more
 attention than it saves. Killing a lens is a normal outcome, not a failure.
@@ -84,7 +84,7 @@ The same shape, applied to process feedback:
    unprocessed).
 2. A separate step processes the inbox into **proposed** scaffolding changes.
 3. **A human approves** before any rule/spec/gate is edited — changing the rules
-   the agents follow is self-modifying and stays [HITL](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md).
+   the agents follow is self-modifying and stays [HITL](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md).
 
 ## Companion cycle: memory promotion
 
@@ -95,7 +95,7 @@ The same shape, applied to process feedback:
    promoted becomes everyone's wrong lesson.
 
 With Jig's plugin, this step is
-[`/jig:promote-memory`](https://github.com/docomply/jig/blob/main/plugin/skills/promote-memory/SKILL.md).
+[`/jig:promote-memory`](https://github.com/jig-harness/jig/blob/main/plugin/skills/promote-memory/SKILL.md).
 
 ## Anti-patterns this loop forbids
 

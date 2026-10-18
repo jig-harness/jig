@@ -212,7 +212,7 @@ if (issues.length > 0) {
 ## Model Context Protocol tools are not callable from scripts
 
 A script run through a shell cannot call Model Context Protocol
-([MCP](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) tools: the agent harness (Claude
+([MCP](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) tools: the agent harness (Claude
 Code, for one) has no bridge that lets a script call the agent's tools. When
 several independent MCP lookups are needed, issue them as parallel tool calls
 in one turn; if their results are large, write them to a file and filter or

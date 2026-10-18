@@ -45,15 +45,20 @@ const fixtures = join(import.meta.dir, "tests/fixtures");
 // The fixtures use neutral patterns; the real ones are tested at run time
 // below, so no fixture has to spell out what the gate forbids.
 const trackerPatterns = join(fixtures, "tracker-key-patterns.txt");
-// Jig's own configuration, which fills the real patterns' placeholders: the
-// tracker team whose keys they reject and the owner whose name they reject.
+// Jig's own configuration and notice, which fill the real patterns'
+// placeholders: the tracker team whose keys they reject and the licensor
+// whose name they reject.
 const jigConfig = readFileSync(join(root, ".config/jig.yaml"), "utf8");
-const { issue_tracker, review } = loadYaml(jigConfig) as {
+const { issue_tracker } = loadYaml(jigConfig) as {
   issue_tracker: { team: string };
-  review: { repo_slug: string };
 };
 const team = issue_tracker.team;
-const owner = review.repo_slug.split("/")[0] ?? "";
+const jigNotice = readFileSync(join(root, "NOTICE"), "utf8");
+const licensor =
+  jigNotice
+    .split("\n")
+    .map((line) => /^Copyright [0-9]{4} (.+)$/.exec(line)?.[1]?.trim())
+    .find((name) => name) ?? "";
 const temporary: string[] = [];
 function temp(): string {
   const path = mkdtempSync(join(tmpdir(), "jig-gates-"));
@@ -161,6 +166,9 @@ const placeholderCases: [string, string, string[], number][] = [
     "fail-tracker-placeholder-bad-yaml",
     "fail-tracker-placeholder-no-field",
     "fail-tracker-placeholder-no-owner",
+    "fail-tracker-placeholder-no-notice",
+    "fail-tracker-placeholder-no-copyright",
+    "fail-tracker-placeholder-no-licensor",
     "fail-tracker-placeholder-unknown",
   ].map((name): [string, string, string[], number] => [
     "check-no-tracker-refs",
@@ -786,61 +794,97 @@ test.skipIf(!unixPermissions)(
 test("the real patterns reject the original tracker keys and organization name, outside the allowed places", () => {
   const dir = temp();
   expectSpawnExit(safeSpawn(["git", "init", "-q", dir]), 0);
-  // Capitalised, as a publisher field or a copyright line writes it.
-  const name = `${owner.charAt(0).toUpperCase()}${owner.slice(1)}`;
+  // The licensor's name as NOTICE writes it, and as an address spells it.
+  const name = licensor;
+  const lower = name.toLowerCase();
   const write = (path: string, content: string) => {
     mkdirSync(join(dir, path, ".."), { recursive: true });
     writeFileSync(join(dir, path), content);
     expectSpawnExit(safeSpawn(["git", "-C", dir, "add", path]), 0);
   };
   const check = () => run("check-no-tracker-refs", [dir]);
+  // History keeps the address the repository had.
   write(
-    "README.md",
+    "CHANGELOG.md",
     [
-      `Install from https://github.com/${name.toLowerCase()}/jig.git`,
-      `See https://github.com/${name.toLowerCase()}/jig/blob/main/README.md`,
-      `Hosted at https://github.com/${name.toLowerCase()}/jig.`,
+      `- the repository moves to \`https://github.com/${lower}/jig\`;`,
+      `Install from https://github.com/${lower}/jig.git`,
+      `See https://github.com/${lower}/jig/blob/main/README.md`,
+      `Hosted at https://github.com/${lower}/jig.`,
+      `[1.0.0]: https://github.com/${lower}/jig/compare/v0.9.0...v1.0.0`,
       "",
     ].join("\n"),
   );
+  write("NOTICE", jigNotice);
+  write("plugin/NOTICE", jigNotice);
+  write("LICENSE-MIT-0", `MIT No Attribution\n\nCopyright 2026 ${name}\n`);
   write(
     "plugin/.claude-plugin/plugin.json",
     `{\n  "author": { "name": "${name}" }\n}\n`,
   );
+  write(
+    ".claude-plugin/marketplace.json",
+    `{\n  "owner": { "name": "${name}" }\n}\n`,
+  );
   write(".config/jig.yaml", jigConfig);
+  // The record of who holds the copyright names the licensor.
+  write(
+    "docs/adr/ADR-0006-home-copyright-and-brand-held-apart.md",
+    `**Deciders:** Jig's maintainer and ${name}\n\n${name} holds the copyright.\n`,
+  );
   // A word that only starts or ends like the team key is not a key.
-  const lower = team.toLowerCase();
-  write("words.md", `${lower}s2024, ${lower}12, x${lower}1234, ${team}-ish\n`);
+  const key = team.toLowerCase();
+  write("words.md", `${key}s2024, ${key}12, x${key}1234, ${team}-ish\n`);
   expectSpawnExit(check(), 0);
   for (const content of [
     `See ${team}-1234.\n`,
     // The key folded into a name.
-    `git switch -c user/${lower}-1234-title\n`,
-    `makeWorktree("${lower}1234-main");\n`,
+    `git switch -c user/${key}-1234-title\n`,
+    `makeWorktree("${key}1234-main");\n`,
     `const PRE_${team}_1234_ACCOUNT = 1;\n`,
-    `join(tmpRoot, "no-such-binary-${lower}1234");\n`,
+    `join(tmpRoot, "no-such-binary-${key}1234");\n`,
     // A short key is still a key once a separator sets it apart.
-    `git switch -c feature/${lower}-42-fix\n`,
+    `git switch -c feature/${key}-42-fix\n`,
     `const PRE_${team}_42_ACCOUNT = 1;\n`,
-    `makeWorktree("${lower}_7");\n`,
+    `makeWorktree("${key}_7");\n`,
     `Built at ${name}.\n`,
-    `export const STATE = "~/.${name.toLowerCase()}/state";\n`,
-    `See https://github.com/${name.toLowerCase()}/other-repo.\n`,
-    // The exemption ends at the repository name, not at a word boundary.
-    `See https://github.com/${name.toLowerCase()}/jig-other.\n`,
-    `See https://github.com/${name.toLowerCase()}/jig.github.io.\n`,
-    `See https://github.com/${name.toLowerCase()}/jig_x.\n`,
-    `See https://github.com/${name.toLowerCase()}/jig..private.\n`,
-    // The exemption starts at the whole address, not inside another host.
-    `See https://notgithub.com/${name.toLowerCase()}/jig.\n`,
-    `See https://evil.github.com/${name.toLowerCase()}/jig.\n`,
-    // An allowed occurrence exempts itself, not the line it sits on.
-    `https://github.com/${name.toLowerCase()}/jig, built at ${name}.\n`,
+    `export const STATE = "~/.${lower}/state";\n`,
+    `See https://github.com/${lower}/other-repo.\n`,
+    // The earlier address is history, which only the changelog records.
+    `Install from https://github.com/${lower}/jig.git\n`,
+    `See https://github.com/${lower}/jig/blob/main/README.md\n`,
+    // A copyright line outside the licence files.
+    `Copyright 2026 ${name}\n`,
   ]) {
     write("notes.md", content);
     expectSpawnExit(check(), 1);
   }
   write("notes.md", "Nothing to see.\n");
+  expectSpawnExit(check(), 0);
+  // Only that record may name the licensor; another decision record may not.
+  write("docs/adr/ADR-0007-another.md", `Agreed with ${name}.\n`);
+  const another = check();
+  expectSpawnExit(another, 1);
+  expect(another.stderr.toString()).toContain("docs/adr/ADR-0007-another.md");
+  write("docs/adr/ADR-0007-another.md", "Agreed.\n");
+  expectSpawnExit(check(), 0);
+  for (const content of [
+    // The exemption ends at the repository name, not at a word boundary.
+    `See https://github.com/${lower}/jig-other.\n`,
+    `See https://github.com/${lower}/jig.github.io.\n`,
+    `See https://github.com/${lower}/jig_x.\n`,
+    `See https://github.com/${lower}/jig..private.\n`,
+    // The exemption starts at the whole address, not inside another host.
+    `See https://notgithub.com/${lower}/jig.\n`,
+    `See https://evil.github.com/${lower}/jig.\n`,
+    // An allowed occurrence exempts itself, not the line it sits on.
+    `https://github.com/${lower}/jig, built at ${name}.\n`,
+    `Built at ${name}: https://github.com/${lower}/jig.\n`,
+  ]) {
+    write("CHANGELOG.md", content);
+    expectSpawnExit(check(), 1);
+  }
+  write("CHANGELOG.md", `See https://github.com/${lower}/jig.\n`);
   for (const content of [
     `{\n  "author": { "name": "${name}" }, "see": "${team}-1"\n}\n`,
     `{\n  "homepage": "${name}"\n}\n`,
@@ -869,6 +913,23 @@ test("placeholders are filled from the configuration, and an unfilled one names 
       "fail-tracker-placeholder-no-owner",
       ["patterns.txt:2", "review.repo_slug", "owner/name", ".config/jig.yaml"],
     ],
+    [
+      "fail-tracker-placeholder-no-notice",
+      ["patterns.txt:2", "{{licensor}}", "NOTICE", "ENOENT"],
+    ],
+    [
+      "fail-tracker-placeholder-no-copyright",
+      ["patterns.txt:2", "{{licensor}}", "Copyright <year> <name>", "NOTICE"],
+    ],
+    [
+      "fail-tracker-placeholder-no-licensor",
+      [
+        "patterns.txt:2",
+        "{{licensor}}",
+        "name on the copyright line",
+        "NOTICE",
+      ],
+    ],
     ["fail-tracker-placeholder-unknown", ["patterns.txt:2", "{{project}}"]],
   ] as const) {
     const result = run(
@@ -883,18 +944,18 @@ test("placeholders are filled from the configuration, and an unfilled one names 
   }
 });
 
-test("the configuration that fills the real patterns still names the original team and owner", () => {
-  // The real patterns reject whatever `.config/jig.yaml` names, and that file
-  // is exempt from the gate. A changed team or owner would silently stop the
-  // gate rejecting the original ones, so both are pinned here by digest,
-  // which checks them without spelling them out.
+test("the configuration and notice that fill the real patterns still name the original team and licensor", () => {
+  // The real patterns reject whatever `.config/jig.yaml` and NOTICE name,
+  // and those lines are exempt from the gate. A changed team or licensor
+  // would silently stop the gate rejecting the original ones, so both are
+  // pinned here by digest, which checks them without spelling them out.
   const digest = (value: string) =>
     createHash("sha256").update(value).digest("hex");
   expect(digest(team)).toBe(
     "c9ff9d7d29e892ae070c1d1c994458bff733dfad5f006865c3c7065193f789db",
   );
-  expect(digest(owner)).toBe(
-    "9d902a0870c74c3e5f74ee1dd1db76e7b1705e069c8a8bc40f52839384eae84f",
+  expect(digest(licensor)).toBe(
+    "15c20ce075903fe982cc794293785f040317201bc28c08f769933bcb0094e109",
   );
 });
 

@@ -17,9 +17,9 @@
 # convergence, which runs everything again on the head the merge waits for.
 # The label events start runs, so the workflow lists them beside the defaults.
 #
-# Jobs are sized to their work and split for billed minutes: a job bills
-# whole minutes, so the drive-pr suite has as many shards as keep each under
-# two minutes and no more.
+# Jobs are split no further than their work needs: the drive-pr suite has as
+# many shards as keep each under two minutes and no more, since each shard
+# repeats the checkout and install.
 #
 # macOS and Windows run nothing here: the nightly workflow (nightly.yml) runs
 # the gate set and the drive-pr suite on them against main once a day, so a
@@ -27,11 +27,11 @@
 # POSIX-only assumption) surfaces on main within a day rather than on its
 # pull request.
 #
-# The jobs that run work use Blacksmith runners (https://docs.blacksmith.sh),
-# which the Blacksmith GitHub App provides to this repository. `gates` only
-# reads the other jobs' results, so it runs on GitHub's smallest hosted
-# runner, billed to the account's Actions budget, rather than on a Blacksmith
-# minute.
+# Every job runs on GitHub's standard hosted runners: a public repository
+# uses them without charge, and `ubuntu-latest` there is a 4-vCPU machine.
+# The larger runners are charged even on a public repository, so no job
+# names one. `gates` only reads the other jobs' results, so it runs on the
+# smallest, `ubuntu-slim`.
 name: gates
 
 on:
@@ -55,7 +55,7 @@ jobs:
   areas:
     name: change areas
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       areas: ${{ steps.resolve.outputs.areas }}
@@ -81,7 +81,7 @@ jobs:
     name: gates (linux)
     needs: areas
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     # The gate set's 20 minutes and the website steps' 10.
     timeout-minutes: 30
     steps:
@@ -142,7 +142,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     # A shard takes about a minute and a half.
     timeout-minutes: 15
     steps:

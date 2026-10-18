@@ -98,7 +98,7 @@ export const METHOD_TERMS = {
 export type MethodTermKey = keyof typeof METHOD_TERMS;
 
 /** The repository's documentation, for the reader who wants more than the guide. */
-const DOCS = "https://github.com/docomply/jig/blob/main/";
+const DOCS = "https://github.com/jig-harness/jig/blob/main/";
 
 /** Who each shipped profile is for. A test holds this to `profiles.yaml`, so a new profile cannot go without one. */
 export const PROFILE_WHO: Readonly<Record<string, string>> = {

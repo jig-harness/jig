@@ -4,7 +4,7 @@ Copy this page into your docs tree (e.g. `docs/development/suppression-token-reg
 and replace the example rows with your own tokens.
 
 **What this is.** Several gates accept an inline **suppression token** (see
-[GLOSSARY.md](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) — a marker that tells the gate "this
+[GLOSSARY.md](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) — a marker that tells the gate "this
 flagged site is intentional; do not fail". When each token is defined only
 inside the one script that consumes it, a developer or agent hitting a gate
 can neither find the right token nor tell whether a token they remember is

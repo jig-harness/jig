@@ -42,7 +42,7 @@ PORT=$(bun reference/port-allocator/allocate-port.ts "$(git branch --show-curren
 Give related services separate ranges (app on `PORT_BASE=20000`, database on
 `21000`, …) so the only possible clash is within a service, and keep the span
 well above your worktree count. Full caveats: the
-[port allocator's README](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/reference/port-allocator/README.md).
+[port allocator's README](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/reference/port-allocator/README.md).
 
 ### 2. A cross-worktree mutex for heavy runs
 
@@ -87,7 +87,7 @@ When a worktree is removed, the work is freshest in memory — the ideal moment 
 capture what was learned. The remove hook prints a short prompt to run your
 reflection step (a `/reflect`-style command) so a session's lessons flow into
 the learning loop rather than evaporating. This closes the loop with the
-**[M8 learning loop](https://github.com/docomply/jig/tree/main/modules/M8-learning-loop)**: teardown is a reflection
+**[M8 learning loop](https://github.com/jig-harness/jig/tree/main/modules/M8-learning-loop)**: teardown is a reflection
 trigger, and reflection feedback becomes durable improvements. Hook skeletons:
 `worktree-hooks.md`.
 
@@ -100,10 +100,10 @@ release run at a time on the integration branch writes the notes into the
 changelog, moves the version and deletes the notes; a pull-request check
 fails a malformed note and a direct edit to what that run writes. The
 portable release step and check:
-**[changelog scripts](https://github.com/docomply/jig/tree/main/plugin/skills/changelog/scripts)**;
+**[changelog scripts](https://github.com/jig-harness/jig/tree/main/plugin/skills/changelog/scripts)**;
 the tools that do the same per ecosystem (Changesets, towncrier, scriv,
 changie) are in the module's
-**[mappings](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md)**.
+**[mappings](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md)**.
 
 ### 7. Per-worktree data namespaces
 
@@ -124,9 +124,9 @@ targeted at all. The drop decides each name again under a per-name lock the
 create also takes, because a worktree can come back on the same branch, and
 so to the same name, between the report and the drop. A namespace created without an owner or expiry is reported,
 not reaped. The decision script and the per-database commands:
-**[reference/worktree-namespace](https://github.com/docomply/jig/tree/main/modules/M12-parallel-agent-ergonomics/reference/worktree-namespace)**
+**[reference/worktree-namespace](https://github.com/jig-harness/jig/tree/main/modules/M12-parallel-agent-ergonomics/reference/worktree-namespace)**
 and the module's
-**[mappings](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md)**.
+**[mappings](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md)**.
 
 ### 8. Gate output written for an agent
 
@@ -140,10 +140,10 @@ exits with the gate's own status, taken from the command itself and never
 from a pipe. A run with several parts ends each with one named verdict
 line; a part without one did not run, and never counts as passed. The
 portable wrapper:
-**[reference/quiet-run](https://github.com/docomply/jig/tree/main/modules/M12-parallel-agent-ergonomics/reference/quiet-run)**;
+**[reference/quiet-run](https://github.com/jig-harness/jig/tree/main/modules/M12-parallel-agent-ergonomics/reference/quiet-run)**;
 the runners' own flags and the shape of a hook that applies the wrapper in
 an agent runtime are in the module's
-**[mappings](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md#agent-facing-gate-output)**.
+**[mappings](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md#agent-facing-gate-output)**.
 
 ### 9. A control channel into an unattended agent
 
@@ -165,16 +165,16 @@ to while it runs, in two kinds of message:
 A new directive comes with the code that enforces it, never as a sentence
 the agent is asked to obey. The runnable form for review loops is the
 drive mailbox of
-**[Jig's drive-pr skill](https://github.com/docomply/jig/blob/main/plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)**;
+**[Jig's drive-pr skill](https://github.com/jig-harness/jig/blob/main/plugin/skills/drive-pr/SKILL.md#the-drive-mailbox)**;
 its layout and the alternatives per agent runner are in the module's
-**[mappings](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md#control-channels)**.
+**[mappings](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md#control-channels)**.
 
 ## Adopt it
 
 1. Vendor `reference/port-allocator/` and `reference/resource-lock/` (or copy the
    two scripts) and wire them per `worktree-hooks.md`.
 2. Import the `branch-discipline.md` checklist into your agent instruction file
-   (see the **[M0 instruction architecture](https://github.com/docomply/jig/tree/main/modules/M0-instruction-architecture)**
+   (see the **[M0 instruction architecture](https://github.com/jig-harness/jig/tree/main/modules/M0-instruction-architecture)**
    module) so every agent inherits it.
 3. Wrap your heavy gate commands with `with-resource-lock.ts` locally; leave CI
    unwrapped (the bypass handles it).

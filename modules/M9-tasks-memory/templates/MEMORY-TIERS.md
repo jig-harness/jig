@@ -42,8 +42,8 @@ Agent memory holds knowledge about the code, not work state.
 ### What — the tracker
 
 The team-visible ledger. One epic or sub-issue per unit of work, each carrying
-its taxonomy. This is the tier the [issue templates](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/templates/ISSUE-TEMPLATES.md) and the
-[label taxonomy](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/templates/label-taxonomy.yaml) govern. The tactical execution plan, the
+its taxonomy. This is the tier the [issue templates](https://github.com/jig-harness/jig/blob/main/modules/M9-tasks-memory/templates/ISSUE-TEMPLATES.md) and the
+[label taxonomy](https://github.com/jig-harness/jig/blob/main/modules/M9-tasks-memory/templates/label-taxonomy.yaml) govern. The tactical execution plan, the
 decisions taken on the item and every handoff live *on the issue*, precisely
 so they are not trapped in a session or a worktree.
 
@@ -54,7 +54,7 @@ of the code, the traps it hit, what a command really does. It is about the
 code, not about one work item, so it outlives any single item. It starts in
 the agent runtime's memory feature, private to the agent, and the durable parts
 are promoted into git-tracked shared docs (see
-[M9's mappings](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/mappings.md)). This is *how* the work gets done, distinct from
+[M9's mappings](https://github.com/jig-harness/jig/blob/main/modules/M9-tasks-memory/mappings.md)). This is *how* the work gets done, distinct from
 *what* the work is.
 
 ### In-session — the task list and worktree scratch
@@ -70,7 +70,7 @@ One worktree often holds more than one agent at a time: a session a person
 operates, the unattended loops it starts, the subagents it delegates to.
 They all see the same scratch directory, so it is where they pass working
 files to each other: a brief for a subagent, a loop's resumption file, a
-[control channel](https://github.com/docomply/jig/blob/main/GLOSSARY.md)
+[control channel](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 into a running loop. These rules keep that sharing safe. Each file has one
 writer, or is an append-only log whose every append takes a lock, so two
 agents never overwrite each other. And a file's name says what it belongs
@@ -160,18 +160,18 @@ private memory            promoted (proposed)          git-tracked shared memory
    omits X").
 2. **Propose** — a promotion step (a `/promote-memory`-style command, such as
    Jig's
-   [`promote-memory`](https://github.com/docomply/jig/blob/main/plugin/skills/promote-memory/SKILL.md)
+   [`promote-memory`](https://github.com/jig-harness/jig/blob/main/plugin/skills/promote-memory/SKILL.md)
    skill) surfaces the lesson as a *candidate* for shared memory, rather than
    editing shared memory silently.
 3. **Review** — a human (or a review point) accepts, edits, or rejects it.
-   Promotion is [HITL](https://github.com/docomply/jig/blob/main/GLOSSARY.md) by construction: it changes the
+   Promotion is [HITL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) by construction: it changes the
    shared record the whole team trusts.
 4. **Land** — the accepted lesson is committed to git-tracked shared memory,
    where it reaches other agents and survives indefinitely — and becomes fodder
    for retrospection.
 
 This is the same **memory-promotion** cycle described in
-[M8 — Learning loop](https://github.com/docomply/jig/tree/main/modules/M8-learning-loop), which pairs it with session
+[M8 — Learning loop](https://github.com/jig-harness/jig/tree/main/modules/M8-learning-loop), which pairs it with session
 **reflection**. M9 owns the *tiers* (where memory lives); M8 owns the
 *promotion and reflection loop* (how a lesson is proposed, reviewed, and turned
 into durable improvement). Adopt them together: the tiers give reflection a

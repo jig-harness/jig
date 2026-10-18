@@ -11,9 +11,9 @@ context: fork
 This skill reviews changes to GitHub Actions workflows (the YAML files under
 `.github/workflows/` and the composite actions under `.github/actions/`) for
 security, correctness, performance, and fit with the repository's own CI
-([continuous integration](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) architecture.
+([continuous integration](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) architecture.
 The pipeline it checks against is the one Jig module
-[M10 (environments & deploy)](https://github.com/docomply/jig/blob/main/modules/M10-environments-deploy/README.md)
+[M10 (environments & deploy)](https://github.com/jig-harness/jig/blob/main/modules/M10-environments-deploy/README.md)
 describes: gates on every pull request, verification after merge, deploys of
 verified builds only, and a manual promotion to production.
 
@@ -41,7 +41,7 @@ and the only reference for Phase 4.
 3. When there is none, review against the generic guidance in this skill only,
    skip Phase 4's drift comparison, and say so in the report.
 
-[Jig's M10 template](https://github.com/docomply/jig/blob/main/modules/M10-environments-deploy/templates/CI-ARCHITECTURE.md)
+[Jig's M10 template](https://github.com/jig-harness/jig/blob/main/modules/M10-environments-deploy/templates/CI-ARCHITECTURE.md)
 is one common shape for such a document. It splits delivery into four stages,
 each with one responsibility and a hard boundary to the next:
 
@@ -75,7 +75,7 @@ workflow's scope against that sorting. A typical split:
 
 | Role | PR gates | Post-merge verification | Deploy |
 |------|----------|-------------------------|--------|
-| Deployed applications ([deploy-critical](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) | Yes | Yes | Yes |
+| Deployed applications ([deploy-critical](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) | Yes | Yes | Yes |
 | Tools that are never deployed (command-line tools, simulators, viewers) | Yes | No | No |
 | Shared libraries | Yes | Yes | Not applicable |
 
@@ -95,7 +95,7 @@ Every repository action in `uses:` (`owner/repo@ref`) must name a full
 40-character commit SHA, followed by a `# vN` comment. A tag (`@v6`, `@1.2.3`) or a branch (`@main`) can be moved
 by the action's owner after review, so the workflow would run code nobody
 reviewed. This is the immutable-pin invariant of
-[M1 (gates and enforcement ladder)](https://github.com/docomply/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md),
+[M1 (gates and enforcement ladder)](https://github.com/jig-harness/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md),
 paired there with an automated updater that proposes pin bumps. When the
 repository enforces pins with a check, a mutable reference is a hard CI
 failure; either way, report it.
@@ -153,9 +153,9 @@ Example: [secret check](references/workflow-examples.md#secret-check).
   branch that starts the deploy), the push needs a personal access token or a
   GitHub App token. Check that it has the minimal scopes.
 - A bot that writes a machine-advanced ref (the
-  [verified pointer](https://github.com/docomply/jig/blob/main/GLOSSARY.md),
+  [verified pointer](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
   a rendered-state ref:
-  [M10](https://github.com/docomply/jig/blob/main/modules/M10-environments-deploy/README.md))
+  [M10](https://github.com/jig-harness/jig/blob/main/modules/M10-environments-deploy/README.md))
   has an identity of its own, scoped to that ref: a GitHub App whose
   installation token is minted in the one job that advances the ref, with
   contents read and write (and workflows, where the ref carries workflow
@@ -171,7 +171,7 @@ Never put a workflow expression inside `run:`. GitHub substitutes the
 expression into the script text before the shell reads it, so a value an outsider can set (a
 branch name, a pull-request title or body, a commit message, an issue
 comment, a dispatch input) runs as shell: an
-[expression injection](https://github.com/docomply/jig/blob/main/GLOSSARY.md).
+[expression injection](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).
 Pass the value through `env:` and read the variable in the script, where the
 shell treats it as data (example:
 [expression through env](references/workflow-examples.md#expression-through-env)).
@@ -196,7 +196,7 @@ Every job needs an explicit `timeout-minutes`. Starting points:
 - Artifact packaging: 10 minutes
 
 `timeout-minutes` counts run time only: a job waiting for a runner is not
-timed, so a [queue stall](https://github.com/docomply/jig/blob/main/GLOSSARY.md)
+timed, so a [queue stall](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 shows as a run that never starts, never as a timeout. A longer timeout does
 nothing for it; the bound on waiting is M13's scheduled queue watchdog, where
 the repository runs one.
@@ -208,7 +208,7 @@ When a workflow detects which parts changed, every downstream job needs an
 
 **2.3 Task-runner scope and concurrency**
 
-In a [monorepo](https://github.com/docomply/jig/blob/main/GLOSSARY.md) driven by a task runner (Turborepo, Nx
+In a [monorepo](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) driven by a task runner (Turborepo, Nx
 and similar), check that each workflow's package filters match its stage in
 the repository's architecture: PR gates cover everything the diff affects;
 post-merge verification leaves out packages that are never deployed. For
@@ -237,7 +237,7 @@ set `if-no-files-found: error` so an empty upload fails (example:
 **2.5 Concurrency keys**
 
 Apply M13's superseding rules (piece 3): two runs share a
-[concurrency group](https://github.com/docomply/jig/blob/main/GLOSSARY.md)
+[concurrency group](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 only when the survivor covers everything the displaced run would have
 checked. For each workflow the change touches:
 
@@ -267,7 +267,7 @@ checked. For each workflow the change touches:
 - **Serialized post-merge verification** uses a fixed group with
   `cancel-in-progress: false`, sound only because the surviving run checks
   the whole range from the
-  [verified pointer](https://github.com/docomply/jig/blob/main/GLOSSARY.md)
+  [verified pointer](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
   to its head; a run that cannot cover that range (a dispatch from another
   branch) falls back to its run id, so it cannot displace one that does.
 - **A push scan that covers a commit range keeps a per-commit group**:
@@ -300,7 +300,7 @@ cover is the reviewer's to decide.
 ### Phase 3: Performance
 
 These checks apply Jig module
-[M13 (pipeline economy)](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/README.md):
+[M13 (pipeline economy)](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/README.md):
 spend CI only where it changes a merge decision, and never let a saving turn
 a failure into a pass.
 
@@ -353,7 +353,7 @@ really depends on another's result.
 
 - Coverage: a scheduled trend, collected in one place and published also
   when it is below target
-  ([M14](https://github.com/docomply/jig/blob/main/modules/M14-testing-strategy/README.md)
+  ([M14](https://github.com/jig-harness/jig/blob/main/modules/M14-testing-strategy/README.md)
   piece 10; M13's placement table), never again in post-merge verification.
   A per-file blocking threshold is a finding in itself (M14 says why), and
   only a threshold that gates the merge belongs in the PR gates; the trend
@@ -412,8 +412,8 @@ and passes, and point the author at it, rather than checking by eye:
 | Concern | Typical enforcing check |
 |---------|-------------------------|
 | Mutable (non-SHA) action references | an action-pin check over `.github/workflows/**` and `.github/actions/**`, or a workflow-convention lint |
-| Job timeouts, cancelling pull-request concurrency, unfiltered required workflows, a `!cancelled()` aggregator, heavy suites off the per-change path, one key-affecting environment per cache group | a workflow-convention lint; Jig's reference is [M13's](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/reference/workflow-conventions/README.md), whose exceptions each carry a reason |
-| A container build's cache mount on every step that reads the store, and no per-command store flag | a cache-mount check over the Dockerfiles; Jig's reference is [M13's](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/reference/cache-mount-coverage/README.md) |
+| Job timeouts, cancelling pull-request concurrency, unfiltered required workflows, a `!cancelled()` aggregator, heavy suites off the per-change path, one key-affecting environment per cache group | a workflow-convention lint; Jig's reference is [M13's](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/reference/workflow-conventions/README.md), whose exceptions each carry a reason |
+| A container build's cache mount on every step that reads the store, and no per-command store flag | a cache-mount check over the Dockerfiles; Jig's reference is [M13's](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/reference/cache-mount-coverage/README.md) |
 | Expressions inside `run:`, over-broad permissions, secrets written to outputs, and `uses:` references a plain grep misses (YAML allows `uses : …`) | a static workflow auditor (for example zizmor) over `.github/workflows/` and `.github/actions/`, pinned to one version so finding counts stay comparable, each suppression with a reason; advisory until the tree is clean at the chosen level, blocking after |
 | Unpinned `curl \| sh` or install scripts | an install-script allowlist |
 | Merge strategy (for example squash-only) | a merge-strategy validation |

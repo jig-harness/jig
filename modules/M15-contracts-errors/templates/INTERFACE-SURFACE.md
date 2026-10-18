@@ -4,11 +4,11 @@
 > `docs/development/api-surface.md`), fill in the placeholders, delete what
 > does not apply, and point your agent instruction file at it. It is the
 > interface half of the contract in Jig's
-> [M15 contracts and error handling](https://github.com/docomply/jig/blob/main/modules/M15-contracts-errors/README.md);
+> [M15 contracts and error handling](https://github.com/jig-harness/jig/blob/main/modules/M15-contracts-errors/README.md);
 > the mark, the bounds and the status list per contract technology are in
-> its [mappings](https://github.com/docomply/jig/blob/main/modules/M15-contracts-errors/mappings.md#published-interface-surface).
+> its [mappings](https://github.com/jig-harness/jig/blob/main/modules/M15-contracts-errors/mappings.md#published-interface-surface).
 > Terms are defined in Jig's
-> [glossary](https://github.com/docomply/jig/blob/main/GLOSSARY.md).
+> [glossary](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).
 
 ## Where the contract is
 

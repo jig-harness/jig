@@ -54,7 +54,7 @@ loop already past [Ready happens inside the loop](#ready-happens-inside-the-loop
 **Exit:** a draft PR exists (or a Ready one, where declared); its description
 names the change and the verification done.
 **Executable:** your forge's draft-PR command — `gh pr create --draft`, or a
-GitLab `Draft:` title prefix (per-forge in [`mappings.md`](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/mappings.md)).
+GitLab `Draft:` title prefix (per-forge in [`mappings.md`](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/mappings.md)).
 
 ### 2. Self-review
 
@@ -63,8 +63,8 @@ leave inline notes where a reviewer will otherwise ask. Run the local gate set.
 
 **Exit:** the author has reviewed the full diff; local gates pass.
 **Executable:** run the local gate set — the M7 gates
-([`check-pr-target-safety.ts`](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review/reference/pr-target-safety),
-[`check-threads-resolved.ts`](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review/reference/comment-resolution)) plus your
+([`check-pr-target-safety.ts`](https://github.com/jig-harness/jig/tree/main/modules/M7-pr-lifecycle-review/reference/pr-target-safety),
+[`check-threads-resolved.ts`](https://github.com/jig-harness/jig/tree/main/modules/M7-pr-lifecycle-review/reference/comment-resolution)) plus your
 repo's own gates — and your agent runtime's self-review (e.g. `/review`).
 
 ### 3. Automated + human review (concurrent, layered)
@@ -85,8 +85,8 @@ migration reviewer, an API change the API reviewer). Do not rely on memory.
 every reviewer that reviews drafts has responded. The rest respond only once
 the PR is Ready, which happens inside step 4.
 **Executable:** the reviewers registered in
-[`review-config.yaml`](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/templates/review-config.yaml); which humans are mandatory comes
-from [M3](https://github.com/docomply/jig/tree/main/modules/M3-change-area-catalog)'s review-gate projection.
+[`review-config.yaml`](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/review-config.yaml); which humans are mandatory comes
+from [M3](https://github.com/jig-harness/jig/tree/main/modules/M3-change-area-catalog)'s review-gate projection.
 
 ### 4. The resolve-comments loop
 
@@ -103,7 +103,7 @@ than passing), and each leaves an audit trail:
 
 **Moot is not a polite Rejected.** Rejected asserts the reviewer was *wrong*;
 moot asserts it may have been *right about code that no longer exists*. Collapsing
-them tells a learning loop ([M8](https://github.com/docomply/jig/tree/main/modules/M8-learning-loop)) that the reviewer
+them tells a learning loop ([M8](https://github.com/jig-harness/jig/tree/main/modules/M8-learning-loop)) that the reviewer
 produced a false positive when it did not, which trains away findings it got
 right. Three of the four states claim that some change exists — "fixed here",
 "tracked there", "superseded by that" — so for those, prose is not a trail: name
@@ -158,13 +158,13 @@ are silent — no error is raised either way:
 Addressed / Rejected / Deferred / Moot with its trail, every reviewer in both
 sets has reported, and the PR is still open.
 **Executable:** the unresolved-threads merge gate
-[`check-threads-resolved.ts`](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review/reference/comment-resolution) — fed by the
+[`check-threads-resolved.ts`](https://github.com/jig-harness/jig/tree/main/modules/M7-pr-lifecycle-review/reference/comment-resolution) — fed by the
 verdict export adapter, not by raw reply text — and the per-round
-[convergence check](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review/reference/review-convergence), whose exit code drives the
-loop. Both are wired in [`mappings.md`](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/mappings.md).
+[convergence check](https://github.com/jig-harness/jig/tree/main/modules/M7-pr-lifecycle-review/reference/review-convergence), whose exit code drives the
+loop. Both are wired in [`mappings.md`](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/mappings.md).
 With Jig's plugin, `/jig:resolve-review-comments` runs one pass of
 this loop and `/jig:drive-pr` runs its rounds unattended
-([plugin](https://github.com/docomply/jig/blob/main/plugin/README.md)).
+([plugin](https://github.com/jig-harness/jig/blob/main/plugin/README.md)).
 
 ### 5. Gates green, then merge
 
@@ -175,7 +175,7 @@ if the merge changed the diff.
 
 **Exit:** required checks green, zero open threads, human merge.
 **Executable:** the merge is a human-only forge action, enforced by branch
-protection requiring a human actor — see the [HITL registry](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md).
+protection requiring a human actor — see the [HITL registry](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md).
 
 ### 6. After the merge: what does the merge still owe?
 
@@ -196,7 +196,7 @@ Each class ends in exactly one of two states, and "nothing found" is neither:
 
 | Class | Settled when | Not owed, for example |
 |-------|--------------|-----------------------|
-| **Tracker state** | The item's own state follows the merge (done, or waiting while a manual, operational or legal step remains), and the epic above it has been rolled up from its children. An epic closes only as [M9](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/README.md#an-epic-closes-on-an-accepted-verdict) says, never on the merge | The pull request names no tracked item |
+| **Tracker state** | The item's own state follows the merge (done, or waiting while a manual, operational or legal step remains), and the epic above it has been rolled up from its children. An epic closes only as [M9](https://github.com/jig-harness/jig/blob/main/modules/M9-tasks-memory/README.md#an-epic-closes-on-an-accepted-verdict) says, never on the merge | The pull request names no tracked item |
 | **Deferred findings** | Every `deferred` reply produced a tracked item that exists. Re-list the resolved threads, because a deferred thread resolves the moment its reply posts, and the summary findings, which have no thread: a reply that says "deferred" proves only that someone typed it | The re-listed threads and summary findings hold no deferred outcome |
 | **Out-of-tree obligations** | Every action the merge leaves outside the repository (a secret or setting to provision, a manual rollout, a migration run by hand, an announcement) is listed when the pull request opens, with an explicit "None" when there are none, and is recorded where a person will find it: the tracker item's closing comment, and the repository's own ledger of such work where it keeps one | The list reads "None", and the diff touches no workflow, configuration or migration |
 | **Temporary scaffolding** | Whatever the work put in place to get here is gone, in the repository and outside it: a widened timeout, a disabled or skipped gate, a live review driver, a working branch, a preview environment, a flipped flag | The pull request description and the driver's log name no scaffolding, and no branch, environment or driver of this work is left |
@@ -207,7 +207,7 @@ Each class ends in exactly one of two states, and "nothing found" is neither:
 closing one removes a whole line from the board; otherwise clear the
 operations that can be cleared now (a step waiting only on a person who is
 here, a drill, a sign-off); otherwise take a batch of small items together
-([batching small issues into one pull request](https://github.com/docomply/jig/blob/main/plugin/skills/work-batch/README.md)).
+([batching small issues into one pull request](https://github.com/jig-harness/jig/blob/main/plugin/skills/work-batch/README.md)).
 A computed ranking proposes the shortlist; a person picks from it.
 
 Fixes the pass finds go in one follow-up pull request, not one each. Run
@@ -218,28 +218,28 @@ nothing.
 done) or not owed (with the evidence), and the next item is picked, or the
 evidence that no open work remains is recorded.
 **Executable:** `do-item`'s post-merge status rule moves the item's state, and
-its [Step 5a](https://github.com/docomply/jig/blob/main/plugin/skills/do-item/SKILL.md#step-5a-all-sub-issues-complete)
+its [Step 5a](https://github.com/jig-harness/jig/blob/main/plugin/skills/do-item/SKILL.md#step-5a-all-sub-issues-complete)
 rolls the epic up: `reconcile_parent_status.ts` proposes the epic's state from
 its children, and Step 5a applies it only after the acceptance and closing
 checks; the
-[deferral protocol](https://github.com/docomply/jig/blob/main/plugin/skills/resolve-review-comments/references/deferral-protocol.md)
+[deferral protocol](https://github.com/jig-harness/jig/blob/main/plugin/skills/resolve-review-comments/references/deferral-protocol.md)
 files what a deferred reply left unfiled. The
-[unresolved-threads gate](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review/reference/comment-resolution)
+[unresolved-threads gate](https://github.com/jig-harness/jig/tree/main/modules/M7-pr-lifecycle-review/reference/comment-resolution)
 checks before the merge that a deferred reply names a reference, not that the
 referenced item exists; only this stage, which can reach the tracker, checks
-that. See [M9](https://github.com/docomply/jig/tree/main/modules/M9-tasks-memory)
+that. See [M9](https://github.com/jig-harness/jig/tree/main/modules/M9-tasks-memory)
 for the tracker.
 
 A change that took **many rounds** to converge is itself a signal: usually the
 scaffolding under-served it, not that the reviewer was noisy. Feed the round count
 to the learning loop rather than letting it evaporate with the session — see
-[M8](https://github.com/docomply/jig/tree/main/modules/M8-learning-loop)'s
-[reflection trigger](https://github.com/docomply/jig/tree/main/modules/M8-learning-loop/reference/reflection-trigger).
+[M8](https://github.com/jig-harness/jig/tree/main/modules/M8-learning-loop)'s
+[reflection trigger](https://github.com/jig-harness/jig/tree/main/modules/M8-learning-loop/reference/reflection-trigger).
 
 ## Human-in-the-loop boundaries
 
 These decisions are **human-only** on every PR — never taken autonomously by an
-agent. See the [HITL registry](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md) for the full list and the
+agent. See the [HITL registry](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md) for the full list and the
 rationale:
 
 - Marking a PR **Ready** for review — unless the repository delegates it to an
@@ -257,5 +257,5 @@ rationale:
 An item carrying the `hitl` label revokes autonomous merge for that PR
 entirely. Enforcement is the forge's branch-protection rule that requires a
 human actor to merge (no bot/self-merge) — the same rule the [HITL
-registry](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md) names — so the label's effect is mechanical, not
+registry](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md) names — so the label's effect is mechanical, not
 just convention.

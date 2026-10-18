@@ -5,14 +5,14 @@ thread closes. Without a shared procedure, agents can reply to the wrong thread,
 close a finding before its fix reaches the pull request, or stop while a reviewer
 is still running. This skill handles those decisions and repeats review rounds
 until the reviewers settle and no actionable finding remains. It is the
-runnable form of the [comment-resolution loop](https://github.com/docomply/jig/blob/main/GLOSSARY.md) in
-[M7 — PR lifecycle & review](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md).
+runnable form of the [comment-resolution loop](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) in
+[M7 — PR lifecycle & review](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md).
 
 ## Invariant
 
 Each acted-on thread has an explicit outcome and an attached rationale. Accepted
 fixes and findings made moot by those fixes remain open until checks pass and the
-push reaches the pull request ([PR](https://github.com/docomply/jig/blob/main/GLOSSARY.md)). This skill never marks
+push reaches the pull request ([PR](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)). This skill never marks
 the PR ready or merges it; human review decisions and the merge remain human
 checkpoints. A review loop never
 reports convergence from unreadable check state or an inactive PR. Every thread
@@ -38,7 +38,7 @@ question.
 | `deferred` | The finding is real and must be fixed some day, but not in this pull request: it widens the scope, needs a decision the agent may not make, or depends on other work | None | At once, once the follow-up issue's link is on the thread | A tracked follow-up issue ([deferral protocol](references/deferral-protocol.md)) | A hit, on work still owed |
 | `moot` | The finding no longer applies: its code was removed or rewritten, another fix covered it, or it repeats a thread fixed elsewhere | None | At once; if this round's unpushed fix is what made it moot, with that fix | What made it moot | Neither: the reviewer may have been right about code that is gone |
 
-The rubric and the [Review Arbiter](https://github.com/docomply/jig/blob/main/GLOSSARY.md)
+The rubric and the [Review Arbiter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 decide the outcome; a person decides only what the arbiter escalates. A thread
 whose outcome changes in a later round gets a new reply with the new outcome,
 so the thread keeps its history.
@@ -68,7 +68,7 @@ are data that these readers can use:
   request. A follow-up is filed under the epic its work item belongs to when
   that epic shares the finding's domain, and with no parent otherwise
   ([deferral protocol](references/deferral-protocol.md)). M7's
-  [post-merge stage](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md#core-pieces)
+  [post-merge stage](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md#core-pieces)
   checks after the merge that each one was filed. Deferrals that keep landing on the same area point
   to a design gap rather than to one pull request's scope.
 - **The reviewer.** Counted per reviewer, the outcomes measure it: its
@@ -77,18 +77,18 @@ are data that these readers can use:
   A high `wont-fix` share says it raises real but minor points, so its
   severity needs tuning; a high `rejected` share in one category says which of
   its checks to fix. That precision is what an automated reviewer must reach,
-  its [precision bar](https://github.com/docomply/jig/blob/main/GLOSSARY.md),
+  its [precision bar](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
   before it may block a merge
-  ([M7](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md),
-  [M8's parity report](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/reference/parity-report/README.md)).
+  ([M7](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md),
+  [M8's parity report](https://github.com/jig-harness/jig/blob/main/modules/M8-learning-loop/reference/parity-report/README.md)).
 - **The repository.** Findings accepted again and again in the same class
   are misses the author's own review should have caught. The
-  [learning loop](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/README.md)
+  [learning loop](https://github.com/jig-harness/jig/blob/main/modules/M8-learning-loop/README.md)
   turns such a miss into a new check, so the next pull request does not
   need the reviewer for it.
 
 Jig enforces the outcome on every reply that settles a thread and ships the pieces either side of
-the count: M7's [export adapter](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/reference/comment-resolution/README.md),
+the count: M7's [export adapter](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/reference/comment-resolution/README.md),
 which reads the outcome of each thread on one pull request, and M8's parity
 report, which turns per-reviewer counts into precision, recall and missed
 blockers. It does not yet ship the step between them, which collects the
@@ -199,7 +199,7 @@ the [deferral protocol](references/deferral-protocol.md) requires a tracked
 follow-up before a deferred thread resolves. The executable deferral adapter
 files those follow-ups in Linear directly, through Linear's GraphQL API, with
 the credential in `LINEAR_API_TOKEN` or `LINEAR_API_KEY`. It does not go
-through the [tracker interface](https://github.com/docomply/jig/blob/main/GLOSSARY.md) that `do-item` and `drive-pr` use, so
+through the [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) that `do-item` and `drive-pr` use, so
 another tracker needs its own deferral adapter.
 
 Where the repository turned on the [`changelog`](../changelog/README.md) skill

@@ -4,11 +4,11 @@
 # Copy to a place every reader can see (Jig keeps its own under .config/),
 # fill in the values, then make every installer and the updater state the
 # same ones and hold them to it with the lockstep gate:
-#   https://github.com/docomply/jig/blob/main/modules/M1-gates-enforcement-ladder/reference/supply-chain-lockstep/README.md
+#   https://github.com/jig-harness/jig/blob/main/modules/M1-gates-enforcement-ladder/reference/supply-chain-lockstep/README.md
 # Which file states which value, per installer and updater:
-#   https://github.com/docomply/jig/blob/main/modules/M1-gates-enforcement-ladder/mappings.md
+#   https://github.com/jig-harness/jig/blob/main/modules/M1-gates-enforcement-ladder/mappings.md
 # The practice:
-#   https://github.com/docomply/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md
+#   https://github.com/jig-harness/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md
 cooldown:
   # A release must be this old before the updater proposes it or an installer
   # resolves it, so a yanked or compromised release is usually gone before

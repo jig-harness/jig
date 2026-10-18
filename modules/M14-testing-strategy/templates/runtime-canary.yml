@@ -26,13 +26,13 @@
 #   - Least privilege: it reads the repository and nothing else.
 #
 # The practice:
-#   https://github.com/docomply/jig/blob/main/modules/M14-testing-strategy/README.md
+#   https://github.com/jig-harness/jig/blob/main/modules/M14-testing-strategy/README.md
 # The next-release channel and the build command per runtime:
-#   https://github.com/docomply/jig/blob/main/modules/M14-testing-strategy/mappings.md
+#   https://github.com/jig-harness/jig/blob/main/modules/M14-testing-strategy/mappings.md
 # The skip tripwire:
-#   https://github.com/docomply/jig/blob/main/modules/M14-testing-strategy/reference/tests-executed/README.md
+#   https://github.com/jig-harness/jig/blob/main/modules/M14-testing-strategy/reference/tests-executed/README.md
 # The one version source and its exceptions:
-#   https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/reference/toolchain-pins/README.md
+#   https://github.com/jig-harness/jig/blob/main/modules/M2-generated-artifact-freshness/reference/toolchain-pins/README.md
 name: Runtime canary
 
 on:

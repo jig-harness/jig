@@ -95,10 +95,10 @@ could not use it anyway. Paste this into a session of Claude Code or Codex
 started in the repository you want to adopt Jig in:
 
 ```text
-Set up Jig (https://github.com/docomply/jig) in this repository, then audit it.
+Set up Jig (https://github.com/jig-harness/jig) in this repository, then audit it.
 
 1. If this agent tool has no plugin support, say so, give me these steps
-   and stop: clone https://github.com/docomply/jig.git; copy or link every
+   and stop: clone https://github.com/jig-harness/jig.git; copy or link every
    folder of its plugin/skills/ into this tool's user skill directory (for
    example ~/.claude/skills/ or ~/.agents/skills/), side by side, and its
    plugin/shared/ into a shared/ folder beside that directory; then start a
@@ -117,18 +117,17 @@ Set up Jig (https://github.com/docomply/jig) in this repository, then audit it.
      new session, and stop.
    - Not listed: go on to step 4.
 4. Check the requirements: Bun, git 2.36 or later,
-   and the GitHub CLI 2.48 or later, signed in with read access to
-   https://github.com/docomply/jig (`gh auth login`, then
-   `gh auth setup-git`). Tell me what is missing and how to install it.
+   and the GitHub CLI 2.48 or later, signed in (`gh auth login`) to the
+   repositories you work on. Tell me what is missing and how to install it.
 5. Then give me the install command for this tool and stop. I run it in a
    terminal and start a new session in this repository, since a plugin
    loads only when a session starts.
    - Claude Code 2.1.292 or later:
-     claude plugin install jig --marketplace https://github.com/docomply/jig.git
+     claude plugin install jig --marketplace https://github.com/jig-harness/jig.git
      Older Claude Code: claude plugin marketplace add
-     https://github.com/docomply/jig.git, then claude plugin install jig@jig
+     https://github.com/jig-harness/jig.git, then claude plugin install jig@jig
    - Codex:
-     codex plugin marketplace add https://github.com/docomply/jig.git
+     codex plugin marketplace add https://github.com/jig-harness/jig.git
      codex plugin add jig@jig
 ```
 
@@ -155,10 +154,6 @@ command it lacks.
   signals, so it does not run on Windows, and `do-item` is not tested there.
   The other skills run on all three systems
   ([operating systems](EXTENDING.md#operating-systems)).
-- **Read access to this repository.** It is private, so git must be able to
-  fetch it without asking for a password. The simplest setup:
-  `gh auth login`, then `gh auth setup-git`. The install commands below use the
-  HTTPS address for that reason.
 
 ## Install the plugin
 
@@ -169,13 +164,13 @@ Claude Code older than 2.1.292, run `claude plugin marketplace add <address>`
 and then `claude plugin install jig@jig` instead):
 
 ```sh
-claude plugin install jig --marketplace https://github.com/docomply/jig.git
+claude plugin install jig --marketplace https://github.com/jig-harness/jig.git
 ```
 
 **Codex**:
 
 ```sh
-codex plugin marketplace add https://github.com/docomply/jig.git
+codex plugin marketplace add https://github.com/jig-harness/jig.git
 codex plugin add jig@jig
 ```
 
@@ -281,7 +276,7 @@ committed: no copy of the skill, no install script, no generated files.
 
    `/jig:resolve-review-comments` comes from the `jig` plugin,
    installed once per machine (see
-   https://github.com/docomply/jig/blob/main/plugin/README.md#install-the-plugin).
+   https://github.com/jig-harness/jig/blob/main/plugin/README.md#install-the-plugin).
    This repository's values are in `.config/jig.yaml`.
    If the skill is not listed, install the plugin and start a new session.
    ```
@@ -294,7 +289,7 @@ committed: no copy of the skill, no install script, no generated files.
    {
      "extraKnownMarketplaces": {
        "jig": {
-         "source": { "source": "git", "url": "https://github.com/docomply/jig.git" }
+         "source": { "source": "git", "url": "https://github.com/jig-harness/jig.git" }
        }
      },
      "enabledPlugins": { "jig@jig": true }
@@ -543,8 +538,8 @@ Paths inside the cache change with each release, so never store them.
   background: `/plugin` → **Marketplaces** → `jig` →
   **Enable auto-update**.
 - **Pin** a machine to a release tag: add the marketplace at that tag,
-  `claude plugin install jig --marketplace https://github.com/docomply/jig.git#v0.3.0`,
-  or `codex plugin marketplace add https://github.com/docomply/jig.git --ref v0.3.0`.
+  `claude plugin install jig --marketplace https://github.com/jig-harness/jig.git#v0.3.0`,
+  or `codex plugin marketplace add https://github.com/jig-harness/jig.git --ref v0.3.0`.
   Versions are chosen per machine, not per repository: every repository on a
   machine uses the same release, so releases keep reading older configuration
   files unless [CHANGELOG.md](../CHANGELOG.md) says otherwise.
@@ -581,10 +576,10 @@ runs as you:
   (or `claude plugin list` / `codex plugin list`). If it is installed, the
   session started before the install: run `/reload-plugins` (Claude Code) or
   start a new session.
-- **Install fails with an authentication or "repository not found" error.**
-  git could not read the private repository without a prompt. Run
-  `gh auth login` and `gh auth setup-git`, then retry with the HTTPS address
-  above. Check with `git ls-remote https://github.com/docomply/jig.git`.
+- **Install fails with a "repository not found" error.** The address is
+  mistyped, or git is set to use a credential that is no longer valid.
+  Check with `git ls-remote https://github.com/jig-harness/jig.git`, which
+  needs no login.
 - **"Jig configuration not found"** — the agent is working in a
   repository that has not [configured](#configure-a-repository) the skill, or
   outside any repository. Start the agent in the repository, or add the

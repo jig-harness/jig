@@ -16,8 +16,8 @@ Those words are a closed vocabulary that every reply must open with. They
 are parsed downstream to score the review bot, so they are a contract rather
 than a formatting habit — see [Reply format](#reply-format).
 
-This is the runnable form of the [comment-resolution loop](https://github.com/docomply/jig/blob/main/GLOSSARY.md) in
-[M7 — PR lifecycle & review](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md).
+This is the runnable form of the [comment-resolution loop](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) in
+[M7 — PR lifecycle & review](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md).
 
 Jig maintains this procedure and ships it as the `jig` plugin for
 Claude Code and Codex, installed once per machine. Each repository supplies its
@@ -69,7 +69,7 @@ Flags:
 
 Thread resolution state (`isResolved`) and the resolve action exist **only** in
 GitHub's GraphQL API — the Representational State Transfer
-([REST](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) reviews API can neither read nor set them.
+([REST](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) reviews API can neither read nor set them.
 `gh pr view --comments` shows top-level conversation only and will not show you
 the inline threads where nearly all review feedback lives.
 
@@ -164,7 +164,7 @@ not a licence to skip" — and the guard deliberately does not paper over it:
 `bun` fails loudly on the missing file, `pipefail` carries
 that failure out, and the pipeline errors instead of silently degrading.
 
-Emits **newline-delimited JSON ([NDJSON](https://github.com/docomply/jig/blob/main/GLOSSARY.md)), one unresolved thread per line**, already filtered and
+Emits **newline-delimited JSON ([NDJSON](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)), one unresolved thread per line**, already filtered and
 paginated:
 
 ```json
@@ -254,14 +254,14 @@ and **every reply opens with that outcome in bold** — see
 [Reply format](#reply-format) below. The vocabulary is closed: no other values,
 no synonyms. Materiality and scope calls follow the
 [triage rubric](references/triage-rubric.md); a thread the rubric does not
-decide goes to the [**Review Arbiter**](https://github.com/docomply/jig/blob/main/GLOSSARY.md) agent
+decide goes to the [**Review Arbiter**](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) agent
 (`jig:review-arbiter`, shipped with the plugin; in Codex, see the
 [Codex notes](../../README.md#codex-notes)), and only an arbiter escalation
 interrupts the user. When that escalation turns out to be an **architectural**
 question rather than a product/scope one — which pattern, which contract
 shape, which boundary — route it through the `decide` skill (`/jig:decide`)
 before interrupting: it checks the question against the repository's
-architecture decision records ([ADRs](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) and standing policy first, and a finding that contradicts settled policy is answered from
+architecture decision records ([ADRs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) and standing policy first, and a finding that contradicts settled policy is answered from
 the corpus rather than from the user's attention.
 
 **`**accepted**`** — the finding is real. Before fixing, run it through the
@@ -581,7 +581,7 @@ Rules:
   hyphenated), "ignored", "n/a", "obsolete".
 - Follow it with a concrete reason. `reply-to-thread.ts` only requires
   whitespace then at least one American Standard Code for Information Interchange
-([ASCII](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) letter or digit — an em dash (`—`) is the
+([ASCII](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) letter or digit — an em dash (`—`) is the
   house style, not an enforced separator. The token alone is not a reply, and
   a thread still may not be resolved on a bare token.
 - If a thread's outcome changes across rounds, post a **new** reply with the new
@@ -849,7 +849,7 @@ machine — a handful of parallel drives exhaust it. `await-round.ts` therefore
 spends as little of it as it can while keeping `gh pr checks` the only source of
 the checks verdict:
 
-- **State and head commit identifier ([SHA](https://github.com/docomply/jig/blob/main/GLOSSARY.md))** are read over conditional REST (`shared/gh-conditional.ts`).
+- **State and head commit identifier ([SHA](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md))** are read over conditional REST (`shared/gh-conditional.ts`).
   An unchanged PR answers `304 Not Modified`, which does not count against the
   primary rate limit. The PR argument must be a number: a URL or branch name is
   refused up front with exit 2, as `list-unresolved-threads.ts` would refuse it
@@ -885,7 +885,7 @@ When a PR takes **more than three rounds** to converge and reflection is on (a
 `reflection` section in some configuration layer), `await-round.ts` says so
 at **wind-down** — the moment it reports convergence, not during the loop —
 notes the round count in the reflection journal, and asks for a
-[reflection](https://github.com/docomply/jig/blob/main/GLOSSARY.md) with
+[reflection](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) with
 [`/jig:reflect`](../reflect/SKILL.md). With reflection off it asks for nothing.
 Tune the boundary with `REFLECT_THRESHOLD` (default `3`). Separately, every round
 counted past that boundary prints a reminder of

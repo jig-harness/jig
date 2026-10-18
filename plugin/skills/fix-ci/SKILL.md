@@ -9,17 +9,17 @@ allowed-tools: "Read Edit Write Grep Glob Bash(gh run *) Bash(gh pr *) Bash(gh a
 # Fix CI errors
 
 Fix every error from a failed GitHub Actions run until the local checks pass,
-then commit and push. CI ([continuous integration](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) is
+then commit and push. CI ([continuous integration](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) is
 the service that runs the repository's checks on every push; this skill turns
 its red run into a green one without guessing. The checks it repairs are the
 repository's quality gates, the subject of Jig module
-[M1 (gates & enforcement ladder)](https://github.com/docomply/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md).
+[M1 (gates & enforcement ladder)](https://github.com/jig-harness/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md).
 GitHub Actions is the one CI service it fetches logs from so far; with another
 CI service, save the failed run's log to a file and pass it with `--log`.
 
 Jig maintains this procedure and ships it in the `jig` plugin.
 Each repository supplies its own values in `.config/jig.yaml`
-(the [consumer overlay](https://github.com/docomply/jig/blob/main/GLOSSARY.md)); every value this skill reads
+(the [consumer overlay](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)); every value this skill reads
 has a fallback, so it also works in a repository without that file.
 
 ### Paths and working directory
@@ -34,7 +34,7 @@ into the skill directory: the scripts find the repository and its
 configuration from the working directory.
 
 If the repository pins its tools with a version manager (for example
-[mise](https://github.com/docomply/jig/blob/main/GLOSSARY.md)), make sure it is active in the shell before you
+[mise](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)), make sure it is active in the shell before you
 run the repository's own commands.
 
 ## Arguments
@@ -132,9 +132,9 @@ failed. Exit 2 is a usage error, including a detached `HEAD` with no run ID,
 ### `scripts/probe-base.ts`
 
 Runs a failing check again on a freshly fetched base, in a throwaway
-[worktree](https://github.com/docomply/jig/blob/main/GLOSSARY.md), so a test
+[worktree](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), so a test
 failure is attributed before it is fixed (the
-[fresh-base probe](https://github.com/docomply/jig/blob/main/GLOSSARY.md)).
+[fresh-base probe](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)).
 The command after `--` is spawned as given, with the worktree as its working
 directory; the checkout you run it from is never touched.
 
@@ -299,7 +299,7 @@ command), then run the drift check itself to confirm. When the overlay lists
 none, or none fits, find the command beside the check: a drift check usually
 has a regenerating counterpart in the same script manifest (`package.json`
 `scripts`, a `Makefile`, a `justfile`), named like `generate:<x>` for a
-`<x>:check`. [M2 (generated-artifact freshness)](https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/README.md)
+`<x>:check`. [M2 (generated-artifact freshness)](https://github.com/jig-harness/jig/blob/main/modules/M2-generated-artifact-freshness/README.md)
 describes the regenerate script, drift check and commit-time hook that keep
 these files fresh.
 
@@ -374,11 +374,11 @@ needs; never read it as a stale test.
   failure was there before. A red base is the base's problem as much as this
   change's: the integration branch can stay red without any pull request
   going red when the per-change checks are scoped to the diff, which is why
-  [M13](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/README.md)
+  [M13](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/README.md)
   asks for an unscoped run there.
 
 The rule itself, independent of this skill, is
-[M14's triage section](https://github.com/docomply/jig/blob/main/modules/M14-testing-strategy/README.md#core-pieces).
+[M14's triage section](https://github.com/jig-harness/jig/blob/main/modules/M14-testing-strategy/README.md#core-pieces).
 
 **Bun: tests pass alone but fail together?** That is `mock.module()`
 contamination: a module mock leaks into the other test files of the same run.
@@ -394,11 +394,11 @@ bun test <file1>.test.ts <file2>.test.ts
 
 ### gate_failure (priority 6, the catch-all)
 
-A check written for this repository failed: a [grep gate](https://github.com/docomply/jig/blob/main/GLOSSARY.md),
+A check written for this repository failed: a [grep gate](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
 a ratchet, a self-test. A specific gate diagnostic is not flaky
 infrastructure. Read the `raw` line, open the workflow step that runs the
 check to learn the rule, and fix the offending source. A finding written to
-[M1](https://github.com/docomply/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md)'s
+[M1](https://github.com/jig-harness/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md)'s
 rules names its rule, its file and line, and its fix (`fix:` on the next log
 line, `Fix:` in the annotation): apply that fix.
 

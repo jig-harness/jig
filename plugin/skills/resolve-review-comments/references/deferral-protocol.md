@@ -225,7 +225,7 @@ weaker evidence than it reads: most issues with children are mid-tree
 groupings that have a genuine epic parent of their own, so treating a
 non-empty children set as proof files their follow-up parentless and silently
 discards the correct parent this table asks for. The epic label is a
-[flag label](https://github.com/docomply/jig/blob/main/GLOSSARY.md) that exists to answer exactly this question ("this issue is a
+[flag label](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) that exists to answer exactly this question ("this issue is a
 coordination container"), so it is the thing to ask.
 
 The trade, stated because both directions have a real failure mode: under the label rule an epic that nobody

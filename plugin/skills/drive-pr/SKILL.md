@@ -18,9 +18,9 @@ and the deferral protocol are canonical in `/jig:resolve-review-comments` —
 [`deferral-protocol.md`](../resolve-review-comments/references/deferral-protocol.md).
 Read them; this skill adds the *loop*, not a second vocabulary. The practice
 it implements is Jig's
-[M7 — PR lifecycle & review](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md);
+[M7 — PR lifecycle & review](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md);
 the loop-cost reports in § What the loop cost belong to
-[M11 — Process observability](https://github.com/docomply/jig/blob/main/modules/M11-process-observability/README.md).
+[M11 — Process observability](https://github.com/jig-harness/jig/blob/main/modules/M11-process-observability/README.md).
 
 **In the delivery loop** — upstream: [`/jig:do-item`](../do-item/SKILL.md)
 opens the PR and arms this drive. Alongside: the repository's own
@@ -50,7 +50,7 @@ working directory and from their own location.
 
 ### Consumer configuration
 
-For timing diagnostics through [trace spans](https://github.com/docomply/jig/blob/main/GLOSSARY.md), set `JIG_TRACE=1` before arming the drive, or set
+For timing diagnostics through [trace spans](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), set `JIG_TRACE=1` before arming the drive, or set
 `JIG_TRACE_FILE` to a specific JSON lines file. Child processes inherit the
 trace context. Records contain command names, exit codes and timeouts, never
 arguments, standard input or command output. See the human page's
@@ -1099,7 +1099,7 @@ call.
 actual chain.** The handoff file (`.context/pr-drive-<PR>.md`) carries an
 **Intent chain** section — why the work exists: the epic's intent, the
 issue's scope and acceptance criteria, which
-[Refocus](https://github.com/docomply/jig/blob/main/GLOSSARY.md) puts
+[Refocus](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) puts
 back in front of an agent — re-read each round from the snapshot `/jig:do-item`
 wrote at pickup and pinned to this PR.
 Use `capture-intent-chain.ts <PR> --pickup <pickupId>` with the token retained
@@ -1820,11 +1820,11 @@ unlabel-triggered full-CI run.
 
 **judgment** — Judge the plan against the defects it could catch and record evidence; your verdict does not alter the required checks.
 
-[Verification fit](https://github.com/docomply/jig/blob/main/GLOSSARY.md) is your recorded judgement of whether the round's
+[Verification fit](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is your recorded judgement of whether the round's
 required validation was worth its cost. The plan decides what you **run**; it does not decide what you think of it. A
 plan built from a change-area catalog (a map from path patterns to the checks
 a change there needs; Jig's
-[M3 — Change-area catalog](https://github.com/docomply/jig/blob/main/modules/M3-change-area-catalog/README.md)) fails toward strictness in every uncertain case by
+[M3 — Change-area catalog](https://github.com/jig-harness/jig/blob/main/modules/M3-change-area-catalog/README.md)) fails toward strictness in every uncertain case by
 construction — an unmatched file selects the `full` profile, a mixed diff takes
 the strictest requirement, and areas tend to accumulate on `profile: full`
 while a `scoped` middle tier goes almost unused — and strictness is not free: a
@@ -2139,7 +2139,7 @@ findings can still be triaged.
 **judgment** — Interpret the measurements and their limits; keep the defect-escape anchor whenever reporting economy figures.
 
 This section and its subsections are the drive's share of
-[M11 — Process observability](https://github.com/docomply/jig/blob/main/modules/M11-process-observability/README.md):
+[M11 — Process observability](https://github.com/jig-harness/jig/blob/main/modules/M11-process-observability/README.md):
 measuring the delivery process itself, not the product.
 
 **Every recall-reducing dial in the triage rubric (the materiality bar, the
@@ -2305,7 +2305,7 @@ names; `scripts/lib/escape-baseline.ts` says where it is read from).
 **judgment** — Interpret the scoreboard against its recorded baseline and disclose incomplete measurements.
 
 Everything above reads one PR, or a window of declined findings. The scoreboard
-for the delivery process as a whole, its [fractal metrics](https://github.com/docomply/jig/blob/main/GLOSSARY.md), (review rounds, follow-ups, escapes across
+for the delivery process as a whole, its [fractal metrics](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), (review rounds, follow-ups, escapes across
 many PRs) is one command over a window of merged PRs plus the issue tracker's
 ledger:
 

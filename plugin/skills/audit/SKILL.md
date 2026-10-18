@@ -8,7 +8,7 @@ allowed-tools: "Read Write Edit Grep Glob Agent Bash(bun *) Bash(git *) Bash(gh 
 # Audit a repository
 
 Tell a repository where it stands against Jig's practice modules
-([modules](https://github.com/docomply/jig/blob/main/modules/README.md)), and,
+([modules](https://github.com/jig-harness/jig/blob/main/modules/README.md)), and,
 on every later run, what changed since. The audit writes one file, the record
 `.config/jig-audit.yaml`, and changes nothing else in the repository unless the
 user asks to apply a recommendation (step 8).

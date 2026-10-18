@@ -9,20 +9,20 @@ context: fork
 
 A systematic review that detects the kinds of artifact a change touches (a
 database migration, an API endpoint, frontend code, a plan document, …) from
-the diff and runs [tiered checks](https://github.com/docomply/jig/blob/main/GLOSSARY.md) against the repository's
+the diff and runs [tiered checks](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) against the repository's
 standards: its architecture decision records
-([ADRs](https://github.com/docomply/jig/blob/main/GLOSSARY.md): short numbered documents
+([ADRs](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): short numbered documents
 that each record one design decision and its reason, Jig module
-[M5](https://github.com/docomply/jig/blob/main/modules/M5-adr-practice/README.md)) and
+[M5](https://github.com/jig-harness/jig/blob/main/modules/M5-adr-practice/README.md)) and
 their machine-readable rules, its
-[change-area catalog](https://github.com/docomply/jig/blob/main/GLOSSARY.md) (one file
+[change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (one file
 mapping path patterns to named areas of the codebase and what a change to each
 implies, Jig module
-[M3](https://github.com/docomply/jig/blob/main/modules/M3-change-area-catalog/README.md)),
+[M3](https://github.com/jig-harness/jig/blob/main/modules/M3-change-area-catalog/README.md)),
 and its specialist review skills.
 
 It is the runnable form of the author-side tiered review in Jig module
-[M7 (PR lifecycle & review)](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md):
+[M7 (PR lifecycle & review)](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md):
 the review a change gets before it is pushed, ahead of the pull request's own
 reviewers.
 
@@ -397,7 +397,7 @@ Any failure is a blocking finding of the catalog's own validation (below),
 an unknown field included: a misspelt `review` would otherwise carry no
 `review.skills` and drop a mandatory gate in silence. A catalog with fields
 only the repository's own wrapper around the resolver (its
-[composer](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) knows is resolved through that wrapper,
+[composer](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) knows is resolved through that wrapper,
 which the repository names as `drive.validation_plan_command`.
 
 Invoke every skill in the resolved, deduplicated `reviewSkills` once and fold
@@ -489,7 +489,7 @@ example:
   the upper bound its kind needs (a maximum length, a pattern or a format
   on a string, a maximum on a number, a maximum item count on an array, a
   closed shape on an object, as
-  [M15's *Bounded inputs*](https://github.com/docomply/jig/blob/main/modules/M15-contracts-errors/README.md)
+  [M15's *Bounded inputs*](https://github.com/jig-harness/jig/blob/main/modules/M15-contracts-errors/README.md)
   states it; a minimum alone bounds nothing), and its
   declared failure statuses cover what its handler and the error boundary
   can produce; an operation only the repository's own clients need carries

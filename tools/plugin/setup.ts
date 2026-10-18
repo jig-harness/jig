@@ -22,7 +22,7 @@ import { cli } from "../../lib/cli.ts";
 export const PLUGIN = "jig";
 export const MARKETPLACE = "jig";
 export const PLUGIN_ID = `${PLUGIN}@${MARKETPLACE}`;
-export const DEFAULT_SOURCE = "https://github.com/docomply/jig.git";
+export const DEFAULT_SOURCE = "https://github.com/jig-harness/jig.git";
 
 type Harness = "claude" | "codex";
 

@@ -13,7 +13,7 @@ Survey how code review and continuous improvement work.
 2. Review routing: are mandatory review requirements selected by change type? Mechanically or by convention?
 3. The comment-resolution loop: is addressing review feedback codified (a closed
    set of terminal states, human-in-the-loop
-   ([HITL](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) boundaries, thread-resolution mechanics)? Note
+   ([HITL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) boundaries, thread-resolution mechanics)? Note
    specifically whether a finding whose code is *gone* has anywhere to go other
    than "rejected", and whether the terminal state is **declared** by the author
    in a machine-readable anchored form or **reconstructed from prose** later —

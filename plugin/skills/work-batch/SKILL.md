@@ -9,12 +9,12 @@ allowed-tools: "Read Grep Glob Edit Write Task Bash(bun *) Bash(git *) Bash(gh *
 
 Most of the cost of a pull request (PR) is its review: the rounds of
 comments, the fixes, the waits for continuous integration
-([CI](https://github.com/docomply/jig/blob/main/GLOSSARY.md)). That cost is paid per pull request,
+([CI](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)). That cost is paid per pull request,
 not per line, so a team that opens one pull request per small issue pays it
 again for each, and several single-issue pull requests over the same files
 turn into merge conflicts. This skill groups several small, independent
 issues from one area of the code into one
-[batch](https://github.com/docomply/jig/blob/main/GLOSSARY.md): one pull
+[batch](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): one pull
 request, one commit per issue, one drive through review.
 
 It owns the proposal (which issues may join, ranked and fitted to a budget),
@@ -53,7 +53,7 @@ read one value yourself, run
 Work the issue alone with [`/jig:do-item`](../do-item/SKILL.md) when:
 
 - **It carries a solo-only flag**, making it a
-  [solo-only issue](https://github.com/docomply/jig/blob/main/GLOSSARY.md):
+  [solo-only issue](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
   the human-in-the-loop label and its facets, the manual-operations label,
   every flag an area of the change-area catalog carries (a database-migration
   flag, an interface-contract flag), and `work_batch.solo_flags`. Each starts a review
@@ -162,7 +162,7 @@ the release in step 4 restores them. Then, for each:
    (`tracker.ts comment <KEY> < body.md`).
 
 Then write the batch form of the
-[intent chain](https://github.com/docomply/jig/blob/main/GLOSSARY.md), as `/jig:do-item`
+[intent chain](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), as `/jig:do-item`
 [Step 3.5](../do-item/SKILL.md#step-35-write-the-intent-chain-snapshot-refocus)
 describes, with `"mode":"batch"`, the anchor as `issue` (for an area or path
 anchor, the highest-ranked issue), the anchor's parent as `epic` when it has
@@ -226,7 +226,7 @@ this order:
    Either way, comment on it that it left the batch and why.
 3. **Stop if nothing remains.** Undo everything step 3 wrote: the issues are
    released by substep 2; remove this session's intent-chain copy, so
-   [Refocus](https://github.com/docomply/jig/blob/main/GLOSSARY.md) stops putting released issues in front of you, and drop the
+   [Refocus](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) stops putting released issues in front of you, and drop the
    `pickupId`:
 
    ```bash

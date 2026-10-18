@@ -13,7 +13,7 @@ accumulate in one shared store. This skill turns them into changes: it groups
 what recurred, proposes a concrete change for each group, and **a person
 approves every change before anything is edited**. The rules agents follow are
 changing themselves here, which is human-in-the-loop by construction
-([M8](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/README.md)).
+([M8](https://github.com/jig-harness/jig/blob/main/modules/M8-learning-loop/README.md)).
 How the records work is in [the reflect README](../reflect/README.md); this
 skill's page for people is [README.md](README.md).
 

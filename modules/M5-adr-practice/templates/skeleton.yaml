@@ -13,7 +13,7 @@
 # Own this file and the decision-record directory with the people who own the
 # architecture (a code-owners rule or a required reviewer): the gate checks
 # that authority is recorded, not who recorded it.
-# Reference gate: https://github.com/docomply/jig/blob/main/modules/M5-adr-practice/reference/skeleton-gate/README.md
+# Reference gate: https://github.com/jig-harness/jig/blob/main/modules/M5-adr-practice/reference/skeleton-gate/README.md
 
 # Where the records live; a trailer's `ADR-0007` resolves to
 # <decision_records>/ADR-0007-*.md. Default: docs/adr.

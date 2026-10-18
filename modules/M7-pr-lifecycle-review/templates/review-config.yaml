@@ -79,7 +79,7 @@ containment:
 promotion_bar:
   min_true_positive_rate: 0.90    # of this lens's findings, >= 90% must be real
   min_sample: 20                  # measured over at least N fired findings
-  measured_by: M8-parity-report   # https://github.com/docomply/jig/tree/main/modules/M8-learning-loop/reference/parity-report
+  measured_by: M8-parity-report   # https://github.com/jig-harness/jig/tree/main/modules/M8-learning-loop/reference/parity-report
   note: >-
     A lens stays `posture: comment` until M8's measurement shows it clears this
     bar; promotion to `posture: blocking` is an M7-Strict, HITL decision.
@@ -109,4 +109,4 @@ lenses:
 
 # Higher-tier "semantic" lenses that need full LLM reasoning (not a checklist
 # bullet) are grown locally, not shipped here — see
-# https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md#left-out-by-design
+# https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md#left-out-by-design

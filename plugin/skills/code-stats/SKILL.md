@@ -8,24 +8,24 @@ allowed-tools: "Read Bash(bun *) Bash(git *)"
 # Code stats: what the repository is made of
 
 How much of this repository is shipped product code, and how much is tests,
-tooling, agent [scaffolding](https://github.com/docomply/jig/blob/main/GLOSSARY.md),
+tooling, agent [scaffolding](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
 docs, build or ops, and in which language and module? This skill answers
 that without a one-off script. It classifies every tracked file along the
-[code-stats dimensions](https://github.com/docomply/jig/blob/main/GLOSSARY.md) and counts its bytes and lines:
+[code-stats dimensions](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) and counts its bytes and lines:
 
 - **area**: what the file is *for* (`scaffolding`, `ci`, `build`, `database`,
   `ops`, `tools`, `docs`, `repo-config`, `production`, or the repository's
   own list);
 - **kind**: what the file *is* (`code`, `test`, `docs`, `config`, `data`,
-  `generated`, `fixture` (a [test fixture](https://github.com/docomply/jig/blob/main/GLOSSARY.md)), `asset`, `vendored`,
+  `generated`, `fixture` (a [test fixture](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)), `asset`, `vendored`,
   `other`);
 - **language**: from the extension, a shebang line (`#!/usr/bin/env bash`)
-  or the `linguist-language` [git attribute](https://github.com/docomply/jig/blob/main/GLOSSARY.md);
-- **module**: from the [workspace manifests](https://github.com/docomply/jig/blob/main/GLOSSARY.md) (pnpm, npm, Yarn or Bun
+  or the `linguist-language` [git attribute](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md);
+- **module**: from the [workspace manifests](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (pnpm, npm, Yarn or Bun
   workspaces, `go.work`, Cargo, Gradle, uv), or the top folders.
 
 Lines are counted as blank, comment or code:
-[LOC (lines of code)](https://github.com/docomply/jig/blob/main/GLOSSARY.md) are the
+[LOC (lines of code)](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) are the
 non-blank, non-comment lines. Binary and media files are sized but not
 line-counted. The human's page is [README.md](README.md); it lists every
 built-in rule.
@@ -111,13 +111,13 @@ decided, then, in the repository's `.config/jig.yaml`:
 4. **`code_stats.modules`**: globs naming module folders, replacing the
    manifests.
 5. **`code_stats.classify_command`**, only when globs cannot say it: a
-   [classify command](https://github.com/docomply/jig/blob/main/GLOSSARY.md), a shell
+   [classify command](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), a shell
    command that reads the tracked paths on standard input, one per line, and
    prints JSON lines `{"path", "area"?, "kind"?, "language"?, "module"?}`
    whose values override every other layer.
 
 Every field is in the
-[configuration reference](https://github.com/docomply/jig/blob/main/plugin/CONFIGURATION.md#code_stats).
+[configuration reference](https://github.com/jig-harness/jig/blob/main/plugin/CONFIGURATION.md#code_stats).
 Re-run and compare the unclassified share.
 
 ## Fail closed

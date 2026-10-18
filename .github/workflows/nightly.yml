@@ -36,12 +36,12 @@ jobs:
       matrix:
         include:
           - os: macos
-            runner: blacksmith-6vcpu-macos-latest
+            runner: macos-latest
           - os: windows
-            runner: blacksmith-4vcpu-windows-2025
+            runner: windows-latest
     runs-on: ${{ matrix.runner }}
-    # Windows takes the longest, about 8 minutes.
-    timeout-minutes: 20
+    # Windows takes the longest, about 10 minutes on the standard image.
+    timeout-minutes: 25
     env:
       # The drive-pr-suite and website jobs below run the separate suites; on
       # Windows the gate script also leaves out the POSIX-only suites.
@@ -67,7 +67,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
-    runs-on: blacksmith-6vcpu-macos-latest
+    runs-on: macos-latest
     # A shard takes up to about 3 minutes.
     timeout-minutes: 15
     steps:
@@ -89,9 +89,9 @@ jobs:
       matrix:
         include:
           - os: macos
-            runner: blacksmith-6vcpu-macos-latest
+            runner: macos-latest
           - os: windows
-            runner: blacksmith-4vcpu-windows-2025
+            runner: windows-latest
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     steps:

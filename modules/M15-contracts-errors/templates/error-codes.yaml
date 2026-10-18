@@ -9,9 +9,9 @@
 # same fields); whichever form it takes, there is one, and the generators and
 # gates read it. Jig's gates for the rule (no code constructed outside the
 # registry; orphans and reverse orphans) are described at
-# https://github.com/docomply/jig/blob/main/modules/M15-contracts-errors/reference/error-registry/README.md
+# https://github.com/jig-harness/jig/blob/main/modules/M15-contracts-errors/reference/error-registry/README.md
 # and the freshness of each generated copy is M2's:
-# https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/README.md
+# https://github.com/jig-harness/jig/blob/main/modules/M2-generated-artifact-freshness/README.md
 #
 #   format        the shape every code has, as a regular expression without
 #                 anchors; every scanner reuses it, so it is declared once

@@ -28,7 +28,7 @@ kind, its README included.
 | Kind | Where | How it changes |
 | --- | --- | --- |
 | Decisions | [adr/](adr/) | amended or superseded, never rewritten |
-| Instructions | the `AGENTS.md` files, and [CONTRIBUTING.md](../CONTRIBUTING.md) they point to | in the pull request that changes the rule |
+| Instructions | the `AGENTS.md` files, [CONTRIBUTING.md](../CONTRIBUTING.md) they point to, and the policies it points to: [GOVERNANCE.md](../GOVERNANCE.md), [SECURITY.md](../SECURITY.md), [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md), [TRADEMARK.md](../TRADEMARK.md) | in the pull request that changes the rule |
 | Terms | [GLOSSARY.md](../GLOSSARY.md) | a term enters in the commit that first uses it |
 | Reference | every document no other row places: `SKILL.md`, [CONFIGURATION.md](../plugin/CONFIGURATION.md), the skills' references, and the READMEs outside the doctrine and plans directories | describes what exists now; changes with what it describes |
 | Doctrine | [modules/](../modules/README.md), [principles/](../principles/README.md), [profiles/](../profiles/README.md), [adoption/](../adoption/brownfield.md), [FACTORY.md](../FACTORY.md), [FEATURES.md](../FEATURES.md), [dispositions.md](dispositions.md) | rewritten to stay current, never appended to |

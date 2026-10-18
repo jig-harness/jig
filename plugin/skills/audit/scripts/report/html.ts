@@ -90,7 +90,7 @@ import type { Fit, FitFinding, Recommendation } from "./source.ts";
 
 /** The principle behind the ladder, in Jig's own repository. */
 const LADDER_URL =
-  "https://github.com/docomply/jig/blob/main/principles/04-enforcement-ladder.md";
+  "https://github.com/jig-harness/jig/blob/main/principles/04-enforcement-ladder.md";
 
 type Rich = (text: string) => string;
 

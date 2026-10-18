@@ -1,5 +1,9 @@
 Jig
-Copyright 2026 Ophir Radnitz
+Copyright 2026 Docomply
+
+Jig Harness, its short form Jig, the logo and the jig-harness.dev domain are
+trademarks of Van Code B.V., licensed to this project; what you may do with them is at
+https://github.com/jig-harness/jig/blob/main/TRADEMARK.md.
 
 Jig is licensed under the Apache License, Version 2.0 (LICENSE), except the
 template files listed below, which are licensed under MIT No Attribution

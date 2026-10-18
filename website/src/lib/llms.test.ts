@@ -40,6 +40,8 @@ test("every section with fixed pages is a section", () => {
 test("the README's tagline and opening paragraph are the root's summary", () => {
   const lead = readmeLead(readFileSync(join(root, "README.md"), "utf8"));
   expect(lead.summary).toStartWith("A jig for AI coding agents");
-  expect(lead.intro).toStartWith("Jig is a modular collection");
+  expect(lead.intro).toStartWith(
+    "Jig Harness, Jig for short, is a modular collection",
+  );
   expect(lead.intro).not.toContain("**");
 });

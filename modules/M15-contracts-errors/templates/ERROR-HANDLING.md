@@ -3,11 +3,11 @@
 > Copy this into your repository (e.g. `docs/development/error-handling.md`),
 > fill in the placeholders, delete what does not apply, and point your agent
 > instruction file at it. It is the tool-independent contract from Jig's
-> [M15 contracts and error handling](https://github.com/docomply/jig/blob/main/modules/M15-contracts-errors/README.md);
+> [M15 contracts and error handling](https://github.com/jig-harness/jig/blob/main/modules/M15-contracts-errors/README.md);
 > the tools for each rule, per language and framework, are in its
-> [mappings](https://github.com/docomply/jig/blob/main/modules/M15-contracts-errors/mappings.md).
+> [mappings](https://github.com/jig-harness/jig/blob/main/modules/M15-contracts-errors/mappings.md).
 > Terms are defined in Jig's
-> [glossary](https://github.com/docomply/jig/blob/main/GLOSSARY.md).
+> [glossary](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).
 
 ## The typed error
 
@@ -26,7 +26,7 @@ the boundary and the telemetry:
 
 Every code is declared once, in the registry `<src/errors/registry/>` (the
 data form is Jig's
-[`error-codes.yaml`](https://github.com/docomply/jig/blob/main/modules/M15-contracts-errors/templates/error-codes.yaml)),
+[`error-codes.yaml`](https://github.com/jig-harness/jig/blob/main/modules/M15-contracts-errors/templates/error-codes.yaml)),
 and nowhere else; the client's code union
 (`<packages/client/src/error-codes.generated.ts>`), each locale's message
 catalog (`<apps/web/messages/<locale>/errors.json>`) and the public reference

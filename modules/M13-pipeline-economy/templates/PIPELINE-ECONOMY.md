@@ -3,9 +3,9 @@
 > Copy this into your repository (e.g. `docs/development/pipeline-economy.md`),
 > fill in the tables, and delete the guidance quotes. It is the
 > tool-independent policy; the per-provider wiring is in Jig's
-> [M13 mappings](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/mappings.md),
+> [M13 mappings](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/mappings.md),
 > and the reasoning behind each rule in the
-> [M13 module](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/README.md).
+> [M13 module](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/README.md).
 
 **The rule.** Spend CI only where it changes a merge decision, and never let a
 saving turn a failure into a pass. What we check is decided by our gate set;

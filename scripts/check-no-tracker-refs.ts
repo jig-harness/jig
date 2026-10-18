@@ -16,16 +16,18 @@
 // unexempted, is itself a finding, so the allowed places cannot outlive what
 // they allow.
 //
-// A pattern line, rejection or allow, may name a value of the scanned
-// repository's configuration, `<root>/.config/jig.yaml`, by placeholder:
-// `{{team}}` is `issue_tracker.team` and `{{owner}}` is the owner part of
-// `review.repo_slug` (`owner/name`). Each is replaced by its value with the
-// regular-expression characters escaped, so a pattern file can forbid an
-// organization's name and tracker keys without spelling them out. The
-// configuration is read only when a pattern line uses a placeholder. A
-// placeholder whose value cannot be read (no configuration, YAML that does
-// not parse, a field missing, empty or not text, a slug with no owner), or an
-// unknown `{{name}}`, makes the gate exit 2.
+// A pattern line, rejection or allow, may name a value the scanned
+// repository holds by placeholder: `{{team}}` is `issue_tracker.team` and
+// `{{owner}}` the owner part of `review.repo_slug` (`owner/name`), both in
+// `<root>/.config/jig.yaml`; `{{licensor}}` is the name on the copyright
+// line of `<root>/NOTICE`, the first line `Copyright <year> <name>`. Each is
+// replaced by its value with the regular-expression characters escaped, so a
+// pattern file can forbid an organization's name and tracker keys without
+// spelling them out. A file is read only when a pattern line uses a
+// placeholder it holds. A placeholder whose value cannot be read (the file
+// missing, YAML that does not parse, a field missing, empty or not text, a
+// slug with no owner, a notice with no copyright line or no name on it), or
+// an unknown `{{name}}`, makes the gate exit 2.
 import { readFileSync, realpathSync, lstatSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { cli, ere } from "../lib/cli.ts";
@@ -61,8 +63,36 @@ const compile = (line: string) =>
 /** A placeholder that cannot be filled: the gate cannot check (exit 2). */
 class Unresolved extends Error {}
 
-/** The configuration file a pattern file's placeholders are read from. */
+/** A file a placeholder is read from that cannot be read as what it is. */
+class Unreadable extends Error {
+  readonly file: string;
+  readonly problem: string;
+  constructor(file: string, problem: string) {
+    super(`${file}: ${problem}`);
+    this.file = file;
+    this.problem = problem;
+  }
+}
+
+/** The configuration file `{{team}}` and `{{owner}}` are read from. */
 const CONFIG = ".config/jig.yaml";
+
+/** The notice file `{{licensor}}` is read from: the name on its copyright line. */
+const NOTICE = "NOTICE";
+const COPYRIGHT_LINE = /^Copyright [0-9]{4} (.+)$/;
+
+/** The files placeholders are read from, each read on the first use. */
+interface Sources {
+  /** The parsed configuration. */
+  config: () => unknown;
+  /** The lines of the notice. */
+  notice: () => string[];
+}
+
+/** A placeholder's value from the sources, or what it needs and does not find. */
+interface Placeholder {
+  read: (sources: Sources) => { value: string } | { needs: string };
+}
 
 /** The value at `keys` in parsed YAML, or undefined where a key is missing. */
 function field(doc: unknown, keys: string[]): unknown {
@@ -76,48 +106,91 @@ function field(doc: unknown, keys: string[]): unknown {
 }
 
 /**
- * Each placeholder: the field it reads, how its value is taken from the
- * field's text, and the form that text must have when it is not used whole.
+ * A placeholder read from a field of the configuration: `take` makes the
+ * value from the field's text, which must have the `form` when it is not
+ * used whole.
  */
-const PLACEHOLDERS: Record<
-  string,
-  { field: string; value: (text: string) => string | undefined; form?: string }
-> = {
-  team: { field: "issue_tracker.team", value: (text) => text },
-  owner: {
-    field: "review.repo_slug",
-    value: (text) => /^([^/\s]+)\/[^/\s]+$/.exec(text)?.[1],
-    form: "owner/name",
+const configured = (
+  path: string,
+  take: (text: string) => string | undefined = (text) => text,
+  form?: string,
+): Placeholder => ({
+  read: (sources) => {
+    const raw = field(sources.config(), path.split("."));
+    const text = typeof raw === "string" ? raw.trim() : "";
+    const value = text ? take(text) : undefined;
+    if (value) return { value };
+    return {
+      needs: `${path} in ${CONFIG}${
+        text
+          ? ` in the form ${form}, not ${JSON.stringify(raw)}`
+          : " as non-empty text"
+      }`,
+    };
+  },
+});
+
+const PLACEHOLDERS: Record<string, Placeholder> = {
+  team: configured("issue_tracker.team"),
+  owner: configured(
+    "review.repo_slug",
+    (text) => /^([^/\s]+)\/[^/\s]+$/.exec(text)?.[1],
+    "owner/name",
+  ),
+  licensor: {
+    read: (sources) => {
+      for (const line of sources.notice()) {
+        const match = COPYRIGHT_LINE.exec(line);
+        if (!match) continue;
+        const value = (match[1] ?? "").trim();
+        return value
+          ? { value }
+          : { needs: `a name on the copyright line of ${NOTICE}` };
+      }
+      return { needs: `a line \`Copyright <year> <name>\` in ${NOTICE}` };
+    },
   },
 };
 
+/** A reader of the file at `path` as `parse` makes it, run once. */
+function source<T>(path: string, parse: (raw: string) => T): () => T {
+  let value: T | undefined;
+  let read = false;
+  return () => {
+    if (read) return value as T;
+    let raw: string;
+    try {
+      raw = readFileSync(path, "utf8");
+    } catch (error) {
+      throw new Unreadable(
+        path,
+        `cannot read it (${(error as NodeJS.ErrnoException).code ?? String(error)})`,
+      );
+    }
+    value = parse(raw);
+    read = true;
+    return value;
+  };
+}
+
 /**
- * A function that fills the placeholders of one pattern line. The
- * configuration under `root` is read on the first line that needs it.
+ * A function that fills the placeholders of one pattern line. The files
+ * under `root` are read on the first line that needs each.
  */
 function placeholderFiller(root: string, patterns: string) {
   const config = join(root, CONFIG);
-  let doc: unknown;
-  let loaded = false;
-  const load = (): unknown => {
-    if (loaded) return doc;
-    let raw: string;
-    try {
-      raw = readFileSync(config, "utf8");
-    } catch (error) {
-      throw new Unresolved(
-        `${patterns} uses placeholders, which are read from ${config}: cannot read it (${(error as NodeJS.ErrnoException).code ?? String(error)})`,
-      );
-    }
-    try {
-      doc = loadYaml(raw);
-    } catch (error) {
-      throw new Unresolved(
-        `${patterns} uses placeholders, which are read from ${config}: it does not parse as YAML (${error instanceof Error ? error.message.split("\n")[0] : String(error)})`,
-      );
-    }
-    loaded = true;
-    return doc;
+  const sources: Sources = {
+    config: source(config, (raw) => {
+      try {
+        return loadYaml(raw);
+      } catch (error) {
+        throw new Unreadable(
+          config,
+          `it does not parse as YAML (${error instanceof Error ? error.message.split("\n")[0] : String(error)})`,
+        );
+      }
+    }),
+    notice: source(join(root, NOTICE), (raw) => raw.split(/\r?\n/)),
   };
   return (text: string, line: number): string =>
     text.replace(/\{\{([^{}]*)\}\}/g, (_whole, name: string) => {
@@ -133,18 +206,19 @@ function placeholderFiller(root: string, patterns: string) {
             .map((known) => `{{${known}}}`)
             .join(", ")}`,
         );
-      const raw = field(load(), placeholder.field.split("."));
-      const text = typeof raw === "string" ? raw.trim() : "";
-      const value = text ? placeholder.value(text) : undefined;
-      if (!value)
-        throw new Unresolved(
-          `${place}: {{${name}}} needs ${placeholder.field} in ${config}${
-            text
-              ? ` in the form ${placeholder.form}, not ${JSON.stringify(raw)}`
-              : " as non-empty text"
-          }`,
-        );
-      return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      let read: ReturnType<Placeholder["read"]>;
+      try {
+        read = placeholder.read(sources);
+      } catch (error) {
+        if (error instanceof Unreadable)
+          throw new Unresolved(
+            `${place}: {{${name}}} is read from ${error.file}: ${error.problem}`,
+          );
+        throw error;
+      }
+      if ("needs" in read)
+        throw new Unresolved(`${place}: {{${name}}} needs ${read.needs}`);
+      return read.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     });
 }
 

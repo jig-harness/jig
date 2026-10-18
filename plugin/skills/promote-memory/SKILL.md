@@ -13,13 +13,13 @@ allowed-tools:
 # Promote memory
 
 Lift an agent-private memory into the team's git-tracked docs. This is the
-[memory promotion](https://github.com/docomply/jig/blob/main/GLOSSARY.md) step of Jig's learning loop
-([M8](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/README.md); its
-[flywheel template](https://github.com/docomply/jig/blob/main/modules/M8-learning-loop/templates/FLYWHEEL.md),
+[memory promotion](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) step of Jig's learning loop
+([M8](https://github.com/jig-harness/jig/blob/main/modules/M8-learning-loop/README.md); its
+[flywheel template](https://github.com/jig-harness/jig/blob/main/modules/M8-learning-loop/templates/FLYWHEEL.md),
 § Companion cycle: memory promotion), between the memory tiers that
-[M9](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/templates/MEMORY-TIERS.md) defines. The
+[M9](https://github.com/jig-harness/jig/blob/main/modules/M9-tasks-memory/templates/MEMORY-TIERS.md) defines. The
 promoted page lands in the docs tree that Jig's docs-as-wiki governance module
-([M4](https://github.com/docomply/jig/blob/main/modules/M4-docs-governance/README.md)) lays out.
+([M4](https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/README.md)) lays out.
 
 ## Context
 
@@ -35,7 +35,7 @@ A repository that works this way runs two knowledge systems side by side:
    decisions, the user's preferences and project context.
 2. **The team's docs.** The git-tracked docs tree (`docs/` unless the
    repository names another root), governed by the repository's wiki schema
-   (M4's [`WIKI-SCHEMA.md`](https://github.com/docomply/jig/blob/main/modules/M4-docs-governance/templates/WIKI-SCHEMA.md)
+   (M4's [`WIKI-SCHEMA.md`](https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/templates/WIKI-SCHEMA.md)
    template, adapted). Authoritative for the team.
 
 By default, session lessons stay in the private layer, so private
@@ -67,7 +67,7 @@ becomes everyone's wrong lesson.
 
 If the memory describes an **architectural decision**, use
 `/jig:adr` to write an architecture decision record
-([ADR](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) instead. A decision record carries more weight
+([ADR](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) instead. A decision record carries more weight
 than a retrospection page and goes through review. This skill is for
 observations and lessons, not decisions.
 

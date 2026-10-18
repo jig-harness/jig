@@ -1,6 +1,6 @@
 # `/jig:changelog`: a changelog nobody has to merge by hand
 
-A repository that keeps a [changelog](https://github.com/docomply/jig/blob/main/GLOSSARY.md)
+A repository that keeps a [changelog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
 and a version faces two bad options when many pull requests are open at once.
 If each pull request edits the changelog and bumps the version itself, every
 merge puts every other open pull request in conflict, and each conflict costs a
@@ -16,9 +16,9 @@ the changelog, moves the version and deletes the notes. The skill's scripts
 check that a branch follows the rules, show what the next release will be, run
 that release step and plan its tags, and a GitHub Action runs them in CI; its `SKILL.md` teaches an agent when a change needs a note
 and how to write one worth reading. The practices are
-[M12's change records](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md)
+[M12's change records](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md)
 (no two pull requests edit the same lines) and
-[M16, releases and versions](https://github.com/docomply/jig/blob/main/modules/M16-releases-versions/README.md)
+[M16, releases and versions](https://github.com/jig-harness/jig/blob/main/modules/M16-releases-versions/README.md)
 (a changelog written for the people who use the released artifact, the
 version chosen after the merge, a tag only on verified code).
 
@@ -167,7 +167,7 @@ tags and publishes an untagged history.
 ## In CI: the action and the workflow
 
 CI has no plugin installed, so the skill is also a GitHub Actions
-[composite action](https://github.com/docomply/jig/blob/main/GLOSSARY.md),
+[composite action](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
 [`action.yml`](action.yml), used as
 `uses: <jig-owner>/jig/plugin/skills/changelog@<commit> # v<version>`: the
 full commit of a Jig release's tag, since a tag can move and a commit cannot.
@@ -239,7 +239,7 @@ It keeps one changelog and one version per repository: a repository that
 releases several artifacts at their own versions (a monorepo's packages)
 needs a tool that keeps one per artifact, such as Changesets or
 release-please
-([M16's mappings](https://github.com/docomply/jig/blob/main/modules/M16-releases-versions/mappings.md#several-artifacts-in-one-repository)).
+([M16's mappings](https://github.com/jig-harness/jig/blob/main/modules/M16-releases-versions/mappings.md#several-artifacts-in-one-repository)).
 It does not publish anywhere (a GitHub Release, a package registry), or write
 entries from commit messages (a commit subject is written for a reviewer, a note
 for the changelog's reader). Its commands never commit, tag or push: in CI the

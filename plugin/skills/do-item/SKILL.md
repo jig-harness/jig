@@ -22,9 +22,9 @@ notices it.
 
 This is the runnable form of two practices: working an item from the
 tracker with its context kept where the next session finds it
-([M9 — Tasks & memory](https://github.com/docomply/jig/blob/main/modules/M9-tasks-memory/README.md)), and opening the pull request under the
+([M9 — Tasks & memory](https://github.com/jig-harness/jig/blob/main/modules/M9-tasks-memory/README.md)), and opening the pull request under the
 repository's policy and handing it to the review loop
-([M7 — PR lifecycle & review](https://github.com/docomply/jig/blob/main/modules/M7-pr-lifecycle-review/README.md)).
+([M7 — PR lifecycle & review](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md)).
 
 Jig maintains this procedure and ships it as the `jig` plugin.
 Each repository supplies its own values in `.config/jig.yaml`
@@ -58,16 +58,16 @@ run time from `.config/jig.yaml`:
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
-| `issue_tracker.adapter` | Which tracker adapter the scripts use (`linear` is the adapter built so far; Jira and a plan file kept in the repository are planned, [ROADMAP item 12](https://github.com/docomply/jig/blob/main/ROADMAP.md#12-more-tracker-adapters); credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client) | `linear` |
+| `issue_tracker.adapter` | Which tracker adapter the scripts use (`linear` is the adapter built so far; Jira and a plan file kept in the repository are planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters); credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client) | `linear` |
 | `issue_tracker.team` | The tracker team or project the repository files into, as the key its issue identifiers carry (`ENG` for `ENG-123`) | Required: the tracker scripts stop with a message naming this field |
 | `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress" |
 | `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
 | `issue_tracker.labels` | The repository's label for each role the skill acts on (see the table below) | The default names below |
 | `do_item.agents` | Routing from issue to implementing agent (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Every issue goes to `general-purpose` |
-| `do_item.scouts` | Pre-flight [scouts](https://github.com/docomply/jig/blob/main/GLOSSARY.md) per agent, `{agent: [scouts]}` | No scouts |
+| `do_item.scouts` | Pre-flight [scouts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) per agent, `{agent: [scouts]}` | No scouts |
 | `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
 | `do_item.execution_plan_block` | Name of the fenced block holding an epic's machine-readable execution plan | `execution-plan-v1` |
-| `drive.change_areas_catalog` | Path to the repository's [change-area catalog](https://github.com/docomply/jig/blob/main/GLOSSARY.md) (areas, their agents, validation plan and mandatory review skills) | No catalog: validate with the repository's gate command |
+| `drive.change_areas_catalog` | Path to the repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (areas, their agents, validation plan and mandatory review skills) | No catalog: validate with the repository's gate command |
 | `repository.base_branch` | The integration branch pull requests land on | The repository's default branch |
 | `drive.reviews_drafts` | `false` makes new pull requests open Ready, since the reviewer would not review a draft | Pull requests open as drafts |
 | `pull_requests.*` | How pull requests are opened and stacked: `stacking`, `max_stack_depth`, `open_as`, `mark_ready`, `branch_name`, `issue_link`, `size_budget`, `labels`, `title_format` (see [Pull-request policy](#pull-request-policy)) | One pull request per change against the integration branch, branch `{key_lower}-{slug}` (the lowercased key, then the title as at most 40 lowercase characters), draft, `Closes <key>`, marked Ready after the first review round; a human merges |
@@ -85,7 +85,7 @@ The skill acts on a few labels as process signals, by role:
 | Role (`issue_tracker.labels.<role>`) | Default | What it signals |
 |---------------------------------------|---------|-----------------|
 | `epic` | `epic` | An issue whose sub-issues are worked one at a time |
-| `hitl` | `hitl` | A deliverable that is a human's judgment (human-in-the-loop, [HITL](https://github.com/docomply/jig/blob/main/GLOSSARY.md)); its facets are `<hitl>:<stakeholder>` (`hitl:legal`, `hitl:product`, …) |
+| `hitl` | `hitl` | A deliverable that is a human's judgment (human-in-the-loop, [HITL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)); its facets are `<hitl>:<stakeholder>` (`hitl:legal`, `hitl:product`, …) |
 | `manual_ops` | `manual-ops` | A step a person performs outside the code |
 | `followup` | `pr-followup` | An issue filed from a review finding |
 | `bug` | `bug`, `type:bug` | A bug |
@@ -151,7 +151,7 @@ work around it:
 
 `--stack-on <branch>` asks to base the pull request on the head branch of
 another open pull request instead of the integration branch (a
-[stacked pull request](https://github.com/docomply/jig/blob/main/GLOSSARY.md)). Use it only
+[stacked pull request](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)). Use it only
 when this change builds on that pull request's unmerged work and the policy
 allows stacking. With `stacking: native` the plan's `afterCreate` links the
 new pull request into a GitHub stack with the gh-stack extension; with
@@ -164,7 +164,7 @@ The scripts reach the tracker through the tracker port in
 `${CLAUDE_SKILL_DIR}/scripts/lib/tracker/`, whose adapter the overlay's
 `issue_tracker.adapter` selects. A harness with a native integration for the
 same tracker may use it instead; the Linear forms, through Linear's Model
-Context Protocol ([MCP](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) tools, are given as the adapter example.
+Context Protocol ([MCP](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) tools, are given as the adapter example.
 
 | Operation | Script form | Adapter example: Linear (MCP) |
 |-----------|-------------|-------------------------------|
@@ -296,7 +296,7 @@ finite, non-negative age under 24 hours.
 
 The intent chain is the short statement of *why* this work exists — the
 epic's intent, the issue's scope and acceptance criteria — that
-[Refocus](https://github.com/docomply/jig/blob/main/GLOSSARY.md) puts
+[Refocus](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) puts
 back in front of an agent after its context is compacted, and at the top of
 every review round. Every invocation, first pickup and resume alike, writes
 `.context/intent-chain/<identifier>.md`.

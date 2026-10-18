@@ -77,7 +77,7 @@
 # Every `uses:` is pinned to a full commit, with its version as a comment.
 #
 # The skill:
-#   https://github.com/docomply/jig/blob/main/plugin/skills/changelog/README.md
+#   https://github.com/jig-harness/jig/blob/main/plugin/skills/changelog/README.md
 name: changelog
 
 on:

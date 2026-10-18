@@ -3,9 +3,9 @@
 > Copy this into your repo (e.g. `docs/development/ci-architecture.md`) and
 > adjust the tool names to your stack. It is the tool-independent contract; the
 > per-provider wiring lives in Jig's
-> [M10 mappings](https://github.com/docomply/jig/blob/main/modules/M10-environments-deploy/mappings.md), and
+> [M10 mappings](https://github.com/jig-harness/jig/blob/main/modules/M10-environments-deploy/mappings.md), and
 > the two enforcement gates in its
-> [`reference/`](https://github.com/docomply/jig/tree/main/modules/M10-environments-deploy/reference).
+> [`reference/`](https://github.com/jig-harness/jig/tree/main/modules/M10-environments-deploy/reference).
 
 ## The core idea: "it merged" is not "it's verified"
 
@@ -39,7 +39,7 @@ fires itself.
 
 Every pull request runs the quick, diff-scoped checks: format, lint, unit tests,
 type checks, the change-area-selected reviews (see
-[M7](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review)), and any security/link/table gates. These
+[M7](https://github.com/jig-harness/jig/tree/main/modules/M7-pr-lifecycle-review)), and any security/link/table gates. These
 are necessary but **not sufficient** — they see the diff, not the integrated
 system. A human still merges. PR gates *inform* that decision;
 they do not certify production-readiness.
@@ -78,7 +78,7 @@ database column queues behind the run in progress, a typo fix lands on top
 of it and takes its place in the queue, and the surviving run, diffed
 against its parent, sees the typo and never the rename. A run from another
 branch covers nothing of this queue, so it gets a slot of its own
-([M13 § Supersede](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/README.md#3-supersede)).
+([M13 § Supersede](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/README.md#3-supersede)).
 The workflow also accepts a manual dispatch, so the watchdog and a person can
 start verification again.
 
@@ -110,7 +110,7 @@ behind it; the watchdog bounds that wait, cancels the run that holds the
 slot (no gate is bypassed, the next run covers the whole gap) and fails,
 because the cancel frees the slot and the missing runner is a capacity fault
 only a person can repair
-([M13 § Bound](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/README.md#4-bound)).
+([M13 § Bound](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/README.md#4-bound)).
 A **diverged pointer**: one that is not an ancestor of the branch can never
 fast-forward again, so the watchdog fails and names the recovery, a
 back-merge (a commit on the branch with the branch's own tree and the
@@ -118,11 +118,11 @@ pointer's tip as its second parent); the pointer is never forced back.
 
 The watchdog runs on a runner pool other than the one it watches. It is a
 freshness gate on a *pointer* instead of a file (see
-[M2](https://github.com/docomply/jig/tree/main/modules/M2-generated-artifact-freshness));
+[M2](https://github.com/jig-harness/jig/tree/main/modules/M2-generated-artifact-freshness));
 the runnable decision is the
-[`verified-pointer`](https://github.com/docomply/jig/tree/main/modules/M10-environments-deploy/reference/verified-pointer)
+[`verified-pointer`](https://github.com/jig-harness/jig/tree/main/modules/M10-environments-deploy/reference/verified-pointer)
 check, and the collectors per provider are in the
-[M10 mappings](https://github.com/docomply/jig/blob/main/modules/M10-environments-deploy/mappings.md#the-verified-pointer-watchdog).
+[M10 mappings](https://github.com/jig-harness/jig/blob/main/modules/M10-environments-deploy/mappings.md#the-verified-pointer-watchdog).
 
 ### Stage 3 — deploy verified artifacts only
 
@@ -151,8 +151,8 @@ Production is reached by a **deliberate human action** on an
 already-verified-and-deployed build — a manual trigger plus an environment
 **protection rule** (required reviewers / a wait timer). It must be impossible
 for a push to auto-promote to production. This is the last human checkpoint (a
-[HITL](https://github.com/docomply/jig/tree/main/modules/M7-pr-lifecycle-review) boundary), and it is enforced by
-configuration, not habit: the [`promote-safety`](https://github.com/docomply/jig/tree/main/modules/M10-environments-deploy/reference/promote-safety)
+[HITL](https://github.com/jig-harness/jig/tree/main/modules/M7-pr-lifecycle-review) boundary), and it is enforced by
+configuration, not habit: the [`promote-safety`](https://github.com/jig-harness/jig/tree/main/modules/M10-environments-deploy/reference/promote-safety)
 lint fails a production deploy that auto-fires, ships a mutable ref, or looks
 its commit up again by name.
 
@@ -170,7 +170,7 @@ quietly ship something other than what the gate approved. So:
   the newest pending run silently discards a deliberate promotion. Refuse a
   re-run of a promotion, which keeps its original place in the order; start
   a new one. Check the lock again just before the migration.
-- **The promotion runs from the [trusted ref](https://github.com/docomply/jig/blob/main/GLOSSARY.md)** (the `verified` pointer). A manually started workflow
+- **The promotion runs from the [trusted ref](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)** (the `verified` pointer). A manually started workflow
   runs its definition from whichever branch the operator picks; start it from
   `verified`, check the gate's own code out from `verified`, and have the
   production environment admit only that ref.
@@ -198,9 +198,9 @@ demand instead, with a cheap proxy per change in its place (for example,
 
 The placement table, per change, after merge, on a schedule and on demand,
 is Jig's
-[M13 placement table](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/README.md#6-place);
+[M13 placement table](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/README.md#6-place);
 fill in your own suites in the copy of its
-[pipeline-economy template](https://github.com/docomply/jig/blob/main/modules/M13-pipeline-economy/templates/PIPELINE-ECONOMY.md).
+[pipeline-economy template](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/templates/PIPELINE-ECONOMY.md).
 Write the placement into the pipeline and check it: a heavy suite that gains
 a per-change trigger drifts back into everyone's wait. A scheduled suite
 reports its failures where someone will see them, and a schedule that
@@ -213,7 +213,7 @@ it runs) is a derived fact kept by people, and it drifts the way every such
 fact does: it lists what existed when it was written, and a pipeline added
 without its line is invisible to the reader the page exists for. Treat the
 page by the ladder for derived artifacts in
-[M2](https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/README.md#the-decision-ladder-drop--check--commit),
+[M2](https://github.com/jig-harness/jig/blob/main/modules/M2-generated-artifact-freshness/README.md#the-decision-ladder-drop--check--commit),
 in this order:
 
 1. **Drop it.** The provider's own list and a header comment at the top of
@@ -281,7 +281,7 @@ trailers are the promotion gap. It is **never kept by hand in tracker fields**,
 which drift the moment a promotion is forgotten. The report runs daily and on
 every push to a pointer branch, and its count per environment pair is a
 process metric
-(**[reference/promotion-gap](https://github.com/docomply/jig/tree/main/modules/M10-environments-deploy/reference/promotion-gap)**).
+(**[reference/promotion-gap](https://github.com/jig-harness/jig/tree/main/modules/M10-environments-deploy/reference/promotion-gap)**).
 
 ### A check confirms an environment's currency first
 

@@ -328,11 +328,51 @@ NOTICE, and vendored code arrives with its licence file and a NOTICE entry;
 
 ## Outside contributions
 
-A contribution from outside the maintainers is accepted under the project's
-licence: sign off each commit (`git commit -s`), which adds a
-`Signed-off-by:` line certifying the
+Jig has one maintainer, who decides what goes in
+([GOVERNANCE.md](GOVERNANCE.md)), and the rules in [AGENTS.md](AGENTS.md)
+decide most of it before anyone reads a diff: Jig states general patterns,
+keeps an organization's values in that organization's configuration, and
+brings in nothing a working repository has not validated. Within those
+rules:
+
+- **Welcome as a pull request, no issue first:** a row in a module's
+  `mappings.md` for another ecosystem; an adapter behind an interface that
+  already exists (an issue tracker, a reflection store, a launcher
+  provider); a bug fix with a test that fails without it; a correction to
+  text or a link; an audit criterion's probe made more precise.
+- **Open an issue first** (the "Proposed change" template): a new module,
+  criterion or skill; a change to an invariant a module states; a change
+  under `plugin/` beyond a fix, since it ships to every machine; a new
+  run-time dependency; a change to a gate's policy.
+- **Not taken:** material that names or copies an organization's own
+  repository, keys or values; a practice no repository has run; a rewrite
+  of a document or a skill; and a large unsolicited pull request, which is
+  closed with a pointer to this section.
+- **Larger than a fix?** A tool that speaks one of Jig's command
+  contracts, such as a reflection store, a validation-plan command or a
+  classify command ([plugin/EXTENDING.md](plugin/EXTENDING.md)), lives in
+  its own repository and Jig points to it; that is the normal way in. An
+  adapter that runs inside the plugin, such as an issue tracker's, is a
+  pull request to Jig.
+
+A contribution is accepted under the project's licence: sign off each
+commit (`git commit -s`), which adds a `Signed-off-by:` line certifying the
 [Developer Certificate of Origin](https://developercertificate.org/), that
-you wrote the change or otherwise have the right to submit it.
+you wrote the change or otherwise have the right to submit it. This
+applies to a contribution from outside the maintainers; a maintainer's
+own commits are covered by their role. No automated check enforces it:
+the maintainer who merges a pull request from outside checks that every
+commit carries the line, and does not merge until it does. No
+contributor licence agreement is asked for. Keep issue-tracker keys and
+links to private systems out of commit messages: a pull request description
+may link an issue; a commit message is history that anyone reads.
+
+A pull request from a fork runs the gates once a maintainer approves the
+workflow run, and the AI reviewer reads it once a maintainer adds the
+`ai-review` label; a maintainer's own pull requests get both without a
+step. Pull requests open as drafts and are driven to convergence the same
+way ([§ Pull-request lifecycle](#pull-request-lifecycle)); a contributor
+without the plugin drives the review by hand, one round at a time.
 
 ## Adding or changing a plugin skill
 

@@ -8,9 +8,9 @@
 # never a CI step; an entry without a check does not parse.
 #
 # The format and the runner:
-#   https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/reference/inventory/README.md
+#   https://github.com/jig-harness/jig/blob/main/modules/M2-generated-artifact-freshness/reference/inventory/README.md
 # The practice:
-#   https://github.com/docomply/jig/blob/main/modules/M2-generated-artifact-freshness/README.md
+#   https://github.com/jig-harness/jig/blob/main/modules/M2-generated-artifact-freshness/README.md
 
 generated:
   # One entry per generator. Paths are relative to the repository root.

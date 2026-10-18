@@ -633,7 +633,7 @@ These are set per machine or per run, not committed:
 | `GH_CALL_TIMEOUT` | Seconds one `gh` call may take; default 30 |
 | `JIG_LOG` | How much the scripts' diagnostics say on standard error: `error`, `warn` (the default), `info` or `debug`. At `debug` a failing script also prints the stack of the failure and its causes, with the last 4,096 bytes of a failed command's error output where the failure carries it (`resolve-review-comments`' `gh` calls), and an error dropped on purpose is printed with the reason |
 | `JIG_LOG_FORMAT` | `text` (the default) writes `<script>: <message>`; `json` writes one JSON object per line with the time, level, script, message and fields |
-| `JIG_TRACE` | `1` enables [trace spans](https://github.com/docomply/jig/blob/main/GLOSSARY.md) for drive passes, waits and commands; files are written under `~/.local/state/jig/traces/<date>/` and `reap-state.ts` reaps trace days older than 14 days |
+| `JIG_TRACE` | `1` enables [trace spans](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) for drive passes, waits and commands; files are written under `~/.local/state/jig/traces/<date>/` and `reap-state.ts` reaps trace days older than 14 days |
 | `JIG_TRACE_FILE` | Enables tracing to this JSON lines file instead of the default trace directory; child processes inherit the same destination |
 | `TRACEPARENT` | Carries the active trace and parent span to child processes; set by the runtime when tracing is enabled |
 | `AWAIT_ROUND_CHECKS_MAX_AGE` | Seconds a still-waiting read of a pull request's checks may be reused while nothing on GitHub changed; default 300, `0` always reads |
