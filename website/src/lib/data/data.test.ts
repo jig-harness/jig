@@ -238,7 +238,7 @@ test("the skills are in families, in the order they are used, each saying how it
         "fix-ci",
       ],
     ],
-    ["Review a change", ["review", "github-actions"]],
+    ["Review a change", ["change-areas", "review", "github-actions"]],
     [
       "Understand, decide and record",
       ["explain", "decide", "adr", "design-brief-builder"],

@@ -239,7 +239,7 @@ supports. What they rely on:
 - `CODEOWNERS` and the "delete head branches on merge" setting, read and
   reported.
 
-**Works without GitHub:** `adr`, `code-stats`, `decide`, `explain`, `design-brief-builder`,
+**Works without GitHub:** `adr`, `change-areas`, `code-stats`, `decide`, `explain`, `design-brief-builder`,
 `programmatic-execution`, `promote-memory`, `resolve-conflicts`, `review` on a
 local diff, `fix-ci` on a saved log (`--log <file>`), and the audit with
 `--offline`. The modules' reference gates take their input as files or

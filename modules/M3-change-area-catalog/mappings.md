@@ -8,12 +8,16 @@ trackers, and deploy systems. Replace `<placeholders>` with your repo's values.
 ## CI job selection (the primary consumer)
 
 The resolver turns changed files into a set of affected areas; CI uses that
-set to decide which jobs run. Two idioms:
+set to decide which jobs run. The commands below are the plugin's
+[`change-areas` skill](../../plugin/skills/change-areas/README.md)
+(`<skill-dir>` is its directory: in the installed plugin, or in a pinned
+Jig checkout where CI has no plugin; a repository with a
+[composer](../../GLOSSARY.md) runs that instead). The idioms:
 
 | Approach | How | When |
 |----------|-----|------|
 | **Native path-filter** (static projection) | generate the provider's path-filter config from the catalog (each area's globs ∪ the globs of everything that transitively implies it); the provider decides per-job | simplest; no resolver at runtime; good when "affected = paths changed" is enough |
-| **Resolver outputs** (dynamic projection) | run the resolver in a setup job, emit `area=true/false` outputs, and gate downstream jobs on them | needed when `impliedBy` closure matters (a shared-lib change must trigger app jobs whose own paths didn't change) |
+| **Resolver outputs** (dynamic projection) | run the resolver in a setup job, emit `area=true/false` outputs for the closure and `area-seed=true/false` for the direct match, and gate downstream jobs on them | needed when `impliedBy` closure matters (a shared-lib change must trigger app jobs whose own paths didn't change) |
 
 ### GitHub Actions
 
@@ -28,8 +32,8 @@ jobs:
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
         with: { fetch-depth: 0 }   # resolver needs the base..HEAD diff
-      - id: r
-        run: <your-resolver> --emit gha >> "$GITHUB_OUTPUT"
+      - id: r                    # appends <area>= and <area>-seed= lines to $GITHUB_OUTPUT
+        run: bun <skill-dir>/scripts/resolve.ts --format gha
   build-web:
     needs: resolve
     if: needs.resolve.outputs.web-app == 'true'
@@ -37,9 +41,18 @@ jobs:
     steps: [ ... ]
 ```
 
+The per-area outputs say nothing about a changed file that matches no area,
+which should select every job ([M13](../M13-pipeline-economy/README.md#2-select)).
+Add that signal through the repository's composer (`ghaOutputs`, for
+instance a `code=` line from `hasUnmatchedFile`, as Jig's own
+`scripts/change-areas.ts` writes one), or keep every file covered with a
+coverage check (`uncoveredFiles`) so there is no unmatched file to miss.
+
 ```yaml
 # Static: a generated dorny/paths-filter config (committed, freshness-gated).
-# Regenerate from the catalog; a drift check (see M2) fails when it is stale.
+# Regenerate with `bun <skill-dir>/scripts/resolve.ts --format dorny
+# --output .github/change-area-filters.yml`; a drift check (see M2) fails when
+# it is stale.
 - uses: dorny/paths-filter@<full-commit-sha> # v3
   id: filter
   with: { filters: .github/change-area-filters.yml }   # generated projection
@@ -55,21 +68,23 @@ build-web:
   script: [ ... ]
 ```
 
-Any CI that can run a script can run the resolver and consume its outputs;
-any CI with a path-filter primitive can consume the static projection. The
-only provider-specific choices are the diff range the resolver reads
-(`pull_request` base…HEAD, merge-commit parent union) and the outputs syntax.
+Any CI that can run a script can run the resolver and consume its outputs
+(`--format json` for anything other than GitHub's output syntax); any CI with
+a path-filter primitive can consume the static projection. The only
+provider-specific choices are the diff range the resolver reads
+(`pull_request` base…HEAD, merge-commit parent union; the skill's `--base`,
+`--event` and `--since`) and the outputs syntax.
 
 ## Issue trackers (label / flag projection)
 
 Each area's `tracker.labels` and process-driving `tracker.flags` (see the
 [flag-label](../../GLOSSARY.md) concept and [M9](../M9-tasks-memory/)) become
-tracker labels/flags applied to the PR/issue — but not from the same
-population: `labels` come from the *seeded* areas only (accuracy — a label
-describes what changed), while `flags` come from the seeded areas'
-`impliedBy` *closure* (a shared-library change must still trigger review of
-its dependents), each flag decided per area rather than inherited as a side
-effect of an unrelated `impliedBy` edge. See [§ Seeds vs.
+tracker labels/flags applied to the PR/issue, both from the *seeded* areas
+only: a label or flag is a lasting claim about what changed, so an
+over-derived one is a lasting false statement. A flag that must fire for a
+change goes on an area that change seeds directly; mandatory reviews, which
+must reach dependents, are `review.skills` and read the closure. The
+resolver's JSON carries both sets under `linear`. See [§ Seeds vs.
 closure](reference/catalog/README.md#seeds-vs-closure--which-side-each-projection-reads)
 for the full rule.
 
@@ -77,7 +92,7 @@ for the full rule.
 |---------|-------------|
 | GitHub | `gh pr edit --add-label` in a CI step, or `actions/labeler` fed the generated area→label map |
 | GitLab | scoped labels via the API in a job, or `/label` quick-actions in an MR note |
-| Linear / Jira | the tracker's API/automation, mapping *seed* area → label and *closure* area → flag; a `flag` label (e.g. `has-migration`) can trigger a mandatory review gate |
+| Linear / Jira | the tracker's API/automation, mapping *seed* area → label and flag; a `flag` label (e.g. `has-migration`) can trigger a process step, and sits on an area whose `paths` cover exactly the trigger files |
 
 ## Deploy tiers & post-deploy actions
 
@@ -87,7 +102,7 @@ projection — the deploy system stays generic:
 
 | System | Consume the projection |
 |--------|------------------------|
-| GitHub Actions deploy workflow | read the resolved `deployTier`/`postDeploy` JSON to pick the environment and the post-deploy step |
+| GitHub Actions deploy workflow | read the resolved `postDeploy` JSON (or the `--format checklist` Markdown) and the affected areas' `deployTier` to pick the environment and the post-deploy step |
 | Argo / Flux / other GitOps | map `deployTier` to a sync wave or a target cluster; post-deploy actions as post-sync hooks |
 | Manual runbook | render the post-deploy checklist (Markdown projection) into the release notes / PR body |
 
@@ -98,7 +113,7 @@ projects to the local hook layer, not CI job selection:
 
 | Hook manager | Wire it |
 |--------------|---------|
-| lefthook / husky / pre-commit | in the pre-push hook, resolve the seeded areas; a changed file matching no area, and a seeded area with no `validation.profile`, both compute as `deep` (the same fail-closed default the catalog defines — see [§ Agent gate depth](reference/catalog/README.md#agent-gate-depth-validation)), so an empty or unmatched-only resolution is `deep`, never vacuously `shallow`; separately, walk the `impliedBy` closure of the seeded areas (not the seeds alone) and fail closed to a CI-identical sandbox if *any* reached area has `needsSandbox: true` — a dependency's sandbox requirement protects an affected dependent even when the dependent itself wasn't directly touched; skip the cross-worktree mutex ([M12](../M12-parallel-agent-ergonomics/)'s [`with-resource-lock.ts`](../M12-parallel-agent-ergonomics/reference/resource-lock/with-resource-lock.ts)) only when *both* computations clear: the deepest profile is all-`shallow` **and** the closure has no `needsSandbox: true` area — profile depth alone is seed-only and can't see a `needsSandbox` dependent reached only through closure |
+| lefthook / husky / pre-commit | in the pre-push hook, pipe the changed files separated by null bytes (`git diff -z --name-only`) to `bun <skill-dir>/scripts/resolve.ts --files - -z --format json` under `set -o pipefail`, so a path git would quote keeps its name, and run its `validation.verificationChecks`. A changed file matching no area, and a seeded area with no `validation.profile`, both select the deepest profile (the fail-closed default the catalog defines — see [§ Agent gate depth](reference/catalog/README.md#agent-gate-depth-validation)); an empty list selects no checks, because it means nothing changed, so a git command that fails must fail the hook rather than hand the resolver an empty list. Where the repository's composer computes a remote-machine requirement (`validation.testbox.required`, from the seeds' closure), fail closed to that machine when it is set; skip the cross-worktree mutex ([M12](../M12-parallel-agent-ergonomics/)'s [`with-resource-lock.ts`](../M12-parallel-agent-ergonomics/reference/resource-lock/with-resource-lock.ts)) only when the plan selects no heavy profile **and** requires no remote machine — profile depth alone is seed-only and can't see a dependent reached only through the closure |
 | CI | re-run the deepest profile's full gate set regardless of what the local hook skipped — CI stays the authority ([M1](../M1-gates-enforcement-ladder/)) |
 
 ## Regex-mirror guard (optional optimization)
@@ -106,7 +121,9 @@ projects to the local hook layer, not CI job selection:
 Only relevant if you keep a fast hand-written CI regex for "did code change?".
 The runnable regex→catalog check ([`reference/regex-mirror/`](reference/regex-mirror/))
 needs only Bun and runs in any CI. The catalog→regex direction needs the
-resolver's area list — wire it into the same job that runs your catalog checker.
+resolver's closure, which the `change-areas` skill's library exports — build
+it there and wire it into the same job that runs the catalog check
+(`bun <skill-dir>/scripts/check.ts`).
 
 ## Anchor corroboration recipe
 

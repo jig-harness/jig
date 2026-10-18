@@ -287,11 +287,12 @@ reported before Jig takes the skill.
    `scripts/lib/change-areas-catalog.ts` reads the consumer repository's
    catalog (`drive.change_areas_catalog`) for every skill, matches a path to
    the areas whose own `paths` match it (`areasOf`), and returns each area's
-   `tracker.labels` and `tracker.flags`. The full
-   [M3](../modules/M3-change-area-catalog/README.md) resolver, with its
-   implied-by closure, is not needed for batching and stays a "Later" item.
-   Jig's own `scripts/change-areas.ts` checks Jig's catalog for Jig's CI and
-   stays where it is.
+   `tracker.labels` and `tracker.flags`. Batching needs no implied-by
+   closure, so it reads the catalog through this reader rather than the full
+   [M3](../modules/M3-change-area-catalog/README.md) resolver, which the
+   plugin's [change-areas skill](../plugin/skills/change-areas/README.md)
+   ships. Jig's own `scripts/change-areas.ts` checks Jig's catalog for Jig's
+   CI as a composer over that skill.
 4. **The skill.** `candidates.ts` and its tests move, rewritten against the
    tracker interface and the configuration above. `SKILL.md` and
    `batch-policy.md` move with their origin references, review history and

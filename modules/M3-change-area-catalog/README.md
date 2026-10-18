@@ -39,14 +39,17 @@ one shared change-area vocabulary, many thin per-consumer projections.
    labels, post-deploy actions, and an `impliedBy` list — the one relation that
    encodes dependencies between areas.
 2. **The resolver** — pure function: a set of changed file paths → the seed
-   areas whose globs match → the transitive closure over `impliedBy` → the
-   union of all their implications. One directed relation expresses both
-   fan-out (one shared library implies every app that lists it) and fan-in (one
-   aggregator area lists many sources in its own `impliedBy`).
+   areas, those whose `paths` or a generator's `source` globs match a changed
+   file → the transitive closure over `impliedBy` → the union of all their
+   implications. One directed relation expresses both fan-out (one shared
+   library implies every app that lists it) and fan-in (one aggregator area
+   lists many sources in its own `impliedBy`).
 3. **Projections (generated)** — the per-consumer views emitted from the
-   catalog: a CI path-filter, a review-gate table, a component directory, a
-   post-deploy checklist, tracker-label sets, a JSON resolution for other
-   tooling. Each is freshness-gated (see [M2](../M2-generated-artifact-freshness/)):
+   catalog: a CI path-filter, per-event CI outputs (one for the closure and
+   one for the seeds of each area), a review-gate table, a component
+   directory, a post-deploy checklist, tracker labels and flags, and a JSON
+   resolution with the change's validation plan for other tooling. Each
+   committed one is freshness-gated (see [M2](../M2-generated-artifact-freshness/)):
    a committed projection that no longer matches the catalog fails CI.
 4. **The regex-mirror guard** — when a repo keeps a fast hand-written CI regex
    ("did any *code* change?") to avoid running the full resolver on every event,
@@ -73,14 +76,18 @@ one shared change-area vocabulary, many thin per-consumer projections.
    one — see the pattern in [`adoption/brownfield.md`](../../adoption/brownfield.md#grandfathering-a-coverage-gate)
    and its catalog-specific mechanism in
    [`reference/catalog/README.md`](reference/catalog/README.md#grandfathering-catalog-coverage).
-6. **Agent gate-depth (`validation:`)** — a projection answering "what must a
-   coding agent run before commit and push, and does it need a CI-identical
-   sandbox," with its depth read from the same *seeds* as labels, not the
-   closure — except the sandbox requirement itself, which reads the seeded
-   areas' closure so it still protects an affected dependent the change
-   didn't directly touch. Cross-cuts [M1](../M1-gates-enforcement-ladder/)
-   (which gate rung runs) and [M12](../M12-parallel-agent-ergonomics/) (a
-   shallow-enough answer can skip the cross-worktree heavy-run mutex).
+6. **Agent gate depth (`validation:`)** — a projection answering "what must a
+   coding agent run before commit and push." The catalog declares its
+   [validation profiles](../../GLOSSARY.md) under `profiles:`, shallowest
+   first; an area may name one, and an area that names none, like a changed
+   file no area matches, gets the deepest. The depth is read from the
+   *seeds*, like tracker labels. A repository whose agents must also run on
+   a CI-identical remote machine computes that requirement in its own
+   [composer](../../GLOSSARY.md), from the seeds' closure, so it still
+   protects a dependent the change did not touch. Cross-cuts
+   [M1](../M1-gates-enforcement-ladder/) (which gate rung runs) and
+   [M12](../M12-parallel-agent-ergonomics/) (a shallow-enough answer can skip
+   the cross-worktree heavy-run mutex).
 7. **Generated-output coupling (`generated:`)** — an area declares the
    derived files it owns, in [M2](../M2-generated-artifact-freshness/)'s
    inventory format (outputs, source, regenerate command, check), so a
@@ -88,7 +95,9 @@ one shared change-area vocabulary, many thin per-consumer projections.
    [freshness gate](../M2-generated-artifact-freshness/) without escalating to
    full validation, the regenerate command isn't triplicated across a
    hook, CI, and prose, and M2's generic runner reads the catalog as the
-   inventory and runs every declared check.
+   inventory and runs every declared check. A change to a generator's
+   `source` seeds its owning area, even where the source lies under another
+   area's `paths`, so the generator and its check are in that change's plan.
 
 ## Design rules
 
@@ -105,15 +114,15 @@ one shared change-area vocabulary, many thin per-consumer projections.
 - **Don't populate a projection block before its consumer exists** — an empty
   `review`/`postDeploy`/tracker-label block is drift waiting to happen.
 - **Every projection reads one side of `impliedBy`, and must say which**:
-  fan-in *closure* answers "what are the consequences?" (deploy tiers,
-  post-deploy actions — over-triggering is cheap here); *seeds* answer "what
-  did this change touch?" (tracker labels, `validation:`, `generated:` —
-  accuracy matters more than coverage here). Mandatory review-gate flags need
-  the closure's reach (a shared-library change must still trigger review of
-  its dependents) but a flag's placement on an area is a *decision* made
-  against that area's real membership, never *inherited* as a side effect of
-  some unrelated area's `impliedBy` edge. Getting this backwards is a
-  demonstrated failure mode — see the worked table in
+  the *closure* answers "what are the consequences?" (deploy tiers,
+  post-deploy actions, mandatory reviews in `review.skills`); the
+  [*seeds*](../../GLOSSARY.md) answer "what did this change touch?" (tracker
+  labels and flags, `validation:`, `generated:`). Reviews fail toward
+  coverage: a missed review is a defect, an extra one costs one run. Labels
+  and flags fail toward accuracy: they are lasting claims on the issue
+  record, so an over-derived one is a lasting false statement. A flag that
+  must fire for a change goes on an area that change seeds directly. See the
+  table in
   [`reference/catalog/README.md`](reference/catalog/README.md#seeds-vs-closure--which-side-each-projection-reads).
 - **The catalog's own structural check needs one required hand-written
   shortcut**: a self-check cannot ask its subject whether it should run, so
@@ -159,13 +168,15 @@ one shared change-area vocabulary, many thin per-consumer projections.
    (a copyable one-area starter) or
    [`reference/catalog/catalog.example.yaml`](reference/catalog/catalog.example.yaml)
    (exercises every field); validate it against the schema and graph
-   invariants in [`reference/catalog/README.md`](reference/catalog/README.md).
+   invariants in [`reference/catalog/README.md`](reference/catalog/README.md)
+   with `/jig:change-areas` (its `scripts/check.ts`).
    This is **Lite** — consumers can still reference area names by hand.
-2. Add a schema/graph CI check and generate at least one consumer projection
-   (CI job selection or the review-gate table) from the catalog with a
-   freshness gate ([M2](../M2-generated-artifact-freshness/)); gate
-   workspace-coverage so a new, unmapped workspace fails CI. This is
-   **Standard**.
+2. Run that check in CI and generate at least one consumer projection from
+   the catalog: CI job selection with the skill's `--format gha` (per-event
+   outputs) or `--format dorny` (a path-filter spec, committed with a
+   freshness gate, [M2](../M2-generated-artifact-freshness/)), or the
+   review-gate table; gate workspace-coverage so a new, unmapped workspace
+   fails CI. This is **Standard**.
 3. Generate every remaining consumer as a projection, drive CI job selection
    from the resolver itself, and — if you keep a hand-written CI shortcut
    regex — wire it to the regex-mirror guard
@@ -202,20 +213,28 @@ What this module provides:
 - [`mappings.md`](mappings.md) (CI path filters, tracker labels, deploy tiers)
   and the module's [maturity criteria](../../plugin/skills/audit/criteria/M3-change-area-catalog.yaml).
 
-Jig's own catalog (`.config/change-areas.yaml`) is a working instance:
-[`scripts/change-areas.ts`](../../scripts/change-areas.ts) validates it,
-checks that every file belongs to an area, and resolves a pull request's
-changed files to the areas that select its CI jobs. Read it as a worked
-example; it knows only the fields Jig's catalog uses.
+The runnable form is the plugin's
+[`change-areas` skill](../../plugin/skills/change-areas/README.md): the
+schema validation, the graph and repository invariants, the resolver with
+its git layer, and the projections (CI outputs, a path-filter spec, JSON with
+the validation plan, the post-deploy checklist, the review-gate table).
+[`reference/catalog/README.md`](reference/catalog/README.md) is the
+specification it implements; a repository that implements the resolver in
+another language holds it to the same file. A repository whose catalog
+needs more than the generic schema runs the skill through a
+[composer](../../GLOSSARY.md). Jig's own catalog (`.config/change-areas.yaml`)
+does: [`scripts/change-areas.ts`](../../scripts/change-areas.ts) adds Jig's
+own field, its outputs and the policy that every file belongs to an area.
 
 How CI uses the resolver (one resolver job per run, gates selected by their
 own area, an unmatched file selecting everything) is
 [M13 pipeline economy](../M13-pipeline-economy/README.md#2-select).
 
-Deliberately left out: a portable resolver, catalog validator and projection
-emitters for other repositories. A change-area resolver is a structured-data
-and graph job best written in the language the consumer repository already
-uses, so the module specifies it instead of shipping one; only the regex →
-catalog check, which needs no resolver, is runnable here as a reference. The
-other three guard checks are documented recipes. All area names, deploy tiers
-and post-deploy actions are neutral examples.
+Deliberately left out: of the regex-mirror guard's checks, only the regex →
+catalog one is runnable here; the others are documented recipes rather than
+runnable gates. All area names, deploy tiers and post-deploy actions
+are neutral examples.
+
+Future: a lint that checks the path lists in agent rules, hook
+configuration and CI workflow triggers against the catalog, so a consumer
+that restates the catalog's globs is caught when they drift.

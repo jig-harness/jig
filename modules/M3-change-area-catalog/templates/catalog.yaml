@@ -3,12 +3,26 @@
 # truth mapping path patterns -> change-areas -> implications; every consumer
 # (CI selection, review gates, tracker labels, deploy tiers) is generated from
 # it. See the module README and reference/catalog/ for the full field spec,
-# the resolver algorithm, and a worked multi-area example.
+# the resolver algorithm, and a worked multi-area example. As written, it
+# loads under the schema of Jig's change-areas skill.
+
+# --- optional: close the open fields, and declare the validation profiles ---
+# vocabularies:                    # each a non-empty list; a field without one takes any text
+#   category: [<group>, ...]
+#   deployTier: [<tier>, none]
+# profiles:                        # shallowest first; the LAST is the deepest and the default
+#   <shallow>:
+#     localChecks: ["<pre-commit command>"]
+#     verificationChecks: ["<verification command>"]
+#   <deep>:
+#     localChecks: ["<pre-commit command>", "<test command>"]
+#     verificationChecks: ["<verification command>", "<test command>"]
 
 areas:
   # One area per "kind of change." The id is a kebab-case slug used by every
   # consumer — they reference this name, never re-hardcode the globs below.
-  <area-id>:
+  # Rename `my-area` to your own.
+  my-area:
     title: "<Human Name>"
     category: <group>            # grouping tag only — NOT a build/deploy lane
     paths: ["<glob>/**"]         # globs that define membership (>=1)
@@ -27,9 +41,10 @@ areas:
     #   labels: [<tracker-label>]
     # agent: <owning-agent>
     # validation:
-    #   profile: <deep|shallow>        # what a coding agent must run pre-commit/push
-    #                                  # (omitting this block, or `profile`, defaults to `deep`)
-    #   needsSandbox: <true|false>     # does it need a CI-identical sandbox
+    #   profile: <profile>             # a name under `profiles`: what a coding agent must run
+    #                                  # pre-commit/push (omitting this block, or `profile`,
+    #                                  # defaults to the deepest profile)
+    #   ownTests: "<test command>"     # the area's own suite, run before commit and in verification
     #   notes: "why this depth"
     # generated:                        # the derived files this area owns, in M2's inventory format
     #   - outputs: ["<derived-file>"]   # each declared once, matched by this area's `paths`

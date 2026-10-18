@@ -1,41 +1,46 @@
-// Scope: Jig's change-area catalog (.config/change-areas.yaml, module M3).
-// `--check` validates the catalog's schema and implied-by graph and that every
-// repository file belongs to an area: exit 1 on a violation, 2 when the
-// catalog cannot be read. `--base <ref>` resolves the files changed since the
-// merge base with <ref> to areas and prints the resolution as JSON; under
-// GitHub Actions it also writes the `areas` and `code` step outputs the CI
-// workflow selects jobs by. `--all` resolves to every area.
-import { appendFileSync, readFileSync } from "node:fs";
+// Scope: Jig's change-area catalog (.config/change-areas.yaml, module M3),
+// read through the plugin's change-areas skill, which ships the schema, the
+// resolver and the invariants; this script adds Jig's own policy on top.
+// `--check` validates the catalog and that every repository file belongs to
+// an area: exit 1 on a violation, 2 when the catalog cannot be read.
+// `--base <ref>` resolves the files changed since the merge base with <ref>
+// to areas and prints the resolution as JSON; under GitHub Actions it also
+// writes the `areas` and `code` step outputs the CI workflow selects jobs by.
+// `--all` resolves to every area.
+import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { repoFiles } from "../lib/files.ts";
 import { isRecord } from "../lib/record.ts";
-import {
-  LEAKY_GIT_ENV,
-  spawnSync,
-} from "../plugin/shared/guarded-git-spawn.ts";
 import { couldNotCheck } from "../lib/findings.ts";
-import { load as loadYaml } from "../lib/vendor/js-yaml.mjs";
+import {
+  type Area as SharedArea,
+  type Catalog as SharedCatalog,
+  catalogProblems as schemaProblems,
+  type FieldExtensions,
+  readCatalogFile,
+} from "../plugin/skills/change-areas/scripts/lib/catalog.ts";
+import {
+  generatedProblems,
+  graphProblems,
+  uncoveredFiles as sharedUncovered,
+  workspaceProblems,
+} from "../plugin/skills/change-areas/scripts/lib/check.ts";
+import {
+  applyImpliedClosure,
+  defaultGitRunner,
+  matchSeedAreas,
+} from "../plugin/skills/change-areas/scripts/lib/resolve.ts";
 import { generatedListProblems } from "../modules/M2-generated-artifact-freshness/reference/inventory/run-generated-checks.ts";
 
 export const CATALOG = ".config/change-areas.yaml";
 
-const AREA_ID = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const CATEGORIES = ["skill", "library", "tooling", "infra", "docs"];
-const DEPLOY_TIERS = ["plugin", "none"];
-const REVIEW_RISKS = ["high"];
+/** The field Jig's catalog adds to the shipped schema. */
+const FIELDS: FieldExtensions = { area: { reviewRisk: ["high"] } };
 
-export interface Area {
-  title: string;
-  category: string;
-  paths: string[];
-  workspace: string[];
-  impliedBy: string[];
-  deployTier: string;
+export interface Area extends SharedArea {
   /** `high` puts the area's paths in the AI reviewer's high-risk list. */
   reviewRisk?: string;
-  /** The derived files the area owns, in M2's inventory format. */
-  generated?: unknown[];
 }
 export type Catalog = Record<string, Area>;
 
@@ -51,60 +56,8 @@ export interface Resolution {
   code: boolean;
 }
 
-function isStringList(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((v) => typeof v === "string");
-}
-
-const oneOf = (field: string, allowed: string[]) => (value: unknown) =>
-  typeof value === "string" && allowed.includes(value)
-    ? null
-    : `${field} \`${JSON.stringify(value)}\` is not one of ${allowed.join(", ")}`;
-
-/**
- * Each area field, whether it is required, and the problem its value has, if
- * any. A field not listed here is unknown.
- */
-const FIELDS: Record<
-  string,
-  { required: boolean; check: (value: unknown) => string | null }
-> = {
-  title: {
-    required: true,
-    check: (v) => (typeof v === "string" ? null : "`title` is not text"),
-  },
-  category: { required: true, check: oneOf("category", CATEGORIES) },
-  paths: {
-    required: true,
-    check: (v) =>
-      isStringList(v) && v.length > 0 && !v.includes("")
-        ? null
-        : "`paths` must list at least one glob",
-  },
-  workspace: {
-    required: true,
-    check: (v) => (isStringList(v) ? null : "`workspace` must be a list"),
-  },
-  impliedBy: {
-    required: true,
-    check: (v) =>
-      isStringList(v) ? null : "`impliedBy` must be a list of area ids",
-  },
-  deployTier: { required: true, check: oneOf("deployTier", DEPLOY_TIERS) },
-  notes: {
-    required: false,
-    check: (v) => (typeof v === "string" ? null : "`notes` is not text"),
-  },
-  reviewRisk: { required: false, check: oneOf("reviewRisk", REVIEW_RISKS) },
-  // M2's inventory entries (outputs, source, command, check), which
-  // scripts/check-generated-files.ts runs; their shape is the runner's.
-  generated: {
-    required: false,
-    check: (v) => {
-      const problems = generatedListProblems(v, "generated");
-      return problems.length ? problems.join("; ") : null;
-    },
-  },
-};
+const shared = (catalog: Catalog): SharedCatalog => ({ areas: catalog });
+const slashes = (files: string[]) => files.map((f) => f.replaceAll("\\", "/"));
 
 /**
  * Read the catalog file; throws when it cannot be read or parsed, or repeats
@@ -112,117 +65,38 @@ const FIELDS: Record<
  * drop an area).
  */
 export function readCatalog(path: string): unknown {
-  return loadYaml(readFileSync(path, "utf8"));
+  return readCatalogFile(path);
 }
 
 /**
  * Schema and graph problems of a parsed catalog, in a stable order. Empty
- * means the catalog is valid: kebab-case ids, known fields only, closed
- * categories and deploy tiers, at least one path per area, and an
+ * means the catalog is valid: the shipped schema with Jig's `reviewRisk`
+ * field and its own vocabularies, each derived-file entry in the shape M2's
+ * runner reads (scripts/check-generated-files.ts runs them), and an
  * implied-by relation whose references exist, never point at their own area
- * and form no cycle.
+ * and form no cycle. Both schemas check the derived-file entries; a problem
+ * both report is listed once.
  */
 export function catalogProblems(doc: unknown): string[] {
-  if (!isRecord(doc) || !isRecord(doc.areas))
-    return ["the catalog has no `areas` map"];
-  const areas = doc.areas;
-  const problems = Object.keys(doc)
-    .filter((key) => key !== "areas")
-    .map((key) => `unknown top-level field \`${key}\``);
-  for (const [id, area] of Object.entries(areas))
-    problems.push(...areaProblems(id, area, areas).map((p) => `${id}: ${p}`));
-  if (problems.length === 0) {
-    const cycle = findCycle(areas as Catalog);
-    if (cycle) problems.push(`impliedBy cycle: ${cycle.join(" -> ")}`);
-  }
-  return problems;
+  const problems = schemaProblems(doc, FIELDS);
+  if (isRecord(doc) && isRecord(doc.areas))
+    for (const [id, area] of Object.entries(doc.areas))
+      if (isRecord(area) && area.generated !== undefined)
+        problems.push(
+          ...generatedListProblems(area.generated, "generated").map(
+            (p) => `${id}: ${p}`,
+          ),
+        );
+  if (problems.length === 0)
+    problems.push(...graphProblems(doc as SharedCatalog));
+  return [...new Set(problems)];
 }
 
-function areaProblems(
-  id: string,
-  area: unknown,
-  areas: Record<string, unknown>,
-): string[] {
-  const problems = AREA_ID.test(id) ? [] : ["the id is not kebab-case"];
-  if (!isRecord(area)) return [...problems, "not a map"];
-  return [
-    ...problems,
-    ...fieldProblems(area),
-    ...referenceProblems(id, area.impliedBy, areas),
-  ];
-}
-
-function fieldProblems(area: Record<string, unknown>): string[] {
-  const problems = Object.keys(area)
-    .filter((field) => !Object.hasOwn(FIELDS, field))
-    .map((field) => `unknown field \`${field}\``);
-  for (const [field, { required, check }] of Object.entries(FIELDS)) {
-    const problem = Object.hasOwn(area, field)
-      ? check(area[field])
-      : required
-        ? `\`${field}\` is missing`
-        : null;
-    if (problem) problems.push(problem);
-  }
-  return problems;
-}
-
-function referenceProblems(
-  id: string,
-  impliedBy: unknown,
-  areas: Record<string, unknown>,
-): string[] {
-  if (!isStringList(impliedBy)) return [];
-  return impliedBy.flatMap((ref) =>
-    ref === id
-      ? ["implies itself"]
-      : Object.hasOwn(areas, ref)
-        ? []
-        : [`impliedBy names unknown area \`${ref}\``],
-  );
-}
-
-/** One cycle of the implied-by relation, or null when there is none. */
-function findCycle(catalog: Catalog): string[] | null {
-  const state = new Map<string, "visiting" | "done">();
-  const path: string[] = [];
-  function visit(id: string): string[] | null {
-    if (state.get(id) === "done") return null;
-    if (state.get(id) === "visiting")
-      return [...path.slice(path.indexOf(id)), id];
-    state.set(id, "visiting");
-    path.push(id);
-    for (const ref of catalog[id]?.impliedBy ?? []) {
-      const cycle = visit(ref);
-      if (cycle) return cycle;
-    }
-    path.pop();
-    state.set(id, "done");
-    return null;
-  }
-  for (const id of Object.keys(catalog)) {
-    const cycle = visit(id);
-    if (cycle) return cycle;
-  }
-  return null;
-}
-
-function matcher(catalog: Catalog): (file: string) => string[] {
-  const globs = Object.entries(catalog).map(
-    ([id, area]) => [id, area.paths.map((p) => new Bun.Glob(p))] as const,
-  );
-  return (file) => {
-    const path = file.replaceAll("\\", "/");
-    return globs
-      .filter(([, gs]) => gs.some((g) => g.match(path)))
-      .map(([id]) => id);
-  };
-}
-
-/** The files no area's paths match. */
+/** The files no area matches. */
 export function uncoveredFiles(files: string[], catalog: Catalog): string[] {
-  const areasOf = matcher(catalog);
-  return files.filter((file) => areasOf(file).length === 0);
+  const normal = slashes(files);
+  const uncovered = new Set(sharedUncovered(normal, shared(catalog)));
+  return files.filter((_, i) => uncovered.has(normal[i] as string));
 }
 
 /**
@@ -230,24 +104,13 @@ export function uncoveredFiles(files: string[], catalog: Catalog): string[] {
  * whose `impliedBy` lists an area already in the set, until it stops growing.
  */
 export function resolveAreas(files: string[], catalog: Catalog): Resolution {
-  const areasOf = matcher(catalog);
-  const seed = new Set<string>();
-  const unmatched: string[] = [];
-  for (const file of files) {
-    const matched = areasOf(file);
-    if (matched.length === 0) unmatched.push(file);
-    for (const id of matched) seed.add(id);
-  }
-  const resolved = new Set(seed);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const [id, area] of Object.entries(catalog))
-      if (!resolved.has(id) && area.impliedBy.some((r) => resolved.has(r))) {
-        resolved.add(id);
-        grew = true;
-      }
-  }
+  const whole = shared(catalog);
+  const normal = slashes(files);
+  const seed = matchSeedAreas(normal, whole);
+  const resolved = applyImpliedClosure(seed, whole);
+  const unmatched = files.filter(
+    (_, i) => matchSeedAreas([normal[i] as string], whole).size === 0,
+  );
   const order = Object.keys(catalog);
   const sorted = (set: Set<string>) => order.filter((id) => set.has(id));
   return {
@@ -261,20 +124,8 @@ export function resolveAreas(files: string[], catalog: Catalog): Resolution {
   };
 }
 
-function git(root: string, args: string[]): string {
-  const env = Object.fromEntries(
-    Object.entries(process.env).filter(
-      ([key]) =>
-        !(LEAKY_GIT_ENV as readonly string[]).includes(key.toUpperCase()),
-    ),
-  );
-  const result = spawnSync("git", ["-C", root, ...args], { env });
-  if (result.status !== 0)
-    throw new Error(
-      `git ${args.join(" ")} failed: ${result.stderr.toString().trim()}`,
-    );
-  return result.stdout.toString();
-}
+const git = (root: string, args: string[]) =>
+  defaultGitRunner(["-C", root, ...args]);
 
 /** Files changed between the merge base with `base` and the working tree. */
 export function changedFiles(root: string, base: string): string[] {
@@ -308,8 +159,12 @@ export function checkChangeAreas(root = "."): number {
   if (problems.length === 0) {
     if (!files.length)
       return couldNotCheck("change-areas", `no file under ${root}`);
-    const catalog = (doc as { areas: Catalog }).areas;
-    for (const file of uncoveredFiles(files, catalog))
+    const catalog = doc as SharedCatalog;
+    problems.push(
+      ...workspaceProblems(catalog, { root, trackedFiles: files }),
+      ...generatedProblems(catalog, { root, trackedFiles: files }),
+    );
+    for (const file of uncoveredFiles(files, catalog.areas))
       problems.push(`${file}: belongs to no area`);
   }
   for (const problem of problems) console.error(`${CATALOG}: ${problem}`);

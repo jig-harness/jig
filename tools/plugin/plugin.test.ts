@@ -993,6 +993,73 @@ test("code-stats runs from the plugin copy and reads the consumer's code_stats",
   expect(report.byArea.product?.files).toBe(1);
 });
 
+test("change-areas resolves and checks the consumer's catalog from the plugin copy", () => {
+  const consumer = consumerRepo(
+    "change-areas",
+    `drive:
+  change_areas_catalog: .config/change-areas.yaml
+`,
+  );
+  writeFileSync(
+    join(consumer, ".config", "change-areas.yaml"),
+    `vocabularies:
+  category: [service, docs]
+  deployTier: [primary, none]
+profiles:
+  shallow: { localChecks: ["true"], verificationChecks: ["true"] }
+  deep: { localChecks: ["make test"], verificationChecks: ["make test"] }
+areas:
+  api:
+    title: API
+    category: service
+    paths: ["src/**"]
+    workspace: ["src"]
+    impliedBy: [docs]
+    deployTier: primary
+    review: { skills: [api-review] }
+  docs:
+    title: Docs
+    category: docs
+    paths: ["docs/**", ".config/**"]
+    workspace: []
+    impliedBy: []
+    deployTier: none
+    validation: { profile: shallow }
+`,
+  );
+  mkdirSync(join(consumer, "src"));
+  writeFileSync(join(consumer, "src", "main.ts"), "export const x = 1;\n");
+  mkdirSync(join(consumer, "docs"));
+  writeFileSync(join(consumer, "docs", "guide.md"), "# Guide\n");
+  const scriptsDir = join(
+    scratch,
+    "cache",
+    "skills",
+    "change-areas",
+    "scripts",
+  );
+
+  const resolved = spawnSync(
+    process.execPath,
+    [join(scriptsDir, "resolve.ts"), "--files", "-", "--format", "json"],
+    { cwd: consumer, env, encoding: "utf8", input: "docs/guide.md\n" },
+  );
+  expectSpawnExit({ ...resolved, exitCode: resolved.status }, 0);
+  expect(JSON.parse(resolved.stdout)).toMatchObject({
+    seedAreas: ["docs"],
+    areas: ["api", "docs"],
+    reviewSkills: ["api-review"],
+    validation: { profiles: ["shallow"] },
+  });
+
+  const checked = spawnSync(process.execPath, [join(scriptsDir, "check.ts")], {
+    cwd: consumer,
+    env,
+    encoding: "utf8",
+  });
+  expectSpawnExit({ ...checked, exitCode: checked.status }, 0);
+});
+
 test("one change-area catalog reader serves the skills from the plugin copy", () => {
   const consumer = consumerRepo(
     "catalog",

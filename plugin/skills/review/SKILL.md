@@ -56,7 +56,7 @@ Every field is optional. Read them from the base branch's copy of
 |-------|--------------|-------------|
 | `repository.base_branch` | The branch the change is compared against (`origin/<branch>`) | The clone's `origin/HEAD` when it has one, else `gh repo view --json defaultBranchRef -q .defaultBranchRef.name` |
 | `adr.rules_file` | Path, from the repository root, to the machine-readable ADR rules file (`pattern_rules`, and optionally `semantic_rules` and `artifact_detection`) | Detected: the one tracked file named `adr-rules.yaml`, `.adr-rules.yaml` or `adr-rules.yml`, or `rules.yaml` or `rules.yml` inside an `adr-rules/` directory, outside test fixtures and templates. No file: Tier 1 runs the generic checks only and says so in the summary |
-| `drive.validation_plan_command` | The command that reads the changed files (one per line) on stdin and prints the validation plan as JSON, including `reviewSkills` (mandatory specialist review skills) and optionally `postDeploy` | No plan command: resolve the catalog by hand (below), or there are no catalog-mandated specialist gates |
+| `drive.validation_plan_command` | The command that reads the changed files (one per line) on stdin and prints the validation plan as JSON, including `reviewSkills` (mandatory specialist review skills) and optionally `postDeploy` | No plan command: resolve the catalog with the change-areas resolver (below), or there are no catalog-mandated specialist gates |
 | `drive.change_areas_catalog` | Path to the change-area catalog (YAML whose `areas:` map holds area key → `{paths, impliedBy, review: {skills}, postDeploy, …}`) | No catalog: skip the catalog steps and say so in the summary |
 | `review.bots` | The logins of the repository's AI reviewers | No AI reviewer is assumed |
 | `issue_tracker.team` | The key the tracker's issue identifiers carry (`ENG` for `ENG-123`), used to recognise the issue a deferral names | A deferral must still name its issue; any issue key or link counts |
@@ -373,11 +373,32 @@ tr '\0' '\n' < "<effective-files>" |
       sh -c '<validation_plan_command>')
 ```
 
-When the repository declares a catalog but no plan command, resolve it by
-hand: the seed areas are those whose `paths` globs match a changed file; add
-every area whose `impliedBy` lists an area already in the set, until nothing
-changes; the review skills are the union of the areas' `review.skills`, and
-the post-deploy actions the union of their `postDeploy`.
+When the repository declares a catalog but no plan command, resolve it with
+the [change-areas](../change-areas/SKILL.md) skill's resolver, run the same
+way, and read `reviewSkills` and `postDeploy` from its JSON. It
+reads the catalog `drive.change_areas_catalog` names from the snapshot's
+overlay, relative to the snapshot (an absolute path stays as it is), and
+`--no-validation` lets a catalog that declares no validation profiles route
+its reviews. The resolver reads the list as setup step 3 wrote it (`-z`), so
+every path reaches it byte for byte:
+
+```bash
+(cd "<base-tree>" &&
+  env -i PATH="$PATH" HOME="$HOME" \
+    JIG_CONSUMER_ROOT="<base-tree>" \
+    JIG_OVERLAY="<base-tree>/.config/jig.yaml" \
+    JIG_USER_LAYER=off \
+    bun --no-env-file --config="<bunfig>" \
+      "${CLAUDE_SKILL_DIR}/../change-areas/scripts/resolve.ts" \
+      --files - -z --format json --no-validation) < "<effective-files>"
+```
+
+Any failure is a blocking finding of the catalog's own validation (below),
+an unknown field included: a misspelt `review` would otherwise carry no
+`review.skills` and drop a mandatory gate in silence. A catalog with fields
+only the repository's own wrapper around the resolver (its
+[composer](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) knows is resolved through that wrapper,
+which the repository names as `drive.validation_plan_command`.
 
 Invoke every skill in the resolved, deduplicated `reviewSkills` once and fold
 its findings into the review output. These are mandatory specialist gates: a

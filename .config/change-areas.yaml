@@ -9,17 +9,26 @@
 # otherwise). When unsure whether one area depends on another, add the
 # `impliedBy` edge: a redundant CI job is cheap, a skipped one is not.
 #
-# Field reference: modules/M3-change-area-catalog/reference/catalog/README.md.
-# `category` is one of skill, library, tooling, infra, docs; `deployTier` is
-# `plugin` for what ships in a plugin version and `none` otherwise.
-# `reviewRisk: high` (optional, Jig's own) puts the area's paths in the AI
-# reviewer's high-risk list: scripts/review-risk.ts writes them into
-# .config/ai-review.yaml, and the gates fail when the two differ. A file may
-# belong to several areas, so a narrow area can mark part of a broader one.
+# Its schema, resolver and invariants are the plugin's change-areas skill
+# (plugin/skills/change-areas/README.md); scripts/change-areas.ts adds Jig's
+# policy on top. Field reference: modules/M3-change-area-catalog/reference/catalog/README.md.
+# `vocabularies:` closes the open fields: `category` is one of skill,
+# library, tooling, infra, docs; `deployTier` is `plugin` for what ships in a
+# plugin version and `none` otherwise. A value outside them fails the gates.
+# `reviewRisk: high` (optional, a field Jig's script adds to the schema) puts
+# the area's paths in the AI reviewer's high-risk list: scripts/review-risk.ts
+# writes them into .config/ai-review.yaml, and the gates fail when the two
+# differ. A file may belong to several areas, so a narrow area can mark part
+# of a broader one.
 # An area's `generated:` list declares the derived files it owns, in M2's
 # inventory format (outputs, source, command, check): scripts/check-generated-files.ts
 # runs every declared check through M2's runner, so a derived file is added
-# with its check or not at all (CONTRIBUTING.md § Derived files).
+# with its check or not at all (CONTRIBUTING.md § Derived files). A change to
+# an entry's `source` seeds the area too.
+
+vocabularies:
+  category: [skill, library, tooling, infra, docs]
+  deployTier: [plugin, none]
 
 areas:
   drive-pr:

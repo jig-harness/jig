@@ -69,11 +69,17 @@ test("files no area matches are reported", () => {
   ]);
 });
 
+// The closed sets live in the catalog, as Jig's own does.
+const vocabularies = {
+  category: ["skill", "library", "tooling", "infra", "docs"],
+  deployTier: ["plugin", "none"],
+};
+
 test("the schema and graph checks reject malformed catalogs", () => {
-  expect(catalogProblems({ areas: catalog })).toEqual([]);
+  expect(catalogProblems({ vocabularies, areas: catalog })).toEqual([]);
   expect(catalogProblems({})).toEqual(["the catalog has no `areas` map"]);
   const problems = (areas: Record<string, unknown>) =>
-    catalogProblems({ areas }).join("\n");
+    catalogProblems({ vocabularies, areas }).join("\n");
   expect(problems({ Bad_Id: area(["x"]) })).toContain("not kebab-case");
   expect(problems({ a: { ...area(["x"]), reviews: [] } })).toContain(
     "unknown field `reviews`",
@@ -90,8 +96,10 @@ test("the schema and graph checks reject malformed catalogs", () => {
   expect(problems({ a: { ...area(["x"]), reviewRisk: "high" } })).toBe("");
   // The derived files an area owns take M2's inventory shape, checked by
   // the runner's own validation: an entry without a check is refused.
-  expect(problems({ a: { ...area(["x"]), generated: {} } })).toContain(
-    "generated: must be a list of entries",
+  // The shipped schema and M2's runner both check an entry's shape; a
+  // problem both find is listed once.
+  expect(problems({ a: { ...area(["x"]), generated: {} } })).toBe(
+    "a: generated: must be a list of entries",
   );
   expect(
     problems({

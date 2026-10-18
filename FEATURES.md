@@ -66,19 +66,28 @@ merges. Outside a drive, `fix-ci` fixes a failed run from its log.
 
 ## Review in tiers, with an arbiter for contested findings
 
-`review` checks a diff, a plan or a pull request in tiers: pattern checks,
-contract checks, then semantic review against the repository's decision
-rules and its [change-area catalog](GLOSSARY.md). `github-actions` reviews
+`change-areas` resolves a change against the repository's
+[change-area catalog](GLOSSARY.md): which areas it touches, and what that
+owes — the CI jobs, the checks to run before a push, the mandatory reviews,
+the tracker labels, the steps after a deploy — and checks the catalog
+itself. `review` checks a diff, a plan or a pull request in tiers: pattern
+checks, contract checks, then semantic review against the repository's
+decision rules and the reviews the catalog makes mandatory. `github-actions` reviews
 workflow changes for security, pinning, caching and the repository's own
 conventions. When a finding is contested and the triage rubric cannot settle
 it, the `review-arbiter` agent rules: fix now, reject, won't fix, defer, or
 escalate to a person. It reads code and never edits.
 
-- **Skills:** [`review`](plugin/skills/review/SKILL.md),
+- **Skills:** [`change-areas`](plugin/skills/change-areas/README.md),
+  [`review`](plugin/skills/review/SKILL.md),
   [`github-actions`](plugin/skills/github-actions/SKILL.md),
   [`review-arbiter`](plugin/agents/review-arbiter.md)
 - **Practice:** [M7](modules/M7-pr-lifecycle-review/),
   [M3](modules/M3-change-area-catalog/)
+- **On the roadmap:** `drive-pr` and `fix-ci` taking their validation plan
+  from the catalog when no plan command is configured, as `review` already
+  does, and a lint that checks the path lists in agent rules, hooks and CI
+  triggers against the catalog (Later)
 
 ## A learning loop built into the process
 

@@ -33,6 +33,7 @@ criteria:
     observe:
       - "a script/schema validates area-id format and rejects unknown fields"
       - "a check fails on a dangling impliedBy reference or a self-implication"
+      - "running the change-areas skill's `scripts/check.ts`, or a composer's `runCheck`, in CI counts as this check: it validates the ids, rejects unknown fields and fails on a dangling or self-referencing impliedBy"
       - "this check runs unconditionally or behind a literal path match on the catalog file itself, never behind a resolver lookup — a fixture that deletes the catalog file's own path from the catalog still runs this check rather than silently resolving to no seeded areas and skipping it, and a separate fixture with a real schema or graph defect (a dangling reference, a self-implication) proves the check fails"
 
   - id: catalog-graph-validated
@@ -49,18 +50,19 @@ criteria:
       at all — whether or not any area currently declares `validation:` —
       a schema check alone is not enough either: the safety-critical part
       is the *computation*, not the shape — an implementation that parses
-      the block correctly but silently drops the `deep` fail-closed
-      defaults (unmatched file, missing `validation.profile`) or derives
-      `needsSandbox` from seeds instead of closure would still pass a
-      schema-only check while under-validating (see M3's `reference/catalog/README.md`
-      § Agent gate depth).
+      the block correctly but silently drops the fail-closed default to the
+      deepest declared profile (unmatched file, missing
+      `validation.profile`), or, where the repository computes a
+      remote-machine requirement, derives it from the seeds instead of their
+      closure, would still pass a schema-only check while under-validating
+      (see M3's `reference/catalog/README.md` § Agent gate depth).
     observe:
-      - "a CI job runs the catalog checker (referential integrity + cycle detection)"
+      - "a CI job runs the catalog checker (referential integrity + cycle detection); the change-areas skill's `scripts/check.ts`, or a composer's `runCheck`, counts, and also checks each `generated[].source` against the repository's files"
       - "a cycle or dangling reference fails the build"
       - "if any area declares `generated:`, the checker also expands each `generated[].source` glob and fails the build when it matches no on-disk path — and this expansion runs on every CI event (or is triggered by a match against any declared `generated[].source` glob, not just the catalog file), so deleting the last file a glob matches without touching the catalog still re-validates the now-broken declaration"
-      - "if any area declares `generated:`, a test fixture proves activation, not just glob resolution: a change under a `generated[].source` path activates the *owning* area's freshness check (a freshness-projection-scoped selection, per M3's `reference/catalog/README.md`'s § Generated-output coupling, Activation — this must not add the area to the general seed set consumed by `validation:`, tracker labels, or other seed-reading projections), and the test fails if that source-only change does not activate the freshness check"
-      - "if the repo wires an agent-gate-depth consumer at all — whether or not any area currently declares `validation:` — a test fixture proves the computed profile: an unmatched file and a seeded area with no `validation:` block or no `validation.profile` both compute as `deep` by default, and `needsSandbox` is computed from the seeds' `impliedBy` closure, not from the seeds alone; a resolver relying entirely on the documented defaults (no area declares `validation:` yet) must still be exercised, not skipped just because there's no explicit block to point the fixture at"
-      - "for each of deploy tiers, post-deploy actions, mandatory review flags (`tracker.flags`), the review-gate table (`review.skills`), and tracker labels that the repo actually generates a consumer view for, a test fixture proves that projection reads the correct side of § Seeds vs. closure (deploy tiers/post-deploy/review flags/review-gate table from the seeded areas' `impliedBy` closure, tracker labels from the seeds alone) — a fixture where a seed's closure differs from the seed set catches a projection reading the wrong side (e.g. a `core-lib` change whose closure reaches `api-service` must not skip `api-service`'s `review.skills`); a repo that generates none of these has nothing to fixture and is unaffected"
+      - "if any area declares `generated:`, a test fixture proves activation, not just glob resolution: a change touching only a `generated[].source` path seeds the *owning* area, as a `paths` match would (M3's `reference/catalog/README.md`'s § Generated-output coupling, Activation), so that area's freshness check is in the change's validation plan, and the test fails if that source-only change does not select it"
+      - "if the repo wires an agent-gate-depth consumer at all — whether or not any area currently declares `validation:` — a test fixture proves the computed profile: an unmatched file and a seeded area with no `validation:` block or no `validation.profile` both select the deepest declared profile as the fail-closed default; where the repository's composer computes a remote-machine requirement, a fixture proves it is read from the seeds' `impliedBy` closure, not from the seeds alone; a resolver relying entirely on the documented defaults (no area declares `validation:` yet) must still be exercised, not skipped just because there's no explicit block to point the fixture at"
+      - "for each of deploy tiers, post-deploy actions, mandatory reviews (`review.skills` and the review-gate table), and tracker labels and flags (`tracker.labels`, `tracker.flags`) that the repo actually generates a consumer view for, a test fixture proves that projection reads the correct side of § Seeds vs. closure (deploy tiers, post-deploy actions and `review.skills` from the seeded areas' `impliedBy` closure; tracker labels and flags from the seeds alone) — a fixture where a seed's closure differs from the seed set catches a projection reading the wrong side (e.g. a `core-lib` change whose closure reaches `api-service` must not skip `api-service`'s `review.skills`); a repo that generates none of these has nothing to fixture and is unaffected"
 
   - id: workspace-coverage-gated
     level: standard
@@ -95,7 +97,7 @@ criteria:
       closure), so a change to a shared area mechanically triggers the jobs of
       every area that depends on it.
     observe:
-      - "a CI setup step resolves changed files to areas and gates downstream jobs on the result"
+      - "a CI setup step resolves changed files to areas and gates downstream jobs on the result; the change-areas skill's `--format gha` outputs (`<area>=` for the closure), or a composer's, written by that step and read by the jobs' conditions, count"
       - "a shared-area change triggers dependent-area jobs whose own paths did not change"
 
   - id: all-consumers-generated

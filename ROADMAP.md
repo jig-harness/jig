@@ -139,11 +139,18 @@ code ratio, the generated share and the size of the agent scaffolding.
 - **Drive loop follow-ups.** A drive's CI-repair round running `fix-ci`,
   through a `fix-ci` mode that stops before pushing so the drive does the
   push itself.
-- **Gates and workspace infrastructure.** The change-area resolver
-  ([M3](modules/M3-change-area-catalog/README.md)), locks shared across
+- **Gates and workspace infrastructure.** Locks shared across
   worktrees, remote gates, and a runnable form of
   [M12](modules/M12-parallel-agent-ergonomics/README.md)'s workspace
   lifecycle.
+- **Change-area consumer lint.** The
+  [change-areas skill](plugin/skills/change-areas/README.md) checks the path
+  lists in agent rules, hook configuration and CI workflow triggers against
+  the catalog, so a copy of an area's globs fails when it drifts.
+- **The resolver in the delivery skills.** A repository with a change-area
+  catalog and no validation-plan command gets its plan from the catalog in
+  `drive-pr` and `fix-ci` too, as `review` already does for its mandatory
+  reviews.
 - **Bun's linter and formatter.** A linter reports code that breaks a rule;
   a formatter rewrites code into one consistent layout. Bun is adding its
   own, `bun lint` and `bun fmt`, which could replace Biome (one tool that

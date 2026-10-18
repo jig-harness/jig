@@ -1,0 +1,144 @@
+# A neutral catalog that exercises every shape the resolver handles: fan-out
+# from a shared library, fan-in to a search index, multi-valued membership,
+# a generator whose source lives in another area, both tracker spellings and
+# three validation profiles.
+vocabularies:
+  category: [app, service, generated, library, infra, tooling, docs]
+  deployTier: [primary, none]
+  flags: [api-change, needs-migration]
+  envs: [staging, prod]
+
+profiles:
+  shallow:
+    localChecks: ["fmt"]
+    verificationChecks: ["fmt --check"]
+  standard:
+    localChecks: ["fmt", "lint"]
+    verificationChecks: ["fmt --check", "lint"]
+  deep:
+    localChecks: ["fmt", "lint", "test", "build"]
+    verificationChecks: ["fmt --check", "lint", "test", "build"]
+
+areas:
+  web-app:
+    title: "Web App"
+    category: app
+    paths: ["apps/web-app/**"]
+    workspace: ["apps/web-app"]
+    impliedBy: [core-lib, ci-infra]
+    deployTier: primary
+    review:
+      skills: [ui-review]
+    tracker:
+      labels: [area:web]
+
+  api-service:
+    title: "API Service"
+    category: service
+    paths: ["apps/api-service/**"]
+    workspace: ["apps/api-service"]
+    impliedBy: [core-lib, ci-infra]
+    deployTier: primary
+    validation:
+      profile: deep
+      ownTests: "bun test apps/api-service"
+    review:
+      skills: [api-review]
+      notes: >-
+        Applies when request or response
+        contracts change.
+    postDeploy:
+      - action: "warm the read-through cache"
+        when: "after new instances are healthy"
+        envs: [staging, prod]
+        notes: |
+          Runs against the deployed image.
+          Safe to repeat.
+    tracker:
+      labels: [area:api]
+      flags: [api-change]
+
+  api-schema:
+    title: "Generated API Schema"
+    category: generated
+    paths: ["packages/api-schema/**"]
+    workspace: ["packages/api-schema"]
+    impliedBy: [api-service]
+    deployTier: none
+    validation:
+      profile: shallow
+    generated:
+      - outputs: ["packages/api-schema/openapi.json"]
+        source: ["apps/api-service/src/routes/**", "tools/gen/schema.ts"]
+        command: "gen-schema"
+        check: "gen-schema --check"
+    linear:
+      labels: [area:api]
+
+  core-lib:
+    title: "Core Library"
+    category: library
+    paths: ["packages/core-lib/**"]
+    workspace: ["packages/core-lib"]
+    impliedBy: []
+    deployTier: none
+    review:
+      skills: [lib-review, api-review]
+    tracker:
+      labels: [area:shared]
+      flags: [needs-migration]
+
+  ci-infra:
+    title: "CI Infra"
+    category: infra
+    paths: [".github/workflows/**", "package.json"]
+    workspace: []
+    impliedBy: []
+    deployTier: none
+
+  tooling:
+    title: "Tooling"
+    category: tooling
+    paths: ["tools/**"]
+    workspace: []
+    impliedBy: []
+    deployTier: none
+    validation:
+      profile: standard
+      ownTests: "bun test tools"
+
+  docs:
+    title: "Documentation"
+    category: docs
+    paths: ["docs/**", "*.md"]
+    workspace: []
+    impliedBy: []
+    deployTier: none
+    validation:
+      profile: shallow
+
+  adr:
+    title: "Decision Records"
+    category: docs
+    paths: ["docs/adr/**"]
+    workspace: []
+    impliedBy: []
+    deployTier: none
+    validation:
+      profile: shallow
+    tracker:
+      labels: [area:docs]
+
+  search-index:
+    title: "Search Index"
+    category: service
+    paths: ["search/**"]
+    workspace: []
+    impliedBy: [docs, api-service]
+    deployTier: primary
+    validation:
+      profile: shallow
+    postDeploy:
+      - action: "rebuild the search index"
+        when: "after the documents are published"
+        envs: [prod]

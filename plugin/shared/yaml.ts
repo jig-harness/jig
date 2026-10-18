@@ -6,8 +6,24 @@
  * Bun's built-in parser is not a substitute: it keeps the last of two
  * duplicated keys where js-yaml rejects the document.
  */
-import { load as parse } from "./vendor/js-yaml.mjs";
+import { dump as write, load as parse } from "./vendor/js-yaml.mjs";
 
 export function load(text: string): unknown {
   return parse(text);
+}
+
+/** How `dump` writes: the subset of js-yaml's options the skills use. */
+export interface DumpOptions {
+  /** Write every mapping's keys in sorted order. */
+  sortKeys?: boolean;
+  /** Fold long strings at this width; `-1` never folds. */
+  lineWidth?: number;
+}
+
+/**
+ * `value` as YAML, byte for byte what js-yaml's own `dump` writes, so a
+ * projection a consumer generated before with js-yaml stays unchanged.
+ */
+export function dump(value: unknown, options: DumpOptions = {}): string {
+  return write(value, options);
 }

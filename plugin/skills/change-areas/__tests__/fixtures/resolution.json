@@ -1,0 +1,149 @@
+{
+  "changedFiles": [
+    "docs/adr/0002-choice.md",
+    "packages/core-lib/src/index.ts",
+    "stray.txt",
+    "tools/gen/schema.ts"
+  ],
+  "seedAreas": [
+    "adr",
+    "api-schema",
+    "core-lib",
+    "docs",
+    "tooling"
+  ],
+  "areas": [
+    "adr",
+    "api-schema",
+    "api-service",
+    "core-lib",
+    "docs",
+    "search-index",
+    "tooling",
+    "web-app"
+  ],
+  "flags": {
+    "adr": true,
+    "api-schema": true,
+    "api-service": true,
+    "ci-infra": false,
+    "core-lib": true,
+    "docs": true,
+    "search-index": true,
+    "tooling": true,
+    "web-app": true
+  },
+  "postDeploy": [
+    {
+      "area": "api-service",
+      "action": {
+        "action": "warm the read-through cache",
+        "when": "after new instances are healthy",
+        "envs": [
+          "staging",
+          "prod"
+        ],
+        "notes": "Runs against the deployed image.\nSafe to repeat.\n"
+      }
+    },
+    {
+      "area": "search-index",
+      "action": {
+        "action": "rebuild the search index",
+        "when": "after the documents are published",
+        "envs": [
+          "prod"
+        ]
+      }
+    }
+  ],
+  "review": [
+    {
+      "area": "api-service",
+      "skills": [
+        "api-review"
+      ]
+    },
+    {
+      "area": "core-lib",
+      "skills": [
+        "lib-review",
+        "api-review"
+      ]
+    },
+    {
+      "area": "web-app",
+      "skills": [
+        "ui-review"
+      ]
+    }
+  ],
+  "reviewSkills": [
+    "api-review",
+    "lib-review",
+    "ui-review"
+  ],
+  "linear": {
+    "labels": [
+      "area:api",
+      "area:docs",
+      "area:shared"
+    ],
+    "flags": [
+      "needs-migration"
+    ]
+  },
+  "validation": {
+    "sourceAreas": [
+      "adr",
+      "api-schema",
+      "core-lib",
+      "docs",
+      "tooling"
+    ],
+    "profiles": [
+      "shallow",
+      "standard",
+      "deep"
+    ],
+    "localChecks": [
+      "gen-schema",
+      "fmt",
+      "lint",
+      "test",
+      "build",
+      "bun test tools"
+    ],
+    "verificationChecks": [
+      "fmt --check",
+      "lint",
+      "test",
+      "build",
+      "gen-schema --check",
+      "bun test tools"
+    ],
+    "testbox": {
+      "required": false,
+      "command": null,
+      "warmupCommand": null,
+      "reason": null,
+      "requiredBy": []
+    },
+    "repositoryHooksRequired": true,
+    "githubCiRequired": true
+  },
+  "generated": [
+    {
+      "area": "api-schema",
+      "outputs": [
+        "packages/api-schema/openapi.json"
+      ],
+      "source": [
+        "apps/api-service/src/routes/**",
+        "tools/gen/schema.ts"
+      ],
+      "command": "gen-schema",
+      "check": "gen-schema --check"
+    }
+  ]
+}

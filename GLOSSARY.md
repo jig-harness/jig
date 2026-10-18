@@ -342,12 +342,18 @@ make, use the entry's term instead.
   are mandatory, which deploy tier applies). It is the *SSoT* every consumer
   reads via generated *projections*, instead of each re-hardcoding its own
   path-lists that then disagree.
-- **Validation profile** — a *change-area catalog* area's declared gate depth
-  for a coding agent's own pre-commit/push checks: `deep` runs the area's full
-  code gates; `shallow` skips them, either because the area has no code to gate
-  (docs) or because it holds real code that deliberately never ships (a
-  prototype/spike). An area that omits the field defaults to `deep` — the same
-  fail-closed default as a file matching no area at all.
+- **Seed area** — a *change-area catalog* area that a changed file matches
+  directly, through its `paths` or a generator's `source`: what the change
+  touched. The seeds together with every area their `impliedBy` relation
+  reaches, the closure, are the change's consequences; each projection reads
+  one of the two.
+- **Validation profile** — a named gate depth for a coding agent's own
+  pre-commit/push checks, declared in the *change-area catalog* under
+  `profiles:` from shallowest to deepest (for example `shallow`, which skips
+  the code gates of an area with no code to gate or with code that never
+  ships, and `deep`, which runs them all). An area may name its profile; one
+  that names none gets the deepest — the same fail-closed default as a file
+  matching no area at all.
 - **Self-check paradox** — the situation where a *check* validates the same
   data its own trigger condition is computed from (e.g. a catalog's structural
   check, triggered by resolving changed paths *through* that catalog). The
@@ -1236,6 +1242,11 @@ make, use the entry's term instead.
   `.config/jig.yaml` and read by the procedure when it runs.
   The procedure stays shared while the values belong to the consumer. Every
   field is in [plugin/CONFIGURATION.md](plugin/CONFIGURATION.md).
+- **Composer** — a repository's own short script that runs a Jig tool's
+  library with that repository's values where configuration cannot express
+  them: extra catalog fields, extra outputs, its own validation policy. The
+  tool stays shared; the composer holds only what is the repository's
+  ([change-areas](plugin/skills/change-areas/README.md#a-composer)).
 - **JSONL (JSON Lines)** — a text format with one complete JSON value per
   line. Appending a record is appending a line, and a reader can process the
   file line by line, so it suits logs that only grow.
@@ -1345,7 +1356,9 @@ make, use the entry's term instead.
   needed, and which review skills to run. A repository supplies it as a command
   that reads changed files on stdin and prints JSON
   (`drive.validation_plan_command`); without one the plan is the gate command
-  alone ([drive-pr](plugin/skills/drive-pr/README.md)).
+  alone ([drive-pr](plugin/skills/drive-pr/README.md)). The
+  [change-areas](plugin/skills/change-areas/README.md) skill prints one from
+  the *change-area catalog*.
 - **Remote test box (Testbox)** — a disposable machine, warmed for one run, that
   re-runs a repository's heavy test and build checks away from the laptop. A
   *validation plan* says when one is required; Jig's drive uses each box

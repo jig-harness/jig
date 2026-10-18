@@ -358,10 +358,22 @@ evidence.
 - **Windows for `drive-pr` and `do-item`.** Finding and waiting on a pass's
   processes without `ps` and POSIX signals, `do-item`'s pickup record without
   owner-only file modes, and a Windows CI job for both suites.
-- **Gates and workspace infrastructure.** The change-area resolver
-  ([M3](../modules/M3-change-area-catalog/README.md)), cross-worktree locks and
+- **Gates and workspace infrastructure.** Cross-worktree locks and
   test infrastructure, remote gates, and a runnable form of
   [M12](../modules/M12-parallel-agent-ergonomics/README.md)'s workspace lifecycle.
+- **Change-area consumer lint.** The `lint-consumers` check moves into the
+  [change-areas skill](../plugin/skills/change-areas/README.md): the path
+  lists in agent rules, hook configuration and CI workflow triggers checked
+  against the catalog, so a consumer that restates an area's globs fails when
+  they drift ([M3](../modules/M3-change-area-catalog/README.md) lists it as
+  future). Bring it in with its tests, and its consumer-specific path lists
+  as the repository's configuration or composer.
+- **The resolver in the delivery skills.** When a repository declares
+  `drive.change_areas_catalog` and no `drive.validation_plan_command`,
+  `drive-pr` and `fix-ci` take their validation plan from the change-areas
+  resolver instead of `gates.command` alone, as `review` already does for
+  its mandatory reviews. Done when a repository with only a catalog gets
+  the catalog's plan in a drive round and in `fix-ci`, with a test for each.
 - **Bun's linter and formatter.** A linter reports code that breaks a rule;
   a formatter rewrites code into one consistent layout. Jig uses Biome, a
   single tool that does both, for its TypeScript and JSON. Bun is adding its own:
@@ -388,7 +400,8 @@ evidence.
   written against.
 - **Module gaps.** Items each module README lists as future: M4's tag-merge
   normalizer and scheduled wiki lint, M3's catalog-to-regex reverse check
-  (needs the resolver), a semantic tier for ADR rules (M5 with M7/M8), M12's
+  (can be built on the change-areas skill's resolver), a semantic tier for
+  ADR rules (M5 with M7/M8), M12's
   probe-for-free port fallback.
 - **Module consistency.** M6's stage gates require `status: accepted`, which
   M4's frontmatter schema does not define (it has `approved`), and M6's

@@ -226,7 +226,10 @@ does not implement.
 ## Direction 2 — catalog → regex (recipe)
 
 The reverse check needs the resolver's area list, so it lives with the
-resolver rather than as a standalone script:
+resolver rather than as a standalone script; the
+[`change-areas` skill](../../../../plugin/skills/change-areas/README.md)'s
+library exports the closure (`transitiveImpliedBy`, `applyImpliedClosure`)
+to build it on:
 
 1. For each area, decide if it is **code-bearing** — any area not explicitly
    named in the checker's non-code-bearing deny-list is code-bearing. Keep

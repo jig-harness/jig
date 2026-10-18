@@ -15,6 +15,25 @@
 #
 # Field reference: see ./README.md § "Entry schema".
 
+# The values the open fields may take in this repository. A field without a
+# vocabulary takes any non-empty text.
+vocabularies:
+  category: [app, service, generated, library, infra, docs, prototype]
+  deployTier: [primary, none]
+  envs: [staging, prod]
+
+# The validation profiles, shallowest first: what a coding agent runs before
+# commit (localChecks) and to verify the committed tree (verificationChecks).
+# The last one is the deepest: an area without a profile, and any changed
+# file no area matches, get it.
+profiles:
+  shallow:
+    localChecks: ["npm run format"]
+    verificationChecks: ["npm run format:check"]
+  deep:
+    localChecks: ["npm run format", "npm run lint", "npm test", "npm run build"]
+    verificationChecks: ["npm run format:check", "npm run lint", "npm test", "npm run build"]
+
 areas:
   # ---- A deployable app that fans out from the shared library -------------
   web-app:
@@ -42,8 +61,7 @@ areas:
     deployTier: primary
     validation:
       profile: deep
-      needsSandbox: true
-      notes: "Route/contract changes need integration coverage against a CI-identical sandbox."
+      notes: "Route/contract changes need the deep profile: its tests cover the contract."
     review:
       skills: [api-review]
       notes: "Applies when request/response contracts change."
@@ -66,7 +84,6 @@ areas:
     deployTier: none
     validation:
       profile: shallow
-      needsSandbox: false
       notes: "Generated output; the source (api-service routes) carries the real code gates."
     generated:                   # M2's inventory entries: the derived files this area owns
       - outputs: ["packages/api-schema/openapi.json"]
@@ -111,7 +128,6 @@ areas:
     deployTier: none
     validation:
       profile: shallow
-      needsSandbox: false
       notes: "No code to gate — shallow because there's nothing to run, not because prose is inherently shallow."
     tracker:
       labels: [area:docs]
@@ -128,5 +144,4 @@ areas:
     deployTier: none
     validation:
       profile: shallow
-      needsSandbox: false
       notes: "Real code, not prose — shallow because it never ships, not because it isn't code."
