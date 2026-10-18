@@ -276,15 +276,14 @@ areas:
 
   website:
     title: "The jig-harness.dev website"
-    # Published documentation: a change here or in what the site renders
-    # runs the website job, not the gate set on every operating system.
+    # A change here or in what the site reads runs the website steps of the
+    # gate-set job.
     category: docs
     paths: ["website/**"]
     workspace: []
-    # The site renders the documents, the skills' pages and the audit sheet,
-    # so a change to any of them can break its build.
-    impliedBy:
-      [docs, instructions, plugin, plugin-manifests, drive-pr, resolve-review-comments, do-item, audit-scoring, toolchain]
+    # The site reads the files `site-sources` lists, imports the shared
+    # library, and builds with the toolchain.
+    impliedBy: [site-sources, plugin-manifests, shared-lib, plugin-shared, toolchain]
     deployTier: none
     generated:
       - outputs: ["website/bun.lock"]
@@ -292,9 +291,48 @@ areas:
         command: "bun install --cwd website"
         check: "bun install --cwd website --frozen-lockfile --dry-run --silent"
         notes: >-
-          The website job in gates.yml and the deploy in website.yml install
+          The website steps in gates.yml and the deploy in website.yml install
           with --frozen-lockfile in website/, with the same limit as the root
           lockfile's entry.
+
+  site-sources:
+    title: "What the website reads from the rest of the repository"
+    # Part of `docs`, `plugin` and the module areas: the documents the site
+    # renders or parses (website/src/content.config.ts and
+    # website/src/lib/data/index.ts), and the audit skill with the code its
+    # renderer imports, whose criteria, profiles and fixtures the build
+    # renders the live audit example and the module pages with. A document's
+    # link to any other file is checked by the gate set's link check, not by
+    # the site's build. website/scripts/site-inputs.test.ts fails when the site's
+    # build imports, or its content collection or a read takes in, a
+    # file that does not select the website.
+    category: docs
+    paths:
+      - "README.md"
+      - "FACTORY.md"
+      - "FEATURES.md"
+      - "GLOSSARY.md"
+      - "CHANGELOG.md"
+      - "ROADMAP.md"
+      - "adoption/*.md"
+      - "profiles/README.md"
+      - "principles/*.md"
+      - "modules/README.md"
+      - "modules/M*/README.md"
+      - "modules/M*/mappings.md"
+      - "plugin/README.md"
+      - "plugin/CONFIGURATION.md"
+      - "plugin/EXTENDING.md"
+      - "plugin/skills/*/SKILL.md"
+      - "plugin/skills/*/README.md"
+      - "plugin/skills/audit/**"
+      - "plugin/skills/decide/scripts/sheet-kit/**"
+      - "plugin/skills/adr/scripts/locate.ts"
+      - "plugin/agents/*.md"
+      - "tools/*/README.md"
+    workspace: []
+    impliedBy: []
+    deployTier: none
 
   docs:
     title: "Documentation and vendored seed material"

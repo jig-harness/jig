@@ -49,6 +49,14 @@ drive:
   # drive-pr marks them Ready after the first round
   # (CONTRIBUTING.md § Pull-request lifecycle).
   reviews_drafts: true
+ci:
+  # The check main's ruleset requires; the drive waits for it on the
+  # converged head.
+  required_checks: [gates]
+  # While a pull request carries this label, gates.yml skips its jobs and
+  # fails `gates`: drive-pr holds CI between review rounds and releases it at
+  # convergence, so the expensive jobs run on the head the merge waits for.
+  hold_label: ci:hold
 changelog:
   # Jig keeps its changelog from change notes (changes/README.md): a pull
   # request adds a note, and the release step writes it after the merge.

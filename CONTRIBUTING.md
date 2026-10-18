@@ -60,7 +60,12 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    after the first round (`pull_requests.mark_ready`), or one pass at a time
    with `/jig:resolve-review-comments`, marking it Ready yourself once that
    first round has settled. Every thread ends with a declared outcome and is
-   resolved.
+   resolved. Between rounds the drive holds CI with the `ci:hold` label
+   (`ci.hold_label`, [M13's hold](modules/M13-pipeline-economy/README.md#7-hold)):
+   while it is on, the `gates` check fails without running the jobs, and
+   removing it runs them in full. A drive that stopped can leave the label
+   behind; remove it by hand (`gh pr edit <PR> --remove-label ci:hold`),
+   never by rerunning the held run.
 4. The pull request may merge once a round after Ready has settled: every
    reviewer has reported on the current head, no thread or summary finding is
    left unanswered, and the required checks are green. A person merges; an
@@ -167,8 +172,8 @@ Two unrelated failures surface in one run rather than two; fix every stage
 the list names, not only the first.
 
 CI runs the same command on Linux for every pull request
-(`.github/workflows/gates.yml`); the catalog decides which of its jobs a pull
-request needs. macOS and Windows run once a day against `main`
+(`.github/workflows/gates.yml`); the catalog decides which of its jobs and
+steps a pull request needs. macOS and Windows run once a day against `main`
 (`.github/workflows/nightly.yml`), and on demand from the Actions tab for a
 branch likely to break on one of them. A new top-level file or directory gets an area in the catalog
 in the same pull request.
@@ -191,7 +196,8 @@ checks the setting against that policy; it needs an administrator's `gh`
 login, so it runs by hand, not in CI.
 
 Locally, `JIG_GATES_SKIP_SEPARATE_SUITES=1 bun run gates` leaves out the long
-drive-pr suite and the website's tests, which CI runs in their own jobs; run
+drive-pr suite and the website's tests, which CI runs in the drive-pr job and
+in the gate-set job's website steps; run
 the test files for what you changed, and let CI run the rest. The website's
 tests need `bun install` inside `website/` first.
 

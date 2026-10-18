@@ -9,3 +9,7 @@
 # times the Linux run and nothing waits for them (nightly.yml's header).
 heavy:
   - nightly.yml
+  # The gate set and the drive-pr suite run per change, and the CI hold
+  # skips them between review rounds.
+  - gates.yml#gate-set
+  - gates.yml#drive-pr-suite

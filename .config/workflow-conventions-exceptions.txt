@@ -5,4 +5,8 @@
 # blank line ends the group. The lint fails on an entry without a reason and
 # on one that suppresses no finding: delete such an entry.
 #
-# Jig's workflows meet every convention, so there is no entry.
+# The merge waits for the gate set and the drive-pr suite through `gates`, so
+# they run per change; the CI hold runs them once per review rather than on
+# every push.
+heavy-per-change .github/workflows/gates.yml gate-set
+heavy-per-change .github/workflows/gates.yml drive-pr-suite

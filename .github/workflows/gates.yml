@@ -1,12 +1,25 @@
 # Every pull request and every push to main runs the gate set on Linux. The
 # drive-pr suite is long, so it runs in its own job, split into parallel
-# shards (see SEPARATE_SUITES in scripts/gates.ts).
+# shards (see SEPARATE_SUITES in scripts/gates.ts); the website's checks, tests
+# and build run in the gate-set job after the gate set, so they cost no job of
+# their own.
 #
 # Which jobs a pull request runs comes from Jig's change-area catalog
 # (.config/change-areas.yaml, resolved by scripts/change-areas.ts): the
 # drive-pr suite runs when the `drive-pr` area is affected, and the website
-# job when the `website` area is (the site renders the documents, so most
-# changes affect it). A push to main runs everything.
+# steps when the `website` area is (the area takes in what the site reads,
+# through `site-sources`). A push to main runs everything.
+#
+# The CI hold (modules/M13-pipeline-economy/README.md#7-hold): while a pull
+# request carries the `ci:hold` label (`ci.hold_label` in .config/jig.yaml),
+# every job but `gates` skips and `gates` fails, naming the label. drive-pr adds
+# the label before a review round's intermediate push and removes it at
+# convergence, which runs everything again on the head the merge waits for.
+# The label events start runs, so the workflow lists them beside the defaults.
+#
+# Jobs are sized to their work and split for billed minutes: a job bills
+# whole minutes, so the drive-pr suite has as many shards as keep each under
+# two minutes and no more.
 #
 # macOS and Windows run nothing here: the nightly workflow (nightly.yml) runs
 # the gate set and the drive-pr suite on them against main once a day, so a
@@ -14,13 +27,16 @@
 # POSIX-only assumption) surfaces on main within a day rather than on its
 # pull request.
 #
-# Every job runs on Blacksmith runners (https://docs.blacksmith.sh), which the
-# Blacksmith GitHub App provides to this repository; GitHub-hosted runners
-# draw on the account's Actions budget instead.
+# The jobs that run work use Blacksmith runners (https://docs.blacksmith.sh),
+# which the Blacksmith GitHub App provides to this repository. `gates` only
+# reads the other jobs' results, so it runs on GitHub's smallest hosted
+# runner, billed to the account's Actions budget, rather than on a Blacksmith
+# minute.
 name: gates
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
 
@@ -38,6 +54,7 @@ concurrency:
 jobs:
   areas:
     name: change areas
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') }}
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     outputs:
@@ -63,14 +80,10 @@ jobs:
   gate-set:
     name: gates (linux)
     needs: areas
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'ci:hold') }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 20
-    env:
-      # The drive-pr-suite and website jobs below run the separate suites.
-      JIG_GATES_SKIP_SEPARATE_SUITES: "1"
-      # The runner image has Google Chrome, so a sheet's browser checks fail
-      # here when it is missing instead of being skipped with a warning.
-      JIG_REQUIRE_BROWSER: "1"
+    # The gate set's 20 minutes and the website steps' 10.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
@@ -90,18 +103,47 @@ jobs:
       - name: Install locked dependencies, scripts off
         run: bun install --frozen-lockfile --ignore-scripts
       - name: Run gate set
+        env:
+          # The drive-pr-suite job and the website steps below run the
+          # separate suites.
+          JIG_GATES_SKIP_SEPARATE_SUITES: "1"
+          # The runner image has Google Chrome, so a sheet's browser checks
+          # fail here when it is missing instead of being skipped with a
+          # warning.
+          JIG_REQUIRE_BROWSER: "1"
         run: bun run gates
+      # The website steps run after a failed gate set too, so one run reports
+      # both. The build renders the live audit example with the audit skill's
+      # renderer, which needs the repository's own dependencies installed
+      # above.
+      - name: Install the website's locked dependencies, scripts off
+        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') }}
+        working-directory: website
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Check the website's types
+        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') }}
+        working-directory: website
+        run: bun run check
+      # The gate set leaves these out (scripts/gates.ts SEPARATE_SUITES):
+      # they need the website's dependencies installed above.
+      - name: Test the document parsers
+        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') }}
+        run: bun run test ./website/
+      - name: Build the site and check its links
+        if: ${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') }}
+        working-directory: website
+        run: bun run build
 
   drive-pr-suite:
-    name: drive-pr suite (linux, ${{ matrix.shard }}/4)
+    name: drive-pr suite (linux, ${{ matrix.shard }}/3)
     needs: areas
-    if: contains(needs.areas.outputs.areas, '"drive-pr"')
+    if: ${{ contains(needs.areas.outputs.areas, '"drive-pr"') && !contains(github.event.pull_request.labels.*.name, 'ci:hold') }}
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3]
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    # A shard takes up to about 3 minutes.
+    # A shard takes about a minute and a half.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -116,55 +158,31 @@ jobs:
         if: matrix.shard == 1
         run: bun plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts
       - name: Run this shard of the drive-pr suite
-        run: bun run test --shard=${{ matrix.shard }}/4 ./plugin/skills/drive-pr/
-
-  website:
-    name: website
-    needs: areas
-    if: contains(needs.areas.outputs.areas, '"website"')
-    runs-on: blacksmith-2vcpu-ubuntu-2404
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
-      # The build renders the live audit example with the audit skill's
-      # renderer, which needs the repository's own dependencies.
-      - name: Install locked dependencies, scripts off
-        run: bun install --frozen-lockfile --ignore-scripts
-      - name: Install the website's locked dependencies, scripts off
-        working-directory: website
-        run: bun install --frozen-lockfile --ignore-scripts
-      - name: Check types
-        working-directory: website
-        run: bun run check
-      # The gate job leaves these out (scripts/gates.ts SEPARATE_SUITES):
-      # they need the dependencies installed above.
-      - name: Test the document parsers
-        run: bun run test ./website/
-      - name: Build the site and check its links
-        working-directory: website
-        run: bun run build
+        run: bun run test --shard=${{ matrix.shard }}/3 ./plugin/skills/drive-pr/
 
   # Branch protection requires a check named `gates`; this job reports it,
   # passing only when the areas resolved, the gate set passed, and the
-  # drive-pr suite and website job passed or were not needed. It runs on
-  # `!cancelled()`, not
+  # drive-pr suite passed or was not needed. It runs on `!cancelled()`, not
   # `always()`: `always()` also runs when a newer push cancelled this run, and
-  # would then report a failure for a head that is already superseded.
+  # would then report a failure for a head that is already superseded. It is
+  # never guarded by the hold: a skipped required check counts as passing.
   gates:
-    needs: [areas, gate-set, drive-pr-suite, website]
+    needs: [areas, gate-set, drive-pr-suite]
     if: ${{ !cancelled() }}
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:
+      - name: Fail while the CI hold is on
+        if: ${{ contains(github.event.pull_request.labels.*.name, 'ci:hold') }}
+        run: |
+          echo "::error::held: this pull request carries the ci:hold label, so its heavy jobs were skipped. Remove the label (gh pr edit <PR> --remove-label ci:hold) to run everything again; never rerun this run, which replays the labelled event."
+          exit 1
       - name: Require every selected job
         env:
           AREAS: ${{ needs.areas.result }}
           GATE_SET: ${{ needs.gate-set.result }}
           DRIVE_PR: ${{ needs.drive-pr-suite.result }}
           DRIVE_PR_SELECTED: ${{ contains(needs.areas.outputs.areas, '"drive-pr"') }}
-          WEBSITE: ${{ needs.website.result }}
-          WEBSITE_SELECTED: ${{ contains(needs.areas.outputs.areas, '"website"') }}
         run: |
           failed=""
           [ "$AREAS" = success ] || failed="$failed areas($AREAS)"
@@ -173,11 +191,6 @@ jobs:
             [ "$DRIVE_PR" = success ] || failed="$failed drive-pr-suite($DRIVE_PR)"
           else
             [ "$DRIVE_PR" = skipped ] || failed="$failed drive-pr-suite($DRIVE_PR)"
-          fi
-          if [ "$WEBSITE_SELECTED" = true ]; then
-            [ "$WEBSITE" = success ] || failed="$failed website($WEBSITE)"
-          else
-            [ "$WEBSITE" = skipped ] || failed="$failed website($WEBSITE)"
           fi
           if [ -n "$failed" ]; then
             echo "::error::required jobs did not pass:$failed"

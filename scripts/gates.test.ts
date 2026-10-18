@@ -1196,7 +1196,8 @@ type SuiteJob = {
 
 // Whether a job runs and whether its failure reaches the run's result are set
 // by its condition and its dependencies: a skipped dependency skips the job.
-type SuiteContract = { if?: string; needs?: string };
+// A suite that runs as steps of a larger job carries its own step condition.
+type SuiteContract = { if?: string; needs?: string; stepIf?: string };
 
 // A job counts as running a suite only when every key of its workflow, every
 // key it carries, every key of its strategy and every key of the suite's step
@@ -1210,7 +1211,8 @@ type SuiteContract = { if?: string; needs?: string };
 // does not run or its failures are suppressed. The condition and the
 // dependencies must equal the contract; the matrix may hold nothing but the
 // shard list, so no include, exclude or extra dimension can change which jobs
-// run. The suite's step carries a name and a command and nothing else, and its
+// run. The suite's step carries a name and a command and nothing else (and
+// the contract's step condition, exactly, where it has one), and its
 // whole command must be one of two shapes: the suite's directory alone, or
 // every shard of it. Any other text — an extra option such as a test-name
 // filter, shell syntax, a fixed shard — does not count, because nothing
@@ -1295,9 +1297,14 @@ function runsEveryShard(run: string, dir: string, shards: unknown): boolean {
 function runsSuite(job: SuiteJob, dir: string, contract: SuiteContract = {}) {
   if (!suiteJobShapeAllowed(job, contract)) return false;
   const shards = job.strategy?.matrix?.shard;
+  const stepKeys =
+    contract.stepIf === undefined
+      ? SUITE_STEP_KEYS
+      : new Set([...SUITE_STEP_KEYS, "if"]);
   return (job.steps ?? []).some(
     (step) =>
-      onlyKeys(step, SUITE_STEP_KEYS) &&
+      onlyKeys(step, stepKeys) &&
+      step.if === contract.stepIf &&
       typeof step.run === "string" &&
       (step.run.trim() === `bun run test ./${dir}` ||
         runsEveryShard(step.run.trim(), dir, shards)),
@@ -1327,11 +1334,29 @@ function workflowRunsSuite(
   );
 }
 
-// On pull requests the drive-pr suite runs when its area is affected, after
-// the job that resolves the areas; every night it runs unconditionally.
+// On pull requests the drive-pr suite runs when its area is affected and the
+// CI hold is off, after the job that resolves the areas; every night it runs
+// unconditionally. The website's suite runs in the gate-set job, which runs
+// whenever the hold is off, as a step selected by the website area.
 const DRIVE_PR_AREA = `contains(needs.areas.outputs.areas, '"drive-pr"')`;
-const PR_SUITE: SuiteContract = { needs: "areas", if: DRIVE_PR_AREA };
-const PR_TRIGGERS = { pull_request: null, push: { branches: ["main"] } };
+const NOT_HELD = `!contains(github.event.pull_request.labels.*.name, 'ci:hold')`;
+const PR_SUITE: SuiteContract = {
+  needs: "areas",
+  if: `\${{ ${DRIVE_PR_AREA} && ${NOT_HELD} }}`,
+};
+const WEBSITE_STEP = `\${{ !cancelled() && contains(needs.areas.outputs.areas, '"website"') }}`;
+const PR_WEBSITE_SUITE: SuiteContract = {
+  needs: "areas",
+  if: `\${{ ${NOT_HELD} }}`,
+  stepIf: WEBSITE_STEP,
+};
+// Pull requests list the hold label's events beside the default types.
+const PR_TRIGGERS = {
+  pull_request: {
+    types: ["opened", "synchronize", "reopened", "labeled", "unlabeled"],
+  },
+  push: { branches: ["main"] },
+};
 const NIGHTLY_TRIGGERS = {
   schedule: [{ cron: "17 3 * * *" }],
   workflow_dispatch: null,
@@ -1473,6 +1498,22 @@ test("a suite counts as run only by an allowlisted job and command", async () =>
   }
 });
 
+test("a suite's step condition counts only where the contract names it, and only that one", () => {
+  const dir = "website/";
+  const run = `bun run test ./${dir}`;
+  const stepIf = WEBSITE_STEP;
+  expect(runsSuite({ steps: [{ if: stepIf, run }] }, dir, { stepIf })).toBe(
+    true,
+  );
+  expect(runsSuite({ steps: [{ if: stepIf, run }] }, dir)).toBe(false);
+  for (const step of [
+    { run },
+    { if: "always()", run },
+    { if: `${stepIf} || true`, run },
+  ])
+    expect(runsSuite({ steps: [step] }, dir, { stepIf })).toBe(false);
+});
+
 // The same holds one scope up: a workflow-level setting reaches every step of
 // every job.
 test("a suite counts as run only in an allowlisted workflow", async () => {
@@ -1518,7 +1559,37 @@ test("a suite counts as run only in an allowlisted workflow", async () => {
   }
 });
 
-test("every suite the gate job leaves out runs in its own CI job", async () => {
+/**
+ * The job that runs a separate suite and the contract it runs it under. On
+ * pull requests the website's suite runs as steps of the gate job itself.
+ */
+function suiteRunner(
+  workflow: string,
+  gateJob: string,
+  suite: string,
+  on: unknown,
+): [string, WorkflowContract] {
+  const website = suite === "website/**";
+  if (workflow !== "gates.yml")
+    return [website ? "website" : "drive-pr-suite", { on }];
+  return website
+    ? [gateJob, { ...PR_WEBSITE_SUITE, on }]
+    : ["drive-pr-suite", { ...PR_SUITE, on }];
+}
+
+/** Whether the gate job, or its step running the gate set, skips the separate suites. */
+function skipsSeparate(job: SuiteJob | undefined, env: string): boolean {
+  return (
+    job?.env?.[env] === "1" ||
+    (job?.steps ?? []).some(
+      (step) =>
+        step.run === "bun run gates" &&
+        (step.env as Record<string, string> | undefined)?.[env] === "1",
+    )
+  );
+}
+
+test("every suite the gate job leaves out runs in a CI job of its own or a selected step", async () => {
   const { SEPARATE_SUITES, SKIP_SEPARATE_ENV } = await import("./gates.ts");
   const { load } = await import("js-yaml");
   const read = (name: string) =>
@@ -1527,22 +1598,15 @@ test("every suite the gate job leaves out runs in its own CI job", async () => {
     ) as SuiteWorkflow & { jobs: Record<string, SuiteJob> };
   // Pull requests run the gate set on Linux; the nightly run covers macOS
   // and Windows. Each workflow's gate job leaves the separate suites to its
-  // own suite jobs.
-  for (const [name, gateJob, contract] of [
-    ["gates.yml", "gate-set", { ...PR_SUITE, on: PR_TRIGGERS }],
-    ["nightly.yml", "platform-gates", { on: NIGHTLY_TRIGGERS }],
+  // own suite jobs, or on pull requests the website's to its own steps.
+  for (const [name, gateJob, on] of [
+    ["gates.yml", "gate-set", PR_TRIGGERS],
+    ["nightly.yml", "platform-gates", NIGHTLY_TRIGGERS],
   ] as const) {
     const workflow = read(name);
-    expect(workflow.jobs[gateJob]?.env?.[SKIP_SEPARATE_ENV]).toBe("1");
+    expect(skipsSeparate(workflow.jobs[gateJob], SKIP_SEPARATE_ENV)).toBe(true);
     for (const suite of SEPARATE_SUITES) {
-      const job = suite === "website/**" ? "website" : "drive-pr-suite";
-      const suiteContract =
-        name === "gates.yml" && job === "website"
-          ? {
-              ...contract,
-              if: `contains(needs.areas.outputs.areas, '"website"')`,
-            }
-          : contract;
+      const [job, suiteContract] = suiteRunner(name, gateJob, suite, on);
       expect(
         workflowRunsSuite(
           workflow,
@@ -1573,12 +1637,7 @@ test("every suite the gate job leaves out runs in its own CI job", async () => {
     ),
   ).toBe(true);
   // The required status check `gates` must wait for the separate job too.
-  expect(jobs.gates?.needs).toEqual([
-    "areas",
-    "gate-set",
-    "drive-pr-suite",
-    "website",
-  ]);
+  expect(jobs.gates?.needs).toEqual(["areas", "gate-set", "drive-pr-suite"]);
 });
 
 test("the workflow selects jobs by area names the change-area catalog defines", async () => {
