@@ -91,6 +91,14 @@ per-forge, per-bot wiring lives in [mappings.md](mappings.md).
    forever. See [the gate's README](reference/comment-resolution/) for the full
    argument.
 
+   A loop may record more than the gate needs. The plugin's
+   [`resolve-review-comments`](../../plugin/skills/resolve-review-comments/README.md#outcomes)
+   splits a valid finding it deliberately declines, `wont-fix`, from one that
+   was wrong, `rejected`. The gate reads both as `rejected`, since either
+   closes the thread; a reviewer's score must not, because one is a hit and
+   the other a false positive. The skill's page says what each outcome leaves
+   behind and what it measures.
+
 6. **The verdict is declared, not inferred** — the author states which terminal
    state applies, in a form a machine can read, *at the moment of reply*.
    Reconstructing it later from prose is a measurably lossy step, and the loss

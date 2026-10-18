@@ -161,8 +161,12 @@ The pull-request loop every change follows:
    [CONFIGURATION.md](plugin/CONFIGURATION.md)).
 2. **Review rounds** — layered reviewers (in-house shadow reviewer, commercial
    bots, humans), with mandatory review steps selected by what changed.
-3. **Resolve every comment** — accept (fix + reply) or reject (reply with a
-   concrete reason), then resolve the thread. Once the draft reviewers settle,
+3. **Resolve every comment** — give each thread one recorded outcome:
+   accepted (fixed here), rejected (wrong, with the reason), won't fix (valid
+   but not worth the change), deferred (valid and owed, filed as a follow-up
+   item) or moot (its code is gone), then resolve the thread
+   ([the outcomes and what each leaves behind](plugin/skills/resolve-review-comments/README.md#outcomes)).
+   Once the draft reviewers settle,
    a human, or a review driver at the round the repository's pull-request
    policy names, marks Ready, and the reviewers that wait for Ready join; loop
    until a round after Ready settles with nothing left, with every expected
@@ -199,7 +203,10 @@ have caught gets classified, reconstructed as an eval fixture, and answered
 with an additive check. The check gates only once validated on its fixtures,
 and its recall, precision and cost decide whether it is kept, promoted or
 removed, so both loops get sharper over time without growing manual
-vigilance. Session reflections and promoted memories feed the same
+vigilance. Review outcomes are the measure's raw data: each reply that settles a thread opens with
+its recorded outcome, so a reviewer's hits, false positives and declined
+findings can be counted rather than guessed from the thread's prose, and
+deferred findings return to the line as work items. Session reflections and promoted memories feed the same
 scaffolding; the plugin's
 [`promote-memory`](plugin/skills/promote-memory/SKILL.md) skill does the
 promotion.

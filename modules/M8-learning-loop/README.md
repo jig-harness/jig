@@ -278,5 +278,14 @@ keep the module and `lib/` together when you vendor them.
   `manual` row without an issue for its gap, is future: it is worth writing
   once a repository has kept a catalog long enough to show which failures
   recur, so the template states the rule and leaves the dates to the owners.
+- **Counting review outcomes.** The outcome each settling review reply opens with
+  ([resolve-review-comments](../../plugin/skills/resolve-review-comments/README.md#outcomes))
+  is the parity report's natural input: per reviewer, `accepted`, `wont-fix`
+  and `deferred` are true positives, `rejected` a false positive, and `moot`
+  neither. A blocker the reviewer never raised has no reply, so the
+  report's `missed_blockers` come from comparing it with an independent
+  oracle, never from the outcomes. The script that collects the outcomes
+  across pull requests and writes the report's rows is future: it is worth writing once a repository has scored
+  reviewers from its own replies and shown which counts it acts on.
 - **Telemetry wiring.** Event names and dashboards belong with
   [M11](../M11-process-observability/).
