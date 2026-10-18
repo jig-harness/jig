@@ -19,6 +19,22 @@
   // Sensible defaults for managers, ignore paths, and PR behavior.
   extends: ["config:recommended"],
 
+  // Fixture inputs hold deliberately pinned, drifted or malformed versions that
+  // the gates test against; an update to one would break the fixture.
+  // `config:recommended` skips `__fixtures__` but not `fixtures`, and
+  // `ignorePaths` replaces its list, so the preset's entries are repeated.
+  ignorePaths: [
+    "**/node_modules/**",
+    "**/bower_components/**",
+    "**/vendor/**",
+    "**/examples/**",
+    "**/__tests__/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/__fixtures__/**",
+    "**/fixtures/**",
+  ],
+
   // One issue that lists every pending and rate-limited update.
   dependencyDashboard: true,
 
