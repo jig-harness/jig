@@ -1152,6 +1152,7 @@ describe("self-inflicted.ts CLI — the stream contract", () => {
   async function runCli(
     stdin: string,
     args: string[] = ["--repo", "", "--base", "base-branch"],
+    env: Record<string, string> = {},
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     const argv = args.map((a, i) => (args[i - 1] === "--repo" ? repo : a));
     const proc = Bun.spawn(
@@ -1160,7 +1161,7 @@ describe("self-inflicted.ts CLI — the stream contract", () => {
         stdin: new Response(stdin),
         stdout: "pipe",
         stderr: "pipe",
-        env: scrubbedGitEnv(),
+        env: { ...scrubbedGitEnv(), ...env },
       },
     );
     const [stdout, stderr, exitCode] = await Promise.all([
@@ -1250,7 +1251,19 @@ describe("self-inflicted.ts CLI — the stream contract", () => {
             line: 1,
             isOutdated: false,
           }),
+          JSON.stringify({
+            threadId: "T5",
+            path: "src/a.ts",
+            line: 1,
+            isOutdated: false,
+            comments: [
+              { author: "another-bot", body: "🟠 **high** · correctness" },
+            ],
+          }),
         ].join("\n"),
+        undefined,
+        // The configured reviewer, whose comments are read in Jig's format.
+        { DRIVE_PR_REVIEWER_APP: "shadow-review" },
       );
       expect(r.exitCode).toBe(0);
       const out = r.stdout
@@ -1261,6 +1274,8 @@ describe("self-inflicted.ts CLI — the stream contract", () => {
       expect(out[1].severity).toBe("high"); // P1 badge → high, not unknown
       expect(out[2].severity).toBe("unknown");
       expect(out[3].severity).toBe("unknown"); // no comments field at all
+      // Jig's format from a login that is not the configured reviewer.
+      expect(out[4].severity).toBe("unknown");
     },
     CLI_TIMEOUT_MS,
   );

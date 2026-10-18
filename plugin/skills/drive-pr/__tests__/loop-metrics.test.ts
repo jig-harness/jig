@@ -703,7 +703,7 @@ describe("computeLoopMetrics — outcome mix", () => {
     const out = renderLoopMetrics(m);
     expect(out).toContain("glyph-switcher: 1/1 lifetime (100.0%)");
     expect(out).toContain("0 findings this round");
-    expect(out).not.toContain("no longer recognized");
+    expect(out).not.toContain("severity format is not recognized");
     expect(out).not.toContain("EVERY finding this round");
   });
 
@@ -775,7 +775,7 @@ describe("computeLoopMetrics — outcome mix", () => {
     const out = renderLoopMetrics(m);
     expect(out).toContain("glyph-switcher: 1/5 lifetime (20.0%)");
     expect(out).toContain("1/1 this round (100.0%)");
-    expect(out).toContain("no longer recognized");
+    expect(out).toContain("severity format is not recognized");
   });
 
   it("buckets a thread with no author under a name no reviewer can own", () => {
@@ -800,7 +800,7 @@ describe("computeLoopMetrics — outcome mix", () => {
     // A human emits no severity token, so `severityOf` reads `unknown` for
     // every human thread BY CONSTRUCTION. Counting them parks every human at a
     // permanent 100% — which both defeats the "~0 → ~100% is the outage"
-    // diagnostic and makes the rendered "format is no longer recognized"
+    // diagnostic and makes the rendered "severity format is not recognized"
     // warning a claim that is false of the person it names.
     const m = computeLoopMetrics(
       sample({
@@ -834,7 +834,7 @@ describe("computeLoopMetrics — outcome mix", () => {
     expect(m.threads.total).toBe(3);
     const out = renderLoopMetrics(m);
     expect(out).not.toContain("a-human:");
-    expect(out).not.toContain("no longer recognized");
+    expect(out).not.toContain("severity format is not recognized");
   });
 
   it("reports a null share when every thread is human — not measured, not 0%", () => {
@@ -920,7 +920,7 @@ describe("renderLoopMetrics", () => {
       ),
     );
     expect(out).toContain("glyph-switcher: 2/2 lifetime (100.0%)");
-    expect(out).toContain("no longer recognized");
+    expect(out).toContain("severity format is not recognized");
     expect(out).toContain("zz-occasional: 1/2 lifetime (50.0%)");
     // Worst first, despite `zz-occasional` sorting later alphabetically —
     // "one reviewer at 100%" is the signal and must lead.
@@ -930,7 +930,7 @@ describe("renderLoopMetrics", () => {
     // The 50% reviewer is a rate, not an outage: it must NOT carry the
     // fully-inert warning.
     expect(out.split("zz-occasional:")[1]).not.toContain(
-      "no longer recognized",
+      "severity format is not recognized",
     );
   });
 
@@ -1621,12 +1621,22 @@ describe("threadFrom — withholding the outcome of an unreadable thread", () =>
   // and the whole point is that it must surface as a measured `unknown` rate
   // rather than as the silence of "no findings declined".
   it("samples severity off the RAISING comment, and a switched glyph reads unknown", () => {
+    // A built-in format, so the sample reads it whatever the repository's
+    // own reviewer is.
+    const coderabbit = { login: "coderabbitai", __typename: "Bot" };
     const recognized = threadFrom(
       node,
-      [{ ...comments[0]!, body: "🟡 **medium** · a finding" }, comments[1]!],
+      [
+        {
+          ...comments[0]!,
+          author: coderabbit,
+          body: "**🔒 Security** | **🟠 Major** | **⚡ Quick win**",
+        },
+        comments[1]!,
+      ],
       false,
     );
-    expect(recognized.severity).toBe("medium");
+    expect(recognized.severity).toBe("high");
 
     // 🔺 (U+1F53A) is NOT in the matcher, deliberately — it admits only the
     // coloured circles rather than every emoji, and widening it is the more
@@ -1635,7 +1645,14 @@ describe("threadFrom — withholding the outcome of an unreadable thread", () =>
     // change is the SIGNAL, not the matcher.
     const switched = threadFrom(
       node,
-      [{ ...comments[0]!, body: "🔺 **medium** · a finding" }, comments[1]!],
+      [
+        {
+          ...comments[0]!,
+          author: coderabbit,
+          body: "**🔒 Security** | **🔺 Major** | **⚡ Quick win**",
+        },
+        comments[1]!,
+      ],
       false,
     );
     expect(switched.severity).toBe("unknown");

@@ -142,6 +142,10 @@ import {
   WINDDOWN_EXEMPTION_ROUNDS,
   winddownFingerprintsOf,
 } from "../scripts/summary-findings";
+import {
+  BUILTIN_FORMATS,
+  jigFormats,
+} from "../scripts/lib/severity-formats.ts";
 
 import {
   HEAD,
@@ -156,6 +160,14 @@ import {
 } from "./drive-pr-harness.ts";
 
 useDrivePrSuite();
+
+/** The configured reviewer of these fixtures, which writes Jig's own format. */
+const REVIEWER = "example-review";
+const FORMATS = [...BUILTIN_FORMATS, ...jigFormats([REVIEWER])];
+const sev = (text: string, author?: string | null): string =>
+  severityOf(text, author, FORMATS);
+const jigSeverity = (text: string) => sev(text, REVIEWER);
+const codexSeverity = (text: string) => sev(text, "chatgpt-codex-connector");
 
 // ── Unit tests: the summary-only enumerator ─────────────────────────────────
 
@@ -271,25 +283,29 @@ describe("summary-findings parsing", () => {
   });
 
   it("extracts severity from the bullet", () => {
-    expect(severityOf("🟡 **medium** (high confidence)")).toBe("medium");
-    expect(severityOf("no severity here")).toBe("unknown");
+    expect(jigSeverity("🟡 **medium** (high confidence)")).toBe("medium");
+    expect(jigSeverity("no severity here")).toBe("unknown");
   });
 
   it("maps a shields.io priority badge onto the canonical severity vocabulary", () => {
     expect(
-      severityOf(
+      codexSeverity(
         "**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Mechanize severity**",
       ),
     ).toBe("high");
     expect(
-      severityOf(
+      codexSeverity(
         "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Bootstrap the calibration command**",
       ),
     ).toBe("medium");
-    // A bold canonical token still wins even when a badge is also present —
-    // the badge fallback only fires when no bold token matched.
-    expect(severityOf("🟠 **high** · ![P2 Badge](...)")).toBe("high");
-    expect(severityOf("![P9 Badge](...) not a real priority")).toBe("unknown");
+    // Each reviewer's comments are read in its own format only: a badge
+    // that does not lead Codex's line 0 is not a severity, and Jig's format
+    // does not read a badge.
+    expect(codexSeverity("🟠 **high** · ![P2 Badge](...)")).toBe("unknown");
+    expect(jigSeverity("![P1 Badge](...) title")).toBe("unknown");
+    expect(codexSeverity("![P9 Badge](...) not a real priority")).toBe(
+      "unknown",
+    );
   });
 
   it("confines the badge matcher to line 0 too, not just the bold-token matcher", () => {
@@ -300,16 +316,16 @@ describe("summary-findings parsing", () => {
     // header whose real line 0 carries no severity at all must not arm the
     // ladder off a badge that only appears once the text has walked to line 1.
     expect(
-      severityOf("\n![P1 Badge](https://img.shields.io/badge/P1-orange)"),
+      codexSeverity("\n![P1 Badge](https://img.shields.io/badge/P1-orange)"),
     ).toBe("unknown");
     expect(
-      severityOf(
+      codexSeverity(
         "Some unrelated title\n![P2 Badge](https://img.shields.io/badge/P2-yellow)",
       ),
     ).toBe("unknown");
     // A real badge on line 0 still parses, tabs included.
     expect(
-      severityOf("\t![P1 Badge](https://img.shields.io/badge/P1-orange)"),
+      codexSeverity("\t![P1 Badge](https://img.shields.io/badge/P1-orange)"),
     ).toBe("high");
   });
 
@@ -320,16 +336,16 @@ describe("summary-findings parsing", () => {
     // input — `severityOf` feeds `fail_open.inert_when_unknown`, and a finding
     // that should read `unknown` (ladder inert) instead armed the ladder.
     expect(
-      severityOf(
+      jigSeverity(
         "`**low**` is a supported token, not this finding’s severity.",
       ),
     ).toBe("unknown");
-    expect(severityOf("3 **low**-level branches are skipped")).toBe("unknown");
+    expect(jigSeverity("3 **low**-level branches are skipped")).toBe("unknown");
     // The real formats still parse: emoji + space, and a bare token.
-    expect(severityOf("\u{1F7E1} **medium** \u00b7 correctness")).toBe(
+    expect(jigSeverity("\u{1F7E1} **medium** \u00b7 correctness")).toBe(
       "medium",
     );
-    expect(severityOf("**high** \u00b7 no emoji at all")).toBe("high");
+    expect(jigSeverity("**high** \u00b7 no emoji at all")).toBe("high");
   });
 
   it("narrows the prefix to the coloured circles and to line 0 — a warning sign, or a decoration-only first line, is not a severity", () => {
@@ -337,18 +353,18 @@ describe("summary-findings parsing", () => {
     // its own decoy. `\p{Extended_Pictographic}` admits every emoji rather
     // than the coloured circles the contract names, so a title merely OPENING
     // with a warning sign classified `blocker`…
-    expect(severityOf("\u26a0\ufe0f **blocker** behavior is unsupported")).toBe(
-      "unknown",
-    );
+    expect(
+      jigSeverity("\u26a0\ufe0f **blocker** behavior is unsupported"),
+    ).toBe("unknown");
     // …and `\s` matches `\n`, so dropping the `m` flag never confined the
     // match to line 0 at all — the PREFIX walked to line 1 by itself. Note
     // this decoy defeats the circle fix alone: swap the warning sign for a
     // real circle and the whitespace branch is the only thing still holding
     // the line.
-    expect(severityOf("\u26a0\ufe0f\n**low** is only an example token")).toBe(
+    expect(jigSeverity("\u26a0\ufe0f\n**low** is only an example token")).toBe(
       "unknown",
     );
-    expect(severityOf("\u{1F7E1}\n**low** is only an example token")).toBe(
+    expect(jigSeverity("\u{1F7E1}\n**low** is only an example token")).toBe(
       "unknown",
     );
     // Every coloured circle the reviewers actually emit still parses, as does
@@ -364,19 +380,19 @@ describe("summary-findings parsing", () => {
       "\u26aa",
       "\u26ab",
     ]) {
-      expect(severityOf(`${circle} **medium** \u00b7 correctness`)).toBe(
+      expect(jigSeverity(`${circle} **medium** \u00b7 correctness`)).toBe(
         "medium",
       );
     }
-    expect(severityOf("\t**low** \u00b7 leading tab")).toBe("low");
+    expect(jigSeverity("\t**low** \u00b7 leading tab")).toBe("low");
     // The VS16 branch is DEFENSIVE and unreachable via any circle in the
     // class today (all are Emoji_Presentation=Yes), so this asserts what it
     // would do rather than a shape any emitter currently produces. Kept
     // deliberately, and labelled so, because an unlabelled probe over an
     // unreachable state reads as evidence that something emits it.
-    expect(severityOf("\u{1F7E1}\ufe0f **high** \u00b7 x")).toBe("high");
+    expect(jigSeverity("\u{1F7E1}\ufe0f **high** \u00b7 x")).toBe("high");
     // …and the defensive branch must not become a way back across a line.
-    expect(severityOf("\u{1F7E1}\ufe0f\n**low** is an example")).toBe(
+    expect(jigSeverity("\u{1F7E1}\ufe0f\n**low** is an example")).toBe(
       "unknown",
     );
   });
@@ -389,20 +405,20 @@ describe("summary-findings parsing", () => {
     // noise in prose, not decoration a reviewer emitted — then classified
     // as a real severity instead of `unknown`, arming a ladder that should
     // have failed open.
-    expect(severityOf("\ufe0f**high** hidden VS16")).toBe("unknown");
-    expect(severityOf("\u200d**low** hidden ZWJ")).toBe("unknown");
+    expect(jigSeverity("\ufe0f**high** hidden VS16")).toBe("unknown");
+    expect(jigSeverity("\u200d**low** hidden ZWJ")).toBe("unknown");
     // Binding the modifier to a preceding circle closed the standalone case
     // above but not this one: a ZWJ joins its base to whatever follows it, so
     // a circle immediately followed by a ZWJ and then the bold token — with
     // nothing after the ZWJ to join with — is an incomplete, dangling
     // sequence, not decoration. This used to classify `high`; the ZWJ branch
     // is now removed entirely rather than re-patched, so it reads `unknown`.
-    expect(severityOf("\u{1F7E1}\u200d**high** hidden ZWJ")).toBe("unknown");
+    expect(jigSeverity("\u{1F7E1}\u200d**high** hidden ZWJ")).toBe("unknown");
     // A run of several circles, each optionally carrying its own VS16, still
     // parses — the fix binds a modifier to ITS circle, it does not forbid
     // more than one circle in the prefix.
     expect(
-      severityOf("\u{1F7E1}\ufe0f\u{1F534} **high** \u00b7 two circles"),
+      jigSeverity("\u{1F7E1}\ufe0f\u{1F534} **high** \u00b7 two circles"),
     ).toBe("high");
   });
 
@@ -417,14 +433,14 @@ describe("summary-findings parsing", () => {
     // fail_open.inert_when_unknown. Mutation-checked: re-adding `m` reddens
     // this.
     expect(
-      severityOf(
+      jigSeverity(
         "Anchor severity parsing to the header\n`**low**` is a supported token, and this line begins with it.",
       ),
     ).toBe("unknown");
     // …while a REAL severity field on line 0 still parses, with body prose
     // below it quoting a different token as an example.
     expect(
-      severityOf(
+      jigSeverity(
         "\u{1F7E0} **high** \u00b7 correctness\nCompare against `**blocker**` for the top tier.",
       ),
     ).toBe("high");
@@ -435,7 +451,7 @@ describe("summary-findings parsing", () => {
     // as an example must not be misread as that higher severity — the badge
     // is only a signal in the leading header position.
     expect(
-      severityOf(
+      codexSeverity(
         "Explanation text with no leading badge that later quotes ![P0 Badge](...) as an example of the wrong shape.",
       ),
     ).toBe("unknown");
@@ -449,7 +465,7 @@ describe("summary-findings parsing", () => {
     // the body and finds the decoy instead (the bold-token counterpart of the
     // badge case above).
     expect(
-      severityOf(
+      codexSeverity(
         "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub>  Some title**\n\n" +
           "For example, `This low-priority finding demonstrates the malformed token **blocker**` returns `blocker`.",
       ),
@@ -464,7 +480,7 @@ describe("summary-findings parsing", () => {
     // anywhere later in the header can no longer win (the title-level
     // counterpart of the body-level case above).
     expect(
-      severityOf(
+      codexSeverity(
         "**<sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub> Handle the **blocker** token**",
       ),
     ).toBe("medium");
@@ -479,7 +495,7 @@ describe("summary-findings parsing", () => {
     // wherever it sat in the header. The token must now be the leading
     // content of the header — no letters before it, only emoji/punctuation/
     // whitespace, the shape every real severity field has.
-    expect(severityOf("Handle the **blocker** token safely")).toBe("unknown");
+    expect(jigSeverity("Handle the **blocker** token safely")).toBe("unknown");
   });
 
   it("scopes past leading ai-review HTML-comment markers to find the header", () => {
@@ -488,7 +504,7 @@ describe("summary-findings parsing", () => {
     // header/body split must skip those rather than treating the first
     // marker line as the whole header.
     expect(
-      severityOf(
+      jigSeverity(
         "<!-- ai-review-inline -->\n<!-- ai-review-fp: abc123 -->\n<!-- ai-review-round: 11 -->\n" +
           "🟡 **medium** · 🎯 correctness · confidence: high\n\n" +
           "For example, `This low-priority finding demonstrates the malformed token **blocker**` returns `blocker`.",
@@ -503,7 +519,7 @@ describe("summary-findings parsing", () => {
     // exposing whatever body prose follows it as the header — otherwise a
     // bold token quoted there as an example is misread as the real severity.
     expect(
-      severityOf(
+      jigSeverity(
         "<!-- some unrelated editor comment -->\n\n" +
           "For example, `This low-priority finding demonstrates the malformed token **blocker**` returns `blocker`.",
       ),
@@ -670,7 +686,7 @@ describe("summary-findings parsing", () => {
     // fails that. The old CATEGORY_LEAD_FIELD only checked the suffix, so it
     // accepted this title as a lead field and fabricated a category on a
     // header severityOf itself classifies `unknown`.
-    expect(severityOf("Fix the **medium** · 🏷️ category: security")).toBe(
+    expect(jigSeverity("Fix the **medium** · 🏷️ category: security")).toBe(
       "unknown",
     );
     expect(categoryOf("Fix the **medium** · 🏷️ category: security")).toBe(
@@ -723,6 +739,35 @@ describe("summary-findings parsing", () => {
     );
   });
 
+  it("reads summary bullets in the sticky author's severity formats", () => {
+    const body = [
+      "<!-- ai-code-review -->",
+      "### headline",
+      "",
+      "- `a.ts:12` — ![P1 Badge](https://img.shields.io/badge/P1-orange) badge finding",
+      "- `b.ts:3` — 🟡 **medium** · 🏷️ category: correctness — jig finding",
+      "",
+    ].join("\n");
+    const severities = (stickyAuthor: string | null) =>
+      classify({
+        pr: 1,
+        stickyCommentId: 1,
+        stickyBody: body,
+        stickyAuthor,
+        anchoredKeys: [],
+        addressedFingerprints: new Set(),
+      }).findings.map((f) => f.severity);
+    // The Codex connector's badge is read from its sticky, and Jig's own
+    // format still applies to whoever posted the sticky.
+    expect(severities("chatgpt-codex-connector[bot]")).toEqual([
+      "high",
+      "medium",
+    ]);
+    // Any other author's sticky reads Jig's format only.
+    expect(severities("some-reviewer[bot]")).toEqual(["unknown", "medium"]);
+    expect(severities(null)).toEqual(["unknown", "medium"]);
+  });
+
   // CodeRabbit's current inline-finding header — three
   // italic, pipe-delimited fields (category | severity | effort) — matched
   // neither the bold-token matcher nor the badge matcher, so 100% of its
@@ -735,27 +780,27 @@ describe("summary-findings parsing", () => {
     // why an author-blind version of this exact test would be a false
     // positive on the class it exists to catch.
     expect(
-      severityOf(
+      sev(
         "_🩺 Stability & Availability_ | _🔴 Critical_ | _⚡ Quick win_",
         "coderabbitai",
       ),
     ).toBe("blocker");
     expect(
-      severityOf(
+      sev(
         "_📐 Maintainability & Code Quality_ | _🟡 Minor_ | _⚡ Quick win_",
         "coderabbitai",
       ),
     ).toBe("low");
     expect(
-      severityOf(
+      sev(
         "_🗄️ Data Integrity & Integration_ | _🟠 Major_ | _⚡ Quick win_",
         "coderabbitai",
       ),
     ).toBe("high");
     // The emoji before the token is optional — only the word is load-bearing.
-    expect(
-      severityOf("_Stability_ | _Critical_ | _Quick win_", "coderabbitai"),
-    ).toBe("blocker");
+    expect(sev("_Stability_ | _Critical_ | _Quick win_", "coderabbitai")).toBe(
+      "blocker",
+    );
   });
 
   // CodeRabbit added a fourth tier, `🔵 Trivial`, below `Minor`.
@@ -764,20 +809,20 @@ describe("summary-findings parsing", () => {
   // verbatim CodeRabbit inline-finding headers.
   it("reads CodeRabbit’s `Trivial` tier as the weakest canonical severity", () => {
     expect(
-      severityOf(
+      sev(
         "_📐 Maintainability & Code Quality_ | _🔵 Trivial_ | _⚡ Quick win_",
         "coderabbitai",
       ),
     ).toBe("low");
     expect(
-      severityOf(
+      sev(
         "_📐 Maintainability & Code Quality_ | _🔵 Trivial_ | _💤 Low value_",
         "coderabbitai",
       ),
     ).toBe("low");
     // The author gate still binds the new token.
     expect(
-      severityOf(
+      sev(
         "_📐 Maintainability & Code Quality_ | _🔵 Trivial_ | _⚡ Quick win_",
         "example-review",
       ),
@@ -813,21 +858,18 @@ describe("summary-findings parsing", () => {
       ],
     ];
     for (const [header, expected] of cases) {
-      expect(severityOf(header, "coderabbitai")).toBe(expected);
+      expect(sev(header, "coderabbitai")).toBe(expected);
       // The author gate binds the bold form exactly as it binds the italic one.
-      expect(severityOf(header, "shadow-review")).toBe("unknown");
-      expect(severityOf(header)).toBe("unknown");
+      expect(sev(header, "shadow-review")).toBe("unknown");
+      expect(sev(header)).toBe("unknown");
     }
     // The emoji is optional in the bold form too.
     expect(
-      severityOf(
-        "**Stability** | **Critical** | **Quick win**",
-        "coderabbitai",
-      ),
+      sev("**Stability** | **Critical** | **Quick win**", "coderabbitai"),
     ).toBe("blocker");
     // A header followed by the finding body still reads from line 0.
     expect(
-      severityOf(
+      sev(
         "**🔒 Security & Privacy** | **🟠 Major** | **⚡ Quick win**\n\n`foo` leaks the token.",
         "coderabbitai",
       ),
@@ -836,40 +878,34 @@ describe("summary-findings parsing", () => {
 
   it("accepts either emphasis marker field by field, not only a uniform header", () => {
     expect(
-      severityOf(
-        "**🔒 Security** | _🟠 Major_ | **⚡ Quick win**",
-        "coderabbitai",
-      ),
+      sev("**🔒 Security** | _🟠 Major_ | **⚡ Quick win**", "coderabbitai"),
     ).toBe("high");
     expect(
-      severityOf(
-        "_🔒 Security_ | **🟠 Major** | _⚡ Quick win_",
-        "coderabbitai",
-      ),
+      sev("_🔒 Security_ | **🟠 Major** | _⚡ Quick win_", "coderabbitai"),
     ).toBe("high");
   });
 
   it("keeps the shape guards on the bold form: arity, end-to-end match, wrapped fields", () => {
     // Bold equivalents of the italic decoys below.
     const decoy = "**Expected** | **Critical** | **Actual**";
-    expect(severityOf(decoy)).toBe("unknown");
-    expect(severityOf(decoy, "chatgpt-codex-connector")).toBe("unknown");
-    expect(severityOf(decoy, "shadow-review")).toBe("unknown");
+    expect(sev(decoy)).toBe("unknown");
+    expect(sev(decoy, "chatgpt-codex-connector")).toBe("unknown");
+    expect(sev(decoy, "shadow-review")).toBe("unknown");
     // Authorship still gates the path rather than disabling it.
-    expect(severityOf(decoy, "coderabbitai")).toBe("blocker");
+    expect(sev(decoy, "coderabbitai")).toBe("blocker");
     // Two fields, four fields.
+    expect(sev("**🩺 Stability** | **🔴 Critical**", "coderabbitai")).toBe(
+      "unknown",
+    );
     expect(
-      severityOf("**🩺 Stability** | **🔴 Critical**", "coderabbitai"),
-    ).toBe("unknown");
-    expect(
-      severityOf(
+      sev(
         "**🩺 Stability** | **🔴 Critical** | **⚡ Quick win** | **extra**",
         "coderabbitai",
       ),
     ).toBe("unknown");
     // Trailing effort field not emphasized at all.
     expect(
-      severityOf(
+      sev(
         "**🩺 Stability** | **🔴 Critical** | not bold at all",
         "coderabbitai",
       ),
@@ -879,40 +915,34 @@ describe("summary-findings parsing", () => {
     // `CODERABBIT_SEVERITY_FIELD` (trailing text breaks `$`; leading text
     // breaks `^`), so removing either anchor alone turns a probe red.
     expect(
-      severityOf(
+      sev(
         "**🩺 Stability** | **Critical is a token** | **⚡ Quick win**",
         "coderabbitai",
       ),
     ).toBe("unknown");
     expect(
-      severityOf(
+      sev(
         "**🩺 Stability** | **see Critical** | **⚡ Quick win**",
         "coderabbitai",
       ),
     ).toBe("unknown");
     // A longer word that merely begins with a token.
     expect(
-      severityOf(
-        "**🩺 Stability** | **Majority** | **⚡ Quick win**",
-        "coderabbitai",
-      ),
+      sev("**🩺 Stability** | **Majority** | **⚡ Quick win**", "coderabbitai"),
     ).toBe("unknown");
     // Unknown vocabulary word.
     expect(
-      severityOf(
-        "**some field** | **not a severity** | **third**",
-        "coderabbitai",
-      ),
+      sev("**some field** | **not a severity** | **third**", "coderabbitai"),
     ).toBe("unknown");
     // Two separate bold spans are not one wrapped field.
     expect(
-      severityOf(
+      sev(
         "**a** and **b** | **🔴 Critical** | **⚡ Quick win**",
         "coderabbitai",
       ),
     ).toBe("unknown");
     // A single bold field with no pipes.
-    expect(severityOf("**🔴 Critical**", "coderabbitai")).toBe("unknown");
+    expect(sev("**🔴 Critical**", "coderabbitai")).toBe("unknown");
   });
 
   it("requires the raising comment be authored by CodeRabbit, not merely shaped like its header", () => {
@@ -921,41 +951,41 @@ describe("summary-findings parsing", () => {
     // CodeRabbit finding. The arity+shape fix alone still misread this
     // as `blocker`; only gating on authorship closes it.
     const decoy = "_Expected_ | _Critical_ | _Actual_";
-    expect(severityOf(decoy)).toBe("unknown");
-    expect(severityOf(decoy, null)).toBe("unknown");
-    expect(severityOf(decoy, "chatgpt-codex-connector")).toBe("unknown");
-    expect(severityOf(decoy, "example-review")).toBe("unknown");
+    expect(sev(decoy)).toBe("unknown");
+    expect(sev(decoy, null)).toBe("unknown");
+    expect(sev(decoy, "chatgpt-codex-connector")).toBe("unknown");
+    expect(sev(decoy, "example-review")).toBe("unknown");
     // The identical shape, actually from CodeRabbit, still classifies —
     // authorship gates the path, it does not disable it.
-    expect(severityOf(decoy, "coderabbitai")).toBe("blocker");
+    expect(sev(decoy, "coderabbitai")).toBe("blocker");
   });
 
   it("does not misread an unrelated pipe character in another reviewer’s prose as CodeRabbit’s header", () => {
     // Author is `'coderabbitai'` throughout this test so each case actually
-    // exercises `coderabbitSeverityOf`'s own shape rejection rather than
+    // exercises the `pipe-fields` shape's own rejection rather than
     // returning `unknown` on the author gate alone.
     //
     // No genuine lead field (not wrapped `_..._`) — a decoy pipe in ordinary
     // prose must not be mistaken for CodeRabbit's category|severity split.
     expect(
-      severityOf("Use a pipe | for separation, not a comma.", "coderabbitai"),
+      sev("Use a pipe | for separation, not a comma.", "coderabbitai"),
     ).toBe("unknown");
     // A lead field that IS italic-wrapped but whose second field is not one of
     // CodeRabbit's severity tokens must still read unknown, not guess.
     expect(
-      severityOf("_some field_ | _not a severity_ | _third_", "coderabbitai"),
+      sev("_some field_ | _not a severity_ | _third_", "coderabbitai"),
     ).toBe("unknown");
     // A single field (no pipe at all) — the pre-existing bold/badge matchers
     // still own this shape; the CodeRabbit matcher must not fire on it.
-    expect(severityOf("_🔴 Critical_", "coderabbitai")).toBe("unknown");
-    // A bold canonical token still wins outright — the CodeRabbit matcher is
-    // additive, checked only after the existing matchers found nothing.
+    expect(sev("_🔴 Critical_", "coderabbitai")).toBe("unknown");
+    // CodeRabbit's comments are read in CodeRabbit's format only, so Jig's
+    // own bold token from that login is not a severity.
     expect(
-      severityOf(
+      sev(
         "🟠 **high** — not the pipe-delimited CodeRabbit shape",
         "coderabbitai",
       ),
-    ).toBe("high");
+    ).toBe("unknown");
   });
 
   it("requires an exact end-to-end match on CodeRabbit’s severity field, not merely a quoted decoy inside a longer field", () => {
@@ -963,7 +993,7 @@ describe("summary-findings parsing", () => {
     // `_Critical_` as an example inside a longer field must not match, the
     // same discipline `SEVERITY_FIELD` and `CATEGORY_FIELD` already apply.
     expect(
-      severityOf(
+      sev(
         "_🩺 Stability_ | _for example, _Critical_ is a token_ | _⚡ Quick win_",
         "coderabbitai",
       ),
@@ -971,29 +1001,26 @@ describe("summary-findings parsing", () => {
     // The same one-anchor-at-a-time discipline for the italic form: each of
     // these defeats only `$` or only `^`.
     expect(
-      severityOf(
+      sev(
         "_🩺 Stability_ | _Critical is a token_ | _⚡ Quick win_",
         "coderabbitai",
       ),
     ).toBe("unknown");
     expect(
-      severityOf(
-        "_🩺 Stability_ | _see Critical_ | _⚡ Quick win_",
-        "coderabbitai",
-      ),
+      sev("_🩺 Stability_ | _see Critical_ | _⚡ Quick win_", "coderabbitai"),
     ).toBe("unknown");
   });
 
   it("requires exactly three CodeRabbit fields, rejecting a truncated or padded header", () => {
     // Two fields (category | severity, no effort) — must not be accepted on
     // the strength of the first two fields alone.
-    expect(severityOf("_🩺 Stability_ | _🔴 Critical_", "coderabbitai")).toBe(
+    expect(sev("_🩺 Stability_ | _🔴 Critical_", "coderabbitai")).toBe(
       "unknown",
     );
     // Four-plus fields — an extra trailing field must not be silently
     // ignored either.
     expect(
-      severityOf(
+      sev(
         "_🩺 Stability_ | _🔴 Critical_ | _⚡ Quick win_ | _extra_",
         "coderabbitai",
       ),
@@ -1002,10 +1029,7 @@ describe("summary-findings parsing", () => {
     // field, not merely be present — a decoy that happens to carry three
     // pipe-delimited segments must not pass on arity alone.
     expect(
-      severityOf(
-        "_🩺 Stability_ | _🔴 Critical_ | not italic at all",
-        "coderabbitai",
-      ),
+      sev("_🩺 Stability_ | _🔴 Critical_ | not italic at all", "coderabbitai"),
     ).toBe("unknown");
   });
 

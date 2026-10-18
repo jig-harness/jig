@@ -150,6 +150,14 @@ export function reviewBots(): string[] {
 }
 
 /**
+ * `review.severity_formats`, unparsed: `lib/severity-formats.ts` validates
+ * it.
+ */
+export function reviewSeverityFormats(): unknown {
+  return section("review").severity_formats;
+}
+
+/**
  * Is this comment author the posting reviewer, whose sticky comment is a
  * witness? Its app's bot login when an app is configured, else any login in
  * `review.bots`.

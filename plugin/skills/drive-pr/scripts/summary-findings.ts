@@ -58,6 +58,14 @@ import {
   stickyMarker,
 } from "./lib/overlay.ts";
 import { ghCall } from "./lib/proc.ts";
+import {
+  headerOf,
+  SEVERITY_FIELD,
+  severityOf,
+  stickySeverityOf,
+} from "./lib/severity-formats.ts";
+
+export { severityOf };
 
 // ── Pure parsing (unit-tested directly; no network) ─────────────────────────
 
@@ -484,355 +492,6 @@ export function parseBodyFindings(body: string): BodyFinding[] {
 }
 
 /**
- * Some inline reviewers emit a shields.io priority
- * badge instead of a bold canonical token — `![P1 Badge](https://img.shields
- * .io/badge/P1-orange?...)`. Mapped onto the same canonical tokens this
- * function produces elsewhere, never a vocabulary of its own:
- * `severity_order` (`review-triage.yaml`) is validated as an exact
- * permutation of `CANONICAL_SEVERITIES` (`ladder.ts`), so a badge-derived
- * value outside that set would fail the ladder's own config validation
- * rather than merely being ignored.
- */
-const BADGE_SEVERITY: Record<string, string> = {
-  p0: "blocker",
-  p1: "high",
-  p2: "medium",
-  p3: "low",
-};
-
-/**
- * A REAL leading severity field, on line 0 of the header: optional horizontal
- * whitespace and coloured-circle decoration, then the bold token. Nothing
- * else.
- *
- * The prefix used to be `[^\p{L}\n]*` — "any run of non-letters" — which is
- * far wider than the shape it was documented to describe, and two decoys
- * show the gap: a title beginning `` `**low**` is a supported token `` (a
- * backtick is not a letter) and `3 **low**-level branches are skipped` (a
- * digit is not a letter) were both classified `low`. Both are severity-LESS
- * findings, so the consequence is the fail-open contract inverted at its
- * load-bearing input: `severityOf` feeds `fail_open.inert_when_unknown`, and
- * a finding that should have read `unknown` — leaving the ladder inert —
- * instead armed it and could decline work that was supposed to fail open.
- *
- * So the prefix ENUMERATES what actually appears there rather than
- * subtracting what must not: a space or tab, and one of the COLOURED CIRCLES
- * this reviewer emits. A badge-format finding never reaches here — the
- * `BADGE_SEVERITY` matcher runs first.
- *
- * The variation-selector (VS16) branch exists to cover a reviewer that
- * starts decorating a circle it does not decorate today — every circle in
- * the class is `Emoji_Presentation=Yes`, so none needs VS16 to render, but a
- * future emitter might pair one anyway. It is bound to a PRECEDING circle in
- * the same alternative, never a free-standing branch of the top-level
- * alternation: a modifier is decoration only when it modifies something, and
- * one with no base character before it is not a circle a reviewer
- * decorated, it is an arbitrary invisible code point sitting in front of a
- * quoted token — exactly the "unforeseen decoration" the enumeration below
- * exists to reject, not admit.
- *
- * A ZWJ branch used to sit alongside VS16 here and is now gone entirely — see
- * the last decoy below for why re-binding it was not the fix.
- *
- * The first attempt at that enumeration was still two steps too wide, and a
- * decoy defeated each step:
- *
- * - `\p{Extended_Pictographic}` admits EVERY emoji, not the circles the
- *   sentence above claims, so `⚠️ **blocker** behavior is unsupported` — a
- *   severity-less title that merely opens with a warning sign — classified
- *   `blocker`. The branch is now the coloured
- *   circle block itself (U+1F534/U+1F535, U+1F7E0–U+1F7E4, U+26AA/U+26AB): a
- *   closed set that cannot grow under it, unlike a Unicode property whose
- *   membership is Unicode's to widen.
- * - `\s` matches `\n`, so dropping the `m` flag never actually confined the
- *   match to line 0 — the PREFIX walked to line 1 on its own and `⚠️\n**low**
- *   is only an example token` classified `low`. The whitespace branch is now
- *   `[ \t]`, which cannot leave the line it starts on, so the line-0 guarantee
- *   below is true of the whole pattern rather than of `^` alone.
- * - A later cut still listed VS16 and ZWJ as their own top-level branches
- *   under `*`, so each was reachable standalone — with no circle anywhere
- *   before it — and a title opening with a bare ZWJ or VS16 right before the
- *   bold token classified as a real severity. Binding each modifier to a
- *   circle in the same alternative closed that: the loop can still skip a
- *   RUN of decoration across several circles, but never a modifier with
- *   nothing behind it.
- * - Binding closed the standalone case but not the shape a ZWJ actually has:
- *   a ZWJ joins its base to WHATEVER FOLLOWS it, so a circle immediately
- *   followed by a ZWJ and then `**` — nothing after the ZWJ to join with —
- *   is an incomplete, dangling sequence, and it still classified as a real
- *   severity (`severityOf('🟡<ZWJ>**high** hidden ZWJ')` returned `high`).
- *   Closing that properly means requiring a second emoji after the ZWJ,
- *   which none of these circles has ever needed — none participates in a
- *   real ZWJ sequence today, so the branch was speculative from the start.
- *   Removed rather than patched a third time: a modifier admitted for a
- *   future emitter that does not exist has now cost two bypasses and bought
- *   no coverage of anything real.
- *
- * Every decoy above is a severity-LESS finding, so each had the same
- * consequence as the first: `unknown` (ladder inert) read as a real
- * severity, arming a ladder that should have failed open.
- *
- * Enumerating rather than subtracting also fixes the bias direction: an
- * unforeseen decoration — a nbsp, an emoji outside the circle block — now
- * yields `unknown` and leaves the ladder inert, instead of admitting a
- * severity nobody wrote.
- *
- * Written as an ALTERNATION rather than one character class: a class mixing a
- * base character with a combining one (VS16) can never match the combined
- * grapheme as a unit, which biome's `noMisleadingCharacterClass` rejects. The
- * behaviour actually wanted here is "skip a RUN of decoration code points,
- * where a modifier only ever follows the circle it decorates" — a circle
- * optionally followed by VS16 is one alternative, plain whitespace is the
- * other, and the `*` repeats across either. (The circles are a class among
- * themselves — they are all base characters.)
- *
- * Deliberately no `m` flag: `^` must mean start-of-header, not start-of-line.
- * A line-0 anchor was once added with `m` carried along, which defeated it
- * for any header whose SECOND line began with a quoted token, so the flag was
- * removed. Do not add it back — and do not widen the whitespace branch back to
- * `\s` either, which reopens the same hole from the other end.
- */
-const SEVERITY_FIELD =
-  /^(?:[ \t]|[\u{1F534}\u{1F535}\u{1F7E0}-\u{1F7E4}\u{26AA}\u{26AB}](?:\uFE0F)?)*\*\*(blocker|high|medium|low)\*\*/iu;
-
-/**
- * `🟡 **medium**` / `🔵 **low**` → `medium` / `low`; a `[P1]`-style badge (see
- * `BADGE_SEVERITY`) → its mapped token; unknown shapes → `unknown`.
- *
- * Without the badge fallback, every finding from a reviewer using this format
- * reads `unknown`, and because `severity` is listed in
- * `fail_open.inert_when_unknown` (`review-triage.yaml`), the decline ladder is
- * inert for ALL of that reviewer's findings — every round, not just the
- * unrecognized ones.
- *
- * Both the bold-token and badge matchers are scoped to the leading HEADER
- * paragraph, never the finding's prose body — leading `<!-- ai-review-* -->`
- * HTML comments (the configured reviewer app's own format) are stripped
- * first, then the header is everything up to the first blank line. A
- * badge-format finding carries no bold canonical token in its header, so an
- * unscoped search falls through to the body and misreads any bold token
- * quoted there as an example — e.g. a low-severity finding's own explanation
- * quoting `**blocker**` — as the real severity (the same class the badge
- * fallback was already scoped against).
- *
- * The stripped comments are scoped to the `ai-review-*` marker shape and no
- * other — a leading HTML comment from an unrelated source, if stripped
- * unconditionally, would expose whatever paragraph follows it as the header,
- * even when that paragraph is body prose quoting a bold token as an example
- * rather than a real severity bullet.
- *
- * The badge matcher runs BEFORE the bold-token matcher, and is anchored to the
- * structurally leading position — line 0 of the header, not merely its start —
- * rather than searched for anywhere in the header. A badge-format finding's own
- * title can itself quote a bold canonical token as a decoy (e.g.
- * `![P2 Badge](...) Handle the **blocker** token`) — an unanchored bold-token
- * search run first would match that decoy before the badge matcher ever runs,
- * misreading the badge's `medium` as `blocker`.
- *
- * The leading (and every internal) whitespace run in the badge pattern is
- * `[ \t]`, never `\s` — `\s` matches `\n`, so `^\s*` would let the prefix walk
- * past line 0 exactly the way `SEVERITY_FIELD`'s own prefix once did:
- * `severityOf('\n![P1 Badge](...)')` matched the badge on line 1 and armed the
- * ladder from a header whose real line 0 carries no severity at all. The two
- * matchers share the same line-0 contract; they must share the same whitespace
- * class that makes it true, not merely the same intent stated in prose.
- *
- * The bold-token matcher is anchored the same way, on the same line 0-of-header
- * position — not merely "somewhere in the (narrower) header blob": narrowing
- * the blob does not anchor the token search itself. A
- * severity-less finding whose own TITLE quotes a canonical word in bold (e.g.
- * `Handle the **blocker** token safely`) has no letters before that token, so
- * requiring the run of characters before `**` to contain no letters — only
- * emoji, punctuation or whitespace, the shape every real leading severity
- * field actually has — rejects it; a real field like `🟡 **medium** · …`
- * still matches.
- *
- * That anchor is only real WITHOUT the `m` flag, and the fix that added it
- * once carried one — so `^` restarted at every line inside the header and
- * the anchor it claimed to add was defeated by any header whose SECOND line
- * began with a quoted token (`` `**low**` is a supported token ``), which is
- * ordinary prose in a finding that is itself about severity parsing. A
- * severity-less late-round finding was then classified `low` instead of
- * `unknown`, bypassing `fail_open.inert_when_unknown` entirely (the third
- * failure from this one root cause, and the reason the flag is now called
- * out here rather than left as a detail of the literal). Do not add `m`: the
- * header is a single logical field, and line 0 of it is the whole claim.
- */
-/**
- * Leading `ai-review-*` HTML comments stripped, then everything up to the
- * first blank line — the block both `severityOf` and `categoryOf` read their
- * field out of. Shared rather than copied so a future fix to this scoping
- * (the comment-strip pattern, the blank-line split) cannot silently apply to
- * one and not the other — which is exactly how `categoryOf` first shipped
- * without the line-0 restriction `severityOf` had already paid three fixes
- * to earn.
- */
-function headerOf(text: string): string {
-  const withoutLeadingComments = text.replace(
-    /^(?:\s*<!--\s*ai-review-[\s\S]*?-->\s*)+/,
-    "",
-  );
-  return withoutLeadingComments.split(/\n\s*\n/, 1)[0] ?? "";
-}
-
-/**
- * CodeRabbit's inline-finding header: three emphasized, pipe-delimited fields
- * on line 0 of the header — category, severity, effort — e.g.
- * `**🔒 Security & Privacy** | **🟠 Major** | **⚡ Quick win**` (current) or
- * `_🩺 Stability & Availability_ | _🔴 Critical_ | _⚡ Quick win_`
- * (until 2026-10-09). Verified against 12/12 lifetime CodeRabbit inline
- * findings across three independent PRs in its italic form, and all 7 inline
- * threads on one PR in its bold form, each with an identical 100% unreadable
- * rate under the matchers above — this is CodeRabbit's whole format, not a
- * one-off variant.
- *
- * Neither existing matcher recognizes it, on two independent axes (a third,
- * the emphasis marker, is covered below):
- *   - vocabulary: CodeRabbit's tokens are `Critical`/`Major`/`Minor`/`Trivial`
- *     (`Trivial` first observed 2026-10, where its absence left the
- *     ladder inert for that finding), none of which is a member of
- *     `blocker|high|medium|low` — a vocabulary mapping is required, not just
- *     a case fold.
- *   - position: severity is the SECOND `|`-delimited field, preceded by a
- *     category field (`**🩺 Stability & Availability** | `) that
- *     `SEVERITY_FIELD`'s leading-decoration prefix does not admit. Widening
- *     that prefix to walk past an entire leading field would reopen exactly
- *     the decoy class its enumeration above was hardened against, so this is
- *     parsed structurally instead — split line 0 on `|`, then match field 1
- *     — the same field-position discipline
- *     `categoryOf`/`CATEGORY_LEAD_FIELD` already uses against the identical
- *     class of positional decoy.
- *
- * Each field must be wrapped END TO END (`^...$`) and the severity field's
- * unwrapped content must be the token (optionally preceded by one emoji) and
- * nothing else — a body sentence quoting `Critical` as an example inside a
- * longer field cannot satisfy this, and the LEAD and TRAILING fields must
- * themselves look like genuine emphasized fields, not merely be present —
- * mirroring `severityOf`'s own refusal to admit a bold token merely because
- * it appears somewhere in the header, and `CATEGORY_LEAD_FIELD`'s refusal to
- * trust a lead field that only ends with the right shape.
- *
- * The emphasis marker is NOT part of the contract and has already moved once:
- * `_italic_` fields became `**bold**` fields on 2026-10-09, reading every
- * CodeRabbit finding as `unknown` and leaving the decline ladder inert until
- * it was recognized again. So each field is unwrapped from EITHER marker,
- * field by field, and the vocabulary/arity/position checks run on the
- * unwrapped content — a pinned marker would be one more exact visual shape for
- * the next format change to break. Accepting both markers does not reopen the
- * decoy class: authorship (`CODERABBIT_LOGIN` in `severityOf`) is what closes
- * it, and the shape check stays a narrowing, not the guard.
- *
- * A bold field's content may not itself contain `**`, so `**a** and **b**`
- * (two bold spans in prose) is not read as a single wrapped field. (The
- * italic branch keeps its original `.+` content: it never mattered, since the
- * lead and trailing fields' content is never read.)
- */
-const CODERABBIT_FIELD = /^(?:_(.+)_|\*\*((?:(?!\*\*).)+)\*\*)$/u;
-const CODERABBIT_SEVERITY_FIELD =
-  /^(?:[\u{1F534}\u{1F535}\u{1F7E0}-\u{1F7E4}\u{26AA}\u{26AB}][ \t]*)?(Critical|Major|Minor|Trivial)$/iu;
-
-/** The content of a `_italic_` or `**bold**` field, or `null` if it is neither. */
-function coderabbitFieldContent(field: string | undefined): string | null {
-  const m = (field ?? "").match(CODERABBIT_FIELD);
-  return m ? (m[1] ?? m[2] ?? null) : null;
-}
-
-/**
- * CodeRabbit's GraphQL `author.login` — verified live against 12+ inline
- * findings across four PRs: plain `coderabbitai`, no `[bot]` suffix (that
- * suffix is a REST-API convention some other call sites use for the same
- * account; GraphQL's `author{ login }` never carries it). Any shape-based
- * CodeRabbit matcher, however many fields it requires, stays defeatable by a
- * decoy an ordinary reviewer comment can produce by coincidence —
- * `_Expected_ | _Critical_ | _Actual_` is exactly three italic
- * pipe-delimited fields with a real severity token in the middle, and reads
- * nothing like a bug unless you already know CodeRabbit did not write it
- * (the third decoy on this one function). Identity is the only signal that
- * closes the class rather than narrowing it one counterexample at a time.
- */
-const CODERABBIT_LOGIN = "coderabbitai";
-
-/**
- * Mapped onto the canonical `severity_order` vocabulary the same way
- * `BADGE_SEVERITY` maps `chatgpt-codex-connector`'s badge tiers. CodeRabbit's
- * vocabulary has no `medium` counterpart, and `severity_order` has
- * nothing weaker than `low`, so both `Minor` and `Trivial` take the weakest
- * canonical slot rather than widening `CANONICAL_SEVERITIES` for one reviewer.
- */
-const CODERABBIT_SEVERITY: Record<string, string> = {
-  critical: "blocker",
-  major: "high",
-  minor: "low",
-  trivial: "low",
-};
-
-/**
- * `**🩺 Stability & Availability** | **🔴 Critical** | **⚡ Quick win**` (or
- * the same fields in `_italic_`) → `blocker`; anything not shaped like CodeRabbit's pipe-delimited header → `null`, so
- * `severityOf` falls through to `unknown` rather than risking a false
- * positive on an unrelated pipe character in another reviewer's prose.
- *
- * The header is defined as exactly three fields (category | severity |
- * effort) — arity is checked with `!== 3`, not `< 2`, so a two-field decoy
- * (`**anything** | **Critical**`) or a four-plus-field one
- * (`**anything** | **Critical** | extra | extra`) reads `null` instead of
- * being accepted on the strength of its first two fields alone. The trailing
- * effort field is itself required to look like a genuine emphasized field
- * (the same wrapped-field shape, `coderabbitFieldContent`, the category field
- * is held to) — otherwise the whole thing is more likely a decoy that merely
- * happens to contain two pipe-delimited emphasized-looking segments than a real CodeRabbit
- * header, and an unrecognized severity leaving the decline ladder inert is
- * the safe failure mode, not this one.
- *
- * Shape alone is NOT the whole guard — see `severityOf`, which gates every
- * call to this function on the raising comment's own author. A three-field
- * shape check narrows the decoy surface; it cannot close it, because English
- * prose can produce the exact shape by coincidence (`**Expected** | **Critical**
- * | **Actual**` — a bug report's own before/after fields — misread as
- * `blocker` under this function alone).
- */
-function coderabbitSeverityOf(header: string): string | null {
-  const line0 = header.split("\n", 1)[0] ?? "";
-  const fields = line0.split("|").map((f) => f.trim());
-  if (
-    fields.length !== 3 ||
-    coderabbitFieldContent(fields[0]) === null ||
-    coderabbitFieldContent(fields[2]) === null
-  ) {
-    return null;
-  }
-  const m = coderabbitFieldContent(fields[1])?.match(CODERABBIT_SEVERITY_FIELD);
-  if (!m) return null;
-  return CODERABBIT_SEVERITY[(m[1] ?? "").toLowerCase()] ?? null;
-}
-
-/**
- * `authorLogin` is the raising comment's own GitHub login, threaded in by the
- * caller — `undefined`/`null` for a caller with no identity to offer (e.g.
- * `classify()`'s own sticky-body bullets below, which are always the
- * configured reviewer app's text, never CodeRabbit's, so skipping the
- * CodeRabbit-shaped path there is already correct without one). Gating
- * `coderabbitSeverityOf` on `CODERABBIT_LOGIN` — rather than trusting its
- * shape check alone — is what actually closes the decoy class three
- * consecutive fixes to this function kept narrowing instead of closing; see
- * that function's own doc for the counterexample that forced this.
- */
-export function severityOf(text: string, authorLogin?: string | null): string {
-  const header = headerOf(text);
-  const badge = header.match(
-    /^[ \t]*\*{0,2}(?:<sub>[ \t]*){0,2}!\[[ \t]*(P[0-3])[ \t]*Badge\]/i,
-  );
-  if (badge) return BADGE_SEVERITY[(badge[1] ?? "").toLowerCase()] ?? "unknown";
-  const bold = header.match(SEVERITY_FIELD);
-  if (bold) return (bold[1] ?? "").toLowerCase();
-  if (authorLogin === CODERABBIT_LOGIN) {
-    const coderabbit = coderabbitSeverityOf(header);
-    if (coderabbit) return coderabbit;
-  }
-  return "unknown";
-}
-
-/**
  * The `🏷️ category: <token>` field the reviewer renders next to severity on
  * both an inline finding's tag line and a backlog/body bullet's header — per
  * the reviewer's own contract, "A consumer reads it with `/🏷️ category:
@@ -937,7 +596,7 @@ const CATEGORY_FIELD =
  * `categories` clause can only ever ADMIT a finding, never decline one on the
  * strength of `unknown`).
  *
- * CodeRabbit's header (see `coderabbitSeverityOf` above)
+ * CodeRabbit's header (the `pipe-fields` shape in `lib/severity-formats.ts`)
  * also carries a category-shaped field — `**🩺 Stability & Availability**`, the
  * lead field ahead of its severity — but it is deliberately left unmapped
  * here: it is freeform prose, not the closed `categories:` vocabulary in
@@ -968,6 +627,11 @@ export interface ClassifyInput {
   pr: number;
   stickyCommentId: number | null;
   stickyBody: string;
+  /**
+   * The sticky's author login. Its bullets are read with that reviewer's
+   * severity formats plus Jig's own; absent, with Jig's own alone.
+   */
+  stickyAuthor?: string | null;
   /**
    * Keys of findings that DID receive an inline reviewer comment in the round
    * this sticky describes — `path:line`, or bare `path` for a comment whose
@@ -1126,11 +790,9 @@ export function classify(input: ClassifyInput): SummaryReport {
       source: "body",
       path: f.path,
       line: f.line,
-      // No author threaded here: every body bullet is a line inside THIS
-      // sticky, always authored by the configured reviewer app, never by
-      // CodeRabbit — so `severityOf`'s CodeRabbit path is correctly skipped
-      // by the same default a caller with no identity gets.
-      severity: severityOf(f.text),
+      // Every body bullet is a line of the sticky, found by its author's
+      // login (`reviewerSticky`), so it is read in that author's formats.
+      severity: stickySeverityOf(f.text, input.stickyAuthor),
       category: categoryOf(f.text),
       text: f.text,
     });
@@ -2045,6 +1707,7 @@ async function main(): Promise<number> {
         pr: prNumber,
         stickyCommentId: sticky.id,
         stickyBody: sticky.body,
+        stickyAuthor: sticky.user.login,
         anchoredKeys,
         addressedFingerprints: addressed,
         reviewedSha,

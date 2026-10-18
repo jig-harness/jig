@@ -517,6 +517,23 @@ other_tool:
     );
   });
 
+  test("drive-pr's severity-format validation refuses what it would refuse", () => {
+    const refused = (formats: string) =>
+      ids(
+        fit({
+          ".config/jig.yaml": `review:\n  severity_formats:\n${formats}`,
+        }).report,
+      ).includes("rejected:drive-pr (severity formats)");
+    const entry = (shape: string, severities: string) =>
+      `    - login: example-reviewer\n      shape: ${shape}\n      severities: ${severities}\n`;
+    expect(refused(entry("regex", "{ Sev1: high }"))).toBe(true);
+    expect(refused(entry("badge", "{ Sev1: critical }"))).toBe(true);
+    expect(refused(entry("badge", "{}"))).toBe(true);
+    expect(refused(entry("badge", "{ Sev1: high, SEV1: low }"))).toBe(true);
+    expect(refused(entry("badge", '{ "Sev-1": high }'))).toBe(true);
+    expect(refused(entry("badge", "{ Sev1: high, Sev2: medium }"))).toBe(false);
+  });
+
   test("the code-stats skill's own validation refuses what it would refuse", () => {
     const refused = (codeStats: string) =>
       ids(

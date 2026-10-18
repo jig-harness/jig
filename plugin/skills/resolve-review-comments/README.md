@@ -136,6 +136,7 @@ tooling can carry more.
 | `review.repo_slug` | GitHub repository (`owner/name`) used to validate finding permalinks; a deferral without it needs `--repo-slug` |
 | `review.repo_label` | Repository label used on follow-up issues, one of `review.taxonomy.repos`; a deferral without it needs `--repo-label` |
 | `review.taxonomy` | Consumer label sets used when filing deferred findings: `types`, `repos`, `sizes` (default `xs`, `small`), `categories`, `context_prefixes`, and `ownership_prefixes` (required once `types`, `repos` or `context_prefixes` is set). `provenance_label` and `epic_label` are older spellings of the `followup` and `epic` roles in `issue_tracker.labels`; set either one, or both to the same name |
+| `review.severity_formats` | Optional. How a reviewer writes a finding's severity, for one with no built-in format or words a built-in one does not read (entries are tried first; the built-in formats still apply after them), so the decline ladder can use it ([severity formats](../../EXTENDING.md#severity-formats)) |
 | `issue_tracker.labels` | Optional. The repository's label per role; deferral reads `followup` (default `pr-followup`) and `epic` (default `epic`). Checked at step 0 |
 | `issue_tracker.team`, `issue_tracker.file_command` | Optional. Shown to the agent for filing follow-up issues by hand |
 

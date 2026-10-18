@@ -78,6 +78,7 @@ import { workingTree } from "../../changelog/scripts/notes-dir.ts";
 import { parseCodeStatsConfig } from "../../code-stats/scripts/lib/config.ts";
 import { releasableVersion } from "../../changelog/scripts/versions.ts";
 import { parsePrPolicy } from "../../drive-pr/scripts/lib/pr-policy.ts";
+import { parseSeverityFormats } from "../../drive-pr/scripts/lib/severity-formats.ts";
 import { refuseRenamedSection } from "../../do-item/scripts/lib/overlay.ts";
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
@@ -839,6 +840,11 @@ function skillValidation(
     parseTrackerConfig(config);
   });
   attempt("resolve-review-comments", () => parseReviewConfig(config.review));
+  attempt("drive-pr (severity formats)", () => {
+    const review = config.review;
+    if (typeof review === "object" && review !== null && !Array.isArray(review))
+      parseSeverityFormats((review as Config).severity_formats);
+  });
   attempt("adr", () => adrConfig(path));
   attempt("changelog", () => changelogValidation(config, root));
   attempt("code-stats", () => parseCodeStatsConfig(config.code_stats));

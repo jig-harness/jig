@@ -977,6 +977,14 @@ make, use the entry's term instead.
   an acceptance into a decline, never the reverse, and the bar lives only in the
   repository's `.config/review-triage.yaml`
   ([triage rubric](plugin/skills/resolve-review-comments/references/triage-rubric.md#the-decline-ladder)).
+- **Severity format** — how one automated reviewer writes a finding's
+  severity: its login, the shape of the field (a bold word, a priority badge,
+  one field of a pipe-delimited header) and how its words map onto Jig's
+  `blocker`, `high`, `medium` and `low`. Read only from comments that login
+  posted; a finding no format reads has an unknown severity, which leaves the
+  *decline ladder* inert for it where the repository's review-triage file
+  lists `severity` under `fail_open.inert_when_unknown`
+  ([severity formats](plugin/EXTENDING.md#severity-formats)).
 - **Human-decided span** — a part of a pull request that records a person's
   decision (a "Decided by …" line, a decisions table, an operations follow-ups
   block). A review fix may correct the facts or wording around it, but may not

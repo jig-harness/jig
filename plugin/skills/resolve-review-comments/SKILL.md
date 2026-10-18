@@ -183,13 +183,13 @@ paginated:
   left-side thread, an unreadable base, …). Feed this straight into step 3's
   `--self-inflicted` — pass `null` through as `unknown`, never as `false`.
   `selfInflictedCommit` names the blamed commit when `true`.
-- `severity` — the thread's own first comment run through `severityOf`. The
-  recognised formats are a bold `**blocker**`/`**high**`/`**medium**`/`**low**`
-  token opening the comment and a `[P0]`–`[P3]` image badge, read from any
-  reviewer, and CodeRabbit's `category | severity | effort` header, read only
-  on a comment CodeRabbit raised. A finding in any other shape reads
-  `unknown`, so a custom reviewer takes part in severity-based triage by
-  opening its findings with one of the first two.
+- `severity` — the thread's own first comment run through `severityOf`,
+  which reads it with the [severity formats](../../EXTENDING.md#severity-formats)
+  of the comment's own author: CodeRabbit's, Greptile's and the Codex
+  connector's built in, Jig's own format (a bold `**blocker**`/`**high**`/`**medium**`/`**low**`
+  token opening the comment) for the configured reviewer, and any the
+  repository adds in `review.severity_formats`. A comment no format of its
+  author reads is `unknown`.
   Unconditionally appended by `self-inflicted.ts` on every record,
   self-inflicted or not — feed it straight into step 3's `--severity`.
 - `category` — the same first comment run through `categoryOf`. The one

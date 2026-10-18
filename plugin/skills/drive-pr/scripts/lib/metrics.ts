@@ -186,7 +186,7 @@ export interface LoopMetrics {
    * park every human at a permanent 100% and inflate the aggregate with a
    * population that has no glyph to switch, defeating the one diagnostic this
    * metric exists to give ("~0 → ~100% is the outage"). Worse, it would make
-   * the rendered warning below — "this reviewer's format is no longer
+   * the rendered warning below — "this reviewer's severity format is not
    * recognized" — a claim that is false of every human it named.
    *
    * Scoped to every BOT thread, answered or not — unlike `outcomesByCategory`,
@@ -628,7 +628,7 @@ export function renderSeverityOutageWarnings(m: LoopMetrics): string {
       const span = bucket.recentRoundKnown
         ? "EVERY finding this round"
         : "EVERY attributable finding over the PR lifetime";
-      return `  ⚠ ${span} — ${author}: ${scope} has an unreadable severity; this reviewer's format is no longer recognized, and its ladder is fully inert`;
+      return `  ⚠ ${span} — ${author}: ${scope} has an unreadable severity; this reviewer's severity format is not recognized (add it in review.severity_formats), and its ladder is fully inert`;
     })
     .join("\n");
 }
@@ -733,7 +733,7 @@ export function renderLoopMetrics(m: LoopMetrics): string {
       ? "EVERY finding this round"
       : "EVERY attributable finding over the PR lifetime";
     lines.push(
-      `             ${a}: ${b.unknown}/${b.total} lifetime (${pct(b.unknownShare)})${recent}${outage ? ` ⚠ ${outageSpan} — this reviewer's format is no longer recognized, and its ladder is fully inert` : ""}`,
+      `             ${a}: ${b.unknown}/${b.total} lifetime (${pct(b.unknownShare)})${recent}${outage ? ` ⚠ ${outageSpan} — this reviewer's severity format is not recognized (add it in review.severity_formats), and its ladder is fully inert` : ""}`,
     );
   }
 

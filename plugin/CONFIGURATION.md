@@ -190,6 +190,7 @@ How review threads are resolved and how the drive recognises its AI reviewer.
 | `review.reviewer_check_pattern` | anchored regular expression | `^ai[ _-]?review(\s*\(.+\))?$`, used once a reviewer is expected | drive-pr | Name of the posting reviewer's check run. Matched case-insensitively, so `^ai review$` also matches `AI Review`; POSIX classes such as `[[:space:]]` are accepted. Without `review.reviewer_app`, reviewer checks are recognised by name from any app and the summary comment is accepted only from `review.bots`. `DRIVE_PR_REVIEWER_CHECK` overrides it |
 | `review.sticky_marker` | text | `<!-- ai-code-review -->` | drive-pr | Text identifying the reviewer's summary comment. Read only when a reviewer is expected. `DRIVE_PR_STICKY_MARKER` overrides it |
 | `review.reviewed_sha_marker` | text | `ai-reviewed-sha` | drive-pr | Marker for the commit the reviewer reviewed, inside that comment. Read only when a reviewer is expected. `DRIVE_PR_SHA_MARKER` overrides it |
+| `review.severity_formats` | list of `{login, shape, severities}` | none: the [built-in formats](EXTENDING.md#severity-formats) only | drive-pr, resolve-review-comments | How a reviewer writes a finding's severity, so the decline ladder can use it: a reviewer with no built-in format, or words or a shape a built-in format does not read. `login` is the reviewer's GitHub login (`[bot]` optional); `shape` is `bold-token` (`🟡 **Major**`), `badge` (a `![P1 Badge]` image), `html-badge` (an `<img alt="P1">` image) or `pipe-fields` (`**category** \| **Major** \| **effort**`); `severities` maps each of the reviewer's words to `blocker`, `high`, `medium` or `low`. Read before the built-in formats, which still apply to a comment no entry reads, and only on comments that login posted. `null` means not set |
 
 The [resolve-review-comments README](skills/resolve-review-comments/README.md)
 and the [drive-pr README](skills/drive-pr/README.md) explain how these are used.
@@ -672,6 +673,10 @@ review:
   reviewer_check_pattern: "^ai[ _-]?review(\\s*\\(.+\\))?$"
   sticky_marker: "<!-- ai-code-review -->"
   reviewed_sha_marker: ai-reviewed-sha
+  severity_formats:
+    - login: example-linter[bot]
+      shape: badge                       # bold-token | badge | html-badge | pipe-fields
+      severities: { Sev1: blocker, Sev2: high, Sev3: medium, Sev4: low }
 repository:
   base_branch: develop                   # default: the repository's default branch
 pull_requests:

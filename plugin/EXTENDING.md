@@ -62,7 +62,7 @@ hook or the interface instead.
 | Review skills, implementing agents, scouts | The repository's own | [Configuration](#the-repositorys-own-skills-and-agents) | — |
 | Issue tracker | Linear | [A tracker adapter](#issue-tracker) in Jig | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12 |
 | Reflection store | A folder of files, a Notion database, or any command | [A store command](#reflection-stores), no change to Jig | Jira: roadmap, later |
-| AI reviewer | Any bot, by login, app and check name | [Configuration](#ai-reviewers) | Summary-comment severities in [the parsed formats](#ai-reviewers) only: roadmap item 10 |
+| AI reviewer | Any bot, by login, app and check name; finding severities from CodeRabbit, Greptile, the Codex connector, Jig's own finding format, or any reviewer [configured](#severity-formats) | [Configuration](#ai-reviewers) | — |
 | Forge (where pull requests live) | GitHub, through the `gh` command | — | [No forge interface yet](#forge-github): roadmap, later |
 | CI system | Any CI that reports checks to GitHub | `ci.required_checks`; `fix-ci --log` | [Log download and workflow review](#ci-system) are GitHub Actions only |
 | Git remote | `origin` | — | Roadmap item 10 |
@@ -208,17 +208,58 @@ drive expects a reviewer only where `review.reviewer_app` or
 `review.reviewer_check_pattern` is set; a repository with neither converges on
 threads and CI alone.
 
-Fixed today: the severity of a finding that a reviewer writes in its
-summary comment, rather than as a thread, is read from a structured
-`severity` field when the finding comes from the reviewer's machine-readable
-backlog block (`ai-review-backlog`), and otherwise only from these formats:
-a bold severity word (`**medium**`) at the head of the finding, the Codex
-connector's `P0`–`P3` badges, in
-[`summary-findings.ts`](skills/drive-pr/scripts/summary-findings.ts).
-CodeRabbit's header is read only on its inline threads, where the comment's
-author is known to be CodeRabbit; in a summary comment it is not read. In
-any other format the severity reads as unknown. Adding a format is a parser
-added there (roadmap item 10).
+### Severity formats
+
+In late rounds the review loop can decline a finding it would otherwise fix
+([the decline ladder](skills/resolve-review-comments/references/triage-rubric.md#the-decline-ladder)),
+and how far it may go depends on the finding's severity. Each reviewer writes
+severity its own way, so Jig reads it through a **severity format**: the
+reviewer's login, the shape of the field, and how the reviewer's words map
+onto Jig's `blocker`, `high`, `medium` and `low`. A format is read only from
+comments its own login posted, so prose that happens to look like a severity
+field, from anyone else, is never read as one. A finding no format reads has
+an unknown severity. Where the repository's
+[review-triage file](CONFIGURATION.md#the-review-triage-file) lists
+`severity` under `fail_open.inert_when_unknown`, the ladder then stays inert
+for that finding; where it does not, the severity clause abstains and the
+ladder's other clauses decide.
+
+Built in, each checked against the reviewer's real comments:
+
+| Reviewer | Login | Shape | Words |
+| --- | --- | --- | --- |
+| CodeRabbit | `coderabbitai` | `pipe-fields`: `**🔒 Security** \| **🟠 Major** \| **⚡ Quick win**` | `Critical` blocker, `Major` high, `Minor` and `Trivial` low |
+| Greptile | `greptile-apps` | `html-badge`: an `<img alt="P1">` badge at the head of the finding | `P0` blocker, `P1` high, `P2` medium |
+| Codex connector | `chatgpt-codex-connector` | `badge`: a `![P1 Badge]` image at the head of the finding | `P0` to `P3`: blocker to low |
+| The repository's configured reviewer (`review.reviewer_app`, else `review.bots`) | its own | `bold-token`: `🟡 **medium** · 🏷️ category: correctness` | Jig's own words |
+
+The `bold-token` row is **Jig's own finding format**. A reviewer a team builds
+itself, an agent running in CI for example, gets severity and category
+triage by opening each finding with it, once its login is the configured
+reviewer or has an entry of its own below. The bullets of the reviewer's
+summary comment are read in this format, after the formats of the login
+that posted it.
+
+Any other reviewer is added in `review.severity_formats`
+([fields](CONFIGURATION.md#review)), one entry per login, without a change to
+Jig:
+
+```yaml
+review:
+  severity_formats:
+    - login: example-reviewer[bot]
+      shape: bold-token # 🔴 **Critical** · …
+      severities: { Critical: blocker, Major: high, Minor: medium, Nit: low }
+```
+
+A repository's entries are tried before the built-in ones, and add to them
+rather than replace them: a comment an entry does not read is still tried
+against the built-in formats for the same login. An entry picks
+one of the supported shapes and supplies the reviewer's words; it cannot
+describe a field built another way (a different decoration before the word,
+a different layout). That is a new shape, a change to Jig with fixtures from
+the reviewer's real comments, as is a reviewer many teams use contributed as
+a built-in.
 
 ## Forge: GitHub
 

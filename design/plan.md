@@ -159,8 +159,11 @@ Move into configuration when a consumer needs them:
   with fixed label groups, instead of going through the
   [tracker interface](../GLOSSARY.md);
 - the drive pushes to and fetches from a remote named `origin`;
-- summary-finding severity is parsed only for the reviewers whose comment
-  formats the drive already knows;
+- the markers of Jig's own finding format (`ai-review-backlog`,
+  `ai-review-round`, the leading `ai-review-*` comments) are fixed, and the
+  summary-comment markers default to `<!-- ai-code-review -->` and
+  `ai-reviewed-sha`: they become settings with neutral defaults, set to the
+  current names first in the repositories whose reviewer writes them;
 - fields named after Linear: the review-triage file's
   `severity_mapping.<severity>.linear_priority` and
   `fractal-metrics.ts --skip-linear`, renamed with the old names still read.

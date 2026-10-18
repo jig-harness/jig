@@ -1041,8 +1041,9 @@ cannot set shell options.
 passes every record through unchanged and adds `selfInflicted` — `true` when
 the anchor line's last-touching commit is one of **this PR's own**, with the
 commit id in `selfInflictedCommit` — and, unconditionally on every record, the
-thread's own `severity` (`severityOf` against its first comment; `unknown` if
-neither the bold-token nor the badge shape matched) and `category`
+thread's own `severity` (`severityOf` against its first comment, with the
+[severity formats](../../EXTENDING.md#severity-formats) of that comment's
+author; `unknown` if none of them read one) and `category`
 (`categoryOf` against the same comment; `unknown` when the reviewer emitted no
 `🏷️ category:` tag). By round 3, self-inflicted is the single most likely
 case, and it is what § 3's "check the fix's own blast radius" turns on — a question
@@ -1161,8 +1162,8 @@ finding on a gate script (tier 1), and a code PR a finding on its docs
 a gate defect as docs polish.
 
 `--severity` is step 2's `severity` label for this **thread** — `self-
-inflicted.ts` computes it by running `severityOf` (bold `**token**`, or a
-`[P1]`-style badge for a reviewer that emits one instead) against the
+inflicted.ts` computes it by running `severityOf` (the comment author's own
+[severity formats](../../EXTENDING.md#severity-formats)) against the
 thread's own first comment, so it need not be re-derived by hand from the raw
 finding text. `--category` is step 2's `category` label the same way
 (`categoryOf` against the same comment, or against the finding's own text for
@@ -2219,9 +2220,12 @@ What is load-bearing about the numbers:
   not a gate. **Read the per-author line, not the aggregate**: an
   aggregate share drifts up merely because one noisy reviewer posted more,
   whereas one reviewer jumping from ~0 to ~100% is the outage. The fix for
-  that is never to widen `SEVERITY_FIELD`; it is to teach the matcher the
-  reviewer's new shape deliberately, or to ask the reviewer to keep the old
-  one.
+  that is never to widen a shape's pattern. A new login or new words in one
+  of the existing shapes is an entry in `review.severity_formats`
+  ([severity formats](../../EXTENDING.md#severity-formats)); a field built
+  differently (a new decoration, a new layout) is a new shape, added to
+  `scripts/lib/severity-formats.ts` deliberately with fixtures from the reviewer's
+  real comments. Or ask the reviewer to keep the old one.
 
   The per-author line itself carries a lifetime figure and a current-round
   one — `1/5 lifetime (20.0%) · 1/1 this round (100.0%)` — because the
