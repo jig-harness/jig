@@ -153,7 +153,7 @@ fields:
         shape: string
         severities: { type: map, values_type: string }
     read_by: [drive-pr, resolve-review-comments]
-    since: next
+    since: 0.61.0
 
   repository.base_branch:
     type: string
