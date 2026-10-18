@@ -258,9 +258,10 @@ screen).
   preview addresses are off, so the domain is the only way in.
 - **Open, not indexed**: every reader is served. `website/worker/index.ts`
   answers with the built page or file, or a page's Markdown twin for a
-  reader that prefers Markdown. `robots.txt` (disallow everything) and
-  `noindex` on every page keep the site out of search engines until it
-  opens to them ([§ Build order](#build-order)).
+  reader that prefers Markdown. `robots.txt` (disallow everything), and
+  `noindex` in every page and in the `X-Robots-Tag` header
+  `website/public/_headers` gives every file, keep the site out of search
+  engines until it opens to them ([§ Build order](#build-order)).
 - **Deploy**: `.github/workflows/website.yml` deploys every push to `main`
   (the site renders the documents, so most changes reach it). It needs the
   `CLOUDFLARE_API_TOKEN` secret of the `website` environment: a token
@@ -336,7 +337,8 @@ Markdown, and an index to find it by.
   page or twin does not have, as it does for a page.
 - **Served like any page.** Any reader or agent can fetch it, and
   `robots.txt` asks crawlers to stay out. Opening the site to search engines
-  takes `robots.txt` and `noindex` off, so crawlers can find it.
+  takes `robots.txt`, `noindex` and the `X-Robots-Tag` header off, so
+  crawlers can find it.
 
 ### Working on the site
 
@@ -387,7 +389,8 @@ Open, each its own pull request:
    once the skills' READMEs state their limits and platforms in a form a
    page can read.
 5. **Opening the site to search engines** (a person's decision): remove
-   `noindex`, `robots.txt` and the "Internal preview" strip; review the
+   `robots.txt`, the pages' `noindex`, the `X-Robots-Tag` rule in
+   `website/public/_headers` and the "Internal preview" strip; review the
    site's own copy (the home page's statements, the limits, the figure
    captions); decide whether the live audit example keeps showing a
    third party's repository or shows Jig's own audit.
