@@ -56,6 +56,7 @@ with the review.
 | [Reflection stores](reflection.md) | Later: the Jira store |
 | [The audit experience](audit-experience.md) | 8 |
 | [The jig-harness.dev website](website.md) | 18 |
+| [Merge conflicts, measured](merge-conflicts.md) | 22 |
 
 ## Starting a design
 

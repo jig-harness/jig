@@ -574,6 +574,10 @@ make, use the entry's term instead.
   opposed to the side carrying the work being brought in. Git's own names,
   "ours" and "theirs", swap meaning between a merge and a rebase, so
   Jig's conflict tooling names each side by this role instead.
+- **Conflict hotspot** — a file that conflicts again and again as parallel
+  pull requests merge, usually because it keeps in one place something every
+  change adds to (a count, a list, a version). Measuring the conflicts
+  finds it; moving that fact out of the shared place removes it.
 - **Changelog** — a file listing each release's notable changes, newest
   first, written for the people who use the *released artifact* it belongs
   to. Jig's follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):

@@ -292,6 +292,32 @@ repository with one released artifact. What is left:
 - **Other CI providers' templates** beside GitHub's workflow template, when
   a repository needs one.
 
+### 22. Merge conflicts, measured
+
+Parallel pull requests put each other in conflict, and each conflict costs a
+resolution and a CI run; nobody can say how many there are, in which files,
+or why. [design/merge-conflicts.md](merge-conflicts.md) has how it works:
+
+- **A report from history**: `resolve-conflicts` replays every merge commit
+  with `git merge-tree`, reads the decisions its own `Conflicts resolved:`
+  sections recorded, and lists the conflicted paths with a cause each
+  (derived, structural, echo, version, sequence, tally, append, packed
+  list, adjacent, overlap) and the
+  change that removes it; the paths that keep conflicting are the
+  [conflict hotspots](../GLOSSARY.md).
+- **A live record**: `resolve-conflicts` keeps one event per resolved path
+  instead of overwriting its snapshot, which covers the rebases,
+  cherry-picks and reverts the replay cannot see.
+- **The practice**: M11's `merge_conflict` event and metric, the figure on
+  `drive-pr`'s cross-PR scoreboard, M12's practice and audit criterion, and
+  hotspots as findings in the reflection store.
+- **One file per roadmap item** follows only if the report shows the plan
+  or the roadmap conflicting where items are added or removed side by side.
+
+Done when the report run on Jig's history lists its conflicts by path and
+cause with a remedy for each, a resolution by `resolve-conflicts` leaves its
+events, and an audit scores M12's new criterion from the report.
+
 ## Later
 
 - **Jira store for reflections.** One issue per finding, of a custom issue

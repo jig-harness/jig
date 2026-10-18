@@ -113,6 +113,16 @@ one per repository. The skill also checks the whole changelog against the
 rules of its format, and gets workflow templates for CI providers other than
 GitHub.
 
+### 22. Merge conflicts, measured
+
+A report of where a repository's merges conflict, from its git history and
+from each resolution [`resolve-conflicts`](plugin/skills/resolve-conflicts/SKILL.md)
+makes: which files, how often, why (a count, a list or a version every
+change edits in one place, or two changes to the same lines), and the change
+that removes each cause. [M12](modules/M12-parallel-agent-ergonomics/README.md)
+gains the practice of measuring and removing
+[conflict hotspots](GLOSSARY.md), and the audit scores it.
+
 ## Later
 
 - **Jira store for reflections.** Reflections kept as Jira issues, for a team
