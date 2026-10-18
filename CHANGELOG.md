@@ -287,6 +287,12 @@ changes are marked **Breaking** and say what a consumer changes.
   Git for Windows' Bash, then PowerShell for Codex.
 - The module map on the website starts on Team/Standard instead of Solo/Lite, so it opens with more of the modules filled and a clearer picture of what a team takes and leaves. The profile switch still offers every profile.
 - Hovering or focusing a row of the home page's map opens that module's popover, the same one the module chips show, with a link to the module.
+- The [queue-watchdog](modules/M13-pipeline-economy/templates/queue-watchdog.yml)
+  and [runtime-canary](modules/M14-testing-strategy/templates/runtime-canary.yml)
+  workflow templates check out Jig without a token of their own: Jig's
+  repository is public, so the checkout needs no credential. A workflow
+  copied from an earlier template can drop the Jig checkout's `token` line
+  and the secret it names.
 
 ### Fixed
 
