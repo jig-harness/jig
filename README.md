@@ -2,7 +2,7 @@
 
 # Jig
 
-**AI-native delivery practices — template, reference, and auditor.**
+**A jig for AI coding agents: modular delivery practices, shared skills and gates, and an auditor that scores your repository.**
 
 Jig is a modular collection of software-delivery practices for teams that
 build and maintain software with AI coding agents. A jig, in a workshop, holds
