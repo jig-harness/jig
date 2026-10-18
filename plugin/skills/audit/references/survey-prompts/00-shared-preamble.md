@@ -42,6 +42,13 @@
 
 Calibration rules (learned from audit runs):
 
+- **A practice covering most of its scope scores its weakest part.** A
+  criterion about every job (every package, every derived file) scores the
+  highest rung that holds for all of them, however few fall short: two of
+  three jobs with a timeout and no written rule is `absent`; with a rule
+  asking every job for one, `convention`. Say the coverage in the evidence
+  ("2 of 3 jobs declare a timeout").
+
 - **A uniformly "absent" area is a valid, expected finding** — common in
   small or pre-agent-era OSS targets. Report the nearest existing analogue
   (CI config, lint setup, CONTRIBUTING, readme) in a line or two and move

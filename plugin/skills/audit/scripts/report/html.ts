@@ -61,9 +61,11 @@ import { iconSprite } from "./lucide/icons.ts";
 import { critAnchor, createMarks, type Marks, scoreChip } from "./marks.ts";
 import {
   alternativeOf,
+  alternativeStanding,
   attainedWord,
   type Cell,
   countsOf,
+  criteriaHeadline,
   groups,
   type Horizon,
   horizonWhy,
@@ -175,20 +177,16 @@ function stats(ctx: Ctx): string {
   const of = (a: number, b: number) =>
     `<span class="big">${a} <small>${esc(LABEL.ofWord)} ${b}</small></span>`;
   const later = n.later > 0 ? `; ${n.later} ${esc(LABEL.laterCount)}` : "";
-  const met = n.notExamined > 0 ? LABEL.examinedMet : LABEL.criteriaMet;
-  const notExamined =
-    n.notExamined > 0
-      ? `; ${n.notExamined} ${esc(LABEL.notExaminedCount)}`
-      : "";
+  const head = criteriaHeadline(n);
   const applied =
     n.applied > 0 ? `; ${n.applied} ${esc(LABEL.appliedCount)}` : "";
   const items = [
-    `<li class="met">${of(n.met, n.applicable)}${esc(met)}${n.expectedAbsent > 0 ? `; ${n.expectedAbsent} ${esc(LABEL.expectedAbsentCount)}` : ""}${notExamined}</li>`,
-    `<li><span class="big">${n.now}</span>${esc(LABEL.recommendationsNow)}, ${n.quickWins} ${esc(LABEL.quickWins)}${later}${applied}</li>`,
+    `<li class="met">${of(n.met, n.applicable)}${esc(head.noun)}${esc(head.tail)}</li>`,
+    `<li><span class="big">${n.now}</span>${esc(LABEL.recommendationsNow[plural(n.now)])}, ${n.quickWins} ${esc(LABEL.quickWins[plural(n.quickWins)])}${later}${applied}</li>`,
   ];
   if (n.withTarget > 0)
     items.push(
-      `<li>${of(n.atTarget, n.withTarget)}${esc(LABEL.modulesAtTarget)}</li>`,
+      `<li>${of(n.atTarget, n.withTarget)}${esc(LABEL.modulesAtTarget[plural(n.withTarget)])}</li>`,
     );
   if (n.uncovered > 0)
     items.push(
@@ -219,10 +217,7 @@ function alternativeHtml(ctx: Ctx, rich: Rich): string {
   const alt = alternativeOf(ctx.input, ctx.targets);
   if (!alt) return "";
   const why = alt.why.map((w) => `<li>${rich(w)}</li>`).join("");
-  const at = LABEL.alternativeAtTarget
-    .replace("{profile}", alt.name)
-    .replace("{n}", String(alt.atTarget))
-    .replace("{m}", String(alt.withTarget));
+  const at = alternativeStanding(alt);
   return `<div class="alt" id="alternative"><h3>${esc(LABEL.alternativeHead.replace("{profile}", alt.name))}</h3>${why ? `<ul>${why}</ul>` : ""}<p>${esc(at)}</p></div>`;
 }
 
@@ -639,7 +634,7 @@ function driftSection(ctx: Ctx): string {
   const rich = richIn(ctx);
   const drift = ctx.input.source.drift ?? [];
   const body = drift.length
-    ? `<ol class="claims">${drift.map((x) => `<li class="pair"><p class="main">${rich(x.text)}</p><p class="src"><span class="vh">${esc(LABEL.evidence)} </span>${x.evidence.map((e) => `<code>${esc(e)}</code>`).join("<br>")}</p></li>`).join("")}</ol>`
+    ? `<ol class="claims">${drift.map((x) => `<li class="pair"><p class="main">${isApplied(x) && x.applied_in ? `<span class="tag tag-done">${esc(LABEL.fixedIn)} ${appliedWhere(x.applied_in)}</span> ` : ""}${rich(x.text)}</p><p class="src"><span class="vh">${esc(LABEL.evidence)} </span>${x.evidence.map((e) => `<code>${esc(e)}</code>`).join("<br>")}</p></li>`).join("")}</ol>`
     : `<p>${esc(LABEL.noDrift)}</p>`;
   return section(
     LABEL.drift,

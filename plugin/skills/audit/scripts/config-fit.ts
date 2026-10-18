@@ -25,8 +25,10 @@
  *     that differs from the taxonomy's types;
  *   - settings the repository's shape suggests but does not use;
  *   - the facts a profile suggestion rests on (`lib/profile-facts.ts`):
- *     contributors, deploy signals in CI, compliance documents, and the
- *     lightest profile they support.
+ *     contributors, deploy signals in CI and in tracked deploy
+ *     configuration, compliance documents, the lightest profile they
+ *     support, and another profile to consider beside it or beside the one
+ *     the audit record declares.
  *
  * Each suggested value comes with the fact it was read from, and together
  * they make a starter configuration (`lib/draft.ts`): a whole file for a
@@ -84,7 +86,7 @@ import { journalPath } from "../../reflect/scripts/lib/context.ts";
 import { parseReflection } from "../../reflect/scripts/lib/settings.ts";
 import { swallow } from "../../../shared/errors.ts";
 import { load } from "../../../shared/yaml.ts";
-import { parseRecord, RECORD_RELPATH } from "./lib/record.ts";
+import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
 import { taxonomyFindings } from "./lib/taxonomy-fit.ts";
 import {
   ghJson,
@@ -905,9 +907,13 @@ interface ForgeRepo {
   deleteBranchOnMerge?: boolean;
 }
 
+/** What classic branch protection says about a branch. */
+type Classic = "protected" | "unprotected" | "unknown";
+
 /**
- * Add the checks classic branch protection requires to `required`. False
- * when whether the branch is protected could not be read.
+ * Add the checks classic branch protection requires to `required`, and say
+ * whether the branch has classic protection at all; unknown when that could
+ * not be read.
  */
 function classicProtection(
   slug: string,
@@ -915,29 +921,30 @@ function classicProtection(
   root: string,
   required: Set<string>,
   report: FitReport,
-): boolean {
+): Classic {
   const protection = run(
     "gh",
     ["api", `repos/${slug}/branches/${base}/protection`],
     { cwd: root },
   );
   if (protection.code !== 0) {
-    if (/not protected/i.test(protection.stderr)) return true;
+    if (/not protected/i.test(protection.stderr)) return "unprotected";
     // Reading protection needs admin rights; the branch itself tells any
     // reader whether it is protected at all.
     const branch = ghJson(["api", `repos/${slug}/branches/${base}`], root);
-    return (
-      branch.ok && (branch.value as { protected?: unknown }).protected === false
-    );
+    return branch.ok &&
+      (branch.value as { protected?: unknown }).protected === false
+      ? "unprotected"
+      : "unknown";
   }
   let p: unknown;
   try {
     p = JSON.parse(protection.stdout);
   } catch (error) {
     report.facts.branch_protection_error = String(error);
-    return false;
+    return "unknown";
   }
-  if (!isRecord(p)) return false;
+  if (!isRecord(p)) return "unknown";
   for (const check of protectionChecks(p.required_status_checks))
     required.add(check);
   const reviews = isRecord(p.required_pull_request_reviews)
@@ -946,7 +953,7 @@ function classicProtection(
   report.facts.required_reviews = String(
     typeof reviews === "number" ? reviews : 0,
   );
-  return true;
+  return "protected";
 }
 
 /** The check names a protection's `required_status_checks` lists, old and new form. */
@@ -963,17 +970,18 @@ function protectionChecks(status: unknown): string[] {
 }
 
 /**
- * Add the checks the branch's rulesets require to `required`. False when
- * the rulesets could not be read.
+ * Add the checks the branch's rulesets require to `required`, and return how
+ * many ruleset rules apply to the branch; null when the rulesets could not be
+ * read.
  */
 function rulesetChecks(
   slug: string,
   base: string,
   root: string,
   required: Set<string>,
-): boolean {
+): number | null {
   const rules = ghJson(["api", `repos/${slug}/rules/branches/${base}`], root);
-  if (!rules.ok || !Array.isArray(rules.value)) return false;
+  if (!rules.ok || !Array.isArray(rules.value)) return null;
   for (const rule of rules.value as {
     type?: string;
     parameters?: { required_status_checks?: { context: string }[] };
@@ -981,10 +989,14 @@ function rulesetChecks(
     if (rule.type === "required_status_checks")
       for (const c of rule.parameters?.required_status_checks ?? [])
         required.add(c.context);
-  return true;
+  return rules.value.length;
 }
 
-/** The checks the integration branch requires: classic protection and rulesets both count. */
+/**
+ * The checks the integration branch requires: classic protection and
+ * rulesets both count. A branch with neither is reported as unprotected,
+ * apart from one protected without a required check.
+ */
 function requiredChecks(
   slug: string,
   base: string,
@@ -992,10 +1004,9 @@ function requiredChecks(
   report: FitReport,
 ): { required: Set<string>; findings: Finding[] } {
   const required = new Set<string>();
-  const classicKnown = classicProtection(slug, base, root, required, report);
-  const rulesKnown = rulesetChecks(slug, base, root, required);
-  const known = classicKnown && rulesKnown;
-  if (!known) {
+  const classic = classicProtection(slug, base, root, required, report);
+  const rules = rulesetChecks(slug, base, root, required);
+  if (classic === "unknown" || rules === null) {
     report.facts.branch_protection =
       "unchecked: protection or rulesets could not be read";
     return { required, findings: [] };
@@ -1004,14 +1015,19 @@ function requiredChecks(
     report.facts.branch_protection = `requires ${[...required].join(", ")}`;
     return { required, findings: [] };
   }
-  report.facts.branch_protection = "requires no checks";
+  const unprotected = classic === "unprotected" && rules === 0;
+  report.facts.branch_protection = unprotected
+    ? "none: no branch protection and no ruleset"
+    : "requires no checks";
   return {
     required,
     findings: [
       {
         id: "fact:no-required-checks",
         severity: "info",
-        message: `${base} requires no status checks: a failing gate does not block a merge`,
+        message: unprotected
+          ? `${base} is unprotected (no branch protection and no ruleset), so it requires no status checks: a failing gate does not block a merge, and a push can land on it without a pull request`
+          : `${base} is protected but requires no status checks: a failing gate does not block a merge`,
       },
     ],
   };
@@ -1435,8 +1451,11 @@ function catalogSuggestion(config: Config, files: string[]): Suggestion[] {
   ];
 }
 
-/** A command that runs the repository's checks, and what shows it. */
-type Gate = { command: string; evidence: string };
+/**
+ * A command that runs the repository's checks, and what shows it;
+ * `unsettled` names what keeps it from being the whole check CI runs.
+ */
+type Gate = { command: string; evidence: string; unsettled?: string };
 
 /** The package script that runs the repository's checks, with its runner. */
 function scriptGate(root: string): Gate | null {
@@ -1471,14 +1490,154 @@ function makeGate(root: string): Gate | null {
   };
 }
 
-/** With no gate command set, the one the repository's shape names. */
+/** A tracked script named like the repository's whole check, at the root or under `scripts/` or `bin/`. */
+const GATE_SCRIPT =
+  /^(?:(?:scripts|bin)\/)?(gates?|checks?|verify|ci)(?:\.(?:sh|bash))?$/;
+
+/** A command line up to its first comment: a shell runs nothing after it. */
+function beforeComment(line: string): string {
+  let wordStart = true;
+  for (const match of line.matchAll(PIECE)) {
+    const [, blank, separator, , , , , text] = match;
+    if (wordStart && text?.startsWith("#")) return line.slice(0, match.index);
+    wordStart = blank !== undefined || separator !== undefined;
+  }
+  return line;
+}
+
+/**
+ * One command of a CI line that runs a gate script, as CI writes it (with
+ * the environment it sets, if any) and as a configuration could repeat it.
+ */
+type CiRun = { written: string; env: string; command: string | null };
+
+/**
+ * The commands of a CI command line that run the gate script `file`,
+ * directly or through `bash` or `sh`. A mention in an argument
+ * (`echo ./scripts/gates.sh`) or after a comment runs nothing, and a line
+ * whose syntax changes how its quotes are read shows nothing reliably. Each
+ * run's `command` repeats it exactly, interpreter and arguments kept; it is
+ * null when no configuration value can: a leading assignment or `env`
+ * prefix, or an `env` setting of the workflow, job or step, sets what the
+ * script reads, and an argument with expansion, quoting or space reads
+ * differently pasted elsewhere.
+ */
+function ciRuns(line: CiLine, file: string): CiRun[] {
+  const { segments, requoted } = scan(beforeComment(line.text));
+  if (requoted) return [];
+  return segments.flatMap((segment) => {
+    const words = commandWords(segment);
+    if (typeof words === "string") return [];
+    const shell = words[0] === "bash" || words[0] === "sh" ? words[0] : null;
+    const at = shell === null ? 0 : 1;
+    if (words[at]?.replace(/^\.\//, "") !== file) return [];
+    const args = words.slice(at + 1);
+    const repeatable =
+      line.env.length === 0 &&
+      words.length === segment.length &&
+      args.every((a) => PLAIN_ARGUMENT.test(a));
+    const base = shell === null ? `./${file}` : `${shell} ${file}`;
+    const env = line.env.length === 0 ? "" : ` with ${line.env.join(", ")} set`;
+    return [
+      {
+        written: segment.join(" "),
+        env,
+        command: repeatable ? [base, ...args].join(" ") : null,
+      },
+    ];
+  });
+}
+
+/** An argument that reads the same pasted into a configuration: no expansion, quoting or space. */
+const PLAIN_ARGUMENT = /^[\w.,=:/@+%-]+$/;
+
+/**
+ * The tracked gate scripts ({@link GATE_SCRIPT}) a shell can run: an
+ * executable one as `./<path>`, a shell script without the executable bit
+ * through `bash`. One a CI job's `run` step invokes comes first, with the
+ * workflow named in its evidence. When every CI run of it is the same
+ * repeatable command, that command is the suggestion, so it runs what CI
+ * runs; otherwise the suggestion is the bare script, marked `unsettled`
+ * with the runs CI makes, for a reader to choose from.
+ */
+function scriptFileGates(
+  root: string,
+  files: string[],
+): (Gate & { ci: boolean })[] {
+  const jobs = ciJobs(root, files);
+  const gates = files.flatMap((file) => {
+    const match = GATE_SCRIPT.exec(file);
+    if (match === null) return [];
+    let mode: number;
+    try {
+      mode = statSync(join(root, file)).mode;
+    } catch (error) {
+      swallow(error, `${file} is tracked but missing from the working tree`);
+      return [];
+    }
+    const executable = process.platform === "win32" || (mode & 0o111) !== 0;
+    if (!executable && !/\.(sh|bash)$/.test(file)) return [];
+    const { runBy, settled, unsettled } = ciSettlement(
+      jobs.flatMap((job) =>
+        job.commands.flatMap((line) =>
+          ciRuns(line, file).map((run) => ({ ...run, file: job.file })),
+        ),
+      ),
+    );
+    const base = executable ? `./${file}` : `bash ${file}`;
+    const kind = executable ? "an executable script" : "a shell script";
+    const ci =
+      runBy.length === 0
+        ? ""
+        : `, and CI runs it (${runBy.join(", ")})${unsettled === undefined ? "" : `; ${unsettled}`}`;
+    return [
+      {
+        command: settled ?? base,
+        evidence: `${file} is ${kind} named like the repository's check${ci}`,
+        ci: runBy.length > 0,
+        ...(unsettled === undefined ? {} : { unsettled }),
+      },
+    ];
+  });
+  return [...gates.filter((g) => g.ci), ...gates.filter((g) => !g.ci)];
+}
+
+/**
+ * What a gate script's CI runs settle: the workflows that run it, the one
+ * command every run is when there is one, and otherwise how CI runs it.
+ */
+function ciSettlement(runs: (CiRun & { file: string })[]): {
+  runBy: string[];
+  settled: string | null;
+  unsettled?: string;
+} {
+  const runBy = [...new Set(runs.map((r) => r.file))];
+  const commands = [...new Set(runs.map((r) => r.command))];
+  const settled = commands.length === 1 ? (commands[0] ?? null) : null;
+  if (runs.length === 0 || settled !== null) return { runBy, settled };
+  const written = [...new Set(runs.map((r) => `\`${r.written}\`${r.env}`))];
+  return { runBy, settled, unsettled: `CI runs it as ${written.join(", ")}` };
+}
+
+/**
+ * With no gate command set, the one the repository's shape names: a gate
+ * script CI runs, else a package script, else a make target, else a gate
+ * script CI does not run.
+ */
 function gateFindings(
   config: Config,
   root: string,
+  files: string[],
   report: FitReport,
 ): Finding[] {
   if (at(config, "gates.command") !== undefined) return [];
-  const gate = scriptGate(root) ?? makeGate(root);
+  const scripts = scriptFileGates(root, files);
+  const gate =
+    scripts.find((g) => g.ci) ??
+    scriptGate(root) ??
+    makeGate(root) ??
+    scripts[0] ??
+    null;
   if (gate === null)
     return [
       {
@@ -1493,7 +1652,10 @@ function gateFindings(
       field: "gates.command",
       value: gate.command,
       evidence: gate.evidence,
-      message: `set gates.command: ${gate.command}, the repository's whole local check, so the review and CI skills run it before every push`,
+      message:
+        gate.unsettled === undefined
+          ? `set gates.command: ${gate.command}, the repository's whole local check, so the review and CI skills run it before every push`
+          : `${gate.command} is the repository's check, but ${gate.unsettled}: set gates.command to the command that runs all of what CI runs, since ${gate.command} alone may run less`,
     },
   ]);
 }
@@ -1507,7 +1669,7 @@ function suggestions(
 ): Finding[] {
   return [
     ...offer(report, catalogSuggestion(config, files)),
-    ...gateFindings(config, root, report),
+    ...gateFindings(config, root, files, report),
   ];
 }
 
@@ -1880,7 +2042,19 @@ interface CiJob {
   pullRequest: boolean;
   /** The ids of the jobs it waits for. */
   needs: string[];
-  commands: string[];
+  commands: CiLine[];
+  /** The `run` steps not read: their lines are not each a command run at the root. */
+  unread: number;
+}
+
+/**
+ * One command line of a `run` step, with the environment variables the
+ * workflow, job or step sets for it: what the line runs reads them, and a
+ * configuration value repeating the line alone would not set them.
+ */
+interface CiLine {
+  text: string;
+  env: string[];
 }
 
 /** Whether a workflow's `on` names a pull-request event. */
@@ -1896,17 +2070,42 @@ const COMPOUND =
   /^(if|then|else|elif|fi|for|while|until|do|done|case|esac|select|function|\{|\}|\(|\))(\s|;|$)/;
 
 /**
- * The command lines of a `run` block: continuations joined, blanks and
- * comments dropped. A block with a compound command (`if`, `for`, …) is read
- * as none: what runs depends on its conditions.
+ * Text that may open a here-document or change folder: `<<` anywhere, or
+ * `cd`, `pushd` or `popd` as a word anywhere. Matched on the raw line,
+ * comments included and quote marks and backslashes removed (`c'd'` and
+ * `c\d` run `cd`), so it can only over-read.
  */
-function runLines(run: string): string[] {
+const NOT_AT_ROOT = /<<|(^|[^\w./-])(cd|pushd|popd)(?![\w./-])/;
+
+/** Whether a line may open a here-document or change folder, in any quoting. */
+function notAtRoot(line: string): boolean {
+  return NOT_AT_ROOT.test(line.replace(/['"\\]/g, ""));
+}
+
+/**
+ * The command lines of a `run` block: continuations joined, blanks and
+ * comments dropped; null when the block is not read. A block is read only
+ * when its lines are each a command run at the repository's root: a compound
+ * command (`if`, `for`, …) runs depending on its conditions, a
+ * here-document's lines are input, and a `cd` moves what follows it to
+ * another folder. Those are recognised by text, not parsed, so a block that
+ * only mentions one (`echo '<<EOF'`) is not read either, and the caller says
+ * so rather than reading it as running nothing.
+ */
+function runLines(run: string): string[] | null {
   const lines = run
     .replace(/\s*\\\r?\n\s*/g, " ")
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line !== "" && !line.startsWith("#"));
-  return lines.some((line) => COMPOUND.test(line)) ? [] : lines;
+  const unread = lines.some((line) => COMPOUND.test(line) || notAtRoot(line));
+  return unread ? null : lines;
+}
+
+/** The names of the environment variables an `env` setting sets; an expression sets ones unknown. */
+function envNames(env: unknown): string[] {
+  if (env === undefined || env === null) return [];
+  return isRecord(env) ? Object.keys(env) : ["(an expression)"];
 }
 
 /**
@@ -1929,12 +2128,18 @@ function shellLike(shell: unknown): boolean {
   );
 }
 
-/** The command lines of a `run` step that runs at the root in a POSIX shell. */
-function stepLines(step: unknown): string[] {
+/**
+ * The command lines of a `run` step that runs at the root in a POSIX shell,
+ * each with the environment `inherited` from its workflow and job and the
+ * step's own; null for a `run` step that is not read: one in another folder
+ * or shell, or a block {@link runLines} does not read.
+ */
+function stepLines(step: unknown, inherited: string[]): CiLine[] | null {
   if (!isRecord(step) || typeof step.run !== "string") return [];
   if (step["working-directory"] !== undefined || !shellLike(step.shell))
-    return [];
-  return runLines(step.run);
+    return null;
+  const env = [...new Set([...inherited, ...envNames(step.env)])];
+  return runLines(step.run)?.map((text) => ({ text, env })) ?? null;
 }
 
 /** The jobs of the repository's GitHub Actions workflows that parse. */
@@ -1960,6 +2165,12 @@ function workflowJobs(file: string, doc: unknown): CiJob[] {
     if (!isRecord(job)) return [];
     const steps = Array.isArray(job.steps) ? job.steps : [];
     const away = elsewhere || runsElsewhere(job.defaults);
+    const env = [...envNames(doc.env), ...envNames(job.env)];
+    const read = steps.map((step) =>
+      away && isRecord(step) && typeof step.run === "string"
+        ? null
+        : stepLines(step, env),
+    );
     return [
       {
         file,
@@ -1967,7 +2178,8 @@ function workflowJobs(file: string, doc: unknown): CiJob[] {
         name: typeof job.name === "string" ? job.name : id,
         pullRequest,
         needs: typeof job.needs === "string" ? [job.needs] : texts(job.needs),
-        commands: away ? [] : steps.flatMap(stepLines),
+        commands: read.flatMap((lines) => lines ?? []),
+        unread: read.filter((lines) => lines === null).length,
       },
     ];
   });
@@ -2659,10 +2871,28 @@ function gateCiFindings(
     : [...(forgeRequired ?? [])];
   const { jobs, basis } = comparedJobs(ciJobs(root, files), required);
   const missing = notInGate(jobs, gateRun(command, scripts, root), scripts);
-  if (missing.size === 0) return [];
+  // A step is unread when its block is, or when a line of it is one the
+  // comparison cannot read as a shell would (a redirection, an expression).
+  const unread = jobs.filter(
+    (job) =>
+      job.unread > 0 ||
+      job.commands.some(({ text }) => lineKeys(text, scripts) === null),
+  );
+  const unchecked: Finding[] =
+    unread.length === 0
+      ? []
+      : [
+          {
+            id: "unchecked:gates.command:ci",
+            severity: "info",
+            message: `${unread.map((job) => `${job.file}, job ${job.id}`).join("; ")} ${unread.length === 1 ? "has" : "have"} \`run\` steps this comparison does not read (a compound command, a here-document or a change of folder, a redirection or an expression, or another folder or shell), so whether gates.command runs what they run is unchecked`,
+          },
+        ];
+  if (missing.size === 0) return unchecked;
   const shown = [...missing.values()].slice(0, 5);
   const more = missing.size > 5 ? ` and ${missing.size - 5} more` : "";
   return [
+    ...unchecked,
     {
       id: "suggestion:gates.command:ci",
       severity: "suggestion",
@@ -2679,7 +2909,7 @@ function notInGate(
 ): Map<string, string> {
   const missing = new Map<string, string>();
   for (const job of jobs)
-    for (const line of job.commands) {
+    for (const { text: line } of job.commands) {
       const uncovered = (lineKeys(line, scripts) ?? []).filter(
         (key) => !key.setup && !gateCovers(gate, key, scripts),
       );
@@ -2810,7 +3040,13 @@ function reviewerFindings(config: Config, pulls: Pull[]): Finding[] {
   ];
 }
 
-/** A reviewer-looking check that ran on recent pull requests while no reviewer is named. */
+/**
+ * A reviewer-looking check that ran on recent pull requests while no reviewer
+ * is named. It warns even when drive-pr's default check pattern matches the
+ * check: the drive applies that default only once a reviewer is named, so
+ * with neither field set it waits for no reviewer. The warning says whether
+ * the default matches, which decides what naming the reviewer takes.
+ */
 function unnamedReviewer(pulls: Pull[]): Finding[] {
   const names = new Set<string>();
   let count = 0;
@@ -2822,17 +3058,28 @@ function unnamedReviewer(pulls: Pull[]): Finding[] {
     if (looking.length > 0) count++;
   }
   if (count < 2) return [];
-  const shown = [...names]
-    .slice(0, 3)
-    .map((n) => `"${n}"`)
-    .join(", ");
+  const listed = [...names].slice(0, 3);
+  const quote = (list: string[]) => list.map((n) => `"${n}"`).join(", ");
+  const matching = listed.filter((n) => FORMER_REVIEWER_CHECK.test(n));
+  const others = listed.filter((n) => !FORMER_REVIEWER_CHECK.test(n));
+  const pattern = `the default review.reviewer_check_pattern (${FORMER_REVIEWER_CHECK.source}, matched case-insensitively)`;
+  const naming =
+    others.length === 0
+      ? `${pattern} matches ${listed.length === 1 ? "it" : "them"}, so if a drive should wait for its findings, setting review.reviewer_app to the app that posts it is enough`
+      : `${pattern} ${matching.length > 0 ? `matches ${quote(matching)} but ` : ""}does not match ${quote(others)}, so if a drive should wait for its findings, set review.reviewer_check_pattern to a pattern its check name matches, and review.reviewer_app to the app that posts it to count only that app's check`;
   return [
     {
       id: "contradiction:review.reviewer-unnamed",
       severity: "warning",
-      message: `${shown} ran on ${count} of the last ${pulls.length} merged pull requests and looks like an AI reviewer's check, but neither review.reviewer_app nor review.reviewer_check_pattern names a reviewer, so drive-pr will not wait for it. If a drive should wait for its findings, set review.reviewer_app to the app that posts it, or review.reviewer_check_pattern to a pattern its check name matches`,
+      message: `${quote(listed)} ran on ${count} of the last ${pulls.length} merged pull requests and looks like an AI reviewer's check, but neither review.reviewer_app nor review.reviewer_check_pattern names a reviewer, so drive-pr will not wait for it: it applies its default check pattern only once a reviewer is named. ${naming[0]?.toUpperCase()}${naming.slice(1)}`,
     },
   ];
+}
+
+/** The audit record at `recordPath`, or null when there is none. */
+function auditRecord(recordPath: string): AuditRecord | null {
+  if (!existsSync(recordPath)) return null;
+  return parseRecord(readFileSync(recordPath, "utf8"), recordPath);
 }
 
 function declinedRefs(
@@ -2845,8 +3092,8 @@ function declinedRefs(
     string,
     { reason: string; revisit_when: string; revisit_after?: string }
   >();
-  if (!existsSync(recordPath)) return refs;
-  const record = parseRecord(readFileSync(recordPath, "utf8"), recordPath);
+  const record = auditRecord(recordPath);
+  if (record === null) return refs;
   for (const d of record.declined)
     for (const ref of d.refs)
       if (ref.startsWith("config/")) refs.set(ref.slice("config/".length), d);
@@ -2924,7 +3171,12 @@ export async function configFit(opts: {
       ...gateCiFindings(config, opts.root, files, state.required),
       ...gatePermissionFindings(config, opts.root),
     );
-  report.profile_facts = profileFacts(opts.root, files);
+  report.profile_facts = profileFacts(
+    opts.root,
+    files,
+    new Date(),
+    auditRecord(opts.recordPath)?.profile,
+  );
   Object.assign(report.facts, profileFactLines(report.profile_facts));
   applyDeclines(report, opts.recordPath);
   const draft = draftConfig(

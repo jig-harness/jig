@@ -76,9 +76,16 @@ Cases that recur:
   installed (often by installing dependencies). Score the configuration, and
   say in the evidence when nothing installs it on its own.
 - **A practice that covers part of its scope** scores the rung the whole
-  reaches, and the evidence says the coverage ("2 of 3 jobs declare a
-  timeout"). There is no partial score: a criterion about every job is met
-  when every job meets it.
+  reaches: the highest rung that holds for every part of the scope, which
+  is the rung of the weakest part, however few parts fall short. The
+  evidence says the coverage ("2 of 3 jobs declare a timeout"). There is no
+  partial score: a criterion about every job is met when every job meets
+  it. For example, for "every CI job declares a timeout", where two of
+  three jobs set one in the workflow and the third sets none: with no
+  written rule, the third job is `absent`, so the criterion is `absent`;
+  when the contributing guide asks every job to set one, every job is
+  covered at least by that rule, so it is `convention`; it is `mechanical`
+  only once the third job sets one too.
 - **A host plan that cannot require checks** (branch protection that the
   plan does not offer for a private repository): score what runs, usually
   `advisory`, say the host's limit in the evidence, and recommend a local

@@ -19,7 +19,8 @@
  * the base branch, the `gh pr create` arguments the policy fixes (base,
  * draft or Ready, labels), the commands to run after it (linking a native
  * stack), the title convention, the template(s) to fill in, the line linking
- * the issue, the size against its budget, and warnings. `--stack-on` asks to base the pull request on
+ * the issue, the size against its budget (leaving out, and naming, the files
+ * in `UNCOUNTED` such as the audit record), and warnings. `--stack-on` asks to base the pull request on
  * another open pull request's head branch instead of the trunk; the policy
  * decides whether that is allowed. Run it after the validation plan passes,
  * before `gh pr create`.
@@ -98,21 +99,57 @@ export interface OpenPlan {
     budget: number | null;
     over: boolean;
     acceptedReason: string | null;
+    /** Files changed but not counted in `changedLines` (`UNCOUNTED`). */
+    uncounted: Uncounted[];
   };
   codeowners: string | null;
   warnings: string[];
 }
 
-/** Changed lines (added plus deleted, binary files ignored) between `baseRef` and HEAD. */
-export function countChangedLines(numstat: string): number {
-  let total = 0;
+/**
+ * Files whose changed lines the size budget does not count, and why: the
+ * audit record (`/jig:audit`) is rewritten whole by every audit, so counting
+ * it would put any pull request that commits it over a budget its own change
+ * fits.
+ */
+export const UNCOUNTED: ReadonlyMap<string, string> = new Map([
+  [".config/jig-audit.yaml", "the audit record, rewritten by every audit"],
+]);
+
+/** A file left out of the size, with its changed lines and why. */
+export interface Uncounted {
+  path: string;
+  lines: number;
+  why: string;
+}
+
+/**
+ * Changed lines (added plus deleted, binary files ignored) of `git diff
+ * --numstat`, and the files in `UNCOUNTED` left out of that total.
+ */
+export function measureChange(numstat: string): {
+  changedLines: number;
+  uncounted: Uncounted[];
+} {
+  let changedLines = 0;
+  const uncounted: Uncounted[] = [];
   for (const line of numstat.split("\n")) {
-    const [added, deleted] = line.split("\t");
+    const [added, deleted, path] = line.split("\t");
     if (added === undefined || deleted === undefined) continue;
-    if (/^\d+$/.test(added)) total += Number(added);
-    if (/^\d+$/.test(deleted)) total += Number(deleted);
+    const lines =
+      (/^\d+$/.test(added) ? Number(added) : 0) +
+      (/^\d+$/.test(deleted) ? Number(deleted) : 0);
+    const why = path === undefined ? undefined : UNCOUNTED.get(path);
+    if (path !== undefined && why !== undefined)
+      uncounted.push({ path, lines, why });
+    else changedLines += lines;
   }
-  return total;
+  return { changedLines, uncounted };
+}
+
+/** Changed lines between `baseRef` and HEAD, as `measureChange` counts them. */
+export function countChangedLines(numstat: string): number {
+  return measureChange(numstat).changedLines;
 }
 
 async function revParses(root: string, ref: string): Promise<boolean> {
@@ -296,11 +333,11 @@ async function buildOpenPlan(opts: {
   );
   if (numstat.code !== 0)
     throw new Error(`git diff --numstat ${baseRef}...HEAD failed`);
-  const changedLines = countChangedLines(numstat.stdout);
+  const { changedLines, uncounted } = measureChange(numstat.stdout);
   const over = policy.sizeBudget !== null && changedLines > policy.sizeBudget;
   if (over && (opts.acceptOversize ?? "").trim() === "")
     throw new Refusal(
-      `refused: this change is ${changedLines} changed lines against ${baseRef}, over pull_requests.size_budget (${policy.sizeBudget}).`,
+      `refused: this change is ${changedLines} changed lines against ${baseRef}${uncountedNote(uncounted)}, over pull_requests.size_budget (${policy.sizeBudget}).`,
       policy.stacking === "none"
         ? "Split it into pull requests that each fit and land one after another, or, if it cannot be split, re-run with --accept-oversize <reason> and put that reason in the pull request body."
         : `Split it into a stack (pull_requests.stacking is ${policy.stacking}; re-run with --stack-on for each upper layer), or, if it cannot be split, re-run with --accept-oversize <reason> and put that reason in the pull request body.`,
@@ -335,10 +372,17 @@ async function buildOpenPlan(opts: {
       budget: policy.sizeBudget,
       over,
       acceptedReason: over ? opts.acceptOversize : null,
+      uncounted,
     },
     codeowners: findCodeowners(root),
     warnings,
   };
+}
+
+/** What the size leaves out, as a clause after it: `, not counting <path> (<n> lines, <why>)`. */
+function uncountedNote(uncounted: readonly Uncounted[]): string {
+  if (uncounted.length === 0) return "";
+  return `, not counting ${uncounted.map((u) => `${u.path} (${u.lines} lines, ${u.why})`).join(", ")}`;
 }
 
 /** One argument as POSIX shell text, so a printed command runs as planned. */
@@ -373,7 +417,7 @@ export function formatOpenPlan(plan: OpenPlan): string {
   if (plan.body.issueLink !== null)
     lines.push(`issue link:  ${plan.body.issueLink}`);
   lines.push(
-    `size:        ${plan.size.changedLines} changed lines${plan.size.budget === null ? "" : ` of ${plan.size.budget}`}${plan.size.acceptedReason === null ? "" : ` (over budget, accepted: ${plan.size.acceptedReason})`}`,
+    `size:        ${plan.size.changedLines} changed lines${plan.size.budget === null ? "" : ` of ${plan.size.budget}`}${plan.size.acceptedReason === null ? "" : ` (over budget, accepted: ${plan.size.acceptedReason})`}${uncountedNote(plan.size.uncounted)}`,
   );
   if (plan.codeowners !== null)
     lines.push(

@@ -1,8 +1,8 @@
 /**
  * The observable facts a profile suggestion rests on, and the suggestion
  * itself: how many people commit to the repository, whether its CI names
- * deploy, release or publish work, and whether it keeps documents that name a
- * compliance regime.
+ * deploy, release or publish work or its tracked files configure a deploy,
+ * and whether it keeps documents that name a compliance regime.
  *
  * Every fact comes from git and the tracked files, so an offline audit has
  * them too. The facts are reported as found; only `suggestProfile` turns them
@@ -29,9 +29,11 @@ export interface Contributors {
 }
 
 /**
- * A CI file whose jobs name deploy, release or publish work, and what in it
- * does. The match is on words, not on what the commands do, so the matched
- * lines are reported for a reader to judge.
+ * A CI file whose triggers or jobs name deploy, release or publish work, or a
+ * tracked file that configures a deploy (a service unit, a deploy directory,
+ * a hosting platform's configuration), and what in it does. The match is on
+ * names and words, not on what the commands do, so the matched lines are
+ * reported for a reader to judge.
  */
 export interface DeploySignal {
   file: string;
@@ -59,22 +61,24 @@ export interface ProfileFacts {
   contributors: Contributors | null;
   contributors_unchecked?: string;
   deploy_signals: DeploySignal[];
-  /** CI files that are not valid YAML, so whether they deploy is unchecked. */
+  /**
+   * CI files that are not valid YAML, and deploy configurations that could
+   * not be read, so whether they deploy is unchecked.
+   */
   unreadable_ci_files: string[];
   compliance_documents: ComplianceDocument[];
   /** Absent when the facts settle nothing: no history and no deploy signal. */
   suggested_profile?: SuggestedProfile;
   /**
-   * The other profile the facts could support at a boundary, such as
-   * team-standard when CI deploys but one person commits; absent when the
-   * facts point one way.
+   * Another profile worth considering, as {@link profileAlternative} picks
+   * it; absent when the facts point one way.
    */
   alternative?: ProfileAlternative;
 }
 
 /** A profile the facts could also support, and why. */
 export interface ProfileAlternative {
-  id: SuggestableProfile;
+  id: SuggestableProfile | "regulated-strict";
   why: string[];
 }
 
@@ -291,6 +295,31 @@ function jobSignals(
   ];
 }
 
+/** The text entries of a value that is one string or a list. */
+const entries = (value: unknown): string[] =>
+  typeof value === "string"
+    ? [value]
+    : Array.isArray(value)
+      ? value.filter((v): v is string => typeof v === "string")
+      : [];
+
+/**
+ * What in a GitHub Actions workflow's triggers names shipping work: a
+ * published release, or a pushed tag, which is how a release is usually cut.
+ */
+function triggerSignals(on: unknown): string[] {
+  if (!isMapping(on))
+    return entries(on).includes("release") ? ["on: release"] : [];
+  const signals = "release" in on ? ["on: release"] : [];
+  if (isMapping(on.push) && on.push.tags !== undefined) {
+    const tags = entries(on.push.tags);
+    signals.push(
+      `on: push tags${tags.length > 0 ? ` ${tags.join(", ")}` : ""}`,
+    );
+  }
+  return signals;
+}
+
 /** The jobs of a parsed CI file: GitHub's under `jobs`, GitLab's at the top level. */
 function jobsOf(file: string, doc: unknown): [string, unknown][] {
   if (!isMapping(doc)) return [];
@@ -302,9 +331,11 @@ function jobsOf(file: string, doc: unknown): [string, unknown][] {
 }
 
 /**
- * The CI files that declare a deployment environment or a job or step whose
- * name or command says deploy, release or publish. A file included from
- * elsewhere (GitLab's `include`) is not followed.
+ * The CI files that declare a deployment environment, run on a release or a
+ * pushed tag, or have a job or step whose name or command says deploy,
+ * release or publish; then the tracked files that configure a deploy
+ * ({@link fileSignals}). A file included from elsewhere (GitLab's `include`)
+ * is not followed.
  */
 function deploySignals(
   root: string,
@@ -323,17 +354,133 @@ function deploySignals(
       unreadable.push(`${file} (${String(error).split("\n")[0]})`);
       continue;
     }
-    const templates = GITLAB_PIPELINE.test(file) && isMapping(doc) ? doc : {};
-    const matched = [
-      ...new Set(
-        jobsOf(file, doc).flatMap(([id, job]) =>
-          jobSignals(id, job, templates),
-        ),
-      ),
-    ];
+    const matched = ciFileSignals(file, doc);
     if (matched.length > 0) signals.push({ file, matched });
   }
-  return { signals, unreadable };
+  return {
+    signals: [...signals, ...fileSignals(root, files, unreadable)],
+    unreadable,
+  };
+}
+
+/** What in one parsed CI file names shipping work: its triggers, then its jobs. */
+function ciFileSignals(file: string, doc: unknown): string[] {
+  if (!isMapping(doc)) return [];
+  const gitlab = GITLAB_PIPELINE.test(file);
+  return [
+    ...new Set([
+      ...(gitlab ? [] : triggerSignals(doc.on)),
+      ...jobsOf(file, doc).flatMap(([id, job]) =>
+        jobSignals(id, job, gitlab ? doc : {}),
+      ),
+    ]),
+  ];
+}
+
+/** Whether a signal is a CI file's rather than a tracked deploy configuration's. */
+const isCiSignal = (s: DeploySignal) =>
+  GITHUB_WORKFLOW.test(s.file) || GITLAB_PIPELINE.test(s.file);
+
+/** A systemd unit that runs or schedules a program on a host. */
+const UNIT = /\.(service|timer)$/;
+/** Top-level directories named for deploying or for the infrastructure deployed to. */
+const DEPLOY_DIR = /^(deploy|deployments?|infra|infrastructure)\//;
+/** A hosting platform's configuration at the root, which its deploy command reads. */
+const PLATFORM_FILES: [RegExp, string][] = [
+  [/^fly\.toml$/, "Fly.io app configuration"],
+  [/^wrangler\.(toml|jsonc?)$/, "Cloudflare Workers configuration"],
+  [/^netlify\.toml$/, "Netlify site configuration"],
+  [/^vercel\.json$/, "Vercel project configuration"],
+  [/^render\.ya?ml$/, "Render blueprint"],
+];
+
+/**
+ * A tracked file's text; null when it is missing from the working tree, or
+ * could not be read, which `unreadable` then records.
+ */
+function readTracked(
+  root: string,
+  file: string,
+  unreadable: string[],
+): string | null {
+  const path = join(root, file);
+  if (!existsSync(path)) return null;
+  try {
+    return readFileSync(path, "utf8");
+  } catch (error) {
+    unreadable.push(`${file} (${String(error).split("\n")[0]})`);
+    return null;
+  }
+}
+
+/** The process types a Procfile declares, one `name: command` per line. */
+function procfileTypes(text: string): string[] {
+  return text
+    .split("\n")
+    .map((line) => /^([A-Za-z0-9_-]+):\s*\S/.exec(line)?.[1])
+    .filter((name): name is string => name !== undefined);
+}
+
+/**
+ * What a systemd unit is, and the program a service unit starts. The unit is
+ * read whatever its kind, so one that cannot be read is named as unchecked.
+ */
+function unitSignal(
+  root: string,
+  file: string,
+  unreadable: string[],
+): string[] {
+  const kind = file.endsWith(".timer") ? "timer" : "service";
+  const text = readTracked(root, file, unreadable);
+  const start =
+    text === null || kind === "timer"
+      ? undefined
+      : /^ExecStart=.+$/m.exec(text)?.[0];
+  return [`systemd ${kind} unit`, ...(start ? [clip(start)] : [])];
+}
+
+/**
+ * The tracked files outside CI that configure a deploy: systemd service and
+ * timer units, a top-level deploy or infrastructure directory holding more
+ * than documents, a Procfile that declares a process, and a hosting
+ * platform's configuration at the root; tests and their data, templates and
+ * vendored copies left out. Each is named with what it holds, for a reader to
+ * judge. A unit, Procfile or platform configuration that cannot be read is
+ * still named by its file, and goes to `unreadable` too.
+ */
+function fileSignals(
+  root: string,
+  files: string[],
+  unreadable: string[],
+): DeploySignal[] {
+  const units = files
+    .filter((f) => UNIT.test(f) && !NOT_OWN.test(f))
+    .map((file) => ({ file, matched: unitSignal(root, file, unreadable) }));
+  const dirs = new Map<string, string[]>();
+  for (const f of files) {
+    const dir = DEPLOY_DIR.exec(f)?.[0];
+    if (dir === undefined || DOCUMENT.test(f) || UNIT.test(f)) continue;
+    if (NOT_OWN.test(f)) continue;
+    dirs.set(dir, [...(dirs.get(dir) ?? []), f]);
+  }
+  const deployDirs = [...dirs].map(([file, held]) => ({
+    file,
+    matched: [`deploy files: ${some(held)}`],
+  }));
+  const platforms = files.flatMap((file): DeploySignal[] => {
+    if (file === "Procfile") {
+      const text = readTracked(root, file, unreadable);
+      const types = text === null ? [] : procfileTypes(text);
+      return types.length > 0
+        ? [{ file, matched: [`process types: ${types.join(", ")}`] }]
+        : [];
+    }
+    const platform = PLATFORM_FILES.find(([name]) => name.test(file));
+    if (platform === undefined) return [];
+    readTracked(root, file, unreadable);
+    return [{ file, matched: [platform[1]] }];
+  });
+  return [...units, ...deployDirs, ...platforms];
 }
 
 /** A name a path or heading may use for a compliance regime or register. */
@@ -353,9 +500,9 @@ const REGIMES: [string, RegExp][] = [
 /** Files that are documents, and those whose first heading can be read. */
 const DOCUMENT = /\.(md|mdx|markdown|rst|adoc|txt|pdf|docx?|odt)$/i;
 const HEADED = /\.(md|mdx|markdown|adoc)$/i;
-/** Test data, templates and vendored copies are not the repository's own documents. */
+/** Tests and their data, templates and vendored copies are not the repository's own documents or deploys. */
 const NOT_OWN =
-  /(^|\/)(fixtures?|templates?|vendor|node_modules|__tests__|tests?)\//i;
+  /(^|\/)(fixtures?|__fixtures__|testdata|templates?|vendor|node_modules|__tests__|tests?)\//i;
 
 const regimesIn = (text: string) =>
   REGIMES.filter(([, pattern]) => pattern.test(text)).map(([name]) => name);
@@ -396,9 +543,19 @@ function some(items: string[], limit = 5): string {
     : shown;
 }
 
-/** The deploy signals as one line of a profile's reasons. */
-const deployReason = (signals: DeploySignal[]) =>
-  `CI names deploy, release or publish work: ${some(signals.map((s) => s.file))}`;
+/** The deploy signals as one line of a profile's reasons, CI files and other files apart. */
+function deployReason(signals: DeploySignal[]): string {
+  const ci = signals.filter(isCiSignal).map((s) => s.file);
+  const other = signals.filter((s) => !isCiSignal(s)).map((s) => s.file);
+  return [
+    ...(ci.length > 0
+      ? [`CI names deploy, release or publish work: ${some(ci)}`]
+      : []),
+    ...(other.length > 0
+      ? [`tracked files configure a deploy: ${some(other)}`]
+      : []),
+  ].join(", and ");
+}
 
 /** How many people, in words, for a profile's reasons. */
 const peopleText = (n: number) =>
@@ -419,7 +576,7 @@ const peopleText = (n: number) =>
  * committed in the last 90 days; and at most one person and no deploy signal
  * make it solo-lite, naming the CI files that could not be read.
  * Regulated-strict is never suggested: a compliance document is a reason to
- * consider it, which the team decides. Without readable history and without a
+ * consider it, which the team decides ({@link profileAlternative}). Without readable history and without a
  * deploy signal the facts settle nothing, and there is no suggestion.
  */
 export function suggestProfile(
@@ -458,6 +615,46 @@ function profileChoice(
       `compliance documents found: consider regulated-strict (${some(facts.compliance_documents.map((d) => d.path))})`,
     );
   return choice;
+}
+
+/**
+ * Another profile worth considering beside the one the facts suggest, or the
+ * one the team declared (`declared`, the audit record's profile). A declared
+ * profile the facts do not suggest makes the suggested one the alternative:
+ * the team chose otherwise, and the sheet shows what the facts point to.
+ * Otherwise, compliance documents beside team-standard make regulated-strict
+ * the alternative, which the facts never suggest and the team decides on.
+ * Otherwise it is the other profile the facts could support at a boundary,
+ * such as team-standard when CI deploys but one person commits.
+ */
+export function profileAlternative(
+  facts: Parameters<typeof suggestProfile>[0],
+  declared?: string,
+): ProfileAlternative | undefined {
+  const choice = profileChoice(facts);
+  const suggested = choice?.suggested;
+  if (
+    suggested !== undefined &&
+    declared !== undefined &&
+    declared !== suggested.id
+  )
+    return {
+      id: suggested.id,
+      why: [
+        `the facts suggest ${suggested.id} rather than the declared ${declared}`,
+        ...suggested.why,
+      ],
+    };
+  const docs = facts.compliance_documents;
+  if (docs.length > 0 && (declared ?? suggested?.id) === "team-standard")
+    return {
+      id: "regulated-strict",
+      why: [
+        `compliance documents found: ${some(docs.map((d) => d.path))}`,
+        "the facts never suggest regulated-strict: whether the documents bind the repository is the team's to decide",
+      ],
+    };
+  return choice?.alternative;
 }
 
 /** At most one person in a year, and CI that deploys: solo-lite, team-standard beside it. */
@@ -507,7 +704,7 @@ function soloLite(
 ): SuggestedProfile {
   const unread = facts.unreadable_ci_files ?? [];
   const why = [
-    `${peopleText(people)} in the last 90 days, and no ${unread.length > 0 ? "readable " : ""}CI file names deploy, release or publish work`,
+    `${peopleText(people)} in the last 90 days, and no ${unread.length > 0 ? "readable " : ""}CI file names deploy, release or publish work and no tracked file configures a deploy`,
   ];
   if (unread.length > 0)
     why.push(
@@ -516,11 +713,16 @@ function soloLite(
   return { id: "solo-lite", why };
 }
 
-/** Gather the profile facts of the repository at `root` from git and its tracked `files`. */
+/**
+ * Gather the profile facts of the repository at `root` from git and its
+ * tracked `files`; `declared` is the profile the audit record declares, which
+ * the alternative is weighed against.
+ */
 export function profileFacts(
   root: string,
   files: string[],
   now = new Date(),
+  declared?: string,
 ): ProfileFacts {
   const history = contributors(root, now);
   const { signals, unreadable } = deploySignals(root, files);
@@ -531,12 +733,12 @@ export function profileFacts(
     unreadable_ci_files: unreadable,
     compliance_documents: complianceDocuments(root, files),
   };
-  const choice = profileChoice(facts);
-  if (choice === undefined) return facts;
+  const suggested = suggestProfile(facts);
+  const alternative = profileAlternative(facts, declared);
   return {
     ...facts,
-    suggested_profile: choice.suggested,
-    ...(choice.alternative ? { alternative: choice.alternative } : {}),
+    ...(suggested ? { suggested_profile: suggested } : {}),
+    ...(alternative ? { alternative } : {}),
   };
 }
 
@@ -571,7 +773,7 @@ export function profileFactLines(facts: ProfileFacts): Record<string, string> {
   const s = facts.suggested_profile;
   lines.suggested_profile =
     s === undefined
-      ? "none: the history could not be read and no CI file names deploy, release or publish work"
+      ? "none: the history could not be read, no CI file names deploy, release or publish work and no tracked file configures a deploy"
       : `${s.id}: ${s.why.join("; ")}`;
   const alt = facts.alternative;
   if (alt !== undefined)

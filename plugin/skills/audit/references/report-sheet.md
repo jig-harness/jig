@@ -90,6 +90,12 @@ rather than empty. An unknown key is an error.
 - **`stack.evidence`** is one text: name several sources with `; `.
 - **`examined.unchecked`** is what could not be read, and why, so the reader
   knows what the scores do not cover.
+- **`drift`** lists each statement the repository contradicts, with the
+  evidence on both sides. A drift entry fixed after the audited commit
+  takes `status: "applied"` and `applied_in` as a recommendation does
+  (below): the sheet shows it as fixed ("Fixed in #53") and keeps it in the
+  list. Fixing drift is no recommendation, so the counts of work do not
+  change.
 - **`terms`** define the words of art the summary, findings and actions use.
   The sheet links each one at its first use in a section.
 - Write in short sentences, one fact each, in plain words.
@@ -119,6 +125,10 @@ rather than empty. An unknown key is an error.
   out of Start here and the counts of work, and offers no choice on it. The
   decisions block never names it, and `record.ts apply-feedback` refuses a
   block that decides one. Leave `status` out while the work is open.
+  `applied_in` is checked for its form only, so a commit can stand in until
+  the pull request exists; then name the pull request and render again.
+  The report's fingerprint counts `applied_in`, so decisions copied from
+  the earlier sheet no longer apply to the new one.
 - **`needs: "host-admin"`** marks a recommendation only someone who
   administers the repository on its host can apply, such as a branch
   protection rule. The sheet tags it *Needs a repository admin*. An
@@ -189,8 +199,10 @@ When the fit report's profile facts name an **alternative profile**
 (`profile_facts.alternative`, with its `id` and a list of reasons, `why`)
 other than the one the sheet measures against, the sheet shows it beside the
 profile: *Another profile to consider*, its reasons, and how many modules
-would be at their target under it. It helps the team choose the dial; it is
-never a finding.
+would be at their target under it. A module short of that target only on
+criteria the audit left not examined is counted apart, as one for which it
+cannot be told; a module short on an examined criterion is not at its
+target. It helps the team choose the dial; it is never a finding.
 
 To see the targets and gaps another profile would set before anyone chooses
 it, give `--profile <id>` to `validate` or `render`, with `--conditions
@@ -251,11 +263,13 @@ purpose.
   prior record is the latest before the audited
   one, so a prior dated after the audited record, a history record dated
   after the prior, and two history records of one day are refused. The
-  committed record's own history holds them:
+  committed record's own history holds them, read from the audited commit
+  back (`HEAD`, or the `--at` revision), since a record committed after it
+  is dated after the prior:
 
   ```bash
-  git log --format=%H -- .config/jig-audit.yaml
-  git show <commit>:.config/jig-audit.yaml > <scratch>/jig-audit.<commit>.yaml
+  git log --format=%H <commit> -- .config/jig-audit.yaml
+  git show <sha>:.config/jig-audit.yaml > <scratch>/jig-audit.<sha>.yaml
   ```
 
 - `--out` defaults to a new temporary folder, because the sheet names paths
@@ -309,10 +323,16 @@ as colour:
 | not examined | a struck-through eye |
 | not scored | a question mark |
 
-When the record leaves criteria **not examined**, the counts say how many
-criteria were examined and how many of those are met ("21 of 40 examined
-criteria met; 89 not examined, beyond the target"), so unexamined criteria
-never read as failures. A module none of whose criteria were examined
+With a profile, the counts' headline is the criteria within its target and
+how many of those are met; the criteria beyond it follow apart, those left
+**not examined** and those scored anyway, by a probe or with
+`--examine-all` ("8 of 9 criteria within the target met; 89 not examined,
+beyond the target; 25 scored beyond the target, 2 of them met"), so neither
+reads as a failure. Criteria within the target that a narrower record left
+not examined are neither met nor a gap: the headline counts them first, as
+within the target and not judged. Without a profile the headline counts
+every criterion.
+A module none of whose criteria were examined
 attains *not examined*. In the comparison with the last audit, a criterion
 examined at one audit only is listed apart, under *Examined at one audit
 only* (examined now, or not examined now), never as fixed, regressed or still

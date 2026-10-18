@@ -60,6 +60,18 @@ export interface LeftOnPurpose {
   revisit_when?: string;
 }
 
+/**
+ * A statement the repository contradicts, with the evidence on both sides.
+ * Fixed after the audited commit (in the same run that audited, say), it
+ * carries `status` and `applied_in` as an applied recommendation does.
+ */
+export interface Drift {
+  text: string;
+  evidence: string[];
+  status?: "applied";
+  applied_in?: string;
+}
+
 /** A fact suggesting the team revisit its profile: more contributors, a deploy environment, a compliance document. */
 export interface ProfileSignal {
   text: string;
@@ -84,7 +96,7 @@ export interface ReportSource {
   stack: { facet: string; detected: string; evidence: string }[];
   recommendations: Recommendation[];
   left_on_purpose?: LeftOnPurpose[];
-  drift?: { text: string; evidence: string[] }[];
+  drift?: Drift[];
   terms?: GlossaryEntry[];
 }
 
@@ -141,8 +153,13 @@ const REC_FIELDS = [
 
 const REC_OPTIONAL = ["quick_win", "lighter", "status", "applied_in", "needs"];
 
-/** `status: applied` and where: a pull request's URL or number, or a commit. */
-function checkApplied(c: Checker, r: Record<string, unknown>, p: string): void {
+/** `status: applied` and where: a pull request's URL or number, or a commit. `what` names the entry in a problem. */
+function checkApplied(
+  c: Checker,
+  r: Record<string, unknown>,
+  p: string,
+  what = "recommendation",
+): void {
   if ("status" in r && r.status !== "applied")
     c.fail(
       `${p}.status`,
@@ -150,7 +167,7 @@ function checkApplied(c: Checker, r: Record<string, unknown>, p: string): void {
     );
   if (!("applied_in" in r)) {
     if (r.status === "applied")
-      c.fail(`${p}.applied_in`, "is required for an applied recommendation");
+      c.fail(`${p}.applied_in`, `is required for an applied ${what}`);
     return;
   }
   if (r.status !== "applied")
@@ -229,14 +246,25 @@ function checkStack(c: Checker, value: unknown): void {
   });
 }
 
-/** A list of facts, each a text with at least one piece of evidence: the drift found, the profile's signals. */
-function checkFacts(c: Checker, value: unknown, path: string): void {
+/**
+ * A list of facts, each a text with at least one piece of evidence: the
+ * drift found, the profile's signals. A drift entry may also be marked
+ * applied (`appliable`).
+ */
+function checkFacts(
+  c: Checker,
+  value: unknown,
+  path: string,
+  appliable = false,
+): void {
   if (!c.array(value, path, 1)) return;
+  const optional = appliable ? ["status", "applied_in"] : [];
   value.forEach((d, i) => {
     const p = `${path}[${i}]`;
-    if (c.object(d, p, ["text", "evidence"], [])) {
+    if (c.object(d, p, ["text", "evidence"], optional)) {
       c.text(d.text, `${p}.text`);
       c.texts(d.evidence, `${p}.evidence`, 1);
+      if (appliable) checkApplied(c, d, p, "drift entry");
     }
   });
 }
@@ -289,7 +317,7 @@ export function parseReportSource(value: unknown): ReportSource {
   checkStack(c, value.stack);
   checkRecommendations(c, value.recommendations);
   if ("left_on_purpose" in value) checkLeftOnPurpose(c, value.left_on_purpose);
-  if ("drift" in value) checkFacts(c, value.drift, "$.drift");
+  if ("drift" in value) checkFacts(c, value.drift, "$.drift", true);
   if ("terms" in value) c.glossary(value.terms, "$.terms");
   if (c.problems.length > 0) throw new ReportSourceError(c.problems);
   return value as unknown as ReportSource;

@@ -267,9 +267,13 @@ test("Jig's own configuration fits", () => {
   const report = JSON.parse(run.out) as {
     findings: { id: string; severity: string }[];
   };
+  // A checkout behind origin/main says where this clone stands, not whether
+  // the configuration fits; it holds on any branch the moment main moves.
   expect(
     report.findings.filter(
-      (f) => f.severity === "error" || f.severity === "warning",
+      (f) =>
+        (f.severity === "error" || f.severity === "warning") &&
+        f.id !== "fact:behind-integration-branch",
     ),
   ).toEqual([]);
   expect(run.code).toBe(0);

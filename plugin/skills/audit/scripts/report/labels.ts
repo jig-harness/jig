@@ -29,20 +29,42 @@ export const LABEL = {
   alternativeHead: "Another profile to consider: {profile}",
   alternativeAtTarget:
     "Under {profile}, {n} of {m} modules would be at their target.",
+  /** The modules the alternative profile would judge on criteria the audit did not examine. */
+  alternativeUntold: {
+    one: "Under {profile}, {n} of {m} modules would be at their target; for {u} it cannot be told, because criteria it needs were not examined.",
+    many: "Under {profile}, {n} of {m} modules would be at their target; for {u} it cannot be told, because criteria they need were not examined.",
+  },
 
   inShort: "In short",
-  criteriaMet: "criteria met",
-  examinedMet: "examined criteria met",
+  /** After "<n> of <m>": the noun agrees with <m>. */
+  criteriaMet: { one: "criterion met", many: "criteria met" },
+  /** With a profile, the headline counts the criteria within its target. */
+  withinMet: {
+    one: "criterion within the target met",
+    many: "criteria within the target met",
+  },
+  /** Criteria beyond the target scored anyway: `{n}` scored, `{m}` met. */
+  beyondScored: "{n} scored beyond the target, {m} of them met",
   notExaminedCount: "not examined, beyond the target",
+  notExaminedWithinCount: "within the target not examined, so not judged",
   ofWord: "of",
   recommendations: "Recommendations",
-  recommendationsNow: "recommendations for now",
-  quickWins: "quick wins",
+  recommendationsNow: {
+    one: "recommendation for now",
+    many: "recommendations for now",
+  },
+  quickWins: { one: "quick win", many: "quick wins" },
   quickWin: "Quick win",
   appliedIn: "Applied in",
   needs: { "host-admin": "Needs a repository admin" },
-  modulesAtTarget: "modules at their target",
-  expectedAbsentCount: "do not apply to this shape",
+  modulesAtTarget: {
+    one: "module at its target",
+    many: "modules at their target",
+  },
+  expectedAbsentCount: {
+    one: "does not apply to this shape",
+    many: "do not apply to this shape",
+  },
   uncoveredCount: {
     one: "gap no recommendation covers",
     many: "gaps no recommendation covers",
@@ -215,6 +237,8 @@ export const LABEL = {
   drift: "Drift",
   driftIntro: "Where what the repository says and what it does disagree.",
   noDrift: "None found.",
+  /** A drift entry fixed after the audited commit: where. */
+  fixedIn: "Fixed in",
 
   examined: "What was examined",
   stack: "Stack",
@@ -243,7 +267,7 @@ export const LABEL = {
     advisory: "a tool reports it but does not block",
     mechanical: "a check blocks the change",
     "expected-absent": "does not apply to this shape",
-    "not-examined": "the audit did not look: past what the profile asks",
+    "not-examined": "the audit did not look",
   },
   notScoredMeaning: "no score in the record",
 } as const;
@@ -330,6 +354,9 @@ export const SHEET_LABEL = {
     notMet: "Does not meet its bar yet.",
     na: "Does not apply to this repository's shape.",
     notExamined: "Not examined: beyond the target, so the audit did not look.",
+    notExaminedWithin:
+      "Not examined: within the target, but the record did not look, so it is not judged.",
+    notExaminedUnscoped: "Not examined: the audit did not look.",
     left: "Left on purpose:",
   },
   sinceCompared: "Compared with the audit of {date} (plugin {version}).",

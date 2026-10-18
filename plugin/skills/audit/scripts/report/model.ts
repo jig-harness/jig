@@ -625,8 +625,9 @@ export function horizonOf(
   return asks(targets.grow) ? "grow" : "optional";
 }
 
-/** Whether a recommendation was applied after the audited commit: done, so never offered as work. */
-export const isApplied = (r: Recommendation): boolean => r.status === "applied";
+/** Whether a recommendation or a drift entry was applied after the audited commit: done, so never offered as work. */
+export const isApplied = (r: Pick<Recommendation, "status">): boolean =>
+  r.status === "applied";
 
 /** The recommendations of one horizon, in the report's order. */
 export function recsFor(
@@ -656,13 +657,24 @@ export function worthWhen(
 }
 
 export interface Counts {
-  /** Examined criteria that meet their bar. */
+  /** Whether the counts are scoped to a target: a profile applies. */
+  scoped: boolean;
+  /** Examined criteria within the target (every one, without a profile) that meet their bar. */
   met: number;
-  /** Criteria the audit examined and the repository's shape does not rule out. */
+  /** Criteria within the target (every one, without a profile) the audit examined and the repository's shape does not rule out. */
   applicable: number;
+  /** Of the criteria counted, those the shape rules out. */
   expectedAbsent: number;
   /** Criteria beyond the target the audit did not examine. */
   notExamined: number;
+  /**
+   * Criteria within the target left unexamined, which a record narrower than
+   * the profile leaves: not judged, so neither met nor a gap.
+   */
+  notExaminedWithin: number;
+  /** Criteria beyond the target scored anyway (by a probe, or with `--examine-all`), and how many of them meet their bar. */
+  beyond: number;
+  beyondMet: number;
   /** Open recommendations for now, and those for later or optional. */
   now: number;
   later: number;
@@ -678,29 +690,56 @@ export interface Counts {
   left: number;
 }
 
+/**
+ * The summary's counts. With a profile, the headline counts the criteria
+ * within its target only: those beyond it are not what the team aims for, so
+ * a probe's `absent` there must not read as a shortfall. Those scored beyond
+ * it are counted apart (`beyond`), as are those left unexamined, within the
+ * target (`notExaminedWithin`) and outside it (`notExamined`).
+ */
 export function countsOf(
   input: ReportInput,
   rows: ModuleRow[],
   targets: Targets,
 ): Counts {
-  const cells = rows.flatMap((r) => r.cells);
+  const all = rows.flatMap((r) => r.cells);
+  const scoped = targets.now !== null;
+  const cells = scoped ? all.filter((c) => c.inTarget === true) : all;
   const expectedAbsent = cells.filter(
     (c) => c.score === EXPECTED_ABSENT,
   ).length;
-  const notExamined = cells.filter((c) => c.score === NOT_EXAMINED).length;
+  const notExaminedWithin = scoped
+    ? cells.filter((c) => c.score === NOT_EXAMINED).length
+    : 0;
+  const notExamined =
+    all.filter((c) => c.score === NOT_EXAMINED).length - notExaminedWithin;
+  const isMet = (c: Cell) =>
+    c.score !== null &&
+    c.score !== EXPECTED_ABSENT &&
+    c.score !== NOT_EXAMINED &&
+    meets(c.score, c.criterion.requires);
+  const beyond = scoped
+    ? all.filter(
+        (c) =>
+          c.inTarget === false &&
+          c.score !== null &&
+          c.score !== EXPECTED_ABSENT &&
+          c.score !== NOT_EXAMINED,
+      )
+    : [];
   const targeted = rows.filter((r) => r.target !== null);
   const open = input.source.recommendations.filter((r) => !isApplied(r));
   const now = recsFor("now", input, targets).filter((r) => !isApplied(r));
   return {
-    met: cells.filter(
-      (c) =>
-        c.score !== null &&
-        c.score !== EXPECTED_ABSENT &&
-        meets(c.score, c.criterion.requires),
-    ).length,
-    applicable: cells.length - expectedAbsent - notExamined,
+    scoped,
+    met: cells.filter(isMet).length,
+    applicable:
+      cells.filter((c) => c.score !== NOT_EXAMINED).length - expectedAbsent,
     expectedAbsent,
     notExamined,
+    notExaminedWithin,
+    beyond: beyond.length,
+    beyondMet: beyond.filter(isMet).length,
     now: now.length,
     later: open.length - now.length,
     quickWins: now.filter((r) => r.quick_win).length,
@@ -714,6 +753,34 @@ export function countsOf(
 }
 
 /**
+ * The words of the criteria headline after "<met> of <applicable>": the
+ * noun, and the clauses that follow it (those the shape rules out, those not
+ * examined, those scored beyond the target), each only when there are any.
+ */
+export function criteriaHeadline(n: Counts): { noun: string; tail: string } {
+  const noun = (n.scoped ? LABEL.withinMet : LABEL.criteriaMet)[
+    plural(n.applicable)
+  ];
+  const clauses = [
+    n.notExaminedWithin > 0
+      ? `${n.notExaminedWithin} ${LABEL.notExaminedWithinCount}`
+      : "",
+    n.expectedAbsent > 0
+      ? `${n.expectedAbsent} ${LABEL.expectedAbsentCount[plural(n.expectedAbsent)]}`
+      : "",
+    n.notExamined > 0
+      ? `${n.notExamined} ${n.scoped ? LABEL.notExaminedCount : LABEL.notExaminedHere}`
+      : "",
+    n.beyond > 0
+      ? LABEL.beyondScored
+          .replace("{n}", String(n.beyond))
+          .replace("{m}", String(n.beyondMet))
+      : "",
+  ].filter((c) => c !== "");
+  return { noun, tail: clauses.map((c) => `; ${c}`).join("") };
+}
+
+/**
  * Another profile the repository's facts support, as the fit report names
  * it, with how many modules would be at their target under it; null when it
  * names none or names the profile the sheet already measures against.
@@ -723,6 +790,12 @@ export interface Alternative {
   name: string;
   why: string[];
   atTarget: number;
+  /**
+   * Modules short of its target only on criteria the audit did not examine:
+   * whether they would be at it cannot be told. A module short on an
+   * examined criterion is not at its target, whatever the rest would show.
+   */
+  untold: number;
   withTarget: number;
 }
 
@@ -733,19 +806,40 @@ export function alternativeOf(
   const alt = input.fit?.profile_facts?.alternative;
   const profile = alt ? input.profiles.profiles.get(alt.id) : undefined;
   if (!alt || !profile || profile.id === targets.profile?.id) return null;
+  const scores = scoresOf(input.record);
   const rows = gaps(
     input.modules,
-    scoresOf(input.record),
+    scores,
     targetsFor(profile, []),
     input.profiles.order,
   ).filter((g) => g.target !== null);
+  const unexamined = (c: { key: string }) => {
+    const s = scores.get(c.key);
+    return s === undefined || s === NOT_EXAMINED;
+  };
   return {
     id: profile.id,
     name: profile.name,
     why: alt.why,
     atTarget: rows.filter((g) => g.missing.length === 0).length,
+    untold: rows.filter(
+      (g) => g.missing.length > 0 && g.missing.every(unexamined),
+    ).length,
     withTarget: rows.length,
   };
+}
+
+/** How the modules would stand under the alternative, as one sentence of plain text. */
+export function alternativeStanding(alt: Alternative): string {
+  const text =
+    alt.untold > 0
+      ? LABEL.alternativeUntold[plural(alt.untold)]
+      : LABEL.alternativeAtTarget;
+  return text
+    .replace("{profile}", alt.name)
+    .replace("{n}", String(alt.atTarget))
+    .replace("{m}", String(alt.withTarget))
+    .replace("{u}", String(alt.untold));
 }
 
 // ---------- ranking and grouping ----------

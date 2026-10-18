@@ -64,7 +64,9 @@ The record names one commit, so settle what the audit should describe first:
    errors the user wants fixed, fix them and commit before step 3; the
    audit then scores the fixed configuration.
 3. Install the repository's dependencies, so the hooks the audit finds
-   configured can run.
+   configured can run. On macOS `/tmp` is a symlink to `/private/tmp` and
+   some install scripts refuse a symlinked path, so make any worktree under
+   its real path (`pwd -P`). The temporary worktree `--at` makes already is.
 
 `score.ts --draft` refuses a checkout whose tracked files differ from the
 commit; `--at HEAD` scores the commit from a temporary worktree instead,
@@ -120,9 +122,14 @@ version it started with. Audit again in a new session.
 Keep its **Facts** section: the integration branch, its protection and the
 required checks are evidence for steps 2 and 3, and the profile facts (people
 committing in the last 90 days and the last year, automation counted apart;
-CI files that name deploy, release or publish work; documents whose path or first
-heading names a compliance regime; and the `suggested_profile` they support,
-also as `profile_facts` in the `--json` output) are what step 3 suggests a
+CI files that name deploy, release or publish work or run on a release or a
+pushed tag, and tracked files that configure a deploy (systemd units, a
+top-level deploy or infrastructure directory, a Procfile, a hosting
+platform's configuration); documents whose path or first heading names a
+compliance regime; and the `suggested_profile` they support, with an
+`alternative` beside it: the suggested profile when the record declares
+another, regulated-strict when compliance documents sit beside
+team-standard; also as `profile_facts` in the `--json` output) are what step 3 suggests a
 profile from. Save its `--json` output to
 the scratch folder as well (`config-fit.ts --json > <scratch>/fit.json`): the
 audit sheet shows it. When the repository has no configuration file, or the
@@ -168,6 +175,12 @@ everything. On a first audit, pass the profile the user chose or step 1's
 targets to those of the profile the record declares, which the draft keeps;
 it never narrows them.
 
+When the user has chosen the profile, add `--declare`: the draft then
+declares it (with `--conditions` and `--heading-to`) as the record's
+`profile`, in place of the prior record's, so it need not be set by hand.
+Otherwise leave the profile undeclared and make it the sheet's first
+decision.
+
 Add `--at <rev>` when the checkout has uncommitted changes. `score.ts` checks
 the commit out into a temporary worktree and keeps it: the draft's first
 line, `# snapshot: <dir>`, names it. Every survey reads the repository's
@@ -175,7 +188,8 @@ files there, not the checkout's, so pass that folder to the surveys. When the
 record is done, remove it with `git worktree remove --force <dir>`.
 
 The draft holds one entry per criterion of every module, with the criterion
-and its pass bar as comments and the prior audit's answer when there is one.
+and its pass bar as comments and the prior audit's answer when there is one
+(as a comment, for a criterion the draft leaves `not-examined`).
 Criteria whose probe found the precondition missing are already scored
 `absent`; a probe that could not read a file is marked unchecked and left for
 you. A criterion commented `# probe capped: …; at most <rung>` lacks only what
@@ -210,7 +224,8 @@ service, monorepo, documentation, infrastructure, …): it is what makes `expect
 defensible.
 
 Set `profile`, the maturity the team aims for (`${CLAUDE_SKILL_DIR}/profiles.yaml`:
-`solo-lite`, `team-standard`, `regulated-strict`). Keep the prior record's.
+`solo-lite`, `team-standard`, `regulated-strict`). Keep the prior record's
+(or pass `score.ts --declare`).
 The record holds the team's choice only; a suggestion goes in the report
 source, never in both. On a first audit ask the user, without blocking: when
 nobody can answer, or they do not know, leave it `null` and
@@ -237,16 +252,23 @@ bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" check <scratch>/jig-audit.next.yaml
 ```
 
 Repeat until it reports the record complete. It also warns of evidence
-naming a path or line the audited commit does not have. `record.ts summary
+naming a path or line the audited commit does not have. Code identifiers,
+the audit's scratch files, files the evidence proposes or says are missing,
+and the plugin's own scripts named as the plugin's are not read as paths. `record.ts summary
 <record> --profile <id>` shows the targets and gaps under a profile without
 changing the record, to explore a suggestion.
 
 ## 4. Compare with the last audit
 
-When `.config/jig-audit.yaml` exists:
+When `.config/jig-audit.yaml` exists, save the committed record to the
+scratch folder first, and use that copy as the prior in this step and the
+next: step 6 copies the new record over `.config/jig-audit.yaml`, and a
+comparison or render after it would compare the record with itself. Read it
+at the audited commit, `<commit>` below (`HEAD`, or the `--at` revision):
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" compare .config/jig-audit.yaml <scratch>/jig-audit.next.yaml
+git show <commit>:.config/jig-audit.yaml > <scratch>/jig-audit.prior.yaml
+bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" compare <scratch>/jig-audit.prior.yaml <scratch>/jig-audit.next.yaml
 ```
 
 It lists criteria fixed, regressed, still open, new, and added by Jig since the
@@ -261,7 +283,9 @@ names a `config/` finding, also save the fit report again against the draft,
 (every criterion it names now passes, and it names no configuration finding:
 drop the entry) or **stale** (a criterion it names no longer exists: ask the
 user). It reports a criterion that moved into or out of `not-examined` apart, as
-examined since or no longer examined, never as fixed or regressed. The comparison refuses a draft that `record.ts check` finds incomplete.
+examined since or no longer examined, never as fixed or regressed. Against a prior record that examined every
+criterion, the criteria a narrower profile leaves unexamined are counted in
+one line; their prior scores stay as comments in the draft. The comparison refuses a draft that `record.ts check` finds incomplete.
 `config-fit.ts` already leaves out the configuration findings the record
 declines, except errors, which no decline hides.
 
@@ -290,13 +314,13 @@ repository administrator can carry out (a host setting) `needs: "host-admin"`.
 profile without changing the record.
 
 On a re-audit, the trend needs the older records, which the committed
-record's history holds. List the commits that changed it, and write the
-record at each (the most recent is `.config/jig-audit.yaml` itself, the
-`--prior`):
+record's history holds. List the commits that changed it, from the audited
+commit back, and write the record at each but the most recent, which is the
+prior step 4 saved:
 
 ```bash
-git log --format=%H -- .config/jig-audit.yaml
-git show <commit>:.config/jig-audit.yaml > <scratch>/jig-audit.<commit>.yaml
+git log --format=%H <commit> -- .config/jig-audit.yaml
+git show <sha>:.config/jig-audit.yaml > <scratch>/jig-audit.<sha>.yaml
 ```
 
 Then:
@@ -304,7 +328,7 @@ Then:
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/report.ts" render <scratch>/jig-audit.json \
   --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json \
-  [--prior .config/jig-audit.yaml [--history <scratch>/jig-audit.<commit>.yaml]…] \
+  [--prior <scratch>/jig-audit.prior.yaml [--history <scratch>/jig-audit.<sha>.yaml]…] \
   --out <folder>
 ```
 
@@ -380,19 +404,27 @@ or a request that asks for the changes in the same session as the audit:
    record scores the commit it audited, and the next audit scores the change.
    Commit the record before the applied changes, in its own commit. Name in
    the pull request description the criteria each recommendation targets,
-   and give each applied recommendation `status: "applied"` and
-   `applied_in` in the report source, so the sheet shows it done rather than
-   open. A change that adds, renames or removes a criterion updates those
+   and give each applied recommendation, and each drift entry fixed,
+   `status: "applied"` and `applied_in` in the report source, so the sheet
+   shows it done rather than open. `applied_in` may name the commit until
+   the pull request exists; once it is opened, name the pull request and
+   render the sheet again, with the prior step 4 saved. A change that adds, renames or removes a criterion updates those
    criteria's entries in the record too, scored against the audited commit.
 4. Create a branch and plan each pull request with `do-item`'s policy:
    `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" open` (and
    `branch` first when the change belongs to a tracker item). Follow what it
-   prints: base, draft or Ready, labels, title convention, template.
+   prints: base, draft or Ready, labels, title convention, template. Its
+   size leaves the audit record out, and says so.
 5. Make the change, run the repository's gates, and open the pull request.
    Offer `/jig:drive-pr` on it.
 
 Unattended (no decisions from the team), apply only the first two tiers,
-and list the rest in the pull request as left for a person:
+and list the rest in the pull request as left for a person. Before applying
+either, read the repository's own rules on who may change a path: its
+`CODEOWNERS` file, and any protected-path or skeleton inventory its
+instruction files name (paths whose change needs a decision record, say).
+Leave a change to such a path for a person too, naming the rule that
+reserves it.
 
 1. **Drift fixes**: a statement the repository contradicts (a stale path, a
    wrong count, a retired tool named), where the repository shows which

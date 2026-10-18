@@ -507,6 +507,34 @@ describe("a criterion left not examined", () => {
     expect(text).toContain("| M2 h | not examined | not examined |");
   });
 
+  test("against a prior audit that examined everything, is counted in one line rather than listed", () => {
+    const everything = record({
+      "M1/a": "mechanical",
+      "M1/b": "mechanical",
+      "M1/c": "absent",
+      "M1/d": "absent",
+      "M2/a": "mechanical",
+    });
+    const scoped = record({
+      "M1/a": "mechanical",
+      "M1/b": "not-examined",
+      "M1/c": "not-examined",
+      "M1/d": "not-examined",
+      "M2/a": "not-examined",
+    });
+    const narrowed = compare(everything, scoped, m, schema, "2026-10-12");
+    // The comparison itself, and so --json, still names each one.
+    expect(
+      narrowed.criteria.filter((c) => c.change === "no-longer-examined"),
+    ).toHaveLength(4);
+    const text = renderComparison(narrowed, everything);
+    expect(text).not.toContain("## no longer examined");
+    expect(text).not.toContain("- M1/b:");
+    expect(text).toContain(
+      "No longer examined: 4 criteria the prior audit scored lie beyond the new target and were not examined; the prior record keeps their scores (the draft carries each as a comment), and score.ts --draft --examine-all examines them again.",
+    );
+  });
+
   describe("under a declared profile", () => {
     const real = loadModules();
     const profiles = loadProfiles(real);
@@ -581,6 +609,125 @@ test("evidence names a path only where it reads unmistakably as one, and not whe
   });
 });
 
+test.each([
+  [
+    "a file of the audit's scratch folder",
+    "read from fit.json, jig-audit.json, jig-audit.next.yaml and m3.draft.yaml",
+  ],
+  [
+    "a code identifier",
+    "the store uses Bun.SQL, sets .exitCode and reads rules[].paths",
+  ],
+  ["a fragment of a name", "files named <area>-template.md"],
+  [
+    "a file the evidence proposes",
+    "would add docs/runbook.md; proposed .github/CODEOWNERS; missing docs/adr/README.md",
+  ],
+])("evidence names no path in %s", (_, evidence) => {
+  expect(evidencePaths(evidence)).toEqual([]);
+});
+
+test("names joined by a slash that each read as a file are alternatives", () => {
+  expect(
+    evidencePaths("AGENTS.md/CLAUDE.md:3 at the root, docs/a.md").map(
+      (p) => p.token,
+    ),
+  ).toEqual(["AGENTS.md", "CLAUDE.md:3", "docs/a.md"]);
+});
+
+test("a path a word for the plugin shortly precedes is marked as possibly the plugin's", () => {
+  const [plugin, own] = evidencePaths(
+    "replies through the plugin's scripts/reply-to-thread.ts; scripts/reply-to-thread.ts",
+  );
+  expect(plugin).toEqual({
+    token: "scripts/reply-to-thread.ts",
+    path: "scripts/reply-to-thread.ts",
+    plugin: true,
+  });
+  expect(own?.plugin).toBeUndefined();
+  // A word for the plugin elsewhere in the clause does not claim the repository's own path.
+  const [, script] = evidencePaths(
+    "Jig is configured in .config/jig.yaml and the repository's scripts/score.ts runs its checks",
+  );
+  expect(script).toEqual({
+    token: "scripts/score.ts",
+    path: "scripts/score.ts",
+  });
+  // A skill may be the repository's own: only the plugin or Jig claims a path.
+  expect(
+    evidencePaths("the repository's skill runs scripts/score.ts")[0]?.plugin,
+  ).toBeUndefined();
+  // The plugin near a path is not the plugin owning it: only a possessive is.
+  expect(
+    evidencePaths("the plugin calls repository scripts/score.ts")[0]?.plugin,
+  ).toBeUndefined();
+  expect(evidencePaths("Jig's own scripts/score.ts")[0]?.plugin).toBe(true);
+});
+
+test("add or create after a program is a command, and the paths after it are read", () => {
+  expect(
+    evidencePaths(
+      "CI runs git add docs/generated.md and scripts/gone.ts validates the output",
+    ).map((p) => p.path),
+  ).toEqual(["docs/generated.md", "scripts/gone.ts"]);
+  expect(evidencePaths("add docs/runbook.md and create docs/x.md")).toEqual([]);
+  // A program's options between it and its command keep it a command.
+  expect(
+    evidencePaths(
+      "CI runs git -C tools add docs/generated.md and scripts/gone.ts validates the output",
+    ).map((p) => p.path),
+  ).toEqual(["docs/generated.md", "scripts/gone.ts"]);
+  // A proposal covers the path it names, not the rest of the clause.
+  expect(
+    evidencePaths("add docs/runbook.md beside docs/real.md").map((p) => p.path),
+  ).toEqual(["docs/real.md"]);
+  // It covers a list of paths, joined by commas, `and` or `or`.
+  for (const evidence of [
+    "add docs/a.md and docs/b.md",
+    "add docs/a.md, docs/b.md",
+    "create docs/a.md, docs/b.md or docs/c.md",
+  ])
+    expect(evidencePaths(evidence)).toEqual([]);
+  expect(
+    evidencePaths("add docs/a.md and docs/b.md beside docs/real.md").map(
+      (p) => p.path,
+    ),
+  ).toEqual(["docs/real.md"]);
+  // Every path after a comma in the list is proposed, whatever follows it:
+  // the words after cannot tell a proposal from a claim. A path to check
+  // starts a clause of its own.
+  for (const evidence of [
+    "add docs/a.md, docs/b.md beside docs/real.md",
+    "add docs/a.md, docs/b.md, docs/c.md beside docs/real.md",
+  ])
+    expect(evidencePaths(evidence).map((p) => p.path)).toEqual([
+      "docs/real.md",
+    ]);
+  for (const evidence of [
+    "add docs/new.md, scripts/gone.ts validates the result",
+    "add docs/a.md, docs/b.md, scripts/gone.ts validates the result",
+  ])
+    expect(evidencePaths(evidence)).toEqual([]);
+  expect(
+    evidencePaths("add docs/new.md; scripts/gone.ts validates the result").map(
+      (p) => p.path,
+    ),
+  ).toEqual(["scripts/gone.ts"]);
+  for (const evidence of [
+    "add docs/a.md, docs/b.md, and docs/c.md",
+    "add docs/a.md, docs/b.md and docs/c.md",
+  ])
+    expect(evidencePaths(evidence)).toEqual([]);
+});
+
+test("a file name in capitals is a path, a member in capitals is code", () => {
+  expect(
+    evidencePaths("README.MD, CONFIG.YAML and PACKAGE.JSON; Bun.SQL").map(
+      (p) => p.path,
+    ),
+  ).toEqual(["README.MD", "CONFIG.YAML", "PACKAGE.JSON"]);
+});
+
 describe("records run against the repository they audit", () => {
   const recordFor = (commit: string, criteria = "{}", extra = "") =>
     `version: 1\nplugin_version: 0.13.0\ndate: 2026-01-02\ncommit: ${commit}\n${extra}criteria: ${criteria}\n`;
@@ -642,6 +789,37 @@ describe("records run against the repository they audit", () => {
       `docs/later.md is not in commit ${head.slice(0, 12)}`,
     );
     expect(run.out).toContain("3 evidence warning(s) to look at");
+  });
+
+  test("check warns of a stale path beside evidence that names none, and not of the plugin's own scripts", () => {
+    const dir = repo({ "AGENTS.md": "# Agents\n" });
+    const head = git(dir, "rev-parse", "HEAD");
+    const scored = loadModules()
+      .flatMap((x) => x.criteria)
+      .map((c, i) =>
+        i === 0
+          ? `  ${c.key}: { score: convention, evidence: "AGENTS.md/CLAUDE.md; Bun.SQL and .exitCode in fit.json; <x>-template.md; would add docs/runbook.md; the jig plugin's scripts/await-round.ts waits on reviews; docs/gone.md lists it; scripts/reply-to-thread.ts; the repository's skill runs scripts/score.ts; scripts/record.ts; the plugin's scripts/record.ts; the plugin's scripts/report.ts; scripts/report.ts" }`
+          : `  ${c.key}: { score: absent, evidence: "none" }`,
+      )
+      .join("\n");
+    const path = join(scratch, "false-positives.yaml");
+    writeFileSync(path, recordFor(head, `\n${scored}`));
+    const run = runScript("record.ts", ["check", path], dir);
+    expect(run.code).toBe(0);
+    const warnings = run.out
+      .split("\n")
+      .filter((l) => l.startsWith("warning: "));
+    const short = head.slice(0, 12);
+    expect(warnings.map((w) => w.replace(/^warning: \S+: /, ""))).toEqual([
+      `CLAUDE.md is not in commit ${short}`,
+      `docs/gone.md is not in commit ${short}`,
+      // A plugin script not said to be the plugin's is the repository's, and missing.
+      `scripts/reply-to-thread.ts is not in commit ${short}`,
+      `scripts/score.ts is not in commit ${short}`,
+      // Cited as the repository's too, before or after the plugin's: missing either way.
+      `scripts/record.ts is not in commit ${short}`,
+      `scripts/report.ts is not in commit ${short}`,
+    ]);
   });
 
   test("summary shows the targets of a profile the record does not declare, without editing it", () => {

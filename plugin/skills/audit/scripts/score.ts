@@ -12,7 +12,7 @@
  *       filled in, Score and Evidence left for the agent
  *   bun score.ts --draft <file> [--prior <record>] [--date YYYY-MM-DD]
  *                [--at <rev>] [--profile <id>] [--conditions M12,M3]
- *                [--heading-to <id>] [--examine-all]
+ *                [--heading-to <id>] [--declare] [--examine-all]
  *       write a draft audit record to <file>: decided scores filled, the rest
  *       `null` with the criterion, its bar and the prior answer as comments.
  *       The prior record defaults to .config/jig-audit.yaml when it exists;
@@ -28,7 +28,11 @@
  *       a probe's `absent` stands. --examine-all leaves nothing unexamined.
  *       The draft's own profile: stays the prior record's (null without
  *       one): the team, not the audit, chooses it. So --profile naming
- *       another profile examines the prior record's targets too.
+ *       another profile examines the prior record's targets too. --declare
+ *       says the team chose the --profile given: the draft declares it, with
+ *       the conditions and heading_to the flags name (the prior record's for
+ *       the same profile), in place of the prior record's, and examines its
+ *       targets only. --declare needs --profile.
  *   bun score.ts --check
  *       check the criteria themselves: every module present, each with
  *       well-formed criteria. Needs no repository.
@@ -48,6 +52,7 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -81,7 +86,7 @@ import {
 import { isDate, pluginVersion, run, today, trackedFiles } from "./lib/repo.ts";
 
 const USAGE =
-  "usage: score.ts [--json] | --draft <file> [--prior <record>] [--date YYYY-MM-DD] [--at <rev>] [--profile <id>] [--conditions M12,M3] [--heading-to <id>] [--examine-all] | --check   [--criteria <dir>]";
+  "usage: score.ts [--json] | --draft <file> [--prior <record>] [--date YYYY-MM-DD] [--at <rev>] [--profile <id>] [--conditions M12,M3] [--heading-to <id>] [--declare] [--examine-all] | --check   [--criteria <dir>]";
 
 interface Args {
   mode: "checklist" | "draft" | "check";
@@ -94,6 +99,8 @@ interface Args {
   profile?: string;
   conditions?: string[];
   headingTo?: string;
+  /** Whether the draft declares the profile `--profile` names, as the team's choice. */
+  declare: boolean;
   examineAll: boolean;
   criteria: string;
 }
@@ -106,6 +113,7 @@ const DRAFT_FLAGS = [
   "--profile",
   "--conditions",
   "--heading-to",
+  "--declare",
   "--examine-all",
 ];
 
@@ -119,6 +127,9 @@ const SWITCHES: Record<string, (args: Args) => void> = {
   },
   "--examine-all": (a) => {
     a.examineAll = true;
+  },
+  "--declare": (a) => {
+    a.declare = true;
   },
 };
 
@@ -158,7 +169,10 @@ const VALUED: Record<string, (args: Args, value: string) => void> = {
 function argsFault(args: Args, argv: string[]): string | null {
   if (args.date !== undefined && !isDate(args.date))
     return "--date must be a calendar date, YYYY-MM-DD";
-  if (args.mode === "draft") return null;
+  if (args.mode === "draft")
+    return args.declare && args.profile === undefined
+      ? "--declare needs --profile: it declares the profile --profile names"
+      : null;
   const stray = DRAFT_FLAGS.find((f) => argv.includes(f));
   return stray === undefined ? null : `${stray} needs --draft`;
 }
@@ -186,6 +200,7 @@ function parseArgs(argv: string[]): Args {
   const args: Args = {
     mode: "checklist",
     json: false,
+    declare: false,
     examineAll: false,
     criteria: CRITERIA_DIR,
   };
@@ -383,12 +398,12 @@ interface Scope {
 
 /**
  * The profile the draft is scoped to: the one `--profile` names, else the
- * prior record's, each with its conditions and heading-to profile. The draft
- * keeps the profile the prior record declares, and `record.ts check` wants
- * every criterion within that profile's targets scored, so another
- * `--profile` adds its targets to the declared profile's rather than
- * narrowing them. Null when there is none, or `--examine-all` asks for every
- * criterion.
+ * prior record's, each with its conditions and heading-to profile. Unless
+ * `--declare` replaces it, the draft keeps the profile the prior record
+ * declares, and `record.ts check` wants every criterion within that
+ * profile's targets scored, so another `--profile` adds its targets to the
+ * declared profile's rather than narrowing them. Null when there is none, or
+ * `--examine-all` asks for every criterion.
  */
 function draftScope(
   args: Args,
@@ -408,7 +423,8 @@ function draftScope(
     selection.conditions,
     chosen.heading,
   );
-  if (prior?.profile === undefined) return { profile: chosen.profile, targets };
+  if (args.declare || prior?.profile === undefined)
+    return { profile: chosen.profile, targets };
   // The draft keeps every declaration the prior record makes, so its targets
   // stay examined even when `--conditions` or `--heading-to` names others.
   const declared = addDeclaredTargets(
@@ -482,6 +498,30 @@ function scopeSelection(
   };
 }
 
+/** The profile, conditions and heading-to profile a draft declares. */
+type Declaration = {
+  profile: string;
+  conditions: string[];
+  heading_to?: string;
+};
+
+/**
+ * What the draft declares in place of the prior record's profile: the
+ * selection `--profile` names, when `--declare` says the team chose it. Null
+ * without `--declare`; the reason when the selection is not a profile's.
+ */
+function declaration(
+  args: Args,
+  prior: AuditRecord | null,
+  profiles: Profiles,
+): Declaration | null | { error: string } {
+  if (!args.declare) return null;
+  const selection = scopeSelection(args, prior);
+  if (selection === null || "error" in selection) return selection;
+  const chosen = selectProfiles(profiles, selection);
+  return "error" in chosen ? chosen : selection;
+}
+
 /** The profile, or profiles, whose targets a scope examines. */
 const scopeName = (scope: Scope): string =>
   scope.declared === undefined
@@ -529,7 +569,9 @@ function snapshotAt(
   commit: string,
   modules: Module[],
 ): { dir: string; rows: Row[] } | { error: string } {
-  const dir = mkdtempSync(join(tmpdir(), "jig-audit-at-"));
+  // Under its real path: some install scripts refuse a symlinked one, and
+  // macOS's temporary folder is one.
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "jig-audit-at-")));
   const remove = () => dropSnapshot(root, dir);
   const add = run(
     "git",
@@ -648,6 +690,8 @@ function draftInputs(
   const profiles = loadProfiles(modules);
   const scope = draftScope(args, found.prior, profiles);
   if (scope !== null && "error" in scope) return scope;
+  const declared = declaration(args, found.prior, profiles);
+  if (declared !== null && "error" in declared) return declared;
   const version = pluginVersion();
   if (version === null)
     return {
@@ -656,7 +700,7 @@ function draftInputs(
     };
   const read = audited(args, modules, root);
   if ("error" in read) return read;
-  return { prior: found.prior, profiles, scope, version, ...read };
+  return { prior: found.prior, profiles, scope, declared, version, ...read };
 }
 
 function writeDraft(args: Args, modules: Module[], root: string): number {
@@ -666,7 +710,8 @@ function writeDraft(args: Args, modules: Module[], root: string): number {
     console.error(inputs.error);
     return 2;
   }
-  const { prior, profiles, scope, version, commit, rows, snapshot } = inputs;
+  const { prior, profiles, scope, declared, version, commit, rows, snapshot } =
+    inputs;
   const { decided, ceilings, hints } = probeOutcomes(rows);
   const probed = decided.size;
   const left = scope === null ? 0 : leaveUnexamined(modules, decided, scope);
@@ -684,6 +729,7 @@ function writeDraft(args: Args, modules: Module[], root: string): number {
           hints,
           ceilings,
           prior,
+          ...(declared === null ? {} : { declared }),
           pluginVersion: version,
           date: args.date ?? today(),
           commit,

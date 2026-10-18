@@ -16,7 +16,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { countChangedLines, shellQuote } from "../scripts/pr-plan.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  countChangedLines,
+  measureChange,
+  shellQuote,
+} from "../scripts/pr-plan.ts";
 
 const SCRIPT = join(import.meta.dir, "..", "scripts", "pr-plan.ts");
 
@@ -173,6 +178,23 @@ describe("countChangedLines", () => {
       14,
     );
     expect(countChangedLines("")).toBe(0);
+  });
+
+  it("leaves the audit record out of the total and names it", () => {
+    expect(
+      measureChange("3\t1\ta.ts\n900\t880\t.config/jig-audit.yaml\n"),
+    ).toEqual({
+      changedLines: 4,
+      uncounted: [
+        {
+          path: ".config/jig-audit.yaml",
+          lines: 1780,
+          why: "the audit record, rewritten by every audit",
+        },
+      ],
+    });
+    // Only that path: a file of the same name elsewhere counts.
+    expect(countChangedLines("5\t0\tdocs/jig-audit.yaml\n")).toBe(5);
   });
 });
 
@@ -608,7 +630,27 @@ describe("pr-plan.ts open", () => {
       budget: 10,
       over: true,
       acceptedReason: "one generated migration",
+      uncounted: [],
     });
+  });
+
+  it("fits a change within the budget when only the audit record is large, and says it left the record out", () => {
+    overlay("pull_requests:\n  size_budget: 10\n");
+    mkdirSync(join(repo, ".config"), { recursive: true });
+    commitLines(".config/jig-audit.yaml", 500);
+    commitLines("a.txt", 4);
+    const r = spawnSync(process.execPath, [SCRIPT, "open"], {
+      cwd: repo,
+      encoding: "utf8",
+      env: cleanEnv(),
+    });
+    expectSpawnExit(
+      { exitCode: r.status, stdout: r.stdout, stderr: r.stderr },
+      0,
+    );
+    expect(r.stdout).toContain(
+      "size:        4 changed lines of 10, not counting .config/jig-audit.yaml (500 lines, the audit record, rewritten by every audit)",
+    );
   });
 
   it("reads the title convention from a conventional commitlint configuration before history", () => {

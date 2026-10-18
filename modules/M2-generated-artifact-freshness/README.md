@@ -288,7 +288,9 @@ so a reviewer applies it where the lint's shape test cannot.
    ([`templates/generated-files.yaml`](templates/generated-files.yaml), or
    the change-area catalog's `generated:` entries), and state that derived
    files are never edited by hand; give each derived file a generated-file
-   header naming its regenerate command. This is **Lite**.
+   header naming its regenerate command, or, where its format cannot carry
+   one (JSON, a vendored file pinned by its hash), say in its inventory
+   entry that it is not edited by hand. This is **Lite**.
 2. For each derived file, walk the ladder: drop it if no consumer needs it at
    rest; otherwise give it the full triad
    ([`reference/triad/`](reference/triad/)); give each generator that keeps

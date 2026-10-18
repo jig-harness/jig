@@ -1913,8 +1913,10 @@ describe("criteria the audit did not examine", () => {
     );
     const n = countsOf(input, rows, t);
     expect(n.notExamined).toBe(3);
-    expect(n.applicable).toBe(base.applicable - 3);
+    // M5 lies beyond the target: the headline never counted it.
+    expect(n.applicable).toBe(base.applicable);
     expect(n.met).toBe(base.met);
+    expect(n.beyond).toBe(base.beyond - 3);
     expect(
       m5?.cells.filter((c) => c.score === "not-examined" && c.gap),
     ).toEqual([]);
@@ -1928,18 +1930,43 @@ describe("criteria the audit did not examine", () => {
     expect(page).toContain(
       "Not examined: beyond the target, so the audit did not look.",
     );
-    expect(page).toContain("examined criteria met; ");
-    expect(page).toContain("3 not examined, beyond the target</li>");
+    expect(page).toContain("criteria within the target met; ");
+    expect(page).toContain("; 3 not examined, beyond the target; ");
     expect(page).toContain('<span class="sch s-not-examined">');
     const md = renderReportMarkdown(input);
     expect(md).toMatch(
-      /- \d+ of \d+ examined criteria met; .*3 not examined, beyond the target/,
+      /- \d+ of \d+ criteria within the target met; .*3 not examined, beyond the target/,
     );
     expect(md).toContain("**not examined**");
-    // The headline reads as before when every criterion was examined.
-    expect(renderReportHtml(reportInput())).not.toContain(
-      "examined criteria met",
+  });
+
+  test("the headline counts the criteria within the target, and those scored beyond it apart", () => {
+    const input = reportInput();
+    const t = targetsOf(input);
+    const rows = mapRows(input, t);
+    const cells = rows.flatMap((r) => r.cells);
+    const scored = (c: (typeof cells)[number]) =>
+      c.score !== null &&
+      c.score !== "expected-absent" &&
+      c.score !== "not-examined";
+    const within = cells.filter((c) => c.inTarget === true && scored(c));
+    const beyond = cells.filter((c) => c.inTarget === false && scored(c));
+    expect(within.length).toBeGreaterThan(0);
+    expect(beyond.length).toBeGreaterThan(0);
+    const n = countsOf(input, rows, t);
+    expect([n.applicable, n.beyond]).toEqual([within.length, beyond.length]);
+    const md = renderReportMarkdown(input);
+    expect(md).toContain(
+      `- ${n.met} of ${within.length} criteria within the target met`,
     );
+    expect(md).toContain(
+      `; ${beyond.length} scored beyond the target, ${n.beyondMet} of them met`,
+    );
+    // Without a profile there is no target: every criterion counts, as met or not.
+    const none = reportInput({ source: noProfile });
+    const all = renderReportMarkdown(none);
+    expect(all).toMatch(/- \d+ of \d+ criteria met/);
+    expect(all).not.toContain("beyond the target");
   });
 
   test("a module none of whose criteria were examined attains not examined", () => {
@@ -1970,9 +1997,24 @@ describe("criteria the audit did not examine", () => {
     expect(row?.cells.filter((c) => c.gap).map((c) => c.criterion.key)).toEqual(
       expect.not.arrayContaining(M5_KEYS),
     );
-    expect(renderReportHtml(explored)).toContain(
-      '<span class="tgt">3 not examined</span>',
+    const page = renderReportHtml(explored);
+    expect(page).toContain('<span class="tgt">3 not examined</span>');
+    // The headline says they are within the target and not judged, never beyond it.
+    const n = countsOf(
+      explored,
+      mapRows(explored, targetsOf(explored)),
+      targetsOf(explored),
     );
+    expect([n.notExaminedWithin, n.notExamined]).toEqual([3, 0]);
+    expect(renderReportMarkdown(explored)).toMatch(
+      /criteria within the target met; 3 within the target not examined, so not judged/,
+    );
+    expect(page).not.toContain("not examined, beyond the target");
+    expect(page).toContain(
+      "Not examined: within the target, but the record did not look, so it is not judged.",
+    );
+    // The score's own meaning says nothing about the target, so the popover does not contradict itself.
+    expect(page).not.toContain("past what the profile asks");
   });
 
   test("a change into or out of not examined is set apart, never fixed, regressed or still open", () => {
@@ -2252,6 +2294,92 @@ describe("applied recommendations and those that need an admin", () => {
   });
 });
 
+describe("drift fixed after the audited commit", () => {
+  const drift = (s: Record<string, unknown>) =>
+    s.drift as Record<string, unknown>[];
+
+  test("is validated as an applied recommendation is", () => {
+    expect(
+      problemsOf((s) => {
+        const [a, b, c] = drift(s);
+        Object.assign(a ?? {}, { status: "fixed" });
+        Object.assign(b ?? {}, { status: "applied" });
+        Object.assign(c ?? {}, { applied_in: "a branch" });
+      }),
+    ).toEqual([
+      "$.drift[0].status: must be applied, or left out while the work is open",
+      "$.drift[1].applied_in: is required for an applied drift entry",
+      '$.drift[2].applied_in: needs "status": "applied"',
+      "$.drift[2].applied_in: must be a pull request's URL or number, or a commit",
+    ]);
+    // The profile's signals are facts, never work: they take neither key.
+    expect(
+      problemsOf((s) => {
+        const p = s.profile as Record<string, unknown>;
+        p.signals = [
+          {
+            text: "Seven committed.",
+            evidence: ["git shortlog"],
+            status: "applied",
+          },
+        ];
+      }),
+    ).toEqual(["$.profile.signals[0].status: unknown field"]);
+  });
+
+  test("shows where it was fixed, in the sheet and the Markdown copy", () => {
+    const input = reportInput({
+      source: (s) => {
+        Object.assign(drift(s)[1] ?? {}, {
+          status: "applied",
+          applied_in: "#53",
+        });
+      },
+    });
+    const page = renderReportHtml(input);
+    const section = page.slice(page.indexOf('id="drift"'));
+    expect(section).toContain(
+      '<p class="main"><span class="tag tag-done">Fixed in #53</span> The coverage service',
+    );
+    expect(section.match(/tag-done/g)?.length).toBe(1);
+    expect(renderReportMarkdown(input)).toContain(
+      "- **Fixed in #53** · The coverage service",
+    );
+    // Fixing drift is no recommendation: the counts of work stay as they were.
+    const t = targetsOf(input);
+    expect(countsOf(input, mapRows(input, t), t).applied).toBe(0);
+  });
+});
+
+describe("the counts agree in number", () => {
+  test("one quick win and one recommendation read in the singular", () => {
+    const input = reportInput({
+      source: (s) => {
+        for (const r of recs(s)) delete r.quick_win;
+        rec(s, 0).quick_win = true;
+      },
+    });
+    const t = targetsOf(input);
+    const n = countsOf(input, mapRows(input, t), t);
+    expect(n.quickWins).toBe(1);
+    const page = renderReportHtml(input);
+    const md = renderReportMarkdown(input);
+    for (const text of [page, md]) {
+      expect(text).toContain(", 1 quick win");
+      expect(text).not.toContain("1 quick wins");
+    }
+    expect(page).toContain(`${n.now}</span>recommendations for now`);
+    const one = reportInput({
+      source: (s) => {
+        s.recommendations = [rec(s, 0)];
+      },
+    });
+    expect(renderReportMarkdown(one)).toMatch(
+      /- 1 recommendation for now, [01] quick wins?/,
+    );
+  });
+});
+
 describe("another profile", () => {
   test("explored, measures against it and says so", () => {
     const input = {
@@ -2307,6 +2435,7 @@ describe("another profile", () => {
         : null,
     };
     expect(alternativeOf(same, targetsOf(same))).toBeNull();
+    expect(alt?.untold).toBe(0);
     expect(
       inputProblems({
         ...withAlt,
@@ -2320,6 +2449,44 @@ describe("another profile", () => {
     ).toEqual([
       "fit: profile_facts.alternative.id no-such is not one of solo-lite, team-standard, regulated-strict",
     ]);
+  });
+
+  test("modules it would judge on criteria not examined are counted apart, never as short of their target", () => {
+    const withAlt = (record: string) => {
+      const input = reportInput({ record });
+      return {
+        ...input,
+        fit: input.fit
+          ? {
+              ...input.fit,
+              profile_facts: {
+                alternative: { id: "team-standard", why: [] },
+              },
+            }
+          : null,
+      };
+    };
+    // Every M5 criterion Team/Standard's target reaches.
+    const standardM5 = [
+      ...M5_KEYS,
+      "M5/adr-frontmatter-validated",
+      "M5/supersession-metadata-used",
+    ];
+    const input = withAlt(unexamined(standardM5));
+    const alt = alternativeOf(input, targetsOf(input));
+    expect(alt?.untold).toBe(1);
+    const sentence = `Under Team/Standard, ${alt?.atTarget} of 10 modules would be at their target; for 1 it cannot be told, because criteria it needs were not examined.`;
+    expect(renderReportHtml(input)).toContain(`<p>${sentence}</p>`);
+    expect(renderReportMarkdown(input)).toContain(sentence);
+    // A module short on a criterion that was examined is not at its target, whatever the rest would show.
+    const [first, ...rest] = standardM5;
+    const short = withAlt(
+      withScores(recordText(), {
+        [first ?? ""]: "absent",
+        ...Object.fromEntries(rest.map((k) => [k, "not-examined"])),
+      }),
+    );
+    expect(alternativeOf(short, targetsOf(short))?.untold).toBe(0);
   });
 });
 

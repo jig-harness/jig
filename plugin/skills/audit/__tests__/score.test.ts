@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -519,7 +520,7 @@ describe("a draft scoped to a profile", () => {
     // The scope is the audit's, not a profile the team declared.
     expect(record.profile).toBeUndefined();
     expect(readFileSync(path, "utf8")).toMatch(
-      /^profile: null {3}# .*leave null unless the team chose one; a suggested profile goes in the report source$/m,
+      /^profile: null {3}# .*: set it when the team chose one \(score\.ts --declare does\); otherwise leave null and put a suggested profile in the report source$/m,
     );
     // Filled within the target, the draft checks with no profile declared.
     const filled = readFileSync(path, "utf8")
@@ -640,6 +641,78 @@ describe("a draft scoped to a profile", () => {
     ).toEqual([]);
   });
 
+  test("--declare records the profile, conditions and heading-to profile the flags name", () => {
+    const dir = repo({ "AGENTS.md": "# Agents\n" });
+    const { run, path } = draftIn(dir, "declared.yaml", [
+      "--profile",
+      "team-standard",
+      "--conditions",
+      "M12",
+      "--heading-to",
+      "regulated-strict",
+      "--declare",
+    ]);
+    expect(run.code).toBe(0);
+    const record = read(path);
+    expect(record.profile).toBe("team-standard");
+    expect(record.profile_conditions).toEqual(["M12"]);
+    expect(record.heading_to).toBe("regulated-strict");
+    // Filled where it was left open, the draft checks against what it declares.
+    const filled = readFileSync(path, "utf8")
+      .replace(/score: null/g, "score: convention")
+      .replace(/evidence: null/g, 'evidence: "AGENTS.md"');
+    expect(
+      checkRecord(parseRecord(filled, path), modules, loadProfiles(modules)),
+    ).toEqual([]);
+  });
+
+  test("--declare replaces the prior record's profile, whose targets it no longer examines", () => {
+    const dir = repo({
+      "AGENTS.md": "# Agents\n",
+      ".config/jig-audit.yaml":
+        'version: 1\nplugin_version: 0.12.0\ndate: "2026-01-02"\ncommit: abc\nprofile: team-standard\nprofile_conditions: [M12]\ncriteria: {}\n',
+    });
+    const { run, path } = draftIn(dir, "redeclared.yaml", [
+      "--profile",
+      "solo-lite",
+      "--declare",
+    ]);
+    expect(run.code).toBe(0);
+    const record = read(path);
+    expect(record.profile).toBe("solo-lite");
+    expect(record.profile_conditions).toBeUndefined();
+    expect(scoreOf(record, "M0/per-directory-instructions")).toBe(
+      "not-examined",
+    );
+    expect(run.out).toContain("beyond the Solo/Lite target");
+  });
+
+  test("keeps a prior score beyond the target as the comment of the criterion it leaves unexamined", () => {
+    const dir = repo({
+      "AGENTS.md": "# Agents\n",
+      ".config/jig-audit.yaml":
+        'version: 1\nplugin_version: 0.12.0\ndate: "2026-01-02"\ncommit: abc\nprofile: null\ncriteria:\n  M0/per-directory-instructions: { score: convention, evidence: "src/AGENTS.md extends the root file" }\n',
+    });
+    const { run, path } = draftIn(dir, "narrowing.yaml", [
+      "--profile",
+      "solo-lite",
+    ]);
+    expect(run.code).toBe(0);
+    const text = readFileSync(path, "utf8");
+    const entry = text.slice(text.indexOf("  M0/per-directory-instructions:"));
+    expect(entry).toMatch(
+      /^ {2}M0\/per-directory-instructions:.*\n {4}# .*\n {4}# prior: convention: src\/AGENTS\.md extends the root file\n {4}score: not-examined\n/,
+    );
+  });
+
+  test("--declare without --profile is a usage error", () => {
+    const dir = repo({ "AGENTS.md": "# Agents\n" });
+    const { run, path } = draftIn(dir, "undeclared.yaml", ["--declare"]);
+    expect(run.code).toBe(2);
+    expect(run.err).toContain("--declare needs --profile");
+    expect(existsSync(path)).toBe(false);
+  });
+
   test("a profile without a draft is a usage error", () => {
     const run = runScript("score.ts", ["--profile", "solo-lite"], scratch);
     expect(run.code).toBe(2);
@@ -678,6 +751,8 @@ describe("a draft of another commit", () => {
     )?.[1];
     expect(snapshot).toBeDefined();
     const kept = snapshot ?? "";
+    // Under its real path, which some install scripts insist on.
+    expect(kept).toBe(realpathSync(kept));
     expect(existsSync(join(kept, ".gitlab-ci.yml"))).toBe(false);
     expect(readFileSync(join(kept, "AGENTS.md"), "utf8")).toBe("# Agents\n");
     expect(run.out).toContain(`snapshot of ${before.slice(0, 12)}: ${kept}`);

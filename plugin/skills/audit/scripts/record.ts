@@ -15,11 +15,21 @@
  *       with a profile declared, none within its target (or a condition's,
  *       or heading_to's) left not-examined. Warns, without failing, about
  *       evidence naming a path the record's commit does not hold or a line
- *       past its file's end
+ *       past its file's end. Not read as paths: code identifiers, fragments
+ *       of a name, the audit's scratch files (fit.json, jig-audit.next.yaml),
+ *       what a clause says is missing or proposed (after `no`, `missing`,
+ *       `would`, `proposed`, …; `add` or `create` proposes only the paths
+ *       right after it, one or a list joined by commas, `and` or `or`, and
+ *       nothing when it is a program's command such as `git add`), and a
+ *       Jig plugin file a possessive of the plugin or Jig directly precedes
+ *       (`the plugin's scripts/x.ts`); `a.md/b.md` names two alternatives
  *   bun record.ts compare <prior> <current> [--json] [--date YYYY-MM-DD]
  *       fixed, regressed, still open, new, added by Jig since the prior
  *       audit's plugin version, removed, and apart from those, examined
- *       since or no longer examined; configuration fields added since;
+ *       since or no longer examined (against a prior record that examined
+ *       every criterion, the no-longer-examined ones are counted in one
+ *       line, not listed);
+ *       configuration fields added since;
  *       each declined recommendation held, due, resolved or stale; refuses
  *       a current record that check finds incomplete
  *   bun record.ts summary [<record>] [--profile <id> [--conditions M12,M3]]

@@ -42,11 +42,18 @@ function markLabel(c: Cell): string {
 
 type Standing = [cls: "gap" | "ok" | "nn", text: string];
 
+/** Why a criterion the audit did not examine was left so, by where it lies against the target. */
+function unexamined(c: Cell): string {
+  const S = SHEET_LABEL.standing;
+  if (c.inTarget === true) return S.notExaminedWithin;
+  return c.inTarget === false ? S.notExamined : S.notExaminedUnscoped;
+}
+
 /** Where a criterion stands against the profile, in the popover's words. */
 function standing(c: Cell): Standing[] {
   const S = SHEET_LABEL.standing;
   if (c.score === EXPECTED_ABSENT) return [["nn", S.na]];
-  if (c.score === NOT_EXAMINED) return [["nn", S.notExamined]];
+  if (c.score === NOT_EXAMINED) return [["nn", unexamined(c)]];
   if (c.gap) {
     const out: Standing[] = [["gap", S.gap]];
     if (c.uncovered) out.push(["gap", S.uncovered]);

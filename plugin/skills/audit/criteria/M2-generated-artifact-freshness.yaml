@@ -22,10 +22,13 @@ criteria:
     requires: convention
     statement: >-
       Hand-editing derived files is documented as forbidden, and each derived
-      file's header identifies it as generated with its regenerate command.
+      file's header identifies it as generated with its regenerate command;
+      where the format cannot carry a header (JSON, a vendored file pinned
+      by its hash), the file's inventory entry says it is not edited by hand.
     observe:
       - "instruction file or inventory states the hand-editing ban"
       - "derived files open with a generated-file marker naming the regenerate command"
+      - "a derived file whose format takes no comment, or whose bytes are pinned, has an inventory entry with its regenerate command and that it is not edited by hand"
 
   - id: numbers-in-prose-rule-stated
     level: standard

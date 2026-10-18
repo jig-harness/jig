@@ -329,6 +329,136 @@ describe("the configuration file", () => {
     expect(gate?.message).toContain("bun run check");
   });
 
+  test("a gate script CI runs is the suggested gate command, ahead of a package script", () => {
+    const dir = repo({
+      "package.json": '{"scripts":{"test":"true"}}',
+      "scripts/gates.sh": "#!/bin/sh\ntrue\n",
+      "bin/check": "#!/bin/sh\ntrue\n",
+      ".github/workflows/ci.yml":
+        "on: pull_request\njobs:\n  gates:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./scripts/gates.sh --all\n",
+    });
+    chmodSync(join(dir, "scripts/gates.sh"), 0o755);
+    chmodSync(join(dir, "bin/check"), 0o755);
+    const gate = fitIn(dir, ["--offline"]).suggestions.find(
+      (s) => s.field === "gates.command",
+    );
+    // The arguments CI passes it are kept: the script's default may run less.
+    expect(gate).toMatchObject({
+      value: "./scripts/gates.sh --all",
+      evidence:
+        "scripts/gates.sh is an executable script named like the repository's check, and CI runs it (.github/workflows/ci.yml)",
+    });
+    // Without a package script or CI step, a gate script CI does not run is still found.
+    const alone = repo({ "scripts/check.sh": "#!/bin/sh\ntrue\n" });
+    expect(
+      fitIn(alone, ["--offline"]).suggestions.find(
+        (s) => s.field === "gates.command",
+      )?.value,
+    ).toBe("bash scripts/check.sh");
+  });
+
+  test("a gate script CI only mentions, or runs with arguments that cannot be kept, is suggested as such", () => {
+    const suggestion = (run: string) => {
+      const dir = repo({
+        "package.json": '{"scripts":{"test":"true"}}',
+        "scripts/gates.sh": "#!/bin/sh\ntrue\n",
+        ".github/workflows/ci.yml": `on: pull_request\njobs:\n  gates:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ${JSON.stringify(run)}\n`,
+      });
+      chmodSync(join(dir, "scripts/gates.sh"), 0o755);
+      return fitIn(dir, ["--offline"]).suggestions.find(
+        (s) => s.field === "gates.command",
+      );
+    };
+    // A mention in an argument or a comment runs nothing: the package script wins.
+    for (const run of [
+      "echo ./scripts/gates.sh",
+      "echo ready # ./scripts/gates.sh",
+      "echo ready # && ./scripts/gates.sh --all",
+    ])
+      expect(suggestion(run)?.value).toBe("npm run test");
+    // The interpreter CI names is kept: the shebang may not be the shell the script needs.
+    expect(suggestion("make lint && bash scripts/gates.sh")?.value).toBe(
+      "bash scripts/gates.sh",
+    );
+    expect(suggestion("sh scripts/gates.sh --all")?.value).toBe(
+      "sh scripts/gates.sh --all",
+    );
+    expect(suggestion("./scripts/gates.sh --all # every suite")?.value).toBe(
+      "./scripts/gates.sh --all",
+    );
+    // What CI sets or passes that a configuration value cannot repeat leaves the command unsettled.
+    const unsettled: [string, string][] = [
+      [
+        "./scripts/gates.sh --only $SUITE",
+        "`./scripts/gates.sh --only $SUITE`",
+      ],
+      [
+        "CHECK_SCOPE=all ./scripts/gates.sh",
+        "`CHECK_SCOPE=all ./scripts/gates.sh`",
+      ],
+      [
+        "env CHECK_SCOPE=all ./scripts/gates.sh",
+        "`env CHECK_SCOPE=all ./scripts/gates.sh`",
+      ],
+      [
+        "./scripts/gates.sh --lint && ./scripts/gates.sh --test",
+        "`./scripts/gates.sh --lint`, `./scripts/gates.sh --test`",
+      ],
+    ];
+    for (const [run, as] of unsettled)
+      expect(suggestion(run)).toMatchObject({
+        value: "./scripts/gates.sh",
+        evidence: expect.stringContaining(`; CI runs it as ${as}`),
+        message: expect.stringContaining(
+          "./scripts/gates.sh alone may run less",
+        ),
+      });
+    // A block whose lines are not each a command run at the root shows no run:
+    // a here-document's lines are input, and a `cd` moves what follows it.
+    // Both are recognised by text in any form, so a mere mention counts too.
+    for (const run of [
+      "cat <<'EOF'\n./scripts/gates.sh --all\nEOF",
+      "cat <<''\n./scripts/gates.sh --all\n\n",
+      "cat <<\\EOF\n./scripts/gates.sh --all\nEOF",
+      "cd tools && ./scripts/gates.sh --all",
+      "cd tools\n./scripts/gates.sh --all",
+      "command cd tools\n./scripts/gates.sh --all",
+      "CHECK_SCOPE=all cd tools && ./scripts/gates.sh --all",
+      "echo 'usage: <<EOF'\n./scripts/gates.sh --all",
+      "c'd' tools\n./scripts/gates.sh --all",
+      'c""d tools\n./scripts/gates.sh --all',
+      "c\\d tools\n./scripts/gates.sh --all",
+      "pu'sh'd tools\n./scripts/gates.sh --all",
+    ])
+      expect(suggestion(run)?.value).toBe("npm run test");
+  });
+
+  test("an environment the workflow, job or step sets leaves a CI-run gate script unsettled", () => {
+    const suggestion = (workflow: string) => {
+      const dir = repo({
+        "package.json": '{"scripts":{"test":"true"}}',
+        "scripts/gates.sh": "#!/bin/sh\ntrue\n",
+        ".github/workflows/ci.yml": workflow,
+      });
+      chmodSync(join(dir, "scripts/gates.sh"), 0o755);
+      return fitIn(dir, ["--offline"]).suggestions.find(
+        (s) => s.field === "gates.command",
+      );
+    };
+    const step = "      - run: ./scripts/gates.sh --all\n";
+    for (const workflow of [
+      `on: pull_request\nenv:\n  CHECK_SCOPE: all\njobs:\n  gates:\n    runs-on: ubuntu-latest\n    steps:\n${step}`,
+      `on: pull_request\njobs:\n  gates:\n    runs-on: ubuntu-latest\n    env:\n      CHECK_SCOPE: all\n    steps:\n${step}`,
+      `on: pull_request\njobs:\n  gates:\n    runs-on: ubuntu-latest\n    steps:\n${step}        env:\n          CHECK_SCOPE: all\n`,
+    ])
+      expect(suggestion(workflow)).toMatchObject({
+        value: "./scripts/gates.sh",
+        evidence: expect.stringContaining(
+          "; CI runs it as `./scripts/gates.sh --all` with CHECK_SCOPE set",
+        ),
+      });
+  });
+
   test("unknown, refused, mistyped and deprecated fields", () => {
     const { code, report } = fit({
       ".config/jig.yaml": `gates:
@@ -1004,8 +1134,22 @@ declined:
         protected: false,
       }),
     });
-    expect(report.facts.branch_protection).toBe("requires no checks");
-    expect(ids(report)).toContain("fact:no-required-checks");
+    expect(report.facts.branch_protection).toBe(
+      "none: no branch protection and no ruleset",
+    );
+    expect(
+      report.findings.find((f) => f.id === "fact:no-required-checks")?.message,
+    ).toStartWith("main is unprotected (no branch protection and no ruleset)");
+    // Protected, but with no required check: said apart from unprotected.
+    const unchecked = online("repository:\n  base_branch: main\n", {
+      "branches/main/protection": JSON.stringify({}),
+      "rules/branches/main": "[]",
+    });
+    expect(unchecked.facts.branch_protection).toBe("requires no checks");
+    expect(
+      unchecked.findings.find((f) => f.id === "fact:no-required-checks")
+        ?.message,
+    ).toStartWith("main is protected but requires no status checks");
   });
 
   test("the repository's file is judged alone; this machine's layers are reported", () => {
@@ -1216,6 +1360,18 @@ gates:
         '"AI review" ran on 3 of the last 3 merged pull requests',
       ),
     });
+    const message = (checks: string[]) =>
+      online("repository:\n  base_branch: main\n", {
+        "--state merged": pulls(checks, []),
+      }).findings.find((f) => f.id === "contradiction:review.reviewer-unnamed")
+        ?.message ?? "";
+    // The default pattern matches, but the drive applies it only once a reviewer is named.
+    expect(message(["AI review"])).toContain(
+      "matched case-insensitively) matches it, so if a drive should wait for its findings, setting review.reviewer_app to the app that posts it is enough",
+    );
+    expect(message(["Claude code review"])).toContain(
+      'does not match "Claude code review", so if a drive should wait for its findings, set review.reviewer_check_pattern',
+    );
     // A skipped check did not run: a dormant reviewer arm is not a reviewer.
     const skipped = online("repository:\n  base_branch: main\n", {
       "--state merged": JSON.stringify(
@@ -1537,6 +1693,37 @@ jobs:
           "on: pull_request\njobs:\n  ci:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm ci\n      - run: bun run check\n",
         ),
       ).toBeUndefined();
+    });
+
+    test("a CI step the comparison does not read is reported unchecked, not as covered", () => {
+      const unchecked = (run: string) =>
+        fit({
+          ".config/jig.yaml": 'gates:\n  command: "bun test"\n',
+          "package.json": "{}",
+          ".github/workflows/ci.yml": `on: pull_request\njobs:\n  ci:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ${JSON.stringify(run)}\n`,
+        }).report.findings.filter((f) => f.id.endsWith("gates.command:ci"));
+      for (const run of [
+        "bun run lint\necho 'usage: <<EOF'",
+        "bun run lint\necho ready # <<EOF",
+        "cd web && bun run lint",
+        "if true; then\n  bun run lint\nfi",
+        "bun run lint > lint.log",
+        // A workflow expression, written apart so it does not read as a template.
+        `bun run lint --filter ${"$"}{{ matrix.pkg }}`,
+      ])
+        expect(unchecked(run)).toMatchObject([
+          {
+            id: "unchecked:gates.command:ci",
+            severity: "info",
+            message: expect.stringContaining(
+              ".github/workflows/ci.yml, job ci has `run` steps this comparison does not read",
+            ),
+          },
+        ]);
+      // A block it reads is compared as before, and is not reported.
+      expect(unchecked("bun test\nbun run lint").map((f) => f.id)).toEqual([
+        "suggestion:gates.command:ci",
+      ]);
     });
 
     /** The suggestion's message when the gate runs one runner file, by its language. */

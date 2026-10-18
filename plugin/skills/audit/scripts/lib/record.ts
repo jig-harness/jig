@@ -44,7 +44,15 @@ import {
   SCORES,
 } from "./criteria.ts";
 import type { Schema } from "./schema.ts";
-import { compareVersions, isDate, run, VERSION_PATTERN } from "./repo.ts";
+import { readdirSync } from "node:fs";
+import { dirname } from "node:path";
+import {
+  compareVersions,
+  isDate,
+  run,
+  skillDir,
+  VERSION_PATTERN,
+} from "./repo.ts";
 
 export const RECORD_RELPATH = ".config/jig-audit.yaml";
 
@@ -624,22 +632,51 @@ export function attainmentText(a: Attainment | null): string {
   return a === NOT_EXAMINED ? "not examined" : a;
 }
 
+/**
+ * One section per kind of change, each criterion listed, except the kinds
+ * `counted` leaves to a count.
+ */
+function changeGroups(c: Comparison, counted: readonly Change[]): string[] {
+  return CHANGE_ORDER.filter((change) => !counted.includes(change)).flatMap(
+    (change) => {
+      const rows = c.criteria.filter((r) => r.change === change);
+      if (rows.length === 0) return [];
+      return [
+        `## ${CHANGE_HEADING[change] ?? change} (${rows.length})`,
+        "",
+        ...rows.map(
+          (r) => `- ${r.key}: ${r.prior ?? "—"} → ${r.current ?? "—"}`,
+        ),
+        "",
+      ];
+    },
+  );
+}
+
+/**
+ * The comparison as Markdown. Against a prior record that examined every
+ * criterion (one that declares no profile, or was drafted with
+ * `--examine-all`), a record scoped to a profile leaves every criterion
+ * beyond its target unexamined: those are counted in one line rather than
+ * listed one by one (`--json` lists them).
+ */
 export function renderComparison(c: Comparison, prior: AuditRecord): string {
   const lines = [
     `# Changes since the audit of ${prior.date} (plugin ${prior.plugin_version})`,
     "",
   ];
-  for (const change of CHANGE_ORDER) {
-    const rows = c.criteria.filter((r) => r.change === change);
-    if (rows.length === 0) continue;
-    lines.push(`## ${CHANGE_HEADING[change] ?? change} (${rows.length})`, "");
-    for (const r of rows)
-      lines.push(`- ${r.key}: ${r.prior ?? "—"} → ${r.current ?? "—"}`);
-    lines.push("");
-  }
+  const counted = ![...prior.criteria.values()].some(
+    (e) => e.score === NOT_EXAMINED,
+  );
+  lines.push(...changeGroups(c, counted ? ["no-longer-examined"] : []));
   const count = (change: Change) =>
     c.criteria.filter((r) => r.change === change).length;
   lines.push(`Unchanged and met: ${count("unchanged")}.`, "");
+  if (counted && count("no-longer-examined") > 0)
+    lines.push(
+      `No longer examined: ${count("no-longer-examined")} criteria the prior audit scored lie beyond the new target and were not examined; the prior record keeps their scores (the draft carries each as a comment), and score.ts --draft --examine-all examines them again.`,
+      "",
+    );
   if (count("not-examined") > 0)
     lines.push(`Not examined: ${count("not-examined")}.`, "");
   if (c.newFields.length > 0)
@@ -771,12 +808,19 @@ export function renderDraft(opts: {
   /** The highest rung each capped criterion's probe allows. */
   ceilings?: ReadonlyMap<string, Rung>;
   prior: AuditRecord | null;
+  /** The profile the team chose, declared in place of the prior record's. */
+  declared?: { profile: string; conditions: string[]; heading_to?: string };
   pluginVersion: string;
   date: string;
   commit: string;
   /** The ids a `profile:` may name, for the draft's comment. */
   profileIds?: readonly string[];
 }): string {
+  const declared = opts.declared ?? {
+    profile: opts.prior?.profile,
+    conditions: opts.prior?.profile_conditions ?? [],
+    heading_to: opts.prior?.heading_to,
+  };
   const out = [
     "# Jig audit record: written by /jig:audit, read by its next run.",
     "# Each criterion carries its level, pass bar and statement as comments.",
@@ -785,10 +829,10 @@ export function renderDraft(opts: {
     `date: ${quote(opts.date)}`,
     `commit: ${opts.commit}`,
     `shape: ${opts.prior?.shape ? quote(opts.prior.shape) : "null"}   # library | application | service | monorepo | documentation | infrastructure | …`,
-    `profile: ${opts.prior?.profile ?? "null"}   # ${opts.profileIds?.join(" | ") ?? "a profile id from profiles.yaml"}: leave null unless the team chose one; a suggested profile goes in the report source`,
-    ...(opts.prior?.heading_to ? [`heading_to: ${opts.prior.heading_to}`] : []),
-    ...(opts.prior?.profile_conditions?.length
-      ? [`profile_conditions: [${opts.prior.profile_conditions.join(", ")}]`]
+    `profile: ${declared.profile ?? "null"}   # ${opts.profileIds?.join(" | ") ?? "a profile id from profiles.yaml"}: set it when the team chose one (score.ts --declare does); otherwise leave null and put a suggested profile in the report source`,
+    ...(declared.heading_to ? [`heading_to: ${declared.heading_to}`] : []),
+    ...(declared.conditions.length
+      ? [`profile_conditions: [${declared.conditions.join(", ")}]`]
       : []),
     "criteria:",
   ];
@@ -1222,6 +1266,8 @@ export interface EvidencePath {
   path: string;
   line?: number;
   end?: number;
+  /** Set when the evidence says it is the Jig plugin's (`the plugin's scripts/x.ts`): the path may be one of the plugin's files. */
+  plugin?: true;
 }
 
 /** Extensions that make a bare file name, one without a folder, read as a path. */
@@ -1247,25 +1293,135 @@ const TOKEN = /^([\w.+@-]+(?:\/[\w.+@-]+)*)(\/?)(?::(\d+)(?:-(\d+))?)?$/;
  * The repository paths a piece of evidence names: `path`, `path:line` or
  * `path:line-line`. Only what reads unmistakably as a path counts (a name with
  * a folder and an extension, a dotfile, a known file name), so prose, globs,
- * web addresses, host queries and criterion keys are left alone.
+ * web addresses, host queries and criterion keys are left alone, and so are
+ * code identifiers (`Bun.SQL`, `.exitCode`, `rules[].paths`), fragments of a
+ * name (`-template.md`) and the files of the audit's own scratch folder
+ * (`fit.json`, `jig-audit.next.yaml`). Names joined by a slash that each read
+ * as a file (`AGENTS.md/CLAUDE.md`) are alternatives, each a path. In a
+ * clause (text between `;`, a sentence's end or a line break), what follows
+ * a word that says it is missing or proposed (`no`, `missing`, `would`,
+ * `proposed`, …) is not read: those paths need not exist. `add` or `create`
+ * proposes the path it is followed by, or the list of paths joined by
+ * commas, `and` or `or` (`add a.md and b.md`), and no word after the list
+ * (`beside real.md` is checked). Every path after a comma in that list is in
+ * it: `add a.md, b.md beside real.md` and `add a.md, gone.ts validates it`
+ * read alike, so the second's gone.ts is not checked either (a path to check
+ * starts a clause of its own: `add a.md; gone.ts validates it`). After a program, its
+ * options between (`git -C tools add`), it is a command, not a proposal. A
+ * path the plugin or Jig is said to own, by a possessive right before it
+ * (`the plugin's scripts/x.ts`, `Jig's own scripts/x.ts`), is marked
+ * `plugin`; a mention of the plugin nearby claims nothing.
  */
 export function evidencePaths(evidence: string): EvidencePath[] {
-  const found: EvidencePath[] = [];
-  // A path named after a negation ("no lefthook.yml") is named as missing.
-  for (const clause of evidence.split(/;|\.\s|\n/)) {
-    const words = clause.split(/[\s,|()<>[\]{}"'`]+/);
-    const negation = words.findIndex((w) => NEGATION.test(w));
-    for (const raw of negation < 0 ? words : words.slice(0, negation)) {
-      const path = evidencePath(raw);
-      if (path) found.push(path);
-    }
-  }
-  return found;
+  return evidence.split(/;|\.\s|\n/).flatMap(clausePaths);
 }
 
-/** Words after which a clause names what is missing. */
-const NEGATION =
-  /^(no|not|none|never|without|absent|missing|lacks?|neither|nor)$/i;
+/** The paths one clause of evidence names. */
+function clausePaths(clause: string): EvidencePath[] {
+  // Empty brackets and parentheses join an identifier (`rules[].paths`,
+  // `run().code`); the `$` keeps it whole and marks it as no path.
+  // A comma is kept as a word of its own: it continues a proposed list.
+  const words = clause
+    .replace(/\[\]|\(\)/g, "$")
+    .replace(/,/g, " , ")
+    .split(/[\s|()<>[\]{}"'`]+/)
+    .filter((w) => w !== "");
+  const absent = words.findIndex((w) => NOT_THERE.test(w));
+  const read = absent < 0 ? words : words.slice(0, absent);
+  // `verb`: after `add`/`create`, before its first path; `list`: after a
+  // proposed path; `joined`: after a comma, `and` or `or` in a list, whose
+  // next path is in it. What follows that path cannot tell a proposal
+  // (`add a.md, b.md beside real.md`) from a claim (`add a.md, gone.ts
+  // validates it`), so the path is read as proposed and goes unchecked.
+  let proposing: "verb" | "list" | "joined" | null = null;
+  return read.flatMap((raw, i) => {
+    if (PROPOSE.test(raw) && !commandOfProgram(words, i)) proposing = "verb";
+    const plugin = ownedByPlugin(words, i);
+    const paths = alternatives(raw).flatMap((word) => {
+      const path = evidencePath(word);
+      if (path === null) return [];
+      return [plugin ? { ...path, plugin: true as const } : path];
+    });
+    if (paths.length > 0 && proposing !== null && proposing !== "list") {
+      proposing = "list";
+      return [];
+    } else if (
+      (raw === "," || LIST_JOINER.test(raw)) &&
+      proposing !== null &&
+      proposing !== "verb"
+    )
+      proposing = "joined";
+    else if (proposing !== "verb") proposing = null;
+    return paths;
+  });
+}
+
+/**
+ * Whether the words before the one at `i` say the plugin owns it: a
+ * possessive of the plugin or Jig (`plugin's`, split at its apostrophe into
+ * `plugin` and `s`), with `own` allowed between.
+ */
+function ownedByPlugin(words: readonly string[], i: number): boolean {
+  let j = i - 1;
+  if (OWN.test(words[j] ?? "")) j -= 1;
+  const word = words[j] ?? "";
+  if (/^s$/i.test(word)) return PLUGIN_NAME.test(words[j - 1] ?? "");
+  return PLUGIN_NAME.test(word.replace(/’s$/i, "")) && /’s$/i.test(word);
+}
+
+/**
+ * Whether the word at `i` is a command of a program before it (`git add`,
+ * `git -C tools add`): options, each with the value it takes, may stand
+ * between them.
+ */
+function commandOfProgram(words: readonly string[], i: number): boolean {
+  let j = i - 1;
+  while (j >= 0) {
+    const word = words[j] ?? "";
+    if (word.startsWith("-")) j -= 1;
+    else if (j >= 1 && (words[j - 1] ?? "").startsWith("-")) j -= 2;
+    else break;
+  }
+  return PROGRAM.test(words[j] ?? "");
+}
+
+/** Words after which a clause names what is missing, or what it proposes to add. */
+const NOT_THERE =
+  /^(no|not|none|never|without|absent|missing|lacks?|neither|nor|would|propose[ds]?|proposal|suggested)$/i;
+/** Verbs that propose the file they are followed by, unless they are a program's command. */
+const PROPOSE = /^(add|create)$/i;
+/** Words that join a list of proposed paths (`add a.md and b.md`). */
+const LIST_JOINER = /^(and|or|&)$/i;
+/** Programs with an `add` or `create` command (`git add`, `gh pr create`). */
+const PROGRAM =
+  /^(git|gh|pr|issue|release|repo|npm|bun|pnpm|yarn|cargo|poetry|uv|go|dotnet|helm|kubectl)$/i;
+/**
+ * The Jig plugin, Jig, or one of its skills (`/jig:audit`), as the owner in
+ * a possessive. A skill is not one: a repository has skills of its own.
+ */
+const PLUGIN_NAME = /^(\/?jig(:[\w-]+)?|plugin)$/i;
+/** A word that may stand between an owner and what it owns (`the plugin's own`). */
+const OWN = /^own$/i;
+
+/**
+ * The words one word stands for: names joined by slashes that each read as a
+ * file of their own (`AGENTS.md/CLAUDE.md`) are alternatives; any other word
+ * stands for itself.
+ */
+function alternatives(raw: string): string[] {
+  const parts = raw.split("/");
+  return parts.length > 1 &&
+    parts.every((p) => FILE_EXTENSION.test(p.replace(/:[\d-]+$/, "")))
+    ? parts
+    : [raw];
+}
+
+/**
+ * The files the audit writes to its scratch folder, outside the repository:
+ * evidence naming one is about the audit, not the commit.
+ */
+const SCRATCH_FILE =
+  /^(fit\.json|jig-audit(\.[\w-]+)?\.(json|ya?ml)|answers-[\w-]+\.txt|part-[\w-]+\.ya?ml|decisions\.ya?ml|[\w.-]+\.draft\.ya?ml)$/;
 
 /** The path one word of evidence names, or null. */
 function evidencePath(raw: string): EvidencePath | null {
@@ -1291,9 +1447,19 @@ function readsAsOther(segments: readonly string[]): boolean {
   const [first = "", ...rest] = segments;
   if (segments.some((s) => s === "." || s === "..")) return true;
   if (/^[\d.]+$/.test(segments.join("."))) return true;
+  // A name's fragment (`-template.md`) is no file of its own.
+  if (/^-/.test(segments.at(-1) ?? "")) return true;
   if (rest.length > 0) return HOST.test(first);
-  // `.ts` names a kind of file, not a file.
-  return /^\.[A-Za-z0-9]+$/.test(first) && FILE_EXTENSION.test(first);
+  return (
+    // `.ts` names a kind of file, not a file.
+    (/^\.[A-Za-z0-9]+$/.test(first) && FILE_EXTENSION.test(first)) ||
+    // A property (`.exitCode`) or a member (`Bun.SQL`) is code.
+    /^\.[a-z]+[A-Z]/.test(first) ||
+    // A capital suffix after a name with small letters (`Bun.SQL`); a file
+    // name in capitals (`README.MD`) has its extension in the same case.
+    /^[A-Za-z]*[a-z]\w*\.[A-Z]+$/.test(first) ||
+    SCRATCH_FILE.test(first)
+  );
 }
 
 /**
@@ -1336,8 +1502,11 @@ const lineCount = (text: string): number =>
  * its file's end, read from the repository at `root`. A name the evidence
  * shortens (`ci.yml`, `scripts/gates.ts` within a package) counts when one
  * path ends with it. A probe's evidence and
- * an unexamined criterion's are the script's own and are not read. Warnings
- * only: a path may be named for what is missing.
+ * an unexamined criterion's are the script's own and are not read. A path
+ * the commit lacks, that every clause citing it says is the plugin's or
+ * Jig's, and that names a file of the Jig plugin (`scripts/x.ts` of one of
+ * its skills) is tooling the repository uses, and is not warned of.
+ * Warnings only: a path may be named for what is missing.
  */
 export function evidenceWarnings(record: AuditRecord, root: string): string[] {
   const tree = commitTree(root, record.commit);
@@ -1350,13 +1519,27 @@ export function evidenceWarnings(record: AuditRecord, root: string): string[] {
       evidence.startsWith(NOT_EXAMINED_EVIDENCE)
     )
       continue;
-    const cited = new Map(evidencePaths(evidence).map((p) => [p.token, p]));
-    for (const p of cited.values()) {
+    for (const p of citedOnce(evidencePaths(evidence))) {
       const warning = p.path === RECORD_RELPATH ? null : pathWarning(p, tree);
       if (warning !== null) warnings.push(`${key}: ${warning}`);
     }
   }
   return warnings;
+}
+
+/**
+ * Each cited token once, marked `plugin` only when every citation of it is:
+ * a token the evidence also names as the repository's own is the
+ * repository's, whichever comes first.
+ */
+function citedOnce(paths: EvidencePath[]): EvidencePath[] {
+  const cited = new Map<string, EvidencePath>();
+  for (const p of paths) {
+    const seen = cited.get(p.token);
+    if (seen === undefined) cited.set(p.token, p);
+    else if (seen.plugin && !p.plugin) cited.set(p.token, p);
+  }
+  return [...cited.values()];
 }
 
 /** The files and folders a commit holds, and a file's line count there. */
@@ -1395,11 +1578,26 @@ function commitTree(root: string, commit: string): CommitTree | null {
   return { short: commit.slice(0, 12), files, folders, linesOf };
 }
 
+let pluginList: ReadonlySet<string> | undefined;
+
+/** The files of the Jig plugin this script runs from, relative to its root. */
+function pluginFiles(): ReadonlySet<string> {
+  pluginList ??= new Set(
+    readdirSync(dirname(dirname(skillDir())), { recursive: true })
+      .map(String)
+      .filter((f) => !f.split(/[\\/]/).includes("node_modules"))
+      .map((f) => f.replace(/\\/g, "/")),
+  );
+  return pluginList;
+}
+
 /** What is wrong with one cited path at the commit, or null. */
 function pathWarning(p: EvidencePath, tree: CommitTree): string | null {
   const file = resolvePath(p.path, tree.files);
   if (file === undefined && resolvePath(p.path, tree.folders) === undefined)
-    return `${p.token} is not in commit ${tree.short}`;
+    return p.plugin && resolvePath(p.path, pluginFiles()) !== undefined
+      ? null
+      : `${p.token} is not in commit ${tree.short}`;
   const last = p.end ?? p.line;
   if (last === undefined || typeof file !== "string") return null;
   const count = tree.linesOf(file);

@@ -22,10 +22,12 @@ import type { Comparison, CriterionChange } from "../lib/record.ts";
 import { FILE_STEM, LABEL, plural } from "./labels.ts";
 import {
   alternativeOf,
+  alternativeStanding,
   attainedWord,
   type Cell,
   changeRows,
   countsOf,
+  criteriaHeadline,
   examinationChanges,
   groups,
   type Horizon,
@@ -106,10 +108,7 @@ function alternative(input: ReportInput, t: Targets): string[] {
   const alt = alternativeOf(input, t);
   if (!alt) return [];
   return [
-    `**${LABEL.alternativeHead.replace("{profile}", lit(alt.name))}.** ${LABEL.alternativeAtTarget
-      .replace("{profile}", lit(alt.name))
-      .replace("{n}", String(alt.atTarget))
-      .replace("{m}", String(alt.withTarget))}`,
+    `**${LABEL.alternativeHead.replace("{profile}", lit(alt.name))}.** ${lit(alternativeStanding(alt))}`,
     "",
     ...alt.why.map((w) => `- ${lit(w)}`),
     ...(alt.why.length ? [""] : []),
@@ -121,14 +120,14 @@ function inShort(input: ReportInput, rows: ModuleRow[], t: Targets): string[] {
   const out = [`## ${LABEL.inShort}`, "", lit(input.source.summary), ""];
   if (t.profile?.why)
     out.push(`*${LABEL.whySuggested}* ${lit(t.profile.why)}`, "");
-  const met = n.notExamined > 0 ? LABEL.examinedMet : LABEL.criteriaMet;
+  const head = criteriaHeadline(n);
   out.push(
-    `- ${n.met} ${LABEL.ofWord} ${n.applicable} ${met}${n.expectedAbsent > 0 ? `; ${n.expectedAbsent} ${LABEL.expectedAbsentCount}` : ""}${n.notExamined > 0 ? `; ${n.notExamined} ${LABEL.notExaminedCount}` : ""}`,
-    `- ${n.now} ${LABEL.recommendationsNow}, ${n.quickWins} ${LABEL.quickWins}${n.later > 0 ? `; ${n.later} ${LABEL.laterCount}` : ""}${n.applied > 0 ? `; ${n.applied} ${LABEL.appliedCount}` : ""}`,
+    `- ${n.met} ${LABEL.ofWord} ${n.applicable} ${head.noun}${head.tail}`,
+    `- ${n.now} ${LABEL.recommendationsNow[plural(n.now)]}, ${n.quickWins} ${LABEL.quickWins[plural(n.quickWins)]}${n.later > 0 ? `; ${n.later} ${LABEL.laterCount}` : ""}${n.applied > 0 ? `; ${n.applied} ${LABEL.appliedCount}` : ""}`,
   );
   if (n.withTarget > 0)
     out.push(
-      `- ${n.atTarget} ${LABEL.ofWord} ${n.withTarget} ${LABEL.modulesAtTarget}`,
+      `- ${n.atTarget} ${LABEL.ofWord} ${n.withTarget} ${LABEL.modulesAtTarget[plural(n.withTarget)]}`,
     );
   if (n.uncovered > 0)
     out.push(`- ${n.uncovered} ${LABEL.uncoveredCount[plural(n.uncovered)]}`);
@@ -573,7 +572,7 @@ function drift(input: ReportInput): string[] {
     ...(items.length
       ? items.map(
           (d) =>
-            `- ${lit(d.text)} *${LABEL.evidence}:* ${d.evidence.map(code).join(", ")}`,
+            `- ${isApplied(d) && d.applied_in ? `**${LABEL.fixedIn} ${appliedWhere(d.applied_in)}** · ` : ""}${lit(d.text)} *${LABEL.evidence}:* ${d.evidence.map(code).join(", ")}`,
         )
       : [LABEL.noDrift]),
     "",

@@ -84,8 +84,10 @@ the accepted recommendations together, in one pull request unless part of the
 work needs its own decision, through `do-item`'s pull-request policy. A
 request that asks for the changes in the same session (such as "optimize
 this repository for Jig") may apply, without the team's decisions, only drift
-fixes and written rules; new gates and host settings wait for a person. The
-sheet then shows each applied recommendation as done.
+fixes and written rules, and none to a path the repository's own rules
+reserve (`CODEOWNERS`, a protected-path inventory); new gates and host
+settings wait for a person. The sheet then shows each applied
+recommendation, and each drift entry fixed, as done.
 
 ## Run it
 
@@ -135,7 +137,7 @@ compares their committed records instead of auditing each again
 | `scripts/config-fit.ts` | Configuration fit (`--offline`, `--json`, `--draft` for a starter configuration) |
 | `scripts/report.ts` | `validate`, `render` and `extract` of the audit sheet |
 | `scripts/report/lucide/` | The icons the sheet draws, vendored from [Lucide](https://lucide.dev) under the ISC licence (its `LICENSE` beside them) |
-| `scripts/score.ts` | The scoring checklist, the draft record (`--profile` to leave criteria beyond the target unexamined, `--at <rev>` to score a commit while the checkout has changes), and `--check` of the criteria |
+| `scripts/score.ts` | The scoring checklist, the draft record (`--profile` to leave criteria beyond the target unexamined, `--declare` to record that profile as the team's choice, `--at <rev>` to score a commit while the checkout has changes), and `--check` of the criteria |
 | `scripts/record.ts` | `check`, `compare`, `summary`, `fill`, `merge`, `portfolio` and `apply-feedback` over records |
 
 ## Changing it

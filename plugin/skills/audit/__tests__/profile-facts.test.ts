@@ -4,7 +4,7 @@
  * support.
  */
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
@@ -14,6 +14,7 @@ import {
   countPeople,
   type DeploySignal,
   isAutomationAuthor,
+  profileAlternative,
   profileFacts,
   suggestProfile,
 } from "../scripts/lib/profile-facts.ts";
@@ -87,11 +88,11 @@ describe("the suggested profile", () => {
     expect(suggestProfile({ ...none, contributors: people(1) })).toEqual({
       id: "solo-lite",
       why: [
-        "one human contributor in the last 90 days, and no CI file names deploy, release or publish work",
+        "one human contributor in the last 90 days, and no CI file names deploy, release or publish work and no tracked file configures a deploy",
       ],
     });
     expect(suggestProfile({ ...none, contributors: people(0) })?.why).toEqual([
-      "no human contributor in the last 90 days, and no CI file names deploy, release or publish work",
+      "no human contributor in the last 90 days, and no CI file names deploy, release or publish work and no tracked file configures a deploy",
     ]);
   });
 
@@ -184,7 +185,7 @@ describe("the suggested profile", () => {
         unreadable_ci_files: [".github/workflows/ship.yml (bad indentation)"],
       })?.why,
     ).toEqual([
-      "one human contributor in the last 90 days, and no readable CI file names deploy, release or publish work",
+      "one human contributor in the last 90 days, and no readable CI file names deploy, release or publish work and no tracked file configures a deploy",
       "unchecked, as they could not be read: .github/workflows/ship.yml",
     ]);
   });
@@ -439,4 +440,159 @@ publish_docs:
     expect(report.facts.compliance_documents).toBe("none");
     expect(report.facts.suggested_profile).toStartWith("solo-lite: ");
   });
+});
+
+describe("the alternative profile", () => {
+  const none = { deploy_signals: [], compliance_documents: [] };
+
+  test("compliance documents beside team-standard make regulated-strict the alternative", () => {
+    const facts = {
+      ...none,
+      contributors: people(3),
+      compliance_documents: [
+        threatModel,
+        { path: "docs/gdpr-gaps.md", regimes: ["GDPR"], via: "path" as const },
+      ],
+    };
+    expect(profileAlternative(facts)).toEqual({
+      id: "regulated-strict",
+      why: [
+        "compliance documents found: docs/threat-model.md, docs/gdpr-gaps.md",
+        "the facts never suggest regulated-strict: whether the documents bind the repository is the team's to decide",
+      ],
+    });
+    // Beside solo-lite the documents are a reason in the suggestion, not the alternative.
+    expect(
+      profileAlternative({
+        ...none,
+        contributors: people(1),
+        compliance_documents: [threatModel],
+      }),
+    ).toBeUndefined();
+    // A declared team-standard counts as team-standard, even without a suggestion.
+    expect(
+      profileAlternative(
+        { ...none, contributors: null, compliance_documents: [threatModel] },
+        "team-standard",
+      )?.id,
+    ).toBe("regulated-strict");
+  });
+
+  test("a declared profile the facts do not suggest makes the suggested one the alternative", () => {
+    expect(
+      profileAlternative({ ...none, contributors: people(1) }, "team-standard"),
+    ).toEqual({
+      id: "solo-lite",
+      why: [
+        "the facts suggest solo-lite rather than the declared team-standard",
+        "one human contributor in the last 90 days, and no CI file names deploy, release or publish work and no tracked file configures a deploy",
+      ],
+    });
+    // Declared as suggested: the facts' own alternative stands.
+    expect(
+      profileAlternative({ ...none, contributors: people(1) }, "solo-lite"),
+    ).toBeUndefined();
+  });
+
+  test("config-fit reads the declared profile from the audit record", () => {
+    const dir = repo({
+      "README.md": "# Example\n",
+      "audit.yaml": `version: 1
+plugin_version: 0.51.0
+date: 2026-01-02
+commit: abc
+profile: team-standard
+criteria: {}
+`,
+    });
+    const run = runScript(
+      "config-fit.ts",
+      ["--offline", "--json", "--record", "audit.yaml"],
+      dir,
+    );
+    const report = JSON.parse(run.out) as {
+      profile_facts: { alternative?: { id: string } };
+    };
+    expect(report.profile_facts.alternative?.id).toBe("solo-lite");
+  });
+});
+
+describe("deploy signals outside CI", () => {
+  test("service units, a deploy directory, platform files and tag-triggered workflows", () => {
+    const files = {
+      "deploy/app.service":
+        "[Unit]\nDescription=app\n[Service]\nExecStart=/opt/app/bin/run\n",
+      "deploy/update.timer": "[Timer]\nOnCalendar=hourly\n",
+      "deploy/install.sh": "#!/bin/sh\n",
+      "deploy/README.md": "# Deploying\n",
+      "infra/README.md": "# Notes only\n",
+      "fly.toml": 'app = "example"\n',
+      Procfile: "web: bin/server\nrelease: bin/migrate\n",
+      "test/fixtures/x.service": "[Service]\n",
+      ".github/workflows/tagged.yml":
+        "on:\n  push:\n    tags: ['v*']\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make dist\n",
+    };
+    const dir = repo(files);
+    const signals = profileFacts(dir, Object.keys(files)).deploy_signals;
+    expect(signals).toEqual([
+      { file: ".github/workflows/tagged.yml", matched: ["on: push tags v*"] },
+      {
+        file: "deploy/app.service",
+        matched: ["systemd service unit", "ExecStart=/opt/app/bin/run"],
+      },
+      { file: "deploy/update.timer", matched: ["systemd timer unit"] },
+      { file: "deploy/", matched: ["deploy files: deploy/install.sh"] },
+      { file: "fly.toml", matched: ["Fly.io app configuration"] },
+      { file: "Procfile", matched: ["process types: web, release"] },
+    ]);
+    expect(
+      suggestProfile({
+        contributors: people(1),
+        deploy_signals: signals,
+        compliance_documents: [],
+      })?.why[1],
+    ).toBe(
+      "revisit when a second person joins or the deploys need review gates: CI names deploy, release or publish work: .github/workflows/tagged.yml, and tracked files configure a deploy: deploy/app.service, deploy/update.timer, deploy/, fly.toml, Procfile",
+    );
+  });
+
+  test("a deploy directory or unit that is only test data, templates or vendored copies is no signal", () => {
+    const files = {
+      "infra/tests/fixtures/example.tf": "resource {}\n",
+      "deploy/templates/example.sh": "#!/bin/sh\n",
+      "infrastructure/vendor/mod/main.tf": "resource {}\n",
+      "infra/testdata/example.tf": "resource {}\n",
+      "deploy/__fixtures__/example.sh": "#!/bin/sh\n",
+      "testdata/example.service": "[Service]\nExecStart=/bin/true\n",
+    };
+    const dir = repo(files);
+    expect(profileFacts(dir, Object.keys(files)).deploy_signals).toEqual([]);
+  });
+
+  test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "a unit, Procfile or platform configuration that cannot be read is named as unchecked, not fatal",
+    () => {
+      const files = {
+        "deploy/app.service": "[Service]\nExecStart=/opt/app/bin/run\n",
+        "deploy/update.timer": "[Timer]\nOnCalendar=hourly\n",
+        "fly.toml": 'app = "example"\n',
+        Procfile: "web: bin/server\n",
+      };
+      const dir = repo(files);
+      for (const f of Object.keys(files)) chmodSync(join(dir, f), 0o000);
+      const facts = profileFacts(dir, Object.keys(files));
+      // Named by its file, as a reader can judge without its text.
+      expect(facts.deploy_signals).toEqual([
+        { file: "deploy/app.service", matched: ["systemd service unit"] },
+        { file: "deploy/update.timer", matched: ["systemd timer unit"] },
+        { file: "fly.toml", matched: ["Fly.io app configuration"] },
+      ]);
+      expect(facts.unreadable_ci_files.map((u) => u.split(" (")[0])).toEqual([
+        "deploy/app.service",
+        "deploy/update.timer",
+        "fly.toml",
+        "Procfile",
+      ]);
+    },
+  );
 });
