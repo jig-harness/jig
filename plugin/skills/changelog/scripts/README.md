@@ -1,7 +1,7 @@
 # The changelog scripts
 
 The commands behind [`/jig:changelog`](../README.md): the branch check, the
-release step and the status report. They read the repository's `changelog:`
+release step, the conversion of a branch and the status report. They read the repository's `changelog:`
 section of `.config/jig.yaml` ([the configuration
 reference](../../../CONFIGURATION.md#changelog)), so none takes the notes folder,
 the changelog or the version files as a flag. Run them with Bun, with the
@@ -173,6 +173,54 @@ whose own tree has no section, is taken for one that never adopted the skill. On
 checked, and the output says so. Exit 0 clean (or `not configured`), 1 findings,
 2 a usage error.
 
+## Converting a branch
+
+```sh
+bun convert.ts [--base origin/main] [--dry-run] [--json]
+```
+
+For a branch that edited the changelog or the version itself, as every branch
+did before the repository adopted change notes. Against the merge base with the
+base (a branch stacked on another converts against that branch, so only its own
+edits count), it:
+
+1. refuses while a merge, rebase, cherry-pick or revert has stopped, on
+   uncommitted changes and on a detached `HEAD`, and on what the note cannot
+   carry and would be lost: entries outside a `###` section, anything under one
+   other than `- ` entries, a released version's section removed or renamed.
+   A changelog or version file newer than the branch's fork point that the
+   branch lacks too is left out (a missing changelog reads as empty); one the
+   branch created on its own as well is refused, since its edits cannot be told
+   from the base's;
+2. writes the release sections the branch added and its additions to Unreleased
+   as one note, named after the branch like any note, in the order and with the
+   headings of the format. A Common Changelog entry loses the reference and the
+   authors the release step appends, and the authors go into the note's front
+   matter; each relative link is rewritten from the changelog's folder to the
+   notes folder. A note the branch already has takes the entries it does not
+   hold yet, and where only one side names authors the other side's history
+   is named too;
+3. gives the note the `release` of the bump from the merge base's version to the
+   branch's (none when the branch did not move it);
+4. puts back the merge base's Unreleased section, the release sections the
+   branch added and its version, and keeps the branch's edits to earlier
+   releases and to the comparison links they use. An Unreleased entry the
+   branch moved into a release under another change type, edited or removed
+   is printed as `attention:`, since the base's text comes back;
+5. sets a placeholder the branch filled with its own version back to its `from`,
+   and only that: a value goes back only where the file holds more of it than
+   the merge base did, so an earlier merge's stamp is left alone even on a line
+   the branch edited. Where an added line is the same as one the merge base
+   already has, the two cannot be told apart by their text, so the value stays
+   and the line is printed as `check:`, as is any other added line that names
+   the version, for a person to look at;
+6. leaves all of it uncommitted, and prints what it did.
+
+`--dry-run` writes nothing. The note it writes may still have a problem the
+check would find (a heading the format does not list, say); each is printed as
+`attention:`. Exit 0 converted, nothing to convert or `not configured`; 1 a
+refusal; 2 a usage error, an invalid configuration or an unreadable file.
+
 ## The status report
 
 ```sh
@@ -183,10 +231,23 @@ The current version, the notes that ask for a release and the version they would
 make, the notes that wait for a release (or that the next run writes under
 Unreleased), and, when `origin` is on GitHub and `gh` answers, whether the last
 release run on the integration branch (`repository.base_branch`, else the
-default branch) succeeded; the run is the newest one of the workflow named
+default branch) succeeded. The run is the newest one of the workflow named
 `release`, in any letter case (a workflow that only mentions the word, such as a
-release-notes drafter, is not it). A host without an adapter, a missing or signed-out
-`gh`, or an unreadable answer is reported as "unknown", never as a failure.
+release-notes drafter, is not it), that is still going, else its newest run: a
+release run still going is never cancelled by a later one, so an older run still
+going answers before a newer one that ended, and the report is then `running`
+(exit 0) rather than the newer run's result. Only that workflow's runs are read,
+so other workflows' runs cannot hide one. Its runs are listed back to the
+horizon past which none can still be going (GitHub ends a run 35 days after it
+starts and re-runs one at most 30 days after it was created; a day more covers
+a clock that is off), in listings split by when a run was created rather than
+by its status, so newer runs that ended cannot hide one and a run whose status
+changes between two listings is still seen. With no run since that horizon,
+the newest run answers. A host without an adapter, a missing or signed-out
+`gh`, an unreadable answer, or a listing `gh` filled to the limit it was asked
+for and that cannot be reached past (a workflow list, more runs created in one
+second than a listing holds, or more listings than the read takes) is reported
+as "unknown", never as a failure.
 Exit 1 when a note is unreadable, the version files disagree or the last release
 run failed; 2 for a usage error, an invalid configuration or an unreadable file.
 

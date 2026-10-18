@@ -6,7 +6,7 @@ import {
   remoteRef,
 } from "../scripts/branches.ts";
 import {
-  github,
+  github as githubAt,
   type Gh,
   hostingFor,
   type Hosting,
@@ -165,34 +165,66 @@ describe("status", () => {
 });
 
 describe("the last release run, through gh", () => {
+  type Listed = Record<string, unknown>;
+  /** The runs of one listing as GitHub answers it: by creation time and limit. */
+  function listing(runs: Listed[], args: string[]): Listed[] {
+    const created = args.includes("--created")
+      ? args[args.indexOf("--created") + 1]
+      : undefined;
+    const [from, to] = created?.startsWith(">=")
+      ? [created.slice(2), undefined]
+      : (created?.split("..") ?? []);
+    const time = (run: Listed) => String(run.createdAt ?? "");
+    return runs
+      .filter((run) => (!from || time(run) >= from) && (!to || time(run) <= to))
+      .toSorted((x, y) => time(y).localeCompare(time(x)))
+      .slice(0, Number(args[args.indexOf("--limit") + 1]));
+  }
+  /** gh answering the workflow list with `workflows` and each workflow's runs from `runs`. */
   const answering =
-    (out: string | null, seen: string[][] = []): Gh =>
+    (
+      runs: Record<number, Listed[]> | string | null,
+      workflows: Listed[] = [{ id: 1, name: "release" }],
+      seen: string[][] = [],
+    ): Gh =>
     (args) => {
       seen.push(args);
-      return out;
+      if (args[0] === "workflow") return JSON.stringify(workflows);
+      if (typeof runs === "string" || runs === null) return runs;
+      const id = Number(args[args.indexOf("--workflow") + 1]);
+      return JSON.stringify(listing(runs[id] ?? [], args));
     };
-  const runs = (list: object[]) => JSON.stringify(list);
+  const at = (minute: number) =>
+    `2026-01-01T00:${String(minute).padStart(2, "0")}:00Z`;
+  /** GitHub through `gh`, on the day after the runs `at` creates. */
+  const github = (root: string, gh: Gh) =>
+    githubAt(root, gh, () => new Date("2026-01-02T00:00:00Z"));
 
   test("is the newest run of the release workflow on the branch", () => {
     const seen: string[][] = [];
     const run = github(
       "/x",
       answering(
-        runs([
-          { workflowName: "gates", status: "completed", conclusion: "failure" },
-          {
-            workflowName: "release",
-            status: "completed",
-            conclusion: "success",
-            url: "https://u",
-            headSha: "abcdef0123",
-          },
-          {
-            workflowName: "release",
-            status: "completed",
-            conclusion: "failure",
-          },
-        ]),
+        {
+          1: [
+            {
+              status: "completed",
+              conclusion: "failure",
+              createdAt: at(1),
+            },
+            {
+              status: "completed",
+              conclusion: "success",
+              url: "https://u",
+              headSha: "abcdef0123",
+              createdAt: at(2),
+            },
+          ],
+        },
+        [
+          { id: 1, name: "release" },
+          { id: 2, name: "gates" },
+        ],
         seen,
       ),
     ).lastReleaseRun("main");
@@ -201,18 +233,21 @@ describe("the last release run, through gh", () => {
       detail: "the last release run on abcdef0 succeeded",
       url: "https://u",
     });
-    expect(seen[0]).toContain("main");
+    const listed = seen.filter((args) => args[0] === "run");
+    expect(listed.length).toBeGreaterThan(0);
+    for (const args of listed) {
+      expect(args).toContain("main");
+      expect(args[args.indexOf("--workflow") + 1]).toBe("1");
+    }
   });
 
   test("only a workflow named release counts, not one that mentions the word", () => {
     const state = (name: string) =>
       github(
         "/x",
-        answering(
-          runs([
-            { workflowName: name, status: "completed", conclusion: "success" },
-          ]),
-        ),
+        answering({ 7: [{ status: "completed", conclusion: "success" }] }, [
+          { id: 7, name },
+        ]),
       ).lastReleaseRun("main").state;
     expect([state("release"), state("Release"), state(" RELEASE ")]).toEqual([
       "success",
@@ -223,32 +258,168 @@ describe("the last release run, through gh", () => {
       expect([name, state(name)]).toEqual([name, "none"]);
   });
 
+  test("an older release run still going answers before a newer one that ended", () => {
+    const run = github(
+      "/x",
+      answering({
+        1: [
+          { status: "completed", conclusion: "cancelled", createdAt: at(3) },
+          {
+            status: "in_progress",
+            url: "https://older",
+            headSha: "0123456789",
+            createdAt: at(2),
+          },
+          { status: "completed", conclusion: "success", createdAt: at(1) },
+        ],
+      }),
+    ).lastReleaseRun("main");
+    expect(run).toEqual({
+      state: "running",
+      detail: "a release run on 0123456 is still going",
+      url: "https://older",
+    });
+  });
+
+  /** 100 runs that ended, created after the minute `from`, one second apart. */
+  const ended = (from: number) =>
+    Array.from({ length: 100 }, (_, i) => ({
+      databaseId: 1000 + i,
+      status: "completed",
+      conclusion: "cancelled",
+      createdAt: `2026-01-01T00:${String(from + 1 + Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}Z`,
+    }));
+
+  test("a release run still going answers behind a full window of newer runs that ended", () => {
+    const buried = {
+      databaseId: 1,
+      status: "in_progress",
+      url: "https://buried",
+      createdAt: at(1),
+    };
+    expect(
+      github("/x", answering({ 1: [buried, ...ended(1)] })).lastReleaseRun(
+        "main",
+      ),
+    ).toMatchObject({ state: "running", url: "https://buried" });
+  });
+
+  test("a release run whose status changes between listings is still seen going", () => {
+    // Waiting for approval, then going once approved, then waiting again on
+    // its next job: whichever status each listing finds, it is still going.
+    const statuses = ["waiting", "in_progress", "queued", "waiting"];
+    let calls = 0;
+    const runs = ended(1);
+    const gh: Gh = (args) => {
+      if (args[0] === "workflow")
+        return JSON.stringify([{ id: 1, name: "release" }]);
+      const buried = {
+        databaseId: 1,
+        status: statuses[calls++ % statuses.length],
+        url: "https://buried",
+        createdAt: at(1),
+      };
+      return JSON.stringify(listing([buried, ...runs], args));
+    };
+    expect(github("/x", gh).lastReleaseRun("main")).toMatchObject({
+      state: "running",
+      url: "https://buried",
+    });
+  });
+
+  test("runs created before the horizon have ended, and the newest of them answers alone", () => {
+    const seen: string[][] = [];
+    const old = [
+      {
+        status: "completed",
+        conclusion: "success",
+        createdAt: "2025-06-01T00:00:00Z",
+      },
+      { status: "in_progress", createdAt: "2025-05-01T00:00:00Z" },
+    ];
+    expect(
+      github("/x", answering({ 1: old }, undefined, seen)).lastReleaseRun(
+        "main",
+      ).state,
+    ).toBe("success");
+    const horizon = seen.find((args) => args.includes("--created"));
+    expect(horizon?.[horizon.indexOf("--created") + 1]).toBe(
+      ">=2025-10-28T00:00:00Z",
+    );
+  });
+
+  test("a listing gh cut short at its limit answers unknown", () => {
+    const workflows = Array.from({ length: 1000 }, (_, i) => ({
+      id: i + 2,
+      name: `w${i}`,
+    }));
+    expect(
+      github("/x", answering({}, workflows)).lastReleaseRun("main").state,
+    ).toBe("unknown");
+    // More runs created in one second than one listing holds.
+    const sameSecond = Array.from({ length: 100 }, (_, i) => ({
+      databaseId: i,
+      status: "completed",
+      conclusion: "success",
+      createdAt: at(5),
+    }));
+    expect(
+      github("/x", answering({ 1: sameSecond })).lastReleaseRun("main").state,
+    ).toBe("unknown");
+    // More runs since the horizon than the listings may take.
+    const many = Array.from({ length: 2100 }, (_, i) => ({
+      databaseId: i,
+      status: "completed",
+      conclusion: "success",
+      createdAt: new Date(Date.parse(at(0)) - i * 1000).toISOString(),
+    }));
+    expect(
+      github("/x", answering({ 1: many })).lastReleaseRun("main").state,
+    ).toBe("unknown");
+    // A run without a creation time leaves the next listing nowhere to start.
+    const timeless = ended(1).map(({ createdAt: _, ...run }) => run);
+    const gh: Gh = (args) =>
+      JSON.stringify(
+        args[0] === "workflow" ? [{ id: 1, name: "release" }] : timeless,
+      );
+    expect(github("/x", gh).lastReleaseRun("main").state).toBe("unknown");
+  });
+
+  test("runs of every workflow named release are read and the newest answers", () => {
+    const run = github(
+      "/x",
+      answering(
+        {
+          1: [{ status: "completed", conclusion: "failure", createdAt: at(1) }],
+          2: [{ status: "completed", conclusion: "success", createdAt: at(2) }],
+        },
+        [
+          { id: 1, name: "release" },
+          { id: 2, name: "Release" },
+        ],
+      ),
+    ).lastReleaseRun("main");
+    expect(run.state).toBe("success");
+  });
+
   test("failed, running, none and unknown", () => {
-    const state = (out: string | null) =>
-      github("/x", answering(out)).lastReleaseRun("main").state;
+    const state = (gh: Gh) => github("/x", gh).lastReleaseRun("main").state;
     expect(
       state(
-        runs([
-          {
-            workflowName: "release",
-            status: "completed",
-            conclusion: "cancelled",
-          },
-        ]),
+        answering({ 1: [{ status: "completed", conclusion: "cancelled" }] }),
       ),
     ).toBe("failure");
-    expect(
-      state(runs([{ workflowName: "Release", status: "in_progress" }])),
-    ).toBe("running");
-    expect(
-      state(
-        runs([
-          { workflowName: "gates", status: "completed", conclusion: "success" },
-        ]),
-      ),
-    ).toBe("none");
-    expect(state(null)).toBe("unknown");
-    expect(state("not json")).toBe("unknown");
+    expect(state(answering({ 1: [{ status: "in_progress" }] }))).toBe(
+      "running",
+    );
+    expect(state(answering({ 1: [] }))).toBe("none");
+    expect(state(answering({}, [{ id: 2, name: "gates" }]))).toBe("none");
+    expect(state(answering(null))).toBe("unknown");
+    expect(state(answering("not json"))).toBe("unknown");
+    expect(state(() => null)).toBe("unknown");
+    expect(state((args) => (args[0] === "workflow" ? "not json" : "[]"))).toBe(
+      "unknown",
+    );
   });
 
   test("only a GitHub origin has an adapter, so another host or none degrades to no answer", () => {

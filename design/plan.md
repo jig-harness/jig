@@ -76,9 +76,6 @@ from the history; `Changed`, `Added`, `Removed`, `Fixed`; every entry
 imperative, one line, with references; breaking changes marked and listed
 first; no `Unreleased`).
 
-- **Draft** each pull request's change note when it opens, written for the
-  changelog's reader rather than the diff's reviewer, a breaking change
-  marked with what a consumer must do.
 - **Check**, against the rules of the detected format rather than a union of
   both: structure, category names and order, dates written year-month-day,
   link references, and release coverage. Each rule, its conditions and its
@@ -95,8 +92,6 @@ first; no `Unreleased`).
   template, and a setup step that walks through the App, the ruleset and the
   environment holding the key; other CI providers' templates when a
   repository needs one.
-- `do-item` and `drive-pr` ask for a change note when a pull request changes
-  what users see, where the format keeps one per change.
 
 The practice itself (a changelog per released artifact, mechanically
 checked) gets a module of its own for releases and versions, M16, which

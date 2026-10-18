@@ -740,7 +740,10 @@ Then:
   nothing to enumerate — the review converged before you were dispatched.
 - **`conflict-resolve`** — run § 5's `base-sync.ts`, which will report exit
   `9`; merge the base and resolve the conflict with
-  [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md). It maps
+  [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), starting
+  the merge from its Step 1 rather than with a bare `git merge`: where the
+  repository opted in to the changelog skill, its pre-merge step first moves
+  the branch's own changelog edits into a change note. It maps
   both sides and why each changed, regenerates derived files rather than
   hand-merging them, checks that no change was silently dropped, records
   every decision in the merge commit message, and validates with this round's
@@ -1647,6 +1650,18 @@ Parked items stop counting as live work, which is what lets the drive reach
 finding, not a checkpoint. Unpark with
 `drive-state.ts unpark [PR] --key K` once the human answers.
 
+**The change note — only where the repository has opted in.** When
+`bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/check.ts" --base origin/<base>`
+(the pull request's base; it reads the configuration the base holds, not the
+branch's own) prints anything
+but `not configured` and the pull request carries a change note, an accepted
+fix that changes what the pull request does for someone using the released
+artifact also updates the note in the same round: its entries, and its
+`release:` if the fix moves the bump
+([`/jig:changelog`](../changelog/SKILL.md) § Writing a note). A fix that
+changes nothing the note says leaves it alone. Where the check prints
+`not configured`, the round never mentions a note.
+
 ### 5. Sync the base, then validate the cumulative tree — every round
 
 **exact** — Sync, resolve, and run the emitted cumulative plan in that order. Any escalation above the minimum needs stated evidence.
@@ -1689,7 +1704,7 @@ loop cannot see, such as converging and wanting the local gates and the
 | Exit | Means | What to do |
 |---|---|---|
 | `0` | Nothing to do, or merged cleanly | `--json`'s `action` says which — do not infer it from the code. Continue |
-| `9` | The base **conflicts** with this branch. The worktree was *restored* — nothing is half-merged | Resolve it deliberately with [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md): `git merge origin/<base>`, then map, resolve (intent-traced; derived files regenerated, never hand-merged), record, check, validate with this section's plan and conclude the merge; then push |
+| `9` | The base **conflicts** with this branch. The worktree was *restored* — nothing is half-merged | Resolve it deliberately with [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), from its Step 1 so its pre-merge changelog conversion runs first: `git merge origin/<base>`, then map, resolve (intent-traced; derived files regenerated, never hand-merged), record, check, validate with this section's plan and conclude the merge; then push |
 | `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Resolve `round-plan.ts` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `base-sync.ts`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
 | `5` | The PR is not `OPEN` | Stop — the same liveness posture `finish-round.ts` takes before its push |
 | `11` | Another live session holds this working tree's tree lease (never under `--check`) | Stop, as for `finish-round.ts`'s `11` below |

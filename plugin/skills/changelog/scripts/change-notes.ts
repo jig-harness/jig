@@ -47,7 +47,7 @@ const ABSOLUTE = /^([a-z][a-z0-9+.-]*:|\/|#)/i;
  * reads the section as anything but those items: text before or between
  * them, a line indented too little to continue one, or another kind of list.
  */
-function entries(text: string): { items: string[]; stray: boolean } {
+export function entries(text: string): { items: string[]; stray: boolean } {
   const items: string[][] = [];
   for (const { line, inFence } of fenced(text)) {
     if (!inFence && /^[-*] /.test(line)) items.push([line]);

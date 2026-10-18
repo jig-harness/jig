@@ -39,6 +39,22 @@ export function isNoteFile(notes: string, path: string): boolean {
   );
 }
 
+/**
+ * The file name, within the notes folder, of the note a branch carries: the
+ * branch's name with every character but a letter, a digit, `.`, `_` or `-`
+ * replaced by `-` and cut to its first 64 characters, so a long name stays
+ * within what a file system allows, then the first eight hexadecimal digits
+ * of the SHA-256 of the full name, which keep `feat/x` and `feat-x` (and two
+ * names alike in their first 64 characters) apart.
+ */
+export function noteName(branch: string): string {
+  const digest = new Bun.CryptoHasher("sha256")
+    .update(branch)
+    .digest("hex")
+    .slice(0, 8);
+  return `${branch.replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 64)}-${digest}.md`;
+}
+
 /** The note files, by name. */
 export function noteFiles(config: NotesConfig): string[] {
   const dir = join(config.root, config.notes);

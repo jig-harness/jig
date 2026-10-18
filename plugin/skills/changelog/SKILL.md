@@ -1,7 +1,7 @@
 ---
 name: changelog
-description: "Keep a repository's changelog from change notes: write the note for a change, check a branch against the repository's changelog configuration, see which release the waiting notes make. Applies only where .config/jig.yaml sets changelog.file."
-argument-hint: "[note | check | status]"
+description: "Keep a repository's changelog from change notes: write the note for a change, check a branch against the repository's changelog configuration, convert a branch that edited the changelog itself, see which release the waiting notes make. Applies only where .config/jig.yaml sets changelog.file."
+argument-hint: "[note | check | status | convert]"
 allowed-tools: "Read Write Edit Grep Glob Bash(bun *) Bash(git *)"
 ---
 
@@ -67,8 +67,8 @@ writes them, and the branch check fails a branch that does.
 
 2. **Create one file in the notes folder** (`changelog.notes_dir`, `changes`
    by default), named after the branch: its name with every character other
-   than a letter, a digit, `.`, `_` or `-` replaced by `-`, then `-` and the
-   first eight hexadecimal digits of the SHA-256 of the branch's full name
+   than a letter, a digit, `.`, `_` or `-` replaced by `-` and cut to its first
+   64 characters, then `-` and the first eight hexadecimal digits of the SHA-256 of the branch's full name
    (`printf %s "$branch" | shasum -a 256 | cut -c1-8`). The digits keep
    `feat/x` and `feat-x` apart. Only Markdown files directly in the folder are
    notes; its `README.md` is not one. If the branch already has a note, edit it.
@@ -162,7 +162,37 @@ release: minor
 ```
 
 A branch that already edited the changelog or the version itself must put those
-edits back to the integration branch's text and move the entries into a note.
+edits back to the integration branch's text and move the entries into a note:
+[convert it](#converting-a-branch), never by hand.
+
+## Converting a branch
+
+When a branch edited the changelog's Unreleased or release sections or a version
+file (the check says so), run, from the repository root with the work committed:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/convert.ts" --dry-run
+bun "${CLAUDE_SKILL_DIR}/scripts/convert.ts"
+```
+
+The first prints what it would do. The second writes the branch's note (named
+after the branch) from the release sections the branch added and its additions
+to Unreleased, with the `release` of the bump the branch made to the version;
+puts back the integration branch's open sections and version, keeping the
+branch's edits to earlier releases; and sets a placeholder the branch filled
+(`since: 1.3.0`) back to its text (`since: next`). It refuses during a stopped
+merge, rebase or cherry-pick, on uncommitted changes and on a detached `HEAD`.
+Its result stays uncommitted for you to review:
+
+- read the note: it carries what the branch wrote, so reword an entry for the
+  changelog's reader, and fix any line printed as `attention:`;
+- look at each `check:` line, a line that still names the branch's version,
+  which the script does not change;
+- run `check.ts`, then commit.
+
+A branch stacked on another pull request passes that branch as `--base`, so only
+its own edits become its note. Where the repository has not turned the skill on,
+the command says `not configured` and changes nothing.
 
 ## The commands
 
@@ -172,7 +202,8 @@ root, and prints the plugin version it ran as.
 | Command | What it does |
 |---------|--------------|
 | `check.ts [--base <ref>]` | The branch check. Every note reads as the release step will read it; the branch leaves the version and the changelog's open and release sections to the release step; a branch touching a release path carries a note that asks for a release, and one touching a note path carries a note; in Common Changelog also the format's rules (breaking entries, one-line entries, entries that read the same with their reference appended, one notice, authors). The base is `--base`, else the base of the pull request in a CI job, else the hosting service's default branch. It needs the full history. Exit 0 clean or `not configured`, 1 findings (a base that cannot be found included), 2 a usage error. |
-| `status.ts [--json]` | The notes waiting, the version they would make, the notes that wait for a release, and on GitHub whether the last release run on the integration branch succeeded (read through `gh`; without `gh`, or on another host, it says it could not read it). Exit 1 when a note is unreadable, the version files disagree or the last release run failed (the run is the one of the workflow named `release`). |
+| `status.ts [--json]` | The notes waiting, the version they would make, the notes that wait for a release, and on GitHub whether the last release run on the integration branch succeeded, a release run still going answering first (read through `gh`; without `gh`, or on another host, it says it could not read it). Exit 1 when a note is unreadable, the version files disagree or the last release run failed (the run is the one of the workflow named `release`). |
+| `convert.ts [--base <ref>] [--dry-run] [--json]` | Turns a branch that edited the changelog or the version itself into one with a note ([§ Converting a branch](#converting-a-branch)). Exit 0 converted, nothing to convert or `not configured`; 1 a refusal; 2 a usage error. |
 | `release.ts [--dry-run] [--json] [--date YYYY-MM-DD]` | The release step: writes the waiting notes into the changelog, moves the version, fills the placeholders, runs `after_version`, deletes the notes. Writes files only; it never commits, tags or pushes. CI runs it after a merge; run it yourself only with `--dry-run` to preview. Exit 1 for a malformed note or a step that failed (version files that disagree, `after_version`, no `origin` for Common Changelog links); 2 for a usage error, an invalid configuration or an unreadable file. |
 
 The check holds a branch to the `changelog:` section **as the base holds it**,

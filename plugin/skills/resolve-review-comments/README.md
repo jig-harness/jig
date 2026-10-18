@@ -118,6 +118,11 @@ the credential in `LINEAR_API_TOKEN` or `LINEAR_API_KEY`. It does not go
 through the [tracker interface](https://github.com/docomply/jig/blob/main/GLOSSARY.md) that `do-item` and `drive-pr` use, so
 another tracker needs its own deferral adapter.
 
+Where the repository turned on the [`changelog`](../changelog/README.md) skill
+(`changelog.file` in the `.config/jig.yaml` its base branch holds), an accepted fix that changes
+what the pull request's change note says updates the note in the same commit; a
+repository that did not is never asked for one.
+
 The skill works independently. A sibling `drive-pr` skill, found in the
 repository's own `.claude/skills/drive-pr` or else beside this skill in the
 plugin, adds lease

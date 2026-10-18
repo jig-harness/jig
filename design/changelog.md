@@ -43,8 +43,13 @@ This is the design of [ROADMAP.md](../ROADMAP.md) item 4. Built so far:
   `SKILL.md` and `README.md`; and Jig's own values moved into its
   `.config/jig.yaml`.
 
-What is missing: converting a branch, the agent skills taking part, a way for
-CI to run it and a guided setup. The questions that needed a person's decision
+- converting a branch (`convert.ts`) and the agent skills taking part
+  (build step 4): `do-item` writes the note and runs the check, `drive-pr` and
+  `resolve-review-comments` keep the note true, `resolve-conflicts` converts
+  before it merges, and `/followup` reads `status.ts`, each only where the
+  repository turned the skill on.
+
+What is missing: a way for CI to run it and a guided setup. The questions that needed a person's decision
 are settled ([§ Decisions this design needs](#decisions-this-design-needs)).
 
 ## How it works
@@ -161,8 +166,8 @@ The note format stays as M12's reference defines it: optional
 configured format: Keep a Changelog's `Added`, `Changed`, `Deprecated`,
 `Removed`, `Fixed`, `Security`, or Common Changelog's `Changed`, `Added`,
 `Removed`, `Fixed`. A note's file name is the branch's name with every
-character other than a letter, a digit, `.`, `_` or `-` replaced by `-`,
-followed by the first eight hexadecimal digits of the SHA-256 of the
+character other than a letter, a digit, `.`, `_` or `-` replaced by `-` and
+cut to its first 64 characters, followed by the first eight hexadecimal digits of the SHA-256 of the
 branch's full name, directly in the notes folder: `feat/x` and `feat-x`
 then give different files, and no branch name gives the folder's own
 `README.md`, which the release step never reads as a note. A branch may
@@ -195,7 +200,7 @@ prints the plugin version it ran as.
 | `check.ts [--base <ref>]` | The branch check: every note reads; the branch leaves the version and the changelog's open and release sections to the release step; a branch touching a release path carries a note that asks for one, and one touching a note path carries a note. The base defaults to the integration branch; a base git cannot compare against is a finding, never a skipped check. It needs the full history (`fetch-depth: 0` in CI). |
 | `release.ts [--dry-run] [--json] [--date YYYY-MM-DD]` | The release step: writes the waiting notes into the changelog, moves the version, fills the placeholders, runs `after_version`, deletes the notes. Writes files only; never commits, tags or pushes. |
 | `convert.ts` | Turns a branch that edited the changelog or the version itself into one with a note ([§ Converting a branch](#converting-a-branch)). |
-| `status.ts` | The waiting notes, the version they would make and the notes that wait for a release. On GitHub it also reads whether the last release run on the integration branch succeeded (through `gh`). |
+| `status.ts` | The waiting notes, the version they would make and the notes that wait for a release. On GitHub it also reads whether the last release run on the integration branch succeeded, a release run still going answering first (through `gh`). |
 | `release-access.ts` | Whether the release can reach the integration branch in the configured mode, and force pushes and deletion stay blocked for the release identity too ([§ Setup](#setup)). Reads GitHub's rulesets and branch protection. |
 
 The agent writes a note by hand from the procedure in `SKILL.md` (§ Writing
@@ -611,7 +616,7 @@ Each step is one pull request with its change note and, where it changes
 3. **One release per run** (built): `release.ts` writes everything
    waiting as one version, with no per-merge mode; ADR-0002 and ADR-0004
    amended.
-4. **Converting, and the agents.** `convert.ts`; `do-item`, `drive-pr`,
+4. **Converting, and the agents** (built). `convert.ts`; `do-item`, `drive-pr`,
    `resolve-review-comments` and `resolve-conflicts` taking part;
    `/followup` reading `status.ts`.
 5. **CI and setup.** `action.yml`, the workflow template with both modes and

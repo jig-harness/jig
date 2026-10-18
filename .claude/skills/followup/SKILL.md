@@ -97,21 +97,48 @@ Every Jig release is tagged `v<version>` on the commit that shipped it
 plugin](../../../CONTRIBUTING.md#releasing-the-plugin)). After the merge,
 the release workflow (`.github/workflows/release.yml`) writes the change notes
 into CHANGELOG.md, moves the version on a commit of its own and tags it.
-First check that it ran for this merge, by the merge's own notes and its own
-run, not by what `changes/` holds on main: another merge may have added a note
-since, and its run may be queued or running. The merge's notes are the notes
-it added, edited or renamed into place, counted as the release step counts
-them: Markdown files directly in `changes/`, other than a README in any letter
-case
+First check that it consumed this merge's notes, by the merge's own notes and
+the release run, not by what `changes/` holds on main: another merge may have
+added a note since, and its run may be queued or running. The merge's notes
+are the notes it added, edited or renamed into place, counted as the release
+step counts them: Markdown files directly in `changes/`, other than a README
+in any letter case
 (`git diff --name-only --diff-filter=AMR <merge>^ <merge> -- ':(glob)changes/*.md'`,
-which names a renamed note by its new path, after `git fetch origin main`);
-the runs are
-`gh run list --workflow release.yml --limit 10 --json status,conclusion,headSha,url`,
-the merge's own and any later one. A run waiting behind another is cancelled
-when a newer one queues, and the newer run writes its notes. A note of the
-merge is still there only when its path is on main and main's last addition
-of that path is the same commit as its last addition at the merge, the way
-the release step dates a note
+which names a renamed note by its new path, after `git fetch origin main`).
+Then read where releases stand on main with the changelog skill's `status.ts`,
+from a throwaway checkout of `origin/main` (the working tree is the branch it
+reads), fetched immediately before it:
+
+```bash
+git fetch origin main
+CHECKOUT=$(mktemp -d)
+git worktree add --detach "$CHECKOUT/main" origin/main
+bun plugin/skills/changelog/scripts/status.ts --root "$CHECKOUT/main" --json \
+  >"$CHECKOUT/status.json" 2>"$CHECKOUT/status.err"
+echo "status.ts exit $?"; cat "$CHECKOUT/status.json" "$CHECKOUT/status.err"
+git worktree remove --force "$CHECKOUT/main"
+```
+
+Remove the checkout whatever `status.ts` did. It exits 1 with its report
+when a note is unreadable or the last release run failed, which the table
+below reads; when it prints no report (the version files on main disagree:
+exit 1; an invalid configuration or an unreadable file: exit 2), none of the
+table's rows applies. Report the release state as unread, owed investigation,
+with the exit status and what it wrote to standard error, and go on to the
+tags.
+
+`releasing`, `waiting` and `unreleased` list the readable notes still in the
+folder, `errors` the ones the release step cannot read (each names its file,
+and any one of them stops the release), and `releaseRun` is the newest run of the `release` workflow on main that is
+still going, else its newest run: a release run still going is never
+cancelled by a later one (the later run waits, and a newer run replaces the
+waiting one, cancelling that one instead), so an older run still going can yet
+consume the note, and a cancelled run's notes fall to the run that replaced it (`state`: `running`, `success`, `failure`, `none` or `unknown`, read through
+`gh`). Since a note `errors` names is in none of the lists, check that the file is
+there before reading the lists (`git cat-file -e origin/main:<note>`). A note
+of the merge is still there only when its file is on main and
+main's last addition of that path is the same commit as its last addition at
+the merge, the way the release step dates a note
 (`git log --first-parent --diff-filter=A -1 --format=%H <ref> -- <note>`,
 with `<ref>` first `origin/main`, then the merge): a note the merge only
 edited is still the note it edited, while a file name a release deleted can
@@ -120,8 +147,10 @@ be reused, and the later merge's note is not this one's. Then:
 | What you find | It means |
 |---------------|----------|
 | No note of the merge is still there, or the merge added none | Released, or nothing to release: go on to the tags |
-| A note of the merge is still there and a release run (the merge's or a later one) is not completed (queued, pending, waiting or in progress) | Pending: say so and fetch and check again when the run finishes; not an incident |
-| A note of the merge is still there and every release run has completed (the newest failed or was cancelled, or none wrote it) | The workflow failed (most often, the `jig-release` App can no longer push: its key in the `release` environment was rotated or removed, or `main`'s ruleset no longer lets it past): report it with the run's link, as a person's step |
+| A note of the merge is still there and `errors` names it | The release cannot read it, so no run will consume it: report it with the error, as a person's step, whatever the run says |
+| A note of the merge is still there and `releaseRun.state` is `running` | Pending: say so, and when the run finishes repeat the whole read (fetch, a new checkout, `status.ts`, the note checks) — `status.ts` alone reads the old checkout's notes; not an incident |
+| A note of the merge is still there and `releaseRun.state` is `success`, `failure` or `none`, and it still is when the whole read is repeated | The workflow did not consume it (most often, the `jig-release` App can no longer push: its key in the `release` environment was rotated or removed, or `main`'s ruleset no longer lets it past): report it with the run's link, as a person's step |
+| A note of the merge is still there and `releaseRun.state` is `unknown` | Not readable here (no `gh`, no origin, or a listing `gh` may have cut short): look at `gh run list --workflow release.yml --limit 10` by hand and say that it was not read |
 
 A note on main that a later merge added is that merge's to settle, not this one's.
 Then check the tags on every merge,

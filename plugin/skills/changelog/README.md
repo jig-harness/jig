@@ -107,6 +107,31 @@ runs after the version changes, such as one that updates a lock file. Because
 `after_version` runs your own command, it refuses to run inside a CI job unless
 that job says it holds no secrets.
 
+## A branch that already edited the changelog
+
+`convert.ts` turns a branch that edited the changelog or the version itself,
+the way every branch did before the repository adopted change notes, into one
+with a note: it moves the branch's entries into a note, puts back the integration
+branch's open sections and version, and leaves the result uncommitted for its
+owner to review. A branch stacked on another converts against that branch. The
+agent skills use it where it helps: `resolve-conflicts` converts before merging
+a branch whose changelog edits would conflict, so nothing resolved elsewhere is
+thrown away.
+
+## The agents
+
+Only where the repository turned the skill on, as its integration branch holds
+the configuration: each asks first through a command that reads the base's
+configuration rather than the branch's own (`check.ts`, or `convert.ts
+--dry-run` for `resolve-conflicts`, which converts before merging), so a
+branch that predates the adoption is asked too.
+`do-item` writes the note before it opens the pull request and runs the check
+with the other gates; `drive-pr` and `resolve-review-comments` update the note in
+the round whose accepted fix changes what it says; `resolve-conflicts` converts
+before it merges; and Jig's own `/followup` reads `status.ts` to see that the
+release run consumed the merged pull request's notes. A repository that did not
+turn the skill on is never asked for a note.
+
 ## What it will not do
 
 It does not commit, tag or push, publish anywhere, or write entries from commit
@@ -114,7 +139,7 @@ messages (a commit subject is written for a reviewer, a note for the changelog's
 reader). The workflow that runs the release in CI and the guided setup are later
 steps of this skill's [design](https://github.com/docomply/jig/blob/main/design/changelog.md).
 
-The commands are `check.ts`, `status.ts` and `release.ts` in
+The commands are `check.ts`, `status.ts`, `release.ts` and `convert.ts` in
 [`scripts/`](scripts/README.md), run with Bun from the repository's root; each
 prints the plugin version it ran as. Their tests are in
 [`__tests__/`](__tests__/).

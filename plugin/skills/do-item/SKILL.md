@@ -595,6 +595,24 @@ routing below remain **exact**.
    work, because labelling lags reality; so agents open PRs by default and
    humans gate *merges*, not *pushes*.
 
+   **Change note — only where the repository has opted in.** Run
+   `bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/check.ts" --base origin/<base>`
+   from the repository root, `<base>` being the branch the pull request
+   merges into. It reads the configuration the base holds, not the branch's
+   own, so a branch that predates the adoption or drops `changelog.file` is
+   still asked. When it prints `not configured`, the repository keeps no
+   changelog from change notes: write no note, run nothing else of the
+   `changelog` skill, and do not mention a changelog in the pull request.
+   Otherwise follow [`/jig:changelog`](../changelog/SKILL.md) § Writing a
+   note before the pull request opens: add the branch's note when the change
+   is one the changelog's readers would notice or a configured path requires
+   one, never edit the changelog or a version file, and run the same check
+   with the other gates, so that a finding is fixed before the push. A branch that already
+   edited the changelog or the version is converted first
+   (`bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base origin/<base>`,
+   the same base as the check, so a stacked branch moves only its own
+   edits), and the result reviewed.
+
    **Pre-PR code review gate (mandatory unless the diff is tiny):**
 
    Run it after the implementing agent finishes and the validation plan

@@ -85,6 +85,33 @@ from this side before they are regenerated.
 
 If an operation has already stopped on conflicts, go to Step 2.
 
+**Before merging, only where the repository has opted in.** Fetch the base
+and let the changelog skill say whether the branch edited the changelog's
+Unreleased or release sections or a version file. It reads the repository's
+configuration as the base holds it, so a branch forked before the repository
+adopted the skill is covered too:
+
+```bash
+git fetch origin <base>
+bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base origin/<base> --dry-run
+```
+
+When it prints `not configured` (the base did not turn the skill on) or
+reports nothing to convert, go straight to the merge. When it reports a note,
+a file to put back or a placeholder, convert for real and commit the result
+before merging, so those files cannot conflict and no resolution made to
+another file is thrown away:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base origin/<base>
+git add -A
+git commit -m "chore(changelog): move the branch's changelog edits into a change note"
+```
+
+`convert.ts` refuses on uncommitted changes, so commit or set aside anything
+else first, and prints `attention:` lines for entries it could not move
+cleanly: fix those before committing.
+
 To bring a branch up to date with its base (the `conflict-resolve` round of
 [`/jig:drive-pr`](../drive-pr/SKILL.md) is this case), merge the base
 in, with a base section in the markers:

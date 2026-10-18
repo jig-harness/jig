@@ -26,8 +26,8 @@ upgrades an update bot cannot make alone and drives them to merge.
 
 For a repository that keeps a changelog, the skill already runs the
 release step from configuration, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
-or [Common Changelog](https://common-changelog.org/) format. Still to come:
-it drafts each pull request's change note for the changelog's reader,
+or [Common Changelog](https://common-changelog.org/) format, and the agent
+skills write and keep each pull request's change note. Still to come: it
 checks the whole file against the rules of its format, and sets up how a
 release reaches the integration branch. A new module, M16, states the
 practice for software that is released in versions, as

@@ -689,6 +689,16 @@ rather than leaving the audit trail out of sequence.
 
 ### 4. Verify and push
 
+**The change note — only where the repository has opted in.** If
+`bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/check.ts" --base origin/<base>`
+(the pull request's base; it reads the configuration the base holds, not the
+branch's own) prints anything
+but `not configured` and the pull request carries a change note, an accepted
+fix that changes what the note says (an entry, or the `release:` it asks for)
+updates the note in the same commit, as
+[`/jig:changelog`](../changelog/SKILL.md) § Writing a note describes. Where
+it prints `not configured`, no note is ever asked for.
+
 If any thread was addressed with a code change, run `gates.command` from
 step 0. If consumer instructions define change-proportional validation,
 resolve the complete diff again and run **every** emitted local and verification

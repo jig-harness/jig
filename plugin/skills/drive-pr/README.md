@@ -311,6 +311,11 @@ The `bun` prefix and the single line are both deliberate, so don't "tidy" them: 
 
 One red-CI cause is worth ruling out before you repair anything in a repository with a [CI hold](#ci-hold): a drive that **died** mid-round leaves its hold label behind, and the repository's held-head check then fails a required check on a perfectly healthy PR. Check `gh pr view <PR> --json labels` first. If it is there, push whatever the dead drive stranded, then `gh pr edit <PR> --remove-label "<ci.hold_label>"` — the removal itself retriggers CI. Do **not** `gh run rerun` the old run: it replays the original event payload, which still carries the label, so it fails on the hold step again.
 
+Where the repository turned on the [`changelog`](../changelog/README.md) skill
+(`changelog.file` in the `.config/jig.yaml` its base branch holds), a round whose accepted fix
+changes what the pull request's change note says updates the note in the same
+round. A repository that did not is never asked for one.
+
 ## What it will never do
 
 - **Merge, approve, or request changes** on the PR.
