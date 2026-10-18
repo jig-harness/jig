@@ -7,30 +7,45 @@ export interface Block {
   text: string;
 }
 
+/** A line of a Markdown file, placed against its fenced code blocks. */
+export interface FencedLine {
+  line: string;
+  inFence: boolean;
+  delimiter: "open" | "close" | null;
+}
+
 /** A comparison or tag link definition: `[label]: https://…`. */
 export const LINK_REF = /^\[([^\]]+)\]: (\S+)\s*$/;
 
 /**
  * The lines of `text` with whether each sits inside a fenced code block, so a
- * heading shown as an example in the changelog is not read as structure. As
+ * heading shown as an example in the changelog is not read as structure, and
+ * which lines open and close a fence. Both delimiters sit inside the fence. As
  * in CommonMark, a fence closes only on a line holding nothing but a run of
  * its own character at least as long as the one that opened it.
  */
-export function fenced(text: string): { line: string; inFence: boolean }[] {
+export function fenced(text: string): FencedLine[] {
   let fence: string | null = null;
-  const lines: { line: string; inFence: boolean }[] = [];
+  const lines: FencedLine[] = [];
   for (const line of text.split("\n")) {
     if (fence === null) {
       // A backtick fence's info string holds no backtick.
       const opener = /^ {0,3}(`{3,}(?=[^`]*$)|~{3,})/.exec(line)?.[1];
       if (opener) fence = opener;
-      lines.push({ line, inFence: opener !== undefined });
+      lines.push(
+        opener === undefined
+          ? { line, inFence: false, delimiter: null }
+          : { line, inFence: true, delimiter: "open" },
+      );
       continue;
     }
     const closer = /^ {0,3}(`+|~+)\s*$/.exec(line)?.[1];
-    if (closer && closer[0] === fence[0] && closer.length >= fence.length)
-      fence = null;
-    lines.push({ line, inFence: true });
+    const closes =
+      closer !== undefined &&
+      closer[0] === fence[0] &&
+      closer.length >= fence.length;
+    if (closes) fence = null;
+    lines.push({ line, inFence: true, delimiter: closes ? "close" : null });
   }
   return lines;
 }

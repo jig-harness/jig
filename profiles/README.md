@@ -47,7 +47,9 @@ cancelled, a timeout on every job, no required pipeline filtered by paths);
 **M14 Lite** (test tiers and testing rules written down); **M15 Lite** (the
 error contract written, one typed error with codes); **M12** if using
 parallel agent
-workspaces. M3 (change-area catalog) once the repo is big enough that "what
+workspaces; **M16 Lite** if the repository releases versioned software
+(the released artifacts and the rule for what gets a changelog entry
+written down, each release tagged). M3 (change-area catalog) once the repo is big enough that "what
 does this change imply?" stops being obvious.
 
 ## Regulated/Strict
@@ -60,7 +62,9 @@ merge reserved to humans), **M8** (learning loop with regression corpus), **M10 
 observability/audit trails), **M13 Lite**, **M14 Standard** (enforced
 test budgets, tests with every change, type-checked tests) and **M15
 Standard** (the swallowing forms linted, one error boundary that hides
-server-side detail). M13 Standard
+server-side detail), and **M16 Standard** where the repository releases
+versioned software (the version set after the merge by one release run at a
+time, a shipped change held to asking for a release). M13 Standard
 selects jobs from M3's change-area catalog, so neither profile's audit target
 goes past M13 Lite; a repository with a catalog has what Standard needs.
 Compliance artifacts (data-processing registers,

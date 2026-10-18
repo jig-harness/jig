@@ -17,10 +17,12 @@ under `plugin/`.
   and then by area, not by item. Small pull requests that touch the same
   files (this file, AGENTS.md, CHANGELOG.md, the configuration) conflict with
   each other at every merge.
-- Every pull request records its user-visible change as a
-  [change note](changes/README.md) under `changes/`, never as an edit to
-  [CHANGELOG.md](CHANGELOG.md)'s Unreleased or release sections or to the
-  plugin version. A pull request that changes `plugin/` gives its note
+- A pull request whose change a team using Jig would notice (always one that
+  changes `plugin/`) records it as a [change note](changes/README.md) under
+  `changes/`
+  ([which changes get one](changes/README.md#when-a-pull-request-needs-one)),
+  never as an addition to [CHANGELOG.md](CHANGELOG.md)'s Unreleased or
+  release sections or a change to the plugin version. A pull request that changes `plugin/` gives its note
   `release: patch|minor|major`; after the merge, the release step writes the
   note into the changelog and moves the version, and the release commit is
   tagged once its gates pass

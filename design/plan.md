@@ -58,42 +58,6 @@ rollout:
 [adoption/greenfield.md](../adoption/greenfield.md) then points at
 `/jig:kickoff` instead of the seed.
 
-### 4. `changelog` skill
-
-Design: [design/changelog.md](changelog.md).
-
-Keeps a repository's changelog as a practice, not an afterthought, for a
-repository that opts in: the skill, its gate and the change-note requests
-below act only where the repository's own `.config/jig.yaml` sets
-`changelog.file`, and a repository without it is never asked for a
-changelog. It works in either
-common format, detected from the file or set in configuration:
-[Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) (an
-`Unreleased` section filled as changes merge; `Added`, `Changed`,
-`Deprecated`, `Removed`, `Fixed`, `Security`) or
-[Common Changelog](https://common-changelog.org/) (written at release time
-from the history; `Changed`, `Added`, `Removed`, `Fixed`; every entry
-imperative, one line, with references; breaking changes marked and listed
-first; no `Unreleased`).
-
-- **Check**, against the rules of the detected format rather than a union of
-  both: structure, category names and order, dates written year-month-day,
-  link references, and release coverage. Each rule, its conditions and its
-  exemptions are taken from the format's own specification, cited where the
-  check enforces them, not restated here. Jig's own
-  `scripts/check-changelog.ts` checks, from the version files its
-  configuration names, that they agree and that the current version has a
-  heading, and holds branches to the change notes; no check yet validates a
-  whole changelog against its format. `bun run gates` calls it.
-- **Other CI providers' templates** beside GitHub's workflow template, when
-  a repository needs one.
-
-The practice itself (a changelog per released artifact, mechanically
-checked) gets a module of its own for releases and versions, M16, which
-applies to software that is downloaded, embedded or consumed, as M10 applies
-to a deployed service. M12 keeps the part about parallel work: one change
-note per pull request, written in after the merge.
-
 ### 5. A shared runtime kernel and diagnostics
 
 The plugin's scripts each solve the same problems by hand: decoding JSON
@@ -302,6 +266,31 @@ Done when a repository whose tests only its test runner names is classified
 correctly with no `code_stats` section, the reference set's recorded results
 are checked by a test, and an audit sheet cites code-stats figures as
 evidence.
+
+### 21. `changelog` skill: several artifacts, and the whole file checked
+
+The [`changelog` skill](../plugin/skills/changelog/README.md) is the
+runnable form of [M16](../modules/M16-releases-versions/README.md) for a
+repository with one released artifact. What is left:
+
+- **Several released artifacts in one repository**, each with its own
+  changelog, version, tag prefix and release paths: a `changelog` section
+  that lists artifacts, a note's front matter naming the artifacts it
+  reaches and the bump for each, a release run that releases each artifact
+  whose notes wait as one version of that artifact, and tags that carry the
+  artifact's name. A note reaching no artifact stays the repository's
+  choice (Unreleased, or none). Done when a monorepo with two packages
+  releases them independently through the action, and the single-artifact
+  configuration keeps working unchanged.
+- **A whole-changelog check**, against the rules of the detected format
+  rather than a union of both: structure, category names and order, dates
+  written year-month-day, link references, and release coverage. Each rule,
+  its conditions and its exemptions are taken from the format's own
+  specification, cited where the check enforces them. Of the whole file,
+  Jig's own `scripts/check-changelog.ts` checks only that the version files
+  agree and that the current version has a heading.
+- **Other CI providers' templates** beside GitHub's workflow template, when
+  a repository needs one.
 
 ## Later
 

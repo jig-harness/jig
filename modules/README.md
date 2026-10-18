@@ -26,10 +26,11 @@ and reference gates.
 | [M9 Tasks & memory](M9-tasks-memory/) | Tracker taxonomy with process-driving labels; persistent agent memory | [`do-item`](../plugin/skills/do-item/SKILL.md) |
 | [M10 Environments & deploy](M10-environments-deploy/) | PR gates → verify → deploy → promote; ephemeral envs; test-data factory | [`github-actions`](../plugin/skills/github-actions/SKILL.md) |
 | [M11 Process observability](M11-process-observability/) | Telemetry on the delivery process itself (review quality, gate health), and whether its scheduled jobs are still running | [`drive-pr`](../plugin/skills/drive-pr/README.md)'s loop and fleet metrics |
-| [M12 Parallel-agent ergonomics](M12-parallel-agent-ergonomics/) | Multiple agents, one machine/repo: ports, mutexes, branch discipline, gate output for agents | — |
+| [M12 Parallel-agent ergonomics](M12-parallel-agent-ergonomics/) | Multiple agents, one machine/repo: ports, mutexes, branch discipline, change notes, gate output for agents | [`changelog`](../plugin/skills/changelog/README.md) for change notes |
 | [M13 Pipeline economy](M13-pipeline-economy/) | CI spent only where it changes a merge decision: honest signal, selection, superseding, bounds, ordering, placement, the CI hold, caches | [`github-actions`](../plugin/skills/github-actions/SKILL.md) reviews workflow changes |
 | [M14 Testing strategy](M14-testing-strategy/) | Test tiers with budgets, honest doubles, injected clock, polling, tests with every change | — |
 | [M15 Contracts & error handling](M15-contracts-errors/) | Failures keep their cause and travel on three typed channels, callers branch on type or code, one boundary maps errors to responses, a merged migration never changes, an interface is internal by default | — |
+| [M16 Releases & versions](M16-releases-versions/) | A changelog per released artifact written for its consumers, the version chosen once after the merge, a tag only on verified code, a narrowed release identity | [`changelog`](../plugin/skills/changelog/README.md) |
 
 Adoption ordering for brownfield projects is leverage-first — typically
 M1 → M2 → M0 → M4 — but the [audit](../plugin/skills/audit/README.md) report's recommendation

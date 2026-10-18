@@ -1,0 +1,173 @@
+# Machine-evaluable criteria for M16 (Releases & versions).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+#
+# Repo-shape note: every criterion here is "expected-absent" for a repository
+# that releases no versioned artifact (a deployed service with no client
+# library, a web application deployed rather than installed, a website,
+# documentation). A deployed service that also publishes a library, a tool or
+# a client is scored on them like a library. The auditor calibrates by what
+# the repository publishes.
+#
+# M12's change-records criteria score the conflict side of change notes (one
+# file per change, written in after the merge); these score the release side
+# (what the version and the tag follow, and who may write them).
+module: M16
+name: releases-versions
+purpose: >-
+  The changelog and version of each released artifact tell its consumers
+  what changed and whether an upgrade is safe.
+criteria:
+  - id: released-artifacts-and-entry-rule-written
+    level: lite
+    requires: convention
+    statement: >-
+      The repository names each artifact it releases, with its changelog and
+      where its version lives, and writes down which changes get a changelog
+      entry (those the artifact's consumers would notice) and how a change's
+      version bump is judged (expected-absent where the repository releases no
+      versioned artifact).
+    observe:
+      - "a contributor-facing doc or the changelog's own opening names the released artifact(s), the changelog of each and the file or tag that holds each version"
+      - "a written rule says what gets an entry (a change its consumers notice) and what does not (CI, refactors, the repository's own tooling or website), and how the bump is chosen (semantic versioning or the repository's own scheme)"
+      - "a changelog that records changes no consumer sees (CI tweaks, website work, internal tooling) as entries is evidence the rule is missing or not followed"
+    since: next
+
+  - id: each-release-tagged
+    level: lite
+    requires: convention
+    statement: >-
+      Each released version has a git tag naming it, so a consumer and a
+      publishing job can find the exact code of every version (expected-absent
+      where the repository releases no versioned artifact).
+    observe:
+      - "the changelog's release headings or the registry's versions each have a matching tag (git tag --list, or the host's tags page)"
+      - "a monorepo's tags name the artifact as well as the version (<artifact>@1.2.0, <artifact>/v1.2.0)"
+    since: next
+
+  - id: version-set-after-merge-by-one-run
+    level: standard
+    requires: mechanical
+    statement: >-
+      A release step on the integration branch, one run at a time, sets each
+      artifact's version after the merge from the bump its waiting changes ask
+      for, and no pull request sets the version itself (expected-absent where
+      the repository releases no versioned artifact).
+    observe:
+      - "a CI job on the integration branch, or a release tool's release pull request, writes the changelog and moves the version (the changelog skill's release command, Changesets, release-please, changie, towncrier, scriv, semantic-release)"
+      - "the job cannot overlap itself (a concurrency group that does not cancel, a single regenerated release pull request), and one run releases everything waiting as one version"
+      - "a pull-request check fails a branch that edits the version or the changelog's release sections (M12's change-records-assembled-after-merge observes the changelog side)"
+    probe:
+      mechanical:
+        files: &ci-config
+          - ".github/workflows/*.yml"
+          - ".github/workflows/*.yaml"
+          - ".forgejo/workflows/*"
+          - ".gitea/workflows/*"
+          - ".gitlab-ci.yml"
+          - ".circleci/config.yml"
+          - ".circleci/config.yaml"
+          - "azure-pipelines.yml"
+          - "azure-pipelines.yaml"
+          - ".azure-pipelines/**"
+          - ".pipelines/**"
+          - "bitbucket-pipelines.yml"
+          - "Jenkinsfile"
+          - "**/Jenkinsfile"
+          - "**/*.jenkinsfile"
+          - ".buildkite/**"
+          - ".drone.yml"
+          - ".drone.yaml"
+          - ".woodpecker.yml"
+          - ".woodpecker.yaml"
+          - ".woodpecker/**"
+          - ".travis.yml"
+          - ".cirrus.yml"
+          - ".cirrus.star"
+          - "appveyor.yml"
+          - ".appveyor.yml"
+          - ".semaphore/**"
+          - ".teamcity/**"
+          - "bitrise.yml"
+          - "codemagic.yaml"
+          - "codefresh.yml"
+          - "cloudbuild.yaml"
+          - "cloudbuild.yml"
+          - "buildspec.yml"
+          - "buildspec.yaml"
+          - ".tekton/**"
+          - ".harness/**"
+          - ".build.yml"
+          - ".builds/**"
+          - "**/*.gocd.yaml"
+          - "**/*.gocd.yml"
+          - ".concourse/**"
+          - "ci/pipeline*.yml"
+          - "ci/pipeline*.yaml"
+          - ".onedev-buildspec.yml"
+    since: next
+
+  - id: shipped-change-requires-release
+    level: standard
+    requires: mechanical
+    statement: >-
+      A check fails a pull request that changes what an artifact ships without
+      a change record asking for a release, so no shipped change reaches the
+      integration branch unversioned (expected-absent where the repository
+      releases no versioned artifact).
+    observe:
+      - "a pull-request check maps the artifact's shipped paths to a required record: the changelog skill's check with changelog.release_paths set, `changeset status --since=<base>`, `towncrier check`, or a CI step of the repository's own (for changie or scriv, a step that fails when no fragment was added)"
+      - "a change outside the shipped paths (CI, tooling, website) is not asked for one"
+      - "with release-please or semantic-release, a check that holds the commit type of a change to the shipped paths to one that releases (feat, fix) meets it; Conventional Commits alone, unchecked, are convention"
+    probe:
+      mechanical:
+        files: *ci-config
+    since: next
+
+  - id: changelog-and-version-per-artifact
+    level: standard
+    requires: convention
+    statement: >-
+      A repository that releases several artifacts at their own versions keeps
+      a changelog and a version per artifact, and each change record names the
+      artifacts it reaches (expected-absent where the repository releases one
+      artifact, or none).
+    observe:
+      - "each released package or tool has its own changelog and version (a CHANGELOG.md beside each package manifest, a release-please manifest, Changesets' per-package changelogs, Nx Release's projects)"
+      - "a change record names the artifacts it changes and the bump for each, and tags carry the artifact's name"
+      - "artifacts that always release together at one version (one product under two manifests) count as one artifact"
+    since: next
+
+  - id: release-tag-after-verification
+    level: strict
+    requires: mechanical
+    statement: >-
+      Each version is tagged automatically on the commit that released it, and
+      on no other, only once that commit's own required checks have passed,
+      and publishing starts from the tag (expected-absent where the repository
+      releases no versioned artifact).
+    observe:
+      - "a CI job tags the releasing commit after reading that commit's required checks (the changelog skill's tag-plan and tag-push jobs, a workflow_run of the gate workflow, a last pipeline stage), not in the run that wrote the release"
+      - "the publishing job starts on a tag push, not on a push to the integration branch"
+      - "a release tool that commits the release and tags and publishes it in the same run (semantic-release with @semantic-release/git) does not meet it"
+    probe:
+      mechanical:
+        files: *ci-config
+    since: next
+
+  - id: release-identity-narrowed
+    level: strict
+    requires: mechanical
+    statement: >-
+      The identity that writes the release to the integration branch passes
+      its rules only as far as the release needs (contents only, never
+      workflows; its key held by an environment only the integration branch
+      may use; force pushes and deletion still blocked for it), or the release
+      arrives as a pull request a person merges (expected-absent where the
+      repository releases no versioned artifact).
+    observe:
+      - "the release pushes as a dedicated App or deploy key, not a person's token; the host's rulesets or branch protection name it as the one bypass of the pull-request and check rules, and a rule without that bypass blocks force pushes and deletion"
+      - "its key is a secret of a deployment environment restricted to the integration branch, and the job that reads it runs nothing from the repository"
+      - "or: the release tool opens a release pull request and no automation bypasses the integration branch's rules"
+      - "the changelog skill's release-access.ts reports what GitHub's rulesets allow for the release identity"
+    since: next

@@ -170,8 +170,274 @@ describe("checkNotes", () => {
     expect(findings).toContain(
       "a/plugin.json: the branch moves the version from 1.2.0 to 1.3.0",
     );
-    expect(findings).toContain("CHANGELOG.md: the branch edits Unreleased");
+    expect(findings).toContain("CHANGELOG.md: the branch adds to Unreleased");
     expect(findings).toContain("adds or removes a release section");
+  });
+
+  test("an entry already under Unreleased may be corrected or removed, never added to", () => {
+    const root = branch();
+    const corrected = KEEP_CHANGELOG.replace(
+      "- an earlier docs change",
+      "- an earlier docs change, corrected",
+    );
+    expect(corrected).not.toBe(KEEP_CHANGELOG);
+    write(root, "CHANGELOG.md", corrected);
+    expect(check(root)).toMatchObject({
+      findings: [],
+      notices: [
+        "CHANGELOG.md: the branch corrects or removes entries under Unreleased; check that it changes only what was wrong. Lines it changes or removes:\n  - - an earlier docs change\nLines it adds:\n  - - an earlier docs change, corrected",
+      ],
+    });
+    write(
+      root,
+      "CHANGELOG.md",
+      KEEP_CHANGELOG.replace("- an earlier docs change\n", ""),
+    );
+    expect(check(root).findings).toEqual([]);
+    write(
+      root,
+      "CHANGELOG.md",
+      KEEP_CHANGELOG.replace(
+        "- an earlier docs change",
+        "- an earlier docs change\n\n### Added\n\n- a new section",
+      ),
+    );
+    const adds = (changelog: string) => {
+      write(root, "CHANGELOG.md", changelog);
+      return check(root).findings.join("\n");
+    };
+    expect(adds(KEEP_CHANGELOG)).toBe("");
+    // A nested item is an entry too.
+    expect(
+      adds(
+        KEEP_CHANGELOG.replace(
+          "- an earlier docs change",
+          "- an earlier docs change\n  - and more",
+        ),
+      ),
+    ).toContain("CHANGELOG.md: the branch adds to Unreleased");
+    // An entry moved to another section is an entry that section did not have.
+    expect(
+      adds(
+        KEEP_CHANGELOG.replace(
+          "### Changed\n\n- an earlier docs change",
+          "### Changed\n\n### Fixed\n\n- an earlier docs change",
+        ),
+      ),
+    ).toContain("CHANGELOG.md: the branch adds to Unreleased");
+    // Rewriting an entry keeps the count, so it is a correction the notice shows.
+    write(
+      root,
+      "CHANGELOG.md",
+      KEEP_CHANGELOG.replace("- an earlier docs change", "- something else"),
+    );
+    expect(check(root)).toMatchObject({ findings: [] });
+    expect(check(root).notices.join("\n")).toContain(
+      "  - - an earlier docs change",
+    );
+  });
+
+  test("any line added under Unreleased is refused, whatever Markdown makes of it", () => {
+    const root = branch();
+    const adds = (changelog: string) => {
+      write(root, "CHANGELOG.md", changelog);
+      return check(root).findings.join("\n");
+    };
+    const after = (text: string) =>
+      KEEP_CHANGELOG.replace(
+        "- an earlier docs change",
+        `- an earlier docs change\n${text}`,
+      );
+    for (const text of [
+      "1. a numbered change",
+      "\nA paragraph of its own.",
+      "  Additional explanation.",
+      "> a quoted change",
+      "| a | table |",
+      "<details>",
+      "***\nA new change.",
+      "\n    indented code\nA new change.",
+      "```\n- one\n```",
+    ])
+      expect(adds(after(text))).toContain(
+        "CHANGELOG.md: the branch adds to Unreleased",
+      );
+    // A blank line adds nothing, and neither does the way a heading is written.
+    expect(adds(after(""))).toBe("");
+    expect(
+      adds(KEEP_CHANGELOG.replace("### Changed", "  ### Changed ##")),
+    ).toBe("");
+  });
+
+  test("a line rewritten under Unreleased stays where it was, in the same structure and section", () => {
+    const base = KEEP_CHANGELOG.replace(
+      "### Changed\n\n- an earlier docs change",
+      "### Changed\n\n- an earlier docs change\n  with more to say\n- Old note - New note\n\n### Fixed\n\n- a fix",
+    );
+    const root = repository({ ...files(), "CHANGELOG.md": base });
+    git(root, "checkout", "-qb", "work");
+    const adds = (changelog: string) => {
+      write(root, "CHANGELOG.md", changelog);
+      return check(root).findings.join("\n");
+    };
+    const refused = "CHANGELOG.md: the branch adds to Unreleased";
+    // Every line kept, or rewritten in place, adds nothing.
+    expect(adds(base)).toBe("");
+    expect(adds(base.replace("- a fix", "- a fix, corrected"))).toBe("");
+    expect(
+      adds(base.replace("  with more to say", "  with more to say, corrected")),
+    ).toBe("");
+    // An entry moved into a heading that already exists keeps every count.
+    expect(
+      adds(
+        base
+          .replace("- Old note - New note\n", "")
+          .replace("- a fix", "- Old note - New note\n- a fix"),
+      ),
+    ).toContain(refused);
+    // Removing a continuation line does not make room for a new entry.
+    expect(
+      adds(
+        base
+          .replace("  with more to say\n", "")
+          .replace("- a fix", "- a fix\n- a new fix"),
+      ),
+    ).toContain(refused);
+    // Nor does turning it into one where it stood.
+    expect(
+      adds(base.replace("  with more to say", "- a new change")),
+    ).toContain(refused);
+    // Splitting one line into two is a line added, however few words change.
+    expect(
+      adds(base.replace("- Old note - New note", "- Old note\n- New note")),
+    ).toContain(refused);
+    expect(
+      adds(base.replace("- Old note - New note", "- Old note -\n  New note")),
+    ).toContain(refused);
+    // Removing a heading moves the entries under it into the one above.
+    expect(adds(base.replace("### Fixed\n\n", ""))).toContain(refused);
+    // Removing the heading with its entries is a removal.
+    expect(adds(base.replace("\n### Fixed\n\n- a fix\n", ""))).toBe("");
+    // A line opening a fence changes what every line after it is.
+    expect(adds(base.replace("  with more to say", "```"))).toContain(refused);
+  });
+
+  test("a line rewritten into the text of the one after it is still in its place", () => {
+    const base = KEEP_CHANGELOG.replace(
+      "- an earlier docs change",
+      "- an old change\n- an earlier docs change",
+    );
+    const root = repository({ ...files(), "CHANGELOG.md": base });
+    git(root, "checkout", "-qb", "work");
+    write(
+      root,
+      "CHANGELOG.md",
+      base.replace("- an old change", "- an earlier docs change"),
+    );
+    expect(check(root).findings).toEqual([]);
+  });
+
+  test("text repeated inside and outside a fence does not turn a removal into an addition", () => {
+    const base = KEEP_CHANGELOG.replace(
+      "- an earlier docs change",
+      "```\n- an earlier docs change\n```\n\n- an earlier docs change",
+    );
+    const root = repository({ ...files(), "CHANGELOG.md": base });
+    git(root, "checkout", "-qb", "work");
+    write(
+      root,
+      "CHANGELOG.md",
+      base.replace("```\n- an earlier docs change\n```\n\n", ""),
+    );
+    expect(check(root).findings).toEqual([]);
+  });
+
+  test("a long Unreleased is compared in one pass, not one step per pair of lines", () => {
+    const entries = Array.from({ length: 60_000 }, (_, n) => `- entry ${n}`);
+    const base = KEEP_CHANGELOG.replace(
+      "- an earlier docs change",
+      entries.join("\n"),
+    );
+    const root = repository({ ...files(), "CHANGELOG.md": base });
+    git(root, "checkout", "-qb", "work");
+    write(root, "CHANGELOG.md", base.replace("- entry 0\n", "- entry zero\n"));
+    expect(check(root).findings).toEqual([]);
+  });
+
+  test("a heading added again or moved to another depth is a section the base did not have", () => {
+    const root = branch();
+    const adds = (changelog: string) => {
+      write(root, "CHANGELOG.md", changelog);
+      return check(root).findings.join("\n");
+    };
+    expect(
+      adds(
+        KEEP_CHANGELOG.replace(
+          "- an earlier docs change",
+          "- an earlier docs change\n\n### Changed",
+        ),
+      ),
+    ).toContain("CHANGELOG.md: the branch adds to Unreleased");
+    expect(
+      adds(KEEP_CHANGELOG.replace("### Changed", "#### Changed")),
+    ).toContain("CHANGELOG.md: the branch adds to Unreleased");
+  });
+
+  test("removing one of two identical lines names it", () => {
+    const twice = KEEP_CHANGELOG.replace(
+      "- an earlier docs change",
+      "- an earlier docs change\n- an earlier docs change",
+    );
+    const root = repository({ ...files(), "CHANGELOG.md": twice });
+    git(root, "checkout", "-qb", "work");
+    write(root, "CHANGELOG.md", KEEP_CHANGELOG);
+    expect(check(root)).toMatchObject({
+      findings: [],
+      notices: [
+        "CHANGELOG.md: the branch corrects or removes entries under Unreleased; check that it changes only what was wrong. Lines it changes or removes:\n  - - an earlier docs change",
+      ],
+    });
+  });
+
+  test("lines swapped or rewritten in their places are all named, in order", () => {
+    const two = KEEP_CHANGELOG.replace("- an earlier docs change", "- A\n- B");
+    const root = repository({ ...files(), "CHANGELOG.md": two });
+    git(root, "checkout", "-qb", "work");
+    const notice = (changelog: string) => {
+      write(root, "CHANGELOG.md", changelog);
+      const { findings, notices } = check(root);
+      expect(findings).toEqual([]);
+      return notices;
+    };
+    const says = (removed: string[], added: string[]) => [
+      `CHANGELOG.md: the branch corrects or removes entries under Unreleased; check that it changes only what was wrong. Lines it changes or removes:\n${removed.map((l) => `  - ${l}`).join("\n")}\nLines it adds:\n${added.map((l) => `  - ${l}`).join("\n")}`,
+    ];
+    expect(notice(two.replace("- A\n- B", "- B\n- A"))).toEqual(
+      says(["- A", "- B"], ["- B", "- A"]),
+    );
+    expect(notice(two.replace("- A\n- B", "- B\n- C"))).toEqual(
+      says(["- A", "- B"], ["- B", "- C"]),
+    );
+  });
+
+  test("removing one of several alike entries names that entry alone", () => {
+    const three = KEEP_CHANGELOG.replace(
+      "- an earlier docs change",
+      "- A\n- B\n- C",
+    );
+    const root = repository({ ...files(), "CHANGELOG.md": three });
+    git(root, "checkout", "-qb", "work");
+    const notice = (changelog: string) => {
+      write(root, "CHANGELOG.md", changelog);
+      const { findings, notices } = check(root);
+      expect(findings).toEqual([]);
+      return notices;
+    };
+    const removes = (line: string) => [
+      `CHANGELOG.md: the branch corrects or removes entries under Unreleased; check that it changes only what was wrong. Lines it changes or removes:\n  - ${line}`,
+    ];
+    expect(notice(three.replace("- A\n", ""))).toEqual(removes("- A"));
+    expect(notice(three.replace("- B\n", ""))).toEqual(removes("- B"));
   });
 
   test("a version kept in YAML or TOML is held the same way", () => {

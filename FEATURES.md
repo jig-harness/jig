@@ -166,8 +166,9 @@ changes a merge decision, and the testing strategy sets tiers with budgets.
 
 ## Change notes, and a changelog nobody fights over
 
-Each pull request adds a [change note](GLOSSARY.md): a small file of its own,
-never an edit to the changelog or the version. After the merge, a release
+Each pull request whose change the people using the software would notice
+adds a [change note](GLOSSARY.md): a small file of its own, never an edit to
+the changelog or the version. After the merge, a release
 step writes the notes into the changelog, moves the version to the largest
 bump asked for and deletes the notes, and the release is tagged once its
 commit passes its checks. Two pull requests
@@ -182,10 +183,11 @@ walks through the GitHub App, the branch rules and the workflow. Jig's own
 releases are made this way.
 
 - **Skills:** [`changelog`](plugin/skills/changelog/README.md)
-- **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
-- **On the roadmap:** the rest of the `changelog` skill (roadmap item 4): a
-  check of the whole file against its format's own rules, and a module of its
-  own for releases and versions
+- **Practice:** [M12](modules/M12-parallel-agent-ergonomics/),
+  [M16](modules/M16-releases-versions/)
+- **On the roadmap:** a changelog and a version per released artifact in one
+  repository, and a check of the whole file against its format's own rules
+  (roadmap item 21)
 
 ## Workspaces for many agents on one machine
 

@@ -15,9 +15,11 @@ the notes into the changelog, moves the version and deletes the notes after
 the merge. This skill is the agent's side of that: when a change needs a note,
 how to write one a reader of the changelog can use, the commands that check
 a branch and show what the next release will be, and the guided setup that
-turns it on in a repository, CI included. The practice is Jig's
-[M12](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md);
-the human's page is [README.md](README.md).
+turns it on in a repository, CI included. The practices are Jig's
+[M12](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md)
+(no two pull requests edit the same lines) and
+[M16](https://github.com/docomply/jig/blob/main/modules/M16-releases-versions/README.md)
+(releases and versions); the human's page is [README.md](README.md).
 
 Jig maintains this procedure and ships it in the `jig` plugin. The repository
 supplies its values in the `changelog:` section of its `.config/jig.yaml`
@@ -55,17 +57,31 @@ ran as.
 ## Writing a note
 
 Write the note when you open the pull request, while the change is fresh, and
-keep it true as review changes the change. Never edit the changelog's
-Unreleased or release sections or any version file by hand: the release step
-writes them, and the branch check fails a branch that does.
+keep it true as review changes the change. Never add to the changelog's
+Unreleased or release sections or edit any version file by hand: the release
+step writes them, and the branch check fails a branch that does. Correcting
+an entry already there (a link your change broke, a wrong word) or removing
+one is allowed. Under Unreleased a correction rewrites a line where it stands,
+under the same heading and with the same indentation and list or quote marker,
+and adds none, so keep a longer correction on its line rather than rewrapping
+it; the check names the lines it changes, removes or adds for the reviewer. In
+a released section the reviewer reads the diff.
 
-1. **Decide whether the change needs a note.** It does when the repository's
-   `release_paths` or `note_paths` cover a file it changes (the branch check
-   says so), and whenever someone who reads the changelog would want to know:
-   a new capability, a changed behaviour, a fix to something a user hit, a
-   removal. Skip it for a change that only the people working on the repository
-   notice (a refactor, a test, a CI tweak) unless the check asks. A repository
-   with neither path configured never requires a note.
+1. **Decide whether the change needs a note.** The changelog is written for
+   the people who use what the repository releases, not for the people who
+   work on it. A change needs a note when the repository's `release_paths` or
+   `note_paths` cover a file it changes (the branch check says so), and
+   whenever someone who uses the released artifact would want to know: a new
+   capability, a changed behaviour or default, a fix to something a user hit,
+   a deprecation, a removal, a security fix. Skip it for a change that only
+   the people working on the repository notice (a refactor, a test, a CI or
+   build tweak, the repository's own scripts and agent instructions, internal
+   design documents, a project website) unless the check asks; when the check
+   asks for a change no user sees, write one `patch` item that says so
+   plainly. Where the repository writes down its own rule for what gets an
+   entry (in its contributing guide or its notes folder's `README.md`), that
+   rule decides. A repository with neither path configured never requires a
+   note.
 
 2. **Create one file in the notes folder** (`changelog.notes_dir`, `changes`
    by default), named after the branch: its name with every character other

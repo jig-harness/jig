@@ -39,6 +39,9 @@ profiles:
       M3:
         level: lite
         when: what a change implies is no longer obvious from its paths
+      M16:
+        level: lite
+        when: the repository releases versioned software for others to install, embed or consume
 
   regulated-strict:
     name: Regulated/Strict
@@ -64,5 +67,8 @@ profiles:
       M3:
         level: lite
         when: what a change implies is no longer obvious from its paths
+      M16:
+        level: standard
+        when: the repository releases versioned software for others to install, embed or consume
 
-order: [M1, M2, M0, M4, M5, M6, M7, M14, M15, M9, M13, M12, M10, M3, M8, M11]
+order: [M1, M2, M0, M4, M5, M6, M7, M14, M15, M9, M13, M12, M16, M10, M3, M8, M11]

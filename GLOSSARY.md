@@ -575,7 +575,8 @@ make, use the entry's term instead.
   "ours" and "theirs", swap meaning between a merge and a rebase, so
   Jig's conflict tooling names each side by this role instead.
 - **Changelog** — a file listing each release's notable changes, newest
-  first. Jig's follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
+  first, written for the people who use the *released artifact* it belongs
+  to. Jig's follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
   one heading per plugin version, and an **Unreleased** heading for changes
   that no release carries yet. Jig's is written from *change notes* by the
   release step, never by hand.
@@ -586,6 +587,18 @@ make, use the entry's term instead.
   parallel pull requests never conflict over either. Also called a changeset
   or a news fragment by the tools that use them
   ([changes/](changes/README.md), [M12](modules/M12-parallel-agent-ergonomics/README.md)).
+- **Released artifact** — a thing a repository publishes at a version for
+  others to install, embed or consume: a package, a command-line tool, a
+  plugin, a service's client library. Each has one changelog, written for
+  the people who use it, and its own version; a change that reaches none of
+  them gets no entry. A repository can release several, at their own
+  versions ([M16](modules/M16-releases-versions/README.md)).
+- **Semantic versioning (semver)** — a version scheme of three numbers,
+  `major.minor.patch`, whose change says what an upgrade does to the people
+  who use the software: a new major version may break something they rely
+  on, a new minor version adds capabilities compatibly, a new patch version
+  only fixes defects. Before 1.0.0 a minor version may break things
+  ([semver.org](https://semver.org)).
 - **Version source** — where a repository keeps its released version, for
   the `changelog` skill: in files (JSON, TOML, YAML or a plain `VERSION`
   file, each at a key) or only in its git tags. The release step moves it, and

@@ -3,8 +3,9 @@
 // version and the changelog's Unreleased and release sections. A branch that
 // changes a released path carries a note that asks for a release; one that
 // changes a note path carries a note. Edits to an earlier release's text (a
-// typo, a link) stay allowed: they are rare and touch lines no other branch
-// does.
+// typo, a link) stay allowed, and so do corrections and removals of entries
+// already under Unreleased, which the check names for the reviewer: they are
+// rare and touch lines no other branch does. Adding to Unreleased is refused.
 //
 // The check enforces the configuration the base holds, not the branch's own:
 // it reads the `changelog:` section of `.config/jig.yaml` at the base
@@ -47,6 +48,7 @@ import {
   resolve as resolveConfig,
 } from "./config.ts";
 import { releasedVersions, unreleasedSection } from "./formats.ts";
+import { fenced, heading } from "./markdown-blocks.ts";
 import { authorsIn, isBot, originLinks } from "./history.ts";
 import {
   checkReleasePullRequest,
@@ -158,10 +160,10 @@ function changelogFindings(options: CheckOptions, branch: Branch): string[] {
   const findings: string[] = [];
   if (
     options.format.hasUnreleased &&
-    unreleasedSection(before) !== unreleasedSection(after)
+    addsUnreleased(unreleasedSection(before), unreleasedSection(after))
   )
     findings.push(
-      `${options.changelog}: the branch edits Unreleased, which the release step writes; put the change in a note under ${options.notes}/ instead`,
+      `${options.changelog}: the branch adds to Unreleased, which the release step writes; put the change in a note under ${options.notes}/ instead`,
     );
   const versions = (text: string) =>
     releasedVersions(text, options.format).join(" ");
@@ -170,6 +172,147 @@ function changelogFindings(options: CheckOptions, branch: Branch): string[] {
       `${options.changelog}: the branch adds or removes a release section, which the release step writes; put the change in a note under ${options.notes}/ with \`release:\` instead`,
     );
   return findings;
+}
+
+/** A line's leading structure: indentation, quote markers and a list marker. */
+const lead = (line: string) =>
+  (/^[\s>]*(?:(?:[-*+]|\d+[.)])(?=\s|$))?/.exec(line)?.[0] ?? "").replace(
+    /\d+/,
+    "1",
+  );
+
+/** A non-blank line of an Unreleased section, with its place. */
+type Placed = { text: string; place: string };
+
+/**
+ * The place of each non-blank line of an Unreleased section, which a
+ * correction may not change: a heading's level and title, or a line's leading
+ * structure (indentation, quote markers, a list marker, a fence delimiter, or
+ * being inside a fence) with the heading it sits under.
+ */
+function places(section: string): Placed[] {
+  const lines: Placed[] = [];
+  let under = "";
+  for (const line of fenced(section)) {
+    if (line.line.trim() === "") continue;
+    const text = line.line;
+    const h = line.inFence ? null : heading(text);
+    if (h !== null) {
+      under = `${"#".repeat(h.level)} ${h.title.toLowerCase()}`;
+      lines.push({ text, place: under });
+    } else if (line.delimiter !== null)
+      lines.push({ text, place: `fence ${line.delimiter}\n${under}` });
+    else
+      lines.push({
+        text,
+        place: `${line.inFence ? "in fence" : `lead ${lead(text)}`}\n${under}`,
+      });
+  }
+  return lines;
+}
+
+/**
+ * For each non-blank line of the branch's Unreleased, the base line whose
+ * place it takes: the first one after the previous match with the same
+ * place. Null when a line finds none, which is a line the base did not have
+ * room for. One pass over each section.
+ */
+function matchPlaces(was: Placed[], now: Placed[]): number[] | null {
+  const matched: number[] = [];
+  let i = 0;
+  for (const line of now) {
+    while (i < was.length && was[i]?.place !== line.place) i++;
+    if (i === was.length) return null;
+    matched.push(i++);
+  }
+  return matched;
+}
+
+/**
+ * Whether the branch's Unreleased adds to what the base's holds, or the
+ * section itself appears or goes. Which lines form an entry is for a Markdown
+ * parser to say, and the check has none, so the rule is about places, never
+ * about text: read line by line, the branch's section must be the base's with
+ * lines removed, each line it keeps or rewrites in the place of one the base
+ * had, in order, with the same leading structure and under the same heading.
+ * So a line inserted anywhere, an entry moved to another heading, a
+ * continuation turned into a list item and a rewrap onto more lines are all
+ * refused, and removing a line under one heading cannot make room for one
+ * under another. A heading is rewritten only into the same level and title.
+ * What a line now says is the reviewer's to judge: the notice lists every line
+ * changed, removed or added. One pass over each section, so its cost grows
+ * with the section's length and no faster.
+ */
+function addsUnreleased(before: string | null, after: string | null): boolean {
+  if (before === after) return false;
+  if (before === null || after === null) return true;
+  return matchPlaces(places(before), places(after)) === null;
+}
+
+/**
+ * The lines a correction changes, read the way `addsUnreleased` reads it:
+ * each branch line takes the place of the base line it matched, so a base
+ * line is changed when the line in its place says something else, and
+ * removed when no line took its place. Order counts, so two lines swapped
+ * are both named. The caller leaves out the lines both sections end on first.
+ */
+function changedLines(
+  was: Placed[],
+  now: Placed[],
+  matched: number[],
+): { removed: string[]; added: string[] } {
+  const taken = new Map(matched.map((at, n) => [at, now[n]?.text]));
+  return {
+    removed: was
+      .filter((line, at) => taken.get(at) !== line.text)
+      .map((line) => line.text),
+    added: now
+      .filter((line, n) => was[matched[n] ?? -1]?.text !== line.text)
+      .map((line) => line.text),
+  };
+}
+
+/**
+ * Both sections without the lines they end on alike, same text in the same
+ * place, so deleting the first of several alike entries names that entry
+ * alone rather than every line after it shifted up a place. Lines they start
+ * on alike already match themselves. What is left still matches whenever the
+ * whole sections did.
+ */
+function withoutSharedTail(was: Placed[], now: Placed[]): [Placed[], Placed[]] {
+  let end = 0;
+  while (end < Math.min(was.length, now.length)) {
+    const [a, b] = [was[was.length - 1 - end], now[now.length - 1 - end]];
+    if (a?.text !== b?.text || a?.place !== b?.place) break;
+    end++;
+  }
+  return [was.slice(0, was.length - end), now.slice(0, now.length - end)];
+}
+
+/** Unreleased entries the branch corrected or removed, named for the reviewer. */
+function correctedUnreleased(options: CheckOptions, branch: Branch): string[] {
+  if (!options.format.hasUnreleased) return [];
+  const before = branch.atBase(options.changelog);
+  const after = branch.now(options.changelog);
+  if (before === null || after === null) return [];
+  const was = unreleasedSection(before);
+  const now = unreleasedSection(after);
+  if (was === null || now === null || was === now) return [];
+  const [wasLines, nowLines] = withoutSharedTail(places(was), places(now));
+  const matched = matchPlaces(wasLines, nowLines);
+  if (matched === null) return [];
+  const { removed, added } = changedLines(wasLines, nowLines, matched);
+  const listed = (heading: string, lines: string[]) =>
+    lines.length
+      ? [`${heading}\n${lines.map((line) => `  - ${line.trim()}`).join("\n")}`]
+      : [];
+  const lines = [
+    ...listed("Lines it changes or removes:", removed),
+    ...listed("Lines it adds:", added),
+  ];
+  return [
+    `${options.changelog}: the branch corrects or removes entries under Unreleased; check that it changes only what was wrong. ${lines.join("\n")}`,
+  ];
 }
 
 /** The notes the branch added or changed that still exist, read. */
@@ -357,7 +500,14 @@ export function checkNotes(options: CheckOptions): CheckResult {
     ...pathFindings(options, branch, notes),
     ...creditFindings(options, branch, notes),
   );
-  return { findings, notices: editedNotices(options, branch), skipped: null };
+  return {
+    findings,
+    notices: [
+      ...editedNotices(options, branch),
+      ...correctedUnreleased(options, branch),
+    ],
+    skipped: null,
+  };
 }
 
 /** What the branch check found, with whether the repository has the skill on at its base. */

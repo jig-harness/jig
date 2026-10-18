@@ -54,7 +54,6 @@ with the review.
 | Design | Plan items |
 |--------|---------------|
 | [Reflection stores](reflection.md) | Later: the Jira store |
-| [The `changelog` skill](changelog.md) | 4 |
 | [The audit experience](audit-experience.md) | 8 |
 | [The jig-harness.dev website](website.md) | 18 |
 

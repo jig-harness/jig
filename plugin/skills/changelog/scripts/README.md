@@ -154,9 +154,11 @@ and what is under it, never a longer name that starts the same (`plugin` holds
 change to it. In Common Changelog a `**Breaking:**` entry needs `release: major`
 (`minor` before 1.0.0), a note whose commits are all by bots needs `authors:`, and
 a summary is refused when a note waiting on the base has one. Correcting an
-earlier release's text stays allowed: it is rare and touches lines no other
-branch does; deleting the changelog is not. A note of an earlier branch that this
-one changes or deletes is printed as a `note:` for the reviewer.
+earlier release's text stays allowed, and so does correcting or removing an
+entry already under Unreleased: each is rare and touches lines no other branch
+does. Adding a section or an entry to Unreleased is refused, and so is deleting
+the changelog. A note of an earlier branch that this one changes or deletes, and
+a correction under Unreleased, are printed as a `note:` for the reviewer.
 
 The check holds the branch to the `changelog:` section **the base holds**
 (`git show <base>:.config/jig.yaml`), so a branch cannot unset `changelog.file`,

@@ -194,7 +194,7 @@ subjects:
 | `scraper` | feature 11, documents that say what is true now, 1:1 | a drawing board with an erasing knife and its shavings |
 | `wrenches` | feature 12, adopt one module at a time, 1:1 | three sizes of one wrench on a pegboard, a hand taking the middle one |
 | `footing` | not yet drawn: the home page's foot, 3:1, in place of `slab` | a wide cross-section of the ground under a building: a concrete slab on driven piles, service pipes and conduits running the width of the drawing beneath it, and a scaffolding lattice standing on the slab at the right, cut by the drawing's upper edge |
-| `numberer` | not yet placed: the `changelog` skill, once FEATURES.md has a section for it ([ROADMAP.md](../ROADMAP.md) item 4), 16:9 | an automatic numbering stamp on a stack of slips, one stamped slip on a booklet |
+| `numberer` | not yet placed: FEATURES.md's section on change notes and the `changelog` skill, 16:9 | an automatic numbering stamp on a stack of slips, one stamped slip on a booklet |
 
 #### The jig's model
 

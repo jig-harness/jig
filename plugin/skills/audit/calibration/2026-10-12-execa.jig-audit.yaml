@@ -942,4 +942,33 @@ criteria:
     # Each operation's declared failure responses name every status its code can produce: the boundary's generic server-side status, the validation status, the authentication and authorization refusals where those layers run, and the transport status of each domain error the handler throws; the review checks the list against the handler (expected-absent where the repository serves no interface).
     score: expected-absent
     evidence: "No operations with failure statuses: failures are thrown ExecaError instances and the subprocess's own exit code (docs/errors.md), not a served interface's responses"
+  # M16 releases-versions
+  M16/released-artifacts-and-entry-rule-written:   # lite, requires convention
+    # The repository names each artifact it releases, with its changelog and where its version lives, and writes down which changes get a changelog entry (those the artifact's consumers would notice) and how a change's version bump is judged (expected-absent where the repository releases no versioned artifact).
+    score: absent
+    evidence: "execa publishes one npm package (version 10.1.0 in package.json) but keeps no changelog file (the root holds none) and no written rule for what a release lists or how the bump is chosen; its notes are GitHub Releases written by the maintainer at release time, which no contributor document describes."
+  M16/each-release-tagged:   # lite, requires convention
+    # Each released version has a git tag naming it, so a consumer and a publishing job can find the exact code of every version (expected-absent where the repository releases no versioned artifact).
+    score: convention
+    evidence: "Each release has a v<version> tag (v10.0.0, v10.0.1, v10.1.0, the audited commit's) with a GitHub Release by the maintainer; tagging is a step of the maintainer's release by hand, and nothing checks that a version has its tag."
+  M16/version-set-after-merge-by-one-run:   # standard, requires mechanical
+    # A release step on the integration branch, one run at a time, sets each artifact's version after the merge from the bump its waiting changes ask for, and no pull request sets the version itself (expected-absent where the repository releases no versioned artifact).
+    score: absent
+    evidence: "The version in package.json is moved by hand at release time; the only workflow, .github/workflows/main.yml, runs the tests and sets no version."
+  M16/shipped-change-requires-release:   # standard, requires mechanical
+    # A check fails a pull request that changes what an artifact ships without a change record asking for a release, so no shipped change reaches the integration branch unversioned (expected-absent where the repository releases no versioned artifact).
+    score: absent
+    evidence: "No pull-request check asks a change to the shipped source to say which release it needs; there are no change records."
+  M16/changelog-and-version-per-artifact:   # standard, requires convention
+    # A repository that releases several artifacts at their own versions keeps a changelog and a version per artifact, and each change record names the artifacts it reaches (expected-absent where the repository releases one artifact, or none).
+    score: expected-absent
+    evidence: "execa releases one npm package, so one changelog and one version suffice."
+  M16/release-tag-after-verification:   # strict, requires mechanical
+    # Each version is tagged automatically on the commit that released it, and on no other, only once that commit's own required checks have passed, and publishing starts from the tag (expected-absent where the repository releases no versioned artifact).
+    score: absent
+    evidence: "No workflow tags or publishes (main.yml only tests): the tag and the npm publish are made by hand, not by a job that reads the releasing commit's checks first."
+  M16/release-identity-narrowed:   # strict, requires mechanical
+    # The identity that writes the release to the integration branch passes its rules only as far as the release needs (contents only, never workflows; its key held by an environment only the integration branch may use; force pushes and deletion still blocked for it), or the release arrives as a pull request a person merges (expected-absent where the repository releases no versioned artifact).
+    score: absent
+    evidence: "Releases are pushed and published by the maintainer by hand; no dedicated release identity and no release pull request exists."
 declined: []

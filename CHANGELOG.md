@@ -14,8 +14,10 @@ This file is written by the release step, not by hand. A pull request adds a
 `scripts/release.ts` writes every note here and deletes it. A note that asks
 for a release (every pull request that changes `plugin/` has one) becomes the
 next version's section, and the step moves both manifests to that version
-and tags it. Changes outside the plugin (modules, the auditor,
-documentation) are listed under **Unreleased**. Why it works this way:
+and tags it. Changes outside the plugin that a team using Jig would notice
+(modules, templates, the documents it reads to adopt Jig) are listed under
+**Unreleased**; Jig's website, CI and maintainer tooling are not listed
+([which changes get a note](changes/README.md#when-a-pull-request-needs-one)). Why it works this way:
 [ADR-0004](docs/adr/ADR-0004-change-notes-released-after-the-merge.md).
 
 Before 1.0.0, a minor version can change behaviour that consumers rely on; such
@@ -109,12 +111,6 @@ changes are marked **Breaking** and say what a consumer changes.
   review round, merge only once a round after Ready has settled with the
   required checks green, and a person merges. `.config/jig.yaml` declares
   `drive.reviews_drafts: true`, the fact the draft-first order rests on.
-- [design/changelog.md](design/changelog.md): the design of the opt-in
-  `changelog` skill (roadmap item 4), which turns M12's change-notes
-  reference into a plugin skill with its own configuration section, Keep a
-  Changelog and Common Changelog, version files beyond JSON, two ways for the
-  release to reach a protected branch, a guided setup, and the agent skills
-  writing and keeping the notes.
 - The factory on the site, redrawn and split into pages. Every actor is a
   chip that says what it is (`/` a skill, `@` the agent, `>` a tool, a
   silhouette for a person, a dashed chip for work not built yet) and opens

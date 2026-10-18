@@ -59,7 +59,8 @@ ci:
   hold_label: ci:hold
 changelog:
   # Jig keeps its changelog from change notes (changes/README.md): a pull
-  # request adds a note, and the release step writes it after the merge.
+  # request a team using Jig would notice adds a note, and the release step
+  # writes it after the merge.
   file: CHANGELOG.md
   format: keep-a-changelog
   # The plugin is the released artifact: both manifests carry its version.

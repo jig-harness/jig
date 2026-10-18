@@ -44,6 +44,7 @@ criteria:
     observe:
       - "a doc tells contributors to add a per-change note file (changes/, .changeset/, changelog.d/, newsfragments/ or similar) instead of editing the changelog"
       - "expected-absent: the repository keeps no changelog or version that changes with each pull request"
+      - "Jig's changelog skill meets it where `.config/jig.yaml` sets `changelog.file` and a contributor doc points at its notes folder; `/jig:changelog setup` is the remedy where a changelog is edited by every pull request"
     since: 0.31.0
 
   - id: port-allocation-scripted

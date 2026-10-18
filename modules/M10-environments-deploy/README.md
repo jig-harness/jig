@@ -280,7 +280,11 @@ in, because it describes the code, not the environment.
   requires every change to arrive through a pull request blocks the writer,
   even when it requires zero approvals. Protect such a ref by restricting *who may push*
   to the one writer identity, and require no pull request on it; where a
-  pull-request rule must stay, give the writer an explicit bypass.
+  pull-request rule must stay, give the writer an explicit bypass. A
+  release step that commits a new version to the integration branch uses
+  the same exception, narrowed further; that branch is then not a release
+  pointer, and [M16](../M16-releases-versions/README.md#core-pieces) says
+  how the two stay apart.
 
 ## Environment hygiene
 
@@ -408,10 +412,13 @@ the currency step's matrix.
 
 Deploy-shaped criteria are **expected-absent for a library-shaped repo**: a
 published package has no environments, no `verified`-to-production path, and no
-preview environments to spin up — its "deploy" is a release/publish gated
-elsewhere. Such a repo can satisfy this module at Lite (document that it does not
-deploy) without the Standard/Strict deploy machinery counting against it; the
-[audit](../../plugin/skills/audit/README.md) calibrates by repo shape.
+preview environments to spin up. Its path to its users is a release in
+versions, which [M16](../M16-releases-versions/README.md) covers: a changelog
+per released artifact, the version chosen after the merge, a tag only on
+verified code. Such a repo can satisfy this module at Lite (document that it
+does not deploy) without the Standard/Strict deploy machinery counting against
+it; the [audit](../../plugin/skills/audit/README.md) calibrates by repo shape.
+A repository that both deploys and publishes follows both modules.
 
 ## Adoption steps
 

@@ -11,6 +11,28 @@ edit the same lines, so merging one does not put the others in conflict.
 Why: [ADR-0004](../docs/adr/ADR-0004-change-notes-released-after-the-merge.md);
 the practice is [M12](../modules/M12-parallel-agent-ergonomics/README.md)'s.
 
+## When a pull request needs one
+
+CHANGELOG.md is read by the teams that use Jig: the people who install the
+`jig` plugin, and the people who adopt its modules, templates and reference
+gates in their own repositories. A pull request adds a note when one of them
+would notice what it changed, and only then
+([M16](../modules/M16-releases-versions/README.md)):
+
+- **A note:** anything under `plugin/` (the gates require one, with
+  `release`, since machines receive the plugin only as a new version); a
+  module's practice, criteria, templates or reference gates; the profiles,
+  principles, adoption guides, GLOSSARY.md, CONFIGURATION.md and the other
+  documents a team reads to adopt Jig, when what they say changes.
+- **No note:** the website (jig-harness.dev is deployed, not released); CI
+  workflows and their cost; Jig's own scripts, tests and agent skills
+  (`scripts/`, `tools/`, `.claude/`); the documents only its maintainers read
+  (AGENTS.md, CONTRIBUTING.md, `design/`, the plan, the roadmap, ADRs about
+  how Jig itself is built); a wording fix that changes nothing a reader does.
+
+A pull request that changes only what needs no note simply has none: the
+gates ask for a note only where `plugin/` changes.
+
 ## Writing one
 
 ```markdown
@@ -61,8 +83,9 @@ One or two sentences that sum up the release, when it needs them.
 
 `bun run gates` reads every note the way the release step will, and fails
 a branch that edits the changelog's Unreleased or release sections or moves
-the version itself. Correcting an earlier release's text stays a direct
-edit to CHANGELOG.md.
+the version itself. Correcting an earlier release's text, or correcting or
+removing an entry already under Unreleased, stays a direct edit to
+CHANGELOG.md; adding one does not.
 
 To see what the release step will write without writing it:
 

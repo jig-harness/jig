@@ -1063,6 +1063,35 @@ criteria:
     # Each operation's declared failure responses name every status its code can produce: the boundary's generic server-side status, the validation status, the authentication and authorization refusals where those layers run, and the transport status of each domain error the handler throws; the review checks the list against the handler (expected-absent where the repository serves no interface).
     score: expected-absent
     evidence: "No operations with failure responses: Jig's one failure surface is the exit code of its scripts (0, 1, 2 through lib/cli.ts), which is not a served interface"
+  # M16 releases-versions
+  M16/released-artifacts-and-entry-rule-written:   # lite, requires convention
+    # The repository names each artifact it releases, with its changelog and where its version lives, and writes down which changes get a changelog entry (those the artifact's consumers would notice) and how a change's version bump is judged (expected-absent where the repository releases no versioned artifact).
+    score: convention
+    evidence: "CHANGELOG.md's opening names the jig plugin as the released artifact, its version in both plugin manifests, its v<version> tag and semantic versioning, with a breaking change marked and what a consumer changes; AGENTS.md has every pull request record its user-visible change, under the new version when it changes plugin/ and under Unreleased otherwise. The rule does not say who the user is, so Unreleased also records Jig's own tooling and design documents."
+  M16/each-release-tagged:   # lite, requires convention
+    # Each released version has a git tag naming it, so a consumer and a publishing job can find the exact code of every version (expected-absent where the repository releases no versioned artifact).
+    score: convention
+    evidence: "Every version with a section in CHANGELOG.md, from v0.1.0-review-pilot to v0.16.1, has its v<version> tag; plugin/AGENTS.md has each release's merge commit tagged by hand, and no job places or checks the tags."
+  M16/version-set-after-merge-by-one-run:   # standard, requires mechanical
+    # A release step on the integration branch, one run at a time, sets each artifact's version after the merge from the bump its waiting changes ask for, and no pull request sets the version itself (expected-absent where the repository releases no versioned artifact).
+    score: absent
+    evidence: "The pull request sets the version itself: plugin/AGENTS.md has each change to plugin/ bump both manifests and add that version's section, so there is no release step after the merge."
+  M16/shipped-change-requires-release:   # standard, requires mechanical
+    # A check fails a pull request that changes what an artifact ships without a change record asking for a release, so no shipped change reaches the integration branch unversioned (expected-absent where the repository releases no versioned artifact).
+    score: convention
+    evidence: "plugin/AGENTS.md has every pull request that changes plugin/ bump the version; scripts/check-changelog.ts in bun run gates fails only when the current version has no CHANGELOG.md section, so a change to plugin/ without a bump passes."
+  M16/changelog-and-version-per-artifact:   # standard, requires convention
+    # A repository that releases several artifacts at their own versions keeps a changelog and a version per artifact, and each change record names the artifacts it reaches (expected-absent where the repository releases one artifact, or none).
+    score: expected-absent
+    evidence: "Jig releases one artifact, the jig plugin; its two manifests (Claude Code's and Codex's) always carry one version, so they are one artifact with one changelog."
+  M16/release-tag-after-verification:   # strict, requires mechanical
+    # Each version is tagged automatically on the commit that released it, and on no other, only once that commit's own required checks have passed, and publishing starts from the tag (expected-absent where the repository releases no versioned artifact).
+    score: absent
+    evidence: "Tags are placed by hand on the merge commit, with no job reading its checks first, and nothing publishes from a tag: machines install the plugin from main through .claude-plugin/marketplace.json (source ./plugin)."
+  M16/release-identity-narrowed:   # strict, requires mechanical
+    # The identity that writes the release to the integration branch passes its rules only as far as the release needs (contents only, never workflows; its key held by an environment only the integration branch may use; force pushes and deletion still blocked for it), or the release arrives as a pull request a person merges (expected-absent where the repository releases no versioned artifact).
+    score: mechanical
+    evidence: "No automation writes a release to main: the version moves in the pull request that changes plugin/, and a person merges it under main's branch protection, which requires the gates check (.github/workflows/gates.yml)."
 declined:
   - refs: ["M9/taxonomy-documented", "M9/memory-location-designated"]
     reason: "Deferred."

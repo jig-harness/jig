@@ -108,13 +108,13 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    notes into the changelog, moves the version to the largest bump asked for,
    and deletes the notes; a branch check fails a note the step could not read
    and a direct edit to what the step writes. Pull requests then touch
-   disjoint files, and no two claim the same version. The plugin ships the
-   [`changelog` skill](../../plugin/skills/changelog/README.md) (`release.ts`,
-   `check.ts`, `status.ts` + self-tests, and a GitHub Action with a workflow
-   template that runs them in CI) for a
-   [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) or
-   [Common Changelog](https://common-changelog.org/) file; the tools
-   that do the same per ecosystem are in [mappings.md](mappings.md).
+   disjoint files, and no two claim the same version. What goes in a
+   changelog, how the version is chosen and how a release is tagged and
+   pushed is release practice, [M16](../M16-releases-versions/README.md)'s;
+   this piece is only that no two pull requests edit the same lines for it.
+   The plugin's [`changelog` skill](../../plugin/skills/changelog/README.md)
+   is the runnable form of both; the tools that do the same per ecosystem
+   are in [M16's mappings](../M16-releases-versions/mappings.md).
 7. **Per-worktree data namespaces** — several worktrees share one database
    server, so each derives its own namespace (a schema, a database, a key
    prefix) from its identity, the way it derives its port: the same worktree
@@ -246,7 +246,7 @@ governs how those files layer), so every agent inherits the rules.
    it drops (commands per database in [mappings.md](mappings.md#per-worktree-data-namespaces)).
 7. Where the repository keeps a changelog or a version that every pull request
    touches, move it to change notes: pick the tool for your ecosystem from
-   [mappings.md](mappings.md) or use the plugin’s
+   [M16's mappings](../M16-releases-versions/mappings.md) or use the plugin’s
    [`changelog` skill](../../plugin/skills/changelog/README.md) (`/jig:changelog
    setup` walks through it), run the release step
    on the integration branch after each merge, and the branch check on every
@@ -274,11 +274,11 @@ governs how those files layer), so every agent inherits the rules.
 | [`templates/worktree-hooks.md`](templates/worktree-hooks.md) | Create-hook (allocate and print the port slot) and remove-hook (nudge reflection) skeletons |
 | [`reference/port-allocator/`](reference/port-allocator/) | The deterministic per-worktree port allocator |
 | [`reference/resource-lock/`](reference/resource-lock/) | The cross-worktree mutex for heavy runs, with its CI bypass (shared with [M1](../M1-gates-enforcement-ladder/)) |
-| [`changelog` skill](../../plugin/skills/changelog/README.md) | The release step that writes change notes into a Keep a Changelog or Common Changelog file and moves the version, the branch check that holds pull requests to it, and the status report |
+| [`changelog` skill](../../plugin/skills/changelog/README.md) | The change note's procedure, the branch check that holds pull requests to it, and the release step that writes the notes in after the merge ([M16](../M16-releases-versions/README.md)'s runnable form too) |
 | [`reference/worktree-namespace/`](reference/worktree-namespace/) | The per-worktree data namespace: the name derived from a worktree's identity, and the reaper's decision (which of one owner's namespaces are expired or orphaned, which were created unlabelled, with production refused) |
 | [`reference/quiet-run/`](reference/quiet-run/) | The quiet-run wrapper: a verdict line and the tail on green, everything on red, the command's own exit status; with its self-test |
 | [`drive-pr`'s drive mailbox](../../plugin/skills/drive-pr/SKILL.md#the-drive-mailbox) | The control channel into an unattended review loop: notes, and the `hold-push`, `pause` and `stop` directives with their checkpoints |
-| [`mappings.md`](mappings.md) | Worktree managers and agent runners, package managers, CI providers, change-note tools, per-database namespace commands, test-runner quiet flags and the command-rewriting hook per agent runtime, control channels |
+| [`mappings.md`](mappings.md) | Worktree managers and agent runners, package managers, CI providers, change notes and the union merge driver, per-database namespace commands, test-runner quiet flags and the command-rewriting hook per agent runtime, control channels |
 | [maturity criteria](../../plugin/skills/audit/criteria/M12-parallel-agent-ergonomics.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
 Each reference utility is a Bun script with a self-test. The port allocator
@@ -292,10 +292,9 @@ the Jig repository's `lib/`, so run them from a pinned Jig checkout or vendor
 - **Local values.** Port ranges, lock names, hook-manager wiring, the notes
   directory and the version files are each repository's own; the scripts
   take them as arguments or ship with neutral defaults.
-- **Who may push the release.** Where the integration branch is protected,
-  the release step's commit needs an identity allowed past that protection,
-  or a release pull request that a person merges; which one is the
-  repository's decision, and its CI provider's settings hold it.
+- **The release itself.** Which changes get an entry, how the version is
+  chosen, how a release is tagged and who may push it are
+  [M16](../M16-releases-versions/README.md)'s.
 - **Repositories without parallel agents.** The worktree practices
   (branches and footguns, ports, the heavy-run mutex, worktree hooks and
   namespaces, the teardown nudge) are **expected-absent** for a repository

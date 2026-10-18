@@ -22,17 +22,6 @@ several hostile points of view in a fresh session; plan review inside
 documentation checks; and `upgrade-deps`, which makes grouped dependency
 upgrades an update bot cannot make alone and drives them to merge.
 
-### 4. `changelog` skill
-
-For a repository that keeps a changelog, the skill already runs the
-release step from configuration, in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
-or [Common Changelog](https://common-changelog.org/) format, and the agent
-skills write and keep each pull request's change note; a GitHub Action, a
-workflow template and a guided setup run it in CI. Still to come: it checks
-the whole file against the rules of its format. A new module, M16, states the
-practice for software that is released in versions, as
-[M10](modules/M10-environments-deploy/README.md) does for a deployed service.
-
 ### 5. A shared runtime kernel and diagnostics
 
 The skills' scripts each solve the same problems by hand: retrying, clean-up
@@ -113,6 +102,16 @@ pytest, Gradle, Maven), is checked against a recorded set of public
 repositories in several languages, and gives
 [`jig:audit`](plugin/skills/audit/README.md) measured evidence: the test to
 code ratio, the generated share and the size of the agent scaffolding.
+
+### 21. `changelog` skill: several artifacts, and the whole file checked
+
+A repository that releases several things at their own versions, such as a
+monorepo's packages, keeps a changelog and a version for each with the
+[`changelog` skill](plugin/skills/changelog/README.md), as
+[M16](modules/M16-releases-versions/README.md) asks; today the skill keeps
+one per repository. The skill also checks the whole changelog against the
+rules of its format, and gets workflow templates for CI providers other than
+GitHub.
 
 ## Later
 

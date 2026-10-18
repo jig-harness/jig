@@ -107,9 +107,10 @@ Read in this order when starting a session here:
 How to apply each is in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 - **One cohesive pull request per piece of work**, against `main`, with
-  Conventional Commits and a [change note](changes/README.md), never an
-  edit to CHANGELOG.md's open sections or the plugin version: the release
-  step writes those after the merge. Never split related work into small
+  Conventional Commits and, when a team using Jig would notice the change
+  (always for `plugin/`), a [change note](changes/README.md), never an
+  addition to CHANGELOG.md's open sections or a move of the plugin version:
+  the release step writes those after the merge. Never split related work into small
   pull requests that touch the same files.
 - **Run `bun run gates` before pushing**, and fix what fails rather than
   suppressing it. Never add a `Ratchet-Loosen` trailer unless a person asked

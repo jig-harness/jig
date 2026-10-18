@@ -154,41 +154,19 @@ closes that window
 
 The invariant: no pull request edits a file every pull request edits. Each
 change adds a note of its own, and one run at a time on the integration branch
-writes the notes into the changelog and moves the version. The tools below do
-that; they differ in where the notes live, how the release is chosen, and
-which changelog format they write.
+writes the notes into the changelog and moves the version. The tools that do
+it (the plugin's [`changelog` skill](../../plugin/skills/changelog/README.md),
+Changesets, towncrier, scriv, changie), the ones that generate the changelog
+from commits instead, and how the release reaches a protected branch are in
+[M16's mappings](../M16-releases-versions/mappings.md), with the rest of the
+release practice.
 
-| Tool | Ecosystem | Notes | Release step | Changelog it writes |
-|------|-----------|-------|--------------|---------------------|
-| [`changelog` skill](../../plugin/skills/changelog/README.md) | any (Bun script) | `changes/*.md`, front matter `release: patch\|minor\|major`, the format's sections | `release.ts` after each merge, from the skill's GitHub Action; its workflow template pushes the commit (or opens a release pull request) and tags each version once its releasing commit's required checks pass | Keep a Changelog (Unreleased for notes that ask for no release) or Common Changelog; versions in JSON, TOML or YAML files, a `VERSION` file or tags |
-| [Changesets](https://github.com/changesets/changesets) | JavaScript / TypeScript packages | `.changeset/*.md`, front matter naming each package and its bump | `changeset version`; its GitHub Action keeps a "Version Packages" pull request open that a person merges | its own format, grouped by bump (Major / Minor / Patch Changes), per package; versions in `package.json` only |
-| [towncrier](https://towncrier.readthedocs.io/) | Python, any | `newsfragments/<id>.<type>` files | `towncrier build --version <v>`; the version is given, not computed; `towncrier check` fails a branch without a fragment | configurable template and types |
-| [scriv](https://scriv.readthedocs.io/) | Python, any | `changelog.d/*.md` or `.rst` | `scriv collect --version <v>` | Keep a Changelog's types by default |
-| [changie](https://changie.dev/) | any (Go binary) | `.changes/unreleased/*.yaml`, one kind each | `changie batch <version\|auto>` then `changie merge`; `auto` derives the bump from the kinds | configurable; Keep a Changelog's kinds by default |
-
-Choose by the version you release: Changesets fits a repository whose
-released artifacts are npm packages; a repository whose version lives
-elsewhere (a plugin manifest, a `pyproject.toml`, a Go tag) or that wants
-Keep a Changelog's Unreleased for changes outside any release fits the
-reference or changie better.
-
-Two neighbouring approaches remove the conflicts without notes, at a cost:
-
-- **Generate the changelog from commits** (release-please,
-  semantic-release, GitLab's changelog API from `Changelog:` commit
-  trailers). Nothing per pull request to conflict on, but each entry is a
-  commit subject, written for a reviewer rather than a reader.
-- **A union merge driver** (`CHANGELOG.md merge=union` in `.gitattributes`)
-  lets git keep both sides of a local merge, but places lines without
-  knowing the changelog's sections, does nothing for the version, and
-  GitHub's mergeability check does not use it: the pull request still shows
-  as conflicting.
-
-Whatever the tool, the release step pushes to the integration branch. Where
-that branch is protected, give the step an identity allowed past the
-protection (a GitHub App or a token stored as a secret, with contents write
-on that repository only), or have it open a release pull request a person
-merges.
+One neighbouring approach removes the conflicts without notes, and is not
+enough: **a union merge driver** (`CHANGELOG.md merge=union` in
+`.gitattributes`) lets git keep both sides of a local merge, but places lines
+without knowing the changelog's sections, does nothing for the version, and
+GitHub's mergeability check does not use it: the pull request still shows as
+conflicting.
 
 ## Agent-facing gate output
 

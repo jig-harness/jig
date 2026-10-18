@@ -2,9 +2,9 @@
 title: "ADR-0004: A pull request adds a change note; the release is written after the merge"
 type: adr
 status: amended
-description: "Pull requests never edit CHANGELOG.md's open sections or the plugin version; a release step on main writes their change notes and moves the version, and the release commit is tagged once its gates pass"
+description: "Pull requests never add to CHANGELOG.md's open sections or move the plugin version; a release step on main writes their change notes and moves the version, and the release commit is tagged once its gates pass"
 lifecycle: permanent
-version: "1.3"
+version: "1.4"
 last_updated: 2026-10-18
 owner: maintainers
 decision_date: 2026-10-15
@@ -160,3 +160,21 @@ gates, which pushing the tag with the commit could not promise, since the
 commit had passed nothing yet. `scripts/release.ts` stays the local way to
 run the step (`--dry-run`). The mechanism is the skill's
 ([plugin/skills/changelog/README.md § How the release reaches the branch](../../plugin/skills/changelog/README.md#how-the-release-reaches-the-branch)).
+
+### 2026-10-18 — A note only for what a team using Jig notices; corrections to Unreleased (v1.4)
+
+Touches the Decision's "A pull request records its change as a change note"
+and "It never edits the changelog's Unreleased or release sections", and the
+alternative's "It remains the mapping for JavaScript repositories in M12".
+CHANGELOG.md is written for the teams that use Jig, so a pull request adds a
+note only when one of them would notice its change: always for a change to
+`plugin/`, which reaches machines only as a new version, and never for the
+website, CI, Jig's own tooling or the documents only its maintainers read
+([changes/README.md § When a pull request needs one](../../changes/README.md#when-a-pull-request-needs-one)).
+A pull request still never adds to Unreleased or a release section, but it
+may correct or remove an entry already under Unreleased, as it may an
+earlier release's text; the branch check names the edit for the reviewer.
+The release practice these rest on is
+[M16](../../modules/M16-releases-versions/README.md)'s, and the tools that
+map it per ecosystem, Changesets among them, are in
+[M16's mappings](../../modules/M16-releases-versions/mappings.md).
