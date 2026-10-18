@@ -20,9 +20,11 @@
 //
 // Usage: bun release.ts [--root <dir>] [--date YYYY-MM-DD] [--dry-run] [--json]
 // Prints what it released (with --json, `{ plugin, configured, version,
-// previous, notes, waiting, stamped }`, where `version` is null when no note
-// asked for a release, `notes` are the notes written in and `waiting` those
-// left for a release).
+// previous, notes, waiting, stamped, changelog, release }`, where `version` is
+// null when no note asked for a release, `notes` are the notes written in,
+// `waiting` those left for a release, `changelog` the changelog's path and
+// `release` the configured `{ push, branch }` the release reaches the
+// integration branch by; the last two are null when the skill is off).
 // Exit: 0 written, or nothing to write; 1 a note is malformed or a step failed
 // (version files that disagree, `after_version`, no origin for the links of a
 // Common Changelog release); 2 a usage error, an invalid configuration or an
@@ -112,20 +114,25 @@ function waitingNotes(options: ReleaseOptions): ChangeNote[] {
   return notes;
 }
 
+/** Whether `date` is a real calendar day written YYYY-MM-DD. */
+export function isCalendarDay(date: string): boolean {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? new Date(`${date}T00:00:00Z`)
+    : null;
+  return (
+    !!day &&
+    !Number.isNaN(day.getTime()) &&
+    day.toISOString().slice(0, 10) === date
+  );
+}
+
 /**
  * The release date: `date` when it is a real calendar day written
  * YYYY-MM-DD, today in UTC when none is given. Throws otherwise.
  */
 function releaseDate(date: string | undefined): string {
   if (date === undefined) return new Date().toISOString().slice(0, 10);
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(date)
-    ? new Date(`${date}T00:00:00Z`)
-    : null;
-  if (
-    !day ||
-    Number.isNaN(day.getTime()) ||
-    day.toISOString().slice(0, 10) !== date
-  )
+  if (!isCalendarDay(date))
     throw new ChangelogError(
       `the release date must be a calendar day written YYYY-MM-DD, not ${JSON.stringify(date)}`,
     );
@@ -168,38 +175,58 @@ function changelogWith(
   });
 }
 
+/** What a release writes, computed and checked before the first file is. */
+interface Plan {
+  result: ReleaseResult;
+  /** Each file's path with the text the release gives it. */
+  writes: Map<string, string>;
+  /** The notes written in, which the release deletes. */
+  written: ChangeNote[];
+  /** The command to run once the files are written; null for none. */
+  afterVersion: string | null;
+}
+
 /**
- * Write the notes in and delete them; throws on a malformed note. Every file
- * is computed and checked before the first is written, so a refusal leaves
- * the repository as it was.
+ * The notes a release writes in. A note without a release is written under
+ * Unreleased at once, or waits for the release that carries it.
  */
-export async function release(options: ReleaseOptions): Promise<ReleaseResult> {
+const writtenNotes = (
+  options: ReleaseOptions,
+  notes: ChangeNote[],
+): ChangeNote[] =>
+  options.unreleased === "write" || notes.some((n) => n.release !== null)
+    ? notes
+    : [];
+
+/** The release `options` asks for, computed; throws on a malformed note. */
+function plan(options: ReleaseOptions, withAfterVersion: boolean): Plan {
   releaseDate(options.date);
   const notes = waitingNotes(options);
   const previous = currentVersionOf(options);
   const changelogPath = join(options.root, options.changelog);
   const before = readFileSync(changelogPath, "utf8");
-  // A note without a release is written under Unreleased at once, or waits
-  // for the release that carries it.
-  const written =
-    options.unreleased === "write" || notes.some((n) => n.release !== null)
-      ? notes
-      : [];
+  const written = writtenNotes(options, notes);
   const waiting = notes.filter((n) => !written.includes(n)).map((n) => n.file);
   if (!written.length)
     return {
-      version: null,
-      previous,
-      notes: [],
-      waiting,
-      stamped: [],
-      changelog: before,
+      result: {
+        version: null,
+        previous,
+        notes: [],
+        waiting,
+        stamped: [],
+        changelog: before,
+      },
+      writes: new Map(),
+      written: [],
+      afterVersion: null,
     };
   const version = nextVersion(
     previous,
     written.flatMap((n) => (n.release ? [n.release] : [])),
   );
-  const afterVersion = version ? options.config.afterVersion : null;
+  const afterVersion =
+    version && withAfterVersion ? options.config.afterVersion : null;
   if (afterVersion && !options.dryRun) requireAfterVersionAllowed(options.env);
   const changelog = changelogWith(options, before, written, version, previous);
   const computed = new Map<string, string>([
@@ -211,27 +238,65 @@ export async function release(options: ReleaseOptions): Promise<ReleaseResult> {
   const stamped = version
     ? stamp(options.root, options.config.placeholders, version, computed)
     : new Map<string, string>();
-  const writes = new Map<string, string>([
-    ...computed,
-    ...[...stamped].map(
-      ([file, text]) => [join(options.root, file), text] as [string, string],
-    ),
-  ]);
-  if (!options.dryRun) {
-    for (const [path, text] of writes) writeFileSync(path, text);
-    if (afterVersion)
-      await runAfterVersion(options.root, afterVersion, options.env);
-    // The notes go last: a failed command leaves them for the next run.
-    for (const note of written) rmSync(join(options.root, note.file));
-  }
   return {
-    version,
-    previous,
-    notes: written.map((n) => n.file),
-    waiting,
-    stamped: [...stamped.keys()],
-    changelog,
+    result: {
+      version,
+      previous,
+      notes: written.map((n) => n.file),
+      waiting,
+      stamped: [...stamped.keys()],
+      changelog,
+    },
+    writes: new Map<string, string>([
+      ...computed,
+      ...[...stamped].map(
+        ([file, text]) => [join(options.root, file), text] as [string, string],
+      ),
+    ]),
+    written,
+    afterVersion,
   };
+}
+
+/** Write a plan's files, unless the run is a dry one. */
+function writeFiles(options: ReleaseOptions, { writes }: Plan): void {
+  if (options.dryRun) return;
+  for (const [path, text] of writes) writeFileSync(path, text);
+}
+
+/** Delete the notes a plan wrote in, unless the run is a dry one. */
+function deleteNotes(options: ReleaseOptions, { written }: Plan): void {
+  if (options.dryRun) return;
+  for (const note of written) rmSync(join(options.root, note.file));
+}
+
+/**
+ * Write the notes in and delete them; throws on a malformed note. Every file
+ * is computed and checked before the first is written, so a refusal leaves
+ * the repository as it was.
+ */
+export async function release(options: ReleaseOptions): Promise<ReleaseResult> {
+  const planned = plan(options, true);
+  writeFiles(options, planned);
+  if (planned.afterVersion && !options.dryRun)
+    await runAfterVersion(options.root, planned.afterVersion, options.env);
+  // The notes go last: a failed command leaves them for the next run.
+  deleteNotes(options, planned);
+  return planned.result;
+}
+
+/**
+ * The release step's own writes, without `after_version`: what the branch
+ * check reproduces a release pull request with. It neither runs the command
+ * nor asks whether it may, so it runs in any job.
+ */
+export function releaseWithoutAfterVersion(
+  options: ReleaseOptions,
+): ReleaseResult {
+  const planned = plan(options, false);
+  writeFiles(options, planned);
+  deleteNotes(options, planned);
+  return planned.result;
 }
 
 /**
@@ -475,6 +540,8 @@ export async function runReleaseCommand(command: {
           notes: [],
           waiting: [],
           stamped: [],
+          changelog: null,
+          release: null,
         }),
       );
     else
@@ -530,6 +597,8 @@ export async function runRelease(
         notes,
         waiting,
         stamped,
+        changelog: options.changelog,
+        release: options.config.release,
       }),
     );
   else console.log(`${banner("release")}\n${summary(options, result)}`);

@@ -2,10 +2,10 @@
 title: "ADR-0004: A pull request adds a change note; the release is written after the merge"
 type: adr
 status: amended
-description: "Pull requests never edit CHANGELOG.md's open sections or the plugin version; a release step on main writes their change notes, moves the version and tags it"
+description: "Pull requests never edit CHANGELOG.md's open sections or the plugin version; a release step on main writes their change notes and moves the version, and the release commit is tagged once its gates pass"
 lifecycle: permanent
-version: "1.2"
-last_updated: 2026-10-17
+version: "1.3"
+last_updated: 2026-10-18
 owner: maintainers
 decision_date: 2026-10-15
 supersedes: ~
@@ -140,3 +140,23 @@ for a release, a run writes the notes that do as one version, one commit and
 one tag, pushed together atomically; notes that ask for none go under
 Unreleased. [ADR-0002](ADR-0002-the-plugin-is-its-directory.md)'s third
 amendment gives the reason.
+
+### 2026-10-18 — The tag follows the release commit's gates; the workflow runs the skill's action (v1.3)
+
+Touches the Decision's "`.github/workflows/release.yml` runs
+`scripts/release.ts`" and "commits, tags `v<version>` and pushes", and the
+first amendment's "one commit and one tag" pushed together. The workflow runs
+the `changelog` skill's release step through the skill's action from this
+checkout (`./plugin/skills/changelog`), in a job that holds no key; a second
+job, which alone reads the `release` environment and runs nothing from the
+repository, pushes the release commit. The tag no longer travels with that
+push: the workflow's `tag-plan` job finds each released version without its
+tag, and `tag-push` tags the version's releasing commit (the first commit on
+main's first-parent line whose changelog has its heading) once `gates`, the
+check main's ruleset requires, has passed on that commit. A cancelled gates
+run is re-run once; a releasing commit whose gates failed is left untagged
+and reported. A tag on main therefore always names a commit that passed its
+gates, which pushing the tag with the commit could not promise, since the
+commit had passed nothing yet. `scripts/release.ts` stays the local way to
+run the step (`--dry-run`). The mechanism is the skill's
+([plugin/skills/changelog/README.md § How the release reaches the branch](../../plugin/skills/changelog/README.md#how-the-release-reaches-the-branch)).

@@ -3,8 +3,9 @@
 // section of .config/jig.yaml. After a merge to main it writes the change
 // notes under changes/ into CHANGELOG.md, moves both plugin manifests to the
 // next version when a note asks for a release, and deletes the notes.
-// .github/workflows/release.yml runs it on every push to main and commits,
-// tags and pushes what it writes. Every note waiting is one release (ADR-0002).
+// It is the local way to run the step (`--dry-run` to preview);
+// .github/workflows/release.yml runs the same step through the skill's action.
+// Every note waiting is one release (ADR-0002).
 //
 // Usage: bun scripts/release.ts [--dry-run] [--json] [--date YYYY-MM-DD]
 // Exit: 0 written, or nothing to write; 1 a note is malformed; 2 an error.

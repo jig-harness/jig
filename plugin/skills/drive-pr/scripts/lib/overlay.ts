@@ -11,6 +11,7 @@
  */
 import { isAbsolute, join } from "node:path";
 import { layersFingerprint } from "../../../../shared/config-layers.ts";
+import { isDistinctNameList } from "../../../../shared/guards.ts";
 import {
   configSource,
   consumerRoot,
@@ -222,15 +223,11 @@ export function maxRoundsSetting(): number | undefined {
 export function requiredChecksSetting(): string[] | undefined {
   const value = section("ci").required_checks;
   if (value === undefined || value === null) return undefined;
-  if (
-    !Array.isArray(value) ||
-    value.some((name) => typeof name !== "string" || name.trim() === "") ||
-    new Set(value).size !== value.length
-  )
+  if (!isDistinctNameList(value))
     throw new Error(
       `ci.required_checks must be a list of distinct nonempty check names: ${configSource("ci.required_checks")}`,
     );
-  return value as string[];
+  return value;
 }
 
 /**

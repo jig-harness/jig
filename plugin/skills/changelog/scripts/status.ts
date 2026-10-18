@@ -1,17 +1,23 @@
 // Where a repository's releases stand: the notes waiting, the version they
 // would make, the notes that wait for a release to carry them and, on GitHub,
-// whether the last release run on the integration branch succeeded. It writes
-// nothing.
+// whether the last release run on the integration branch succeeded and which
+// released versions still wait for their tag (tag.ts's plan: each with its
+// state, and a failed releasing commit with the checks that failed). It
+// writes nothing.
 //
 // Usage: bun status.ts [--root <dir>] [--json]
 // Exit: 0 reported (also when the repository has not turned the skill on, and
-// when the hosting service cannot be asked); 1 a note is malformed, the
-// version cannot be told (the version files disagree) or the last release run
-// failed; 2 a usage error, an invalid configuration or an unreadable file.
+// when the hosting service or origin cannot be asked); 1 a note is malformed,
+// the version cannot be told (the version files disagree), the last release
+// run failed or a releasing commit failed its required checks; 2 a usage
+// error, an invalid configuration or an unreadable file. A configuration
+// tag.ts refuses on the integration branch is an invalid configuration, not
+// an unknown tag picture: tag.ts would not tag until it is fixed.
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { fail, runMain } from "../../../shared/cli.ts";
 import { errnoCode } from "../../../shared/errors.ts";
+import { ConfigurationError } from "./errors.ts";
 import { consumerRoot } from "../../../shared/consumer.ts";
 import { pluginVersion } from "../../../shared/plugin-version.ts";
 import { banner } from "./banner.ts";
@@ -20,6 +26,7 @@ import { type Bump, nextVersion } from "./change-notes.ts";
 import { loadResolved, type Resolved } from "./config.ts";
 import { type Hosting, hostingFor, type ReleaseRun } from "./hosting.ts";
 import { currentVersionOf, readNotes } from "./notes-dir.ts";
+import { type PlanSources, planTags, type TagState } from "./tag.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -41,6 +48,59 @@ export interface Status {
   errors: string[];
   integrationBranch: string | null;
   releaseRun: ReleaseRun;
+  /** The released versions origin has no tag for, or why they cannot be told. */
+  tags: TagPicture;
+}
+
+/** A released version that waits for its tag. */
+export interface UntaggedVersion {
+  version: string;
+  tag: string;
+  state: TagState;
+  detail: string;
+  /** The releasing commit. */
+  commit: string;
+  /** The required checks that failed on it, for state `failed`. */
+  failing: string[];
+}
+
+export type TagPicture =
+  | { known: true; untagged: UntaggedVersion[] }
+  | { known: false; detail: string };
+
+/**
+ * Which versions wait for their tag, from tag.ts's plan; unknown when it
+ * cannot be read. A configuration the plan refuses is thrown.
+ */
+function tagPicture(root: string, sources: PlanSources, env: Env): TagPicture {
+  if (!sources.hosting) return { known: false, detail: UNKNOWN_RUN.detail };
+  try {
+    const plan = planTags(root, sources, env);
+    if (plan === null)
+      return {
+        known: false,
+        detail: "the integration branch has not turned the skill on",
+      };
+    return {
+      known: true,
+      untagged: plan.versions.map((v) => ({
+        version: v.version,
+        tag: v.tag,
+        state: v.state,
+        detail: v.detail,
+        commit: v.commit,
+        failing: v.checks
+          .filter((c) => c.verdict === "failed")
+          .map((c) => c.name),
+      })),
+    };
+  } catch (error) {
+    if (error instanceof ConfigurationError) throw error;
+    return {
+      known: false,
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 const UNKNOWN_RUN: ReleaseRun = {
@@ -54,6 +114,7 @@ export function status(
   resolved: Resolved,
   hosting: Hosting | null,
   env: Env = process.env,
+  tags: PlanSources["tags"] = undefined,
 ): Status {
   const { notes, errors } = readNotes(resolved);
   const releasing = notes.flatMap((n) =>
@@ -79,8 +140,17 @@ export function status(
     errors,
     integrationBranch: branch,
     releaseRun: run,
+    tags: tagPicture(
+      resolved.root,
+      { hosting, ...(tags ? { tags } : {}) },
+      env,
+    ),
   };
 }
+
+/** Whether the picture holds a version whose releasing commit failed its checks. */
+const tagFailed = (s: Status): boolean =>
+  s.tags.known && s.tags.untagged.some((v) => v.state === "failed");
 
 function describe(s: Status): string[] {
   const lines = [
@@ -106,8 +176,23 @@ function describe(s: Status): string[] {
     );
   lines.push(
     `release run${s.integrationBranch ? ` on ${s.integrationBranch}` : ""}: ${s.releaseRun.state} (${s.releaseRun.detail})${s.releaseRun.url ? ` ${s.releaseRun.url}` : ""}`,
+    ...describeTags(s.tags),
   );
   return lines;
+}
+
+/** The lines of the status that say which released versions wait for a tag. */
+function describeTags(tags: Status["tags"]): string[] {
+  if (!tags.known) return [`tags: unknown (${tags.detail})`];
+  if (tags.untagged.length === 0)
+    return ["tags: no released version waits for its tag"];
+  return [
+    "released, waiting for its tag:",
+    ...tags.untagged.map(
+      (v) =>
+        `  ${v.tag}: ${v.state} (${v.detail})${v.state === "failed" ? `; releasing commit ${v.commit}, failing: ${v.failing.join(", ") || "none named"}` : ""}`,
+    ),
+  ];
 }
 
 /** What a repository that did not turn the skill on is told. */
@@ -125,13 +210,16 @@ function tryStatus(
   resolved: Resolved,
   hosting: Hosting | null,
   env: Env,
+  tags: PlanSources["tags"],
 ): Status | null {
   try {
-    return status(resolved, hosting, env);
+    return status(resolved, hosting, env, tags);
   } catch (error) {
-    // An unreadable file is the caller's to report (exit 2); a version that
-    // cannot be told (the files disagree) is this run's (exit 1).
-    if (errnoCode(error) !== undefined) throw error;
+    // An unreadable file or an invalid configuration is the caller's to
+    // report (exit 2); a version that cannot be told (the files disagree) is
+    // this run's (exit 1).
+    if (errnoCode(error) !== undefined || error instanceof ConfigurationError)
+      throw error;
     console.error(error instanceof Error ? error.message : String(error));
     return null;
   }
@@ -143,6 +231,7 @@ export function runStatus(
   json: boolean,
   env: Env = process.env,
   hosting: Hosting | null | undefined = undefined,
+  tags: PlanSources["tags"] = undefined,
 ): number {
   const resolved = loadResolved(root, env);
   if (resolved === null) {
@@ -153,11 +242,16 @@ export function runStatus(
     resolved,
     hosting === undefined ? hostingFor(root) : hosting,
     env,
+    tags,
   );
   if (result === null) return 1;
   if (json) console.log(JSON.stringify(result));
   else for (const line of describe(result)) console.log(line);
-  return result.errors.length || result.releaseRun.state === "failure" ? 1 : 0;
+  return result.errors.length ||
+    result.releaseRun.state === "failure" ||
+    tagFailed(result)
+    ? 1
+    : 0;
 }
 
 if (import.meta.main)

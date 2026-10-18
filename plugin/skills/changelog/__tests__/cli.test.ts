@@ -117,6 +117,8 @@ describe("the commands", () => {
       previous: "1.2.0",
       notes: ["changes/a.md"],
       waiting: [],
+      changelog: "CHANGELOG.md",
+      release: { push: "direct", branch: "changelog-release" },
     });
     expect(JSON.parse(dry.out).plugin).toMatch(/^\d+\.\d+\.\d+$/);
     expect(existsSync(join(dir, "changes/a.md"))).toBe(true);

@@ -1,3 +1,7 @@
 [tools]
 bun = "1.4.3"
 lefthook = "2.2.1"
+# Lints GitHub workflows and the changelog skill's workflow template
+# (tools/plugin/changelog-workflow.test.ts), running shellcheck over their
+# scripts where it is installed.
+actionlint = "1.7.12"

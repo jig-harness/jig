@@ -110,7 +110,8 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    and a direct edit to what the step writes. Pull requests then touch
    disjoint files, and no two claim the same version. The plugin ships the
    [`changelog` skill](../../plugin/skills/changelog/README.md) (`release.ts`,
-   `check.ts`, `status.ts` + self-tests) for a
+   `check.ts`, `status.ts` + self-tests, and a GitHub Action with a workflow
+   template that runs them in CI) for a
    [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) or
    [Common Changelog](https://common-changelog.org/) file; the tools
    that do the same per ecosystem are in [mappings.md](mappings.md).
@@ -246,7 +247,8 @@ governs how those files layer), so every agent inherits the rules.
 7. Where the repository keeps a changelog or a version that every pull request
    touches, move it to change notes: pick the tool for your ecosystem from
    [mappings.md](mappings.md) or use the plugin’s
-   [`changelog` skill](../../plugin/skills/changelog/README.md), run the release step
+   [`changelog` skill](../../plugin/skills/changelog/README.md) (`/jig:changelog
+   setup` walks through it), run the release step
    on the integration branch after each merge, and the branch check on every
    pull request. Convert open pull requests' changelog edits into notes once.
 8. Give each gate command a quiet form: a reporter flag from

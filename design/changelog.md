@@ -9,12 +9,12 @@ the changelog is written from memory and the release goes out late or not at
 all. Jig solved this for itself: each pull request adds a
 [change note](../GLOSSARY.md), and a release step on the integration branch
 writes the notes into the changelog, moves the version and tags it after the
-merge. Today that mechanism ships as scripts in the plugin, implementing
-[M12](../modules/M12-parallel-agent-ergonomics/README.md), that an adopting
-repository still has to wire up by hand. With this built, a
+merge. The mechanism ships in the plugin as the `changelog` skill,
+implementing [M12](../modules/M12-parallel-agent-ergonomics/README.md): a
 repository turns it on with one section of its `.config/jig.yaml`, Jig's
 agents write and keep the notes as part of their normal work, and a GitHub
-Action and a guided setup take care of the check and the release.
+Action, a workflow template and a guided setup take care of the check, the
+release and the tags.
 
 This is the design of [ROADMAP.md](../ROADMAP.md) item 4. Built so far:
 
@@ -23,8 +23,8 @@ This is the design of [ROADMAP.md](../ROADMAP.md) item 4. Built so far:
   the note format and its checker, the release step (`release.ts`, which
   releases everything waiting as one version, with version placeholders) and
   the branch check (`check.ts`), with their self-test;
-- Jig's own use of it: `scripts/release.ts`, `scripts/check-changelog.ts`,
-  `.github/workflows/release.yml`, the `jig-release`
+- Jig's own use of it: `scripts/release.ts` (the release step run locally),
+  `scripts/check-changelog.ts`, `.github/workflows/release.yml`, the `jig-release`
   [GitHub App](../GLOSSARY.md), `main`'s [ruleset](../GLOSSARY.md) and the
   `release` environment
   ([ADR-0004](../docs/adr/ADR-0004-change-notes-released-after-the-merge.md));
@@ -48,9 +48,18 @@ This is the design of [ROADMAP.md](../ROADMAP.md) item 4. Built so far:
   `resolve-review-comments` keep the note true, `resolve-conflicts` converts
   before it merges, and `/followup` reads `status.ts`, each only where the
   repository turned the skill on.
+- CI and setup (build step 5): `action.yml` with the `check`, `release` and
+  `tag` commands; the workflow template with both modes, the two release
+  jobs and the `tag-plan` and `tag-push` jobs; the release-pull-request rule
+  of the branch check; `tag.ts` and the tags in `status.ts`;
+  `release-access.ts`, through which Jig's `scripts/check-branch-protection.ts`
+  reads rulesets; App manifests and changelog templates; `/jig:changelog
+  setup`; and Jig's own `release.yml` on the action and the `tag` jobs, its
+  gates run on `main` never cancelled.
 
-What is missing: a way for CI to run it and a guided setup. The questions that needed a person's decision
-are settled ([§ Decisions this design needs](#decisions-this-design-needs)).
+What is missing: the module for releases and versions (build step 6). The
+questions that needed a person's decision are settled
+([§ Decisions this design needs](#decisions-this-design-needs)).
 
 ## How it works
 
@@ -191,16 +200,19 @@ message naming the version it needs.
 
 ### The commands
 
-Each is a script under `scripts/`, run by the agent through the skill or by
-CI through the action, with the repository as the working directory. Each
-prints the plugin version it ran as.
+Each is a script under `scripts/`, run by the agent through the skill with
+the repository as the working directory, or by CI through the action, which
+starts Bun outside the checkout and names the repository with `--root`, so
+no Bun setting the repository holds applies. Each prints the plugin version
+it ran as.
 
 | Command | What it does |
 |---------|--------------|
-| `check.ts [--base <ref>]` | The branch check: every note reads; the branch leaves the version and the changelog's open and release sections to the release step; a branch touching a release path carries a note that asks for one, and one touching a note path carries a note. The base defaults to the integration branch; a base git cannot compare against is a finding, never a skipped check. It needs the full history (`fetch-depth: 0` in CI). |
+| `check.ts [--base <ref>] [--head-ref <name>]` | The branch check: every note reads; the branch leaves the version and the changelog's open and release sections to the release step; a branch touching a release path carries a note that asks for one, and one touching a note path carries a note. A release pull request passes by being reproduced instead ([§ How the release reaches the branch](#how-the-release-reaches-the-branch)); `--head-ref` names its branch where the checkout does not. The base defaults to the integration branch; a base git cannot compare against is a finding, never a skipped check. It needs the full history (`fetch-depth: 0` in CI). |
 | `release.ts [--dry-run] [--json] [--date YYYY-MM-DD]` | The release step: writes the waiting notes into the changelog, moves the version, fills the placeholders, runs `after_version`, deletes the notes. Writes files only; never commits, tags or pushes. |
 | `convert.ts` | Turns a branch that edited the changelog or the version itself into one with a note ([§ Converting a branch](#converting-a-branch)). |
-| `status.ts` | The waiting notes, the version they would make and the notes that wait for a release. On GitHub it also reads whether the last release run on the integration branch succeeded, a release run still going answering first (through `gh`). |
+| `status.ts` | The waiting notes, the version they would make and the notes that wait for a release. On GitHub it also reads whether the last release run on the integration branch succeeded, a release run still going answering first (through `gh`), and which released versions still wait for their tag, from `tag.ts`'s plan; a releasing commit whose checks failed makes it exit 1. |
+| `tag.ts [--json] [--rerun]` | The tag plan ([§ How the release reaches the branch](#how-the-release-reaches-the-branch)): each released version without a tag, its releasing commit and its state. It makes no tag; its JSON is what the workflow's tag job acts on. |
 | `release-access.ts` | Whether the release can reach the integration branch in the configured mode, and force pushes and deletion stay blocked for the release identity too ([§ Setup](#setup)). Reads GitHub's rulesets and branch protection. |
 
 The agent writes a note by hand from the procedure in `SKILL.md` (§ Writing
@@ -358,10 +370,20 @@ that commit and runs nothing from the repository.
   the note, through an ordinary pull request. A person merges it. The branch
   check passes a release pull request when re-running the release step on
   its merge base, with the date of the branch's new release heading and the
-  same pinned plugin version, gives exactly the branch's change, apart from
-  the files `after_version` changed, whose output can depend on what a
-  package registry answers that day; those must change only where they
-  repeat the version.
+  same pinned plugin version (the code of the action that runs the check),
+  gives exactly the branch's change, apart from the files `after_version`
+  changed, whose output can depend on what a package registry answers that
+  day; those must differ only line for line by the previous version becoming
+  the new one, a line added or changed otherwise failing even when it names
+  the version, and a file that is not valid UTF-8 text may not differ at
+  all. The branch must
+  add exactly one release heading, dated a real day no later than today, so
+  a date cannot be chosen to make the reproduction match a later run. The
+  check job checks out the pull request's own head commit, not its merge
+  with the base, since the release step is reproduced on the merge base the
+  branch was written on, so a move of the integration branch does not fail
+  it; that move starts a release run, which regenerates the release branch
+  on the new tip, and the check runs again on the regenerated branch.
 
 **Tagging after verification.** In both modes a version is tagged on the
 commit that released it and on no other: the first commit on the integration
@@ -372,14 +394,39 @@ push), that commit holds exactly the release. The `tag` job runs after every
 check run completes on the integration branch, finds each version that has a
 heading but no tag, and tags its releasing commit once every required check
 on that commit itself has passed: the required checks are the ones the
-branch's rules require, or the repository's `ci.required_checks`, not one
-named workflow. A later commit's success never stands in for the releasing
-commit's. A releasing commit whose required checks were cancelled rather
+branch's rules require, or `ci.required_checks` in the integration branch's
+own `.config/jig.yaml`, not one named workflow. Only versions newer than the
+newest release tag on `origin` are owed a tag, and with no release tag yet
+only the newest release heading, so a repository that adopts the workflow
+with an untagged history does not have its old versions tagged and
+published; setup has the person confirm what `status.ts` lists first. A later commit's success never stands in for the releasing
+commit's. Versions are tagged oldest first: once a newer tag is on `origin`
+an older version is no longer owed one, so a version whose checks passed
+waits while an older owed version's checks are still pending or are to be
+run again. A releasing commit whose required checks were cancelled rather
 than failed (a gate workflow that cancels its earlier runs on the
-integration branch when a newer push arrives, as Jig's does today) gets those
+integration branch when a newer push arrives) gets those
 checks run again once, by the `tag` job; the workflow template's own checks
 do not cancel runs on the integration branch. A releasing commit whose checks
-failed is reported by `status.ts` and left untagged for a person. The re-run
+failed is reported by `status.ts` and left untagged for a person; it holds
+no newer version back, and once a newer version is tagged it is no longer
+owed a tag, so `status.ts` stops listing it and the failed `tag` job run
+stays its report.
+"Once" is read from GitHub's attempt number, which a re-run raises: a
+cancelled check whose workflow run is on its first attempt is re-run; one
+cancelled again on a later attempt fails, and so does a check cancelled
+outside a workflow run, which the job cannot re-run, and so does one whose
+re-run GitHub refuses (it refuses runs older than 30 days): the plan still
+hands on the other versions' tags. A check that concluded `neutral` or
+`skipped` did no work, so it counts as its workflow run ended: passed when
+that run succeeded, which lets a job skipped on a push (the template's
+branch check) not hold up a tag, and cancelled when that run was cancelled,
+as a gate aggregator that runs unless the run is cancelled is. One that did
+work answers before it, and one no workflow run reported (another app's)
+counts as passed. A version whose heading
+arrived in one commit with other release headings, as when a changelog is
+brought in with its history, has no releasing commit: it is reported as
+imported and tagged by hand if at all. The re-run
 needs Actions write, which the App is never given: the `tag` job runs it
 with its own `GITHUB_TOKEN`, granted `actions: write` in that job alone
 (the workflow's default stays `contents: read`), and the template and setup
@@ -388,7 +435,12 @@ is also granted `checks: read` and `statuses: read`, since a required check
 can be a check run from outside Actions or a commit status, and a scope an
 explicit `permissions:` block leaves out is `none`. A
 publishing job that starts on a new tag therefore only ever ships a commit
-that passed its checks. A machine that installs from the integration branch
+that passed its checks. The `tag` job's plan, printed as JSON by `tag.ts`,
+is the contract with the job that makes the tags: that job holds the App's
+key, runs nothing from the repository, checks each entry of the plan's
+`ready` list against strict patterns, and creates the annotated tags through
+GitHub's API. A failed version does not hold the others back: the plan job
+hands its `ready` list on, then fails. A machine that installs from the integration branch
 receives a release as soon as its commit lands; a machine pinned to a tag
 receives it once the tag exists.
 
@@ -427,9 +479,10 @@ for pull requests, the release on pushes to the integration branch in the
 configured mode, and the `tag` job. GitLab's and other providers' equivalents
 stay on the roadmap item until a repository needs one. `check.ts`,
 `release.ts` and `convert.ts` read only git and the repository's files, so
-any provider's CI can run them. `status.ts`'s run lookup, `release-access.ts`
-and setup read GitHub (its runs, rulesets and branch protection), each
-behind its own adapter; another provider adds its adapters beside them.
+any provider's CI can run them. `status.ts`'s run lookup, `tag.ts`'s
+required checks, `release-access.ts` and setup read GitHub (its runs, checks,
+rulesets and branch protection), each behind its own adapter; another
+provider adds its adapters beside them.
 
 ### Setup
 
@@ -454,8 +507,8 @@ organization setting itself; it prints what to change and checks it after:
    are created first and the old branch protection removed after, so the
    branch is never unprotected; until it is removed, both apply and the App
    cannot pass.
-   Setup stops with an explanation when an organization ruleset also covers
-   the branch, which a repository ruleset's bypass cannot pass, or when the
+   Setup stops with an explanation when a requirement fails because of an
+   organization ruleset, which a repository ruleset's bypass cannot pass, or when the
    plan does not offer rulesets or environments for a private repository;
 4. add the workflow from the template;
 5. convert the pull requests already open ([§ Converting a
@@ -475,7 +528,9 @@ does not block them for it. It reads every
 page of the branch's rules, combines several rulesets with any classic
 branch protection the way GitHub applies them (the most restrictive setting
 wins), and reports "unknown" where GitHub withholds a ruleset's bypass list
-from the token reading it. Jig's own `scripts/check-branch-protection.ts`,
+from the token reading it: a login without administrator rights gets
+unknowns, not an error. The release branch's rulesets are read even before
+it exists; its classic branch protection is unknown until it does. Jig's own `scripts/check-branch-protection.ts`,
 which checks Jig's whole branch policy, stays Jig's and takes the same
 reading of rulesets from this script.
 
@@ -591,7 +646,7 @@ recorded. Every decision below is settled.
    one-file-per-change part either way. Blocks build step 6.
 3. **Settled 2026-10-15: the organization's private repositories may use
    Jig's actions**, and Dependabot may read Jig for its pin updates; a person
-   changes both settings when build step 5 ships the action. Publishing Jig
+   changes both settings in Jig's repository. Publishing Jig
    for other organizations stays a separate decision
    ([§ How CI runs it](#how-ci-runs-it)).
 
@@ -619,7 +674,7 @@ Each step is one pull request with its change note and, where it changes
 4. **Converting, and the agents** (built). `convert.ts`; `do-item`, `drive-pr`,
    `resolve-review-comments` and `resolve-conflicts` taking part;
    `/followup` reading `status.ts`.
-5. **CI and setup.** `action.yml`, the workflow template with both modes and
+5. **CI and setup** (built). `action.yml`, the workflow template with both modes and
    the `tag` job, the release-pull-request rule of the branch check,
    `release-access.ts` (and Jig's branch-protection check reading rulesets
    through it), `/jig:changelog setup`. Jig's own workflow moves onto the

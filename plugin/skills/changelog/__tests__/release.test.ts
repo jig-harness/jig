@@ -6,6 +6,7 @@ import {
   AFTER_VERSION_TIMEOUT,
   MalformedNotes,
   release,
+  releaseWithoutAfterVersion,
   runReleaseCommand,
 } from "../scripts/release.ts";
 import {
@@ -587,6 +588,21 @@ describe("after_version", () => {
       env: { ...ci, [AFTER_VERSION_IN_CI]: "1" },
     });
     expect(existsSync(join(root, "ran.txt"))).toBe(true);
+  });
+
+  test("the release step's own writes run without it, in a CI job too", () => {
+    const root = scratch();
+    const ci = { ...local, GITHUB_ACTIONS: "true" };
+    const result = releaseWithoutAfterVersion({
+      ...options(root, touch("ran.txt")),
+      date: "2026-02-03",
+      env: ci,
+    });
+    expect(result.version).toBe("1.3.0");
+    expect(existsSync(join(root, "ran.txt"))).toBe(false);
+    expect(text(root, "a/plugin.json")).toBe(MANIFEST("1.3.0"));
+    expect(text(root, "CHANGELOG.md")).toContain("## [1.3.0] - 2026-02-03");
+    expect(existsSync(join(root, "changes/a.md"))).toBe(false);
   });
 
   test("every common CI marker counts, but a marker set to false does not", async () => {

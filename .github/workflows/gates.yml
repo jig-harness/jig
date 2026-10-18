@@ -27,9 +27,13 @@ on:
 permissions:
   contents: read
 
+# A pull request's newer push cancels its older run. A run on main is never
+# cancelled, nor replaced while it waits, so every commit on main gets its
+# checks: the release workflow (release.yml) tags a release commit only once
+# its own `gates` check passed.
 concurrency:
-  group: gates-${{ github.ref }}
-  cancel-in-progress: true
+  group: gates-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   areas:

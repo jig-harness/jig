@@ -1,89 +1,117 @@
 # After every merge to main, writes the change notes under changes/ into
 # CHANGELOG.md and, when a note asks for a release, moves both plugin
-# manifests to the next version and tags it `v<version>` (scripts/release.ts;
-# docs/adr/ADR-0004-change-notes-released-after-the-merge.md). Runs one at a
-# time and always from main's newest commit, so a run that waited behind
-# another writes whatever notes are still there; a run that finds none does
-# nothing. Every note waiting is one release: when several merges landed before
-# the run started, they ship together as the largest bump any of them asks for,
-# with all of their notes, because the run releases the tree it checked out and
-# that tree already holds all of their code
+# manifests to the next version; once the release commit's gates pass, tags
+# it `v<version>` (docs/adr/ADR-0004-change-notes-released-after-the-merge.md).
+# It runs the `changelog` skill's action from this checkout
+# (plugin/skills/changelog/action.yml), so Jig always releases with the
+# version being changed, in the shape of the skill's workflow template
+# (plugin/skills/changelog/templates/github/changelog.yml) in `direct` mode.
+#
+# The release runs one at a time and always from main's newest commit, so a
+# run that waited behind another writes whatever notes are still there; a run
+# that finds none does nothing. Every note waiting is one release: when several
+# merges landed before the run started, they ship together as the largest bump
+# any of them asks for, with all of their notes, because the run releases the
+# tree it checked out and that tree already holds all of their code
 # (docs/adr/ADR-0002-the-plugin-is-its-directory.md).
 #
 # main's ruleset admits a change only through a pull request with its checks
 # green, and names the `jig-release` GitHub App as the one actor allowed to
-# push past it. The push therefore uses a token of that App, minted for this
+# push past it. The push therefore uses a token of that App, minted for the
 # run only, limited to this repository's contents and valid for an hour. Its
 # key is a secret of the `release` environment, which only main may use, so
-# no workflow on another branch can mint one. The token is minted after the
-# release step has run, and the checkout keeps no credential, so nothing but
-# the push ever holds it. The commit it pushes runs the gates and deploys the
-# site like any other push to main.
+# no workflow on another branch can mint one. The release step runs in a job
+# that cannot reach that environment (`release`); the job that holds the key
+# (`push`) checks nothing out and runs nothing from the repository: it pushes
+# the commit the first job handed on as a git bundle. The commit it pushes
+# runs the gates and deploys the site like any other push to main.
+#
+# Tags come after verification: every time a gates run on main completes, and
+# every six hours as a backstop, `tag-plan` finds each released version
+# without its tag (plugin/skills/changelog/scripts/tag.ts) and `tag-push` tags
+# the commit that released it once that commit's required checks passed. A
+# cancelled check is run again once, with this workflow's own token granted
+# Actions write in `tag-plan` alone; a releasing commit whose checks failed is
+# left untagged, and `tag-plan` fails for it.
 name: release
 
 on:
   push:
     branches: [main]
+  workflow_run:
+    workflows: [gates]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "23 */6 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Never cancelled: a release waiting behind another writes whatever notes are
+# still there, and a newer tag run waiting replaces an older one, since it
+# plans from a newer state.
 concurrency:
-  group: release
+  group: release-${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'release' || 'tag' }}
   cancel-in-progress: false
 
 jobs:
   release:
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 10
-    environment: release
+    outputs:
+      changed: ${{ steps.release.outputs.changed }}
+      start: ${{ steps.release.outputs.start }}
+      commit: ${{ steps.release.outputs.commit }}
+      push: ${{ steps.release.outputs.push }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: main
           # The notes are ordered by the commits that added them.
           fetch-depth: 0
-          # The push authenticates with the App's token below.
+          # Nothing in this job pushes.
           persist-credentials: false
-      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
-      - name: Write, commit and tag the change notes
+      - id: release
+        uses: ./plugin/skills/changelog
+        with:
+          command: release
+          git-user-name: jig-release[bot]
+          git-user-email: 343182900+jig-release[bot]@users.noreply.github.com
+      - if: steps.release.outputs.changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: changelog-release
+          path: ${{ steps.release.outputs.bundle }}
+          if-no-files-found: error
+          retention-days: 1
+
+  push:
+    needs: release
+    if: needs.release.outputs.changed == 'true'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    environment: release
+    permissions: {}
+    steps:
+      - name: Check what the release job handed on
+        env:
+          MODE: ${{ needs.release.outputs.push }}
+          START: ${{ needs.release.outputs.start }}
+          COMMIT: ${{ needs.release.outputs.commit }}
         run: |
-          git config user.name "jig-release[bot]"
-          git config user.email "343182900+jig-release[bot]@users.noreply.github.com"
-          start=$(git rev-parse HEAD)
-          refs="HEAD:main"
-          bun scripts/release.ts --json > "$RUNNER_TEMP/release.json"
-          cat "$RUNNER_TEMP/release.json"
-          notes=$(jq '.notes | length' "$RUNNER_TEMP/release.json")
-          if [ "$notes" != 0 ]; then
-            version=$(jq -r '.version // empty' "$RUNNER_TEMP/release.json")
-            # Everything the release step wrote: the notes it deleted, the
-            # changelog, the manifests and the files whose `since: next` it
-            # filled in. The checkout holds nothing else.
-            git add -A
-            if [ -n "$version" ]; then
-              git commit -q -m "chore(release): $version" \
-                -m "Writes $notes change note(s) into CHANGELOG.md and moves the plugin to $version."
-              git tag -a "v$version" -m "v$version"
-              refs="$refs refs/tags/v$version"
-            else
-              git commit -q -m "docs(changelog): write $notes change note(s) under Unreleased"
-            fi
-          fi
-          echo "start=$start" >> "$GITHUB_ENV"
-          echo "refs=$refs" >> "$GITHUB_ENV"
-      - name: Check whether there is anything to push
-        id: written
-        run: |
-          if [ "$(git rev-parse HEAD)" = "$start" ]; then
-            echo "no change notes to release"
-            echo "push=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "push=true" >> "$GITHUB_OUTPUT"
-          fi
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          [ "$MODE" = direct ] || fail "Jig releases in direct mode, not '$MODE'"
+          [[ "$START" =~ ^[0-9a-f]{40}$ ]] || fail "the release's start is not a commit hash"
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail "the release commit is not a commit hash"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: changelog-release
+          path: ${{ runner.temp }}/changelog-release
       - name: Mint the release App's token
-        if: steps.written.outputs.push == 'true'
         id: app
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
@@ -91,18 +119,130 @@ jobs:
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
       - name: Push
-        if: steps.written.outputs.push == 'true'
         env:
           TOKEN: ${{ steps.app.outputs.token }}
+          START: ${{ needs.release.outputs.start }}
+          COMMIT: ${{ needs.release.outputs.commit }}
+          BUNDLE: ${{ runner.temp }}/changelog-release/jig-changelog-release.bundle
         run: |
+          set -euo pipefail
           remote="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          # shellcheck disable=SC2086 # the branch and each tag, split on purpose
-          if git push --atomic "$remote" $refs; then exit 0; fi
+          # An empty repository with no hooks: the bundle is read as data.
+          repo="$RUNNER_TEMP/changelog-push"
+          git init -q "$repo"
+          cd "$repo"
+          git config core.hooksPath /dev/null
+          # The bundle holds only the release commit, on top of the commit the
+          # release ran on, which the push needs to compute what to send.
+          git fetch -q --no-tags --depth=1 "$remote" "$START"
+          git bundle verify -q "$BUNDLE"
+          git fetch -q --no-tags "$BUNDLE" "HEAD:refs/heads/changelog-push"
+          [ "$(git rev-parse refs/heads/changelog-push)" = "$COMMIT" ] ||
+            { echo "::error::the bundle does not hold the release commit"; exit 1; }
+          if [ "$(git rev-list --count "$START..$COMMIT")" != 1 ] || [ "$(git rev-parse "$COMMIT^")" != "$START" ]; then
+            echo "::error::the release commit is not one commit on top of $START"
+            exit 1
+          fi
+          if git push -q "$remote" "$COMMIT:refs/heads/main"; then exit 0; fi
           # A merge that landed while this ran has its own run queued behind
           # this one, which writes these notes too; any other failure fails.
-          git fetch -q "$remote" +main:refs/remotes/origin/main
-          if [ "$(git rev-parse origin/main)" != "$start" ]; then
+          tip=$(git ls-remote "$remote" refs/heads/main | cut -f1)
+          if [ "$tip" != "$START" ]; then
             echo "::notice::main moved during the release; the run queued behind this one writes these notes"
             exit 0
           fi
           exit 1
+
+  tag-plan:
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push') ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+      checks: read
+      statuses: read
+    outputs:
+      ready: ${{ steps.plan.outputs.ready }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: main
+          # A version is tagged on the first commit of main's history that
+          # has its heading; the tags already made are read from origin.
+          fetch-depth: 0
+          # The token, which may re-run workflows, stays out of the
+          # checkout's .git/config: the action hands it to the one git call
+          # that reads origin's tags.
+          persist-credentials: false
+      - id: plan
+        uses: ./plugin/skills/changelog
+        with:
+          command: tag
+          rerun: "true"
+      # After the plan's ready list is handed on, so a failed version does
+      # not hold back the others.
+      - name: Fail for a releasing commit whose checks failed
+        if: steps.plan.outputs.failed == 'true'
+        run: |
+          echo "::error::a releasing commit failed its required checks and stays untagged: the plan above names it and its checks"
+          exit 1
+
+  tag-push:
+    needs: tag-plan
+    if: ${{ !cancelled() && needs.tag-plan.outputs.ready != '' && needs.tag-plan.outputs.ready != '[]' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    environment: release
+    permissions: {}
+    steps:
+      - name: Check the plan
+        env:
+          READY: ${{ needs.tag-plan.outputs.ready }}
+        run: |
+          set -euo pipefail
+          jq -e 'type == "array" and all(.[]; type == "object"
+            and (.tag | type) == "string" and (.commit | type) == "string"
+            and .message == .tag)' <<< "$READY" > /dev/null ||
+            { echo "::error::the tag plan is not a list of {tag, commit, message}"; exit 1; }
+          jq -r '.[] | [.tag, .commit] | @tsv' <<< "$READY" | while IFS=$'\t' read -r tag commit; do
+            [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] ||
+              { echo "::error::'$tag' is not a release tag"; exit 1; }
+            [[ "$commit" =~ ^[0-9a-f]{40}$ ]] ||
+              { echo "::error::$tag: '$commit' is not a commit hash"; exit 1; }
+          done
+      - name: Mint the release App's token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Tag each ready version
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          READY: ${{ needs.tag-plan.outputs.ready }}
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS=$'\t' read -r tag commit; do
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" > /dev/null 2>&1; then
+              echo "::notice::$tag exists already; left as it is"
+              continue
+            fi
+            # Only a commit of main is tagged.
+            state=$(gh api "repos/$GITHUB_REPOSITORY/compare/$commit...main" --jq .status)
+            if [ "$state" != ahead ] && [ "$state" != identical ]; then
+              echo "::error::$tag: $commit is not on main ($state); not tagged"
+              failed=1
+              continue
+            fi
+            object=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="$tag" -f message="$tag" \
+              -f object="$commit" -f type=commit --jq .sha)
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$object" > /dev/null
+            echo "::notice::tagged $commit $tag"
+          done < <(jq -r '.[] | [.tag, .commit] | @tsv' <<< "$READY")
+          exit "$failed"

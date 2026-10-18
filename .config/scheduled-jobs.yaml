@@ -13,3 +13,11 @@ jobs:
     grace: 6h
     max_run: 2h
     red_after: 2
+  # .github/workflows/release.yml: the tag job's backstop, every six hours at
+  # 23 past; every gates run on main also starts it. A run takes minutes, so
+  # one going for over an hour is hung.
+  - id: release
+    cadence: 6h
+    grace: 3h
+    max_run: 1h
+    red_after: 2

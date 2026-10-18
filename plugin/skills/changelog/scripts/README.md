@@ -1,7 +1,8 @@
 # The changelog scripts
 
 The commands behind [`/jig:changelog`](../README.md): the branch check, the
-release step, the conversion of a branch and the status report. They read the repository's `changelog:`
+release step, the conversion of a branch, the status report, the tag plan and
+the release-access check. They read the repository's `changelog:`
 section of `.config/jig.yaml` ([the configuration
 reference](../../../CONFIGURATION.md#changelog)), so none takes the notes folder,
 the changelog or the version files as a flag. Run them with Bun, with the
@@ -131,13 +132,15 @@ carry the later ones' changes (a breaking change under a patch number). A merge
 that lands during a run is released by the run queued behind it.
 
 `--json` prints `{ "plugin", "configured", "version", "previous", "notes",
-"waiting", "stamped" }`; `version` is null when no note asked for a release,
-`notes` are the notes written and `waiting` the notes left for a release.
+"waiting", "stamped", "changelog", "release" }`; `version` is null when no
+note asked for a release, `notes` are the notes written and `waiting` the notes
+left for a release, `changelog` is the changelog's path and `release` is
+`{ "push", "branch" }` from `changelog.release`.
 
 ## The branch check
 
 ```sh
-bun check.ts [--base origin/main]
+bun check.ts [--root <dir>] [--base origin/main] [--head-ref <branch>]
 ```
 
 Every note must read the way the release step will read it. Against the merge
@@ -172,6 +175,39 @@ the branch rules never pass by not running; only a clone with no remote at all,
 whose own tree has no section, is taken for one that never adopted the skill. On the base itself only the notes are
 checked, and the output says so. Exit 0 clean (or `not configured`), 1 findings,
 2 a usage error.
+
+**A release pull request.** Where the base's section sets `release.push:
+pull-request` and the branch is the base's `release.branch`, the branch is the
+release step's own output, so the rules above would refuse it. It passes
+instead when it is exactly what the release step writes on its merge base:
+
+1. the changelog gains exactly one release heading, whose date is a real day
+   no later than today (UTC);
+2. the release step runs on the merge base in a temporary worktree (hooks off),
+   dated from that heading and without `after_version`, with the plugin
+   version running the check (in CI, the action's pinned one), and must make
+   the heading's version;
+3. every file the release step writes is byte for byte the branch's, and the
+   branch adds or deletes nothing else. A file the release step does not
+   write fails, unless the base sets `after_version`: then it may differ only
+   by the version, line for line in order. It must have as many lines as the
+   reproduction, and each line must be the reproduction's or that line with
+   the old version replaced by the new one, as a whole version (not inside a
+   longer version or a name: `1.2.0` in `"1.2.0"` or `p@1.2.0`, never in
+   `11.2.0`, `1.2.0-rc.1` or `v1.2.0`). An added line, or one changed beyond
+   the version, fails even when it names the version (the finding shows up to
+   three of the lines that differ). Any file may differ this way; the rule
+   does not name which files `after_version` may touch, but a file that is
+   not valid UTF-8 text may not differ at all.
+
+Its findings start with `release pull request: `; a pass prints
+`change notes: OK — the release pull request is what the release step writes
+on its merge base: <version>, dated <date>`. The branch is `--head-ref`, else
+the head of the pull request that started the CI job (from the event, then
+`GITHUB_HEAD_REF`), else the checked-out branch. The branch is judged against
+the merge base it was written on, so a move of the base does not fail the
+check; every push to the integration branch regenerates the release branch on
+the new tip, and the check runs again on it.
 
 ## Converting a branch
 
@@ -231,9 +267,11 @@ The current version, the notes that ask for a release and the version they would
 make, the notes that wait for a release (or that the next run writes under
 Unreleased), and, when `origin` is on GitHub and `gh` answers, whether the last
 release run on the integration branch (`repository.base_branch`, else the
-default branch) succeeded. The run is the newest one of the workflow named
-`release`, in any letter case (a workflow that only mentions the word, such as a
-release-notes drafter, is not it), that is still going, else its newest run: a
+default branch) succeeded. The run is the newest release run, one started by a
+push or by hand (its tag and branch-check runs are not), of the workflow named
+`release` or `changelog` (the name of the workflow setup copies in), in any
+letter case (a workflow that only mentions the word, such as a release-notes
+drafter, is not it), that is still going, else its newest one: a
 release run still going is never cancelled by a later one, so an older run still
 going answers before a newer one that ended, and the report is then `running`
 (exit 0) rather than the newer run's result. Only that workflow's runs are read,
@@ -248,11 +286,137 @@ the newest run answers. A host without an adapter, a missing or signed-out
 for and that cannot be reached past (a workflow list, more runs created in one
 second than a listing holds, or more listings than the read takes) is reported
 as "unknown", never as a failure.
-Exit 1 when a note is unreadable, the version files disagree or the last release
-run failed; 2 for a usage error, an invalid configuration or an unreadable file.
+It ends with the released versions still waiting for their tag, from the
+tag plan below: each with its state, and a failed releasing commit with the
+checks that failed (`released, waiting for its tag:` then `  v1.3.0: failed
+(failed: test); releasing commit <sha>, failing: test`), or `tags: no
+released version waits for its tag`, or `tags: unknown (…)` where `origin` or `gh`
+cannot answer. `--json` adds `tags`: `{ "known": true, "untagged": [{ "version",
+"tag", "state", "detail", "commit", "failing" }] }` or `{ "known": false,
+"detail" }`.
+Exit 1 when a note is unreadable, the version files disagree, the last release
+run failed or a releasing commit failed its required checks; 2 for a usage
+error, an invalid configuration or an unreadable file.
 
-Jig runs these on itself: `scripts/release.ts` from `.github/workflows/release.yml`,
-and `scripts/check-changelog.ts` in `bun run gates`, both reading Jig's own
-`changelog:` section. The self-tests are in [`../__tests__/`](../__tests__/).
+## The tag plan
+
+```sh
+bun tag.ts [--root <dir>] [--json] [--rerun]
+```
+
+A version is tagged on the commit that released it and on no other: its
+**releasing commit**, the first commit on the integration branch's
+first-parent line (its own history, without the commits of the branches merged
+into it) whose changelog has the version's heading. However the release reached
+the branch (a squash, a merge commit, a rebase, a direct push), that commit
+holds exactly the release. A version is owed a tag when it has a heading, no
+`<tag_prefix><version>` tag on `origin` (any tag of that name counts), and is
+newer than the newest `<tag_prefix>x.y.z` tag on `origin`; with no such tag
+on `origin`, only the newest release heading is owed one. So a repository
+that adopts the workflow with an untagged history never has its old versions
+tagged and published: `status.ts` shows what the first run would tag, and
+tagging the newest released version by hand first leaves nothing older owed.
+Versions are tagged oldest first, since a newer tag on `origin` leaves an
+older version no longer owed one: a version whose checks passed waits while
+an older owed version is `pending` or `rerun`. An older `failed` version
+holds nothing back; it is left for a person, its failed `tag.ts` run is the
+report, and once a newer version is tagged it is no longer owed a tag, so
+neither `tag.ts` nor `status.ts` lists it again.
+Each version owed gets one state:
+
+| State | Meaning |
+|-------|---------|
+| `ready` | every required check on the releasing commit itself passed, and no older owed version is `pending` or `rerun`: the tag can be made |
+| `pending` | a required check is queued, running or has not reported yet; or every check passed and the version waits for an older one, whose tag `waitsFor` names |
+| `rerun` | a required check was cancelled, none failed, and its workflow run's attempt number is still 1 |
+| `failed` | a required check failed, or was cancelled again after a re-run, or was cancelled outside a workflow run, or `--rerun` asked GitHub to run it again and was refused (GitHub refuses a run older than 30 days): left untagged for a person |
+| `imported` | its heading came in one commit with other release headings (a changelog brought in with its history), so no commit released it: tagged by hand if it is owed a tag at all |
+
+The required checks are `ci.required_checks` when the integration branch's
+`.config/jig.yaml` sets it (`[]` tags without any; a person's file and the
+environment are not read), else the checks the branch's rules require, classic
+protection and rulesets together; with neither, the plan stops: no required
+checks known. A check pinned to an app is met only by that app's check runs;
+an unpinned one takes the worst of its check runs and commit statuses.
+The newest check run per name and app that did its work answers. A
+`neutral` or `skipped` check run did none: with only those, it counts as
+passed when one's workflow run succeeded or no workflow run reported it (a
+check from another app), as pending while its run goes on, as cancelled when
+its run was cancelled (a job with `if: ${{ !cancelled() }}` is skipped in a
+cancelled run), and as failed otherwise. A later commit's success never stands in for the releasing commit's.
+The changelog, the `changelog:` section, `ci.required_checks` and the history
+are read from the integration branch, the tags from `origin` (`git ls-remote --tags`), never from
+the working tree or this clone's tags; a shallow clone is refused.
+
+It makes no tag. `--rerun` re-runs, once, the workflow runs of the `rerun`
+entries (it needs a token with Actions write); without it the script only
+reads. A re-run GitHub refuses fails the versions that needed it, with the
+reason in their `detail`; the plan, `ready` included, still holds for the
+others. `--json` prints `{ "plugin", "configured", "branch", "ref",
+"tagPrefix", "newestTag" (the newest `<tagPrefix>x.y.z` tag on `origin`, or
+null), "requiredChecks": { "source": "configuration" | "branch rules",
+"names" } | null, "versions": [{ "version", "tag", "commit", "state",
+"detail", "checks": [{ "name", "verdict", "detail", "url"?, "run"? }],
+"rerun": [], "waitsFor"? }], "ready": [{ "tag", "commit", "message" }], "reruns": [{ "run",
+"requested", "detail"? }] }`, versions oldest first. The `ready` list is what
+the workflow template's `tag-push` job tags, as an annotated tag made through
+GitHub's API. Exit 0 a plan was made (nothing owed and `not configured`
+included); 1 a version failed (its releasing commit failed its required
+checks, or a re-run it needed was refused), with the whole plan, `ready`
+included, still printed; 2 a usage error, an invalid configuration, a
+shallow clone, no required checks known, or something git or GitHub could not
+answer.
+
+## The release-access check
+
+```sh
+bun release-access.ts (--app <slug> | --app-id <id>) [--root <dir>] [--repo <owner/repo>] [--input <file>|-] [--json]
+```
+
+Whether the release's GitHub App can reach the integration branch in the
+configured mode, read from GitHub's rulesets (every page of the branch's rules)
+and classic branch protection combined, the most restrictive setting winning.
+It changes nothing. The App is `--app-id`, else the id `gh api apps/<slug>`
+gives; only a bypass entry of type `Integration` with that id names it, never
+a role, a team, an organization administrator or a deploy key. The repository
+is `--repo`, else `origin`'s.
+
+| Requirement | Mode | Holds when |
+|-------------|------|-----------|
+| `push` | `direct` | every active ruleset with a rule that would stop the release's push lists the App with bypass mode `always` (or `exempt`), and no classic protection stops it (required checks or reviews, push restrictions without the App, signed commits, a locked branch) |
+| `release-branch` | `pull-request` | the App can create, push and force-push `changelog.release.branch`; its rules are read even before it exists, its classic protection is unknown until it does |
+| `force-push-blocked`, `deletion-blocked` | both | classic protection, or a `non_fast_forward` or `deletion` rule in an active ruleset that does not list the App, blocks it for the App too |
+
+A rule that cannot stop the release's one fast-forward commit (`non_fast_forward`,
+`deletion`, `creation`, `required_linear_history`, `copilot_code_review`)
+needs no bypass; every other rule, an unknown one included, does. On the
+release branch `creation` and `non_fast_forward` count as well. Where GitHub
+withheld a bypass list, or classic protection could not be read, the
+requirement is `UNKNOWN`, never passed or failed: a login without
+administrator rights gets unknowns, not an error. An organization ruleset is
+judged like the others and listed apart, since no repository setting changes
+it; setup stops where a requirement fails because of one.
+
+The text output prints `PASS`, `UNKNOWN` or `FAIL` and a summary per
+requirement, with its reasons indented, and ends `N of M requirements hold`.
+`--json` prints `{ "plugin", "configured", "mode", "repo", "identity": { "id",
+"slug" }, "integrationBranch", "releaseBranch", "status": "pass" | "fail" |
+"unknown", "requirements": [{ "id", "status", "summary", "reasons" }],
+"rulesets": [{ "branch", "id", "name", "enforcement", "source", "rules",
+"bypass" }], "organizationRulesets": [{ "id", "name" }] }`, `bypass` null where
+it was withheld. `--input` reads an offline document instead of GitHub (the
+shape `scripts/check-branch-protection.ts --input` takes in Jig, with
+`release_branch`, required in `pull-request` mode, and optional `app` and
+`repo`). Exit 0 every requirement holds (or `not
+configured`); 1 one fails; 3 none fails but one is unknown, for a repository
+administrator to read; 2 a usage error, an invalid configuration, or GitHub
+could not be read.
+
+Jig runs these on itself: `.github/workflows/release.yml` uses the skill's
+action from its own checkout for the release and the tags, `scripts/release.ts`
+runs the release step locally, `scripts/check-changelog.ts` runs the check in
+`bun run gates`, all reading Jig's own `changelog:` section, and
+`scripts/check-branch-protection.ts` reads main's rulesets through
+`github-rules.ts`. The self-tests are in [`../__tests__/`](../__tests__/).
 The practice is
 [M12's change records](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md).

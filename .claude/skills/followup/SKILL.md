@@ -56,7 +56,7 @@ gh pr view "$PR" --json number,title,state,mergedAt,mergeCommit,baseRefName,head
 - Fetch first: `git fetch --no-tags origin main`. Leave this clone's tags
   alone: a fetch that updates them refuses a tag origin holds elsewhere
   ("would clobber existing tag"), and [B](#b-tagging-the-release) reads
-  origin's tags and this clone's separately, to tell those cases apart.
+  origin's tags, not this clone's.
 
 ## Step 1: the arms
 
@@ -96,7 +96,8 @@ Every Jig release is tagged `v<version>` on the commit that shipped it
 ([CONTRIBUTING.md § Releasing the
 plugin](../../../CONTRIBUTING.md#releasing-the-plugin)). After the merge,
 the release workflow (`.github/workflows/release.yml`) writes the change notes
-into CHANGELOG.md, moves the version on a commit of its own and tags it.
+into CHANGELOG.md and moves the version on a commit of its own, and tags that
+commit once its gates pass.
 First check that it consumed this merge's notes, by the merge's own notes and
 the release run, not by what `changes/` holds on main: another merge may have
 added a note since, and its run may be queued or running. The merge's notes
@@ -154,22 +155,34 @@ be reused, and the later merge's note is not this one's. Then:
 
 A note on main that a later merge added is that merge's to settle, not this one's.
 Then check the tags on every merge,
-whatever it changed: a tag an earlier release left owed is owed now.
+whatever it changed: a tag an earlier release left owed is owed now. The
+release workflow makes them itself: it tags each version's releasing commit
+(the first commit on main whose CHANGELOG.md has the version's heading) once
+`gates` passed on that commit. `status.ts`'s report above already holds the
+picture, in `tags`: `known: false` with a `detail` when it could not be read
+(no `gh`, no origin), else `untagged`, every released version origin has no
+tag for, each with its `state`, its releasing `commit` and the checks
+`failing`. For the whole plan (every required check's verdict and link), run
+the changelog skill's tag plan; it reads the changelog and the history from
+`origin/main` and the tags from origin, never from the working tree:
 
 ```bash
-bun scripts/release-tags.ts
+bun plugin/skills/changelog/scripts/tag.ts --json
 ```
 
-It lists every version CHANGELOG.md released that has no tag on origin, with
-the commit that first set the manifest to it; a tag made here whose push
-failed still counts as owed, and so does a tag on origin that is lightweight
-or points at another commit: a release is owed an annotated tag at that
-commit. Replacing a tag on origin deletes it
-there first, so the script prints those commands apart, as ask-first. That
-commit, not a pull request title, is the one to tag: a title can name the version the branch had before
-it was renumbered. It prints the commands; it never runs them. NOT OWED only
-when it reports none. An untagged release is also a broken link on the site,
-which links each release on `/whats-new/` to its tag.
+| `state` | It means |
+|---------|----------|
+| no entry (`untagged` empty) | NOT OWED |
+| `pending` or `rerun` | Pending: the gates on the releasing commit are still running, or were cancelled and the workflow runs them again once; check again later, not an incident |
+| `ready` | OWED: the gates passed but no tag job has run since; run the release workflow (`gh workflow run release.yml`), ask first |
+| `failed` | OWED, a person's step: the gates failed on the releasing commit; report it with the failing checks, and never tag it by hand |
+| `imported` | OWED only if that version was ever owed a tag: its heading came in with others, so no commit released it; report it for a person |
+
+`tags.known: false` is unread, not NOT OWED: say so with its `detail`. A tag
+on origin of the version's name counts as made, whatever it points at; when
+a release link on the site (`/whats-new/` links each release to its tag)
+lands on the wrong commit, report it as a person's step. An untagged release
+is also a broken link there.
 
 Machines receive a release only when they update the plugin: say so, with the
 update command from [plugin/README.md](../../../plugin/README.md#update-pin-or-remove),
@@ -291,8 +304,8 @@ act:
 |---|---|
 | Tracker status, closing comment, filing follow-up items (here or for a consumer) | on its own |
 | Fixing what the pass found in Jig's documents or the site's hand-written text | on its own: one follow-up pull request for all of it, opened as a draft (CONTRIBUTING.md) |
-| Read-only checks: `release-tags.ts`, `site-diff.ts`, `drives.ts`, `gh run` | on its own |
-| Creating and pushing release tags | ask first |
+| Read-only checks: `status.ts`, `tag.ts` (without `--rerun`), `site-diff.ts`, `drives.ts`, `gh run` | on its own |
+| Running the release workflow, creating or replacing a release tag | ask first |
 | Re-running a failed deploy | ask first |
 | Stopping a live driver, deleting a branch or a worktree | ask first |
 | Anything in another repository, or anything near the origin-reference boundary | a person decides |

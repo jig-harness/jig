@@ -169,19 +169,23 @@ changes a merge decision, and the testing strategy sets tiers with budgets.
 Each pull request adds a [change note](GLOSSARY.md): a small file of its own,
 never an edit to the changelog or the version. After the merge, a release
 step writes the notes into the changelog, moves the version to the largest
-bump asked for, tags the release and deletes the notes. Two pull requests
+bump asked for and deletes the notes, and the release is tagged once its
+commit passes its checks. Two pull requests
 never edit the same lines, so merging one does not put the others in
 conflict. The `changelog` skill turns this on in a repository whose own
 configuration names its changelog file, in Keep a Changelog or Common
 Changelog format, with the version read from a file or from tags; its
-commands check a branch, show the next release and run the release step.
-Jig's own releases are made this way.
+commands check a branch, show the next release and run the release step. A
+GitHub Action and workflow template run them in CI, pushing the release
+directly or as a release pull request a person merges, and a guided setup
+walks through the GitHub App, the branch rules and the workflow. Jig's own
+releases are made this way.
 
 - **Skills:** [`changelog`](plugin/skills/changelog/README.md)
 - **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
-- **On the roadmap:** the rest of the `changelog` skill (roadmap item 4):
-  drafting each pull request's note, a check of the whole file against its
-  format's own rules, and the way a release reaches the integration branch
+- **On the roadmap:** the rest of the `changelog` skill (roadmap item 4): a
+  check of the whole file against its format's own rules, and a module of its
+  own for releases and versions
 
 ## Workspaces for many agents on one machine
 

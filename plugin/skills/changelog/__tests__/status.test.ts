@@ -33,6 +33,9 @@ const stub = (state: Hosting["lastReleaseRun"]): Hosting => ({
   name: "stub",
   defaultBranch: () => "main",
   lastReleaseRun: state,
+  requiredChecks: () => ({ known: true, value: [] }),
+  commitChecks: () => ({ known: true, value: [] }),
+  rerun: () => null,
 });
 
 describe("status", () => {
@@ -174,9 +177,13 @@ describe("the last release run, through gh", () => {
     const [from, to] = created?.startsWith(">=")
       ? [created.slice(2), undefined]
       : (created?.split("..") ?? []);
+    const event = args.includes("--event")
+      ? args[args.indexOf("--event") + 1]
+      : undefined;
     const time = (run: Listed) => String(run.createdAt ?? "");
     return runs
       .filter((run) => (!from || time(run) >= from) && (!to || time(run) <= to))
+      .filter((run) => !event || (run.event ?? "push") === event)
       .toSorted((x, y) => time(y).localeCompare(time(x)))
       .slice(0, Number(args[args.indexOf("--limit") + 1]));
   }
@@ -241,7 +248,7 @@ describe("the last release run, through gh", () => {
     }
   });
 
-  test("only a workflow named release counts, not one that mentions the word", () => {
+  test("only a workflow named release or changelog counts, not one that mentions the word", () => {
     const state = (name: string) =>
       github(
         "/x",
@@ -249,13 +256,49 @@ describe("the last release run, through gh", () => {
           { id: 7, name },
         ]),
       ).lastReleaseRun("main").state;
-    expect([state("release"), state("Release"), state(" RELEASE ")]).toEqual([
-      "success",
-      "success",
-      "success",
-    ]);
+    expect([
+      state("release"),
+      state("Release"),
+      state(" RELEASE "),
+      state("changelog"),
+    ]).toEqual(["success", "success", "success", "success"]);
     for (const name of ["Release Drafter", "pre-release checks", "releases"])
       expect([name, state(name)]).toEqual([name, "none"]);
+  });
+
+  test("a tag or branch-check run of the release workflow is not a release run", () => {
+    const runs = [
+      {
+        status: "completed",
+        conclusion: "failure",
+        event: "push",
+        createdAt: at(1),
+      },
+      {
+        status: "completed",
+        conclusion: "success",
+        event: "workflow_run",
+        createdAt: at(2),
+      },
+      {
+        status: "completed",
+        conclusion: "success",
+        event: "schedule",
+        createdAt: at(3),
+      },
+    ];
+    const recent = github(
+      "/x",
+      answering({ 1: runs }, [{ id: 1, name: "changelog" }]),
+    ).lastReleaseRun("main");
+    expect(recent.state).toBe("failure");
+    // Past the horizon, the newest run of each releasing event answers.
+    const old = githubAt(
+      "/x",
+      answering({ 1: runs }, [{ id: 1, name: "changelog" }]),
+      () => new Date("2026-06-01T00:00:00Z"),
+    ).lastReleaseRun("main");
+    expect(old.state).toBe("failure");
   });
 
   test("an older release run still going answers before a newer one that ended", () => {

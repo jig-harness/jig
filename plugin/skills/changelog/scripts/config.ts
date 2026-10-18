@@ -4,7 +4,7 @@
 // environment variable that sets any of it is refused, never merged, or a
 // person's own settings could switch the skill on, or weaken what it
 // enforces, in a repository that never adopted it.
-import { ChangelogError } from "./errors.ts";
+import { ChangelogError, ConfigurationError } from "./errors.ts";
 import { posix } from "node:path";
 import {
   isMapping,
@@ -436,14 +436,31 @@ export function configAtBase(
   root: string,
   base: string,
 ): ChangelogConfig | null {
-  const text = tryGit(root, ["show", `${base}:${OVERLAY_RELPATH}`]);
-  if (text === null) return null;
+  return overlayAt(root, base, (parsed) =>
+    parsed === null ? null : parseChangelogSection(parsed.changelog),
+  );
+}
+
+/**
+ * What `read` makes of the repository's own `.config/jig.yaml` at the
+ * revision `rev`, given as a mapping, or null when the revision has no such
+ * file or it holds no mapping. The other layers (a person's file, the
+ * environment) are not read: a revision's configuration is what the
+ * repository committed. Throws a `ConfigurationError`, naming the file and
+ * revision, when the file is not YAML or `read` refuses it.
+ */
+export function overlayAt<T>(
+  root: string,
+  rev: string,
+  read: (parsed: Record<string, unknown> | null) => T,
+): T {
+  const text = tryGit(root, ["show", `${rev}:${OVERLAY_RELPATH}`]);
   try {
-    const parsed = load(text);
-    return isMapping(parsed) ? parseChangelogSection(parsed.changelog) : null;
+    const parsed = text === null ? null : load(text);
+    return read(isMapping(parsed) ? parsed : null);
   } catch (error) {
-    throw new ChangelogError(
-      `${error instanceof Error ? error.message : String(error)}: ${OVERLAY_RELPATH} at ${base}`,
+    throw new ConfigurationError(
+      `${error instanceof Error ? error.message : String(error)}: ${OVERLAY_RELPATH} at ${rev}`,
     );
   }
 }

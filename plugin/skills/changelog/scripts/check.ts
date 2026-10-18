@@ -14,10 +14,18 @@
 // section it proposes as well, which must be valid, and the check names the
 // change. Where the base holds no section the check says "not configured".
 //
-// Usage: bun check.ts [--root <dir>] [--base <ref>]
+// In `pull-request` mode (the base's `changelog.release.push`), the pull
+// request from the base's `changelog.release.branch` is the release pull
+// request, which the release step writes: instead of the rules above, the
+// check re-runs the release step on its merge base and passes it only when
+// that gives exactly its change (release-pr.ts says how).
+//
+// Usage: bun check.ts [--root <dir>] [--base <ref>] [--head-ref <name>]
 // The base is `--base`, else the base of the pull request that started the CI
 // job, else the hosting service's default branch (never `repository.base_branch`
-// of the branch's own tree). On the base itself only the notes are checked,
+// of the branch's own tree). The branch the change comes from is `--head-ref`,
+// else the head of the pull request that started the CI job, else the branch
+// checked out. On the base itself only the notes are checked,
 // and the output says so. A base git cannot compare against is a finding: the
 // branch rules must not pass because they did not run.
 // Exit: 0 clean (or not configured), 1 findings (an invalid configuration at
@@ -40,6 +48,11 @@ import {
 } from "./config.ts";
 import { releasedVersions, unreleasedSection } from "./formats.ts";
 import { authorsIn, isBot, originLinks } from "./history.ts";
+import {
+  checkReleasePullRequest,
+  headRef,
+  isReleasePullRequest,
+} from "./release-pr.ts";
 import {
   isNoteFile,
   type NotesConfig,
@@ -350,6 +363,8 @@ export function checkNotes(options: CheckOptions): CheckResult {
 /** What the branch check found, with whether the repository has the skill on at its base. */
 export interface BranchCheck extends CheckResult {
   configured: boolean;
+  /** The release a release pull request was reproduced as; null for any other branch. */
+  reproduced: { version: string; date: string } | null;
 }
 
 const notConfigured = (more: Partial<BranchCheck> = {}): BranchCheck => ({
@@ -357,6 +372,7 @@ const notConfigured = (more: Partial<BranchCheck> = {}): BranchCheck => ({
   notices: [],
   skipped: null,
   configured: false,
+  reproduced: null,
   ...more,
 });
 
@@ -433,13 +449,16 @@ function proposalFindings(
  * The branch check of the repository at `root` against `base`: the
  * configuration is the base's, and the branch's own section is checked as a
  * proposal. A repository whose base has no `changelog.file` is not
- * configured, whatever the branch adds.
+ * configured, whatever the branch adds. The release pull request of
+ * `pull-request` mode is reproduced instead; `explicitHead` names the branch
+ * the change comes from where the CI event or the checkout does not.
  */
 export function checkBranch(
   root: string,
   base: string | null,
   env: Record<string, string | undefined> = process.env,
   explicitBase = true,
+  explicitHead: string | null = null,
 ): BranchCheck {
   let proposed: ChangelogConfig | null;
   try {
@@ -485,6 +504,16 @@ export function checkBranch(
       notices,
     });
   }
+  if (isReleasePullRequest(atBase, headRef(root, explicitHead, env))) {
+    const reproduction = checkReleasePullRequest(root, base);
+    return {
+      findings: [...findings, ...reproduction.findings],
+      notices,
+      skipped: null,
+      configured: true,
+      reproduced: reproduction.reproduced,
+    };
+  }
   const result = checkNotes({
     ...resolved,
     releasePaths: atBase.releasePaths,
@@ -497,6 +526,7 @@ export function checkBranch(
     notices: [...notices, ...result.notices],
     skipped: result.skipped,
     configured: true,
+    reproduced: null,
   };
 }
 
@@ -505,14 +535,16 @@ export function runCheck(
   root: string,
   explicitBase: string | null,
   env: Record<string, string | undefined> = process.env,
+  explicitHead: string | null = null,
 ): number {
   console.log(banner("check"));
   const base = checkBase(root, explicitBase, env);
-  const { findings, notices, skipped, configured } = checkBranch(
+  const { findings, notices, skipped, configured, reproduced } = checkBranch(
     root,
     base,
     env,
     explicitBase !== null,
+    explicitHead,
   );
   for (const n of notices) console.log(`note: ${n}`);
   for (const f of findings) console.error(f);
@@ -520,9 +552,11 @@ export function runCheck(
   console.log(
     !configured
       ? "change notes: not configured (the base holds no changelog.file in .config/jig.yaml)"
-      : skipped
-        ? `change notes: OK — every note reads; branch checks skipped (${skipped})`
-        : `change notes: OK — every note reads, and the branch leaves the version and the changelog's sections to the release step`,
+      : reproduced
+        ? `change notes: OK — the release pull request is what the release step writes on its merge base: ${reproduced.version}, dated ${reproduced.date}`
+        : skipped
+          ? `change notes: OK — every note reads; branch checks skipped (${skipped})`
+          : `change notes: OK — every note reads, and the branch leaves the version and the changelog's sections to the release step`,
   );
   return 0;
 }
@@ -534,11 +568,14 @@ if (import.meta.main)
         options: {
           root: { type: "string" },
           base: { type: "string" },
+          "head-ref": { type: "string" },
         },
       });
       return runCheck(
         values.root ? resolve(values.root) : consumerRoot(),
         values.base ?? null,
+        process.env,
+        values["head-ref"] ?? null,
       );
     } catch (error) {
       fail(2, error instanceof Error ? error.message : String(error));

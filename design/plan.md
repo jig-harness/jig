@@ -85,13 +85,8 @@ first; no `Unreleased`).
   configuration names, that they agree and that the current version has a
   heading, and holds branches to the change notes; no check yet validates a
   whole changelog against its format. `bun run gates` calls it.
-- **How the release reaches the integration branch**, chosen per
-  repository: a direct push by a GitHub App the branch's ruleset lets past
-  its rules (Jig's own setup, ADR-0004), or a release pull request a person
-  merges, which needs no such exception. A GitHub Action and workflow
-  template, and a setup step that walks through the App, the ruleset and the
-  environment holding the key; other CI providers' templates when a
-  repository needs one.
+- **Other CI providers' templates** beside GitHub's workflow template, when
+  a repository needs one.
 
 The practice itself (a changelog per released artifact, mechanically
 checked) gets a module of its own for releases and versions, M16, which

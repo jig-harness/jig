@@ -25,48 +25,31 @@
 // `{ "classic": {...}|null, "rules": [...], "rulesets": [{ "id", "name",
 // "enforcement", "bypass_actors" }] }`. A failing ruleset gets the rules to
 // add, not a payload.
+//
+// Reading and combining classic protection and rulesets is the changelog
+// skill's (plugin/skills/changelog/scripts/github-rules.ts), which its
+// release-access check reads the same way; this file holds Jig's policy, its
+// report and its remediation.
 import { readFileSync } from "node:fs";
 import { cli } from "../lib/cli.ts";
+import {
+  checkTypes,
+  combine,
+  contexts,
+  defaultBranchOf,
+  describeActor,
+  documentOf,
+  field,
+  ghApi,
+  type Json,
+  type RulesetView,
+  readBranch,
+  sourceOf,
+} from "../plugin/skills/changelog/scripts/github-rules.ts";
 
-type Json = Record<string, unknown>;
 function object(value: unknown): value is Json {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-function field(root: Json, path: string): unknown {
-  return path.split(".").reduce<unknown>((value, key) => {
-    if (value == null) return undefined;
-    if (!object(value)) throw new Error(`unexpected parent type for ${path}`);
-    return value[key];
-  }, root);
-}
-const FIELD_TYPES: Record<string, string> = {
-  "required_status_checks.contexts": "array",
-  "required_status_checks.strict": "boolean",
-  "required_pull_request_reviews.required_approving_review_count": "number",
-  "required_conversation_resolution.enabled": "boolean",
-  "enforce_admins.enabled": "boolean",
-  "allow_force_pushes.enabled": "boolean",
-  "allow_deletions.enabled": "boolean",
-  restrictions: "object",
-  "required_pull_request_reviews.bypass_pull_request_allowances": "object",
-};
-function hasType(found: unknown, type: string): boolean {
-  if (type === "array") return Array.isArray(found);
-  if (type === "object") return object(found);
-  return typeof found === type;
-}
-/** Throw when a field the report reads has the wrong type. */
-function checkTypes(value: Json): void {
-  for (const [path, type] of Object.entries(FIELD_TYPES)) {
-    const found = field(value, path);
-    if (found != null && !hasType(found, type))
-      throw new Error(
-        `branch-protection JSON has unexpected field types: ${path} must be ${type}`,
-      );
-  }
-}
-const contexts = (value: Json) =>
-  (field(value, "required_status_checks.contexts") ?? []) as unknown[];
 /** The settings Jig's policy requires, each with whether it holds. */
 function controls(value: Json): [string, boolean][] {
   return [
@@ -129,14 +112,14 @@ const BYPASS_ACTORS = [
 function rulesetLines(value: Json): string[] {
   const rulesets = value.rulesets ?? [];
   if (!Array.isArray(rulesets)) throw new Error("rulesets must be an array");
-  return rulesets.filter(object).map((r) => {
+  return (rulesets as RulesetView[]).filter(object).map((r) => {
     const bypass = Array.isArray(r.bypass)
-      ? r.bypass.join(", ") || "none"
+      ? r.bypass.map(describeActor).join(", ") || "none"
       : "unknown (GitHub omits them without write access to the ruleset)";
     const about = [
       r.name,
       r.enforcement,
-      `rules: ${(r.rules as string[]).join(", ") || "none"}`,
+      `rules: ${r.rules.join(", ") || "none"}`,
     ]
       .filter(Boolean)
       .join("; ");
@@ -236,224 +219,6 @@ export function remediation(value: Json): Json {
     ),
   };
 }
-/** A ruleset bypass actor, named as far as its id allows, with the mode it bypasses in. */
-function bypassName(actor: Json): string {
-  const id = String(actor.actor_id ?? "");
-  const who = (() => {
-    switch (actor.actor_type) {
-      case "Integration":
-        return `app ${id}`;
-      case "RepositoryRole":
-        return id === "5" ? "repository admin" : `repository role ${id}`;
-      case "OrganizationAdmin":
-        return "organization admin";
-      case "Team":
-        return `team ${id}`;
-      case "DeployKey":
-        return "deploy keys";
-      default:
-        return `${String(actor.actor_type)} ${id}`;
-    }
-  })();
-  return `${who} (${String(actor.bypass_mode ?? "mode unknown")})`;
-}
-
-/** What was read: classic protection, and the rules and rulesets that apply to the branch. */
-interface Source {
-  /** The branch's classic protection; null when it has none. */
-  classic: Json | null;
-  /** Every rule of every ruleset that applies, each carrying its `ruleset_id`. */
-  rules: Json[];
-  /** The rulesets by id; one may lack `bypass_actors`, which GitHub omits without write access. */
-  rulesets: Json[];
-}
-
-function objects(value: unknown, what: string): Json[] {
-  if (value == null) return [];
-  if (!Array.isArray(value) || !value.every(object))
-    throw new Error(`ruleset input: ${what} must be an array of objects`);
-  return value;
-}
-
-/** The modes a ruleset is in; only `active` enforces anything. */
-const ENFORCEMENTS = ["active", "evaluate", "disabled"];
-
-/**
- * Throw unless every rule names the ruleset it comes from and every ruleset
- * has an id and, when it says, a known enforcement mode. A ruleset without
- * `enforcement` is one GitHub would not describe; the rules endpoint lists
- * only active rules, so its rules count.
- */
-function checkRulesets(rules: Json[], rulesets: Json[]): void {
-  const isId = (value: unknown) =>
-    (typeof value === "number" && Number.isInteger(value)) ||
-    (typeof value === "string" && /^\d+$/.test(value));
-  if (!rules.every((r) => isId(r.ruleset_id)))
-    throw new Error("ruleset input: every rule needs its ruleset_id");
-  for (const ruleset of rulesets) {
-    if (!isId(ruleset.id))
-      throw new Error("ruleset input: every ruleset needs its id");
-    if (
-      "enforcement" in ruleset &&
-      !ENFORCEMENTS.includes(ruleset.enforcement as string)
-    )
-      throw new Error(
-        `ruleset input: enforcement of ruleset ${String(ruleset.id)} is one of ${ENFORCEMENTS.join(", ")}`,
-      );
-  }
-}
-
-/** The sources of an `--input` document or a live read; a bare object is classic protection. */
-function sourceOf(parsed: Json): Source {
-  if (!("rules" in parsed || "rulesets" in parsed || "classic" in parsed))
-    return { classic: parsed, rules: [], rulesets: [] };
-  if ("bypass_actors" in parsed)
-    throw new Error(
-      "ruleset input: bypass_actors belong to a ruleset; list them under rulesets[] with the ruleset's id",
-    );
-  const classic = parsed.classic ?? null;
-  if (classic !== null && !object(classic))
-    throw new Error("ruleset input: classic must be an object or null");
-  const rules = objects(parsed.rules, "rules");
-  const rulesets = objects(parsed.rulesets, "rulesets");
-  checkRulesets(rules, rulesets);
-  return { classic, rules, rulesets };
-}
-
-const parametersOf = (rule: Json): Json =>
-  object(rule.parameters) ? rule.parameters : {};
-
-/** The check names a `required_status_checks` rule's parameters list. */
-function contextsOf(parameters: Json): string[] {
-  const checks = parameters.required_status_checks;
-  if (checks === undefined) return [];
-  if (!Array.isArray(checks) || !checks.every(object))
-    throw new Error(
-      "ruleset input: required_status_checks must be an array of objects",
-    );
-  return checks.flatMap((c) =>
-    typeof c.context === "string" ? [c.context] : [],
-  );
-}
-
-/**
- * Classic protection and every rule that applies, combined the way GitHub
- * layers them (a control holds when any source provides it; checks add up;
- * the strictest review count wins), in the shape the policy is evaluated on,
- * with each ruleset's own bypass list beside it.
- */
-export function combine(source: Source): Json {
-  const { classic, rulesets } = source;
-  // A ruleset in evaluate or disabled mode enforces nothing.
-  const inactive = new Set(
-    rulesets
-      .filter((r) => "enforcement" in r && r.enforcement !== "active")
-      .map((r) => String(r.id)),
-  );
-  const rules = source.rules.filter((r) => !inactive.has(String(r.ruleset_id)));
-  const base: Json = classic ?? {};
-  checkTypes(base);
-  const ofType = (type: string) =>
-    rules.filter((r) => r.type === type).map(parametersOf);
-  const checkRules = ofType("required_status_checks");
-  const reviewRules = ofType("pull_request");
-  const classicChecks = object(base.required_status_checks)
-    ? base.required_status_checks
-    : null;
-  const classicReviews = object(base.required_pull_request_reviews)
-    ? base.required_pull_request_reviews
-    : null;
-  const approvals = [
-    classicReviews?.required_approving_review_count,
-    ...reviewRules.map((r) => r.required_approving_review_count),
-  ].filter((n): n is number => typeof n === "number");
-  const ids = [
-    ...new Set([
-      ...rules.map((r) => String(r.ruleset_id)),
-      ...rulesets.map((r) => String(r.id)),
-    ]),
-  ];
-  return {
-    ...base,
-    classic_protected: classic !== null,
-    required_status_checks:
-      classicChecks || checkRules.length
-        ? {
-            ...classicChecks,
-            strict:
-              classicChecks?.strict === true ||
-              checkRules.some(
-                (r) => r.strict_required_status_checks_policy === true,
-              ),
-            contexts: [
-              ...new Set([
-                ...contexts(base),
-                ...checkRules.flatMap(contextsOf),
-              ]),
-            ],
-          }
-        : null,
-    required_pull_request_reviews:
-      classicReviews || reviewRules.length
-        ? {
-            ...classicReviews,
-            required_approving_review_count: Math.max(0, ...approvals),
-          }
-        : null,
-    required_conversation_resolution: {
-      enabled:
-        field(base, "required_conversation_resolution.enabled") === true ||
-        reviewRules.some((r) => r.required_review_thread_resolution === true),
-    },
-    allow_force_pushes: {
-      enabled: !(
-        field(base, "allow_force_pushes.enabled") === false ||
-        ofType("non_fast_forward").length
-      ),
-    },
-    allow_deletions: {
-      enabled: !(
-        field(base, "allow_deletions.enabled") === false ||
-        ofType("deletion").length
-      ),
-    },
-    rulesets: ids.map((id) => {
-      const ruleset = rulesets.find((r) => String(r.id) === id);
-      const bypass = ruleset?.bypass_actors;
-      if (bypass !== undefined && bypass !== null)
-        if (!Array.isArray(bypass) || !bypass.every(object))
-          throw new Error(
-            `ruleset input: bypass_actors of ruleset ${id} must be an array of objects`,
-          );
-      return {
-        id,
-        name: typeof ruleset?.name === "string" ? ruleset.name : null,
-        enforcement:
-          typeof ruleset?.enforcement === "string" ? ruleset.enforcement : null,
-        rules: [
-          ...new Set(
-            rules
-              .filter((r) => String(r.ruleset_id) === id)
-              .map((r) => String(r.type)),
-          ),
-        ],
-        // null where GitHub did not say: unknown, never an empty list.
-        bypass: Array.isArray(bypass) ? bypass.map(bypassName) : null,
-      };
-    }),
-  };
-}
-
-/** A `gh api` call; a failure throws unless `tolerate404` and GitHub said 404. */
-function gh(args: string[], tolerate404 = false) {
-  const result = Bun.spawnSync(["gh", "api", ...args], { timeout: 15000 });
-  if (
-    result.exitCode !== 0 &&
-    !(tolerate404 && result.stderr.toString().includes("HTTP 404"))
-  )
-    throw new Error(result.stderr.toString() || "gh api failed or timed out");
-  return result;
-}
 /** The `--input` file and the positional owner/repo and branch. */
 function parseArgs(args: string[]): { input: string; positional: string[] } {
   let input = "";
@@ -486,34 +251,9 @@ function originRepo(): string {
     )
     .replace(/\.git$/, "");
 }
-/** A `gh api` response as JSON; null for a tolerated 404. */
-function ghJson(args: string[], tolerate404 = false): unknown {
-  const result = gh(args, tolerate404);
-  return result.exitCode === 0
-    ? JSON.parse(result.stdout.toString() || "null")
-    : null;
-}
 /**
- * The branch's classic protection; null when it has none. GitHub answers
- * "Branch not protected" for an unprotected branch but a bare 404 to a reader
- * who may not see protection, so any other 404 is checked against the
- * branch's own `protected` flag, which every reader sees, and fails when the
- * branch is protected.
- */
-function classicProtection(repo: string, encoded: string): unknown {
-  const result = gh([`repos/${repo}/branches/${encoded}/protection`], true);
-  if (result.exitCode === 0) return JSON.parse(result.stdout.toString());
-  if (result.stderr.toString().includes("Branch not protected")) return null;
-  const branch = ghJson([`repos/${repo}/branches/${encoded}`]);
-  if (object(branch) && branch.protected === false) return null;
-  throw new Error(
-    `cannot read the classic protection of ${repo}@${decodeURIComponent(encoded)}, which is protected: an administrator's gh login is needed`,
-  );
-}
-/**
- * The live protection of `branch` (its default branch when empty): its
- * classic protection, every page of the rules that apply to it, and each
- * ruleset behind those rules, as the document `--input` takes.
+ * The live protection of `branch` (its default branch when empty), as the
+ * document `--input` takes.
  */
 function fetchProtection(
   repo: string,
@@ -521,34 +261,11 @@ function fetchProtection(
 ): { branch: string; raw: string } {
   if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repo))
     throw new Error("could not parse an owner/repo from origin");
-  const name =
-    branch ||
-    gh([`repos/${repo}`, "--jq", ".default_branch"])
-      .stdout.toString()
-      .trim();
-  const encoded = encodeURIComponent(name);
-  // The endpoint returns 30 rules a page by default; --slurp wraps the pages.
-  const pages = ghJson([
-    "--paginate",
-    "--slurp",
-    `repos/${repo}/rules/branches/${encoded}?per_page=100`,
-  ]);
-  const rules = (Array.isArray(pages) ? pages.flat() : []).filter(object);
-  const ids = [...new Set(rules.map((r) => String(r.ruleset_id)))];
-  const rulesets = ids.map((id) => {
-    // A ruleset GitHub will not describe keeps its id, and its bypass list
-    // stays unknown.
-    const ruleset = ghJson([`repos/${repo}/rulesets/${id}`], true);
-    return object(ruleset) ? ruleset : { id };
-  });
-  const classic = classicProtection(repo, encoded);
+  const gh = ghApi();
+  const name = branch || defaultBranchOf(gh, repo);
   return {
     branch: name,
-    raw: JSON.stringify({
-      classic: object(classic) ? classic : null,
-      rules,
-      rulesets,
-    }),
+    raw: JSON.stringify(documentOf(readBranch(gh, repo, name))),
   };
 }
 function printRemediation(repo: string, branch: string, value: Json): void {
@@ -573,6 +290,11 @@ function protectionSource(
   const repo = repoArg || originRepo();
   return { repo, ...fetchProtection(repo, branchArg ?? "") };
 }
+/** What the recheck's heading calls the protection: classic, rulesets, or both. */
+function recheckTitle(rulesets: boolean, classic: boolean): string {
+  if (!rulesets) return "Branch protection";
+  return classic ? "Branch protection and ruleset" : "Ruleset";
+}
 export function checkProtection(args: string[]): number {
   const { input, positional } = parseArgs(args);
   const { repo, branch, raw } = protectionSource(input, positional);
@@ -586,7 +308,7 @@ export function checkProtection(args: string[]): number {
   const result = evaluateProtection(value);
   const rulesets = source.rules.length > 0 || source.rulesets.length > 0;
   console.log(
-    `${rulesets ? (source.classic ? "Branch protection and ruleset" : "Ruleset") : "Branch protection"} recheck — ${repo}@${branch}\n${result.lines.join("\n")}`,
+    `${recheckTitle(rulesets, Boolean(source.classic))} recheck — ${repo}@${branch}\n${result.lines.join("\n")}`,
   );
   if (result.status && rulesets)
     console.log(

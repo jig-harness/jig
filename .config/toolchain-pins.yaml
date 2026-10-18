@@ -5,7 +5,8 @@
 # modules/M2-generated-artifact-freshness/reference/toolchain-pins/README.md
 #
 # The workflows install Bun through mise, which reads mise.toml, so they
-# carry no pin of their own and are not sites.
+# carry no pin of their own and are not sites. The changelog skill's action
+# runs where mise.toml is the consumer's, so it pins the Bun Jig tests with.
 tools:
   bun:
     source: { file: mise.toml, toml: tools.bun }
@@ -13,3 +14,6 @@ tools:
       - { files: package.json, json: packageManager, pattern: '^bun@(.+)$' }
       # The types package is released with the runtime and carries its version.
       - { files: package.json, json: devDependencies.@types/bun }
+      - files: plugin/skills/changelog/action.yml
+        step: oven-sh/setup-bun
+        with: bun-version

@@ -63,6 +63,11 @@ modules/M9-tasks-memory/templates/ISSUE-TEMPLATES.md
 modules/M9-tasks-memory/templates/MEMORY-TIERS.md
 modules/M9-tasks-memory/templates/label-taxonomy.yaml
 modules/M9-tasks-memory/templates/phase-formula.yaml
+plugin/skills/changelog/templates/common-changelog.md
+plugin/skills/changelog/templates/github/app-manifest-direct.json
+plugin/skills/changelog/templates/github/app-manifest-pull-request.json
+plugin/skills/changelog/templates/github/changelog.yml
+plugin/skills/changelog/templates/keep-a-changelog.md
 
 Third-party code, each under the licence in the file listed, which sits
 beside it:

@@ -101,6 +101,7 @@ criteria:
     observe:
       - "a CI job or release tool on the integration branch writes the notes into the changelog and moves the version (Changesets, towncrier, scriv, changie, or a script)"
       - "a pull-request check fails a malformed note, or a direct edit to the changelog's release sections or the version"
+      - "Jig's changelog skill meets both where `.config/jig.yaml` sets `changelog.file` and a workflow runs its action (`plugin/skills/changelog` with `command: check` on pull requests and `command: release` on the integration branch, as its workflow template does); without such a workflow the release step is not wired, and `/jig:changelog setup` is the remedy"
     since: 0.31.0
 
   - id: unattended-agent-control-channel

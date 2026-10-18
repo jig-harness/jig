@@ -28,6 +28,15 @@ export function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isString);
 }
 
+/** A list of distinct names, none empty or only whitespace (`ci.required_checks`). */
+export function isDistinctNameList(value: unknown): value is string[] {
+  return (
+    isStringArray(value) &&
+    value.every((name) => name.trim() !== "") &&
+    new Set(value).size === value.length
+  );
+}
+
 /**
  * A value that did not have the expected shape. `what` names the input (a
  * file, a command's output), `path` the place inside it (`$` for the whole

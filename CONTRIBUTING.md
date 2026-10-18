@@ -22,7 +22,8 @@ under `plugin/`.
   [CHANGELOG.md](CHANGELOG.md)'s Unreleased or release sections or to the
   plugin version. A pull request that changes `plugin/` gives its note
   `release: patch|minor|major`; after the merge, the release step writes the
-  note into the changelog, moves the version and tags it
+  note into the changelog and moves the version, and the release commit is
+  tagged once its gates pass
   ([ADR-0004](docs/adr/ADR-0004-change-notes-released-after-the-merge.md)).
   A file that must name the version a change ships in (a `since:`) names
   `next`, which the release replaces.
@@ -412,20 +413,30 @@ A release goes like this:
    `plugin/` without a note that asks for a release). A `since:` the change
    adds names `next`.
 2. Merge it with green gates.
-3. The release workflow (`.github/workflows/release.yml`) then runs
-   `scripts/release.ts` on main: it moves `version` in both manifests to the
-   next version, writes the note as that version's section of
-   [CHANGELOG.md](CHANGELOG.md), replaces `since: next`, deletes the note,
-   and pushes the commit with its tag `v<version>`.
+3. The release workflow (`.github/workflows/release.yml`) then runs the
+   `changelog` skill's release step on main, through the skill's action from
+   this checkout (`./plugin/skills/changelog`), so Jig releases with the
+   version being changed: it moves `version` in both manifests to the next
+   version, writes the note as that version's section of
+   [CHANGELOG.md](CHANGELOG.md), replaces `since: next` and deletes the note,
+   in a job that holds no key; a second job pushes that commit to main.
+4. The release commit runs the gates like any push to main. Once `gates`
+   passes on that commit, the workflow's `tag-plan` and `tag-push` jobs tag it
+   `v<version>`. They run after every gates run on main and every six hours;
+   a cancelled gates run is run again once, and a release commit whose gates
+   failed stays untagged, fails `tag-plan` and shows in the changelog skill's
+   `status.ts`, for a person to fix.
 
-The workflow pushes as the `jig-release` GitHub App, the one actor `main`'s
-ruleset lets past its pull-request and check rules; its client ID
+The workflow pushes and tags as the `jig-release` GitHub App, the one actor
+`main`'s ruleset lets past its pull-request and check rules; its client ID
 (`RELEASE_APP_CLIENT_ID`) and private key (`RELEASE_APP_PRIVATE_KEY`) live in
-the `release` environment, which only `main` may use. When the workflow
-cannot push (the App was uninstalled, its key revoked, or the ruleset no
-longer names it), the notes wait on `main` and nothing is lost: restore it,
+the `release` environment, which only `main` may use, and only the jobs that
+push and tag, which run nothing from the repository, name it. When the
+workflow cannot push (the App was uninstalled, its key revoked, or the ruleset
+no longer names it), the notes wait on `main` and nothing is lost: restore it,
 then run the workflow by hand (`gh workflow run release.yml`, or Run
-workflow on its Actions page). It writes every waiting note as one release. A release cannot go through a pull request instead: the gates refuse a
+workflow on its Actions page). It writes every waiting note as one release.
+`bun scripts/release.ts --dry-run` shows locally what the next run writes. A release cannot go through a pull request instead: the gates refuse a
 branch that moves the version or writes a release section, which only the
 release step may.
 

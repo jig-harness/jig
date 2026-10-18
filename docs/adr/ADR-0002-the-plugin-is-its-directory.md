@@ -4,8 +4,8 @@ type: adr
 status: amended
 description: "Agent tools install only plugin/ from main; everything a skill needs lives there, and each change is a tagged version"
 lifecycle: permanent
-version: "1.4"
-last_updated: 2026-10-17
+version: "1.5"
+last_updated: 2026-10-18
 owner: maintainers
 decision_date: 2026-10-09
 supersedes: ~
@@ -136,3 +136,15 @@ and the licence gate (`scripts/check-licences.ts`) lists templates in a skill
 moving the plugin to the repository root (its `package.json` would make each
 agent tool install the development dependencies on every machine), and a
 copy of the asset in the skill (it drifts from the module's).
+
+### 2026-10-18 — A version's tag follows its release commit's gates (v1.5)
+
+Touches the third amendment's "a version exists once the run's one atomic
+push puts its release commit and its tag on `main`". The run's push carries
+the release commit alone; the tag is made on that commit once its gates pass
+([ADR-0004](ADR-0004-change-notes-released-after-the-merge.md)'s third
+amendment). A version therefore exists on `main`, and reaches machines that
+install from it, as soon as its release commit lands, and a machine pinned to
+a tag receives it once the tag exists. The rest of that amendment holds: the
+release commit still lands on `main`'s newest commit, so one run still writes
+at most one version.

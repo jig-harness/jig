@@ -13,8 +13,8 @@ file of its own that says, for a reader of the changelog, what the pull request
 changed and what release it needs. Pull requests then touch different files, so
 they never conflict. After a merge, a release step writes the waiting notes into
 the changelog, moves the version and deletes the notes. The skill's scripts
-check that a branch follows the rules, show what the next release will be, and
-run that release step; its `SKILL.md` teaches an agent when a change needs a note
+check that a branch follows the rules, show what the next release will be, run
+that release step and plan its tags, and a GitHub Action runs them in CI; its `SKILL.md` teaches an agent when a change needs a note
 and how to write one worth reading. The practice itself is
 [M12's change records](https://github.com/docomply/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md).
 
@@ -118,6 +118,103 @@ agent skills use it where it helps: `resolve-conflicts` converts before merging
 a branch whose changelog edits would conflict, so nothing resolved elsewhere is
 thrown away.
 
+## Setting it up
+
+`/jig:changelog setup` walks you through turning the skill on in a repository
+on GitHub, in steps, each checked before the next: the `changelog:`
+section (and the changelog itself, from the
+[Keep a Changelog](templates/keep-a-changelog.md) or
+[Common Changelog](templates/common-changelog.md) template, when there is
+none); a GitHub App created from a prefilled App manifest
+([`direct`](templates/github/app-manifest-direct.json),
+[`pull-request`](templates/github/app-manifest-pull-request.json)), installed
+on the repository only, with its client ID and private key in a
+`changelog-release` environment only the integration branch may use; the
+branch rules the mode needs; the workflow; and the conversion of the pull
+requests already open, each left for its owner. The agent changes no setting
+itself: it tells you what to change and checks it after you did.
+
+## How the release reaches the branch
+
+`changelog.release.push` chooses one of two ways:
+
+- **`direct`**: the App pushes the release commit onto the integration branch.
+  The branch's ruleset lets the App past its rules, while a second ruleset,
+  which does not name the App, keeps force pushes and deletion blocked for it
+  too. Every merge is released at once, with no second merge.
+- **`pull-request`**: no one passes the branch's rules. Every push to the
+  integration branch regenerates a **release pull request** from scratch, and
+  a person merges it. The branch check passes it only when re-running the
+  release step on its merge base gives exactly its change; nobody edits it by
+  hand, and a wording fix goes into the note through an ordinary pull request.
+
+`release-access.ts` checks that the App can do what the mode needs and
+nothing more, and setup runs it.
+
+Either way, a version is tagged only once its **releasing commit**, the commit
+on the integration branch that first carries its changelog heading, has passed
+every required check: a publishing job started by the tag therefore ships
+only a commit that passed. A check that was cancelled is run again once; a
+releasing commit whose checks failed is left untagged, and `status.ts`
+reports it. Only versions newer than the newest release tag on `origin` are
+tagged, and with none yet only the newest, so adopting the workflow never
+tags and publishes an untagged history.
+
+## In CI: the action and the workflow
+
+CI has no plugin installed, so the skill is also a GitHub Actions
+[composite action](https://github.com/docomply/jig/blob/main/GLOSSARY.md),
+[`action.yml`](action.yml), used as
+`uses: <jig-owner>/jig/plugin/skills/changelog@<commit> # v<version>`: the
+full commit of a Jig release's tag, since a tag can move and a commit cannot.
+It sets up Bun at the version Jig tests with and runs one command on the
+checkout. Bun starts outside the checkout, in a folder of the runner's
+temporary space holding its own empty settings, and is given the checkout's
+path: so no file in the repository (`bunfig.toml`, `.env`, a `tsconfig.json`
+whose `paths` could replace the script) changes what runs. In the `tag` job
+the checkout keeps no credential; the action hands the token to the one git
+call that reads `origin`'s tags.
+
+| Input | For | What it is |
+|-------|-----|------------|
+| `command` | all | `check`, `release` or `tag` (required) |
+| `root` | all | the checkout, relative to the workspace (`.`) |
+| `base` | `check` | the revision the branch is compared with; by default the pull request's base |
+| `head-ref` | `check` | the branch the change comes from; by default the pull request's head |
+| `rerun` | `tag` | `true` to run cancelled required checks again, once (needs Actions write); `false` by default |
+| `token` | `check`, `tag` | the token GitHub is read with; the job's own token by default |
+| `git-user-name`, `git-user-email` | `release` | who the release commit is by; `github-actions[bot]` by default |
+
+| Output | For | What it is |
+|--------|-----|------------|
+| `changed` | `release` | `true` when the release step wrote something |
+| `version` | `release` | the version released; empty when the notes went under Unreleased |
+| `notes` | `release` | how many notes it wrote in |
+| `start`, `commit` | `release` | the commit it ran on and the release commit on top of it |
+| `bundle` | `release` | a git bundle holding that commit, for the job that pushes |
+| `push`, `release-branch` | `release` | `changelog.release.push` and `changelog.release.branch` |
+| `plan` | `tag` | the path of the tag plan as JSON |
+| `ready` | `tag` | the versions that can be tagged now, `[{ tag, commit, message }]` |
+| `failed` | `tag` | `true` when a releasing commit failed its checks |
+
+The action never pushes, tags or opens a pull request. The workflow template,
+[`templates/github/changelog.yml`](templates/github/changelog.yml), does,
+in jobs that run nothing from the repository:
+
+- `check`, on every pull request: the branch check. Make it a required check.
+- `release`, on every push to the integration branch: the release step and
+  `after_version`, in a job that holds no key; then `push`, the only job that
+  can read the App's key besides `tag-push`, pushes the commit (`direct`) or
+  the release branch and its pull request (`pull-request`).
+- `tag-plan`, after each run of the workflows that report the required checks
+  and every six hours, makes the tag plan and re-runs cancelled checks once;
+  `tag-push` makes the tags it found ready.
+
+Runs on the integration branch are never cancelled, so a release that waited
+writes whatever notes are still there. Copy the template to
+`.github/workflows/changelog.yml` and fill in the placeholders its header
+lists; setup does both with you.
+
 ## The agents
 
 Only where the repository turned the skill on, as its integration branch holds
@@ -134,12 +231,14 @@ turn the skill on is never asked for a note.
 
 ## What it will not do
 
-It does not commit, tag or push, publish anywhere, or write entries from commit
-messages (a commit subject is written for a reviewer, a note for the changelog's
-reader). The workflow that runs the release in CI and the guided setup are later
-steps of this skill's [design](https://github.com/docomply/jig/blob/main/design/changelog.md).
+It does not publish anywhere (a GitHub Release, a package registry), or write
+entries from commit messages (a commit subject is written for a reviewer, a note
+for the changelog's reader). Its commands never commit, tag or push: in CI the
+workflow does, in jobs that run nothing from the repository. Setup changes no
+setting for you. CI providers other than GitHub can run the check and the
+release step, but have no template yet.
 
-The commands are `check.ts`, `status.ts`, `release.ts` and `convert.ts` in
-[`scripts/`](scripts/README.md), run with Bun from the repository's root; each
-prints the plugin version it ran as. Their tests are in
+The commands are `check.ts`, `status.ts`, `release.ts`, `convert.ts`, `tag.ts`
+and `release-access.ts` in [`scripts/`](scripts/README.md), run with Bun from
+the repository's root; each prints the plugin version it ran as. Their tests are in
 [`__tests__/`](__tests__/).

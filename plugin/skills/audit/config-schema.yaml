@@ -148,7 +148,7 @@ fields:
   repository.base_branch:
     type: string
     pattern: "^(?!origin/)[^\\s~^:?*\\[\\\\]+$"
-    read_by: [drive-pr, do-item, review, descar]
+    read_by: [drive-pr, do-item, review, descar, changelog]
     repository_only: true
 
   pull_requests.stacking:
@@ -222,7 +222,7 @@ fields:
     type: list
     items: string
     distinct: true
-    read_by: [drive-pr]
+    read_by: [drive-pr, changelog]
     repository_only: true
   ci.hold_label:
     type: string

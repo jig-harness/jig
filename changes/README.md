@@ -4,9 +4,9 @@ A pull request records what it changes for a reader in a **change note**: a
 small Markdown file in this folder, one per pull request, named after the
 branch or the change (`changes/notion-store.md`). It never edits
 [CHANGELOG.md](../CHANGELOG.md) or the plugin's version. After the merge, the
-release step (`scripts/release.ts`, run by `.github/workflows/release.yml`)
+release step (the `changelog` skill's, run by `.github/workflows/release.yml`)
 writes every note into the changelog, moves the version when a note asks for
-it, tags the release and deletes the notes. Two pull requests then never
+it and deletes the notes; the release commit is tagged once its gates pass. Two pull requests then never
 edit the same lines, so merging one does not put the others in conflict.
 Why: [ADR-0004](../docs/adr/ADR-0004-change-notes-released-after-the-merge.md);
 the practice is [M12](../modules/M12-parallel-agent-ergonomics/README.md)'s.

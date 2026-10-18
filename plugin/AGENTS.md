@@ -26,8 +26,8 @@ once.
   adds a [change note](../changes/README.md) with `release: patch|minor|major`
   (say what a consumer must change first when it is breaking) and leaves both
   manifests' `version` and [CHANGELOG.md](../CHANGELOG.md) alone: after the
-  merge, the release step moves the version, writes the section and tags
-  `v<version>` ([CONTRIBUTING.md § Releasing the plugin](../CONTRIBUTING.md#releasing-the-plugin)).
+  merge, the release step moves the version and writes the section, and the
+  release commit is tagged `v<version>` once its gates pass ([CONTRIBUTING.md § Releasing the plugin](../CONTRIBUTING.md#releasing-the-plugin)).
   A `since:` it adds names `next`.
 - **A new skill** gets a row in the skills table in [README.md](README.md),
   its name in both manifests' descriptions, its configuration in
