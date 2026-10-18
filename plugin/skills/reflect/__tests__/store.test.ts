@@ -4,6 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   realpathSync,
@@ -13,10 +14,24 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { tsArgv } from "../../../shared/proc.ts";
+import { MAX_BUFFER_BYTES, tsArgv } from "../../../shared/proc.ts";
+import { eventText, KINDS } from "../scripts/lib/events.ts";
 import { EXIT, runStore, Store } from "../scripts/lib/store-client.ts";
-import { runConformance, sampleFinding } from "../scripts/store-contract.ts";
+import {
+  BULK_EVENTS,
+  BULK_LINE_BYTES,
+  main,
+  MAX_BULK,
+  MAX_TIMEOUT_SEC,
+  runConformance,
+  sampleFinding,
+} from "../scripts/store-contract.ts";
+import { ExitError } from "../../../shared/cli.ts";
 
+// A conformance run spawns the store for every check, and the bulk ones
+// write and list hundreds of events.
+const SUITE_MS = 180_000;
+const CAPPED_STORE = join(import.meta.dir, "fixtures", "capped-store.ts");
 const FILESYSTEM_STORE = join(
   import.meta.dir,
   "..",
@@ -35,10 +50,122 @@ function filesystem(path = join(dir, "store")): string[] {
 }
 
 describe("the filesystem store", () => {
-  it("passes the conformance suite", async () => {
-    const results = await runConformance(filesystem());
-    expect(results.filter((result) => !result.ok)).toEqual([]);
-    expect(results.length).toBeGreaterThan(10);
+  it(
+    "passes the conformance suite",
+    async () => {
+      const results = await runConformance(filesystem());
+      expect(results.filter((result) => !result.ok)).toEqual([]);
+      expect(results.length).toBeGreaterThan(10);
+    },
+    SUITE_MS,
+  );
+
+  const capped = (cap: number, ...flags: string[]): string[] =>
+    tsArgv(CAPPED_STORE, [
+      "--path",
+      join(dir, "store"),
+      "--cap",
+      String(cap),
+      ...flags,
+    ]);
+  const failedNames = (results: { name: string; ok: boolean }[]) =>
+    results.filter((result) => !result.ok).map((result) => result.name);
+
+  // Capped at every bulk event, the listing drops only the events stored
+  // before them, which a `since` the bulk falls in may leave out; capped at
+  // one page, it drops most of the bulk too.
+  it(
+    "fails only the unfiltered exhaustiveness check when list is capped at every bulk event",
+    async () => {
+      const results = await runConformance(capped(2 * BULK_EVENTS));
+      expect(failedNames(results)).toEqual([
+        expect.stringContaining("list returns all"),
+      ]);
+      expect(results.find((result) => !result.ok)?.detail).toContain("missing");
+    },
+    SUITE_MS,
+  );
+
+  it(
+    "fails both exhaustiveness checks when list is capped at one page",
+    async () => {
+      expect(failedNames(await runConformance(capped(100)))).toEqual([
+        expect.stringContaining("list returns all"),
+        expect.stringContaining("list with since returns all"),
+      ]);
+    },
+    SUITE_MS,
+  );
+
+  it(
+    "fails only the since exhaustiveness check when list is capped only with since",
+    async () => {
+      const results = await runConformance(capped(100, "--since-only"));
+      expect(failedNames(results)).toEqual([
+        expect.stringContaining("list with since returns all"),
+      ]);
+      expect(results.find((result) => !result.ok)?.detail).toContain("missing");
+    },
+    SUITE_MS,
+  );
+
+  // A cap above the bulk passes; a larger bulk finds it.
+  it(
+    "finds a cap above the default bulk only with a larger bulk",
+    async () => {
+      const cap = 3 * BULK_EVENTS;
+      expect(failedNames(await runConformance(capped(cap)))).toEqual([]);
+      rmSync(join(dir, "store"), { recursive: true, force: true });
+      expect(
+        failedNames(await runConformance(capped(cap), 60, undefined, cap)),
+      ).toEqual([
+        expect.stringContaining("list returns all"),
+        expect.stringContaining("list with since returns all"),
+      ]);
+    },
+    SUITE_MS,
+  );
+
+  // A listing larger than a store call may capture is stopped, so the largest
+  // bulk would fail against a store that lists every event.
+  it("keeps the largest bulk's listing within the output a store call may capture", () => {
+    const longestKind = KINDS.reduce((a, b) => (b.length > a.length ? b : a));
+    const widest = {
+      ...sampleFinding(
+        `20261012T150405Z-${"f".repeat(16)}`,
+        `bulk, one change, ${2 * MAX_BULK}`,
+        "2026-10-17T09:00:00Z",
+      ),
+      kind: longestKind,
+      change: {
+        repository: "example.invalid/store-contract",
+        branch: `contract-${"9".repeat(12)}`,
+        pull_request: null,
+        issue: null,
+      },
+    };
+    expect(Buffer.byteLength(`${eventText(widest)}\n`)).toBeLessThanOrEqual(
+      BULK_LINE_BYTES,
+    );
+    expect(2 * MAX_BULK * BULK_LINE_BYTES).toBeLessThanOrEqual(
+      MAX_BUFFER_BYTES / 2,
+    );
+  });
+
+  // A bulk the run cannot build would fail only after the earlier checks had
+  // written their events, leaving a store the corrected run cannot use.
+  it.each([
+    ["--bulk", String(MAX_BULK + 1)],
+    ["--bulk", "4294967296"],
+    ["--bulk", "9".repeat(400)],
+    ["--timeout", String(MAX_TIMEOUT_SEC + 1)],
+  ])("refuses %s %s before touching the store", async (flag, value) => {
+    const store = join(dir, "store");
+    const command = ["bun", FILESYSTEM_STORE, "--path", store].join(" ");
+    const run = main(["--command", command, flag, value]);
+    await expect(run).rejects.toBeInstanceOf(ExitError);
+    await expect(run).rejects.toMatchObject({ code: 2 });
+    expect(existsSync(store)).toBe(false);
   });
 
   it("fails list naming the file and line of a line that is not an event", async () => {

@@ -4,6 +4,7 @@
  * pointed at a fresh, empty store.
  *
  * Usage: bun store-contract.ts --command "<command>" [--timeout <seconds>]
+ *        [--bulk <events>]
  *
  * It checks the store, appends findings and decisions, re-appends the same
  * events, runs concurrent appends whose events overlap, appends a different
@@ -13,11 +14,20 @@
  * first, and `since` never losing an event. It checks that `diagnose`
  * reports each conflict with every copy's text, the exit code for an unknown
  * operation, and that an invalid event is refused with the store unchanged.
+ * Last, it appends `--bulk` events (250 by default) under a change each and
+ * as many again under one change, with every kind of finding, and checks that
+ * `list` returns every event the store holds, and `list` with a `since` the
+ * bulk falls in every bulk event, once and byte for byte. The two halves page
+ * differently: a store that reads only its first page of changes, or of one
+ * change's events, is found when that page is smaller than `--bulk`, and a cap
+ * on the whole listing when it is below what the listing must hold (with the
+ * `since`, both halves; without it, the events stored before them too). So
+ * `--bulk` is set above the store's own page and cap sizes.
  *
  * Output: one line per check, `ok` or `FAIL` with the reason. Exit codes: 0
  * every check passed; 1 a check failed; 2 usage.
  */
-import { tsArgv } from "../../../shared/proc.ts";
+import { MAX_BUFFER_BYTES, tsArgv } from "../../../shared/proc.ts";
 import { fail, runMain } from "../../../shared/cli.ts";
 import { last, parseArgs } from "./lib/args.ts";
 import {
@@ -25,6 +35,7 @@ import {
   eventText,
   type FindingEvent,
   jsonlLines,
+  KINDS,
   parseObject,
   type ReflectionEvent,
 } from "./lib/events.ts";
@@ -115,8 +126,37 @@ export function sampleDecision(
   };
 }
 
+/**
+ * The default bulk, appended once per way a store may page: more than the
+ * common page and cap size of 100, not more than every store's.
+ */
+export const BULK_EVENTS = 250;
+
 const ID = (n: number): string =>
   `20261012T150405Z-${n.toString(16).padStart(16, "0")}`;
+
+/**
+ * How a listing differs from the exact text expected under each id: how many
+ * of the `required` ids it lacks (all of them when not given), and how many of
+ * its lines repeat an id or are not that text.
+ */
+function compareListing(
+  lines: readonly string[],
+  expected: ReadonlyMap<string, string>,
+  required: ReadonlySet<string> = new Set(expected.keys()),
+): { missing: number; unexpected: number } {
+  const found = new Set<string>();
+  let unexpected = 0;
+  for (const line of lines) {
+    const id = String(objectOf(line).id);
+    if (expected.get(id) === line && !found.has(id)) found.add(id);
+    else unexpected++;
+  }
+  return {
+    missing: [...required].filter((id) => !found.has(id)).length,
+    unexpected,
+  };
+}
 
 function jsonl(events: readonly ReflectionEvent[]): string {
   return `${events.map(eventText).join("\n")}\n`;
@@ -124,12 +164,14 @@ function jsonl(events: readonly ReflectionEvent[]): string {
 
 /**
  * Run every check against a store command; `env`, when given, is the
- * environment the command runs in.
+ * environment the command runs in, and `bulk` the events the exhaustiveness
+ * check appends per way a store may page.
  */
 export async function runConformance(
   command: readonly string[],
   timeoutSec = 60,
   env?: Record<string, string | undefined>,
+  bulk = BULK_EVENTS,
 ): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
   const record = (name: string, ok: boolean, detail?: string): void => {
@@ -169,19 +211,6 @@ export async function runConformance(
     "another sample decision",
     "2026-10-14T10:00:00Z",
   );
-  /** Whether an append succeeded and its receipt names every event sent. */
-  const receipted = (
-    result: { code: number; stdout: string },
-    sent: ReadonlyArray<{ id: string }>,
-  ): boolean => {
-    if (result.code !== 0) return false;
-    const list = objectOf(result.stdout).stored;
-    const ids = (Array.isArray(list) ? list : []).map((entry: unknown) =>
-      isMapping(entry) ? entry.id : undefined,
-    );
-    return sent.every((event) => ids.includes(event.id));
-  };
-
   const first = await call("append", jsonl([a, b, da]));
   record(
     "append reports every event stored",
@@ -319,11 +348,143 @@ export async function runConformance(
     invalid.code !== 0 && unchanged,
     `exit ${invalid.code}; list exits ${before.code} before and ${after.code} after, ${jsonlLines(before.stdout).length} and ${jsonlLines(after.stdout).length} events`,
   );
+
+  // Every event the store holds before the bulk, as `list` must return it:
+  // each conflict settled as checked above.
+  await checkBulkListing(
+    {
+      call,
+      appendLarge: (input) =>
+        runStore(command, "append", input, timeoutSec * 5, env),
+      record,
+    },
+    [
+      firstOf(eventText(a), eventText(aOther)),
+      firstOf(eventText(e1), eventText(e2)),
+      ...[b, c, d, da, dc].map(eventText),
+    ],
+    a.change,
+    bulk,
+  );
   return results;
 }
 
-const USAGE =
-  'usage: store-contract.ts --command "<command>" [--timeout <seconds>]';
+type Call = (
+  op: Parameters<typeof runStore>[1],
+  input?: string,
+) => ReturnType<typeof runStore>;
+
+/** Whether an append succeeded and its receipt names every event sent. */
+function receipted(
+  result: { code: number; stdout: string },
+  sent: ReadonlyArray<{ id: string }>,
+): boolean {
+  if (result.code !== 0) return false;
+  const list = objectOf(result.stdout).stored;
+  const ids = new Set(
+    (Array.isArray(list) ? list : []).map((entry: unknown) =>
+      isMapping(entry) ? entry.id : undefined,
+    ),
+  );
+  return sent.every((event) => ids.has(event.id));
+}
+
+/**
+ * The exhaustiveness checks: append `bulk` events per way a store may page to
+ * a store holding the `stored` event texts, and require them all back.
+ */
+async function checkBulkListing(
+  store: {
+    call: Call;
+    appendLarge: (input: string) => ReturnType<typeof runStore>;
+    record: (name: string, ok: boolean, detail?: string) => void;
+  },
+  stored: readonly string[],
+  change: FindingEvent["change"],
+  bulk: number,
+): Promise<void> {
+  const { call, appendLarge, record } = store;
+  // A listing cut at a page or a cap would still pass the checks before these
+  // on a store that small, and passes these when the cut is past the bulk. The
+  // classifier reasons from the classes `list` returns, so a class missing
+  // from a short listing is coined again under a new name.
+  // A store may page over its records as well as over the events within one,
+  // so the events come both ways: each under a change of its own, and all
+  // under one change. They carry every kind of finding, so a store that
+  // refuses one fails here. The append gets the deadline `list` gets: it is a
+  // large write.
+  const bulkFinding = (n: number, title: string): FindingEvent => ({
+    ...sampleFinding(ID(n), title, "2026-10-17T09:00:00Z"),
+    kind: KINDS[n % KINDS.length] as FindingEvent["kind"],
+  });
+  const bulkEvents = [
+    ...Array.from({ length: bulk }, (_, i) =>
+      bulkFinding(1000 + i, `bulk, change ${i}`),
+    ),
+    ...Array.from({ length: bulk }, (_, i) => ({
+      ...bulkFinding(1000 + bulk + i, `bulk, one change, ${i}`),
+      change,
+    })),
+  ];
+  const bulkAppend = await appendLarge(jsonl(bulkEvents));
+  // Every event the store now holds, as `list` must return it.
+  const expected = new Map<string, string>(
+    [...stored, ...bulkEvents.map(eventText)].map((text) => [
+      String(objectOf(text).id),
+      text,
+    ]),
+  );
+  const bulkListed = await call("list");
+  const bulkLines = jsonlLines(bulkListed.stdout);
+  const { missing, unexpected } = compareListing(bulkLines, expected);
+  record(
+    `list returns all ${expected.size} stored events once each, byte for byte, more than one page holds`,
+    receipted(bulkAppend, bulkEvents) &&
+      bulkListed.code === 0 &&
+      missing === 0 &&
+      unexpected === 0,
+    `append exit ${bulkAppend.code}: ${bulkAppend.stderr}; list exit ${bulkListed.code}: ${bulkListed.stderr}; ${missing} of ${expected.size} events missing, ${unexpected} of ${bulkLines.length} lines repeated or not as appended`,
+  );
+  // The same with a `since` every bulk event is at or after, which a store
+  // may answer with a different query. Older events may come back too, since
+  // a store may ignore `since`.
+  const bulkSince = await call(
+    "list",
+    JSON.stringify({ since: bulkEvents[0]?.at }),
+  );
+  const sinceLines = jsonlLines(bulkSince.stdout);
+  const sinceDiff = compareListing(
+    sinceLines,
+    expected,
+    new Set(bulkEvents.map((event) => event.id)),
+  );
+  record(
+    `list with since returns all ${bulkEvents.length} events at or after it once each, byte for byte`,
+    bulkSince.code === 0 &&
+      sinceDiff.missing === 0 &&
+      sinceDiff.unexpected === 0,
+    `list exit ${bulkSince.code}: ${bulkSince.stderr}; ${sinceDiff.missing} of ${bulkEvents.length} events missing, ${sinceDiff.unexpected} of ${sinceLines.length} lines repeated or not as appended`,
+  );
+}
+
+/**
+ * The bytes a bulk event's line stays within: its fields are fixed but for
+ * the digits of its id, title and branch, which the widest bulk keeps far
+ * below this.
+ */
+export const BULK_LINE_BYTES = 1024;
+
+/**
+ * The largest `--bulk`: a listing of twice this many events, plus the events
+ * stored before them, fits with room to spare in the output a store call may
+ * capture before it is stopped.
+ */
+export const MAX_BULK = Math.floor(MAX_BUFFER_BYTES / BULK_LINE_BYTES / 4);
+
+/** The largest `--timeout`, in seconds: a deadline every timer can hold. */
+export const MAX_TIMEOUT_SEC = 3600;
+
+const USAGE = `usage: store-contract.ts --command "<command>" [--timeout <seconds, at most 3600>] [--bulk <events, at most ${MAX_BULK}>]`;
 
 /** The store command, with `bun <script>` run under this same runtime. */
 function commandOf(line: string | undefined): string[] {
@@ -335,14 +496,28 @@ function commandOf(line: string | undefined): string[] {
     : words;
 }
 
+/**
+ * A whole number option from 1 to `max`, or `fallback` when it is not given;
+ * checked before any store operation, so a bad value leaves the store empty.
+ */
+function countOf(
+  value: string | undefined,
+  fallback: number,
+  max: number,
+): number {
+  if (value === undefined) return fallback;
+  if (!/^[1-9][0-9]*$/.test(value) || Number(value) > max) fail(2, USAGE);
+  return Number(value);
+}
+
 export async function main(argv: string[]): Promise<number> {
-  const args = parseArgs(argv, ["command", "timeout"]);
+  const args = parseArgs(argv, ["command", "timeout", "bulk"]);
   if (typeof args === "string" || args.positional.length > 0) fail(2, USAGE);
-  const timeout = last(args, "timeout") ?? "60";
-  if (!/^[1-9][0-9]*$/.test(timeout)) fail(2, USAGE);
   const results = await runConformance(
     commandOf(last(args, "command")),
-    Number(timeout),
+    countOf(last(args, "timeout"), 60, MAX_TIMEOUT_SEC),
+    undefined,
+    countOf(last(args, "bulk"), BULK_EVENTS, MAX_BULK),
   );
   for (const result of results)
     console.log(

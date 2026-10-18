@@ -13,7 +13,7 @@ import { isMapping } from "../../../../shared/config-layers.ts";
 
 export const EVENT_VERSION = 1;
 
-export const KINDS = ["error", "opportunity"] as const;
+export const KINDS = ["error", "opportunity", "unhelpful-content"] as const;
 export const SEVERITIES = ["high", "medium", "low"] as const;
 export const DECISIONS = [
   "approved",

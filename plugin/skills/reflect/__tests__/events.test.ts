@@ -80,6 +80,15 @@ describe("events", () => {
     expect(() => parseEvent("not json")).toThrow("not JSON");
   });
 
+  it("takes each kind of finding and refuses another", () => {
+    const good = sampleFinding(newId(), "fine");
+    for (const kind of ["error", "opportunity", "unhelpful-content"])
+      expect(eventProblems({ ...good, kind })).toEqual([]);
+    expect(eventProblems({ ...good, kind: "noise" })).toEqual([
+      "kind must be one of error, opportunity, unhelpful-content",
+    ]);
+  });
+
   it("takes only a real instant, written the one way times sort", () => {
     const good = sampleFinding(newId(), "fine");
     const problem = "at must be a UTC time such as 2026-10-12T15:04:05Z";

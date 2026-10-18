@@ -75,8 +75,8 @@ A finding is one JSON object:
 
 | Field | What to write |
 |-------|---------------|
-| `kind` | `error` (something went wrong or cost time) or `opportunity` (something could work better) |
-| `severity` | `high`, `medium` or `low`; for an opportunity, its priority |
+| `kind` | `error` (something went wrong or cost time), `opportunity` (something could work better) or `unhelpful-content` (instruction text that cost context without helping) |
+| `severity` | `high`, `medium` or `low`; for an opportunity or unhelpful content, its priority |
 | `class` | A kebab-case name for the failure *shape*, not the incident (step 3) |
 | `target` | `{"scope":"repository","name":"<file or area>"}` for this repository's own scaffolding; `{"scope":"tool","tool":"jig","name":"<skill>"}` for a Jig skill |
 | `title` | One line: what happened |
@@ -108,7 +108,12 @@ echo '{"class": "...", "severity": "..."}' | bun "${CLAUDE_SKILL_DIR}/scripts/jo
 ## 3. Name the class
 
 Reuse a class from `gather`'s `classes` whenever its shape fits (its example
-title shows the shape). Findings of one class are counted together, so two
+title shows the shape). After a successful `gather`, `classes` is every class
+the store holds, never a ranked or capped search result, so a class missing
+from it does not exist: check the whole list before you coin a name. With a
+`store_error`, `classes` is `null` and shows nothing about which classes
+exist: a name you coin then may duplicate one the store holds, so say in the
+finding's description that the store could not be read. Findings of one class are counted together, so two
 names for one shape hide a recurrence. A new class needs a name that
 describes the shape (`instruction-missing-precondition`,
 `narrow-fix-per-round`), and its finding's description says the shape in one

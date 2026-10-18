@@ -1070,6 +1070,11 @@ make, use the entry's term instead.
 - **Reflection journal** — a worktree's own file of findings captured as they
   happen and not yet sent to the *reflection store*, so capturing one never
   depends on the store being reachable.
+- **Unhelpful content** — a kind of reflection finding: instruction text, in
+  an instructions file or a skill, that cost an agent context without helping
+  it, such as a section it loaded and never used, or one that misled it.
+  Recording it beside the failures keeps the cost of always-loaded context
+  visible ([reflect](plugin/skills/reflect/README.md)).
 - **Owner marker** — the line `Jig owner: <owner>` that reflection writes into
   the description of a class's tracker issue, so the issue says whose it is.
   `<owner>` is `repository:<id>` or `tool:<name>`, with every character other

@@ -111,8 +111,8 @@ the [JSONL](https://github.com/docomply/jig/blob/main/GLOSSARY.md) format:
 | Field | Holds |
 |-------|-------|
 | `change` | Where the finding came from: the repository (its `origin` remote without protocol or `.git`, or, without one, `local/<folder>-<hash>`, the hash taken from the folder's path), the branch, and the pull request and issue when known. The issue is read from the branch name with the repository's `issue_tracker.team` |
-| `kind` | `error` (something went wrong or cost time) or `opportunity` (something could work better) |
-| `severity` | `high`, `medium` or `low`; for an opportunity, its priority on the same scale |
+| `kind` | `error` (something went wrong or cost time), `opportunity` (something could work better) or `unhelpful-content` ([instruction text that cost context without helping](https://github.com/docomply/jig/blob/main/GLOSSARY.md)) |
+| `severity` | `high`, `medium` or `low`; for an opportunity or unhelpful content, its priority on the same scale |
 | `class` | A short kebab-case name for the failure shape, not the incident: `narrow-fix-per-round`, `instruction-missing-precondition`. Findings of one class are counted together, so a class already in the store is reused when it fits |
 | `target` | What the finding is about: `{"scope":"repository","name":"AGENTS.md"}` for the repository's own scaffolding, `{"scope":"tool","tool":"jig","name":"drive-pr"}` for a shared tool |
 | `title`, `description`, `suggested_fix` | What happened and the concrete change that would have prevented it |
@@ -287,7 +287,7 @@ any other.
 |-----------|-------|--------|------------|
 | `check` | none | `{"ok":true}`, or `{"ok":false,"reason":…,"fix":…}` | Says whether the store is reachable and writable, and how to fix it when not |
 | `append` | JSONL events | `{"stored":[{"id":…,"ref":…}]}` | Every event is stored, or none is reported stored that was not. An `append` that repeats a stored id may store it again; neither it nor a concurrent `append` loses another event. `ref` is a reference a person can open, or `null` |
-| `list` | `{"since":…}` (optional) | JSONL events | Every event, or every event at or after `since`, each id once: copies of one event are returned as one, and of different events under one id, the one whose stored text sorts first. A store may ignore `since` and return all. It never returns a ranked, capped or partial set: when it cannot read everything, it exits non-zero |
+| `list` | `{"since":…}` (optional) | JSONL events | Every event, or every event at or after `since`, each id once: copies of one event are returned as one, and of different events under one id, the one whose stored text sorts first. A store may ignore `since` and return all. It never returns a ranked, capped or partial set: when it cannot read everything, it exits non-zero. Naming a finding's class works from this listing, and a capped one cannot show that a class does not exist, so the class would be coined again under a new name |
 | `diagnose` | none | JSONL notices | What the store holds that disagrees with the events as `list` returns them, one notice per line: `{"kind":"id-conflict","id":…,"copies":[{"ref":…,"text":…}]}` for different events under one id, and `{"kind":"status-edited","ref":…,"shown":…,"computed":…}` for a status a person changed by hand where a store shows one. A store with neither returns nothing |
 
 Exit codes: 0 done; 1 failed (the reason on standard error); 2 usage; 3
@@ -310,7 +310,7 @@ business.
 **The conformance suite** checks a store command against all of this:
 
 ```sh
-bun <skill-dir>/scripts/store-contract.ts --command "<command> <its options>"
+bun <skill-dir>/scripts/store-contract.ts --command "<command> <its options>" [--bulk <events>]
 ```
 
 Point the command at a fresh, empty store. The suite appends findings and
@@ -319,8 +319,16 @@ event under a stored id both one after the other and concurrently, lists,
 checks the round trip byte for byte, that each id comes back once and that a
 conflict returns the copy whose text sorts first, that `since` loses nothing,
 that `diagnose` reports each conflict with every copy's text, the exit code
-for an unknown operation, and that an invalid event is refused with the store
-unchanged.
+for an unknown operation, that an invalid event is refused with the store
+unchanged, and that `list` is exhaustive: after `--bulk` events (250 by
+default) are appended under a change each and as many again under one change,
+with every kind of finding, it returns every event the store holds, and with a
+`since` the bulk falls in every bulk event, once and byte for byte. The two
+halves page differently: a store that reads only its first page of changes, or
+of one change's events, is found when that page is smaller than `--bulk`, and a
+cap on the whole listing when it is below what the listing must hold. So set
+`--bulk` above the store's own page and cap sizes (at most 16384, so the
+listing fits in the output a store call may capture).
 
 ## Filesystem store
 

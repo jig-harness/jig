@@ -14,6 +14,33 @@ contract, its conformance suite and the built stores) is described in the
 
 The Jira store is not planned yet ([ROADMAP.md](../ROADMAP.md), Later).
 
+## What every store holds to
+
+Whatever a store keeps its records in, these requirements decide whether the
+findings stay useful, and a store is not done until it meets them.
+
+- **`list` is exhaustive.** Naming a finding's class means choosing from the
+  classes already in use, and a search that is ranked, capped or paged
+  without being followed to its end cannot prove that a class does not exist:
+  the reader coins a new name for a shape the store already holds, and one
+  recurrence is counted as two classes. A store therefore reads everything or
+  exits non-zero; a store whose own search is ranked (a database's text
+  search, an issue tracker's query) lists by walking every page of an
+  unranked query. The [conformance suite](../plugin/skills/reflect/README.md#the-store-contract)
+  includes an exhaustiveness test: it appends a bulk of events (250 by
+  default) under a change each and as many again under one change, and
+  requires `list` to return every event the store holds, with and without a
+  `since`. It finds a page smaller than the bulk, and a cap on the whole
+  listing below the events it must hold; an adapter whose backend pages or
+  caps above the bulk raises the bulk past that size.
+- **The kinds of finding cover what is worth recording.** `kind` is `error`,
+  `opportunity` or [`unhelpful-content`](../GLOSSARY.md). The third is instruction text, in an
+  instructions file or a skill, that cost context without helping: a section
+  the agent loaded and never used, or one that misled it. It keeps the cost
+  of always-loaded context ([M0](../modules/M0-instruction-architecture/README.md))
+  visible in the same store as the failures, with a class shared by repeated
+  reports of the same text.
+
 ## Jira store (future)
 
 Not planned yet; the shape a Jira store would take, for when a team that
@@ -42,4 +69,5 @@ tracks its work in Jira needs one.
   to it, so the tracker shows the recurrence directly.
 - **Open questions:** whether a project administrator must create the issue
   type and fields (the store's `init` cannot on every Jira plan), and how
-  `list` stays complete within Jira's search paging limits on a large project.
+  `list` walks every page of Jira's search on a large project within the
+  store's deadline, since it may not return a partial set.
