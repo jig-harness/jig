@@ -77,7 +77,8 @@ path, the kind of file, the conflicting regions with a cause for each
    from the empty tree, the system's and a person's attributes files are
    not read, and every configured driver is replaced by `false`. Git still
    reads `.git/info/attributes`, so a marker size or a built-in driver set
-   there still applies, but no driver command runs. It never fetches: it
+   there still applies (the report reads regions at that marker size), but
+   no driver command runs. It never fetches: it
    needs git 2.43 or later, the first whose `merge-tree` reads
    `GIT_ATTR_SOURCE` reliably, refuses a partial clone
    below git 2.45, which cannot be kept from fetching, and exits with a

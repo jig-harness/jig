@@ -112,22 +112,31 @@ export class Git {
   }
 }
 
-/** Whether the repository is a partial clone, whose missing objects git would fetch. */
+/**
+ * Whether the repository is a partial clone, whose missing objects git would
+ * fetch: `extensions.partialClone` set, a remote marked `promisor` (a key
+ * with no value is true to git), or a remote with a `partialCloneFilter`,
+ * which makes it a promisor remote by itself.
+ */
 export function isPartialClone(git: Git): boolean {
   const out = git.raw([
     "config",
+    "-z",
     "--get-regexp",
-    "^(extensions\\.partialclone|remote\\..*\\.promisor)$",
+    "^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$",
   ]);
-  return out.stdout
-    .toString("utf8")
-    .split("\n")
-    .some((line) => {
-      const [key = "", value = ""] = line.split(" ");
-      return key === "extensions.partialclone"
-        ? value !== ""
-        : ["true", "yes", "on", "1"].includes(value.toLowerCase());
-    });
+  return splitNul(out.stdout.toString("utf8")).some((entry) => {
+    const newline = entry.indexOf("\n");
+    const key = newline < 0 ? entry : entry.slice(0, newline);
+    const value = newline < 0 ? null : entry.slice(newline + 1);
+    if (key.endsWith(".partialclonefilter")) return true;
+    if (key.endsWith(".promisor"))
+      return (
+        value === null ||
+        ["true", "yes", "on", "1"].includes(value.trim().toLowerCase())
+      );
+    return value !== null && value !== "";
+  });
 }
 
 /** Every configured merge driver's command, set to `false`: no driver of the repository's or a person's runs. */
@@ -143,6 +152,16 @@ function silencedDrivers(repo: Git): string[] {
     .split("\n")
     .filter((key) => key !== "")
     .map((key) => `${key}=false`);
+}
+
+/**
+ * A directory as one entry of `GIT_ALTERNATE_OBJECT_DIRECTORIES`: C-quoted
+ * when it holds the list's separator or starts with a quote, which git reads
+ * back as one path.
+ */
+export function quoteAlternate(dir: string): string {
+  if (!dir.includes(delimiter) && !dir.startsWith('"')) return dir;
+  return `"${dir.replace(/[\\"]/g, (c) => `\\${c}`)}"`;
 }
 
 /**
@@ -173,7 +192,10 @@ export function withScratchObjects<T>(repo: Git, body: (git: Git) => T): T {
     mkdirSync(objectDir);
     const noAttributes = join(scratch, "attributes");
     writeFileSync(noAttributes, "");
-    const alternates = [objects, repo.env.GIT_ALTERNATE_OBJECT_DIRECTORIES]
+    const alternates = [
+      quoteAlternate(objects),
+      repo.env.GIT_ALTERNATE_OBJECT_DIRECTORIES,
+    ]
       .filter((dir): dir is string => typeof dir === "string" && dir !== "")
       .join(delimiter);
     const git = new Git(
@@ -235,6 +257,7 @@ export function mergeCommits(
 ): MergeCommit[] {
   const out = git.text([
     "log",
+    "--no-show-signature",
     ...EXCLUDED_REFS.map((ref) => `--exclude=${ref}`),
     "--all",
     "--merges",
@@ -256,6 +279,7 @@ export function mergeCommits(
   const bodies = git.text(
     [
       "log",
+      "--no-show-signature",
       "--no-walk=unsorted",
       "--stdin",
       "-z",
@@ -471,7 +495,14 @@ export function parseMergeTree(output: string, clean: boolean): TreeMerge {
   const messagesAt = clean ? 1 : readStages(parts, entry);
   readMessages(parts, messagesAt, (paths, type, message) => {
     const kind = conflictType(type);
-    for (const target of paths.flatMap((path) => byPath.get(path) ?? [])) {
+    // A conflict git reports only in a message (a directory rename's file
+    // location, for one) has no staged entry: its paths are recorded anyway.
+    const staged = paths.some((path) => byPath.has(path));
+    const targets =
+      kind !== null && !staged
+        ? paths.map(entry)
+        : paths.flatMap((path) => byPath.get(path) ?? []);
+    for (const target of targets) {
       if (kind !== null && !target.conflicts.includes(kind))
         target.conflicts.push(kind);
       if (type !== "Auto-merging") target.messages.push(message);
@@ -506,6 +537,34 @@ export function mergeTree(
       `git merge-tree exited ${r.code}: ${r.stderr.trim() || "no message"}`,
     );
   return parseMergeTree(r.stdout.toString("utf8"), r.code === 0);
+}
+
+const DEFAULT_MARKER_SIZE = 7;
+
+/**
+ * The conflict-marker size git writes for each path: the
+ * `conflict-marker-size` attribute the replay's git still reads (from
+ * `$GIT_DIR/info/attributes`), 7 where none is set.
+ */
+export function markerSizes(
+  git: Git,
+  paths: readonly string[],
+): Map<string, number> {
+  const sizes = new Map<string, number>();
+  if (paths.length === 0) return sizes;
+  const out = splitNul(
+    git.text(
+      ["check-attr", "-z", "--stdin", "conflict-marker-size"],
+      `${paths.join("\0")}\0`,
+    ),
+  );
+  for (let i = 0; i + 2 < out.length; i += 3) {
+    const size = Number(out[i + 2]);
+    if (Number.isInteger(size) && size > 0) sizes.set(out[i] as string, size);
+  }
+  return new Map(
+    paths.map((path) => [path, sizes.get(path) ?? DEFAULT_MARKER_SIZE]),
+  );
 }
 
 /**

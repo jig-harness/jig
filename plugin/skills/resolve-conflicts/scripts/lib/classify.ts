@@ -147,8 +147,8 @@ export function generatedEntries(): GeneratedEntry[] {
 export function hotspotMinMerges(): number {
   const read = readSection();
   const value = read?.section.hotspot_min_merges;
-  if (value === undefined || value === null) return DEFAULT_HOTSPOT_MIN_MERGES;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1)
+  if (value === undefined) return DEFAULT_HOTSPOT_MIN_MERGES;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
     read?.bad(
       `${SECTION}.hotspot_min_merges must be a whole number of 1 or more`,
     );

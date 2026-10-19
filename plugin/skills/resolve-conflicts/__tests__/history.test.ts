@@ -9,6 +9,7 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -558,6 +559,19 @@ describe("the report", () => {
     expect(bad.stderr).toContain(
       "resolve_conflicts.hotspot_min_merges must be a whole number",
     );
+    // The audit's schema accepts neither: no value, and an integer past what a double holds exactly.
+    for (const value of ["", " 9007199254740993"]) {
+      s.overlay(`resolve_conflicts:\n  hotspot_min_merges:${value}\n`);
+      const refused = run(["--all"]);
+      expectSpawnExit(
+        {
+          exitCode: refused.code,
+          stdout: refused.stdout,
+          stderr: refused.stderr,
+        },
+        2,
+      );
+    }
   });
 
   it("emits the merge-conflicts/v1 shape", () => {
@@ -781,9 +795,73 @@ describe("what the replay must not trust or run", () => {
     });
   });
 
+  it("reads regions at the marker size $GIT_DIR/info/attributes sets", () => {
+    mkdirSync(join(s.root, ".git", "info"), { recursive: true });
+    writeFileSync(
+      join(s.root, ".git", "info", "attributes"),
+      "*.md conflict-marker-size=12\n",
+    );
+    merge(
+      { "notes.md": "a\n" },
+      { "notes.md": "a\nb\n" },
+      { "notes.md": "a\nc\n" },
+    );
+    const rep = report();
+    expect(pathOf(rep, "notes.md")).toMatchObject({
+      causes: ["append"],
+      mechanical: true,
+    });
+    expect(causesOf("notes.md", rep)).toEqual(["append"]);
+  });
+
+  it("reads merges whose signature git would show (log.showSignature)", () => {
+    const bin = join(s.home, "bin-gpg");
+    mkdirSync(bin);
+    writeFakeProgram(
+      join(bin, "gpg"),
+      [
+        "#!/usr/bin/env bun",
+        'if (process.argv.includes("--verify")) {',
+        '  process.stderr.write("gpg: Good signature from a fake\\n");',
+        '  process.stdout.write("[GNUPG:] GOODSIG 0 fake\\n[GNUPG:] VALIDSIG 0\\n[GNUPG:] TRUST_ULTIMATE\\n");',
+        "} else {",
+        "  await Bun.stdin.text();",
+        '  process.stderr.write("[GNUPG:] SIG_CREATED \\n");',
+        '  process.stdout.write("-----BEGIN PGP SIGNATURE-----\\n\\nfake\\n-----END PGP SIGNATURE-----\\n");',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    s.git("config", "gpg.program", join(bin, "gpg"));
+    s.git("config", "log.showSignature", "true");
+    const { commit } = merge(
+      { "a.txt": "x\n" },
+      { "a.txt": "y\n" },
+      { "a.txt": "z\n" },
+    );
+    const signed = s
+      .git(
+        "commit-tree",
+        "-S",
+        `${commit}^{tree}`,
+        "-p",
+        `${commit}^1`,
+        "-p",
+        `${commit}^2`,
+        "-m",
+        "Merge branch 'signed'",
+      )
+      .trim();
+    s.git("reset", "-q", "--hard", signed);
+    expect(s.git("log", "-1").toLowerCase()).toContain("good signature");
+    const rep = report();
+    expect(rep.skipped).toEqual([]);
+    expect(rep.merges.map((m) => m.commit)).toEqual([signed]);
+    expect(rep.merges[0]?.conflicted).toBe(true);
+  });
+
   it("refuses a partial clone when git cannot be kept from fetching", () => {
     merge({ "a.txt": "x\n" }, { "a.txt": "y\n" }, { "a.txt": "z\n" });
-    s.git("config", "remote.origin.promisor", "true");
     const real = Bun.which("git", { PATH: s.env.PATH ?? "" }) as string;
     const fake = (version: string) => {
       const bin = join(s.home, `bin-${version}`);
@@ -802,13 +880,23 @@ describe("what the replay must not trust or run", () => {
       return bin;
     };
     const path = s.env.PATH ?? "";
+    const config = join(s.root, ".git", "config");
+    const plain = readFileSync(config, "utf8");
     s.env.PATH = `${fake("2.44.0")}${delimiter}${path}`;
-    const old = run(["--all"]);
-    expectSpawnExit(
-      { exitCode: old.code, stdout: old.stdout, stderr: old.stderr },
-      2,
-    );
-    expect(old.stderr).toContain("partial clone");
+    // A promisor set true, set with no value (true to git), or a filter alone.
+    for (const remote of [
+      "\tpromisor = true\n",
+      "\tpromisor\n",
+      "\tpartialclonefilter = blob:none\n",
+    ]) {
+      writeFileSync(config, `${plain}[remote "origin"]\n${remote}`);
+      const old = run(["--all"]);
+      expectSpawnExit(
+        { exitCode: old.code, stdout: old.stdout, stderr: old.stderr },
+        2,
+      );
+      expect(old.stderr).toContain("partial clone");
+    }
     s.env.PATH = `${fake("2.45.0")}${delimiter}${path}`;
     const recent = run(["--json", "--all"]);
     expectSpawnExit(

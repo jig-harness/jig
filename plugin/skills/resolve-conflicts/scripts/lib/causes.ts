@@ -176,8 +176,8 @@ export function edit(
     [from.length, to.length] as [number, number],
   ]) {
     if (pi > i || pj > j) spans.push([i, pi]);
-    removed.push(...from.slice(i, pi));
-    added.push(...to.slice(j, pj));
+    for (let k = i; k < pi; k++) removed.push(from[k] as string);
+    for (let k = j; k < pj; k++) added.push(to[k] as string);
     i = pi + 1;
     j = pj + 1;
   }
@@ -264,22 +264,37 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * The release field's value where the line assigns it: the key (bare or
+ * quoted), `:` or `=`, then the version (bare or quoted). With no key named,
+ * the version alone.
+ */
+function releaseField(release: { version: string; key: string }): RegExp {
+  const keyName = release.key.split(".").at(-1) ?? "";
+  const version = `(?<![\\w.])${escapeRegExp(release.version)}(?![\\w.])`;
+  if (keyName === "") return new RegExp(`()${version}`);
+  return new RegExp(
+    `((?<![\\w.-])["']?${escapeRegExp(keyName)}["']?\\s*[:=]\\s*["']?)${version}`,
+  );
+}
+
+/**
+ * The lines with the release version masked where the release field holds it
+ * (once: the field appears once in its file, so another field of the same
+ * name and value stays as it is) and every date stamp masked.
+ */
 function stamped(
   lines: readonly string[],
   release: { version: string; key: string } | null,
 ): string[] {
-  const keyName = release?.key.split(".").at(-1) ?? "";
-  const version =
-    release === null
-      ? null
-      : new RegExp(
-          `(?<![\\w.])${escapeRegExp(release.version)}(?![\\w.])`,
-          "g",
-        );
+  const field = release === null ? null : releaseField(release);
+  let masked = false;
   return lines.map((line) => {
     let out = line;
-    if (version !== null && (keyName === "" || line.includes(keyName)))
-      out = out.replace(version, PLACEHOLDER_VERSION);
+    if (field !== null && !masked && field.test(out)) {
+      out = out.replace(field, `$1${PLACEHOLDER_VERSION}`);
+      masked = true;
+    }
     if (DATE_STAMP_KEY.test(out)) out = out.replace(DATE, PLACEHOLDER_DATE);
     return out;
   });
@@ -287,8 +302,8 @@ function stamped(
 
 /**
  * `version`: the sides differ only in the release version of an artifact the
- * repository's release step writes (read at the configured key, on the lines
- * that name it), or in a date stamp.
+ * repository's release step writes (the value the configured key is assigned,
+ * nowhere else), or in a date stamp.
  */
 export function isVersion(r: Region, ctx: RegionContext): boolean {
   const ours = stamped(r.ours, ctx.release.ours);
@@ -320,14 +335,17 @@ function highestOrdinal(lines: readonly string[], prefix: string): number {
 }
 
 /**
- * `sequence`: both sides add an entry with the same ordinal, the one after the
- * highest the base version of the file holds for entries written the same way.
+ * `sequence`: both sides only add lines, and both add an entry with the same
+ * ordinal, the one after the highest the base version of the file holds for
+ * entries written the same way. A side that also changes or removes a line
+ * has an edit the collision does not explain.
  */
 export function isSequence(r: Region, ctx: RegionContext): boolean {
   const ours = edit(r.base, r.ours);
   const theirs = edit(r.base, r.theirs);
   const baseFile = ctx.file.base ?? (r.base.length === 0 ? [] : null);
   if (ours === null || theirs === null || baseFile === null) return false;
+  if (ours.removed.length > 0 || theirs.removed.length > 0) return false;
   const theirsOrdinals = theirs.added.map((line) => ({
     line,
     ordinal: ordinalOf(line),
@@ -423,27 +441,47 @@ export function isAppend(r: Region, ctx: RegionContext): boolean {
   return r.base.length === 0 && ctx.inBase;
 }
 
-/** What separates the items of a list written on one line. */
-const ITEM_SEPARATOR = /\s*[,;|]\s*|\s+(?:and|or)\s+/;
+/** A separator between the items of a list written on one line. */
+const SEPARATOR_TOKENS = new Set([",", ";", "|", "and", "or"]);
 
-/** The items of a list on one line, without the brackets and quotes around them. */
-function items(line: string): string[] {
-  return line
-    .split(ITEM_SEPARATOR)
-    .map((item) => item.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
-    .filter((item) => item !== "");
+const SEPARATOR = "\u0000separator\u0000";
+
+/**
+ * A line as tokens: each run of letters, digits and `_`, and each other
+ * non-blank character; every separator is one token, so `b and c` growing
+ * into `b, c and d` keeps its items in place.
+ */
+function tokens(line: string): string[] {
+  return (line.match(/[\p{L}\p{N}_]+|\S/gu) ?? []).map((token) =>
+    SEPARATOR_TOKENS.has(token) ? SEPARATOR : token,
+  );
 }
 
-/** Whether `to` is `from` with items added to its list, and none changed or removed. */
+/**
+ * Whether `to` is `from` with items added to its list: every token of `from`
+ * stands in `to` unchanged and in order, and each run of tokens `to` inserts
+ * starts or ends at a separator, so it is a whole item, not a change to one
+ * (`b` becoming `b()` inserts `(` `)`, which is not an item).
+ */
 function addsItems(from: string, to: string): boolean {
-  const before = counts(items(from));
-  const after = items(to);
-  if (after.length <= items(from).length || !ITEM_SEPARATOR.test(to))
-    return false;
-  const inAfter = counts(after);
-  for (const [item, n] of before)
-    if ((inAfter.get(item) ?? 0) < n) return false;
-  return true;
+  const before = tokens(from);
+  const after = tokens(to);
+  const pairs = align(before, after);
+  if (pairs === null || pairs.length !== before.length) return false;
+  let inserted = 0;
+  let j = 0;
+  for (const [, pj] of [...pairs, [before.length, after.length]]) {
+    const run = after.slice(j, pj);
+    if (run.length > 0) {
+      const first = run[0] as string;
+      const last = run.at(-1) as string;
+      if (run.length < 2 || (first !== SEPARATOR && last !== SEPARATOR))
+        return false;
+      inserted++;
+    }
+    j = (pj as number) + 1;
+  }
+  return inserted > 0;
 }
 
 /** `packed-list`: the region is one line in every side, and each side adds items to a list in it. */

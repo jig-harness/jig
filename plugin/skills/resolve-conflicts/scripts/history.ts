@@ -9,8 +9,8 @@
  *                       [--json] [--limit <n>]
  *   --days <n>      the last n days (default 30).
  *   --since <date>  merges committed on or after the date (YYYY-MM-DD, or an
- *                   ISO 8601 time); --until <date> ends the range before that
- *                   time, or after that day for a bare date.
+ *                   ISO 8601 time with its offset); --until <date> ends the
+ *                   range before that time, or after that day for a bare date.
  *   --all           the whole history.
  *   --json          the report as JSON (schema `merge-conflicts/v1`).
  *   --limit <n>     paths the terminal report lists (default 25; 0: all).
@@ -73,6 +73,7 @@ import {
   MIN_GIT,
   type MergeCommit,
   mergeCommits,
+  markerSizes,
   mergeTree,
   parseGitVersion,
   parseResolutionSection,
@@ -113,10 +114,27 @@ function day(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-/** A `--since`/`--until` value: a bare date is that day's start (UTC). */
+const DATE_ARG =
+  /^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
+
+/**
+ * A `--since`/`--until` value: `YYYY-MM-DD`, that day's start (UTC), or an
+ * ISO 8601 time with its offset (`Z` or `±HH:MM`), so no value depends on the
+ * machine's time zone. A day the calendar does not have is refused.
+ */
 function parseDate(value: string | undefined, end: boolean): number | null {
   if (value === undefined) return null;
-  const bare = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const match = value.match(DATE_ARG);
+  if (!match) return null;
+  const [, year, month, date] = match.map(Number) as number[];
+  const day = new Date(Date.UTC(year as number, (month as number) - 1, date));
+  if (
+    day.getUTCFullYear() !== year ||
+    day.getUTCMonth() + 1 !== month ||
+    day.getUTCDate() !== date
+  )
+    return null;
+  const bare = !value.includes("T");
   const ms = Date.parse(bare ? `${value}T00:00:00Z` : value);
   if (Number.isNaN(ms)) return null;
   return bare && end ? ms + DAY_MS : ms;
@@ -125,7 +143,7 @@ function parseDate(value: string | undefined, end: boolean): number | null {
 function whole(value: string | undefined, min: number): number | null {
   if (value === undefined || !/^\d+$/.test(value)) return null;
   const n = Number(value);
-  return n >= min ? n : null;
+  return Number.isSafeInteger(n) && n >= min ? n : null;
 }
 
 interface Flags {
@@ -157,13 +175,13 @@ const VALUE_FLAGS: Record<
   "--since": (flags, value) => {
     flags.since = value;
     return parseDate(value, false) === null
-      ? "--since takes a date (YYYY-MM-DD) or an ISO 8601 time"
+      ? "--since takes a date (YYYY-MM-DD) or an ISO 8601 time with its offset"
       : null;
   },
   "--until": (flags, value) => {
     flags.until = value;
     return parseDate(value, true) === null
-      ? "--until takes a date (YYYY-MM-DD) or an ISO 8601 time"
+      ? "--until takes a date (YYYY-MM-DD) or an ISO 8601 time with its offset"
       : null;
   },
 };
@@ -228,6 +246,8 @@ export function parseArgs(
   }
   const n = flags.days ?? DEFAULT_DAYS;
   const from = now - n * DAY_MS;
+  if (Number.isNaN(new Date(from).getTime()))
+    return "--days reaches before the earliest date a time can hold";
   return {
     json,
     limit,
@@ -352,10 +372,15 @@ function regionCauseOf(
   return (region: Region) => regionCause(region, ctx);
 }
 
+function hasStage(stages: ConflictedPath["stages"]): boolean {
+  return stages.base !== null || stages.ours !== null || stages.theirs !== null;
+}
+
 /** The record of one conflicted path of a replayed merge. */
 function pathRecord(
   git: Git,
   conflicted: ConflictedPath,
+  markerSize: number,
   objects: {
     tree: Buffer | null;
     base: Buffer | null;
@@ -377,7 +402,7 @@ function pathRecord(
   const cls: PathClass = derived ? derived.class : binary ? "binary" : "text";
   const parsed =
     !binary && objects.tree !== null
-      ? parseRegionLines(objects.tree.toString("utf8"))
+      ? parseRegionLines(objects.tree.toString("utf8"), markerSize)
       : [];
   const decode = (b: Buffer | null) => (b === null ? null : b.toString("utf8"));
   const texts = {
@@ -409,7 +434,7 @@ function pathRecord(
       : [pathLevelCause(conflicted, derived !== null, binary)];
   return {
     path,
-    kind: kindOf(stages),
+    kind: hasStage(stages) ? kindOf(stages) : null,
     conflicts: conflicted.conflicts,
     class: cls,
     causes,
@@ -465,11 +490,16 @@ export function replayMerge(
   const get = (spec: string) =>
     spec === "" ? null : (content.get(spec) ?? null);
   const sections = parseResolutionSection(merge.message);
+  const sizes = markerSizes(
+    git,
+    merged.paths.map((p) => p.path),
+  );
   const paths = merged.paths
     .map((p) => {
       const record = pathRecord(
         git,
         p,
+        sizes.get(p.path) as number,
         {
           tree: get(`${merged.tree}:${p.path}`),
           base: get(p.stages.base?.blob ?? ""),
@@ -483,6 +513,9 @@ export function replayMerge(
     })
     .sort((a, b) => a.path.localeCompare(b.path));
   const conflictedPaths = new Set(paths.map((p) => p.path));
+  // merge-tree's exit status decides: a failed merge whose conflicts no path
+  // carries is still a conflicted one.
+  const conflicted = !merged.clean || paths.length > 0;
   return {
     operation: "merge",
     commit: merge.commit,
@@ -495,8 +528,10 @@ export function replayMerge(
       ours: setup.heads.get(ours) ?? [],
       theirs: setup.heads.get(theirs) ?? [],
     },
-    conflicted: paths.length > 0,
-    mechanical: paths.length > 0 ? paths.every((p) => p.mechanical) : null,
+    conflicted,
+    mechanical: conflicted
+      ? paths.length > 0 && paths.every((p) => p.mechanical)
+      : null,
     paths,
     unmatchedResolutions: [...sections]
       .filter(([path]) => !conflictedPaths.has(path))

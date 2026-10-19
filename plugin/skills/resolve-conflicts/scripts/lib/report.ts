@@ -25,8 +25,8 @@ export interface RegionRecord {
 
 export interface PathRecord {
   path: string;
-  /** Which sides hold the path, as `conflict-map.ts` names it. */
-  kind: Kind;
+  /** Which sides hold the path, as `conflict-map.ts` names it; null when git reports its conflict only in a message. */
+  kind: Kind | null;
   /** Git's own kinds of conflict for the path (`contents`, `modify/delete`, `binary`, …). */
   conflicts: string[];
   class: PathClass;
@@ -272,7 +272,9 @@ class Tallies {
     };
     this.byPath.set(path.path, summary);
     summary.merges++;
-    if (merge.date > summary.lastConflict) summary.lastConflict = merge.date;
+    // Committer dates keep their own offset: compare instants, not text.
+    if (Date.parse(merge.date) > Date.parse(summary.lastConflict))
+      summary.lastConflict = merge.date;
     const causes = units(path);
     for (const cause of causes) {
       this.regions++;
@@ -326,8 +328,9 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Every week of the range, a week without a merge as a row of zeros, so a gap
- * shows. An open end of the range is the first or the last merge's week (now,
- * for a range with only a start).
+ * shows. An open end of the range is the first or the last merge's week; a
+ * range with only a start runs to now, or to a later merge (a clock ahead of
+ * now) so that every merge counted has its week.
  */
 function allWeeks(
   byWeek: ReadonlyMap<string, WeekSummary>,
@@ -335,15 +338,20 @@ function allWeeks(
   merges: readonly MergeRecord[],
   now: Date,
 ): WeekSummary[] {
-  const dates = merges.map((m) => Date.parse(m.date));
-  const first =
-    range.since !== null ? Date.parse(range.since) : Math.min(...dates);
+  let earliest = Number.POSITIVE_INFINITY;
+  let latest = Number.NEGATIVE_INFINITY;
+  for (const merge of merges) {
+    const at = Date.parse(merge.date);
+    if (at < earliest) earliest = at;
+    if (at > latest) latest = at;
+  }
+  const first = range.since !== null ? Date.parse(range.since) : earliest;
   const last =
     range.until !== null
       ? Date.parse(range.until) - 1
       : range.since !== null
-        ? now.getTime()
-        : Math.max(...dates);
+        ? Math.max(now.getTime(), latest)
+        : latest;
   if (!Number.isFinite(first) || !Number.isFinite(last) || first > last)
     return [];
   const weeks: WeekSummary[] = [];
@@ -427,7 +435,10 @@ function headline(report: Report): string[] {
 
 function pathLines(report: Report, limit: number): string[] {
   const shown = limit > 0 ? report.paths.slice(0, limit) : report.paths;
-  const width = Math.min(60, Math.max(...shown.map((p) => p.path.length)));
+  const width = Math.min(
+    60,
+    shown.reduce((most, p) => Math.max(most, p.path.length), 0),
+  );
   const out = ["", "Paths, most often first:"];
   for (const p of shown)
     out.push(
@@ -473,10 +484,24 @@ function summaryLines(report: Report): string[] {
       (c) =>
         `  ${c.cause.padEnd(11)} ${plural(c.regions, "region")} in ${plural(c.paths, "path")}, ${plural(c.merges, "merge")}: ${c.remedy}`,
     ),
+  ];
+}
+
+function weeklyLines(report: Report): string[] {
+  if (report.weeks.length === 0) return [];
+  return [
     "",
     "Per week, conflicted merges by cause:",
     ...weekLines(report.weeks),
   ];
+}
+
+/** What the report found, when no path conflicted: none replayed, or none of those replayed conflicted. */
+function noConflictLine(report: Report): string {
+  if (report.totals.merges > 0) return "No replayed merge conflicted.";
+  return report.totals.skipped > 0
+    ? "No merge in the range was replayed: every one was skipped, so nothing is known about its conflicts."
+    : "No merge in the range.";
 }
 
 function skippedLines(skipped: readonly SkippedMerge[]): string[] {
@@ -512,8 +537,12 @@ function confidenceLines(confidence: Confidence | null): string[] {
 export function renderReport(report: Report, limit: number): string {
   const body =
     report.totals.conflicted === 0
-      ? ["", "No merge in the range conflicted."]
-      : [...pathLines(report, limit), ...summaryLines(report)];
+      ? ["", noConflictLine(report), ...weeklyLines(report)]
+      : [
+          ...pathLines(report, limit),
+          ...summaryLines(report),
+          ...weeklyLines(report),
+        ];
   return [
     ...headline(report),
     ...body,

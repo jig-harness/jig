@@ -146,8 +146,10 @@ the new session, run the audit: `/jig:audit` in Claude Code, or ask for the
 | **The `gh-stack` extension** | Any | Only `pull_requests.stacking: native` |
 | **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in |
 
-Nothing checks these versions when a skill runs: an older tool fails on the
-command it lacks.
+Most skills do not check these versions when they run: an older tool fails
+on the command it lacks. The `resolve-conflicts` history report is the
+exception: it checks git's version first, and refuses an older git, or a
+partial clone on a git that cannot be kept from fetching.
 
 - **macOS or Linux for `drive-pr` and `do-item`.** The driver supervises
   agent processes through [POSIX](../GLOSSARY.md) process groups and

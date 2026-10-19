@@ -9,7 +9,9 @@ import {
   isAdjacent,
   isEcho,
   isPackedList,
+  isSequence,
   isSourceCode,
+  isVersion,
   type RegionContext,
   regionCause,
 } from "../scripts/lib/causes.ts";
@@ -19,10 +21,16 @@ import {
   parseGitVersion,
   parseMergeTree,
   parseResolutionSection,
+  quoteAlternate,
   subjectBranches,
 } from "../scripts/lib/replay.ts";
 import { parseObligations } from "../scripts/lib/obligations.ts";
-import { weekOf } from "../scripts/lib/report.ts";
+import {
+  buildReport,
+  type MergeRecord,
+  renderReport,
+  weekOf,
+} from "../scripts/lib/report.ts";
 
 describe("git's version", () => {
   it("reads the forms git prints", () => {
@@ -79,8 +87,21 @@ describe("the command line", () => {
       ["--limit", "-1"],
       ["--since", "2026-02-01", "--until", "2026-01-01"],
       ["--all", "--since", "2026-01-01"],
+      ["--since", "2026-02-30"],
+      ["--since", "1"],
+      ["--since", "2026-01-01T00:00"],
+      ["--until", "2026-13-01"],
+      ["--days", "1000000000"],
+      ["--days", "9".repeat(400)],
+      ["--limit", "9".repeat(400)],
     ])
       expect(typeof parseArgs(args, now)).toBe("string");
+  });
+
+  it("reads an ISO 8601 time with its offset", () => {
+    expect(
+      parseArgs(["--since", "2026-01-01T10:00:00+02:00"], now),
+    ).toMatchObject({ since: Date.parse("2026-01-01T08:00:00Z") });
   });
 });
 
@@ -119,6 +140,24 @@ describe("merge-tree's output", () => {
       ours: { mode: "100644", blob: "c2" },
       theirs: null,
     });
+  });
+
+  it("keeps a conflict git reports only in a message", () => {
+    const out = [
+      "tree0",
+      "",
+      "2",
+      "old/f",
+      "new/f",
+      "CONFLICT (file location)",
+      "CONFLICT (file location): old/f added in feat inside a directory that was renamed in main.\n",
+      "",
+    ].join("\0");
+    const parsed = parseMergeTree(out, false);
+    expect(parsed.paths.map((p) => [p.path, p.conflicts, p.stages])).toEqual([
+      ["old/f", ["file location"], { base: null, ours: null, theirs: null }],
+      ["new/f", ["file location"], { base: null, ours: null, theirs: null }],
+    ]);
   });
 
   it("reads a clean merge as no path", () => {
@@ -225,6 +264,95 @@ describe("the cause rules", () => {
     ).toBe(false);
   });
 
+  it("packed-list: a change to an existing item is not an added item", () => {
+    expect(
+      isPackedList({
+        base: ["return [a, b];"],
+        ours: ["return [a, b, c];"],
+        theirs: ["return [a, b(), d];"],
+      }),
+    ).toBe(false);
+    expect(
+      isPackedList({
+        base: ["return [a, b];"],
+        ours: ["return [a, b, c];"],
+        theirs: ["return [d, a, b];"],
+      }),
+    ).toBe(true);
+  });
+
+  it("sequence: only when both sides add; a changed line is not explained by the collision", () => {
+    const ctx = {
+      ...none,
+      file: { base: ["retries: 3"], ours: null, theirs: null },
+    };
+    expect(
+      isSequence(
+        {
+          base: ["retries: 3"],
+          ours: ["retries: 4 # ours"],
+          theirs: ["retries: 4 # theirs"],
+        },
+        ctx,
+      ),
+    ).toBe(false);
+    const entries = {
+      ...none,
+      file: { base: ["001 a", "002 b"], ours: null, theirs: null },
+    };
+    expect(
+      isSequence({ base: [], ours: ["003 c"], theirs: ["003 d"] }, entries),
+    ).toBe(true);
+    expect(
+      isSequence(
+        {
+          base: ["x = 1"],
+          ours: ["003 c", "x = 2"],
+          theirs: ["003 d", "x = 3"],
+        },
+        entries,
+      ),
+    ).toBe(false);
+  });
+
+  it("version: only the configured field's value is the release version", () => {
+    const release = (version: string) => ({ version, key: "version" });
+    const ctx: RegionContext = {
+      ...none,
+      release: { base: null, ours: release("1.1.0"), theirs: release("1.0.1") },
+    };
+    expect(
+      isVersion(
+        {
+          base: ['{"version":"1.0.0","dependencies":{"lib":"1.0.0"}}'],
+          ours: ['{"version":"1.1.0","dependencies":{"lib":"1.1.0"}}'],
+          theirs: ['{"version":"1.0.1","dependencies":{"lib":"1.0.1"}}'],
+        },
+        ctx,
+      ),
+    ).toBe(false);
+    expect(
+      isVersion(
+        {
+          base: ['  "version": "1.0.0",'],
+          ours: ['  "version": "1.1.0",'],
+          theirs: ['  "version": "1.0.1",'],
+        },
+        ctx,
+      ),
+    ).toBe(true);
+    expect(
+      isVersion(
+        {
+          base: ['  "version": "1.0.0",', '    "version": "1.0.0"'],
+          ours: ['  "version": "1.1.0",', '    "version": "1.1.0"'],
+          theirs: ['  "version": "1.0.1",', '    "version": "1.0.1"'],
+        },
+        ctx,
+      ),
+    ).toBe(false);
+  });
+
   it("adjacent: insertions at one place overlap; a change beside the other's does not", () => {
     expect(
       isAdjacent({ base: ["a", "b"], ours: ["A", "b"], theirs: ["a", "B"] }),
@@ -283,4 +411,93 @@ it("lets the obligations reader accept the history report's hotspot threshold", 
   expect(
     parseObligations({ generated: [], hotspot_min_merges: 2, obligations: [] }),
   ).toEqual([]);
+});
+
+it("quotes an alternate object directory that holds the list separator", () => {
+  const sep = process.platform === "win32" ? ";" : ":";
+  expect(quoteAlternate("/repo/.git/objects")).toBe("/repo/.git/objects");
+  expect(quoteAlternate(`/tmp/project${sep}copy/.git/objects`)).toBe(
+    `"/tmp/project${sep}copy/.git/objects"`,
+  );
+  expect(quoteAlternate('"odd\\dir')).toBe('"\\"odd\\\\dir"');
+});
+
+describe("the report", () => {
+  const record = (date: string, conflicted: boolean): MergeRecord => ({
+    operation: "merge",
+    commit: date,
+    parents: ["a", "b"],
+    date,
+    subject: "Merge",
+    pullRequest: null,
+    branches: { theirs: null, ours: null },
+    parentHeads: { ours: [], theirs: [] },
+    conflicted,
+    mechanical: conflicted ? false : null,
+    paths: conflicted
+      ? [
+          {
+            path: "f",
+            kind: "both-modified",
+            conflicts: ["contents"],
+            class: "text",
+            causes: ["overlap"],
+            regions: [],
+            mechanical: false,
+            resolution: null,
+          },
+        ]
+      : [],
+    unmatchedResolutions: [],
+  });
+  const now = new Date("2026-10-19T12:00:00Z");
+  const range = { since: "2026-10-01T00:00:00.000Z", until: null, label: "x" };
+  const build = (merges: MergeRecord[], skipped = 0) =>
+    buildReport({
+      range,
+      hotspotMinMerges: 3,
+      merges,
+      skipped: Array.from({ length: skipped }, (_, i) => ({
+        commit: `s${i}`,
+        date: "2026-10-05T00:00:00Z",
+        subject: "Merge",
+        reason: "replay-failed" as const,
+        detail: "missing object",
+      })),
+      confidence: null,
+      now,
+    });
+
+  it("takes a path's last conflict by instant, not by text", () => {
+    const report = build([
+      record("2026-10-19T09:00:00Z", true),
+      record("2026-10-19T10:00:00+02:00", true),
+    ]);
+    expect(report.paths[0]?.lastConflict).toBe("2026-10-19T09:00:00Z");
+  });
+
+  it("gives a merge dated after now its week", () => {
+    const report = build([record("2026-11-03T00:00:00Z", false)]);
+    expect(report.weeks.at(-1)).toMatchObject({
+      week: "2026-11-02",
+      merges: 1,
+    });
+    expect(report.weeks.reduce((n, w) => n + w.merges, 0)).toBe(1);
+  });
+
+  it("shows the weeks when no merge conflicted", () => {
+    const text = renderReport(
+      build([record("2026-10-05T00:00:00Z", false)]),
+      25,
+    );
+    expect(text).toContain("No replayed merge conflicted.");
+    expect(text).toContain("Per week, conflicted merges by cause:");
+    expect(text).toContain("2026-10-05  0 of 1 merge conflicted");
+  });
+
+  it("does not call a range clean when every merge was skipped", () => {
+    const text = renderReport(build([], 2), 25);
+    expect(text).toContain("No merge in the range was replayed");
+    expect(text).not.toContain("conflicted.");
+  });
 });

@@ -475,8 +475,10 @@ bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --since 2026-01-01 --until 2026-03-
 bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --all --json
 ```
 
-A bare date is a day in UTC: `--since` starts at its midnight, and `--until`
-ends after it.
+A bare date (`YYYY-MM-DD`) is a day in UTC: `--since` starts at its
+midnight, and `--until` ends after it. A time carries its offset from UTC
+(`2026-01-01T09:00:00+02:00`, or `Z` for UTC itself), so no range depends on
+the machine's time zone.
 
 It [replays](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) every merge commit the repository's refs reach in the range
 (fetched pull-request heads such as `refs/pull/*/head` included; the stash
@@ -490,8 +492,9 @@ ref, index, working tree or object of the repository changes. Today's
 attributes do not reach a past merge: the working tree's and the index's
 `.gitattributes` are read from the empty tree instead, and the system's and a
 person's attributes files are not read. The exception is
-`.git/info/attributes`, which git always reads: a `conflict-marker-size` or a
-built-in driver (`merge=union`, `merge=binary`) set there still applies.
+`.git/info/attributes`, which git always reads: a built-in driver
+(`merge=union`, `merge=binary`) set there still applies, and the report reads
+regions at the `conflict-marker-size` set there.
 Every configured merge driver is replaced by `false`, so no command of the
 repository's runs, whichever file names it. It reads git only and never
 fetches: it needs git 2.43 or later, and
@@ -503,7 +506,8 @@ replay (an object missing) is skipped too. Every skipped merge is listed
 with its reason.
 
 Each conflicting region gets one cause, the first of these that matches; a
-path git reports as conflicting without text regions gets `structural` for
+path git reports as conflicting without text regions, including one it names
+only in a message (a directory rename's file location), gets `structural` for
 the whole path, with git's own kind of conflict (`modify/delete`, `binary`,
 …); a lockfile or generated file is `derived` whatever its regions.
 
@@ -512,11 +516,11 @@ the whole path, with git's own kind of conflict (`modify/delete`, `binary`,
 | `derived` | the path is a lockfile or a generated file, as `conflict-map.ts` classes it | regenerate it; keep it out of pull requests if a step after the merge can write it |
 | `structural` | git reports the conflict without text regions: modify/delete, rename, binary, file/directory, mode (a text conflict whose regions cannot be read is `overlap`) | none from the regions; resolving it stays a decision |
 | `echo` | the sides are identical, or one side's edit (adding at least one line) is already in the other, in the same order | keep the side that contains the other; rebuild a branch on its base once the branch it was built on merges |
-| `version` | the sides differ only in the release version the changelog skill's release step writes (`changelog.version`), or in a last-updated date | move the version after the merge; take a date from git |
-| `sequence` | both sides add an entry with the next ordinal, one past the base's highest | identifiers that cannot collide, or one renumbering step |
+| `version` | the sides differ only in the release version the changelog skill's release step writes (`changelog.version`), where its key is assigned, or in a last-updated date | move the version after the merge; take a date from git |
+| `sequence` | both sides only add lines, among them an entry with the same next ordinal, one past the base's highest | identifiers that cannot collide, or one renumbering step |
 | `tally` | only numbers differ, and each side's number moved by the lines that side added to the file, or added above the line it names | derive the number where it is used; key a register by name, not line |
 | `append` | the base side is empty: both sides added lines at the same place (not in a file both sides added, which had no base) | one file per entry, or a sorted list with one entry per line; in source code the report asks whether it is the same fix written twice |
-| `packed-list` | one line in every side, and each side only adds items to a list in it | one item per line |
+| `packed-list` | one line in every side, and each side only adds whole items to a list in it, changing none | one item per line |
 | `adjacent` | the lines each side changed touch but do not overlap | split what changes for different reasons onto lines or files of its own |
 | `overlap` | none of the above | two pieces of work changed the same thing: plan them apart, or land one first |
 
@@ -544,7 +548,8 @@ range, one without a merge as zeros), `confidence`, `limits`, `skipped` (each
 with its reason: `octopus`, `shallow` or `replay-failed`), and `merges`, one
 record per replayed merge (`operation: "merge"`, its commit, both parents
 and the pull-request heads each is the tip of, its date, subject, the pull request and the branches the
-subject names, and each conflicted path with its kind,
+subject names, and each conflicted path with its kind (null for a path git
+names only in a message),
 git's kinds of conflict, class, causes, regions, and the decision and reason
 its `Conflicts resolved:` section recorded).
 
