@@ -420,7 +420,8 @@ a deadline. The checker reports every obligation; a failed command blocks
 conclusion. Each command runs only while every tracked file on disk matches
 the staged tree, checked before every command and after the last, with
 submodules compared whatever their ignore settings and assume-unchanged or
-skip-worktree files compared directly. A command that changes the staged tree
+skip-worktree files compared too, including those inside initialized
+submodules. A command that changes the staged tree
 or a tracked file stops the commands after it and fails the check, so no
 result certifies a tree its command did not see. Text-only entries require the agent's review in Step 6.
 

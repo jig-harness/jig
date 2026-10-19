@@ -48,7 +48,8 @@ deadline; failures block conclusion. Commands read files on disk, so each one
 runs only while every tracked file matches the staged tree, checked before
 every command and after the last. Submodules are compared whatever their
 ignore settings, and files Git is told not to compare (assume-unchanged or
-skip-worktree) are compared directly. A command that changes the staged tree
+skip-worktree) are compared too, including those inside initialized
+submodules. A command that changes the staged tree
 or a tracked file stops the commands after it and invalidates the whole run:
 review the change, stage or discard it, and check again. A passing command supplements the text
 review. With no obligations configured, there are none to run.

@@ -337,3 +337,100 @@ for (const flag of ["--assume-unchanged", "--skip-worktree"])
       }),
     );
   });
+
+function addSubmodule(setup: Scratch): void {
+  setup.run("git", ["init", "-q", "sub"]);
+  setup.write("sub/helper.ts", "export const helper = 1;\n");
+  setup.run("git", ["-C", "sub", "add", "helper.ts"]);
+  setup.run("git", ["-C", "sub", "commit", "-q", "-m", "one"]);
+  setup.git("add", "sub");
+  setup.git("commit", "-q", "-m", "Add the submodule");
+}
+
+test("a flagged file inside an initialized submodule is compared with disk", () => {
+  const s = resolvedMerge(addSubmodule);
+  const flagged = s.run("git", [
+    "-C",
+    "sub",
+    "update-index",
+    "--assume-unchanged",
+    "--",
+    "helper.ts",
+  ]);
+  expectSpawnExit({ ...flagged, exitCode: flagged.code }, 0);
+  setObligations(s, [{ check: "Validate", command: "true" }]);
+  let run = s.script("check-resolution.ts", ["--json"]);
+  expectSpawnExit({ ...run, exitCode: run.code }, 0);
+
+  s.write("sub/helper.ts", "export const helper = 2;\n");
+  run = s.script("check-resolution.ts", ["--json"]);
+  expectSpawnExit({ ...run, exitCode: run.code }, 1);
+  const report = JSON.parse(run.stdout);
+  expect(report.obligations).toMatchObject([{ status: "not-run" }]);
+  expect(report.problems).toContainEqual(
+    expect.objectContaining({
+      path: "sub/helper.ts",
+      message: expect.stringContaining("assume-unchanged or skip-worktree"),
+    }),
+  );
+});
+
+for (const flag of ["--assume-unchanged", "--skip-worktree"])
+  test(`a clean submodule marked ${flag} passes`, () => {
+    const s = resolvedMerge(addSubmodule);
+    s.git("update-index", flag, "--", "sub");
+    setObligations(s, [{ check: "Validate", command: "true" }]);
+    const run = s.script("check-resolution.ts", ["--json"]);
+    expectSpawnExit({ ...run, exitCode: run.code }, 0);
+    expect(JSON.parse(run.stdout).obligations).toMatchObject([
+      { status: "passed" },
+    ]);
+  });
+
+test("flagged files whose names hold a newline or start with a quote are compared literally", () => {
+  const newline = "a\nb.txt";
+  const quoted = '"quoted.txt';
+  const s = resolvedMerge((setup) =>
+    setup.commit("Add awkward names", {
+      [newline]: "staged\n",
+      [quoted]: "staged\n",
+    }),
+  );
+  s.git("update-index", "--skip-worktree", "--", newline, quoted);
+  setObligations(s, [{ check: "Validate", command: "true" }]);
+  let run = s.script("check-resolution.ts", ["--json"]);
+  expectSpawnExit({ ...run, exitCode: run.code }, 0);
+
+  s.write(newline, "edited on disk\n");
+  run = s.script("check-resolution.ts", ["--json"]);
+  expectSpawnExit({ ...run, exitCode: run.code }, 1);
+  const paths = JSON.parse(run.stdout).problems.map(
+    (p: { path: string }) => p.path,
+  );
+  expect(paths).toContain(newline);
+  expect(paths).not.toContain(quoted);
+});
+
+test("a flagged symlink checked out as a plain file under core.symlinks=false is compared as git checks it out", () => {
+  const s = resolvedMerge((setup) => {
+    setup.write("target.txt", "target\n");
+    setup.run("ln", ["-s", "target.txt", "link"]);
+    setup.git("add", "target.txt", "link");
+    setup.git("commit", "-q", "-m", "Add the link");
+  });
+  s.git("config", "core.symlinks", "false");
+  s.run("rm", ["link"]);
+  s.git("checkout", "--", "link");
+  expect(s.read("link")).toBe("target.txt");
+  s.git("update-index", "--assume-unchanged", "--", "link");
+  setObligations(s, [{ check: "Validate", command: "true" }]);
+  let run = s.script("check-resolution.ts", ["--json"]);
+  expectSpawnExit({ ...run, exitCode: run.code }, 0);
+
+  s.write("link", "elsewhere.txt");
+  run = s.script("check-resolution.ts", ["--json"]);
+  expectSpawnExit({ ...run, exitCode: run.code }, 1);
+  expect(JSON.parse(run.stdout).problems).toContainEqual(
+    expect.objectContaining({ path: "link" }),
+  );
+});

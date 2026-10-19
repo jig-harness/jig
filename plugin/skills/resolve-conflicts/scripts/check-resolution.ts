@@ -29,7 +29,14 @@
  * printed. Exit 4 wins over exit 1, since an escalated resolution is not
  * concluded either way.
  */
-import { existsSync, lstatSync, readFileSync, readlinkSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fail, runMain } from "../../../shared/cli.ts";
 import { unmergedPaths } from "./conflict-map.ts";
@@ -288,98 +295,80 @@ const SKIPPED_DIFFERS =
   "is marked assume-unchanged or skip-worktree, so git does not compare it, and its file on disk differs from the staged tree: clear the flag (git update-index --no-assume-unchanged --no-skip-worktree -- <path>), then stage or discard it";
 
 /**
- * `git diff` deliberately skips some paths, so a clean diff alone does not
- * prove the disk matches the index: submodule ignore settings hide a moved or
- * dirty submodule (overridden here), and an assume-unchanged or skip-worktree
- * entry is never compared at all (each is compared independently).
+ * Tracked paths whose file on disk differs from the staged tree, as git itself
+ * compares them. A plain `git diff` skips some paths: submodule ignore
+ * settings hide a moved or dirty submodule (overridden here), and an
+ * assume-unchanged or skip-worktree entry is never compared. Those entries are
+ * re-staged without their flags into a throwaway copy of the index, so git
+ * compares them as it compares any other entry, whatever their kind (file,
+ * symlink, submodule) and whatever the checkout settings. Initialized
+ * submodules are checked the same way, since git's status of a submodule
+ * trusts the flags in the submodule's own index.
  */
-function treeState(root: string): TreeState {
-  const unstaged = splitNul(
-    git(root, ["diff", "--name-only", "-z", "--ignore-submodules=none"]),
-  );
-  const skipped = new Set(skippedMismatches(root));
-  const differing = [...new Set([...unstaged, ...skipped])]
-    .sort()
-    .map((path) => ({
-      path,
-      message: skipped.has(path) ? SKIPPED_DIFFERS : DIFFERS,
+function differingPaths(root: string, prefix = ""): Finding[] {
+  const flagged = skippedEntries(root);
+  const dir = mkdtempSync(join(tmpdir(), "check-resolution-"));
+  try {
+    const index = join(dir, "index");
+    const source = gitPath(root, "index");
+    if (existsSync(source)) copyFileSync(source, index);
+    const env = { ...process.env, GIT_INDEX_FILE: index };
+    if (flagged.size > 0)
+      git(
+        root,
+        ["-c", "core.splitIndex=false", "update-index", "-z", "--index-info"],
+        [...flagged.values()].map((record) => `${record}\0`).join(""),
+        env,
+      );
+    const differing = splitNul(
+      git(
+        root,
+        ["diff", "--name-only", "-z", "--ignore-submodules=none"],
+        undefined,
+        env,
+      ),
+    ).map((path) => ({
+      path: `${prefix}${path}`,
+      message: flagged.has(path) ? SKIPPED_DIFFERS : DIFFERS,
     }));
+    for (const path of initializedSubmodules(root))
+      differing.push(...differingPaths(join(root, path), `${prefix}${path}/`));
+    return differing;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function treeState(root: string): TreeState {
+  const differing = differingPaths(root).sort((a, b) =>
+    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
+  );
   return { tree: git(root, ["write-tree"]).trim(), differing };
 }
 
-interface IndexEntry {
-  path: string;
-  mode: string;
-  blob: string;
-}
-
-/** Stage-0 entries marked assume-unchanged (a lowercase tag) or skip-worktree (S). */
-function skippedEntries(root: string): IndexEntry[] {
-  const entries: IndexEntry[] = [];
-  for (const record of splitNul(git(root, ["ls-files", "-s", "-v", "-z"]))) {
-    const match = record.match(/^(\S) (\d+) ([0-9a-f]+) \d\t(.*)$/s);
+/**
+ * Stage-0 entries marked assume-unchanged (a lowercase tag) or skip-worktree
+ * (S), by path, each as the `git ls-files -s` record that re-stages it.
+ */
+function skippedEntries(root: string): Map<string, string> {
+  const entries = new Map<string, string>();
+  for (const line of splitNul(git(root, ["ls-files", "-s", "-v", "-z"]))) {
+    const match = line.match(/^(\S) (\d+ [0-9a-f]+ 0\t(.*))$/s);
     if (!match) continue;
-    const [, tag = "", mode = "", blob = "", path = ""] = match;
-    if (tag === tag.toLowerCase() || tag === "S")
-      entries.push({ path, mode, blob });
+    const [, tag = "", record = "", path = ""] = match;
+    if (tag === tag.toLowerCase() || tag === "S") entries.set(path, record);
   }
   return entries;
 }
 
-/**
- * Whether an entry's file matches its staged mode without reading content:
- * `"content"` when only a regular file's blob is left to compare.
- */
-function shapeMatches(
-  root: string,
-  entry: IndexEntry,
-  fileMode: boolean,
-): boolean | "content" {
-  const full = join(root, entry.path);
-  const stat = lstatSync(full, { throwIfNoEntry: false });
-  if (stat === undefined) return false;
-  if (entry.mode === "120000")
-    return (
-      stat.isSymbolicLink() &&
-      git(root, ["hash-object", "--stdin"], readlinkSync(full)).trim() ===
-        entry.blob
+/** Submodule paths whose working tree is a checked-out repository. */
+function initializedSubmodules(root: string): string[] {
+  return splitNul(git(root, ["ls-files", "-s", "-z"]))
+    .map((line) => line.match(/^160000 [0-9a-f]+ 0\t(.*)$/s)?.[1])
+    .filter(
+      (path): path is string =>
+        path !== undefined && existsSync(join(root, path, ".git")),
     );
-  if (entry.mode !== "100644" && entry.mode !== "100755") return false;
-  if (!stat.isFile()) return false;
-  const executable = (stat.mode & 0o111) !== 0;
-  if (fileMode && executable !== (entry.mode === "100755")) return false;
-  return "content";
-}
-
-/** Entries git does not compare with disk whose file differs from the staged blob or mode. */
-function skippedMismatches(root: string): string[] {
-  const entries = skippedEntries(root);
-  if (entries.length === 0) return [];
-  const fileMode =
-    process.platform !== "win32" &&
-    gitRaw(root, [
-      "config",
-      "--type=bool",
-      "--get",
-      "core.fileMode",
-    ]).stdout.trim() !== "false";
-  const mismatched: string[] = [];
-  const regular: IndexEntry[] = [];
-  for (const entry of entries) {
-    const shape = shapeMatches(root, entry, fileMode);
-    if (shape === "content") regular.push(entry);
-    else if (!shape) mismatched.push(entry.path);
-  }
-  if (regular.length === 0) return mismatched;
-  const hashes = git(
-    root,
-    ["hash-object", "--stdin-paths"],
-    `${regular.map((entry) => entry.path).join("\n")}\n`,
-  ).split("\n");
-  regular.forEach((entry, i) => {
-    if (hashes[i] !== entry.blob) mismatched.push(entry.path);
-  });
-  return mismatched;
 }
 
 function notRun(
