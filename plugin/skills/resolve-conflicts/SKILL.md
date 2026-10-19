@@ -318,7 +318,8 @@ It fails (exit 1), listing each problem with its file and line, when:
 3. a mapped path has no decision, an unknown one, or lacks a required reason;
 4. what is staged for a mapped path differs from the working tree. The
    configuration, the change-area catalog (read through the symbolic links the
-   index holds) and the `.gitattributes` files are read from the index, as the
+   index holds; a link whose target leaves the repository is refused, never
+   read from disk) and the `.gitattributes` files are read from the index, as the
    commit carries them: a change to one of them takes effect once it is staged,
    and a working-tree change that is not staged, an untracked file, an ignored
    one, a staged link named `.gitattributes`, `$GIT_DIR/info/attributes`, the
