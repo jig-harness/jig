@@ -231,7 +231,7 @@ jig/conflicts.json)`, which is never committed. Its shape:
     "integrationWhy": "main is the default branch"
   },
   "warning": null,
-  "catalogUnread": null,
+  "catalogIncomplete": null,
   "mappedAt": "2026-01-01T00:00:00.000Z",
   "paths": {
     "src/a.ts": {
@@ -264,14 +264,20 @@ jig/conflicts.json)`, which is never committed. Its shape:
 edit it by hand to the same shape. `regenerate` is
 `{ "command", "cwd", "source": "built-in" | "configuration" | "catalog" }` for
 a derived file, and `null` for a `generated` path whose catalog entry declares
-no command (then `record.ts` needs `--command`). `catalogUnread` says why the
-change-area catalog could not be read when the map was written, and keeps the
-check refusing until a map with a readable catalog clears it. `dropped` is `{ "why": "…", "lines": [{ "side": "theirs", "text": "…" }] }`.
+no command (then `record.ts` needs `--command`). `catalogIncomplete` says why
+the change-area catalog's generated files could not all be read when the map
+was written (the catalog could not be read, or an entry's `outputs` are
+malformed), and keeps the check refusing until a map that reads them all
+clears it. `dropped` is `{ "why": "…", "lines": [{ "side": "theirs", "text": "…" }] }`.
 
 The snapshot belongs to one operation (its kind, `HEAD`, and the incoming
-commit). Running `conflict-map.ts` again for the same operation keeps the
-decisions already recorded and maps paths that are newly unmerged; a snapshot
-of a different operation is replaced, and the output says so. Each stop of a
+commit). Running `conflict-map.ts` again for the same operation classifies
+every mapped path afresh (a staged one from its stored conflict stages), maps
+paths that are newly unmerged, and keeps each recorded decision while the
+path's class and regeneration command are the ones it was recorded under. A
+decision recorded under another class or command is cleared, the output names
+the path, and you record it again. A snapshot of a different operation is
+replaced, and the output says so. Each stop of a
 rebase is a different operation. An unreadable snapshot is never replaced
 (exit 3): once a path is staged, git no longer knows its conflict stages, and
 only the snapshot does. Restore it, or, if nothing has been staged since it
@@ -413,14 +419,15 @@ the catalog overrides the table. The following problems are reported, never
 skipped: a catalog entry with no `command` still claims its outputs as
 generated files (never hand-merged) and the map warns that no command is
 known, so `record.ts` needs `--command` for it; an entry whose `outputs` are
-not a list of literal file paths is named in the warning and ignored; and a
-catalog that cannot be read (it may be among the conflicted paths) is named in
-the warning while the map goes on without it, and `check-resolution.ts`
-refuses until a later map reads it. Resolve the catalog first, then run
-`conflict-map.ts` again: it keeps the decisions already recorded,
-reclassifies every mapped path, a staged one included, that the catalog now
-declares generated, and gives every derived path the command that now applies
-(check-resolution.ts then asks for `regenerated`). A `drive.change_areas_catalog` that is not a path is
+not a list of literal file paths is named in the warning and its outputs are
+classified by the other rules; and a catalog that cannot be read (it may be
+among the conflicted paths) is named in the warning while the map goes on
+without it. In the last two cases `check-resolution.ts` refuses until a later
+map reads every entry. Resolve or correct the catalog first, then run
+`conflict-map.ts` again: it reclassifies every mapped path, a staged one
+included, gives every derived path the command that now applies, and clears
+each decision recorded under a class or command that changed, so
+`check-resolution.ts` asks for that path's decision again. A `drive.change_areas_catalog` that is not a path is
 refused (exit 2).
 
 Built-in lockfiles, matched by file name in any directory and regenerated in

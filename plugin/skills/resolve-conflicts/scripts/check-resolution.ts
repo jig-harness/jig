@@ -195,13 +195,13 @@ function checkPath(
   }
 }
 
-/** A map written without the change-area catalog may have classified a generated file as text. */
+/** A map that could not honour every catalog declaration may have classified a generated file as text. */
 function incompleteMap(snapshot: Snapshot): Finding[] {
-  if (!snapshot.catalogUnread) return [];
+  if (!snapshot.catalogIncomplete) return [];
   return [
     {
       path: "(conflict map)",
-      message: `the change-area catalog could not be read when the conflicts were mapped (${snapshot.catalogUnread}), so a file it declares generated may be classified as text: resolve the catalog, then run conflict-map.ts again`,
+      message: `the change-area catalog's generated files could not all be read when the conflicts were mapped (${snapshot.catalogIncomplete}), so a file it declares generated may be classified as text: resolve or correct the catalog, then run conflict-map.ts again`,
     },
   ];
 }

@@ -51,7 +51,7 @@ interface Map {
     integration: string;
   };
   warning: string | null;
-  catalogUnread?: string | null;
+  catalogIncomplete?: string | null;
   paths: Record<string, MappedPath>;
 }
 
@@ -423,17 +423,21 @@ describe("classes", () => {
           0,
         );
         resolveCatalog();
+        const r = s.script("conflict-map.ts");
+        expect(r.stdout).toContain(
+          "cleared the decision for openapi.json, whose class or regeneration command changed",
+        );
         const m = map();
         expect(m.warning).not.toContain("could not be read");
         expect(m.paths["openapi.json"]).toMatchObject({
           class: "generated",
           regenerate: { source: "catalog" },
-          resolution: { decision: "combined" },
+          resolution: { decision: null },
         });
-        const r = s.script("check-resolution.ts");
-        expect(r.code).toBe(1);
-        expect(r.stdout).toContain(
-          "PROBLEM openapi.json: is a generated file: take the integration side, regenerate it (bun run gen:openapi) and record regenerated",
+        const check = s.script("check-resolution.ts");
+        expect(check.code).toBe(1);
+        expect(check.stdout).toContain(
+          "PROBLEM openapi.json: no decision recorded",
         );
       });
 
@@ -451,22 +455,23 @@ describe("classes", () => {
         const before = s.script("check-resolution.ts");
         expect(before.code).toBe(1);
         expect(before.stdout).toContain(
-          "PROBLEM (conflict map): the change-area catalog could not be read when the conflicts were mapped",
+          "PROBLEM (conflict map): the change-area catalog's generated files could not all be read when the conflicts were mapped",
         );
-        expect(map().catalogUnread).toBeNull();
+        expect(map().catalogIncomplete).toBeNull();
         const after = s.script("check-resolution.ts");
         expect(after.stdout).not.toContain("(conflict map)");
         expect(after.stdout).toContain(
-          "PROBLEM openapi.json: is a generated file",
+          "PROBLEM openapi.json: no decision recorded",
         );
       });
     });
 
-    it("gives a staged derived path the command the catalog declares once it is resolved", () => {
+    it("gives a staged derived path the command the catalog declares once it is resolved, and asks for that regeneration again", () => {
       s.overlay("drive:\n  change_areas_catalog: catalog.yaml\n");
       conflictEverywhere(["catalog.yaml", "bun.lock"]);
       expect(map().paths["bun.lock"]?.regenerate?.source).toBe("built-in");
       s.git("add", "bun.lock");
+      expect(s.script("record.ts", ["bun.lock", "regenerated"]).code).toBe(0);
       s.write(
         "catalog.yaml",
         CATALOG.replace(
@@ -478,6 +483,45 @@ describe("classes", () => {
       expect(map().paths["bun.lock"]).toMatchObject({
         class: "generated",
         regenerate: { command: "bun run gen:openapi", source: "catalog" },
+        resolution: { decision: null },
+      });
+      expect(s.script("check-resolution.ts").stdout).toContain(
+        "PROBLEM bun.lock: no decision recorded",
+      );
+    });
+
+    it("keeps a decision recorded under the class and command the path still has", () => {
+      useCatalog();
+      conflictEverywhere(["openapi.json"]);
+      map();
+      s.git("add", "openapi.json");
+      expect(s.script("record.ts", ["openapi.json", "regenerated"]).code).toBe(
+        0,
+      );
+      expect(map().paths["openapi.json"]?.resolution.decision).toBe(
+        "regenerated",
+      );
+    });
+
+    it("classifies a staged path by the other rules once the catalog no longer declares it", () => {
+      useCatalog();
+      conflictEverywhere(["openapi.json"]);
+      expect(map().paths["openapi.json"]?.class).toBe("generated");
+      s.git("add", "openapi.json");
+      expect(s.script("record.ts", ["openapi.json", "regenerated"]).code).toBe(
+        0,
+      );
+      s.write(
+        "catalog.yaml",
+        CATALOG.replace(
+          "outputs: [openapi.json, docs/api.md]",
+          "outputs: [docs/api.md]",
+        ),
+      );
+      expect(map().paths["openapi.json"]).toMatchObject({
+        class: "text",
+        regenerate: null,
+        resolution: { decision: null },
       });
     });
 
@@ -490,6 +534,31 @@ describe("classes", () => {
       );
       expect(m.paths["schema.sql"]?.class).toBe("text");
       expect(m.paths["src/a.ts"]?.class).toBe("text");
+      expect(m.catalogIncomplete).toContain('"**" is not a literal');
+    });
+
+    it("refuses the check while an entry's outputs are malformed, a valid output beside them included", () => {
+      useCatalog(
+        CATALOG.replace(
+          "outputs: [openapi.json, docs/api.md]",
+          'outputs: [openapi.json, "**"]',
+        ),
+      );
+      conflictEverywhere(["openapi.json"]);
+      expect(map().paths["openapi.json"]?.class).toBe("text");
+      s.write("openapi.json", "hand merged\n");
+      s.git("add", "openapi.json");
+      expect(s.script("record.ts", ["openapi.json", "combined"]).code).toBe(0);
+      const r = s.script("check-resolution.ts");
+      expect(r.code).toBe(1);
+      expect(r.stdout).toContain(
+        'PROBLEM (conflict map): the change-area catalog\'s generated files could not all be read when the conflicts were mapped (catalog area api.generated[0].outputs: "**" is not a literal',
+      );
+      useCatalog();
+      expect(map().catalogIncomplete).toBeNull();
+      expect(s.script("check-resolution.ts").stdout).not.toContain(
+        "(conflict map)",
+      );
     });
 
     it("reports an entry whose outputs are not a list of paths", () => {
@@ -502,6 +571,9 @@ describe("classes", () => {
       ) as Map;
       expect(m.warning).toContain(
         "catalog area api.generated[1].outputs is not a nonempty list of paths",
+      );
+      expect(m.catalogIncomplete).toContain(
+        "api.generated[1].outputs is not a nonempty list of paths",
       );
       expect(m.paths["schema.sql"]?.class).toBe("text");
     });

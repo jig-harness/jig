@@ -141,11 +141,13 @@ export interface CatalogGenerated {
   /** One line per problem, for the map to print: nothing here is skipped silently. */
   problems: string[];
   /**
-   * Why the catalog could not be read, or `null`. Set, the map is incomplete:
-   * a file only the catalog declares generated was classified by the other
-   * rules, so the check refuses until a map with a readable catalog clears it.
+   * Why the catalog's generated declarations could not all be honoured (the
+   * catalog cannot be read, or an entry's `outputs` are malformed), or `null`.
+   * Set, the map is incomplete: a file the catalog means to declare generated
+   * was classified by the other rules, so the check refuses until a map that
+   * honours every declaration clears it.
    */
-  unreadable: string | null;
+  incomplete: string | null;
 }
 
 /** The catalog path `drive.change_areas_catalog` names, or `null` when unset. */
@@ -171,24 +173,24 @@ function configuredCatalogPath(): string | null {
 function catalogEntry(
   entry: Record<string, unknown>,
   at: string,
-): { entry?: GeneratedEntry; problems: string[] } {
+): { entry?: GeneratedEntry; problems: string[]; malformed?: string } {
   const outputs = entry.outputs;
   if (
     !Array.isArray(outputs) ||
     outputs.length === 0 ||
     outputs.some((p) => typeof p !== "string" || p.trim() === "")
-  )
-    return { problems: [`${at}.outputs is not a nonempty list of paths`] };
+  ) {
+    const malformed = `${at}.outputs is not a nonempty list of paths`;
+    return { problems: [malformed], malformed };
+  }
   const paths = outputs as string[];
   // The catalog declares literal output files, never globs: `**` would claim
   // every conflicted path as generated.
   const invalid = paths.find((p) => !OUTPUT_PATH_RE.test(p));
-  if (invalid !== undefined)
-    return {
-      problems: [
-        `${at}.outputs: "${invalid}" is not a literal repository-relative file path`,
-      ],
-    };
+  if (invalid !== undefined) {
+    const malformed = `${at}.outputs: "${invalid}" is not a literal repository-relative file path`;
+    return { problems: [malformed], malformed };
+  }
   const command =
     typeof entry.command === "string" && entry.command.trim() !== ""
       ? entry.command
@@ -208,16 +210,17 @@ function catalogEntry(
  * The generated entries of the change-area catalog the repository declares in
  * `drive.change_areas_catalog`: each area's `generated[].outputs` with that
  * entry's `command`. No catalog configured gives an empty result. A catalog
- * that cannot be read is reported, not fatal: it may be among the conflicted
- * paths, and the map must still run so it can be resolved first. An entry
- * without a `command` still claims its outputs, so a derived file is never
- * hand-merged, and is reported.
+ * that cannot be read, or an entry whose `outputs` are malformed, is reported
+ * and marks the map incomplete, not fatal: the catalog may be among the
+ * conflicted paths, and the map must still run so it can be resolved first.
+ * An entry without a `command` still claims its outputs, so a derived file is
+ * never hand-merged, and is reported.
  */
 export function catalogGeneratedEntries(): CatalogGenerated {
   const result: CatalogGenerated = {
     entries: [],
     problems: [],
-    unreadable: null,
+    incomplete: null,
   };
   const path = configuredCatalogPath();
   if (path === null) return result;
@@ -225,21 +228,30 @@ export function catalogGeneratedEntries(): CatalogGenerated {
   try {
     areas = loadCatalogFile(path);
   } catch (err) {
-    result.unreadable = err instanceof Error ? err.message : String(err);
+    result.incomplete = err instanceof Error ? err.message : String(err);
     result.problems.push(
-      `${result.unreadable}. Files that only the catalog declares as generated are classified by the other rules until it can be read; resolve the catalog first if it is itself conflicted, then run conflict-map.ts again (check-resolution.ts refuses until then).`,
+      `${result.incomplete}. Files that only the catalog declares as generated are classified by the other rules until it can be read; resolve the catalog first if it is itself conflicted, then run conflict-map.ts again (check-resolution.ts refuses until then).`,
     );
     return result;
   }
+  const malformed: string[] = [];
   for (const [key, area] of areas) {
     const generated = area.fields.generated;
+    // loadCatalogFile has checked that `generated` is a list of mappings.
     if (!Array.isArray(generated)) continue;
     generated.forEach((entry: unknown, i) => {
       if (!isRecord(entry)) return;
       const found = catalogEntry(entry, `catalog area ${key}.generated[${i}]`);
       if (found.entry) result.entries.push(found.entry);
+      if (found.malformed) malformed.push(found.malformed);
       result.problems.push(...found.problems);
     });
+  }
+  if (malformed.length > 0) {
+    result.incomplete = malformed.join("; ");
+    result.problems.push(
+      "The outputs of an entry reported above are classified by the other rules until it is corrected; correct the catalog, then run conflict-map.ts again (check-resolution.ts refuses until then).",
+    );
   }
   return result;
 }
