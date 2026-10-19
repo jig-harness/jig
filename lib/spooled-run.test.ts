@@ -9,7 +9,16 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { lastLinesOf, lineCount, linesOf, MAX_LINE } from "./spooled-run.ts";
+import {
+  type GroupIo,
+  lastLinesOf,
+  lineCount,
+  linesOf,
+  MAX_LINE,
+  reapGroup,
+  signalCommand,
+  signalGroup,
+} from "./spooled-run.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "jig-spooled-run-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -109,6 +118,72 @@ test.skipIf(process.platform === "win32")(
     const spool = JSON.parse(stdout);
     expect(spool).toEqual({ interrupted: "SIGTERM", signal: "SIGKILL" });
     await until(() => !alive(command), "the command to stop");
+  },
+);
+
+/** A system whose `kill` answers from `script` in order, its last answer
+ * repeating: `ok`, or the error code it throws. Records every call and
+ * warning. */
+function scripted(script: string[], reapMs = 200) {
+  const calls: [number, NodeJS.Signals | 0][] = [];
+  const warnings: string[] = [];
+  const io: GroupIo = {
+    kill: (pid, signal) => {
+      calls.push([pid, signal]);
+      const answer = script[Math.min(calls.length, script.length) - 1];
+      if (answer === "ok") return;
+      throw Object.assign(new Error(`kill: ${answer}`), { code: answer });
+    },
+    warn: (line) => warnings.push(line),
+    reapMs,
+  };
+  return { io, calls, warnings };
+}
+
+test("a group probe answered EPERM is present, not gone, and not an error", () => {
+  expect(signalGroup(7, 0, scripted(["EPERM"]).io)).toBe("unsignalable");
+  expect(signalGroup(7, 0, scripted(["ESRCH"]).io)).toBe("gone");
+  expect(signalGroup(7, 0, scripted(["ok"]).io)).toBe("signalled");
+  expect(() => signalGroup(7, 0, scripted(["EINVAL"]).io)).toThrow("EINVAL");
+});
+
+test("a group that answers EPERM while exiting is waited for until ESRCH, not killed", async () => {
+  const { io, calls, warnings } = scripted(["EPERM", "EPERM", "ESRCH"]);
+  await reapGroup(7, Date.now() + 5_000, io);
+  expect(calls).toEqual([
+    [-7, 0],
+    [-7, 0],
+    [-7, 0],
+  ]);
+  expect(warnings).toEqual([]);
+});
+
+test("a group still answering EPERM after the grace period is killed, then reported", async () => {
+  const { io, calls, warnings } = scripted(["EPERM"], 150);
+  await reapGroup(7, Date.now() + 100, io);
+  expect(calls).toContainEqual([-7, "SIGKILL"]);
+  const killed = calls.findIndex(([, signal]) => signal === "SIGKILL");
+  // Probed after the kill, until the reap window ran out.
+  expect(calls.slice(killed + 1).length).toBeGreaterThan(0);
+  expect(warnings).toEqual([
+    "spooled-run: process group 7 still has members after SIGKILL\n",
+  ]);
+});
+
+test.skipIf(process.platform === "win32")(
+  "a forwarded signal no group member takes goes to the command itself",
+  () => {
+    for (const [answer, direct] of [
+      ["EPERM", ["SIGTERM"]],
+      ["ESRCH", ["SIGTERM"]],
+      ["ok", []],
+    ] as const) {
+      const sent: NodeJS.Signals[] = [];
+      const { io, calls } = scripted([answer]);
+      signalCommand(7, "SIGTERM", (name) => sent.push(name), io);
+      expect(calls).toEqual([[-7, "SIGTERM"]]);
+      expect(sent).toEqual([...direct]);
+    }
   },
 );
 

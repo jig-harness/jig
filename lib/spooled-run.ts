@@ -61,7 +61,7 @@ export const MAX_LINE = 4 * 1024 * 1024;
 const GROUPS = process.platform !== "win32";
 
 /** What a signal to a process group found. */
-type GroupState =
+export type GroupState =
   /** A member took the signal. */
   | "signalled"
   /** Members exist and none could be signalled. macOS answers so for a group
@@ -71,10 +71,35 @@ type GroupState =
   /** No process of the group is left. */
   | "gone";
 
+/** The calls the group handling makes to the system; tests replace them to
+ * produce answers a real process gives only in a race. */
+export interface GroupIo {
+  /** `process.kill`: throws with the system's error code. */
+  kill: (pid: number, signal: NodeJS.Signals | 0) => void;
+  /** Report a line to the operator. */
+  warn: (line: string) => void;
+  /** How long a killed group has to be reaped before it is reported. */
+  reapMs: number;
+}
+
+const SYSTEM: GroupIo = {
+  kill: (pid, signal) => {
+    process.kill(pid, signal);
+  },
+  warn: (line) => {
+    process.stderr.write(line);
+  },
+  reapMs: 2_000,
+};
+
 /** Send a signal to a process group; 0 only asks whether it has members. */
-function signalGroup(pid: number, signal: NodeJS.Signals | 0): GroupState {
+export function signalGroup(
+  pid: number,
+  signal: NodeJS.Signals | 0,
+  io: GroupIo = SYSTEM,
+): GroupState {
   try {
-    process.kill(-pid, signal);
+    io.kill(-pid, signal);
     return "signalled";
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
@@ -84,12 +109,13 @@ function signalGroup(pid: number, signal: NodeJS.Signals | 0): GroupState {
   }
 }
 
-/** How long a killed group has to be reaped before it is reported. */
-const REAP_MS = 2_000;
-
 /** Wait until the group has no process left or the deadline passes. */
-async function waitGone(pid: number, deadline: number): Promise<boolean> {
-  while (signalGroup(pid, 0) !== "gone") {
+async function waitGone(
+  pid: number,
+  deadline: number,
+  io: GroupIo,
+): Promise<boolean> {
+  while (signalGroup(pid, 0, io) !== "gone") {
     if (Date.now() >= deadline) return false;
     await Bun.sleep(50);
   }
@@ -100,13 +126,28 @@ async function waitGone(pid: number, deadline: number): Promise<boolean> {
  * kill what is left. A group that still answers after the kill is reported,
  * not assumed gone: its members are exiting slowly, or beyond this process's
  * reach. */
-async function reapGroup(pid: number, deadline: number): Promise<void> {
-  if (await waitGone(pid, deadline)) return;
-  signalGroup(pid, "SIGKILL");
-  if (!(await waitGone(pid, Date.now() + REAP_MS)))
-    process.stderr.write(
+export async function reapGroup(
+  pid: number,
+  deadline: number,
+  io: GroupIo = SYSTEM,
+): Promise<void> {
+  if (await waitGone(pid, deadline, io)) return;
+  signalGroup(pid, "SIGKILL", io);
+  if (!(await waitGone(pid, Date.now() + io.reapMs, io)))
+    io.warn(
       `spooled-run: process group ${pid} still has members after SIGKILL\n`,
     );
+}
+
+/** Send a signal to the command's group, or to the command alone (`direct`)
+ * where there are no groups or no member of the group took it. */
+export function signalCommand(
+  pid: number,
+  name: NodeJS.Signals,
+  direct: (name: NodeJS.Signals) => void,
+  io: GroupIo = SYSTEM,
+): void {
+  if (!GROUPS || signalGroup(pid, name, io) !== "signalled") direct(name);
 }
 
 /** Run `command`, spooling its standard output and error to files. Throws
@@ -131,10 +172,8 @@ export async function spooledRun(
       stderr: errFd,
       detached: GROUPS,
     });
-    const signal = (name: NodeJS.Signals) => {
-      if (!GROUPS || signalGroup(child.pid, name) !== "signalled")
-        child.kill(name);
-    };
+    const signal = (name: NodeJS.Signals) =>
+      signalCommand(child.pid, name, (direct) => child.kill(direct));
     const forward = (name: NodeJS.Signals) => {
       interrupted ??= name;
       signal(name);
