@@ -105,6 +105,17 @@ describe("tokens", () => {
     ['const url = "https://example.com/x"; spawnSync("linear", args);'],
     ['const open = /[/*]/; spawnSync("linear", args);'],
     ["const s = 'it\\'s // x'; spawnSync(\"linear\", args);"],
+    [
+      'function valid(url) { return /^https:\\/\\//.test(url); } spawnSync("linear", args);',
+    ],
+    ['const v = a / b; const w = c / d; spawnSync("linear", args);'],
+    [
+      `const value = \`\${Bun.spawn([/* launch */ "linear", "issue", "create"])}\`;`,
+    ],
+    [`const t = \`\${\`\${spawnSync("linear", args)}\`}\`;`],
+    ['/* unclosed \nspawnSync("linear", args);'],
+    ['// spawnSync("linear", ["issue", "create"]);'],
+    ['/* Bun.spawn(["linear", "api"]) */'],
   ])(
     "a call written around comments or through an alias is found: %s",
     (code) => {
@@ -117,6 +128,13 @@ describe("tokens", () => {
     ['import subprocess as sp\nsp.run(["linear", "issue", "create"])'],
     ['import subprocess as sp\nsp.check_output("linear", shell=False)'],
     ['subprocess.run(  # the tracker\n  ["linear", "issue"])'],
+    ['from subprocess import run\nrun("linear", shell=False)'],
+    ['from subprocess import call\ncall("linear", shell=False)'],
+    ['from subprocess import PIPE, run\nrun("linear", stdout=PIPE)'],
+    [
+      'from subprocess import (\n  PIPE,  # pipes\n  call as c,\n)\nc("linear")',
+    ],
+    ['from subprocess import run as r\nr("linear")'],
   ])("a Python run is found: %s", (code) => {
     expect(violations("plugin/x.py", code)).toMatchObject([
       { rule: "tracker-boundary", file: "plugin/x.py" },
@@ -126,9 +144,8 @@ describe("tokens", () => {
     ['console.log("linear", version);'],
     ['settings.set("linear", false);'],
     ['record("linear", adapter);'],
-    ['// spawnSync("linear", ["issue", "create"]);'],
-    ['/* Bun.spawn(["linear", "api"]) */'],
     ['const note = "// not a comment"; log("linear", note);'],
+    ['from subprocess import PIPE\nrun("linear")'],
   ])("a call that does not launch the client is not: %s", (code) => {
     expect(violations("plugin/x.ts", code)).toEqual([]);
   });

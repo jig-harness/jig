@@ -12,11 +12,14 @@
 // …), or to a name the file binds to one, whose first argument is `linear`;
 // or a command line `linear <subcommand>`. A call to any other function with
 // `linear` first (`console.log("linear", v)`) names the client without
-// running it. Runs are looked for in the code with its comments blanked out,
-// so a comment anywhere inside a call hides nothing and a comment's prose is
-// not a call. The file is matched as a whole, so an argument list or a spawn
-// split over several lines is found like one written on a single line; a
-// command line stays on one line.
+// running it. Runs are looked for in the file's text as written, with any
+// comment between two of a run's tokens read as white space: no comment can
+// hide a run, and a run written inside a comment's prose is reported like
+// one in the code, so the check can over-report but never miss. Nothing is
+// lexed, so no string, regular expression or template the check reads wrongly
+// can blank code out of its view. The file is matched as a whole, so an
+// argument list or a spawn split over several lines is found like one written
+// on a single line; a command line stays on one line.
 //
 // Scope: every code file (TypeScript, JavaScript, shell, Python) under
 // `plugin/` outside the adapters' directory, and every file of the planning
@@ -98,6 +101,9 @@ const LAUNCHERS = [
   "check_output",
 ];
 
+/** The names `subprocess` exports that start a process. */
+const SUBPROCESS = ["run", "call", "Popen", "check_call", "check_output"];
+
 /** Launchers whose name means one only on their own module. */
 const QUALIFIED = [
   String.raw`Bun\s*\.\s*spawn(?:Sync)?`,
@@ -107,13 +113,42 @@ const QUALIFIED = [
 ];
 
 const IDENT = String.raw`[A-Za-z_$][\w$]*`;
-const quoteName = (name: string) => name.replace(/\$/g, "\\$");
+const quoteName = (name: string) => name.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+
+/**
+ * What may stand between two of a run's tokens: white space, and comments in
+ * any of the languages' syntaxes. A comment cannot end early (a line comment
+ * runs to its line's end, a block comment to its first closing marker), so a
+ * gap matches in one way only and a scan stays linear in the file's length.
+ */
+const GAP = String.raw`(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\n]*(?![^\n])|#[^\n]*(?![^\n]))*`;
+
+/**
+ * The names `from subprocess import …` binds to a launcher, under its alias
+ * where it has one, from one-line, continued and parenthesised import lists.
+ */
+function subprocessImports(code: string): string[] {
+  const bound: string[] = [];
+  for (const m of code.matchAll(
+    /\bfrom\s+subprocess\s+import\s+(\([^)]*\)?|[^\n]*)/g,
+  ))
+    for (const item of (m[1] as string)
+      .replace(/#[^\n]*/g, "")
+      .replace(/[()\\]/g, "")
+      .split(",")) {
+      const [, name, alias] =
+        /^\s*(\w+)(?:\s+as\s+(\w+))?\s*$/.exec(item) ?? [];
+      if (name && SUBPROCESS.includes(name)) bound.push(alias ?? name);
+    }
+  return bound;
+}
 
 /**
  * The names a file binds to a launcher: `import { execFileSync as run }`,
  * `const { spawnSync: run } = …`, `const run = cp.spawnSync`,
- * `from subprocess import run as r`, and `import subprocess as sp`'s module
- * name; followed through a chain of such bindings.
+ * `from subprocess import run` or `… import (call, run as r)`, and
+ * `import subprocess as sp`'s module name; followed through a chain of such
+ * bindings.
  */
 function launcherNames(code: string): {
   names: Set<string>;
@@ -125,13 +160,7 @@ function launcherNames(code: string): {
     new RegExp(String.raw`\bimport\s+subprocess\s+as\s+(${IDENT})`, "g"),
   ))
     modules.add(m[1] as string);
-  for (const m of code.matchAll(
-    new RegExp(
-      String.raw`\bfrom\s+subprocess\s+import\s+(?:run|call)\s+as\s+(${IDENT})`,
-      "g",
-    ),
-  ))
-    names.add(m[1] as string);
+  for (const name of subprocessImports(code)) names.add(name);
   for (let size = -1; size !== names.size; ) {
     size = names.size;
     const known = [...names].map(quoteName).join("|");
@@ -150,7 +179,7 @@ function launcherNames(code: string): {
   return { names, modules };
 }
 
-/** The pattern of a run of the `linear` client in a file's comment-blanked code. */
+/** The pattern of a run of the `linear` client in a file's text. */
 function runPattern(code: string): RegExp {
   const { names, modules } = launcherNames(code);
   const launcher = [
@@ -163,64 +192,12 @@ function runPattern(code: string): RegExp {
   ].join("|");
   return new RegExp(
     [
-      String.raw`\[\s*${LINEAR}\s*,`,
-      String.raw`\(\s*${LINEAR}\s*,\s*\[`,
-      String.raw`(?<![\w$.])(?:new\s+)?(?:${launcher})\s*\(\s*${LINEAR}`,
+      String.raw`\[${GAP}${LINEAR}${GAP},`,
+      String.raw`\(${GAP}${LINEAR}${GAP},${GAP}\[`,
+      String.raw`(?<![\w$.])(?:new\s+)?(?:${launcher})${GAP}\(${GAP}${LINEAR}`,
       String.raw`(?<![\w./-])linear[ \t]+(?:api|auth|config|issues?|teams?|projects?|labels?|cycles?|comments?|documents?|milestones?|initiatives?)\b`,
     ].join("|"),
     "g",
-  );
-}
-
-/**
- * A comment, or a literal a comment marker inside of must not start one, in
- * each language's syntax. Each alternative begins with a character no other
- * begins with, and none nests a quantifier over overlapping input, so a scan
- * is linear in the file's length. A JavaScript `/` opens a regular
- * expression literal only where an operand is expected (after an operator or
- * a bracket); a one-line literal left open ends at its line break.
- */
-const LEXEMES: Record<Language, RegExp> = {
-  js: new RegExp(
-    [
-      String.raw`\/\/[^\n]*`,
-      String.raw`\/\*[\s\S]*?(?:\*\/|$)`,
-      String.raw`"(?:\\.|[^"\\\n])*"?`,
-      String.raw`'(?:\\.|[^'\\\n])*'?`,
-      String.raw`\`(?:\\[\s\S]|[^\`\\])*\`?`,
-      String.raw`(?<=(?:^|[(,=:[!&|?{};+\-*%<>~^])\s*)\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]?|[^/\\\n[])*\/?`,
-    ].join("|"),
-    "g",
-  ),
-  hash: new RegExp(
-    [
-      String.raw`(?<!\S)#[^\n]*`,
-      String.raw`"(?:\\[\s\S]|[^"\\])*"?`,
-      String.raw`'(?:\\[\s\S]|[^'\\])*'?`,
-    ].join("|"),
-    "g",
-  ),
-};
-
-type Language = "js" | "hash";
-
-/**
- * `text` with every comment replaced by spaces, line breaks kept, so a
- * match's offset is its offset in the file. The comment syntax is the file's
- * language's: line and block comments for JavaScript and TypeScript, `#` for
- * shell and Python; other files are returned unchanged. Strings and
- * JavaScript regular expression literals are skipped, so a comment marker
- * inside one starts nothing.
- */
-export function blankComments(path: string, text: string): string {
-  const language: Language | null = /\.[cm]?[jt]s$/.test(path)
-    ? "js"
-    : /\.(?:sh|bash|py)$/.test(path)
-      ? "hash"
-      : null;
-  if (!language) return text;
-  return text.replace(LEXEMES[language], (lexeme) =>
-    /^(?:\/[/*]|#)/.test(lexeme) ? lexeme.replace(/[^\n]/g, " ") : lexeme,
   );
 }
 
@@ -237,18 +214,16 @@ export function inScope(path: string): boolean {
  */
 export function violations(path: string, text: string): Finding[] {
   const findings: { line: number; order: number; finding: Finding }[] = [];
-  const code = blankComments(path, text);
   const tokens = [
     ...TOKENS.map((t) => ({
       ...t,
-      in: text,
       pattern: new RegExp(t.pattern, `${t.pattern.flags}g`),
     })),
-    { what: RUN, in: code, pattern: runPattern(code) },
+    { what: RUN, pattern: runPattern(text) },
   ];
   tokens.forEach((token, order) => {
     const lines = new Set<number>();
-    for (const match of token.in.matchAll(token.pattern)) {
+    for (const match of text.matchAll(token.pattern)) {
       const line = text.slice(0, match.index).split("\n").length;
       if (lines.has(line)) continue;
       lines.add(line);
