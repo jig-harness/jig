@@ -33,6 +33,7 @@ import { checkReviewRisk } from "./review-risk.ts";
 import { checkRoadmap } from "./check-roadmap.ts";
 import { checkContextBudget } from "./check-context-budget.ts";
 import { checkSupplyChainLockstep } from "./check-supply-chain-lockstep.ts";
+import { checkPlugin } from "./check-plugin.ts";
 const root = join(import.meta.dir, "..");
 
 /**
@@ -140,6 +141,7 @@ export const CHECKS: Stage[] = [
   check("check-generated-files.ts", checkGeneratedFiles),
   check("review-risk.ts --check", checkReviewRisk),
   check("check-roadmap.ts", checkRoadmap),
+  check("check-plugin.ts", checkPlugin),
 ];
 
 /**

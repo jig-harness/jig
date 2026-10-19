@@ -9,7 +9,7 @@ the skills read, its type, what it does, what happens when it is absent, and
 which skill reads it. It is the complete reference; the skill READMEs explain
 the behaviour behind each field.
 
-The file is the repository's [consumer overlay](../GLOSSARY.md): its own
+The file is the repository's [consumer overlay](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): its own
 values, laid over the shared procedure. Values that belong to a person or a
 machine rather than to one repository go in a user file instead, and a single
 run can override either through environment variables: see
@@ -86,7 +86,7 @@ Contents: [the file](#the-file) ·
 ## Configuration layers
 
 The skills read their values from up to three
-[configuration layers](../GLOSSARY.md). A higher layer overrides a lower one:
+[configuration layers](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). A higher layer overrides a lower one:
 
 | Layer | Where | Holds |
 |-------|-------|-------|
@@ -219,8 +219,8 @@ an error.
 | `severity_mapping` | map from each severity, and `unknown`, to `{linear_priority, acceptance}` | no | The tracker priority and acceptance tier each severity corresponds to; checked when present, not used by the ladder |
 | `calibration` | any | no | Notes for people; not read |
 
-The [test fixture](../GLOSSARY.md)
-[`review-triage.yaml`](skills/resolve-review-comments/__tests__/fixtures/review-triage.yaml)
+The [test fixture](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+[`review-triage.yaml`](https://github.com/jig-harness/jig/blob/main/plugin/skills/resolve-review-comments/__tests__/fixtures/review-triage.yaml)
 is a complete example.
 
 ## `repository`
@@ -253,7 +253,7 @@ issue on merge, merged by a human.
 
 ### Stacking
 
-A *[stacked pull request](../GLOSSARY.md)* is based on another open pull
+A *[stacked pull request](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)* is based on another open pull
 request's branch rather than the integration branch, so dependent work can be
 reviewed before what it builds on merges. Stacks have a cost: any tool that
 reads its settings from a pull request's base (an AI reviewer that loads its
@@ -304,9 +304,9 @@ not resolve it either.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `drive.validation_plan_command` | shell command | The plan is `gates.command` alone | drive-pr, fix-ci, resolve-conflicts, review, descar | Reads changed files (one per line) on stdin and prints the validation plan as JSON on stdout. The change-areas skill's resolver prints such a plan from the catalog: `bun <plugin>/skills/change-areas/scripts/resolve.ts --files - --format json`, or the repository's own [composer](../GLOSSARY.md) around it |
+| `drive.validation_plan_command` | shell command | The plan is `gates.command` alone | drive-pr, fix-ci, resolve-conflicts, review, descar | Reads changed files (one per line) on stdin and prints the validation plan as JSON on stdout. The change-areas skill's resolver prints such a plan from the catalog: `bun <plugin>/skills/change-areas/scripts/resolve.ts --files - --format json`, or the repository's own [composer](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) around it |
 | `drive.load_guard_command` | shell command | No load guard | drive-pr | Waits until the machine can take heavy checks |
-| `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing | drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts | The repository's [change-area catalog](../GLOSSARY.md) (YAML with an `areas:` map). The [change-areas](skills/change-areas/README.md) skill validates the whole catalog against [its schema](skills/change-areas/README.md#the-catalog) and resolves a change against it. The plugin reads each area's `paths` and `generated[].source` globs, `labels`, `tracker.labels` and `tracker.flags` (`linear:` is the older spelling of the `tracker:` block) and `agent`, through one reader that refuses an area whose globs, labels or `tracker` block are malformed, with the field at fault; `agent` and the rest of the area are passed through unchecked. `resolve-conflicts` also reads each area's `generated[].outputs` and `command` (see `resolve_conflicts.generated`). `determine_agent.ts --catalog` overrides it for one run |
+| `drive.change_areas_catalog` | path, relative to the root or absolute | No catalog: `--area` unchecked, no area-based agent routing | drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts | The repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (YAML with an `areas:` map). The [change-areas](skills/change-areas/README.md) skill validates the whole catalog against [its schema](skills/change-areas/README.md#the-catalog) and resolves a change against it. The plugin reads each area's `paths` and `generated[].source` globs, `labels`, `tracker.labels` and `tracker.flags` (`linear:` is the older spelling of the `tracker:` block) and `agent`, through one reader that refuses an area whose globs, labels or `tracker` block are malformed, with the field at fault; `agent` and the rest of the area are passed through unchecked. `resolve-conflicts` also reads each area's `generated[].outputs` and `command` (see `resolve_conflicts.generated`). `determine_agent.ts --catalog` overrides it for one run |
 | `drive.reviews_drafts` | `true`, `false` | Unknown | drive-pr, do-item | Whether the AI reviewer reviews draft pull requests. The drive uses it to explain a draft waiting for a review; `false` also makes new pull requests open Ready unless `pull_requests.open_as` says otherwise |
 | `drive.max_rounds` | whole number ≥ 1 | `10` | drive-pr | The default round budget of a drive: how many review rounds it runs before it stops unconverged (exit `6`). The `--max-rounds` flag overrides it for one run. A value that is not a whole number of at least 1 stops the drive, unless the flag names the budget |
 | `drive.escape_baseline_doc` | path, relative to the root | `docs/review-loop-baseline.md` | drive-pr | Document recording the human-judged defect-escape baseline that the loop-cost reports compare against |
@@ -316,13 +316,13 @@ not resolve it either.
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
 | `ci.required_checks` | list of distinct check names; `[]` means none | Derived from the protection and rulesets of the pull request's base, and of the branch its stack lands on; for changelog, of the integration branch | drive-pr, changelog | drive-pr: checks that must complete on the converged head before the drive certifies it. Required, and not empty, when `ci.hold_label` is set. changelog (`tag.ts`, `status.ts`): checks that must pass on a releasing commit before its version is tagged, `[]` tagging without any, read from the integration branch's `.config/jig.yaml` only, never from a person's file or the environment. Set, it wins over the branch's rules for both. Unset, and with no check the integration branch's rules require, tagging fails closed: no required checks known. Name only checks that run on the integration branch: one that runs only on pull requests never reports there, and its versions would wait for their tag forever |
-| `ci.hold_label` | label | No hold: every push runs full CI | drive-pr | A label the repository's workflows honour by skipping expensive jobs on intermediate pushes; the drive removes it once review converges. See the [drive-pr README](skills/drive-pr/README.md); the workflow side is [M13's CI hold](../modules/M13-pipeline-economy/README.md#7-hold) |
+| `ci.hold_label` | label | No hold: every push runs full CI | drive-pr | A label the repository's workflows honour by skipping expensive jobs on intermediate pushes; the drive removes it once review converges. See the [drive-pr README](skills/drive-pr/README.md); the workflow side is [M13's CI hold](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/README.md#7-hold) |
 
 ## `issue_tracker`
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `issue_tracker.adapter` | adapter name | `linear` | do-item, drive-pr, decide, work-batch | Which [tracker adapter](../GLOSSARY.md) answers. `linear` is the only one today; it reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client |
+| `issue_tracker.adapter` | adapter name | `linear` | do-item, drive-pr, decide, work-batch | Which [tracker adapter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) answers. `linear` is the only one today; it reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client |
 | `issue_tracker.team` | team key such as `ENG` | **Required by the tracker scripts**; elsewhere issue keys are not recognised | do-item, drive-pr, review, work-batch | The key issue identifiers carry (`ENG` for `ENG-123`) |
 | `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read), work-batch | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate` |
 | `issue_tracker.labels.epic` | label | `review.taxonomy.epic_label`, else `epic` | do-item, resolve-review-comments, drive-pr (fleet health), work-batch | Marks an issue whose sub-issues are worked one at a time |
@@ -558,8 +558,8 @@ code_stats:
 | `code_stats.areas` | list of `{name, description?, paths: [globs], content?: true or false}`; globs are relative to the root (`**`, `*`, `?`, `{a,b}`, `[...]`) | The default areas below | code-stats | What each file is for, in order: the first rule whose glob matches names a file's area. The list replaces the default areas whole. `content: true` makes YAML, JSON and other configuration files in that area count as data. A name holds no `/` |
 | `code_stats.default_area` | area name | `production` | code-stats | The area of a file no rule matches; such a file counts as unclassified |
 | `code_stats.kinds` | map of kind (`code`, `test`, `docs`, `config`, `data`, `generated`, `fixture`, `asset`, `vendored`, `other`) to a list of globs | none: built-in detection alone | code-stats | Kinds checked before built-in detection, in the order written; the first glob that matches decides |
-| `code_stats.modules` | list of globs naming module folders | Detected from the [workspace manifests](../GLOSSARY.md) (pnpm, npm, Yarn or Bun workspaces, `go.work`, Cargo, Gradle, uv), else the top folders | code-stats | The module folders; a file belongs to the deepest one that holds it |
-| `code_stats.classify_command` | shell command | none | code-stats | The last layer, a [classify command](../GLOSSARY.md): run once from the root with the tracked paths on standard input, one per line; prints JSON lines `{"path", "area"?, "kind"?, "language"?, "module"?}` whose values override every other layer. A non-zero exit, a line it cannot read, an untracked path, or an unknown area or kind fails the report ([contract](skills/code-stats/README.md#the-classify-command)) |
+| `code_stats.modules` | list of globs naming module folders | Detected from the [workspace manifests](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (pnpm, npm, Yarn or Bun workspaces, `go.work`, Cargo, Gradle, uv), else the top folders | code-stats | The module folders; a file belongs to the deepest one that holds it |
+| `code_stats.classify_command` | shell command | none | code-stats | The last layer, a [classify command](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): run once from the root with the tracked paths on standard input, one per line; prints JSON lines `{"path", "area"?, "kind"?, "language"?, "module"?}` whose values override every other layer. A non-zero exit, a line it cannot read, an untracked path, or an unknown area or kind fails the report ([contract](skills/code-stats/README.md#the-classify-command)) |
 
 The default areas, in order:
 

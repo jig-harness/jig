@@ -1322,6 +1322,19 @@ make, use the entry's term instead.
   a version: the first on the branch's own (first-parent) history whose
   changelog has that version's heading. Its tag goes on that commit once
   its own required checks pass, and on no other.
+- **Release channel** — a named address that machines install a released
+  artifact from, which moves to a new version on its own schedule: one
+  channel takes every version as it ships, another only the versions that
+  proved themselves on the first. A machine follows a channel and receives
+  its updates, where a pinned version receives none. npm's dist-tags
+  (`latest`, `next`) are channels; Jig's plugin has `latest` and `stable`
+  ([plugin/README.md](plugin/README.md#release-channels)).
+- **Promotion** — moving a version from a release channel that takes every
+  version to one that takes only proven ones, once a written rule holds (a
+  time on the first channel, checks green, no open regression). A
+  **rollback** moves the channel back to a version it carried before.
+- **Soak** — the time a version must spend where some machines run it before
+  it is promoted, so problems its tests missed surface first.
 - **TOML (Tom's Obvious, Minimal Language)** — a configuration file format of
   `key = value` lines grouped under `[section]` headings. Python projects
   (`pyproject.toml`) and Rust crates (`Cargo.toml`) keep their name and

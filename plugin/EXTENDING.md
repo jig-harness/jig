@@ -7,7 +7,7 @@ takes a command, or discovers halfway through a drive that its forge, its
 issue tracker or its operating system is not supported. This document is
 that map. It says which parts of Jig a repository adapts with a value,
 which with a command of its own, which need an implementation added to Jig,
-and which are fixed today, with the [roadmap](../ROADMAP.md) item that
+and which are fixed today, with the [roadmap](https://github.com/jig-harness/jig/blob/main/ROADMAP.md) item that
 would open each one.
 
 Every field it names that exists today is in the
@@ -106,7 +106,7 @@ named in configuration:
 - **Review gates.** `do_item.gates` names a review skill that must approve a
   change before it is pushed, when the issue carries one of its labels or the
   change touches one of its paths. A change area in the
-  [change-area catalog](../GLOSSARY.md) names the review skills its changes
+  [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) names the review skills its changes
   need the same way.
 - **Implementing agents and scouts.** `do_item.agents` routes an issue to one
   of the repository's own subagents by change area, label or title, and
@@ -120,7 +120,7 @@ named in configuration:
 ## Issue tracker
 
 **Interface.** The skills reach the tracker through the
-[tracker interface](../GLOSSARY.md), defined in
+[tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), defined in
 [`do-item/scripts/lib/tracker/port.ts`](skills/do-item/scripts/lib/tracker/port.ts):
 read an issue with its comments and children, move it to a workflow state,
 comment, and the reads that delivery metrics and batch proposals need. States
@@ -186,7 +186,7 @@ machine, or a whole team, writes to
 
 - **The contract.** The store command takes an operation (`check`,
   `append`, `list`, `diagnose`) as its first argument, reads JSON or
-  [JSONL](../GLOSSARY.md) on standard input, writes it on standard output,
+  [JSONL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on standard input, writes it on standard output,
   and exits 0 (done), 1 (failed), 2 (usage) or 3 (unavailable).
 - **The stores.** `filesystem`, a folder of files and the default;
   `notion`, a Notion database people browse and filter; and `command`, any
@@ -284,7 +284,7 @@ supports. What they rely on:
 `programmatic-execution`, `promote-memory`, `resolve-conflicts`, `review` on a
 local diff, `fix-ci` on a saved log (`--log <file>`), and the audit with
 `--offline`. The modules' reference gates take their input as files or
-arguments, and [M7's mappings](../modules/M7-pr-lifecycle-review/mappings.md)
+arguments, and [M7's mappings](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/mappings.md)
 state the review practice for GitLab and Gitea as well.
 
 **The git remote** is `origin`: the drive pushes to it, fetches from it and
@@ -351,33 +351,33 @@ Supporting a third tool as a plugin means a manifest for it beside the existing 
 
 ## Workspace launcher
 
-The [launcher](../tools/launcher/README.md) connects an issue tracker's
+The [launcher](https://github.com/jig-harness/jig/blob/main/tools/launcher/README.md) connects an issue tracker's
 "open in coding agent" button to a workspace on the machine. It has
 interfaces of its own, each with one implementation chosen in
 `~/.linear/launcher.yaml`:
 
-- a **tracker** ([`tracker.ts`](../tools/launcher/tracker.ts)): Linear;
-- a **workspace provider** ([`provider.ts`](../tools/launcher/provider.ts)):
+- a **tracker** ([`tracker.ts`](https://github.com/jig-harness/jig/blob/main/tools/launcher/tracker.ts)): Linear;
+- a **workspace provider** ([`provider.ts`](https://github.com/jig-harness/jig/blob/main/tools/launcher/provider.ts)):
   Conductor, which runs on macOS only.
 
 A new provider is a module in `tools/launcher/providers/` that validates its
 per-repository settings and opens the workspace, registered in `index.ts`
 there; a tracker is added the same way under `trackers/`. A Herdr provider
 is next: Herdr is the workspace runtime Jig's tooling targets first
-([ADR-0005](../docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md),
-[ROADMAP.md](../ROADMAP.md) item 19).
+([ADR-0005](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md),
+[ROADMAP.md](https://github.com/jig-harness/jig/blob/main/ROADMAP.md) item 19).
 
 ## Operating systems
 
 The skills are TypeScript run by Bun, which runs natively on macOS, Linux
-and Windows ([ADR-0001](../docs/adr/ADR-0001-bun-typescript-toolchain.md)).
+and Windows ([ADR-0001](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0001-bun-typescript-toolchain.md)).
 Every pull request to Jig is tested on Linux, and `main` on macOS and Windows
 every night, where Windows leaves out only the suites listed in
-`POSIX_ONLY_SUITES` in [scripts/gates.ts](../scripts/gates.ts).
+`POSIX_ONLY_SUITES` in [scripts/gates.ts](https://github.com/jig-harness/jig/blob/main/scripts/gates.ts).
 
 | Part | macOS | Linux | Windows | Why |
 | --- | --- | --- | --- | --- |
-| `drive-pr` | yes | yes | no | Supervises its agent processes through [POSIX](../GLOSSARY.md) process groups and signals, and finds them with `ps`; its suite runs on Windows every night, with the tests that need that work skipped |
+| `drive-pr` | yes | yes | no | Supervises its agent processes through [POSIX](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) process groups and signals, and finds them with `ps`; its suite runs on Windows every night, with the tests that need that work skipped |
 | `do-item` | yes | yes | no | Its pickup record uses hard links and owner-only file modes; its suite runs on Windows every night, with the tests that need that work skipped |
 | The launcher | yes | no | no | Its one provider, Conductor, is a macOS app |
 | Every other skill | yes | yes | yes | — |
@@ -401,14 +401,14 @@ tools, and each module's `mappings.md` names the tools that implement it in
 each ecosystem: CI providers, hook managers, forges, trackers, agent tools,
 package managers, telemetry backends. A team on a tool not listed there
 adds a row or a section, with the tool's real configuration, in a pull
-request to Jig ([modules/AGENTS.md](../modules/AGENTS.md)). Each row is a
+request to Jig ([modules/AGENTS.md](https://github.com/jig-harness/jig/blob/main/modules/AGENTS.md)). Each row is a
 fact a reader can check, so it names what exists, not what is planned.
 
 ## Contributing an extension
 
 An adapter, provider, command hook or new field arrives in Jig by pull
-request, under [CONTRIBUTING.md](../CONTRIBUTING.md) and
-[plugin/AGENTS.md](AGENTS.md):
+request, under [CONTRIBUTING.md](https://github.com/jig-harness/jig/blob/main/CONTRIBUTING.md) and
+[plugin/AGENTS.md](https://github.com/jig-harness/jig/blob/main/plugin/AGENTS.md):
 
 - **Values stay with the team.** The implementation holds the mechanism; a
   team's names, labels, hosts and credentials reach it through
@@ -421,6 +421,6 @@ request, under [CONTRIBUTING.md](../CONTRIBUTING.md) and
   service, so they run in CI without credentials.
 - **Runs from the plugin cache.** No package dependencies at run time: Bun's
   built-ins, or a vendored single-file build with its licence
-  ([adding a plugin skill](../CONTRIBUTING.md#adding-or-changing-a-plugin-skill)).
+  ([adding a plugin skill](https://github.com/jig-harness/jig/blob/main/CONTRIBUTING.md#adding-or-changing-a-plugin-skill)).
 - **Move, never copy.** An adapter a team already runs moves here with its
   tests, and the team deletes its own copy.

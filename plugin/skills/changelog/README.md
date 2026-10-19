@@ -250,4 +250,4 @@ release step, but have no template yet.
 The commands are `check.ts`, `status.ts`, `release.ts`, `convert.ts`, `tag.ts`
 and `release-access.ts` in [`scripts/`](scripts/README.md), run with Bun from
 the repository's root; each prints the plugin version it ran as. Their tests are in
-[`__tests__/`](__tests__/).
+[`__tests__/`](https://github.com/jig-harness/jig/tree/main/plugin/skills/changelog/__tests__).
