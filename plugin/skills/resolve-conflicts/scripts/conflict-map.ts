@@ -57,7 +57,7 @@ import {
 export const INTENT_CAP = 20;
 const DEFAULT_MARKER_SIZE = 7;
 
-interface Unmerged {
+export interface Unmerged {
   base: Stage | null;
   ours: Stage | null;
   theirs: Stage | null;
@@ -220,8 +220,8 @@ function intentReader(root: string, op: Operation) {
 export function mapConflicts(
   root: string,
   op: Operation,
+  unmerged = unmergedPaths(root),
 ): Record<string, PathEntry> {
-  const unmerged = unmergedPaths(root);
   const paths = [...unmerged.keys()].sort();
   const attrs = attributes(root, paths);
   const entries = generatedEntries();

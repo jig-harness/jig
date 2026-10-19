@@ -412,6 +412,11 @@ fields:
     default: 3
     since: next
     read_by: [resolve-conflicts]
+  resolve_conflicts.obligations:
+    type: list
+    items: { type: map, values_type: string }
+    read_by: [resolve-conflicts]
+    since: 0.62.0
   github_actions.conventions_doc:
     type: path
     exists: expected

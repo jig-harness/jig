@@ -597,6 +597,7 @@ own; `audit` checks all the others.
 | `fix_ci.regenerate_commands` | list of shell commands | none: the agent finds the command | fix-ci | Commands that regenerate committed generated files a CI check compares |
 | `resolve_conflicts.generated` | list of `{paths: [globs relative to the root], command: shell command}`; globs match as the change-area catalog's do (`**`, `*`, `?`, `{a,b}`, `[...]`) | none: only the built-in lockfile table applies | resolve-conflicts | Files that are regenerated, never hand-merged, when they conflict, and the command that rebuilds them (run from the root). An entry also overrides the built-in lockfile command for a path it matches. Unknown keys are refused |
 | `resolve_conflicts.hotspot_min_merges` | whole number, 1 or more | `3` | resolve-conflicts | The history report (`history.ts`) names a path a conflict hotspot when it conflicted in at least this many of the merges it replayed in its range |
+| `resolve_conflicts.obligations` | list of `{check: nonempty text, command?: nonempty shell command}` | none | resolve-conflicts | Checks the agent applies to the entire resolved staged diff, including auto-merged hunks. Optional commands run from the repository root during validation, only while every tracked file matches the staged tree; failure, or a command changing the staged tree or a tracked file (which also stops the commands after it), blocks completion and is included in the report. Text still requires agent inspection when a command passes. Unknown keys are refused. Each command has a 120-second deadline, overridden by the positive whole-second `RESOLVE_CONFLICTS_COMMAND_TIMEOUT` environment variable |
 | `github_actions.conventions_doc` | path, relative to the root | Searched for in the instructions and docs; else generic guidance | github-actions | The document describing the repository's workflows and their conventions |
 | `design_brief.kit` | folder, relative to the root | Detected: a tracked folder ending in `design-kit` or `design_kit` | design-brief-builder | The design kit: voice, colours and type, rubric, component previews, logo |
 | `design_brief.design_language` | path, relative to the root | Detected: the first tracked `*design-language*.md` or `*design-system*.md` | design-brief-builder | The written design canon |
@@ -765,6 +766,10 @@ resolve_conflicts:
     - paths: ["src/generated/**"]
       command: bun run generate
   hotspot_min_merges: 3                 # default: 3
+  obligations:
+    - check: Preserve the repository's validation guards in every resolved hunk.
+    - check: The complete resolved result passes its configured checks.
+      command: bun run gates
 github_actions:
   conventions_doc: docs/ci.md
 design_brief:

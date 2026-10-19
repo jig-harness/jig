@@ -69,7 +69,7 @@ function firstInvalidGlob(paths: readonly string[]): string | null {
 }
 
 const SECTION = "resolve_conflicts";
-const KNOWN_KEYS = ["generated", "hotspot_min_merges"];
+const KNOWN_KEYS = ["generated", "hotspot_min_merges", "obligations"];
 
 /** The least number of merges a path conflicts in to count as a hotspot, when unset. */
 export const DEFAULT_HOTSPOT_MIN_MERGES = 3;
