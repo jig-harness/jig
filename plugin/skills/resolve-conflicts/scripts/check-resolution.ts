@@ -155,7 +155,7 @@ function checkPath(
     );
   if (decision === "regenerated" && !derived)
     problem(
-      "decision 'regenerated' applies only to lockfiles and generated files: declare the path under resolve_conflicts.generated, or record another decision",
+      "decision 'regenerated' applies only to lockfiles and generated files: declare the path under resolve_conflicts.generated or in the change-area catalog's generated entries, or record another decision",
     );
   if (decision === "regenerated" && !command?.trim())
     problem("decision 'regenerated' needs the command that rebuilt the path");

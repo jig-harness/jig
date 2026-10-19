@@ -34,8 +34,10 @@ right answer is a product decision goes to a human.
 
 Jig maintains this procedure and ships it in the `jig` plugin.
 A repository adds its own generated files in `.config/jig.yaml`
-(the [consumer overlay](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md));
-without that file the skill works on its defaults.
+(the [consumer overlay](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)),
+and the skill also reads the `generated:` entries of its change-area catalog
+(`drive.change_areas_catalog`), so a generator declared there is not stated
+twice; without that file the skill works on its defaults.
 
 ### Paths and working directory
 
@@ -139,8 +141,8 @@ integration side and the merge base, and for every conflicted path:
 - its **kind**: `both-modified`, `both-added`, `deleted-by-ours`,
   `deleted-by-theirs`, `added-by-ours`, `added-by-theirs` or `both-deleted`;
 - its **class**: `lockfile` (by file name), `generated` (by the
-  repository's configuration), `binary` or `text`, with the regeneration
-  command for the derived classes;
+  repository's configuration or its change-area catalog), `binary` or `text`,
+  with the regeneration command for the derived classes;
 - its conflict regions (line ranges);
 - the **intent** of each side: the commits that changed the path since the
   merge base (at most 20 per side), and, for a path one side deleted, where
@@ -259,8 +261,9 @@ jig/conflicts.json)`, which is never committed. Its shape:
 
 `resolution` is the part you fill in; `record.ts` writes it, and you may
 edit it by hand to the same shape. `regenerate` is
-`{ "command", "cwd", "source": "built-in" | "configuration" }` for a derived
-file. `dropped` is `{ "why": "…", "lines": [{ "side": "theirs", "text": "…" }] }`.
+`{ "command", "cwd", "source": "built-in" | "configuration" | "catalog" }` for
+a derived file, and `null` for a `generated` path whose catalog entry declares
+no command (then `record.ts` needs `--command`). `dropped` is `{ "why": "…", "lines": [{ "side": "theirs", "text": "…" }] }`.
 
 The snapshot belongs to one operation (its kind, `HEAD`, and the incoming
 commit). Running `conflict-map.ts` again for the same operation keeps the
@@ -386,11 +389,34 @@ Each entry's `paths` are globs over repository-relative paths (`*` and `?`
 stay within one directory; `**` spans any number; `{a,b}` matches either
 alternative; `[...]` matches one character of a class, `[!...]` or `[^...]`
 one outside it, and never `/`), and `command` rebuilds them, run from the repository
-root. An entry also overrides the built-in lockfile table for a path it
-matches. Unknown keys, wrong types and a glob that cannot compile (an
+root. Unknown keys, wrong types and a glob that cannot compile (an
 unclosed `{`, a backwards range such as `[z-a]`) are refused with the field
 named (exit 2). `JIG_OVERLAY` points the
 scripts at another configuration file.
+
+**The change-area catalog is read too.** When `drive.change_areas_catalog`
+names a catalog, every `generated[].outputs` path of every area is a generated
+file, rebuilt by that entry's `command` (run from the repository root), the
+class `generated` and the source `catalog` in the map. The catalog states what
+a generator writes once; `resolve_conflicts.generated` is for the files it does
+not declare. A path is classified by the first of these that matches:
+
+1. `resolve_conflicts.generated`, in the order written;
+2. the catalog's `generated[].outputs`, in the catalog's order;
+3. the built-in lockfile table below.
+
+An entry in the list above therefore overrides the catalog and the table, and
+the catalog overrides the table. Three things are reported, never skipped:
+a catalog entry with no `command` still claims its outputs as generated files
+(never hand-merged) and the map warns that no command is known, so
+`record.ts` needs `--command` for it; an entry whose `outputs` are not a
+list of valid paths is named in the warning and ignored; and a catalog that
+cannot be read (it may be among the conflicted paths) is named in the warning
+while the map goes on without it. Resolve the catalog first, then run
+`conflict-map.ts` again: it keeps the decisions already recorded and
+reclassifies every mapped path, a staged one included, that the catalog now
+declares generated (check-resolution.ts then asks for `regenerated`). A `drive.change_areas_catalog` that is not a path is
+refused (exit 2).
 
 Built-in lockfiles, matched by file name in any directory and regenerated in
 that directory:

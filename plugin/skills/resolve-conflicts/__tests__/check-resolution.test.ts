@@ -355,6 +355,58 @@ describe("derived files", () => {
   });
 });
 
+describe("a file the change-area catalog declares generated", () => {
+  beforeEach(() => {
+    s.git("merge", "--abort");
+    s.write(
+      "catalog.yaml",
+      [
+        "areas:",
+        "  api:",
+        '    paths: ["src/api/**"]',
+        "    generated:",
+        "      - outputs: [openapi.json]",
+        '        source: ["src/api/**"]',
+        "        command: bun run gen:openapi",
+        "        check: bun run gen:openapi --check",
+        "",
+      ].join("\n"),
+    );
+    s.overlay("drive:\n  change_areas_catalog: catalog.yaml\n");
+    s.commit("Describe the feature API", { "openapi.json": "feature\n" });
+    s.git("checkout", "-q", "main");
+    s.commit("Describe the main API", { "openapi.json": "main\n" });
+    s.git("checkout", "-q", "feature");
+    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    s.write("src/config.ts", CONFIG_COMBINED);
+    s.git("checkout", "--theirs", "openapi.json");
+    s.write("openapi.json", "regenerated\n");
+    s.git("add", "src/config.ts", "openapi.json");
+    expect(record("src/config.ts", "combined").code).toBe(0);
+  });
+
+  it("fails unless it is recorded regenerated", () => {
+    expect(record("openapi.json", "combined").code).toBe(0);
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM openapi.json: is a generated file: take the integration side, regenerate it (bun run gen:openapi) and record regenerated",
+    );
+  });
+
+  it("records the catalog's command and passes", () => {
+    expect(record("openapi.json", "regenerated").stdout).toContain(
+      "recorded openapi.json: regenerated (bun run gen:openapi)",
+    );
+    const r = check("--message");
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain(
+      "- openapi.json: regenerated (bun run gen:openapi)\n",
+    );
+  });
+});
+
 describe("the snapshot's identity", () => {
   it("exits 3 when the snapshot belongs to a different operation", () => {
     s.git("merge", "--abort");

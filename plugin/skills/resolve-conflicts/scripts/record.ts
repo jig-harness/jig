@@ -90,7 +90,7 @@ async function main(): Promise<number> {
   )
     fail(
       2,
-      `record: regenerated applies only to lockfiles and generated files, and ${path} is ${entry.class}. Declare it under resolve_conflicts.generated, or record another decision.`,
+      `record: regenerated applies only to lockfiles and generated files, and ${path} is ${entry.class}. Declare it under resolve_conflicts.generated or in the change-area catalog's generated entries, or record another decision.`,
     );
   if (options.command !== undefined && decision !== "regenerated")
     fail(2, "record: --command applies only to regenerated");

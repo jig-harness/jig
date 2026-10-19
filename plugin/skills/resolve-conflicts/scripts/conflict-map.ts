@@ -18,8 +18,11 @@
  * and changes nothing else.
  *
  * Reads `resolve_conflicts.generated` from `.config/jig.yaml`
- * (path globs and the command that regenerates them); JIG_OVERLAY
- * points at another configuration file.
+ * (path globs and the command that regenerates them) and, when
+ * `drive.change_areas_catalog` is set, the `generated[].outputs` and `command`
+ * of the change-area catalog; the configuration wins over the catalog, the
+ * catalog over the built-in lockfile table. JIG_OVERLAY points at another
+ * configuration file.
  *
  * Exit codes: 0 mapped; 2 usage error, not in a git work tree, or invalid
  * configuration; 3 no merge, rebase, cherry-pick or revert is in progress, or
@@ -29,7 +32,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fail, runMain } from "../../../shared/cli.ts";
-import { generatedEntries, regenerateFor } from "./lib/classify.ts";
+import {
+  type CatalogGenerated,
+  catalogGeneratedEntries,
+  type GeneratedEntry,
+  generatedEntries,
+  regenerateFor,
+} from "./lib/classify.ts";
 import { git, readBlob, splitNul, topLevel } from "./lib/git.ts";
 import { parseHunks } from "./lib/markers.ts";
 import {
@@ -216,15 +225,21 @@ function intentReader(root: string, op: Operation) {
   };
 }
 
+/** The derived-file entries in precedence order: configuration, then the catalog. */
+function derivedEntries(catalog: CatalogGenerated): GeneratedEntry[] {
+  return [...generatedEntries(), ...catalog.entries];
+}
+
 /** Map every unmerged path of the operation in progress. */
 export function mapConflicts(
   root: string,
   op: Operation,
+  catalog: CatalogGenerated = catalogGeneratedEntries(),
 ): Record<string, PathEntry> {
   const unmerged = unmergedPaths(root);
   const paths = [...unmerged.keys()].sort();
   const attrs = attributes(root, paths);
-  const entries = generatedEntries();
+  const entries = derivedEntries(catalog);
   const intent = intentReader(root, op);
   // Keyed by git paths, so `__proto__` is an ordinary path: no prototype.
   const mapped: Record<string, PathEntry> = Object.create(null);
@@ -250,9 +265,7 @@ export function mapConflicts(
       kind,
       class: cls,
       markerSize,
-      regenerate: derived
-        ? { command: derived.command, cwd: derived.cwd, source: derived.source }
-        : null,
+      regenerate: derived?.regenerate ?? null,
       stages,
       hunks,
       intent: intent(path, kind),
@@ -266,11 +279,14 @@ export function mapConflicts(
  * Fold a fresh map into the stored snapshot. The same operation keeps every
  * recorded decision and every path mapped earlier (a staged path is no longer
  * unmerged, but its entry is still what the check needs); a different
- * operation's snapshot is replaced.
+ * operation's snapshot is replaced. A kept path that `entries` (or the
+ * lockfile table) now declares derived is reclassified, so a generator the
+ * catalog declared only after the path was staged still owes a regeneration.
  */
 export function mergeSnapshot(
   previous: Snapshot | null,
   fresh: Snapshot,
+  entries: readonly GeneratedEntry[] = [],
 ): { snapshot: Snapshot; note: string } {
   if (previous === null) return { snapshot: fresh, note: "new" };
   if (!sameOperation(previous, fresh.operation))
@@ -282,6 +298,18 @@ export function mergeSnapshot(
     Object.create(null),
     previous.paths,
   );
+  for (const [path, entry] of Object.entries(paths)) {
+    const derived =
+      entry.class === "text" || entry.class === "binary"
+        ? regenerateFor(path, entries)
+        : null;
+    if (derived)
+      paths[path] = {
+        ...entry,
+        class: derived.class,
+        regenerate: derived.regenerate,
+      };
+  }
   for (const [path, entry] of Object.entries(fresh.paths)) {
     const resolution = Object.hasOwn(previous.paths, path)
       ? previous.paths[path]?.resolution
@@ -357,6 +385,15 @@ function summary(
   return out.join("\n");
 }
 
+/** The operation's warning and the catalog's problems, each under its own `WARNING:` prefix. */
+function warningOf(
+  operation: string | null,
+  catalog: CatalogGenerated,
+): string | null {
+  const lines = [operation, ...catalog.problems].filter(Boolean);
+  return lines.length === 0 ? null : lines.join("\nWARNING: ");
+}
+
 function usage(): never {
   fail(2, "usage: conflict-map.ts [--json] [--integration ours|theirs]");
 }
@@ -384,7 +421,8 @@ async function main(): Promise<number> {
       fail(3, `conflict-map: ${err.message} Nothing to map.`);
     throw err;
   }
-  const paths = mapConflicts(root, op);
+  const catalog = catalogGeneratedEntries();
+  const paths = mapConflicts(root, op, catalog);
   const fresh: Snapshot = {
     version: 1,
     operation: {
@@ -399,7 +437,7 @@ async function main(): Promise<number> {
       integration: op.integration,
       integrationWhy: op.integrationWhy,
     },
-    warning: op.warning,
+    warning: warningOf(op.warning, catalog),
     mappedAt: new Date().toISOString(),
     paths,
   };
@@ -415,7 +453,11 @@ async function main(): Promise<number> {
       "Restore it if any conflicted path has been staged since it was written. If none has, move it aside and run conflict-map.ts again.",
     );
   }
-  const { snapshot, note } = mergeSnapshot(previous, fresh);
+  const { snapshot, note } = mergeSnapshot(
+    previous,
+    fresh,
+    derivedEntries(catalog),
+  );
   const file = saveSnapshot(root, snapshot);
   if (json) console.log(JSON.stringify(snapshot, null, 2));
   else {

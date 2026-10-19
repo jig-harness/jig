@@ -236,7 +236,9 @@ function regenerateProblem(value: unknown): string | null {
   if (!isRecord(value)) return "is not an object";
   if (typeof value.command !== "string" || typeof value.cwd !== "string")
     return "has no command or directory";
-  if (value.source !== "built-in" && value.source !== "configuration")
+  if (
+    !["built-in", "configuration", "catalog"].includes(value.source as string)
+  )
     return "has an unknown source";
   return null;
 }
