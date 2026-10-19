@@ -16,20 +16,34 @@
  * mapped path or in any other staged change; when a mapped path has no
  * decision, an unknown one, or lacks a required reason; when staged content
  * differs from the working tree for a mapped path; when a lockfile or
- * generated file was not regenerated; and when a side's change is dropped
+ * generated file was not regenerated; when the configuration and change-area
+ * catalog as they stand now classify a mapped path differently from the map
+ * (its decision answered another requirement), or the catalog cannot be read;
+ * and when a side's change is dropped
  * without that being the recorded decision (the dropped-change check; see
  * lib/drops.ts).
  *
  * Exit codes: 0 the resolution passes; 1 problems, each listed with its file
- * and line; 2 usage error; 3 no operation in progress, no snapshot, or a
- * snapshot of a different operation (run conflict-map.ts first); 4 a path is
+ * and line; 2 usage error or invalid configuration; 3 no operation in
+ * progress, no snapshot, or a snapshot of a different operation (run
+ * conflict-map.ts first); 4 a path is
  * recorded as escalate: the resolution needs a human, and each question is
  * printed. Exit 4 wins over exit 1, since an escalated resolution is not
  * concluded either way.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { fail, runMain } from "../../../shared/cli.ts";
-import { unmergedPaths } from "./conflict-map.ts";
+import {
+  type Classification,
+  classifyPaths,
+  derivedEntries,
+  sameRequirement,
+  unmergedPaths,
+} from "./conflict-map.ts";
+import {
+  type CatalogGenerated,
+  catalogGeneratedEntries,
+} from "./lib/classify.ts";
 import { droppedLines } from "./lib/drops.ts";
 import {
   git,
@@ -195,25 +209,81 @@ function checkPath(
   }
 }
 
-/** A map that could not honour every catalog declaration may have classified a generated file as text. */
-function incompleteMap(snapshot: Snapshot): Finding[] {
-  if (!snapshot.catalogIncomplete) return [];
-  return [
-    {
-      path: "(conflict map)",
-      message: `the change-area catalog's generated files could not all be read when the conflicts were mapped (${snapshot.catalogIncomplete}), so a file it declares generated may be classified as text: resolve or correct the catalog, then run conflict-map.ts again`,
-    },
-  ];
+/**
+ * A catalog whose generated declarations could not all be honoured, when the
+ * conflicts were mapped or now, may leave a generated file classified as text.
+ */
+function incompleteCatalog(
+  snapshot: Snapshot,
+  catalog: CatalogGenerated,
+): Finding[] {
+  const fix =
+    "so a file it declares generated may be classified as text: resolve or correct the catalog, then run conflict-map.ts again";
+  if (snapshot.catalogIncomplete)
+    return [
+      {
+        path: "(conflict map)",
+        message: `the change-area catalog's generated files could not all be read when the conflicts were mapped (${snapshot.catalogIncomplete}), ${fix}`,
+      },
+    ];
+  if (catalog.incomplete)
+    return [
+      {
+        path: "(conflict map)",
+        message: `the change-area catalog's generated files cannot all be read now (${catalog.incomplete}), ${fix}`,
+      },
+    ];
+  return [];
 }
 
-export function checkResolution(root: string, snapshot: Snapshot): CheckResult {
+function describeClass(c: Classification): string {
+  return c.regenerate ? `${c.class} (${c.regenerate.command})` : c.class;
+}
+
+/**
+ * Mapped paths whose requirement has moved since the map: the configuration
+ * and the catalog as they stand now, applied to each path's stored stages,
+ * give a different class or generator than the snapshot holds, and the
+ * decision was recorded against the snapshot's.
+ */
+function changedRequirements(
+  root: string,
+  snapshot: Snapshot,
+  catalog: CatalogGenerated,
+): Finding[] {
+  const stages = new Map(
+    Object.entries(snapshot.paths).map(([path, entry]) => [path, entry.stages]),
+  );
+  const now = classifyPaths(root, stages, derivedEntries(catalog));
+  const found: Finding[] = [];
+  for (const [path, entry] of Object.entries(snapshot.paths).sort()) {
+    const after = now.get(path) as Classification;
+    if (sameRequirement(entry, after)) continue;
+    found.push({
+      path,
+      message: `mapped as ${describeClass(entry)}, but the configuration and change-area catalog now make it ${describeClass(after)}: run conflict-map.ts again and record the path again`,
+    });
+  }
+  return found;
+}
+
+export function checkResolution(
+  root: string,
+  snapshot: Snapshot,
+  catalog: CatalogGenerated,
+): CheckResult {
   const result: CheckResult = {
     exit: 0,
     problems: [],
     notes: [],
     escalations: [],
   };
-  result.problems.push(...incompleteMap(snapshot));
+  const incomplete = incompleteCatalog(snapshot, catalog);
+  result.problems.push(...incomplete);
+  // A catalog that cannot be read now would report its generated files as
+  // changed to text; the refusal above already covers them.
+  if (incomplete.length === 0)
+    result.problems.push(...changedRequirements(root, snapshot, catalog));
   const unmerged = unmergedPaths(root);
   for (const path of [...unmerged.keys()].sort()) {
     const entry = Object.hasOwn(snapshot.paths, path)
@@ -291,7 +361,7 @@ async function main(): Promise<number> {
       2,
       "check-resolution: a rebase concludes with 'git rebase --continue', which keeps the replayed commit's message; use --message and post the section on the pull request.",
     );
-  const result = checkResolution(root, snapshot);
+  const result = checkResolution(root, snapshot, catalogGeneratedEntries());
 
   if (mode === "--json") {
     console.log(

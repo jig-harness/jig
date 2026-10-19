@@ -81,7 +81,7 @@ from this side before they are regenerated.
 |--------|--------------|------------|
 | `scripts/conflict-map.ts [--json] [--integration ours\|theirs]` | Maps the stopped operation and writes the snapshot. Read-only otherwise | 0 mapped; 2 usage, not in a git work tree, or invalid configuration; 3 nothing in progress, or the stored snapshot is unreadable (it is never replaced) |
 | `scripts/record.ts <path> <decision> [--reason "…"] [--command "…"] [--dropped "…"]` | Records one path's decision in the snapshot | 0 recorded; 2 usage (unknown path or decision, missing reason, no known regeneration command, or `regenerated` for a path that is not a lockfile or generated file); 3 nothing in progress, or no snapshot for this operation |
-| `scripts/check-resolution.ts [--json \| --message \| --commit-message]` | Verifies the resolution; prints the commit-message section | 0 passes; 1 problems; 2 usage; 3 nothing in progress, or no snapshot for this operation; 4 needs a human (wins over 1) |
+| `scripts/check-resolution.ts [--json \| --message \| --commit-message]` | Verifies the resolution; prints the commit-message section | 0 passes; 1 problems; 2 usage or invalid configuration; 3 nothing in progress, or no snapshot for this operation; 4 needs a human (wins over 1) |
 
 ## Step 1: Start or find the operation
 
@@ -427,7 +427,11 @@ map reads every entry. Resolve or correct the catalog first, then run
 `conflict-map.ts` again: it reclassifies every mapped path, a staged one
 included, gives every derived path the command that now applies, and clears
 each decision recorded under a class or command that changed, so
-`check-resolution.ts` asks for that path's decision again. A `drive.change_areas_catalog` that is not a path is
+`check-resolution.ts` asks for that path's decision again. The check itself
+classifies every mapped path again from the configuration and catalog as they
+stand when it runs: a path whose class or command differs from the map's (a
+declaration added, changed or removed since the map) fails until the map runs
+again, and so does a catalog that cannot be read at that point. A `drive.change_areas_catalog` that is not a path is
 refused (exit 2).
 
 Built-in lockfiles, matched by file name in any directory and regenerated in

@@ -229,7 +229,7 @@ function intentReader(root: string, op: Operation) {
 }
 
 /** The derived-file entries in precedence order: configuration, then the catalog. */
-function derivedEntries(catalog: CatalogGenerated): GeneratedEntry[] {
+export function derivedEntries(catalog: CatalogGenerated): GeneratedEntry[] {
   return [...generatedEntries(), ...catalog.entries];
 }
 
@@ -321,7 +321,7 @@ function restaged(
 }
 
 /** Whether a decision recorded under `before` still answers what `after` requires. */
-function sameRequirement(
+export function sameRequirement(
   before: Classification,
   after: Classification,
 ): boolean {

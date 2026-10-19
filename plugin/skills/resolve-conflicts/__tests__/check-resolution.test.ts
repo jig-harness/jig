@@ -355,23 +355,28 @@ describe("derived files", () => {
   });
 });
 
+/** A catalog whose one generated entry writes `output` with `command`. */
+function writeCatalog(output: string, command: string): void {
+  s.write(
+    "catalog.yaml",
+    [
+      "areas:",
+      "  api:",
+      '    paths: ["src/api/**"]',
+      "    generated:",
+      `      - outputs: [${output}]`,
+      '        source: ["src/api/**"]',
+      `        command: ${command}`,
+      `        check: ${command} --check`,
+      "",
+    ].join("\n"),
+  );
+}
+
 describe("a file the change-area catalog declares generated", () => {
   beforeEach(() => {
     s.git("merge", "--abort");
-    s.write(
-      "catalog.yaml",
-      [
-        "areas:",
-        "  api:",
-        '    paths: ["src/api/**"]',
-        "    generated:",
-        "      - outputs: [openapi.json]",
-        '        source: ["src/api/**"]',
-        "        command: bun run gen:openapi",
-        "        check: bun run gen:openapi --check",
-        "",
-      ].join("\n"),
-    );
+    writeCatalog("openapi.json", "bun run gen:openapi");
     s.overlay("drive:\n  change_areas_catalog: catalog.yaml\n");
     s.commit("Describe the feature API", { "openapi.json": "feature\n" });
     s.git("checkout", "-q", "main");
@@ -403,6 +408,61 @@ describe("a file the change-area catalog declares generated", () => {
     expect(r.code).toBe(0);
     expect(r.stdout).toContain(
       "- openapi.json: regenerated (bun run gen:openapi)\n",
+    );
+  });
+
+  it("fails once the catalog replaces the generator the decision was recorded with, until the map runs again", () => {
+    expect(record("openapi.json", "regenerated").code).toBe(0);
+    writeCatalog("openapi.json", "bun run gen:api");
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM openapi.json: mapped as generated (bun run gen:openapi), but the configuration and change-area catalog now make it generated (bun run gen:api): run conflict-map.ts again and record the path again",
+    );
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    expect(record("openapi.json", "regenerated").code).toBe(0);
+    expect(check().code).toBe(0);
+  });
+
+  it("fails when the catalog cannot be read at the check, though it could when mapped", () => {
+    expect(record("openapi.json", "regenerated").code).toBe(0);
+    s.write("catalog.yaml", "areas: [\n");
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM (conflict map): the change-area catalog's generated files cannot all be read now",
+    );
+  });
+});
+
+describe("a generated declaration the catalog gains after the map", () => {
+  beforeEach(() => {
+    s.git("merge", "--abort");
+    writeCatalog("schema.json", "bun run gen:schema");
+    s.overlay("drive:\n  change_areas_catalog: catalog.yaml\n");
+    s.commit("Describe the feature API", { "openapi.json": "feature\n" });
+    s.git("checkout", "-q", "main");
+    s.commit("Describe the main API", { "openapi.json": "main\n" });
+    s.git("checkout", "-q", "feature");
+    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    s.write("src/config.ts", CONFIG_COMBINED);
+    s.write("openapi.json", "feature\nmain\n");
+    s.git("add", "src/config.ts", "openapi.json");
+    expect(record("src/config.ts", "combined").code).toBe(0);
+    expect(record("openapi.json", "combined").code).toBe(0);
+  });
+
+  it("passes the hand-merged file while the catalog does not declare it", () => {
+    expect(check().code).toBe(0);
+  });
+
+  it("fails the hand-merged file once the catalog declares it generated", () => {
+    writeCatalog("openapi.json", "bun run gen:openapi");
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM openapi.json: mapped as text, but the configuration and change-area catalog now make it generated (bun run gen:openapi): run conflict-map.ts again and record the path again",
     );
   });
 });
