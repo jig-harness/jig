@@ -467,8 +467,14 @@ const CONJUNCTIONS = ["and", "or"];
 
 const PROSE_SEPARATOR = "\u0000separator\u0000";
 
-/** A quoted literal, whole: what it holds is one item, separators and spaces included. */
-const QUOTED = /"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`/u;
+/**
+ * A quoted literal, whole: what it holds is one item, separators and spaces
+ * included. A run of backticks opens a literal that the next run of the same
+ * length closes, with no escapes inside (a Markdown code span), so ``a,b``
+ * is one literal, not two empty ones around `a,b`.
+ */
+const QUOTED =
+  /"(?:[^"\\]|\\.)*"|(?<!`)(?<ticks>`+)(?!`)[\s\S]*?(?<!`)\k<ticks>(?!`)/u;
 const SINGLE_QUOTED = /'(?:[^'\\]|\\.)*'/u;
 
 /** The quotes that open a literal: in prose `'` is an apostrophe. */
@@ -504,11 +510,85 @@ function wordCounts(line: string, words: readonly string[]): string[] {
   return words.map((word) => String(all.filter((w) => w === word).length));
 }
 
+const OPENERS = new Set(["(", "[", "{"]);
+const CLOSERS = new Set([")", "]", "}"]);
+
+/** Where a sentence ends a prose list: `a, b.` grows into `a, b, c.`. */
+const SENTENCE_ENDS = new Set([".", "!", "?", ":"]);
+
+/**
+ * Whether `tokens` are whole items, one or more between separators: each
+ * holds something and closes every bracket it opens, and a separator inside
+ * brackets belongs to the item (`g(x, y)` is one item).
+ */
+function wholeItems(tokens: readonly string[]): boolean {
+  const open: string[] = [];
+  let empty = true;
+  for (const token of tokens) {
+    if (open.length === 0 && isSeparator(token)) {
+      if (empty) return false;
+      empty = true;
+      continue;
+    }
+    empty = false;
+    if (OPENERS.has(token)) open.push(token);
+    else if (CLOSERS.has(token)) {
+      const opener = open.pop();
+      if (
+        opener === undefined ||
+        "([{".indexOf(opener) !== ")]}".indexOf(token)
+      )
+        return false;
+    }
+  }
+  return !empty && open.length === 0;
+}
+
+/**
+ * Whether `run`, inserted between `before` and `after` (null at an end of the
+ * line), adds whole items at an item boundary: a separator and items placed
+ * where an item ends (before a separator, a closing bracket or the end), or
+ * items and a separator placed where an item starts (after a separator, an
+ * opening bracket or the start; in prose also before the sentence's end).
+ * Anything else, `b` becoming `b + d,` or `b` becoming `b, x + e`, changes an
+ * item the base has.
+ */
+function addsWholeItems(
+  run: readonly string[],
+  before: string | null,
+  after: string | null,
+  prose: boolean,
+): boolean {
+  const first = run[0] as string;
+  const last = run.at(-1) as string;
+  const itemEnds =
+    before !== null && !isSeparator(before) && !OPENERS.has(before);
+  const itemStarts =
+    after !== null && !isSeparator(after) && !CLOSERS.has(after);
+  const endBoundary =
+    after === null ||
+    isSeparator(after) ||
+    CLOSERS.has(after) ||
+    (prose && SENTENCE_ENDS.has(after));
+  const startBoundary =
+    before === null || isSeparator(before) || OPENERS.has(before);
+  return (
+    (isSeparator(first) &&
+      itemEnds &&
+      endBoundary &&
+      wholeItems(run.slice(1))) ||
+    (isSeparator(last) &&
+      startBoundary &&
+      itemStarts &&
+      wholeItems(run.slice(0, -1)))
+  );
+}
+
 /**
  * Whether `to` is `from` with items added to its list: every token of `from`
  * stands in `to` unchanged and in order, and each run of tokens `to` inserts
- * starts or ends at a separator, so it is a whole item, not a change to one
- * (`b` becoming `b()` inserts `(` `)`, which is not an item).
+ * is whole items at an item boundary (`addsWholeItems`), so no item of
+ * `from` changed (`b` becoming `b()` inserts `(` `)`, which is not an item).
  */
 function addsItems(from: string, to: string, prose: boolean): boolean {
   // A prose list keeps its conjunctions: `a or b` becoming `a and b and c` changes the list.
@@ -525,15 +605,14 @@ function addsItems(from: string, to: string, prose: boolean): boolean {
   let inserted = 0;
   let j = 0;
   for (const [, pj] of [...pairs, [before.length, after.length]]) {
-    const run = after.slice(j, pj);
-    if (run.length > 0) {
-      const first = run[0] as string;
-      const last = run.at(-1) as string;
-      if (run.length < 2 || (!isSeparator(first) && !isSeparator(last)))
+    const end = pj as number;
+    if (end > j) {
+      const run = after.slice(j, end);
+      if (!addsWholeItems(run, after[j - 1] ?? null, after[end] ?? null, prose))
         return false;
       inserted++;
     }
-    j = (pj as number) + 1;
+    j = end + 1;
   }
   return inserted > 0;
 }

@@ -218,14 +218,14 @@ function top(map: Partial<Record<Cause, number>>): Cause {
   return best;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /** The Monday (UTC) of the week holding `date`. */
 export function weekOf(date: string): string {
-  const day = new Date(date);
-  const monday = new Date(
-    Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate()),
-  );
-  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
-  return monday.toISOString().slice(0, 10);
+  // Day arithmetic on the instant, not Date.UTC, which reads a year below 100 as 19xx.
+  const day = Math.floor(Date.parse(date) / DAY_MS) * DAY_MS;
+  const weekday = (new Date(day).getUTCDay() + 6) % 7;
+  return new Date(day - weekday * DAY_MS).toISOString().slice(0, 10);
 }
 
 interface CauseTotal {
@@ -324,7 +324,7 @@ class Tallies {
   }
 }
 
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * DAY_MS;
 
 /**
  * Every week of the range, a week without a merge as a row of zeros, so a gap

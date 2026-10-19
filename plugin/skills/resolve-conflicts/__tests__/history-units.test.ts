@@ -374,6 +374,50 @@ describe("the cause rules", () => {
     ).toBe(true);
   });
 
+  it("packed-list: an inserted item stands at an item boundary and is whole", () => {
+    const both = (base: string, ours: string, theirs: string) =>
+      isPackedList({ base: [base], ours: [ours], theirs: [theirs] }, none);
+    // A trailing separator does not make `+ d` an item: `b` changed.
+    expect(
+      both("return [a, b];", "return [a, b, c];", "return [a, b + d,];"),
+    ).toBe(false);
+    // An item added inside an expression changes it.
+    expect(both("f(a, b + e);", "f(a, b + e, c);", "f(a, b, x + e);")).toBe(
+      false,
+    );
+    expect(both("f(a, b + e);", "f(a, b + e, c);", "f(a, x, b + e);")).toBe(
+      true,
+    );
+    // An added item closes every bracket it opens.
+    expect(both("f(a, b);", "f(a, b, c);", "f(a, b, g(x);")).toBe(false);
+    expect(both("f(a, b);", "f(a, b, c);", "f(a, b, g(x, y));")).toBe(true);
+    // A separator alone adds no item.
+    expect(both("f(a, b);", "f(a, b, c);", "f(a, b,);")).toBe(false);
+  });
+
+  it("packed-list: a code span delimited by a run of backticks is one item", () => {
+    expect(
+      isPackedList(
+        {
+          base: ["Use ``a,b``."],
+          ours: ["Use ``a,c,b``."],
+          theirs: ["Use ``a,d,b``."],
+        },
+        prose,
+      ),
+    ).toBe(false);
+    expect(
+      isPackedList(
+        {
+          base: ["Use ``a`b``, c."],
+          ours: ["Use ``a`b``, c, d."],
+          theirs: ["Use ``a`b``, c, e."],
+        },
+        prose,
+      ),
+    ).toBe(true);
+  });
+
   it("packed-list: a quoted literal is one item; a change inside it is not an added item", () => {
     expect(
       isPackedList(
@@ -616,6 +660,8 @@ it("names a week by its Monday", () => {
   expect(weekOf("2026-10-19T10:00:00+02:00")).toBe("2026-10-19");
   expect(weekOf("2026-10-25T23:00:00Z")).toBe("2026-10-19");
   expect(weekOf("2026-10-18T23:30:00Z")).toBe("2026-10-12");
+  // A year below 100 stays itself: 0099-01-01 is a Thursday.
+  expect(weekOf("0099-01-01T00:00:00Z")).toBe("0098-12-29");
 });
 
 it("reads the branches a merge's subject names", () => {
@@ -728,6 +774,29 @@ describe("the report", () => {
     expect(text).toContain("No replayed merge conflicted.");
     expect(text).toContain("Per week, conflicted merges by cause:");
     expect(text).toContain("2026-10-05  0 of 1 merge conflicted");
+  });
+
+  it("lists the weeks of a range in a year below 100", () => {
+    const report = buildReport({
+      range: {
+        since: "0099-01-01T00:00:00.000Z",
+        until: "0099-01-31T00:00:00.000Z",
+        label: "x",
+      },
+      hotspotMinMerges: 3,
+      merges: [record("0099-01-12T00:00:00Z", false)],
+      skipped: [],
+      confidence: null,
+      now,
+    });
+    expect(report.weeks.map((w) => w.week)).toEqual([
+      "0098-12-29",
+      "0099-01-05",
+      "0099-01-12",
+      "0099-01-19",
+      "0099-01-26",
+    ]);
+    expect(report.weeks[2]?.merges).toBe(1);
   });
 
   it("does not call a range clean when every merge was skipped", () => {

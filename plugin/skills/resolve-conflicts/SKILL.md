@@ -521,7 +521,7 @@ the whole path, with git's own kind of conflict (`modify/delete`, `binary`,
 | `sequence` | both sides only add lines, among them an entry with the same next ordinal, one past the base's highest | identifiers that cannot collide, or one renumbering step |
 | `tally` | only numbers differ, and each side's number moved by the lines that side added to the file, or added above the line it names | derive the number where it is used; key a register by name, not line |
 | `append` | the base side is empty: both sides added lines at the same place (not in a file both sides added, which had no base) | one file per entry, or a sorted list with one entry per line; in source code the report asks whether it is the same fix written twice |
-| `packed-list` | one line in every side, and each side only adds whole items to a list in it, changing no item or separator; a quoted literal is one item, and a line with a quote that closes nowhere is not read (in prose, a closing `and` or `or` may move) | one item per line |
+| `packed-list` | one line in every side, and each side only adds whole items to a list in it, each placed where an item ends or starts and closing every bracket it opens, changing no item or separator; a quoted literal is one item (a code span runs to the next run of as many backticks), and a line with a quote that closes nowhere is not read (in prose, a closing `and` or `or` may move) | one item per line |
 | `adjacent` | the lines each side changed touch but do not overlap | split what changes for different reasons onto lines or files of its own |
 | `overlap` | none of the above | two pieces of work changed the same thing: plan them apart, or land one first |
 
