@@ -1351,6 +1351,23 @@ make, use the entry's term instead.
   its updates, where a pinned version receives none. npm's dist-tags
   (`latest`, `next`) are channels; Jig's plugin has `latest` and `stable`
   ([plugin/README.md](plugin/README.md#release-channels)).
+- **Trusted publishing** — publishing to a package registry without a
+  stored token: the registry is told once which repository and workflow may
+  publish a package, the publishing job proves it is that workflow with a
+  short-lived identity token from its CI provider (OpenID Connect), and the
+  registry returns a credential that expires within minutes. npm, PyPI and
+  crates.io offer it.
+- **Provenance** — a signed, public record a package registry keeps beside
+  a published version, naming the repository, commit and workflow that
+  built it, so anyone installing it can check where it came from. A
+  publish attestation, such as PyPI's, is narrower: it names the workflow
+  that uploaded the file, which proves where it was published from, not
+  where it was built.
+- **Preview package** — a package built from a pull request's commit, so a
+  consumer can install and try the change before it merges. It is not a
+  release: no changelog entry, no version the release step chose, no tag,
+  and it moves none of the release channels; one published to the
+  registry gets a channel name of its own that no release uses.
 - **Promotion** — moving a version from a release channel that takes every
   version to one that takes only proven ones, once a written rule holds (a
   time on the first channel, checks green, no open regression). A
