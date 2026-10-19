@@ -43,6 +43,7 @@ import {
   type Regenerate,
   regenerateFor,
 } from "./lib/classify.ts";
+import { indexAttrSource } from "./lib/attributes.ts";
 import { git, readBlob, splitNul, topLevel } from "./lib/git.ts";
 import { parseHunks } from "./lib/markers.ts";
 import {
@@ -97,14 +98,20 @@ export function unmergedPaths(root: string): Map<string, Unmerged> {
   return byPath;
 }
 
+/** Where `attributes` reads `.gitattributes` from. */
+type AttributeSource = "index" | "merge";
+
 /**
- * `git check-attr` values for the attributes the map reads, per path, from the
- * `.gitattributes` files in the index: the commit carries those, not the
- * working tree's.
+ * `git check-attr` values for `names`, per path. From the `index`: the
+ * attributes the commit carries (lib/attributes.ts), which classify a path.
+ * As the `merge` read them: the working tree's files first, then the
+ * index's, which is how git found the marker size it wrote.
  */
 function attributes(
   root: string,
   paths: string[],
+  source: AttributeSource,
+  names: readonly string[],
 ): Map<string, Record<string, string>> {
   const result = new Map<string, Record<string, string>>();
   if (paths.length === 0) return result;
@@ -112,13 +119,11 @@ function attributes(
     git(
       root,
       [
+        ...(source === "index" ? [indexAttrSource(root)] : []),
         "check-attr",
-        "--cached",
         "-z",
         "--stdin",
-        "diff",
-        "merge",
-        "conflict-marker-size",
+        ...names,
       ],
       `${paths.join("\0")}\0`,
     ),
@@ -130,6 +135,12 @@ function attributes(
     result.set(path, values);
   }
   return result;
+}
+
+/** A `conflict-marker-size` value as a size, the default when unset or invalid. */
+function markerSizeOf(attrs: Record<string, string> | undefined): number {
+  const size = Number(attrs?.["conflict-marker-size"]);
+  return Number.isInteger(size) && size > 0 ? size : DEFAULT_MARKER_SIZE;
 }
 
 function isBinary(
@@ -264,13 +275,15 @@ export function classifyPaths(
   stagesByPath: ReadonlyMap<string, Unmerged>,
   entries: readonly GeneratedEntry[],
 ): Map<string, Classification> {
-  const attrs = attributes(root, [...stagesByPath.keys()]);
+  const attrs = attributes(root, [...stagesByPath.keys()], "index", [
+    "diff",
+    "merge",
+    "conflict-marker-size",
+  ]);
   const result = new Map<string, Classification>();
   for (const [path, stages] of stagesByPath) {
     const pathAttrs = attrs.get(path) ?? {};
-    const size = Number(pathAttrs["conflict-marker-size"]);
-    const markerSize =
-      Number.isInteger(size) && size > 0 ? size : DEFAULT_MARKER_SIZE;
+    const markerSize = markerSizeOf(pathAttrs);
     const derived = regenerateFor(path, entries);
     result.set(path, {
       class: derived
@@ -286,11 +299,25 @@ export function classifyPaths(
 }
 
 /**
+ * The marker size git writes each path's markers with: the
+ * `conflict-marker-size` a merge reads, the working tree's files before the
+ * index's. It can differ from the size the index declares (an untracked
+ * `.gitattributes`), and only finding the markers depends on it.
+ */
+export function writtenSizes(
+  root: string,
+  paths: string[],
+): Map<string, number> {
+  const attrs = attributes(root, paths, "merge", ["conflict-marker-size"]);
+  return new Map(paths.map((path) => [path, markerSizeOf(attrs.get(path))]));
+}
+
+/**
  * Map every unmerged path of the operation in progress, or the paths given in
- * `unmerged` with their stages. `recordedSizes` holds the marker size an
- * earlier map of the same operation recorded for a path: git wrote that
- * path's markers when the operation stopped, so a `conflict-marker-size`
- * changed since does not describe them.
+ * `unmerged` with their stages. A path's marker size is the one git wrote its
+ * markers with: the size an earlier map of the same operation recorded
+ * (`recordedSizes`), else the size the merge read; a `conflict-marker-size`
+ * changed since the operation stopped does not describe them.
  */
 export function mapConflicts(
   root: string,
@@ -301,6 +328,10 @@ export function mapConflicts(
 ): Record<string, PathEntry> {
   const paths = [...unmerged.keys()].sort();
   const classes = classifyPaths(root, unmerged, derivedEntries(catalog));
+  const written = writtenSizes(
+    root,
+    paths.filter((path) => !recordedSizes.has(path)),
+  );
   const intent = intentReader(root, op);
   // Keyed by git paths, so `__proto__` is an ordinary path: no prototype.
   const mapped: Record<string, PathEntry> = Object.create(null);
@@ -309,7 +340,8 @@ export function mapConflicts(
     const kind = kindOf(stages);
     const classified = classes.get(path) as Classification;
     const { class: cls, regenerate } = classified;
-    const markerSize = recordedSizes.get(path) ?? classified.markerSize;
+    const markerSize =
+      recordedSizes.get(path) ?? written.get(path) ?? classified.markerSize;
     const file = join(root, path);
     const hunks =
       cls === "text" && existsSync(file)

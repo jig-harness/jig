@@ -50,8 +50,8 @@ harness, replace it with that path yourself before running a command: a shell
 would expand the unset variable to an empty string.
 
 Git 2.41 or newer is required: to reconstruct the automatic merge result
-without trusting already staged content, and to read the staged
-`.gitattributes` files when scanning staged changes for conflict markers.
+without trusting already staged content, and to read every attribute from
+the staged `.gitattributes` files (`git --attr-source`).
 Cherry-picking or reverting a merge commit with `-m` is unsupported: Git
 does not reliably retain the selected parent for reconstruction. The mapper
 refuses it before writing a snapshot; resolve and validate that operation
@@ -320,8 +320,9 @@ It fails (exit 1), listing each problem with its file and line, when:
    configuration, the change-area catalog (read through the symbolic links the
    index holds) and the `.gitattributes` files are read from the index, as the
    commit carries them: a change to one of them takes effect once it is staged,
-   and a working-tree change that is not staged, an untracked file or an
-   ignored one decides nothing;
+   and a working-tree change that is not staged, an untracked file, an ignored
+   one or a staged link named `.gitattributes` decides nothing. Conflict
+   markers are looked for at the size git wrote them with as well;
 5. a lockfile or generated file is not recorded as `regenerated`, or any
    other path is;
 6. a staged path is outside the operation's changed-file set, or its staged

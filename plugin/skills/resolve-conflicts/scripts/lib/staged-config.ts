@@ -62,29 +62,30 @@ function located(path: string): string {
 }
 
 /**
- * `path` (absolute, or relative to `root`) as git names a path below the
- * repository (`/` separated), or `null` when it does not lead into it. Only
- * the leading components that reach the repository are resolved on disk, so
- * an alias of it (a symlinked parent, `/var` for `/private/var`) is still the
- * repository. The components after them are kept as written, links and `..`
- * included, for the index walk to follow: a link inside the repository leads
- * where the index says, whatever the disk holds.
+ * `path` (absolute, or relative to `base`) as git names a path below the
+ * repository at `root` (`/` separated), or `null` when it does not lead into
+ * it. Only the leading components that reach the repository are resolved on
+ * disk, so an alias of it (a symlinked parent, `/var` for `/private/var`) is
+ * still the repository. The components after them are kept as written, links,
+ * `.`, `..` and a trailing separator included, for the index walk to follow:
+ * a link inside the repository leads where the index says, whatever the disk
+ * holds.
  */
-function insideRoot(root: string, path: string): string | null {
+function insideRoot(root: string, path: string, base: string): string | null {
   const realRoot = located(root);
   const parts = isAbsolute(path)
     ? diskComponents(path)
-    : [...diskComponents(root), ...diskComponents(path)];
+    : [...diskComponents(base), ...diskComponents(path)];
   for (let reach = 1; reach < parts.length; reach++) {
-    const rest = parts
-      .slice(reach)
-      .filter((name) => name !== "" && name !== ".");
-    if (rest.length === 0) return null;
+    const rest = parts.slice(reach).filter((name) => name !== "");
+    const first = rest.find((name) => name !== ".");
+    if (first === undefined) return null;
     // A `..` straight after the repository climbs out of it on disk.
-    if (rest[0] === "..") continue;
+    if (first === "..") continue;
     // The first component alone is the file-system root (`/`, `C:\\`).
     const prefix = parts.slice(0, reach).join(sep) + (reach === 1 ? sep : "");
-    if (located(prefix) === realRoot) return rest.join("/");
+    if (located(prefix) === realRoot)
+      return rest.join("/") + (parts.at(-1) === "" ? "/" : "");
   }
   return null;
 }
@@ -101,7 +102,9 @@ export function stagedConfig(): Record<string, unknown> {
   const inIndex =
     named === undefined || named.trim() === ""
       ? OVERLAY_RELPATH
-      : insideRoot(root, named);
+      : // Relative to the working directory, as every configuration reader
+        // takes it.
+        insideRoot(root, named, process.cwd());
   if (inIndex === null) return layeredConfig(root).values;
   return layeredConfig(root, process.env, stagedText(root, inIndex)).values;
 }
@@ -113,7 +116,7 @@ export function stagedConfig(): Record<string, unknown> {
  */
 export function stagedCatalog(configured: string): Map<string, CatalogArea> {
   const root = consumerRoot();
-  const inIndex = insideRoot(root, configured);
+  const inIndex = insideRoot(root, configured, root);
   if (inIndex === null)
     return loadCatalogFile(
       isAbsolute(configured) ? configured : `${root}${sep}${configured}`,

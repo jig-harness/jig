@@ -49,6 +49,30 @@ describe("readIndexFile", () => {
     expect(read("through-missing")).toEqual({ found: "absent" });
   });
 
+  it("cannot read a directory, named or reached through a link", () => {
+    s.commit("Add a directory", { ".config/jig.yaml/inner": "x\n" });
+    symlinkSync(".config/jig.yaml", `${s.root}/to-dir`);
+    s.git("add", "to-dir");
+    expect(read(".config/jig.yaml")).toEqual({
+      found: "unreadable",
+      reason: ".config/jig.yaml is a directory",
+    });
+    expect(read("to-dir")).toMatchObject({ found: "unreadable" });
+    expect(read(".config/jig.yaml/.")).toMatchObject({ found: "unreadable" });
+  });
+
+  it("keeps a trailing `/` or `.` a requirement for a directory", () => {
+    s.commit("Add a file", { "policy.yaml": "p\n" });
+    symlinkSync("policy.yaml/", `${s.root}/slash-link`);
+    s.git("add", "slash-link");
+    for (const path of ["policy.yaml/", "policy.yaml/.", "slash-link"])
+      expect(read(path)).toEqual({
+        found: "unreadable",
+        reason: `${path} reads through policy.yaml, which is not a directory`,
+      });
+    expect(read("./policy.yaml")).toEqual({ found: "file", text: "p\n" });
+  });
+
   it("follows links through the index, directories included", () => {
     s.commit("Add files", {
       "config/nested/keep": "",

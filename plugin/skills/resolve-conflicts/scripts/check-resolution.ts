@@ -52,11 +52,13 @@ import {
   derivedEntries,
   sameRequirement,
   unmergedPaths,
+  writtenSizes,
 } from "./conflict-map.ts";
 import {
   type CatalogGenerated,
   catalogGeneratedEntries,
 } from "./lib/classify.ts";
+import { indexAttrSource, THROWAWAY_INDEX_CONFIG } from "./lib/attributes.ts";
 import { droppedLines } from "./lib/drops.ts";
 import {
   git,
@@ -101,43 +103,12 @@ function unstaged(root: string, path: string): boolean {
   return git(root, ["diff", "--name-only", "-z", "--", path]) !== "";
 }
 
-/**
- * A tree holding the regular `.gitattributes` files of the index (a link of
- * that name is ignored by a checkout), for git to read
- * attributes from instead of the working tree: the commit carries those, and
- * an untracked or ignored one decides nothing.
- */
-function attributesTree(root: string): string {
-  const records = splitNul(git(root, ["ls-files", "--stage", "-z"])).filter(
-    (record) =>
-      /^100(?:644|755) [0-9a-f]+ 0\t(?:.*\/)?\.gitattributes$/s.test(record),
-  );
-  const dir = mkdtempSync(join(tmpdir(), "check-resolution-"));
-  try {
-    const env = { ...process.env, GIT_INDEX_FILE: join(dir, "index") };
-    git(
-      root,
-      [...THROWAWAY_INDEX_CONFIG, "update-index", "-z", "--index-info"],
-      records.map((record) => `${record}\0`).join(""),
-      env,
-    );
-    return git(
-      root,
-      [...THROWAWAY_INDEX_CONFIG, "write-tree"],
-      undefined,
-      env,
-    ).trim();
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
 /** Conflict markers in staged changes outside the mapped paths. */
 function stagedMarkers(root: string, mapped: Snapshot["paths"]): Finding[] {
   // Exit 2 means it found something (whitespace errors count too); only the
   // marker lines matter here.
   const r = gitRaw(root, [
-    `--attr-source=${attributesTree(root)}`,
+    indexAttrSource(root),
     "diff",
     "--cached",
     "--check",
@@ -165,7 +136,7 @@ function checkPath(
   path: string,
   entry: PathEntry,
   stillUnmerged: boolean,
-  currentMarkerSize: number,
+  currentMarkerSizes: readonly number[],
   result: CheckResult,
 ): void {
   const problem = (message: string, line?: number) =>
@@ -236,9 +207,12 @@ function checkPath(
   if (entry.class === "binary") return;
   const text = readBlob(root, blob);
   // The markers git wrote have the mapped size; markers rewritten since
-  // (git checkout --conflict) have the size the attribute gives now.
+  // (git checkout --conflict), or written by the same operation started
+  // again, have a size the attributes give now: the index's, or the one a
+  // merge reads, the working tree's files first. Looking for more sizes can
+  // only find more markers.
   const lines = new Set(
-    [...new Set([entry.markerSize, currentMarkerSize])].flatMap((size) =>
+    [...new Set([entry.markerSize, ...currentMarkerSizes])].flatMap((size) =>
       markerLines(text, size),
     ),
   );
@@ -370,13 +344,18 @@ export function checkResolution(
           : "still unmerged: resolve it, then git add it (or git rm it)",
     });
   }
-  for (const path of Object.keys(snapshot.paths).sort())
+  const mapped = Object.keys(snapshot.paths).sort();
+  const written = writtenSizes(root, mapped);
+  for (const path of mapped)
     checkPath(
       root,
       path,
       snapshot.paths[path] as PathEntry,
       unmerged.has(path),
-      (now.get(path) as Classification).markerSize,
+      [
+        (now.get(path) as Classification).markerSize,
+        written.get(path) as number,
+      ],
       result,
     );
   result.problems.push(...stagedMarkers(root, snapshot.paths));
@@ -430,13 +409,6 @@ const DIFFERS =
   "differs from the staged tree: obligation commands check files on disk, so stage or discard it first";
 const SKIPPED_DIFFERS =
   "is marked assume-unchanged or skip-worktree, so git does not compare it, and its file on disk differs from the staged tree: clear the flag (git update-index --no-assume-unchanged --no-skip-worktree -- <path>), then stage or discard it";
-
-const THROWAWAY_INDEX_CONFIG = [
-  "-c",
-  "core.splitIndex=false",
-  "-c",
-  "core.ignorestat=false",
-];
 
 /**
  * Tracked paths whose file on disk differs from the staged tree, as git itself

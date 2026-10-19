@@ -50,9 +50,14 @@ function indexEntries(root: string): Index {
   return { staged, unmerged, directories };
 }
 
-/** A path's components, the empty and `.` ones dropped. */
+/**
+ * A path's components, the empty ones dropped. A trailing `/` becomes a
+ * trailing `.`: like `.` and `..`, it requires what comes before it to be a
+ * directory.
+ */
 function components(path: string): string[] {
-  return path.split("/").filter((name) => name !== "" && name !== ".");
+  const names = path.split("/").filter((name) => name !== "");
+  return path.endsWith("/") && names.length > 0 ? [...names, "."] : names;
 }
 
 /** The components a link at `at` leads to, or why they cannot be followed. */
@@ -110,6 +115,8 @@ interface Walk {
 function step(root: string, walk: Walk, index: Index): Walked | undefined {
   const { path, pending, reached } = walk;
   const name = pending.shift() as string;
+  // What `.` and `..` follow was read through as a directory already.
+  if (name === ".") return undefined;
   if (name === "..")
     return reached.pop() === undefined
       ? { problem: `${path} leaves the repository` }
@@ -160,7 +167,10 @@ export function readIndexFile(root: string, path: string): IndexRead {
     return { found: "unmerged", path: reached.unmerged };
   const { file } = reached;
   const entry = index.staged.get(file);
-  if (entry === undefined) return { found: "absent" };
+  if (entry === undefined)
+    return index.directories.has(file)
+      ? { found: "unreadable", reason: `${file} is a directory` }
+      : { found: "absent" };
   if (entry.mode !== "100644" && entry.mode !== "100755")
     return { found: "unreadable", reason: `${file} is not a regular file` };
   return { found: "file", text: readBlob(root, entry.blob) };

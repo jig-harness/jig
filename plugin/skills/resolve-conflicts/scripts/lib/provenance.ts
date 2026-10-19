@@ -1,5 +1,6 @@
 /** Reconstruct Git's automatic result from committed inputs, never the index. */
 import { DecodeError } from "../../../../shared/guards.ts";
+import { indexAttrSource } from "./attributes.ts";
 import { git, gitRaw, splitNul } from "./git.ts";
 import type { Operation } from "./operation.ts";
 import type { Snapshot, Stage } from "./snapshot.ts";
@@ -71,11 +72,17 @@ function isMerging(root: string, op: Inputs["operation"]): boolean {
   );
 }
 
+/**
+ * Git's automatic merge of the two sides, under the attributes the commit
+ * carries (a merge driver or marker size the working tree alone declares
+ * changes nothing).
+ */
 function automaticTree(
   root: string,
   inputs: Inputs,
 ): { tree: string; conflicts: Set<string> } {
   const result = gitRaw(root, [
+    indexAttrSource(root),
     ...mergeArguments(root, inputs.operation),
     inputs.sides.ours.commit,
     inputs.sides.theirs.commit,

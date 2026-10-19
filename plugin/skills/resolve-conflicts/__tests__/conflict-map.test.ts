@@ -25,6 +25,7 @@ afterEach(() => s.cleanup());
 interface MappedPath {
   kind: string;
   class: string;
+  markerSize: number;
   regenerate: { command: string; cwd: string; source: string } | null;
   stages: Record<string, { blob: string } | null>;
   hunks: {
@@ -231,6 +232,37 @@ describe("classes", () => {
       class: "generated",
       regenerate: { command: "make gen" },
     });
+  });
+
+  it("takes a relative JIG_OVERLAY from the working directory, as every configuration reader does", () => {
+    s.write(
+      "src/ov.yaml",
+      'resolve_conflicts:\n  generated:\n    - paths: ["gen/**"]\n      command: make gen\n',
+    );
+    s.env.JIG_OVERLAY = "ov.yaml";
+    conflictEverywhere(["gen/x.txt"]);
+    const r = s.script("conflict-map.ts", ["--json"], `${s.root}/src`);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).paths["gen/x.txt"]).toMatchObject({
+      class: "generated",
+      regenerate: { command: "make gen" },
+    });
+  });
+
+  it("classifies by the index's attributes, not a staged link named .gitattributes", () => {
+    symlinkSync("* -diff", `${s.root}/.gitattributes`);
+    conflictEverywhere(["notes.txt"]);
+    expect(map().paths["notes.txt"]?.class).toBe("text");
+  });
+
+  it("records the marker size git wrote, though only an untracked file declares it", () => {
+    s.write("src/.gitattributes", "*.txt conflict-marker-size=9\n");
+    s.write(".git/info/exclude", "/src/.gitattributes\n");
+    conflictEverywhere(["src/x.txt"]);
+    expect(s.read("src/x.txt")).toStartWith("<<<<<<<<< ");
+    const path = map().paths["src/x.txt"];
+    expect(path?.markerSize).toBe(9);
+    expect(path?.hunks).toHaveLength(1);
   });
 
   it("reads a catalog configured through an alias of the repository from the index", () => {
