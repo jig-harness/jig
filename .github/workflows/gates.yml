@@ -102,6 +102,23 @@ jobs:
         run: bun scripts/check-supply-chain-lockstep.ts
       - name: Install locked dependencies, scripts off
         run: bun install --frozen-lockfile --ignore-scripts
+      # Claude Code's validator checks the plugin as the tools install it
+      # (scripts/check-plugin.ts). The native binary comes from its platform
+      # package, which has no install script, rather than as a dependency,
+      # which would add hundreds of megabytes to every contributor's install.
+      - name: Fetch Claude Code for the plugin check
+        env:
+          # renovate: datasource=npm depName=@anthropic-ai/claude-code-linux-x64
+          CLAUDE_CODE_VERSION: 2.1.303
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/claude-code"
+          mkdir -p "$dir"
+          cd "$dir"
+          npm pack --silent "@anthropic-ai/claude-code-linux-x64@${CLAUDE_CODE_VERSION}" > /dev/null
+          tar -xzf anthropic-ai-claude-code-linux-x64-*.tgz
+          chmod +x package/claude
+          echo "$dir/package" >> "$GITHUB_PATH"
       - name: Run gate set
         env:
           # The drive-pr-suite job and the website steps below run the
@@ -111,6 +128,9 @@ jobs:
           # fail here when it is missing instead of being skipped with a
           # warning.
           JIG_REQUIRE_BROWSER: "1"
+          # And Claude Code is fetched above, so the plugin check fails
+          # without its validator instead of skipping it.
+          JIG_REQUIRE_CLAUDE: "1"
         run: bun run gates
       # The website steps run after a failed gate set too, so one run reports
       # both. The build renders the live audit example with the audit skill's

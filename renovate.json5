@@ -87,6 +87,20 @@
     labels: ["dependencies", "security"],
   },
 
+  // --- Versions outside a manifest -------------------------------------------
+
+  // A pin a workflow states in a `# renovate:` comment above it, such as the
+  // Claude Code release the gates validate the plugin with.
+  customManagers: [
+    {
+      customType: "regex",
+      managerFilePatterns: ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+\\w+: (?<currentValue>\\S+)",
+      ],
+    },
+  ],
+
   // --- Per-manager rules ----------------------------------------------------
 
   packageRules: [

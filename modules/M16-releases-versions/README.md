@@ -236,6 +236,15 @@ or as a release pull request) and the tag after verification.
   the release step writes well-formed sections, but no check yet validates
   a whole changelog against its format's rules (structure, section names and
   order, dates, link references) ([roadmap](../../ROADMAP.md)).
+- **Release channels.** An artifact released several times a day can offer
+  [release channels](../../GLOSSARY.md): one that takes every tagged version,
+  and one a version reaches by [promotion](../../GLOSSARY.md) after a
+  [soak](../../GLOSSARY.md) with its checks green and no open regression,
+  with a rollback that withdraws a bad one. npm's dist-tags are this
+  practice for packages; Jig's plugin runs it for a plugin installed from a
+  Git repository ([plugin/README.md](../../plugin/README.md#release-channels)).
+  It becomes a core piece, with an audit criterion, once a second repository
+  has run it.
 - **Other CI providers.** The skill's check and release step run on any
   provider; its workflow template, its tag job and its access check are
   GitHub's until a repository needs another.

@@ -32,7 +32,8 @@
 # the commit that released it once that commit's required checks passed. A
 # cancelled check is run again once, with this workflow's own token granted
 # Actions write in `tag-plan` alone; a releasing commit whose checks failed is
-# left untagged, and `tag-plan` fails for it.
+# left untagged, and `tag-plan` fails for it. The `latest` job then moves the
+# `latest` release channel to the newest tagged version (channels.yml).
 name: release
 
 on:
@@ -246,3 +247,20 @@ jobs:
             echo "::notice::tagged $commit $tag"
           done < <(jq -r '.[] | [.tag, .commit] | @tsv' <<< "$READY")
           exit "$failed"
+
+  # After every tag run, the `latest` channel catches up to the newest tagged
+  # version (channels.yml), whatever the tag jobs did: a version tagged by an
+  # earlier run whose channel step failed reaches it on the next one.
+  latest:
+    needs: [tag-plan, tag-push]
+    if: ${{ !cancelled() && needs.tag-plan.result != 'skipped' }}
+    permissions:
+      contents: read
+      checks: read
+      issues: read
+    concurrency:
+      group: channel-latest
+      cancel-in-progress: false
+    uses: ./.github/workflows/channels.yml
+    with:
+      command: latest

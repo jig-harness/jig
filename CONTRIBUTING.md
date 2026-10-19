@@ -472,8 +472,10 @@ repository.
 
 ## Releasing the plugin
 
-This repository is the `jig` plugin: both agent tools install `plugin/` from
-`main` ([ADR-0002](docs/adr/ADR-0002-the-plugin-is-its-directory.md)). The
+This repository is the `jig` plugin: both agent tools install `plugin/`,
+from the release channels built out of each version's tag
+([ADR-0002](docs/adr/ADR-0002-the-plugin-is-its-directory.md),
+[plugin/README.md § Release channels](plugin/README.md#release-channels)). The
 rules for changing anything under `plugin/` (running from a copy outside this
 repository, the version bump, the release tag) are in
 [plugin/AGENTS.md](plugin/AGENTS.md).
@@ -504,9 +506,33 @@ A release goes like this:
    a cancelled gates run is run again once, and a release commit whose gates
    failed stays untagged, fails `tag-plan` and shows in the changelog skill's
    `status.ts`, for a person to fix.
+5. The workflow's `latest` job then moves the `latest` channel to the newest
+   tagged version (`.github/workflows/channels.yml`, running
+   `tools/plugin/channel.ts`). Each run catches up, so a version a failed run
+   left behind arrives with the next one.
+6. A maintainer promotes a version to `stable` once it has proven itself on
+   `latest`, and rolls `stable` back when a promoted version turns out bad:
 
-The workflow pushes and tags as the `jig-release` GitHub App, the one actor
-`main`'s ruleset lets past its pull-request and check rules; its client ID
+   ```sh
+   bun tools/plugin/channel.ts status          # each channel, and what latest has that stable lacks
+   bun tools/plugin/channel.ts check 0.62.0    # the promotion rule's verdict, read-only
+   gh workflow run channels.yml -f command=promote -f version=0.62.0
+   gh workflow run channels.yml -f command=rollback -f version=0.61.1
+   ```
+
+   The run refuses, naming each reason, unless the rule in
+   [plugin/README.md § Release channels](plugin/README.md#release-channels)
+   holds. A bug report that says a version broke something that worked
+   before gets the `regression` label when it is triaged, with the version it
+   was found in in its "Plugin version" field: while it is open, no version
+   from that one on is promoted. A rollback across a breaking release needs
+   `-f across-breaking=true`. One `stable` request runs at a time; a second
+   one made while another waits replaces it.
+
+The workflows push, tag and move the channels as the `jig-release` GitHub
+App, the one actor `main`'s ruleset lets past its pull-request and check
+rules, and the one the channels' ruleset lets create or update `latest` and
+`stable`; its client ID
 (`RELEASE_APP_CLIENT_ID`) and private key (`RELEASE_APP_PRIVATE_KEY`) live in
 the `release` environment, which only `main` may use, and only the jobs that
 push and tag, which run nothing from the repository, name it. When the

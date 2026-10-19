@@ -79,6 +79,7 @@ Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
 [procedure skills](#the-procedure-skills) ·
 [Codex notes](#codex-notes) ·
 [update or remove](#update-pin-or-remove) ·
+[release channels](#release-channels) ·
 [where it works](#where-it-works) · [troubleshooting](#troubleshooting) ·
 [how it works](#how-it-works) ·
 [release](#releases) ·
@@ -123,11 +124,11 @@ Set up Jig (https://github.com/jig-harness/jig) in this repository, then audit i
    terminal and start a new session in this repository, since a plugin
    loads only when a session starts.
    - Claude Code 2.1.292 or later:
-     claude plugin install jig --marketplace https://github.com/jig-harness/jig.git
+     claude plugin install jig --marketplace https://github.com/jig-harness/jig.git#stable
      Older Claude Code: claude plugin marketplace add
-     https://github.com/jig-harness/jig.git, then claude plugin install jig@jig
+     https://github.com/jig-harness/jig.git#stable, then claude plugin install jig@jig
    - Codex:
-     codex plugin marketplace add https://github.com/jig-harness/jig.git
+     codex plugin marketplace add https://github.com/jig-harness/jig.git --ref stable
      codex plugin add jig@jig
 ```
 
@@ -158,27 +159,32 @@ command it lacks.
 ## Install the plugin
 
 Run these once per machine, in a terminal (not inside an agent session).
+They follow the `stable` [release channel](#release-channels), which
+receives a version once it has proven itself; put `latest` in place of
+`stable` to receive every version as soon as it is released.
 
 **Claude Code** (one step: it registers the marketplace and installs; on
 Claude Code older than 2.1.292, run `claude plugin marketplace add <address>`
 and then `claude plugin install jig@jig` instead):
 
 ```sh
-claude plugin install jig --marketplace https://github.com/jig-harness/jig.git
+claude plugin install jig --marketplace https://github.com/jig-harness/jig.git#stable
 ```
 
 **Codex**:
 
 ```sh
-codex plugin marketplace add https://github.com/jig-harness/jig.git
+codex plugin marketplace add https://github.com/jig-harness/jig.git --ref stable
 codex plugin add jig@jig
 ```
 
 **Both at once**, from a checkout of this repository (it installs for each tool
-it finds on `PATH`, and updates when already installed):
+it finds on `PATH`, following `stable` unless `--channel latest` says
+otherwise, and updates when already installed):
 
 ```sh
 bun tools/plugin/setup.ts
+bun tools/plugin/setup.ts --channel latest
 ```
 
 **Check** what is installed (exit 1 when the plugin is missing or disabled
@@ -193,10 +199,28 @@ codex plugin list         # same for Codex
 Start a **new** session afterwards. Sessions that were already open load the
 plugin after `/reload-plugins` (Claude Code) or a restart (Codex).
 
-For an organization, an administrator can install it on every machine instead:
+For an organization, an administrator can install it on every machine instead.
 Claude Code reads `extraKnownMarketplaces` and `enabledPlugins` from
-[managed settings](https://code.claude.com/docs/en/plugins/org), and a Codex
-workspace administrator can sync a GitHub marketplace for the team.
+[managed settings](https://code.claude.com/docs/en/plugins/org); name the
+channel as the source's `ref`:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "jig": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/jig-harness/jig.git",
+        "ref": "stable"
+      }
+    }
+  },
+  "enabledPlugins": { "jig@jig": true }
+}
+```
+
+A Codex workspace administrator can sync a GitHub marketplace for the team;
+point it at the `stable` branch where the sync lets you choose one.
 
 ## Use a skill
 
@@ -289,7 +313,11 @@ committed: no copy of the skill, no install script, no generated files.
    {
      "extraKnownMarketplaces": {
        "jig": {
-         "source": { "source": "git", "url": "https://github.com/jig-harness/jig.git" }
+         "source": {
+           "source": "git",
+           "url": "https://github.com/jig-harness/jig.git",
+           "ref": "stable"
+         }
        }
      },
      "enabledPlugins": { "jig@jig": true }
@@ -530,29 +558,106 @@ Paths inside the cache change with each release, so never store them.
 
 ## Update, pin or remove
 
-- **Update** to the latest release: `bun tools/plugin/setup.ts`, or by hand
+- **Update** to the newest version of the channel the machine follows:
+  `bun tools/plugin/setup.ts`, or by hand
   `claude plugin marketplace update jig && claude plugin update jig@jig --scope user`
   and `codex plugin marketplace upgrade jig && codex plugin add jig@jig`.
-  A tool picks up a new release only when the plugin's `version` changes (see
-  [release](#releases)). Claude Code can also update in the
-  background: `/plugin` → **Marketplaces** → `jig` →
-  **Enable auto-update**.
-- **Pin** a machine to a release tag: add the marketplace at that tag,
+  A tool installs a version only when the plugin's `version` changes, up or
+  down (see [release](#releases)). To update without asking, see
+  [automatic updates](#automatic-updates).
+- **Pin** a machine to one version: add the marketplace at its tag,
   `claude plugin install jig --marketplace https://github.com/jig-harness/jig.git#v0.3.0`,
   or `codex plugin marketplace add https://github.com/jig-harness/jig.git --ref v0.3.0`.
+  A pinned machine receives nothing until you move the pin; a tag holds the
+  source tree, tests included, where a channel holds the plugin as built.
   Versions are chosen per machine, not per repository: every repository on a
   machine uses the same release, so releases keep reading older configuration
   files unless [CHANGELOG.md](../CHANGELOG.md) says otherwise.
-- **What `main` means:** both tools install from the default branch, but a
-  machine only receives a change when `version` changes. Every merge that
-  changes `plugin/` is therefore released as a new version, written by the
-  release step on `main` from the pull request's change note (see
-  [release](#releases)); otherwise two machines showing the same
-  version can run different code.
+- **What `main` means:** a marketplace added without a ref follows `main`,
+  the source. It receives each version as soon as its release commit lands,
+  before that commit's gates have passed, along with the development files.
+  It is for working on Jig; every other machine follows a
+  [channel](#release-channels). `bun tools/plugin/setup.ts` says so on a
+  machine that follows `main`.
 - **Remove**: `claude plugin uninstall jig@jig` and
   `codex plugin remove jig@jig` (add
   `claude plugin marketplace remove jig` /
   `codex plugin marketplace remove jig` to forget the source too).
+
+## Release channels
+
+A channel is a branch of this repository that the tools install from. It
+holds the plugin as the tools install it: the two marketplace files and
+`plugin/`, without the tests (`__tests__/`) and the instructions for agents
+working on Jig itself (`AGENTS.md`, `CLAUDE.md`). Everything else under
+`plugin/` is what a skill may rely on at run time. The channels are
+generated: every commit on them is written by the release tooling, built
+from a version's tag, and records in its message which version it carries
+and which commit it was built from.
+
+| Channel | What it carries | When it moves | For |
+|---------|-----------------|---------------|-----|
+| `stable` | A version that spent 72 hours on `latest` without an open regression | When Jig's maintainers promote a version, or roll back | Most machines, organization rollouts, container images |
+| `latest` | Every version | When a version is tagged, which happens once its release commit has passed the gates | Jig's maintainers, and teams that want each change as soon as it ships |
+
+**Promotion.** A version moves from `latest` to `stable` only when all of
+these hold, and the promotion command refuses otherwise, naming each
+reason:
+
+- it is tagged on `main`, and the tagged commit passed the gates;
+- it has been on `latest` for at least 72 hours;
+- no open issue labelled `regression` is filed against a version the
+  promotion would bring to `stable` (one after `stable`'s current version, up
+  to this one); a regression issue that names no version blocks every
+  promotion until it does;
+- it is newer than `stable`'s current version, and no rollback withdrew it.
+
+**Rollback.** When a version on `stable` turns out bad, `stable` goes back to
+a version it carried before, as a new commit. Machines on `stable` install
+the earlier version on their next update, since both tools install whenever
+`version` changes. The versions rolled back over are withdrawn: they never
+reach `stable` again, and the fix ships as a new version that goes through
+`latest` like any other. A rollback across a breaking release is refused
+unless asked for explicitly, since repositories may already have changed
+their configuration for it. `latest` has no rollback; it is fixed forward.
+
+**What `stable` gained.** A promotion brings every version after `stable`'s
+previous one up to the promoted one; their sections in
+[CHANGELOG.md](../CHANGELOG.md) are what changed. The
+[`stable` branch's history](https://github.com/jig-harness/jig/commits/stable)
+lists each promotion and the versions it brought.
+
+**Switching channels.** Neither tool re-adds a registered marketplace from
+another ref, and removing the marketplace uninstalls the plugin, so a switch
+is three steps. The plugin's id stays `jig@jig`, so repositories that enable
+it need no change.
+
+```sh
+claude plugin marketplace remove jig
+claude plugin install jig --marketplace https://github.com/jig-harness/jig.git#latest
+
+codex plugin marketplace remove jig
+codex plugin marketplace add https://github.com/jig-harness/jig.git --ref latest
+codex plugin add jig@jig
+```
+
+`bun tools/plugin/setup.ts --channel latest` (or `stable`) on a machine
+registered at the other channel stops and prints the removal command; run it,
+then run setup again.
+
+### Automatic updates
+
+- **Claude Code** updates a marketplace added from a Git address only when
+  asked, unless auto-update is on for it: `/plugin` → **Marketplaces** →
+  `jig` → **Enable auto-update**. On `stable`, turn it on: updates are few,
+  and each was proven on `latest` first. On `latest`, it brings several
+  versions a day; turn it on if you want each one as it ships.
+- **Codex** refreshes a Git marketplace on
+  `codex plugin marketplace upgrade jig`, then installs the new version on
+  `codex plugin add jig@jig`. `bun tools/plugin/setup.ts` runs both; run it
+  on a schedule if you want updates without asking.
+
+A session keeps the version it started with; a new session uses the update.
 
 ## Where it works
 
@@ -565,7 +670,7 @@ runs as you:
 | A terminal session in any clone or worktree | Nothing beyond the one-time install |
 | Herdr, Conductor, or any tool that creates worktrees and starts sessions | Nothing: new workspaces are ordinary directories on a machine that has the plugin |
 | `claude -p`, `codex exec`, scripts and loops | Nothing; plugins load in headless runs too |
-| A container image or CI runner that runs an agent | Install at image build: run the install commands with git credentials available. For Claude Code, build a read-only *seed* with `CLAUDE_CODE_PLUGIN_CACHE_DIR=/opt/claude-seed claude plugin install jig --marketplace …`, set `CLAUDE_CODE_PLUGIN_SEED_DIR=/opt/claude-seed` at run time, and enable it with `enabledPlugins` ([details](https://code.claude.com/docs/en/plugins/org#seed-containers-and-ci)). For Codex, run the two install commands in the image, or copy `plugin/skills/*` to `/etc/codex/skills/` and `plugin/shared/` to `/etc/codex/shared/`: the scripts import the shared code from the folder beside the skills folder |
+| A container image or CI runner that runs an agent | Install at image build: run the install commands with git credentials available. For Claude Code, build a read-only *seed* with `CLAUDE_CODE_PLUGIN_CACHE_DIR=/opt/claude-seed claude plugin install jig --marketplace https://github.com/jig-harness/jig.git#stable`, set `CLAUDE_CODE_PLUGIN_SEED_DIR=/opt/claude-seed` at run time, and enable it with `enabledPlugins` ([details](https://code.claude.com/docs/en/plugins/org#seed-containers-and-ci)). For Codex, run the two install commands in the image, or copy `plugin/skills/*` to `/etc/codex/skills/` and `plugin/shared/` to `/etc/codex/shared/`: the scripts import the shared code from the folder beside the skills folder |
 | CI jobs that only run tests and gates | Nothing: they do not need the skills |
 | A runner that gives each session its own Claude Code configuration directory (`CLAUDE_CONFIG_DIR`) | A user-level install lives in the default directory and is not seen there. Build a seed once (as for containers) and set `CLAUDE_CODE_PLUGIN_SEED_DIR` in the runner's environment; repositories enable the plugin through `enabledPlugins` in `.claude/settings.json` |
 | A tool without plugin support | Copy or link every folder of `plugin/skills/` into that tool's user skill directory (for example `~/.claude/skills/` or `~/.agents/skills/`), side by side, and `plugin/shared/` into a `shared/` folder beside that directory (`~/.claude/shared/`, `~/.agents/shared/`): skills import scripts from their siblings and code from `shared/`, so one skill alone, or the skills without `shared/`, do not run. The command name is then the bare skill name |
@@ -579,7 +684,11 @@ runs as you:
 - **Install fails with a "repository not found" error.** The address is
   mistyped, or git is set to use a credential that is no longer valid.
   Check with `git ls-remote https://github.com/jig-harness/jig.git`, which
-  needs no login.
+  needs no login. If the error names the ref, check the channel's name: the
+  channels are `stable` and `latest`.
+- **"Already added from a different source"**, or setup saying the
+  marketplace is registered elsewhere: the machine follows another channel
+  or address. See [switching channels](#release-channels).
 - **"Jig configuration not found"** — the agent is working in a
   repository that has not [configured](#configure-a-repository) the skill, or
   outside any repository. Start the agent in the repository, or add the
@@ -600,7 +709,9 @@ runs as you:
 ## How it works
 
 This repository is a marketplace (a catalog a tool installs plugins from) for
-each tool, listing one plugin, the `plugin/` directory:
+each tool, listing one plugin, the `plugin/` directory. Each
+[release channel](#release-channels) carries the same layout, built from a
+version's tag without the development files:
 
 ```text
 .claude-plugin/marketplace.json          Claude Code marketplace: one plugin, source "./plugin"
@@ -651,9 +762,15 @@ Every merged change to `plugin/` is released as a new version, tagged
 `v<version>` and described in [CHANGELOG.md](../CHANGELOG.md). A release run
 writes the waiting changes that ask for a release as one version, the largest
 bump any of them asks for, so merges that landed before the run share a
-version. Machines
-receive the release on their next update. Repositories need no change
-unless the changelog says so.
+version. Each tagged version reaches the `latest`
+[channel](#release-channels), and a version that proves itself there is
+promoted to `stable`. Machines receive a version on their next update.
+Repositories need no change unless the changelog says so.
+
+The plugin's name, `jig`, and the marketplace's never change: a new name
+would be a new plugin to every machine and every repository that enables
+`jig@jig`. Both plugin manifests carry the version, and it moves with every
+release.
 
 ## Moving from the `groundwork` plugin
 

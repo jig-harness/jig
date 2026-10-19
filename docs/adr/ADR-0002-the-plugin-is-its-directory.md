@@ -2,10 +2,10 @@
 title: "ADR-0002: The plugin is the plugin/ directory, and every change to it ships as a version"
 type: adr
 status: amended
-description: "Agent tools install only plugin/ from main; everything a skill needs lives there, and each change is a tagged version"
+description: "Agent tools install only plugin/, from release channels built out of each version's tag; everything a skill needs lives there, and each change is a tagged version"
 lifecycle: permanent
-version: "1.5"
-last_updated: 2026-10-18
+version: "1.6"
+last_updated: 2026-10-19
 owner: maintainers
 decision_date: 2026-10-09
 supersedes: ~
@@ -148,3 +148,38 @@ install from it, as soon as its release commit lands, and a machine pinned to
 a tag receives it once the tag exists. The rest of that amendment holds: the
 release commit still lands on `main`'s newest commit, so one run still writes
 at most one version.
+
+### 2026-10-19 — Machines install from release channels, built from the tags (v1.6)
+
+Touches the Decision's "the tools install that directory from `main`" and
+the fifth amendment's "reaches machines that install from it, as soon as its
+release commit lands". Two channels now carry the plugin, each a branch of
+this repository that the marketplace is added at
+([plugin/README.md § Release channels](../../plugin/README.md#release-channels)):
+`latest` takes every version once its tag exists, which is once its release
+commit passed its gates; `stable` takes a version a person promotes after it
+spent 72 hours on `latest` with no open regression, and goes back to an
+earlier one by a rollback. A machine that wants fewer, settled updates
+follows `stable` and still receives them, which pinning a tag could not
+offer. `main` stays installable as the source, for working on Jig.
+
+Each channel commit holds the plugin as installed, a derived artifact rather
+than a second source: the two marketplace files and `plugin/` as the tag
+holds them, less the files only development needs (`__tests__/`,
+`AGENTS.md`, `CLAUDE.md`), built from the tag's objects by
+`tools/plugin/artifact.ts` and never edited by hand. That names the files a
+skill may rely on at run time, makes the install smaller, and lets the gates
+check the plugin as a machine receives it (`scripts/check-plugin.ts`, which
+runs Claude Code's validator over the same build). Every channel commit sits
+on top of the channel's previous one, a rollback included, and its trailers
+name the version and the tagged commit, so a channel's history is the record
+of what it carried. The second alternative's "a separate repository for the
+plugin" stays rejected: the artifact lives in this repository and is
+generated from the same commit as the modules and criteria beside it.
+
+Rejected: moving tags as channels (a clone that fetched a tag keeps the old
+one unless forced, where both tools follow a moved branch); channels holding
+the source tree (a rollback would rewind the branch, and the development
+files would still reach every machine); and promoting on a schedule without
+a person (no one has yet run the promotion rule long enough to trust it
+unattended).

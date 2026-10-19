@@ -15,6 +15,7 @@ import {
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -26,12 +27,14 @@ import {
   spawnSync,
 } from "../../plugin/shared/guarded-git-spawn.ts";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
+import { writeWorkingArtifact } from "./artifact.ts";
 import {
   claudeMarketplace,
   claudeUserInstall,
   codexInstall,
   codexMarketplace,
   DEFAULT_SOURCE,
+  describeSource,
   PLUGIN_ID,
   parse,
   sameSource,
@@ -57,12 +60,11 @@ let scripts: string;
 let shared: string;
 beforeAll(() => {
   scratch = realpathSync(mkdtempSync(join(tmpdir(), "jig-plugin-")));
-  // The plugin cache copies the whole plugin directory (skills, shared code,
-  // agents, assets, manifests); tests are not part of it.
-  cpSync(join(root, "plugin"), join(scratch, "cache"), {
-    recursive: true,
-    filter: (path) => !path.split(/[\\/]/).includes("__tests__"),
-  });
+  // The plugin cache holds the plugin as the release channels ship it
+  // (skills, shared code, agents, assets, manifests), without its tests and
+  // its instructions for agents working on Jig itself.
+  writeWorkingArtifact(root, join(scratch, "artifact"));
+  renameSync(join(scratch, "artifact", "plugin"), join(scratch, "cache"));
   scripts = join(scratch, "cache", "skills", skill, "scripts");
   shared = join(scratch, "cache", "shared");
 });
@@ -122,39 +124,6 @@ test("change-note commands run from the plugin cache and read the repository's c
   const unreadable = run("release.ts", []);
   expectSpawnExit({ ...unreadable, exitCode: unreadable.status }, 2);
   expect(unreadable.stderr).toContain("MISSING.md does not exist");
-});
-
-test("both harness manifests describe the same plugin", () => {
-  const claude = json("plugin/.claude-plugin/plugin.json");
-  const codex = json("plugin/.codex-plugin/plugin.json");
-  for (const manifest of [claude, codex]) {
-    expect(manifest.name).toBe("jig");
-    expect(manifest.skills).toBe("./skills/");
-    expect(String(manifest.version)).toMatch(/^\d+\.\d+\.\d+$/);
-  }
-  // A release bumps both together; a mismatch would ship different versions.
-  expect(codex.version).toBe(claude.version);
-  expect(codex.description).toBe(claude.description);
-});
-
-test("both marketplaces list plugin/ as the plugin", () => {
-  const claude = json(".claude-plugin/marketplace.json") as {
-    name: string;
-    plugins: { name: string; source: unknown }[];
-  };
-  const codex = json(".agents/plugins/marketplace.json") as {
-    name: string;
-    plugins: { name: string; source: unknown }[];
-  };
-  expect(`${claude.plugins[0]?.name}@${claude.name}`).toBe(PLUGIN_ID);
-  expect(`${codex.plugins[0]?.name}@${codex.name}`).toBe(PLUGIN_ID);
-  expect(claude.plugins).toHaveLength(1);
-  expect(codex.plugins).toHaveLength(1);
-  expect(claude.plugins[0]?.source).toBe("./plugin");
-  expect(codex.plugins[0]?.source).toEqual({
-    source: "local",
-    path: "./plugin",
-  });
 });
 
 /**
@@ -366,16 +335,34 @@ test("setup defaults to the Jig repository and rejects unknown flags", () => {
       check: false,
       source: DEFAULT_SOURCE,
       explicit: false,
+      defaulted: true,
       only: null,
     });
     expect(parse(["--check", "--codex", "--source", "/x"])).toEqual({
       check: true,
       source: "/x",
       explicit: true,
+      defaulted: false,
       only: "codex",
+    });
+    expect(parse(["--channel", "latest"])).toEqual({
+      check: false,
+      source: `${DEFAULT_SOURCE}#latest`,
+      explicit: true,
+      defaulted: false,
+      only: null,
     });
     expect(() => parse(["--source"])).toThrow("needs a marketplace source");
     expect(() => parse(["--bogus"])).toThrow("unknown argument");
+    expect(() => parse(["--channel", "beta"])).toThrow(
+      "--channel needs one of: latest, stable",
+    );
+    expect(() =>
+      parse(["--channel", "stable", "--source", `${DEFAULT_SOURCE}#v0.3.0`]),
+    ).toThrow("contradict each other");
+    expect(() =>
+      parse(["--channel", "stable", "--source", "/src/jig"]),
+    ).toThrow("has no channels");
   } finally {
     if (previous !== undefined) process.env.JIG_MARKETPLACE = previous;
   }
@@ -438,7 +425,37 @@ test("setup recognises where a marketplace is registered from", () => {
       ],
     }),
   ).toEqual({ location: DEFAULT_SOURCE, git: true });
+  // Codex's list leaves the ref out; its config.toml carries it.
+  expect(
+    codexMarketplace(
+      {
+        marketplaces: [
+          {
+            name: "jig",
+            marketplaceSource: { sourceType: "git", source: DEFAULT_SOURCE },
+          },
+        ],
+      },
+      { marketplaces: { jig: { source: DEFAULT_SOURCE, ref: "stable" } } },
+    ),
+  ).toEqual({ location: `${DEFAULT_SOURCE}#stable`, git: true });
   expect(codexMarketplace({ marketplaces: [] })).toBeNull();
+  expect(
+    describeSource({ location: `${DEFAULT_SOURCE}#stable`, git: true }),
+  ).toBe("the stable channel");
+  expect(describeSource({ location: DEFAULT_SOURCE, git: true })).toBe(
+    "main, the source address",
+  );
+  expect(
+    describeSource({ location: `${DEFAULT_SOURCE}#v0.3.0`, git: true }),
+  ).toBe("v0.3.0, pinned");
+  expect(describeSource({ location: "/src/jig", git: false })).toBe(
+    "the directory /src/jig",
+  );
+  // A channel is a ref: following one channel does not satisfy the other.
+  expect(
+    sameSource(`${DEFAULT_SOURCE}#latest`, `${DEFAULT_SOURCE}#stable`),
+  ).toBe(false);
   expect(sameSource(`${DEFAULT_SOURCE}#v0.2.0`, DEFAULT_SOURCE)).toBe(true);
   // A requested release must not be satisfied by an unpinned registration.
   expect(sameSource(DEFAULT_SOURCE, `${DEFAULT_SOURCE}#v0.2.0`)).toBe(false);
@@ -480,6 +497,8 @@ if (process.env[key] !== undefined) console.log(process.env[key]);
     {
       env: {
         ...env,
+        // Never the machine's own Codex configuration.
+        CODEX_HOME: join(scratch, "no-codex-home"),
         ...stub,
         JIG_MARKETPLACE: "",
         PATH: `${bin}${delimiter}${dirname(process.execPath)}${delimiter}/usr/bin${delimiter}/bin`,
@@ -547,6 +566,68 @@ test.skipIf(process.platform === "win32")(
       "codex plugin marketplace upgrade jig",
       "codex plugin add jig@jig",
       "codex plugin list --json",
+      "codex plugin marketplace list --json",
+    ]);
+    // A machine registered from main is told how to follow a channel.
+    expect(result.stderr).toContain(
+      "codex: jig@jig follows main, the source address",
+    );
+    expect(result.stdout).toContain(
+      "codex: jig@jig 0.2.0 enabled, following main, the source address",
+    );
+  },
+  30_000,
+);
+
+test.skipIf(process.platform === "win32")(
+  "setup installs a fresh machine at the channel asked for",
+  () => {
+    const result = runSetup(["--channel", "latest"], {
+      STUB_CLAUDE_PLUGIN_MARKETPLACE_LIST_JSON: "[]",
+      STUB_CODEX_PLUGIN_MARKETPLACE_LIST_JSON: '{"marketplaces":[]}',
+      STUB_CLAUDE_PLUGIN_LIST_JSON: userInstall,
+      STUB_CODEX_PLUGIN_LIST_JSON: JSON.stringify({
+        installed: [{ pluginId: PLUGIN_ID, version: "0.2.0", enabled: true }],
+      }),
+    });
+    expect(result.status).toBe(0);
+    expect(result.calls).toContain(
+      `claude plugin install jig --marketplace ${DEFAULT_SOURCE}#latest`,
+    );
+    expect(result.calls).toContain(
+      `codex plugin marketplace add ${DEFAULT_SOURCE} --ref latest`,
+    );
+  },
+  30_000,
+);
+
+test.skipIf(process.platform === "win32")(
+  "setup refuses to move a machine to another channel without the removal",
+  () => {
+    const codexHome = mkdtempSync(join(scratch, "codex-home-"));
+    writeFileSync(
+      join(codexHome, "config.toml"),
+      `[marketplaces.jig]\nsource_type = "git"\nsource = "${DEFAULT_SOURCE}"\nref = "latest"\n`,
+    );
+    const result = runSetup(["--codex", "--channel", "stable"], {
+      STUB_CODEX_PLUGIN_MARKETPLACE_LIST_JSON: JSON.stringify({
+        marketplaces: [
+          {
+            name: "jig",
+            marketplaceSource: { sourceType: "git", source: DEFAULT_SOURCE },
+          },
+        ],
+      }),
+      CODEX_HOME: codexHome,
+    });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain(
+      `registered from ${DEFAULT_SOURCE}#latest, not ${DEFAULT_SOURCE}#stable`,
+    );
+    expect(result.stderr).toContain("codex plugin marketplace remove jig");
+    expect(result.calls).toEqual([
+      "codex --version",
+      "codex plugin marketplace list --json",
     ]);
   },
   30_000,

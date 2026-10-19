@@ -4,9 +4,13 @@
  * this machine: Claude Code and Codex, whichever command-line tools exist.
  *
  * Usage:
- *   bun tools/plugin/setup.ts            install, or update to the latest release
+ *   bun tools/plugin/setup.ts            install, or update to the newest release
+ *                                        of the channel the machine follows
  *   bun tools/plugin/setup.ts --check    report what is installed; exit 1 if missing
- *   options: --source <marketplace>      install from this source instead of
+ *   options: --channel latest|stable     follow that release channel (a fresh
+ *                                        install follows stable); refused when
+ *                                        the marketplace is registered at another
+ *            --source <marketplace>      install from this source instead of
  *                                        $JIG_MARKETPLACE or the Jig
  *                                        GitHub repository (HTTPS); refused when the
  *                                        marketplace is already registered elsewhere
@@ -17,12 +21,26 @@
  * user-level plugin settings and caches; it never touches a repository.
  */
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { cli } from "../../lib/cli.ts";
 
 export const PLUGIN = "jig";
 export const MARKETPLACE = "jig";
 export const PLUGIN_ID = `${PLUGIN}@${MARKETPLACE}`;
 export const DEFAULT_SOURCE = "https://github.com/jig-harness/jig.git";
+
+/** A setup request that cannot be carried out as given. */
+class SetupError extends Error {
+  override name = "SetupError";
+}
+
+/** The release channels, each a branch of the repository (plugin/README.md). */
+export const CHANNELS = ["latest", "stable"] as const;
+export type Channel = (typeof CHANNELS)[number];
+/** The channel a fresh install follows. */
+export const DEFAULT_CHANNEL: Channel = "stable";
 
 type Harness = "claude" | "codex";
 
@@ -144,15 +162,66 @@ export function claudeMarketplace(list: unknown): Registered | null {
   };
 }
 
-export function codexMarketplace(list: unknown): Registered | null {
+/**
+ * Codex's list leaves out the ref a Git marketplace was added at, so it is
+ * read from the configuration the list comes from (`ref`, under
+ * `[marketplaces.<name>]` in `config.toml`).
+ */
+export function codexMarketplace(
+  list: unknown,
+  config: unknown = null,
+): Registered | null {
   const marketplaces = (list as { marketplaces?: unknown })?.marketplaces;
   if (!Array.isArray(marketplaces)) return null;
   const entry = marketplaces.find((m) => m?.name === MARKETPLACE);
   if (!entry) return null;
+  const location = String(entry.marketplaceSource?.source ?? entry.root ?? "");
+  const ref = (config as { marketplaces?: Record<string, { ref?: unknown }> })
+    ?.marketplaces?.[MARKETPLACE]?.ref;
   return {
-    location: String(entry.marketplaceSource?.source ?? entry.root ?? ""),
+    location: typeof ref === "string" && ref ? `${location}#${ref}` : location,
     git: entry.marketplaceSource?.sourceType === "git",
   };
+}
+
+/** Codex's user configuration, or null when it has none. */
+function codexConfig(): unknown {
+  const home = process.env.CODEX_HOME || join(homedir(), ".codex");
+  let text: string;
+  try {
+    text = readFileSync(join(home, "config.toml"), "utf8");
+  } catch (error) {
+    if (code(error) === "ENOENT") return null;
+    throw error;
+  }
+  return Bun.TOML.parse(text);
+}
+
+/** Split `<base>#<ref>` into the address and the ref, if it names one. */
+export function splitSource(source: string): { base: string; ref?: string } {
+  const at = source.indexOf("#");
+  return at < 0
+    ? { base: source }
+    : { base: source.slice(0, at), ref: source.slice(at + 1) };
+}
+
+/** Whether a source is a Git address rather than a directory. */
+export function isGitAddress(source: string): boolean {
+  return /^(https?:\/\/|ssh:\/\/|git@|git:\/\/)/.test(source);
+}
+
+/**
+ * What a registered source follows, in words: a channel, `main` (the source
+ * address, which receives each version before its gates pass), a pinned ref,
+ * or a directory.
+ */
+export function describeSource(registered: Registered): string {
+  const { ref } = splitSource(registered.location);
+  if (!registered.git) return `the directory ${registered.location}`;
+  if (ref && (CHANNELS as readonly string[]).includes(ref))
+    return `the ${ref} channel`;
+  if (ref) return `${ref}, pinned`;
+  return "main, the source address";
 }
 
 /**
@@ -182,15 +251,37 @@ function refuseOtherSource(
       ? `claude plugin marketplace remove ${MARKETPLACE}`
       : `codex plugin marketplace remove ${MARKETPLACE}`;
   throw new Error(
-    `${harness}: the ${MARKETPLACE} marketplace is registered from ${registered.location}, not ${requested}. To switch, run \`${remove}\` and rerun this command.`,
+    `${harness}: the ${MARKETPLACE} marketplace is registered from ${registered.location}, not ${requested}. To switch, run \`${remove}\` (it uninstalls ${PLUGIN_ID} too) and rerun this command, which installs it again; repositories that enable ${PLUGIN_ID} need no change.`,
   );
 }
 
-function install(harness: Harness, source: string, explicit: boolean): void {
+/** After an update, point a machine that follows `main` at a channel. */
+function adviseChannel(harness: Harness, registered: Registered): void {
+  const { base, ref } = splitSource(registered.location);
+  if (!registered.git || ref !== undefined) return;
+  console.warn(
+    `${harness}: ${PLUGIN_ID} follows main, the source address, which receives each version before its gates pass. To follow a release channel instead: bun tools/plugin/setup.ts --${harness} --channel ${DEFAULT_CHANNEL} --source ${base}`,
+  );
+}
+
+function registeredMarketplace(harness: Harness): Registered | null {
+  return harness === "claude"
+    ? claudeMarketplace(
+        json("claude", ["plugin", "marketplace", "list", "--json"]),
+      )
+    : codexMarketplace(
+        json("codex", ["plugin", "marketplace", "list", "--json"]),
+        codexConfig(),
+      );
+}
+
+function install(
+  harness: Harness,
+  registered: Registered | null,
+  source: string,
+  explicit: boolean,
+): void {
   if (harness === "claude") {
-    const registered = claudeMarketplace(
-      json("claude", ["plugin", "marketplace", "list", "--json"]),
-    );
     if (registered === null) {
       run("claude", ["plugin", "install", PLUGIN, "--marketplace", source]);
       return;
@@ -205,18 +296,25 @@ function install(harness: Harness, source: string, explicit: boolean): void {
     // An unscoped update picks the most specific installed scope; this
     // command manages the user-scope install only.
     else run("claude", ["plugin", "update", PLUGIN_ID, "--scope", "user"]);
+    adviseChannel(harness, registered);
     return;
   }
-  const registered = codexMarketplace(
-    json("codex", ["plugin", "marketplace", "list", "--json"]),
-  );
-  if (registered === null)
-    run("codex", ["plugin", "marketplace", "add", source]);
-  else {
+  if (registered === null) {
+    // Codex takes the ref as an option, not in the address.
+    const { base, ref } = splitSource(source);
+    run("codex", [
+      "plugin",
+      "marketplace",
+      "add",
+      base,
+      ...(ref ? ["--ref", ref] : []),
+    ]);
+  } else {
     refuseOtherSource(harness, registered, source, explicit);
     // Only Git marketplaces have a snapshot to refresh; a local path is live.
     if (registered.git)
       run("codex", ["plugin", "marketplace", "upgrade", MARKETPLACE]);
+    adviseChannel(harness, registered);
   }
   // Adding again reinstalls the marketplace's current version.
   run("codex", ["plugin", "add", PLUGIN_ID]);
@@ -228,10 +326,17 @@ function installed(harness: Harness): Installed | null {
     : codexInstall(json("codex", ["plugin", "list", "--json"]));
 }
 
+/**
+ * The command line. `source` is what a fresh install registers: the given
+ * source, at `--channel`'s ref when one is given. `defaulted` is set when
+ * nothing chose the source, so a fresh install follows {@link DEFAULT_CHANNEL}
+ * (or `latest`, until `stable` has its first version).
+ */
 export function parse(argv: string[]): {
   check: boolean;
   source: string;
   explicit: boolean;
+  defaulted: boolean;
   only: Harness | null;
 } {
   let check = false;
@@ -239,6 +344,7 @@ export function parse(argv: string[]): {
   let source = fromEnv || DEFAULT_SOURCE;
   let explicit = Boolean(fromEnv);
   let only: Harness | null = null;
+  let channel: Channel | null = null;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--check") check = true;
@@ -249,38 +355,121 @@ export function parse(argv: string[]): {
       if (!value) throw new Error("--source needs a marketplace source");
       source = value;
       explicit = true;
-    } else throw new Error(`unknown argument: ${arg}`);
+    } else if (arg === "--channel") channel = channelArgument(argv[++i]);
+    else throw new Error(`unknown argument: ${arg}`);
   }
-  return { check, source, explicit, only };
+  if (channel !== null)
+    return {
+      check,
+      source: atChannel(source, channel),
+      explicit: true,
+      defaulted: false,
+      only,
+    };
+  return { check, source, explicit, defaulted: !explicit, only };
 }
 
-if (import.meta.main)
-  cli(() => {
-    const { check, source, explicit, only } = parse(process.argv.slice(2));
-    const harnesses = (["claude", "codex"] as const).filter(
-      (harness) => only === null || only === harness,
+function channelArgument(value: string | undefined): Channel {
+  if (!(CHANNELS as readonly string[]).includes(value ?? ""))
+    throw new SetupError(`--channel needs one of: ${CHANNELS.join(", ")}`);
+  return value as Channel;
+}
+
+/** `source` at `channel`'s ref; refused where a channel cannot apply. */
+function atChannel(source: string, channel: Channel): string {
+  if (splitSource(source).ref !== undefined)
+    throw new SetupError(
+      `--channel and a source that names a ref (${source}) contradict each other; give one`,
     );
-    let missing = 0;
-    let found = 0;
-    for (const harness of harnesses) {
-      if (!available(harness)) {
-        if (only !== null) throw new Error(`${harness} is not on PATH`);
-        console.log(`${harness}: not on PATH, skipped`);
-        continue;
-      }
-      found++;
-      if (!check) install(harness, source, explicit);
-      const state = installed(harness);
-      if (state === null || !state.enabled) {
-        missing++;
-        console.log(
-          `${harness}: ${PLUGIN_ID} ${state === null ? "is not installed for this user" : "is installed but disabled"}`,
-        );
-      } else console.log(`${harness}: ${PLUGIN_ID} ${state.version} enabled`);
-    }
-    if (found === 0) {
-      console.error("neither claude nor codex is on PATH");
-      return 1;
-    }
-    return missing === 0 ? 0 : 1;
-  });
+  if (!isGitAddress(source))
+    throw new SetupError(
+      `--channel needs a Git address; ${source} is a directory, which has no channels`,
+    );
+  return `${source}#${channel}`;
+}
+
+/** Print what `harness` has installed and follows; whether it is enabled. */
+function report(harness: Harness): boolean {
+  const state = installed(harness);
+  if (state === null || !state.enabled) {
+    console.log(
+      `${harness}: ${PLUGIN_ID} ${state === null ? "is not installed for this user" : "is installed but disabled"}`,
+    );
+    return false;
+  }
+  const registered = registeredMarketplace(harness);
+  const follows = registered ? `, following ${describeSource(registered)}` : "";
+  console.log(`${harness}: ${PLUGIN_ID} ${state.version} enabled${follows}`);
+  return true;
+}
+
+/**
+ * The source a fresh install registers when nothing chose one: the default
+ * channel, or `latest` while that channel has no version yet.
+ */
+function defaultChannelSource(): string {
+  const timeout = commandTimeoutMs();
+  const result = spawnSync(
+    "git",
+    ["ls-remote", "--exit-code", "--heads", DEFAULT_SOURCE, DEFAULT_CHANNEL],
+    { encoding: "utf8", timeout, killSignal: "SIGKILL" },
+  );
+  if (result.status === 0) return `${DEFAULT_SOURCE}#${DEFAULT_CHANNEL}`;
+  // 2: the remote answered and has no such branch.
+  if (result.status === 2) {
+    console.log(
+      `the ${DEFAULT_CHANNEL} channel has no version yet; following latest`,
+    );
+    return `${DEFAULT_SOURCE}#latest`;
+  }
+  throw new SetupError(
+    `git ls-remote ${DEFAULT_SOURCE} failed: ${(result.stderr || result.error?.message || "").trim()}`,
+  );
+}
+
+/**
+ * Install or update one harness, then report it: `skipped` when it is not on
+ * `PATH`, else whether the plugin is installed and enabled. `source` gives
+ * what a fresh install registers, looked up only when one is needed.
+ */
+function setUp(
+  harness: Harness,
+  parsed: ReturnType<typeof parse>,
+  source: () => string,
+): "skipped" | "ok" | "missing" {
+  if (!available(harness)) {
+    if (parsed.only !== null) throw new Error(`${harness} is not on PATH`);
+    console.log(`${harness}: not on PATH, skipped`);
+    return "skipped";
+  }
+  if (!parsed.check) {
+    const before = registeredMarketplace(harness);
+    install(
+      harness,
+      before,
+      before === null ? source() : parsed.source,
+      parsed.explicit,
+    );
+  }
+  return report(harness) ? "ok" : "missing";
+}
+
+/** Set up each harness on `PATH`; the exit code. */
+function main(parsed: ReturnType<typeof parse>): number {
+  // The default channel is looked up once, and only for a fresh install.
+  let fresh: string | null = parsed.defaulted ? null : parsed.source;
+  const source = () => {
+    fresh ??= defaultChannelSource();
+    return fresh;
+  };
+  const outcomes = (["claude", "codex"] as const)
+    .filter((harness) => parsed.only === null || parsed.only === harness)
+    .map((harness) => setUp(harness, parsed, source));
+  if (outcomes.every((outcome) => outcome === "skipped")) {
+    console.error("neither claude nor codex is on PATH");
+    return 1;
+  }
+  return outcomes.includes("missing") ? 1 : 0;
+}
+
+if (import.meta.main) cli(() => main(parse(process.argv.slice(2))));

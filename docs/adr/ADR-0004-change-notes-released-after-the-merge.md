@@ -4,8 +4,8 @@ type: adr
 status: amended
 description: "Pull requests never add to CHANGELOG.md's open sections or move the plugin version; a release step on main writes their change notes and moves the version, and the release commit is tagged once its gates pass"
 lifecycle: permanent
-version: "1.4"
-last_updated: 2026-10-18
+version: "1.5"
+last_updated: 2026-10-19
 owner: maintainers
 decision_date: 2026-10-15
 supersedes: ~
@@ -178,3 +178,15 @@ The release practice these rest on is
 [M16](../../modules/M16-releases-versions/README.md)'s, and the tools that
 map it per ecosystem, Changesets among them, are in
 [M16's mappings](../../modules/M16-releases-versions/mappings.md).
+
+### 2026-10-19 — A tagged version reaches machines through the channels (v1.5)
+
+Touches the Costs' "For the minute between a merge and its release commit,
+main carries plugin code under the previous version". Machines now install
+from the release channels rather than from `main`
+([ADR-0002](ADR-0002-the-plugin-is-its-directory.md)'s sixth amendment), and
+a channel receives a version only once its tag exists, so that minute no
+longer reaches them; it remains true of a machine that follows `main`. After
+the tag jobs, the release workflow moves the `latest` channel to the newest
+tagged version, with the same App and environment, through
+`.github/workflows/channels.yml`.
