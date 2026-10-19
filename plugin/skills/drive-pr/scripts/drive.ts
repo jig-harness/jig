@@ -133,6 +133,8 @@
  *      Resume the pause directive and re-arm the drive.
  */
 
+import { PROCESS_REGISTRY_ENV } from "../../../shared/process-registry.ts";
+import { driverStopRequested, stopRequestPath } from "./lib/stop-request.ts";
 import {
   registerCleanup,
   registerSignalHandler,
@@ -165,6 +167,7 @@ import {
   heartbeatStaleMs,
   parseClaimText,
   stagingLive,
+  parseStagingHost,
 } from "./lib/claim.ts";
 import {
   fail,
@@ -1022,6 +1025,7 @@ interface Claim {
   nonce: string;
   pid: number;
   host: string;
+  platform: string | null;
   /** The claim's diagnostics line — advisory, absent on older claims. */
   diag: ClaimDiag | null;
 }
@@ -1084,6 +1088,7 @@ export function inspect(dir: string): Occupant {
         nonce: only.slice(CLAIM_PREFIX.length),
         pid: record.pid,
         host: record.host,
+        platform: record.platform,
         diag: record.diag,
       },
       unreadable: false,
@@ -1161,7 +1166,7 @@ export function claimWasTakenOver(
  * process's own, and reclaims the ones whose recorded owner is confirmed gone.
  */
 function stagingDirFor(lock: DriveLock, pid: number, host: string): string {
-  return `${lock.dir}.${pid}.${host}.staging`;
+  return `${lock.dir}.${pid}.${host}@${process.platform}.staging`;
 }
 
 function takeLock(lock: DriveLock): boolean {
@@ -1192,7 +1197,7 @@ function takeLock(lock: DriveLock): boolean {
 function parseStagingName(
   base: string,
   entry: string,
-): { pid: number; host: string } | null {
+): { pid: number; host: string; platform: string | null } | null {
   const prefix = `${base}.`;
   const suffix = ".staging";
   if (!entry.startsWith(prefix) || !entry.endsWith(suffix)) return null;
@@ -1201,7 +1206,10 @@ function parseStagingName(
   if (dot === -1) return null;
   const pidStr = middle.slice(0, dot);
   if (!isDigits(pidStr)) return null;
-  return { pid: Number.parseInt(pidStr, 10), host: middle.slice(dot + 1) };
+  return {
+    pid: Number.parseInt(pidStr, 10),
+    ...parseStagingHost(middle.slice(dot + 1)),
+  };
 }
 
 /**
@@ -1285,7 +1293,7 @@ function sweepStaleStaging(lock: DriveLock): void {
     } catch {
       age = null; // gone, or unreadable — not this sweep's to force either way
     }
-    if (stagingLive({ pid: named.pid, host: named.host, ageMs: age })) continue;
+    if (stagingLive({ ...named, ageMs: age })) continue;
     try {
       rmSync(stagingDir, { recursive: true, force: true });
     } catch {
@@ -1364,6 +1372,64 @@ let quotaSleepAbort: AbortController | null = null;
  * lets the loop re-join the wait it could not perform inline.
  */
 let passStopWitness: Promise<boolean> | null = null;
+
+function installStopControls(
+  held: DriveLock[],
+  releaseAll: () => void,
+): Disposable {
+  let shuttingDown = false;
+  const shutDown = (sig: string): Promise<void> | undefined => {
+    const code =
+      sig === "SIGINT"
+        ? 130
+        : sig === "SIGTERM" || sig === "stop request"
+          ? 143
+          : 129;
+    // A repeated signal forces termination without unlocking a live pass.
+    if (shuttingDown) {
+      held.length = 0;
+      process.exit(code);
+    }
+    shuttingDown = true;
+    return stopActivePass(`received ${sig}`).then((gone) => {
+      if (gone) releaseAll();
+      else held.length = 0;
+      process.exit(code);
+    });
+  };
+  const cancellation = registerSignalHandler(shutDown);
+  const stopTimer = setInterval(() => {
+    if (
+      !shuttingDown &&
+      held.some(
+        (lock) =>
+          lock.nonce !== undefined && driverStopRequested(lock.dir, lock.nonce),
+      )
+    ) {
+      void shutDown("stop request");
+    }
+  }, 250);
+  stopTimer.unref?.();
+  return {
+    [Symbol.dispose]() {
+      clearInterval(stopTimer);
+      cancellation[Symbol.dispose]();
+    },
+  };
+}
+
+function createDriverRegistry(held: DriveLock[]): void {
+  // The registry belongs to this acquisition. Detached foreground runners
+  // inherit it, so the operator can also capture them if a driver is wedged.
+  if (process.platform === "win32") {
+    const prLock = held[held.length - 1];
+    if (prLock?.nonce !== undefined) {
+      const registry = join(prLock.dir, `processes.${prLock.nonce}`);
+      mkdirSync(registry);
+      process.env[PROCESS_REGISTRY_ENV] = registry;
+    }
+  }
+}
 
 /**
  * End the running pass and report whether its termination was WITNESSED.
@@ -1802,6 +1868,7 @@ function claimAlive(claim: Claim, dir: string): boolean {
   return claimLive({
     pid: claim.pid,
     host: claim.host,
+    platform: claim.platform,
     ageMs: lastRefreshAgeMs(dir, claim),
   });
 }
@@ -1943,6 +2010,11 @@ function acquire(lock: DriveLock, pr: string): void {
  */
 function release(lock: DriveLock): void {
   if (lock.nonce === undefined) return; // never taken
+  rmSync(join(lock.dir, `processes.${lock.nonce}`), {
+    recursive: true,
+    force: true,
+  });
+  rmSync(stopRequestPath(lock.dir, lock.nonce), { force: true });
   rmSync(join(lock.dir, claimName(lock.nonce)), { force: true });
   try {
     rmdirSync(lock.dir);
@@ -2559,22 +2631,8 @@ async function main(): Promise<number> {
     lockResources.dispose();
     held.length = 0;
   };
-  let shuttingDown = false;
-  using cancellation = registerSignalHandler((sig) => {
-    const code = sig === "SIGINT" ? 130 : sig === "SIGTERM" ? 143 : 129;
-    // A repeated signal forces termination without unlocking a live pass.
-    if (shuttingDown) {
-      held.length = 0;
-      process.exit(code);
-    }
-    shuttingDown = true;
-    return stopActivePass(`received ${sig}`).then((gone) => {
-      if (gone) releaseAll();
-      else held.length = 0;
-      process.exit(code);
-    });
-  });
-  void cancellation;
+  using stopControls = installStopControls(held, releaseAll);
+  void stopControls;
   for (const lock of locks) {
     acquire(lock, pr);
     held.push(lock);
@@ -2586,6 +2644,7 @@ async function main(): Promise<number> {
       }),
     );
   }
+  createDriverRegistry(held);
   driverLogRotates = true;
   // Renewal starts the moment the last lock is held, and runs on its own timer
   // for the rest of the drive — a claim must stay fresh DURING a pass, not

@@ -1,5 +1,5 @@
 /** Scoped resources also remain reachable when a signal or process.exit skips scope disposal. */
-type CleanupSignal = "SIGINT" | "SIGTERM" | "SIGHUP";
+type CleanupSignal = "SIGINT" | "SIGTERM" | "SIGHUP" | "SIGBREAK";
 type SignalHandler = (signal: CleanupSignal) => void | Promise<void>;
 
 interface Registry {
@@ -38,7 +38,11 @@ function createRegistry(): Registry {
     pending: new Set(),
   };
   process.on("exit", () => disposeAll(registry));
-  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+  const signals: CleanupSignal[] =
+    process.platform === "win32"
+      ? ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]
+      : ["SIGINT", "SIGTERM", "SIGHUP"];
+  for (const signal of signals) {
     const onSignal = (): void => {
       // Start every callback synchronously so cancellation forwarding is prompt.
       for (const handler of [...registry.signals].reverse()) {
@@ -64,9 +68,15 @@ function createRegistry(): Registry {
         if (process.listenerCount(signal) > 1) return;
         const hadResources = registry.resources.size > 0;
         disposeAll(registry);
-        if (hadResources) {
+        if (hadResources || process.platform === "win32") {
           process.exit(
-            signal === "SIGINT" ? 130 : signal === "SIGTERM" ? 143 : 129,
+            signal === "SIGINT"
+              ? 130
+              : signal === "SIGTERM"
+                ? 143
+                : signal === "SIGBREAK"
+                  ? 149
+                  : 129,
           );
         }
         (process as unknown as import("node:events").EventEmitter).off(

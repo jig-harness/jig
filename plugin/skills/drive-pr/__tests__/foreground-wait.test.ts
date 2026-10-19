@@ -1,3 +1,4 @@
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   existsSync,
@@ -11,45 +12,38 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, delimiter } from "node:path";
+import { processTable } from "../../../shared/process-table.ts";
+import {
+  captureProcessTree,
+  signalIdentityTargets,
+} from "../../../shared/process-tree.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
-import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
+import {
+  skipsOnWindows,
+  exceptOnWindows,
+  byPlatform,
+} from "../../../../lib/test-helpers/windows-skip.ts";
 
 const SCRIPT = resolve(import.meta.dir, "../scripts/foreground-wait.ts");
 
-// The runner finds, supervises and ends the command's process tree through
-// `ps -A` and POSIX signals, which Git for Windows' `ps` and Windows lack.
-const NO_PS = skipsOnWindows(
-  "process-lifecycle",
-  "the runner reads the process tree with `ps -A -o pid=,ppid=` and ends it with POSIX signals",
+// This permission fixture needs POSIX mode bits; Windows writes are governed by ACLs.
+const NO_MODE_BITS = skipsOnWindows(
+  "file-system",
+  "chmod 444 does not make a Windows file unwritable; the fixture needs an ACL-aware replacement",
 );
+const bunCommand = (source: string) => [process.execPath, "-e", source];
+const busy = "setInterval(() => {}, 1000)";
+const childTree = (source = busy, parent = busy) =>
+  `Bun.spawn([process.execPath, '-e', ${JSON.stringify(source)}], {stdout:'ignore',stderr:'ignore'}); ${parent}`;
 
 // Each case spawns several bun processes; the 5s default is too tight under load.
 const T = 60_000;
 
-const alive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-  } catch {
-    return false;
-  }
-  // A zombie still answers signal 0; it is not running.
-  const ps = Bun.spawnSync(["ps", "-o", "stat=", "-p", String(pid)]);
-  const stat = ps.stdout.toString().trim();
-  return stat !== "" && !stat.startsWith("Z");
-};
-
-/** `pid` and everything beneath it, from one `ps` snapshot. */
-const treeOf = (pid: number): number[] => {
-  const rows = Bun.spawnSync(["ps", "-A", "-o", "pid=,ppid="])
-    .stdout.toString()
-    .split("\n")
-    .map((l) => l.trim().split(/\s+/).map(Number));
-  const out: number[] = [pid];
-  for (let i = 0; i < out.length; i++) {
-    for (const [p, pp] of rows)
-      if (pp === out[i] && !out.includes(p as number)) out.push(p as number);
-  }
-  return out;
+const alive = async (pid: number): Promise<boolean> => {
+  const rows = await processTable();
+  return (
+    rows?.some((row) => row.pid === pid && !row.stat.startsWith("Z")) ?? true
+  );
 };
 
 const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -81,25 +75,21 @@ describe("foreground-wait.ts", () => {
   };
   // Children are stopped before their state directory goes, so a late runner
   // never writes into a deleted directory and a failed assertion leaks nothing.
-  afterEach(() => {
+  afterEach(async () => {
     if (existsSync(stateRoot())) {
       // The whole tree, snapshotted before anything dies: killing only the
       // recorded parents would leave their descendants running, re-parented.
-      const doomed = ["runner.pid", "cmd.pid"].flatMap((name) => {
+      for (const name of ["runner.pid", "cmd.pid"]) {
         const pid = pidOf(name);
-        return pid === null ? [] : treeOf(pid);
-      });
-      for (const pid of doomed) {
-        try {
-          process.kill(pid, "SIGKILL");
-        } catch {}
+        const targets = pid === null ? null : await captureProcessTree(pid);
+        if (targets) await signalIdentityTargets(targets, "SIGKILL");
       }
     }
     rmSync(cwd, { recursive: true, force: true });
   });
 
   const runWith = (env: Record<string, string>, ...args: string[]) =>
-    Bun.spawnSync(["bun", SCRIPT, ...args], {
+    Bun.spawnSync([process.execPath, SCRIPT, ...args], {
       cwd,
       stderr: "pipe",
       env: { ...process.env, ...PACING, ...env },
@@ -107,66 +97,75 @@ describe("foreground-wait.ts", () => {
   const run = (...args: string[]) => runWith({}, ...args);
   const out = (r: ReturnType<typeof run>) => r.stdout.toString();
 
-  test.skipIf(NO_PS)(
+  test(
     "relays the output; a failing command is reported apart from control codes",
     () => {
-      expect(run("launch", "--", "sh", "-c", "echo hi; exit 7").exitCode).toBe(
+      expectSpawnExit(
+        run(
+          "launch",
+          "--",
+          ...bunCommand("console.log('hi'); process.exit(7)"),
+        ),
         0,
       );
       const w = run("wait");
-      expect(w.exitCode).toBe(30);
+      expectSpawnExit(w, 30);
       expect(out(w)).toContain("hi");
       expect(out(w)).toContain("command-exit: 7");
     },
     T,
   );
 
-  test.skipIf(NO_PS)(
+  test(
     "a command exiting 20 or 21 is a finished command, not a control state",
     () => {
       for (const code of [20, 21]) {
-        expect(run("launch", "--", "sh", "-c", `exit ${code}`).exitCode).toBe(
+        expectSpawnExit(
+          run("launch", "--", ...bunCommand(`process.exit(${code})`)),
           0,
         );
         const w = run("wait");
-        expect(w.exitCode).toBe(30);
+        expectSpawnExit(w, 30);
         expect(out(w)).toContain(`command-exit: ${code}`);
         // Repeating wait still reports the finished command.
-        expect(run("wait").exitCode).toBe(30);
+        expectSpawnExit(run("wait"), 30);
       }
     },
     T,
   );
 
-  test.skipIf(NO_PS)(
+  test(
     "a successful command exits wait with 0",
     () => {
-      expect(run("launch", "--", "true").exitCode).toBe(0);
-      expect(run("wait").exitCode).toBe(0);
+      expectSpawnExit(run("launch", "--", ...bunCommand("")), 0);
+      expectSpawnExit(run("wait"), 0);
     },
     T,
   );
 
-  test.skipIf(NO_PS)(
+  test(
     "a launch beside a live one is refused, and wait reports still-running",
     () => {
-      expect(run("launch", "--", "sleep", "30").exitCode).toBe(0);
-      expect(run("launch", "--", "true").exitCode).toBe(3);
+      expectSpawnExit(run("launch", "--", ...bunCommand(busy)), 0);
+      expectSpawnExit(run("launch", "--", ...bunCommand("")), 3);
       const w = run("wait", "--max-sec", "1");
-      expect(w.exitCode).toBe(20);
+      expectSpawnExit(w, 20);
       expect(out(w)).toContain("never `launch`");
     },
     T,
   );
 
-  test.skipIf(NO_PS)(
+  test(
     "concurrent launches: exactly one wins the claim",
     async () => {
       const procs = Array.from({ length: 4 }, () =>
-        Bun.spawn(["bun", SCRIPT, "launch", "--", "sleep", "30"], {
-          cwd,
-          env: { ...process.env, ...PACING },
-        }),
+        Bun.spawn(
+          [process.execPath, SCRIPT, "launch", "--", ...bunCommand(busy)],
+          {
+            cwd,
+            env: { ...process.env, ...PACING },
+          },
+        ),
       );
       const codes = await Promise.all(procs.map((p) => p.exited));
       expect(codes.filter((c) => c === 0)).toHaveLength(1);
@@ -178,40 +177,46 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test.skipIf(NO_PS)(
+  test(
     "a failed spawn surfaces its message and status once",
     () => {
-      expect(run("launch", "--", "/nonexistent/fgwait-cmd").exitCode).toBe(0);
+      expectSpawnExit(run("launch", "--", "/nonexistent/fgwait-cmd"), 0);
       const w = run("wait");
-      expect(w.exitCode).toBe(30);
+      expectSpawnExit(w, 30);
       expect(out(w)).toContain("could not start command");
       expect(out(w)).toContain("command-exit: 127");
     },
     T,
   );
 
-  test.skipIf(NO_PS)(
+  test(
     "repeated waits relay only output not yet shown",
     () => {
-      expect(
-        run("launch", "--", "sh", "-c", "echo first; sleep 3; echo second")
-          .exitCode,
-      ).toBe(0);
+      expectSpawnExit(
+        run(
+          "launch",
+          "--",
+          ...bunCommand(
+            "console.log('first'); setTimeout(() => console.log('second'), 3000)",
+          ),
+        ),
+        0,
+      );
       const w1 = run("wait", "--max-sec", "1");
-      expect(w1.exitCode).toBe(20);
+      expectSpawnExit(w1, 20);
       expect(out(w1)).toContain("first");
       const w2 = run("wait");
-      expect(w2.exitCode).toBe(0);
+      expectSpawnExit(w2, 0);
       expect(out(w2)).toContain("second");
       expect(out(w2)).not.toContain("first");
     },
     T,
   );
 
-  test.skipIf(NO_PS)(
+  test(
     "a runner killed mid-command is not running forever: wait reports 21 once nothing is alive",
     async () => {
-      expect(run("launch", "--", "sleep", "30").exitCode).toBe(0);
+      expectSpawnExit(run("launch", "--", ...bunCommand(busy)), 0);
       for (let i = 0; i < 50 && pidOf("cmd.pid") === null; i++) {
         await sleepMs(100);
       }
@@ -221,17 +226,17 @@ describe("foreground-wait.ts", () => {
       }
       await sleepMs(300);
       const w = run("wait", "--max-sec", "1");
-      expect(w.exitCode).toBe(21);
+      expectSpawnExit(w, 21);
     },
     T,
   );
 
-  test.skipIf(NO_PS)(
-    "runner and command stay in the pass group: cancelling the group stops both",
+  test(
+    "pass cancellation reaches the runner and command",
     async () => {
       // Stand-in for the driver's pass group: its own leader, like drive.ts's pass.
       const pass = Bun.spawn(
-        ["bun", SCRIPT, "launch", "--", "sh", "-c", "sleep 30; sleep 30"],
+        [process.execPath, SCRIPT, "launch", "--", ...bunCommand(childTree())],
         { cwd, detached: true, env: { ...process.env, ...PACING } },
       );
       await pass.exited;
@@ -242,52 +247,64 @@ describe("foreground-wait.ts", () => {
         await sleepMs(100);
       }
       const cmdPid = (command ?? pidOf("cmd.pid")) as number;
-      expect(alive(runner)).toBe(true);
-      expect(alive(cmdPid)).toBe(true);
-      process.kill(-pass.pid, "SIGTERM");
-      for (let i = 0; i < 50 && (alive(runner) || alive(cmdPid)); i++) {
+      expect(await alive(runner)).toBe(true);
+      expect(await alive(cmdPid)).toBe(true);
+      const cancellation = byPlatform(
+        "Windows cancels a recorded tree; POSIX cancels a process group",
+        { windows: "tree", posix: "group" },
+      );
+      if (cancellation === "group") process.kill(-pass.pid, "SIGTERM");
+      else
+        await signalIdentityTargets(
+          (await captureProcessTree(runner)) ?? [],
+          "SIGKILL",
+        );
+      for (
+        let i = 0;
+        i < 50 && ((await alive(runner)) || (await alive(cmdPid)));
+        i++
+      ) {
         await sleepMs(100);
       }
-      expect(alive(runner)).toBe(false);
-      expect(alive(cmdPid)).toBe(false);
+      expect(await alive(runner)).toBe(false);
+      expect(await alive(cmdPid)).toBe(false);
     },
     T,
   );
 
-  test.skipIf(NO_PS)(
+  test(
     "a pass that never waits cannot leave the command running past the runner deadline",
     async () => {
-      expect(
+      expectSpawnExit(
         runWith(
           { DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "2" },
           "launch",
           "--",
-          "sh",
-          "-c",
-          "sleep 30 & wait",
-        ).exitCode,
-      ).toBe(0);
+          ...bunCommand(childTree()),
+        ),
+        0,
+      );
       for (let i = 0; i < 50 && pidOf("cmd.pid") === null; i++) {
         await sleepMs(100);
       }
       const cmdPid = pidOf("cmd.pid") as number;
-      expect(alive(cmdPid)).toBe(true);
+      expect(await alive(cmdPid)).toBe(true);
       const w = run("wait", "--max-sec", "30");
-      expect(w.exitCode).toBe(30);
+      expectSpawnExit(w, 30);
       expect(out(w)).toContain("deadline of 2s reached");
       expect(out(w)).toContain("command-exit: 124");
-      expect(alive(cmdPid)).toBe(false);
+      expect(await alive(cmdPid)).toBe(false);
     },
     T,
   );
 
-  test.skipIf(NO_PS)(
+  test(
     "the deadline also ends a SIGTERM-resistant descendant before a result is published",
     async () => {
       const gate = join(cwd, "witness.gate");
       writeFileSync(gate, "");
       // The shell exits on SIGTERM; its child ignores it and outlives the shell.
-      expect(
+      expectSpawnExit(
         runWith(
           {
             DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "2",
@@ -295,11 +312,14 @@ describe("foreground-wait.ts", () => {
           },
           "launch",
           "--",
-          "sh",
-          "-c",
-          `sh -c 'trap "" TERM; echo $$ > stubborn.pid; exec sleep 30' >/dev/null 2>&1 & wait`,
-        ).exitCode,
-      ).toBe(0);
+          ...bunCommand(
+            childTree(
+              `require("node:fs").writeFileSync("stubborn.pid",String(process.pid)); process.on("SIGTERM",()=>{}); ${busy}`,
+            ),
+          ),
+        ),
+        0,
+      );
       // Hold the termination witness open: while it cannot confirm the tree is
       // dead, no terminal result may exist, however long we look. Removing the
       // gate then lets publication proceed — ordering established by the gate,
@@ -321,66 +341,72 @@ describe("foreground-wait.ts", () => {
       await sleepMs(4000);
       expect(existsSync(join(latestGen(), "result.json"))).toBe(false);
       const still = run("wait", "--max-sec", "1");
-      expect(still.exitCode).toBe(20);
+      expectSpawnExit(still, 20);
       rmSync(gate);
       const w = run("wait", "--max-sec", "30");
-      expect(w.exitCode).toBe(30);
+      expectSpawnExit(w, 30);
       expect(out(w)).toContain("command-exit: 124");
-      expect(alive(stubborn as number)).toBe(false);
+      expect(await alive(stubborn as number)).toBe(false);
     },
     T,
   );
 
-  test.skipIf(NO_PS)(
+  test(
     "the deadline SIGTERMs a previously tracked descendant, so its cleanup handler runs",
     async () => {
       // The descendant is observed by the periodic tracker (every 200ms) well
       // before the 2s deadline, so termination must signal it although it is
       // not newly seen.
-      expect(
+      expectSpawnExit(
         runWith(
           { DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "2" },
           "launch",
           "--",
-          "sh",
-          "-c",
-          `sh -c 'trap "echo term > termed.marker; exit 0" TERM; while :; do :; done' >/dev/null 2>&1 & wait`,
-        ).exitCode,
-      ).toBe(0);
+          ...bunCommand(
+            childTree(
+              `process.on("SIGTERM",()=>{require("node:fs").writeFileSync("termed.marker","term");process.exit(0)}); ${busy}`,
+            ),
+          ),
+        ),
+        0,
+      );
       const w = run("wait", "--max-sec", "40");
-      expect(w.exitCode).toBe(30);
-      expect(existsSync(join(cwd, "termed.marker"))).toBe(true);
+      expectSpawnExit(w, 30);
+      exceptOnWindows("Windows has no cooperative POSIX TERM handler", () =>
+        expect(existsSync(join(cwd, "termed.marker"))).toBe(true),
+      );
     },
     T,
   );
 
-  test.skipIf(NO_PS)(
+  test(
     "a command that exits on its own leaves no tracked descendant running when the result is published",
     async () => {
       // The periodic tracker (every 200ms) captures the descendant; the
       // command then exits 0 while the descendant, with its output
       // redirected, lives on.
-      expect(
+      expectSpawnExit(
         run(
           "launch",
           "--",
-          "sh",
-          "-c",
-          `sleep 600 >/dev/null 2>&1 & echo $! > bg.pid; sleep 1.5; exit 0`,
-        ).exitCode,
-      ).toBe(0);
+          ...bunCommand(
+            `const child=Bun.spawn([process.execPath,"-e",${JSON.stringify(busy)}],{stdout:"ignore",stderr:"ignore"}); require("node:fs").writeFileSync("bg.pid",String(child.pid)); child.unref(); setTimeout(()=>process.exit(0),1500)`,
+          ),
+        ),
+        0,
+      );
       const w = run("wait", "--max-sec", "60");
-      expect(w.exitCode).toBe(0);
+      expectSpawnExit(w, 0);
       expect(out(w)).toContain("descendants still running");
       const bg = Number.parseInt(readFileSync(join(cwd, "bg.pid"), "utf8"), 10);
       expect(Number.isInteger(bg)).toBe(true);
-      expect(alive(bg)).toBe(false);
+      expect(await alive(bg)).toBe(false);
     },
     T,
   );
 
-  test.skipIf(NO_PS)(
-    "a descendant recovered after a failed process snapshot still gets SIGTERM before SIGKILL",
+  test(
+    "a descendant recovered after a failed process snapshot receives its cancellation grace",
     async () => {
       // `ps` fails from before the deadline (3s) until released, so termination
       // cannot snapshot and signals only the command; the descendant was
@@ -389,11 +415,17 @@ describe("foreground-wait.ts", () => {
       const shim = join(cwd, "shim");
       mkdirSync(shim);
       const flag = join(cwd, "psbroken");
-      writeFakeProgram(
-        join(shim, "ps"),
-        `#!/bin/sh\n[ -e "${flag}" ] && exit 1\nexec /bin/ps "$@"\n`,
+      const native = byPlatform(
+        "Windows reads CIM through PowerShell; POSIX reads ps",
+        { windows: "powershell.exe", posix: "ps" },
       );
-      expect(
+      const actual = Bun.which(native);
+      expect(actual).not.toBeNull();
+      writeFakeProgram(
+        join(shim, native),
+        `#!/usr/bin/env bun\nif(require("node:fs").existsSync(${JSON.stringify(flag)})) process.exit(1); const result=Bun.spawnSync([${JSON.stringify(actual)},...process.argv.slice(2)], {stdout:"pipe",stderr:"inherit"}); process.stdout.write(result.stdout); process.exit(result.exitCode);`,
+      );
+      expectSpawnExit(
         runWith(
           {
             DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "3",
@@ -401,40 +433,46 @@ describe("foreground-wait.ts", () => {
           },
           "launch",
           "--",
-          "sh",
-          "-c",
-          `sh -c 'trap "echo term > termed.marker; exit 0" TERM; while :; do :; done' >/dev/null 2>&1 & wait`,
-        ).exitCode,
-      ).toBe(0);
+          ...bunCommand(
+            childTree(
+              `process.on("SIGTERM",()=>{require("node:fs").writeFileSync("termed.marker","term");process.exit(0)}); ${busy}`,
+            ),
+          ),
+        ),
+        0,
+      );
       await sleepMs(1000); // tracked within 200ms, before the deadline
       writeFileSync(flag, "");
       await sleepMs(3500); // deadline fires with `ps` broken
       rmSync(flag);
       const w = run("wait", "--max-sec", "40");
-      expect(w.exitCode).toBe(30);
-      expect(existsSync(join(cwd, "termed.marker"))).toBe(true);
+      expectSpawnExit(w, 30);
+      exceptOnWindows("Windows has no cooperative POSIX TERM handler", () =>
+        expect(existsSync(join(cwd, "termed.marker"))).toBe(true),
+      );
     },
     T,
   );
 
-  test.skipIf(NO_PS)(
+  test(
     "the deadline settles even when a re-parented descendant holds the output pipes open",
     async () => {
       // The shell exits at once; its background child outlives it, inherits the
       // pipes, and is no longer under any pid the runner can discover.
-      expect(
+      expectSpawnExit(
         runWith(
           { DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "2" },
           "launch",
           "--",
-          "sh",
-          "-c",
-          "sleep 600 & echo $! > bg.pid; exit 0",
-        ).exitCode,
-      ).toBe(0);
+          ...bunCommand(
+            `const child=Bun.spawn([process.execPath,"-e",${JSON.stringify(busy)}],{stdout:"inherit",stderr:"inherit"}); require("node:fs").writeFileSync("bg.pid",String(child.pid)); child.unref(); process.exit(0)`,
+          ),
+        ),
+        0,
+      );
       try {
         const w = run("wait", "--max-sec", "40");
-        expect(w.exitCode).toBe(30);
+        expectSpawnExit(w, 30);
         expect(out(w)).toContain("deadline of 2s reached");
         expect(out(w)).toContain("command-exit: 124");
       } finally {
@@ -455,21 +493,22 @@ describe("foreground-wait.ts", () => {
   );
 
   // Root ignores mode bits, so chmod 444 cannot make the append fail.
-  test.skipIf(NO_PS || process.getuid?.() === 0)(
+  test.skipIf(NO_MODE_BITS || process.getuid?.() === 0)(
     "a log that cannot be written ends the command instead of leaving it unsupervised",
     async () => {
       // Replace the log with a read-only file: appends fail (EACCES) while the
       // reader in `wait` can still open it.
       const log = ".context/foreground-wait/gen-1/log";
-      expect(
+      expectSpawnExit(
         run(
           "launch",
           "--",
           "sh",
           "-c",
           `rm -f ${log}; touch ${log}; chmod 444 ${log}; echo diagnostic; sleep 600`,
-        ).exitCode,
-      ).toBe(0);
+        ),
+        0,
+      );
       const cmdPid = await (async () => {
         for (let i = 0; i < 50 && pidOf("cmd.pid") === null; i++) {
           await sleepMs(100);
@@ -477,10 +516,10 @@ describe("foreground-wait.ts", () => {
         return pidOf("cmd.pid") as number;
       })();
       const w = run("wait", "--max-sec", "40");
-      expect(w.exitCode).toBe(30);
+      expectSpawnExit(w, 30);
       expect(out(w)).toContain("could not write the log");
       expect(out(w)).toContain("command-exit: 125");
-      expect(alive(cmdPid)).toBe(false);
+      expect(await alive(cmdPid)).toBe(false);
     },
     T,
   );
@@ -495,7 +534,7 @@ describe("foreground-wait.ts", () => {
           "--",
           "true",
         );
-        expect(r.exitCode).toBe(2);
+        expectSpawnExit(r, 2);
         expect(r.stderr.toString()).toContain("not a usable deadline");
       }
       expect(existsSync(stateRoot())).toBe(false);
@@ -503,21 +542,20 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test.skipIf(NO_PS)(
+  test(
     "retained output is bounded at the writer and the truncation is reported",
     () => {
       // 20 MiB of output against a 16 MiB retention cap.
-      expect(
+      expectSpawnExit(
         run(
           "launch",
           "--",
-          "sh",
-          "-c",
-          'head -c 20971520 /dev/zero | tr "\\0" x',
-        ).exitCode,
-      ).toBe(0);
+          ...bunCommand('process.stdout.write("x".repeat(20971520))'),
+        ),
+        0,
+      );
       const w = run("wait", "--max-sec", "60");
-      expect(w.exitCode).toBe(0);
+      expectSpawnExit(w, 0);
       // The retained payload is exactly the cap; the only allowance beyond it
       // is the truncation marker, pinned byte for byte.
       const marker = `\nforeground-wait: output exceeded ${16 * 1024 * 1024} bytes; the rest is dropped\n`;
@@ -541,9 +579,54 @@ describe("foreground-wait.ts", () => {
   );
 
   test(
+    "a launched runner registers an identity so a pass can cancel its tree after the launcher exits",
+    async () => {
+      const registry = join(cwd, "registry");
+      mkdirSync(registry);
+      const launched = runWith(
+        { JIG_PROCESS_REGISTRY_DIR: registry },
+        "launch",
+        "--",
+        ...bunCommand(childTree()),
+      );
+      expectSpawnExit(launched, 0);
+      const entries = readdirSync(registry);
+      expect(entries.some((name) => name.endsWith(".pending"))).toBe(false);
+      const recorded = JSON.parse(
+        readFileSync(
+          join(
+            registry,
+            entries.find((name) => name.endsWith(".json")) as string,
+          ),
+          "utf8",
+        ),
+      ) as { pid: number; start: string };
+      expect(pidOf("runner.pid")).toBe(recorded.pid);
+      expect(recorded.start).toBeTruthy();
+      const readyDeadline = Date.now() + 20_000;
+      while (pidOf("cmd.pid") === null && Date.now() < readyDeadline)
+        await sleepMs(20);
+      expect(pidOf("cmd.pid")).not.toBeNull();
+      const targets = await captureProcessTree(recorded.pid);
+      expect(targets?.length).toBeGreaterThan(1);
+      await signalIdentityTargets(targets ?? [], "SIGKILL");
+      const deadline = Date.now() + 20_000;
+      while ((await alive(recorded.pid)) && Date.now() < deadline)
+        await sleepMs(20);
+      expect(await alive(recorded.pid)).toBe(false);
+      expect(await alive(pidOf("cmd.pid") as number)).toBe(false);
+      // Children are stopped first. The runner may publish their failure
+      // before its own kill arrives, or die before publishing a result.
+      const expected = existsSync(join(latestGen(), "result.json")) ? 30 : 21;
+      expectSpawnExit(run("wait", "--max-sec", "1"), expected);
+    },
+    T,
+  );
+
+  test(
     "wait with no launch on record is a usage error",
     () => {
-      expect(run("wait").exitCode).toBe(2);
+      expectSpawnExit(run("wait"), 2);
     },
     T,
   );

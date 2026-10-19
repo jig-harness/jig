@@ -68,10 +68,6 @@ function realGitForShell(): string {
   return shellPath(real);
 }
 
-const NO_TREE_KILL = skipsOnWindows(
-  "process-lifecycle",
-  "killing a process on Windows does not reach its children, so a hung or slow child process tree outlives the deadline",
-);
 const NO_QUOTE_NAMES = skipsOnWindows(
   "file-system",
   "a double quote is not a legal file-name character on Windows, so the file cannot be created",
@@ -813,100 +809,94 @@ describe("announce-merge-ready.ts", () => {
     expect(r.stderr).toContain("uncommitted state");
   });
 
-  it.skipIf(NO_TREE_KILL)(
-    "the worktree cleanliness check refuses on a TIMEOUT rather than hanging",
-    async () => {
-      // `checkWorktreeClean()`'s `git status --porcelain` call carried no
-      // deadline: a stalled filesystem or a lock held by another process could
-      // hang the announcement indefinitely instead of returning the documented
-      // unreadable-tree refusal. This wraps `git` with a stub that hangs ONLY on
-      // `status --porcelain` — every other git call (drive-status.ts's own
-      // `rev-parse HEAD`, etc.) still reaches the REAL binary, or the probe
-      // would time out for the wrong reason before ever reaching the call this
-      // targets.
-      const dirty = makeScratchRepo("scratch-announce-git-status-hang");
-      const realGit = realGitForShell();
-      const gitBinDir = mkdtempSync(join(tmpdir(), "drive-pr-git-stub-"));
-      const gitStubPath = join(gitBinDir, "git");
-      writeFakeProgram(
-        gitStubPath,
-        [
-          "#!/usr/bin/env bash",
-          'if [ "${1:-}" = "status" ] && [ "${2:-}" = "--porcelain" ]; then',
-          "  sleep 30",
-          "  exit 0",
-          "fi",
-          `exec "${realGit}" "$@"`,
-          "",
-        ].join("\n"),
-      );
-      const started = Date.now();
-      const r = await announce(
-        { threads: [], reviewedSha: dirty.head, head: dirty.head },
-        false,
-        {
-          cwd: dirty.dir,
-          extraBinDir: gitBinDir,
-          env: { GIT_CALL_TIMEOUT: "1" },
-        },
-      );
-      const elapsed = Date.now() - started;
-      expect(r.posted).toBe(false);
-      expect(r.exitCode).not.toBe(0);
-      expect(r.stderr).toContain("cannot read the working tree");
-      expect({
-        boundedWellBeforeTheStubsSleepFinished: elapsed < 15_000,
-      }).toEqual({ boundedWellBeforeTheStubsSleepFinished: true });
-    },
-  );
+  it("the worktree cleanliness check refuses on a TIMEOUT rather than hanging", async () => {
+    // `checkWorktreeClean()`'s `git status --porcelain` call carried no
+    // deadline: a stalled filesystem or a lock held by another process could
+    // hang the announcement indefinitely instead of returning the documented
+    // unreadable-tree refusal. This wraps `git` with a stub that hangs ONLY on
+    // `status --porcelain` — every other git call (drive-status.ts's own
+    // `rev-parse HEAD`, etc.) still reaches the REAL binary, or the probe
+    // would time out for the wrong reason before ever reaching the call this
+    // targets.
+    const dirty = makeScratchRepo("scratch-announce-git-status-hang");
+    const realGit = realGitForShell();
+    const gitBinDir = mkdtempSync(join(tmpdir(), "drive-pr-git-stub-"));
+    const gitStubPath = join(gitBinDir, "git");
+    writeFakeProgram(
+      gitStubPath,
+      [
+        "#!/usr/bin/env bash",
+        'if [ "${1:-}" = "status" ] && [ "${2:-}" = "--porcelain" ]; then',
+        "  sleep 30",
+        "  exit 0",
+        "fi",
+        `exec "${realGit}" "$@"`,
+        "",
+      ].join("\n"),
+    );
+    const started = Date.now();
+    const r = await announce(
+      { threads: [], reviewedSha: dirty.head, head: dirty.head },
+      false,
+      {
+        cwd: dirty.dir,
+        extraBinDir: gitBinDir,
+        env: { GIT_CALL_TIMEOUT: "1" },
+      },
+    );
+    const elapsed = Date.now() - started;
+    expect(r.posted).toBe(false);
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr).toContain("cannot read the working tree");
+    expect({
+      boundedWellBeforeTheStubsSleepFinished: elapsed < 15_000,
+    }).toEqual({ boundedWellBeforeTheStubsSleepFinished: true });
+  });
 
-  it.skipIf(NO_TREE_KILL)(
-    "the unconcluded-git-op probe itself refuses on a TIMEOUT rather than hanging",
-    async () => {
-      // The FIRST call `checkWorktreeClean()` makes (`unconcludedGitOpMarker`)
-      // needs its own deadline, distinct from the later `git status --porcelain`
-      // call the sibling probe above targets — a synchronous `existsSync()`
-      // inside that helper had no deadline at all, and folding the whole check
-      // into one bounded subprocess is what closed it. This stub hangs ONLY on
-      // `rev-parse --git-dir` — the one call that helper's own script makes — so
-      // the probe pins THIS call, not the status one.
-      const dirty = makeScratchRepo("scratch-announce-git-rev-parse-hang");
-      const realGit = realGitForShell();
-      const gitBinDir = mkdtempSync(
-        join(tmpdir(), "drive-pr-git-revparse-stub-"),
-      );
-      const gitStubPath = join(gitBinDir, "git");
-      writeFakeProgram(
-        gitStubPath,
-        [
-          "#!/usr/bin/env bash",
-          'if [ "${1:-}" = "rev-parse" ] && [ "${2:-}" = "--git-dir" ]; then',
-          "  sleep 30",
-          "  exit 0",
-          "fi",
-          `exec "${realGit}" "$@"`,
-          "",
-        ].join("\n"),
-      );
-      const started = Date.now();
-      const r = await announce(
-        { threads: [], reviewedSha: dirty.head, head: dirty.head },
-        false,
-        {
-          cwd: dirty.dir,
-          extraBinDir: gitBinDir,
-          env: { GIT_CALL_TIMEOUT: "1" },
-        },
-      );
-      const elapsed = Date.now() - started;
-      expect(r.posted).toBe(false);
-      expect(r.exitCode).not.toBe(0);
-      expect(r.stderr).toContain("cannot read the working tree");
-      expect({
-        boundedWellBeforeTheStubsSleepFinished: elapsed < 15_000,
-      }).toEqual({ boundedWellBeforeTheStubsSleepFinished: true });
-    },
-  );
+  it("the unconcluded-git-op probe itself refuses on a TIMEOUT rather than hanging", async () => {
+    // The FIRST call `checkWorktreeClean()` makes (`unconcludedGitOpMarker`)
+    // needs its own deadline, distinct from the later `git status --porcelain`
+    // call the sibling probe above targets — a synchronous `existsSync()`
+    // inside that helper had no deadline at all, and folding the whole check
+    // into one bounded subprocess is what closed it. This stub hangs ONLY on
+    // `rev-parse --git-dir` — the one call that helper's own script makes — so
+    // the probe pins THIS call, not the status one.
+    const dirty = makeScratchRepo("scratch-announce-git-rev-parse-hang");
+    const realGit = realGitForShell();
+    const gitBinDir = mkdtempSync(
+      join(tmpdir(), "drive-pr-git-revparse-stub-"),
+    );
+    const gitStubPath = join(gitBinDir, "git");
+    writeFakeProgram(
+      gitStubPath,
+      [
+        "#!/usr/bin/env bash",
+        'if [ "${1:-}" = "rev-parse" ] && [ "${2:-}" = "--git-dir" ]; then',
+        "  sleep 30",
+        "  exit 0",
+        "fi",
+        `exec "${realGit}" "$@"`,
+        "",
+      ].join("\n"),
+    );
+    const started = Date.now();
+    const r = await announce(
+      { threads: [], reviewedSha: dirty.head, head: dirty.head },
+      false,
+      {
+        cwd: dirty.dir,
+        extraBinDir: gitBinDir,
+        env: { GIT_CALL_TIMEOUT: "1" },
+      },
+    );
+    const elapsed = Date.now() - started;
+    expect(r.posted).toBe(false);
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr).toContain("cannot read the working tree");
+    expect({
+      boundedWellBeforeTheStubsSleepFinished: elapsed < 15_000,
+    }).toEqual({ boundedWellBeforeTheStubsSleepFinished: true });
+  });
 
   it("still detects an untracked leftover under status.showUntrackedFiles=no", async () => {
     // `git status --porcelain` alone inherits `status.showUntrackedFiles` from
@@ -2888,70 +2878,64 @@ describe("guarded-push.ts", () => {
     });
   });
 
-  it.skipIf(NO_TREE_KILL)(
-    "the deadline kills the process TREE, not just the child it signalled",
-    async () => {
-      // Returning promptly is not the same as having stopped the work. `git
-      // push` runs the pre-push hook, and that hook runs the build and test
-      // suites — a deadline that reports "killed" while those keep running
-      // leaves them consuming the machine and producing side effects after the
-      // driver has moved on.
-      //
-      // The stub's `sleep` is a genuine grandchild, and it writes the marker
-      // only if it lives to finish. Waiting past its full duration before
-      // looking is what makes the absence of the marker mean "killed" rather
-      // than "not written yet". The kill grace is shortened to 500ms, so the
-      // tree is gone by ~1.5s, well before the 3s sleep would finish.
-      const r = await guardedPush(
-        { threads: [] },
-        {
-          slowPushSec: 3,
-          env: {
-            DRIVE_PR_PUSH_TIMEOUT: "1",
-            DRIVE_PR_KILL_ESCALATE_MS: "500",
-          },
+  it("the deadline kills the process TREE, not just the child it signalled", async () => {
+    // Returning promptly is not the same as having stopped the work. `git
+    // push` runs the pre-push hook, and that hook runs the build and test
+    // suites — a deadline that reports "killed" while those keep running
+    // leaves them consuming the machine and producing side effects after the
+    // driver has moved on.
+    //
+    // The stub's `sleep` is a genuine grandchild, and it writes the marker
+    // only if it lives to finish. Waiting past its full duration before
+    // looking is what makes the absence of the marker mean "killed" rather
+    // than "not written yet". The kill grace is shortened to 500ms, so the
+    // tree is gone by ~1.5s, well before the 3s sleep would finish.
+    const r = await guardedPush(
+      { threads: [] },
+      {
+        slowPushSec: 3,
+        env: {
+          DRIVE_PR_PUSH_TIMEOUT: "1",
+          DRIVE_PR_KILL_ESCALATE_MS: "500",
         },
-      );
-      expect(r.exitCode).toBe(1);
-      await new Promise((res) => setTimeout(res, 3500));
-      expect({ grandchildSurvived: existsSync(r.survivorMarker) }).toEqual({
-        grandchildSurvived: false,
-      });
-    },
-  );
+      },
+    );
+    expect(r.exitCode).toBe(1);
+    await new Promise((res) => setTimeout(res, 3500));
+    expect({ grandchildSurvived: existsSync(r.survivorMarker) }).toEqual({
+      grandchildSurvived: false,
+    });
+  });
 
-  it.skipIf(NO_TREE_KILL)(
-    "escalates to SIGKILL even when the child exits before the grace elapses",
-    async () => {
-      // The tree kill above is delivered by a two-second escalation timer, and
-      // `settle` clears that timer. A child that exits promptly on SIGTERM while
-      // a descendant survives WITHOUT holding the captured streams therefore
-      // fires 'close' first and cancels the only SIGKILL the group was going to
-      // get — the wrapper reports 124 while the descendant runs on, which is the
-      // exact leak the group kill exists to close.
-      //
-      // 'background' is what makes the child exit early: the grandchild's stdio
-      // goes to /dev/null, so nothing but bash holds the pipes. The grace is
-      // shortened to 500ms — still ample for bash to exit on the SIGTERM
-      // first — and the 3s sleep still outlasts the kill.
-      const r = await guardedPush(
-        { threads: [] },
-        {
-          slowPushSec: 3,
-          slowPushStyle: "background",
-          env: {
-            DRIVE_PR_PUSH_TIMEOUT: "1",
-            DRIVE_PR_KILL_ESCALATE_MS: "500",
-          },
+  it("escalates to SIGKILL even when the child exits before the grace elapses", async () => {
+    // The tree kill above is delivered by a two-second escalation timer, and
+    // `settle` clears that timer. A child that exits promptly on SIGTERM while
+    // a descendant survives WITHOUT holding the captured streams therefore
+    // fires 'close' first and cancels the only SIGKILL the group was going to
+    // get — the wrapper reports 124 while the descendant runs on, which is the
+    // exact leak the group kill exists to close.
+    //
+    // 'background' is what makes the child exit early: the grandchild's stdio
+    // goes to /dev/null, so nothing but bash holds the pipes. The grace is
+    // shortened to 500ms — still ample for bash to exit on the SIGTERM
+    // first — and the 3s sleep still outlasts the kill.
+    const r = await guardedPush(
+      { threads: [] },
+      {
+        slowPushSec: 3,
+        slowPushStyle: "background",
+        env: {
+          DRIVE_PR_PUSH_TIMEOUT: "1",
+          DRIVE_PR_KILL_ESCALATE_MS: "500",
         },
-      );
-      expect(r.exitCode).toBe(1);
-      await new Promise((res) => setTimeout(res, 3500));
-      expect({ grandchildSurvived: existsSync(r.survivorMarker) }).toEqual({
-        grandchildSurvived: false,
-      });
-    },
-  );
+      },
+    );
+    expect(r.exitCode).toBe(1);
+    await new Promise((res) => setTimeout(res, 3500));
+    expect({ grandchildSurvived: existsSync(r.survivorMarker) }).toEqual({
+      grandchildSurvived: false,
+    });
+  });
 
   it("refuses a DRIVE_PR_PUSH_TIMEOUT of 0 rather than pushing unbounded", async () => {
     // Same refusal GH_CALL_TIMEOUT carries, and for the same reason: `0`

@@ -416,7 +416,7 @@ in each, needs distinct, clone-specific values.
 
 ## Stopping and resuming safely
 
-- **Stop:** Ctrl-C (or `SIGTERM`) is safe. Signals are forwarded into the whole child tree; the in-flight pass ends; locks a dead driver leaves behind are recovered automatically by the next driver.
+- **Stop:** `drives.ts --stop <PR>` requests shutdown after verifying the driver's process identity. The driver stops the active pass before releasing its locks. On Windows, a polled stop request lets cleanup run without POSIX signals; process snapshots come from PowerShell. Ctrl-C also cancels the active work. Locks a dead driver leaves behind are recovered automatically by the next driver.
 - **Resume:** run the same command again. The durable state means it continues rather than restarts, and threads already answered are reconciled rather than re-answered (`reconcile-replied-threads.ts` runs from the gate). A retry against an unchanged head is not a new *reviewed-head* round, but it does spend one of the durable **attempts**; within one uninterrupted drive, consecutive observable no-op passes trip exit `14` (default 2), while retries spread across driver restarts reset that in-memory stall streak and can still exhaust `--max-rounds` with exit `6`.
 - **Inspect without touching:** `bun <skill-dir>/scripts/drive-status.ts <PR> --json --once --no-count` answers "what would the drive do now" without doing it. `--no-count` is what makes that true — without it the probe *counts* its own evaluation as a round on this head, moving the durable counter that a later drive's `--max-rounds` bound and reflection nudge both read.
 

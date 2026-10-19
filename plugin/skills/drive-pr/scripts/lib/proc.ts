@@ -1,3 +1,9 @@
+import {
+  captureProcessOutput,
+  type ProcessTimers,
+} from "../../../../shared/process-output.ts";
+import { windowsProcessLifecycle } from "../../../../shared/windows-process.ts";
+import { processTable } from "../../../../shared/process-table.ts";
 /**
  * Process spawning with deadlines — the TypeScript successor to
  * `lib/gh-deadline.sh`, and the ONE place `gh` is ever spawned from.
@@ -38,7 +44,7 @@ import { hostname } from "node:os";
 import {
   lastBytes,
   readTimeoutEnv,
-  registerCancellationGroup,
+  registerRunCancellation,
   writeChildInput,
 } from "../../../../shared/proc.ts";
 import { fail, testPacing } from "./cli.ts";
@@ -585,12 +591,8 @@ export function parsePsStatRows(
  * like the Linux path's own `null`.
  */
 async function hasLiveGroupMemberPs(pgid: number): Promise<boolean | null> {
-  const r = await run(["ps", "-A", "-o", "pid=,pgid=,stat="], {
-    stderr: "ignore",
-    timeoutSec: 5,
-  });
-  if (r.spawnFailed || r.code !== 0) return null;
-  const rows = parsePsStatRows(r.stdout);
+  const rows = await processTable();
+  if (rows === null) return null;
   for (const row of rows) {
     if (row.pgid !== pgid) continue;
     if (!row.stat.startsWith("Z")) return true;
@@ -606,9 +608,7 @@ async function hasLiveGroupMemberPs(pgid: number): Promise<boolean | null> {
  * makes the zombie case testable without spawning a real one), falling back
  * to `ps` only when `/proc` itself could not be read.
  *
- * `win32` is never routed here — `stop()`'s Windows branch confirms
- * termination through `taskkill`'s own (already tree-aware) exit code
- * instead, so this function is POSIX-only by construction.
+ * Windows uses captured creation identities instead of POSIX process groups.
  */
 async function hasLiveGroupMember(pgid: number): Promise<boolean | null> {
   const viaProc = hasLiveGroupMemberLinux(pgid);
@@ -677,9 +677,10 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     const detached =
       process.platform !== "win32" &&
       (opts.detached === true || opts.timeoutSec !== undefined);
+    const windows = windowsProcessLifecycle(opts.env);
     const spawnOpts: SpawnOptions = {
       cwd: opts.cwd,
-      env: traceEnv(opts.env) as NodeJS.ProcessEnv,
+      env: traceEnv(windows.env) as NodeJS.ProcessEnv,
       detached,
       stdio: [
         opts.stdin === undefined ? "ignore" : "pipe",
@@ -691,6 +692,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     try {
       child = spawn(cmd ?? "", args, spawnOpts);
     } catch (e) {
+      windows.dispose();
       const message = e instanceof Error ? e.message : String(e);
       resolve({
         code: 127,
@@ -712,32 +714,15 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     // undetached child still shares our group and gets the terminal's signals
     // directly, and a caller that asked for `detached` or took a `RunHandle`
     // owns its child's cancellation itself (see the registry note above `run`).
-    const cancellableGroup =
-      detached && opts.detached !== true && opts.onSpawn === undefined
-        ? child.pid
-        : undefined;
-    const releaseCancellation =
-      cancellableGroup === undefined
-        ? undefined
-        : registerCancellationGroup(cancellableGroup);
+    const releaseCancellation = registerRunCancellation(
+      child,
+      windows,
+      detached,
+      opts,
+    );
 
-    let out = "";
-    let err = "";
-    // The last bytes of stderr, past whatever the cap discards.
-    let errTail = "";
     let timedOut = false;
-    let bufferExceeded = false;
     let spawnFailed = false;
-    // Tracked incrementally rather than re-derived from
-    // `Buffer.byteLength(out) + Buffer.byteLength(err)` on every chunk: the
-    // latter rescans the WHOLE accumulated string per 'data' event, so
-    // capture cost grows with the square of the byte count as the cap is
-    // approached.
-    let capturedBytes = 0;
-    let killTimer: NodeJS.Timeout | undefined;
-    let escalateTimer: NodeJS.Timeout | undefined;
-    let stopEscalateTimer: NodeJS.Timeout | undefined;
-    const maxBufferBytes = opts.maxBufferBytes ?? MAX_BUFFER_BYTES;
     // Declared out here, not inside the `onSpawn` block, because the 'close'
     // handler below has to read it — a stop's escalation cannot be allowed to
     // die with the leader any more than the deadline's can.
@@ -749,76 +734,36 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
       exitedResolve = r;
     });
 
-    // Mirrors the deadline's own SIGTERM-then-SIGKILL escalation (below) —
-    // a runaway response is killed the same way a hung one is, just on a
-    // byte trigger instead of a clock. Guarded by `bufferExceeded` so a burst
-    // that arrives across two 'data' events cannot schedule the escalation
-    // twice, and skipped once `timedOut` already owns the shutdown.
-    const enforceBufferLimit = () => {
-      if (bufferExceeded || timedOut) return;
-      if (capturedBytes <= maxBufferBytes) return;
-      bufferExceeded = true;
-      if (killTimer) clearTimeout(killTimer);
-      signalTree("SIGTERM");
-      escalateTimer = setTimeout(() => {
-        signalTree("SIGKILL");
-        child.stdout?.destroy();
-        child.stderr?.destroy();
-        child.unref();
-        settle(1);
-      }, 2000);
-    };
-
-    child.stdout?.setEncoding("utf8");
-    child.stdout?.on("data", (d: string) => {
-      // Discarded once EITHER kill path has fired, not just the buffer cap:
-      // SIGTERM does not stop the child instantly under the deadline either,
-      // and a child that ignores it (or a descendant that keeps writing through
-      // either escalation's two-second grace) can go on emitting data right up
-      // to the SIGKILL. Gating this on `bufferExceeded` alone left the
-      // DEADLINE's own escalation window uncapped — `timedOut` sets and
-      // `enforceBufferLimit` no-ops forever, but nothing stopped these handlers
-      // from still appending.
-      const captured = !(bufferExceeded || timedOut);
-      if (captured) {
-        out += d;
-        capturedBytes += Buffer.byteLength(d);
-      }
-      opts.onChunk?.("stdout", Buffer.byteLength(d), captured);
-      enforceBufferLimit();
-    });
-    child.stderr?.setEncoding("utf8");
-    child.stderr?.on("data", (d: string) => {
-      errTail = lastBytes(errTail + d);
-      const captured = !(bufferExceeded || timedOut);
-      if (captured) {
-        err += d;
-        capturedBytes += Buffer.byteLength(d);
-      }
-      opts.onChunk?.("stderr", Buffer.byteLength(d), captured);
-      enforceBufferLimit();
+    const timers: ProcessTimers = {};
+    const output = captureProcessOutput(child, opts, {
+      timedOut: () => timedOut,
+      timers,
+      signalTree: (signal) => signalTree(signal),
+      settle: (code) => settle(code),
     });
 
-    const settle = (code: number, extraErr?: string) => {
-      if (killTimer) clearTimeout(killTimer);
-      if (escalateTimer) clearTimeout(escalateTimer);
-      if (stopEscalateTimer) clearTimeout(stopEscalateTimer);
-      // Untracked here rather than on 'close', because `settle` is also the
-      // deadline's own exit path — which fires while the group may still be
-      // dying. A stale pgid in the set would have a later cancellation signal
-      // a number the kernel has since handed to something else.
-      releaseCancellation?.();
-      resolve({
-        code,
-        stdout: out,
-        stderr: err || (extraErr ?? ""),
-        timedOut,
-        bufferExceeded,
-        spawnFailed,
-        stderrTail: code === 0 ? "" : lastBytes(errTail || (extraErr ?? "")),
+    const settle = (code: number, extraErr?: string) =>
+      windows.finish(() => {
+        if (timers.kill) clearTimeout(timers.kill);
+        if (timers.escalate) clearTimeout(timers.escalate);
+        if (timers.stop) clearTimeout(timers.stop);
+        // Untracked here rather than on 'close', because `settle` is also the
+        // deadline's own exit path — which fires while the group may still be
+        // dying. A stale pgid in the set would have a later cancellation signal
+        // a number the kernel has since handed to something else.
+        releaseCancellation?.();
+        resolve({
+          code,
+          stdout: output.stdout,
+          stderr: output.stderr || (extraErr ?? ""),
+          timedOut,
+          bufferExceeded: output.bufferExceeded,
+          spawnFailed,
+          stderrTail:
+            code === 0 ? "" : lastBytes(output.tail || (extraErr ?? "")),
+        });
+        exitedResolve();
       });
-      exitedResolve();
-    };
 
     // Signal the whole tree where we can, the child alone where we cannot.
     //
@@ -828,52 +773,10 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     // gone; anything else falls back to the single child rather than leaving
     // it running.
     //
-    // Windows has no process groups to signal: `taskkill /T` is the platform's
-    // own answer, walking the child tree by parent pid. It is spawned
-    // fire-and-forget — we are already inside a deadline, and waiting on the
-    // killer to confirm a kill would reintroduce the unbounded wait.
-    const signalTree = (sig: NodeJS.Signals) => {
-      if (child.pid === undefined) return;
-      if (process.platform === "win32") {
-        if (sig === "SIGKILL") {
-          try {
-            const killer = spawn(
-              "taskkill",
-              ["/pid", String(child.pid), "/t", "/f"],
-              { stdio: "ignore" },
-            );
-            // `spawn` reports a failure to START asynchronously, as an 'error'
-            // event — the surrounding try/catch never sees it, and an unhandled
-            // one on a ChildProcess throws. So the fallback has to be a
-            // listener, not a catch block, or a machine without taskkill loses
-            // the kill AND crashes the driver. Attached BEFORE unref, which
-            // only detaches it from the event loop and does not remove
-            // listeners.
-            killer.on("error", () => {
-              try {
-                child.kill(sig);
-              } catch {
-                // already gone
-              }
-            });
-            killer.unref();
-          } catch {
-            child.kill(sig);
-          }
-        }
-        return;
-      }
-      try {
-        if (detached) process.kill(-child.pid, sig);
-        else child.kill(sig);
-      } catch {
-        try {
-          child.kill(sig);
-        } catch {
-          // already gone
-        }
-      }
-    };
+    const stillOwned = () =>
+      child.exitCode === null && child.signalCode === null;
+    const signalTree = (sig: NodeJS.Signals) =>
+      windows.signal(child, detached, sig, killEscalateMs());
 
     // Exposed BEFORE any await, so a caller that must end this child on its own
     // event never races the spawn. `stop` reuses `signalTree`, which is why the
@@ -916,82 +819,34 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
       // outcome — an unconfirmed one leaves the timer as the legitimate
       // backstop it already is.
       const clearStopEscalateTimer = (): void => {
-        if (stopEscalateTimer) {
-          clearTimeout(stopEscalateTimer);
-          stopEscalateTimer = undefined;
+        if (timers.stop) {
+          clearTimeout(timers.stop);
+          delete timers.stop;
         }
       };
       const doStop = async (): Promise<boolean> => {
         stopped = true;
+        if (process.platform === "win32") {
+          const confirmed = await windows.stop(
+            child.pid,
+            killEscalateMs(),
+            stillOwned,
+          );
+          if (confirmed) {
+            child.stdout?.destroy();
+            child.stderr?.destroy();
+            child.unref();
+            settle(1);
+          }
+          return confirmed;
+        }
         signalTree("SIGTERM");
         // The grace, not the guarantee: `settle` clears this timer, and the
         // leader can close while a SIGTERM-ignoring descendant lives on, so
         // 'close' below fires an unconditional group SIGKILL as well.
         const graceMs = killEscalateMs();
-        stopEscalateTimer = setTimeout(() => signalTree("SIGKILL"), graceMs);
+        timers.stop = setTimeout(() => signalTree("SIGKILL"), graceMs);
         const pgid = child.pid;
-        if (process.platform === "win32") {
-          // Windows has no process groups to poll, and `signalTree`'s own
-          // `taskkill /T /F` above is spawned fire-and-forget and unref'd —
-          // correct for the INTERNAL deadline escalation just below, where
-          // awaiting confirmation would reintroduce the unbounded wait that
-          // escalation exists to bound, but wrong here: treating the leader's
-          // own exit as tree-wide evidence would let a surviving descendant, or
-          // a `taskkill` that silently failed, still report `true` — a false
-          // witness, the mirror of never releasing the locks at all. `stop()`
-          // has no such time-boundedness constraint — every caller already
-          // awaits it end to end — so it can and must await ITS OWN `taskkill`
-          // invocation and treat only that exit code as the completion signal.
-          if (pgid === undefined) {
-            await exited;
-            return false;
-          }
-          const confirmed = await new Promise<boolean>((resolveConfirmed) => {
-            let settledLocal = false;
-            let killer: ReturnType<typeof spawn>;
-            const settleOnce = (value: boolean): void => {
-              if (settledLocal) return;
-              settledLocal = true;
-              clearTimeout(witnessTimer);
-              resolveConfirmed(value);
-            };
-            try {
-              killer = spawn("taskkill", ["/pid", String(pgid), "/t", "/f"], {
-                stdio: "ignore",
-              });
-            } catch {
-              resolveConfirmed(false);
-              return;
-            }
-            // A hung `taskkill` — neither erroring nor exiting — must not
-            // wedge this driver indefinitely: the production caller
-            // (drive.ts's PASS_DEADLINE branch) awaits `stop()` directly,
-            // with no deadline of its own, and the POSIX witness just below
-            // already bounds itself the identical way. Best-effort SIGKILL
-            // of the hung killer itself on timeout — it may already be
-            // unkillable, but leaving it running is no worse than not
-            // trying.
-            const witnessTimer = setTimeout(() => {
-              try {
-                killer.kill("SIGKILL");
-              } catch {
-                // already gone
-              }
-              settleOnce(false);
-            }, STOP_WITNESS_MS);
-            killer.on("error", () => settleOnce(false));
-            killer.on("exit", (code) => {
-              // 0 = killed successfully; 128 = "process not found" — the
-              // tree is already gone, which is the same outcome this call
-              // was trying to produce. Anything else is a real failure to
-              // confirm, and fails closed rather than guessing.
-              settleOnce(code === 0 || code === 128);
-            });
-          });
-          if (confirmed) clearStopEscalateTimer();
-          await exited;
-          return confirmed;
-        }
         if (!detached || pgid === undefined) {
           // No group to witness. A non-detached child shares OUR group, so
           // `kill(-pgid, 0)` would answer about this process. The best
@@ -1051,10 +906,10 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     }
 
     if (opts.timeoutSec !== undefined) {
-      killTimer = setTimeout(() => {
+      timers.kill = setTimeout(() => {
         timedOut = true;
         signalTree("SIGTERM");
-        escalateTimer = setTimeout(() => {
+        timers.escalate = setTimeout(() => {
           signalTree("SIGKILL");
           // Settle on the DEADLINE's terms, not on 'close'.
           //
@@ -1084,7 +939,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
       }, opts.timeoutSec * 1000);
     }
 
-    // Set BEFORE `settle`, exactly as `timedOut` and `bufferExceeded` are, so
+    // Set BEFORE `settle`, exactly as `timedOut` and `output.bufferExceeded` are, so
     // the flag is on the result this handler produces.
     //
     // Node emits 'error' for a handful of causes, and a failed spawn is only
@@ -1101,7 +956,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     });
     child.on("close", (code) => {
       // A timed-out child that exits on SIGTERM cancels its own escalation:
-      // `settle` clears `escalateTimer`, so if 'close' fires before the two
+      // `settle` clears `timers.escalate`, so if 'close' fires before the two
       // seconds elapse — which it does whenever the surviving descendants are
       // not holding the captured streams — the group SIGKILL never happens and
       // the tree leaks anyway, while this wrapper reports 124. So the kill
@@ -1118,17 +973,17 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
       // reason — it was missed when `stop()` was added and reported one round
       // later. The leader can exit
       // on the stop's SIGTERM while a descendant that IGNORES SIGTERM keeps
-      // running; 'close' then fires, `settle` clears `stopEscalateTimer`, the
+      // running; 'close' then fires, `settle` clears `timers.stop`, the
       // scheduled group SIGKILL never happens, and `exited` resolves — telling
       // `drive.ts` the pass is gone so it releases both locks with that
       // descendant still editing and pushing. Killing the group here instead of
       // relying on the timer is what makes it unraceable.
       //
-      // `bufferExceeded` gets the same treatment for the same reason: its own
+      // `output.bufferExceeded` gets the same treatment for the same reason: its own
       // escalation timer is exactly as raceable against a leader that exits
       // promptly on the SIGTERM it sent.
-      if (timedOut || stopped || bufferExceeded) signalTree("SIGKILL");
-      settle(timedOut ? 124 : bufferExceeded ? 1 : (code ?? 1));
+      if (timedOut || stopped || output.bufferExceeded) signalTree("SIGKILL");
+      settle(timedOut ? 124 : output.bufferExceeded ? 1 : (code ?? 1));
     });
 
     writeChildInput(child.stdin, opts.stdin);

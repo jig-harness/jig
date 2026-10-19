@@ -26,11 +26,13 @@
 
 import { describe, expect, it } from "bun:test";
 import {
-  accessSync,
-  constants as fsConstants,
   mkdtempSync,
   rmSync,
+  mkdirSync,
+  writeFileSync,
+  existsSync,
 } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -39,25 +41,11 @@ import {
   type ProcRow,
   parsePassChildRows,
 } from "../scripts/lib/pass-child.ts";
-import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
-
-const HAS_BASH = (() => {
-  try {
-    accessSync("/bin/bash", fsConstants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-})();
-// `hasPassChild` relies on POSIX `ps`; the fixtures below additionally need
-// bash's `exec -a` to plant a chosen argv[0] onto a long-lived process — both
-// are POSIX-only, matching `lib/pass-child.ts`'s own scope (no `/proc`
-// dependency, but no Windows support either, same as `drives.ts --stop`).
-const posixIt =
-  !skipsOnWindows("process-lifecycle", "hasPassChild reads POSIX ps") &&
-  HAS_BASH
-    ? it
-    : it.skip;
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  captureProcessTree,
+  signalIdentityTargets,
+} from "../../../shared/process-tree.ts";
 
 describe("parsePassChildRows", () => {
   it("parses pid, ppid and the remainder of the line as args", () => {
@@ -523,92 +511,111 @@ describe("findPassChild — the pure exclusion-list-plus-walk", () => {
   });
 });
 
-describe("hasPassChild — the real ps integration", () => {
-  posixIt("no descendant at all → false", async () => {
-    // `sleep` spawned DIRECTLY, with no shell in between, so the pid under
-    // test provably has no children — `sleep` forks nothing.
-    //
-    // Deliberately NOT `sh -c 'sleep 30'` relying on the shell exec-replacing
-    // itself for a single simple command: that optimisation is a shell
-    // implementation detail, not a POSIX guarantee, and a shell that forks
-    // instead leaves a real `sleep` child that this probe correctly reports
-    // as a pass — so the test failed on Linux (a remote gates host)
-    // while passing on macOS, asserting the shell's behaviour rather than
-    // this function's.
-    const child = Bun.spawn(["sleep", "30"], {
-      stdout: "ignore",
-      stderr: "ignore",
-    });
+describe("hasPassChild — the native process table integration", () => {
+  const busy = "setInterval(() => {}, 1000)";
+  const ready = async (file: string) => {
+    const deadline = Date.now() + 20_000;
+    while (!existsSync(file) && Date.now() < deadline) await Bun.sleep(20);
+    expect(existsSync(file)).toBe(true);
+  };
+  const stop = async (pid: number) => {
+    const targets = await captureProcessTree(pid);
+    if (targets) await signalIdentityTargets(targets, "SIGKILL");
+  };
+  it("no descendant at all → false", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pass-child-none-"));
+    const file = join(dir, "ready");
+    const child = Bun.spawn([
+      process.execPath,
+      "-e",
+      `require("node:fs").writeFileSync(${JSON.stringify(file)}, ""); ${busy}`,
+    ]);
     try {
-      await new Promise((r) => setTimeout(r, 200));
+      await ready(file);
       expect(await hasPassChild(child.pid)).toBe(false);
     } finally {
-      child.kill();
+      await stop(child.pid);
       await child.exited;
+      rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
-  posixIt("a real, non-helper-script descendant → true", async () => {
-    // `& wait` forces bash to actually fork the `sleep` rather than
-    // tail-call it, so the spawned pid keeps a genuine child alive.
-    const child = Bun.spawn(["/bin/bash", "-c", "sleep 30 & wait"], {
-      stdout: "ignore",
-      stderr: "ignore",
-    });
-    try {
-      await new Promise((r) => setTimeout(r, 200));
-      expect(await hasPassChild(child.pid)).toBe(true);
-    } finally {
-      child.kill();
-      await child.exited;
-    }
-  });
-
-  posixIt(
-    "a descendant whose argv IS a skill helper script path → false",
-    async () => {
-      // `exec -a NAME cmd` (bash) runs `cmd` with argv[0] replaced by NAME —
-      // the cheapest way to make a REAL, long-lived process whose `ps`-visible
-      // argv is an absolute helper-script path, without actually invoking a
-      // real script (and its side effects).
-      const child = Bun.spawn(
-        [
-          "/bin/bash",
-          "-c",
-          'exec -a "/repo/.claude/skills/drive-pr/scripts/drive-status.ts" sleep 30',
-        ],
-        { stdout: "ignore", stderr: "ignore" },
+  for (const helper of [false, true]) {
+    it(helper
+      ? "a genuine helper child is excluded"
+      : "a real non-helper child is found", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "pass-child-tree-"));
+      const scripts = join(
+        dir,
+        "skills",
+        helper ? "drive-pr" : "another-skill",
+        "scripts",
       );
+      mkdirSync(scripts, { recursive: true });
+      const file = join(dir, "ready");
+      const script = join(scripts, "fixture.ts");
+      writeFileSync(
+        script,
+        `require("node:fs").writeFileSync(${JSON.stringify(file)}, ""); ${busy}`,
+      );
+      const child = Bun.spawn([
+        process.execPath,
+        "-e",
+        `Bun.spawn([process.execPath,${JSON.stringify(script)}], {stdout:"ignore",stderr:"ignore"}); ${busy}`,
+      ]);
       try {
-        await new Promise((r) => setTimeout(r, 200));
-        expect(await hasPassChild(child.pid)).toBe(false);
+        await ready(file);
+        expect(await hasPassChild(child.pid)).toBe(!helper);
       } finally {
-        child.kill();
+        await stop(child.pid);
         await child.exited;
+        rmSync(dir, { recursive: true, force: true });
       }
-    },
-  );
+    }, 30_000);
+  }
 
-  it("a ps that cannot be spawned at all degrades to null, never false", async () => {
-    const savedPath = process.env.PATH;
-    // An EMPTY DIRECTORY on PATH, not an empty STRING: POSIX `execvp` falls
-    // back to a default system path (`confstr(_CS_PATH)`, typically
-    // `/bin:/usr/bin`) when handed `PATH=''`, so `ps` is still found and this
-    // fixture would prove nothing — the same distinction `drives.test.ts`'s
-    // own `--stop` ps-unavailable fixture already draws. `null` must never
-    // collapse to `false` (a positive claim of "no pass"), which
-    // `classifyDrive` would otherwise be able to read as WEDGED evidence
-    // over a probe that never actually ran. `process.pid` (the test runner's
-    // own) is fine to target here specifically BECAUSE the spawn fails
-    // before any tree walk happens — the self-measurement hazard the module
-    // header warns about only applies once `ps` actually runs.
+  it("an unavailable native probe returns null, never false", () => {
     const empty = mkdtempSync(join(tmpdir(), "pass-child-noPATH-"));
     try {
-      process.env.PATH = empty;
-      expect(await hasPassChild(process.pid)).toBeNull();
+      const result = Bun.spawnSync(
+        [
+          process.execPath,
+          "-e",
+          `const {hasPassChild}=await import(${JSON.stringify(fileURLToPath(new URL("../scripts/lib/pass-child.ts", import.meta.url)))}); console.log(JSON.stringify(await hasPassChild(process.pid)))`,
+        ],
+        {
+          env: { ...process.env, PATH: empty },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      expectSpawnExit(result, 0);
+      expect(result.stdout.toString().trim()).toBe("null");
     } finally {
-      process.env.PATH = savedPath;
       rmSync(empty, { recursive: true, force: true });
     }
+  });
+});
+
+describe("Windows helper command lines", () => {
+  for (const command of [
+    "C:\\bun\\bun.exe C:\\Repo\\skills\\drive-pr\\scripts\\drive-status.ts",
+    '"C:\\Program Files\\bun.exe" "C:\\My Repo\\skills\\drive-pr\\scripts\\drive-status.ts" --json',
+  ]) {
+    it(`excludes ${command}`, () =>
+      expect(findPassChild(1, [{ pid: 2, ppid: 1, args: command }])).toBe(
+        false,
+      ));
+  }
+  it("a quoted Windows pass argument mentioning a helper remains a pass", () => {
+    expect(
+      findPassChild(1, [
+        {
+          pid: 2,
+          ppid: 1,
+          args: '"C:\\Program Files\\bun.exe" "C:\\My Repo\\pass.ts" relative\\skills\\drive-pr\\scripts\\drive-status.ts',
+        },
+      ]),
+    ).toBe(true);
   });
 });

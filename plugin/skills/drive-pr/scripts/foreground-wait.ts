@@ -8,15 +8,16 @@
  * (`drive-pr-selftest` on commit, the pre-push suite on push). So the step is
  * launched once and waited on as often as the ceiling requires.
  *
- * The command is deliberately NOT detached into its own session. It stays in
- * the pass's process group, so `drive.ts`'s PASS_DEADLINE / stop signalling
- * reaches it and the termination witness can see it — an escaped `setsid`
- * descendant is the known false-witness gap in references/terminal-states.md.
+ * On POSIX the command stays in the pass's process group, so PASS_DEADLINE
+ * and stop signalling reach it. On Windows the launch records the runner's
+ * creation identity in the pass's process registry before returning, so the
+ * pass can stop its recorded tree after the launcher exits. A descendant
+ * which escapes observation remains the residual described below.
  *
  * Raw `spawn` rather than `lib/proc.ts`'s `run()`, on purpose: `run()` blocks
  * until its child exits, and this helper's whole job is to outlive the `launch`
- * call. It is bounded twice instead: by staying in the pass's group (above),
- * which `drive.ts` kills on PASS_DEADLINE/stop, and by the runner's own
+ * call. It is bounded twice instead: by belonging to the pass's cancellation
+ * tree (above), which `drive.ts` ends on PASS_DEADLINE/stop, and by the runner's own
  * deadline (`$DRIVE_PR_FOREGROUND_WAIT_TIMEOUT`, default 5400s — the pass's own
  * `$DRIVE_PR_PASS_TIMEOUT` default, so a command cannot outlive the pass that
  * launched it; deliberately NOT the push-only `$DRIVE_PR_PUSH_TIMEOUT`, since
@@ -46,7 +47,7 @@
  * second copy of a push can never start beside the first.
  *
  * LIVENESS is the live (non-zombie) process tree under the launch's recorded
- * pids, read from `ps`, never bare pid existence: an unreaped zombie answers
+ * pids, read from the native process table, never bare pid existence: an unreaped zombie answers
  * `kill(pid, 0)` forever. RESIDUAL, stated rather than closed: a descendant
  * that outlives BOTH the runner and the command (re-parented to init) is
  * invisible here, as is a command started in the instant between `spawn` and
@@ -55,7 +56,7 @@
  * command started has stopped" — the caller's own post-check (`git log`,
  * `finish-round.ts` idempotence) stays the authority before relaunching.
  */
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import {
   appendFileSync,
   closeSync,
@@ -74,6 +75,8 @@ import {
 import { join } from "node:path";
 import { testPacing } from "./lib/cli.ts";
 import { readTimeoutEnv } from "./lib/proc.ts";
+import { processTable } from "../../../shared/process-table.ts";
+import { signalIdentityTargets } from "../../../shared/process-tree.ts";
 import {
   liveTargets,
   type PsRow,
@@ -90,7 +93,8 @@ const STDOUT_STALL_MS = 30_000;
 /** Total time one relayed write may take, however steadily it progresses. */
 const STDOUT_RELAY_MAX_MS = 60_000;
 /**
- * Grace between SIGTERM and SIGKILL when the runner ends the command. This,
+ * Grace before force termination: POSIX first sends SIGTERM; Windows has no
+ * generic cooperative CLI signal and gives the command time to exit. This,
  * `TRACK_POLL_MS` and `WAIT_POLL_MS` take a test pacing seam (`testPacing`).
  */
 const KILL_GRACE_MS = testPacing(
@@ -152,29 +156,6 @@ function readResult(dir: string): Result | "unreadable" | null {
   }
 }
 
-function psRows(): PsRow[] | null {
-  const r = spawnSync("ps", ["-A", "-o", "pid=,ppid=,lstart=,stat="], {
-    encoding: "utf8",
-    timeout: 5000,
-  });
-  if (r.error || r.status !== 0) return null;
-  const rows: PsRow[] = [];
-  for (const line of r.stdout.split("\n")) {
-    // pid ppid <lstart: five words> stat
-    const [pid, ppid, ...rest] = line.trim().split(/\s+/);
-    const row = {
-      pid: Number.parseInt(pid ?? "", 10),
-      ppid: Number.parseInt(ppid ?? "", 10),
-      start: rest.slice(0, 5).join(" "),
-      stat: rest[5] ?? "",
-    };
-    if (Number.isInteger(row.pid) && Number.isInteger(row.ppid) && row.stat) {
-      rows.push(row);
-    }
-  }
-  return rows;
-}
-
 function killZero(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -193,8 +174,8 @@ function killZero(pid: number): boolean {
  * files first lets the launcher finish in between, leaving roots that name
  * only a dead launcher — a live launch misread as finished.
  */
-function liveTree(readRoots: () => number[]): boolean {
-  const rows = psRows();
+async function liveTree(readRoots: () => number[]): Promise<boolean> {
+  const rows = await processTable();
   const roots = readRoots();
   // `ps` unavailable: fail toward "still running", as lib/proc.ts does.
   if (rows === null) return roots.some(killZero);
@@ -234,13 +215,25 @@ const TRACK_POLL_MS = testPacing("DRIVE_PR_FOREGROUND_WAIT_TRACK_MS", 2000, 10);
 const WAIT_POLL_MS = testPacing("DRIVE_PR_FOREGROUND_WAIT_POLL_MS", 2000, 10);
 
 /** The captured targets still live; empty once every one is witnessed dead. */
-function stillLive(targets: Target[]): Target[] {
+async function stillLive(
+  targets: Target[],
+  rows: PsRow[] | null,
+): Promise<Target[]> {
+  // An existing process whose creation time is inaccessible has unknown
+  // identity; it cannot prove the recorded owner dead or authorize a kill.
+  if (rows?.some((row) => !row.start && targets.some((t) => t.pid === row.pid)))
+    rows = null;
   const live = witnessStep(
     targets,
-    psRows(),
-    (pid) => signalPid(pid, "SIGKILL"),
+    rows,
+    (pid) => {
+      if (process.platform !== "win32") signalPid(pid, "SIGKILL");
+    },
     killZero,
   );
+  if (process.platform === "win32" && rows !== null) {
+    await signalIdentityTargets(live, "SIGKILL");
+  }
   const gate = process.env[WITNESS_GATE_ENV];
   return gate && existsSync(gate) ? targets : live;
 }
@@ -251,7 +244,7 @@ function deadlineSec(): number | null {
   return read.ok ? read.seconds : null;
 }
 
-function running(dir: string): boolean {
+async function running(dir: string): Promise<boolean> {
   if (readResult(dir) !== null) return false;
   if (readPid(dir, "launcher.pid") === null) {
     // Claimed but nothing recorded yet: mid-creation, unless the creator died.
@@ -270,7 +263,57 @@ function running(dir: string): boolean {
   );
 }
 
-function launch(argv: string[]): number {
+/** Complete the pass registry handoff, retaining a pending marker on unknown identity. */
+async function recordRunnerIdentity(
+  registry: string | undefined,
+  entry: string,
+  runnerPid: number | undefined,
+  dir: string,
+): Promise<void> {
+  if (!registry) return;
+  const rows = await processTable();
+  const identity = rows?.find((row) => row.pid === runnerPid);
+  if (identity?.start) {
+    writeAtomic(
+      registry,
+      `${entry}.json`,
+      JSON.stringify({ pid: identity.pid, start: identity.start }),
+    );
+    rmSync(join(registry, `${entry}.pending`), { force: true });
+  } else if (readResult(dir) !== null) {
+    // A runner which finished before enumeration has already witnessed
+    // its command tree and published the result.
+    rmSync(join(registry, `${entry}.pending`), { force: true });
+  }
+}
+
+/** Start and register the supervisor before its launcher returns. */
+async function startRunner(
+  dir: string,
+  argv: string[],
+  next: number,
+): Promise<void> {
+  // A Windows pass cannot rely on a process group after this launcher
+  // exits. Publish the runner's creation identity in the pass's registry
+  // before returning; the pass can then stop its recorded tree even after
+  // Windows has reparented it. A pending registration is unknown, not empty.
+  const registry = process.env.JIG_PROCESS_REGISTRY_DIR;
+  const entry = `${process.pid}-${next}`;
+  if (registry) writeFileSync(join(registry, `${entry}.pending`), "");
+  const runner = spawn(
+    process.execPath,
+    [process.argv[1] as string, "_run", dir, "--", ...argv],
+    { stdio: "ignore", cwd: process.cwd() },
+  );
+  runner.unref();
+  writeAtomic(dir, "runner.pid", String(runner.pid));
+  await recordRunnerIdentity(registry, entry, runner.pid, dir);
+  console.log(
+    `foreground-wait: launched (gen ${next}, runner pid ${runner.pid})`,
+  );
+}
+
+async function launch(argv: string[]): Promise<number> {
   if (argv.length === 0) {
     console.error("foreground-wait: launch needs -- <command> [args...]");
     return 2;
@@ -286,7 +329,7 @@ function launch(argv: string[]): number {
   for (;;) {
     const gens = generations();
     const latest = gens.at(-1);
-    if (latest !== undefined && running(genDir(latest))) {
+    if (latest !== undefined && (await running(genDir(latest)))) {
       console.error(
         "foreground-wait: an earlier launch is still running — call `wait`, never `launch`",
       );
@@ -303,16 +346,7 @@ function launch(argv: string[]): number {
     writeAtomic(dir, "launcher.pid", String(process.pid));
     for (const old of gens)
       rmSync(genDir(old), { recursive: true, force: true });
-    const runner = spawn(
-      process.execPath,
-      [process.argv[1] as string, "_run", dir, "--", ...argv],
-      { stdio: "ignore", cwd: process.cwd() },
-    );
-    runner.unref();
-    writeAtomic(dir, "runner.pid", String(runner.pid));
-    console.log(
-      `foreground-wait: launched (gen ${next}, runner pid ${runner.pid})`,
-    );
+    await startRunner(dir, argv, next);
     return 0;
   }
 }
@@ -355,23 +389,51 @@ function run(dir: string, argv: string[]): void {
   // and reaches every live tracked identity, not just newly observed ones.
   // Once the witness owns `doomed` (it shrinks it as targets are seen dead),
   // the periodic tracker stands down; only an explicit recapture runs.
-  const track = (recapture = false) => {
-    if (child.pid === undefined || (witnessing && !recapture)) return;
-    const rows = psRows();
-    const cap = recaptureOwned(
-      child.pid,
-      rootIdentity,
-      child.exitCode !== null || child.signalCode !== null,
-      rows,
-    );
-    captureUnresolved = cap.kind === "unresolved";
-    if (cap.kind === "unverifiable") unverifiable = true;
-    if (cap.kind !== "tree" || rows === null) return;
-    rootIdentity = cap.root;
-    // Live identities stay even once re-parented out of the tree.
-    const known = new Set(doomed.map((t) => `${t.pid}:${t.start}`));
-    const fresh = cap.targets.filter((t) => !known.has(`${t.pid}:${t.start}`));
-    doomed = liveTargets([...doomed, ...fresh], rows);
+  let tracking: Promise<void> = Promise.resolve();
+  let pendingTracks = 0;
+  const track = (recapture = false): Promise<void> => {
+    // A slow native enumeration must not accumulate a backlog of periodic
+    // reads ahead of the deadline's capture. Coalesce tracking while busy.
+    if (!recapture && pendingTracks > 0) return tracking;
+    pendingTracks++;
+    tracking = tracking
+      .then(async () => {
+        if (child.pid === undefined || (witnessing && !recapture)) return;
+        const rows = await processTable();
+        if (
+          rows?.some(
+            (r) =>
+              !r.start &&
+              (r.pid === child.pid || doomed.some((t) => t.pid === r.pid)),
+          )
+        ) {
+          captureUnresolved = true;
+          return;
+        }
+        const cap = recaptureOwned(
+          child.pid,
+          rootIdentity,
+          child.exitCode !== null || child.signalCode !== null,
+          rows,
+        );
+        captureUnresolved =
+          cap.kind === "unresolved" ||
+          (cap.kind === "tree" && cap.targets.some((t) => !t.start));
+        if (captureUnresolved) return;
+        if (cap.kind === "unverifiable") unverifiable = true;
+        if (cap.kind !== "tree" || rows === null) return;
+        rootIdentity = cap.root;
+        // Live identities stay even once re-parented out of the tree.
+        const known = new Set(doomed.map((t) => `${t.pid}:${t.start}`));
+        const fresh = cap.targets.filter(
+          (t) => !known.has(`${t.pid}:${t.start}`),
+        );
+        doomed = liveTargets([...doomed, ...fresh], rows);
+      })
+      .finally(() => {
+        pendingTracks--;
+      });
+    return tracking;
   };
   const capture = () => track(true);
   // When each identity was sent SIGTERM. The invariant every path that ends the
@@ -383,7 +445,9 @@ function run(dir: string, argv: string[]): void {
   const termLive = () => {
     for (const t of doomed) {
       if (termed.has(idOf(t))) continue;
-      signalPid(t.pid, "SIGTERM");
+      // Windows has no cooperative POSIX TERM: retain the identity and let
+      // the witness force termination after the grace.
+      if (process.platform !== "win32") signalPid(t.pid, "SIGTERM");
       termed.set(idOf(t), Date.now());
     }
   };
@@ -408,31 +472,44 @@ function run(dir: string, argv: string[]): void {
   const settleWhenTerminated = (result: Result) => {
     if (settled || witnessing) return;
     witnessing = true;
-    const poll = setInterval(() => {
-      // Shrinks monotonically: a target seen dead is never signalled again.
-      if (captureUnresolved) capture();
-      if (!captureUnresolved) termLive();
-      // Only an identity whose TERM grace has elapsed is escalated to SIGKILL.
-      const now = Date.now();
-      const due = doomed.filter(
-        (t) => now - (termed.get(idOf(t)) ?? now) >= KILL_GRACE_MS,
-      );
-      const waiting = doomed.filter((t) => !due.includes(t));
-      const rows = psRows();
-      doomed = [
-        ...stillLive(due),
-        ...(rows === null ? waiting : liveTargets(waiting, rows)),
-      ];
-      if (captureUnresolved || doomed.length > 0) return;
-      clearInterval(poll);
-      settle(
-        unverifiable
-          ? {
-              ...result,
-              note: `${result.note ? `${result.note}; ` : ""}the command's process tree could not be witnessed (its identity was never recorded, so its descendants were not tracked), so descendants may survive`,
-            }
-          : result,
-      );
+    let polling = false;
+    const poll = setInterval(async () => {
+      if (polling) return;
+      polling = true;
+      try {
+        // Shrinks monotonically: a target seen dead is never signalled again.
+        if (captureUnresolved) await capture();
+        if (!captureUnresolved) termLive();
+        // Only an identity whose TERM grace has elapsed is escalated to SIGKILL.
+        const now = Date.now();
+        const due = doomed.filter(
+          (t) => now - (termed.get(idOf(t)) ?? now) >= KILL_GRACE_MS,
+        );
+        const waiting = doomed.filter((t) => !due.includes(t));
+        let rows = await processTable();
+        if (
+          rows?.some(
+            (row) => !row.start && doomed.some((t) => t.pid === row.pid),
+          )
+        )
+          rows = null;
+        doomed = [
+          ...(await stillLive(due, rows)),
+          ...(rows === null ? waiting : liveTargets(waiting, rows)),
+        ];
+        if (captureUnresolved || rows === null || doomed.length > 0) return;
+        clearInterval(poll);
+        settle(
+          unverifiable
+            ? {
+                ...result,
+                note: `${result.note ? `${result.note}; ` : ""}the command's process tree could not be witnessed (its identity was never recorded, so its descendants were not tracked), so descendants may survive`,
+              }
+            : result,
+        );
+      } finally {
+        polling = false;
+      }
     }, WITNESS_POLL_MS);
     timers.push(poll as unknown as NodeJS.Timeout);
   };
@@ -442,7 +519,7 @@ function run(dir: string, argv: string[]): void {
   // grace, never contingent on `close`. `close` waits for the stdio pipes as
   // well as the exit, and a descendant that outlived its parent (re-parented,
   // so invisible to `captureTree`) holds them open indefinitely.
-  const terminate = (
+  const terminate = async (
     exitCode: number,
     note: string,
     signal: string | null = null,
@@ -457,7 +534,7 @@ function run(dir: string, argv: string[]): void {
     } catch {
       // Best effort: the result's `note` still carries the reason.
     }
-    capture();
+    await capture();
     // SIGTERM every live tracked identity (verified against this snapshot), so
     // descendants observed earlier get the same chance to clean up as the root.
     if (!captureUnresolved) termLive();
@@ -465,6 +542,7 @@ function run(dir: string, argv: string[]): void {
     // unreaped child, so the number cannot have been reused); its descendants
     // were tracked while it ran, so they are already in `doomed`.
     if (
+      process.platform !== "win32" &&
       captureUnresolved &&
       child.pid !== undefined &&
       child.exitCode === null &&
@@ -486,7 +564,10 @@ function run(dir: string, argv: string[]): void {
       appendFileSync(log, data);
       return true;
     } catch (err) {
-      terminate(125, `could not write the log (${(err as Error).message})`);
+      void terminate(
+        125,
+        `could not write the log (${(err as Error).message})`,
+      );
       return false;
     }
   };
@@ -509,23 +590,24 @@ function run(dir: string, argv: string[]): void {
   // Track the tree while the command runs (no signalling), so a `ps` failure at
   // termination time still leaves the descendants known and the command's
   // identity recorded.
-  track();
+  void track();
   timers.push(
-    setInterval(() => track(), TRACK_POLL_MS) as unknown as NodeJS.Timeout,
+    setInterval(() => {
+      void track();
+    }, TRACK_POLL_MS) as unknown as NodeJS.Timeout,
   );
   const seconds = deadlineSec() ?? DEFAULT_DEADLINE_SEC;
   timers.push(
-    setTimeout(
-      () => terminate(124, `deadline of ${seconds}s reached`),
-      seconds * 1000,
-    ),
+    setTimeout(() => {
+      void terminate(124, `deadline of ${seconds}s reached`);
+    }, seconds * 1000),
   );
   // `close` follows `error` for a failed spawn; the first outcome wins.
   child.on("error", (err) => {
     write(`foreground-wait: could not start command: ${err.message}\n`);
     settle({ exitCode: 127, signal: null });
   });
-  child.on("close", (code, signal) => {
+  child.on("close", async (code, signal) => {
     // The command can exit on SIGTERM while a descendant ignores it, and
     // settling clears the scheduled SIGKILL — so finish the kill here, on the
     // targets captured before signalling, before a terminal result exists.
@@ -542,9 +624,9 @@ function run(dir: string, argv: string[]): void {
     // command exiting on its own does not establish that: a descendant the
     // tracker already captured can outlive it, so end it through the same
     // TERM → grace → witnessed-KILL path the deadline uses.
-    capture();
-    if (doomed.length > 0) {
-      terminate(
+    await capture();
+    if (doomed.length > 0 || captureUnresolved) {
+      void terminate(
         exitCode,
         "the command exited with descendants still running; terminated them",
         signal ?? null,
@@ -650,13 +732,13 @@ async function wait(maxSec: number): Promise<number> {
   }
   const dir = genDir(latest);
   const deadline = Date.now() + maxSec * 1000;
-  while (running(dir) && Date.now() < deadline) {
+  while ((await running(dir)) && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, WAIT_POLL_MS));
   }
   // Result first, then the log: a published result means the log is complete.
   const result = readResult(dir);
   if (result !== null) return finish(dir, result);
-  if (running(dir)) {
+  if (await running(dir)) {
     relayLog(dir);
     console.log("still running — call `wait` again (never `launch`)");
     return 20;
@@ -675,7 +757,7 @@ const sep = rest.indexOf("--");
 const after = sep === -1 ? [] : rest.slice(sep + 1);
 
 if (cmd === "launch") {
-  process.exit(launch(after));
+  process.exit(await launch(after));
 } else if (cmd === "_run") {
   run(rest[0] as string, after);
 } else if (cmd === "wait") {

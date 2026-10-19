@@ -1,3 +1,4 @@
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { expect, test } from "bun:test";
 import { registerCleanup } from "../cleanup.ts";
 
@@ -61,7 +62,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
         console.log('stopped');
       });
       setInterval(() => {}, 1000);
-      process.kill(process.pid, ${JSON.stringify(signal)});
+      if (process.platform === "win32") process.emit(${JSON.stringify(signal)});
+      else process.kill(process.pid, ${JSON.stringify(signal)});
     `,
     ]);
     expect(result.stdout.toString().trim().split("\n")).toEqual([
@@ -69,7 +71,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
       "second",
       "first",
     ]);
-    expect(result.exitCode).toBe(signal === "SIGINT" ? 130 : 143);
+    expectSpawnExit(result, signal === "SIGINT" ? 130 : 143);
     expect(result.stderr.toString()).toContain("release failed");
   });
 }
@@ -92,12 +94,35 @@ test("overlapping cancellation signals wait for all in-flight cancellation work"
       }));
     });
     setInterval(() => {}, 1000);
-    process.kill(process.pid, 'SIGINT');
-    process.kill(process.pid, 'SIGTERM');
+    if (process.platform === "win32") {
+      process.emit("SIGINT");
+      process.emit("SIGTERM");
+    } else {
+      process.kill(process.pid, "SIGINT");
+      process.kill(process.pid, "SIGTERM");
+    }
   `,
   ]);
   expect(result.stdout.toString().trim().split("\n")).toEqual([
     "stopped",
     "released",
   ]);
+});
+
+test("Windows console break awaits cleanup and exits without re-raising a POSIX signal", () => {
+  const module = new URL("../cleanup.ts", import.meta.url).pathname;
+  const result = Bun.spawnSync([
+    process.execPath,
+    "-e",
+    `
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const { registerCleanup, registerSignalHandler } = await import(${JSON.stringify(module)});
+    registerCleanup(() => console.log('released'));
+    registerSignalHandler(async () => { await Promise.resolve(); console.log('stopped'); });
+    process.kill = () => { throw new Error('must not re-raise'); };
+    process.emit('SIGBREAK');
+  `,
+  ]);
+  expectSpawnExit(result, 149);
+  expect(result.stdout.toString().trim()).toBe("stopped\nreleased");
 });

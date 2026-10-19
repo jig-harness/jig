@@ -227,12 +227,15 @@ export function plantClaim(
     pid: number | string;
     host: string;
     nonce: string;
+    platform?: string | null;
     staleMs?: number;
   },
 ): string {
   mkdirSync(dirPath, { recursive: true });
   const file = join(dirPath, `claim.${opts.nonce}`);
-  writeFileSync(file, `${opts.pid} ${opts.host}\n`);
+  const platform =
+    opts.platform === null ? "" : ` ${opts.platform ?? process.platform}`;
+  writeFileSync(file, `${opts.pid} ${opts.host}${platform}\n`);
   if (opts.staleMs !== undefined) {
     const at = (Date.now() - opts.staleMs) / 1000;
     utimesSync(file, at, at);

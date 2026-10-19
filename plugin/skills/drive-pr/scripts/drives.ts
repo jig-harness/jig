@@ -18,7 +18,7 @@
  * (`drive.ts` § Single-instance locking). Claims are interpreted by exactly
  * the rule recovery uses — `lib/claim.ts`, shared with the writer — so this
  * listing can never call a claim live that recovery would retire, or vice
- * versa. `--stop` signals the driver process; it never touches the lock.
+ * versa. `--stop` writes a stop request beside the claim; it never removes the claim.
  *
  * Modes:
  *   drives.ts                list every drive lock (human-readable); a LIVE
@@ -59,20 +59,15 @@
  *                            the SessionStart hook consumes this mode, and
  *                            its silence must only ever mean "checked, and
  *                            clear", never "could not check".
- *   drives.ts --stop <PR>    SIGTERM the live driver of <PR> and wait for it
- *                            to leave. The driver stops its pass tree first
- *                            and releases its locks on the way out — that is
- *                            its documented signal path, so this is the
- *                            polite stop, not a kill -9. Signals ONLY a pid
- *                            it positively bound to THIS claim: the command
- *                            must look like a drive.ts driver AND the pid's
- *                            start time must not postdate the claim's
- *                            acquisition timestamp — a recycled pid starts
- *                            after the claim that names its predecessor was
- *                            written, whatever its argv. Unverifiable pids
- *                            and unbindable claims are refused, never
- *                            signaled on the claim alone (claim freshness
- *                            proves liveness, not identity).
+ *   drives.ts --stop <PR>    Verify the live driver's creation identity,
+ *                            then write a generation-addressed stop request.
+ *                            The driver stops its pass tree and releases its
+ *                            locks. After a 30s grace, force only captured
+ *                            process identities and witness the tree's exit.
+ *                            Older POSIX drivers receive SIGTERM instead.
+ *                            Foreign PID namespaces, unreadable tables and
+ *                            unbindable claims are refused.
+
  *
  * Exit codes:
  *   0  listed / banner printed / positively nothing to report / --doctor's
@@ -89,19 +84,25 @@
  */
 
 import {
-  accessSync,
-  constants as fsConstants,
-  readdirSync,
-  readFileSync,
-  statSync,
-} from "node:fs";
+  processTable,
+  type ProcessRow,
+} from "../../../shared/process-table.ts";
+import {
+  captureProcessTree,
+  captureRegisteredProcessTrees,
+  signalIdentityTargets,
+  identityTargetsGone,
+} from "../../../shared/process-tree.ts";
+import { requestDriverStop } from "./lib/stop-request.ts";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { hostname } from "node:os";
-import { delimiter, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   CLAIM_PREFIX,
   type ClaimDiag,
   claimLive,
+  samePidNamespace,
   parseClaimText,
 } from "./lib/claim.ts";
 import { fail, isDigits, runMain, sleep, testPacing } from "./lib/cli.ts";
@@ -126,7 +127,6 @@ import {
   gitCallTimeoutSeconds,
   gitIdentityEnv,
   pidAlive,
-  run,
   unconcludedGitOpMarker,
 } from "./lib/proc.ts";
 import { legacyFootprint } from "./lib/state/legacy-state.ts";
@@ -151,32 +151,16 @@ const WORKTREE_LOCK = /^pr-drive-worktree-([0-9a-f]+)\.lock$/;
  * passes it. The authoritative identity check is the claim binding in `stop()`:
  * the pid's start time must not postdate the claim's acquisition timestamp.
  */
-const DRIVER_CMD = /(^|[\s/])drive\.ts(\s|$)/;
+const DRIVER_CMD = /(^|[\s/\\])drive\.ts(?:["\']?)(\s|$)/;
 
 /**
- * Slack for the claim binding's start-time comparison. `ps -o etime=`
- * floors to whole seconds and is sampled after the fact, so a computed
- * start time can trail the true one by a couple of seconds — without slack
+ * Slack for the claim binding's start-time comparison. POSIX creation times
+ * have whole-second precision, so the sampled time can differ slightly — without slack
  * a legitimate owner could be refused. A genuinely recycled pid inside
  * this window would additionally have to pass DRIVER_CMD, and the old
  * driver would have to have died within seconds of acquiring.
  */
 const START_SLACK_MS = 5_000;
-
-/**
- * `ps -o etime=` → milliseconds, or `null` when unparsable. The format is
- * `[[dd-]hh:]mm:ss`.
- */
-function parseEtimeMs(s: string): number | null {
-  const m = /^(?:(?:(\d+)-)?(\d+):)?(\d+):(\d+)$/.exec(s);
-  if (m === null) return null;
-  const [, d, h, min, sec] = m;
-  return (
-    (((Number(d ?? 0) * 24 + Number(h ?? 0)) * 60 + Number(min)) * 60 +
-      Number(sec)) *
-    1000
-  );
-}
 
 interface LockRow {
   /** Human name: `PR #123` or `worktree ab12…`. */
@@ -195,6 +179,8 @@ interface LockRow {
   state: "live" | "stale" | "empty" | "contested" | "unreadable";
   pid: number | null;
   host: string | null;
+  platform: string | null;
+  nonce: string | null;
   refreshAgeSec: number | null;
   diag: ClaimDiag | null;
   /**
@@ -304,6 +290,8 @@ function readLock(dir: string, kind: "pr" | "worktree", key: string): LockRow {
     state: "empty",
     pid: null,
     host: null,
+    platform: null,
+    nonce: null,
     refreshAgeSec: null,
     diag: null,
     self: false,
@@ -344,12 +332,14 @@ function readLock(dir: string, kind: "pr" | "worktree", key: string): LockRow {
   }
   row.pid = record.pid;
   row.host = record.host;
+  row.platform = record.platform;
+  row.nonce = (claims[0] as string).slice(CLAIM_PREFIX.length);
   row.diag = record.diag;
-  row.self = ownParentDriver(record.pid, record.host, record.diag);
+  row.self =
+    samePidNamespace(record) &&
+    ownParentDriver(record.pid, record.host, record.diag);
   row.refreshAgeSec = Math.max(0, Math.round(ageMs / 1000));
-  row.state = claimLive({ pid: record.pid, host: record.host, ageMs })
-    ? "live"
-    : "stale";
+  row.state = claimLive({ ...record, ageMs }) ? "live" : "stale";
   return row;
 }
 
@@ -502,6 +492,8 @@ export function listStateOnlyRows(
       state: "empty",
       pid: null,
       host: null,
+      platform: null,
+      nonce: null,
       refreshAgeSec: null,
       diag: null,
       self: false,
@@ -520,27 +512,6 @@ export function listStateOnlyRows(
 // that could drift.
 const SELF = fileURLToPath(import.meta.url);
 const stopHint = (pr: string): string => formatStopCommand(SELF, pr);
-
-/**
- * `--stop` binds the pid to the claim via a POSIX `ps` probe and refuses every
- * live claim where that probe cannot run — so on a `ps`-less host the command
- * can never succeed, and advertising it would hand the operator a hint
- * guaranteed to refuse. Detected by looking for an executable `ps` on PATH
- * rather than assumed from the platform: a POSIX host can lack `ps` too. The
- * probe itself still runs and fails closed either way — this only governs
- * whether hints advertise the command.
- */
-const STOP_WORKS_HERE =
-  process.platform !== "win32" &&
-  (process.env.PATH ?? "").split(delimiter).some((dir) => {
-    if (dir === "") return false;
-    try {
-      accessSync(join(dir, "ps"), fsConstants.X_OK);
-      return true;
-    } catch {
-      return false;
-    }
-  });
 
 // ── Gathering DoctorInput ────────────────────────────────────────────────────
 //
@@ -647,18 +618,6 @@ export async function gatherWorktreeLeftovers(
 }
 
 /**
- * Is THIS row's recorded claim host one `--stop`/`ps`/`kill` on this machine
- * can actually reach — unset (legacy debris, conventionally "this host") or
- * equal to this host's own hostname? Mirrors `stop`'s own three-part check
- * exactly (`row.host !== null && row.host !== '' && row.host !== hostname`,
- * negated), so this file's OWN idea of "local" cannot drift from the one the
- * real `--stop` refusal is built on.
- */
-function hostIsLocal(host: string | null): boolean {
-  return host === null || host === "" || host === hostname();
-}
-
-/**
  * Assemble one row's `DoctorInput` — the I/O `classifyDrive` never does.
  *
  * `procs` is the ONE process-table snapshot the whole sweep shares
@@ -695,7 +654,10 @@ async function gatherDoctorInput(
     row.diag?.worktree === undefined || row.diag.worktree === ""
       ? null
       : row.diag.worktree;
-  const isLocal = hostIsLocal(row.host);
+  const isLocal = samePidNamespace({
+    host: row.host ?? "",
+    platform: row.platform,
+  });
   // `passChild` is a pure walk over the shared snapshot — no subprocess of its
   // own, so it costs nothing to compute for every row. Gated on `isLocal`: a
   // foreign-host claim's `pid` is a number in a DIFFERENT machine's process
@@ -787,7 +749,7 @@ function printHuman(stateDir: string, rows: LockRow[]): void {
       // instead, so it always lists alone.
       const owner =
         row.diag !== null
-          ? `${row.host ?? ""}:${row.pid}:${row.diag.started}`
+          ? `${row.host ?? ""}:${row.platform ?? "legacy"}:${row.pid}:${row.diag.started}`
           : `legacy:${row.host ?? ""}:${row.pid}:${row.kind}:${row.key}`;
       const group = liveByOwner.get(owner) ?? [];
       group.push(row);
@@ -886,10 +848,6 @@ function printHuman(stateDir: string, rows: LockRow[]): void {
       } else if (prRow?.diag == null) {
         console.log(
           "    stop:     unavailable — the claim predates diagnostics, so --stop cannot bind the pid to it; inspect by hand.",
-        );
-      } else if (!STOP_WORKS_HERE) {
-        console.log(
-          "    stop:     unavailable on this platform — --stop needs `ps` to verify the pid before signaling.",
         );
       } else {
         console.log(`    stop:     ${stopHint(drivenPr)}`);
@@ -1029,6 +987,7 @@ async function here(stateDir: string): Promise<number> {
         r.state === "live" &&
         r.pid === row.pid &&
         (r.host ?? "") === (row.host ?? "") &&
+        r.platform === row.platform &&
         r.diag !== null &&
         row.diag !== null &&
         r.diag.started === row.diag.started,
@@ -1078,11 +1037,9 @@ async function here(stateDir: string): Promise<number> {
   // pid can wear a fresh claim, and a banner bypassing that check would aim the
   // operator at a possibly unrelated process.
   console.log(
-    verifiedPr !== null && STOP_WORKS_HERE
+    verifiedPr !== null
       ? `  Stop it: ${stopHint(verifiedPr)}   (or leave the tree to it until it converges)`
-      : verifiedPr !== null
-        ? "  Stop it: --stop is unavailable on this platform (it needs `ps` to verify the pid) — stop the driver from its own session.   (or leave the tree to it until it converges)"
-        : `  No live PR lock verifies this driver, so there is no safe stop command — inspect the claim first: ${row.dir}   (or leave the tree to it until it converges)`,
+      : `  No live PR lock verifies this driver, so there is no safe stop command — inspect the claim first: ${row.dir}   (or leave the tree to it until it converges)`,
   );
   return 0;
 }
@@ -1106,58 +1063,36 @@ async function stop(stateDir: string, pr: string): Promise<number> {
     return 1;
   }
   const pid = row.pid as number;
-  if (row.host !== null && row.host !== "" && row.host !== hostname()) {
+  if (!samePidNamespace({ host: row.host ?? "", platform: row.platform })) {
     console.log(
-      `PR #${pr}'s driver runs on ${row.host} — signal it from that host (pid ${pid}).`,
+      `PR #${pr}'s driver runs on ${row.host} (${row.platform ?? "unknown platform"}) — stop it from that PID namespace (pid ${pid}).`,
     );
     return 1;
   }
-  // A pid alone cannot prove the process is still THE driver: within the
-  // staleness window, a crashed driver's recycled pid answers kill(pid, 0) and
-  // its claim still reads live. Ask the process table, and FAIL CLOSED when it
-  // cannot answer: claim freshness proves liveness, never identity, so "could
-  // not verify" refuses rather than signals. Where `ps` cannot answer at all
-  // (e.g. Windows), --stop is unavailable by design; stop the driver with a
-  // tool that can name the process.
-  //
-  // And argv alone cannot prove identity either — it verifies "a drive.ts
-  // process", never "the process that wrote THIS claim", so a pid recycled onto
-  // a DIFFERENT live driver would still pass it. Bind the pid to the claim
-  // itself: the claim records its acquisition time (`diag.started`, written by
-  // the driver AFTER it started), the process table reports the pid's elapsed
-  // time, and a process that started AFTER the claim was written cannot be the
-  // process that wrote it — the canonical (pid, start-time) process identity,
-  // same-clock because a foreign host was already refused above. Every
-  // unreadable input refuses: a legacy claim with no diagnostics line, an
-  // unparsable timestamp, or an unparsable etime is inspected by hand, not
-  // signaled. The instant between a verified probe and `process.kill` remains
-  // the irreducible TOCTOU of POSIX kill-by-pid (this runtime exposes no pidfd
-  // equivalent); the binding narrows the exposure from the whole staleness
-  // window to that instant. Deadlined so a hung `ps` (OS/process-table trouble)
-  // cannot block --stop indefinitely: on expiry `run()` reports a non-zero
-  // code, which lands in the same fail-closed "could not verify" refusal below.
-  // The 10s deadline takes a test pacing seam (`testPacing`).
-  const probe = await run(
-    ["ps", "-o", "etime=", "-o", "command=", "-p", String(pid)],
-    {
-      stderr: "ignore",
-      timeoutSec: testPacing("DRIVE_PR_STOP_PS_TIMEOUT_SEC", 10, 1),
-    },
+  const verified = await verifyDriverClaim(row, pid);
+  if ("code" in verified) return verified.code;
+  return stopVerifiedDriver(row, verified.owner);
+}
+
+async function verifyDriverClaim(
+  row: LockRow,
+  pid: number,
+): Promise<{ code: number } | { owner: ProcessRow }> {
+  const snapshot = await processTable(
+    testPacing("DRIVE_PR_STOP_PS_TIMEOUT_SEC", 10, 1),
   );
-  const parsed =
-    probe.code === 0 ? /^\s*(\S+)\s+(\S.*)$/.exec(probe.stdout.trim()) : null;
-  const etime = parsed?.[1] ?? "";
-  const cmd = (parsed?.[2] ?? "").trim();
-  if (cmd === "") {
-    if (!pidAlive(pid, "")) {
+  const owner = snapshot?.find((p) => p.pid === pid);
+  const cmd = owner?.args ?? "";
+  if (owner === undefined || cmd === "") {
+    if (snapshot !== null && owner === undefined) {
       console.log(`driver pid ${pid} was already gone.`);
-      return 0;
+      return { code: 0 };
     }
     console.log(
-      `refusing to signal pid ${pid}: could not verify its command via ps, and a fresh claim proves liveness, not identity — the pid may have been recycled.`,
+      `refusing to signal pid ${pid}: could not verify its command via process table, and a fresh claim proves liveness, not identity — the pid may have been recycled.`,
     );
     console.log(`Inspect the claim by hand before acting: ${row.dir}`);
-    return 1;
+    return { code: 1 };
   }
   if (!DRIVER_CMD.test(cmd)) {
     console.log(
@@ -1167,23 +1102,23 @@ async function stop(stateDir: string, pr: string): Promise<number> {
     console.log(
       "The pid was likely recycled after a crash; the claim is effectively stale, and the next drive recovers the lock.",
     );
-    return 1;
+    return { code: 1 };
   }
   if (row.diag === null) {
     console.log(
       `refusing to signal pid ${pid}: the claim carries no diagnostics line, so nothing binds this pid to this claim — a recycled pid running another driver would be indistinguishable from the owner.`,
     );
     console.log(`Inspect the claim by hand before acting: ${row.dir}`);
-    return 1;
+    return { code: 1 };
   }
   const claimStartedMs = Date.parse(row.diag.started);
-  const etimeMs = parseEtimeMs(etime);
-  if (Number.isNaN(claimStartedMs) || etimeMs === null) {
+  const processStartedMs = Date.parse(owner?.start ?? "");
+  if (Number.isNaN(claimStartedMs) || Number.isNaN(processStartedMs)) {
     console.log(
-      `refusing to signal pid ${pid}: could not compare its start time (etime ${JSON.stringify(etime)}) to the claim's acquisition time (${JSON.stringify(row.diag.started)}).`,
+      `refusing to signal pid ${pid}: could not compare its start time (${JSON.stringify(owner?.start)}) to the claim's acquisition time (${JSON.stringify(row.diag.started)}).`,
     );
     console.log(`Inspect the claim by hand before acting: ${row.dir}`);
-    return 1;
+    return { code: 1 };
   }
   // A FUTURE acquisition time defeats the whole binding: `procStart > future +
   // slack` is false for every process, so a recycled pid wearing a clock-skewed
@@ -1194,50 +1129,149 @@ async function stop(stateDir: string, pr: string): Promise<number> {
       `refusing to signal pid ${pid}: the claim's acquisition time (${row.diag.started}) is in the future — clock skew or a corrupt claim, and a future bound accepts every process.`,
     );
     console.log(`Inspect the claim by hand before acting: ${row.dir}`);
-    return 1;
+    return { code: 1 };
   }
-  if (Date.now() - etimeMs > claimStartedMs + START_SLACK_MS) {
+  if (processStartedMs > claimStartedMs + START_SLACK_MS) {
     console.log(
       `refusing to signal pid ${pid}: it started after the claim that names it was written, so it is not the claim's writer — the pid was recycled (its command happens to be a driver: ${cmd}).`,
     );
     console.log(
       "The claim is effectively stale; the next drive recovers the lock.",
     );
+    return { code: 1 };
+  }
+  return { owner };
+}
+
+async function requestVerifiedDriverStop(
+  row: LockRow,
+  owner: ProcessRow,
+): Promise<boolean> {
+  const pid = owner.pid;
+  if (row.platform !== null && row.nonce !== null) {
+    try {
+      requestDriverStop(row.dir, row.nonce);
+    } catch (error) {
+      console.log(`cannot request stop of driver pid ${pid}: ${String(error)}`);
+      return false;
+    }
+    console.log(
+      `requested stop of driver pid ${pid} — it stops its pass tree, then releases its locks…`,
+    );
+  } else {
+    // Existing POSIX drivers predate the file channel. Their signal handler
+    // provides the same cleanup; untagged claims on Windows were refused above.
+    if (!(await signalIdentityTargets([owner], "SIGTERM"))) return false;
+    console.log(
+      `sent SIGTERM to driver pid ${pid} — it stops its pass tree, then releases its locks…`,
+    );
+  }
+  return true;
+}
+
+async function stopVerifiedDriver(
+  row: LockRow,
+  owner: ProcessRow,
+): Promise<number> {
+  const pid = owner.pid;
+  // Capture descendants before requesting shutdown: the root may leave before
+  // its descendants, and the fallback must never rediscover a recycled PID.
+  const targets = await captureProcessTree(pid);
+  if (
+    targets === null ||
+    !targets.some((p) => p.pid === pid && p.start === owner?.start)
+  ) {
+    console.log(
+      `refusing to stop pid ${pid}: its identity changed or its process tree could not be verified.`,
+    );
     return 1;
   }
-  try {
-    process.kill(pid, "SIGTERM");
-  } catch (e) {
-    // Only ESRCH means "already stopped". EPERM means the driver is alive but
-    // owned by another user — reporting that as success would leave the drive
-    // running behind a green exit (same distinction pidAlive draws).
-    if ((e as NodeJS.ErrnoException).code === "EPERM") {
-      console.log(
-        `cannot signal driver pid ${pid}: permission denied — it runs as another user on this host. Stop it from that user's session.`,
-      );
-      return 1;
+  const registry =
+    process.platform === "win32" && row.platform !== null && row.nonce !== null
+      ? join(row.dir, `processes.${row.nonce}`)
+      : null;
+  const refreshRegistered = async (): Promise<boolean> => {
+    if (registry === null) return true;
+    const registered = await captureRegisteredProcessTrees(registry);
+    if (registered === null) return false;
+    for (const process of registered) {
+      if (
+        !targets.some((p) => p.pid === process.pid && p.start === process.start)
+      )
+        targets.push(process);
     }
-    console.log(`driver pid ${pid} was already gone.`);
-    return 0;
+    return true;
+  };
+  if (!(await refreshRegistered())) {
+    console.log(
+      `refusing to stop pid ${pid}: its foreground runner registry is unreadable or has a pending launch.`,
+    );
+    return 1;
+  }
+  if (!(await requestVerifiedDriverStop(row, owner))) return 1;
+  const graceSec = testPacing("DRIVE_PR_STOP_GRACE_SEC", 30, 1);
+  const deadline = Date.now() + graceSec * 1000;
+  while (Date.now() < deadline) {
+    if (
+      registry !== null &&
+      existsSync(registry) &&
+      !(await refreshRegistered())
+    ) {
+      await sleep(0.25);
+      continue;
+    }
+    if (await identityTargetsGone(targets)) {
+      console.log(
+        `stopped: driver pid ${pid} and its captured pass tree exited.`,
+      );
+      return 0;
+    }
+    await sleep(0.25);
+  }
+  return forceStopDriver(owner, targets, refreshRegistered, graceSec);
+}
+
+async function forceStopDriver(
+  owner: ProcessRow,
+  targets: ProcessRow[],
+  refreshRegistered: () => Promise<boolean>,
+  graceSec: number,
+): Promise<number> {
+  const pid = owner.pid;
+  const beforeForce = await processTable();
+  if (beforeForce === null) return 1;
+  if (beforeForce.some((p) => p.pid === pid && p.start === owner.start)) {
+    const latest = await captureProcessTree(pid, async () => beforeForce);
+    if (latest === null) return 1;
+    for (const process of latest) {
+      if (
+        !targets.some((p) => p.pid === process.pid && p.start === process.start)
+      )
+        targets.push(process);
+    }
+  }
+  if (!(await refreshRegistered())) {
+    console.log(
+      `cannot force pid ${pid}: its foreground runner registry is unreadable or has a pending launch; inspect before restarting.`,
+    );
+    return 1;
   }
   console.log(
-    `sent SIGTERM to driver pid ${pid} — it stops its pass tree, then releases its locks…`,
+    `driver pid ${pid} outlived the ${graceSec}s grace — forcing its captured process identities to exit.`,
   );
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    if (!pidAlive(pid, "")) {
-      console.log(`stopped: driver pid ${pid} exited.`);
+  if (!(await signalIdentityTargets(targets, "SIGKILL"))) return 1;
+  const forcedDeadline = Date.now() + 5000;
+  while (Date.now() < forcedDeadline) {
+    if (await identityTargetsGone(targets)) {
+      console.log(
+        `stopped: driver pid ${pid} and its captured pass tree exited; abandoned locks are recovered by the next drive.`,
+      );
       return 0;
     }
     await sleep(0.25);
   }
   console.log(
-    `driver pid ${pid} is still up after 30s — likely still tearing down its pass tree.`,
-    // A second SIGTERM takes drive.ts's forced path: it exits immediately and
-    // LEAVES its locks, which the next acquire recovers as stale.
-  );
-  console.log(
-    `Re-check with drives.ts; a second --stop forces an immediate exit (locks are then recovered as stale).`,
+    `could not witness driver pid ${pid}'s entire captured pass tree exit; inspect before restarting.`,
   );
   return 1;
 }

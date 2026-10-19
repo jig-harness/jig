@@ -1,3 +1,15 @@
+export {
+  lastBytes,
+  MAX_BUFFER_BYTES,
+  STDERR_TAIL_BYTES,
+} from "./process-output.ts";
+import {
+  captureProcessOutput,
+  lastBytes,
+  type ProcessTimers,
+} from "./process-output.ts";
+import { windowsProcessLifecycle } from "./windows-process.ts";
+import { stopWindowsTree } from "./process-tree.ts";
 import { registerSignalHandler } from "./cleanup.ts";
 /**
  * Process spawning with deadlines — the TypeScript successor to
@@ -136,20 +148,6 @@ export interface RunResult {
   groupSurvived?: boolean;
 }
 
-/** How much of a failed child's error output `RunResult.stderrTail` keeps. */
-export const STDERR_TAIL_BYTES = 4 * 1024;
-
-/** The last `STDERR_TAIL_BYTES` of `text`, cut on a character boundary. */
-export function lastBytes(text: string): string {
-  if (text.length <= STDERR_TAIL_BYTES / 4) return text;
-  const bytes = Buffer.from(text);
-  if (bytes.length <= STDERR_TAIL_BYTES) return text;
-  return bytes
-    .subarray(bytes.length - STDERR_TAIL_BYTES)
-    .toString("utf8")
-    .replace(/^\uFFFD+/, "");
-}
-
 /**
  * Programs whose second word is a subcommand. For any other program the
  * second word can be anything (a URL with a credential in it, a path), so
@@ -193,17 +191,6 @@ export class ChildFailure extends Error {
   }
 }
 
-/**
- * The old `ghOrExit`'s own explicit `spawnSync` `maxBuffer` (NOT Node's
- * default, which is 1 MiB), kept as this port's default too: one caller
- * (`list-unresolved-threads.ts --paginate`) pages a whole PR's review threads
- * into a single document, so the bound has to be generous — but a bound of
- * some size is what stands between a runaway `gh` response and this
- * process's heap, and `run()`'s `data` handlers accumulate into JS strings
- * with no bound of their own.
- */
-export const MAX_BUFFER_BYTES = 64 * 1024 * 1024;
-
 /** A child may exit before consuming input; its own status owns that result. */
 export function writeChildInput(
   input: import("node:stream").Writable | null,
@@ -240,8 +227,9 @@ export interface RunOptions {
    * When the child exits, kill whatever is still alive in its process group
    * and report it as `groupSurvived`: for a command whose work must be over
    * when it returns, so a background job it left cannot write afterwards.
-   * POSIX only, and only with `timeoutSec` (which gives the child its own
-   * group); a descendant that left the group (`setsid`) is not reached.
+   * On POSIX this requires `timeoutSec`, which gives the child its own
+   * group; a descendant that left the group (`setsid`) is not reached.
+   * On Windows this reaps the registered foreground runners.
    */
   reapGroup?: boolean;
   /**
@@ -273,6 +261,8 @@ export interface RunOptions {
 interface CancellationRegistry {
   handlerRegistered: boolean;
   groups: Map<number, Set<symbol>>;
+  registryDirs: Map<number, string>;
+  cancelWindows: Map<number, () => Promise<boolean>>;
 }
 const registryKey = Symbol.for("jig.review.process-cancellation.v1");
 const globalRegistry = globalThis as typeof globalThis & {
@@ -281,6 +271,8 @@ const globalRegistry = globalThis as typeof globalThis & {
 const cancellation = globalRegistry[registryKey] ?? {
   handlerRegistered: false,
   groups: new Map<number, Set<symbol>>(),
+  registryDirs: new Map<number, string>(),
+  cancelWindows: new Map<number, () => Promise<boolean>>(),
 };
 globalRegistry[registryKey] = cancellation;
 const cancellableGroups = cancellation.groups;
@@ -298,7 +290,13 @@ function groupAlive(pgid: number | undefined): boolean {
 }
 
 /** Share cancellation ownership with consumer runners; release on settlement. */
-export function registerCancellationGroup(pgid: number): () => void {
+export function registerCancellationGroup(
+  pgid: number,
+  registryDir?: string,
+  cancelWindows?: () => Promise<boolean>,
+): () => void {
+  if (cancelWindows) cancellation.cancelWindows.set(pgid, cancelWindows);
+  if (registryDir) cancellation.registryDirs.set(pgid, registryDir);
   const token = Symbol();
   let registrations = cancellableGroups.get(pgid);
   if (!registrations) {
@@ -311,8 +309,35 @@ export function registerCancellationGroup(pgid: number): () => void {
     if (released) return;
     released = true;
     registrations.delete(token);
-    if (registrations.size === 0) cancellableGroups.delete(pgid);
+    if (registrations.size === 0) {
+      cancellableGroups.delete(pgid);
+      cancellation.registryDirs.delete(pgid);
+      cancellation.cancelWindows.delete(pgid);
+    }
   };
+}
+
+/** Register only library-owned cancellation; caller-owned handles keep their ordering. */
+export function registerRunCancellation(
+  child: import("node:child_process").ChildProcess,
+  windows: ReturnType<typeof windowsProcessLifecycle>,
+  detached: boolean,
+  caller: { detached?: boolean; onSpawn?: unknown } = {},
+): (() => void) | undefined {
+  if (
+    caller.detached ||
+    caller.onSpawn ||
+    (!detached && !windows.enabled) ||
+    child.pid === undefined
+  )
+    return undefined;
+  return registerCancellationGroup(child.pid, windows.dir, () =>
+    windows.stop(
+      child.pid,
+      CANCEL_ESCALATE_MS,
+      () => child.exitCode === null && child.signalCode === null,
+    ),
+  );
 }
 
 /**
@@ -377,9 +402,23 @@ function signalGroup(pgid: number, sig: NodeJS.Signals): void {
  * witnessed one, and `CANCEL_ESCALATE_MS` is sized for a blocking cost rather
  * than a free one.
  */
-function cancelTrackedGroups(): void {
+async function cancelTrackedGroups(): Promise<void> {
   const groups = [...cancellableGroups.keys()];
   if (groups.length === 0) return;
+  if (process.platform === "win32") {
+    await Promise.all(
+      groups.map(
+        (pid) =>
+          cancellation.cancelWindows.get(pid)?.() ??
+          stopWindowsTree(
+            pid,
+            CANCEL_ESCALATE_MS,
+            cancellation.registryDirs.get(pid),
+          ),
+      ),
+    );
+    return;
+  }
   for (const pgid of groups) signalGroup(pgid, "SIGTERM");
   sleepSync(CANCEL_ESCALATE_MS);
   for (const pgid of groups) signalGroup(pgid, "SIGKILL");
@@ -389,7 +428,7 @@ function cancelTrackedGroups(): void {
 if (!cancellation.handlerRegistered) {
   cancellation.handlerRegistered = true;
   registerSignalHandler(() => {
-    cancelTrackedGroups();
+    return cancelTrackedGroups();
   });
 }
 
@@ -458,9 +497,10 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     // thing that ends them anyway.
     const detached =
       opts.timeoutSec !== undefined && process.platform !== "win32";
+    const windows = windowsProcessLifecycle(opts.env);
     const spawnOpts: SpawnOptions = {
       cwd: opts.cwd,
-      env: traceEnv(opts.env) as NodeJS.ProcessEnv,
+      env: traceEnv(windows.env) as NodeJS.ProcessEnv,
       detached,
       stdio: [
         opts.stdinInherit
@@ -476,6 +516,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     try {
       child = spawn(cmd, args, spawnOpts);
     } catch (e) {
+      windows.dispose();
       const message = e instanceof Error ? e.message : String(e);
       resolve({
         code: 127,
@@ -495,99 +536,43 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     // forwarded into the group `detached` just put it beyond reach of. Only a
     // group THIS library detached on its own initiative: an undetached child
     // still shares our group and gets the terminal's signals directly.
-    const cancellableGroup = detached ? child.pid : undefined;
-    const unregisterGroup =
-      cancellableGroup === undefined
-        ? undefined
-        : registerCancellationGroup(cancellableGroup);
+    const unregisterGroup = registerRunCancellation(child, windows, detached);
 
-    let out = "";
-    let err = "";
-    // The last bytes of stderr, past whatever the cap discards: bounded,
-    // and what a failure report needs.
-    let errTail = "";
     let timedOut = false;
-    let bufferExceeded = false;
     let spawnFailed = false;
     let groupSurvived = false;
-    // Tracked incrementally rather than re-derived from `Buffer.byteLength(out)
-    // + Buffer.byteLength(err)` on every chunk: the latter rescans the WHOLE
-    // accumulated string per 'data' event, so capture cost grows with the
-    // square of the byte count as the cap is approached.
-    let capturedBytes = 0;
-    let killTimer: NodeJS.Timeout | undefined;
-    let escalateTimer: NodeJS.Timeout | undefined;
-    const maxBufferBytes = opts.maxBufferBytes ?? MAX_BUFFER_BYTES;
 
-    // Mirrors the deadline's own SIGTERM-then-SIGKILL escalation (below) —
-    // a runaway response is killed the same way a hung one is, just on a
-    // byte trigger instead of a clock. Guarded by `bufferExceeded` so a burst
-    // that arrives across two 'data' events cannot schedule the escalation
-    // twice, and skipped once `timedOut` already owns the shutdown.
-    const enforceBufferLimit = () => {
-      if (bufferExceeded || timedOut) return;
-      if (capturedBytes <= maxBufferBytes) return;
-      bufferExceeded = true;
-      if (killTimer) clearTimeout(killTimer);
-      signalTree("SIGTERM");
-      escalateTimer = setTimeout(() => {
-        signalTree("SIGKILL");
-        child.stdout?.destroy();
-        child.stderr?.destroy();
-        child.unref();
-        settle(1);
-      }, 2000);
-    };
-
-    child.stdout?.setEncoding("utf8");
-    child.stdout?.on("data", (d: string) => {
-      // Discarded once EITHER kill path has fired, not just the buffer cap:
-      // SIGTERM does not stop the child instantly under the deadline either,
-      // and a child that ignores it (or a descendant that keeps writing
-      // through either escalation's two-second grace) can go on emitting
-      // data right up to the SIGKILL. Gating this on `bufferExceeded` alone
-      // left the DEADLINE's own escalation window uncapped — `timedOut` sets
-      // and `enforceBufferLimit` no-ops forever, but nothing stopped these
-      // handlers from still appending.
-      const captured = !(bufferExceeded || timedOut);
-      if (captured) {
-        out += d;
-        capturedBytes += Buffer.byteLength(d);
-      }
-      opts.onChunk?.("stdout", Buffer.byteLength(d), captured);
-      enforceBufferLimit();
-    });
-    child.stderr?.setEncoding("utf8");
-    child.stderr?.on("data", (d: string) => {
-      errTail = lastBytes(errTail + d);
-      const captured = !(bufferExceeded || timedOut);
-      if (captured) {
-        err += d;
-        capturedBytes += Buffer.byteLength(d);
-      }
-      opts.onChunk?.("stderr", Buffer.byteLength(d), captured);
-      enforceBufferLimit();
+    const timers: ProcessTimers = {};
+    const output = captureProcessOutput(child, opts, {
+      timedOut: () => timedOut,
+      timers,
+      signalTree: (signal) => signalTree(signal),
+      settle: (code) => settle(code),
     });
 
-    const settle = (code: number, extraErr?: string) => {
-      if (killTimer) clearTimeout(killTimer);
-      if (escalateTimer) clearTimeout(escalateTimer);
-      // Untracked here rather than on 'close', because `settle` is also the
-      // deadline's own exit path — which fires while the group may still be
-      // dying. A stale pgid in the set would have a later cancellation signal
-      // a number the kernel has since handed to something else.
-      unregisterGroup?.();
-      resolve({
-        code,
-        stdout: out,
-        stderr: err || (extraErr ?? ""),
-        timedOut,
-        bufferExceeded,
-        spawnFailed,
-        stderrTail: code === 0 ? "" : lastBytes(errTail || (extraErr ?? "")),
-        ...(opts.reapGroup ? { groupSurvived } : {}),
+    const settle = (code: number, extraErr?: string) =>
+      windows.finish(() => {
+        if (timers.kill) clearTimeout(timers.kill);
+        if (timers.escalate) clearTimeout(timers.escalate);
+        // Untracked here rather than on 'close', because `settle` is also the
+        // deadline's own exit path — which fires while the group may still be
+        // dying. A stale pgid in the set would have a later cancellation signal
+        // a number the kernel has since handed to something else.
+        unregisterGroup?.();
+        resolve({
+          code,
+          stdout: output.stdout,
+          stderr: output.stderr || (extraErr ?? ""),
+          timedOut,
+          bufferExceeded: output.bufferExceeded,
+          spawnFailed,
+          stderrTail:
+            code === 0 ? "" : lastBytes(output.tail || (extraErr ?? "")),
+          ...(opts.reapGroup
+            ? { groupSurvived: groupSurvived || windows.groupSurvived }
+            : {}),
+        });
       });
-    };
 
     // Signal the whole tree where we can, the child alone where we cannot.
     //
@@ -597,58 +582,14 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     // gone; anything else falls back to the single child rather than leaving
     // it running.
     //
-    // Windows has no process groups to signal: `taskkill /T` is the platform's
-    // own answer, walking the child tree by parent pid. It is spawned
-    // fire-and-forget — we are already inside a deadline, and waiting on the
-    // killer to confirm a kill would reintroduce the unbounded wait.
-    const signalTree = (sig: NodeJS.Signals) => {
-      if (child.pid === undefined) return;
-      if (process.platform === "win32") {
-        if (sig === "SIGKILL") {
-          try {
-            const killer = spawn(
-              "taskkill",
-              ["/pid", String(child.pid), "/t", "/f"],
-              { stdio: "ignore" },
-            );
-            // `spawn` reports a failure to START asynchronously, as an 'error'
-            // event — the surrounding try/catch never sees it, and an
-            // unhandled one on a ChildProcess throws. So the fallback has to
-            // be a listener, not a catch block, or a machine without taskkill
-            // loses the kill AND crashes the driver. Attached BEFORE unref,
-            // which only detaches it from the event loop and does not remove
-            // listeners.
-            killer.on("error", () => {
-              try {
-                child.kill(sig);
-              } catch {
-                // already gone
-              }
-            });
-            killer.unref();
-          } catch {
-            child.kill(sig);
-          }
-        }
-        return;
-      }
-      try {
-        if (detached) process.kill(-child.pid, sig);
-        else child.kill(sig);
-      } catch {
-        try {
-          child.kill(sig);
-        } catch {
-          // already gone
-        }
-      }
-    };
+    const signalTree = (sig: NodeJS.Signals) =>
+      windows.signal(child, detached, sig);
 
     if (opts.timeoutSec !== undefined) {
-      killTimer = setTimeout(() => {
+      timers.kill = setTimeout(() => {
         timedOut = true;
         signalTree("SIGTERM");
-        escalateTimer = setTimeout(() => {
+        timers.escalate = setTimeout(() => {
           signalTree("SIGKILL");
           // Settle on the DEADLINE's terms, not on 'close'.
           //
@@ -670,7 +611,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
       }, opts.timeoutSec * 1000);
     }
 
-    // Set BEFORE `settle`, exactly as `timedOut` and `bufferExceeded` are, so
+    // Set BEFORE `settle`, exactly as `timedOut` and `output.bufferExceeded` are, so
     // the flag is on the result this handler produces.
     //
     // Node emits 'error' for a handful of causes, and a failed spawn is only
@@ -690,7 +631,11 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     // 'close' that descendant has already done its work (and usually gone).
     // Killing the group here closes those pipes, and 'close' then settles.
     child.on("exit", () => {
-      if (timedOut || bufferExceeded) return;
+      if (timedOut || output.bufferExceeded) return;
+      if (opts.reapGroup && windows.enabled) {
+        windows.reap(child.pid);
+        return;
+      }
       if (opts.reapGroup && detached && groupAlive(child.pid)) {
         groupSurvived = true;
         signalTree("SIGKILL");
@@ -698,17 +643,17 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     });
     child.on("close", (code) => {
       // A timed-out (or buffer-killed) child that exits on SIGTERM cancels its
-      // own escalation: `settle` clears `escalateTimer`, so if 'close' fires
+      // own escalation: `settle` clears `timers.escalate`, so if 'close' fires
       // before the two seconds elapse the group SIGKILL never happens and the
       // tree leaks anyway, while this wrapper reports the wrong outcome
       //. So the kill moves here, where it
       // cannot be raced.
-      if (timedOut || bufferExceeded) signalTree("SIGKILL");
+      if (timedOut || output.bufferExceeded) signalTree("SIGKILL");
       else if (opts.reapGroup && detached && groupAlive(child.pid)) {
         groupSurvived = true;
         signalTree("SIGKILL");
       }
-      settle(timedOut ? 124 : bufferExceeded ? 1 : (code ?? 1));
+      settle(timedOut ? 124 : output.bufferExceeded ? 1 : (code ?? 1));
     });
 
     writeChildInput(child.stdin, opts.stdin);

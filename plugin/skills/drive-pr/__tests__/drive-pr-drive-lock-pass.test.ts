@@ -38,12 +38,14 @@ import {
 } from "./drive-loop-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
-import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
-
-const NO_SIGNALS = skipsOnWindows(
-  "process-lifecycle",
-  "a signal to the driver is TerminateProcess on Windows, so its handler never runs, and the pass has no process group to kill",
-);
+import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
+import {
+  captureProcessTree,
+  identityTargetsGone,
+  signalIdentityTargets,
+} from "../../../shared/process-tree.ts";
+import { requestDriverStop } from "../scripts/lib/stop-request.ts";
+import { readdirSync } from "node:fs";
 
 useDrivePrSuite();
 
@@ -114,12 +116,18 @@ describe("drive.ts loop control", () => {
      * group to be stopped while the grandchild still sleeps.
      */
     const LATE_GRANDCHILD_SECONDS = 2;
-    const passWithLateGrandchild = (dir: string) => [
-      "sh",
-      "-c",
-      `: pass for 999; : > ${JSON.stringify(join(dir, "pass-started"))}; ` +
-        `(sleep ${LATE_GRANDCHILD_SECONDS}; : > ${JSON.stringify(join(dir, "pass-late"))}) & wait`,
-    ];
+    const passWithLateGrandchild = (dir: string) =>
+      byPlatform(
+        "Windows tree termination is witnessed by captured identities; POSIX also checks the late write",
+        { windows: "captured", posix: "late-write" },
+      ) === "captured"
+        ? portablePassTree(dir)
+        : [
+            "sh",
+            "-c",
+            `: pass for 999; : > ${JSON.stringify(join(dir, "pass-started"))}; ` +
+              `(sleep ${LATE_GRANDCHILD_SECONDS}; : > ${JSON.stringify(join(dir, "pass-late"))}) & wait`,
+          ];
 
     /**
      * Poll for the pass's own announcement, so the window is not guessed.
@@ -178,6 +186,17 @@ describe("drive.ts loop control", () => {
         },
       );
       const startedAt = await awaitPassStart(dir);
+      const native =
+        byPlatform(
+          "native Windows teardown requires creation-bound descendant witnesses",
+          { windows: "true", posix: "false" },
+        ) === "true";
+      const captured = native
+        ? await captureProcessTree(
+            Number(readFileSync(join(dir, "pass-started"), "utf8")),
+          )
+        : null;
+      if (native) expect(captured).not.toBeNull();
       // A successor recovering this lock is indistinguishable, from here, from
       // the generation simply no longer being ours — which is exactly what the
       // heartbeat checks.
@@ -190,8 +209,12 @@ describe("drive.ts loop control", () => {
       expect(stderr).toContain("stopping the active pass");
       expect(stderr).toContain("recovered by another driver");
       // Past the grandchild's own sleep: nothing in the pass tree survived.
-      await outwaitGrandchild(startedAt, LATE_GRANDCHILD_SECONDS);
-      expect(existsSync(join(dir, "pass-late"))).toBe(false);
+      if (captured !== null)
+        expect(await identityTargetsGone(captured)).toBe(true);
+      else {
+        await outwaitGrandchild(startedAt, LATE_GRANDCHILD_SECONDS);
+        expect(existsSync(join(dir, "pass-late"))).toBe(false);
+      }
     }, 15000);
 
     it("stops rotating the driver log once another driver recovers the lock", async () => {
@@ -227,6 +250,17 @@ describe("drive.ts loop control", () => {
         },
       );
       const startedAt = await awaitPassStart(dir);
+      const native =
+        byPlatform(
+          "native Windows teardown requires creation-bound descendant witnesses",
+          { windows: "true", posix: "false" },
+        ) === "true";
+      const captured = native
+        ? await captureProcessTree(
+            Number(readFileSync(join(dir, "pass-started"), "utf8")),
+          )
+        : null;
+      if (native) expect(captured).not.toBeNull();
       // Full, so the next line the old driver writes would rotate the file.
       // Filled BEFORE the takeover is published: once it is, the driver's
       // heartbeat may notice and write its shutdown lines at any moment, and
@@ -1484,7 +1518,22 @@ describe("drive.ts loop control", () => {
       }
     }, 15000);
 
-    it.skipIf(NO_SIGNALS).each(["SIGTERM", "SIGHUP"] as const)(
+    function portablePassTree(dir: string): string[] {
+      const childCode = `setInterval(() => {}, 1000);`;
+      const code = `import {writeFileSync} from 'node:fs'; const child = Bun.spawn([process.execPath, '-e', ${JSON.stringify(childCode)}], {stdout:'inherit',stderr:'inherit'}); writeFileSync(${JSON.stringify(join(dir, "pass-started"))}, String(process.pid)); setInterval(() => {}, 1000);`;
+      return [process.execPath, "-e", code, "999"];
+    }
+
+    function requestHeldDriverStop(prLock: string): void {
+      const claim = readdirSync(prLock).find((name) =>
+        name.startsWith("claim."),
+      );
+      expect(claim).toBeDefined();
+      if (claim !== undefined)
+        requestDriverStop(prLock, claim.slice("claim.".length));
+    }
+
+    it.each(["SIGTERM", "SIGHUP"] as const)(
       "stops the pass BEFORE releasing the locks on %s",
       async (signal) => {
         // A signal delivered to the driver pid alone — a supervisor, `kill
@@ -1503,7 +1552,7 @@ describe("drive.ts loop control", () => {
             "--max-rounds",
             "1",
             "--",
-            ...passWithLateGrandchild(dir),
+            ...portablePassTree(dir),
           ),
           {
             env: {
@@ -1517,81 +1566,109 @@ describe("drive.ts loop control", () => {
             stderr: "pipe",
           },
         );
-        const startedAt = await awaitPassStart(dir);
+        await awaitPassStart(dir);
+        const captured = await captureProcessTree(
+          Number(readFileSync(join(dir, "pass-started"), "utf8")),
+        );
+        expect(captured).not.toBeNull();
+        const mode = byPlatform(
+          "Windows uses the cooperative channel because native signals terminate the driver immediately",
+          { windows: "request", posix: "signal" },
+        );
         // The DRIVER only. The pass runs in its own process group precisely so
         // this signal cannot reach it by accident, which is what leaves the
         // handler as the only thing that can end it.
-        proc.kill(signal);
+        if (mode === "request") requestHeldDriverStop(pr);
+        else proc.kill(signal);
         const [stderr, exitCode] = await Promise.all([
           new Response(proc.stderr).text(),
           proc.exited,
         ]);
-        expect(exitCode).toBe(signal === "SIGHUP" ? 129 : 143);
+        expect(exitCode).toBe(
+          mode === "request" ? 143 : signal === "SIGHUP" ? 129 : 143,
+        );
         expect(stderr).toContain("stopping the active pass");
-        expect(stderr).toContain(`received ${signal}`);
+        expect(stderr).toContain(
+          `received ${mode === "request" ? "stop request" : signal}`,
+        );
         // Both locks released — the pass was provably gone first, so releasing
         // them is safe and the next driver need not recover them as stale.
         expect(existsSync(worktree)).toBe(false);
         expect(existsSync(pr)).toBe(false);
-        await outwaitGrandchild(startedAt, LATE_GRANDCHILD_SECONDS);
-        expect(existsSync(join(dir, "pass-late"))).toBe(false);
+        if (captured !== null)
+          expect(await identityTargetsGone(captured)).toBe(true);
       },
-      15000,
+      60000,
     );
 
-    it.skipIf(NO_SIGNALS)(
-      "kills the pass GROUP even when the leader closes first",
-      async () => {
-        // `settle` clears the stop's escalation timer, so a leader that exits on
-        // the SIGTERM cancels the scheduled group SIGKILL — and a descendant that
-        // IGNORES SIGTERM then survives while `exited` resolves, telling the
-        // driver the pass is gone.
-        // The leader here exits promptly; the grandchild traps TERM and would
-        // write its marker four seconds later if only the timer stood behind it
-        // — longer than the stop's two-second escalation grace, so a group
-        // SIGKILL that does fire lands while it still sleeps.
-        const { dir, stateDir } = writeFixture({
-          threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
-        });
-        const { worktree } = lockDirs(dir, stateDir);
-        const proc = Bun.spawn(
-          scriptArgv(
-            join(SCRIPTS, "drive.ts"),
-            "999",
-            "--no-head-sync",
-            "--max-rounds",
-            "1",
-            "--",
-            "sh",
-            "-c",
-            `: pass for 999; sh -c 'trap "" TERM; sleep 4; : > ${JSON.stringify(join(dir, "pass-late"))}' & ` +
-              `: > ${JSON.stringify(join(dir, "pass-started"))}; wait`,
-          ),
-          {
-            env: {
-              ...process.env,
-              PATH: `${binDir}${delimiter}${process.env.PATH}`,
-              DRIVE_PR_FIXTURES: dir,
-              DRIVE_PR_STATE_DIR: stateDir,
-              DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-              DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
-            },
-            stdout: "pipe",
-            stderr: "pipe",
+    it("kills the pass GROUP even when the leader closes first", async () => {
+      // `settle` clears the stop's escalation timer, so a leader that exits on
+      // the SIGTERM cancels the scheduled group SIGKILL — and a descendant that
+      // IGNORES SIGTERM then survives while `exited` resolves, telling the
+      // driver the pass is gone.
+      // The leader here exits promptly; the grandchild traps TERM and would
+      // write its marker four seconds later if only the timer stood behind it
+      // — longer than the stop's two-second escalation grace, so a group
+      // SIGKILL that does fire lands while it still sleeps.
+      const { dir, stateDir } = writeFixture({
+        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+      });
+      const { worktree } = lockDirs(dir, stateDir);
+      const mode = byPlatform(
+        "POSIX proves escalation after a leader exits on TERM; native Windows proves captured descendant termination",
+        { windows: "captured", posix: "leader-first" },
+      );
+      const command =
+        mode === "captured"
+          ? portablePassTree(dir)
+          : [
+              "sh",
+              "-c",
+              `: pass for 999; sh -c 'trap "" TERM; sleep 4; : > ${JSON.stringify(join(dir, "pass-late"))}' & : > ${JSON.stringify(join(dir, "pass-started"))}; wait`,
+            ];
+      const proc = Bun.spawn(
+        scriptArgv(
+          join(SCRIPTS, "drive.ts"),
+          "999",
+          "--no-head-sync",
+          "--max-rounds",
+          "1",
+          "--",
+          ...command,
+        ),
+        {
+          env: {
+            ...process.env,
+            PATH: `${binDir}${delimiter}${process.env.PATH}`,
+            DRIVE_PR_FIXTURES: dir,
+            DRIVE_PR_STATE_DIR: stateDir,
+            DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "100",
           },
-        );
-        const startedAt = await awaitPassStart(dir);
-        simulateTakeover(worktree, "successor02");
-        const [, exitCode] = await Promise.all([
-          new Response(proc.stderr).text(),
-          proc.exited,
-        ]);
-        expect(exitCode).toBe(11);
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      const startedAt = await awaitPassStart(dir);
+      const captured =
+        mode === "captured"
+          ? await captureProcessTree(
+              Number(readFileSync(join(dir, "pass-started"), "utf8")),
+            )
+          : null;
+      if (mode === "captured") expect(captured).not.toBeNull();
+      simulateTakeover(worktree, "successor02");
+      const [, exitCode] = await Promise.all([
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      expect(exitCode).toBe(11);
+      if (mode === "leader-first") {
         await outwaitGrandchild(startedAt, 4);
         expect(existsSync(join(dir, "pass-late"))).toBe(false);
-      },
-      15000,
-    );
+      } else if (captured !== null)
+        expect(await identityTargetsGone(captured)).toBe(true);
+    }, 60000);
 
     it("a SECOND signal leaves the locks rather than releasing them under a live pass", async () => {
       // The forced-exit branch ran `process.exit()` with `held` still
@@ -1602,6 +1679,18 @@ describe("drive.ts loop control", () => {
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
       const { worktree, pr } = lockDirs(dir, stateDir);
+      const mode = byPlatform(
+        "native Windows forced termination has no signal handler; POSIX repeats the signal during graceful teardown",
+        { windows: "forced", posix: "repeated" },
+      );
+      const command =
+        mode === "forced"
+          ? portablePassTree(dir)
+          : [
+              "sh",
+              "-c",
+              `: pass for 999; trap "" TERM; : > ${JSON.stringify(join(dir, "pass-started"))}; n=0; while [ $n -lt 100 ]; do sleep 0.1; n=$((n+1)); done`,
+            ];
       const proc = Bun.spawn(
         scriptArgv(
           join(SCRIPTS, "drive.ts"),
@@ -1610,17 +1699,7 @@ describe("drive.ts loop control", () => {
           "--max-rounds",
           "1",
           "--",
-          "sh",
-          "-c",
-          // The leader must genuinely OUTLIVE the first signal, or the second
-          // one races a stop that has already finished and released. `trap ""
-          // TERM` alone does not achieve that: it protects the shell, while a
-          // bare `sleep 8` is a separate process that dies on the group
-          // SIGTERM — the shell's `wait` then returns and it exits anyway, in
-          // milliseconds. Looping short sleeps keeps the group alive until the
-          // escalation SIGKILL, which is a window wide enough to be certain.
-          `: pass for 999; trap "" TERM; : > ${JSON.stringify(join(dir, "pass-started"))}; ` +
-            "n=0; while [ $n -lt 100 ]; do sleep 0.1; n=$((n+1)); done",
+          ...command,
         ),
         {
           env: {
@@ -1639,15 +1718,32 @@ describe("drive.ts loop control", () => {
         },
       );
       await awaitPassStart(dir);
+      const captured = await captureProcessTree(proc.pid);
+      expect(captured).not.toBeNull();
       proc.kill("SIGTERM");
-      await Bun.sleep(50); // well inside the 2s escalation grace
-      proc.kill("SIGTERM");
+      if (mode === "repeated") {
+        expect(
+          await pollUntil(
+            () =>
+              readFileSync(join(stateDir, "drive-pr-999.log"), "utf8").includes(
+                "received SIGTERM",
+              ),
+            100,
+            10,
+          ),
+        ).toBe(true);
+        proc.kill("SIGTERM");
+      }
       const exitCode = await proc.exited;
       expect(exitCode).toBe(143);
       // Still held: the operator forced an exit rather than proving the pass
       // gone, so a lock left behind is the safe direction.
       expect(existsSync(worktree)).toBe(true);
       expect(existsSync(pr)).toBe(true);
+      if (captured !== null) {
+        expect(await identityTargetsGone(captured)).toBe(false);
+        await signalIdentityTargets(captured, "SIGKILL");
+      }
       // The pass's own loop can spin for up to 10s (100 x 0.1s)
       // before the escalation SIGKILL lands, on top of spawn/IO overhead —
       // comfortably past bun:test's 5000ms default even without contention.

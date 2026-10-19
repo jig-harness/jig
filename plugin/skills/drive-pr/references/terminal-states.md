@@ -615,15 +615,23 @@ the source needs no fence, so there is nothing left to bound.
 drive lock in the state dir with its owner and a verdict — live by exactly the
 recovery rule (`lib/claim.ts`'s `claimLive`), stale, empty, or the fail-closed
 `contested`/`unreadable` shapes, which it reports rather than drops — and
-`--stop <PR>` SIGTERMs a live driver, which stops its pass tree and releases
-its locks on the way out. It signals only a pid it can bind to the claim, so
-it refuses a claim with no diagnostics line (a driver predating diagnostics) and
-refuses any host where `ps` cannot report the pid's command. It never writes
-lock state: recovery stays
-`acquire`'s alone. The driver's own narrative survives the arming session at
+`--stop <PR>` requests that a live driver stop its pass tree and release
+its locks on the way out. It acts only on a process it can bind to the claim,
+using `ps` on POSIX and a PowerShell process snapshot on Windows. A Windows
+driver polls for the stop request and runs its own cleanup; a process-table
+failure refuses the stop. Recovery stays `acquire`'s alone. The driver's own narrative survives the arming session at
 `<state dir>/drive-pr-<PR>.log`.
 
-A pid recorded on **another host** is unanswerable here and counts as alive; the
+A stop request names the claim's generation, so a request left by an older
+driver cannot cancel its successor. The driver checks for requests every
+250 milliseconds. After a 30-second grace, the stop command forces captured
+process identities to exit and verifies their disappearance; it leaves
+abandoned locks for the next acquire to recover. Forced termination uses
+individually verified identities rather than trusting a tree-kill command's
+exit status. A process created outside the captured tree remains outside
+this guarantee; containment of arbitrary escaped descendants is separate work.
+
+A pid recorded on **another host or platform** is unanswerable here and counts as alive; the
 cost is a refusal a human clears by removing the directory, against two live
 drivers if it guessed the other way.
 
@@ -658,8 +666,8 @@ the locks. Releasing first was the same defect by a second path — a signal
 delivered to the driver pid alone (a supervisor, `kill <pid>`) never reaches the
 pass, so the locks came free while the agent kept writing the tree.
 
-Both stops signal the pass's whole **process group**, which is why the pass is
-spawned detached: signalling the pass alone leaves `guarded-push.ts` and the
+On POSIX, both stops signal the pass's whole **process group**, which is why
+the pass is spawned detached: signalling the pass alone leaves `guarded-push.ts` and the
 `git push` under it running. The cost of detaching is that the pass no longer
 receives the terminal's own Ctrl-C, or has a controlling terminal at all — the
 handlers above are what replace the first, and the second is correct for a

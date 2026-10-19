@@ -533,7 +533,7 @@ describe("drive.ts loop control", () => {
     });
 
     it("reclaims a staging directory orphaned by a crash before the publishing rename", async () => {
-      // `takeLock` publishes into `<lock>.<pid>.<host>.staging` before the
+      // `takeLock` publishes into `<lock>.<pid>.<host>@<platform>.staging` before the
       // rename that installs it. A crash in that window used to be bounded
       // only by "that exact pid retries this exact lock" — on a long-lived
       // clone a pid is not guaranteed to be reused for the same lock ever
@@ -546,7 +546,7 @@ describe("drive.ts loop control", () => {
       // between writeFileSync and renameSync).
       const { dir, stateDir } = writeFixture({ threads: [] });
       const { worktree } = lockDirs(dir, stateDir);
-      const orphanedStaging = `${worktree}.999999.${hostname()}.staging`;
+      const orphanedStaging = `${worktree}.999999.${hostname()}@${process.platform}.staging`;
       plantClaim(orphanedStaging, {
         pid: 999999,
         host: hostname(),
@@ -593,7 +593,7 @@ describe("drive.ts loop control", () => {
       // what closes this gap too.
       const { dir, stateDir } = writeFixture({ threads: [] });
       const { worktree } = lockDirs(dir, stateDir);
-      const emptyStaging = `${worktree}.999999.${hostname()}.staging`;
+      const emptyStaging = `${worktree}.999999.${hostname()}@${process.platform}.staging`;
       mkdirSync(emptyStaging, { recursive: true }); // no claim file inside
 
       const proc = Bun.spawn(
@@ -638,7 +638,7 @@ describe("drive.ts loop control", () => {
       // (unquestionably alive) pid, backdated well past `STAGING_STALE_MS`.
       const { dir, stateDir } = writeFixture({ threads: [] });
       const { worktree } = lockDirs(dir, stateDir);
-      const recycledStaging = `${worktree}.${process.pid}.${hostname()}.staging`;
+      const recycledStaging = `${worktree}.${process.pid}.${hostname()}@${process.platform}.staging`;
       plantClaim(recycledStaging, {
         pid: process.pid,
         host: hostname(),
@@ -684,7 +684,7 @@ describe("drive.ts loop control", () => {
       // pid-reuse test above, minus the backdating.
       const { dir, stateDir } = writeFixture({ threads: [] });
       const { worktree } = lockDirs(dir, stateDir);
-      const freshStaging = `${worktree}.${process.pid}.${hostname()}.staging`;
+      const freshStaging = `${worktree}.${process.pid}.${hostname()}@${process.platform}.staging`;
       plantClaim(freshStaging, {
         pid: process.pid,
         host: hostname(),
