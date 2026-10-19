@@ -6,10 +6,12 @@
 // checks. Exit 1 on a finding; 2 when it cannot check: a file is unreadable,
 // or `claude` is missing where JIG_REQUIRE_CLAUDE=1 (CI) demands it.
 // Without that variable a missing `claude` skips the validator with a warning,
-// so a contributor without Claude Code can still run the gates.
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+// so a contributor without Claude Code can still run the gates. A relative
+// link in a shipped Markdown file must resolve inside the artifact: a link to
+// the rest of the repository is an absolute URL (modules/AGENTS.md).
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { cli } from "../lib/cli.ts";
 import {
   couldNotCheck,
@@ -137,6 +139,51 @@ function marketplaceFindings(
   return out;
 }
 
+/** Directories whose Markdown is copied elsewhere, as check-md-links skips them. */
+const UNCHECKED_DIRS = ["templates", "fixtures", "fixture", "seeds"];
+
+/**
+ * The relative links in the artifact's Markdown (`written`, paths inside
+ * `out`) that point at nothing the artifact holds: a target outside
+ * `plugin/` resolves in the repository but not where the plugin is
+ * installed or on a release channel's branch.
+ */
+export function linkFindings(out: string, written: string[]): Finding[] {
+  return written
+    .filter(
+      (path) =>
+        path.endsWith(".md") &&
+        !path.split("/").some((part) => UNCHECKED_DIRS.includes(part)),
+    )
+    .flatMap((path) => brokenLinks(out, path));
+}
+
+/** The relative links in one artifact file that leave the artifact or miss. */
+function brokenLinks(out: string, path: string): Finding[] {
+  const content = readFileSync(join(out, path), "utf8");
+  return [...content.matchAll(/\]\(([^)]*)\)/g)]
+    .filter((match) => !resolvesInside(out, path, match[1] ?? ""))
+    .map((match) => ({
+      rule: RULE,
+      file: path,
+      line: content.slice(0, match.index).split("\n").length,
+      problem: `the link to ${match[1]} resolves to nothing the installed plugin holds`,
+      remedy:
+        "link a file outside plugin/ by its absolute URL (https://github.com/jig-harness/jig/blob/main/…), as modules/AGENTS.md says",
+    }));
+}
+
+/** Whether a link target is a URL or anchor, or a file the artifact holds. */
+function resolvesInside(out: string, path: string, target: string): boolean {
+  if (/^(https?:\/\/|mailto:|#|<)/.test(target)) return true;
+  const bare = target.split("#")[0]?.replace(/ $/, "") ?? "";
+  if (!bare) return true;
+  const resolved = join(out, dirname(path), bare);
+  return (
+    !relative(out, resolved).startsWith(`..${sep}`) && existsSync(resolved)
+  );
+}
+
 /** Whether `claude` runs here; only a missing executable means it does not. */
 function claudeAvailable(): boolean {
   const result = spawnSync("claude", ["--version"], {
@@ -200,8 +247,9 @@ export function checkPlugin(
 ): number {
   const out = mkdtempSync(join(tmpdir(), "jig-plugin-artifact-"));
   try {
+    let written: string[];
     try {
-      writeWorkingArtifact(root, out);
+      written = writeWorkingArtifact(root, out);
     } catch (error) {
       return couldNotCheck(
         RULE,
@@ -222,13 +270,17 @@ export function checkPlugin(
       console.warn(
         `${RULE}: claude is not on PATH, so the plugin was not run through Claude Code's validator; set JIG_REQUIRE_CLAUDE=1 to make that an error`,
       );
-    const findings = [...manifestFindings(files), ...(validated ?? [])];
+    const findings = [
+      ...manifestFindings(files),
+      ...linkFindings(out, written),
+      ...(validated ?? []),
+    ];
     if (findings.length) {
       reportFindings(findings, env);
       return 1;
     }
     console.log(
-      `${RULE}: OK — manifests and marketplaces agree${validated ? "; claude plugin validate --strict passes on the artifact" : ""}`,
+      `${RULE}: OK — manifests and marketplaces agree; every relative link in its Markdown resolves inside it${validated ? "; claude plugin validate --strict passes on the artifact" : ""}`,
     );
     return 0;
   } finally {

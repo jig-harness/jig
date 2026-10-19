@@ -18,7 +18,14 @@ import { dirname, join, resolve } from "node:path";
 import { load } from "js-yaml";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import { spawnSync } from "../../plugin/shared/guarded-git-spawn.ts";
-import { gitEnv, isShipped } from "./artifact.ts";
+import {
+  artifactTree,
+  ChannelError,
+  channelReadme,
+  gitEnv,
+  isShipped,
+  runChecked,
+} from "./artifact.ts";
 import {
   type ChannelCommit,
   compareVersions,
@@ -31,6 +38,7 @@ import {
   parseTrailers,
   readChannel,
   regressionVersions,
+  requiredCheckResult,
   run,
   SOAK_HOURS,
   soakStart,
@@ -355,9 +363,16 @@ function pushScript(): string {
   return script.replace(remoteLine, 'remote="$ORIGIN"');
 }
 
+/** The run's request, as the workflow's inputs carry it. */
+interface Request {
+  command: string;
+  version?: string | undefined;
+}
+
 function push(
   outputs: Record<string, string>,
   bundle: string,
+  request: Request,
 ): { status: number | null; stdout: string; stderr: string } {
   const temp = mkdtempSync(join(scratch, "runner-"));
   const result = spawnSync("bash", ["-c", pushScript()], {
@@ -365,6 +380,8 @@ function push(
     env: gitEnv({
       ORIGIN: origin,
       RUNNER_TEMP: temp,
+      COMMAND: request.command,
+      VERSION: request.version ?? "",
       CHANNEL: outputs.channel ?? "",
       START: outputs.start ?? "",
       COMMIT: outputs.commit ?? "",
@@ -382,7 +399,10 @@ function promoteAndPush(argv: string[], name: string): string {
   const bundle = join(scratch, `${name}.bundle`);
   const { status, outputs } = channel([...argv, "--bundle", bundle]);
   expect(status).toBe(0);
-  const pushed = push(outputs, bundle);
+  const pushed = push(outputs, bundle, {
+    command: argv[0] as string,
+    version: argv[1],
+  });
   expectSpawnExit({ ...pushed, exitCode: pushed.status }, 0);
   return outputs.commit as string;
 }
@@ -497,10 +517,181 @@ test.skipIf(process.platform === "win32")(
       "refs/jig-channel/out/stable",
       `^${tip}`,
     ]);
-    const refused = push({ channel: "stable", start: tip, commit }, bundle);
+    const refused = push({ channel: "stable", start: tip, commit }, bundle, {
+      command: "promote",
+      version: "0.1.1",
+    });
     expectSpawnExit({ ...refused, exitCode: refused.status }, 1);
     expect(refused.stdout).toContain("files differ from what v0.1.1 ships");
     expect(sh(origin, ["rev-parse", "stable"])).toBe(tip);
   },
   60_000,
+);
+
+test.skipIf(process.platform === "win32")(
+  "the push job checks the record later runs read against the request and the tags",
+  () => {
+    // Stable carries the rollback to 0.1.0 the test above pushed.
+    release("0.1.2", new Date().toISOString());
+    promoteAndPush(["latest"], "latest-3");
+    promoteAndPush(["promote", "0.1.2"], "stable-4");
+    const refusals: [string, Forgery, Request][] = [
+      [
+        "Jig-Withdrawn '0.1.2' is not the versions rolled back over, '0.1.1,0.1.2'",
+        { withdrawn: "0.1.2" },
+        { command: "rollback", version: "0.1.0" },
+      ],
+      [
+        "a promote withdraws no version",
+        { action: "promote", version: "0.1.2", withdrawn: "0.1.0" },
+        { command: "promote", version: "0.1.2" },
+      ],
+      [
+        "Jig-Action 'rollback' is not the requested promote",
+        {},
+        { command: "promote", version: "0.1.0" },
+      ],
+      [
+        "Jig-Version 0.1.0 is not the requested 0.1.1",
+        {},
+        { command: "rollback", version: "0.1.1" },
+      ],
+      [
+        "not within the last hour",
+        { date: "2026-01-02T00:00:00Z" },
+        { command: "rollback", version: "0.1.0" },
+      ],
+      [
+        "files differ from what v0.1.0 ships",
+        { readme: "anything\n" },
+        { command: "rollback", version: "0.1.0" },
+      ],
+    ];
+    for (const [problem, forgery, request] of refusals) {
+      const forged = forge(forgery);
+      const result = push(forged.outputs, forged.bundle, request);
+      expectSpawnExit({ ...result, exitCode: result.status }, 1);
+      expect(result.stdout).toContain(problem);
+      expect(sh(origin, ["rev-parse", "stable"])).toBe(
+        forged.outputs.start as string,
+      );
+    }
+    // The same forger, asked for nothing false, writes a commit that passes.
+    const honest = forge({});
+    const accepted = push(honest.outputs, honest.bundle, {
+      command: "rollback",
+      version: "0.1.0",
+    });
+    expectSpawnExit({ ...accepted, exitCode: accepted.status }, 0);
+  },
+  60_000,
+);
+
+/** What a forged stable commit says; by default, an honest rollback to 0.1.0. */
+interface Forgery {
+  action?: string;
+  version?: string;
+  withdrawn?: string;
+  readme?: string;
+  date?: string;
+}
+
+/** A stable commit on top of the origin's tip, written by hand, and its bundle. */
+function forge(forgery: Forgery): {
+  outputs: Record<string, string>;
+  bundle: string;
+} {
+  const action = forgery.action ?? "rollback";
+  const version = forgery.version ?? "0.1.0";
+  const withdrawn = forgery.withdrawn ?? "0.1.1,0.1.2";
+  sh(work, ["fetch", "-q", "origin", "+stable:refs/jig-channel/forge-base"]);
+  const tip = sh(work, ["rev-parse", "refs/jig-channel/forge-base"]);
+  const source = sh(work, ["rev-parse", `v${version}^{commit}`]);
+  const tree = artifactTree(work, source, {
+    "README.md": forgery.readme ?? channelReadme("stable", version),
+  });
+  const message = [
+    `stable: ${action} v${version}`,
+    "",
+    `Jig-Channel: stable`,
+    `Jig-Action: ${action}`,
+    `Jig-Version: ${version}`,
+    `Jig-Source: ${source}`,
+    `Jig-Withdrawn: ${withdrawn}`,
+    "",
+  ].join("\n");
+  const dates: Record<string, string> = forgery.date
+    ? { GIT_AUTHOR_DATE: forgery.date, GIT_COMMITTER_DATE: forgery.date }
+    : {};
+  const written = spawnSync(
+    "git",
+    ["-C", work, "commit-tree", tree, "-p", tip, "-F", "-"],
+    { env: gitEnv(dates), input: message },
+  );
+  expectSpawnExit({ ...written, exitCode: written.status }, 0);
+  const commit = written.stdout.trim();
+  sh(work, ["update-ref", "refs/jig-channel/out/stable", commit]);
+  const bundle = join(mkdtempSync(join(scratch, "forged-")), "stable.bundle");
+  sh(work, [
+    "bundle",
+    "create",
+    "-q",
+    bundle,
+    "refs/jig-channel/out/stable",
+    `^${tip}`,
+  ]);
+  return { outputs: { channel: "stable", start: tip, commit }, bundle };
+}
+
+test.skipIf(process.platform === "win32")(
+  "a tag only this clone has is not a release",
+  () => {
+    sh(work, ["tag", "v9.9.9"]);
+    try {
+      const versions = gitSources(work, "origin", github)
+        .tags()
+        .map((t) => t.version);
+      expect(versions).toContain("0.1.0");
+      expect(versions).not.toContain("9.9.9");
+    } finally {
+      sh(work, ["tag", "-d", "v9.9.9"]);
+    }
+  },
+  30_000,
+);
+
+test("the required check is the one GitHub Actions reports", () => {
+  const run = (slug: string, conclusion: string) => ({
+    app: { slug },
+    status: "completed",
+    conclusion,
+  });
+  expect(requiredCheckResult([run("github-actions", "success")])).toBe(
+    "success",
+  );
+  // Another App's `gates` is not the required check, success or not.
+  expect(requiredCheckResult([run("impostor", "success")])).toBeNull();
+  expect(
+    requiredCheckResult([
+      run("impostor", "success"),
+      run("github-actions", "failure"),
+    ]),
+  ).toBe("failure");
+  expect(
+    requiredCheckResult([
+      { app: { slug: "github-actions" }, status: "queued" },
+    ]),
+  ).toBe("queued");
+});
+
+test.skipIf(process.platform === "win32")(
+  "a command past its deadline fails with a reason, not a hang",
+  () => {
+    expect(() => runChecked("sleep", ["5"], { timeout: 200 })).toThrow(
+      ChannelError,
+    );
+    expect(() => runChecked("sleep", ["5"], { timeout: 200 })).toThrow(
+      "did not finish within 0.2 seconds",
+    );
+  },
 );

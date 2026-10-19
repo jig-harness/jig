@@ -8,7 +8,7 @@ before a new working copy can use them.
 
 Jig ships its skills as one **plugin**: an installable bundle that Claude
 Code and Codex both understand. You install it **once per machine**. From then
-on every repository, every [worktree](../GLOSSARY.md) and every session on that
+on every repository, every [worktree](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) and every session on that
 machine has the skills; creating a new worktree, workspace or clone needs no
 step at all. Each repository keeps only its own values (its gate command,
 reviewer names, issue team) in one configuration file, which the skills read
@@ -64,7 +64,7 @@ runs, what it hands over to.
 | [changelog](skills/changelog/README.md) | Keeps a repository's changelog and version from change notes: each pull request adds a small note instead of editing the changelog, a release step writes the notes in after the merge, and the skill's commands check a branch and show the next release; a GitHub Action and workflow template run the check, the release and the tags in CI, and `/jig:changelog setup` walks through turning it on. On only where the repository's `.config/jig.yaml` sets `changelog.file` | `/jig:changelog` | Where it is on, [do-item](skills/do-item/SKILL.md) writes the note before it opens the pull request, [drive-pr](skills/drive-pr/SKILL.md) and [resolve-review-comments](skills/resolve-review-comments/SKILL.md) keep it true through review, and [resolve-conflicts](skills/resolve-conflicts/SKILL.md) converts a branch's changelog edits into a note before merging |
 | [programmatic-execution](skills/programmatic-execution/SKILL.md) | Runs bulk read-only analysis as one script instead of many tool calls, so large outputs stay out of the conversation | `/jig:programmatic-execution` | Supports every other skill; none depends on it |
 
-The plugin also ships agents (a [subagent](../GLOSSARY.md) is a separately prompted helper
+The plugin also ships agents (a [subagent](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a separately prompted helper
 that a skill hands a narrow job to):
 
 | Agent | What it does | Available as |
@@ -141,7 +141,7 @@ the new session, run the audit: `/jig:audit` in Claude Code, or ask for the
 | Tool | Version | Needed for |
 |------|---------|------------|
 | **Claude Code** and/or a **Codex CLI** with plugin support | Claude Code 2.1.292 or later for the one-step install below (older: the two-step install), and 2.1.285 or later for a drive's [long background commands](skills/drive-pr/README.md#the-background-time-limit). Codex: tested with 0.159 | Every skill. Either tool is enough; install for each one you use |
-| **[Bun](https://bun.sh)** on `PATH` | The version in [mise.toml](../mise.toml), which Jig tests; an older Bun may lack an API a script uses | Every skill's scripts, which are TypeScript run by Bun. The repository being worked on needs no Bun of its own |
+| **[Bun](https://bun.sh)** on `PATH` | The version in [mise.toml](https://github.com/jig-harness/jig/blob/main/mise.toml), which Jig tests; an older Bun may lack an API a script uses | Every skill's scripts, which are TypeScript run by Bun. The repository being worked on needs no Bun of its own |
 | **git** | 2.36 or later (`--path-format` for absolute paths and `git worktree list -z`; `resolve-conflicts` needs 2.31) | Every skill that reads the repository |
 | **GitHub CLI** (`gh`), signed in with access to the repositories you work on | 2.48 or later (`gh api --slurp`) | Every skill that works on pull requests. Jig supports GitHub as its only forge ([extending](EXTENDING.md#forge-github)) |
 | **The `gh-stack` extension** | Any | Only `pull_requests.stacking: native` |
@@ -151,7 +151,7 @@ Nothing checks these versions when a skill runs: an older tool fails on the
 command it lacks.
 
 - **macOS or Linux for `drive-pr` and `do-item`.** The driver supervises
-  agent processes through [POSIX](../GLOSSARY.md) process groups and
+  agent processes through [POSIX](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) process groups and
   signals, so it does not run on Windows, and `do-item` is not tested there.
   The other skills run on all three systems
   ([operating systems](EXTENDING.md#operating-systems)).
@@ -255,7 +255,7 @@ A repository adopts a skill by committing its values. Nothing else is
 committed: no copy of the skill, no install script, no generated files.
 
 1. **Create `.config/jig.yaml`** with the values the skill needs.
-   This file is the *consumer overlay* (see the [glossary](../GLOSSARY.md)):
+   This file is the *consumer overlay* (see the [glossary](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)):
    the repository's own values, laid over the shared procedure. JSON is valid
    YAML, so a JSON-formatted file works too. The minimum for
    `resolve-review-comments`:
@@ -427,18 +427,18 @@ runs the repository's normal CI. `ci.required_checks` names the checks instead;
 review rounds (see the [drive-pr README](skills/drive-pr/README.md#ci-hold)).
 
 **Where a drive keeps its state.** A drive records its rounds, locks and
-leases (a [lease](../GLOSSARY.md) is a short-lived claim that one session owns the pull
+leases (a [lease](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a short-lived claim that one session owns the pull
 request's threads) outside the repository, in a per-clone folder:
 `~/.local/state/jig/drive-pr/<clone>/` by default. Set
 `DRIVE_PR_STATE_DIR` to move it; to move existing state into another folder,
 run `bun <skill-dir>/scripts/migrate-state-dir.ts --from <old-dir>` (see the
 [drive-pr README](skills/drive-pr/README.md#relocating-the-state-dir)). The
-[verification-fit](../GLOSSARY.md) log (the agent's recorded verdicts on whether each round's
+[verification-fit](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) log (the agent's recorded verdicts on whether each round's
 required validation was worth its cost) defaults to the Jig state
 folder too; `JIG_VERIFICATION_FIT_LOG` overrides it.
 
 **How the skills reach the issue tracker.** `do-item` and `drive-pr` talk to
-the tracker only through a small [tracker interface](../GLOSSARY.md) (read an issue with its
+the tracker only through a small [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (read an issue with its
 comments, list its children, change its state, post a comment, run the
 reports' queries). An *adapter* implements that interface for one tracker;
 `issue_tracker.adapter` chooses it, and Linear is the only adapter today.
@@ -572,7 +572,7 @@ Paths inside the cache change with each release, so never store them.
   source tree, tests included, where a channel holds the plugin as built.
   Versions are chosen per machine, not per repository: every repository on a
   machine uses the same release, so releases keep reading older configuration
-  files unless [CHANGELOG.md](../CHANGELOG.md) says otherwise.
+  files unless [CHANGELOG.md](https://github.com/jig-harness/jig/blob/main/CHANGELOG.md) says otherwise.
 - **What `main` means:** a marketplace added without a ref follows `main`,
   the source. It receives each version as soon as its release commit lands,
   before that commit's gates have passed, along with the development files.
@@ -586,7 +586,7 @@ Paths inside the cache change with each release, so never store them.
 
 ## Release channels
 
-A [release channel](../GLOSSARY.md) is a branch of this repository that the
+A [release channel](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a branch of this repository that the
 tools install from. It
 holds the plugin as the tools install it: the two marketplace files and
 `plugin/`, without the tests (`__tests__/`) and the instructions for agents
@@ -601,12 +601,14 @@ and which commit it was built from.
 | `stable` | A version that spent 72 hours on `latest` without an open regression | When Jig's maintainers promote a version, or roll back | Most machines, organization rollouts, container images |
 | `latest` | Every version | When a version is tagged, which happens once its release commit has passed the gates | Jig's maintainers, and teams that want each change as soon as it ships |
 
-**[Promotion](../GLOSSARY.md).** A version moves from `latest` to `stable` only when all of
+**[Promotion](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).** A version moves from `latest` to `stable` only when all of
 these hold, and the promotion command refuses otherwise, naming each
 reason:
 
 - it is tagged on `main`, and the tagged commit passed the gates;
-- it has been on `latest` for at least 72 hours;
+- it has been on `latest` for at least 72 hours; a version tagged before
+  `latest` existed counts from its tag, since `main` was then the one
+  address machines installed from;
 - no open issue labelled `regression` is filed against a version the
   promotion would bring to `stable` (one after `stable`'s current version, up
   to this one); a regression issue that names no version blocks every
@@ -624,7 +626,7 @@ their configuration for it. `latest` has no rollback; it is fixed forward.
 
 **What `stable` gained.** A promotion brings every version after `stable`'s
 previous one up to the promoted one; their sections in
-[CHANGELOG.md](../CHANGELOG.md) are what changed. The
+[CHANGELOG.md](https://github.com/jig-harness/jig/blob/main/CHANGELOG.md) are what changed. The
 [`stable` branch's history](https://github.com/jig-harness/jig/commits/stable)
 lists each promotion and the versions it brought.
 
@@ -750,7 +752,7 @@ machine, so skills stay compatible with older configuration files wherever
 they can; a change that needs a configuration edit is a breaking release (see
 [release](#releases)), and the skill's first step names the edit.
 
-The plugin also registers an [agent-runtime hook](../GLOSSARY.md), the
+The plugin also registers an [agent-runtime hook](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), the
 turn-budget guard (`hooks/turn-budget-guard.ts`): before every tool call it
 counts the session's agentic turns off the transcript and, within 50 turns of
 the runtime's cap of 1000, hands the agent a wrap-up instruction, so an
@@ -758,12 +760,12 @@ unattended session writes its handoff before the runtime aborts it. It reads
 local files only, lets the call through whenever it cannot count (and says so
 as a hook error), and is off with `JIG_TURN_BUDGET=0`; its knobs are in
 [CONFIGURATION.md § Environment variables](CONFIGURATION.md#environment-variables)
-and the practice is [M1's rung](../modules/M1-gates-enforcement-ladder/README.md#core-pieces).
+and the practice is [M1's rung](https://github.com/jig-harness/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md#core-pieces).
 
 ## Releases
 
 Every merged change to `plugin/` is released as a new version, tagged
-`v<version>` and described in [CHANGELOG.md](../CHANGELOG.md). A release run
+`v<version>` and described in [CHANGELOG.md](https://github.com/jig-harness/jig/blob/main/CHANGELOG.md). A release run
 writes the waiting changes that ask for a release as one version, the largest
 bump any of them asks for, so merges that landed before the run share a
 version. Each tagged version reaches the `latest`

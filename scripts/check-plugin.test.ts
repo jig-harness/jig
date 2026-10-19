@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
@@ -7,7 +13,8 @@ import {
   spawnSync,
   withoutLeakyGitEnv,
 } from "../plugin/shared/guarded-git-spawn.ts";
-import { manifestFindings } from "./check-plugin.ts";
+import { writeWorkingArtifact } from "../tools/plugin/artifact.ts";
+import { linkFindings, manifestFindings } from "./check-plugin.ts";
 
 const root = resolve(import.meta.dir, "..");
 const FILES = [
@@ -32,6 +39,42 @@ function files(): Record<string, Record<string, unknown>> {
 
 test("the repository's manifests and marketplaces agree", () => {
   expect(manifestFindings(files())).toEqual([]);
+});
+
+test("every relative link in the installed plugin's Markdown resolves inside it", () => {
+  const out = mkdtempSync(join(tmpdir(), "jig-plugin-links-"));
+  try {
+    const written = writeWorkingArtifact(root, out);
+    expect(linkFindings(out, written)).toEqual([]);
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("a link out of the plugin is a finding, unless it is a URL or in a template", () => {
+  const out = mkdtempSync(join(tmpdir(), "jig-plugin-links-"));
+  try {
+    const docs: Record<string, string> = {
+      "plugin/README.md":
+        "[g](../GLOSSARY.md) [s](skills/x/SKILL.md#a) [u](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) [h](#here)\n",
+      "plugin/skills/x/SKILL.md":
+        "[r](../../README.md) [m](../../../mise.toml)\n",
+      "plugin/skills/x/templates/t.md": "[c](../../../../CONTRIBUTING.md)\n",
+    };
+    for (const [path, text] of Object.entries(docs)) {
+      mkdirSync(dirname(join(out, path)), { recursive: true });
+      writeFileSync(join(out, path), text);
+    }
+    const found = linkFindings(out, Object.keys(docs)).map(
+      (f) => `${f.file}: ${f.problem}`,
+    );
+    expect(found).toEqual([
+      "plugin/README.md: the link to ../GLOSSARY.md resolves to nothing the installed plugin holds",
+      "plugin/skills/x/SKILL.md: the link to ../../../mise.toml resolves to nothing the installed plugin holds",
+    ]);
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
 });
 
 test("a manifest that differs from the other in a shared field is a finding", () => {

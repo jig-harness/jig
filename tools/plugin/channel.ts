@@ -49,6 +49,9 @@ export const SOAK_HOURS = 72;
 /** The check main's ruleset requires; a version's tagged commit must pass it. */
 export const REQUIRED_CHECK = "gates";
 
+/** The App that reports {@link REQUIRED_CHECK}: the gates workflow runs in GitHub Actions. */
+export const REQUIRED_CHECK_APP = "github-actions";
+
 /** The label that marks an issue as a regression in a released version. */
 export const REGRESSION_LABEL = "regression";
 
@@ -296,27 +299,45 @@ export interface Sources {
   regressions(): Regression[];
 }
 
+/** Where gitSources keeps the remote's tags. */
+const TAGS = "refs/jig-channel/tags/";
+
+/** How long one git call to the remote may take. */
+export const REMOTE_TIMEOUT_MS = 300_000;
+
+/** A git call that talks to the remote: bounded, and never waits on a prompt. */
+function remoteGit(repo: string, args: string[]): string {
+  return runChecked("git", ["-C", repo, ...args], {
+    env: gitEnv({ GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never" }),
+    timeout: REMOTE_TIMEOUT_MS,
+  });
+}
+
 /** Read the channels and tags from `remote` of `repo`, fetching them first. */
 export function gitSources(
   repo: string,
   remote: string,
   github: Pick<Sources, "gates" | "regressions">,
 ): Sources {
-  git(repo, [
+  // The remote's tags, in a namespace of their own and pruned to what the
+  // remote has: a tag made or kept only locally is not a release.
+  remoteGit(repo, [
     "fetch",
     "-q",
     "--force",
-    "--tags",
+    "--prune",
+    "--no-tags",
     remote,
     "+refs/heads/main:refs/jig-channel/main",
+    `+refs/tags/*:${TAGS}*`,
   ]);
-  const heads = git(repo, ["ls-remote", "--heads", remote]);
+  const heads = remoteGit(repo, ["ls-remote", "--heads", remote]);
   for (const channel of CHANNELS)
     if (
       heads.includes(`\trefs/heads/${channel}\n`) ||
       heads.endsWith(`\trefs/heads/${channel}`)
     )
-      git(repo, [
+      remoteGit(repo, [
         "fetch",
         "-q",
         "--no-tags",
@@ -335,8 +356,8 @@ export function gitSources(
 function readTags(repo: string): Tag[] {
   const listing = git(repo, [
     "for-each-ref",
-    "--format=%(refname:strip=2)%00%(*objectname)%00%(objectname)%00%(taggerdate:unix)%00%(*committerdate:unix)%00%(committerdate:unix)",
-    "refs/tags/v*",
+    "--format=%(refname:strip=3)%00%(*objectname)%00%(objectname)%00%(taggerdate:unix)%00%(*committerdate:unix)%00%(committerdate:unix)",
+    `${TAGS}v*`,
   ]);
   const tags: Tag[] = [];
   for (const line of listing.split("\n")) {
@@ -408,6 +429,25 @@ export function readChannel(
   return { tip: history[0]?.commit ?? null, history };
 }
 
+/**
+ * The required check's result among a commit's check runs named
+ * {@link REQUIRED_CHECK}: its conclusion once completed, else its status;
+ * null when there is none. Any App that may write checks can name one
+ * `gates`; only the gates workflow's, reported through GitHub Actions, is
+ * the required check.
+ */
+export function requiredCheckResult(runs: unknown[]): string | null {
+  const run = runs.find(
+    (entry) =>
+      (entry as { app?: { slug?: unknown } } | null)?.app?.slug ===
+      REQUIRED_CHECK_APP,
+  );
+  if (run === undefined) return null;
+  const { status, conclusion } = run as Record<string, unknown>;
+  if (status !== "completed") return String(status);
+  return typeof conclusion === "string" ? conclusion : "unknown";
+}
+
 /** The GitHub facts, through the `gh` command-line tool. */
 export function ghSources(
   repo: string,
@@ -426,11 +466,7 @@ export function ghSources(
         throw new ChannelError(
           `GitHub answered no check-run list for ${commit}`,
         );
-      const run: unknown = list[0];
-      if (run === undefined) return null;
-      const { status, conclusion } = run as Record<string, unknown>;
-      if (status !== "completed") return String(status);
-      return typeof conclusion === "string" ? conclusion : "unknown";
+      return requiredCheckResult(list);
     },
     regressions: () => {
       const issues: unknown = JSON.parse(

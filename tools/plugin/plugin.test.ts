@@ -35,6 +35,7 @@ import {
   codexMarketplace,
   DEFAULT_SOURCE,
   describeSource,
+  followsMain,
   PLUGIN_ID,
   parse,
   sameSource,
@@ -449,6 +450,17 @@ test("setup recognises where a marketplace is registered from", () => {
   expect(
     describeSource({ location: `${DEFAULT_SOURCE}#v0.3.0`, git: true }),
   ).toBe("v0.3.0, pinned");
+  // Naming main outright still follows main; only a version tag is a pin.
+  expect(
+    describeSource({ location: `${DEFAULT_SOURCE}#main`, git: true }),
+  ).toBe("main, the source address");
+  expect(
+    describeSource({ location: `${DEFAULT_SOURCE}#feature`, git: true }),
+  ).toBe("the ref feature");
+  expect(followsMain(undefined)).toBe(true);
+  expect(followsMain("main")).toBe(true);
+  expect(followsMain("refs/heads/main")).toBe(true);
+  expect(followsMain("stable")).toBe(false);
   expect(describeSource({ location: "/src/jig", git: false })).toBe(
     "the directory /src/jig",
   );

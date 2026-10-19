@@ -218,16 +218,23 @@ export function isGitAddress(source: string): boolean {
 
 /**
  * What a registered source follows, in words: a channel, `main` (the source
- * address, which receives each version before its gates pass), a pinned ref,
- * or a directory.
+ * address, which receives each version before its gates pass, with or
+ * without `#main`), a version tag it is pinned to, another ref, or a
+ * directory.
  */
 export function describeSource(registered: Registered): string {
   const { ref } = splitSource(registered.location);
   if (!registered.git) return `the directory ${registered.location}`;
-  if (ref && (CHANNELS as readonly string[]).includes(ref))
+  if (followsMain(ref)) return "main, the source address";
+  if ((CHANNELS as readonly string[]).includes(ref as string))
     return `the ${ref} channel`;
-  if (ref) return `${ref}, pinned`;
-  return "main, the source address";
+  if (/^v\d+\.\d+\.\d+$/.test(ref as string)) return `${ref}, pinned`;
+  return `the ref ${ref}`;
+}
+
+/** Whether a registered ref follows `main`: none, or `main` named outright. */
+export function followsMain(ref: string | undefined): boolean {
+  return ref === undefined || ref === "main" || ref === "refs/heads/main";
 }
 
 /**
@@ -264,7 +271,7 @@ function refuseOtherSource(
 /** After an update, point a machine that follows `main` at a channel. */
 function adviseChannel(harness: Harness, registered: Registered): void {
   const { base, ref } = splitSource(registered.location);
-  if (!registered.git || ref !== undefined) return;
+  if (!registered.git || !followsMain(ref)) return;
   // A marketplace added as `owner/repo` is a Git address setup cannot take.
   const source = isGitAddress(base) ? base : DEFAULT_SOURCE;
   console.warn(

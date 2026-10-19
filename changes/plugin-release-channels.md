@@ -13,7 +13,7 @@ release: minor
   `bun tools/plugin/setup.ts` follows `stable` on a fresh machine and takes
   `--channel latest|stable`. A channel holds the plugin without its tests
   and development notes, so the install is smaller. A machine added without
-  a ref still follows `main`, which receives each version before its gates
+  a ref, or at `#main`, still follows `main`, which receives each version before its gates
   pass; to move it to a channel, remove the marketplace and add it again at
   the channel, as
   [Release channels](../plugin/README.md#release-channels) shows. The plugin's

@@ -240,10 +240,11 @@ or as a release pull request) and the tag after verification.
   [release channels](../../GLOSSARY.md): one that takes every tagged version,
   and one a version reaches by [promotion](../../GLOSSARY.md) after a
   [soak](../../GLOSSARY.md) with its checks green and no open regression,
-  with a rollback that withdraws a bad one. npm's dist-tags are this
-  practice for packages; Jig's plugin runs it for a plugin installed from a
-  Git repository ([plugin/README.md](../../plugin/README.md#release-channels)).
-  It becomes a core piece, with an audit criterion, once a second repository
+  with a rollback that withdraws a bad one. Jig's plugin runs it for a
+  plugin installed from a Git repository
+  ([plugin/README.md](../../plugin/README.md#release-channels)); how other
+  ecosystems carry it is in [mappings.md](mappings.md#release-channels). It
+  becomes a core piece, with an audit criterion, once a second repository
   has run it.
 - **Other CI providers.** The skill's check and release step run on any
   provider; its workflow template, its tag job and its access check are

@@ -17,7 +17,7 @@ verbatim.
 The canonical (exit, state) pairing below is code, not this table:
 [`terminal-states.ts`](../scripts/lib/status/terminal-states.ts), checked
 against this and the other prose restatements by
-[`__tests__/terminal-states-consistency.ts`](../__tests__/terminal-states-consistency.ts).
+[`__tests__/terminal-states-consistency.ts`](https://github.com/jig-harness/jig/blob/main/plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts).
 A backtick-wrapped **State** cell names a real `state` value (or, on row `4`,
 the five that share that exit code — `4` has no `state` of its own); an em
 dash means the row does not identify a single canonical state. Usually that is

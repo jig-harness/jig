@@ -52,7 +52,12 @@ export function isShipped(path: string): boolean {
   return name !== "AGENTS.md" && name !== "CLAUDE.md";
 }
 
-/** The README a channel branch carries in place of the repository's. */
+/**
+ * The README a channel branch carries in place of the repository's. The
+ * `push` job in .github/workflows/channels.yml writes the same text to check
+ * a channel commit's README, so a change here is made there too
+ * (tools/plugin/channel.test.ts runs that job's script on a written commit).
+ */
 export function channelReadme(channel: string, version: string): string {
   return [
     `# Jig plugin, \`${channel}\` channel`,
@@ -87,8 +92,13 @@ export function runChecked(
     env: options.env ?? gitEnv(),
     input: options.input,
     timeout: options.timeout,
+    killSignal: "SIGKILL",
     maxBuffer: 256 * 1024 * 1024,
   });
+  if ((result.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT")
+    throw new ChannelError(
+      `${command} ${args.join(" ")} did not finish within ${(options.timeout ?? 0) / 1000} seconds`,
+    );
   if (result.error) throw result.error;
   if (result.status !== 0)
     throw new ChannelError(
