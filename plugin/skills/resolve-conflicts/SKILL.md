@@ -327,8 +327,12 @@ It fails (exit 1), listing each problem with its file and line, when:
    nothing. Git's automatic result is reconstructed under no configuration
    but the repository's rename-detection settings (`merge.renames`,
    `merge.directoryRenames`, `merge.renameLimit`, `diff.renames`,
-   `diff.renameLimit`), so a merge driver configured for the repository, the
-   user, the system or the environment does not run. Conflict markers are looked for at the size git wrote them with as
+   `diff.renameLimit`) and `core.useReplaceRefs`, so a merge driver
+   configured for the repository, the user, the system or the environment
+   does not run. It reads the repository's own history and submodules: its
+   replace refs, and each submodule's repository in the working tree or
+   under the repository's `modules` directory, so a submodule git
+   fast-forwarded is not reported as a conflict. Conflict markers are looked for at the size git wrote them with as
    well, and in other staged changes on every added line, whatever an
    attribute says the file is;
 5. a lockfile or generated file is not recorded as `regenerated`, or any

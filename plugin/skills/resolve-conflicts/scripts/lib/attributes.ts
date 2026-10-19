@@ -16,6 +16,7 @@ import {
   existsSync,
   mkdtempSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -47,21 +48,22 @@ const REPOSITORY_VARIABLES = [
 ];
 
 /**
- * Settings that decide how a merge detects renames, and nothing else: the one
- * configuration the reconstruction takes from the repository as it stands, so
- * that it detects the renames the operation itself detected.
+ * Settings that decide which renames and which history a merge finds, and
+ * nothing else: the one configuration the reconstruction takes from the
+ * repository as it stands, so that it finds what the operation itself found.
  */
-const RENAME_SETTINGS = [
+const MERGE_SETTINGS = [
   "merge.renames",
   "merge.directoryRenames",
   "merge.renameLimit",
   "diff.renames",
   "diff.renameLimit",
+  "core.useReplaceRefs",
 ];
 
-/** The rename settings in effect for the repository, as `-c` arguments. */
-function renameSettings(root: string): string[] {
-  return RENAME_SETTINGS.flatMap((key) => {
+/** The merge settings in effect for the repository, as `-c` arguments. */
+function mergeSettings(root: string): string[] {
+  return MERGE_SETTINGS.flatMap((key) => {
     const r = gitRaw(root, ["config", "--get", key]);
     return r.code === 0 ? ["-c", `${key}=${r.stdout.trim()}`] : [];
   });
@@ -104,11 +106,17 @@ export type IndexAttributesGit = (
  * `info/attributes` does not exist; `core.attributesFile` names an empty file
  * and `GIT_ATTR_NOSYSTEM` drops the system's file. Objects are the
  * repository's own (`GIT_OBJECT_DIRECTORY`), so what it writes, an automatic
- * merge's tree, is readable from the repository afterwards. No configuration
+ * merge's tree, is readable from the repository afterwards. Its working tree
+ * is the repository's and its `modules` directory links to the repository's,
+ * so a merge reaches the same submodule repositories (to fast-forward one),
+ * and the repository's replace refs are copied in, so it reads the same
+ * commits;
+ * `--attr-source` takes precedence over the working tree's `.gitattributes`
+ * files, so they still decide nothing. No configuration
  * is read: not the repository's, the user's (`GIT_CONFIG_GLOBAL` names an
  * empty file), the system's (`GIT_CONFIG_NOSYSTEM`), nor any passed in the
- * environment, except the settings that decide rename detection, passed on
- * as the repository has them. So a merge driver configured anywhere does not
+ * environment, except the settings that decide rename detection and
+ * replacement objects, passed on as the repository has them. So a merge driver configured anywhere does not
  * run, and a merge's result is git's for the attributes the commit carries.
  */
 export function indexAttributesGit<T>(
@@ -142,6 +150,17 @@ export function indexAttributesGit<T>(
       "shallow",
     ]).trim();
     if (existsSync(shallow)) copyFileSync(shallow, join(gitDir, "shallow"));
+    // A submodule's repository is found where the merge itself finds it: in
+    // the working tree, or under the repository's `modules` directory.
+    const modules = git(root, [
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-path",
+      "modules",
+    ]).trim();
+    if (existsSync(modules))
+      symlinkSync(modules, join(gitDir, "modules"), "junction");
+    const workTree = git(root, ["rev-parse", "--show-toplevel"]).trim();
     const noAttributes = join(scratch, "attributes");
     writeFileSync(noAttributes, "");
     const noConfiguration = join(scratch, "config");
@@ -152,14 +171,23 @@ export function indexAttributesGit<T>(
       if (CONFIGURATION_VARIABLE.test(name)) delete env[name];
     Object.assign(env, {
       GIT_DIR: gitDir,
+      GIT_WORK_TREE: workTree,
       GIT_OBJECT_DIRECTORY: objects,
       GIT_ATTR_NOSYSTEM: "1",
       GIT_CONFIG_GLOBAL: noConfiguration,
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_OPTIONAL_LOCKS: "0",
     });
+    // Replacement objects stand in for the commits the merge reads.
+    const replaceBase = process.env.GIT_REPLACE_REF_BASE || "refs/replace/";
+    const replacements = git(root, [
+      "for-each-ref",
+      "--format=create %(refname) %(objectname)",
+      replaceBase,
+    ]);
+    if (replacements) git(root, ["update-ref", "--stdin"], replacements, env);
     const prefix = [
-      ...renameSettings(root),
+      ...mergeSettings(root),
       "-c",
       `core.attributesFile=${noAttributes}`,
       `--attr-source=${tree}`,

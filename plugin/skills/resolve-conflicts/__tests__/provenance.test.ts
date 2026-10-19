@@ -219,6 +219,67 @@ describe("staged content provenance", () => {
     s.git("add", "unrelated.txt");
     expect(check(1).stdout).toContain("outside this operation");
   });
+  for (const checkout of ["checked out", "deinitialized"]) {
+    it(`reconstructs a submodule fast-forward when it is ${checkout}`, () => {
+      const sub = (...args: string[]) => {
+        const r = s.run("git", ["-C", "sub", ...args]);
+        ok(r);
+        return r.stdout.trim();
+      };
+      s.write("sub/file.txt", "s0\n");
+      ok(s.run("git", ["init", "-q", "sub"]));
+      sub("add", "file.txt");
+      sub("commit", "-q", "-m", "S0");
+      s.write(
+        ".gitmodules",
+        '[submodule "sub"]\n\tpath = sub\n\turl = ./sub\n',
+      );
+      s.git("add", ".gitmodules", "sub");
+      s.commit("Base", { "conflict.txt": "base\n" });
+      s.git("submodule", "--quiet", "absorbgitdirs");
+      s.write("sub/file.txt", "s1\n");
+      sub("commit", "-q", "-am", "S1");
+      const s1 = sub("rev-parse", "HEAD");
+      s.write("sub/file.txt", "s2\n");
+      sub("commit", "-q", "-am", "S2");
+      const s2 = sub("rev-parse", "HEAD");
+      s.git("checkout", "-q", "-b", "feature");
+      sub("checkout", "-q", s1);
+      s.commit("Feature", { "conflict.txt": "feature\n" });
+      s.git("checkout", "-q", "main");
+      sub("checkout", "-q", s2);
+      s.commit("Main", { "conflict.txt": "main\n" });
+      s.git("checkout", "-q", "feature");
+      if (checkout === "deinitialized")
+        s.git("submodule", "--quiet", "deinit", "--force", "sub");
+      ok(s.gitTry("merge", "main"), 1);
+      expect(s.git("ls-files", "-u", "--", "sub")).toBe("");
+      map();
+      resolve();
+      check();
+    });
+  }
+  it("reconstructs the merge with the repository's replacement objects", () => {
+    s.commit("Base", { "conflict.txt": "base\n", "clean.txt": "base\n" });
+    s.git("checkout", "-q", "-b", "feature");
+    s.commit("Feature", { "conflict.txt": "feature\n" });
+    s.git("checkout", "-q", "main");
+    const main = s.commit("Main", { "conflict.txt": "main\n" });
+    s.write("clean.txt", "replaced\n");
+    s.git("add", "clean.txt");
+    const tree = s.git("write-tree").trim();
+    const replacement = s
+      .git("commit-tree", tree, "-p", `${main}^`, "-m", "Replaced")
+      .trim();
+    s.git("replace", main, replacement);
+    s.git("reset", "-q", "--hard");
+    s.git("checkout", "-q", "feature");
+    ok(s.gitTry("merge", "main"), 1);
+    expect(s.read("clean.txt")).toBe("replaced\n");
+    map();
+    resolve();
+    check();
+  });
   it("reconstructs a revert of the root commit", () => {
     const root = s.commit("Root", {
       "conflict.txt": "base\n",

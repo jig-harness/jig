@@ -14,9 +14,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { mergeSnapshot } from "../scripts/conflict-map.ts";
-import { CONFIG_BASE, mergeConflict, Scratch } from "./scratch.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { CONFIG_BASE, mergeConflict, type Run, Scratch } from "./scratch.ts";
 
 let s: Scratch;
+const ok = (r: Run, code: number) =>
+  expectSpawnExit({ ...r, exitCode: r.code }, code);
 beforeEach(() => {
   s = new Scratch();
 });
@@ -59,7 +62,7 @@ interface Map {
 function map(...args: string[]): Map {
   const r = s.script("conflict-map.ts", ["--json", ...args]);
   expect(r.stderr).not.toContain("error");
-  expect(r.code).toBe(0);
+  ok(r, 0);
   return JSON.parse(r.stdout);
 }
 
@@ -108,7 +111,7 @@ describe("a merge", () => {
     const m = map();
     expect(m.paths["src/config.ts"]?.hunks[0]?.base).toBeNull();
     const text = s.script("conflict-map.ts");
-    expect(text.code).toBe(0);
+    ok(text, 0);
     expect(text.stdout).toContain("src/config.ts  both-modified  text");
     expect(text.stdout).toContain("git checkout --conflict=zdiff3");
     expect(text.stdout).toContain("Raise the retry limit (#15)");
@@ -117,7 +120,7 @@ describe("a merge", () => {
   it("works from a subdirectory of the repository", () => {
     mergeConflict(s);
     const r = s.script("conflict-map.ts", ["--json"], `${s.root}/src`);
-    expect(r.code).toBe(0);
+    ok(r, 0);
     expect(Object.keys(JSON.parse(r.stdout).paths)).toEqual(["src/config.ts"]);
   });
 
@@ -132,7 +135,7 @@ describe("a rebase", () => {
     mergeConflict(s);
     s.git("merge", "--abort");
     const rebase = s.gitTry("rebase", "main");
-    expect(rebase.code).not.toBe(0);
+    ok(rebase, 1);
     const m = map();
     expect(m.operation.kind).toBe("rebase");
     expect(m.sides.ours.ref).toBe("main");
@@ -159,7 +162,7 @@ describe("a cherry-pick", () => {
     mergeConflict(s);
     s.git("merge", "--abort");
     const pick = s.gitTry("cherry-pick", "main~1");
-    expect(pick.code).not.toBe(0);
+    ok(pick, 1);
     const m = map();
     expect(m.operation.kind).toBe("cherry-pick");
     expect(m.sides.theirs.role).toContain("being cherry-picked");
@@ -203,7 +206,7 @@ describe("a revert of the root commit", () => {
     s.commit("Tune the helpers", {
       "src/old.ts": CONFIG_BASE.replace("retries: 3", "retries: 4"),
     });
-    expect(s.gitTry("revert", "--no-edit", root).code).not.toBe(0);
+    ok(s.gitTry("revert", "--no-edit", root), 1);
     const m = map();
     expect(m.operation.kind).toBe("revert");
     expect(m.paths["src/old.ts"]?.kind).toBe("deleted-by-theirs");
@@ -218,7 +221,7 @@ describe("classes", () => {
     s.git("checkout", "-q", "main");
     s.commit("Main", Object.fromEntries(files.map((f) => [f, "main\n"])));
     s.git("checkout", "-q", "feature");
-    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    ok(s.gitTry("merge", "main"), 1);
   }
 
   it("reads a JIG_OVERLAY file inside the repository from the index", () => {
@@ -242,7 +245,7 @@ describe("classes", () => {
     s.env.JIG_OVERLAY = "ov.yaml";
     conflictEverywhere(["gen/x.txt"]);
     const r = s.script("conflict-map.ts", ["--json"], `${s.root}/src`);
-    expect(r.code).toBe(0);
+    ok(r, 0);
     expect(JSON.parse(r.stdout).paths["gen/x.txt"]).toMatchObject({
       class: "generated",
       regenerate: { command: "make gen" },
@@ -332,7 +335,7 @@ describe("classes", () => {
       "gen/x.txt": "main\n",
     });
     s.git("checkout", "-q", "feature");
-    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    ok(s.gitTry("merge", "main"), 1);
     const first = map();
     expect(first.paths[".config/jig.yaml"]).toBeDefined();
     expect(first.catalogIncomplete).toContain(".config/jig.yaml is unmerged");
@@ -445,7 +448,7 @@ describe("classes", () => {
       useCatalog();
       conflictEverywhere(["openapi.json"]);
       const r = s.script("conflict-map.ts");
-      expect(r.code).toBe(0);
+      ok(r, 0);
       expect(r.stdout).toContain("openapi.json  both-modified  generated");
       expect(r.stdout).toContain(
         "regenerate: bun run gen:openapi (in .; catalog)",
@@ -482,7 +485,7 @@ describe("classes", () => {
       useCatalog();
       conflictEverywhere(["schema.sql"]);
       const r = s.script("conflict-map.ts", ["--json"]);
-      expect(r.code).toBe(0);
+      ok(r, 0);
       const m = JSON.parse(r.stdout) as Map;
       expect(m.paths["schema.sql"]).toMatchObject({
         class: "generated",
@@ -500,7 +503,7 @@ describe("classes", () => {
       s.overlay("drive:\n  change_areas_catalog: missing.yaml\n");
       conflictEverywhere(["openapi.json", "bun.lock"]);
       const r = s.script("conflict-map.ts", ["--json"]);
-      expect(r.code).toBe(0);
+      ok(r, 0);
       const m = JSON.parse(r.stdout) as Map;
       expect(m.warning).toContain("the change-area catalog");
       expect(m.warning).toContain("missing.yaml could not be read");
@@ -544,9 +547,7 @@ describe("classes", () => {
         map();
         s.write("openapi.json", "hand merged\n");
         s.git("add", "openapi.json");
-        expect(s.script("record.ts", ["openapi.json", "combined"]).code).toBe(
-          0,
-        );
+        ok(s.script("record.ts", ["openapi.json", "combined"]), 0);
         resolveCatalog();
         const r = s.script("conflict-map.ts");
         expect(r.stdout).toContain(
@@ -560,7 +561,7 @@ describe("classes", () => {
           resolution: { decision: null },
         });
         const check = s.script("check-resolution.ts");
-        expect(check.code).toBe(1);
+        ok(check, 1);
         expect(check.stdout).toContain(
           "PROBLEM openapi.json: no decision recorded",
         );
@@ -570,15 +571,11 @@ describe("classes", () => {
         map();
         s.write("openapi.json", "hand merged\n");
         s.git("add", "openapi.json");
-        expect(s.script("record.ts", ["openapi.json", "combined"]).code).toBe(
-          0,
-        );
+        ok(s.script("record.ts", ["openapi.json", "combined"]), 0);
         resolveCatalog();
-        expect(s.script("record.ts", ["catalog.yaml", "combined"]).code).toBe(
-          0,
-        );
+        ok(s.script("record.ts", ["catalog.yaml", "combined"]), 0);
         const before = s.script("check-resolution.ts");
-        expect(before.code).toBe(1);
+        ok(before, 1);
         expect(before.stdout).toContain(
           "PROBLEM (conflict map): the generated files the configuration and change-area catalog declare could not all be read when the conflicts were mapped",
         );
@@ -596,7 +593,7 @@ describe("classes", () => {
       conflictEverywhere(["catalog.yaml", "bun.lock"]);
       expect(map().paths["bun.lock"]?.regenerate?.source).toBe("built-in");
       s.git("add", "bun.lock");
-      expect(s.script("record.ts", ["bun.lock", "regenerated"]).code).toBe(0);
+      ok(s.script("record.ts", ["bun.lock", "regenerated"]), 0);
       s.write(
         "catalog.yaml",
         CATALOG.replace(
@@ -620,9 +617,7 @@ describe("classes", () => {
       conflictEverywhere(["openapi.json"]);
       map();
       s.git("add", "openapi.json");
-      expect(s.script("record.ts", ["openapi.json", "regenerated"]).code).toBe(
-        0,
-      );
+      ok(s.script("record.ts", ["openapi.json", "regenerated"]), 0);
       expect(map().paths["openapi.json"]?.resolution.decision).toBe(
         "regenerated",
       );
@@ -633,9 +628,7 @@ describe("classes", () => {
       conflictEverywhere(["openapi.json"]);
       expect(map().paths["openapi.json"]?.class).toBe("generated");
       s.git("add", "openapi.json");
-      expect(s.script("record.ts", ["openapi.json", "regenerated"]).code).toBe(
-        0,
-      );
+      ok(s.script("record.ts", ["openapi.json", "regenerated"]), 0);
       s.write(
         "catalog.yaml",
         CATALOG.replace(
@@ -674,9 +667,9 @@ describe("classes", () => {
       expect(map().paths["openapi.json"]?.class).toBe("text");
       s.write("openapi.json", "hand merged\n");
       s.git("add", "openapi.json");
-      expect(s.script("record.ts", ["openapi.json", "combined"]).code).toBe(0);
+      ok(s.script("record.ts", ["openapi.json", "combined"]), 0);
       const r = s.script("check-resolution.ts");
-      expect(r.code).toBe(1);
+      ok(r, 1);
       expect(r.stdout).toContain(
         'PROBLEM (conflict map): the generated files the configuration and change-area catalog declare could not all be read when the conflicts were mapped (catalog area api.generated[0].outputs: "**" is not a literal',
       );
@@ -709,7 +702,7 @@ describe("classes", () => {
       s.overlay("drive:\n  change_areas_catalog: [a, b]\n");
       conflictEverywhere(["a.txt"]);
       const r = s.script("conflict-map.ts", ["--json"]);
-      expect(r.code).toBe(2);
+      ok(r, 2);
       expect(r.stderr).toContain("drive.change_areas_catalog must be a path");
     });
   });
@@ -721,7 +714,7 @@ describe("classes", () => {
     s.git("checkout", "-q", "main");
     s.commit("Main", { "logo.dat": "a\0main" });
     s.git("checkout", "-q", "feature");
-    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    ok(s.gitTry("merge", "main"), 1);
     expect(map().paths["logo.dat"]).toMatchObject({
       class: "binary",
       hunks: [],
@@ -736,7 +729,7 @@ describe("classes", () => {
     s.git("checkout", "-q", "main");
     s.commit("Main", { "notes.txt": `${wide}\0\nmain\n` });
     s.git("checkout", "-q", "feature");
-    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    ok(s.gitTry("merge", "main"), 1);
     expect(map().paths["notes.txt"]?.class).toBe("text");
   });
 
@@ -771,7 +764,7 @@ describe("classes", () => {
       s.overlay(text);
       conflictEverywhere(["a.txt"]);
       const r = s.script("conflict-map.ts", ["--json"]);
-      expect(r.code).toBe(2);
+      ok(r, 2);
       expect(r.stderr).toContain(expected);
     });
 });
@@ -816,7 +809,7 @@ describe("the snapshot", () => {
       "src/config.ts": CONFIG_BASE.replace("retries: 3", "retries: 5"),
     });
     s.git("checkout", "-q", "feature");
-    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    ok(s.gitTry("merge", "main"), 1);
 
     const commits = map().paths["src/config.ts"]?.intent.theirs.commits;
     expect(commits?.map((c) => c.pr)).toEqual([null]);
@@ -834,9 +827,9 @@ describe("the snapshot", () => {
     mergeConflict(s);
     map();
     s.git("merge", "--abort");
-    expect(s.gitTry("cherry-pick", "main~1").code).not.toBe(0);
+    ok(s.gitTry("cherry-pick", "main~1"), 1);
     const r = s.script("conflict-map.ts");
-    expect(r.code).toBe(0);
+    ok(r, 0);
     expect(r.stdout).toContain(
       "replaced the snapshot of a different operation",
     );
@@ -857,7 +850,7 @@ describe("the snapshot", () => {
       .trim();
     writeFileSync(file, "{ damaged");
     const r = s.script("conflict-map.ts");
-    expect(r.code).toBe(3);
+    ok(r, 3);
     expect(r.stderr).toContain("the stored snapshot is unreadable");
     expect(readFileSync(file, "utf8")).toBe("{ damaged");
   });
@@ -881,7 +874,7 @@ describe("the snapshot", () => {
       chmodSync(file, 0o000);
       try {
         const r = s.script("conflict-map.ts");
-        expect(r.code).toBe(3);
+        ok(r, 3);
         expect(r.stderr).toContain("the stored snapshot is unreadable");
       } finally {
         chmodSync(file, 0o644);
@@ -912,10 +905,10 @@ describe("the snapshot", () => {
     });
     writeFileSync(file, damaged);
     const mapped = s.script("conflict-map.ts");
-    expect(mapped.code).toBe(3);
+    ok(mapped, 3);
     expect(mapped.stderr).toContain("the path map is not an object");
     const checked = s.script("check-resolution.ts");
-    expect(checked.code).toBe(3);
+    ok(checked, 3);
     expect(checked.stderr).toContain("the path map is not an object");
     expect(readFileSync(file, "utf8")).toBe(damaged);
   });
@@ -928,7 +921,7 @@ describe("the snapshot", () => {
     snapshot.paths["src/config.ts"].hunks = null;
     writeFileSync(file, JSON.stringify(snapshot));
     const r = s.script("check-resolution.ts");
-    expect(r.code).toBe(3);
+    ok(r, 3);
     expect(r.stderr).toContain('path "src/config.ts" has no hunk list');
   });
 
@@ -940,7 +933,7 @@ describe("the snapshot", () => {
     snapshot.paths["src/config.ts"].markerSize = 7.5;
     writeFileSync(file, JSON.stringify(snapshot));
     const r = s.script("check-resolution.ts");
-    expect(r.code).toBe(3);
+    ok(r, 3);
     expect(r.stderr).toContain(
       'path "src/config.ts" has a marker size that is not a positive integer',
     );
@@ -958,7 +951,7 @@ describe("the snapshot", () => {
     };
     writeFileSync(file, JSON.stringify(snapshot));
     const empty = s.script("check-resolution.ts");
-    expect(empty.code).toBe(3);
+    ok(empty, 3);
     expect(empty.stderr).toContain('path "src/config.ts" has no stage at all');
     const stage = { mode: "100644", blob: "0".repeat(40) };
     snapshot.paths["src/config.ts"].stages = {
@@ -968,7 +961,7 @@ describe("the snapshot", () => {
     };
     writeFileSync(file, JSON.stringify(snapshot));
     const mismatched = s.script("check-resolution.ts");
-    expect(mismatched.code).toBe(3);
+    ok(mismatched, 3);
     expect(mismatched.stderr).toContain(
       'path "src/config.ts" is recorded as both-modified, but its stages are those of both-added',
     );
@@ -985,7 +978,7 @@ describe("the snapshot", () => {
       rmSync(file);
       symlinkSync(target, file);
       const r = s.script("conflict-map.ts");
-      expect(r.code).toBe(3);
+      ok(r, 3);
       expect(r.stderr).toContain("the stored snapshot is unreadable");
       expect(lstatSync(file).isSymbolicLink()).toBe(true);
       expect(readlinkSync(file)).toBe(target);
@@ -1011,10 +1004,10 @@ describe("the snapshot", () => {
 it("exits 3 when no operation is in progress", () => {
   s.commit("Base", { "a.txt": "a\n" });
   const r = s.script("conflict-map.ts");
-  expect(r.code).toBe(3);
+  ok(r, 3);
   expect(r.stderr).toContain("no merge, rebase, cherry-pick or revert");
 });
 
 it("exits 2 on an unknown option", () => {
-  expect(s.script("conflict-map.ts", ["--bogus"]).code).toBe(2);
+  ok(s.script("conflict-map.ts", ["--bogus"]), 2);
 });
