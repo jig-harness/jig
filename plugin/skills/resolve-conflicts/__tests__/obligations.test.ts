@@ -316,27 +316,29 @@ test("an ignored submodule setting does not hide a moved submodule from the stat
 });
 
 for (const flag of ["--assume-unchanged", "--skip-worktree"])
-  test(`a ${flag} entry is compared with disk independently of git diff`, () => {
-    const s = resolvedMerge((setup) =>
-      setup.commit("Add the helper", { "helper.txt": "staged\n" }),
-    );
-    s.git("update-index", flag, "--", "helper.txt");
-    setObligations(s, [{ check: "Validate", command: "true" }]);
-    let run = s.script("check-resolution.ts", ["--json"]);
-    expectSpawnExit({ ...run, exitCode: run.code }, 0);
+  for (const ignorestat of [false, true])
+    test(`a ${flag} entry is compared with disk independently of git diff${ignorestat ? " under core.ignorestat=true" : ""}`, () => {
+      const s = resolvedMerge((setup) =>
+        setup.commit("Add the helper", { "helper.txt": "staged\n" }),
+      );
+      if (ignorestat) s.git("config", "core.ignorestat", "true");
+      s.git("update-index", flag, "--", "helper.txt");
+      setObligations(s, [{ check: "Validate", command: "true" }]);
+      let run = s.script("check-resolution.ts", ["--json"]);
+      expectSpawnExit({ ...run, exitCode: run.code }, 0);
 
-    s.write("helper.txt", "edited on disk\n");
-    run = s.script("check-resolution.ts", ["--json"]);
-    expectSpawnExit({ ...run, exitCode: run.code }, 1);
-    const report = JSON.parse(run.stdout);
-    expect(report.obligations).toMatchObject([{ status: "not-run" }]);
-    expect(report.problems).toContainEqual(
-      expect.objectContaining({
-        path: "helper.txt",
-        message: expect.stringContaining("assume-unchanged or skip-worktree"),
-      }),
-    );
-  });
+      s.write("helper.txt", "edited on disk\n");
+      run = s.script("check-resolution.ts", ["--json"]);
+      expectSpawnExit({ ...run, exitCode: run.code }, 1);
+      const report = JSON.parse(run.stdout);
+      expect(report.obligations).toMatchObject([{ status: "not-run" }]);
+      expect(report.problems).toContainEqual(
+        expect.objectContaining({
+          path: "helper.txt",
+          message: expect.stringContaining("assume-unchanged or skip-worktree"),
+        }),
+      );
+    });
 
 function addSubmodule(setup: Scratch): void {
   setup.run("git", ["init", "-q", "sub"]);
@@ -347,33 +349,44 @@ function addSubmodule(setup: Scratch): void {
   setup.git("commit", "-q", "-m", "Add the submodule");
 }
 
-test("a flagged file inside an initialized submodule is compared with disk", () => {
-  const s = resolvedMerge(addSubmodule);
-  const flagged = s.run("git", [
-    "-C",
-    "sub",
-    "update-index",
-    "--assume-unchanged",
-    "--",
-    "helper.ts",
-  ]);
-  expectSpawnExit({ ...flagged, exitCode: flagged.code }, 0);
-  setObligations(s, [{ check: "Validate", command: "true" }]);
-  let run = s.script("check-resolution.ts", ["--json"]);
-  expectSpawnExit({ ...run, exitCode: run.code }, 0);
+for (const ignorestat of [false, true])
+  test(`a flagged file inside an initialized submodule is compared with disk${ignorestat ? " under core.ignorestat=true" : ""}`, () => {
+    const s = resolvedMerge(addSubmodule);
+    if (ignorestat) {
+      const set = s.run("git", [
+        "-C",
+        "sub",
+        "config",
+        "core.ignorestat",
+        "true",
+      ]);
+      expectSpawnExit({ ...set, exitCode: set.code }, 0);
+    }
+    const flagged = s.run("git", [
+      "-C",
+      "sub",
+      "update-index",
+      "--assume-unchanged",
+      "--",
+      "helper.ts",
+    ]);
+    expectSpawnExit({ ...flagged, exitCode: flagged.code }, 0);
+    setObligations(s, [{ check: "Validate", command: "true" }]);
+    let run = s.script("check-resolution.ts", ["--json"]);
+    expectSpawnExit({ ...run, exitCode: run.code }, 0);
 
-  s.write("sub/helper.ts", "export const helper = 2;\n");
-  run = s.script("check-resolution.ts", ["--json"]);
-  expectSpawnExit({ ...run, exitCode: run.code }, 1);
-  const report = JSON.parse(run.stdout);
-  expect(report.obligations).toMatchObject([{ status: "not-run" }]);
-  expect(report.problems).toContainEqual(
-    expect.objectContaining({
-      path: "sub/helper.ts",
-      message: expect.stringContaining("assume-unchanged or skip-worktree"),
-    }),
-  );
-});
+    s.write("sub/helper.ts", "export const helper = 2;\n");
+    run = s.script("check-resolution.ts", ["--json"]);
+    expectSpawnExit({ ...run, exitCode: run.code }, 1);
+    const report = JSON.parse(run.stdout);
+    expect(report.obligations).toMatchObject([{ status: "not-run" }]);
+    expect(report.problems).toContainEqual(
+      expect.objectContaining({
+        path: "sub/helper.ts",
+        message: expect.stringContaining("assume-unchanged or skip-worktree"),
+      }),
+    );
+  });
 
 for (const flag of ["--assume-unchanged", "--skip-worktree"])
   test(`a clean submodule marked ${flag} passes`, () => {

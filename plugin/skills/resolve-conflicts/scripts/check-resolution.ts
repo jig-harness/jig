@@ -294,6 +294,13 @@ const DIFFERS =
 const SKIPPED_DIFFERS =
   "is marked assume-unchanged or skip-worktree, so git does not compare it, and its file on disk differs from the staged tree: clear the flag (git update-index --no-assume-unchanged --no-skip-worktree -- <path>), then stage or discard it";
 
+const THROWAWAY_INDEX_CONFIG = [
+  "-c",
+  "core.splitIndex=false",
+  "-c",
+  "core.ignorestat=false",
+];
+
 /**
  * Tracked paths whose file on disk differs from the staged tree, as git itself
  * compares them. A plain `git diff` skips some paths: submodule ignore
@@ -301,9 +308,11 @@ const SKIPPED_DIFFERS =
  * assume-unchanged or skip-worktree entry is never compared. Those entries are
  * re-staged without their flags into a throwaway copy of the index, so git
  * compares them as it compares any other entry, whatever their kind (file,
- * symlink, submodule) and whatever the checkout settings. Initialized
- * submodules are checked the same way, since git's status of a submodule
- * trusts the flags in the submodule's own index.
+ * symlink, submodule) and whatever the checkout settings. Every git call on
+ * that copy turns off the settings that would set a flag again on the way in
+ * (`core.ignorestat` marks each re-staged entry assume-unchanged) or split the
+ * copy across files. Initialized submodules are checked the same way, since
+ * git's status of a submodule trusts the flags in the submodule's own index.
  */
 function differingPaths(root: string, prefix = ""): Finding[] {
   const flagged = skippedEntries(root);
@@ -316,14 +325,20 @@ function differingPaths(root: string, prefix = ""): Finding[] {
     if (flagged.size > 0)
       git(
         root,
-        ["-c", "core.splitIndex=false", "update-index", "-z", "--index-info"],
+        [...THROWAWAY_INDEX_CONFIG, "update-index", "-z", "--index-info"],
         [...flagged.values()].map((record) => `${record}\0`).join(""),
         env,
       );
     const differing = splitNul(
       git(
         root,
-        ["diff", "--name-only", "-z", "--ignore-submodules=none"],
+        [
+          ...THROWAWAY_INDEX_CONFIG,
+          "diff",
+          "--name-only",
+          "-z",
+          "--ignore-submodules=none",
+        ],
         undefined,
         env,
       ),
