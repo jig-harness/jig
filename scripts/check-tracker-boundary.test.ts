@@ -90,6 +90,52 @@ describe("tokens", () => {
       { rule: "tracker-boundary", file: "plugin/x.ts", line: 2 },
     ]);
   });
+  test.each([
+    ['Bun.spawn([ // invoke the tracker\n  "linear", "issue", "create"]);'],
+    ['spawnSync( // invoke the tracker\n  "linear", ["issue", "create"]);'],
+    ['execFileSync(/* a */ /* b */ "linear", args);'],
+    [
+      'const { spawnSync: sp } = require("node:child_process");\nsp("linear", args);',
+    ],
+    [
+      'import * as cp from "node:child_process";\ncp.execFileSync("linear", args);',
+    ],
+    ["const run = cp.spawnSync;\nconst go = run;\ngo(`linear`, args);"],
+    ['wrapper("linear", ["issue", "create"]);'],
+    ['const url = "https://example.com/x"; spawnSync("linear", args);'],
+  ])(
+    "a call written around comments or through an alias is found: %s",
+    (code) => {
+      expect(violations("plugin/x.ts", `ok\n${code}\n`)).toMatchObject([
+        { rule: "tracker-boundary", file: "plugin/x.ts" },
+      ]);
+    },
+  );
+  test.each([
+    ['import subprocess as sp\nsp.run(["linear", "issue", "create"])'],
+    ['import subprocess as sp\nsp.check_output("linear", shell=False)'],
+    ['subprocess.run(  # the tracker\n  ["linear", "issue"])'],
+  ])("a Python run is found: %s", (code) => {
+    expect(violations("plugin/x.py", code)).toMatchObject([
+      { rule: "tracker-boundary", file: "plugin/x.py" },
+    ]);
+  });
+  test.each([
+    ['console.log("linear", version);'],
+    ['settings.set("linear", false);'],
+    ['record("linear", adapter);'],
+    ['// spawnSync("linear", ["issue", "create"]);'],
+    ['/* Bun.spawn(["linear", "api"]) */'],
+    ['const note = "// not a comment"; log("linear", note);'],
+  ])("a call that does not launch the client is not: %s", (code) => {
+    expect(violations("plugin/x.ts", code)).toEqual([]);
+  });
+  test("a long run of comment markers is matched in linear time", () => {
+    const text = `(/*${"*//*".repeat(50_000)}`;
+    const started = performance.now();
+    expect(violations("plugin/x.ts", text)).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(2_000);
+  });
   test("a command line does not run on across a line break", () => {
     expect(
       violations("plugin/x.md", "work in a linear\nissue order\n"),

@@ -5,13 +5,18 @@
 //
 // "Directly" means a token only a direct call uses: Linear's API host, its
 // SDK package, the name prefix of a Linear MCP server's tools, or a run of
-// the `linear` command-line client (an argument list, or any call, whose
-// first element is the literal `linear`, or a command line
-// `linear <subcommand>`). A spawn is recognised by the program name in the
-// place a program name goes, never by the name of the function called, so an
-// imported alias or a wrapper is found like `spawnSync` itself. The file is matched
-// as a whole, so an argument list or a spawn split over several lines is
-// found like one written on a single line; a command line stays on one line.
+// the `linear` command-line client. A run is one of: an argument list whose
+// first element is the literal `linear`; a call whose first argument is
+// `linear` and whose second is an argument list written out; a call to a
+// process launcher (`spawnSync`, `execFile`, `Bun.spawn`, `subprocess.run`,
+// …), or to a name the file binds to one, whose first argument is `linear`;
+// or a command line `linear <subcommand>`. A call to any other function with
+// `linear` first (`console.log("linear", v)`) names the client without
+// running it. Runs are looked for in the code with its comments blanked out,
+// so a comment anywhere inside a call hides nothing and a comment's prose is
+// not a call. The file is matched as a whole, so an argument list or a spawn
+// split over several lines is found like one written on a single line; a
+// command line stays on one line.
 //
 // Scope: every code file (TypeScript, JavaScript, shell, Python) under
 // `plugin/` outside the adapters' directory, and every file of the planning
@@ -69,12 +74,173 @@ export const TOKENS: { what: string; pattern: RegExp }[] = [
     what: "a Linear MCP tool",
     pattern: /mcp__(?:(?!__)[\w-])*linear(?:(?!__)[\w-])*__/i,
   },
-  {
-    what: "a run of the `linear` command-line client",
-    pattern:
-      /[[(]\s*(?:\/\*[\s\S]*?\*\/\s*)*["'`]linear["'`]\s*,|(?<![\w./-])linear[ \t]+(?:api|auth|config|issues?|teams?|projects?|labels?|cycles?|comments?|documents?|milestones?|initiatives?)\b/,
-  },
 ];
+
+/** What a run of the `linear` command-line client is reported as. */
+const RUN = "a run of the `linear` command-line client";
+
+/** The literal `linear` in any of the three quotes. */
+const LINEAR = String.raw`["'\`]linear["'\`]`;
+
+/** Functions that start a process from a program name and its arguments. */
+const LAUNCHERS = [
+  "spawn",
+  "spawnSync",
+  "execFile",
+  "execFileSync",
+  "exec",
+  "execSync",
+  "fork",
+  "execa",
+  "execaSync",
+  "Popen",
+  "check_call",
+  "check_output",
+];
+
+/** Launchers whose name means one only on their own module. */
+const QUALIFIED = [
+  String.raw`Bun\s*\.\s*spawn(?:Sync)?`,
+  String.raw`Deno\s*\.\s*Command`,
+  String.raw`subprocess\s*\.\s*(?:run|call)`,
+  String.raw`os\s*\.\s*exec[lv]p?e?`,
+];
+
+const IDENT = String.raw`[A-Za-z_$][\w$]*`;
+const quoteName = (name: string) => name.replace(/\$/g, "\\$");
+
+/**
+ * The names a file binds to a launcher: `import { execFileSync as run }`,
+ * `const { spawnSync: run } = …`, `const run = cp.spawnSync`,
+ * `from subprocess import run as r`, and `import subprocess as sp`'s module
+ * name; followed through a chain of such bindings.
+ */
+function launcherNames(code: string): {
+  names: Set<string>;
+  modules: Set<string>;
+} {
+  const names = new Set(LAUNCHERS);
+  const modules = new Set<string>();
+  for (const m of code.matchAll(
+    new RegExp(String.raw`\bimport\s+subprocess\s+as\s+(${IDENT})`, "g"),
+  ))
+    modules.add(m[1] as string);
+  for (const m of code.matchAll(
+    new RegExp(
+      String.raw`\bfrom\s+subprocess\s+import\s+(?:run|call)\s+as\s+(${IDENT})`,
+      "g",
+    ),
+  ))
+    names.add(m[1] as string);
+  for (let size = -1; size !== names.size; ) {
+    size = names.size;
+    const known = [...names].map(quoteName).join("|");
+    const qualified = [
+      ...QUALIFIED,
+      String.raw`(?:${IDENT}\s*\.\s*)?(?:${known})`,
+    ].join("|");
+    for (const pattern of [
+      String.raw`(?<![\w$])(?:${known})\s+as\s+(${IDENT})`,
+      String.raw`(?<![\w$.])(?:${known})\s*:\s*(${IDENT})`,
+      String.raw`\b(?:const|let|var)\s+(${IDENT})\s*=\s*(?:${qualified})(?![\w$]|\s*[(.])`,
+    ])
+      for (const m of code.matchAll(new RegExp(pattern, "g")))
+        names.add(m[1] as string);
+  }
+  return { names, modules };
+}
+
+/** The pattern of a run of the `linear` client in a file's comment-blanked code. */
+function runPattern(code: string): RegExp {
+  const { names, modules } = launcherNames(code);
+  const launcher = [
+    ...QUALIFIED,
+    ...[...modules].map(
+      (m) =>
+        String.raw`${quoteName(m)}\s*\.\s*(?:run|call|Popen|check_call|check_output)`,
+    ),
+    String.raw`(?:${IDENT}\s*\.\s*)?(?:${[...names].map(quoteName).join("|")})`,
+  ].join("|");
+  return new RegExp(
+    [
+      String.raw`\[\s*${LINEAR}\s*,`,
+      String.raw`\(\s*${LINEAR}\s*,\s*\[`,
+      String.raw`(?<![\w$.])(?:new\s+)?(?:${launcher})\s*\(\s*${LINEAR}`,
+      String.raw`(?<![\w./-])linear[ \t]+(?:api|auth|config|issues?|teams?|projects?|labels?|cycles?|comments?|documents?|milestones?|initiatives?)\b`,
+    ].join("|"),
+    "g",
+  );
+}
+
+/**
+ * `text` with every comment replaced by spaces, line breaks kept, so a
+ * match's offset is its offset in the file. The comment syntax is the file's
+ * language's: line and block comments for JavaScript and TypeScript, `#` for shell
+ * and Python; other files are returned unchanged. Strings (and a JavaScript
+ * regular expression literal) are skipped, so a comment marker inside one
+ * starts nothing.
+ */
+export function blankComments(path: string, text: string): string {
+  const js = /\.[cm]?[jt]s$/.test(path);
+  const hash = /\.(?:sh|bash|py)$/.test(path);
+  if (!js && !hash) return text;
+  const out = text.split("");
+  const blank = (from: number, to: number) => {
+    for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = " ";
+  };
+  let i = 0;
+  let previous = ""; // the last significant character before `i`
+  while (i < text.length) {
+    const c = text[i] as string;
+    const next = text[i + 1];
+    if (js && c === "/" && next === "/") {
+      const end = text.indexOf("\n", i);
+      const stop = end === -1 ? text.length : end;
+      blank(i, stop);
+      i = stop;
+      continue;
+    }
+    if (js && c === "/" && next === "*") {
+      const end = text.indexOf("*/", i + 2);
+      const stop = end === -1 ? text.length : end + 2;
+      blank(i, stop);
+      i = stop;
+      continue;
+    }
+    if (hash && c === "#" && (i === 0 || /\s/.test(text[i - 1] as string))) {
+      const end = text.indexOf("\n", i);
+      const stop = end === -1 ? text.length : end;
+      blank(i, stop);
+      i = stop;
+      continue;
+    }
+    const regex =
+      js &&
+      c === "/" &&
+      (previous === "" || /[(,=:[!&|?{};+\-*%<>~^]/.test(previous));
+    if (c === '"' || c === "'" || c === "`" || regex) {
+      let k = i + 1;
+      let inClass = false;
+      while (k < text.length) {
+        const d = text[k];
+        if (d === "\\") {
+          k += 2;
+          continue;
+        }
+        if (d === c && !inClass) break;
+        if (d === "\n" && js && c !== "`") break;
+        if (regex && (d === "[" || d === "]")) inClass = d === "[";
+        k++;
+      }
+      i = k + 1;
+      previous = c;
+      continue;
+    }
+    if (!/\s/.test(c)) previous = c;
+    i++;
+  }
+  return out.join("");
+}
 
 /** Whether the boundary applies to a repository path. */
 export function inScope(path: string): boolean {
@@ -89,11 +255,18 @@ export function inScope(path: string): boolean {
  */
 export function violations(path: string, text: string): Finding[] {
   const findings: { line: number; order: number; finding: Finding }[] = [];
-  TOKENS.forEach((token, order) => {
+  const code = blankComments(path, text);
+  const tokens = [
+    ...TOKENS.map((t) => ({
+      ...t,
+      in: text,
+      pattern: new RegExp(t.pattern, `${t.pattern.flags}g`),
+    })),
+    { what: RUN, in: code, pattern: runPattern(code) },
+  ];
+  tokens.forEach((token, order) => {
     const lines = new Set<number>();
-    for (const match of text.matchAll(
-      new RegExp(token.pattern, `${token.pattern.flags}g`),
-    )) {
+    for (const match of token.in.matchAll(token.pattern)) {
       const line = text.slice(0, match.index).split("\n").length;
       if (lines.has(line)) continue;
       lines.add(line);
