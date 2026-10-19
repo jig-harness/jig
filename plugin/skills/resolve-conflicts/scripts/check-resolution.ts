@@ -41,6 +41,7 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -102,57 +103,108 @@ function unstaged(root: string, path: string): boolean {
   return git(root, ["diff", "--name-only", "-z", "--", path]) !== "";
 }
 
-/** The repository-relative paths of the declaration files inside `root`. */
-function declarationPaths(root: string): Set<string> {
-  return new Set(
-    declarationFiles()
-      .map((file) => relative(root, file).replaceAll("\\", "/"))
-      .filter(
-        (rel) =>
-          rel !== "" &&
-          rel !== ".." &&
-          !rel.startsWith("../") &&
-          !isAbsolute(rel),
-      ),
-  );
+/** `file`'s path relative to `root`, or `null` when it lies outside. */
+function inside(root: string, file: string): string | null {
+  const rel = relative(root, file).replaceAll("\\", "/");
+  return rel === "" || rel === ".." || rel.startsWith("../") || isAbsolute(rel)
+    ? null
+    : rel;
 }
 
 /**
- * The files that decide a path's class or marker size (the configuration, the
- * catalog, every `.gitattributes`) whose working tree differs from the index.
- * The check reads them from the working tree, but the commit carries what is
- * staged, so a difference would certify a requirement the commit does not
- * have. Mapped paths are checked too: a mapped declaration recorded deleted
- * and recreated unstaged is checked nowhere else. An unmerged path (the
- * catalog may be one) is reported as unmerged.
+ * The configuration and the catalog inside `root`, each also as the file a
+ * symbolic link to it resolves to (that file is what is read).
  */
-function unstagedDeclarations(root: string): Finding[] {
-  const declarations = declarationPaths(root);
-  // Pathspecs are literal here (lib/git.ts), so the whole status is filtered.
-  const records = splitNul(
-    git(root, [
-      "status",
-      "--porcelain=v1",
-      "-z",
-      "--untracked-files=all",
-      "--no-renames",
-    ]),
-  );
+function declarationFilePaths(root: string): string[] {
+  const realRoot = realpathSync(root);
+  return declarationFiles()
+    .flatMap((file) => [
+      inside(root, file),
+      existsSync(file) ? inside(realRoot, realpathSync(file)) : null,
+    ])
+    .filter((path): path is string => path !== null);
+}
+
+/** The `.gitattributes` of `path`'s directory and of each one above it. */
+function attributeFiles(path: string): string[] {
+  const files: string[] = [];
+  let dir = posix.dirname(path);
+  for (; dir !== "."; dir = posix.dirname(dir))
+    files.push(`${dir}/.gitattributes`);
+  files.push(".gitattributes");
+  return files;
+}
+
+/**
+ * The repository-relative paths of the files that decide how the mapped paths
+ * are classified: the configuration, the catalog, and the `.gitattributes` of
+ * every directory holding a mapped path.
+ */
+function declarationPaths(root: string, mapped: Iterable<string>): Set<string> {
+  return new Set([
+    ...declarationFilePaths(root),
+    ...[...mapped].flatMap(attributeFiles),
+  ]);
+}
+
+const DECLARATION_DIFFERS =
+  "decides how the mapped paths are classified, and the working tree differs from what is staged: the check reads the working tree, the commit takes what is staged. git add it, or restore it from the index, then run this again";
+const FLAGGED_DECLARATION_DIFFERS = `${DECLARATION_DIFFERS}. It is marked assume-unchanged or skip-worktree: clear the flag first (git update-index --no-assume-unchanged --no-skip-worktree -- <path>)`;
+
+/**
+ * Tracked declarations (and any tracked `.gitattributes`) whose file on disk
+ * differs from the index, compared as differingPaths compares them, so an
+ * assume-unchanged or skip-worktree flag hides nothing.
+ */
+function differingDeclarations(
+  root: string,
+  declarations: ReadonlySet<string>,
+  unmerged: ReadonlyMap<string, unknown>,
+): Finding[] {
   const found: Finding[] = [];
-  for (const record of records) {
-    const path = record.slice(3);
-    if (!declarations.has(path) && posix.basename(path) !== ".gitattributes")
+  for (const { path, message } of differingPaths(root)) {
+    const attributes = posix.basename(path) === ".gitattributes";
+    if ((!declarations.has(path) && !attributes) || unmerged.has(path))
       continue;
-    // An unmerged entry (U in either column, AA, DD) is reported as unmerged.
-    const xy = record.slice(0, 2);
-    if (xy[1] === " " || /U|AA|DD/.test(xy)) continue;
+    const flagged = message === SKIPPED_DIFFERS;
+    // Git reads the index's copy of an attributes file a sparse checkout
+    // left out, so it decides nothing the commit does not carry.
+    if (flagged && attributes && !existsSync(join(root, path))) continue;
     found.push({
       path,
-      message:
-        "decides how the mapped paths are classified, and the working tree differs from what is staged: the check reads the working tree, the commit takes what is staged. git add it, or restore it from the index, then run this again",
+      message: flagged ? FLAGGED_DECLARATION_DIFFERS : DECLARATION_DIFFERS,
     });
   }
   return found;
+}
+
+/**
+ * Declaration files (see declarationPaths; any tracked `.gitattributes` too)
+ * whose working tree differs from the index. The check reads them from the
+ * working tree, but the commit carries what is staged, so a difference would
+ * certify a requirement the commit does not have. A declaration on disk that
+ * the index lacks is found by its path, so an ignore rule hides nothing.
+ * Mapped paths are checked too: a mapped declaration recorded deleted and
+ * recreated unstaged is checked nowhere else. Unmerged paths are reported as
+ * unmerged.
+ */
+function unstagedDeclarations(
+  root: string,
+  snapshot: Snapshot,
+  unmerged: ReadonlyMap<string, unknown>,
+): Finding[] {
+  const declarations = declarationPaths(root, Object.keys(snapshot.paths));
+  const found = differingDeclarations(root, declarations, unmerged);
+  const tracked = new Set(splitNul(git(root, ["ls-files", "-z"])));
+  const reported = new Set(found.map((f) => f.path));
+  for (const path of declarations)
+    if (
+      !tracked.has(path) &&
+      !reported.has(path) &&
+      existsSync(join(root, path))
+    )
+      found.push({ path, message: DECLARATION_DIFFERS });
+  return found.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
 /** Conflict markers in staged changes outside the mapped paths. */
@@ -373,7 +425,7 @@ export function checkResolution(
   if (incomplete.length === 0)
     result.problems.push(...changedRequirements(snapshot, now));
   const unmerged = unmergedPaths(root);
-  result.problems.push(...unstagedDeclarations(root));
+  result.problems.push(...unstagedDeclarations(root, snapshot, unmerged));
   for (const path of [...unmerged.keys()].sort()) {
     const entry = Object.hasOwn(snapshot.paths, path)
       ? snapshot.paths[path]
@@ -598,7 +650,9 @@ async function checkWithObligations(
       : "An earlier command changed the staged tree or the working tree, so this command did not run.",
   );
   const changed = !unchanged();
-  const final = checkResolution(root, snapshot, catalog);
+  // A command may have changed a catalog outside the repository, which the
+  // tree state does not cover: the final check reads it again.
+  const final = checkResolution(root, snapshot, catalogGeneratedEntries());
   if (changed || obligations.some((o) => o.status === "not-run"))
     final.problems.push({
       path: "resolve_conflicts.obligations",

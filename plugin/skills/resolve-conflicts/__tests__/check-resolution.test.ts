@@ -4,7 +4,7 @@
  * message, and the snapshot's operation identity.
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import {
   CONFIG_BASE,
   CONFIG_COMBINED,
@@ -507,6 +507,105 @@ describe("a generated declaration the catalog gains after the map", () => {
     s.git("rm", "-q", "--cached", "src/.gitattributes");
     rmSync(`${s.root}/src/.gitattributes`);
     expect(check().code).toBe(0);
+  });
+  it("fails while the working tree's catalog differs under an assume-unchanged or skip-worktree flag", () => {
+    const mapped = s.read("catalog.yaml");
+    writeCatalog("openapi.json", "bun run gen:openapi");
+    s.git("add", "catalog.yaml");
+    s.write("catalog.yaml", mapped);
+    for (const flag of ["--assume-unchanged", "--skip-worktree"]) {
+      s.git("update-index", flag, "catalog.yaml");
+      const r = check();
+      expect(r.code).toBe(1);
+      expect(r.stdout).toContain(
+        "PROBLEM catalog.yaml: decides how the mapped paths are classified, and the working tree differs from what is staged",
+      );
+      expect(r.stdout).toContain("clear the flag first");
+      s.git("update-index", flag.replace("--", "--no-"), "catalog.yaml");
+    }
+  });
+
+  it("fails while an ignored .gitattributes file classifies a mapped path", () => {
+    s.write(".git/info/exclude", ".gitattributes\n");
+    s.write(".gitattributes", "openapi.json -diff\n");
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM .gitattributes: decides how the mapped paths are classified",
+    );
+  });
+});
+
+describe("a catalog reached through a symbolic link", () => {
+  beforeEach(() => {
+    s.git("merge", "--abort");
+    writeCatalog("schema.json", "bun run gen:schema", "config/catalog.yaml");
+    symlinkSync("config/catalog.yaml", `${s.root}/catalog.yaml`);
+    s.overlay("drive:\n  change_areas_catalog: catalog.yaml\n");
+    s.commit("Describe the feature API", { "openapi.json": "feature\n" });
+    s.git("checkout", "-q", "main");
+    s.commit("Describe the main API", { "openapi.json": "main\n" });
+    s.git("checkout", "-q", "feature");
+    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    s.write("src/config.ts", CONFIG_COMBINED);
+    s.write("openapi.json", "feature\nmain\n");
+    s.git("add", "src/config.ts", "openapi.json");
+    expect(record("src/config.ts", "combined").code).toBe(0);
+    expect(record("openapi.json", "combined").code).toBe(0);
+  });
+
+  it("fails while the link's target differs from what is staged", () => {
+    const mapped = s.read("config/catalog.yaml");
+    writeCatalog("openapi.json", "bun run gen:openapi", "config/catalog.yaml");
+    s.git("add", "config/catalog.yaml");
+    s.write("config/catalog.yaml", mapped);
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM config/catalog.yaml: decides how the mapped paths are classified, and the working tree differs from what is staged",
+    );
+  });
+});
+
+describe("a catalog outside the repository that an obligation command changes", () => {
+  beforeEach(() => {
+    s.git("merge", "--abort");
+    writeCatalog("schema.json", "bun run gen:schema", "../catalog.yaml");
+    s.overlay(`drive:\n  change_areas_catalog: ${s.home}/catalog.yaml\n`);
+    s.commit("Describe the feature API", { "openapi.json": "feature\n" });
+    s.git("checkout", "-q", "main");
+    s.commit("Describe the main API", { "openapi.json": "main\n" });
+    s.git("checkout", "-q", "feature");
+    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    s.write("src/config.ts", CONFIG_COMBINED);
+    s.write("openapi.json", "feature\nmain\n");
+    s.git("add", "src/config.ts", "openapi.json");
+    expect(record("src/config.ts", "combined").code).toBe(0);
+    expect(record("openapi.json", "combined").code).toBe(0);
+  });
+
+  it("is read again for the final check", () => {
+    const declared = s
+      .read("../catalog.yaml")
+      .replace("outputs: [schema.json]", "outputs: [openapi.json]");
+    writeFileSync(`${s.home}/declared.yaml`, declared);
+    writeFileSync(
+      `${s.home}/declare.ts`,
+      `import { copyFileSync } from "node:fs"; copyFileSync(${JSON.stringify(`${s.home}/declared.yaml`)}, ${JSON.stringify(`${s.home}/catalog.yaml`)});`,
+    );
+    s.env.JIG__RESOLVE_CONFLICTS__OBLIGATIONS = JSON.stringify([
+      {
+        check: "Declare the API generated",
+        command: `${process.execPath} ${s.home}/declare.ts`,
+      },
+    ]);
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM openapi.json: mapped as text, but the configuration and change-area catalog now make it generated (bun run gen:schema)",
+    );
   });
 });
 
