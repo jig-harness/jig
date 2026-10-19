@@ -73,9 +73,13 @@ path, the kind of file, the conflicting regions with a cause for each
    repository changes. It needs no setup and nothing installed
    in the past, so a repository can measure its history on the day it
    adopts Jig. Today's attributes and merge drivers are kept out of the
-   past merges (attributes are read from the empty tree, and every
-   configured driver is replaced by `false`), and it never fetches: it
-   needs git 2.40 or later, for `GIT_ATTR_SOURCE`, refuses a partial clone
+   past merges: the working tree's and the index's attributes are read
+   from the empty tree, the system's and a person's attributes files are
+   not read, and every configured driver is replaced by `false`. Git still
+   reads `.git/info/attributes`, so a marker size or a built-in driver set
+   there still applies, but no driver command runs. It never fetches: it
+   needs git 2.43 or later, the first whose `merge-tree` reads
+   `GIT_ATTR_SOURCE` reliably, refuses a partial clone
    below git 2.45, which cannot be kept from fetching, and exits with a
    message otherwise. In a shallow clone a merge whose merge base the
    boundary hides would replay as if the two sides had added every file, so
