@@ -1,4 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
+import { expectSpawnExit } from "./test-helpers/expect-spawn-exit.ts";
 import {
   existsSync,
   mkdtempSync,
@@ -41,17 +42,24 @@ const alive = (pid: number) => {
  * test sends reaches that process and never the test runner. */
 function driver(shell: string, graceMs: number) {
   const script = join(scratch, `driver-${files++}.ts`);
+  const ready = join(scratch, `wrapper-ready-${files++}`);
   writeFileSync(
     script,
     `import { spooledRun } from ${JSON.stringify(join(import.meta.dir, "spooled-run.ts"))};
-const run = await spooledRun(["sh", "-c", ${JSON.stringify(shell)}], { stdin: "ignore", graceMs: ${graceMs} });
+import { writeFileSync } from "node:fs";
+const pending = spooledRun(["sh", "-c", ${JSON.stringify(shell)}], { stdin: "ignore", graceMs: ${graceMs} });
+writeFileSync(${JSON.stringify(ready)}, "ready");
+const run = await pending;
 console.log(JSON.stringify({ interrupted: run.interrupted, signal: run.signal }));`,
   );
-  return Bun.spawn([process.execPath, script], {
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "inherit",
-  });
+  return {
+    ready,
+    run: Bun.spawn([process.execPath, script], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "inherit",
+    }),
+  };
 }
 const pidIn = (path: string) => () =>
   existsSync(path) && readFileSync(path, "utf8").trim() !== "";
@@ -60,14 +68,18 @@ test.skipIf(process.platform === "win32")(
   "a cancellation reaches the processes the command started",
   async () => {
     const pids = join(scratch, "descendant.pid");
-    const run = driver(`sleep 300 & echo $! > ${pids}; wait`, 5_000);
-    await until(pidIn(pids), "the descendant to start");
+    const { run, ready } = driver(`sleep 300 & echo $! > ${pids}; wait`, 5_000);
+    const announced = pidIn(pids);
+    await until(
+      () => announced() && existsSync(ready),
+      "the descendant and wrapper to start",
+    );
     const descendant = Number(readFileSync(pids, "utf8"));
     run.kill("SIGTERM");
-    expect(await run.exited).toBe(0);
-    expect(JSON.parse(await new Response(run.stdout).text()).interrupted).toBe(
-      "SIGTERM",
-    );
+    const exitCode = await run.exited;
+    const stdout = await new Response(run.stdout).text();
+    expectSpawnExit({ exitCode, stdout, stderr: null }, 0);
+    expect(JSON.parse(stdout).interrupted).toBe("SIGTERM");
     await until(() => !alive(descendant), "the descendant to stop");
   },
 );
@@ -76,15 +88,21 @@ test.skipIf(process.platform === "win32")(
   "a command that ignores the cancellation is killed after the grace period",
   async () => {
     const pids = join(scratch, "stubborn.pid");
-    const run = driver(
+    const { run, ready } = driver(
       `trap '' TERM; echo $$ > ${pids}; while :; do sleep 1; done`,
       300,
     );
-    await until(pidIn(pids), "the command to start");
+    const announced = pidIn(pids);
+    await until(
+      () => announced() && existsSync(ready),
+      "the command and wrapper to start",
+    );
     const command = Number(readFileSync(pids, "utf8"));
     run.kill("SIGTERM");
-    expect(await run.exited).toBe(0);
-    const spool = JSON.parse(await new Response(run.stdout).text());
+    const exitCode = await run.exited;
+    const stdout = await new Response(run.stdout).text();
+    expectSpawnExit({ exitCode, stdout, stderr: null }, 0);
+    const spool = JSON.parse(stdout);
     expect(spool).toEqual({ interrupted: "SIGTERM", signal: "SIGKILL" });
     await until(() => !alive(command), "the command to stop");
   },

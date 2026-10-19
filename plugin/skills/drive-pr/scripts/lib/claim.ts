@@ -7,7 +7,7 @@
  * live, never what taking or retiring one means.
  *
  * A claim is `claim.<nonce>` inside the lock directory. Line 1 is
- * `<pid> <hostname>` — the liveness identity, and everything the protocol ever
+ * `<pid> <hostname> <platform>` — the liveness identity, and everything the protocol ever
  * reads. Line 2, when present, is one JSON object of OPERATOR DIAGNOSTICS:
  * which PR the owner is driving, from which worktree, since when, and where its
  * durable log is. Diagnostics are advisory by design: a claim with no second
@@ -49,20 +49,21 @@ export interface ClaimDiag {
 export interface ClaimRecord {
   pid: number;
   host: string;
+  platform: string | null;
   diag: ClaimDiag | null;
 }
 
 /**
  * Serialize a claim. The diagnostics object is written compactly on one line,
- * so line 1 stays the whole identity and a reader that only splits tokens
- * (every older parser) still lands on the same pid and host.
+ * so line 1 stays the whole identity. Older parsers still read the first two
+ * tokens as pid and host; new readers also bind the PID namespace.
  */
 export function formatClaim(
   pid: number,
   host: string,
   diag?: ClaimDiag,
 ): string {
-  const head = `${pid} ${host}\n`;
+  const head = `${pid} ${host} ${process.platform}\n`;
   return diag === undefined ? head : `${head}${JSON.stringify(diag)}\n`;
 }
 
@@ -181,11 +182,23 @@ export function parseClaimText(text: string): ClaimRecord | null {
   const nl = text.indexOf("\n");
   const head = nl === -1 ? text : text.slice(0, nl);
   const rest = nl === -1 ? "" : text.slice(nl + 1);
-  const [rawPid, rawHost = ""] = head.trim().split(/\s+/);
+  const [rawPid, rawHost = "", platform = null] = head.trim().split(/\s+/);
   if (!isDigits(rawPid ?? "")) return null;
   const pid = Number.parseInt(rawPid as string, 10);
   if (pid < 1 || !Number.isSafeInteger(pid)) return null;
-  return { pid, host: rawHost, diag: parseDiag(rest) };
+  return { pid, host: rawHost, platform, diag: parseDiag(rest) };
+}
+
+/** A host can expose multiple PID namespaces (native Windows and WSL).
+ * Untagged older claims are POSIX-compatible; Windows cannot bind them safely. */
+export function samePidNamespace(record: {
+  host: string;
+  platform?: string | null;
+}): boolean {
+  if (record.host !== "" && record.host !== hostname()) return false;
+  return record.platform == null
+    ? process.platform !== "win32"
+    : record.platform === process.platform;
 }
 
 /**
@@ -227,8 +240,10 @@ export function heartbeatStaleMs(): number {
 export function claimLive(record: {
   pid: number;
   host: string;
+  platform?: string | null;
   ageMs: number | null;
 }): boolean {
+  if (!samePidNamespace(record)) return true;
   if (!pidAlive(record.pid, record.host)) return false;
   if (record.host !== "" && record.host !== hostname()) return true;
   return record.ageMs === null || record.ageMs <= heartbeatStaleMs();
@@ -263,10 +278,27 @@ export const STAGING_STALE_MS = 5 * 60_000;
 export function stagingLive(record: {
   pid: number;
   host: string;
+  platform?: string | null;
   ageMs: number | null;
 }): boolean {
+  if (
+    (record.host === "" || record.host === hostname()) &&
+    !samePidNamespace(record)
+  )
+    return true;
   if (!pidAlive(record.pid, record.host)) return false;
   const foreign = record.host !== "" && record.host !== hostname();
   const staleAfter = foreign ? heartbeatStaleMs() : STAGING_STALE_MS;
   return record.ageMs === null || record.ageMs <= staleAfter;
+}
+
+/** New staging names bind their namespace before the directory is published. */
+export function parseStagingHost(token: string): {
+  host: string;
+  platform: string | null;
+} {
+  const at = token.lastIndexOf("@");
+  return at === -1
+    ? { host: token, platform: null }
+    : { host: token.slice(0, at), platform: token.slice(at + 1) };
 }

@@ -7,6 +7,7 @@
 import { expect } from "bun:test";
 import {
   mkdirSync,
+  existsSync,
   readdirSync,
   rmSync,
   utimesSync,
@@ -25,6 +26,21 @@ import {
   writeFixture,
 } from "./drive-pr-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+
+import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
+
+/** Wait for actual pass readiness; the budget includes native fixture startup. */
+export async function awaitFixtureMarker(marker: string): Promise<boolean> {
+  const budgetMs = Number(
+    byPlatform(
+      "native Windows must launch the CLI and Git Bash fixture chain before a pass can announce itself",
+      { windows: "60000", posix: "10000" },
+    ),
+  );
+  const deadline = Date.now() + budgetMs;
+  while (!existsSync(marker) && Date.now() < deadline) await Bun.sleep(25);
+  return existsSync(marker);
+}
 
 /**
  * drive.ts's fixed waits, compressed for every drive `runDriveIn` spawns
@@ -227,12 +243,15 @@ export function plantClaim(
     pid: number | string;
     host: string;
     nonce: string;
+    platform?: string | null;
     staleMs?: number;
   },
 ): string {
   mkdirSync(dirPath, { recursive: true });
   const file = join(dirPath, `claim.${opts.nonce}`);
-  writeFileSync(file, `${opts.pid} ${opts.host}\n`);
+  const platform =
+    opts.platform === null ? "" : ` ${opts.platform ?? process.platform}`;
+  writeFileSync(file, `${opts.pid} ${opts.host}${platform}\n`);
   if (opts.staleMs !== undefined) {
     const at = (Date.now() - opts.staleMs) / 1000;
     utimesSync(file, at, at);

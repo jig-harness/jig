@@ -24,6 +24,7 @@
  */
 import { relative, resolve, sep } from "node:path";
 import { mapConflicts } from "./conflict-map.ts";
+import { catalogGeneratedEntries } from "./lib/classify.ts";
 import {
   operationInputs,
   provenance,
@@ -93,7 +94,13 @@ function mappedEntry(
   const proof = readProvenance(root, operation);
   validateCleanPath(proof, snapshot, path, given);
   const stages = cleanStages(proof, path);
-  const entry = mapConflicts(root, operation, new Map([[path, stages]]))[path];
+  const entry = mapConflicts(
+    root,
+    operation,
+    catalogGeneratedEntries(),
+    new Map(),
+    new Map([[path, stages]]),
+  )[path];
   if (entry === undefined) fail(2, `record: cannot map ${given}`);
   snapshot.paths[path] = entry;
   return entry;
@@ -144,7 +151,7 @@ async function main(): Promise<number> {
   )
     fail(
       2,
-      `record: regenerated applies only to lockfiles and generated files, and ${path} is ${entry.class}. Declare it under resolve_conflicts.generated, or record another decision.`,
+      `record: regenerated applies only to lockfiles and generated files, and ${path} is ${entry.class}. Declare it under resolve_conflicts.generated or in the change-area catalog's generated entries, or record another decision.`,
     );
   if (options.command !== undefined && decision !== "regenerated")
     fail(2, "record: --command applies only to regenerated");

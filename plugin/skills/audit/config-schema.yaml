@@ -213,7 +213,7 @@ fields:
   drive.change_areas_catalog:
     type: path
     exists: expected
-    read_by: [drive-pr, do-item, review, decide, work-batch, change-areas]
+    read_by: [drive-pr, do-item, review, decide, work-batch, change-areas, resolve-conflicts]
   drive.reviews_drafts:
     type: boolean
     read_by: [drive-pr, do-item]

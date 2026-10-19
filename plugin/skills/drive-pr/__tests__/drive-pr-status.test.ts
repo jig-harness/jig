@@ -2846,7 +2846,15 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
   /** A `git` stub that hangs on ONE subcommand and delegates every other call
    * to the real binary — same shape as the `announce-merge-ready.ts` timeout
    * probes above, applied here to the measurement calls this describe
-   * block owns. */
+   * block owns.
+   *
+   * The hang is far longer than the bound the probes assert: on Windows a
+   * deadlined call settles only after the verified tree stop (grace, then
+   * native process snapshots), several seconds per call, so the bound must
+   * sit well clear of that cost and still well under the hang it rules out. */
+  const HANG_SEC = 120;
+  const BOUND_MS = 45_000;
+  const PROBE_TIMEOUT_MS = 60_000;
   function makeHangingGitStub(hangsOn: string[]): string {
     const realGit = Bun.which("git");
     if (!realGit) throw new Error("no git on PATH to wrap for this probe");
@@ -2860,7 +2868,7 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
       [
         "#!/usr/bin/env bash",
         `if ${cond}; then`,
-        "  sleep 30",
+        `  sleep ${HANG_SEC}`,
         "  exit 0",
         "fi",
         `exec "${realGit}" "$@"`,
@@ -2870,45 +2878,53 @@ describe("drive-status.ts measures local HEAD in the tree being driven", () => {
     return dir;
   }
 
-  it("the local-HEAD `rev-parse HEAD` read refuses on a TIMEOUT rather than hanging", async () => {
-    // Neither of this describe block's two `git()` calls carried a deadline —
-    // `git()` is undeadlined by default on the premise that a local call
-    // cannot hang the way a network one can, but a stalled FUSE/NFS mount or
-    // a held filesystem lock defeats that premise, and this read feeds a
-    // fail-closed guard that must not block forever waiting to fail closed.
-    const gitStubDir = makeHangingGitStub(["rev-parse", "HEAD"]);
-    const started = Date.now();
-    const r = await measureFrom(scratchClean.dir, {
-      DRIVE_PR_WORKTREE: scratchClean.dir,
-      GIT_CALL_TIMEOUT: "1",
-      PATH: `${gitStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
-    });
-    const elapsed = Date.now() - started;
-    expect(r.localSource).toBe("unavailable");
-    expect(r.local).toBe("");
-    expect({ boundedWellUnder30s: elapsed < 15_000 }).toEqual({
-      boundedWellUnder30s: true,
-    });
-  });
+  it(
+    "the local-HEAD `rev-parse HEAD` read refuses on a TIMEOUT rather than hanging",
+    async () => {
+      // Neither of this describe block's two `git()` calls carried a deadline —
+      // `git()` is undeadlined by default on the premise that a local call
+      // cannot hang the way a network one can, but a stalled FUSE/NFS mount or
+      // a held filesystem lock defeats that premise, and this read feeds a
+      // fail-closed guard that must not block forever waiting to fail closed.
+      const gitStubDir = makeHangingGitStub(["rev-parse", "HEAD"]);
+      const started = Date.now();
+      const r = await measureFrom(scratchClean.dir, {
+        DRIVE_PR_WORKTREE: scratchClean.dir,
+        GIT_CALL_TIMEOUT: "1",
+        PATH: `${gitStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
+      });
+      const elapsed = Date.now() - started;
+      expect(r.localSource).toBe("unavailable");
+      expect(r.local).toBe("");
+      expect({ boundedWellUnderTheHang: elapsed < BOUND_MS }).toEqual({
+        boundedWellUnderTheHang: true,
+      });
+    },
+    PROBE_TIMEOUT_MS,
+  );
 
-  it("the local-HEAD `rev-parse --show-toplevel` identity check refuses on a TIMEOUT rather than hanging", async () => {
-    const gitStubDir = makeHangingGitStub(["rev-parse", "--show-toplevel"]);
-    const started = Date.now();
-    const r = await measureFrom(scratchClean.dir, {
-      DRIVE_PR_WORKTREE: scratchClean.dir,
-      GIT_CALL_TIMEOUT: "1",
-      PATH: `${gitStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
-    });
-    const elapsed = Date.now() - started;
-    // `rev-parse HEAD` still succeeds (real git, real SHA) before the
-    // identity check's own `--show-toplevel` call hangs — so this pins the
-    // SECOND call's deadline specifically, distinct from the probe above.
-    expect(r.localSource).toBe("unavailable");
-    expect(r.local).toBe("");
-    expect({ boundedWellUnder30s: elapsed < 15_000 }).toEqual({
-      boundedWellUnder30s: true,
-    });
-  });
+  it(
+    "the local-HEAD `rev-parse --show-toplevel` identity check refuses on a TIMEOUT rather than hanging",
+    async () => {
+      const gitStubDir = makeHangingGitStub(["rev-parse", "--show-toplevel"]);
+      const started = Date.now();
+      const r = await measureFrom(scratchClean.dir, {
+        DRIVE_PR_WORKTREE: scratchClean.dir,
+        GIT_CALL_TIMEOUT: "1",
+        PATH: `${gitStubDir}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
+      });
+      const elapsed = Date.now() - started;
+      // `rev-parse HEAD` still succeeds (real git, real SHA) before the
+      // identity check's own `--show-toplevel` call hangs — so this pins the
+      // SECOND call's deadline specifically, distinct from the probe above.
+      expect(r.localSource).toBe("unavailable");
+      expect(r.local).toBe("");
+      expect({ boundedWellUnderTheHang: elapsed < BOUND_MS }).toEqual({
+        boundedWellUnderTheHang: true,
+      });
+    },
+    PROBE_TIMEOUT_MS,
+  );
 });
 
 describe("drive-status.ts refuses to converge — the measured false-convergence modes", () => {

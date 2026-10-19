@@ -130,7 +130,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain(
       "are required checks final-ready could not confirm are fresh",
     );
-  }, 30000);
+  }, 120_000);
 
   it("does NOT defer a required-named failure sourced from a legacy commit status, never a check-run", async () => {
     // `completedRequiredCi()` (ci-hold.ts) reads check-runs alone — it has no
@@ -230,7 +230,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).not.toContain(
       "no fresh exact-head required-check witness",
     );
-  }, 30000);
+  }, 120_000);
 
   it("does NOT defer a required-named failure that is BOTH an unconfirmed check-run AND a fresh legacy commit status under the same name", async () => {
     // The exact provenance gap: `failingCheckNames`
@@ -343,5 +343,5 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).not.toContain(
       "no fresh exact-head required-check witness",
     );
-  }, 30000);
+  }, 120_000);
 });

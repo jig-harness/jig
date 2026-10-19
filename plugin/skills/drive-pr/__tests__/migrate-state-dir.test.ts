@@ -430,6 +430,7 @@ const ALL_ARTIFACT_FAMILIES: Record<ArtifactFamily, true> = {
   "reaper-snapshot": true,
   "remote-mutation-lock": true,
   state: true,
+  "stop-completion": true,
   "tree-lease": true,
 };
 
@@ -442,6 +443,7 @@ describe("canonical state artifact inventory", () => {
       "drive-pr-42.json",
       "drive-pr-42.log",
       "drive-pr-42.ready-claim",
+      "drive-pr-42.stop-complete.aaaaaaaaaaaaaaaaaaaaaaaa.json",
       "drive-pr-remote-lock-42.lock.stale.owner.aaaaaaaaaaaaaaaaaaaaaaaa",
       "drive-tree-lease-wt-0123456789abcdef.json",
       "pr-drive-lease-42-wt-0123456789abcdef.json",
@@ -488,6 +490,10 @@ describe("canonical state artifact inventory", () => {
       { name: "drive-pr-42.json", family: "state" },
       { name: "drive-pr-42.log", family: "log" },
       { name: "drive-pr-42.ready-claim", family: "ready-claim" },
+      {
+        name: "drive-pr-42.stop-complete.aaaaaaaaaaaaaaaaaaaaaaaa.json",
+        family: "stop-completion",
+      },
       {
         name: "drive-pr-remote-lock-42.lock.stale.owner.aaaaaaaaaaaaaaaaaaaaaaaa",
         family: "remote-mutation-lock",

@@ -27,7 +27,9 @@ import {
 } from "../scripts/lib/tracker/linear.ts";
 import { CANONICAL_STATES } from "../scripts/lib/tracker/port.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
-import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
+import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
+import { processTable } from "../../../shared/process-table.ts";
+import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 /**
  * Whether a process has ended within `ms`: gone from the process table, or
@@ -37,9 +39,12 @@ import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 async function endsWithin(pid: number, ms: number): Promise<boolean> {
   const deadline = Date.now() + ms;
   for (;;) {
-    const ps = Bun.spawnSync(["ps", "-o", "stat=", "-p", String(pid)]);
-    const stat = ps.stdout.toString().trim();
-    if (ps.exitCode !== 0 || stat === "" || stat.startsWith("Z")) return true;
+    const rows = await processTable();
+    if (
+      rows !== null &&
+      !rows.some((row) => row.pid === pid && !row.stat.startsWith("Z"))
+    )
+      return true;
     if (Date.now() >= deadline) return false;
     await new Promise((r) => setTimeout(r, 50));
   }
@@ -285,30 +290,53 @@ describe("Linear transport", () => {
 
     it("kills the client when the caller's signal aborts", async () => {
       dir = mkdtempSync(join(tmpdir(), "linear-cli-"));
-      const bin = join(dir, "linear");
-      writeFakeProgram(bin, "#!/bin/sh\nexec sleep 30\n");
+      const ready = join(dir, "client-ready");
+      const bin = writeFakeProgram(
+        join(dir, "linear"),
+        `#!/usr/bin/env bun
+        import {writeFileSync} from 'node:fs';
+        writeFileSync(${JSON.stringify(ready)},String(process.pid));
+        setInterval(()=>{},1000);
+      `,
+      );
       const controller = new AbortController();
-      // The client runs without blocking the event loop, so this timer fires.
-      setTimeout(() => controller.abort(new Error("deadline")), 50);
-      const started = Date.now();
+      let pid = 0,
+        started = 0;
+      const cancelling = (async () => {
+        const deadline = Date.now() + 15_000;
+        while (!existsSync(ready) && Date.now() < deadline)
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        pid = Number(readFileSync(ready, "utf8"));
+        started = Date.now();
+        controller.abort(new Error("deadline"));
+      })();
       await expect(
-        cliTransport(bin)("query { ok }", {}, controller.signal),
+        cliTransport(bin)("query {ok}", {}, controller.signal),
       ).rejects.toThrow("Linear request cancelled: deadline");
-      expect(Date.now() - started).toBeLessThan(5_000);
-    });
+      await cancelling;
+      expect(pid).toBeGreaterThan(0);
+      const limit = Number(
+        byPlatform("Windows cancellation includes bounded CIM enumeration", {
+          windows: "15000",
+          posix: "5000",
+        }),
+      );
+      expect(Date.now() - started).toBeLessThan(limit);
+      expect(await endsWithin(pid, 10_000)).toBe(true);
+    }, 60_000);
 
-    it.skipIf(
-      skipsOnWindows(
-        "process-lifecycle",
-        "the cancel's `taskkill /t` leaves the client's descendant running, so the output pipe stays open",
-      ),
-    )("ends a client whose descendant holds its output open", async () => {
+    it("ends a client whose descendant holds its output open", async () => {
       dir = mkdtempSync(join(tmpdir(), "linear-cli-"));
       const bin = join(dir, "linear");
       const pidFile = join(dir, "descendant.pid");
-      writeFakeProgram(
+      const program = writeFakeProgram(
         bin,
-        `#!/bin/sh\nsleep 30 &\necho $! > '${pidFile}'\nwait\n`,
+        `#!/usr/bin/env bun
+        import {writeFileSync} from 'node:fs';
+        const child=Bun.spawn([process.execPath,'-e','setInterval(()=>{},1000)'],{stdout:'inherit',stderr:'inherit'});
+        writeFileSync(${JSON.stringify(pidFile)},String(child.pid));
+        await child.exited;
+      `,
       );
       const controller = new AbortController();
       // Cancel once the descendant exists, however slowly the shell starts.
@@ -324,44 +352,68 @@ describe("Linear transport", () => {
         controller.abort(new Error("deadline"));
       })();
       await expect(
-        cliTransport(bin)("query { ok }", {}, controller.signal),
+        cliTransport(program)("query { ok }", {}, controller.signal),
       ).rejects.toThrow("Linear request cancelled: deadline");
-      expect(Date.now() - aborted).toBeLessThan(5_000);
+      const limit = Number(
+        byPlatform("Windows cleanup includes bounded CIM enumeration", {
+          windows: "15000",
+          posix: "5000",
+        }),
+      );
+      expect(Date.now() - aborted).toBeLessThan(limit);
       const pid = Number(readFileSync(pidFile, "utf8").trim());
-      expect(await endsWithin(pid, 1_000)).toBe(true);
-    });
+      expect(await endsWithin(pid, 10_000)).toBe(true);
+    }, 60_000);
 
     it("ends the client when the calling process is terminated", async () => {
       dir = mkdtempSync(join(tmpdir(), "linear-cli-"));
-      const bin = join(dir, "linear");
-      const pidFile = join(dir, "client.pid");
-      writeFakeProgram(
-        bin,
-        `#!/bin/sh\necho $$ > '${pidFile}'\nexec sleep 30\n`,
+      const pidFile = join(dir, "client.pid"),
+        request = join(dir, "console-request"),
+        released = join(dir, "cleanup-ran");
+      const bin = writeFakeProgram(
+        join(dir, "linear"),
+        `#!/usr/bin/env bun
+        import {writeFileSync} from 'node:fs';
+        writeFileSync(${JSON.stringify(pidFile)},String(process.pid));
+        setInterval(()=>{},1000);
+      `,
+      );
+      const mode = byPlatform(
+        "Windows uses a modeled console event so the parent's cancellation handler can run",
+        { windows: "file", posix: "signal" },
       );
       const caller = join(dir, "caller.ts");
       writeFileSync(
         caller,
-        `import { cliTransport } from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/tracker/linear.ts"))};\nawait cliTransport(${JSON.stringify(bin)})("query { ok }", {});\n`,
+        `
+        import {cliTransport} from ${JSON.stringify(join(import.meta.dir, "../scripts/lib/tracker/linear.ts"))};
+        import {registerCleanup} from ${JSON.stringify(join(import.meta.dir, "../../../shared/cleanup.ts"))};
+        import {writeFileSync,existsSync,unlinkSync} from 'node:fs';
+        registerCleanup(()=>writeFileSync(${JSON.stringify(released)},''));
+        ${mode === "file" ? `setInterval(()=>{if(existsSync(${JSON.stringify(request)})){unlinkSync(${JSON.stringify(request)});process.emit('SIGTERM');}},25);` : ""}
+        await cliTransport(${JSON.stringify(bin)})("query {ok}",{});
+      `,
       );
       const child = Bun.spawn([process.execPath, caller], {
-        stdout: "ignore",
-        stderr: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
       });
-      let pid = 0;
-      for (let i = 0; i < 200 && pid === 0; i++) {
-        await new Promise((r) => setTimeout(r, 25));
-        try {
-          pid = Number(readFileSync(pidFile, "utf8").trim());
-        } catch {
-          // not started yet
-        }
+      try {
+        const deadline = Date.now() + 15_000;
+        while (!existsSync(pidFile) && Date.now() < deadline)
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        const pid = Number(readFileSync(pidFile, "utf8"));
+        expect(pid).toBeGreaterThan(0);
+        if (mode === "file") writeFileSync(request, "stop");
+        else child.kill("SIGTERM");
+        await expectSpawnExited(child, 143);
+        expect(existsSync(released)).toBe(true);
+        expect(await endsWithin(pid, 10_000)).toBe(true);
+      } finally {
+        child.kill();
+        await child.exited;
       }
-      expect(pid).toBeGreaterThan(0);
-      child.kill("SIGTERM");
-      await child.exited;
-      expect(await endsWithin(pid, 2_000)).toBe(true);
-    });
+    }, 60_000);
 
     it("stops a client that prints more than it can hold", async () => {
       dir = mkdtempSync(join(tmpdir(), "linear-cli-"));

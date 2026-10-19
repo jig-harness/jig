@@ -128,8 +128,11 @@ function resolvedMerge(setup?: (s: Scratch) => void): Scratch {
   return s;
 }
 
+// The environment layer, not an untracked .config/jig.yaml: the check refuses
+// while a file that decides classification differs from the index, and a
+// staged one would be a change outside the operation.
 function setObligations(s: Scratch, entries: unknown): void {
-  s.overlay(`resolve_conflicts:\n  obligations: ${JSON.stringify(entries)}\n`);
+  s.env.JIG__RESOLVE_CONFLICTS__OBLIGATIONS = JSON.stringify(entries);
 }
 
 test("CLI reports pending text and successful commands for the whole resolved merge", () => {

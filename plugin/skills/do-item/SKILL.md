@@ -850,8 +850,8 @@ routing below remain **exact**.
       neither the arm outcome nor the printed path proves the log exists.
       Never post a template such as `<state dir>` as a path. Include the
       fleet commands too: `drives.ts` lists live drives, and `drives.ts --stop
-      <PR>` stops this one (`--stop` needs a POSIX host with `ps`; the listing
-      works everywhere). These are what a human reaches for when the
+      <PR>` stops this one (the process probe uses `ps` on POSIX and
+      PowerShell on Windows). These are what a human reaches for when the
       background drive is an agent they have no window into.
 
    2. **exact** — **Spawn that command in the background** (the harness's

@@ -338,32 +338,22 @@ audit scores M12's new criterion from the report.
 - **Windows for `drive-pr` and `do-item`.** Both skills, and the skills
   they invoke, running on native Windows under Claude Code with Git for
   Windows' Bash first, and under PowerShell (Codex on Windows) later. Much
-  of the code already handles Windows: a pass is never detached and its
-  tree ends with `taskkill /T`, the clone key is not a path, and the pass is
+  of the code already handles Windows: a pass and its registered runners
+  are stopped by captured process identities, the clone key is not a path,
+  and the pass is
   spawned without a shell. Both suites run on Windows every night; the tests
   that need a step below skip there, and each skip names the step that lifts
   it (`skipsOnWindows` in
   [lib/test-helpers/windows-skip.ts](../lib/test-helpers/windows-skip.ts)).
   The steps land in this order, each as its own pull request:
-  1. **A pass's processes without `ps` and POSIX signals**
-     (`process-lifecycle`). One process-table
-     source (`ps` on POSIX, `Win32_Process` through PowerShell on Windows)
-     for `foreground-wait`, `pass-child --doctor`, the group check in
-     `proc.ts` and `drives.ts --stop`; a stop that does not need a signal
-     (the driver polls for a stop request and releases its own locks); the
-     tree snapshotted before a forced kill so a stop only reports the tree
-     gone when it is; no re-raising of signals Windows cannot deliver; and
-     the platform in a claim's owner, so a WSL and a native driver on one
-     worktree do not read each other as dead. Today `foreground-wait`
-     never settles once its deadline fires, and `--stop` refuses.
-  2. **State, locks and paths** (`file-system`). Renames retried while
+  1. **State, locks and paths** (`file-system`). Renames retried while
      another process holds the target open, lock renames retried before
      reading as claimed, both sides of a worktree's identity normalised
      before hashing (a mismatch makes a live worktree look deleted),
      `drive.ts` started through `import.meta.main`, the pickup record's
      no-link guard kept where `O_NOFOLLOW` does not exist, and a clear error
      on a volume without hard links.
-  3. **The skills under Git Bash** (`git-bash`). Every script command led by
+  2. **The skills under Git Bash** (`git-bash`). Every script command led by
      `bun`, the `ps`, `setsid` and `nohup` instructions replaced by the
      scripts' own commands, the pass command resolved through
      [`PATHEXT`](../GLOSSARY.md) (an npm-installed agent CLI is a `.cmd`),
@@ -375,11 +365,11 @@ audit scores M12's new criterion from the report.
      quoted for `cmd.exe`'s own rules, tested with arguments holding
      spaces, quotes, `%` and `^`. Done when a pickup, a driven round and a
      stop work end to end on a Windows machine.
-  4. **Job Objects** (optional, decided after step 1): each pass in a
+  3. **Job Objects** (optional): each pass in a
      Windows [Job Object](../GLOSSARY.md), for a kill no directly started
      descendant escapes and a sound check that the tree is gone; or a
-     recorded decision that step 1's snapshot is enough.
-  5. **PowerShell** (`powershell`, later): the shell constructs in the
+     recorded decision that captured process identities are enough.
+  4. **PowerShell** (`powershell`, later): the shell constructs in the
      skills' instructions (`$(…)`, heredocs, pipes into `grep` or `tail`,
      `test`, `mktemp`, and `review`'s file-set logic) moved into the scripts
      they feed, so the skills run under Codex on Windows without Git Bash.

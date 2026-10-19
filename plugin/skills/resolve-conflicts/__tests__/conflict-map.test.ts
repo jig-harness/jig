@@ -51,6 +51,7 @@ interface Map {
     integration: string;
   };
   warning: string | null;
+  catalogIncomplete?: string | null;
   paths: Record<string, MappedPath>;
 }
 
@@ -271,6 +272,318 @@ describe("classes", () => {
     expect(map().paths["bun.lock"]).toMatchObject({
       class: "generated",
       regenerate: { command: "bun run relock", source: "configuration" },
+    });
+  });
+
+  describe("the change-area catalog", () => {
+    const CATALOG = [
+      "areas:",
+      "  api:",
+      '    paths: ["src/api/**"]',
+      "    generated:",
+      "      - outputs: [openapi.json, docs/api.md]",
+      '        source: ["src/api/**"]',
+      "        command: bun run gen:openapi",
+      "        check: bun run gen:openapi --check",
+      "      - outputs: [schema.sql]",
+      '        source: ["src/db/**"]',
+      "        check: bun run gen:schema --check",
+      "",
+    ].join("\n");
+
+    function useCatalog(text = CATALOG, extra: string[] = []): void {
+      s.write("catalog.yaml", text);
+      s.overlay(
+        ["drive:", "  change_areas_catalog: catalog.yaml", ...extra, ""].join(
+          "\n",
+        ),
+      );
+    }
+
+    it("maps an output as generated with the catalog's command", () => {
+      useCatalog();
+      conflictEverywhere(["openapi.json", "docs/api.md", "src/api/routes.ts"]);
+      const m = map();
+      for (const output of ["openapi.json", "docs/api.md"])
+        expect(m.paths[output]).toMatchObject({
+          class: "generated",
+          regenerate: {
+            command: "bun run gen:openapi",
+            cwd: ".",
+            source: "catalog",
+          },
+        });
+      // A source is edited by hand: only the outputs are derived.
+      expect(m.paths["src/api/routes.ts"]?.class).toBe("text");
+    });
+
+    it("prints the catalog's command as the regeneration command", () => {
+      useCatalog();
+      conflictEverywhere(["openapi.json"]);
+      const r = s.script("conflict-map.ts");
+      expect(r.code).toBe(0);
+      expect(r.stdout).toContain("openapi.json  both-modified  generated");
+      expect(r.stdout).toContain(
+        "regenerate: bun run gen:openapi (in .; catalog)",
+      );
+    });
+
+    it("lets resolve_conflicts.generated override it, and it override the lockfile table", () => {
+      useCatalog(
+        CATALOG.replace(
+          "outputs: [openapi.json, docs/api.md]",
+          "outputs: [openapi.json, bun.lock]",
+        ),
+        [
+          "resolve_conflicts:",
+          "  generated:",
+          '    - paths: ["openapi.json"]',
+          "      command: make openapi",
+        ],
+      );
+      conflictEverywhere(["openapi.json", "bun.lock", "go.sum"]);
+      const m = map();
+      expect(m.paths["openapi.json"]?.regenerate).toMatchObject({
+        command: "make openapi",
+        source: "configuration",
+      });
+      expect(m.paths["bun.lock"]).toMatchObject({
+        class: "generated",
+        regenerate: { command: "bun run gen:openapi", source: "catalog" },
+      });
+      expect(m.paths["go.sum"]?.regenerate?.source).toBe("built-in");
+    });
+
+    it("reports an entry with no command, and still treats its outputs as generated", () => {
+      useCatalog();
+      conflictEverywhere(["schema.sql"]);
+      const r = s.script("conflict-map.ts", ["--json"]);
+      expect(r.code).toBe(0);
+      const m = JSON.parse(r.stdout) as Map;
+      expect(m.paths["schema.sql"]).toMatchObject({
+        class: "generated",
+        regenerate: null,
+      });
+      expect(m.warning).toContain(
+        "catalog area api.generated[1] declares outputs (schema.sql) but no command",
+      );
+      expect(r.stderr).toContain("WARNING: catalog area api.generated[1]");
+      const text = s.script("conflict-map.ts");
+      expect(text.stdout).toContain("WARNING: catalog area api.generated[1]");
+    });
+
+    it("reports a catalog it cannot read and still maps", () => {
+      s.overlay("drive:\n  change_areas_catalog: missing.yaml\n");
+      conflictEverywhere(["openapi.json", "bun.lock"]);
+      const r = s.script("conflict-map.ts", ["--json"]);
+      expect(r.code).toBe(0);
+      const m = JSON.parse(r.stdout) as Map;
+      expect(m.warning).toContain("the change-area catalog");
+      expect(m.warning).toContain("missing.yaml could not be read");
+      expect(m.paths["openapi.json"]?.class).toBe("text");
+      expect(m.paths["bun.lock"]?.class).toBe("lockfile");
+    });
+
+    it("picks the catalog up when the map runs again once it can be read", () => {
+      s.overlay("drive:\n  change_areas_catalog: catalog.yaml\n");
+      conflictEverywhere(["openapi.json"]);
+      expect(map().paths["openapi.json"]?.class).toBe("text");
+      s.write("catalog.yaml", CATALOG);
+      expect(map().paths["openapi.json"]?.class).toBe("generated");
+    });
+
+    describe("when the catalog is itself conflicted", () => {
+      beforeEach(() => {
+        s.overlay("drive:\n  change_areas_catalog: catalog.yaml\n");
+        conflictEverywhere(["catalog.yaml", "openapi.json"]);
+      });
+
+      function resolveCatalog(): void {
+        s.write("catalog.yaml", CATALOG);
+        s.git("add", "catalog.yaml");
+      }
+
+      it("maps without it, says why, and reclassifies once it is resolved", () => {
+        const first = map();
+        expect(first.warning).toContain("the change-area catalog");
+        expect(first.paths["catalog.yaml"]?.class).toBe("text");
+        expect(first.paths["openapi.json"]?.class).toBe("text");
+        resolveCatalog();
+        expect(map().paths["openapi.json"]).toMatchObject({
+          class: "generated",
+          regenerate: { command: "bun run gen:openapi", source: "catalog" },
+        });
+      });
+
+      it("reclassifies a path hand-merged and staged before the catalog was resolved", () => {
+        map();
+        s.write("openapi.json", "hand merged\n");
+        s.git("add", "openapi.json");
+        expect(s.script("record.ts", ["openapi.json", "combined"]).code).toBe(
+          0,
+        );
+        resolveCatalog();
+        const r = s.script("conflict-map.ts");
+        expect(r.stdout).toContain(
+          "cleared the decision for openapi.json, whose class or regeneration command changed",
+        );
+        const m = map();
+        expect(m.warning).not.toContain("could not be read");
+        expect(m.paths["openapi.json"]).toMatchObject({
+          class: "generated",
+          regenerate: { source: "catalog" },
+          resolution: { decision: null },
+        });
+        const check = s.script("check-resolution.ts");
+        expect(check.code).toBe(1);
+        expect(check.stdout).toContain(
+          "PROBLEM openapi.json: no decision recorded",
+        );
+      });
+
+      it("refuses the check until the map runs again with the catalog readable", () => {
+        map();
+        s.write("openapi.json", "hand merged\n");
+        s.git("add", "openapi.json");
+        expect(s.script("record.ts", ["openapi.json", "combined"]).code).toBe(
+          0,
+        );
+        resolveCatalog();
+        expect(s.script("record.ts", ["catalog.yaml", "combined"]).code).toBe(
+          0,
+        );
+        const before = s.script("check-resolution.ts");
+        expect(before.code).toBe(1);
+        expect(before.stdout).toContain(
+          "PROBLEM (conflict map): the change-area catalog's generated files could not all be read when the conflicts were mapped",
+        );
+        expect(map().catalogIncomplete).toBeNull();
+        const after = s.script("check-resolution.ts");
+        expect(after.stdout).not.toContain("(conflict map)");
+        expect(after.stdout).toContain(
+          "PROBLEM openapi.json: no decision recorded",
+        );
+      });
+    });
+
+    it("gives a staged derived path the command the catalog declares once it is resolved, and asks for that regeneration again", () => {
+      s.overlay("drive:\n  change_areas_catalog: catalog.yaml\n");
+      conflictEverywhere(["catalog.yaml", "bun.lock"]);
+      expect(map().paths["bun.lock"]?.regenerate?.source).toBe("built-in");
+      s.git("add", "bun.lock");
+      expect(s.script("record.ts", ["bun.lock", "regenerated"]).code).toBe(0);
+      s.write(
+        "catalog.yaml",
+        CATALOG.replace(
+          "outputs: [openapi.json, docs/api.md]",
+          "outputs: [bun.lock]",
+        ),
+      );
+      s.git("add", "catalog.yaml");
+      expect(map().paths["bun.lock"]).toMatchObject({
+        class: "generated",
+        regenerate: { command: "bun run gen:openapi", source: "catalog" },
+        resolution: { decision: null },
+      });
+      expect(s.script("check-resolution.ts").stdout).toContain(
+        "PROBLEM bun.lock: no decision recorded",
+      );
+    });
+
+    it("keeps a decision recorded under the class and command the path still has", () => {
+      useCatalog();
+      conflictEverywhere(["openapi.json"]);
+      map();
+      s.git("add", "openapi.json");
+      expect(s.script("record.ts", ["openapi.json", "regenerated"]).code).toBe(
+        0,
+      );
+      expect(map().paths["openapi.json"]?.resolution.decision).toBe(
+        "regenerated",
+      );
+    });
+
+    it("classifies a staged path by the other rules once the catalog no longer declares it", () => {
+      useCatalog();
+      conflictEverywhere(["openapi.json"]);
+      expect(map().paths["openapi.json"]?.class).toBe("generated");
+      s.git("add", "openapi.json");
+      expect(s.script("record.ts", ["openapi.json", "regenerated"]).code).toBe(
+        0,
+      );
+      s.write(
+        "catalog.yaml",
+        CATALOG.replace(
+          "outputs: [openapi.json, docs/api.md]",
+          "outputs: [docs/api.md]",
+        ),
+      );
+      expect(map().paths["openapi.json"]).toMatchObject({
+        class: "text",
+        regenerate: null,
+        resolution: { decision: null },
+      });
+    });
+
+    it("reports an output that is not a literal file path, and ignores its entry", () => {
+      useCatalog(CATALOG.replace("outputs: [schema.sql]", 'outputs: ["**"]'));
+      conflictEverywhere(["schema.sql", "src/a.ts"]);
+      const m = map();
+      expect(m.warning).toContain(
+        'catalog area api.generated[1].outputs: "**" is not a literal repository-relative file path',
+      );
+      expect(m.paths["schema.sql"]?.class).toBe("text");
+      expect(m.paths["src/a.ts"]?.class).toBe("text");
+      expect(m.catalogIncomplete).toContain('"**" is not a literal');
+    });
+
+    it("refuses the check while an entry's outputs are malformed, a valid output beside them included", () => {
+      useCatalog(
+        CATALOG.replace(
+          "outputs: [openapi.json, docs/api.md]",
+          'outputs: [openapi.json, "**"]',
+        ),
+      );
+      conflictEverywhere(["openapi.json"]);
+      expect(map().paths["openapi.json"]?.class).toBe("text");
+      s.write("openapi.json", "hand merged\n");
+      s.git("add", "openapi.json");
+      expect(s.script("record.ts", ["openapi.json", "combined"]).code).toBe(0);
+      const r = s.script("check-resolution.ts");
+      expect(r.code).toBe(1);
+      expect(r.stdout).toContain(
+        'PROBLEM (conflict map): the change-area catalog\'s generated files could not all be read when the conflicts were mapped (catalog area api.generated[0].outputs: "**" is not a literal',
+      );
+      useCatalog();
+      expect(map().catalogIncomplete).toBeNull();
+      expect(s.script("check-resolution.ts").stdout).not.toContain(
+        "(conflict map)",
+      );
+    });
+
+    it("reports an entry whose outputs are not a list of paths", () => {
+      useCatalog(
+        CATALOG.replace("outputs: [schema.sql]", "outputs: schema.sql"),
+      );
+      conflictEverywhere(["schema.sql"]);
+      const m = JSON.parse(
+        s.script("conflict-map.ts", ["--json"]).stdout,
+      ) as Map;
+      expect(m.warning).toContain(
+        "catalog area api.generated[1].outputs is not a nonempty list of paths",
+      );
+      expect(m.catalogIncomplete).toContain(
+        "api.generated[1].outputs is not a nonempty list of paths",
+      );
+      expect(m.paths["schema.sql"]?.class).toBe("text");
+    });
+
+    it("refuses a catalog path that is not a string", () => {
+      s.overlay("drive:\n  change_areas_catalog: [a, b]\n");
+      conflictEverywhere(["a.txt"]);
+      const r = s.script("conflict-map.ts", ["--json"]);
+      expect(r.code).toBe(2);
+      expect(r.stderr).toContain("drive.change_areas_catalog must be a path");
     });
   });
 
