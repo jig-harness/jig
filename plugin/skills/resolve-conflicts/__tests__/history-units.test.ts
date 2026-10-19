@@ -21,6 +21,7 @@ import {
   parseResolutionSection,
   subjectBranches,
 } from "../scripts/lib/replay.ts";
+import { parseObligations } from "../scripts/lib/obligations.ts";
 import { weekOf } from "../scripts/lib/report.ts";
 
 describe("git's version", () => {
@@ -276,4 +277,10 @@ it("reads the branches a merge's subject names", () => {
     ours: null,
   });
   expect(subjectBranches("Add a thing")).toEqual({ theirs: null, ours: null });
+});
+
+it("lets the obligations reader accept the history report's hotspot threshold", () => {
+  expect(
+    parseObligations({ generated: [], hotspot_min_merges: 2, obligations: [] }),
+  ).toEqual([]);
 });
