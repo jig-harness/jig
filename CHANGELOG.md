@@ -316,6 +316,49 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.63.0] - 2026-10-19
+
+### Added
+
+- **Release channels for the plugin.** Machines now install `jig` from a
+  channel: `stable`, which receives a version once it has spent 72 hours on
+  `latest` with its gates green and no open regression, or `latest`, which
+  receives every version once it is tagged. Install with
+  `claude plugin install jig --marketplace https://github.com/jig-harness/jig.git#stable`
+  or `codex plugin marketplace add https://github.com/jig-harness/jig.git --ref stable`;
+  `bun tools/plugin/setup.ts` follows `stable` on a fresh machine and takes
+  `--channel latest|stable`. A channel holds the plugin without its tests
+  and development notes, so the install is smaller. A machine added without
+  a ref, or at `#main`, still follows `main`, which receives each version before its gates
+  pass; to move it to a channel, remove the marketplace and add it again at
+  the channel, as
+  [Release channels](plugin/README.md#release-channels) shows. The plugin's
+  id stays `jig@jig`, so repositories need no change.
+
+## [0.62.0] - 2026-10-19
+
+### Added
+
+- Conflict resolution accepts repository obligations over the whole resolved
+  diff, including automatically merged files and hunks, with optional
+  validation commands. Each command runs only while every tracked file on
+  disk matches the staged tree, including submodules and files Git is told
+  not to compare, and a command that changes either stops the commands after
+  it and invalidates the run.
+
+### Changed
+
+- **Breaking:** Conflict resolution requires Git 2.40 or newer to reconstruct
+  the automatic merge result. Upgrade Git before using the skill. Picking or
+  reverting a merge commit with `-m` requires manual resolution and validation
+  because Git does not reliably retain the selected parent.
+
+### Fixed
+
+- Conflict resolution rejects staged paths outside the operation and manual
+  changes without recorded decisions, so unrelated staged work cannot ride
+  into its commit.
+
 ## [0.61.1] - 2026-10-18
 
 ### Changed
@@ -3074,7 +3117,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.61.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.63.0...HEAD
+[0.63.0]: https://github.com/jig-harness/jig/compare/v0.62.0...v0.63.0
+[0.62.0]: https://github.com/jig-harness/jig/compare/v0.61.1...v0.62.0
 [0.61.1]: https://github.com/jig-harness/jig/compare/v0.61.0...v0.61.1
 [0.61.0]: https://github.com/jig-harness/jig/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/jig-harness/jig/compare/v0.59.0...v0.60.0

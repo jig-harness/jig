@@ -69,6 +69,30 @@ function parentOf(root: string, commit: string): string | null {
   return resolveCommit(root, `${commit}^`);
 }
 
+/** A single replay does not reliably retain the selected mainline parent. */
+function requireSingleParent(root: string, commit: string, kind: string): void {
+  if (resolveCommit(root, `${commit}^2`) !== null)
+    throw new NoOperation(
+      `unsupported: ${kind} of a merge commit does not reliably preserve its selected mainline parent. Resolve and validate this operation manually; this skill cannot certify its automatic result.`,
+    );
+}
+
+/** The recreated merge's parents, or the inputs of an ordinary replay. */
+function replayInputs(
+  root: string,
+  head: string,
+  incoming: string,
+): { theirs: string; base: string | null } {
+  const mergeHead = resolveCommit(root, "MERGE_HEAD");
+  if (mergeHead === null)
+    return { theirs: incoming, base: parentOf(root, incoming) };
+  const result = gitRaw(root, ["merge-base", head, mergeHead]);
+  return {
+    theirs: mergeHead,
+    base: result.code === 0 ? result.stdout.trim() : null,
+  };
+}
+
 /** The id of the empty tree in this repository's hash format. */
 function emptyTree(root: string): string {
   return git(root, ["hash-object", "-t", "tree", "--stdin"], "").trim();
@@ -165,6 +189,7 @@ export function detectOperation(
     );
 
   if (rebaseDir !== null && rebaseHead !== null) {
+    const replay = replayInputs(root, head, rebaseHead);
     const dir = gitPath(root, rebaseDir);
     const headName = read(join(dir, "head-name"));
     const branch =
@@ -177,8 +202,8 @@ export function detectOperation(
     return {
       kind: "rebase",
       head,
-      incoming: rebaseHead,
-      base: parentOf(root, rebaseHead),
+      incoming: replay.theirs,
+      base: replay.base,
       ours: side(
         root,
         head,
@@ -187,7 +212,7 @@ export function detectOperation(
       ),
       theirs: side(
         root,
-        rebaseHead,
+        replay.theirs,
         branch,
         `the commit being replayed from ${branch ?? "the branch being rebased"}`,
       ),
@@ -254,6 +279,7 @@ export function detectOperation(
     const incoming = resolveCommit(root, "CHERRY_PICK_HEAD");
     if (incoming === null)
       throw new NoOperation("CHERRY_PICK_HEAD does not name a commit.");
+    requireSingleParent(root, incoming, "cherry-pick");
     return {
       kind: "cherry-pick",
       head,
@@ -276,6 +302,7 @@ export function detectOperation(
     const incoming = resolveCommit(root, "REVERT_HEAD");
     if (incoming === null)
       throw new NoOperation("REVERT_HEAD does not name a commit.");
+    requireSingleParent(root, incoming, "revert");
     // Reverting a root commit goes back to the state before any file
     // existed: the empty tree.
     const parent = parentOf(root, incoming) ?? emptyTree(root);

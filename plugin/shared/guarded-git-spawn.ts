@@ -51,6 +51,20 @@ export const LEAKY_GIT_ENV = [
   "GIT_CONFIG",
 ] as const;
 
+/** `env` without the variables in {@link LEAKY_GIT_ENV}, for an explicit spawn env. */
+export function withoutLeakyGitEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const clean: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env))
+    if (
+      value !== undefined &&
+      !LEAKY_GIT_ENV.some((name) => name === key.toUpperCase())
+    )
+      clean[key] = value;
+  return clean;
+}
+
 function requireSafeEnv(env: SpawnSyncOptions["env"] | undefined): void {
   if (!env)
     throw new Error(

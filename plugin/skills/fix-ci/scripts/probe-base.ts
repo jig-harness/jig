@@ -83,22 +83,7 @@ import {
   parseJunitReport,
 } from "../../../shared/junit-report.ts";
 import { fail, runMain } from "../../../shared/cli.ts";
-
-/**
- * Variables that route git at a repository other than the one it runs in. A
- * hook manager exports the first three; inheriting them would make the probe's
- * worktree commands act on the hook's repository. The command under probe gets
- * the same cleaned environment, since it may run git itself.
- */
-const LEAKY_GIT_ENV = [
-  "GIT_DIR",
-  "GIT_WORK_TREE",
-  "GIT_INDEX_FILE",
-  "GIT_COMMON_DIR",
-  "GIT_OBJECT_DIRECTORY",
-  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-  "GIT_CONFIG",
-];
+import { withoutLeakyGitEnv } from "../../../shared/guarded-git-spawn.ts";
 
 /** Lines of the command's output kept as evidence, per stream. */
 const TAIL_LINES = 60;
@@ -214,15 +199,14 @@ export function parseArgs(argv: string[]): ProbeArgs {
   };
 }
 
+/**
+ * The environment without the variables that route git at another
+ * repository: a hook manager exports them, and inheriting them would make the
+ * probe's worktree commands act on the hook's repository. The command under
+ * probe gets the same cleaned environment, since it may run git itself.
+ */
 function cleanEnv(): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env))
-    if (
-      value !== undefined &&
-      !LEAKY_GIT_ENV.some((name) => name === key.toUpperCase())
-    )
-      env[key] = value;
-  return env;
+  return withoutLeakyGitEnv();
 }
 
 interface Run {

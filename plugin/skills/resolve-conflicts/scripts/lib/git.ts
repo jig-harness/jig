@@ -30,12 +30,14 @@ export function gitRaw(
   root: string | null,
   args: readonly string[],
   input?: string,
+  env?: NodeJS.ProcessEnv,
 ): GitResult {
   const full = [...STABLE, ...(root === null ? [] : ["-C", root]), ...args];
   const r = spawnSync("git", full, {
     encoding: "utf8",
     maxBuffer: MAX_BUFFER,
     input,
+    env,
   });
   if (r.error) throw new Error(`git ${args.join(" ")}: ${r.error.message}`);
   return { code: r.status ?? -1, stdout: r.stdout, stderr: r.stderr };
@@ -46,8 +48,9 @@ export function git(
   root: string | null,
   args: readonly string[],
   input?: string,
+  env?: NodeJS.ProcessEnv,
 ): string {
-  const r = gitRaw(root, args, input);
+  const r = gitRaw(root, args, input, env);
   if (r.code !== 0)
     throw new Error(
       `git ${args.join(" ")} exited ${r.code}: ${r.stderr.trim() || r.stdout.trim()}`,

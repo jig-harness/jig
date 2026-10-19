@@ -1,9 +1,10 @@
 # Agent instructions: the `jig` plugin
 
 These add to the [repository's AGENTS.md](../AGENTS.md) for anything under
-`plugin/`. Claude Code and Codex install this directory from `main` onto every
-machine that uses Jig, so a mistake here reaches every repository at
-once.
+`plugin/`. Claude Code and Codex install this directory onto every machine
+that uses Jig, from the release channels built out of each version's tag
+([README.md § Release channels](README.md#release-channels)), so a mistake
+here reaches every repository at once.
 
 ## Rules
 
@@ -14,7 +15,15 @@ once.
   APIs and the `node:` modules it provides) or a vendored single-file build
   only. The details are in
   [CONTRIBUTING.md § Adding or changing a plugin skill](../CONTRIBUTING.md#adding-or-changing-a-plugin-skill);
-  `tools/plugin/plugin.test.ts` checks the whole plugin from a copy.
+  `tools/plugin/plugin.test.ts` checks the whole plugin from a copy built the
+  way the channels ship it. That copy leaves out `__tests__/`, `AGENTS.md`
+  and `CLAUDE.md` (`tools/plugin/artifact.ts`), so nothing that runs may read
+  them.
+- **The name never changes.** The plugin and both marketplaces are named
+  `jig`, and `jig@jig` is what every machine and every repository's
+  `enabledPlugins` know it by; `bun run gates` (`scripts/check-plugin.ts`)
+  fails another name. Should a rename ever be unavoidable, the Claude Code
+  marketplace's `renames` map carries the old name to the new one.
 - **Consumer values are configuration.** A repository's values (bots, teams,
   labels, branch names, commands) are read at run time from its
   `.config/jig.yaml` and the other configuration layers, always through the

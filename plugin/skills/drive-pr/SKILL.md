@@ -138,7 +138,7 @@ Most rows below are a real `state` value `drive-status.ts` itself emits in
 its `--json` report; the canonical (exit, state) pairing is code, not this
 table — [`terminal-states.ts`](scripts/lib/status/terminal-states.ts),
 checked against this and the other prose restatements by
-[`__tests__/terminal-states-consistency.ts`](__tests__/terminal-states-consistency.ts).
+[`__tests__/terminal-states-consistency.ts`](https://github.com/jig-harness/jig/blob/main/plugin/skills/drive-pr/__tests__/terminal-states-consistency.ts).
 `PASS_DEADLINE`, `QUOTA_PARKED`, `MAILBOX_STOPPED`, and `MAILBOX_PAUSE_TIMEOUT` are the
 exception: named exits `drive.ts` returns directly, never through this report — a
 consumer polling `--json` for one of these four will never see it there.

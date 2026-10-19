@@ -9,6 +9,24 @@ body:
       description: From `claude plugin list` or `codex plugin list`, or the tag you pinned.
     validations:
       required: true
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Where you installed it from
+      description: The ref in `claude plugin marketplace list --json`, or under `[marketplaces.jig]` in Codex's config.toml.
+      options:
+        - stable
+        - latest
+        - a pinned tag
+        - main
+        - a local checkout
+    validations:
+      required: true
+  - type: input
+    id: last-working
+    attributes:
+      label: Last version it worked in
+      description: If it worked before, the version it last worked in. Leave empty if it never did.
   - type: textarea
     id: what
     attributes:
