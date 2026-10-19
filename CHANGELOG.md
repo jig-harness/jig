@@ -316,6 +316,19 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.64.0] - 2026-10-19
+
+### Added
+
+- `resolve-conflicts` reads the `generated:` entries of the change-area catalog (`drive.change_areas_catalog`): a conflicted path listed in an entry's `outputs` is mapped as a generated file and regenerated with that entry's `command`, so a generator declared in the catalog is not copied into `resolve_conflicts.generated`. A path is classified by `resolve_conflicts.generated` first, then the catalog, then the built-in lockfile table. Catalog `outputs` are literal file paths, matched exactly. A catalog entry with no `command`, one whose `outputs` are not literal file paths, and a catalog that cannot be read are reported as warnings by `conflict-map.ts` instead of being skipped; in the last two cases `check-resolution.ts` refuses until the map runs again and reads every entry. Running `conflict-map.ts` again classifies every mapped path afresh, a staged one included, and clears a recorded decision whose path's class or regeneration command has changed. `check-resolution.ts` classifies every mapped path again from the configuration and catalog as they stand when it runs, and refuses a path whose class or regeneration command differs from the map's until the map runs again. It also refuses while the configuration, the catalog (or any symbolic link, file or directory, that reading either passes through, or the file it finally reads) or a `.gitattributes` file differs between the working tree and the index, whatever its assume-unchanged or skip-worktree flag and whether or not it is ignored, since the commit carries what is staged; after obligation commands run, it reads the catalog again. A path keeps the conflict-marker size it was first mapped with for the whole operation, and the check also looks for markers of the size its attribute gives at check time. The snapshot's `regenerate.source` can now be `catalog`, and the snapshot records `catalogIncomplete`.
+
+### Fixed
+
+- Drive cancellation, foreground command deadlines, and process diagnostics use native Windows process snapshots. `drives.ts --stop` requests an orderly shutdown on Windows, and claims distinguish operating systems sharing a worktree.
+- Foreground waits report failure when the process tree cannot be confirmed stopped, preserving the command's exit status and preventing a new launch from discarding unresolved work.
+- Foreground supervisors establish ownership before executing commands, and cooperative stops preserve generation-bound completion proof through registry cleanup.
+- A foreground wait no longer reports a finished launch as still running, and a new launch is no longer refused, when Windows has reused one of the finished launch's process numbers.
+
 ## [0.63.0] - 2026-10-19
 
 ### Added
@@ -3117,7 +3130,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.63.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.64.0...HEAD
+[0.64.0]: https://github.com/jig-harness/jig/compare/v0.63.0...v0.64.0
 [0.63.0]: https://github.com/jig-harness/jig/compare/v0.62.0...v0.63.0
 [0.62.0]: https://github.com/jig-harness/jig/compare/v0.61.1...v0.62.0
 [0.61.1]: https://github.com/jig-harness/jig/compare/v0.61.0...v0.61.1
