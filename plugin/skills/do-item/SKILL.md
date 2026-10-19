@@ -301,6 +301,11 @@ back in front of an agent after its context is compacted, and at the top of
 every review round. Every invocation, first pickup and resume alike, writes
 `.context/intent-chain/<identifier>.md`.
 
+Snapshot publication retries temporary Windows sharing errors. Pickup records
+must be regular files: the reader checks the path before opening it and checks
+the open file's identity, retaining the no-symlink guard when Unix open flags
+are unavailable.
+
 Item snapshots stay keyed by identifier for lookups outside a PR. Interactive
 Refocus reads only `.context/refocus-state/<session>.intent-chain.md`, a full
 copy atomically refreshed by that session's own pickup. The writer prefers

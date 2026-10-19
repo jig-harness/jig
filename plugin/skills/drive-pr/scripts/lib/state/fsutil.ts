@@ -1,12 +1,12 @@
 /** Filesystem helpers shared by the state modules. */
 
+import { renameWithRetry } from "../../../../../shared/rename-with-retry.ts";
 import { randomBytes } from "node:crypto";
 import {
   closeSync,
   fsyncSync,
   linkSync,
   openSync,
-  renameSync,
   unlinkSync,
   writeSync,
 } from "node:fs";
@@ -184,8 +184,10 @@ export function fsyncFileSync(path: string): void {
  * so a plain `.toThrow('message')` assertion still matches it.
  */
 export class ExclusiveWriteOwnFailure extends Error {
-  constructor(cause: unknown) {
-    super(cause instanceof Error ? cause.message : String(cause), { cause });
+  constructor(cause: unknown, message?: string) {
+    super(message ?? (cause instanceof Error ? cause.message : String(cause)), {
+      cause,
+    });
     this.name = "ExclusiveWriteOwnFailure";
   }
 }
@@ -294,7 +296,23 @@ export function createExclusiveDurable(path: string, content: string): void {
     try {
       linkSync(tmp, path);
     } catch (e) {
-      if ((e as NodeJS.ErrnoException)?.code === "EEXIST") throw e;
+      const code = (e as NodeJS.ErrnoException)?.code;
+      if (code === "EEXIST") throw e;
+      if (
+        [
+          "ENOTSUP",
+          "EOPNOTSUPP",
+          "ENOSYS",
+          "EXDEV",
+          "EPERM",
+          "EACCES",
+        ].includes(code ?? "")
+      ) {
+        throw new ExclusiveWriteOwnFailure(
+          e,
+          `State directory ${dirname(path)} could not publish its identity using hard links; check permissions and choose a local volume with hard-link support through DRIVE_PR_STATE_DIR. (${code})`,
+        );
+      }
       throw new ExclusiveWriteOwnFailure(e);
     }
   } finally {
@@ -361,7 +379,7 @@ export function createExclusiveDurable(path: string, content: string): void {
  * only ever true when this invocation's own `open(2)` genuinely won the
  * exclusive create.
  *
- * The `renameSync(tmp, target)` publish step is also what makes this the
+ * The `renameWithRetry(tmp, target)` publish step is also what makes this the
  * canonical way to write to a `target` this process does not hold
  * exclusively for the write's whole duration: `rename(2)` replaces
  * whatever directory entry currently occupies `target` — including a
@@ -420,7 +438,7 @@ export function atomicWrite(
     }
     if (primaryFailed) throw primaryError;
     if (closeFailed) throw closeError;
-    renameSync(tmp, target);
+    renameWithRetry(tmp, target);
     renamed = true;
   } finally {
     if (created && !renamed) {

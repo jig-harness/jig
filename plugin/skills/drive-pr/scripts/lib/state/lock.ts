@@ -15,14 +15,17 @@
  */
 
 import { poll, PollTimeoutError } from "../../../../../shared/retry.ts";
-import { swallow } from "../../../../../shared/errors.ts";
+import {
+  renameWithRetry,
+  mkdirWithRetry,
+} from "../../../../../shared/rename-with-retry.ts";
+import { errnoCode, swallow } from "../../../../../shared/errors.ts";
 import { registerCleanup } from "../../../../../shared/cleanup.ts";
 import { randomBytes } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
   readdirSync,
-  renameSync,
   rmdirSync,
   rmSync,
   statSync,
@@ -31,6 +34,18 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { ExitError, sleep, testDelaySeconds, testPacing } from "../cli.ts";
+
+/** A failed lock move must remain diagnosable as contention or a filesystem fault. */
+function renameLock(source: string, destination: string): void {
+  try {
+    renameWithRetry(source, destination);
+  } catch (error) {
+    console.error(
+      `lock: rename ${source} -> ${destination} failed (${errnoCode(error) ?? "unknown"}).`,
+    );
+    throw error;
+  }
+}
 
 /**
  * The hard ceiling on how long ONE `acquire()` may wait, whatever
@@ -398,7 +413,7 @@ export function createLock(
     const doomed = recoveringQuarantinePath(holder);
     let moved = true;
     try {
-      renameSync(recovering, doomed);
+      renameLock(recovering, doomed);
     } catch {
       // Someone else is already breaking (or released) this exact holder —
       // nothing of ours moved.
@@ -446,7 +461,7 @@ export function createLock(
     // restore leaves (a fourth-order compounded race landing in THIS
     // restore's own vacancy window).
     try {
-      renameSync(doomed, recovering);
+      renameLock(doomed, recovering);
     } catch {
       console.error(
         `${label}: broke a .recovering hold that turned out to belong to another driver, and it could not be restored (it is at ${doomed}).`,
@@ -473,7 +488,7 @@ export function createLock(
     const deadline = performance.now() + RECOVERING_GATE_WAIT_MS;
     for (;;) {
       try {
-        mkdirSync(recovering);
+        mkdirWithRetry(recovering);
       } catch {
         // Check the deadline unconditionally, BEFORE branching on
         // `recoveringIsLive()` — a `mkdirSync` failure that is not genuine
@@ -518,7 +533,7 @@ export function createLock(
   function releaseRecoveringGate(holder: string): void {
     const doomed = recoveringQuarantinePath(holder);
     try {
-      renameSync(recovering, doomed);
+      renameLock(recovering, doomed);
     } catch {
       // Someone else's breaker already reclaimed this exact holder (this
       // process was suspended past RECOVERING_STALE_MS) — not ours to
@@ -540,7 +555,7 @@ export function createLock(
     // it rather than leave that successor believing it holds something that
     // no longer exists.
     try {
-      renameSync(doomed, recovering);
+      renameLock(doomed, recovering);
     } catch {
       console.error(
         `${label}: released .recovering but it belonged to another driver, and it could not be restored (it is at ${doomed}).`,
@@ -594,7 +609,7 @@ export function createLock(
     }
     try {
       try {
-        renameSync(lock, doomed);
+        renameLock(lock, doomed);
       } catch {
         // This generation's slot is already claimed — by a breaker that went
         // through the SAME quarantine protocol to recover it as stale, or
@@ -614,7 +629,7 @@ export function createLock(
         return;
       }
       try {
-        renameSync(doomed, lock);
+        renameLock(doomed, lock);
       } catch {
         console.error(
           `${label}: released ${lock} but it belonged to another driver, and it could not be restored (it is at ${doomed}).`,
@@ -752,7 +767,7 @@ export function createLock(
     if (generation !== null) {
       const doomed = quarantinePath(generation);
       try {
-        renameSync(lock, doomed);
+        renameLock(lock, doomed);
         tombstone(doomed, "abandoned");
       } catch {
         // A rename loser has moved nothing.
@@ -817,7 +832,7 @@ export function createLock(
       if (generation === null) return false;
       const doomed = quarantinePath(generation);
       try {
-        renameSync(lock, doomed);
+        renameLock(lock, doomed);
       } catch (error) {
         swallow(
           error,
@@ -835,7 +850,7 @@ export function createLock(
         return true;
       }
       try {
-        renameSync(doomed, lock);
+        renameLock(doomed, lock);
       } catch {
         console.error(
           `${label}: quarantined ${lock} but it was not actually stale, and it could not be restored (it is at ${doomed}).`,
@@ -849,7 +864,7 @@ export function createLock(
 
   function attemptAcquisition(): "occupied" | "recovering" | "held" {
     try {
-      mkdirSync(lock);
+      mkdirWithRetry(lock);
     } catch {
       return "occupied";
     }
@@ -996,7 +1011,7 @@ export function createLock(
  * holder resuming after either is not a remote edge case; it is this file's
  * entire stated threat model.
  *
- * Compaction sidesteps that instead of re-deriving it: a bare `rename(2)`
+ * On POSIX systems, compaction sidesteps that instead of re-deriving it: a bare `rename(2)`
  * of a directory onto an EXISTING REGULAR FILE fails with `ENOTDIR`, the
  * identical hard failure a rename onto a non-empty directory already gets
  * from `tombstone`'s own marker file — so replacing a tombstoned
@@ -1014,6 +1029,8 @@ export function createLock(
  * precondition from its caller at all — unlike a delete, it is safe to call
  * for any PR, at any point, whether or not that PR's drive is finished;
  * running it from `reset` is a convenient trigger, not a requirement.
+ * Windows keeps the nonempty directory because a directory rename can
+ * replace a regular file there.
  *
  * Never `statSync`-then-delete-by-canonical-path — this file's own established
  * reasoning for why that is unsafe elsewhere (`acquire`'s own malformed-entry
@@ -1193,6 +1210,10 @@ export function sweepLockQuarantine(file: string, onEntry?: () => void): void {
 
 /** Compact one quarantine entry at `path` — see `sweepLockQuarantine`. */
 function compactQuarantineEntry(path: string): void {
+  // Windows can replace a regular-file destination with a directory. Keep
+  // the nonempty directory fence there so a delayed holder cannot move a
+  // successor onto a compacted quarantine entry.
+  if (process.platform === "win32") return;
   let alreadyCompact = false;
   try {
     alreadyCompact = !statSync(path).isDirectory();
@@ -1214,7 +1235,7 @@ function compactQuarantineEntry(path: string): void {
     `.compacting.${basename(path)}.${randomBytes(12).toString("hex")}`,
   );
   try {
-    renameSync(path, staging);
+    renameLock(path, staging);
   } catch {
     // Lost a race to claim this exact entry — most likely a concurrent
     // sweep already did (or is doing) the identical compaction — nothing

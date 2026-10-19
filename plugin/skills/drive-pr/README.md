@@ -337,17 +337,23 @@ round. A repository that did not is never asked for one.
 
 - **The per-clone state dir** — `~/.local/state/jig/drive-pr/<clone-key>/` by default (`resolveStateDir()` in `<skill-dir>/scripts/lib/state/store.ts`; `$DRIVE_PR_STATE_DIR` overrides it — § Relocating the state dir) — the drive state (rounds, attempts, verified commit, parked/held items, Ready-mark round), the round counter, the locks, the leases. Clone-wide by design, *not* worktree-local: every linked worktree driving this PR shares one round budget, one parked set and one held batch, so a second worktree cannot silently re-arm an escalation the first one parked. The locks answer different questions, and only the PR-keyed one bears on "can this PR be driven twice":
   - `pr-drive-<PR>.lock`, keyed by **PR** — refuses a second drive of *this PR* anywhere in the clone (exit `11`).
-  - `pr-drive-worktree-<key>.lock`, keyed by **working tree** (`--show-toplevel`) — stops two drivers colliding over one checkout's files even when they drive *different* PRs. Separate worktrees are meant to run concurrently, so this key deliberately does not gate them.
+  - `pr-drive-worktree-<key>.lock`, keyed by **working tree** (the filesystem canonical path of `--show-toplevel`, including Windows path aliases) — stops two drivers colliding over one checkout's files even when they drive *different* PRs. Separate worktrees are meant to run concurrently, so this key deliberately does not gate them.
 
   Each held item's `actor` stamp reuses that same tree key, but it only **records** which tree made a promise — it grants no exclusivity of its own.
 - **`.context/pr-drive-<PR>.md`** — the human-readable handoff: where the drive stands and how to resume.
 - **GitHub** — the shared truth: threads and their resolution state, outcome replies, the drive's announce comments, the reviewer check-runs.
 
 The state dir grows with every lock generation. `bun <skill-dir>/scripts/reap-state.ts`
-(dry-run by default, `--delete` to act) compacts what is still in use and
+(dry-run by default, `--delete` to act) compacts what is still in use on POSIX
+systems, retains nonempty directory fences on Windows, and
 deletes the files of merged PRs and removed worktrees; run it weekly from the
 machine's own scheduler if you drive many PRs. [`SKILL.md`](SKILL.md) § Running
 it (the *State reaping* entry) explains what it may and may not delete.
+
+On Windows, state writes and lock moves wait briefly for another process's
+sharing handle before reporting failure. Lock failures include the filesystem
+error code. The state volume must support hard links; a refusal names
+`$DRIVE_PR_STATE_DIR` so you can choose another volume.
 
 ## Relocating the state dir
 

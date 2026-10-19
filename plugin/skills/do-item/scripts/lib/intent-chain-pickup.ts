@@ -11,6 +11,7 @@ import {
   fstatSync,
   linkSync,
   lstatSync,
+  type BigIntStats,
   mkdirSync,
   openSync,
   readdirSync,
@@ -161,6 +162,30 @@ function validated(input: unknown): PickupSnapshot {
   return { identifiers: [...record.identifiers], text: record.text };
 }
 
+/** The record's path cannot be trusted as one stable regular file. */
+class UnsafePickupError extends Error {
+  override name = "UnsafePickupError";
+}
+
+/** Bracket open with path identity checks where O_NOFOLLOW is unavailable. */
+function verifyPickupIdentity(
+  file: string,
+  fd: number,
+  entry: BigIntStats,
+): void {
+  const opened = fstatSync(fd, { bigint: true });
+  const current = lstatSync(file, { bigint: true });
+  if (
+    current.isSymbolicLink() ||
+    opened.ino === 0n ||
+    entry.dev !== opened.dev ||
+    entry.ino !== opened.ino ||
+    current.dev !== opened.dev ||
+    current.ino !== opened.ino
+  )
+    throw new UnsafePickupError("pickup changed while opening");
+}
+
 export interface ReadPickupOptions {
   /** Read a source past its retention window. Only an identical rewrite sets
    * this: it is a live pickup that restarts the window. */
@@ -182,13 +207,21 @@ export function readPickup(
 ): PickupSnapshot {
   if (!PICKUP_TOKEN_RE.test(token)) throw new Error("invalid pickup token");
   const file = join(chainDir, "pickups", `${token}.json`);
+  // Windows has no O_NOFOLLOW. Refuse links explicitly and compare the opened
+  // file with the directory entry so a replacement during open fails closed.
+  const entry = lstatSync(file, { bigint: true });
+  if (!entry.isFile() || entry.isSymbolicLink())
+    throw new UnsafePickupError("pickup is not a regular file");
   // Nonblocking open lets fstat refuse a FIFO even when no writer is attached.
   const fd = openSync(
     file,
-    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    constants.O_RDONLY |
+      (constants.O_NOFOLLOW ?? 0) |
+      (constants.O_NONBLOCK ?? 0),
   );
   try {
     const stat = fstatSync(fd);
+    verifyPickupIdentity(file, fd, entry);
     if (!stat.isFile()) throw new Error("pickup is not a regular file");
     if (!allowExpired && now - stat.mtimeMs > RETENTION_MS)
       throw new Error("pickup has expired");

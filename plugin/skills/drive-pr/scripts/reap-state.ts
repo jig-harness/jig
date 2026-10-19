@@ -145,7 +145,7 @@
  */
 
 import { reapTraceDays } from "../../../shared/trace.ts";
-import { createHash } from "node:crypto";
+import { worktreePathKey } from "./lib/state/actor.ts";
 import {
   existsSync,
   readdirSync,
@@ -483,10 +483,9 @@ function isReapOwnArtifact(name: string): boolean {
  * registration can be pruned or lost by a git operation elsewhere while the
  * checkout, and a process still holding the lease, remain. `judgeActorFamily`'s
  * `liveTreeLeaseFor` veto is what closes that gap; this set alone is a strong
- * but not exact predicate. Re-derived here rather than imported because
- * `worktreeKey` deliberately answers only for the CURRENT process's tree and
- * accepts no override — the identity it exists to protect must not be settable
- * (see its own doc comment) — while this needs the key of every OTHER tree.
+ * but not exact predicate. `worktreePathKey` supplies the same filesystem
+ * canonicalization and hash as the driver's `worktreeKey`, while this lists
+ * every registered tree rather than only the current process's tree.
  *
  * Returns `null` when git could not be asked, which fails the whole per-actor
  * predicate closed: an empty set would read as "no tree exists" and retire
@@ -518,9 +517,13 @@ async function liveWorktreeKeys(): Promise<Set<string> | null> {
     // checking that it was needed for parity, not just for its own sake).
     const path = line.slice("worktree ".length).trim();
     if (path === "") continue;
-    keys.add(
-      `wt-${createHash("sha256").update(path).digest("hex").slice(0, 16)}`,
-    );
+    try {
+      keys.add(`wt-${worktreePathKey(path)}`);
+    } catch (error) {
+      // Git can retain registrations after a tree was deleted. An unreadable
+      // existing tree, however, cannot safely be called absent.
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return null;
+    }
   }
   // A repository always has at least one worktree, so an EMPTY set means the
   // porcelain output was not what this parser expects — same fail-closed
