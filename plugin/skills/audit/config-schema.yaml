@@ -410,7 +410,7 @@ fields:
     type: integer
     min: 1
     default: 3
-    since: next
+    since: 0.66.0
     read_by: [resolve-conflicts]
   resolve_conflicts.obligations:
     type: list
