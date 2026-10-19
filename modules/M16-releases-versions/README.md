@@ -206,15 +206,22 @@ or as a release pull request) and the tag after verification.
 | Piece | What it is |
 |-------|------------|
 | [`changelog` skill](../../plugin/skills/changelog/README.md) | The runnable form: the change note's procedure, `check.ts`, `release.ts`, `status.ts`, `tag.ts`, `convert.ts`, `release-access.ts`, the GitHub Action and the workflow template, and `/jig:changelog setup` |
-| [`mappings.md`](mappings.md) | Release tools per ecosystem, tools for several artifacts in one repository, tagging after verification and the release identity per CI provider |
+| [`mappings.md`](mappings.md) | Release tools per ecosystem, tools for several artifacts in one repository, tagging after verification, checks of what a package holds, the release identity per CI provider, publishing without a stored token, release channels and packages to try before the merge |
 | [maturity criteria](../../plugin/skills/audit/criteria/M16-releases-versions.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
 ### Left out by design
 
 - **Publishing.** Uploading to a package registry, creating a GitHub
   Release, announcing a version: each is a repository's own pipeline,
-  started by the tag this module makes. The module asks only that it start
-  from the tag.
+  started by the tag this module makes. The module asks only that a
+  release's publishing start from the tag. A
+  [preview package](mappings.md#packages-to-try-before-the-merge) built
+  from a pull request is not a release: a separate job publishes it, from
+  the pull request's commit, and it moves none of the release channels.
+  [mappings.md](mappings.md#publishing-without-a-stored-token) shows how
+  a registry lets the release's job publish without a stored token, and
+  [what to check](mappings.md#checking-what-the-package-holds) in the
+  package before it does.
 - **Pre-release and calendar versions.** The practice holds for them, but
   the skill writes plain `major.minor.patch` versions; a repository that
   needs others uses a tool from [mappings.md](mappings.md) that writes them.
