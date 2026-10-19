@@ -634,14 +634,37 @@ describe("foreground-wait.ts", () => {
       while (pidOf("cmd.pid") === null && Date.now() < readyDeadline)
         await sleepMs(20);
       expect(pidOf("cmd.pid")).not.toBeNull();
-      const targets = await captureProcessTree(recorded.pid);
-      expect(targets?.length).toBeGreaterThan(1);
+      const commandPid = pidOf("cmd.pid") as number;
+      // The runner can concurrently own an enumeration subprocess; only an
+      // explicit command identity proves this cancellation fixture is ready.
+      let targets = await captureProcessTree(recorded.pid);
+      while (
+        !targets?.some((target) => target.pid === commandPid) &&
+        Date.now() < readyDeadline
+      ) {
+        await sleepMs(20);
+        targets = await captureProcessTree(recorded.pid);
+      }
+      const command = targets?.find((target) => target.pid === commandPid);
+      expect(command?.start).toBeTruthy();
       expect(await forceIdentityTargetsAndWitness(targets ?? [])).toBe(true);
       const deadline = Date.now() + 20_000;
-      while ((await alive(recorded.pid)) && Date.now() < deadline)
-        await sleepMs(20);
-      expect(await alive(recorded.pid)).toBe(false);
-      expect(await alive(pidOf("cmd.pid") as number)).toBe(false);
+      let remaining = true;
+      while (remaining && Date.now() < deadline) {
+        const rows = await processTable();
+        remaining =
+          rows === null ||
+          rows.some(
+            (row) =>
+              !row.stat.startsWith("Z") &&
+              ((row.pid === recorded.pid &&
+                (!row.start || row.start === recorded.start)) ||
+                (row.pid === commandPid &&
+                  (!row.start || row.start === command?.start))),
+          );
+        if (remaining) await sleepMs(20);
+      }
+      expect(remaining).toBe(false);
       // Children are stopped first. The runner may publish their failure
       // before its own kill arrives, or die before publishing a result.
       const expected = existsSync(join(latestGen(), "result.json")) ? 30 : 21;

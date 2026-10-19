@@ -127,3 +127,76 @@ test("Windows console break awaits cleanup and exits without re-raising a POSIX 
   expectSpawnExit(result, 149);
   expect(result.stdout.toString().trim()).toBe("stopped\nreleased");
 });
+
+test("cooperative shutdown awaits every cancellation before resource release", () => {
+  const module = fileURLToPath(new URL("../cleanup.ts", import.meta.url));
+  const result = Bun.spawnSync([
+    process.execPath,
+    "-e",
+    `
+    import {registerCleanup,registerSignalHandler,requestShutdown} from ${JSON.stringify(module)};
+    const resource=registerCleanup(()=>console.log('released'));
+    registerSignalHandler(async()=>{await new Promise(resolve=>setImmediate(resolve));console.log('helper stopped');});
+    registerSignalHandler(()=>console.log('driver stopped'));
+    requestShutdown('SIGTERM',23);
+    resource[Symbol.dispose]();
+  `,
+  ]);
+  expectSpawnExit(result, 23);
+  expect(result.stdout.toString().trim().split("\n")).toEqual([
+    "driver stopped",
+    "helper stopped",
+    "released",
+  ]);
+});
+
+test("signal-driven scope unwind defers resources until sibling cancellation settles", () => {
+  const module = fileURLToPath(new URL("../cleanup.ts", import.meta.url));
+  const result = Bun.spawnSync([
+    process.execPath,
+    "-e",
+    `
+    import {registerCleanup,registerSignalHandler} from ${JSON.stringify(module)};
+    async function main(){
+      using first=registerCleanup(()=>console.log('first'));
+      using second=registerCleanup(()=>console.log('second'));
+      await new Promise(resolve=>{
+        registerSignalHandler(async()=>{await new Promise(done=>setImmediate(done));console.log('helper stopped');});
+        registerSignalHandler(()=>resolve());
+        if(process.platform==='win32') process.emit('SIGTERM');
+        else process.kill(process.pid,'SIGTERM');
+      });
+    }
+    await main();
+  `,
+  ]);
+  expectSpawnExit(result, 143);
+  expect(result.stdout.toString().trim().split("\n")).toEqual([
+    "helper stopped",
+    "second",
+    "first",
+  ]);
+});
+
+test("synchronous callback disposal waits for cancellation callbacks not yet started", () => {
+  const module = fileURLToPath(new URL("../cleanup.ts", import.meta.url));
+  const result = Bun.spawnSync([
+    process.execPath,
+    "-e",
+    `
+    import {registerCleanup,registerSignalHandler,requestShutdown} from ${JSON.stringify(module)};
+    const first=registerCleanup(()=>console.log('first'));
+    const second=registerCleanup(()=>{console.log('second');throw Error('deferred failure');});
+    registerSignalHandler(async()=>{await new Promise(done=>setImmediate(done));console.log('helper stopped');});
+    registerSignalHandler(()=>{second[Symbol.dispose]();first[Symbol.dispose]();});
+    requestShutdown('SIGTERM',29);
+  `,
+  ]);
+  expectSpawnExit(result, 29);
+  expect(result.stdout.toString().trim().split("\n")).toEqual([
+    "helper stopped",
+    "second",
+    "first",
+  ]);
+  expect(result.stderr.toString()).toContain("deferred failure");
+});

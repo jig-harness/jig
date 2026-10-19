@@ -518,9 +518,14 @@ describe("hasPassChild — the native process table integration", () => {
     while (!existsSync(file) && Date.now() < deadline) await Bun.sleep(20);
     expect(existsSync(file)).toBe(true);
   };
-  const stop = async (pid: number) => {
-    const targets = await captureProcessTree(pid);
-    if (targets) await signalIdentityTargets(targets, "SIGKILL");
+  const stop = async (child: ReturnType<typeof Bun.spawn>) => {
+    try {
+      const targets = await captureProcessTree(child.pid);
+      if (targets) await signalIdentityTargets(targets, "SIGKILL");
+    } finally {
+      // The fixture owns this handle even when a native snapshot is unreadable.
+      child.kill("SIGKILL");
+    }
   };
   it("no descendant at all → false", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pass-child-none-"));
@@ -542,7 +547,7 @@ describe("hasPassChild — the native process table integration", () => {
       }
       expect(observed).toBe(false);
     } finally {
-      await stop(child.pid);
+      await stop(child);
       await child.exited;
       rmSync(dir, { recursive: true, force: true });
     }
@@ -575,7 +580,7 @@ describe("hasPassChild — the native process table integration", () => {
         await ready(file);
         expect(await hasPassChild(child.pid)).toBe(!helper);
       } finally {
-        await stop(child.pid);
+        await stop(child);
         await child.exited;
         rmSync(dir, { recursive: true, force: true });
       }

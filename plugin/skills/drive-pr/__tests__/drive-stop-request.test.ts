@@ -5,7 +5,7 @@ import {
   identityTargetsGone,
 } from "../../../shared/process-tree.ts";
 import type { ProcessRow } from "../../../shared/process-table.ts";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
@@ -30,6 +30,68 @@ describe("cooperative driver stop", () => {
     expect(driverStopRequested(stateDir, "old-generation")).toBe(true);
     expect(driverStopRequested(stateDir, "new-generation")).toBe(false);
   });
+
+  it("cooperative stop waits for idle-driver helper cancellation before releasing resources", async () => {
+    const { dir } = writeFixture({ threads: [] });
+    const released = join(dir, "released");
+    const helperPid = join(dir, "helper-pid");
+    const cancelled = join(dir, "cancelled");
+    const mutation = join(dir, "next-mutation");
+    const cleanupModule = new URL("../../../shared/cleanup.ts", import.meta.url)
+      .href;
+    const driveModule = new URL("../scripts/drive.ts", import.meta.url).href;
+    const requestModule = new URL(
+      "../scripts/lib/stop-request.ts",
+      import.meta.url,
+    ).href;
+    const script = `
+      import {writeFileSync,existsSync} from 'node:fs';
+      import {registerCleanup,registerSignalHandler} from ${JSON.stringify(cleanupModule)};
+      import {installStopControls,finishDriverPassRegistrations} from ${JSON.stringify(driveModule)};
+      import {requestDriverStop} from ${JSON.stringify(requestModule)};
+      const child=Bun.spawn([process.execPath,'-e','setInterval(()=>{},1000)',${JSON.stringify(helperPid)}],{stdout:'ignore',stderr:'ignore'});
+      writeFileSync(${JSON.stringify(helperPid)},String(child.pid));
+      registerCleanup(()=>writeFileSync(${JSON.stringify(released)},existsSync(${JSON.stringify(cancelled)})?'cancelled':'early'));
+      registerSignalHandler(async()=>{
+        await new Promise(resolve=>setTimeout(resolve,300));
+        child.kill();await child.exited;
+        writeFileSync(${JSON.stringify(cancelled)},'done');
+      });
+      installStopControls([{dir:${JSON.stringify(dir)},what:'fixture',nonce:'generation'}]);
+      void (async()=>{
+        await new Promise(resolve=>registerSignalHandler(()=>resolve()));
+        await finishDriverPassRegistrations([]);
+        writeFileSync(${JSON.stringify(mutation)},'advanced');
+      })();
+      requestDriverStop(${JSON.stringify(dir)},'generation');
+      setInterval(()=>{},1000);
+    `;
+    const proc = Bun.spawn([process.execPath, "-e", script], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    try {
+      const [exitCode, stdout, stderr] = await Promise.all([
+        proc.exited,
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+      ]);
+      expectSpawnExit({ exitCode, stdout, stderr }, 143);
+      expect(readFileSync(released, "utf8")).toBe("cancelled");
+      expect(existsSync(cancelled)).toBe(true);
+      expect(existsSync(mutation)).toBe(false);
+    } finally {
+      if (existsSync(helperPid)) {
+        const targets = await captureProcessTree(
+          Number(readFileSync(helperPid, "utf8")),
+        );
+        if (targets?.[0]?.args.includes(helperPid))
+          await signalIdentityTargets(targets, "SIGKILL");
+      }
+      proc.kill();
+      await proc.exited;
+    }
+  }, 60000);
 
   it("--stop cancels an active pass and releases its driver's locks", async () => {
     const { dir, stateDir } = writeFixture({

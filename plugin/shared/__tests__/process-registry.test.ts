@@ -4,6 +4,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   createProcessRegistry,
+  markProcessRegistryUnconfirmed,
+  clearProcessRegistryUnconfirmed,
   beginProcessRegistration,
   handoffProcessRegistration,
   processRegistryRoots,
@@ -306,5 +308,27 @@ test("explicit unwitnessed completion differs from missing or malformed completi
     expect(processIdentityCompleted(identity)).toBe(true);
   } finally {
     registry.dispose();
+  }
+});
+
+test("an owner retries past only its own failed-stop marker while ancestors remain uncertain", () => {
+  const ancestor = createProcessRegistry();
+  const owner = createProcessRegistry(ancestor.dir);
+  const sibling = createProcessRegistry(ancestor.dir);
+  try {
+    const marker = markProcessRegistryUnconfirmed(owner.dir);
+    expect(processRegistrySnapshot(ancestor.dir).complete).toBe(false);
+    expect(processRegistrySnapshot(owner.dir, marker)).toEqual({
+      roots: [],
+      complete: true,
+    });
+    const other = markProcessRegistryUnconfirmed(sibling.dir);
+    expect(processRegistrySnapshot(ancestor.dir, marker).complete).toBe(false);
+    clearProcessRegistryUnconfirmed(other);
+    expect(processRegistrySnapshot(ancestor.dir).complete).toBe(false);
+    clearProcessRegistryUnconfirmed(marker);
+    expect(processRegistrySnapshot(ancestor.dir).complete).toBe(true);
+  } finally {
+    ancestor.dispose();
   }
 });

@@ -1665,11 +1665,10 @@ describe("drive.ts loop control", () => {
         expect(await identityTargetsGone(captured)).toBe(true);
     }, 60000);
 
-    it("a SECOND signal leaves the locks rather than releasing them under a live pass", async () => {
-      // The forced-exit branch ran `process.exit()` with `held` still
-      // populated, and Node then runs the 'exit' handler — `releaseAll` — so
-      // the escape hatch released both locks under a pass it had explicitly
-      // declined to wait for.
+    it("forced or repeated shutdown retains the locks while cancellation settles", async () => {
+      // A repeated signal conservatively retains claims while the coordinator
+      // still waits for every cancellation. A forced native exit cannot run
+      // that coordinator and must likewise leave its claims behind.
       const { dir, stateDir } = writeFixture({
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
       });
@@ -1731,12 +1730,11 @@ describe("drive.ts loop control", () => {
       }
       const exitCode = await proc.exited;
       expect(exitCode).toBe(143);
-      // Still held: the operator forced an exit rather than proving the pass
-      // gone, so a lock left behind is the safe direction.
+      // Repeated cancellation and forced native exit both preserve the claims.
       expect(existsSync(worktree)).toBe(true);
       expect(existsSync(pr)).toBe(true);
       if (captured !== null) {
-        expect(await identityTargetsGone(captured)).toBe(false);
+        expect(await identityTargetsGone(captured)).toBe(mode === "repeated");
         await signalIdentityTargets(captured, "SIGKILL");
       }
       // The pass's own loop can spin for up to 10s (100 x 0.1s)

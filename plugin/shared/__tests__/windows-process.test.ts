@@ -15,7 +15,7 @@ test("nested lifecycle owns its scope, retains registrations and retries failed 
     import {mock} from 'bun:test';
     import {existsSync,unlinkSync} from 'node:fs';
     import {dirname,join} from 'node:path';
-    import {createProcessRegistry,publishProcessIdentity,PROCESS_REGISTRY_ENV} from ${JSON.stringify(registry)};
+    import {createProcessRegistry,publishProcessIdentity,processRegistryRoots,PROCESS_REGISTRY_ENV} from ${JSON.stringify(registry)};
     let calls=0, killed=0;
     mock.module(${JSON.stringify(tree)},()=>({
       stopWindowsTree:async(pid,grace,dir,owned,control)=>{calls++; control.killOwned(); return calls>1;},
@@ -38,6 +38,7 @@ test("nested lifecycle owns its scope, retains registrations and retries failed 
       unlinkSync(join(scope.dir,'runner.json'));
       scope.finish(()=>{});
       if(!existsSync(scope.dir)) throw Error('failed cancellation deleted its empty retry scope');
+      if(processRegistryRoots(parent.dir)!==null) throw Error('ancestor forgot uncertain cancellation');
       if(await scope.stop(123,0)!==true || calls!==2 || killed!==2) throw Error('later cancellation was cached or fallback omitted');
       scope.finish(()=>{});
       if(existsSync(scope.dir)) throw Error('confirmed cancellation did not dispose scope');
@@ -100,3 +101,69 @@ test("nested command cancellation leaves its live ancestor and sibling running",
     "ancestor and sibling remain live",
   );
 }, 65000);
+
+test("an exited child with an already released empty registry remains promptly unconfirmed", () => {
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      `
+    import {spawn} from 'node:child_process';
+    import {windowsProcessLifecycle} from ${JSON.stringify(lifecycle)};
+    const platform=process.platform;
+    Object.defineProperty(process,'platform',{value:'win32',configurable:true});
+    const scope=windowsProcessLifecycle();
+    Object.defineProperty(process,'platform',{value:platform,configurable:true});
+    const child=spawn(process.execPath,['-e','process.exit(0)'],{stdio:'ignore'});
+    scope.bind(child);
+    await new Promise(resolve=>child.once('exit',resolve));
+    await new Promise(resolve=>scope.finish(resolve));
+    const watchdog=setTimeout(()=>{throw Error('released empty scope became an unreadable registry');},1000);
+    const confirmed=await scope.stop(child.pid,0,()=>false);
+    clearTimeout(watchdog);
+    if(confirmed) throw Error('uncaptured exited root was falsely confirmed');
+    console.log('promptly unconfirmed');
+  `,
+    ],
+    { stdout: "pipe", stderr: "pipe", timeout: 5000 },
+  );
+  expectSpawnExit(result, 0);
+  expect(result.stdout.toString()).toContain("promptly unconfirmed");
+});
+
+test("marker publication failure still cancels the owned child and remains unconfirmed", () => {
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      `
+   import {mock} from 'bun:test';
+   import {spawn} from 'node:child_process';
+   import {existsSync} from 'node:fs';
+   const actual=await import(${JSON.stringify(registry)});
+   mock.module(${JSON.stringify(registry)},()=>({...actual,markProcessRegistryUnconfirmed(){throw Error('read-only registry');}}));
+   mock.module(${JSON.stringify(tree)},()=>({stopWindowsTree:async(pid,grace,dir,owned,control)=>{control.killOwned();return false;},reapRegisteredProcessTrees:async()=>({survived:false,confirmed:false})}));
+   const {windowsProcessLifecycle}=await import(${JSON.stringify(lifecycle)});
+   const platform=process.platform;
+   Object.defineProperty(process,'platform',{value:'win32',configurable:true});
+   const scope=windowsProcessLifecycle();
+   Object.defineProperty(process,'platform',{value:platform,configurable:true});
+   const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});
+   scope.bind(child);
+   const exited=new Promise(resolve=>child.once('exit',resolve));
+   try {
+     if(await scope.stop(child.pid,0,()=>child.exitCode===null&&child.signalCode===null)!==false) throw Error('uncertain stop confirmed');
+     await exited;
+     scope.finish(()=>{});
+     if(!existsSync(scope.dir)) throw Error('uncertain scope removed');
+     console.log('owned child killed, scope retained');
+   } finally {child.kill('SIGKILL');actual.clearProcessRegistryUnconfirmed(scope.dir+'/owned-stop.pending');const {rmSync}=await import('node:fs');rmSync(scope.dir,{recursive:true,force:true});}
+ `,
+    ],
+    { stdout: "pipe", stderr: "pipe", timeout: 5000 },
+  );
+  expectSpawnExit(result, 0);
+  expect(result.stdout.toString()).toContain(
+    "owned child killed, scope retained",
+  );
+});

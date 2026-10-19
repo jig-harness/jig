@@ -10,7 +10,7 @@ import {
 } from "./process-output.ts";
 import { windowsProcessLifecycle } from "./windows-process.ts";
 import { stopWindowsTree } from "./process-tree.ts";
-import { registerSignalHandler } from "./cleanup.ts";
+import { registerSignalHandler, shutdownRequested } from "./cleanup.ts";
 /**
  * Process spawning with deadlines — the TypeScript successor to
  * `lib/gh-deadline.sh`, and the place every skill's `gh` is spawned from.
@@ -263,6 +263,7 @@ interface CancellationRegistry {
   groups: Map<number, Set<symbol>>;
   registryDirs: Map<number, string>;
   cancelWindows: Map<number, () => Promise<boolean>>;
+  inflight?: Promise<boolean>;
 }
 const registryKey = Symbol.for("jig.review.process-cancellation.v1");
 const globalRegistry = globalThis as typeof globalThis & {
@@ -402,11 +403,11 @@ function signalGroup(pgid: number, sig: NodeJS.Signals): void {
  * witnessed one, and `CANCEL_ESCALATE_MS` is sized for a blocking cost rather
  * than a free one.
  */
-async function cancelTrackedGroups(): Promise<void> {
+async function cancelTrackedGroups(): Promise<boolean> {
   const groups = [...cancellableGroups.keys()];
-  if (groups.length === 0) return;
+  if (groups.length === 0) return true;
   if (process.platform === "win32") {
-    await Promise.all(
+    const results = await Promise.all(
       groups.map(
         (pid) =>
           cancellation.cancelWindows.get(pid)?.() ??
@@ -417,18 +418,31 @@ async function cancelTrackedGroups(): Promise<void> {
           ),
       ),
     );
-    return;
+    return results.every(Boolean);
   }
   for (const pgid of groups) signalGroup(pgid, "SIGTERM");
   sleepSync(CANCEL_ESCALATE_MS);
   for (const pgid of groups) signalGroup(pgid, "SIGKILL");
+  return true;
+}
+
+/** Join cancellation already in progress before deciding whether resources can be released. */
+export function cancelTrackedProcesses(): Promise<boolean> {
+  if (cancellation.inflight) return cancellation.inflight;
+  const pending = cancelTrackedGroups();
+  cancellation.inflight = pending;
+  const clear = (): void => {
+    if (cancellation.inflight === pending) delete cancellation.inflight;
+  };
+  void pending.then(clear, clear);
+  return pending;
 }
 
 /** The kernel awaits owned child cancellation before releasing process resources. */
 if (!cancellation.handlerRegistered) {
   cancellation.handlerRegistered = true;
-  registerSignalHandler(() => {
-    return cancelTrackedGroups();
+  registerSignalHandler(async () => {
+    await cancelTrackedProcesses();
   });
 }
 
@@ -467,6 +481,7 @@ export const ghCall = traceGhRunner<RunResult, RunOptions>(
 
 function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
   return new Promise((resolve) => {
+    if (shutdownRequested()) return;
     const [cmd, ...args] = argv;
     if (!cmd) {
       resolve({

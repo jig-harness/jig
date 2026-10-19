@@ -1,4 +1,10 @@
 import {
+  liveOrUnknownTargets,
+  partitionProcessTree,
+  trackPartitionUncertainty,
+  trackUnknownDescendants,
+} from "./process-uncertainty.ts";
+import {
   processRegistryRoots,
   processIdentityCompleted,
   processIdentityUnwitnessed,
@@ -16,22 +22,8 @@ export async function captureProcessTree(
   if (rows === null) return null;
   const root = rows.find((row) => row.pid === pid);
   if (!root) return null;
-  const targets = collectTree(root, rows);
-  return targets.some((row) => row.start === "") ? null : targets;
-}
-
-function collectTree(root: ProcessRow, rows: ProcessRow[]): ProcessRow[] {
-  const found = new Set([root.pid]);
-  const targets = [root];
-  for (const parent of targets) {
-    for (const row of rows) {
-      if (!found.has(row.pid) && row.ppid === parent.pid) {
-        found.add(row.pid);
-        targets.push(row);
-      }
-    }
-  }
-  return targets;
+  const captured = partitionProcessTree(root.pid, rows);
+  return captured.uncertain.length > 0 ? null : captured.targets;
 }
 
 /** A reused pid belongs to somebody else; unreadable identity never authorizes a kill. */
@@ -147,6 +139,11 @@ function registeredRoot(
   const failedWitness = processIdentityUnwitnessed(root);
   const current = rows.find((row) => row.pid === root.pid);
   if (current?.start === "") {
+    trackPartitionUncertainty(
+      partitionProcessTree(root.pid, rows),
+      rows,
+      unknown,
+    );
     uncertain.add(key);
     return { targets: [], complete: false };
   }
@@ -157,26 +154,12 @@ function registeredRoot(
       complete: !failedWitness && (observed || processIdentityCompleted(root)),
     };
   }
-  const captured = collectTree(current, rows);
-  trackUnknownDescendants(captured, rows, unknown);
-  const complete = !failedWitness && captured.every((row) => row.start !== "");
+  const captured = partitionProcessTree(current.pid, rows);
+  trackPartitionUncertainty(captured, rows, unknown);
+  const complete = !failedWitness && captured.uncertain.length === 0;
   if (complete) uncertain.delete(key);
   else uncertain.add(key);
-  return { targets: captured.filter((row) => row.start !== ""), complete };
-}
-
-function trackUnknownDescendants(
-  captured: ProcessRow[],
-  rows: ProcessRow[],
-  unknown: Set<number>,
-): void {
-  for (const pid of unknown) {
-    if (!rows.some((row) => row.pid === pid)) unknown.delete(pid);
-  }
-  for (const row of captured) {
-    if (row.start === "") unknown.add(row.pid);
-    else unknown.delete(row.pid);
-  }
+  return { targets: captured.targets, complete };
 }
 
 function mergeTargets(targets: ProcessRow[], incoming: ProcessRow[]): void {
@@ -266,6 +249,9 @@ async function captureRootOnce(
   }
   const current = rows.find((row) => row.pid === pid);
   if (!current?.start) {
+    state.unknownDescendants ??= new Set();
+    const captured = partitionProcessTree(pid, rows);
+    trackPartitionUncertainty(captured, rows, state.unknownDescendants);
     state.complete = false;
     return;
   }
@@ -279,14 +265,11 @@ async function captureRootOnce(
     state.complete = false;
     return;
   }
-  const captured = collectTree(current, rows);
+  const captured = partitionProcessTree(current.pid, rows);
   state.unknownDescendants ??= new Set();
-  trackUnknownDescendants(captured, rows, state.unknownDescendants);
-  state.complete = captured.every((row) => row.start !== "");
-  mergeTargets(
-    state.targets,
-    captured.filter((row) => row.start !== ""),
-  );
+  trackPartitionUncertainty(captured, rows, state.unknownDescendants);
+  state.complete = captured.uncertain.length === 0;
+  mergeTargets(state.targets, captured.targets);
 }
 
 async function captureRoot(
@@ -309,7 +292,7 @@ async function captureRegistry(
 ): Promise<boolean> {
   if (!dir) return true;
   const { roots, complete } = context.registry(dir);
-  if (roots.length === 0) return complete;
+  if (roots.length === 0 && !state.unknownDescendants?.size) return complete;
   state.uncertainRegistered ??= new Set();
   state.unknownDescendants ??= new Set();
   state.forcedIdentities ??= new Set();
@@ -334,6 +317,23 @@ export async function captureRegisteredTreeSnapshot(
   return { targets: [...state.targets], complete };
 }
 
+/** Record only identity-validated successful force calls, preserving the caller's observer. */
+function forceControl(
+  state: WindowsTreeState,
+  control: ProcessTreeControl,
+  deadline: number,
+): ProcessTreeControl {
+  return {
+    ...control,
+    deadline,
+    onKilled: (target) => {
+      state.forcedIdentities ??= new Set();
+      state.forcedIdentities.add(`${target.pid}:${target.start}`);
+      control.onKilled?.(target);
+    },
+  };
+}
+
 /** Windows has no generic gentle CLI signal. Keep observed targets while retrying unknown reads. */
 export async function stopWindowsTree(
   pid: number,
@@ -352,15 +352,11 @@ export async function stopWindowsTree(
       await context.pause(forceAt - context.now());
       continue;
     }
-    const signalled = await signalIdentityTargets(state.targets, "SIGKILL", {
-      ...control,
-      deadline: context.deadline,
-      onKilled: (target) => {
-        state.forcedIdentities ??= new Set();
-        state.forcedIdentities.add(`${target.pid}:${target.start}`);
-        control.onKilled?.(target);
-      },
-    });
+    const signalled = await signalIdentityTargets(
+      state.targets,
+      "SIGKILL",
+      forceControl(state, control, context.deadline),
+    );
     registryReadable =
       (await captureRegistry(registryDir, state, context)) && registryReadable;
     if (
@@ -408,17 +404,31 @@ export async function reapRegisteredProcessTrees(
   control: ProcessTreeControl = {},
 ): Promise<{ survived: boolean; confirmed: boolean }> {
   const context = operation(control);
-  const registry = context.registry(dir);
-  const captured = registry.roots.length
-    ? await registeredTrees(registry.roots, context.snapshot)
-    : { targets: [], complete: true };
-  const complete = registry.complete && captured.complete;
-  const survived = !complete || captured.targets.length > 0;
-  const gone =
-    captured.targets.length === 0 ||
-    (await forceIdentityTargetsAndWitness(captured.targets, {
-      ...control,
-      deadline: context.deadline,
-    }));
-  return { survived, confirmed: complete && gone };
+  const state = control.state ?? { root: null, targets: [] };
+  let survived = false;
+  while (context.remaining() > 0) {
+    const complete = await captureRegistry(dir, state, context);
+    if (state.targets.length > 0) {
+      const rows = await context.snapshot();
+      if (rows !== null)
+        state.targets = liveOrUnknownTargets(state.targets, rows);
+    }
+    survived ||=
+      !complete || state.targets.length > 0 || !!state.unknownDescendants?.size;
+    const gone =
+      state.targets.length === 0 ||
+      (await forceIdentityTargetsAndWitness(
+        state.targets,
+        forceControl(state, control, context.deadline),
+      ));
+    const confirmed = await captureRegistry(dir, state, context);
+    if (!gone || !confirmed || state.unknownDescendants?.size)
+      return { survived, confirmed: false };
+    if (
+      state.targets.length === 0 ||
+      (await identityTargetsGone(state.targets, context.snapshot))
+    )
+      return { survived, confirmed: true };
+  }
+  return { survived, confirmed: false };
 }

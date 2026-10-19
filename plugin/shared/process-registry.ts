@@ -36,6 +36,16 @@ function publishRegistryFile(dir: string, name: string, value: unknown): void {
   renameSync(temporary, file);
 }
 
+/** An unsuccessful owned stop remains visible to every ancestor acquisition. */
+export function markProcessRegistryUnconfirmed(dir: string): string {
+  const name = "owned-stop.pending";
+  publishRegistryFile(dir, name, {});
+  return join(dir, name);
+}
+export function clearProcessRegistryUnconfirmed(marker: string): void {
+  rmSync(marker, { force: true });
+}
+
 /** Retain the completion location so readers can reconcile an unfinished handoff. */
 export function beginProcessRegistration(
   dir: string,
@@ -228,6 +238,7 @@ function readRegistryFile(
 function registryDirectorySnapshot(
   dir: string,
   directories: string[],
+  ignoreMarker?: string,
 ): ProcessRegistrySnapshot {
   const entries = registryEntries(dir);
   const snapshot: ProcessRegistrySnapshot = {
@@ -236,6 +247,7 @@ function registryDirectorySnapshot(
   };
   for (const entry of entries ?? []) {
     const path = join(dir, entry.name);
+    if (path === ignoreMarker) continue;
     if (entry.isDirectory()) {
       directories.push(path);
       continue;
@@ -255,11 +267,18 @@ function registryDirectorySnapshot(
 }
 
 /** Keep verified roots even when another registration remains unresolved. */
-export function processRegistrySnapshot(dir: string): ProcessRegistrySnapshot {
+export function processRegistrySnapshot(
+  dir: string,
+  ignoreMarker?: string,
+): ProcessRegistrySnapshot {
   const snapshot: ProcessRegistrySnapshot = { roots: [], complete: true };
   const directories = [dir];
   for (const directory of directories) {
-    const found = registryDirectorySnapshot(directory, directories);
+    const found = registryDirectorySnapshot(
+      directory,
+      directories,
+      ignoreMarker,
+    );
     snapshot.roots.push(...found.roots);
     snapshot.complete = snapshot.complete && found.complete;
   }

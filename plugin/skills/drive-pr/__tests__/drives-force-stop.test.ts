@@ -96,3 +96,59 @@ for (const complete of [false, true]) {
     }
   });
 }
+
+for (const complete of [false, true]) {
+  test(`driver drains retained registrations before advancing with complete=${complete}`, async () => {
+    const { finishDriverPassRegistrations } = await import(
+      "../scripts/drive.ts"
+    );
+    const child = Bun.spawn(
+      [process.execPath, "-e", "setInterval(()=>{},1000)"],
+      { stdout: "ignore", stderr: "ignore" },
+    );
+    const registry = createProcessRegistry();
+    try {
+      const row = (await processTable())?.find((row) => row.pid === child.pid);
+      expect(row?.start).toBeTruthy();
+      if (!row) return;
+      publishProcessIdentity(
+        registry.dir,
+        "retained",
+        row,
+        join(registry.dir, "result.tmp"),
+      );
+      if (!complete)
+        beginProcessRegistration(
+          registry.dir,
+          "unknown",
+          join(registry.dir, "unknown.tmp"),
+        );
+      const locks = [{ dir: registry.dir, what: "fixture" }];
+      expect(await finishDriverPassRegistrations(locks, registry.dir)).toBe(
+        false,
+      );
+      expect(locks.length).toBe(complete ? 1 : 0);
+      expect(await identityTargetsGone([row])).toBe(true);
+      expect(await finishDriverPassRegistrations(locks, registry.dir)).toBe(
+        complete,
+      );
+      expect(locks.length).toBe(complete ? 1 : 0);
+    } finally {
+      child.kill();
+      await child.exited;
+      registry.dispose();
+    }
+  }, 60000);
+}
+
+test("a completed acquisition registry permits the next pass", async () => {
+  const { finishDriverPassRegistrations } = await import("../scripts/drive.ts");
+  const registry = createProcessRegistry();
+  try {
+    const locks = [{ dir: registry.dir, what: "fixture" }];
+    expect(await finishDriverPassRegistrations(locks, registry.dir)).toBe(true);
+    expect(locks.length).toBe(1);
+  } finally {
+    registry.dispose();
+  }
+});

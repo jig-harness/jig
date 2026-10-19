@@ -133,11 +133,18 @@
  *      Resume the pause directive and re-arm the drive.
  */
 
+import { cancelTrackedProcesses } from "../../../shared/proc.ts";
+import {
+  reapRegisteredProcessTrees,
+  type WindowsTreeState,
+} from "../../../shared/process-tree.ts";
 import { PROCESS_REGISTRY_ENV } from "../../../shared/process-registry.ts";
 import { driverStopRequested, stopRequestPath } from "./lib/stop-request.ts";
 import {
   registerCleanup,
   registerSignalHandler,
+  requestShutdown,
+  beginShutdown,
 } from "../../../shared/cleanup.ts";
 import { span } from "../../../shared/trace.ts";
 import { randomBytes } from "node:crypto";
@@ -1384,26 +1391,27 @@ export function driverStopExitCode(sig: string): number {
         : 129;
 }
 
-function installStopControls(
-  held: DriveLock[],
-  releaseAll: () => void,
-): Disposable {
+let driverShuttingDown = false;
+
+export function installStopControls(held: DriveLock[]): Disposable {
   let shuttingDown = false;
-  const shutDown = (sig: string): Promise<void> | undefined => {
-    const code = driverStopExitCode(sig);
-    // A repeated signal forces termination without unlocking a live pass.
-    if (shuttingDown) {
-      held.length = 0;
-      process.exit(code);
-    }
+  let requested = false;
+  const cancellation = registerSignalHandler(async (sig) => {
+    beginShutdown();
+    if (shuttingDown) held.length = 0;
+    driverShuttingDown = true;
     shuttingDown = true;
-    return stopActivePass(`received ${sig}`).then((gone) => {
-      if (gone) releaseAll();
-      else held.length = 0;
-      process.exit(code);
-    });
-  };
-  const cancellation = registerSignalHandler(shutDown);
+    let confirmed = false;
+    try {
+      const helpersGone = await cancelTrackedProcesses();
+      const gone = await stopActivePass(
+        `received ${requested ? "stop request" : sig}`,
+      );
+      confirmed = helpersGone && gone;
+    } finally {
+      if (!confirmed) held.length = 0;
+    }
+  });
   const stopTimer = setInterval(() => {
     if (
       !shuttingDown &&
@@ -1412,7 +1420,8 @@ function installStopControls(
           lock.nonce !== undefined && driverStopRequested(lock.dir, lock.nonce),
       )
     ) {
-      void shutDown("stop request");
+      requested = true;
+      requestShutdown("SIGTERM", driverStopExitCode("stop request"));
     }
   }, 250);
   stopTimer.unref?.();
@@ -1424,6 +1433,83 @@ function installStopControls(
   };
 }
 
+/** Drain acquisition-owned runner registrations before another pass or lock release. */
+export async function drainDriverRegistrations(
+  registry: string | null = driverRegistry,
+): Promise<{ survived: boolean; confirmed: boolean }> {
+  if (registry === null) return { survived: false, confirmed: true };
+  const current = registrationDrains.get(registry);
+  if (current !== undefined) return current;
+  let state = registrationStates.get(registry);
+  if (!state) {
+    state = { root: null, targets: [] };
+    registrationStates.set(registry, state);
+  }
+  const pending = reapRegisteredProcessTrees(registry, { state });
+  registrationDrains.set(registry, pending);
+  try {
+    return await pending;
+  } finally {
+    if (registrationDrains.get(registry) === pending)
+      registrationDrains.delete(registry);
+  }
+}
+
+export async function finishDriverPassRegistrations(
+  locks: DriveLock[],
+  registry: string | null = driverRegistry,
+): Promise<boolean> {
+  if (driverShuttingDown)
+    await new Promise<never>(() => {
+      // The shutdown coordinator owns process exit.
+    });
+  const result = await drainDriverRegistrations(registry).catch((error) => {
+    locks.length = 0;
+    throw error;
+  });
+  if (driverShuttingDown)
+    await new Promise<never>(() => {
+      // The shutdown coordinator owns process exit.
+    });
+
+  if (!result.confirmed) {
+    locks.length = 0;
+    console.error(
+      "drive.ts: retained runner termination could NOT be witnessed — NOT releasing the locks.",
+    );
+    return false;
+  }
+  if (result.survived) {
+    console.error(
+      "drive.ts: the pass left registered work running; it was forced to stop — not advancing this drive.",
+    );
+    return false;
+  }
+  return true;
+}
+
+async function requireDriverPassRegistrations(
+  held: DriveLock[],
+): Promise<void> {
+  if (!(await finishDriverPassRegistrations(held)))
+    fail(1, "retained acquisition work prevented a clean driver completion");
+}
+
+function driverRegistryDrain(held: DriveLock[]): AsyncDisposable {
+  return {
+    [Symbol.asyncDispose]() {
+      return requireDriverPassRegistrations(held);
+    },
+  };
+}
+
+let driverRegistry: string | null = null;
+const registrationStates = new Map<string, WindowsTreeState>();
+const registrationDrains = new Map<
+  string,
+  Promise<{ survived: boolean; confirmed: boolean }>
+>();
+
 function createDriverRegistry(held: DriveLock[]): void {
   // The registry belongs to this acquisition. Detached foreground runners
   // inherit it, so the operator can also capture them if a driver is wedged.
@@ -1432,6 +1518,7 @@ function createDriverRegistry(held: DriveLock[]): void {
     if (prLock?.nonce !== undefined) {
       const registry = join(prLock.dir, `processes.${prLock.nonce}`);
       mkdirSync(registry);
+      driverRegistry = registry;
       process.env[PROCESS_REGISTRY_ENV] = registry;
     }
   }
@@ -1455,12 +1542,14 @@ function createDriverRegistry(held: DriveLock[]): void {
  */
 async function stopActivePass(why: string): Promise<boolean> {
   const handle = activePass;
-  if (handle === null) return true;
+  if (handle === null) return (await drainDriverRegistrations()).confirmed;
   console.error(`drive.ts: stopping the active pass — ${why}`);
   // Recorded before the await so the loop can re-join this same wait — `stop()`
   // memoises, so a second caller shares the outcome rather than restarting it.
   passStopWitness = handle.stop();
-  const gone = await passStopWitness;
+  const passGone = await passStopWitness;
+  const registered = await drainDriverRegistrations();
+  const gone = passGone && registered.confirmed;
   if (!gone) {
     console.error(
       "drive.ts: could not witness the pass tree terminating — NOT releasing the locks.",
@@ -2298,7 +2387,10 @@ async function runRepairPass(
   // path's own `passHandle` — see its comment for why this has to happen
   // here rather than reading `activePass` again below.
   const handle = activePass;
+  const registrationsDone = await finishDriverPassRegistrations(locks);
   activePass = null;
+  if (!registrationsDone)
+    return { dispatched: true, code: 1, postPassMailboxExit: null };
   // Mirror the ordinary-pass path's PASS_DEADLINE handling: `run` resolving
   // once its own SIGKILL escalation FIRES is proof a signal was SENT, not
   // that the process group is actually GONE — a descendant in
@@ -2632,12 +2724,9 @@ async function main(): Promise<number> {
   ];
   const held: DriveLock[] = [];
   using lockResources = new DisposableStack();
-  const releaseAll = (): void => {
-    driverLogRotates = false;
-    lockResources.dispose();
-    held.length = 0;
-  };
-  using stopControls = installStopControls(held, releaseAll);
+  await using registryDrain = driverRegistryDrain(held);
+  void registryDrain;
+  using stopControls = installStopControls(held);
   void stopControls;
   for (const lock of locks) {
     acquire(lock, pr);
@@ -4829,6 +4918,7 @@ async function main(): Promise<number> {
     // needs it to witness the pass tree's termination, which happens after
     // this point.
     const passHandle = activePass;
+    await requireDriverPassRegistrations(held);
     activePass = null;
     // Joined here, before the pass result is interpreted or anything below
     // writes state again — not to make the write itself fatal (a failed or
@@ -5350,5 +5440,15 @@ if (
   process.argv[1] !== undefined &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  runMain("drive.ts", () => span("drive", {}, main));
+  runMain("drive.ts", async () => {
+    try {
+      return await span("drive", {}, main);
+    } finally {
+      // The shared coordinator owns exit while other cancellations are pending.
+      if (driverShuttingDown)
+        await new Promise<never>(() => {
+          // The shutdown coordinator owns process exit.
+        });
+    }
+  });
 }

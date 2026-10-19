@@ -56,6 +56,11 @@
  * command started has stopped" — the caller's own post-check (`git log`,
  * `finish-round.ts` idempotence) stays the authority before relaunching.
  */
+import {
+  trackForegroundProcessTree,
+  type ForegroundTreeState,
+} from "./lib/foreground-process-tree.ts";
+import { liveOrUnknownTargets } from "../../../shared/process-uncertainty.ts";
 import { spawn } from "node:child_process";
 import { swallow } from "../../../shared/errors.ts";
 import {
@@ -90,7 +95,6 @@ import { signalIdentityTargets } from "../../../shared/process-tree.ts";
 import {
   liveTargets,
   type PsRow,
-  recaptureOwned,
   type Target,
   witnessStep,
 } from "./lib/process-witness.ts";
@@ -231,10 +235,6 @@ async function stillLive(
   targets: Target[],
   rows: PsRow[] | null,
 ): Promise<Target[]> {
-  // An existing process whose creation time is inaccessible has unknown
-  // identity; it cannot prove the recorded owner dead or authorize a kill.
-  if (rows?.some((row) => !row.start && targets.some((t) => t.pid === row.pid)))
-    rows = null;
   const live = witnessStep(
     targets,
     rows,
@@ -247,7 +247,11 @@ async function stillLive(
     await signalIdentityTargets(live, "SIGKILL");
   }
   const gate = process.env[WITNESS_GATE_ENV];
-  return gate && existsSync(gate) ? targets : live;
+  return gate && existsSync(gate)
+    ? targets
+    : rows === null
+      ? live
+      : liveOrUnknownTargets(targets, rows);
 }
 
 /** The runner deadline, validated exactly as the other deadlines are; `null` when the variable is unusable. */
@@ -426,22 +430,20 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
   } | null = null;
   // Captured BEFORE the first signal: once the command dies, its surviving
   // descendants are re-parented and a fresh snapshot no longer reaches them.
-  let doomed: Target[] = [];
-  // Native enumeration failed at capture time: the tree is unknown, not empty. The witness
-  // publishes nothing until a later capture succeeds.
-  let captureUnresolved = false;
-  // The command's own identity, recorded at the first readable snapshot and
-  // checked on every later one: a recapture never adopts a pid's new owner.
-  let rootIdentity: Target | null = null;
-  // The complete tree was never captured, or the owned command was forced
-  // during an unreadable snapshot: a later report must retain that uncertainty.
-  let unverifiable = false;
+  const tree: ForegroundTreeState = {
+    root: null,
+    targets: [],
+    unknown: new Set(),
+    unresolved: false,
+    unverifiable: false,
+  };
+  let lastRows: PsRow[] | null = null;
   let witnessing = false;
   // Tracking and signalling are separate duties. `track` only maintains
-  // `doomed` — every identity observed under the command, minus those verified
+  // `tree.targets` — every identity observed under the command, minus those verified
   // dead, so it stays bounded by what is live. Signalling is `terminate`'s job
   // and reaches every live tracked identity, not just newly observed ones.
-  // Once the witness owns `doomed` (it shrinks it as targets are seen dead),
+  // Once the witness owns `tree.targets` (it shrinks it as targets are seen dead),
   // the periodic tracker stands down; only an explicit recapture runs.
   let tracking: Promise<void> = Promise.resolve();
   let pendingTracks = 0;
@@ -462,35 +464,13 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
             rows,
             at(dir, "result.json"),
           );
-        if (
-          rows?.some(
-            (r) =>
-              !r.start &&
-              (r.pid === child.pid || doomed.some((t) => t.pid === r.pid)),
-          )
-        ) {
-          captureUnresolved = true;
-          return;
-        }
-        const cap = recaptureOwned(
+        lastRows = rows;
+        trackForegroundProcessTree(
           child.pid,
-          rootIdentity,
           child.exitCode !== null || child.signalCode !== null,
           rows,
+          tree,
         );
-        captureUnresolved =
-          cap.kind === "unresolved" ||
-          (cap.kind === "tree" && cap.targets.some((t) => !t.start));
-        if (captureUnresolved) return;
-        if (cap.kind === "unverifiable") unverifiable = true;
-        if (cap.kind !== "tree" || rows === null) return;
-        rootIdentity = cap.root;
-        // Live identities stay even once re-parented out of the tree.
-        const known = new Set(doomed.map((t) => `${t.pid}:${t.start}`));
-        const fresh = cap.targets.filter(
-          (t) => !known.has(`${t.pid}:${t.start}`),
-        );
-        doomed = liveTargets([...doomed, ...fresh], rows);
       })
       .finally(() => {
         pendingTracks--;
@@ -504,7 +484,9 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
   const graceStarted = new Map<string, number>();
   const idOf = (t: Target) => `${t.pid}:${t.start}`;
   const beginGrace = () => {
-    for (const t of doomed) {
+    for (const t of lastRows === null
+      ? []
+      : liveTargets(tree.targets, lastRows)) {
       if (graceStarted.has(idOf(t))) continue;
       // Windows has no cooperative POSIX TERM: retain the identity and let
       // the witness force termination after the grace.
@@ -535,10 +517,10 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
   // Unreadable snapshots withhold publication. If the complete tree could not
   // be captured, a later report retains treeWitnessed:false and says so.
   const forceUnresolvedOwnedChild = () => {
-    if (process.platform !== "win32" || !captureUnresolved) return;
+    if (process.platform !== "win32" || !tree.unresolved) return;
     // A handle can safely end our command while CIM is unavailable, but cannot
     // establish what its unobserved descendants did during that outage.
-    unverifiable = true;
+    tree.unverifiable = true;
     forceOwnedChild(child);
   };
   const settleWhenTerminated = (result: Result) => {
@@ -549,31 +531,37 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
       if (polling) return;
       polling = true;
       try {
-        // Shrinks monotonically: a target seen dead is never signalled again.
-        if (captureUnresolved) await capture();
+        const rows = await processTable();
+        lastRows = rows;
+        if (child.pid !== undefined)
+          trackForegroundProcessTree(
+            child.pid,
+            child.exitCode !== null || child.signalCode !== null,
+            rows,
+            tree,
+          );
         forceUnresolvedOwnedChild();
-        if (!captureUnresolved) beginGrace();
-        // Only an identity whose grace elapsed is eligible for force.
+        beginGrace();
         const now = Date.now();
-        const due = doomed.filter(
+        const due = tree.targets.filter(
           (t) => now - (graceStarted.get(idOf(t)) ?? now) >= KILL_GRACE_MS,
         );
-        const waiting = doomed.filter((t) => !due.includes(t));
-        let rows = await processTable();
-        if (
-          rows?.some(
-            (row) => !row.start && doomed.some((t) => t.pid === row.pid),
-          )
-        )
-          rows = null;
-        doomed = [
+        const waiting = tree.targets.filter((t) => !due.includes(t));
+        tree.targets = [
           ...(await stillLive(due, rows)),
-          ...(rows === null ? waiting : liveTargets(waiting, rows)),
+          ...(rows === null ? waiting : liveOrUnknownTargets(waiting, rows)),
         ];
-        if (captureUnresolved || rows === null || doomed.length > 0) return;
+        const witnessGate = process.env[WITNESS_GATE_ENV];
+        if (
+          tree.unresolved ||
+          rows === null ||
+          tree.targets.length > 0 ||
+          (witnessGate && existsSync(witnessGate))
+        )
+          return;
         clearInterval(poll);
         settle(
-          unverifiable
+          tree.unverifiable
             ? {
                 ...result,
                 treeWitnessed: false,
@@ -608,12 +596,12 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
     await capture();
     // Begin grace for every verified tracked identity. POSIX sends SIGTERM;
     // Windows allows the same interval before identity-checked force.
-    if (!captureUnresolved) beginGrace();
+    beginGrace();
     // On POSIX, an unreadable capture still allows TERM of our unreaped child.
     // Windows uses the child handle to force it after the grace below.
     if (
       process.platform !== "win32" &&
-      captureUnresolved &&
+      tree.unresolved &&
       child.pid !== undefined &&
       child.exitCode === null &&
       child.signalCode === null
@@ -699,7 +687,7 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
     // observed through the same grace and witness path, retaining uncertainty
     // when the complete tree could not be captured.
     await capture();
-    if (doomed.length > 0 || captureUnresolved) {
+    if (tree.targets.length > 0 || tree.unresolved) {
       void terminate(
         exitCode,
         "the command exited with descendants still running; terminated them",
@@ -710,7 +698,7 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
     settle({
       exitCode,
       signal: signal ?? null,
-      treeWitnessed: !unverifiable && !captureUnresolved,
+      treeWitnessed: !tree.unverifiable && !tree.unresolved,
     });
   });
 }

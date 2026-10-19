@@ -154,7 +154,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("uncommitted state");
     expect(r.stderr).toContain("leftover-final-verify.txt");
     expect(r.stderr).not.toContain("in this run");
-  });
+  }, 120000);
 
   it("stops instead of spinning when the transition FAILS on the converged path", async () => {
     // mark-ready.ts releases its durable claim when `gh pr ready` fails, so

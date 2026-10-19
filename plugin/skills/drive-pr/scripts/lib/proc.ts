@@ -1,3 +1,4 @@
+import { shutdownRequested } from "../../../../shared/cleanup.ts";
 import {
   captureProcessOutput,
   type ProcessTimers,
@@ -656,6 +657,7 @@ export const run = traceRunner<RunResult, RunOptions>(runProcess, {});
 
 function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
   return new Promise((resolve) => {
+    if (shutdownRequested()) return;
     const [cmd, ...args] = argv;
     // A DEADLINED child gets its own process group, so the deadline can kill
     // the whole tree rather than one process. `kill(pid)` reaches the child

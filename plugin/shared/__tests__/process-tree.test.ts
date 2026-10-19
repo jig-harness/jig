@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   captureProcessTree,
+  reapRegisteredProcessTrees,
+  type WindowsTreeState,
   identityTargetsGone,
   signalIdentityTargets,
   stopWindowsTree,
@@ -432,4 +434,100 @@ test("an explicitly unwitnessed result blocks confirmation while known registere
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+for (const registered of [false, true]) {
+  test(`an unknown ${registered ? "registered" : "owned"} ancestor never authorizes its readable grandchild`, async () => {
+    const leader = registered ? 2 : 1;
+    let rows = [row(leader), row(3, leader, ""), row(4, 3), row(5, leader)];
+    let now = 0;
+    const killed: number[] = [];
+    expect(
+      await stopWindowsTree(
+        1,
+        1,
+        registered ? "scope" : undefined,
+        () => !registered && rows.some((value) => value.pid === 1),
+        {
+          state: {
+            root: registered ? { pid: 1, start: "old" } : null,
+            targets: [],
+          },
+          now: () => now,
+          timeoutMs: 200,
+          pause: async (ms) => {
+            now += ms;
+            if (now === 1) rows = [row(leader), row(4, 0), row(5, leader)];
+          },
+          registryRoots: () => [{ pid: leader, start: "old" }],
+          table: async () => rows,
+          kill: (pid) => {
+            killed.push(pid);
+            rows = rows.filter((value) => value.pid !== pid);
+          },
+        },
+      ),
+    ).toBe(false);
+    expect(killed).toEqual([5, leader]);
+    expect(rows).toEqual([row(4, 0)]);
+  });
+}
+
+for (const forced of [true, false]) {
+  test(`successive registry drains retain ${forced ? "validated force proof" : "natural disappearance uncertainty"}`, async () => {
+    const state: WindowsTreeState = { root: null, targets: [] };
+    let rows = [row(2)];
+    let now = 0;
+    const control = {
+      state,
+      now: () => now,
+      timeoutMs: 100,
+      pause: async (ms: number) => {
+        now += ms;
+      },
+      registryRoots: () => [{ pid: 2, start: "old" }],
+      table: async () => rows,
+      kill: () => {
+        rows = [];
+      },
+    };
+    if (!forced) {
+      const { captureRegisteredTreeSnapshot } = await import(
+        "../process-tree.ts"
+      );
+      await captureRegisteredTreeSnapshot("scope", control);
+      rows = [];
+    }
+    const first = await reapRegisteredProcessTrees("scope", control);
+    const second = await reapRegisteredProcessTrees("scope", control);
+    expect(first.confirmed).toBe(forced);
+    expect(second.confirmed).toBe(forced);
+    expect(second.survived).toBe(!forced);
+  });
+}
+
+test("a registration arriving during the final drain snapshot is forced before confirmation", async () => {
+  let rows = [row(2)];
+  let registryReads = 0;
+  const killed: number[] = [];
+  const state: WindowsTreeState = { root: null, targets: [] };
+  const result = await reapRegisteredProcessTrees("scope", {
+    state,
+    registryRoots: () => {
+      if (++registryReads === 2) rows = [row(3)];
+      return rows.map((value) => ({ pid: value.pid, start: value.start }));
+    },
+    table: async () => {
+      // The first root was forced and witnessed gone. New work becomes visible
+      // during the final registry capture, before acquisition release.
+      return rows;
+    },
+    kill: (pid) => {
+      killed.push(pid);
+      rows = rows.filter((value) => value.pid !== pid);
+    },
+  });
+  expect(result.confirmed).toBe(true);
+  expect(killed).toEqual([2, 3]);
+  expect(rows).toEqual([]);
 });
