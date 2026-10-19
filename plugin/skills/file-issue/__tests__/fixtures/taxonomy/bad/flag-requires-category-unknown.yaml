@@ -1,0 +1,18 @@
+# BAD — the hitl flag requires a label of category `hitl-stakeholder`, which
+# the file does not define.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+flags:
+  - id: hitl
+    scope: shipping-item
+    fires: revoke-autonomy
+    apply_when: a person must decide before the change can merge
+    requires_category: [hitl-stakeholder]

@@ -850,6 +850,85 @@ review:
       expect(taxonomyIds(report)).toEqual([]);
     });
 
+    test("issue_tracker.taxonomy names the file checked, and group and category labels count as defined", () => {
+      const grouped = `${taxonomy}groups:
+  - id: size
+    labels: [{id: small}, {id: medium}]
+categories:
+  - id: stakeholder
+    prefix: "hitl:"
+    labels: [{id: legal}]
+  - id: pattern
+    prefix: "pattern:"
+    open: "^[a-z-]+$"
+`;
+      const config = `issue_tracker:
+  taxonomy: docs/labels.yaml
+  labels:
+    epic: epic
+    hitl: hitl
+    bug: [bug]
+    batch_sizes: [small, tiny]
+    extractable_tails: ["hitl:legal", "pattern:flaky"]
+`;
+      const { report } = fit({
+        ".config/jig.yaml": config,
+        "docs/labels.yaml": grouped,
+        "label-taxonomy.yaml": "types: [unclosed\n",
+      });
+      expect(taxonomyIds(report)).toEqual([
+        "taxonomy:issue_tracker.labels.batch_sizes",
+      ]);
+      expect(
+        report.findings.find(
+          (f) => f.id === "taxonomy:issue_tracker.labels.batch_sizes",
+        )?.message,
+      ).toContain("names tiny, which docs/labels.yaml does not define");
+    });
+
+    test("a category-prefixed label counts only as a closed category's exact label or an open category's matching slug", () => {
+      const categorised = `${taxonomy}categories:
+  - id: stakeholder
+    prefix: "hitl:"
+    labels: [{id: legal}]
+  - id: pattern
+    prefix: "pattern:"
+    open: "[a-z]+"
+`;
+      const tails = (list: string) =>
+        `issue_tracker:\n  labels:\n    extractable_tails: ${list}\n`;
+      const unknownTails = (list: string) => {
+        const { report } = fit({
+          ".config/jig.yaml": tails(list),
+          "label-taxonomy.yaml": categorised,
+        });
+        return (
+          report.findings.find(
+            (f) => f.id === "taxonomy:issue_tracker.labels.extractable_tails",
+          )?.message ?? ""
+        );
+      };
+      expect(unknownTails('["hitl:legal", "pattern:flaky"]')).toBe("");
+      // A closed category takes its own labels only, even where the slug is
+      // a label elsewhere; an open pattern matches the whole slug.
+      const message = unknownTails(
+        '["hitl:finance", "hitl:bug", "pattern:Foo bar", "pattern:flaky2"]',
+      );
+      expect(message).toContain(
+        "names hitl:finance, hitl:bug, pattern:Foo bar, pattern:flaky2, which",
+      );
+    });
+
+    test("a configured taxonomy that does not exist is the schema's path finding alone", () => {
+      const { report } = fit({
+        ".config/jig.yaml": "issue_tracker:\n  taxonomy: docs/absent.yaml\n",
+        "label-taxonomy.yaml": taxonomy,
+      });
+      expect(taxonomyIds(report)).toEqual([
+        "derivation:issue_tracker.taxonomy",
+      ]);
+    });
+
     test("the older review.taxonomy label fields are checked too", () => {
       const { report } = fit({
         ".config/jig.yaml":
@@ -1673,20 +1752,21 @@ describe("the repository around the configuration", () => {
       }).report.findings.filter((f) =>
         f.id.endsWith("issue_tracker.file_command"),
       );
-    expect(fileCommand("/file-issue")).toMatchObject([
+    expect(fileCommand("/open-ticket")).toMatchObject([
       {
         id: "derivation:issue_tracker.file_command",
         severity: "warning",
-        message: expect.stringContaining(".claude/commands/file-issue.md"),
+        message: expect.stringContaining(".claude/commands/open-ticket.md"),
       },
     ]);
     for (const resolved of [
-      ".claude/commands/file-issue.md",
-      ".claude/commands/tracker/file-issue.md",
-      ".claude/skills/file-issue/SKILL.md",
+      ".claude/commands/open-ticket.md",
+      ".claude/commands/tracker/open-ticket.md",
+      ".claude/skills/open-ticket/SKILL.md",
     ])
-      expect(fileCommand("/file-issue", { [resolved]: "x\n" })).toEqual([]);
+      expect(fileCommand("/open-ticket", { [resolved]: "x\n" })).toEqual([]);
     expect(fileCommand("/jig:do-item")).toEqual([]);
+    expect(fileCommand("/jig:file-issue")).toEqual([]);
     // A bare name runs this plugin's skill when nothing else has it.
     expect(fileCommand("/do-item")).toEqual([]);
     expect(fileCommand("/jig:no-such-skill")[0]?.id).toBe(

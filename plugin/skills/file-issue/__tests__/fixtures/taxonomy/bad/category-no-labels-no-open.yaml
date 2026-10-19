@@ -1,0 +1,15 @@
+# BAD — the area category has neither `labels:` nor `open:`, so no label can
+# belong to it.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+categories:
+  - id: area
+    prefix: "area:"

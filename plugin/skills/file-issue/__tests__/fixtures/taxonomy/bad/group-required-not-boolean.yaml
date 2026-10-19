@@ -1,0 +1,16 @@
+# BAD — the size group's `required:` is text, not true or false.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+groups:
+  - id: size
+    required: "yes please"
+    labels:
+      - id: small

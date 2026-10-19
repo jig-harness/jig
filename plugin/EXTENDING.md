@@ -123,7 +123,13 @@ named in configuration:
 [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), defined in
 [`do-item/scripts/lib/tracker/port.ts`](skills/do-item/scripts/lib/tracker/port.ts):
 read an issue with its comments and children, move it to a workflow state,
-comment, and the reads that delivery metrics and batch proposals need. States
+comment, file an issue, change its fields and labels, search this team's
+issues, read and add relations between issues, list the labels an issue can
+carry, and the reads that delivery metrics and batch proposals need. Labels
+and projects are given by name and a parent by its key; the adapter resolves
+each to exactly one tracker resource or refuses before writing. A skill's
+procedure runs the issue operations as commands of
+[`do-item/scripts/tracker.ts`](skills/do-item/scripts/tracker.ts). States
 are named by canonical keys (`in_progress`, `in_review`, …) that
 `issue_tracker.states` maps to the tracker's own names.
 
@@ -144,6 +150,10 @@ by Linear, so an adapter maps its tracker onto it:
 
 - issue keys are `<TEAM>-<number>`, with the team from `issue_tracker.team`;
 - priority is a number from 0 (none) to 4 (low);
+- relations are directed and read from each issue's side: `relate A blocks
+  B` makes B wait for A, and B reads it as `blocked_by` A; `relate A
+  duplicate B` records A as the duplicate of B (the tracker may close A),
+  and B reads it as `duplicated_by` A; `related` has no direction;
 - a finished issue's workflow state belongs to one of the closed categories
   the metrics count (completed, canceled, duplicate); active states such as
   `in_progress` and `in_review` belong to none of them.
@@ -157,11 +167,12 @@ second adapter does not yet reach them:
 - **Deferring review findings.** `resolve-review-comments` files deferred
   findings through its own Linear client (`defer-batch.ts`), with fixed type
   and repository label groups.
-- **Operations the interface does not have.** Creating an issue, searching
-  open issues, adding labels and attaching a file. Where a skill needs one
-  (`decide` escalating, `decide` and `explain` attaching a sheet, `do-item`
-  where no script covers a step), its instructions name the Linear MCP
-  tools or the `linear` command.
+- **Operations the interface does not have.** Attaching a file. Where a
+  skill needs it (`decide` and `explain` attaching a sheet), its
+  instructions name the Linear MCP tools or the `linear` command.
+- **Skill instructions not yet moved.** `decide` escalating and `do-item`
+  where no script covers a step still name the Linear MCP tools in their
+  instructions, though the interface now has the operations.
 - **Response shapes.** `do-item`'s parent-status reconciliation reads the
   shape of Linear's own answers.
 - **Names.** The review-triage file's `severity_mapping.<severity>.linear_priority`;
@@ -170,10 +181,15 @@ second adapter does not yet reach them:
 - **The launcher**, which has a tracker interface of its own
   ([below](#workspace-launcher)).
 
-Fixing it means adding the missing operations to the interface, moving the
+A repository gate (`scripts/check-tracker-boundary.ts` in Jig's own
+repository) keeps the rest of the plugin's code, and the planning skills'
+procedures, from reaching Linear except through the interface; the deferral
+step is the one file it still allows.
+
+Fixing it means adding attaching a file to the interface, moving the
 deferral step and the skills' instructions onto it, and renaming the
 Linear-named fields with their old names still read. Roadmap item 10 holds
-the deferral step and the names; item 12 holds the operations and the next
+the deferral step and the names; item 12 holds the next
 adapters (Jira, and a plan file kept in the repository), behind open
 decisions: the plan file's format, and whether an adapter may leave out the
 reporting operations.

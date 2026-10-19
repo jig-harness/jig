@@ -61,7 +61,12 @@ concrete per-tracker, per-runtime wiring lives in [mappings.md](mappings.md).
    validated [SSoT](../../GLOSSARY.md) ([`label-taxonomy.yaml`](templates/label-taxonomy.yaml))
    with a closed `types` list, a closed `statuses` list, and `flags` where every
    entry declares what it **fires**. A flag with no trigger is decoration, and
-   the [label-taxonomy lint](reference/label-taxonomy-lint/) rejects it. Many
+   the [label-taxonomy lint](../../plugin/skills/file-issue/scripts/check-label-taxonomy.ts) rejects it. Other closed families sit beside
+   them: a [label group](../../GLOSSARY.md) (one size per issue), and a
+   [label category](../../GLOSSARY.md) of prefixed labels (`area:billing`),
+   which may require an umbrella label so a [facet](../../GLOSSARY.md) never
+   appears alone. The [label validator](../../plugin/skills/file-issue/scripts/validate-labels.ts) checks each issue's labels
+   against the file before the issue is written. Many
    flags are *derivable* rather than hand-applied: if a change touches a
    migration path in the [M3](../M3-change-area-catalog/) change-area catalog,
    the migration flag can be set automatically.
@@ -198,7 +203,7 @@ shortlist.
   flag labels), flag labels are named by convention, and a persistent-memory
   location is designated (by convention). Enforcement may be prose and habit.
 - **Standard** — the taxonomy is a validated SSoT file and the
-  [label-taxonomy lint](reference/label-taxonomy-lint/) runs mechanically; flag
+  [label-taxonomy lint](../../plugin/skills/file-issue/scripts/check-label-taxonomy.ts) runs mechanically; flag
   labels actually **fire gates** (a `has-migration` label triggers a required
   check, a `hitl` label is honoured), each declaring its scope so gate flags
   sit on the shipping item; epics close on an accepted verdict or a recorded
@@ -216,9 +221,12 @@ shortlist.
 1. Copy [`label-taxonomy.yaml`](templates/label-taxonomy.yaml); prune the types
    and statuses to what your tracker uses and declare, for each flag, the process
    it fires, which item carries it (`scope`) and when it applies
-   (`apply_when`). Add the [label-taxonomy lint](reference/label-taxonomy-lint/)
-   as a CI gate so the taxonomy can't drift into folksonomy, and check every
-   copy of its key sets elsewhere against it.
+   (`apply_when`). Declare any other single-select family (a size, a
+   repository) as a group and any prefixed family as a category, with the
+   umbrella each facet `requires`. Add the [label-taxonomy lint](../../plugin/skills/file-issue/scripts/check-label-taxonomy.ts)
+   as a CI gate so the taxonomy can't drift into folksonomy, check every
+   copy of its key sets elsewhere against it, and have every filing path run
+   the [label validator](../../plugin/skills/file-issue/scripts/validate-labels.ts) before it writes an issue.
 2. Wire each flag to its process: point `has-migration` / `api-change` at your
    [M3](../M3-change-area-catalog/) required-checks projection, and the `hitl`
    flag at the same autonomy-revoking rule [M7](../M7-pr-lifecycle-review/) and
@@ -264,8 +272,14 @@ practice:
   adapter and reports the share of open follow-ups that carry no priority.
 - The [audit](../../plugin/skills/audit/README.md)'s configuration check
   compares the configured `issue_tracker.labels` and `review.taxonomy.types`
-  with a repository's `label-taxonomy.yaml`, so an audit run reports where
+  with a repository's label taxonomy (`issue_tracker.taxonomy`, else a
+  `label-taxonomy.yaml` it finds), so an audit run reports where
   those copies of the taxonomy have drifted from it.
+- [`file-issue`](../../plugin/skills/file-issue/README.md) files and plans
+  issues with a durable body, labels derived from the change's areas or its
+  description, a duplicate search first, and every label set checked by the
+  [label validator](../../plugin/skills/file-issue/scripts/validate-labels.ts) before it writes; it holds the
+  [label-taxonomy lint](../../plugin/skills/file-issue/scripts/check-label-taxonomy.ts) too.
 - [`promote-memory`](../../plugin/skills/promote-memory/SKILL.md) is the
   promotion step between the memory tiers, shared with
   [M8](../M8-learning-loop/).
@@ -274,20 +288,22 @@ practice:
 
 | Piece | What it is |
 |-------|------------|
-| [`templates/label-taxonomy.yaml`](templates/label-taxonomy.yaml) | A generic label taxonomy: closed types and statuses, and flags that each declare what they fire, which item carries them and when they apply |
+| [`templates/label-taxonomy.yaml`](templates/label-taxonomy.yaml) | A generic label taxonomy: closed types and statuses, flags that each declare what they fire, which item carries them and when they apply, and an example group and category |
 | [`templates/ISSUE-TEMPLATES.md`](templates/ISSUE-TEMPLATES.md) | Tool-independent epic and sub-issue skeletons carrying the taxonomy, priority and category, and a tactical plan |
 | [`templates/phase-formula.yaml`](templates/phase-formula.yaml) | The formula schema: a work class's phases, with the required ones marked |
 | [`templates/MEMORY-TIERS.md`](templates/MEMORY-TIERS.md) | The what / how / in-session tiers and the private → promoted → git-tracked flow |
-| [`reference/label-taxonomy-lint/`](reference/label-taxonomy-lint/) | The taxonomy's invariants as a gate: closed lists, no flag that fires nothing, and every flag scoped and conditioned |
+| [label-taxonomy lint](../../plugin/skills/file-issue/scripts/check-label-taxonomy.ts) | The taxonomy's invariants as a gate: closed lists, no flag that fires nothing, every flag scoped and conditioned, and every group, category and `requires` well formed; with its self-test in the skill |
+| [label validator](../../plugin/skills/file-issue/scripts/validate-labels.ts) | One issue's labels against the taxonomy: one type, one label per group, every facet beside its umbrella, nothing undefined |
 | [`reference/required-phases/`](reference/required-phases/) | The close-time gate: an item may not reach a done state with a required phase unrecorded |
 | [`mappings.md`](mappings.md) | Issue trackers, persistent-memory homes, CI providers |
 | [maturity criteria](../../plugin/skills/audit/criteria/M9-tasks-memory.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
-Each reference gate ships with a self-test and fixtures, and delegates to the
-shared implementation in [`lib/module-gates.ts`](../../lib/module-gates.ts);
-keep the module and `lib/`, its `vendor/` folder included, together when you
-vendor them. The label-taxonomy lint reads the taxonomy with the js-yaml build
-in `lib/vendor/`, which rejects a repeated key.
+The required-phases gate ships with a self-test and fixtures, and delegates to
+the shared implementation in [`lib/module-gates.ts`](../../lib/module-gates.ts);
+keep the module and `lib/` together when you vendor them. The label-taxonomy
+lint and the label validator run from the plugin, where the `file-issue`
+skill uses them; both read the taxonomy with the plugin's vendored js-yaml
+build, which rejects a repeated key.
 
 ### Left out by design
 

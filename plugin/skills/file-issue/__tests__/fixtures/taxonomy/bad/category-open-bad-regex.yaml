@@ -1,0 +1,15 @@
+# BAD — the pattern category's `open:` is not a regular expression that compiles.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+categories:
+  - id: pattern
+    prefix: "pattern:"
+    open: "^[a-z("

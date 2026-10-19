@@ -160,6 +160,12 @@ export function fakeTracker(
     issueComments: unsupported("issueComments"),
     ledger: unsupported("ledger"),
     labelledIssues: unsupported("labelledIssues"),
+    createIssue: unsupported("createIssue"),
+    updateIssue: unsupported("updateIssue"),
+    listLabels: unsupported("listLabels"),
+    searchIssues: unsupported("searchIssues"),
+    listRelations: unsupported("listRelations"),
+    relate: unsupported("relate"),
     async openIssues(query) {
       queries.push(query);
       if (

@@ -19,6 +19,7 @@ import {
   parseAgentRouting,
 } from "../scripts/determine_agent.ts";
 import { parseArgs } from "../scripts/lib/cli.ts";
+import { parseNewIssue, parsePatch, UsageError } from "../scripts/tracker.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
@@ -1084,6 +1085,46 @@ describe("list_comments.ts", () => {
   });
 });
 
+describe("tracker.ts input", () => {
+  it("fills a new issue's empty description and labels", () => {
+    expect(parseNewIssue('{"title":"x","priority":0}')).toEqual({
+      title: "x",
+      description: "",
+      labels: [],
+      priority: 0,
+    });
+  });
+
+  it("keeps a patch as given, a cleared parent included", () => {
+    expect(parsePatch("ENG-1", '{"parent":null,"addLabels":["bug"]}')).toEqual({
+      parent: null,
+      addLabels: ["bug"],
+    });
+  });
+
+  for (const [what, text, expected] of [
+    ["a list", "[]", "must be a JSON object"],
+    ["a blank title", '{"title":" "}', "non-empty 'title'"],
+    ["a numeric title", '{"title":1}', "'title' must be a string"],
+    ["a fractional priority", '{"title":"x","priority":1.5}', "integer"],
+    ["an empty label name", '{"title":"x","labels":[""]}', "label names"],
+  ] as const) {
+    it(`refuses ${what} as the caller's mistake`, () => {
+      expect(() => parseNewIssue(text)).toThrow(UsageError);
+      expect(() => parseNewIssue(text)).toThrow(expected);
+    });
+  }
+
+  it("refuses a patch that clears nothing it can name", () => {
+    expect(() => parsePatch("ENG-1", '{"removeLabels":[]}')).toThrow(
+      "changes nothing",
+    );
+    expect(() => parsePatch("ENG-1", '{"parent":1}')).toThrow(
+      "an issue key or null",
+    );
+  });
+});
+
 describe("tracker.ts", () => {
   const dirs: string[] = [];
   afterAll(() => {
@@ -1204,6 +1245,249 @@ describe("tracker.ts", () => {
     expect(r.stderr).toBe("");
     expect(r.status).toBe(0);
   });
+
+  const LABEL_LIST = {
+    operation: "query TrackerLabels",
+    variables:
+      '{"filter":{"or":[{"team":{"key":{"eq":"ENG"}}},{"team":{"null":true}}]},"after":null}',
+    payload:
+      '{"data":{"issueLabels":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"l-bug","name":"bug","isGroup":false,"parent":null},{"id":"l-size","name":"size","isGroup":true,"parent":null},{"id":"l-xs","name":"xs","isGroup":false,"parent":{"name":"size"}}]}}}',
+  };
+  const issueId = (key: string) => ({
+    operation: "query TrackerIssueId",
+    variables: `{"id":"${key}"}`,
+    payload: `{"data":{"issue":{"id":"uuid-${key}","team":{"id":"team-1","key":"ENG"}}}}`,
+  });
+
+  it("files an issue from JSON on stdin", () => {
+    const r = run(
+      ["create"],
+      [
+        {
+          operation: "query TrackerTeam",
+          variables: '{"key":"ENG"}',
+          payload:
+            '{"data":{"teams":{"pageInfo":{"hasNextPage":false},"nodes":[{"id":"team-1","key":"ENG"}]}}}',
+        },
+        LABEL_LIST,
+        issueId("ENG-1"),
+        {
+          operation: "mutation TrackerCreate",
+          variables:
+            '{"input":{"teamId":"team-1","title":"Fix it","description":"","labelIds":["l-bug","l-xs"],"priority":3,"parentId":"uuid-ENG-1"}}',
+          payload:
+            '{"data":{"issueCreate":{"success":true,"issue":{"identifier":"ENG-10","url":"https://tracker.example/ENG-10"}}}}',
+        },
+      ],
+      JSON.stringify({
+        title: "Fix it",
+        labels: ["bug", "xs"],
+        priority: 3,
+        parent: "ENG-1",
+      }),
+    );
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({
+      identifier: "ENG-10",
+      url: "https://tracker.example/ENG-10",
+    });
+  });
+
+  it("fails a filing whose label the tracker does not have", () => {
+    const r = run(
+      ["create"],
+      [
+        {
+          operation: "query TrackerTeam",
+          variables: '{"key":"ENG"}',
+          payload:
+            '{"data":{"teams":{"pageInfo":{"hasNextPage":false},"nodes":[{"id":"team-1","key":"ENG"}]}}}',
+        },
+        LABEL_LIST,
+      ],
+      JSON.stringify({ title: "Fix it", labels: ["size"] }),
+    );
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("'size' matches no label");
+    expect(r.stdout).toBe("");
+  });
+
+  it("updates an issue's labels from a patch on stdin", () => {
+    const r = run(
+      ["update", "ENG-1"],
+      [
+        LABEL_LIST,
+        issueId("ENG-1"),
+        {
+          operation: "mutation TrackerUpdate",
+          variables:
+            '{"id":"uuid-ENG-1","input":{"addedLabelIds":["l-xs"],"removedLabelIds":["l-bug"]}}',
+          payload: '{"data":{"issueUpdate":{"success":true}}}',
+        },
+      ],
+      JSON.stringify({ addLabels: ["xs"], removeLabels: ["bug"] }),
+    );
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({ issue: "ENG-1", updated: true });
+  });
+
+  it("searches for text that starts with -- after the end-of-options marker", () => {
+    const r = run(
+      ["search", "--include-closed", "--", "--force"],
+      [
+        {
+          operation: "query TrackerSearch",
+          variables:
+            '{"filter":{"and":[{"team":{"key":{"eq":"ENG"}}},{"or":[{"title":{"containsIgnoreCase":"--force"}},{"description":{"containsIgnoreCase":"--force"}}]}]},"after":null}',
+          payload:
+            '{"data":{"issues":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}',
+        },
+      ],
+    );
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual([]);
+  });
+
+  it("searches, lists relations and labels, and relates", () => {
+    const search = run(
+      ["search", "login", "--include-closed"],
+      [
+        {
+          operation: "query TrackerSearch",
+          variables:
+            '{"filter":{"and":[{"team":{"key":{"eq":"ENG"}}},{"or":[{"title":{"containsIgnoreCase":"login"}},{"description":{"containsIgnoreCase":"login"}}]}]},"after":null}',
+          payload:
+            '{"data":{"issues":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"identifier":"ENG-3","title":"Flaky login","state":{"name":"Todo","type":"unstarted"},"labels":{"pageInfo":{"hasNextPage":false},"nodes":[{"name":"bug"}]}}]}}}',
+        },
+      ],
+    );
+    expect(search.stderr).toBe("");
+    expect(JSON.parse(search.stdout)).toEqual([
+      {
+        identifier: "ENG-3",
+        title: "Flaky login",
+        state: { name: "Todo", type: "unstarted" },
+        labels: ["bug"],
+      },
+    ]);
+
+    const relations = run(
+      ["relations", "ENG-1"],
+      [
+        {
+          operation: "query TrackerRelations",
+          variables: '{"id":"ENG-1","after":null}',
+          payload:
+            '{"data":{"issue":{"relations":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"r1","type":"blocks","relatedIssue":{"identifier":"ENG-2"}}]}}}}',
+        },
+        {
+          operation: "query TrackerInverseRelations",
+          variables: '{"id":"ENG-1","after":null}',
+          payload:
+            '{"data":{"issue":{"inverseRelations":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"r2","type":"blocks","issue":{"identifier":"ENG-4"}},{"id":"r3","type":"duplicate","issue":{"identifier":"ENG-5"}}]}}}}',
+        },
+      ],
+    );
+    expect(relations.stderr).toBe("");
+    expect(JSON.parse(relations.stdout)).toEqual([
+      { type: "blocks", issue: "ENG-2" },
+      { type: "blocked_by", issue: "ENG-4" },
+      { type: "duplicated_by", issue: "ENG-5" },
+    ]);
+
+    const available = run(["available-labels"], [LABEL_LIST]);
+    expect(available.stderr).toBe("");
+    expect(JSON.parse(available.stdout)).toEqual([
+      { name: "bug", group: null },
+      { name: "xs", group: "size" },
+    ]);
+
+    const relate = run(
+      ["relate", "ENG-1", "duplicate", "ENG-2"],
+      [
+        issueId("ENG-1"),
+        issueId("ENG-2"),
+        {
+          operation: "mutation TrackerRelate",
+          variables:
+            '{"input":{"issueId":"uuid-ENG-1","relatedIssueId":"uuid-ENG-2","type":"duplicate"}}',
+          payload: '{"data":{"issueRelationCreate":{"success":true}}}',
+        },
+      ],
+    );
+    expect(relate.stderr).toBe("");
+    expect(relate.status).toBe(0);
+    expect(JSON.parse(relate.stdout)).toEqual({
+      issue: "ENG-1",
+      type: "duplicate",
+      target: "ENG-2",
+    });
+  });
+
+  for (const [what, args, input, expected] of [
+    ["a new issue that is not JSON", ["create"], "{", "not JSON"],
+    ["a new issue without a title", ["create"], "{}", "non-empty 'title'"],
+    [
+      "an unknown key",
+      ["create"],
+      '{"title":"x","label":["bug"]}',
+      "unknown key 'label'",
+    ],
+    [
+      "a priority off the scale",
+      ["create"],
+      '{"title":"x","priority":7}',
+      "'priority' must be an integer from 0",
+    ],
+    ["an empty patch", ["update", "ENG-1"], "{}", "changes nothing"],
+    [
+      "a patch whose labels are not names",
+      ["update", "ENG-1"],
+      '{"addLabels":"bug"}',
+      "'addLabels' must be a list",
+    ],
+    ["an update without a key", ["update"], "{}", "one issue key"],
+    ["an empty search", ["search", " "], "", "non-empty text"],
+    [
+      "an unknown search option",
+      ["search", "x", "--all"],
+      "",
+      "unknown option: --all",
+    ],
+    [
+      "a second text after the end-of-options marker",
+      ["search", "x", "--", "--y"],
+      "",
+      "one non-empty text",
+    ],
+    [
+      "an unknown relation type",
+      ["relate", "ENG-1", "causes", "ENG-2"],
+      "",
+      "not a relation type",
+    ],
+    [
+      "a relation without a target",
+      ["relate", "ENG-1", "blocks"],
+      "",
+      "target key",
+    ],
+    [
+      "an argument to available-labels",
+      ["available-labels", "x"],
+      "",
+      "takes no argument",
+    ],
+  ] as const) {
+    it(`rejects ${what} as a usage error, before any request`, () => {
+      const r = run([...args], [], input);
+      expect(r.stderr).toContain(expected);
+      expect(r.status).toBe(2);
+    });
+  }
 
   for (const [what, args, expected] of [
     ["an unknown operation", ["close", "ENG-1"], "unknown operation"],

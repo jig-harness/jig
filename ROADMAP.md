@@ -75,9 +75,8 @@ remote named `origin`. They move into configuration.
 ### 12. More tracker adapters
 
 Jira, and a plan file kept in the repository, beside Linear. The
-[tracker interface](GLOSSARY.md) first gains the operations the skills still
-reach Linear for directly: creating and searching issues, adding labels and
-attaching files.
+[tracker interface](GLOSSARY.md) first gains attaching a file, the one
+operation the skills still reach Linear for directly.
 
 ### 15. M14 Testing strategy: the rest
 

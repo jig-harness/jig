@@ -930,3 +930,400 @@ describe("Linear adapter: candidate pools", () => {
     );
   });
 });
+
+describe("Linear adapter: filing and planning", () => {
+  const label = (
+    id: string,
+    name: string,
+    group: string | null = null,
+    isGroup = false,
+  ) => ({ id, name, isGroup, parent: group === null ? null : { name: group } });
+  const LABELS = [
+    label("l-bug", "bug"),
+    label("l-size", "size", null, true),
+    label("l-xs", "xs", "size"),
+    label("l-docs", "area:docs"),
+    label("l-dup-1", "twice"),
+    label("l-dup-2", "twice"),
+  ];
+  const issueId = (key: string) => ({
+    issue: { id: `uuid-${key}`, team: { id: "team-1", key: "ENG" } },
+  });
+
+  /** The answer to each lookup the filing operations make, by operation. */
+  const ANSWERS: Array<[string, (call: Call) => unknown]> = [
+    ["TrackerTeam(", () => ({ teams: page([{ id: "team-1", key: "ENG" }]) })],
+    ["TrackerLabels(", () => ({ issueLabels: page(LABELS) })],
+    [
+      "TrackerProject(",
+      () => ({ projects: page([{ id: "p-1", name: "Debt" }]) }),
+    ],
+    ["TrackerIssueId(", (call) => issueId(String(call.variables.id))],
+    [
+      "TrackerCreate(",
+      () => ({
+        issueCreate: {
+          success: true,
+          issue: {
+            identifier: "ENG-10",
+            url: "https://tracker.example/ENG-10",
+          },
+        },
+      }),
+    ],
+    ["TrackerUpdate(", () => ({ issueUpdate: { success: true } })],
+    ["TrackerRelate(", () => ({ issueRelationCreate: { success: true } })],
+  ];
+
+  /** A tracker answering every lookup, `over` first where it answers. */
+  function filing(over: (call: Call) => unknown = () => undefined) {
+    return tracker((call) => {
+      const own = over(call);
+      if (own !== undefined) return own;
+      const answer = ANSWERS.find(([op]) => call.query.includes(op));
+      if (answer === undefined)
+        throw new Error(`unexpected request: ${call.query.slice(0, 60)}`);
+      return answer[1](call);
+    });
+  }
+
+  it("lists the labels issues can carry, with their group, without group labels", async () => {
+    const { t, calls } = filing();
+    expect(await t.listLabels()).toEqual([
+      { name: "area:docs", group: null },
+      { name: "bug", group: null },
+      { name: "twice", group: null },
+      { name: "twice", group: null },
+      { name: "xs", group: "size" },
+    ]);
+    expect(calls[0]?.variables.filter).toEqual({
+      or: [{ team: { key: { eq: "ENG" } } }, { team: { null: true } }],
+    });
+  });
+
+  it("refuses a label page it cannot read in full", async () => {
+    const { t } = filing((call) =>
+      call.query.includes("TrackerLabels(")
+        ? { issueLabels: { pageInfo: { hasNextPage: true }, nodes: LABELS } }
+        : undefined,
+    );
+    await expect(t.listLabels()).rejects.toThrow("cursor");
+    const malformed = filing((call) =>
+      call.query.includes("TrackerLabels(")
+        ? { issueLabels: page([{ id: "l", name: "x" }]) }
+        : undefined,
+    );
+    await expect(malformed.t.listLabels()).rejects.toThrow("isGroup");
+  });
+
+  it("files an issue with every name resolved to an id", async () => {
+    const { t, calls } = filing();
+    const created = await t.createIssue({
+      title: "Fix it",
+      description: "Body",
+      labels: ["bug", "xs"],
+      priority: 2,
+      parent: "ENG-1",
+      project: "Debt",
+    });
+    expect(created).toEqual({
+      identifier: "ENG-10",
+      url: "https://tracker.example/ENG-10",
+    });
+    expect(calls.at(-1)?.variables).toEqual({
+      input: {
+        teamId: "team-1",
+        title: "Fix it",
+        description: "Body",
+        labelIds: ["l-bug", "l-xs"],
+        priority: 2,
+        parentId: "uuid-ENG-1",
+        projectId: "p-1",
+      },
+    });
+  });
+
+  it("names every label that resolves to none or several, and writes nothing", async () => {
+    const { t, calls } = filing();
+    await expect(
+      t.createIssue({
+        title: "x",
+        description: "",
+        labels: ["bug", "nope", "twice", "size"],
+      }),
+    ).rejects.toThrow(
+      "'nope' matches no label; 'twice' matches 2 labels; 'size' matches no label",
+    );
+    expect(calls.some((c) => c.query.includes("TrackerCreate("))).toBe(false);
+  });
+
+  it("refuses a priority off the scale before any request", async () => {
+    for (const priority of [-1, 5, 1.5, Number.NaN]) {
+      const { t, calls } = filing();
+      await expect(
+        t.createIssue({ title: "x", description: "", labels: [], priority }),
+      ).rejects.toThrow("priority must be an integer");
+      await expect(t.updateIssue("ENG-1", { priority })).rejects.toThrow(
+        "priority must be an integer",
+      );
+      expect(calls).toHaveLength(0);
+    }
+  });
+
+  it("refuses a project that does not resolve to exactly one", async () => {
+    const { t, calls } = filing((call) =>
+      call.query.includes("TrackerProject(")
+        ? {
+            projects: page([
+              { id: "p-1", name: "Debt" },
+              { id: "p-2", name: "Debt" },
+            ]),
+          }
+        : undefined,
+    );
+    await expect(
+      t.createIssue({
+        title: "x",
+        description: "",
+        labels: [],
+        project: "Debt",
+      }),
+    ).rejects.toThrow("project 'Debt' matched 2");
+    expect(calls.some((c) => c.query.includes("TrackerCreate("))).toBe(false);
+  });
+
+  it("refuses a filing the tracker did not accept", async () => {
+    const { t } = filing((call) =>
+      call.query.includes("TrackerCreate(")
+        ? { issueCreate: { success: false, issue: null } }
+        : undefined,
+    );
+    await expect(
+      t.createIssue({ title: "x", description: "", labels: [] }),
+    ).rejects.toThrow("did not succeed");
+  });
+
+  it("adds and removes labels by id, without reading or rewriting the issue's set", async () => {
+    const { t, calls } = filing();
+    await t.updateIssue("ENG-1", {
+      addLabels: ["xs", "bug"],
+      removeLabels: ["area:docs"],
+      title: "New",
+      parent: null,
+    });
+    expect(calls.at(-1)?.variables).toEqual({
+      id: "uuid-ENG-1",
+      input: {
+        title: "New",
+        parentId: null,
+        addedLabelIds: ["l-xs", "l-bug"],
+        removedLabelIds: ["l-docs"],
+      },
+    });
+    await t.updateIssue("ENG-1", { removeLabels: ["bug"] });
+    expect(calls.at(-1)?.variables).toEqual({
+      id: "uuid-ENG-1",
+      input: { removedLabelIds: ["l-bug"] },
+    });
+    const ops = calls.map((c) => /(?:query|mutation) (\w+)/.exec(c.query)?.[1]);
+    expect(new Set(ops)).toEqual(
+      new Set(["TrackerLabels", "TrackerIssueId", "TrackerUpdate"]),
+    );
+  });
+
+  it("updates the other fields without reading labels", async () => {
+    const { t, calls } = filing();
+    await t.updateIssue("ENG-1", { project: "Debt", priority: 0 });
+    expect(calls.some((c) => c.query.includes("TrackerLabels("))).toBe(false);
+    expect(calls.at(-1)?.variables).toEqual({
+      id: "uuid-ENG-1",
+      input: { priority: 0, projectId: "p-1" },
+    });
+  });
+
+  it("refuses an empty patch and a label both added and removed", async () => {
+    const { t, calls } = filing();
+    await expect(t.updateIssue("ENG-1", {})).rejects.toThrow("changes nothing");
+    await expect(
+      t.updateIssue("ENG-1", { addLabels: [], removeLabels: [] }),
+    ).rejects.toThrow("changes nothing");
+    await expect(
+      t.updateIssue("ENG-1", { addLabels: ["bug"], removeLabels: ["bug"] }),
+    ).rejects.toThrow("both adds and removes 'bug'");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("refuses an update the tracker did not accept", async () => {
+    const { t } = filing((call) =>
+      call.query.includes("TrackerUpdate(")
+        ? { issueUpdate: { success: false } }
+        : undefined,
+    );
+    await expect(t.updateIssue("ENG-1", { title: "x" })).rejects.toThrow(
+      "did not succeed",
+    );
+  });
+
+  it("searches this team's open issues by title or description", async () => {
+    const summary = {
+      identifier: "ENG-3",
+      title: "Flaky login",
+      state: { name: "Todo", type: "unstarted" },
+      labels: labels("bug"),
+    };
+    const { t, calls } = tracker((_c, n) => ({
+      issues: n === 0 ? page([summary], "c1") : page([]),
+    }));
+    expect(await t.searchIssues("login")).toEqual([
+      {
+        identifier: "ENG-3",
+        title: "Flaky login",
+        state: { name: "Todo", type: "unstarted" },
+        labels: ["bug"],
+      },
+    ]);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.variables.filter).toEqual({
+      and: [
+        { team: { key: { eq: "ENG" } } },
+        {
+          or: [
+            { title: { containsIgnoreCase: "login" } },
+            { description: { containsIgnoreCase: "login" } },
+          ],
+        },
+        { state: { type: { nin: ["completed", "canceled", "duplicate"] } } },
+      ],
+    });
+    await t.searchIssues("login", { includeClosed: true });
+    const closed = calls.at(-1)?.variables.filter as { and: unknown[] };
+    expect(closed.and).toHaveLength(2);
+  });
+
+  it("refuses an empty search and a truncated label list on a hit", async () => {
+    const { t, calls } = tracker(() => ({ issues: page([]) }));
+    await expect(t.searchIssues("  ")).rejects.toThrow("non-empty text");
+    expect(calls).toHaveLength(0);
+    const truncated = tracker(() => ({
+      issues: page([
+        {
+          identifier: "ENG-3",
+          title: "x",
+          state: { name: "Todo", type: "unstarted" },
+          labels: { pageInfo: { hasNextPage: true }, nodes: [] },
+        },
+      ]),
+    }));
+    await expect(truncated.t.searchIssues("x")).rejects.toThrow("truncated");
+  });
+
+  it("lists relations in both directions", async () => {
+    const { t, calls } = tracker((call) =>
+      call.query.includes("TrackerRelations(")
+        ? {
+            issue: {
+              relations: page([
+                {
+                  id: "r1",
+                  type: "blocks",
+                  relatedIssue: { identifier: "ENG-2" },
+                },
+                {
+                  id: "r2",
+                  type: "related",
+                  relatedIssue: { identifier: "ENG-3" },
+                },
+                {
+                  id: "r3",
+                  type: "similar",
+                  relatedIssue: { identifier: "ENG-9" },
+                },
+                {
+                  id: "r6",
+                  type: "duplicate",
+                  relatedIssue: { identifier: "ENG-6" },
+                },
+              ]),
+            },
+          }
+        : {
+            issue: {
+              inverseRelations: page([
+                { id: "r4", type: "blocks", issue: { identifier: "ENG-4" } },
+                { id: "r5", type: "duplicate", issue: { identifier: "ENG-5" } },
+              ]),
+            },
+          },
+    );
+    expect(await t.listRelations("ENG-1")).toEqual([
+      { type: "blocks", issue: "ENG-2" },
+      { type: "related", issue: "ENG-3" },
+      { type: "duplicate", issue: "ENG-6" },
+      { type: "blocked_by", issue: "ENG-4" },
+      { type: "duplicated_by", issue: "ENG-5" },
+    ]);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("fails a relation read on an unknown type or an incomplete page", async () => {
+    const unknown = tracker(() => ({
+      issue: {
+        relations: page([
+          { id: "r1", type: "causes", relatedIssue: { identifier: "ENG-2" } },
+        ]),
+      },
+    }));
+    await expect(unknown.t.listRelations("ENG-1")).rejects.toThrow(
+      "unknown relation type 'causes'",
+    );
+    const partial = tracker(() => ({
+      issue: {
+        relations: { pageInfo: { hasNextPage: true }, nodes: [] },
+      },
+    }));
+    await expect(partial.t.listRelations("ENG-1")).rejects.toThrow("cursor");
+  });
+
+  it("relates two issues by their tracker ids", async () => {
+    const { t, calls } = filing();
+    await t.relate("ENG-1", "blocks", "ENG-2");
+    expect(calls.at(-1)?.variables).toEqual({
+      input: {
+        issueId: "uuid-ENG-1",
+        relatedIssueId: "uuid-ENG-2",
+        type: "blocks",
+      },
+    });
+  });
+
+  it("records a duplicate with the duplicate as the issue and the original as the related issue", async () => {
+    const { t, calls } = filing();
+    await t.relate("ENG-7", "duplicate", "ENG-2");
+    expect(calls.at(-1)?.variables).toEqual({
+      input: {
+        issueId: "uuid-ENG-7",
+        relatedIssueId: "uuid-ENG-2",
+        type: "duplicate",
+      },
+    });
+  });
+
+  it("refuses a relation to itself, an unknown type, and one not accepted", async () => {
+    const { t, calls } = filing();
+    await expect(t.relate("ENG-1", "blocks", "ENG-1")).rejects.toThrow(
+      "itself",
+    );
+    await expect(
+      t.relate("ENG-1", "causes" as "blocks", "ENG-2"),
+    ).rejects.toThrow("not a relation type");
+    expect(calls).toHaveLength(0);
+    const refused = filing((call) =>
+      call.query.includes("TrackerRelate(")
+        ? { issueRelationCreate: { success: false } }
+        : undefined,
+    );
+    await expect(refused.t.relate("ENG-1", "related", "ENG-2")).rejects.toThrow(
+      "did not succeed",
+    );
+  });
+});

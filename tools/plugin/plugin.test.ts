@@ -1086,6 +1086,40 @@ test("code-stats runs from the plugin copy and reads the consumer's code_stats",
   expect(report.byArea.product?.files).toBe(1);
 });
 
+test("file-issue lints and validates against the consumer's configured taxonomy from the plugin copy", () => {
+  const consumer = consumerRepo(
+    "file-issue",
+    "issue_tracker:\n  team: TASK\n  taxonomy: docs/labels.yaml\n",
+  );
+  mkdirSync(join(consumer, "docs"));
+  writeFileSync(
+    join(consumer, "docs", "labels.yaml"),
+    `version: 1
+types: [{id: feature}, {id: bug}]
+statuses: [{id: todo}, {id: done}]
+groups:
+  - {id: size, required: true, labels: [{id: small}, {id: large}]}
+categories:
+  - {id: area, prefix: "area:", labels: [{id: api}]}
+`,
+  );
+  const scripts = join(scratch, "cache", "skills", "file-issue", "scripts");
+  const run = (script: string, args: string[]) =>
+    spawnSync(process.execPath, [join(scripts, script), ...args], {
+      cwd: join(consumer, "docs"),
+      env,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  const lint = run("check-label-taxonomy.ts", []);
+  expectSpawnExit({ ...lint, exitCode: lint.status }, 0);
+  expect(lint.stdout).toContain("groups=1, categories=1");
+  const valid = run("validate-labels.ts", ["feature", "small", "area:api"]);
+  expectSpawnExit({ ...valid, exitCode: valid.status }, 0);
+  const invalid = run("validate-labels.ts", ["feature", "small", "large"]);
+  expectSpawnExit({ ...invalid, exitCode: invalid.status }, 3);
+});
+
 test("change-areas resolves and checks the consumer's catalog from the plugin copy", () => {
   const consumer = consumerRepo(
     "change-areas",

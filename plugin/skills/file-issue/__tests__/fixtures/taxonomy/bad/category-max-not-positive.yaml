@@ -1,0 +1,17 @@
+# BAD — the area category's `max:` is zero; a limit must be a positive integer.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+categories:
+  - id: area
+    prefix: "area:"
+    max: 0
+    labels:
+      - id: billing

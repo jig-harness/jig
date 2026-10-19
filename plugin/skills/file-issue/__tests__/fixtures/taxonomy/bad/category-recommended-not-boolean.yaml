@@ -1,0 +1,17 @@
+# BAD — the area category's `recommended:` is a number, not true or false.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+categories:
+  - id: area
+    prefix: "area:"
+    recommended: 1
+    labels:
+      - id: billing

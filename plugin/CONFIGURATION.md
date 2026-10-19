@@ -333,7 +333,8 @@ not resolve it either.
 | `issue_tracker.labels.pattern_prefix` | text | `pattern:` | do-item, reflect, review-reflections | A recurring pattern's label is `<prefix><slug>`; a reflection class's issue is `<prefix><class>` |
 | `issue_tracker.labels.batch_sizes` | list of labels | `[xs, small, medium]` | do-item, work-batch | Sizes whose issues the batch check may group into one pull request |
 | `issue_tracker.labels.extractable_tails` | list of labels | `<hitl>:legal`, `<hitl>:tactical`, `<manual_ops>`, `<followup>` | do-item | Open sub-issues an epic may hand off instead of finishing |
-| `issue_tracker.file_command` | text | Ask the user to file the issue | do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections | How an agent files a new issue by hand, such as a slash command |
+| `issue_tracker.file_command` | text | Ask the user to file the issue | do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections | How an agent files a new issue by hand, such as a slash command. `/jig:file-issue` files it through the tracker scripts, with its labels checked against the label taxonomy |
+| `issue_tracker.taxonomy` | path, relative to the root or absolute | `label-taxonomy.yaml` | file-issue | The repository's [label taxonomy](https://github.com/jig-harness/jig/blob/main/modules/M9-tasks-memory/README.md): every label an issue may carry, in families, with the rules between them. `file-issue` checks each issue's labels against it before writing, and refuses to file while it is missing or fails its lint |
 
 ## `do_item`
 
@@ -704,7 +705,8 @@ ci:
 issue_tracker:
   adapter: linear
   team: ENG                              # required by the tracker scripts
-  file_command: "linear issue create"
+  file_command: /jig:file-issue
+  taxonomy: docs/label-taxonomy.yaml
   states:
     triage: Triage
     backlog: Backlog

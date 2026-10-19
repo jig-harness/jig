@@ -1,0 +1,16 @@
+# BAD — the area category has no `prefix:`, so its labels would have no name of
+# their own.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+categories:
+  - id: area
+    labels:
+      - id: billing
