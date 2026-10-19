@@ -9,7 +9,8 @@
 // first element is the literal `linear`; a call whose first argument is
 // `linear` and whose second is an argument list written out; a call to a
 // process launcher (`spawnSync`, `execFile`, `Bun.spawn`, `subprocess.run`,
-// …), or to a name the file binds to one, whose first argument is `linear`;
+// …) on any receiver, or to a name the file binds to one, whose first
+// argument is `linear`;
 // or a command line `linear <subcommand>`. A call to any other function with
 // `linear` first (`console.log("linear", v)`) names the client without
 // running it. Runs are looked for in the file's text as written, with any
@@ -155,7 +156,8 @@ function subprocessImports(code: string): string[] {
 
 /**
  * The names a file binds to a launcher: `import { execFileSync as run }`,
- * `const { spawnSync: run } = …`, `const run = cp.spawnSync`,
+ * `const { spawnSync: run } = …`, `const run = cp.spawnSync` (on any
+ * receiver: `this.cp.spawnSync`, `require(…).spawnSync`),
  * `from subprocess import run` or `… import (call, run as r)`, and
  * `import subprocess as sp`'s module name; followed through a chain of such
  * bindings.
@@ -184,7 +186,7 @@ function launcherNames(code: string): {
     for (const pattern of [
       String.raw`(?<![\w$])(?:${known})${GAP1}as${GAP1}(${IDENT})`,
       String.raw`(?<![\w$.])(?:${known})${GAP}:${GAP}(${IDENT})`,
-      String.raw`\b(?:const|let|var)${GAP1}(${IDENT})${GAP}=${GAP}(?:${qualified})(?![\w$]|${GAP}[(.])`,
+      String.raw`\b(?:const|let|var)${GAP1}(${IDENT})${GAP}=${GAP}(?:[^;\n]*?${DOT})?(?:${qualified})(?![\w$]|${GAP}[(.])`,
     ])
       for (const m of code.matchAll(new RegExp(pattern, "g")))
         names.add(m[1] as string);
@@ -207,7 +209,7 @@ function runPattern(code: string): RegExp {
     [
       String.raw`\[${GAP}${LINEAR}${GAP},`,
       String.raw`\(${GAP}${LINEAR}${GAP},${GAP}\[`,
-      String.raw`(?<![\w$.])(?:new${GAP1})?(?:${launcher})${GAP}\(${GAP}${LINEAR}`,
+      String.raw`(?<![\w$])(?:new${GAP1})?(?:${launcher})${GAP}\(${GAP}${LINEAR}`,
       String.raw`(?<![\w./-])linear[ \t]+(?:api|auth|config|issues?|teams?|projects?|labels?|cycles?|comments?|documents?|milestones?|initiatives?)\b`,
     ].join("|"),
     "g",

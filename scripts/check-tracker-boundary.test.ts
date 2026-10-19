@@ -126,6 +126,9 @@ describe("tokens", () => {
     ['const run = cp /* a */ . /* b */ spawnSync;\nrun("linear", args);'],
     ['cp /* launch */ .execFileSync("linear", args);'],
     ['new /* a */ Deno /* b */ . /* c */ Command("linear", { args });'],
+    ['require("node:child_process").execFileSync("linear", args);'],
+    ['this.cp.spawnSync("linear", args);'],
+    ['const run = this.cp.spawnSync;\nrun("linear", args);'],
   ])(
     "a call written around comments or through an alias is found: %s",
     (code) => {

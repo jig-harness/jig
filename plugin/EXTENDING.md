@@ -186,7 +186,7 @@ repository) keeps the rest of the plugin's code, and the planning skills'
 procedures, from reaching Linear except through the interface; the deferral
 step is the one file it still allows.
 
-Fixing it means adding attaching a file to the interface, moving the
+Fixing it means adding file attachment to the interface, moving the
 deferral step and the skills' instructions onto it, and renaming the
 Linear-named fields with their old names still read. Roadmap item 10 holds
 the deferral step and the names; item 12 holds the next
