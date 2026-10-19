@@ -496,12 +496,13 @@ export function parseMergeTree(output: string, clean: boolean): TreeMerge {
   readMessages(parts, messagesAt, (paths, type, message) => {
     const kind = conflictType(type);
     // A conflict git reports only in a message (a directory rename's file
-    // location, for one) has no staged entry: its paths are recorded anyway.
-    const staged = paths.some((path) => byPath.has(path));
-    const targets =
-      kind !== null && !staged
-        ? paths.map(entry)
-        : paths.flatMap((path) => byPath.get(path) ?? []);
+    // location, for one) has no staged entry: each such path is recorded
+    // anyway, whether or not another path of the message has stages.
+    const targets = paths.flatMap((path) => {
+      const found = byPath.get(path);
+      if (found) return [found];
+      return kind !== null ? [entry(path)] : [];
+    });
     for (const target of targets) {
       if (kind !== null && !target.conflicts.includes(kind))
         target.conflicts.push(kind);

@@ -9,6 +9,7 @@ import {
   resolveVersionSource,
   type VersionFile,
   type VersionSource,
+  versionSpan,
   withVersion,
 } from "../scripts/versions.ts";
 
@@ -193,6 +194,38 @@ describe("a version kept in a file", () => {
       ["a.json", "b/c.toml", "d.yml", "e.yaml", "VERSION"].map(isVersionFile),
     ).toEqual([true, true, true, true, true]);
     expect(isVersionFile("setup.py")).toBe(false);
+  });
+});
+
+describe("where the version is written", () => {
+  const at = (text: string, span: [number, number] | null) =>
+    span === null ? null : [text.slice(0, span[0]), text.slice(...span)];
+
+  test("the one value the release step edits, at its full key", () => {
+    const toml = `name = "p"\nproject.version = "1.0.0"\n\n[tool.dep]\nversion = "1.0.0"\n`;
+    expect(
+      at(toml, versionSpan(file("pyproject.toml", "project.version"), toml)),
+    ).toEqual(['name = "p"\nproject.version = "', "1.0.0"]);
+    const json = `{\n  "deps": { "version": "1.0.0" },\n  "version": "1.0.0"\n}\n`;
+    expect(at(json, versionSpan(file("package.json"), json))?.[0]).toBe(
+      `{\n  "deps": { "version": "1.0.0" },\n  "version": "`,
+    );
+    expect(at("1.2.3\n", versionSpan(file("VERSION", ""), "1.2.3\n"))).toEqual([
+      "",
+      "1.2.3",
+    ]);
+  });
+
+  test("none where the release step would refuse or finds no version", () => {
+    const twice = `[project]\nversion = "1.0.0"\n[project]\nversion = "1.0.0"\n`;
+    expect(versionSpan(file("pyproject.toml", "project.version"), twice)).toBe(
+      null,
+    );
+    const inline = `project = { version = "1.0.0" }\n`;
+    expect(versionSpan(file("pyproject.toml", "project.version"), inline)).toBe(
+      null,
+    );
+    expect(versionSpan(file("package.json"), `{"name": "p"}`)).toBe(null);
   });
 });
 

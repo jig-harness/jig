@@ -40,15 +40,17 @@ import { loadChangelogConfig } from "../../changelog/scripts/config.ts";
 import {
   derivedFiles,
   type VersionFile,
-  versionIn,
+  versionSpan,
 } from "../../changelog/scripts/versions.ts";
 import { prNumber } from "./conflict-map.ts";
 import {
   type Cause,
   isMechanical,
+  isProse,
   ordered,
   type Region,
   type RegionContext,
+  type ReleaseField,
   regionCause,
   type SideName,
 } from "./lib/causes.ts";
@@ -127,7 +129,9 @@ function parseDate(value: string | undefined, end: boolean): number | null {
   const match = value.match(DATE_ARG);
   if (!match) return null;
   const [, year, month, date] = match.map(Number) as number[];
-  const day = new Date(Date.UTC(year as number, (month as number) - 1, date));
+  // setUTCFullYear, unlike Date.UTC, reads a year below 100 as itself.
+  const day = new Date(0);
+  day.setUTCFullYear(year as number, (month as number) - 1, date);
   if (
     day.getUTCFullYear() !== year ||
     day.getUTCMonth() + 1 !== month ||
@@ -342,11 +346,23 @@ function regionCauseOf(
   texts: Record<SideName, string | null>,
   versionFiles: VersionFile[],
 ) {
-  const release = (side: SideName) => {
+  const release = (side: SideName): ReleaseField | null => {
+    const text = texts[side];
+    if (text === null) return null;
     for (const file of versionFiles) {
       if (file.path !== conflicted.path) continue;
-      const version = versionIn(file, texts[side]);
-      if (version) return { version, key: file.key };
+      const span = versionSpan(file, text);
+      if (span === null) continue;
+      const [from, to] = span;
+      const start = text.lastIndexOf("\n", from - 1) + 1;
+      const end = text.indexOf("\n", from);
+      const line = text.slice(start, end < 0 ? undefined : end);
+      return {
+        version: text.slice(from, to),
+        line: line.replace(/\r$/, ""),
+        start: from - start,
+        end: to - start,
+      };
     }
     return null;
   };
@@ -367,6 +383,7 @@ function regionCauseOf(
       ours: release("ours"),
       theirs: release("theirs"),
     },
+    prose: isProse(conflicted.path),
     netAbove: (side, line) => above[side](line),
   };
   return (region: Region) => regionCause(region, ctx);

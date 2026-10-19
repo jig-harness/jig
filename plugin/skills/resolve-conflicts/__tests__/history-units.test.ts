@@ -98,6 +98,12 @@ describe("the command line", () => {
       expect(typeof parseArgs(args, now)).toBe("string");
   });
 
+  it("reads a year below 100 as itself", () => {
+    expect(parseArgs(["--since", "0099-01-01"], now)).toMatchObject({
+      since: Date.parse("0099-01-01T00:00:00Z"),
+    });
+  });
+
   it("reads an ISO 8601 time with its offset", () => {
     expect(
       parseArgs(["--since", "2026-01-01T10:00:00+02:00"], now),
@@ -157,6 +163,25 @@ describe("merge-tree's output", () => {
     expect(parsed.paths.map((p) => [p.path, p.conflicts, p.stages])).toEqual([
       ["old/f", ["file location"], { base: null, ours: null, theirs: null }],
       ["new/f", ["file location"], { base: null, ours: null, theirs: null }],
+    ]);
+  });
+
+  it("keeps a message-only path when another path of the message has stages", () => {
+    const out = [
+      "tree0",
+      "100644 b2 2\tnew/f",
+      "",
+      "2",
+      "old/f",
+      "new/f",
+      "CONFLICT (file location)",
+      "CONFLICT (file location): old/f added in feat inside a directory that was renamed in main.\n",
+      "",
+    ].join("\0");
+    const parsed = parseMergeTree(out, false);
+    expect(parsed.paths.map((p) => [p.path, p.conflicts])).toEqual([
+      ["new/f", ["file location"]],
+      ["old/f", ["file location"]],
     ]);
   });
 
@@ -225,8 +250,10 @@ describe("the cause rules", () => {
     inBase: true,
     file: { base: null, ours: null, theirs: null },
     release: { base: null, ours: null, theirs: null },
+    prose: false,
     netAbove: () => null,
   };
+  const prose: RegionContext = { ...none, prose: true };
 
   it("aligns lines and names the changed stretches of the base", () => {
     expect(edit(["a", "b", "c"], ["a", "x", "c", "d"])).toEqual({
@@ -249,35 +276,76 @@ describe("the cause rules", () => {
 
   it("packed-list: items added on both sides; a removed item is not", () => {
     expect(
-      isPackedList({
-        base: ["a, b and c"],
-        ours: ["a, b, c and d"],
-        theirs: ["a, b, c and e"],
-      }),
+      isPackedList(
+        {
+          base: ["a, b and c"],
+          ours: ["a, b, c and d"],
+          theirs: ["a, b, c and e"],
+        },
+        prose,
+      ),
     ).toBe(true);
     expect(
-      isPackedList({
-        base: ["[a, b]"],
-        ours: ["[a, x]"],
-        theirs: ["[a, b, c]"],
-      }),
+      isPackedList(
+        {
+          base: ["[a, b]"],
+          ours: ["[a, x]"],
+          theirs: ["[a, b, c]"],
+        },
+        none,
+      ),
+    ).toBe(false);
+  });
+
+  it("packed-list: a changed separator is not an added item", () => {
+    expect(
+      isPackedList(
+        {
+          base: ["return a | b;"],
+          ours: ["return a | b | c;"],
+          theirs: ["return a, b, d;"],
+        },
+        none,
+      ),
+    ).toBe(false);
+    expect(
+      isPackedList(
+        {
+          base: ["a, b and c"],
+          ours: ["a, b, c and d"],
+          theirs: ["a, b, c and e"],
+        },
+        none,
+      ),
+    ).toBe(false);
+    expect(
+      isPackedList(
+        { base: ["a or b"], ours: ["a and b and c"], theirs: ["a, b, d"] },
+        prose,
+      ),
     ).toBe(false);
   });
 
   it("packed-list: a change to an existing item is not an added item", () => {
     expect(
-      isPackedList({
-        base: ["return [a, b];"],
-        ours: ["return [a, b, c];"],
-        theirs: ["return [a, b(), d];"],
-      }),
+      isPackedList(
+        {
+          base: ["return [a, b];"],
+          ours: ["return [a, b, c];"],
+          theirs: ["return [a, b(), d];"],
+        },
+        none,
+      ),
     ).toBe(false);
     expect(
-      isPackedList({
-        base: ["return [a, b];"],
-        ours: ["return [a, b, c];"],
-        theirs: ["return [d, a, b];"],
-      }),
+      isPackedList(
+        {
+          base: ["return [a, b];"],
+          ours: ["return [a, b, c];"],
+          theirs: ["return [d, a, b];"],
+        },
+        none,
+      ),
     ).toBe(true);
   });
 
@@ -315,22 +383,21 @@ describe("the cause rules", () => {
     ).toBe(false);
   });
 
-  it("version: only the configured field's value is the release version", () => {
-    const release = (version: string) => ({ version, key: "version" });
-    const ctx: RegionContext = {
-      ...none,
-      release: { base: null, ours: release("1.1.0"), theirs: release("1.0.1") },
+  it("version: only the configured field's line is the release version", () => {
+    const field = (line: string, version: string) => {
+      const start = line.indexOf(version);
+      return { version, line, start, end: start + version.length };
     };
-    expect(
-      isVersion(
-        {
-          base: ['{"version":"1.0.0","dependencies":{"lib":"1.0.0"}}'],
-          ours: ['{"version":"1.1.0","dependencies":{"lib":"1.1.0"}}'],
-          theirs: ['{"version":"1.0.1","dependencies":{"lib":"1.0.1"}}'],
-        },
-        ctx,
-      ),
-    ).toBe(false);
+    const pkg = (v: string) => ["{", `  "version": "${v}",`, "}"];
+    const ctx = (ours: string[], theirs: string[]): RegionContext => ({
+      ...none,
+      file: { base: null, ours, theirs },
+      release: {
+        base: null,
+        ours: field('  "version": "1.1.0",', "1.1.0"),
+        theirs: field('  "version": "1.0.1",', "1.0.1"),
+      },
+    });
     expect(
       isVersion(
         {
@@ -338,17 +405,32 @@ describe("the cause rules", () => {
           ours: ['  "version": "1.1.0",'],
           theirs: ['  "version": "1.0.1",'],
         },
-        ctx,
+        ctx(pkg("1.1.0"), pkg("1.0.1")),
       ),
     ).toBe(true);
+    // The same text twice in the file: the region's line may be the other one.
     expect(
       isVersion(
         {
-          base: ['  "version": "1.0.0",', '    "version": "1.0.0"'],
-          ours: ['  "version": "1.1.0",', '    "version": "1.1.0"'],
-          theirs: ['  "version": "1.0.1",', '    "version": "1.0.1"'],
+          base: ['  "version": "1.0.0",'],
+          ours: ['  "version": "1.1.0",'],
+          theirs: ['  "version": "1.0.1",'],
         },
-        ctx,
+        ctx(
+          [...pkg("1.1.0"), '  "version": "1.1.0",'],
+          [...pkg("1.0.1"), '  "version": "1.0.1",'],
+        ),
+      ),
+    ).toBe(false);
+    // Another line with the same value is not the field.
+    expect(
+      isVersion(
+        {
+          base: ['    "lib": "1.0.0"'],
+          ours: ['    "lib": "1.1.0"'],
+          theirs: ['    "lib": "1.0.1"'],
+        },
+        ctx(pkg("1.1.0"), pkg("1.0.1")),
       ),
     ).toBe(false);
   });

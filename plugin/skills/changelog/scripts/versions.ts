@@ -200,7 +200,8 @@ export function releasableVersion(
   return version;
 }
 
-type Span = [start: number, end: number];
+/** Where a value sits in a file's text: from `start` up to `end`. */
+export type Span = [start: number, end: number];
 
 /** Whether `a` and `b` are the same path. */
 const same = (a: readonly string[], b: readonly string[]) =>
@@ -480,6 +481,36 @@ function yamlSpans(text: string, target: readonly string[]): Span[] {
   return found;
 }
 
+/** The positions of the values at a key, per kind of file. */
+const SPANS = { json: jsonSpans, toml: tomlSpans, yaml: yamlSpans };
+
+/**
+ * Where in `text` the release step writes the version: the one span
+ * `withVersion` edits, holding the version `readVersion` reads. Null when the
+ * file holds no readable version there, or holds it in a form `withVersion`
+ * refuses (written twice, escaped, or inside an inline table).
+ */
+export function versionSpan(file: VersionFile, text: string): Span | null {
+  const version = versionIn(file, text);
+  if (version === null) return null;
+  const kind = kindOf(file.path);
+  if (kind === "plain") {
+    const start = text.indexOf(version);
+    return [start, start + version.length];
+  }
+  let spans: Span[];
+  try {
+    spans = SPANS[kind](text, parseField(file.key));
+  } catch (error) {
+    swallow(error, `${file.path}: ${file.key} is not written in place`);
+    return null;
+  }
+  const [start, end] = spans.length === 1 ? (spans[0] ?? [0, 0]) : [0, 0];
+  return spans.length === 1 && text.slice(start, end) === version
+    ? [start, end]
+    : null;
+}
+
 /** The most values an expanded version file may hold. */
 const MAX_VALUES = 100_000;
 
@@ -558,10 +589,7 @@ export function withVersion(
     throw new ChangelogError(
       `${name}: ${file.key} holds ${JSON.stringify(held)}, not the version ${from}`,
     );
-  const spans = { json: jsonSpans, toml: tomlSpans, yaml: yamlSpans }[kind](
-    text,
-    path,
-  );
+  const spans = SPANS[kind](text, path);
   if (spans.length !== 1)
     throw new ChangelogError(
       `${name}: expected ${file.key} to be written once as "${from}", found ${spans.length}`,

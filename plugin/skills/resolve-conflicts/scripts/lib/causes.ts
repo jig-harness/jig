@@ -67,6 +67,20 @@ export function isSourceCode(path: string): boolean {
   return CODE_EXTENSIONS.has(ext);
 }
 
+const PROSE_EXTENSIONS = new Set([
+  "md",
+  "markdown",
+  "mdx",
+  "txt",
+  "rst",
+  "adoc",
+]);
+
+/** Whether `path` is prose, by its extension. */
+export function isProse(path: string): boolean {
+  return PROSE_EXTENSIONS.has(posix.extname(path).slice(1).toLowerCase());
+}
+
 /** The remedy for `cause` at `path`. */
 export function remedyFor(cause: Cause, path: string): string {
   return cause === "append" && isSourceCode(path)
@@ -205,14 +219,28 @@ export interface Region {
 
 export type SideName = "base" | "ours" | "theirs";
 
+/**
+ * The line of a file that holds the release version at the configured key,
+ * found as the release step finds it: the whole line, and where the version
+ * sits in it.
+ */
+export interface ReleaseField {
+  version: string;
+  line: string;
+  start: number;
+  end: number;
+}
+
 /** What a rule may read beyond the region. */
 export interface RegionContext {
   /** Whether the file existed in the merge base; a file both sides added did not. */
   inBase: boolean;
   /** The whole file in each version, as lines; null where that version is absent or unreadable. */
   file: Record<SideName, string[] | null>;
-  /** The release version each version of the file holds at a key the release step writes, if the path is a version file. */
-  release: Record<SideName, { version: string; key: string } | null>;
+  /** Where each version of the file holds the release version the release step writes, if the path is a version file. */
+  release: Record<SideName, ReleaseField | null>;
+  /** Whether the file is prose, where a list's items are separated by commas and a closing `and` or `or`. */
+  prose: boolean;
   /**
    * The net number of lines `side` added to the file above line `line`
    * (1-based) of the base version; null when it cannot be told.
@@ -260,41 +288,27 @@ const DATE =
 const PLACEHOLDER_VERSION = "\u0000version\u0000";
 const PLACEHOLDER_DATE = "\u0000date\u0000";
 
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * The release field's value where the line assigns it: the key (bare or
- * quoted), `:` or `=`, then the version (bare or quoted). With no key named,
- * the version alone.
- */
-function releaseField(release: { version: string; key: string }): RegExp {
-  const keyName = release.key.split(".").at(-1) ?? "";
-  const version = `(?<![\\w.])${escapeRegExp(release.version)}(?![\\w.])`;
-  if (keyName === "") return new RegExp(`()${version}`);
-  return new RegExp(
-    `((?<![\\w.-])["']?${escapeRegExp(keyName)}["']?\\s*[:=]\\s*["']?)${version}`,
-  );
-}
-
 /**
  * The lines with the release version masked where the release field holds it
- * (once: the field appears once in its file, so another field of the same
- * name and value stays as it is) and every date stamp masked.
+ * and every date stamp masked. The field's line is told by its whole text,
+ * which must stand once in the file: another line with the same text could be
+ * the one in the region, so then nothing is masked.
  */
 function stamped(
   lines: readonly string[],
-  release: { version: string; key: string } | null,
+  release: ReleaseField | null,
+  file: readonly string[] | null,
 ): string[] {
-  const field = release === null ? null : releaseField(release);
-  let masked = false;
+  const field =
+    release !== null &&
+    file !== null &&
+    file.filter((line) => line === release.line).length === 1
+      ? release
+      : null;
   return lines.map((line) => {
     let out = line;
-    if (field !== null && !masked && field.test(out)) {
-      out = out.replace(field, `$1${PLACEHOLDER_VERSION}`);
-      masked = true;
-    }
+    if (field !== null && line === field.line)
+      out = `${line.slice(0, field.start)}${PLACEHOLDER_VERSION}${line.slice(field.end)}`;
     if (DATE_STAMP_KEY.test(out)) out = out.replace(DATE, PLACEHOLDER_DATE);
     return out;
   });
@@ -306,8 +320,8 @@ function stamped(
  * nowhere else), or in a date stamp.
  */
 export function isVersion(r: Region, ctx: RegionContext): boolean {
-  const ours = stamped(r.ours, ctx.release.ours);
-  const theirs = stamped(r.theirs, ctx.release.theirs);
+  const ours = stamped(r.ours, ctx.release.ours, ctx.file.ours);
+  const theirs = stamped(r.theirs, ctx.release.theirs, ctx.file.theirs);
   return !same(r.ours, r.theirs) && same(ours, theirs);
 }
 
@@ -442,19 +456,34 @@ export function isAppend(r: Region, ctx: RegionContext): boolean {
 }
 
 /** A separator between the items of a list written on one line. */
-const SEPARATOR_TOKENS = new Set([",", ";", "|", "and", "or"]);
+const SEPARATORS = new Set([",", ";", "|", "and", "or"]);
 
-const SEPARATOR = "\u0000separator\u0000";
+/** The separators of a prose list, which a list growing moves: `b and c` becomes `b, c and d`. */
+const PROSE_SEPARATORS = new Set([",", "and", "or"]);
+
+const CONJUNCTIONS = ["and", "or"];
+
+const PROSE_SEPARATOR = "\u0000separator\u0000";
 
 /**
  * A line as tokens: each run of letters, digits and `_`, and each other
- * non-blank character; every separator is one token, so `b and c` growing
- * into `b, c and d` keeps its items in place.
+ * non-blank character. In prose a comma and a closing `and` or `or` are one
+ * token, so `b and c` growing into `b, c and d` keeps its items in place;
+ * elsewhere every separator is itself, since `a | b` and `a, b` differ.
  */
-function tokens(line: string): string[] {
+function tokens(line: string, prose: boolean): string[] {
   return (line.match(/[\p{L}\p{N}_]+|\S/gu) ?? []).map((token) =>
-    SEPARATOR_TOKENS.has(token) ? SEPARATOR : token,
+    prose && PROSE_SEPARATORS.has(token) ? PROSE_SEPARATOR : token,
   );
+}
+
+const isSeparator = (token: string): boolean =>
+  token === PROSE_SEPARATOR || SEPARATORS.has(token);
+
+/** How many times each of `words` stands in `line` as a word, as text. */
+function wordCounts(line: string, words: readonly string[]): string[] {
+  const all = line.match(/[\p{L}\p{N}_]+/gu) ?? [];
+  return words.map((word) => String(all.filter((w) => w === word).length));
 }
 
 /**
@@ -463,9 +492,15 @@ function tokens(line: string): string[] {
  * starts or ends at a separator, so it is a whole item, not a change to one
  * (`b` becoming `b()` inserts `(` `)`, which is not an item).
  */
-function addsItems(from: string, to: string): boolean {
-  const before = tokens(from);
-  const after = tokens(to);
+function addsItems(from: string, to: string, prose: boolean): boolean {
+  // A prose list keeps its conjunctions: `a or b` becoming `a and b and c` changes the list.
+  if (
+    prose &&
+    !same(wordCounts(from, CONJUNCTIONS), wordCounts(to, CONJUNCTIONS))
+  )
+    return false;
+  const before = tokens(from, prose);
+  const after = tokens(to, prose);
   const pairs = align(before, after);
   if (pairs === null || pairs.length !== before.length) return false;
   let inserted = 0;
@@ -475,7 +510,7 @@ function addsItems(from: string, to: string): boolean {
     if (run.length > 0) {
       const first = run[0] as string;
       const last = run.at(-1) as string;
-      if (run.length < 2 || (first !== SEPARATOR && last !== SEPARATOR))
+      if (run.length < 2 || (!isSeparator(first) && !isSeparator(last)))
         return false;
       inserted++;
     }
@@ -485,13 +520,13 @@ function addsItems(from: string, to: string): boolean {
 }
 
 /** `packed-list`: the region is one line in every side, and each side adds items to a list in it. */
-export function isPackedList(r: Region): boolean {
+export function isPackedList(r: Region, ctx: RegionContext): boolean {
   if (r.base.length !== 1 || r.ours.length !== 1 || r.theirs.length !== 1)
     return false;
   const base = r.base[0] as string;
   return (
-    addsItems(base, r.ours[0] as string) &&
-    addsItems(base, r.theirs[0] as string)
+    addsItems(base, r.ours[0] as string, ctx.prose) &&
+    addsItems(base, r.theirs[0] as string, ctx.prose)
   );
 }
 
@@ -523,7 +558,7 @@ export function regionCause(r: Region, ctx: RegionContext): Cause {
   if (isSequence(r, ctx)) return "sequence";
   if (isTally(r, ctx)) return "tally";
   if (isAppend(r, ctx)) return "append";
-  if (isPackedList(r)) return "packed-list";
+  if (isPackedList(r, ctx)) return "packed-list";
   if (isAdjacent(r)) return "adjacent";
   return "overlap";
 }

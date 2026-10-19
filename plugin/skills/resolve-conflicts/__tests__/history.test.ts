@@ -196,6 +196,36 @@ describe("causes, one scratch merge each", () => {
     expect(causesOf("doc.md", rep)).toEqual(["version"]);
   });
 
+  it("version: a dotted TOML key is the release field; a same-valued key elsewhere is not", () => {
+    s.overlay(
+      "changelog:\n  file: CHANGELOG.md\n  version:\n    files:\n      - { path: pyproject.toml, key: project.version }\n",
+    );
+    const gap = Array.from({ length: 6 }, (_, i) => `k${i} = ${i}`).join("\n");
+    const toml = (v: string) =>
+      `name = "x"\nproject.version = "${v}"\n${gap}\n\n[tool.dep]\nversion="${v}"\n`;
+    merge(
+      { "pyproject.toml": toml("1.0.0") },
+      { "pyproject.toml": toml("1.1.0") },
+      { "pyproject.toml": toml("1.0.1") },
+    );
+    expect(causesOf("pyproject.toml")).toEqual(["version", "overlap"]);
+  });
+
+  it("version: the field's line written twice in the file is not told apart, so it stays overlap", () => {
+    s.overlay(
+      "changelog:\n  file: CHANGELOG.md\n  version:\n    files:\n      - { path: pyproject.toml, key: project.version }\n",
+    );
+    const gap = Array.from({ length: 6 }, (_, i) => `k${i} = ${i}`).join("\n");
+    const toml = (v: string) =>
+      `[project]\nname = "x"\nversion = "${v}"\n${gap}\n\n[tool.dep]\nversion = "${v}"\n`;
+    merge(
+      { "pyproject.toml": toml("1.0.0") },
+      { "pyproject.toml": toml("1.1.0") },
+      { "pyproject.toml": toml("1.0.1") },
+    );
+    expect(causesOf("pyproject.toml")).toEqual(["overlap", "overlap"]);
+  });
+
   it("version: a dependency's version, or a version file nobody releases, stays overlap", () => {
     const pkg = (v: string, dep: string) =>
       `{\n  "name": "x",\n  "version": "${v}",\n  "dependencies": {\n    "lib": "${dep}"\n  }\n}\n`;
@@ -292,6 +322,15 @@ describe("causes, one scratch merge each", () => {
       { "skills.yaml": "name: x\nskills: [audit, review, reflect]\nend: y\n" },
     );
     expect(causesOf("skills.yaml")).toEqual(["packed-list"]);
+  });
+
+  it("packed-list: a prose list grows by moving its closing and", () => {
+    merge(
+      { "notes.md": "# Notes\n\nIt reads a, b and c.\n\nEnd.\n" },
+      { "notes.md": "# Notes\n\nIt reads a, b, c and d.\n\nEnd.\n" },
+      { "notes.md": "# Notes\n\nIt reads a, b, c and e.\n\nEnd.\n" },
+    );
+    expect(causesOf("notes.md")).toEqual(["packed-list"]);
   });
 
   it("adjacent: the changed lines touch without overlapping", () => {

@@ -516,11 +516,11 @@ the whole path, with git's own kind of conflict (`modify/delete`, `binary`,
 | `derived` | the path is a lockfile or a generated file, as `conflict-map.ts` classes it | regenerate it; keep it out of pull requests if a step after the merge can write it |
 | `structural` | git reports the conflict without text regions: modify/delete, rename, binary, file/directory, mode (a text conflict whose regions cannot be read is `overlap`) | none from the regions; resolving it stays a decision |
 | `echo` | the sides are identical, or one side's edit (adding at least one line) is already in the other, in the same order | keep the side that contains the other; rebuild a branch on its base once the branch it was built on merges |
-| `version` | the sides differ only in the release version the changelog skill's release step writes (`changelog.version`), where its key is assigned, or in a last-updated date | move the version after the merge; take a date from git |
+| `version` | the sides differ only in the release version the changelog skill's release step writes (`changelog.version`), at the one place that step writes it, or in a last-updated date | move the version after the merge; take a date from git |
 | `sequence` | both sides only add lines, among them an entry with the same next ordinal, one past the base's highest | identifiers that cannot collide, or one renumbering step |
 | `tally` | only numbers differ, and each side's number moved by the lines that side added to the file, or added above the line it names | derive the number where it is used; key a register by name, not line |
 | `append` | the base side is empty: both sides added lines at the same place (not in a file both sides added, which had no base) | one file per entry, or a sorted list with one entry per line; in source code the report asks whether it is the same fix written twice |
-| `packed-list` | one line in every side, and each side only adds whole items to a list in it, changing none | one item per line |
+| `packed-list` | one line in every side, and each side only adds whole items to a list in it, changing no item or separator (in prose, a closing `and` or `or` may move) | one item per line |
 | `adjacent` | the lines each side changed touch but do not overlap | split what changes for different reasons onto lines or files of its own |
 | `overlap` | none of the above | two pieces of work changed the same thing: plan them apart, or land one first |
 
