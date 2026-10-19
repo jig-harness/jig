@@ -410,7 +410,7 @@ fields:
     type: list
     items: { type: map, values_type: string }
     read_by: [resolve-conflicts]
-    since: next
+    since: 0.62.0
   github_actions.conventions_doc:
     type: path
     exists: expected

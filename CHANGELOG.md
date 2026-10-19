@@ -316,6 +316,30 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.62.0] - 2026-10-19
+
+### Added
+
+- Conflict resolution accepts repository obligations over the whole resolved
+  diff, including automatically merged files and hunks, with optional
+  validation commands. Each command runs only while every tracked file on
+  disk matches the staged tree, including submodules and files Git is told
+  not to compare, and a command that changes either stops the commands after
+  it and invalidates the run.
+
+### Changed
+
+- **Breaking:** Conflict resolution requires Git 2.40 or newer to reconstruct
+  the automatic merge result. Upgrade Git before using the skill. Picking or
+  reverting a merge commit with `-m` requires manual resolution and validation
+  because Git does not reliably retain the selected parent.
+
+### Fixed
+
+- Conflict resolution rejects staged paths outside the operation and manual
+  changes without recorded decisions, so unrelated staged work cannot ride
+  into its commit.
+
 ## [0.61.1] - 2026-10-18
 
 ### Changed
@@ -3074,7 +3098,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.61.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.62.0...HEAD
+[0.62.0]: https://github.com/jig-harness/jig/compare/v0.61.1...v0.62.0
 [0.61.1]: https://github.com/jig-harness/jig/compare/v0.61.0...v0.61.1
 [0.61.0]: https://github.com/jig-harness/jig/compare/v0.60.0...v0.61.0
 [0.60.0]: https://github.com/jig-harness/jig/compare/v0.59.0...v0.60.0
