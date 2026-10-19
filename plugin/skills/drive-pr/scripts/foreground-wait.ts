@@ -40,10 +40,10 @@
  * EXIT CODES are the helper's own and never a command's: a command's exit
  * status is never returned as this process's, because it would collide with the
  * control codes below. `wait` exits 0 finished with the command exiting 0;
- * 30 finished with the command failing (the `command-exit:` line carries its
+ * 30 finished with command failure or an unwitnessed process tree (the `command-exit:` line carries its
  * status and signal); 20 still running — call `wait` again, never `launch`;
  * 21 nothing of the launch is alive and no result was published; 2 usage / no
- * launch on record. `launch` exits 3 while an earlier launch is running, so a
+ * launch on record. `launch` exits 3 while an earlier launch is running or its tree is unresolved, so a
  * second copy of a push can never start beside the first.
  *
  * LIVENESS is the live (non-zombie) process tree under the launch's recorded
@@ -134,7 +134,7 @@ interface Result {
   signal: string | null;
   /** Why the runner itself ended the command (deadline, unwritable log). */
   note?: string;
-  /** Explicit completion proof for registry reconciliation; legacy or unknown is false. */
+  /** Registry proof requires true; helper commands retain legacy compatibility when absent. */
   treeWitnessed?: boolean;
 }
 
@@ -172,7 +172,10 @@ function readResult(dir: string): Result | "unreadable" | null {
     const r = JSON.parse(
       readFileSync(at(dir, "result.json"), "utf8"),
     ) as Result;
-    return Number.isInteger(r.exitCode) ? r : "unreadable";
+    return Number.isInteger(r.exitCode) &&
+      (r.treeWitnessed === undefined || typeof r.treeWitnessed === "boolean")
+      ? r
+      : "unreadable";
   } catch {
     return "unreadable";
   }
@@ -271,8 +274,14 @@ function deadlineSec(): number | null {
   return read.ok ? read.seconds : null;
 }
 
+/** Unwitnessed work retains its evidence and excludes another launch. */
+function unresolvedResult(result: Result | "unreadable" | null): boolean {
+  return result === "unreadable" || result?.treeWitnessed === false;
+}
+
 async function running(dir: string): Promise<boolean> {
-  if (readResult(dir) !== null) return false;
+  const result = readResult(dir);
+  if (result !== null) return unresolvedResult(result);
   if (readPid(dir, "launcher.pid") === null) {
     // Claimed but nothing recorded yet: mid-creation, unless the creator died.
     try {
@@ -353,6 +362,18 @@ async function startRunner(
   );
 }
 
+async function anyGenerationRunning(gens: number[]): Promise<boolean> {
+  for (const gen of gens) if (await running(genDir(gen))) return true;
+  return false;
+}
+
+/** Keep unresolved completion evidence even if it appears during a new claim. */
+function removeCompletedGenerations(gens: number[]): void {
+  for (const gen of gens)
+    if (!unresolvedResult(readResult(genDir(gen))))
+      rmSync(genDir(gen), { recursive: true, force: true });
+}
+
 async function launch(argv: string[]): Promise<number> {
   if (argv.length === 0) {
     console.error("foreground-wait: launch needs -- <command> [args...]");
@@ -369,7 +390,7 @@ async function launch(argv: string[]): Promise<number> {
   for (;;) {
     const gens = generations();
     const latest = gens.at(-1);
-    if (latest !== undefined && (await running(genDir(latest)))) {
+    if (await anyGenerationRunning(gens)) {
       console.error(
         "foreground-wait: an earlier launch is still running — call `wait`, never `launch`",
       );
@@ -384,8 +405,7 @@ async function launch(argv: string[]): Promise<number> {
     }
     const dir = genDir(next);
     writeAtomic(dir, "launcher.pid", String(process.pid));
-    for (const old of gens)
-      rmSync(genDir(old), { recursive: true, force: true });
+    removeCompletedGenerations(gens);
     await startRunner(dir, argv, next);
     return 0;
   }
@@ -420,6 +440,22 @@ function registerRunnerSnapshot(
   if (!self?.start) return false;
   publishProcessIdentity(registry, entry, self, resultFile);
   return true;
+}
+
+/** Test-only acknowledgment of identities already bound by the runner's tracker. */
+function acknowledgeCapture(
+  tree: ForegroundTreeState,
+  rows: PsRow[] | null,
+): void {
+  const marker = process.env.DRIVE_PR_FOREGROUND_WAIT_CAPTURE_ACK;
+  if (process.env.NODE_ENV === "test" && marker && rows !== null)
+    writeFileSync(
+      marker,
+      JSON.stringify({
+        root: tree.root,
+        targets: liveTargets(tree.targets, rows),
+      }),
+    );
 }
 
 function run(dir: string, argv: string[], entry: string | undefined): void {
@@ -493,6 +529,7 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
           rows,
           tree,
         );
+        acknowledgeCapture(tree, rows);
       })
       .finally(() => {
         pendingTracks--;
@@ -829,10 +866,14 @@ function finish(dir: string, result: Result | "unreadable"): number {
     return 1;
   }
   if (result.note) console.log(`foreground-wait: ${result.note}`);
+  if (result.treeWitnessed === false)
+    console.log(
+      "foreground-wait: process tree remains unverified; new launches are blocked",
+    );
   console.log(
     `command-exit: ${result.exitCode}${result.signal ? ` (signal ${result.signal})` : ""}`,
   );
-  return result.exitCode === 0 ? 0 : 30;
+  return result.exitCode === 0 && result.treeWitnessed !== false ? 0 : 30;
 }
 
 async function wait(maxSec: number): Promise<number> {
@@ -843,7 +884,11 @@ async function wait(maxSec: number): Promise<number> {
   }
   const dir = genDir(latest);
   const deadline = Date.now() + maxSec * 1000;
-  while ((await running(dir)) && Date.now() < deadline) {
+  while (
+    readResult(dir) === null &&
+    (await running(dir)) &&
+    Date.now() < deadline
+  ) {
     await new Promise((r) => setTimeout(r, WAIT_POLL_MS));
   }
   // Result first, then the log: a published result means the log is complete.

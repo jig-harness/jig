@@ -76,6 +76,11 @@ mailbox, foreground-wait records) in `.context/` at the root of the working
 tree, and it refuses to push or certify a tree with untracked files. Add
 `.context/` to the repository's `.gitignore`.
 
+Foreground waits preserve a command's exit status separately from confirmation
+that its process tree stopped. An unverified tree makes the helper fail even
+when the command exited successfully, and blocks another launch while keeping
+the earlier generation's process evidence.
+
 The drive also uses two fields `resolve-review-comments` already reads:
 `gates.command` (the complete local checks) and `review.bots` (reviewer
 identities). `review.job_pattern` and `review.required_checks` govern only the

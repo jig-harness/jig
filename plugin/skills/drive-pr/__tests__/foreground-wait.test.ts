@@ -21,6 +21,7 @@ import {
   captureProcessTree,
   signalIdentityTargets,
   forceIdentityTargetsAndWitness,
+  identityTargetsGone,
 } from "../../../shared/process-tree.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import {
@@ -40,6 +41,13 @@ const bunCommand = (source: string) => [process.execPath, "-e", source];
 const busy = "setInterval(() => {}, 1000)";
 const childTree = (source = busy, parent = busy) =>
   `Bun.spawn([process.execPath, '-e', ${JSON.stringify(source)}], {stdout:'ignore',stderr:'ignore'}); ${parent}`;
+
+const afterCapture = (marker: string, source: string, extraPids = "[]") =>
+  `(()=>{const fs=require("node:fs");const deadline=Date.now()+20000;const timer=setInterval(()=>{if(Date.now()>deadline)process.exit(99);try{const targets=JSON.parse(fs.readFileSync(${JSON.stringify(marker)},"utf8")).targets;if([process.pid,...${extraPids}].every(pid=>targets.some(target=>target.pid===pid))){clearInterval(timer);${source}}}catch{}},20);})();`;
+const captureEnv = (marker: string) => ({
+  NODE_ENV: "test",
+  DRIVE_PR_FOREGROUND_WAIT_CAPTURE_ACK: marker,
+});
 
 // Each case spawns several bun processes; the 5s default is too tight under load.
 const T = 60_000;
@@ -121,29 +129,45 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
-  test(
-    "a command exiting 20 or 21 is a finished command, not a control state",
-    () => {
-      for (const code of [20, 21]) {
+  for (const code of [20, 21])
+    test(
+      `a command exiting ${code} is a finished command, not a control state`,
+      () => {
         expectSpawnExit(
           run("launch", "--", ...bunCommand(`process.exit(${code})`)),
           0,
         );
-        const w = run("wait");
-        expectSpawnExit(w, 30);
-        expect(out(w)).toContain(`command-exit: ${code}`);
-        // Repeating wait still reports the finished command.
+        const waited = run("wait");
+        expectSpawnExit(waited, 30);
+        expect(out(waited)).toContain(`command-exit: ${code}`);
         expectSpawnExit(run("wait"), 30);
-      }
-    },
-    T,
-  );
+      },
+      T,
+    );
 
   test(
-    "a successful command exits wait with 0",
+    "a successful bound command exits wait with 0",
     () => {
-      expectSpawnExit(run("launch", "--", ...bunCommand("")), 0);
-      expectSpawnExit(run("wait"), 0);
+      const marker = join(cwd, "captured.json");
+      const command = afterCapture(
+        marker,
+        `console.log("bound-success");process.exit(0);`,
+      );
+      expectSpawnExit(
+        runWith(
+          { NODE_ENV: "test", DRIVE_PR_FOREGROUND_WAIT_CAPTURE_ACK: marker },
+          "launch",
+          "--",
+          ...bunCommand(command),
+        ),
+        0,
+      );
+      const waited = run("wait");
+      expectSpawnExit(waited, 0);
+      expect(out(waited)).toContain("bound-success");
+      expect(
+        JSON.parse(readFileSync(join(latestGen(), "result.json"), "utf8")),
+      ).toMatchObject({ exitCode: 0, treeWitnessed: true });
     },
     T,
   );
@@ -197,12 +221,14 @@ describe("foreground-wait.ts", () => {
   test(
     "repeated waits relay only output not yet shown",
     () => {
+      const capture = join(cwd, "output-capture.json");
       expectSpawnExit(
-        run(
+        runWith(
+          captureEnv(capture),
           "launch",
           "--",
           ...bunCommand(
-            "console.log('first'); setTimeout(() => console.log('second'), 3000)",
+            `console.log("first");setTimeout(()=>{${afterCapture(capture, 'console.log("second");')}},3000)`,
           ),
         ),
         0,
@@ -218,20 +244,68 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
+  const capturedCommand = async (marker: string, pids: number[]) => {
+    const deadline = Date.now() + 20000;
+    let complete = false;
+    while (!complete && Date.now() < deadline) {
+      try {
+        const capture = JSON.parse(readFileSync(marker, "utf8")) as {
+          targets: { pid: number }[];
+        };
+        complete = pids.every((pid) =>
+          capture.targets.some((target) => target.pid === pid),
+        );
+      } catch {
+        // The tracker has not published a complete acknowledgment yet.
+      }
+      if (!complete) await sleepMs(20);
+    }
+    expect(complete).toBe(true);
+  };
+
+  const capturedRunner = async (runner: number, pids: number[]) => {
+    const deadline = Date.now() + 20000;
+    let targets = await captureProcessTree(runner);
+    while (
+      !pids.every((pid) => targets?.some((target) => target.pid === pid)) &&
+      Date.now() < deadline
+    ) {
+      await sleepMs(20);
+      targets = await captureProcessTree(runner);
+    }
+    for (const pid of pids)
+      expect(targets?.some((target) => target.pid === pid)).toBe(true);
+    return targets ?? [];
+  };
+
   test(
     "a runner killed mid-command is not running forever: wait reports 21 once nothing is alive",
     async () => {
-      expectSpawnExit(run("launch", "--", ...bunCommand(busy)), 0);
-      for (let i = 0; i < 50 && pidOf("cmd.pid") === null; i++) {
-        await sleepMs(100);
-      }
-      // Kill the whole recorded tree, leaving zombies where a parent is gone.
-      for (const name of ["runner.pid", "cmd.pid"]) {
-        process.kill(pidOf(name) as number, "SIGKILL");
-      }
-      await sleepMs(300);
-      const w = run("wait", "--max-sec", "1");
-      expectSpawnExit(w, 21);
+      const ack = join(cwd, "killed-capture.json");
+      expectSpawnExit(
+        runWith(captureEnv(ack), "launch", "--", ...bunCommand(busy)),
+        0,
+      );
+      const ready = Date.now() + 20000;
+      while (pidOf("cmd.pid") === null && Date.now() < ready) await sleepMs(20);
+      const cmd = pidOf("cmd.pid") as number;
+      await capturedCommand(ack, [cmd]);
+      const runner = pidOf("runner.pid") as number;
+      const targets = await capturedRunner(runner, [cmd]);
+      const root = targets?.find((target) => target.pid === runner);
+      expect(root?.start).toBeTruthy();
+      // End the supervisor before its command so no terminal report can race
+      // this lost-supervisor fixture; then witness every captured identity.
+      await signalIdentityTargets(root ? [root] : [], "SIGKILL");
+      const deadline = Date.now() + 30000;
+      while (
+        !(await identityTargetsGone(root ? [root] : [])) &&
+        Date.now() < deadline
+      )
+        await sleepMs(20);
+      expect(await identityTargetsGone(root ? [root] : [])).toBe(true);
+      expect(await forceIdentityTargetsAndWitness(targets ?? [])).toBe(true);
+      expectSpawnExit(run("wait", "--max-sec", "30"), 21);
     },
     T,
   );
@@ -239,40 +313,61 @@ describe("foreground-wait.ts", () => {
   test(
     "pass cancellation reaches the runner and command",
     async () => {
-      // Stand-in for the driver's pass group: its own leader, like drive.ts's pass.
+      const ack = join(cwd, "pass-capture.json");
+      const bg = join(cwd, "pass-bg.pid");
       const pass = Bun.spawn(
-        [process.execPath, SCRIPT, "launch", "--", ...bunCommand(childTree())],
-        { cwd, detached: true, env: { ...process.env, ...PACING } },
+        [
+          process.execPath,
+          SCRIPT,
+          "launch",
+          "--",
+          ...bunCommand(
+            childTree(
+              `require("node:fs").writeFileSync(${JSON.stringify(bg)},String(process.pid));${busy}`,
+            ),
+          ),
+        ],
+        {
+          cwd,
+          detached: true,
+          env: { ...process.env, ...PACING, ...captureEnv(ack) },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
       );
-      await pass.exited;
+      expectSpawnExit(
+        {
+          exitCode: await pass.exited,
+          stdout: await new Response(pass.stdout).text(),
+          stderr: await new Response(pass.stderr).text(),
+        },
+        0,
+      );
+      const ready = Date.now() + 20000;
+      while (
+        (pidOf("cmd.pid") === null || !existsSync(bg)) &&
+        Date.now() < ready
+      )
+        await sleepMs(20);
       const runner = pidOf("runner.pid") as number;
-      const command = pidOf("cmd.pid");
-      // cmd.pid is published by the runner a moment after launch returns.
-      for (let i = 0; i < 50 && pidOf("cmd.pid") === null; i++) {
-        await sleepMs(100);
-      }
-      const cmdPid = (command ?? pidOf("cmd.pid")) as number;
-      expect(await alive(runner)).toBe(true);
-      expect(await alive(cmdPid)).toBe(true);
+      const command = pidOf("cmd.pid") as number;
+      const descendant = Number(readFileSync(bg, "utf8"));
+      await capturedCommand(ack, [command, descendant]);
+      const targets = await capturedRunner(runner, [command, descendant]);
       const cancellation = byPlatform(
         "Windows cancels a recorded tree; POSIX cancels a process group",
         { windows: "tree", posix: "group" },
       );
       if (cancellation === "group") process.kill(-pass.pid, "SIGTERM");
       else
-        await signalIdentityTargets(
-          (await captureProcessTree(runner)) ?? [],
-          "SIGKILL",
-        );
-      for (
-        let i = 0;
-        i < 50 && ((await alive(runner)) || (await alive(cmdPid)));
-        i++
-      ) {
-        await sleepMs(100);
+        expect(await forceIdentityTargetsAndWitness(targets ?? [])).toBe(true);
+      const deadline = Date.now() + 30000;
+      let gone = false;
+      while (!gone && Date.now() < deadline) {
+        gone = await identityTargetsGone(targets ?? []);
+        if (!gone) await sleepMs(20);
       }
-      expect(await alive(runner)).toBe(false);
-      expect(await alive(cmdPid)).toBe(false);
+      expect(gone).toBe(true);
     },
     T,
   );
@@ -391,15 +486,16 @@ describe("foreground-wait.ts", () => {
   test(
     "a command that exits on its own leaves no tracked descendant running when the result is published",
     async () => {
-      // The periodic tracker (every 200ms) captures the descendant; the
-      // command then exits 0 while the descendant, with its output
-      // redirected, lives on.
+      const capture = join(cwd, "descendant-capture.json");
+      // The command exits only after the tracker acknowledges both its own
+      // identity and the descendant, whose output is redirected.
       expectSpawnExit(
-        run(
+        runWith(
+          captureEnv(capture),
           "launch",
           "--",
           ...bunCommand(
-            `const child=Bun.spawn([process.execPath,"-e",${JSON.stringify(busy)}],{stdout:"ignore",stderr:"ignore"}); require("node:fs").writeFileSync("bg.pid",String(child.pid)); child.unref(); setTimeout(()=>process.exit(0),1500)`,
+            `const child=Bun.spawn([process.execPath,"-e",${JSON.stringify(busy)}],{stdout:"ignore",stderr:"ignore"}); require("node:fs").writeFileSync("bg.pid",String(child.pid)); child.unref(); ${afterCapture(capture, "process.exit(0);", "[child.pid]")}`,
           ),
         ),
         0,
@@ -488,7 +584,7 @@ describe("foreground-wait.ts", () => {
           "Bun reaps the inherited-pipe child on Windows; POSIX needs the runner deadline",
           { windows: "job-reaped", posix: "deadline" },
         );
-        expectSpawnExit(w, completion === "job-reaped" ? 0 : 30);
+        expectSpawnExit(w, 30);
         expect(out(w)).toContain(
           completion === "job-reaped" ? "command-exit: 0" : "command-exit: 124",
         );
@@ -572,12 +668,19 @@ describe("foreground-wait.ts", () => {
   test(
     "retained output is bounded at the writer and the truncation is reported",
     () => {
+      const capture = join(cwd, "retention-capture.json");
       // 20 MiB of output against a 16 MiB retention cap.
       expectSpawnExit(
-        run(
+        runWith(
+          captureEnv(capture),
           "launch",
           "--",
-          ...bunCommand('process.stdout.write("x".repeat(20971520))'),
+          ...bunCommand(
+            afterCapture(
+              capture,
+              'process.stdout.write("x".repeat(20971520));',
+            ),
+          ),
         ),
         0,
       );
@@ -827,50 +930,126 @@ describe("foreground-wait.ts", () => {
       T,
     );
 
-  test(
-    "a deadline supersedes natural exit while its cancellation capture remains blocked",
-    () => {
-      const shim = join(cwd, "shim");
-      const dir = join(cwd, "blocked-close");
-      mkdirSync(shim);
-      mkdirSync(dir);
-      writeFakeProgram(
-        join(shim, "powershell.exe"),
-        "#!/usr/bin/env bun\nsetTimeout(()=>process.exit(1),10000);\n",
-      );
-      const args = [
-        process.execPath,
-        SCRIPT,
-        "_run",
-        dir,
-        "fixture",
-        "--",
-        ...bunCommand("process.exit(0)"),
-      ];
-      const result = Bun.spawnSync(
-        [
+  for (const [timeout, exitCode] of [
+    ["1", 124],
+    ["20", 0],
+  ] as const)
+    test(
+      `blocked natural-exit cancellation preserves command status ${exitCode} and excludes later work`,
+      () => {
+        const shim = join(cwd, "shim");
+        const dir = join(stateRoot(), "gen-1");
+        mkdirSync(shim);
+        mkdirSync(dir, { recursive: true });
+        writeFakeProgram(
+          join(shim, "powershell.exe"),
+          "#!/usr/bin/env bun\nsetTimeout(()=>process.exit(1),10000);\n",
+        );
+        const args = [
           process.execPath,
-          "-e",
-          `Object.defineProperty(process,"platform",{value:"win32"});process.argv=${JSON.stringify(args)};await import(${JSON.stringify(SCRIPT)});`,
-        ],
-        {
-          cwd,
-          env: {
-            ...process.env,
-            ...PACING,
-            PATH: `${shim}${delimiter}${process.env.PATH}`,
-            DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "1",
-            DRIVE_PR_FOREGROUND_WAIT_CANCEL_MS: "2000",
+          SCRIPT,
+          "_run",
+          dir,
+          "fixture",
+          "--",
+          ...bunCommand("process.exit(0)"),
+        ];
+        const result = Bun.spawnSync(
+          [
+            process.execPath,
+            "-e",
+            `Object.defineProperty(process,"platform",{value:"win32"});process.argv=${JSON.stringify(args)};await import(${JSON.stringify(SCRIPT)});`,
+          ],
+          {
+            cwd,
+            env: {
+              ...process.env,
+              ...PACING,
+              PATH: `${shim}${delimiter}${process.env.PATH}`,
+              DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: timeout,
+              DRIVE_PR_FOREGROUND_WAIT_CANCEL_MS: "2000",
+            },
+            stdout: "pipe",
+            stderr: "pipe",
+            timeout: 10000,
           },
-          stdout: "pipe",
-          stderr: "pipe",
-          timeout: 10000,
-        },
+        );
+        expectSpawnExit(result, 0);
+        expect(
+          JSON.parse(readFileSync(join(dir, "result.json"), "utf8")),
+        ).toMatchObject({ exitCode, treeWitnessed: false });
+        const waited = Bun.spawnSync(
+          [process.execPath, SCRIPT, "wait", "--max-sec", "120"],
+          {
+            cwd,
+            env: { ...process.env, ...PACING },
+            stdout: "pipe",
+            stderr: "pipe",
+            timeout: 3000,
+          },
+        );
+        expectSpawnExit(waited, 30);
+        expect(waited.stdout.toString()).toContain(`command-exit: ${exitCode}`);
+        expectSpawnExit(run("launch", "--", ...bunCommand("")), 3);
+        expect(existsSync(join(dir, "result.json"))).toBe(true);
+      },
+      T,
+    );
+
+  for (const result of [
+    { exitCode: 0, treeWitnessed: false },
+    { exitCode: 0, treeWitnessed: "false" },
+    "unreadable",
+  ] as const)
+    test(
+      "an older unresolved generation is retained beside a newer verified result",
+      () => {
+        const older = join(stateRoot(), "gen-1");
+        const latest = join(stateRoot(), "gen-2");
+        mkdirSync(older, { recursive: true });
+        mkdirSync(latest);
+        writeFileSync(
+          join(older, "result.json"),
+          result === "unreadable" ? "{" : JSON.stringify(result),
+        );
+        writeFileSync(
+          join(latest, "result.json"),
+          JSON.stringify({ exitCode: 0, treeWitnessed: true }),
+        );
+        expectSpawnExit(run("launch", "--", ...bunCommand("")), 3);
+        expect(existsSync(join(older, "result.json"))).toBe(true);
+        expect(existsSync(join(latest, "result.json"))).toBe(true);
+      },
+      T,
+    );
+
+  test(
+    "an older live generation is retained beside a newer verified result",
+    async () => {
+      const child = Bun.spawn(bunCommand(busy), {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      const older = join(stateRoot(), "gen-1");
+      const latest = join(stateRoot(), "gen-2");
+      mkdirSync(older, { recursive: true });
+      mkdirSync(latest);
+      writeFileSync(join(older, "launcher.pid"), String(child.pid));
+      writeFileSync(join(older, "runner.pid"), String(child.pid));
+      writeFileSync(
+        join(latest, "result.json"),
+        JSON.stringify({ exitCode: 0, treeWitnessed: true }),
       );
-      expectSpawnExit(result, 0);
-      expect(
-        JSON.parse(readFileSync(join(dir, "result.json"), "utf8")),
-      ).toMatchObject({ exitCode: 124, treeWitnessed: false });
+      try {
+        expectSpawnExit(run("launch", "--", ...bunCommand("")), 3);
+        expect(existsSync(join(older, "runner.pid"))).toBe(true);
+        expect(existsSync(join(latest, "result.json"))).toBe(true);
+      } finally {
+        child.kill("SIGKILL");
+        await child.exited;
+        rmSync(join(older, "runner.pid"), { force: true });
+        rmSync(join(older, "launcher.pid"), { force: true });
+      }
     },
     T,
   );

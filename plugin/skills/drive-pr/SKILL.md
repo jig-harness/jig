@@ -674,16 +674,18 @@ ${CLAUDE_SKILL_DIR}/scripts/foreground-wait.ts wait
 ```
 
 `wait` never returns the command's own exit status as its own — that would
-collide with its control codes. `0` means the command finished and exited `0`;
-`30` means it finished and failed (the `command-exit: N` line carries the
-status); `20` means still running — call `wait` again; `21` means no process
+collide with its control codes. `0` means the command finished and exited `0`
+with its process tree confirmed stopped; `30` means the command failed or
+its process tree could not be confirmed stopped (the `command-exit: N` line
+preserves the command's status); `20` means still running — call `wait` again; `21` means no process
 recorded for the launch is alive and no result was published. Each `wait`
 relays only output not yet shown (a bounded tail if a great deal arrived).
 
 Never call `launch` to resume a wait: a second copy of the command (a second
 push, or a commit racing the first's `index.lock`) would start beside the
-first. `launch` refuses (exit `3`) while an earlier launch is still alive, but
-that is a backstop, not the procedure. Only on exit `21` — no recorded runner, command or descendant is alive — is a
+first. `launch` refuses (exit `3`) while any earlier generation is still alive
+or has an unverified process tree, and retains that generation's evidence.
+That refusal is a backstop, not the procedure. Only on exit `21` — no recorded runner, command or descendant is alive — is a
 relaunch allowed, and then only after the step's own check: `git log` for a commit that may already
 have landed, and for `finish-round.ts` its idempotence. `21` does not see a
 descendant that outlived both the runner and the command (re-parented to init),

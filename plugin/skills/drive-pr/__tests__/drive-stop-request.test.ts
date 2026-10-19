@@ -106,20 +106,26 @@ describe("cooperative driver stop", () => {
       DRIVE_PR_FIXTURES: dir,
       DRIVE_PR_STATE_DIR: stateDir,
       DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+      NODE_ENV: "test",
     };
     const driver = Bun.spawn(
-      scriptArgv(
-        join(SCRIPTS, "drive.ts"),
-        "999",
-        "--no-head-sync",
-        "--max-rounds",
-        "1",
-        "--",
+      [
         process.execPath,
-        "-e",
-        pass,
-        "999",
-      ),
+        "--preload",
+        join(import.meta.dir, "fixtures", "stop-diagnostics.ts"),
+        ...scriptArgv(
+          join(SCRIPTS, "drive.ts"),
+          "999",
+          "--no-head-sync",
+          "--max-rounds",
+          "1",
+          "--",
+          process.execPath,
+          "-e",
+          pass,
+          "999",
+        ).filter((arg, index) => index !== 0 || arg !== process.execPath),
+      ],
       { env, stdout: "pipe", stderr: "pipe" },
     );
     const output = Promise.all([
@@ -162,7 +168,7 @@ describe("cooperative driver stop", () => {
         {
           exitCode: stopCode,
           stdout: stopOut,
-          stderr: `${stopErr}\n--- driver log ---\n${readFileSync(join(stateDir, "drive-pr-999.log"), "utf8")}`,
+          stderr: `${stopErr}\ndriver exit at operator completion: ${String(driver.exitCode)}\n--- driver log ---\n${readFileSync(join(stateDir, "drive-pr-999.log"), "utf8")}`,
         },
         0,
       );
