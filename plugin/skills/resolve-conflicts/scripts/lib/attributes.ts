@@ -46,6 +46,27 @@ const REPOSITORY_VARIABLES = [
   "GIT_ATTR_SOURCE",
 ];
 
+/**
+ * Settings that decide how a merge detects renames, and nothing else: the one
+ * configuration the reconstruction takes from the repository as it stands, so
+ * that it detects the renames the operation itself detected.
+ */
+const RENAME_SETTINGS = [
+  "merge.renames",
+  "merge.directoryRenames",
+  "merge.renameLimit",
+  "diff.renames",
+  "diff.renameLimit",
+];
+
+/** The rename settings in effect for the repository, as `-c` arguments. */
+function renameSettings(root: string): string[] {
+  return RENAME_SETTINGS.flatMap((key) => {
+    const r = gitRaw(root, ["config", "--get", key]);
+    return r.code === 0 ? ["-c", `${key}=${r.stdout.trim()}`] : [];
+  });
+}
+
 /** Variables that carry configuration into git besides its files. */
 const CONFIGURATION_VARIABLE =
   /^GIT_CONFIG(?:|_PARAMETERS|_COUNT|_KEY_\d+|_VALUE_\d+|_GLOBAL|_SYSTEM|_NOSYSTEM)$/;
@@ -86,8 +107,9 @@ export type IndexAttributesGit = (
  * merge's tree, is readable from the repository afterwards. No configuration
  * is read: not the repository's, the user's (`GIT_CONFIG_GLOBAL` names an
  * empty file), the system's (`GIT_CONFIG_NOSYSTEM`), nor any passed in the
- * environment. So a merge driver configured anywhere does not run, and a
- * merge's result is git's default for the attributes the commit carries.
+ * environment, except the settings that decide rename detection, passed on
+ * as the repository has them. So a merge driver configured anywhere does not
+ * run, and a merge's result is git's for the attributes the commit carries.
  */
 export function indexAttributesGit<T>(
   root: string,
@@ -137,6 +159,7 @@ export function indexAttributesGit<T>(
       GIT_OPTIONAL_LOCKS: "0",
     });
     const prefix = [
+      ...renameSettings(root),
       "-c",
       `core.attributesFile=${noAttributes}`,
       `--attr-source=${tree}`,

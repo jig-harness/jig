@@ -1142,6 +1142,43 @@ describe("attributes the commit does not carry", () => {
       );
     });
 
+  it("the automatic result detects renames as the repository's settings do", () => {
+    const root = s.git("rev-list", "--max-parents=0", "main").trim();
+    s.git("merge", "--abort");
+    s.git("config", "merge.directoryRenames", "true");
+    s.git("checkout", "-q", "-b", "base2", root);
+    s.commit("Add the docs", { "docs/x.md": "x\n" });
+    s.git("checkout", "-q", "-b", "feature2");
+    s.git("mv", "docs", "guide");
+    s.commit("Move the docs", {
+      "src/config.ts": CONFIG_BASE.replace(
+        "  retries: 3,\n",
+        "  retries: 3,\n  timeoutOverride: true,\n",
+      ),
+    });
+    s.git("checkout", "-q", "base2");
+    s.commit("Main", {
+      "docs/y.md": "y\n",
+      "src/config.ts": CONFIG_BASE.replace("retries: 3", "retries: 5"),
+    });
+    s.git("checkout", "-q", "feature2");
+    expect(s.gitTry("merge", "base2").code).not.toBe(0);
+    expect(s.read("guide/y.md")).toBe("y\n");
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    s.write(
+      "src/config.ts",
+      CONFIG_BASE.replace(
+        "  retries: 3,\n",
+        "  retries: 5,\n  timeoutOverride: true,\n",
+      ),
+    );
+    s.git("add", "src/config.ts");
+    expect(record("src/config.ts", "combined").code).toBe(0);
+    const r = check();
+    expect(r.stdout).not.toContain("guide/y.md");
+    expect(r.code).toBe(0);
+  });
+
   it("a merge driver only info/attributes selects does not make its result automatic", () => {
     const guide = "one\ntwo\nthree\nfour\nfive\n";
     const root = s.git("rev-list", "--max-parents=0", "main").trim();
