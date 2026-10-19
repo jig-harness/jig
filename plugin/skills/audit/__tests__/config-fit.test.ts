@@ -501,6 +501,26 @@ other_tool:
     expect(all).toContain("rejected:do-item (tracker)");
   });
 
+  test("resolve-conflicts validates obligation text, optional commands and unknown keys", () => {
+    const refused = (obligations: string) =>
+      ids(
+        fit({
+          ".config/jig.yaml": `resolve_conflicts:\n  obligations: ${obligations}\n`,
+        }).report,
+      ).includes("rejected:resolve-conflicts");
+    for (const value of [
+      "null",
+      "{}",
+      "[{}]",
+      '[{check: ""}]',
+      "[{check: Inspect, command: 5}]",
+      "[{check: Inspect, extra: unknown}]",
+    ])
+      expect(refused(value)).toBe(true);
+    expect(refused("[{check: Inspect}]")).toBe(false);
+    expect(refused("[{check: Inspect, command: bun run gates}]")).toBe(false);
+  });
+
   test("the reflect skill's own validation refuses what it would refuse", () => {
     const refused = (reflection: string) =>
       ids(

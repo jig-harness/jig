@@ -23,8 +23,15 @@
  * (run conflict-map.ts).
  */
 import { relative, resolve, sep } from "node:path";
+import { mapConflicts } from "./conflict-map.ts";
+import {
+  operationInputs,
+  provenance,
+  type Provenance,
+} from "./lib/provenance.ts";
 import { fail, runMain } from "../../../shared/cli.ts";
 import { droppedLines, resolvedText } from "./lib/drops.ts";
+import type { Operation } from "./lib/operation.ts";
 import { topLevel } from "./lib/git.ts";
 import {
   currentSnapshot,
@@ -32,11 +39,65 @@ import {
   isDecision,
   NEEDS_REASON,
   type Resolution,
+  type Snapshot,
+  type PathEntry,
   saveSnapshot,
 } from "./lib/snapshot.ts";
 
 const USAGE =
   'usage: record.ts <path> <decision> [--reason "<text>"] [--command "<command>"] [--dropped "<why>"]';
+
+function readProvenance(root: string, operation: Operation): Provenance {
+  try {
+    return provenance(root, operationInputs(operation));
+  } catch (err) {
+    fail(2, `record: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+function cleanStages(proof: Provenance, path: string): PathEntry["stages"] {
+  return {
+    base: proof.base.get(path) ?? null,
+    ours: proof.ours.get(path) ?? null,
+    theirs: proof.theirs.get(path) ?? null,
+  };
+}
+
+function validateCleanPath(
+  proof: Provenance,
+  snapshot: Snapshot,
+  path: string,
+  given: string,
+): void {
+  if (!proof.allowed.has(path))
+    fail(
+      2,
+      `record: ${given} is outside this operation and is not in the conflict map. Mapped paths: ${Object.keys(snapshot.paths).join(", ") || "(none)"}`,
+    );
+  if (proof.conflicts.has(path))
+    fail(
+      2,
+      `record: ${given} conflicted but is missing from the map; restore the original snapshot before continuing`,
+    );
+}
+
+function mappedEntry(
+  root: string,
+  operation: Operation,
+  snapshot: Snapshot,
+  path: string,
+  given: string,
+): PathEntry {
+  if (Object.hasOwn(snapshot.paths, path))
+    return snapshot.paths[path] as PathEntry;
+  const proof = readProvenance(root, operation);
+  validateCleanPath(proof, snapshot, path, given);
+  const stages = cleanStages(proof, path);
+  const entry = mapConflicts(root, operation, new Map([[path, stages]]))[path];
+  if (entry === undefined) fail(2, `record: cannot map ${given}`);
+  snapshot.paths[path] = entry;
+  return entry;
+}
 
 async function main(): Promise<number> {
   const positional: string[] = [];
@@ -63,17 +124,10 @@ async function main(): Promise<number> {
 
   const root = topLevel();
   if (root === null) fail(2, "record: not inside a git work tree.");
-  const { snapshot } = currentSnapshot("record", root);
+  const { snapshot, operation } = currentSnapshot("record", root);
   const fromCwd = relative(root, resolve(given)).split(sep).join("/");
   const path = Object.hasOwn(snapshot.paths, given) ? given : fromCwd;
-  const entry = Object.hasOwn(snapshot.paths, path)
-    ? snapshot.paths[path]
-    : undefined;
-  if (entry === undefined)
-    fail(
-      2,
-      `record: ${given} is not in the conflict map. Mapped paths: ${Object.keys(snapshot.paths).join(", ") || "(none)"}`,
-    );
+  const entry = mappedEntry(root, operation, snapshot, path, given);
 
   const reason = options.reason ?? null;
   if (NEEDS_REASON.has(decision) && reason === null)

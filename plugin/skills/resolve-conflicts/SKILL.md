@@ -28,12 +28,15 @@ is part of the change its reviewers see.
 records which side's change it dropped and why. Derived files (lockfiles and
 [generated artifacts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md))
 are regenerated from their resolved sources, never merged by hand. Every
-decision is recorded where reviewers see it: the merge commit message. The
-resolution is validated before it is concluded and pushed. A conflict whose
-right answer is a product decision goes to a human.
+decision is recorded where reviewers see it: the merge commit message. Only
+changes attributable to the operation may be staged for its commit.
+Repository obligations apply to the entire resolved diff, including parts
+git merged without a conflict. The resolution is validated before it is
+concluded and pushed. A conflict whose right answer is a product decision
+goes to a human.
 
 Jig maintains this procedure and ships it in the `jig` plugin.
-A repository adds its own generated files in `.config/jig.yaml`
+A repository adds its own generated files and merge obligations in `.config/jig.yaml`
 (the [consumer overlay](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md));
 without that file the skill works on its defaults.
 
@@ -43,6 +46,13 @@ without that file the skill works on its defaults.
 directory containing this `SKILL.md`. Claude Code fills it in. In any other
 harness, replace it with that path yourself before running a command: a shell
 would expand the unset variable to an empty string.
+
+Git 2.40 or newer is required to reconstruct the automatic merge result
+without trusting already staged content. Cherry-picking or reverting a merge
+commit with `-m` is unsupported: Git does not reliably retain the selected
+parent for reconstruction. The mapper refuses it before writing a snapshot;
+resolve and validate that operation manually. Merges recreated by
+`git rebase --rebase-merges` are supported through their replayed parents.
 
 Run every command from the root of the repository with the conflicts. Never
 `cd` into the skill directory: the scripts find the repository, its
@@ -79,7 +89,7 @@ from this side before they are regenerated.
 |--------|--------------|------------|
 | `scripts/conflict-map.ts [--json] [--integration ours\|theirs]` | Maps the stopped operation and writes the snapshot. Read-only otherwise | 0 mapped; 2 usage, not in a git work tree, or invalid configuration; 3 nothing in progress, or the stored snapshot is unreadable (it is never replaced) |
 | `scripts/record.ts <path> <decision> [--reason "…"] [--command "…"] [--dropped "…"]` | Records one path's decision in the snapshot | 0 recorded; 2 usage (unknown path or decision, missing reason, no known regeneration command, or `regenerated` for a path that is not a lockfile or generated file); 3 nothing in progress, or no snapshot for this operation |
-| `scripts/check-resolution.ts [--json \| --message \| --commit-message]` | Verifies the resolution; prints the commit-message section | 0 passes; 1 problems; 2 usage; 3 nothing in progress, or no snapshot for this operation; 4 needs a human (wins over 1) |
+| `scripts/check-resolution.ts [--json \| --message \| --commit-message]` | Verifies the resolution; prints the commit-message section | 0 passes; 1 problems; 2 usage or invalid obligation configuration; 3 nothing in progress, or no snapshot for this operation; 4 needs a human (wins over 1) |
 
 ## Step 1: Start or find the operation
 
@@ -151,6 +161,11 @@ upstream. If the merge guessed the integration side wrong (two feature
 branches, say), run it again with `--integration ours` or `--integration
 theirs`.
 
+Inspect `git diff --cached` before resolving. Every staged path must belong
+to this operation, and every staged hunk outside your recorded decisions
+must match what git merged automatically. Keep unrelated staged work out of
+the operation without discarding it; do not conclude while it is present.
+
 Then read the intent behind every path: the commit messages it lists, and for
 a commit whose subject names a pull request, the pull request itself
 (`gh pr view <number>`). You are looking for *why* each side changed the code,
@@ -211,7 +226,11 @@ bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" bun.lock regenerated
 | `deleted` | the path is removed; say where a carried-over change went | required |
 | `escalate` | needs a human; the reason is the question to put to them | required |
 
-Write each reason for the reviewer, in one or two sentences.
+Write each reason for the reviewer, in one or two sentences. A path that
+merged cleanly can also need a manual edit: `record.ts` accepts it when it
+belongs to the operation and recovers its inputs from the committed sides.
+It refuses unrelated paths and conflicted paths whose original snapshot
+was lost.
 [references/decisions.md](references/decisions.md) has a worked example of
 each decision.
 
@@ -285,7 +304,9 @@ It fails (exit 1), listing each problem with its file and line, when:
 4. what is staged for a mapped path differs from the working tree;
 5. a lockfile or generated file is not recorded as `regenerated`, or any
    other path is;
-6. **a change is dropped.** For every text path it takes the lines each side
+6. a staged path is outside the operation's changed-file set, or its staged
+   content does not match git's automatic result and has no recorded decision;
+7. **a change is dropped.** For every text path it takes the lines each side
    added relative to the merge base, across the whole file, and looks for each
    in the staged result (trimmed, exact match; blank and punctuation-only
    lines are ignored). A missing line is allowed only when the decision says
@@ -302,6 +323,14 @@ Fix what it reports and run it again. Exit 4 means a path is recorded as
 another operation: run `conflict-map.ts`, then record again.
 
 ## Step 6: Validate
+
+Read every `resolve_conflicts.obligations` entry reported by
+`check-resolution.ts`. Check its `check` text against the **whole staged
+diff** (`git diff --cached`), including conflict-free files and hunks git
+merged automatically. Record the evidence and outcome for each obligation
+in the resolution report. An optional command supplements this review; a
+passing command does not establish that its prose obligation is satisfied.
+Fix violations, stage and record any manual changes, and repeat Step 5.
 
 Never conclude a merge that does not build. Run the repository's checks over
 the resolved tree:
@@ -377,12 +406,26 @@ One optional section in `.config/jig.yaml`:
 
 ```yaml
 resolve_conflicts:
+  obligations:
+    - check: "All changed callers still use the shared validation helper."
+      command: bun run check:validation
   generated:
     - paths: ["docs/index.md", "src/generated/**"]
       command: bun run generate
 ```
 
-Each entry's `paths` are globs over repository-relative paths (`*` and `?`
+`obligations` defaults to an empty list. Each entry has nonempty `check`
+text and an optional nonempty `command`, run from the repository root with
+a deadline. The checker reports every obligation; a failed command blocks
+conclusion. Each command runs only while every tracked file on disk matches
+the staged tree, checked before every command and after the last, with
+submodules compared whatever their ignore settings and assume-unchanged or
+skip-worktree files compared too, including those inside initialized
+submodules. A command that changes the staged tree
+or a tracked file stops the commands after it and fails the check, so no
+result certifies a tree its command did not see. Text-only entries require the agent's review in Step 6.
+
+Each generated entry's `paths` are globs over repository-relative paths (`*` and `?`
 stay within one directory; `**` spans any number; `{a,b}` matches either
 alternative; `[...]` matches one character of a class, `[!...]` or `[^...]`
 one outside it, and never `/`), and `command` rebuilds them, run from the repository

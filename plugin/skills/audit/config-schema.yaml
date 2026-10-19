@@ -406,6 +406,11 @@ fields:
         paths: { type: list, items: string }
         command: command
     read_by: [resolve-conflicts]
+  resolve_conflicts.obligations:
+    type: list
+    items: { type: map, values_type: string }
+    read_by: [resolve-conflicts]
+    since: next
   github_actions.conventions_doc:
     type: path
     exists: expected

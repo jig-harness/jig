@@ -18,16 +18,26 @@
  * differs from the working tree for a mapped path; when a lockfile or
  * generated file was not regenerated; and when a side's change is dropped
  * without that being the recorded decision (the dropped-change check; see
- * lib/drops.ts).
+ * lib/drops.ts). Every staged change must belong to the operation and match
+ * Git's automatic result or a recorded decision. Repository obligations are
+ * reported over the whole resolved diff; failed commands block conclusion.
  *
  * Exit codes: 0 the resolution passes; 1 problems, each listed with its file
- * and line; 2 usage error; 3 no operation in progress, no snapshot, or a
+ * and line; 2 usage error or invalid obligation configuration; 3 no operation in progress, no snapshot, or a
  * snapshot of a different operation (run conflict-map.ts first); 4 a path is
  * recorded as escalate: the resolution needs a human, and each question is
  * printed. Exit 4 wins over exit 1, since an escalated resolution is not
  * concluded either way.
  */
-import { existsSync, readFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fail, runMain } from "../../../shared/cli.ts";
 import { unmergedPaths } from "./conflict-map.ts";
 import { droppedLines } from "./lib/drops.ts";
@@ -37,9 +47,17 @@ import {
   gitRaw,
   indexBlob,
   readBlob,
+  splitNul,
   topLevel,
 } from "./lib/git.ts";
 import { markerLines } from "./lib/markers.ts";
+import {
+  obligationEntries,
+  runObligations,
+  type ObligationEntry,
+  type ObligationResult,
+} from "./lib/obligations.ts";
+import { provenanceProblems } from "./lib/provenance.ts";
 import {
   currentSnapshot,
   DECISIONS,
@@ -225,6 +243,9 @@ export function checkResolution(root: string, snapshot: Snapshot): CheckResult {
       result,
     );
   result.problems.push(...stagedMarkers(root, snapshot.paths));
+  result.problems.push(
+    ...provenanceProblems(root, snapshot, new Set(unmerged.keys())),
+  );
   result.exit =
     result.escalations.length > 0 ? 4 : result.problems.length > 0 ? 1 : 0;
   return result;
@@ -262,6 +283,194 @@ function render(f: Finding): string {
   return `${f.path}${f.line === undefined ? "" : `:${f.line}`}: ${f.message}`;
 }
 
+/** The staged tree, plus every tracked path whose file on disk differs from it. */
+interface TreeState {
+  tree: string;
+  differing: Finding[];
+}
+
+const DIFFERS =
+  "differs from the staged tree: obligation commands check files on disk, so stage or discard it first";
+const SKIPPED_DIFFERS =
+  "is marked assume-unchanged or skip-worktree, so git does not compare it, and its file on disk differs from the staged tree: clear the flag (git update-index --no-assume-unchanged --no-skip-worktree -- <path>), then stage or discard it";
+
+const THROWAWAY_INDEX_CONFIG = [
+  "-c",
+  "core.splitIndex=false",
+  "-c",
+  "core.ignorestat=false",
+];
+
+/**
+ * Tracked paths whose file on disk differs from the staged tree, as git itself
+ * compares them. A plain `git diff` skips some paths: submodule ignore
+ * settings hide a moved or dirty submodule (overridden here), and an
+ * assume-unchanged or skip-worktree entry is never compared. Those entries are
+ * re-staged without their flags into a throwaway copy of the index, so git
+ * compares them as it compares any other entry, whatever their kind (file,
+ * symlink, submodule) and whatever the checkout settings. Every git call on
+ * that copy turns off the settings that would set a flag again on the way in
+ * (`core.ignorestat` marks each re-staged entry assume-unchanged) or split the
+ * copy across files. Initialized submodules are checked the same way, since
+ * git's status of a submodule trusts the flags in the submodule's own index.
+ */
+function differingPaths(root: string, prefix = ""): Finding[] {
+  const flagged = skippedEntries(root);
+  const dir = mkdtempSync(join(tmpdir(), "check-resolution-"));
+  try {
+    const index = join(dir, "index");
+    const source = gitPath(root, "index");
+    if (existsSync(source)) copyFileSync(source, index);
+    const env = { ...process.env, GIT_INDEX_FILE: index };
+    if (flagged.size > 0)
+      git(
+        root,
+        [...THROWAWAY_INDEX_CONFIG, "update-index", "-z", "--index-info"],
+        [...flagged.values()].map((record) => `${record}\0`).join(""),
+        env,
+      );
+    const differing = splitNul(
+      git(
+        root,
+        [
+          ...THROWAWAY_INDEX_CONFIG,
+          "diff",
+          "--name-only",
+          "-z",
+          "--ignore-submodules=none",
+        ],
+        undefined,
+        env,
+      ),
+    ).map((path) => ({
+      path: `${prefix}${path}`,
+      message: flagged.has(path) ? SKIPPED_DIFFERS : DIFFERS,
+    }));
+    for (const path of initializedSubmodules(root))
+      differing.push(...differingPaths(join(root, path), `${prefix}${path}/`));
+    return differing;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function treeState(root: string): TreeState {
+  const differing = differingPaths(root).sort((a, b) =>
+    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
+  );
+  return { tree: git(root, ["write-tree"]).trim(), differing };
+}
+
+/**
+ * Stage-0 entries marked assume-unchanged (a lowercase tag) or skip-worktree
+ * (S), by path, each as the `git ls-files -s` record that re-stages it.
+ */
+function skippedEntries(root: string): Map<string, string> {
+  const entries = new Map<string, string>();
+  for (const line of splitNul(git(root, ["ls-files", "-s", "-v", "-z"]))) {
+    const match = line.match(/^(\S) (\d+ [0-9a-f]+ 0\t(.*))$/s);
+    if (!match) continue;
+    const [, tag = "", record = "", path = ""] = match;
+    if (tag === tag.toLowerCase() || tag === "S") entries.set(path, record);
+  }
+  return entries;
+}
+
+/** Submodule paths whose working tree is a checked-out repository. */
+function initializedSubmodules(root: string): string[] {
+  return splitNul(git(root, ["ls-files", "-s", "-z"]))
+    .map((line) => line.match(/^160000 [0-9a-f]+ 0\t(.*)$/s)?.[1])
+    .filter(
+      (path): path is string =>
+        path !== undefined && existsSync(join(root, path, ".git")),
+    );
+}
+
+function notRun(
+  entries: readonly ObligationEntry[],
+  output: string,
+): ObligationResult[] {
+  return entries.map((entry) => ({
+    check: entry.check,
+    command: entry.command ?? null,
+    status: "not-run",
+    output,
+  }));
+}
+
+/**
+ * Commands read files on disk, so each runs only while the disk matches the
+ * staged tree: the state is checked before every command and after the last,
+ * a change stops the commands not yet run, and results stand only if no
+ * command changed either.
+ */
+async function checkWithObligations(
+  root: string,
+  snapshot: Snapshot,
+): Promise<{ result: CheckResult; obligations: ObligationResult[] }> {
+  const entries = obligationEntries();
+  const result = checkResolution(root, snapshot);
+  if (result.exit !== 0)
+    return {
+      result,
+      obligations: notRun(
+        entries,
+        "Fix the resolution before running obligations.",
+      ),
+    };
+  if (!entries.some((entry) => entry.command !== undefined))
+    return { result, obligations: await runObligations(root, entries) };
+
+  const before = treeState(root);
+  if (before.differing.length > 0) {
+    result.problems.push(...before.differing);
+    result.exit = 1;
+    return {
+      result,
+      obligations: notRun(
+        entries,
+        "The working tree differs from the staged tree.",
+      ),
+    };
+  }
+  const unchanged = () => {
+    const now = treeState(root);
+    return now.tree === before.tree && now.differing.length === 0;
+  };
+  const obligations = await runObligations(root, entries, () =>
+    unchanged()
+      ? null
+      : "An earlier command changed the staged tree or the working tree, so this command did not run.",
+  );
+  const changed = !unchanged();
+  const final = checkResolution(root, snapshot);
+  if (changed || obligations.some((o) => o.status === "not-run"))
+    final.problems.push({
+      path: "resolve_conflicts.obligations",
+      message:
+        "a command changed the staged tree or the working tree, so its results describe an earlier state: review the change, stage or discard it, and run check-resolution.ts again",
+    });
+  for (const obligation of obligations)
+    if (obligation.status === "failed")
+      final.problems.push({
+        path: "resolve_conflicts.obligations",
+        message: `${obligation.check}: ${obligation.output}`,
+      });
+  if (final.exit !== 4 && final.problems.length > 0) final.exit = 1;
+  return { result: final, obligations };
+}
+
+function reportObligations(
+  obligations: readonly ObligationResult[],
+  write: (line: string) => void,
+): void {
+  for (const obligation of obligations) {
+    write(`OBLIGATION ${obligation.status}: ${obligation.check}`);
+    if (obligation.command) write(`  command: ${obligation.command}`);
+    write(`  ${obligation.output}`);
+  }
+}
+
 async function main(): Promise<number> {
   const args = process.argv.slice(2);
   const known = ["--json", "--message", "--commit-message"];
@@ -279,7 +488,7 @@ async function main(): Promise<number> {
       2,
       "check-resolution: a rebase concludes with 'git rebase --continue', which keeps the replayed commit's message; use --message and post the section on the pull request.",
     );
-  const result = checkResolution(root, snapshot);
+  const { result, obligations } = await checkWithObligations(root, snapshot);
 
   if (mode === "--json") {
     console.log(
@@ -287,6 +496,7 @@ async function main(): Promise<number> {
         {
           ...result,
           operation: snapshot.operation,
+          obligations,
           message: result.exit === 0 ? messageSection(snapshot) : null,
         },
         null,
@@ -300,6 +510,7 @@ async function main(): Promise<number> {
     for (const e of result.escalations)
       write(`NEEDS A HUMAN ${e.path}: ${e.question}`);
     for (const f of result.notes) write(`note ${render(f)}`);
+    reportObligations(obligations, write);
   };
   if (mode === "--message" || mode === "--commit-message") {
     report((line) => console.error(line));
