@@ -316,6 +316,14 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.65.0] - 2026-10-19
+
+### Added
+
+- `decide`: a document decision sheet lets the reader write a note on each
+  pick in the My picks tray. The note belongs to that option, shows under its
+  pick line in the copy text, and is kept in the browser with the pick.
+
 ## [0.64.0] - 2026-10-19
 
 ### Added
@@ -3130,7 +3138,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.64.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.65.0...HEAD
+[0.65.0]: https://github.com/jig-harness/jig/compare/v0.64.0...v0.65.0
 [0.64.0]: https://github.com/jig-harness/jig/compare/v0.63.0...v0.64.0
 [0.63.0]: https://github.com/jig-harness/jig/compare/v0.62.0...v0.63.0
 [0.62.0]: https://github.com/jig-harness/jig/compare/v0.61.1...v0.62.0
