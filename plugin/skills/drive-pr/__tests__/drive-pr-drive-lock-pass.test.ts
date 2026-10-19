@@ -129,14 +129,25 @@ describe("drive.ts loop control", () => {
               `(sleep ${LATE_GRANDCHILD_SECONDS}; : > ${JSON.stringify(join(dir, "pass-late"))}) & wait`,
           ];
 
+    async function awaitFixtureMarker(marker: string): Promise<boolean> {
+      const budgetMs = Number(
+        byPlatform(
+          "native Windows must launch the CLI and Git Bash fixture chain before a pass can announce itself",
+          { windows: "60000", posix: "10000" },
+        ),
+      );
+      const deadline = Date.now() + budgetMs;
+      while (!existsSync(marker) && Date.now() < deadline) await Bun.sleep(25);
+      return existsSync(marker);
+    }
+
     /**
      * Poll for the pass's own announcement, so the window is not guessed.
      * Returns when it was seen, the clock `outwaitGrandchild` counts from.
      */
     async function awaitPassStart(dir: string): Promise<number> {
       const started = join(dir, "pass-started");
-      for (let i = 0; i < 400 && !existsSync(started); i++) await Bun.sleep(25);
-      expect(existsSync(started)).toBe(true);
+      expect(await awaitFixtureMarker(started)).toBe(true);
       return performance.now();
     }
 
@@ -215,7 +226,7 @@ describe("drive.ts loop control", () => {
         await outwaitGrandchild(startedAt, LATE_GRANDCHILD_SECONDS);
         expect(existsSync(join(dir, "pass-late"))).toBe(false);
       }
-    }, 15000);
+    }, 60000);
 
     it("stops rotating the driver log once another driver recovers the lock", async () => {
       // Rotation is the current owner's alone: a driver whose lock was
@@ -276,8 +287,10 @@ describe("drive.ts loop control", () => {
       expect(stderr).toContain("recovered by another driver");
       expect(existsSync(`${logPath}.1`)).toBe(false);
       expect(statSync(logPath).size).toBeGreaterThan(DRIVER_LOG_MAX_BYTES);
-      await outwaitGrandchild(startedAt, LATE_GRANDCHILD_SECONDS);
-    }, 15000);
+      if (captured !== null)
+        expect(await identityTargetsGone(captured)).toBe(true);
+      else await outwaitGrandchild(startedAt, LATE_GRANDCHILD_SECONDS);
+    }, 60000);
 
     it("does not attribute a PRE-EXISTING session's wall to the pass it spawned", async () => {
       // The WIRING, not the adapter: that `drive.ts` actually takes a
@@ -631,7 +644,7 @@ describe("drive.ts loop control", () => {
       );
 
       try {
-        await pollUntil(() => existsSync(passDonePath), 400);
+        await awaitFixtureMarker(passDonePath);
         const passRan = existsSync(passDonePath);
 
         // Read stderr live rather than waiting for the process to exit —
@@ -788,11 +801,9 @@ describe("drive.ts loop control", () => {
         },
       );
 
-      const startedAt = Date.now();
+      let takeoverAt = 0;
       try {
-        for (let i = 0; i < 400 && !existsSync(passDonePath); i++) {
-          await Bun.sleep(25);
-        }
+        await awaitFixtureMarker(passDonePath);
         const passRan = existsSync(passDonePath);
 
         const reader = proc.stderr.getReader();
@@ -807,6 +818,7 @@ describe("drive.ts loop control", () => {
           // guarantees the heartbeat observes `compromised` while that
           // subprocess is still in flight, not after.
           if (!takeoverFired && allStderr.includes("SLEEPING")) {
+            takeoverAt = Date.now();
             takeoverFired = true;
             simulateTakeover(worktree, "successor03");
           }
@@ -814,7 +826,7 @@ describe("drive.ts loop control", () => {
         }
 
         const exitCode = await proc.exited;
-        const elapsedMs = Date.now() - startedAt;
+        const elapsedMs = Date.now() - takeoverAt;
         return {
           passRan,
           takeoverFired,
@@ -910,7 +922,7 @@ describe("drive.ts loop control", () => {
       );
 
       try {
-        await pollUntil(() => existsSync(passDonePath), 400);
+        await awaitFixtureMarker(passDonePath);
         const passRan = existsSync(passDonePath);
 
         const reader = proc.stderr.getReader();
@@ -1038,9 +1050,7 @@ describe("drive.ts loop control", () => {
       );
 
       try {
-        for (let i = 0; i < 400 && !existsSync(passDonePath); i++) {
-          await Bun.sleep(25);
-        }
+        await awaitFixtureMarker(passDonePath);
         const passRan = existsSync(passDonePath);
         const [allStderr, exitCode] = await Promise.all([
           new Response(proc.stderr).text(),
@@ -1142,9 +1152,7 @@ describe("drive.ts loop control", () => {
       );
 
       try {
-        for (let i = 0; i < 400 && !existsSync(passDonePath); i++) {
-          await Bun.sleep(25);
-        }
+        await awaitFixtureMarker(passDonePath);
         const passRan = existsSync(passDonePath);
         const [allStderr, exitCode] = await Promise.all([
           new Response(proc.stderr).text(),
@@ -1197,7 +1205,7 @@ describe("drive.ts loop control", () => {
       expect(attempt.stopFired).toBe(true);
       expect(attempt.exitCode).toBe(MAILBOX_STOPPED_EXIT);
       expect(attempt.allStderr).toContain("stop requested");
-    }, 30000);
+    }, 120000);
 
     it("a takeover detected WHILE recordQuotaPark is still in flight ends the drive promptly, not after the full sleep", async () => {
       // Without the fix this reproduces: `quotaSleepAbort` did not exist
@@ -1235,13 +1243,13 @@ describe("drive.ts loop control", () => {
       expect(attempt.takeoverFired).toBe(true);
       expect(attempt.exitCode).toBe(11);
       expect(attempt.allStderr).toContain("recovered by another driver");
-      // Comfortably above the ~1s injected delay plus spawn/heartbeat
-      // overhead, comfortably below the ≥~30s full sleep a regression would
+      // Measured from the takeover, excluding CLI startup. Comfortably above
+      // the injected delay and below the ≥~30s full sleep a regression would
       // take (see the fixture's own comment on the 90s nominal target and
       // its minute-truncation floor) — a REGRESSION fails this bound long
-      // before the test's own 30s timeout would.
+      // before the test's outer timeout would.
       expect(attempt.elapsedMs).toBeLessThan(10_000);
-    }, 30000);
+    }, 120000);
 
     it("recordQuotaPark writes the park on the SLEEP path, observed WITHOUT racing a concurrent takeover", async () => {
       // Deliberately uses `attemptQuotaWallSleepStart`, NOT the sibling
@@ -1473,9 +1481,7 @@ describe("drive.ts loop control", () => {
       );
 
       try {
-        for (let i = 0; i < 400 && !existsSync(passDonePath); i++) {
-          await Bun.sleep(25);
-        }
+        await awaitFixtureMarker(passDonePath);
         expect(existsSync(passDonePath)).toBe(true);
 
         const reader = proc.stderr.getReader();

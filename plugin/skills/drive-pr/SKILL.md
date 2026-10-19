@@ -646,11 +646,12 @@ pre-commit hook runs a long suite, a push that runs the pre-push suite), use the
 **foreground wait**. It is two calls, launched once and waited on as often as
 the ceiling requires, all inside this turn.
 
-Launch — one call, returns at once. `foreground-wait.ts` runs the command in
-the pass's own process group — deliberately not detached into a session of its
-own, so `drive.ts`'s deadline and stop signalling still reach it and its
-termination witness can see it — and records its output, result and pids in one
-generation directory per launch under the gitignored
+Launch — one call, returns at once. On POSIX, `foreground-wait.ts` keeps the
+command in the pass's own process group, so the pass's deadline and stop
+signals reach it. On Windows, the runner starts independently so it survives
+the launcher, and its recorded creation identity joins the pass's cancellation
+registry. The helper records its output, result and pids in one generation
+directory per launch under the gitignored
 `.context/foreground-wait/` (the directory is the atomic launch claim). Forward the round's own
 flags in the command (`--bots-only` when the round is driven `--bots-only`,
 per § 6), or a human thread on a touched file refuses the push:

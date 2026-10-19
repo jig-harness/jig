@@ -675,13 +675,14 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     // that actually reaches the tree, and their deadline is the thing that ends
     // them anyway.
     const detached =
-      process.platform !== "win32" &&
-      (opts.detached === true || opts.timeoutSec !== undefined);
+      opts.detached === true ||
+      (process.platform !== "win32" && opts.timeoutSec !== undefined);
     const windows = windowsProcessLifecycle(opts.env);
     const spawnOpts: SpawnOptions = {
       cwd: opts.cwd,
       env: traceEnv(windows.env) as NodeJS.ProcessEnv,
       detached,
+      windowsHide: true,
       stdio: [
         opts.stdin === undefined ? "ignore" : "pipe",
         opts.stdout ?? "pipe",

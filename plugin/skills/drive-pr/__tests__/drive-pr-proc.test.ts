@@ -895,7 +895,13 @@ describe("RunHandle.stop witnesses the process GROUP, not the signal", () => {
 
     const killSpy = spyOn(process, "kill");
     try {
-      expect(await withKillGrace(200, () => h.stop())).toBe(true);
+      const expected = byPlatform(
+        "Windows refuses an exited root whose full tree was never captured; POSIX can still witness its group",
+        { windows: "false", posix: "true" },
+      );
+      expect(await withKillGrace(200, () => h.stop())).toBe(
+        expected === "true",
+      );
       // Past the grace plus slack: the unfixed code left a fresh
       // `setTimeout(() => signalTree('SIGKILL'), grace)` armed and uncleared
       // for exactly this "already gone on the first check" case, firing a
@@ -903,7 +909,8 @@ describe("RunHandle.stop witnesses the process GROUP, not the signal", () => {
       // unrelated process.
       await new Promise((r) => setTimeout(r, 700));
       const staleKill = killSpy.mock.calls.some(
-        (args) => args[0] === -pgid && args[1] === "SIGKILL",
+        (args) =>
+          (args[0] === -pgid || args[0] === pgid) && args[1] === "SIGKILL",
       );
       expect(staleKill).toBe(false);
     } finally {

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { expect, test } from "bun:test";
 import { registerCleanup } from "../cleanup.ts";
@@ -12,7 +13,7 @@ test("scoped cleanup is idempotent and detaches before executing", () => {
 });
 
 test("process exit releases live registrations newest first", () => {
-  const module = new URL("../cleanup.ts", import.meta.url).pathname;
+  const module = fileURLToPath(new URL("../cleanup.ts", import.meta.url));
   const result = Bun.spawnSync([
     process.execPath,
     "-e",
@@ -49,7 +50,7 @@ test("a growing resource count uses one process handler", () => {
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   test(`${signal} awaits cancellation before releasing live resources in order`, () => {
-    const module = new URL("../cleanup.ts", import.meta.url).pathname;
+    const module = fileURLToPath(new URL("../cleanup.ts", import.meta.url));
     const result = Bun.spawnSync([
       process.execPath,
       "-e",
@@ -77,7 +78,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 test("overlapping cancellation signals wait for all in-flight cancellation work", () => {
-  const module = new URL("../cleanup.ts", import.meta.url).pathname;
+  const module = fileURLToPath(new URL("../cleanup.ts", import.meta.url));
   const result = Bun.spawnSync([
     process.execPath,
     "-e",
@@ -110,7 +111,7 @@ test("overlapping cancellation signals wait for all in-flight cancellation work"
 });
 
 test("Windows console break awaits cleanup and exits without re-raising a POSIX signal", () => {
-  const module = new URL("../cleanup.ts", import.meta.url).pathname;
+  const module = fileURLToPath(new URL("../cleanup.ts", import.meta.url));
   const result = Bun.spawnSync([
     process.execPath,
     "-e",

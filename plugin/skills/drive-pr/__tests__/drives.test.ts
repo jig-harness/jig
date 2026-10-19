@@ -1569,54 +1569,88 @@ describe("a foreign-host claim never walks the LOCAL process table", () => {
 
 describe("--doctor / --json WEDGED end-to-end", () => {
   it("a live claim with stale progress and no pass child classifies WEDGED, with a working --stop recovery", async () => {
-    const stateDir = freshStateDir();
-    const claim = formatClaim(process.pid, hostname(), {
-      ...DIAG,
-      pr: "7010",
-    });
-    plantLock(stateDir, "pr-drive-7010.lock", { "claim.aaaa": claim });
-    const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60_000).toISOString();
-    writeFileSync(
-      join(stateDir, "drive-pr-7010.json"),
-      JSON.stringify({ ...freshState(7010), lastProgressAt: fourHoursAgo }),
+    // A dedicated owner has no unrelated parallel test children that could
+    // correctly count as a running pass under the suite's own PID.
+    const owner = Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        "setInterval(() => {}, 1000)",
+        "drive.ts",
+        "999",
+      ],
+      { stdout: "ignore", stderr: "ignore" },
     );
+    try {
+      const stateDir = freshStateDir();
+      const claim = formatClaim(owner.pid, hostname(), {
+        ...DIAG,
+        pr: "7010",
+      });
+      plantLock(stateDir, "pr-drive-7010.lock", { "claim.aaaa": claim });
+      const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60_000).toISOString();
+      writeFileSync(
+        join(stateDir, "drive-pr-7010.json"),
+        JSON.stringify({ ...freshState(7010), lastProgressAt: fourHoursAgo }),
+      );
 
-    // Plain --json, not --doctor --json: WEDGED must be reachable through
-    // the SAME classification pass the plain listing already runs
-    // unconditionally, not only through the doctor-specific surfaces.
-    const r = await runDrives(["--json"], { stateDir });
-    expect(r.exitCode).toBe(0);
-    const parsed = JSON.parse(r.stdout) as {
-      rows: Array<{
-        key: string;
-        doctor: { verdict: string; recovery: string | null } | null;
-      }>;
-    };
-    const row = parsed.rows.find((x) => x.key === "7010");
-    expect(row?.doctor?.verdict).toBe("WEDGED");
-    expect(row?.doctor?.recovery).toContain("--stop 7010");
+      // Plain --json, not --doctor --json: WEDGED must be reachable through
+      // the SAME classification pass the plain listing already runs
+      // unconditionally, not only through the doctor-specific surfaces.
+      const r = await runDrives(["--json"], { stateDir });
+      expect(r.exitCode).toBe(0);
+      const parsed = JSON.parse(r.stdout) as {
+        rows: Array<{
+          key: string;
+          doctor: { verdict: string; recovery: string | null } | null;
+        }>;
+      };
+      const row = parsed.rows.find((x) => x.key === "7010");
+      expect(row?.doctor?.verdict).toBe("WEDGED");
+      expect(row?.doctor?.recovery).toContain("--stop 7010");
+    } finally {
+      owner.kill();
+      await owner.exited;
+    }
   });
 
   it("the PLAIN human listing (no --doctor) prints the stalled line on a WEDGED live row", async () => {
     // `printHuman`'s own `⚠ stalled:` line: both this and the --json case
     // above must read off the SAME `.doctor` field `attachDoctorVerdicts`
     // populates unconditionally.
-    const stateDir = freshStateDir();
-    const claim = formatClaim(process.pid, hostname(), {
-      ...DIAG,
-      pr: "7011",
-    });
-    plantLock(stateDir, "pr-drive-7011.lock", { "claim.aaaa": claim });
-    const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60_000).toISOString();
-    writeFileSync(
-      join(stateDir, "drive-pr-7011.json"),
-      JSON.stringify({ ...freshState(7011), lastProgressAt: fourHoursAgo }),
+    // A dedicated owner has no unrelated parallel test children that could
+    // correctly count as a running pass under the suite's own PID.
+    const owner = Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        "setInterval(() => {}, 1000)",
+        "drive.ts",
+        "999",
+      ],
+      { stdout: "ignore", stderr: "ignore" },
     );
-    const r = await runDrives([], { stateDir });
-    expect(r.exitCode).toBe(0);
-    expect(r.stdout).toContain("PR #7011 — LIVE");
-    expect(r.stdout).toContain("⚠ stalled:");
-    expect(r.stdout).toContain("no pass process is running");
+    try {
+      const stateDir = freshStateDir();
+      const claim = formatClaim(owner.pid, hostname(), {
+        ...DIAG,
+        pr: "7011",
+      });
+      plantLock(stateDir, "pr-drive-7011.lock", { "claim.aaaa": claim });
+      const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60_000).toISOString();
+      writeFileSync(
+        join(stateDir, "drive-pr-7011.json"),
+        JSON.stringify({ ...freshState(7011), lastProgressAt: fourHoursAgo }),
+      );
+      const r = await runDrives([], { stateDir });
+      expect(r.exitCode).toBe(0);
+      expect(r.stdout).toContain("PR #7011 — LIVE");
+      expect(r.stdout).toContain("⚠ stalled:");
+      expect(r.stdout).toContain("no pass process is running");
+    } finally {
+      owner.kill();
+      await owner.exited;
+    }
   });
 });
 

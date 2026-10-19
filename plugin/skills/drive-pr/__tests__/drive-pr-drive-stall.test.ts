@@ -135,7 +135,7 @@ describe("drive.ts loop control", () => {
     // The unwitnessed-only branch must NOT fire here — the pass tree is a
     // plain `sleep`, which dies cleanly on the deadline's SIGKILL.
     expect(r.stderr).not.toContain("could NOT be witnessed");
-  });
+  }, 120_000);
 
   it("re-certifies the worktree after final verification before exiting 0", async () => {
     const repo = makeScratchRepo("scratch-drive-final-verify-dirty");
@@ -261,7 +261,7 @@ describe("drive.ts loop control", () => {
     );
     expect(r.exitCode).toBe(6);
     expect(r.stderr).toContain("NON-CONVERGENCE");
-  });
+  }, 120_000);
 
   it("stops with the stall exit (14) after two passes that change nothing, instead of looping to --max-rounds", async () => {
     // The regression the two issues measured: a pass that exits 0 without
@@ -292,7 +292,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("--- round 2/10");
     expect(r.stderr).not.toContain("--- round 3/10");
     expect(r.stderr).not.toContain("hit --max-rounds");
-  });
+  }, 120_000);
 
   // ── Spawn-boundary integration floor ──────────────────────────────────────
   // The twin of the stall-exit-14 test above, changing exactly one input: this
@@ -315,7 +315,7 @@ describe("drive.ts loop control", () => {
     expect(r.exitCode).toBe(6);
     expect(r.stderr).not.toContain("changed NOTHING");
     expect(r.stderr).toContain("--- round 3/3");
-  });
+  }, 120_000);
 
   it("has no --head to forward: a frozen head is not a measurement", async () => {
     // Briefly forwarded, and wrong three ways at once: frozen at startup it
@@ -407,7 +407,7 @@ describe("drive.ts loop control", () => {
     );
     expect(r.exitCode).toBe(6);
     expect(r.stderr).not.toContain("changed NOTHING");
-  });
+  }, 120_000);
 
   // ── Spawn-boundary integration floor ──────────────────────────────────────
   // The composition the fold's own unit probes cannot reach: a REAL
@@ -436,7 +436,7 @@ describe("drive.ts loop control", () => {
     );
     expect(r.exitCode).toBe(6);
     expect(r.stderr).not.toContain("changed NOTHING");
-  });
+  }, 120_000);
 
   // ── Converted to unit seams ──────────────────────────────────
   // `drive.ts` drives used to live here — a pass that SUBSTITUTES one thread

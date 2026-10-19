@@ -1,3 +1,4 @@
+import { captureRegisteredProcessTrees } from "../process-tree.ts";
 import { expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -42,3 +43,19 @@ for (const [name, value] of [
     }
   });
 }
+
+test("an empty registry can be read without a native process-table query", async () => {
+  const registry = createProcessRegistry();
+  try {
+    let queries = 0;
+    expect(
+      await captureRegisteredProcessTrees(registry.dir, async () => {
+        queries++;
+        return null;
+      }),
+    ).toEqual([]);
+    expect(queries).toBe(0);
+  } finally {
+    registry.dispose();
+  }
+});

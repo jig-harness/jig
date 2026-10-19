@@ -345,8 +345,8 @@ events, and an audit scores M12's new criterion from the report.
 - **Windows for `drive-pr` and `do-item`.** Both skills, and the skills
   they invoke, running on native Windows under Claude Code with Git for
   Windows' Bash first, and under PowerShell (Codex on Windows) later. Much
-  of the code already handles Windows: a pass is never detached and its
-  tree is stopped by captured process identities, the clone key is not a path,
+  of the code already handles Windows: a pass and its registered runners
+  are stopped by captured process identities, the clone key is not a path,
   and the pass is
   spawned without a shell. Both suites run on Windows every night; the tests
   that need a step below skip there, and each skip names the step that lifts

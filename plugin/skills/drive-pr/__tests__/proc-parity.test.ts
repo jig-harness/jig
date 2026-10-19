@@ -82,15 +82,24 @@ await p;`,
   let identity: { pid: number; start: string } | undefined;
   const poll = async (condition: () => boolean | Promise<boolean>) => {
     const deadline = Date.now() + 20_000;
-    while (!(await condition()) && Date.now() < deadline) await Bun.sleep(20);
-    expect(await condition()).toBe(true);
+    let ready = await condition();
+    while (!ready && Date.now() < deadline) {
+      await Bun.sleep(20);
+      ready = await condition();
+    }
+    expect(ready).toBe(true);
   };
   try {
     // The child publishes readiness itself, so cancellation cannot precede
     // its spawn or depend on a fixed scheduling delay.
     await poll(() => existsSync(childFile));
     const pid = Number(readFileSync(childFile, "utf8"));
-    identity = (await processTable())?.find((row) => row.pid === pid);
+    // A cold native process query can time out under concurrent Windows
+    // startup. Readiness requires a usable identity, not merely a pid file.
+    await poll(async () => {
+      identity = (await processTable())?.find((row) => row.pid === pid);
+      return Boolean(identity?.start);
+    });
     expect(identity?.start).toBeTruthy();
     writeFileSync(cancelFile, "");
     // A modeled signal runs the cleanup callbacks on Windows, where killing

@@ -90,8 +90,10 @@ export async function captureRegisteredProcessTrees(
   table: Table = processTable,
 ): Promise<ProcessRow[] | null> {
   const roots = processRegistryRoots(registryDir);
+  if (roots === null) return null;
+  if (roots.length === 0) return [];
   const rows = await table();
-  if (roots === null || rows === null) return null;
+  if (rows === null) return null;
   const targets: ProcessRow[] = [];
   for (const root of roots) {
     const current = rows.find((row) => row.pid === root.pid);
@@ -130,10 +132,10 @@ async function refreshProcessTree(
   pid: number,
   targets: ProcessRow[],
   stillOwned: () => boolean,
+  beforeForce: ProcessRow[] | null,
 ): Promise<boolean> {
   // Include children created during grace without adopting a reused leader's tree.
   if (!stillOwned()) return true;
-  const beforeForce = await processTable();
   if (beforeForce === null) return false;
   if (
     beforeForce.some(
@@ -156,6 +158,21 @@ async function refreshProcessTree(
   return true;
 }
 
+async function captureOwnedProcessTree(
+  pid: number,
+  stillOwned: () => boolean,
+): Promise<ProcessRow[] | null> {
+  // An initial CIM snapshot may be unavailable while a client starts under load.
+  // Retry one bounded enumeration, checking the live ChildProcess before adopting any rows.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!stillOwned()) return null;
+    const targets = await captureProcessTree(pid);
+    if (!stillOwned()) return null;
+    if (targets !== null) return targets;
+  }
+  return null;
+}
+
 /** Windows has no generic gentle CLI signal. Leave grace for cooperative exit, then force. */
 export async function stopWindowsTree(
   pid: number,
@@ -163,14 +180,15 @@ export async function stopWindowsTree(
   registryDir?: string,
   stillOwned: () => boolean = () => true,
 ): Promise<boolean> {
-  const captured = await captureProcessTree(pid);
-  if (!stillOwned() || captured === null) return false;
+  const forceAt = Date.now() + graceMs;
+  const captured = await captureOwnedProcessTree(pid, stillOwned);
+  if (captured === null) return false;
   const targets = captured;
-  const captureRegistered = (): Promise<boolean> =>
-    registryDir
-      ? mergeRegisteredProcessTrees(targets, registryDir)
-      : Promise.resolve(true);
   const awaitRegistered = async (): Promise<boolean> => {
+    const captureRegistered = (): Promise<boolean> =>
+      registryDir
+        ? mergeRegisteredProcessTrees(targets, registryDir)
+        : Promise.resolve(true);
     const deadline = Date.now() + 30_000;
     do {
       if (await captureRegistered()) return true;
@@ -179,9 +197,12 @@ export async function stopWindowsTree(
     return false;
   };
   if (!(await awaitRegistered())) return false;
-  if (await identityTargetsGone(targets)) return true;
-  await new Promise((resolve) => setTimeout(resolve, graceMs));
-  if (!(await refreshProcessTree(pid, targets, stillOwned))) return false;
+  await new Promise((resolve) =>
+    setTimeout(resolve, Math.max(0, forceAt - Date.now())),
+  );
+  const beforeForce = await processTable();
+  if (!(await refreshProcessTree(pid, targets, stillOwned, beforeForce)))
+    return false;
   if (!(await awaitRegistered())) return false;
   return forceIdentityTargetsAndWitness(targets);
 }

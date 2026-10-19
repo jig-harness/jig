@@ -624,7 +624,7 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("intent chain: not pinned for PR #999");
     expect(r.stderr).toContain("not PR #999's head branch");
     expect(r.exitCode).toBe(0);
-  });
+  }, 120_000);
 
   it("refuses a new pin without a pickup token even on the PR head branch", async () => {
     // A matching branch and mutable item file cannot identify the original

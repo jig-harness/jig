@@ -303,7 +303,15 @@ async function startRunner(
   const runner = spawn(
     process.execPath,
     [process.argv[1] as string, "_run", dir, "--", ...argv],
-    { stdio: "ignore", cwd: process.cwd() },
+    {
+      stdio: "ignore",
+      cwd: process.cwd(),
+      // Bun's Windows subprocess job closes with the launcher. Detachment
+      // lets this Bun supervisor survive; its recorded identity keeps it in
+      // the pass's cancellation registry. POSIX retains the pass's group.
+      detached: process.platform === "win32",
+      windowsHide: true,
+    },
   );
   runner.unref();
   writeAtomic(dir, "runner.pid", String(runner.pid));

@@ -177,7 +177,9 @@ async function runCli(
       onSpawn: (spawned) => {
         handle = spawned;
         if (spawned.pid !== undefined)
-          release = registerCancellationGroup(spawned.pid);
+          release = registerCancellationGroup(spawned.pid, undefined, () =>
+            spawned.stop(),
+          );
         if (cancelled(signal)) stop();
       },
     });
