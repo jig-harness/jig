@@ -33,6 +33,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, delimiter } from "node:path";
+import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
 import { readPrState } from "../scripts/lib/pr-state.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
@@ -201,10 +202,18 @@ describe("readPrState — a numeric PR", () => {
     const t0 = Date.now();
     const r = await readPrState("7", { timeoutSec: 1 });
     expect(r.ok).toBe(false);
-    // Well under the 5s a mis-applied fixed deadline would take, so the
-    // caller's one second — not some larger default — is what ended the read.
-    expect(Date.now() - t0).toBeLessThan(3500);
-  }, 20_000);
+    // With the 20s default this fixture returns OPEN after 15s, so the
+    // failed read above proves the caller's tightening took effect. Windows
+    // additionally waits for identity-checked tree cleanup after the deadline.
+    expect(Date.now() - t0).toBeLessThan(
+      Number(
+        byPlatform(
+          "Windows cancellation allows the 30s aggregate cleanup budget after the caller deadline, plus scheduling headroom",
+          { windows: "35000", posix: "3500" },
+        ),
+      ),
+    );
+  }, 60_000);
 });
 
 describe("readPrState — a URL or branch (no REST path)", () => {
@@ -237,8 +246,16 @@ describe("readPrState — a URL or branch (no REST path)", () => {
     const t0 = Date.now();
     const r = await readPrState("feature/x", { timeoutSec: 1 });
     expect(r.ok).toBe(false);
-    expect(Date.now() - t0).toBeLessThan(3500);
-  }, 20_000);
+    // Ignoring the tightening would return OPEN after the fixture's 15s sleep.
+    expect(Date.now() - t0).toBeLessThan(
+      Number(
+        byPlatform(
+          "Windows cancellation allows the 30s aggregate cleanup budget after the caller deadline, plus scheduling headroom",
+          { windows: "35000", posix: "3500" },
+        ),
+      ),
+    );
+  }, 60_000);
 
   it("starts no fallback call once the caller budget is spent", async () => {
     writeFileSync(join(fixDir, "view-state"), "OPEN\n");

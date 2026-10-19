@@ -56,6 +56,21 @@ review. With no obligations configured, there are none to run.
 
 See [configuration](../../CONFIGURATION.md#procedure-skills) for field details.
 
+## Where past merges conflicted
+
+`scripts/history.ts` replays the merge commits of a range of time (the last
+30 days by default) with `git merge-tree`, which changes nothing in the
+repository, and reports the paths that conflicted most often, a cause for
+each conflicting region (a lockfile, a release version, a count, a list
+every change adds to, two changes to the same lines, …), the change that
+removes each cause, the
+[conflict hotspots](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+and a weekly trend, as text or as `merge-conflicts/v1` JSON. It needs Git 2.43
+or newer, skips the merges a shallow clone cuts, and says how often each
+cause was right when a sample was checked by hand. The
+[agent procedure](SKILL.md#where-past-merges-conflicted-the-history-report)
+has the flags and the causes.
+
 ## Verification
 
 The skill's scratch-repository tests exercise unrelated staging during merges

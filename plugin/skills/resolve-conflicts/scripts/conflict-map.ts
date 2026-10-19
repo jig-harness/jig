@@ -13,13 +13,18 @@
  *
  * Writes the map to `<git-dir>/jig/conflicts.json`, the snapshot that
  * record.ts fills in and check-resolution.ts verifies. Running it again for
- * the same operation keeps the decisions already recorded; a snapshot for a
- * different operation is replaced. Reads nothing else into the repository
- * and changes nothing else.
+ * the same operation classifies every mapped path afresh, keeps each path's
+ * marker size (git wrote its markers when the operation stopped), and keeps
+ * each decision recorded under the class and command the path still has; a
+ * snapshot for a different operation is replaced. Reads nothing else into the
+ * repository and changes nothing else.
  *
  * Reads `resolve_conflicts.generated` from `.config/jig.yaml`
- * (path globs and the command that regenerates them); JIG_OVERLAY
- * points at another configuration file.
+ * (path globs and the command that regenerates them) and, when
+ * `drive.change_areas_catalog` is set, the `generated[].outputs` and `command`
+ * of the change-area catalog; the configuration wins over the catalog, the
+ * catalog over the built-in lockfile table. JIG_OVERLAY points at another
+ * configuration file.
  *
  * Exit codes: 0 mapped; 2 usage error, not in a git work tree, or invalid
  * configuration; 3 no merge, rebase, cherry-pick or revert is in progress, or
@@ -29,7 +34,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fail, runMain } from "../../../shared/cli.ts";
-import { generatedEntries, regenerateFor } from "./lib/classify.ts";
+import {
+  type CatalogGenerated,
+  catalogGeneratedEntries,
+  type GeneratedEntry,
+  generatedEntries,
+  type PathClass,
+  type Regenerate,
+  regenerateFor,
+} from "./lib/classify.ts";
 import { git, readBlob, splitNul, topLevel } from "./lib/git.ts";
 import { parseHunks } from "./lib/markers.ts";
 import {
@@ -216,31 +229,75 @@ function intentReader(root: string, op: Operation) {
   };
 }
 
-/** Map every unmerged path of the operation in progress. */
+/** The derived-file entries in precedence order: configuration, then the catalog. */
+export function derivedEntries(catalog: CatalogGenerated): GeneratedEntry[] {
+  return [...generatedEntries(), ...catalog.entries];
+}
+
+/** How a path is resolved, as the map derives it: its class, marker size and generator. */
+export interface Classification {
+  class: PathClass;
+  markerSize: number;
+  regenerate: Regenerate | null;
+}
+
+/**
+ * Classify each path from its conflict stages, its attributes and the
+ * derived-file entries. The stages are the index's for an unmerged path and
+ * the snapshot's for one staged since, so a staged path is classified exactly
+ * as it would be while still unmerged.
+ */
+export function classifyPaths(
+  root: string,
+  stagesByPath: ReadonlyMap<string, Unmerged>,
+  entries: readonly GeneratedEntry[],
+): Map<string, Classification> {
+  const attrs = attributes(root, [...stagesByPath.keys()]);
+  const result = new Map<string, Classification>();
+  for (const [path, stages] of stagesByPath) {
+    const pathAttrs = attrs.get(path) ?? {};
+    const size = Number(pathAttrs["conflict-marker-size"]);
+    const markerSize =
+      Number.isInteger(size) && size > 0 ? size : DEFAULT_MARKER_SIZE;
+    const derived = regenerateFor(path, entries);
+    result.set(path, {
+      class: derived
+        ? derived.class
+        : isBinary(root, stages, pathAttrs)
+          ? "binary"
+          : "text",
+      markerSize,
+      regenerate: derived?.regenerate ?? null,
+    });
+  }
+  return result;
+}
+
+/**
+ * Map every unmerged path of the operation in progress, or the paths given in
+ * `unmerged` with their stages. `recordedSizes` holds the marker size an
+ * earlier map of the same operation recorded for a path: git wrote that
+ * path's markers when the operation stopped, so a `conflict-marker-size`
+ * changed since does not describe them.
+ */
 export function mapConflicts(
   root: string,
   op: Operation,
+  catalog: CatalogGenerated = catalogGeneratedEntries(),
+  recordedSizes: ReadonlyMap<string, number> = new Map(),
   unmerged = unmergedPaths(root),
 ): Record<string, PathEntry> {
   const paths = [...unmerged.keys()].sort();
-  const attrs = attributes(root, paths);
-  const entries = generatedEntries();
+  const classes = classifyPaths(root, unmerged, derivedEntries(catalog));
   const intent = intentReader(root, op);
   // Keyed by git paths, so `__proto__` is an ordinary path: no prototype.
   const mapped: Record<string, PathEntry> = Object.create(null);
   for (const path of paths) {
     const stages = unmerged.get(path) as Unmerged;
     const kind = kindOf(stages);
-    const pathAttrs = attrs.get(path) ?? {};
-    const size = Number(pathAttrs["conflict-marker-size"]);
-    const markerSize =
-      Number.isInteger(size) && size > 0 ? size : DEFAULT_MARKER_SIZE;
-    const derived = regenerateFor(path, entries);
-    const cls = derived
-      ? derived.class
-      : isBinary(root, stages, pathAttrs)
-        ? "binary"
-        : "text";
+    const classified = classes.get(path) as Classification;
+    const { class: cls, regenerate } = classified;
+    const markerSize = recordedSizes.get(path) ?? classified.markerSize;
     const file = join(root, path);
     const hunks =
       cls === "text" && existsSync(file)
@@ -250,9 +307,7 @@ export function mapConflicts(
       kind,
       class: cls,
       markerSize,
-      regenerate: derived
-        ? { command: derived.command, cwd: derived.cwd, source: derived.source }
-        : null,
+      regenerate,
       stages,
       hunks,
       intent: intent(path, kind),
@@ -263,14 +318,51 @@ export function mapConflicts(
 }
 
 /**
+ * A staged path's entry under its new classification. Its marker size stays
+ * the one its markers were written with; its conflict regions are a text
+ * file's only.
+ */
+function restaged(
+  before: PathEntry,
+  now: Classification | undefined,
+): PathEntry {
+  if (now === undefined) return before;
+  return {
+    ...before,
+    ...now,
+    markerSize: before.markerSize,
+    hunks: now.class === "text" ? before.hunks : [],
+  };
+}
+
+/** Whether a decision recorded under `before` still answers what `after` requires. */
+export function sameRequirement(
+  before: Classification,
+  after: Classification,
+): boolean {
+  return (
+    before.class === after.class &&
+    before.regenerate?.command === after.regenerate?.command &&
+    before.regenerate?.cwd === after.regenerate?.cwd
+  );
+}
+
+/**
  * Fold a fresh map into the stored snapshot. The same operation keeps every
- * recorded decision and every path mapped earlier (a staged path is no longer
- * unmerged, but its entry is still what the check needs); a different
- * operation's snapshot is replaced.
+ * path mapped earlier (a staged path is no longer unmerged, but its entry is
+ * still what the check needs); a different operation's snapshot is replaced.
+ * A staged path takes its class from `reclassified` (`classifyPaths` over its
+ * stored stages), an unmerged one from the fresh map, so a declaration added,
+ * changed or removed after the path was staged applies to it. A recorded
+ * decision is kept only while the path's class and generator command are the
+ * ones it was recorded under: a decision for another requirement, such as a
+ * regeneration with a generator the catalog has since replaced, is cleared
+ * and must be recorded again.
  */
 export function mergeSnapshot(
   previous: Snapshot | null,
   fresh: Snapshot,
+  reclassified: ReadonlyMap<string, Classification> = new Map(),
 ): { snapshot: Snapshot; note: string } {
   if (previous === null) return { snapshot: fresh, note: "new" };
   if (!sameOperation(previous, fresh.operation))
@@ -278,22 +370,27 @@ export function mergeSnapshot(
       snapshot: fresh,
       note: `replaced the snapshot of a different operation (${previous.operation.kind} of ${previous.operation.incoming.slice(0, 12)} onto ${previous.operation.head.slice(0, 12)})`,
     };
-  const paths: Record<string, PathEntry> = Object.assign(
-    Object.create(null),
-    previous.paths,
-  );
-  for (const [path, entry] of Object.entries(fresh.paths)) {
-    const resolution = Object.hasOwn(previous.paths, path)
-      ? previous.paths[path]?.resolution
-      : undefined;
-    paths[path] = { ...entry, resolution: resolution ?? entry.resolution };
+  const paths: Record<string, PathEntry> = Object.create(null);
+  const cleared: string[] = [];
+  for (const [path, before] of Object.entries(previous.paths)) {
+    const after: PathEntry = Object.hasOwn(fresh.paths, path)
+      ? (fresh.paths[path] as PathEntry)
+      : restaged(before, reclassified.get(path));
+    const keep = sameRequirement(before, after);
+    if (!keep && before.resolution.decision) cleared.push(path);
+    paths[path] = {
+      ...after,
+      resolution: keep ? before.resolution : emptyResolution(),
+    };
   }
+  for (const [path, entry] of Object.entries(fresh.paths))
+    if (!Object.hasOwn(paths, path)) paths[path] = entry;
   const kept = Object.values(paths).filter(
     (entry) => entry.resolution.decision,
   ).length;
   return {
     snapshot: { ...fresh, paths },
-    note: `updated: kept ${kept} recorded decision${kept === 1 ? "" : "s"}`,
+    note: `updated: kept ${kept} recorded decision${kept === 1 ? "" : "s"}${cleared.length === 0 ? "" : `; cleared the decision for ${cleared.sort().join(", ")}, whose class or regeneration command changed: record it again`}`,
   };
 }
 
@@ -357,6 +454,55 @@ function summary(
   return out.join("\n");
 }
 
+/** The operation's warning and the catalog's problems, each under its own `WARNING:` prefix. */
+function warningOf(
+  operation: string | null,
+  catalog: CatalogGenerated,
+): string | null {
+  const lines = [operation, ...catalog.problems].filter(Boolean);
+  return lines.length === 0 ? null : lines.join("\nWARNING: ");
+}
+
+/** The stored stages of each path the same operation mapped earlier and has staged since. */
+function stagedSince(
+  previous: Snapshot | null,
+  fresh: Snapshot,
+): Map<string, Unmerged> {
+  const staged = new Map<string, Unmerged>();
+  if (previous === null || !sameOperation(previous, fresh.operation))
+    return staged;
+  for (const [path, entry] of Object.entries(previous.paths))
+    if (!Object.hasOwn(fresh.paths, path)) staged.set(path, entry.stages);
+  return staged;
+}
+
+/** The stored snapshot, or `null` when there is none; an unreadable one stops the map. */
+function storedSnapshot(root: string): Snapshot | null {
+  try {
+    return loadSnapshot(root);
+  } catch (err) {
+    // A path staged since the map was written is no longer unmerged, so its
+    // conflict stages and decision exist only in that snapshot: never replace it.
+    return fail(
+      3,
+      `conflict-map: the stored snapshot is unreadable: ${err instanceof Error ? err.message : err}`,
+      "Restore it if any conflicted path has been staged since it was written. If none has, move it aside and run conflict-map.ts again.",
+    );
+  }
+}
+
+/** The marker size an earlier map of the same operation recorded for each path. */
+function recordedSizes(
+  previous: Snapshot | null,
+  op: Operation,
+): Map<string, number> {
+  const sizes = new Map<string, number>();
+  if (previous !== null && sameOperation(previous, op))
+    for (const [path, entry] of Object.entries(previous.paths))
+      sizes.set(path, entry.markerSize);
+  return sizes;
+}
+
 function usage(): never {
   fail(2, "usage: conflict-map.ts [--json] [--integration ours|theirs]");
 }
@@ -384,7 +530,9 @@ async function main(): Promise<number> {
       fail(3, `conflict-map: ${err.message} Nothing to map.`);
     throw err;
   }
-  const paths = mapConflicts(root, op);
+  const previous = storedSnapshot(root);
+  const catalog = catalogGeneratedEntries();
+  const paths = mapConflicts(root, op, catalog, recordedSizes(previous, op));
   const fresh: Snapshot = {
     version: 1,
     operation: {
@@ -399,23 +547,16 @@ async function main(): Promise<number> {
       integration: op.integration,
       integrationWhy: op.integrationWhy,
     },
-    warning: op.warning,
+    warning: warningOf(op.warning, catalog),
+    catalogIncomplete: catalog.incomplete,
     mappedAt: new Date().toISOString(),
     paths,
   };
-  let previous: Snapshot | null = null;
-  try {
-    previous = loadSnapshot(root);
-  } catch (err) {
-    // A path staged since the map was written is no longer unmerged, so its
-    // conflict stages and decision exist only in that snapshot: never replace it.
-    fail(
-      3,
-      `conflict-map: the stored snapshot is unreadable: ${err instanceof Error ? err.message : err}`,
-      "Restore it if any conflicted path has been staged since it was written. If none has, move it aside and run conflict-map.ts again.",
-    );
-  }
-  const { snapshot, note } = mergeSnapshot(previous, fresh);
+  const { snapshot, note } = mergeSnapshot(
+    previous,
+    fresh,
+    classifyPaths(root, stagedSince(previous, fresh), derivedEntries(catalog)),
+  );
   const file = saveSnapshot(root, snapshot);
   if (json) console.log(JSON.stringify(snapshot, null, 2));
   else {

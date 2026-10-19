@@ -1,6 +1,6 @@
 ---
 name: resolve-conflicts
-description: "Resolve the conflicts of a stopped merge, rebase or cherry-pick so both sides' intent survives: map the sides and why each changed, resolve per kind of file, record every decision, check for dropped changes, validate, then conclude; use when a merge, rebase or cherry-pick stops on conflicts, including drive-pr's conflict-resolve round."
+description: "Resolve the conflicts of a stopped merge, rebase or cherry-pick so both sides' intent survives: map the sides and why each changed, resolve per kind of file, record every decision, check for dropped changes, validate, then conclude; use when a merge, rebase or cherry-pick stops on conflicts, including drive-pr's conflict-resolve round; or to report where past merges conflicted and why."
 argument-hint: "[base-branch]"
 allowed-tools: "Read Edit Write Grep Glob Bash(git *) Bash(gh pr view *) Bash(bun *)"
 ---
@@ -37,8 +37,10 @@ goes to a human.
 
 Jig maintains this procedure and ships it in the `jig` plugin.
 A repository adds its own generated files and merge obligations in `.config/jig.yaml`
-(the [consumer overlay](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md));
-without that file the skill works on its defaults.
+(the [consumer overlay](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)),
+and the skill also reads the `generated:` entries of its change-area catalog
+(`drive.change_areas_catalog`), so a generator declared there is not stated
+twice; without that file the skill works on its defaults.
 
 ### Paths and working directory
 
@@ -89,7 +91,7 @@ from this side before they are regenerated.
 |--------|--------------|------------|
 | `scripts/conflict-map.ts [--json] [--integration ours\|theirs]` | Maps the stopped operation and writes the snapshot. Read-only otherwise | 0 mapped; 2 usage, not in a git work tree, or invalid configuration; 3 nothing in progress, or the stored snapshot is unreadable (it is never replaced) |
 | `scripts/record.ts <path> <decision> [--reason "…"] [--command "…"] [--dropped "…"]` | Records one path's decision in the snapshot | 0 recorded; 2 usage (unknown path or decision, missing reason, no known regeneration command, or `regenerated` for a path that is not a lockfile or generated file); 3 nothing in progress, or no snapshot for this operation |
-| `scripts/check-resolution.ts [--json \| --message \| --commit-message]` | Verifies the resolution; prints the commit-message section | 0 passes; 1 problems; 2 usage or invalid obligation configuration; 3 nothing in progress, or no snapshot for this operation; 4 needs a human (wins over 1) |
+| `scripts/check-resolution.ts [--json \| --message \| --commit-message]` | Verifies the resolution; prints the commit-message section | 0 passes; 1 problems; 2 usage or invalid configuration; 3 nothing in progress, or no snapshot for this operation; 4 needs a human (wins over 1) |
 
 ## Step 1: Start or find the operation
 
@@ -149,8 +151,8 @@ integration side and the merge base, and for every conflicted path:
 - its **kind**: `both-modified`, `both-added`, `deleted-by-ours`,
   `deleted-by-theirs`, `added-by-ours`, `added-by-theirs` or `both-deleted`;
 - its **class**: `lockfile` (by file name), `generated` (by the
-  repository's configuration), `binary` or `text`, with the regeneration
-  command for the derived classes;
+  repository's configuration or its change-area catalog), `binary` or `text`,
+  with the regeneration command for the derived classes;
 - its conflict regions (line ranges);
 - the **intent** of each side: the commits that changed the path since the
   merge base (at most 20 per side), and, for a path one side deleted, where
@@ -248,6 +250,7 @@ jig/conflicts.json)`, which is never committed. Its shape:
     "integrationWhy": "main is the default branch"
   },
   "warning": null,
+  "catalogIncomplete": null,
   "mappedAt": "2026-01-01T00:00:00.000Z",
   "paths": {
     "src/a.ts": {
@@ -278,13 +281,22 @@ jig/conflicts.json)`, which is never committed. Its shape:
 
 `resolution` is the part you fill in; `record.ts` writes it, and you may
 edit it by hand to the same shape. `regenerate` is
-`{ "command", "cwd", "source": "built-in" | "configuration" }` for a derived
-file. `dropped` is `{ "why": "…", "lines": [{ "side": "theirs", "text": "…" }] }`.
+`{ "command", "cwd", "source": "built-in" | "configuration" | "catalog" }` for
+a derived file, and `null` for a `generated` path whose catalog entry declares
+no command (then `record.ts` needs `--command`). `catalogIncomplete` says why
+the change-area catalog's generated files could not all be read when the map
+was written (the catalog could not be read, or an entry's `outputs` are
+malformed), and keeps the check refusing until a map that reads them all
+clears it. `dropped` is `{ "why": "…", "lines": [{ "side": "theirs", "text": "…" }] }`.
 
 The snapshot belongs to one operation (its kind, `HEAD`, and the incoming
-commit). Running `conflict-map.ts` again for the same operation keeps the
-decisions already recorded and maps paths that are newly unmerged; a snapshot
-of a different operation is replaced, and the output says so. Each stop of a
+commit). Running `conflict-map.ts` again for the same operation classifies
+every mapped path afresh (a staged one from its stored conflict stages), maps
+paths that are newly unmerged, and keeps each recorded decision while the
+path's class and regeneration command are the ones it was recorded under. A
+decision recorded under another class or command is cleared, the output names
+the path, and you record it again. A snapshot of a different operation is
+replaced, and the output says so. Each stop of a
 rebase is a different operation. An unreadable snapshot is never replaced
 (exit 3): once a path is staged, git no longer knows its conflict stages, and
 only the snapshot does. Restore it, or, if nothing has been staged since it
@@ -301,7 +313,13 @@ It fails (exit 1), listing each problem with its file and line, when:
 1. a path is still unmerged;
 2. conflict markers remain in a mapped path, or in any other staged change;
 3. a mapped path has no decision, an unknown one, or lacks a required reason;
-4. what is staged for a mapped path differs from the working tree;
+4. what is staged for a mapped path differs from the working tree, or the
+   configuration, the change-area catalog (or any symbolic link, file or
+   directory, that reading either passes through, or the file it finally
+   reads) or a `.gitattributes` file differs between the working tree and the
+   index, whatever its assume-unchanged or skip-worktree flag, ignored or not:
+   the check classifies paths by the working tree, and the commit carries what
+   is staged;
 5. a lockfile or generated file is not recorded as `regenerated`, or any
    other path is;
 6. a staged path is outside the operation's changed-file set, or its staged
@@ -429,11 +447,43 @@ Each generated entry's `paths` are globs over repository-relative paths (`*` and
 stay within one directory; `**` spans any number; `{a,b}` matches either
 alternative; `[...]` matches one character of a class, `[!...]` or `[^...]`
 one outside it, and never `/`), and `command` rebuilds them, run from the repository
-root. An entry also overrides the built-in lockfile table for a path it
-matches. Unknown keys, wrong types and a glob that cannot compile (an
+root. Unknown keys, wrong types and a glob that cannot compile (an
 unclosed `{`, a backwards range such as `[z-a]`) are refused with the field
-named (exit 2). `JIG_OVERLAY` points the
-scripts at another configuration file.
+named (exit 2). `hotspot_min_merges` (a whole number, 3 by default) is the
+history report's hotspot threshold
+([below](#where-past-merges-conflicted-the-history-report)). `JIG_OVERLAY`
+points the scripts at another configuration file.
+
+**The change-area catalog is read too.** When `drive.change_areas_catalog`
+names a catalog, every `generated[].outputs` path of every area (a literal
+file path, matched exactly, never a glob) is a generated file, rebuilt by that entry's `command` (run from the repository root), the
+class `generated` and the source `catalog` in the map. The catalog states what
+a generator writes once; `resolve_conflicts.generated` is for the files it does
+not declare. A path is classified by the first of these that matches:
+
+1. `resolve_conflicts.generated`, in the order written;
+2. the catalog's `generated[].outputs`, in the catalog's order;
+3. the built-in lockfile table below.
+
+An entry in the list above therefore overrides the catalog and the table, and
+the catalog overrides the table. The following problems are reported, never
+skipped: a catalog entry with no `command` still claims its outputs as
+generated files (never hand-merged) and the map warns that no command is
+known, so `record.ts` needs `--command` for it; an entry whose `outputs` are
+not a list of literal file paths is named in the warning and its outputs are
+classified by the other rules; and a catalog that cannot be read (it may be
+among the conflicted paths) is named in the warning while the map goes on
+without it. In the last two cases `check-resolution.ts` refuses until a later
+map reads every entry. Resolve or correct the catalog first, then run
+`conflict-map.ts` again: it reclassifies every mapped path, a staged one
+included, gives every derived path the command that now applies, and clears
+each decision recorded under a class or command that changed, so
+`check-resolution.ts` asks for that path's decision again. The check itself
+classifies every mapped path again from the configuration and catalog as they
+stand when it runs: a path whose class or command differs from the map's (a
+declaration added, changed or removed since the map) fails until the map runs
+again, and so does a catalog that cannot be read at that point. A `drive.change_areas_catalog` that is not a path is
+refused (exit 2).
 
 Built-in lockfiles, matched by file name in any directory and regenerated in
 that directory:
@@ -458,8 +508,107 @@ that directory:
   it); a removed line that also exists elsewhere in the file is not noticed.
   The semantic search in Step 3 is still yours to do.
 - The conflict-marker size comes from the path's `conflict-marker-size`
-  attribute (default 7).
+  attribute (default 7) when the path is first mapped, and stays that size
+  for the operation, since git wrote the markers then; the check also looks
+  for markers of the size the attribute gives at check time.
 - A `git am` session is not mapped.
+
+## Where past merges conflicted: the history report
+
+Run it to see where a repository's merges keep conflicting and why, before
+deciding what to change; it is not part of resolving a conflict.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/history.ts"               # the last 30 days
+bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --days 90
+bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --since 2026-01-01 --until 2026-03-31
+bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --all --json
+```
+
+A bare date (`YYYY-MM-DD`) is a day in UTC: `--since` starts at its
+midnight, and `--until` ends after it. A time carries its offset from UTC
+(`2026-01-01T09:00:00+02:00`, or `Z` for UTC itself), so no range depends on
+the machine's time zone.
+
+It [replays](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) every merge commit the repository's refs reach in the range
+(fetched pull-request heads such as `refs/pull/*/head` included; the stash
+and a forge's synthetic `refs/pull/*/merge` commits, under `refs/remotes/`
+too, left out): it merges the
+merge's two parents again with `git merge-tree --write-tree`, which needs no
+working tree, in diff3 style so every conflicting region carries its
+[merge base](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). Git's
+new objects go to a temporary object directory, removed afterwards, so no
+ref, index, working tree or object of the repository changes. Today's
+attributes do not reach a past merge: the working tree's and the index's
+`.gitattributes` are read from the empty tree instead, and the system's and a
+person's attributes files are not read. The exception is
+`.git/info/attributes`, which git always reads: a built-in driver
+(`merge=union`, `merge=binary`) set there still applies, and the report reads
+regions at the `conflict-marker-size` set there, as the running git reads the
+value. Every configured merge driver is replaced by `false` and
+renormalization (`merge.renormalize`) is off, so no merge driver or filter
+command of the repository's runs, whichever file names it. It reads git only and never
+fetches: it needs git 2.43 or later, and
+refuses a partial clone below git 2.45, which cannot be kept from fetching
+the objects it lacks. A merge with more than two parents is skipped; in a
+shallow clone, so is a merge whose history the clone cuts (its merge base
+hidden), and the report says its results are partial. A merge git cannot
+replay (an object missing) is skipped too. Every skipped merge is listed
+with its reason.
+
+Each conflicting region gets one cause, the first of these that matches; a
+path git reports as conflicting without text regions, including one it names
+only in a message (a directory rename's file location), gets `structural` for
+the whole path, with git's own kind of conflict (`modify/delete`, `binary`,
+…); a lockfile or generated file is `derived` whatever its regions.
+
+| Cause | The region | The change that removes it |
+|-------|------------|----------------------------|
+| `derived` | the path is a lockfile or a generated file, as `conflict-map.ts` classes it | regenerate it; keep it out of pull requests if a step after the merge can write it |
+| `structural` | git reports the conflict without text regions: modify/delete, rename, binary, file/directory, mode (a text conflict whose regions cannot be read is `overlap`) | none from the regions; resolving it stays a decision |
+| `echo` | the sides are identical, or one side's edit (adding at least one line) is already in the other, in the same order | keep the side that contains the other; rebuild a branch on its base once the branch it was built on merges |
+| `version` | the sides differ only in release versions the changelog skill's release step writes (`changelog.version`, each key configured for the file), at the one place that step writes each and can move it on its own, or in a last-updated date | move the version after the merge; take a date from git |
+| `sequence` | both sides only add lines, among them an entry with the same next ordinal, one past the base's highest | identifiers that cannot collide, or one renumbering step |
+| `tally` | only numbers differ, and each side's number moved by the lines that side added to the file, or added above the line it names | derive the number where it is used; key a register by name, not line |
+| `append` | the base side is empty: both sides added lines at the same place (not in a file both sides added, which had no base) | one file per entry, or a sorted list with one entry per line; in source code the report asks whether it is the same fix written twice |
+| `packed-list` | one line in every side, and each side only adds whole items to a list in it, each placed where an item ends or starts and closing every bracket it opens, changing no item or separator; a quoted literal is one item, read as the line's language reads it (in prose a code span runs to the next run of as many backticks; in code a backslash escapes inside a string or template literal), and a line with a quote that closes nowhere, or a code line holding a `/` or a template literal's `${`, is not read (in prose, a closing `and` or `or` may move) | one item per line |
+| `adjacent` | the lines each side changed touch but do not overlap | split what changes for different reasons onto lines or files of its own |
+| `overlap` | none of the above | two pieces of work changed the same thing: plan them apart, or land one first |
+
+A rule matches only on evidence it can settle, so a region it cannot settle
+falls to `overlap`. A merge counts as mechanical when no path is `structural`
+and no region is `overlap`.
+
+It prints, for the range: how many merges conflicted of how many; the paths,
+most often first, each with its causes and the remedy for its most frequent
+one (`--limit <n>` paths, 25 by default, `0` for all); the
+[conflict hotspots](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+the paths that conflicted in at least `resolve_conflicts.hotspot_min_merges`
+merges (3 by default); each cause's count and remedy; per week, the
+conflicted merges by cause; how often each cause was right when a sample of
+regions was checked by hand
+([references/cause-accuracy.json](references/cause-accuracy.json)); and its
+limits. It sees only merge commits that still exist: a conflict resolved
+during a rebase, a cherry-pick or a revert, or on a branch deleted after a
+squash merge, leaves nothing to replay, and a conflict met again in a later
+merge counts again.
+
+`--json` prints the same as a `merge-conflicts/v1` object: `range`,
+`shallow`, `totals`, `causes`, `paths`, `hotspots`, `weeks` (every week of the
+range, one without a merge as zeros), `confidence`, `limits`, `skipped` (each
+with its reason: `octopus`, `shallow` or `replay-failed`), and `merges`, one
+record per replayed merge (`operation: "merge"`, its commit, both parents
+and the pull-request heads each is the tip of, its date, subject, the pull request and the branches the
+subject names, and each conflicted path with its kind (null for a path git
+names only in a message),
+git's kinds of conflict, class, causes, regions, and the decision and reason
+its `Conflicts resolved:` section recorded).
+
+| Exit | Meaning |
+|------|---------|
+| 0 | the report was printed |
+| 1 | a git call failed |
+| 2 | usage error, not inside a git repository, invalid configuration, git older than 2.43, or a partial clone with git older than 2.45 |
 
 ## Related skills
 

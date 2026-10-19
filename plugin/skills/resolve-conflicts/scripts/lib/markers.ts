@@ -59,10 +59,25 @@ function label(rawLine: string, size: number): string {
   return rawLine.slice(size).replace(/\r$/, "").trim();
 }
 
-/** Every conflict region in `text`, in order. An unterminated region is left out. */
-export function parseHunks(text: string, size = 7): Hunk[] {
+/**
+ * A conflict region with each section as its lines, so an empty section (no
+ * lines) is told apart from one holding a single blank line.
+ */
+export interface RegionLines {
+  start: number;
+  end: number;
+  oursLabel: string;
+  baseLabel: string | null;
+  theirsLabel: string;
+  ours: string[];
+  base: string[] | null;
+  theirs: string[];
+}
+
+/** Every conflict region in `text`, in order, as lines. An unterminated region is left out. */
+export function parseRegionLines(text: string, size = 7): RegionLines[] {
   const lines = text.split("\n");
-  const hunks: Hunk[] = [];
+  const regions: RegionLines[] = [];
   let current: {
     start: number;
     oursLabel: string;
@@ -94,15 +109,15 @@ export function parseHunks(text: string, size = 7): Hunk[] {
     } else if (kind === "separator" && current.section !== "theirs") {
       current.section = "theirs";
     } else if (kind === "close" && current.section === "theirs") {
-      hunks.push({
+      regions.push({
         start: current.start,
         end: i + 1,
         oursLabel: current.oursLabel,
         baseLabel: current.baseLabel,
         theirsLabel: label(line, size),
-        ours: current.ours.join("\n"),
-        base: current.base === null ? null : current.base.join("\n"),
-        theirs: current.theirs.join("\n"),
+        ours: current.ours,
+        base: current.base,
+        theirs: current.theirs,
       });
       current = null;
     } else {
@@ -115,7 +130,17 @@ export function parseHunks(text: string, size = 7): Hunk[] {
       target.push(line.replace(/\r$/, ""));
     }
   });
-  return hunks;
+  return regions;
+}
+
+/** Every conflict region in `text`, in order. An unterminated region is left out. */
+export function parseHunks(text: string, size = 7): Hunk[] {
+  return parseRegionLines(text, size).map((region) => ({
+    ...region,
+    ours: region.ours.join("\n"),
+    base: region.base === null ? null : region.base.join("\n"),
+    theirs: region.theirs.join("\n"),
+  }));
 }
 
 /** 1-based numbers of every line that is a conflict marker of this size. */

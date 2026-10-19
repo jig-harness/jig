@@ -793,10 +793,50 @@ describe("picks and the copy tray", () => {
       expect(long).toContain("    Right when: ");
       expect(long).toContain("Next steps:\n- ");
       expect(long).not.toMatch(/\{(opt|call):/);
-      await page.locator(".tray textarea").fill("Ask Product first.");
+      await page.locator(".tray .nt textarea").fill("Ask Product first.");
       expect(
         (await preview(page)).endsWith("\n\nNote: Ask Product first."),
       ).toBe(true);
+      await context.close();
+    },
+    TIMEOUT,
+  );
+
+  browserIt(
+    "a note on a pick follows its option into the copy text, survives a reload, and goes with the pick",
+    async () => {
+      const { page, context } = await open(files["seven calls"] as string);
+      await page.locator("#o-a-1 .pick").click();
+      await page.locator("#o-c-2 .pick").click();
+      await page.locator(".bar-picks").click();
+      // Only a call with a pick offers a note.
+      expect(await page.locator(".tray textarea[data-note]").count()).toBe(2);
+      await page
+        .locator('.tray textarea[data-note="a-1"]')
+        .fill("Cheaper now.\nRevisit in Q3.");
+      const text = await preview(page);
+      expect(text).toContain(
+        "(a) option 1: A separate shop layer (recommended: option 2)\n    Note: Cheaper now.\n    Revisit in Q3.\n",
+      );
+      expect(text).not.toMatch(/\(c\) option 2.*\n {4}Note:/);
+      // Another option in the same call does not inherit the note.
+      await page.locator('.tray .o[data-call="a"][data-opt="2"]').click();
+      expect(await preview(page)).not.toContain("Cheaper now.");
+      await page.locator('.tray .o[data-call="a"][data-opt="1"]').click();
+      expect(await preview(page)).toContain("Note: Cheaper now.");
+      await page.reload();
+      await picksRestored(page, '.pick[aria-pressed="true"]');
+      await page.locator(".bar-picks").click();
+      expect(await preview(page)).toContain("Note: Cheaper now.");
+      expect(
+        await page.locator('.tray textarea[data-note="a-1"]').inputValue(),
+      ).toBe("Cheaper now.\nRevisit in Q3.");
+      await page.locator(".tray .clear").click();
+      const stored = await page.evaluate(
+        (key) => JSON.parse(localStorage.getItem(key) ?? "{}"),
+        KEY("ENG-310"),
+      );
+      expect(stored.n).toEqual({});
       await context.close();
     },
     TIMEOUT,

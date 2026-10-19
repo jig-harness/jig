@@ -160,7 +160,7 @@ import {
   statSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { stagingLive } from "./lib/claim.ts";
+import { parseStagingHost, stagingLive } from "./lib/claim.ts";
 import { fail, runMain } from "./lib/cli.ts";
 import {
   atomicWrite,
@@ -202,7 +202,7 @@ const PLAIN_DURABLE_RE =
 
 /**
  * `drive.ts`'s own `stagingDirFor` naming for its single-instance lock's
- * staging directory (`${lock.dir}.${pid}.${host}.staging`, created before the
+ * staging directory (`${lock.dir}.${pid}.${host}@${platform}.staging`, created before the
  * `renameSync` that installs the real `pr-drive-<n>.lock` / `pr-drive-
  * worktree-<hash>.lock` name `FOREIGN_LOCKS` matches) — scoped to
  * `FOREIGN_LOCKS`'s own two base names rather than `migrate-state-dir.ts`'s
@@ -249,7 +249,7 @@ function isLiveForeignStaging(name: string, dirPath: string): boolean {
   }
   return stagingLive({
     pid: Number.parseInt(m[2] as string, 10),
-    host: m[3] as string,
+    ...parseStagingHost(m[3] as string),
     ageMs: Math.max(0, Date.now() - mtimeMs),
   });
 }

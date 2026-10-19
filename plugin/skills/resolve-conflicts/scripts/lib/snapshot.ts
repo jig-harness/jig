@@ -122,6 +122,15 @@ export interface Snapshot {
     integrationWhy: string;
   };
   warning: string | null;
+  /**
+   * Why the change-area catalog's generated declarations could not all be
+   * honoured when the map was written (the catalog could not be read, or an
+   * entry's `outputs` are malformed), or `null`. While set, the classes are
+   * incomplete and the check refuses; a map that honours every declaration
+   * clears it. Absent in a snapshot an earlier version wrote, which is read
+   * as `null`.
+   */
+  catalogIncomplete?: string | null;
   mappedAt: string;
   paths: Record<string, PathEntry>;
 }
@@ -236,7 +245,9 @@ function regenerateProblem(value: unknown): string | null {
   if (!isRecord(value)) return "is not an object";
   if (typeof value.command !== "string" || typeof value.cwd !== "string")
     return "has no command or directory";
-  if (value.source !== "built-in" && value.source !== "configuration")
+  if (
+    !["built-in", "configuration", "catalog"].includes(value.source as string)
+  )
     return "has an unknown source";
   return null;
 }
@@ -332,7 +343,14 @@ export function snapshotProblem(value: unknown): string | null {
     return "integration side is neither ours nor theirs";
   if (typeof sides.integrationWhy !== "string")
     return "no reason for the integration side";
+  return mapProblem(value);
+}
+
+/** Why the snapshot's map-level fields and paths are malformed, or null. */
+function mapProblem(value: Record<string, unknown>): string | null {
   if (!isStringOrNull(value.warning)) return "warning is not a string";
+  if (!isStringOrNull(value.catalogIncomplete ?? null))
+    return "catalogIncomplete is not a string";
   if (typeof value.mappedAt !== "string") return "no mapping time";
   if (!isRecord(value.paths)) return "the path map is not an object";
   for (const [path, entry] of Object.entries(value.paths)) {

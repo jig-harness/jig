@@ -16,37 +16,42 @@ import {
   writeFixture,
 } from "./drive-pr-harness.ts";
 import { DRIVE_PACING_ENV, PASS_NOOP } from "./drive-loop-harness.ts";
-import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
+import { spawn } from "node:child_process";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 useDrivePrSuite();
 
-// A shell pipeline: `head` reads the drive's first line and exits, closing
-// the pipe the drive goes on writing to; the drive's own exit status comes
-// back on standard error.
-describe.skipIf(
-  skipsOnWindows(
-    "process-lifecycle",
-    "a closed pipe to the driver is a POSIX SIGPIPE",
-  ),
-)("a closed console", () => {
+/** Close the actual console pipes after the driver's first write. */
+async function closedConsole(
+  argv: string[],
+  options: { cwd: string; env: NodeJS.ProcessEnv },
+) {
+  const child = spawn(process.execPath, argv, {
+    ...options,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const closed = () => {
+    child.stdout.destroy();
+    child.stderr.destroy();
+  };
+  child.stdout.once("data", closed);
+  child.stderr.once("data", closed);
+  const code = await new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", resolve);
+  });
+  return { exitCode: code, stdout: "", stderr: "" };
+}
+
+describe("a closed console", () => {
   it("does not stop the drive, and the driver log records how it ended", async () => {
     const { dir, stateDir } = writeFixture({
       threads: [],
       reviewedSha: scratchClean.head,
       head: scratchClean.head,
     });
-    const proc = Bun.spawn(
-      [
-        "bash",
-        "-c",
-        '"$@" 2>&1 | head -n 1 >/dev/null; echo "exit=$((PIPESTATUS[0]))" >&2',
-        "drive",
-        join(SCRIPTS, "drive.ts"),
-        "999",
-        "--no-head-sync",
-        "--",
-        ...PASS_NOOP,
-      ],
+    const result = await closedConsole(
+      [join(SCRIPTS, "drive.ts"), "999", "--no-head-sync", "--", ...PASS_NOOP],
       {
         cwd: scratchClean.dir,
         env: {
@@ -57,18 +62,12 @@ describe.skipIf(
           DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
           ...DRIVE_PACING_ENV,
         },
-        stdout: "ignore",
-        stderr: "pipe",
       },
     );
-    const [status] = await Promise.all([
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
-    expect(status.trim()).toBe("exit=0");
+    expectSpawnExit(result, 0);
     const log = readFileSync(join(stateDir, "drive-pr-999.log"), "utf8");
     expect(log).toContain("converged");
-  });
+  }, 60_000);
 
   it("does not stop the drive when the driver log could not start either", async () => {
     const { dir, stateDir } = writeFixture({
@@ -78,18 +77,8 @@ describe.skipIf(
     });
     // A directory squatting on the log's path: the log is unavailable.
     mkdirSync(join(stateDir, "drive-pr-999.log"), { recursive: true });
-    const proc = Bun.spawn(
-      [
-        "bash",
-        "-c",
-        '"$@" 2>&1 | head -n 1 >/dev/null; echo "exit=$((PIPESTATUS[0]))" >&2',
-        "drive",
-        join(SCRIPTS, "drive.ts"),
-        "999",
-        "--no-head-sync",
-        "--",
-        ...PASS_NOOP,
-      ],
+    const result = await closedConsole(
+      [join(SCRIPTS, "drive.ts"), "999", "--no-head-sync", "--", ...PASS_NOOP],
       {
         cwd: scratchClean.dir,
         env: {
@@ -100,14 +89,8 @@ describe.skipIf(
           DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
           ...DRIVE_PACING_ENV,
         },
-        stdout: "ignore",
-        stderr: "pipe",
       },
     );
-    const [status] = await Promise.all([
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
-    expect(status.trim()).toBe("exit=0");
-  });
+    expectSpawnExit(result, 0);
+  }, 60_000);
 });

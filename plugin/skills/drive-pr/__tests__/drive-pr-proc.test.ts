@@ -1,3 +1,12 @@
+import {
+  captureProcessTree,
+  identityTargetsGone,
+  signalIdentityTargets,
+} from "../../../shared/process-tree.ts";
+import {
+  expectSpawnExit,
+  expectSpawnKilled,
+} from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 /**
  * drive-pr suite: process plumbing: entry points, the gh deadline wrapper, run(), cancellation and timeouts.
  * Shared fixtures and probes live in drive-pr-harness.ts.
@@ -16,7 +25,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, delimiter } from "node:path";
+import { join, resolve } from "node:path";
 import { sleep } from "../scripts/lib/cli";
 import {
   hasLiveGroupMemberLinux,
@@ -34,15 +43,12 @@ import {
   gitCleanEnv,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
-import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
-import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
+import {
+  byPlatform,
+  exceptOnWindows,
+} from "../../../../lib/test-helpers/windows-skip.ts";
 
 useDrivePrSuite();
-
-const NO_GROUPS = skipsOnWindows(
-  "process-lifecycle",
-  "process groups (`kill(-pgid, 0)`), `ps` and catchable SIGTERM do not exist on Windows",
-);
 
 /**
  * Run `fn` with `run()`'s SIGTERM-to-SIGKILL grace shortened to `ms` through
@@ -597,270 +603,182 @@ describe("RunHandle.stop witnesses the process GROUP, not the signal", () => {
   const LEADER_EXITS_DESCENDANT_LIVES =
     "sh -c 'trap \"\" TERM; n=0; while [ $n -lt 100 ]; do sleep 0.1; n=$((n+1)); done' & exit 0";
 
-  it.skipIf(NO_GROUPS)(
-    "resolves true only once no member of the group is left",
-    async () => {
-      let handle: RunHandle | undefined;
-      const done = run(["sh", "-c", LEADER_EXITS_DESCENDANT_LIVES], {
+  async function nativeTreeWitness(): Promise<void> {
+    let handle: RunHandle | undefined;
+    const done = run(
+      [
+        process.execPath,
+        "-e",
+        "Bun.spawn([process.execPath,'-e','setInterval(() => {},1000)'],{stdout:'ignore',stderr:'ignore'});setInterval(() => {},1000)",
+      ],
+      {
         detached: true,
         stdout: "ignore",
         stderr: "ignore",
-        onSpawn: (h) => {
-          handle = h;
+        onSpawn: (value) => {
+          handle = value;
         },
-      });
-      const h = handle as RunHandle;
-      const pgid = h.pid as number;
-      expect(pgid).toBeGreaterThan(0);
-
-      // The leader is gone almost at once, so `exited` — the thing both earlier
-      // cuts resolved on — settles here, while the descendant is still running.
+      },
+    );
+    if (!handle?.pid) throw new Error("native tree did not spawn");
+    const owned = handle,
+      pid = handle.pid;
+    const deadline = Date.now() + 15_000;
+    let targets = await captureProcessTree(pid);
+    while ((targets?.length ?? 0) < 2 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      targets = await captureProcessTree(pid);
+    }
+    try {
+      expect(targets?.length).toBeGreaterThanOrEqual(2);
+      expect(await owned.stop()).toBe(true);
+      expect(await identityTargetsGone(targets ?? [])).toBe(true);
       await done;
+    } finally {
+      if (targets) await signalIdentityTargets(targets, "SIGKILL");
+    }
+  }
 
-      // Non-vacuous: the group must still be ALIVE at this point, or the test
-      // would prove nothing about waiting for it. The zombie-aware probe must see
-      // it too, or its `false` below could not fail.
+  it("resolves true only once no member of the owned tree is left", async () => {
+    const witness = byPlatform(
+      "Windows witnesses captured identities; POSIX additionally witnesses a group after its leader exits",
+      { windows: "identity", posix: "group" },
+    );
+    if (witness === "identity") {
+      await nativeTreeWitness();
+      return;
+    }
+    let handle: RunHandle | undefined;
+    const done = run(["sh", "-c", LEADER_EXITS_DESCENDANT_LIVES], {
+      detached: true,
+      stdout: "ignore",
+      stderr: "ignore",
+      onSpawn: (h) => {
+        handle = h;
+      },
+    });
+    const h = handle as RunHandle;
+    const pgid = h.pid as number;
+    expect(pgid).toBeGreaterThan(0);
+
+    // The leader is gone almost at once, so `exited` — the thing both earlier
+    // cuts resolved on — settles here, while the descendant is still running.
+    await done;
+
+    // Non-vacuous: the group must still be ALIVE at this point, or the test
+    // would prove nothing about waiting for it. The zombie-aware probe must see
+    // it too, or its `false` below could not fail.
+    expect(groupAlive(pgid)).toBe(true);
+    expect(liveGroupMember(pgid)).toBe(true);
+
+    expect(await h.stop()).toBe(true);
+    // And `true` means what it claims — no member of the group can still act.
+    // A zombie counts as gone, as it does for `stop()`: under a PID 1 that
+    // reaps orphans late, the SIGKILLed descendant can hold its process-table
+    // slot after `stop()` returns, and `kill(-pgid, 0)` would still see it.
+    expect(liveGroupMember(pgid)).toBe(false);
+  }, 60_000);
+
+  it("reports false rather than guessing when there is no group to witness", async () => {
+    // A non-detached child shares OUR process group, so `kill(-pgid, 0)` would
+    // answer about this test runner. There is nothing to witness, and the
+    // honest answer is "not established" — which drive.ts reads as "do not
+    // release the locks".
+    let handle: RunHandle | undefined;
+    const done = run([process.execPath, "-e", "process.exit(0)"], {
+      stdout: "ignore",
+      stderr: "ignore",
+      onSpawn: (h) => {
+        handle = h;
+      },
+    });
+    await done;
+    expect(await (handle as RunHandle).stop()).toBe(false);
+  });
+
+  it("treats a zombie-only group as gone and witnesses native Windows tree termination", async () => {
+    const witness = byPlatform(
+      "Windows has no zombie groups and verifies forced identity termination",
+      { windows: "identity", posix: "group" },
+    );
+    if (witness === "identity") {
+      await nativeTreeWitness();
+      return;
+    }
+    // `kill(-pgid, 0)` cannot tell a zombie from a running process — a
+    // zombie still occupies a process-table slot until reaped, so it
+    // answers "still alive" exactly like a live one. A child spawned under
+    // a container PID 1 that does not reap orphans leaves a SIGKILLed
+    // descendant a zombie indefinitely, stranding `groupAlive`'s own test
+    // (and this port's `groupGone()`) for the FULL `STOP_WITNESS_MS`.
+    //
+    // `DRIVE_PR_PROC_ROOT` overrides which `/proc`-shaped tree the zombie
+    // check reads — pointed at a fixture instead of the real kernel one, so
+    // this is deterministic regardless of host platform: the REAL group
+    // below stays genuinely alive (via `LEADER_EXITS_DESCENDANT_LIVES` —
+    // NOT a bare `trap "" TERM; sleep N`, which that fixture's own doc
+    // comment already explains dies on the group SIGTERM regardless of the
+    // trap, since the trap protects only the shell and a plain `sleep` is a
+    // separate process) so `groupGone()`'s own real-OS check still reports
+    // "not gone" first, exactly as it does in production, and only the
+    // FIXTURE tree — entirely separate from whatever `/proc` the real
+    // spawned process actually lives under — supplies the "no live member"
+    // answer `hasLiveGroupMember` needs to return `true` early.
+    const procRoot = mkdtempSync(join(tmpdir(), "fake-proc-"));
+    const savedProcRoot = process.env.DRIVE_PR_PROC_ROOT;
+    let handle: RunHandle | undefined;
+    const done = run(["sh", "-c", LEADER_EXITS_DESCENDANT_LIVES], {
+      detached: true,
+      stdout: "ignore",
+      stderr: "ignore",
+      onSpawn: (h) => {
+        handle = h;
+      },
+    });
+    const h = handle as RunHandle;
+    const pgid = h.pid as number;
+    expect(pgid).toBeGreaterThan(0);
+    try {
+      const fakeZombieDir = join(procRoot, "999999");
+      mkdirSync(fakeZombieDir, { recursive: true });
+      // Fields after the `(comm)` split: state, ppid, pgrp — only the first
+      // three matter to the parser under test. `Z` is the kernel's own
+      // zombie state code.
+      writeFileSync(
+        join(fakeZombieDir, "stat"),
+        `999999 (fakezombie) Z 1 ${pgid} 1\n`,
+      );
+      process.env.DRIVE_PR_PROC_ROOT = procRoot;
+
+      // Non-vacuous: the REAL group must still be alive at this point, or
+      // the fixture below is never actually exercised.
       expect(groupAlive(pgid)).toBe(true);
-      expect(liveGroupMember(pgid)).toBe(true);
 
-      expect(await h.stop()).toBe(true);
-      // And `true` means what it claims — no member of the group can still act.
-      // A zombie counts as gone, as it does for `stop()`: under a PID 1 that
-      // reaps orphans late, the SIGKILLed descendant can hold its process-table
-      // slot after `stop()` returns, and `kill(-pgid, 0)` would still see it.
-      expect(liveGroupMember(pgid)).toBe(false);
-    },
-  );
-
-  it.skipIf(NO_GROUPS)(
-    "reports false rather than guessing when there is no group to witness",
-    async () => {
-      // A non-detached child shares OUR process group, so `kill(-pgid, 0)` would
-      // answer about this test runner. There is nothing to witness, and the
-      // honest answer is "not established" — which drive.ts reads as "do not
-      // release the locks".
-      let handle: RunHandle | undefined;
-      const done = run(["sh", "-c", "exit 0"], {
-        stdout: "ignore",
-        stderr: "ignore",
-        onSpawn: (h) => {
-          handle = h;
-        },
-      });
-      await done;
-      expect(await (handle as RunHandle).stop()).toBe(false);
-    },
-  );
-
-  it.skipIf(NO_GROUPS)(
-    "on Windows, fails closed when taskkill cannot be confirmed (e.g. missing on this platform)",
-    async () => {
-      // `detached` is forced false on win32 regardless of the option requested
-      // (lib/proc.ts computes it from `process.platform` internally), so this
-      // reproduces the exact real-world shape: a "detached" request that the
-      // platform silently downgrades. An earlier fix here reported the LEADER's
-      // own exit as tree-wide evidence and returned `true` — but the leader can
-      // exit via the SIGKILL escalation's `child.kill(sig)` ENOENT fallback while
-      // a real Windows `taskkill /T /F` is still running or has silently failed,
-      // so that was a false witness, not a real one. `stop()` now awaits
-      // taskkill's OWN exit code — on this POSIX runner `taskkill` does not exist
-      // at all, so the honest, fail-closed answer is `false`, exercised here
-      // exactly as it runs on every non-Windows CI box.
-      const savedPlatform = process.platform;
-      try {
-        Object.defineProperty(process, "platform", {
-          value: "win32",
-          configurable: true,
-        });
-        let handle: RunHandle | undefined;
-        const done = run(["sh", "-c", "sleep 5"], {
-          detached: true,
-          stdout: "ignore",
-          stderr: "ignore",
-          onSpawn: (h) => {
-            handle = h;
-          },
-        });
-        // The child ends on the backstop SIGKILL after the grace, shortened here.
-        expect(
-          await withKillGrace(200, () => (handle as RunHandle).stop()),
-        ).toBe(false);
-        await done;
-      } finally {
-        Object.defineProperty(process, "platform", {
-          value: savedPlatform,
-          configurable: true,
-        });
-      }
-    },
-  );
-
-  it("on Windows, treats a SUCCESSFUL taskkill exit as witnessed", async () => {
-    // A controllable seam to actually validate that property: put a fake
-    // `taskkill` (any name lookup finds via PATH) in front of the real one and
-    // control exactly what `stop()` awaits, rather than inferring the tree's
-    // fate from the leader process alone.
-    const fakeBinDir = mkdtempSync(join(tmpdir(), "fake-taskkill-"));
-    const fakeTaskkill = join(fakeBinDir, "taskkill");
-    // Really ends the target (`/pid <pid> /t /f`, so `$2` is the pid) —
-    // otherwise the real leader keeps running for the test's full `sleep 5`
-    // and `stop()`'s trailing `await exited` hangs regardless of what this
-    // script reports, proving nothing about the exit-code path under test.
-    writeFakeProgram(
-      fakeTaskkill,
-      '#!/bin/sh\nkill -9 "$2" 2>/dev/null\nexit 0\n',
-    );
-    const savedPath = process.env.PATH;
-    const savedPlatform = process.platform;
-    try {
-      process.env.PATH = `${fakeBinDir}${delimiter}${savedPath ?? ""}`;
-      Object.defineProperty(process, "platform", {
-        value: "win32",
-        configurable: true,
-      });
-      let handle: RunHandle | undefined;
-      const done = run(["sh", "-c", "sleep 5"], {
-        detached: true,
-        stdout: "ignore",
-        stderr: "ignore",
-        onSpawn: (h) => {
-          handle = h;
-        },
-      });
-      expect(await (handle as RunHandle).stop()).toBe(true);
-      await done;
+      const start = Date.now();
+      const witnessed = await h.stop();
+      const elapsedMs = Date.now() - start;
+      expect(witnessed).toBe(true);
+      // Well under STOP_WITNESS_MS (30_000): the fix means this resolves on
+      // roughly the first poll tick, not after waiting out the window.
+      expect(elapsedMs).toBeLessThan(5000);
     } finally {
-      process.env.PATH = savedPath;
-      Object.defineProperty(process, "platform", {
-        value: savedPlatform,
-        configurable: true,
-      });
-      rmSync(fakeBinDir, { recursive: true, force: true });
-    }
-  });
-
-  it("on Windows, fails closed when taskkill runs but exits with a genuine failure code", async () => {
-    // Distinguishes "ran and failed" (a real problem) from "not found" (128,
-    // treated as success — the tree it was asked to kill is already gone)
-    // and from ENOENT (the previous test) — distinct signals the
-    // implementation must not conflate.
-    const fakeBinDir = mkdtempSync(join(tmpdir(), "fake-taskkill-fail-"));
-    const fakeTaskkill = join(fakeBinDir, "taskkill");
-    // Kills the target (so the test itself does not hang on the trailing
-    // `await exited`) but still reports failure — a real `taskkill` could
-    // plausibly end the leader while failing to confirm the whole tree, and
-    // the exit code, not the leader's fate, is what `stop()` must trust.
-    writeFakeProgram(
-      fakeTaskkill,
-      '#!/bin/sh\nkill -9 "$2" 2>/dev/null\nexit 1\n',
-    );
-    const savedPath = process.env.PATH;
-    const savedPlatform = process.platform;
-    try {
-      process.env.PATH = `${fakeBinDir}${delimiter}${savedPath ?? ""}`;
-      Object.defineProperty(process, "platform", {
-        value: "win32",
-        configurable: true,
-      });
-      let handle: RunHandle | undefined;
-      const done = run(["sh", "-c", "sleep 5"], {
-        detached: true,
-        stdout: "ignore",
-        stderr: "ignore",
-        onSpawn: (h) => {
-          handle = h;
-        },
-      });
-      expect(await (handle as RunHandle).stop()).toBe(false);
-      await done;
-    } finally {
-      process.env.PATH = savedPath;
-      Object.defineProperty(process, "platform", {
-        value: savedPlatform,
-        configurable: true,
-      });
-      rmSync(fakeBinDir, { recursive: true, force: true });
-    }
-  });
-
-  it.skipIf(NO_GROUPS)(
-    "treats a ZOMBIE-only group as gone rather than waiting out the full witness window",
-    async () => {
-      // `kill(-pgid, 0)` cannot tell a zombie from a running process — a
-      // zombie still occupies a process-table slot until reaped, so it
-      // answers "still alive" exactly like a live one. A child spawned under
-      // a container PID 1 that does not reap orphans leaves a SIGKILLed
-      // descendant a zombie indefinitely, stranding `groupAlive`'s own test
-      // (and this port's `groupGone()`) for the FULL `STOP_WITNESS_MS`.
-      //
-      // `DRIVE_PR_PROC_ROOT` overrides which `/proc`-shaped tree the zombie
-      // check reads — pointed at a fixture instead of the real kernel one, so
-      // this is deterministic regardless of host platform: the REAL group
-      // below stays genuinely alive (via `LEADER_EXITS_DESCENDANT_LIVES` —
-      // NOT a bare `trap "" TERM; sleep N`, which that fixture's own doc
-      // comment already explains dies on the group SIGTERM regardless of the
-      // trap, since the trap protects only the shell and a plain `sleep` is a
-      // separate process) so `groupGone()`'s own real-OS check still reports
-      // "not gone" first, exactly as it does in production, and only the
-      // FIXTURE tree — entirely separate from whatever `/proc` the real
-      // spawned process actually lives under — supplies the "no live member"
-      // answer `hasLiveGroupMember` needs to return `true` early.
-      const procRoot = mkdtempSync(join(tmpdir(), "fake-proc-"));
-      const savedProcRoot = process.env.DRIVE_PR_PROC_ROOT;
-      let handle: RunHandle | undefined;
-      const done = run(["sh", "-c", LEADER_EXITS_DESCENDANT_LIVES], {
-        detached: true,
-        stdout: "ignore",
-        stderr: "ignore",
-        onSpawn: (h) => {
-          handle = h;
-        },
-      });
-      const h = handle as RunHandle;
-      const pgid = h.pid as number;
-      expect(pgid).toBeGreaterThan(0);
+      if (savedProcRoot === undefined) delete process.env.DRIVE_PR_PROC_ROOT;
+      else process.env.DRIVE_PR_PROC_ROOT = savedProcRoot;
+      rmSync(procRoot, { recursive: true, force: true });
+      // The whole point of this test is that `stop()` clears the backstop
+      // SIGKILL timer once it confirms termination via the fixture tree —
+      // so unlike every other test in this file, nothing here ever sends a
+      // REAL kill to the REAL process, which the loop keeps alive for up to
+      // 10s on its own. Without this, `await done` would block for the
+      // remainder of that loop.
       try {
-        const fakeZombieDir = join(procRoot, "999999");
-        mkdirSync(fakeZombieDir, { recursive: true });
-        // Fields after the `(comm)` split: state, ppid, pgrp — only the first
-        // three matter to the parser under test. `Z` is the kernel's own
-        // zombie state code.
-        writeFileSync(
-          join(fakeZombieDir, "stat"),
-          `999999 (fakezombie) Z 1 ${pgid} 1\n`,
-        );
-        process.env.DRIVE_PR_PROC_ROOT = procRoot;
-
-        // Non-vacuous: the REAL group must still be alive at this point, or
-        // the fixture below is never actually exercised.
-        expect(groupAlive(pgid)).toBe(true);
-
-        const start = Date.now();
-        const witnessed = await h.stop();
-        const elapsedMs = Date.now() - start;
-        expect(witnessed).toBe(true);
-        // Well under STOP_WITNESS_MS (30_000): the fix means this resolves on
-        // roughly the first poll tick, not after waiting out the window.
-        expect(elapsedMs).toBeLessThan(5000);
-      } finally {
-        if (savedProcRoot === undefined) delete process.env.DRIVE_PR_PROC_ROOT;
-        else process.env.DRIVE_PR_PROC_ROOT = savedProcRoot;
-        rmSync(procRoot, { recursive: true, force: true });
-        // The whole point of this test is that `stop()` clears the backstop
-        // SIGKILL timer once it confirms termination via the fixture tree —
-        // so unlike every other test in this file, nothing here ever sends a
-        // REAL kill to the REAL process, which the loop keeps alive for up to
-        // 10s on its own. Without this, `await done` would block for the
-        // remainder of that loop.
-        try {
-          process.kill(-pgid, "SIGKILL");
-        } catch {
-          // already gone
-        }
-        await done;
+        process.kill(-pgid, "SIGKILL");
+      } catch {
+        // already gone
       }
-    },
-  );
+      await done;
+    }
+  }, 60_000);
 
   describe("hasLiveGroupMemberLinux — ENOENT is the only skippable read failure", () => {
     // Hermetic and platform-independent by construction: no process is
@@ -962,7 +880,7 @@ describe("RunHandle.stop witnesses the process GROUP, not the signal", () => {
     // runs, so a timer `doStop` installs afterwards has nothing else to
     // clear it.
     let handle: RunHandle | undefined;
-    const done = run(["sh", "-c", "exit 0"], {
+    const done = run([process.execPath, "-e", "process.exit(0)"], {
       detached: true,
       stdout: "ignore",
       stderr: "ignore",
@@ -977,7 +895,13 @@ describe("RunHandle.stop witnesses the process GROUP, not the signal", () => {
 
     const killSpy = spyOn(process, "kill");
     try {
-      expect(await withKillGrace(200, () => h.stop())).toBe(true);
+      const expected = byPlatform(
+        "Windows refuses an exited root whose full tree was never captured; POSIX can still witness its group",
+        { windows: "false", posix: "true" },
+      );
+      expect(await withKillGrace(200, () => h.stop())).toBe(
+        expected === "true",
+      );
       // Past the grace plus slack: the unfixed code left a fresh
       // `setTimeout(() => signalTree('SIGKILL'), grace)` armed and uncleared
       // for exactly this "already gone on the first check" case, firing a
@@ -985,7 +909,8 @@ describe("RunHandle.stop witnesses the process GROUP, not the signal", () => {
       // unrelated process.
       await new Promise((r) => setTimeout(r, 700));
       const staleKill = killSpy.mock.calls.some(
-        (args) => args[0] === -pgid && args[1] === "SIGKILL",
+        (args) =>
+          (args[0] === -pgid || args[0] === pgid) && args[1] === "SIGKILL",
       );
       expect(staleKill).toBe(false);
     } finally {
@@ -1070,214 +995,203 @@ describe("sleep — abortable", () => {
  */
 describe("cancellation reaches a deadlined child", () => {
   const PROC = join(SCRIPTS, "lib", "proc.ts");
-  // How long each probe child sleeps before marking itself completed, and how
-  // long a probe waits after the kill before looking: long enough past the
-  // sleep that an absent marker means "killed", not "not written yet".
-  const CHILD_SLEEP_SEC = 1.5;
-  const OUTLIVE_MS = 2500;
-
-  interface Probe {
-    /** Did the child run to completion after the fixture was killed? */
-    completed: boolean;
-    /** Did the fixture's OWN handler run? */
-    ownHandlerRan: boolean;
-    signal: string | null;
-    code: number | null;
+  const pause = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+  async function until(check: () => boolean | Promise<boolean>): Promise<void> {
+    const deadline = Date.now() + 30_000;
+    while (!(await check())) {
+      if (Date.now() >= deadline)
+        throw new Error(
+          "cancellation fixture did not reach its expected state",
+        );
+      await pause(50);
+    }
   }
-
-  /**
-   * `runOpts` is spliced into the fixture verbatim, so one fixture covers both
-   * the library-detached child (a deadline) and the caller-owned one (an
-   * explicit `detached` / `onSpawn`), which the forwarding deliberately leaves
-   * alone.
-   */
-  async function probe(opts: {
-    ownHandler: boolean;
-    runOpts: string;
-  }): Promise<Probe> {
+  const nativeChild = (live: string, completed: string, finish: string) => `
+    const {writeFileSync,existsSync} = require('node:fs');
+    writeFileSync(${JSON.stringify(live)}, String(process.pid));
+    setInterval(() => { if (existsSync(${JSON.stringify(finish)})) {
+      writeFileSync(${JSON.stringify(completed)}, ''); process.exit(0);
+    } }, 25);
+  `;
+  function consoleMode(): string {
+    return byPlatform(
+      "Windows cancellation enters the cleanup handler through a modeled console event",
+      { windows: "file", posix: "signal" },
+    );
+  }
+  function watchConsole(request: string, mode: string): string {
+    return mode === "file"
+      ? `setInterval(() => {
+      if (existsSync(${JSON.stringify(request)})) { unlinkSync(${JSON.stringify(request)}); process.emit('SIGTERM'); }
+    }, 25);`
+      : "";
+  }
+  function cancel(
+    child: ReturnType<typeof spawn>,
+    request: string,
+    mode: string,
+  ): void {
+    if (mode === "file") writeFileSync(request, "stop");
+    else child.kill("SIGTERM");
+  }
+  async function probe(opts: { ownHandler: boolean; runOpts: string }) {
     const dir = mkdtempSync(join(tmpdir(), "drive-cancel-"));
-    const live = join(dir, "live");
-    const completed = join(dir, "completed");
-    const ownRan = join(dir, "own-handler-ran");
-    // The child announces itself LIVE before sleeping, so the probe never races
-    // the spawn: a TERM delivered before the child existed would leave nothing
-    // to forward to and pass vacuously.
-    const script = `: > ${JSON.stringify(live)}; sleep ${CHILD_SLEEP_SEC}; : > ${JSON.stringify(completed)}`;
+    const live = join(dir, "live"),
+      completed = join(dir, "completed"),
+      finish = join(dir, "finish");
+    const ownRan = join(dir, "own-handler-ran"),
+      request = join(dir, "console-request");
+    const mode = consoleMode();
+    const own = opts.ownHandler
+      ? byPlatform(
+          "Windows cleanup resources run after asynchronous cancellation settles",
+          {
+            windows: `registerCleanup(() => {writeFileSync(${JSON.stringify(ownRan)}, ''); process.exit(9);});`,
+            posix: `process.on('SIGTERM', () => {writeFileSync(${JSON.stringify(ownRan)}, ''); process.exit(9);});`,
+          },
+        )
+      : "";
     writeFileSync(
       join(dir, "fixture.ts"),
-      [
-        `import { run } from ${JSON.stringify(PROC)};`,
-        `import { writeFileSync } from 'node:fs';`,
-        opts.ownHandler
-          ? `process.on('SIGTERM', () => { writeFileSync(${JSON.stringify(ownRan)}, ''); process.exit(9); });`
-          : "",
-        `await run(['bash', '-c', ${JSON.stringify(script)}], ${opts.runOpts});`,
-      ].join("\n"),
+      `
+      import {run} from ${JSON.stringify(PROC)};
+      import {registerCleanup} from ${JSON.stringify(resolve(SCRIPTS, "../../../shared/cleanup.ts"))};
+      import {writeFileSync,existsSync,unlinkSync} from 'node:fs';
+      ${own}
+      ${watchConsole(request, mode)}
+      await run([process.execPath,'-e',${JSON.stringify(nativeChild(live, completed, finish))}], ${opts.runOpts});
+    `,
     );
-
+    const child = spawn(process.execPath, [join(dir, "fixture.ts")], {
+      cwd: dir,
+      env: gitCleanEnv(),
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    const ended = new Promise<{
+      exitCode: number | null;
+      signal: string | null;
+    }>((resolve) =>
+      child.on("close", (exitCode, signal) => resolve({ exitCode, signal })),
+    );
+    try {
+      await until(() => existsSync(live));
+      const pid = Number(readFileSync(live, "utf8"));
+      const targets = await captureProcessTree(pid);
+      if (targets === null)
+        throw new Error("child identity unavailable before cancellation");
+      cancel(child, request, mode);
+      const exit = await ended;
+      writeFileSync(finish, "finish");
+      await until(
+        async () =>
+          existsSync(completed) || (await identityTargetsGone(targets)),
+      );
+      return {
+        ...exit,
+        stdout: "",
+        stderr,
+        completed: existsSync(completed),
+        ownHandlerRan: existsSync(ownRan),
+      };
+    } finally {
+      child.kill("SIGKILL");
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  it("kills the in-flight deadlined child instead of letting it complete", async () => {
+    const result = await probe({
+      ownHandler: false,
+      runOpts: "{timeoutSec:60}",
+    });
+    expect(result.completed).toBe(false);
+    const termination = byPlatform(
+      "Windows cleanup exits143; POSIX re-raises SIGTERM",
+      { windows: "status", posix: "signal" },
+    );
+    if (termination === "status") expectSpawnExit(result, 143);
+    else expectSpawnKilled(result);
+    exceptOnWindows("POSIX retains the original terminating signal", () =>
+      expect(result.signal).toBe("SIGTERM"),
+    );
+  }, 60_000);
+  it("preserves the caller's own handler while still killing the child", async () => {
+    const result = await probe({
+      ownHandler: true,
+      runOpts: "{timeoutSec:60}",
+    });
+    expect(result.completed).toBe(false);
+    expect(result.ownHandlerRan).toBe(true);
+    expectSpawnExit(result, 9);
+  }, 60_000);
+  it("keeps forwarding a second signal when the caller handler does not exit", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "drive-cancel-repeat-"));
+    const liveA = join(dir, "liveA"),
+      liveB = join(dir, "liveB"),
+      completedA = join(dir, "completedA"),
+      completedB = join(dir, "completedB");
+    const request = join(dir, "request"),
+      phase2 = join(dir, "phase2");
+    const mode = consoleMode();
+    writeFileSync(
+      join(dir, "fixture.ts"),
+      `
+      import {run} from ${JSON.stringify(PROC)};
+      import {writeFileSync,existsSync,unlinkSync} from 'node:fs';
+      process.on('SIGTERM', () => {});
+      ${watchConsole(request, mode)}
+      await run([process.execPath,'-e',${JSON.stringify(nativeChild(liveA, completedA, join(dir, "finishA")))}],{timeoutSec:60});
+      writeFileSync(${JSON.stringify(phase2)},'');
+      await run([process.execPath,'-e',${JSON.stringify(nativeChild(liveB, completedB, join(dir, "finishB")))}],{timeoutSec:60});
+    `,
+    );
     const child = spawn(process.execPath, [join(dir, "fixture.ts")], {
       cwd: dir,
       env: gitCleanEnv(),
       stdio: "ignore",
     });
-    const ended = new Promise<{ code: number | null; signal: string | null }>(
-      (resolve) => {
-        child.on("close", (code, signal) => resolve({ code, signal }));
-      },
-    );
-
-    const nap = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    for (let i = 0; i < 200 && !existsSync(live); i++) await nap(25);
-    const wasLive = existsSync(live);
-    child.kill("SIGTERM");
-    const exit = await ended;
-    // Outlive the child's own sleep: the assertion is that it never
-    // completes, which is only meaningful once it would have.
-    await nap(OUTLIVE_MS);
-
-    const result: Probe = {
-      completed: existsSync(completed),
-      ownHandlerRan: existsSync(ownRan),
-      signal: exit.signal,
-      code: exit.code,
-    };
-    rmSync(dir, { recursive: true, force: true });
-    // Thrown rather than folded into the result, so a fixture whose child never
-    // started fails loudly instead of silently satisfying `completed: false`.
-    if (!wasLive) throw new Error("probe child never became live");
-    return result;
-  }
-
-  it.skipIf(NO_GROUPS)(
-    "kills the in-flight deadlined child instead of letting it complete",
-    async () => {
-      const r = await probe({
-        ownHandler: false,
-        runOpts: "{ timeoutSec: 60 }",
-      });
-      expect({ completed: r.completed, signal: r.signal }).toEqual({
-        completed: false,
-        // Re-raised: with no caller handler the forwarding removes itself and
-        // signals this process again, so it dies from the TERM exactly as it
-        // would have with no handler installed. That is what keeps a
-        // cancellation unmaskable by a caller that swallowed the RunResult.
-        signal: "SIGTERM",
-      });
-    },
-  );
-
-  it.skipIf(NO_GROUPS)(
-    "preserves the caller's own handler while still killing the child",
-    async () => {
-      const r = await probe({
-        ownHandler: true,
-        runOpts: "{ timeoutSec: 60 }",
-      });
-      expect({
-        completed: r.completed,
-        ownHandlerRan: r.ownHandlerRan,
-        code: r.code,
-      }).toEqual({
-        completed: false,
-        ownHandlerRan: true,
-        // The caller's handler owns the outcome once it exists — no re-raise, and
-        // its own exit code, not the signal's.
-        code: 9,
-      });
-    },
-  );
-
-  it.skipIf(NO_GROUPS)(
-    "keeps forwarding a second signal when the caller handler does not exit",
-    async () => {
-      // Regression for the bug this hardening fixed: `forward` used to
-      // remove itself unconditionally after the FIRST occurrence of a signal,
-      // regardless of whether other listeners were still present. A caller that
-      // handles or debounces a signal without exiting — modelled here by an own
-      // handler that never calls `process.exit()` — silently regained the
-      // original unforwarded-cancellation bug for every signal after the first.
-      // Two deadlined children run in sequence so the SECOND SIGTERM has a live
-      // tracked group to prove was (or was not) forwarded.
-      const dir = mkdtempSync(join(tmpdir(), "drive-cancel-repeat-"));
-      const liveA = join(dir, "liveA");
-      const completedA = join(dir, "completedA");
-      const liveB = join(dir, "liveB");
-      const completedB = join(dir, "completedB");
-      const phase2 = join(dir, "phase2-ready");
-      const scriptA = `: > ${JSON.stringify(liveA)}; sleep ${CHILD_SLEEP_SEC}; : > ${JSON.stringify(completedA)}`;
-      const scriptB = `: > ${JSON.stringify(liveB)}; sleep ${CHILD_SLEEP_SEC}; : > ${JSON.stringify(completedB)}`;
-      writeFileSync(
-        join(dir, "fixture.ts"),
-        [
-          `import { run } from ${JSON.stringify(PROC)};`,
-          `import { writeFileSync } from 'node:fs';`,
-          `process.on('SIGTERM', () => {});`,
-          `async function main() {`,
-          `  await run(['bash', '-c', ${JSON.stringify(scriptA)}], { timeoutSec: 60 });`,
-          `  writeFileSync(${JSON.stringify(phase2)}, '');`,
-          `  await run(['bash', '-c', ${JSON.stringify(scriptB)}], { timeoutSec: 60 });`,
-          `}`,
-          `main();`,
-        ].join("\n"),
+    try {
+      await until(() => existsSync(liveA));
+      const targetsA = await captureProcessTree(
+        Number(readFileSync(liveA, "utf8")),
       );
-
-      const child = spawn(process.execPath, [join(dir, "fixture.ts")], {
-        cwd: dir,
-        env: gitCleanEnv(),
-        stdio: "ignore",
-      });
-      const nap = (ms: number) => new Promise((r) => setTimeout(r, ms));
-      try {
-        for (let i = 0; i < 200 && !existsSync(liveA); i++) await nap(25);
-        if (!existsSync(liveA))
-          throw new Error("fixture child A never became live");
-        child.kill("SIGTERM");
-
-        for (let i = 0; i < 200 && !existsSync(phase2); i++) await nap(25);
-        if (!existsSync(phase2)) {
-          throw new Error("fixture did not resume after the first SIGTERM");
-        }
-
-        for (let i = 0; i < 200 && !existsSync(liveB); i++) await nap(25);
-        if (!existsSync(liveB))
-          throw new Error("fixture child B never became live");
-        child.kill("SIGTERM");
-
-        // Outlive child B's own sleep: the assertion is that it never
-        // completes, which is only meaningful once it would have.
-        await nap(OUTLIVE_MS);
-
-        expect(existsSync(completedA)).toBe(false);
-        expect(existsSync(completedB)).toBe(false);
-      } finally {
-        child.kill("SIGKILL");
-        rmSync(dir, { recursive: true, force: true });
-      }
-    },
-  );
-
-  it.skipIf(NO_GROUPS)(
-    "leaves a caller-owned child to its caller",
-    async () => {
-      // `detached` + `onSpawn` is drive.ts's pass: the caller took the handle and
-      // orders its own `stop()` against the lock release, on a 2s grace. The
-      // library must NOT pre-empt that by SIGKILLing a mid-edit agent on its own
-      // 250ms one — so a fixture that takes the handle and then exits without
-      // stopping leaks the child BY CONTRACT. Asserting the leak is what pins the
-      // boundary; widening the forwarding to cover these would flip this test.
-      const r = await probe({
-        ownHandler: true,
-        runOpts: "{ detached: true, onSpawn: () => {} }",
-      });
-      expect({
-        completed: r.completed,
-        ownHandlerRan: r.ownHandlerRan,
-      }).toEqual({
-        completed: true,
-        ownHandlerRan: true,
-      });
-    },
-  );
+      expect(targetsA).not.toBeNull();
+      cancel(child, request, mode);
+      await until(() => existsSync(phase2) && existsSync(liveB));
+      const targetsB = await captureProcessTree(
+        Number(readFileSync(liveB, "utf8")),
+      );
+      expect(targetsB).not.toBeNull();
+      cancel(child, request, mode);
+      await until(
+        async () =>
+          (await identityTargetsGone(targetsA ?? [])) &&
+          (await identityTargetsGone(targetsB ?? [])),
+      );
+      expect(existsSync(completedA)).toBe(false);
+      expect(existsSync(completedB)).toBe(false);
+    } finally {
+      const exited = new Promise<void>((resolve) =>
+        child.once("exit", () => resolve()),
+      );
+      child.kill("SIGKILL");
+      if (child.exitCode === null && child.signalCode === null) await exited;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
+  it("leaves a caller-owned child to its caller", async () => {
+    const result = await probe({
+      ownHandler: true,
+      runOpts: "{detached:true,onSpawn:()=>{}}",
+    });
+    expect(result.completed).toBe(true);
+    expect(result.ownHandlerRan).toBe(true);
+    expectSpawnExit(result, 9);
+  }, 60_000);
 });
 
 // ── Buffer cap ───
