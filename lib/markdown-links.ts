@@ -19,9 +19,16 @@
 // so each `<address>` the file holds is written as a URI autolink for that
 // render: it stays a link exactly where the address was one, and a link whose
 // text is its whole destination is an autolink. An address ends before its
-// `>`, so every email autolink is marked. Two renders, then, whatever the file
-// holds; a link the markers still miss stands at the first place of its text
-// no other link was read from.
+// `>`, so every email autolink is marked.
+//
+// A marker is read only from a render that is the same document: each render
+// also writes the file's outline, every element with its text and metadata
+// but no destination, markers and the autolink scheme removed. A marker that
+// changes the outline (one that ends a fence line, breaks a label or turns an
+// emphasis delimiter) is left out, the places whose markers keep the outline
+// found by halving, and a link the markers still miss stands at the first
+// place of its text no other link was read from. Two renders, then, unless a
+// marker changes the document; then about two more per such marker.
 
 /** One destination and the 1-based line it starts on. */
 export interface MarkdownLink {
@@ -46,26 +53,118 @@ interface Read {
 /** Every link destination `content` declares, ordered by line. */
 export function markdownLinks(content: string): MarkdownLink[] {
   const lineOf = lineFinder(content);
-  const links = place(content, render(content)).map(({ href, at, email }) => ({
-    target: email ? `mailto:${href}` : unescapeDestination(href),
-    line: lineOf(at),
-  }));
+  const digits = markAlphabet(content);
+  const strip = stripper(digits);
+  const plain = render(content, strip);
+  const links = place(content, plain, digits, strip).map(
+    ({ href, at, email }) => ({
+      target: email ? `mailto:${href}` : unescapeDestination(href),
+      line: lineOf(at),
+    }),
+  );
   return links.sort((a, b) => a.line - b.line);
 }
 
-function render(content: string): Rendered[] {
-  const rendered: Rendered[] = [];
-  Bun.markdown.render(content, {
-    link: (children, { href }) => {
-      rendered.push({ href, image: false, autolink: children === href });
-      return children;
-    },
-    image: (children, { src }) => {
-      rendered.push({ href: src, image: true, autolink: false });
-      return children;
-    },
-  });
-  return rendered;
+/** A render's links, in order, and its outline with `strip` applied. */
+interface Rendering {
+  links: Rendered[];
+  outline: string;
+}
+
+/** Every element the renderer calls back for, so the outline holds them all. */
+const ELEMENTS = [
+  "heading",
+  "paragraph",
+  "blockquote",
+  "code",
+  "list",
+  "listItem",
+  "hr",
+  "table",
+  "thead",
+  "tbody",
+  "tr",
+  "th",
+  "td",
+  "html",
+  "strong",
+  "emphasis",
+  "link",
+  "image",
+  "codespan",
+  "strikethrough",
+  "text",
+] as const;
+
+function render(content: string, strip: (text: string) => string): Rendering {
+  const links: Rendered[] = [];
+  // The last text written, as read and as outlined: a link whose children are
+  // that text alone, read as its destination, is an autolink.
+  let text = { read: "", outlined: "" };
+  const callbacks: Record<string, unknown> = {};
+  for (const element of ELEMENTS)
+    callbacks[element] = (
+      children: string | undefined,
+      meta: Record<string, unknown> | undefined,
+    ) => {
+      const inner = children ?? "";
+      const outlined = outlineOf(element, inner, meta, strip);
+      if (element === "text") text = { read: inner, outlined };
+      const link = linkOf(element, meta);
+      if (link !== undefined)
+        links.push({
+          ...link,
+          autolink:
+            !link.image && inner === text.outlined && text.read === link.href,
+        });
+      return outlined;
+    };
+  const outline = Bun.markdown.render(
+    content,
+    callbacks as Parameters<typeof Bun.markdown.render>[1],
+  );
+  return { links, outline };
+}
+
+/** One element as the outline writes it. */
+function outlineOf(
+  element: string,
+  children: string,
+  meta: Record<string, unknown> | undefined,
+  strip: (text: string) => string,
+): string {
+  const inner = element === "text" ? JSON.stringify(strip(children)) : children;
+  return `<${element} ${describe(meta, strip)}>${inner}</${element}>`;
+}
+
+/** The destination a link or image element declares. */
+function linkOf(
+  element: string,
+  meta: Record<string, unknown> | undefined,
+): { href: string; image: boolean } | undefined {
+  const href =
+    element === "link"
+      ? meta?.href
+      : element === "image"
+        ? meta?.src
+        : undefined;
+  return typeof href === "string"
+    ? { href, image: element === "image" }
+    : undefined;
+}
+
+/** An element's metadata without its destination, `strip` applied, empty values left out. */
+function describe(
+  meta: Record<string, unknown> | undefined,
+  strip: (text: string) => string,
+): string {
+  const kept: [string, unknown][] = [];
+  for (const [name, value] of Object.entries(meta ?? {})) {
+    if (name === "href" || name === "src") continue;
+    const shown = typeof value === "string" ? strip(value) : value;
+    if (shown !== undefined && shown !== "") kept.push([name, shown]);
+  }
+  return JSON.stringify(kept);
 }
 
 /**
@@ -73,11 +172,17 @@ function render(content: string): Rendered[] {
  * stands where the marker says; the rest take, in order, the places of their
  * text no marker claimed, or its first place when every one is claimed.
  */
-function place(content: string, rendered: Rendered[]): (Rendered & Read)[] {
+function place(
+  content: string,
+  plain: Rendering,
+  digits: string[],
+  strip: (text: string) => string,
+): (Rendered & Read)[] {
+  const rendered = plain.links;
   const starts = new Map<string, number[]>();
   for (const { href } of rendered)
     if (!starts.has(href)) starts.set(href, indexesOf(content, href));
-  const read = readMarked(content, starts);
+  const read = readMarked(content, starts, { plain, digits, strip });
   const nextRead = queues(read);
   const claimed = new Set<number>();
   const placed = rendered.map((link) => {
@@ -114,23 +219,53 @@ const key = ({ href, image }: Pick<Rendered, "href" | "image">) =>
 
 /**
  * What each destination was read as, by `key`, in render order: the file
- * rendered again as `markFile` writes it.
+ * rendered again as `markFile` writes it, with every marker that keeps the
+ * outline.
  */
 function readMarked(
   content: string,
   starts: Map<string, number[]>,
+  unmarked: {
+    plain: Rendering;
+    digits: string[];
+    strip: (text: string) => string;
+  },
 ): Map<string, Read[]> {
   const read = new Map<string, Read[]>();
   const ends = markableEnds(content, starts);
   if (ends.length === 0) return read;
-  const markers = markerSet(content, ends.length);
+  const markers = markerSet(unmarked.digits, ends.length);
   const addresses = enclosedAddresses(content, starts);
-  const file = markFile(content, ends, addresses, markers.write);
-  for (const link of render(file.marked)) {
-    const id = markers.read(link.href);
+  const kept = keepOutline(
+    ends.map((_, id) => id),
+    (ids) => {
+      const file = markFile(content, ends, ids, addresses, markers.write);
+      const rendering = render(file.marked, unmarked.strip);
+      return rendering.outline === unmarked.plain.outline
+        ? { file, links: rendering.links }
+        : undefined;
+    },
+  );
+  return kept === undefined
+    ? read
+    : readLinks(content, ends, addresses, kept, markers.read);
+}
+
+/** What each link of a marked render was read as, by `key`, in render order. */
+function readLinks(
+  content: string,
+  ends: number[],
+  addresses: Map<number, number>,
+  { file, links }: { file: MarkedFile; links: Rendered[] },
+  idOf: (href: string) => number | undefined,
+): Map<string, Read[]> {
+  const read = new Map<string, Read[]>();
+  for (const link of links) {
+    const id = idOf(link.href);
     const end = id === undefined ? undefined : ends[id];
-    if (id === undefined || end === undefined) continue;
-    const start = (file.markEnds[id] ?? 0) - link.href.length;
+    const markEnd = id === undefined ? undefined : file.markEnds[id];
+    if (end === undefined || markEnd === undefined) continue;
+    const start = markEnd - link.href.length;
     if (!file.marked.startsWith(link.href, start)) continue;
     const at = file.sourceOf(start);
     const found = key({ href: content.slice(at, end), image: link.image });
@@ -139,6 +274,33 @@ function readMarked(
     read.set(found, list);
   }
   return read;
+}
+
+/**
+ * The result of `attempt` for the most places it accepts: all of `ids` when
+ * it accepts them, else the places found by halving, each half tried beside
+ * every place already kept. Every place kept was tried in one attempt with
+ * all the others, so the result is that attempt's. Undefined when none is.
+ */
+function keepOutline<T>(
+  ids: number[],
+  attempt: (ids: number[]) => T | undefined,
+): T | undefined {
+  let last: T | undefined;
+  const grow = (kept: number[], trying: number[]): number[] => {
+    if (trying.length === 0) return kept;
+    const all = [...kept, ...trying];
+    const result = attempt(all);
+    if (result !== undefined) {
+      last = result;
+      return all;
+    }
+    if (trying.length === 1) return kept;
+    const half = Math.ceil(trying.length / 2);
+    return grow(grow(kept, trying.slice(0, half)), trying.slice(half));
+  };
+  grow([], ids);
+  return last;
 }
 
 /**
@@ -172,25 +334,35 @@ function enclosedAddresses(
   return addresses;
 }
 
+/** A marked file, where each marker ends in it, and the source of its indexes. */
+interface MarkedFile {
+  marked: string;
+  markEnds: number[];
+  sourceOf: (index: number) => number;
+}
+
 /**
- * `content` with marker `id` at `ends[id]` and `SCHEME` before every
- * enclosed address; where each marker ends in it; and the place in `content`
- * an index of it was written from.
+ * `content` with marker `id` at `ends[id]` for each of `ids`, and `SCHEME`
+ * before every enclosed address one of them ends; where each marker ends in
+ * it; and the place in `content` an index of it was written from.
  */
 function markFile(
   content: string,
   ends: number[],
+  ids: number[],
   addresses: Map<number, number>,
   marker: (id: number) => string,
-): {
-  marked: string;
-  markEnds: number[];
-  sourceOf: (index: number) => number;
-} {
-  const cuts = [
-    ...ends.map((at, id) => ({ at, id, text: marker(id) })),
-    ...[...addresses.values()].map((at) => ({ at, id: -1, text: SCHEME })),
-  ].sort((a, b) => a.at - b.at);
+): MarkedFile {
+  const cuts = ids
+    .flatMap((id) => {
+      const at = ends[id] ?? 0;
+      const address = addresses.get(at);
+      const mark = { at, id, text: marker(id) };
+      return address === undefined
+        ? [mark]
+        : [{ at: address, id: -1, text: SCHEME }, mark];
+    })
+    .sort((a, b) => a.at - b.at);
   const inserted: { from: number; to: number; at: number }[] = [];
   const markEnds: number[] = [];
   let marked = "";
@@ -228,24 +400,23 @@ const EMAIL =
   /^[\w.!#$%&'*+/=?^`{|}~-]+@[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?)*$/i;
 
 /** A file whose links cannot be marked, because it holds every marker character. */
-export class UnmarkableMarkdownError extends Error {}
+class UnmarkableMarkdownError extends Error {}
 
 /** Enough Private Use Area characters to write a marker in. */
 const ALPHABET_SIZE = 256;
 
 /**
- * Markers for `count` places: fixed-width numbers whose digits are Private Use
- * Area characters `content` does not hold, and the id of the marker a
+ * Markers for `count` places: fixed-width numbers written in `digits`, Private
+ * Use Area characters the file does not hold, and the id of the marker a
  * destination ends with, if it ends with one.
  */
 function markerSet(
-  content: string,
+  digits: string[],
   count: number,
 ): {
   write: (id: number) => string;
   read: (href: string) => number | undefined;
 } {
-  const digits = markAlphabet(content);
   if (digits.length === 0 || (digits.length === 1 && count > 1))
     throw new UnmarkableMarkdownError(
       "markdown-links: the file holds every Private Use Area character, so no link in it can be marked",
@@ -295,6 +466,13 @@ function markAlphabet(content: string): string[] {
       if (marks.length === ALPHABET_SIZE) return marks;
     }
   return marks;
+}
+
+/** Text with every marker digit and `SCHEME` removed. */
+function stripper(digits: string[]): (text: string) => string {
+  const held = new Set(digits);
+  return (text) =>
+    [...text.replaceAll(SCHEME, "")].filter((char) => !held.has(char)).join("");
 }
 
 function indexesOf(content: string, text: string): number[] {

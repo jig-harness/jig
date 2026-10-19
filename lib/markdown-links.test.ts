@@ -238,6 +238,48 @@ test("a file is rendered twice however many links repeat a destination", () => {
   expect(renders).toBe(2);
 });
 
+test("a marker that would change the document is left out, and the rest are read", () => {
+  expect(markdownLinks("[f](~~~)\n~~~\ncode\n~~~\n<a@b.c>")).toEqual([
+    { target: "~~~", line: 1 },
+    { target: "mailto:a@b.c", line: 5 },
+  ]);
+  expect(
+    markdownLinks(
+      "```\n[a](a.md)\n```\n[b](```)\n```\nx\n```\n<a@b.c> [c](```)",
+    ),
+  ).toEqual([
+    { target: "```", line: 4 },
+    { target: "mailto:a@b.c", line: 8 },
+    { target: "```", line: 8 },
+  ]);
+  expect(markdownLinks("[foo bar][]\n\n[foo bar]: foo\n\nfoo <a@b.c>")).toEqual(
+    [
+      { target: "foo", line: 3 },
+      { target: "mailto:a@b.c", line: 5 },
+    ],
+  );
+});
+
+test("each marker that changes the document costs a bounded number of renders", () => {
+  const render = Bun.markdown.render;
+  let renders = 0;
+  Bun.markdown.render = ((...args: Parameters<typeof render>) => {
+    renders++;
+    return render(...args);
+  }) as typeof render;
+  try {
+    const fences = "~~~\ncode\n~~~\n\n".repeat(4);
+    const links = markdownLinks(
+      `[f](~~~)\n\n${fences}${"<a@b.c>\n".repeat(200)}`,
+    );
+    expect(links).toHaveLength(201);
+    expect(links.at(-1)).toEqual({ target: "mailto:a@b.c", line: 218 });
+  } finally {
+    Bun.markdown.render = render;
+  }
+  expect(renders).toBeLessThan(80);
+});
+
 test("percent-encoding is decoded, and a malformed one is kept as written", () => {
   expect(decode("a%20b.md")).toBe("a b.md");
   expect(decode("100%.md")).toBe("100%.md");
