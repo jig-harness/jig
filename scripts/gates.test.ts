@@ -1074,6 +1074,7 @@ test("the gate set runs its cheap stages first and --fast runs only those", asyn
     "bun scripts/check-generated-files.ts",
     "bun scripts/review-risk.ts --check",
     "bun scripts/check-roadmap.ts",
+    "bun scripts/check-plugin.ts",
   ]);
 });
 

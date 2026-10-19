@@ -419,6 +419,6 @@ action from its own checkout for the release and the tags, `scripts/release.ts`
 runs the release step locally, `scripts/check-changelog.ts` runs the check in
 `bun run gates`, all reading Jig's own `changelog:` section, and
 `scripts/check-branch-protection.ts` reads main's rulesets through
-`github-rules.ts`. The self-tests are in [`../__tests__/`](../__tests__/).
+`github-rules.ts`. The self-tests are in [`../__tests__/`](https://github.com/jig-harness/jig/tree/main/plugin/skills/changelog/__tests__).
 The practice is
 [M12's change records](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md).
