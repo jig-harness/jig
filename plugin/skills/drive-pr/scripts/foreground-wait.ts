@@ -350,10 +350,6 @@ function recordedPidFiles(dir: string): RecordedPid[] {
   return recorded;
 }
 
-function recordedPids(dir: string): number[] {
-  return recordedPidFiles(dir).map((recorded) => recorded.pid);
-}
-
 function unrecordedClaimRunning(dir: string): boolean {
   try {
     return Date.now() - statSync(dir).mtimeMs < CLAIM_GRACE_MS;
@@ -363,34 +359,68 @@ function unrecordedClaimRunning(dir: string): boolean {
   }
 }
 
-/** Terminal proof is re-read after native enumeration, which may outlive its writer. */
-async function running(dir: string): Promise<boolean> {
+/** The pid records, per generation, that `running` judged not live. */
+type SettledRecords = Map<string, RecordedPid[]>;
+
+const sameRecord = (a: RecordedPid, b: RecordedPid): boolean =>
+  a.pid === b.pid && a.recordedAt !== null && a.recordedAt === b.recordedAt;
+
+/**
+ * Terminal proof is re-read after native enumeration, which may outlive its writer.
+ *
+ * When the launch reads as not running, the records that verdict covered go
+ * into `settled`, so synchronous admission keeps the identity-aware answer
+ * rather than re-asking a bare signal probe that a reused number satisfies.
+ */
+async function running(
+  dir: string,
+  settled?: SettledRecords,
+): Promise<boolean> {
   const result = readResult(dir);
   if (result !== null) return unresolvedResult(result);
   if (readPid(dir, "launcher.pid") === null) return unrecordedClaimRunning(dir);
   const snapshotStarted = Date.now();
-  const live = await liveTree(() => recordedPidFiles(dir));
+  let roots: RecordedPid[] = [];
+  const live = await liveTree(() => (roots = recordedPidFiles(dir)));
   const terminal = readResult(dir);
+  if (terminal !== null) return unresolvedResult(terminal);
+  if (live) return true;
   // A signal probe covers only a pid recorded after the snapshot began. One the
   // snapshot already saw dead stays dead: a later probe can answer only for a
   // process that reused its number.
-  return terminal === null
-    ? live ||
-        recordedPidFiles(dir).some(
-          (recorded) =>
-            (recorded.recordedAt === null ||
-              recorded.recordedAt >= snapshotStarted - RECORD_CLOCK_SLACK_MS) &&
-            killZero(recorded.pid),
-        )
-    : unresolvedResult(terminal);
+  const records = recordedPidFiles(dir);
+  const probed = (recorded: RecordedPid) =>
+    recorded.recordedAt === null ||
+    recorded.recordedAt >= snapshotStarted - RECORD_CLOCK_SLACK_MS;
+  if (records.some((recorded) => probed(recorded) && killZero(recorded.pid)))
+    return true;
+  settled?.set(
+    dir,
+    records.filter(
+      (recorded) =>
+        probed(recorded) || roots.some((root) => sameRecord(root, recorded)),
+    ),
+  );
+  return false;
 }
 
-/** Synchronous final validation: a live writer can still publish unresolved completion. */
-function blocksAdmission(dir: string): boolean {
+/**
+ * Synchronous final validation: a live writer can still publish unresolved
+ * completion. A record `running` already settled is not probed again; a new or
+ * rewritten one is.
+ */
+function blocksAdmission(dir: string, settled: SettledRecords): boolean {
   const result = readResult(dir);
   if (result !== null) return unresolvedResult(result);
-  const pids = recordedPids(dir);
-  return pids.length > 0 ? pids.some(killZero) : unrecordedClaimRunning(dir);
+  const known = settled.get(dir) ?? [];
+  const records = recordedPidFiles(dir);
+  return records.length > 0
+    ? records.some(
+        (recorded) =>
+          !known.some((done) => sameRecord(done, recorded)) &&
+          killZero(recorded.pid),
+      )
+    : unrecordedClaimRunning(dir);
 }
 
 /** Complete the handoff while the child handle still proves ownership. */
@@ -454,8 +484,11 @@ function startRunner(dir: string, argv: string[], next: number): StartedRunner {
   return { runner, registry, entry };
 }
 
-async function anyGenerationRunning(gens: number[]): Promise<boolean> {
-  for (const gen of gens) if (await running(genDir(gen))) return true;
+async function anyGenerationRunning(
+  gens: number[],
+  settled: SettledRecords,
+): Promise<boolean> {
+  for (const gen of gens) if (await running(genDir(gen), settled)) return true;
   return false;
 }
 
@@ -464,10 +497,11 @@ function commitRunnerAdmission(
   dir: string,
   argv: string[],
   next: number,
+  settled: SettledRecords,
 ): StartedRunner | null {
   if (!ownsGenerationLauncher(dir, process.pid)) return null;
   const gens = generations().filter((gen) => genDir(gen) !== dir);
-  if (gens.some((gen) => blocksAdmission(genDir(gen)))) {
+  if (gens.some((gen) => blocksAdmission(genDir(gen), settled))) {
     rmSync(dir, { recursive: true, force: true });
     return null;
   }
@@ -491,7 +525,8 @@ async function launch(argv: string[]): Promise<number> {
   for (;;) {
     const gens = generations();
     const latest = gens.at(-1);
-    if (await anyGenerationRunning(gens)) {
+    const settled: SettledRecords = new Map();
+    if (await anyGenerationRunning(gens, settled)) {
       console.error(
         "foreground-wait: an earlier launch is still running — call `wait`, never `launch`",
       );
@@ -511,7 +546,7 @@ async function launch(argv: string[]): Promise<number> {
       );
       return 3;
     }
-    const started = commitRunnerAdmission(dir, argv, next);
+    const started = commitRunnerAdmission(dir, argv, next, settled);
     if (started === null) {
       console.error(
         "foreground-wait: an earlier launch remains unresolved; retained its evidence",

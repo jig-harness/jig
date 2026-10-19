@@ -8,6 +8,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -1131,6 +1132,59 @@ describe("foreground-wait.ts", () => {
         await child.exited;
         rmSync(join(older, "runner.pid"), { force: true });
         rmSync(join(older, "launcher.pid"), { force: true });
+      }
+    },
+    T,
+  );
+
+  // A number `running` settled as not this launch's process must not block the
+  // synchronous admission that follows. A zombie is the POSIX form: the
+  // snapshot reads it as exited while a signal probe still answers for it.
+  test.skipIf(
+    skipsOnWindows(
+      "process-lifecycle",
+      "Windows has no zombie processes; its form of this case is a reused number",
+    ),
+  )(
+    "a recorded number the liveness check settled does not block admission",
+    async () => {
+      const zombieFile = join(cwd, "zombie.pid");
+      // `exec` replaces the shell with a process that never reaps its child.
+      const parent = Bun.spawn(
+        [
+          "bash",
+          "-c",
+          `sleep 0.01 & echo $! > ${JSON.stringify(zombieFile)}; exec sleep 60`,
+        ],
+        { stdout: "ignore", stderr: "ignore" },
+      );
+      try {
+        const deadline = Date.now() + 10_000;
+        let zombie: number | null = null;
+        while (zombie === null && Date.now() < deadline) {
+          const rows = existsSync(zombieFile) ? await processTable() : null;
+          const pid = existsSync(zombieFile)
+            ? Number.parseInt(readFileSync(zombieFile, "utf8"), 10)
+            : NaN;
+          if (rows?.some((r) => r.pid === pid && r.stat.startsWith("Z")))
+            zombie = pid;
+          else await sleepMs(20);
+        }
+        expect(zombie).not.toBeNull();
+        const older = join(stateRoot(), "gen-1");
+        mkdirSync(older, { recursive: true });
+        writeFileSync(join(older, "launcher.pid"), String(zombie));
+        writeFileSync(join(older, "runner.pid"), String(zombie));
+        // Recorded well before the check's snapshot, as a finished launch's are.
+        const recordedAt = new Date(Date.now() - 60_000);
+        for (const name of ["launcher.pid", "runner.pid"])
+          utimesSync(join(older, name), recordedAt, recordedAt);
+        expectSpawnExit(run("launch", "--", ...bunCommand("")), 0);
+        expect(existsSync(older)).toBe(false);
+        expectSpawnExit(run("wait", "--max-sec", "30"), 0);
+      } finally {
+        parent.kill("SIGKILL");
+        await parent.exited;
       }
     },
     T,
