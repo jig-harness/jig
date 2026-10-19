@@ -418,6 +418,7 @@ describe("a file the change-area catalog declares generated", () => {
   it("fails once the catalog replaces the generator the decision was recorded with, until the map runs again", () => {
     expect(record("openapi.json", "regenerated").code).toBe(0);
     writeCatalog("openapi.json", "bun run gen:api");
+    s.git("add", "catalog.yaml");
     const r = check();
     expect(r.code).toBe(1);
     expect(r.stdout).toContain(
@@ -440,6 +441,7 @@ describe("a file the change-area catalog declares generated", () => {
   it("fails when the catalog cannot be read at the check, though it could when mapped", () => {
     expect(record("openapi.json", "regenerated").code).toBe(0);
     s.write("catalog.yaml", "areas: [\n");
+    s.git("add", "catalog.yaml");
     const r = check();
     expect(r.code).toBe(1);
     expect(r.stdout).toContain(
@@ -472,6 +474,7 @@ describe("a generated declaration the catalog gains after the map", () => {
 
   it("fails the hand-merged file once the catalog declares it generated", () => {
     writeCatalog("openapi.json", "bun run gen:openapi");
+    s.git("add", "catalog.yaml");
     const r = check();
     expect(r.code).toBe(1);
     expect(r.stdout).toContain(
@@ -479,7 +482,7 @@ describe("a generated declaration the catalog gains after the map", () => {
     );
   });
 
-  it("fails while the staged catalog declares it generated and the working tree's does not", () => {
+  it("classifies by the staged catalog, whatever the working tree's says", () => {
     const mapped = s.read("catalog.yaml");
     writeCatalog("openapi.json", "bun run gen:openapi");
     s.git("add", "catalog.yaml");
@@ -487,51 +490,60 @@ describe("a generated declaration the catalog gains after the map", () => {
     const r = check();
     expect(r.code).toBe(1);
     expect(r.stdout).toContain(
-      "PROBLEM catalog.yaml: decides how the mapped paths are classified, and the working tree differs from what is staged",
+      "PROBLEM openapi.json: mapped as text, but the configuration and change-area catalog now make it generated (bun run gen:openapi)",
     );
-    s.git("add", "catalog.yaml");
+  });
+
+  it("ignores a working-tree catalog that is not staged", () => {
+    writeCatalog("openapi.json", "bun run gen:openapi");
     expect(check().code).toBe(0);
   });
 
-  it("fails while a .gitattributes file outside the operation is added, staged or not", () => {
-    s.write("src/.gitattributes", "*.ts conflict-marker-size=9\n");
-    const r = check();
-    expect(r.code).toBe(1);
-    expect(r.stdout).toContain(
-      "PROBLEM src/.gitattributes: decides how the mapped paths are classified",
-    );
-    s.git("add", "src/.gitattributes");
-    expect(check().stdout).toContain(
-      "PROBLEM src/.gitattributes: staged path is outside this operation",
-    );
-    s.git("rm", "-q", "--cached", "src/.gitattributes");
-    rmSync(`${s.root}/src/.gitattributes`);
-    expect(check().code).toBe(0);
-  });
-  it("fails while the working tree's catalog differs under an assume-unchanged or skip-worktree flag", () => {
-    const mapped = s.read("catalog.yaml");
-    writeCatalog("openapi.json", "bun run gen:openapi");
-    s.git("add", "catalog.yaml");
-    s.write("catalog.yaml", mapped);
+  it("ignores a working-tree catalog under an assume-unchanged or skip-worktree flag", () => {
     for (const flag of ["--assume-unchanged", "--skip-worktree"]) {
+      const mapped = s.read("catalog.yaml");
       s.git("update-index", flag, "catalog.yaml");
-      const r = check();
-      expect(r.code).toBe(1);
-      expect(r.stdout).toContain(
-        "PROBLEM catalog.yaml: decides how the mapped paths are classified, and the working tree differs from what is staged",
-      );
-      expect(r.stdout).toContain("clear the flag first");
+      writeCatalog("openapi.json", "bun run gen:openapi");
+      expect(check().code).toBe(0);
       s.git("update-index", flag.replace("--", "--no-"), "catalog.yaml");
+      s.write("catalog.yaml", mapped);
     }
   });
 
-  it("fails while an ignored .gitattributes file classifies a mapped path", () => {
-    s.write(".git/info/exclude", ".gitattributes\n");
-    s.write(".gitattributes", "openapi.json -diff\n");
+  it("reads the configuration from the index too", () => {
+    s.overlay(
+      "drive:\n  change_areas_catalog: catalog.yaml\nresolve_conflicts:\n  generated:\n    - paths: [openapi.json]\n      command: make openapi\n",
+    );
+    expect(check().code).toBe(0);
+    s.git("add", ".config/jig.yaml");
     const r = check();
     expect(r.code).toBe(1);
     expect(r.stdout).toContain(
-      "PROBLEM .gitattributes: decides how the mapped paths are classified",
+      "PROBLEM openapi.json: mapped as text, but the configuration and change-area catalog now make it generated (make openapi)",
+    );
+  });
+
+  it("does not read a staged link named .gitattributes as attributes", () => {
+    symlinkSync("* conflict-marker-size=50", `${s.root}/.gitattributes`);
+    s.write(
+      "docs/guide.md",
+      "<<<<<<< ours\nguide\n=======\nother\n>>>>>>> theirs\n",
+    );
+    s.git("add", ".gitattributes", "docs/guide.md");
+    expect(check().stdout).toContain(
+      "PROBLEM docs/guide.md:1: conflict marker in a staged file",
+    );
+  });
+
+  it("ignores a .gitattributes file that is untracked or ignored, and refuses one staged outside the operation", () => {
+    s.write("src/.gitattributes", "*.ts conflict-marker-size=9\n");
+    expect(check().code).toBe(0);
+    s.write(".git/info/exclude", "/.gitattributes\n");
+    s.write(".gitattributes", "openapi.json -diff\n");
+    expect(check().code).toBe(0);
+    s.git("add", "src/.gitattributes");
+    expect(check().stdout).toContain(
+      "PROBLEM src/.gitattributes: staged path is outside this operation",
     );
   });
 });
@@ -555,15 +567,16 @@ describe("a catalog reached through a symbolic link", () => {
     expect(record("openapi.json", "combined").code).toBe(0);
   });
 
-  it("fails while the link's target differs from what is staged", () => {
+  it("classifies by the link's staged target, whatever the working tree's says", () => {
     const mapped = s.read("config/catalog.yaml");
     writeCatalog("openapi.json", "bun run gen:openapi", "config/catalog.yaml");
+    expect(check().code).toBe(0);
     s.git("add", "config/catalog.yaml");
     s.write("config/catalog.yaml", mapped);
     const r = check();
     expect(r.code).toBe(1);
     expect(r.stdout).toContain(
-      "PROBLEM config/catalog.yaml: decides how the mapped paths are classified, and the working tree differs from what is staged",
+      "PROBLEM openapi.json: mapped as text, but the configuration and change-area catalog now make it generated (bun run gen:openapi)",
     );
   });
 });
@@ -582,15 +595,18 @@ describe("an untracked .gitattributes file beside an automatically merged file",
     expect(check().code).toBe(0);
   });
 
-  it("fails while it governs only unmapped staged paths", () => {
+  it("does not hide a conflict marker staged in a path it governs", () => {
+    s.write(
+      "docs/guide.md",
+      "<<<<<<< ours\nguide\n=======\nother\n>>>>>>> theirs\n",
+    );
+    s.git("add", "docs/guide.md");
     s.write("docs/.gitattributes", "*.md conflict-marker-size=9\n");
     const r = check();
     expect(r.code).toBe(1);
     expect(r.stdout).toContain(
-      "PROBLEM docs/.gitattributes: decides how the mapped paths are classified",
+      "PROBLEM docs/guide.md:1: conflict marker in a staged file",
     );
-    rmSync(`${s.root}/docs/.gitattributes`);
-    expect(check().code).toBe(0);
   });
 });
 
@@ -618,23 +634,31 @@ describe("a catalog reached through a chain of symbolic links", () => {
     expect(check().code).toBe(0);
   });
 
-  it("fails while a link between the configured path and the file read is retargeted", () => {
+  it("ignores a link on the way retargeted in the working tree only", () => {
     rmSync(`${s.root}/link.yaml`);
     symlinkSync("config/other.yaml", `${s.root}/link.yaml`);
+    expect(check().code).toBe(0);
+  });
+
+  it("fails while a link between the configured path and the file read is retargeted in the index", () => {
+    rmSync(`${s.root}/link.yaml`);
+    symlinkSync("config/other.yaml", `${s.root}/link.yaml`);
+    s.git("add", "link.yaml");
     const r = check();
     expect(r.code).toBe(1);
     expect(r.stdout).toContain(
-      "PROBLEM link.yaml: decides how the mapped paths are classified, and the working tree differs from what is staged",
+      "PROBLEM openapi.json: mapped as text, but the configuration and change-area catalog now make it generated (bun run gen:openapi)",
     );
   });
 
-  it("fails while a linked directory on the way is retargeted", () => {
+  it("fails while a linked directory on the way is retargeted in the index", () => {
     rmSync(`${s.root}/cfg`);
     symlinkSync("alt", `${s.root}/cfg`);
+    s.git("add", "cfg");
     const r = check();
     expect(r.code).toBe(1);
     expect(r.stdout).toContain(
-      "PROBLEM cfg: decides how the mapped paths are classified, and the working tree differs from what is staged",
+      "PROBLEM openapi.json: mapped as text, but the configuration and change-area catalog now make it generated (bun run gen:openapi)",
     );
   });
 });
@@ -664,18 +688,67 @@ describe("a catalog whose link target climbs out of a linked directory", () => {
     expect(check().code).toBe(0);
   });
 
-  it("fails while the file the system reads differs from what is staged", () => {
+  it("classifies by the staged file the system reads, not the one beside the link", () => {
     const mapped = s.read("config/defs.yaml");
     writeCatalog("openapi.json", "bun run gen:openapi", "config/defs.yaml");
+    expect(check().code).toBe(0);
     s.git("add", "config/defs.yaml");
     s.write("config/defs.yaml", mapped);
     const r = check();
     expect(r.code).toBe(1);
     expect(r.stdout).toContain(
-      "PROBLEM config/defs.yaml: decides how the mapped paths are classified, and the working tree differs from what is staged",
+      "PROBLEM openapi.json: mapped as text, but the configuration and change-area catalog now make it generated (bun run gen:openapi)",
     );
   });
 });
+
+describe.skipIf(process.platform === "win32")(
+  "a catalog reached through a link in a directory whose name holds a backslash",
+  () => {
+    beforeEach(() => {
+      s.git("merge", "--abort");
+      writeCatalog("openapi.json", "bun run gen:openapi", "generated.yaml");
+      writeCatalog("schema.json", "bun run gen:schema", "ordinary.yaml");
+      s.write("dir\\name/keep", "");
+      symlinkSync("../generated.yaml", `${s.root}/dir\\name/link.yaml`);
+      symlinkSync("dir\\name/link.yaml", `${s.root}/catalog.yaml`);
+      s.overlay("drive:\n  change_areas_catalog: catalog.yaml\n");
+      s.commit("Describe the feature API", { "openapi.json": "feature\n" });
+      s.git("checkout", "-q", "main");
+      s.commit("Describe the main API", { "openapi.json": "main\n" });
+      s.git("checkout", "-q", "feature");
+      expect(s.gitTry("merge", "main").code).not.toBe(0);
+      expect(s.script("conflict-map.ts").code).toBe(0);
+      expect(s.snapshot().paths).toMatchObject({
+        "openapi.json": { class: "generated" },
+      });
+      s.write("src/config.ts", CONFIG_COMBINED);
+      s.git("checkout", "--theirs", "openapi.json");
+      s.write("openapi.json", "regenerated\n");
+      s.git("add", "src/config.ts", "openapi.json");
+      expect(record("src/config.ts", "combined").code).toBe(0);
+      expect(record("openapi.json", "regenerated").code).toBe(0);
+      expect(check().code).toBe(0);
+    });
+
+    it("ignores the link retargeted in the working tree only", () => {
+      rmSync(`${s.root}/dir\\name/link.yaml`);
+      symlinkSync("../ordinary.yaml", `${s.root}/dir\\name/link.yaml`);
+      expect(check().code).toBe(0);
+    });
+
+    it("fails once the link is retargeted in the index", () => {
+      rmSync(`${s.root}/dir\\name/link.yaml`);
+      symlinkSync("../ordinary.yaml", `${s.root}/dir\\name/link.yaml`);
+      s.git("add", "dir\\name/link.yaml");
+      const r = check();
+      expect(r.code).toBe(1);
+      expect(r.stdout).toContain(
+        "PROBLEM openapi.json: mapped as generated (bun run gen:openapi), but the configuration and change-area catalog now make it text",
+      );
+    });
+  },
+);
 
 describe("a catalog outside the repository that an obligation command changes", () => {
   beforeEach(() => {
@@ -736,15 +809,16 @@ describe("a catalog whose file name starts with two dots", () => {
     expect(record("openapi.json", "combined").code).toBe(0);
   });
 
-  it("is checked as a declaration inside the repository", () => {
+  it("is read from the index as a declaration inside the repository", () => {
     const mapped = s.read("..catalog.yaml");
     writeCatalog("openapi.json", "bun run gen:openapi", "..catalog.yaml");
+    expect(check().code).toBe(0);
     s.git("add", "..catalog.yaml");
     s.write("..catalog.yaml", mapped);
     const r = check();
     expect(r.code).toBe(1);
     expect(r.stdout).toContain(
-      "PROBLEM ..catalog.yaml: decides how the mapped paths are classified, and the working tree differs from what is staged",
+      "PROBLEM openapi.json: mapped as text, but the configuration and change-area catalog now make it generated (bun run gen:openapi)",
     );
   });
 });
@@ -775,12 +849,12 @@ describe("a conflicted catalog recorded deleted", () => {
     ).toBe(0);
   });
 
-  it("fails while a recreated catalog is not staged", () => {
+  it("fails while a catalog recreated on disk is not staged", () => {
     writeCatalog("schema.json", "bun run gen:schema");
     const r = check();
     expect(r.code).toBe(1);
     expect(r.stdout).toContain(
-      "PROBLEM catalog.yaml: decides how the mapped paths are classified, and the working tree differs from what is staged",
+      "PROBLEM (conflict map): the change-area catalog's generated files could not all be read when the conflicts were mapped",
     );
   });
 });

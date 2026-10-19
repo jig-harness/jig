@@ -313,13 +313,12 @@ It fails (exit 1), listing each problem with its file and line, when:
 1. a path is still unmerged;
 2. conflict markers remain in a mapped path, or in any other staged change;
 3. a mapped path has no decision, an unknown one, or lacks a required reason;
-4. what is staged for a mapped path differs from the working tree, or the
-   configuration, the change-area catalog (or any symbolic link, file or
-   directory, that reading either passes through, or the file it finally
-   reads) or a `.gitattributes` file differs between the working tree and the
-   index, whatever its assume-unchanged or skip-worktree flag, ignored or not:
-   the check classifies paths by the working tree, and the commit carries what
-   is staged;
+4. what is staged for a mapped path differs from the working tree. The
+   configuration, the change-area catalog (read through the symbolic links the
+   index holds) and the `.gitattributes` files are read from the index, as the
+   commit carries them: a change to one of them takes effect once it is staged,
+   and a working-tree change that is not staged, an untracked file or an
+   ignored one decides nothing;
 5. a lockfile or generated file is not recorded as `regenerated`, or any
    other path is;
 6. a staged path is outside the operation's changed-file set, or its staged

@@ -12,6 +12,7 @@ import {
   globProblem,
   globToRegExp,
   loadCatalogFile,
+  loadCatalogText,
   parseCatalog,
 } from "../scripts/lib/change-areas-catalog.ts";
 
@@ -167,6 +168,22 @@ describe("loadCatalogFile", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("loadCatalogText", () => {
+  it("names the label when the text is invalid", () => {
+    expect(
+      loadCatalogText(
+        "areas:\n  ci:\n    paths: [.github/**]\n",
+        "x.yaml",
+      ).keys(),
+    ).toContain("ci");
+    expect(() =>
+      loadCatalogText("areas:\n  ci:\n    paths: 3\n", "x.yaml"),
+    ).toThrow(
+      "the change-area catalog x.yaml is not valid: catalog area ci.paths",
+    );
   });
 });
 

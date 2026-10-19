@@ -220,6 +220,30 @@ describe("classes", () => {
     expect(s.gitTry("merge", "main").code).not.toBe(0);
   }
 
+  it("reads a JIG_OVERLAY file inside the repository from the index", () => {
+    const declare = (command: string) =>
+      `resolve_conflicts:\n  generated:\n    - paths: ["gen/**"]\n      command: ${command}\n`;
+    s.write("ov.yaml", declare("make gen"));
+    s.env.JIG_OVERLAY = `${s.root}/ov.yaml`;
+    conflictEverywhere(["gen/x.txt"]);
+    s.write("ov.yaml", "");
+    expect(map().paths["gen/x.txt"]).toMatchObject({
+      class: "generated",
+      regenerate: { command: "make gen" },
+    });
+  });
+
+  it("reads a catalog configured through an alias of the repository from the index", () => {
+    const catalog = (output: string) =>
+      `areas:\n  api:\n    paths: ["src/**"]\n    generated:\n      - outputs: [${output}]\n        source: ["src/**"]\n        command: make gen\n`;
+    s.write("catalog.yaml", catalog("gen.txt"));
+    symlinkSync(s.root, `${s.home}/alias`);
+    s.overlay(`drive:\n  change_areas_catalog: ${s.home}/alias/catalog.yaml\n`);
+    conflictEverywhere(["gen.txt"]);
+    s.write("catalog.yaml", catalog("other.txt"));
+    expect(map().paths["gen.txt"]?.class).toBe("generated");
+  });
+
   it("lockfiles by name, generated files by configuration, binary by content", () => {
     s.overlay(
       [
@@ -389,6 +413,7 @@ describe("classes", () => {
       conflictEverywhere(["openapi.json"]);
       expect(map().paths["openapi.json"]?.class).toBe("text");
       s.write("catalog.yaml", CATALOG);
+      s.git("add", "catalog.yaml");
       expect(map().paths["openapi.json"]?.class).toBe("generated");
     });
 
@@ -518,6 +543,7 @@ describe("classes", () => {
           "outputs: [docs/api.md]",
         ),
       );
+      s.git("add", "catalog.yaml");
       expect(map().paths["openapi.json"]).toMatchObject({
         class: "text",
         regenerate: null,
@@ -555,6 +581,7 @@ describe("classes", () => {
         'PROBLEM (conflict map): the change-area catalog\'s generated files could not all be read when the conflicts were mapped (catalog area api.generated[0].outputs: "**" is not a literal',
       );
       useCatalog();
+      s.git("add", "catalog.yaml", ".config/jig.yaml");
       expect(map().catalogIncomplete).toBeNull();
       expect(s.script("check-resolution.ts").stdout).not.toContain(
         "(conflict map)",

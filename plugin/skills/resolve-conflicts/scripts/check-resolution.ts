@@ -18,10 +18,10 @@
  * differs from the working tree for a mapped path; when a lockfile or
  * generated file was not regenerated; when the configuration and change-area
  * catalog as they stand now classify a mapped path differently from the map
- * (its decision answered another requirement), or the catalog cannot be read;
- * when the configuration, the catalog or a `.gitattributes` file differs
- * between the working tree and the index (the check classifies by the one,
- * the commit carries the other);
+ * (its decision answered another requirement), or the catalog cannot be read.
+ * Both, and the attributes, are read from the index, as the commit carries
+ * them (lib/staged-config.ts), so a file changed on disk and not staged
+ * decides nothing;
  * and when a side's change is dropped
  * without that being the recorded decision (the dropped-change check; see
  * lib/drops.ts). Every staged change must belong to the operation and match
@@ -39,23 +39,12 @@
 import {
   copyFileSync,
   existsSync,
-  lstatSync,
   mkdtempSync,
   readFileSync,
-  readlinkSync,
-  realpathSync,
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import {
-  dirname,
-  isAbsolute,
-  join,
-  parse,
-  posix,
-  relative,
-  sep,
-} from "node:path";
+import { join } from "node:path";
 import { fail, runMain } from "../../../shared/cli.ts";
 import {
   type Classification,
@@ -67,7 +56,6 @@ import {
 import {
   type CatalogGenerated,
   catalogGeneratedEntries,
-  declarationFiles,
 } from "./lib/classify.ts";
 import { droppedLines } from "./lib/drops.ts";
 import {
@@ -113,183 +101,48 @@ function unstaged(root: string, path: string): boolean {
   return git(root, ["diff", "--name-only", "-z", "--", path]) !== "";
 }
 
-/** `file`'s path relative to `root`, or `null` when it lies outside. */
-function inside(root: string, file: string): string | null {
-  const rel = relative(root, file).replaceAll("\\", "/");
-  return rel === "" || rel === ".." || rel.startsWith("../") || isAbsolute(rel)
-    ? null
-    : rel;
-}
-
-/** Hops after which a chain of symbolic links counts as a loop. */
-const MAX_LINK_HOPS = 40;
-
 /**
- * Every path the file system passes through to open `file`: each symbolic
- * link on the way (a file or a directory, at any hop of a chain) and the file
- * finally read, all as absolute paths whose directories hold no link.
- *
- * Components are taken in the order the system takes them, and a `..` steps
- * out of the directory reached so far, which holds no link. Nothing is
- * normalized as text first: `cfg/..` is the parent of wherever `cfg` leads,
- * not the directory holding `cfg`.
+ * A tree holding the regular `.gitattributes` files of the index (a link of
+ * that name is ignored by a checkout), for git to read
+ * attributes from instead of the working tree: the commit carries those, and
+ * an untracked or ignored one decides nothing.
  */
-function traversedPaths(file: string): string[] {
-  const seen: string[] = [];
-  const pending: string[] = [];
-  // Continues at `path`, read from `from`: from its root when absolute.
-  const restart = (path: string, from: string): string => {
-    const { root } = parse(path);
-    pending.unshift(...path.slice(root.length).split(/[\\/]/));
-    return root === "" ? from : root;
-  };
-  let current = restart(
-    isAbsolute(file) ? file : `${process.cwd()}${sep}${file}`,
-    "",
+function attributesTree(root: string): string {
+  const records = splitNul(git(root, ["ls-files", "--stage", "-z"])).filter(
+    (record) =>
+      /^100(?:644|755) [0-9a-f]+ 0\t(?:.*\/)?\.gitattributes$/s.test(record),
   );
-  for (let hops = 0; pending.length > 0; ) {
-    const name = pending.shift() as string;
-    if (name === "" || name === ".") continue;
-    if (name === "..") {
-      current = dirname(current);
-      continue;
-    }
-    const candidate = join(current, name);
-    let link: string | null = null;
-    try {
-      if (lstatSync(candidate).isSymbolicLink()) link = readlinkSync(candidate);
-    } catch {
-      // A missing component: what follows cannot be read either.
-    }
-    if (link === null) {
-      current = candidate;
-      continue;
-    }
-    seen.push(candidate);
-    if (++hops > MAX_LINK_HOPS) return seen;
-    current = restart(link, current);
+  const dir = mkdtempSync(join(tmpdir(), "check-resolution-"));
+  try {
+    const env = { ...process.env, GIT_INDEX_FILE: join(dir, "index") };
+    git(
+      root,
+      [...THROWAWAY_INDEX_CONFIG, "update-index", "-z", "--index-info"],
+      records.map((record) => `${record}\0`).join(""),
+      env,
+    );
+    return git(
+      root,
+      [...THROWAWAY_INDEX_CONFIG, "write-tree"],
+      undefined,
+      env,
+    ).trim();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
-  seen.push(current);
-  return seen;
-}
-
-/** The file a read of `file` opens, or `null` when no file is there. */
-function finalTarget(file: string): string | null {
-  return existsSync(file) ? realpathSync(file) : null;
-}
-
-/**
- * The configuration and the catalog inside `root`, each also as every
- * symbolic link a read of it passes through and the file it finally reads.
- */
-function declarationFilePaths(root: string): string[] {
-  const realRoot = realpathSync(root);
-  return declarationFiles()
-    .flatMap((file) => {
-      const target = finalTarget(file);
-      return [
-        inside(root, file),
-        ...traversedPaths(file).map((path) => inside(realRoot, path)),
-        target === null ? null : inside(realRoot, target),
-      ];
-    })
-    .filter((path): path is string => path !== null);
-}
-
-/** The `.gitattributes` of `path`'s directory and of each one above it. */
-function attributeFiles(path: string): string[] {
-  const files: string[] = [];
-  let dir = posix.dirname(path);
-  for (; dir !== "."; dir = posix.dirname(dir))
-    files.push(`${dir}/.gitattributes`);
-  files.push(".gitattributes");
-  return files;
-}
-
-/**
- * The repository-relative paths of the files that decide how the mapped paths
- * are classified: the configuration, the catalog, and the `.gitattributes` of
- * every directory holding a mapped path.
- */
-function declarationPaths(root: string, mapped: Iterable<string>): Set<string> {
-  return new Set([
-    ...declarationFilePaths(root),
-    ...[...mapped].flatMap(attributeFiles),
-  ]);
-}
-
-const DECLARATION_DIFFERS =
-  "decides how the mapped paths are classified, and the working tree differs from what is staged: the check reads the working tree, the commit takes what is staged. git add it, or restore it from the index, then run this again";
-const FLAGGED_DECLARATION_DIFFERS = `${DECLARATION_DIFFERS}. It is marked assume-unchanged or skip-worktree: clear the flag first (git update-index --no-assume-unchanged --no-skip-worktree -- <path>)`;
-
-/**
- * Tracked declarations (and any tracked `.gitattributes`) whose file on disk
- * differs from the index, compared as differingPaths compares them, so an
- * assume-unchanged or skip-worktree flag hides nothing.
- */
-function differingDeclarations(
-  root: string,
-  declarations: ReadonlySet<string>,
-  unmerged: ReadonlyMap<string, unknown>,
-): Finding[] {
-  const found: Finding[] = [];
-  for (const { path, message } of differingPaths(root)) {
-    const attributes = posix.basename(path) === ".gitattributes";
-    if ((!declarations.has(path) && !attributes) || unmerged.has(path))
-      continue;
-    const flagged = message === SKIPPED_DIFFERS;
-    // Git reads the index's copy of an attributes file a sparse checkout
-    // left out, so it decides nothing the commit does not carry.
-    if (flagged && attributes && !existsSync(join(root, path))) continue;
-    found.push({
-      path,
-      message: flagged ? FLAGGED_DECLARATION_DIFFERS : DECLARATION_DIFFERS,
-    });
-  }
-  return found;
-}
-
-/**
- * Declaration files (see declarationPaths; any tracked `.gitattributes` too)
- * whose working tree differs from the index. The check reads them from the
- * working tree, but the commit carries what is staged, so a difference would
- * certify a requirement the commit does not have. A declaration on disk that
- * the index lacks is found by its path, so an ignore rule hides nothing.
- * Mapped paths are checked too: a mapped declaration recorded deleted and
- * recreated unstaged is checked nowhere else. Unmerged paths are reported as
- * unmerged.
- */
-function unstagedDeclarations(
-  root: string,
-  snapshot: Snapshot,
-  unmerged: ReadonlyMap<string, unknown>,
-): Finding[] {
-  const declarations = declarationPaths(root, Object.keys(snapshot.paths));
-  const found = differingDeclarations(root, declarations, unmerged);
-  const tracked = new Set(splitNul(git(root, ["ls-files", "-z"])));
-  const reported = new Set(found.map((f) => f.path));
-  // Untracked attributes files anywhere, ignored ones included: one governing
-  // only unmapped staged files still decides their conflict-marker check. A
-  // wholly untracked directory is listed as itself, since an attributes file
-  // in it governs nothing staged.
-  const untrackedAttributes = splitNul(
-    git(root, ["ls-files", "-z", "--others", "--directory"]),
-  ).filter((path) => posix.basename(path) === ".gitattributes");
-  for (const path of new Set([...declarations, ...untrackedAttributes]))
-    if (
-      !tracked.has(path) &&
-      !reported.has(path) &&
-      existsSync(join(root, path))
-    )
-      found.push({ path, message: DECLARATION_DIFFERS });
-  return found.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
 /** Conflict markers in staged changes outside the mapped paths. */
 function stagedMarkers(root: string, mapped: Snapshot["paths"]): Finding[] {
   // Exit 2 means it found something (whitespace errors count too); only the
   // marker lines matter here.
-  const r = gitRaw(root, ["diff", "--cached", "--check", "--no-ext-diff"]);
+  const r = gitRaw(root, [
+    `--attr-source=${attributesTree(root)}`,
+    "diff",
+    "--cached",
+    "--check",
+    "--no-ext-diff",
+  ]);
   if (r.code !== 0 && r.code !== 2)
     throw new Error(
       `git diff --cached --check exited ${r.code}: ${r.stderr.trim()}`,
@@ -503,7 +356,6 @@ export function checkResolution(
   if (incomplete.length === 0)
     result.problems.push(...changedRequirements(snapshot, now));
   const unmerged = unmergedPaths(root);
-  result.problems.push(...unstagedDeclarations(root, snapshot, unmerged));
   for (const path of [...unmerged.keys()].sort()) {
     const entry = Object.hasOwn(snapshot.paths, path)
       ? snapshot.paths[path]

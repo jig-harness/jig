@@ -239,15 +239,14 @@ function checkShape(value: unknown, source: string): void {
 }
 
 /**
- * One layer's file, parsed; `null` when it does not exist. An empty file is
- * an empty mapping. A file that cannot be parsed, that holds anything but
- * a mapping, or whose shape `checkShape` refuses is an error naming the file.
+ * One layer's text, parsed; `path` names it in errors. Empty text is an empty
+ * mapping. Text that cannot be parsed, that holds anything but a mapping, or
+ * whose shape `checkShape` refuses is an error naming `path`.
  */
-export function readConfigFile(path: string): Record<string, unknown> | null {
-  if (!existsSync(path)) return null;
+function parseConfigText(text: string, path: string): Record<string, unknown> {
   let parsed: unknown;
   try {
-    parsed = load(readFileSync(path, "utf8"));
+    parsed = load(text);
   } catch (err) {
     throw new Error(
       `Jig configuration could not be parsed: ${path}: ${err instanceof Error ? err.message : String(err)}`,
@@ -258,6 +257,12 @@ export function readConfigFile(path: string): Record<string, unknown> | null {
     throw new Error(`Jig configuration must be a mapping: ${path}`);
   checkShape(parsed, path);
   return parsed;
+}
+
+/** One layer's file, parsed (see `parseConfigText`); `null` when it does not exist. */
+export function readConfigFile(path: string): Record<string, unknown> | null {
+  if (!existsSync(path)) return null;
+  return parseConfigText(readFileSync(path, "utf8"), path);
 }
 
 /**
@@ -408,10 +413,17 @@ export function mergeLayers(
   return merged;
 }
 
-/** Every layer for the repository at `root`, read and merged. */
+/**
+ * Every layer for the repository at `root`, read and merged. The repository
+ * layer comes from its file, unless `repositoryText` supplies its content
+ * (`null` for a file that does not exist): for a caller that reads the
+ * repository's files from somewhere other than the working tree, such as the
+ * git index.
+ */
 export function loadLayeredConfig(
   root: string,
   env: Env = process.env,
+  repositoryText?: string | null,
 ): LayeredConfig {
   const layers: ConfigLayer[] = [];
   const userPath = userConfigPath(env);
@@ -421,7 +433,12 @@ export function loadLayeredConfig(
     layers.push({ name: "user", source: userPath, values: user });
   }
   const repositoryPath = repositoryConfigPath(root, env);
-  const repository = readConfigFile(repositoryPath);
+  const repository =
+    repositoryText === undefined
+      ? readConfigFile(repositoryPath)
+      : repositoryText === null
+        ? null
+        : parseConfigText(repositoryText, repositoryPath);
   if (repository !== null)
     layers.push({
       name: "repository",

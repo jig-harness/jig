@@ -97,7 +97,11 @@ export function unmergedPaths(root: string): Map<string, Unmerged> {
   return byPath;
 }
 
-/** `git check-attr` values for the attributes the map reads, per path. */
+/**
+ * `git check-attr` values for the attributes the map reads, per path, from the
+ * `.gitattributes` files in the index: the commit carries those, not the
+ * working tree's.
+ */
 function attributes(
   root: string,
   paths: string[],
@@ -107,7 +111,15 @@ function attributes(
   const out = splitNul(
     git(
       root,
-      ["check-attr", "-z", "--stdin", "diff", "merge", "conflict-marker-size"],
+      [
+        "check-attr",
+        "--cached",
+        "-z",
+        "--stdin",
+        "diff",
+        "merge",
+        "conflict-marker-size",
+      ],
       `${paths.join("\0")}\0`,
     ),
   );

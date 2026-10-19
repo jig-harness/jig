@@ -1,7 +1,8 @@
 /** Repository checks applied to the entire resolved staged diff, including clean merges. */
 import { fail } from "../../../../shared/cli.ts";
-import { readConfig, withSource } from "../../../../shared/consumer.ts";
+import { withSource } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { stagedConfig } from "./staged-config.ts";
 import {
   readTimeoutEnv,
   run,
@@ -70,11 +71,11 @@ export function parseObligations(section: unknown): ObligationEntry[] {
   return entries.map(parseEntry);
 }
 
-/** Read through all consumer configuration layers, with source-aware errors. */
+/** Read through all consumer configuration layers (the repository's from the index), with source-aware errors. */
 export function obligationEntries(): ObligationEntry[] {
   let values: Record<string, unknown>;
   try {
-    values = readConfig();
+    values = stagedConfig();
   } catch (error) {
     fail(
       2,

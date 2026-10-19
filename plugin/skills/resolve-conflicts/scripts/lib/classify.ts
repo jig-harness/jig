@@ -20,25 +20,18 @@
  * Precedence, first match wins: `resolve_conflicts.generated`, then the
  * catalog's `generated[].outputs`, then the built-in lockfile table.
  */
-import { posix, resolve } from "node:path";
+import { posix } from "node:path";
 import {
   globProblem,
-  loadCatalogFile,
   matchesGlob,
 } from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
 import { OUTPUT_PATH_RE } from "../../../change-areas/scripts/lib/catalog.ts";
 import { catalogPathFromOverlay } from "../../../do-item/scripts/determine_agent.ts";
 import { fail } from "../../../../shared/cli.ts";
-import {
-  fieldInMessage,
-  repositoryConfigPath,
-} from "../../../../shared/config-layers.ts";
-import {
-  consumerRoot,
-  readConfig,
-  sourceIn,
-} from "../../../../shared/consumer.ts";
+import { fieldInMessage } from "../../../../shared/config-layers.ts";
+import { sourceIn } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import { stagedCatalog, stagedConfig } from "./staged-config.ts";
 
 export type PathClass = "lockfile" | "generated" | "binary" | "text";
 
@@ -96,7 +89,7 @@ const SECTION = "resolve_conflicts";
 export function generatedEntries(): GeneratedEntry[] {
   let overlay: Record<string, unknown>;
   try {
-    overlay = readConfig();
+    overlay = stagedConfig();
   } catch (err) {
     fail(2, `resolve-conflicts: ${err instanceof Error ? err.message : err}`);
   }
@@ -163,7 +156,7 @@ export interface CatalogGenerated {
 function configuredCatalogPath(): string | null {
   let overlay: Record<string, unknown>;
   try {
-    overlay = readConfig();
+    overlay = stagedConfig();
   } catch (err) {
     fail(2, `resolve-conflicts: ${err instanceof Error ? err.message : err}`);
   }
@@ -176,18 +169,6 @@ function configuredCatalogPath(): string | null {
       `resolve-conflicts: ${what} in ${sourceIn(overlay, fieldInMessage(what, "drive"))}`,
     );
   }
-}
-
-/**
- * The files whose content declares which paths are generated: the repository
- * configuration and, when one is configured, the change-area catalog, as
- * absolute paths.
- */
-export function declarationFiles(): string[] {
-  const catalog = configuredCatalogPath();
-  const files = [resolve(repositoryConfigPath(consumerRoot()))];
-  if (catalog !== null) files.push(resolve(catalog));
-  return files;
 }
 
 /** One catalog `generated[]` entry as a derived-file entry, or why it is not one. */
@@ -245,9 +226,9 @@ export function catalogGeneratedEntries(): CatalogGenerated {
   };
   const path = configuredCatalogPath();
   if (path === null) return result;
-  let areas: ReturnType<typeof loadCatalogFile>;
+  let areas: ReturnType<typeof stagedCatalog>;
   try {
-    areas = loadCatalogFile(path);
+    areas = stagedCatalog(path);
   } catch (err) {
     result.incomplete = err instanceof Error ? err.message : String(err);
     result.problems.push(
