@@ -10,6 +10,13 @@
 # native comment format (severity line, confirmation marker), so the comment
 # shape is left as CodeRabbit writes it.
 #
+# Trust: CodeRabbit reads this file from the branch under review, so a pull
+# request can change how CodeRabbit reviews it. Nothing relies on this file
+# as a policy boundary. The reviewer whose check decides convergence reads
+# its policy from the base branch (docs/README.md), and a change to this file
+# is in the high-risk `review-config` change area, so that reviewer and the
+# person who merges see it.
+#
 # AGENTS.md and the nested AGENTS.md files are read as review guidelines
 # (knowledge_base.code_guidelines), so the repository rules are not repeated
 # here. `path_instructions` adds only what is specific to a path and that the
@@ -53,9 +60,12 @@ reviews:
     - path: "plugin/**"
       instructions: |-
         Everything here runs from a copy of the plugin directory with no
-        node_modules, so flag an import of a package that is not vendored, a
-        path that leaves plugin/, and a read of __tests__/, AGENTS.md or
-        CLAUDE.md (the shipped copy leaves them out). Consumer values (bots,
+        node_modules, so flag an import of a package that is not vendored, an
+        import or bundled-resource path that leaves plugin/, and a read of the
+        plugin's own __tests__/, AGENTS.md or CLAUDE.md (the shipped copy
+        leaves them out). Reading the consumer repository (the working
+        directory, its configuration) is expected, not a path that leaves the
+        plugin. Consumer values (bots,
         teams, labels, commands) must come from the shared configuration
         reader, never a hard-coded value or a direct parse of the file.
     - path: "plugin/skills/*/SKILL.md"
@@ -138,7 +148,7 @@ reviews:
       - name: "Pull request template"
         mode: warning
         instructions: |-
-          The description keeps the template's three headings ("What and
+          The description keeps the template's headings ("What and
           why", "The audit", "Checklist"). "What and why" says what changes for
           someone who uses Jig. "The audit" says what changed in the audit
           skill (config-schema.yaml, the criteria or config-fit.ts) or why
@@ -152,10 +162,12 @@ reviews:
     # the in-house reviewer has already cleaned
     # (CONTRIBUTING.md § Pull-request lifecycle).
     drafts: false
-    # drive-pr pushes once per round. The default pause after 5 reviewed
-    # commits would leave a long drive waiting on a reviewer that stopped;
-    # 10 still bounds a loop that does not converge.
-    auto_pause_after_reviewed_commits: 10
+    # drive-pr pushes once per round and requires every reviewer to report on
+    # the current head, so any pause here would stall a drive that is still
+    # within its budget. 0 turns the pause off; the drive's own round limit
+    # (drive.max_rounds in .config/jig.yaml) bounds a loop that does not
+    # converge.
+    auto_pause_after_reviewed_commits: 0
     # Dependency updates arrive as lockfile bumps that the supply-chain gates
     # check; a language-model review of them adds nothing.
     ignore_usernames:
