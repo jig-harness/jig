@@ -12,7 +12,7 @@ disagree with them.
 
 This is the design of [plan](plan.md) item 18. The site is
 built and deployed: `website/` renders every page type below in the final
-design, open to every reader and kept out of search engines. What is left
+design, open to every reader and to search engines. What is left
 is in
 [§ Build order](#build-order).
 
@@ -256,12 +256,10 @@ screen).
 - **Worker**: `website/wrangler.jsonc`, a Worker on the custom domain
   `jig-harness.dev` that serves the built files; its `workers.dev` and
   preview addresses are off, so the domain is the only way in.
-- **Open, not indexed**: every reader is served. `website/worker/index.ts`
-  answers with the built page or file, or a page's Markdown twin for a
-  reader that prefers Markdown. `robots.txt` (disallow everything), and
-  `noindex` in every page and in the `X-Robots-Tag` header
-  `website/public/_headers` gives every file, keep the site out of search
-  engines until it opens to them ([§ Build order](#build-order)).
+- **Open**: every reader is served, search engines included.
+  `website/worker/index.ts` answers with the built page or file, or a
+  page's Markdown twin for a reader that prefers Markdown. The site sets no
+  `robots.txt`, `noindex` or `X-Robots-Tag`.
 - **Deploy**: `.github/workflows/website.yml` deploys every push to `main`
   (the site renders the documents, so most changes reach it). It needs the
   `CLOUDFLARE_API_TOKEN` secret of the `website` environment: a token
@@ -335,10 +333,7 @@ Markdown, and an index to find it by.
   images; not code), reads the HTML the file carries as it reads a page, and
   fails the build on a link to a missing page or twin, or to an anchor the
   page or twin does not have, as it does for a page.
-- **Served like any page.** Any reader or agent can fetch it, and
-  `robots.txt` asks crawlers to stay out. Opening the site to search engines
-  takes `robots.txt`, `noindex` and the `X-Robots-Tag` header off, so
-  crawlers can find it.
+- **Served like any page.** Any reader, agent or crawler can fetch it.
 
 ### Working on the site
 
@@ -374,7 +369,7 @@ update is not a plugin release.
 ## Build order
 
 Done: the site, its design, CI and deployment from `main`, open to every
-reader.
+reader and to search engines.
 Open, each its own pull request:
 
 1. **Contrast gate.** A check, run in CI after the build, that every text
@@ -388,12 +383,10 @@ Open, each its own pull request:
 4. **Skill page summary cards.** "It never" and "Runs on" for each skill,
    once the skills' READMEs state their limits and platforms in a form a
    page can read.
-5. **Opening the site to search engines** (a person's decision): remove
-   `robots.txt`, the pages' `noindex`, the `X-Robots-Tag` rule in
-   `website/public/_headers` and the "Internal preview" strip; review the
-   site's own copy (the home page's statements, the limits, the figure
-   captions); decide whether the live audit example keeps showing a
-   third party's repository or shows Jig's own audit.
+5. **The live audit example shows Jig's own audit.** It shows a third
+   party's repository today; Jig's own audit, rendered at build from a
+   committed run of the audit skill on this repository, replaces it, and
+   `website/scripts/audit-example.ts` and the specimen's caption follow.
 
 ## Left out
 

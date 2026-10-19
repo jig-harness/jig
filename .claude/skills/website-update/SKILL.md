@@ -129,10 +129,7 @@ beats a guessed edit.
 - Site copy follows the repository's writing rules ([AGENTS.md](../../../AGENTS.md)):
   plain language, terms linked to the glossary, no origin references, no
   history in the copy.
-- **Leave alone**: `noindex` (in the pages and `website/public/_headers`),
-  `robots.txt` and the "Internal preview" strip. Opening the site to search engines is a person's decision
-  ([design/website.md § Build order](../../../design/website.md#build-order)).
-  Copy whose new wording needs a person's judgement (what Jig claims, what it
+- Copy whose new wording needs a person's judgement (what Jig claims, what it
   never does) goes in the report as a question, not into an edit.
 
 **Follow-ups** are filed through the tracker the way `.config/jig.yaml`
