@@ -1,6 +1,6 @@
 ---
 name: resolve-conflicts
-description: "Resolve the conflicts of a stopped merge, rebase or cherry-pick so both sides' intent survives: map the sides and why each changed, resolve per kind of file, record every decision, check for dropped changes, validate, then conclude; use when a merge, rebase or cherry-pick stops on conflicts, including drive-pr's conflict-resolve round."
+description: "Resolve the conflicts of a stopped merge, rebase or cherry-pick so both sides' intent survives: map the sides and why each changed, resolve per kind of file, record every decision, check for dropped changes, validate, then conclude; use when a merge, rebase or cherry-pick stops on conflicts, including drive-pr's conflict-resolve round; or to report where past merges conflicted and why."
 argument-hint: "[base-branch]"
 allowed-tools: "Read Edit Write Grep Glob Bash(git *) Bash(gh pr view *) Bash(bun *)"
 ---
@@ -417,6 +417,78 @@ that directory:
 - The conflict-marker size comes from the path's `conflict-marker-size`
   attribute (default 7).
 - A `git am` session is not mapped.
+
+## Where past merges conflicted: the history report
+
+Run it to see where a repository's merges keep conflicting and why, before
+deciding what to change; it is not part of resolving a conflict.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/history.ts"               # the last 30 days
+bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --days 90
+bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --since 2026-01-01 --until 2026-03-31
+bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --all --json
+```
+
+It [replays](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) every merge commit the repository's refs reach in the range
+(fetched pull-request heads such as `refs/pull/*/head` included; the stash
+and a forge's synthetic `refs/pull/*/merge` commits left out): it merges the
+merge's two parents again with `git merge-tree --write-tree`, which needs no
+working tree, in diff3 style so every conflicting region carries its
+[merge base](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). Git's
+new objects go to a temporary object directory, removed afterwards, so no
+ref, index, working tree or object of the repository changes. A merge with
+more than two parents is skipped and listed. It needs git 2.38 or later.
+
+Each conflicting region gets one cause, the first of these that matches; a
+path git reports as conflicting without text regions gets `structural` for
+the whole path, with git's own kind of conflict (`modify/delete`, `binary`,
+…); a lockfile or generated file is `derived` whatever its regions.
+
+| Cause | The region | The change that removes it |
+|-------|------------|----------------------------|
+| `derived` | the path is a lockfile or a generated file, as `conflict-map.ts` classes it | regenerate it; keep it out of pull requests if a step after the merge can write it |
+| `structural` | no text regions: modify/delete, rename, binary, file/directory, mode | none from the regions; resolving it stays a decision |
+| `echo` | the sides are identical, or one side's edit (adding at least one line) is already in the other, in the same order | keep the side that contains the other; rebuild a branch on its base once the branch it was built on merges |
+| `version` | the sides differ only in the release version the changelog skill's release step writes (`changelog.version`), or in a last-updated date | move the version after the merge; take a date from git |
+| `sequence` | both sides add an entry with the next ordinal, one past the base's highest | identifiers that cannot collide, or one renumbering step |
+| `tally` | only numbers differ, and each side's number moved by the lines that side added to the file, or added above the line it names | derive the number where it is used; key a register by name, not line |
+| `append` | the base side is empty: both sides added lines at the same place | one file per entry, or a sorted list with one entry per line; in source code the report asks whether it is the same fix written twice |
+| `packed-list` | one line in every side, and each side only adds items to a list in it | one item per line |
+| `adjacent` | the lines each side changed touch but do not overlap | split what changes for different reasons onto lines or files of its own |
+| `overlap` | none of the above | two pieces of work changed the same thing: plan them apart, or land one first |
+
+A rule matches only on evidence it can settle, so a region it cannot settle
+falls to `overlap`. A merge counts as mechanical when no path is `structural`
+and no region is `overlap`.
+
+It prints, for the range: how many merges conflicted of how many; the paths,
+most often first, each with its causes and the remedy for its most frequent
+one (`--limit <n>` paths, 25 by default, `0` for all); the
+[conflict hotspots](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+the paths that conflicted in at least `resolve_conflicts.hotspot_min_merges`
+merges (3 by default); each cause's count and remedy; per week, the
+conflicted merges by cause; how often each cause was right when a sample of
+regions was checked by hand
+([references/cause-accuracy.json](references/cause-accuracy.json)); and its
+limits. It sees only merge commits that still exist: a conflict resolved
+during a rebase, a cherry-pick or a revert, or on a branch deleted after a
+squash merge, leaves nothing to replay, and a conflict met again in a later
+merge counts again.
+
+`--json` prints the same as a `merge-conflicts/v1` object: `range`,
+`totals`, `causes`, `paths`, `hotspots`, `weeks`, `confidence`, `limits`,
+`skipped`, and `merges`, one record per replayed merge (its commit, both
+parents and the pull-request heads each is the tip of, its date, subject and
+the pull request the subject names, and each conflicted path with its kind,
+git's kinds of conflict, class, causes, regions, and the decision and reason
+its `Conflicts resolved:` section recorded).
+
+| Exit | Meaning |
+|------|---------|
+| 0 | the report was printed |
+| 1 | a git call failed |
+| 2 | usage error, not inside a git repository, invalid configuration, or git older than 2.38 |
 
 ## Related skills
 

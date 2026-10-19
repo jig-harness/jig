@@ -596,6 +596,7 @@ own; `audit` checks all the others.
 | `promote_memory.target_dir` | folder, relative to the root | `docs/retrospection` | promote-memory | Where promoted pages go, in `YYYY/MM/` below it |
 | `fix_ci.regenerate_commands` | list of shell commands | none: the agent finds the command | fix-ci | Commands that regenerate committed generated files a CI check compares |
 | `resolve_conflicts.generated` | list of `{paths: [globs relative to the root], command: shell command}`; globs match as the change-area catalog's do (`**`, `*`, `?`, `{a,b}`, `[...]`) | none: only the built-in lockfile table applies | resolve-conflicts | Files that are regenerated, never hand-merged, when they conflict, and the command that rebuilds them (run from the root). An entry also overrides the built-in lockfile command for a path it matches. Unknown keys are refused |
+| `resolve_conflicts.hotspot_min_merges` | whole number, 1 or more | `3` | resolve-conflicts | The history report (`history.ts`) names a path a conflict hotspot when it conflicted in at least this many of the merges it replayed in its range |
 | `github_actions.conventions_doc` | path, relative to the root | Searched for in the instructions and docs; else generic guidance | github-actions | The document describing the repository's workflows and their conventions |
 | `design_brief.kit` | folder, relative to the root | Detected: a tracked folder ending in `design-kit` or `design_kit` | design-brief-builder | The design kit: voice, colours and type, rubric, component previews, logo |
 | `design_brief.design_language` | path, relative to the root | Detected: the first tracked `*design-language*.md` or `*design-system*.md` | design-brief-builder | The written design canon |
@@ -763,6 +764,7 @@ resolve_conflicts:
   generated:
     - paths: ["src/generated/**"]
       command: bun run generate
+  hotspot_min_merges: 3                 # default: 3
 github_actions:
   conventions_doc: docs/ci.md
 design_brief:

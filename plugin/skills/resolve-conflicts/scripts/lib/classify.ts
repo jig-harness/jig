@@ -13,6 +13,8 @@
  *         command: bun run generate
  *
  * A `generated` entry also overrides the built-in table for a path it matches.
+ * The section's other key, `hotspot_min_merges`, is read here too, so one
+ * reader validates the whole section: the history report's hotspot threshold.
  */
 import { posix } from "node:path";
 import {
@@ -67,13 +69,18 @@ function firstInvalidGlob(paths: readonly string[]): string | null {
 }
 
 const SECTION = "resolve_conflicts";
+const KNOWN_KEYS = ["generated", "hotspot_min_merges"];
+
+/** The least number of merges a path conflicts in to count as a hotspot, when unset. */
+export const DEFAULT_HOTSPOT_MIN_MERGES = 3;
+
+type Bad = (what: string) => never;
 
 /**
- * The `resolve_conflicts.generated` entries, validated. A repository without
- * the configuration file or the section gets an empty list; a malformed
- * section stops the script with exit 2 and the exact field at fault.
+ * The `resolve_conflicts` section, its keys checked, with the reporter of a
+ * malformed field; null when the configuration has no such section.
  */
-export function generatedEntries(): GeneratedEntry[] {
+function readSection(): { section: Record<string, unknown>; bad: Bad } | null {
   let overlay: Record<string, unknown>;
   try {
     overlay = readConfig();
@@ -81,8 +88,8 @@ export function generatedEntries(): GeneratedEntry[] {
     fail(2, `resolve-conflicts: ${err instanceof Error ? err.message : err}`);
   }
   const section = overlay[SECTION];
-  if (section === undefined || section === null) return [];
-  const bad = (what: string): never =>
+  if (section === undefined || section === null) return null;
+  const bad: Bad = (what) =>
     fail(
       2,
       `resolve-conflicts: ${what} in ${sourceIn(overlay, fieldInMessage(what, SECTION))}`,
@@ -90,9 +97,23 @@ export function generatedEntries(): GeneratedEntry[] {
   if (typeof section !== "object" || Array.isArray(section))
     bad(`${SECTION} must be a mapping`);
   for (const key of Object.keys(section as object))
-    if (key !== "generated")
-      bad(`${SECTION}.${key} is not a known key (known: generated)`);
-  const generated = (section as Record<string, unknown>).generated;
+    if (!KNOWN_KEYS.includes(key))
+      bad(
+        `${SECTION}.${key} is not a known key (known: ${KNOWN_KEYS.join(", ")})`,
+      );
+  return { section: section as Record<string, unknown>, bad };
+}
+
+/**
+ * The `resolve_conflicts.generated` entries, validated. A repository without
+ * the configuration file or the section gets an empty list; a malformed
+ * section stops the script with exit 2 and the exact field at fault.
+ */
+export function generatedEntries(): GeneratedEntry[] {
+  const read = readSection();
+  if (read === null) return [];
+  const { section, bad } = read;
+  const generated = section.generated;
   if (generated === undefined || generated === null) return [];
   if (!Array.isArray(generated)) bad(`${SECTION}.generated must be a list`);
   return (generated as unknown[]).map((entry, i) => {
@@ -116,6 +137,22 @@ export function generatedEntries(): GeneratedEntry[] {
       bad(`${at}.command must be a nonempty string`);
     return { paths: paths as string[], command: record.command as string };
   });
+}
+
+/**
+ * `resolve_conflicts.hotspot_min_merges`: a path that conflicted in at least
+ * this many merges of the report's range is a hotspot. A malformed value
+ * stops the script with exit 2.
+ */
+export function hotspotMinMerges(): number {
+  const read = readSection();
+  const value = read?.section.hotspot_min_merges;
+  if (value === undefined || value === null) return DEFAULT_HOTSPOT_MIN_MERGES;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1)
+    read?.bad(
+      `${SECTION}.hotspot_min_merges must be a whole number of 1 or more`,
+    );
+  return value as number;
 }
 
 /** The command that regenerates `path`, or null when it is not a derived file. */
