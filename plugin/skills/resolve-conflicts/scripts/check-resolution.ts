@@ -18,10 +18,12 @@
  * differs from the working tree for a mapped path; when a lockfile or
  * generated file was not regenerated; and when a side's change is dropped
  * without that being the recorded decision (the dropped-change check; see
- * lib/drops.ts).
+ * lib/drops.ts). Every staged change must belong to the operation and match
+ * Git's automatic result or a recorded decision. Repository obligations are
+ * reported over the whole resolved diff; failed commands block conclusion.
  *
  * Exit codes: 0 the resolution passes; 1 problems, each listed with its file
- * and line; 2 usage error; 3 no operation in progress, no snapshot, or a
+ * and line; 2 usage error or invalid obligation configuration; 3 no operation in progress, no snapshot, or a
  * snapshot of a different operation (run conflict-map.ts first); 4 a path is
  * recorded as escalate: the resolution needs a human, and each question is
  * printed. Exit 4 wins over exit 1, since an escalated resolution is not
@@ -40,6 +42,12 @@ import {
   topLevel,
 } from "./lib/git.ts";
 import { markerLines } from "./lib/markers.ts";
+import {
+  obligationEntries,
+  runObligations,
+  type ObligationResult,
+} from "./lib/obligations.ts";
+import { provenanceProblems } from "./lib/provenance.ts";
 import {
   currentSnapshot,
   DECISIONS,
@@ -225,6 +233,9 @@ export function checkResolution(root: string, snapshot: Snapshot): CheckResult {
       result,
     );
   result.problems.push(...stagedMarkers(root, snapshot.paths));
+  result.problems.push(
+    ...provenanceProblems(root, snapshot, new Set(unmerged.keys())),
+  );
   result.exit =
     result.escalations.length > 0 ? 4 : result.problems.length > 0 ? 1 : 0;
   return result;
@@ -262,6 +273,48 @@ function render(f: Finding): string {
   return `${f.path}${f.line === undefined ? "" : `:${f.line}`}: ${f.message}`;
 }
 
+/** Validate commands against a checked resolution, then verify their final index. */
+async function checkWithObligations(
+  root: string,
+  snapshot: Snapshot,
+): Promise<{ result: CheckResult; obligations: ObligationResult[] }> {
+  const entries = obligationEntries();
+  let result = checkResolution(root, snapshot);
+  const obligations: ObligationResult[] =
+    result.exit === 0
+      ? await runObligations(root, entries)
+      : entries.map((entry) => ({
+          check: entry.check,
+          command: entry.command ?? null,
+          status: "not-run",
+          output: "Fix the resolution before running obligations.",
+        }));
+  // A configured command can edit or stage files. Check the result that will
+  // actually be committed, rather than certifying the index from before it ran.
+  if (result.exit === 0 && entries.some((entry) => entry.command !== undefined))
+    result = checkResolution(root, snapshot);
+  for (const obligation of obligations)
+    if (obligation.status === "failed")
+      result.problems.push({
+        path: "resolve_conflicts.obligations",
+        message: `${obligation.check}: ${obligation.output}`,
+      });
+  if (result.exit !== 4 && result.problems.length > 0) result.exit = 1;
+
+  return { result, obligations };
+}
+
+function reportObligations(
+  obligations: readonly ObligationResult[],
+  write: (line: string) => void,
+): void {
+  for (const obligation of obligations) {
+    write(`OBLIGATION ${obligation.status}: ${obligation.check}`);
+    if (obligation.command) write(`  command: ${obligation.command}`);
+    write(`  ${obligation.output}`);
+  }
+}
+
 async function main(): Promise<number> {
   const args = process.argv.slice(2);
   const known = ["--json", "--message", "--commit-message"];
@@ -279,7 +332,7 @@ async function main(): Promise<number> {
       2,
       "check-resolution: a rebase concludes with 'git rebase --continue', which keeps the replayed commit's message; use --message and post the section on the pull request.",
     );
-  const result = checkResolution(root, snapshot);
+  const { result, obligations } = await checkWithObligations(root, snapshot);
 
   if (mode === "--json") {
     console.log(
@@ -287,6 +340,7 @@ async function main(): Promise<number> {
         {
           ...result,
           operation: snapshot.operation,
+          obligations,
           message: result.exit === 0 ? messageSection(snapshot) : null,
         },
         null,
@@ -300,6 +354,7 @@ async function main(): Promise<number> {
     for (const e of result.escalations)
       write(`NEEDS A HUMAN ${e.path}: ${e.question}`);
     for (const f of result.notes) write(`note ${render(f)}`);
+    reportObligations(obligations, write);
   };
   if (mode === "--message" || mode === "--commit-message") {
     report((line) => console.error(line));

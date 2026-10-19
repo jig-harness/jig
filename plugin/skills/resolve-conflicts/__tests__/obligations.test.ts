@@ -1,0 +1,211 @@
+import { afterEach, expect, test } from "bun:test";
+import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  parseObligations,
+  runObligations,
+} from "../scripts/lib/obligations.ts";
+import { CONFIG_COMBINED, mergeConflict, Scratch } from "./scratch.ts";
+
+let scratch: Scratch | undefined;
+afterEach(() => scratch?.cleanup());
+
+test("obligations require check text and refuse malformed optional commands and keys", () => {
+  expect(parseObligations(undefined)).toEqual([]);
+  expect(
+    parseObligations({
+      generated: [],
+      obligations: [{ check: "Inspect all staged hunks" }],
+    }),
+  ).toEqual([{ check: "Inspect all staged hunks" }]);
+  for (const obligations of [
+    null,
+    {},
+    ["check"],
+    [{}],
+    [{ check: " " }],
+    [{ check: "x", command: null }],
+    [{ check: "x", command: " " }],
+    [{ check: "x", extra: "y" }],
+  ])
+    expect(() => parseObligations({ obligations })).toThrow(
+      "resolve_conflicts.obligations",
+    );
+});
+
+test("commands run from the consumer root and surface failure while text checks stay pending", async () => {
+  scratch = new Scratch();
+  scratch.write("expected.txt", "expected\n");
+  const results = await runObligations(scratch.root, [
+    { check: "Read every resolved hunk" },
+    {
+      check: "Consumer file is present",
+      command: `"${process.execPath}" -e 'process.exit(require("node:fs").existsSync("expected.txt") ? 0 : 1)'`,
+    },
+    {
+      check: "Reject invalid result",
+      command: `"${process.execPath}" -e 'console.error("guard missing"); process.exit(7)'`,
+    },
+  ]);
+  expect(results.map((result) => result.status)).toEqual([
+    "agent-check",
+    "passed",
+    "failed",
+  ]);
+  expect(results[2]?.output).toContain("guard missing");
+  expect(results[2]?.output).toContain("exit 7");
+});
+
+test("runtime reads layered configuration and bounds a command with a deadline", () => {
+  scratch = new Scratch();
+  const module = join(
+    import.meta.dir,
+    "..",
+    "scripts",
+    "lib",
+    "obligations.ts",
+  );
+  scratch.write(
+    "probe.ts",
+    `import { obligationEntries, runObligations } from ${JSON.stringify(module)}; console.log(JSON.stringify(await runObligations(process.cwd(), obligationEntries())));`,
+  );
+  scratch.overlay(`resolve_conflicts:
+  obligations:
+    - check: Read complete diff
+    - check: Bound a stalled command
+      command: '${process.execPath} -e "setInterval(() => {}, 1000)"'
+`);
+  scratch.env.RESOLVE_CONFLICTS_COMMAND_TIMEOUT = "1";
+  const run = scratch.script(join(scratch.root, "probe.ts"));
+  expectSpawnExit({ ...run, exitCode: run.code }, 0);
+  const results = JSON.parse(run.stdout);
+  expect(results[0].check).toBe("Read complete diff");
+  expect(results[1].status).toBe("failed");
+  expect(results[1].output).toContain("deadline exceeded after 1s");
+  scratch.env.JIG__RESOLVE_CONFLICTS__OBLIGATIONS = JSON.stringify([
+    { check: "Environment layer inspection" },
+  ]);
+  const layered = scratch.script(join(scratch.root, "probe.ts"));
+  expectSpawnExit({ ...layered, exitCode: layered.code }, 0);
+  expect(JSON.parse(layered.stdout)).toMatchObject([
+    { check: "Environment layer inspection", status: "agent-check" },
+  ]);
+});
+
+test("runtime rejects malformed obligations with the configuration source", () => {
+  scratch = new Scratch();
+  const module = join(
+    import.meta.dir,
+    "..",
+    "scripts",
+    "lib",
+    "obligations.ts",
+  );
+  scratch.write(
+    "probe.ts",
+    `import { obligationEntries } from ${JSON.stringify(module)}; obligationEntries();`,
+  );
+  scratch.overlay(
+    'resolve_conflicts:\n  obligations: [{check: Inspect, command: ""}]\n',
+  );
+  const run = scratch.script(join(scratch.root, "probe.ts"));
+  expectSpawnExit({ ...run, exitCode: run.code }, 1);
+  expect(run.stderr).toContain("resolve_conflicts.obligations[0].command");
+  expect(run.stderr).toContain(".config/jig.yaml");
+});
+
+function resolvedMerge(): Scratch {
+  const s = new Scratch();
+  scratch = s;
+  mergeConflict(s);
+  let run = s.script("conflict-map.ts");
+  expectSpawnExit({ ...run, exitCode: run.code }, 0);
+  s.write("src/config.ts", CONFIG_COMBINED);
+  s.git("add", "src/config.ts");
+  run = s.script("record.ts", ["src/config.ts", "combined"]);
+  expectSpawnExit({ ...run, exitCode: run.code }, 0);
+  return s;
+}
+
+function setObligations(s: Scratch, entries: unknown): void {
+  s.overlay(`resolve_conflicts:\n  obligations: ${JSON.stringify(entries)}\n`);
+}
+
+test("CLI reports pending text and successful commands for the whole resolved merge", () => {
+  const s = resolvedMerge();
+  setObligations(s, [
+    { check: "Inspect all staged hunks including auto-merges" },
+    {
+      check: "Run the result check",
+      command: "git diff --cached --exit-code -- src/nonexistent.ts",
+    },
+  ]);
+  const run = s.script("check-resolution.ts", ["--json"]);
+  expectSpawnExit({ ...run, exitCode: run.code }, 0);
+  expect(JSON.parse(run.stdout).obligations).toMatchObject([
+    {
+      check: "Inspect all staged hunks including auto-merges",
+      status: "agent-check",
+    },
+    { check: "Run the result check", status: "passed" },
+  ]);
+});
+
+test("CLI blocks failed commands and emits no commit message", () => {
+  const s = resolvedMerge();
+  setObligations(s, [
+    { check: "Preserve guards", command: "echo missing-guard >&2; exit 7" },
+  ]);
+  const report = s.script("check-resolution.ts", ["--json"]);
+  expectSpawnExit({ ...report, exitCode: report.code }, 1);
+  expect(JSON.parse(report.stdout).obligations).toMatchObject([
+    { status: "failed", output: "exit 7\nmissing-guard" },
+  ]);
+  const message = s.script("check-resolution.ts", ["--message"]);
+  expectSpawnExit({ ...message, exitCode: message.code }, 1);
+  expect(message.stdout).toBe("");
+  expect(message.stderr).toContain("missing-guard");
+});
+
+test("CLI refuses invalid obligation configuration with exit 2", () => {
+  const s = resolvedMerge();
+  setObligations(s, [{ check: "Inspect", command: "" }]);
+  const run = s.script("check-resolution.ts", ["--json"]);
+  expectSpawnExit({ ...run, exitCode: run.code }, 2);
+  expect(run.stderr).toContain("resolve_conflicts.obligations[0].command");
+});
+
+test("CLI rechecks staged provenance after a configured command", () => {
+  const s = resolvedMerge();
+  setObligations(s, [
+    {
+      check: "Run repository check",
+      command: "echo unrelated > unrelated.txt; git add unrelated.txt",
+    },
+  ]);
+  const run = s.script("check-resolution.ts", ["--json"]);
+  expectSpawnExit({ ...run, exitCode: run.code }, 1);
+  expect(JSON.parse(run.stdout).problems).toContainEqual(
+    expect.objectContaining({ path: "unrelated.txt" }),
+  );
+});
+
+test("a missing shell is reported as a failed command", () => {
+  scratch = new Scratch();
+  const module = join(
+    import.meta.dir,
+    "..",
+    "scripts",
+    "lib",
+    "obligations.ts",
+  );
+  scratch.write(
+    "probe.ts",
+    `import { runObligations } from ${JSON.stringify(module)}; console.log(JSON.stringify(await runObligations(process.cwd(), [{check: "Check result", command: "echo checked"}])));`,
+  );
+  scratch.env.PATH = join(scratch.home, "empty-path");
+  const run = scratch.script(join(scratch.root, "probe.ts"));
+  expectSpawnExit({ ...run, exitCode: run.code }, 0);
+  expect(JSON.parse(run.stdout)[0].status).toBe("failed");
+  expect(JSON.parse(run.stdout)[0].output).toContain("exit 127");
+});
