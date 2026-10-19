@@ -180,6 +180,36 @@ test("a file that already holds Private Use Area characters is still marked", ()
   ]);
 });
 
+/** Every Private Use Area character from `first` through `last`. */
+function privateUse(first: number, last: number): string {
+  let text = "";
+  for (let code = first; code <= last; code++)
+    text += String.fromCodePoint(code);
+  return text;
+}
+
+test("a file holding the whole Basic Multilingual Plane's Private Use Area is marked from planes 15 and 16", () => {
+  const inventory = `\`\`\`\n${privateUse(0xe000, 0xf8ff)}\n\`\`\`\n`;
+  expect(markdownLinks(`${inventory}<a@b.c>\n[x](a@b.c)`)).toEqual([
+    { target: "mailto:a@b.c", line: 4 },
+    { target: "a@b.c", line: 5 },
+  ]);
+  const most = `${privateUse(0xe000, 0xf8ff)}${privateUse(0xf0000, 0xffffd)}${privateUse(0x100000, 0x10fffb)}`;
+  expect(
+    markdownLinks(`\`${most}\`\n${"[a](x.md)\n".repeat(5)}<a@b.c>`),
+  ).toEqual([
+    ...[2, 3, 4, 5, 6].map((line) => ({ target: "x.md", line })),
+    { target: "mailto:a@b.c", line: 7 },
+  ]);
+});
+
+test("a file holding every Private Use Area character is refused, not read by guess", () => {
+  const every = `${privateUse(0xe000, 0xf8ff)}${privateUse(0xf0000, 0xffffd)}${privateUse(0x100000, 0x10fffd)}`;
+  expect(() => markdownLinks(`\`${every}\`\n<a@b.c>`)).toThrow(
+    "every Private Use Area character",
+  );
+});
+
 test("a link and an image whose destinations differ only by a leading ! are told apart", () => {
   expect(markdownLinks("[l](!a.md)\n![i](a.md)")).toEqual([
     { target: "!a.md", line: 1 },

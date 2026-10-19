@@ -8,16 +8,20 @@
 //
 // The renderer reports no source positions, so where a destination stands is
 // asked of it in one more render. Every place where a destination's text ends
-// and a destination could end gets a marker naming that place, drawn from
-// characters the file does not hold, and each link the renderer reads carries
-// the marker of the place it was read from. Text that only repeats a
+// and a destination could end gets a marker naming that place, written in
+// Private Use Area characters the file does not hold and as wide as the
+// number of places needs, and each link the renderer reads carries the marker
+// of the place it was read from. A file holding every Private Use Area
+// character leaves nothing to write a marker in, and is refused rather than
+// read by guess. Text that only repeats a
 // destination (in code, prose or an unused definition) renders as no link, so
 // its marker is never read. A marker would leave an email autolink no email,
 // so each `<address>` the file holds is written as a URI autolink for that
 // render: it stays a link exactly where the address was one, and a link whose
-// text is its whole destination is an autolink. Two renders, then, whatever
-// the file holds; a link the markers still miss stands at the first place of
-// its text no other link was read from, and is never taken for an autolink.
+// text is its whole destination is an autolink. An address ends before its
+// `>`, so every email autolink is marked. Two renders, then, whatever the file
+// holds; a link the markers still miss stands at the first place of its text
+// no other link was read from.
 
 /** One destination and the 1-based line it starts on. */
 export interface MarkdownLink {
@@ -74,9 +78,10 @@ function place(content: string, rendered: Rendered[]): (Rendered & Read)[] {
   for (const { href } of rendered)
     if (!starts.has(href)) starts.set(href, indexesOf(content, href));
   const read = readMarked(content, starts);
+  const nextRead = queues(read);
   const claimed = new Set<number>();
   const placed = rendered.map((link) => {
-    const found = read.get(key(link))?.shift();
+    const found = nextRead(key(link));
     if (found === undefined) return { ...link, at: -1, email: false };
     claimed.add(found.at);
     return { ...link, ...found };
@@ -87,10 +92,21 @@ function place(content: string, rendered: Rendered[]): (Rendered & Read)[] {
       href,
       list.filter((at) => !claimed.has(at)),
     );
+  const nextFree = queues(free);
   for (const link of placed)
     if (link.at === -1)
-      link.at = free.get(link.href)?.shift() ?? starts.get(link.href)?.[0] ?? 0;
+      link.at = nextFree(link.href) ?? starts.get(link.href)?.[0] ?? 0;
   return placed;
+}
+
+/** Takes each list's items in order, one per call, without moving the rest. */
+function queues<T>(lists: Map<string, T[]>): (name: string) => T | undefined {
+  const taken = new Map<string, number>();
+  return (name) => {
+    const index = taken.get(name) ?? 0;
+    taken.set(name, index + 1);
+    return lists.get(name)?.[index];
+  };
 }
 
 const key = ({ href, image }: Pick<Rendered, "href" | "image">) =>
@@ -106,13 +122,12 @@ function readMarked(
 ): Map<string, Read[]> {
   const read = new Map<string, Read[]>();
   const ends = markableEnds(content, starts);
-  const marks = markAlphabet(content);
-  if (ends.length === 0 || ends.length > marks.length ** 2) return read;
+  if (ends.length === 0) return read;
+  const markers = markerSet(content, ends.length);
   const addresses = enclosedAddresses(content, starts);
-  const file = markFile(content, ends, addresses, marks);
-  const idOf = markerIds(marks);
+  const file = markFile(content, ends, addresses, markers.write);
   for (const link of render(file.marked)) {
-    const id = idOf(link.href.slice(-2));
+    const id = markers.read(link.href);
     const end = id === undefined ? undefined : ends[id];
     if (id === undefined || end === undefined) continue;
     const start = (file.markEnds[id] ?? 0) - link.href.length;
@@ -166,14 +181,14 @@ function markFile(
   content: string,
   ends: number[],
   addresses: Map<number, number>,
-  marks: string,
+  marker: (id: number) => string,
 ): {
   marked: string;
   markEnds: number[];
   sourceOf: (index: number) => number;
 } {
   const cuts = [
-    ...ends.map((at, id) => ({ at, id, text: marker(marks, id) })),
+    ...ends.map((at, id) => ({ at, id, text: marker(id) })),
     ...[...addresses.values()].map((at) => ({ at, id: -1, text: SCHEME })),
   ].sort((a, b) => a.at - b.at);
   const inserted: { from: number; to: number; at: number }[] = [];
@@ -193,13 +208,15 @@ function markFile(
   }
   marked += content.slice(from);
   const sourceOf = (index: number): number => {
-    let shift = 0;
-    for (const piece of inserted) {
-      if (piece.from >= index) break;
-      if (piece.to > index) return piece.at;
-      shift += piece.to - piece.from;
+    let [low, high] = [-1, inserted.length - 1];
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if ((inserted[middle]?.from ?? 0) < index) low = middle;
+      else high = middle - 1;
     }
-    return index - shift;
+    const piece = inserted[low];
+    if (piece === undefined) return index;
+    return piece.to > index ? piece.at : piece.at + index - piece.to;
   };
   return { marked, markEnds, sourceOf };
 }
@@ -210,30 +227,74 @@ const SCHEME = "jig-mark:";
 const EMAIL =
   /^[\w.!#$%&'*+/=?^`{|}~-]+@[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?)*$/i;
 
-/** The Private Use Area characters `content` does not hold. */
-function markAlphabet(content: string): string {
-  const held = new Set(content.match(/[-]/g));
-  let marks = "";
-  for (let code = 0xe000; code <= 0xf8ff; code++) {
-    const mark = String.fromCharCode(code);
-    if (!held.has(mark)) marks += mark;
-  }
-  return marks;
-}
+/** A file whose links cannot be marked, because it holds every marker character. */
+export class UnmarkableMarkdownError extends Error {}
 
-/** The id of the marker two characters write, if they write one. */
-function markerIds(marks: string): (text: string) => number | undefined {
-  const ids = new Map([...marks].map((mark, index) => [mark, index]));
-  return (text) => {
-    const [high, low] = [...text].map((mark) => ids.get(mark));
-    return high === undefined || low === undefined || text.length !== 2
-      ? undefined
-      : high * marks.length + low;
+/** Enough Private Use Area characters to write a marker in. */
+const ALPHABET_SIZE = 256;
+
+/**
+ * Markers for `count` places: fixed-width numbers whose digits are Private Use
+ * Area characters `content` does not hold, and the id of the marker a
+ * destination ends with, if it ends with one.
+ */
+function markerSet(
+  content: string,
+  count: number,
+): {
+  write: (id: number) => string;
+  read: (href: string) => number | undefined;
+} {
+  const digits = markAlphabet(content);
+  if (digits.length === 0 || (digits.length === 1 && count > 1))
+    throw new UnmarkableMarkdownError(
+      "markdown-links: the file holds every Private Use Area character, so no link in it can be marked",
+    );
+  let width = 1;
+  while (digits.length ** width < count) width++;
+  const values = new Map(digits.map((digit, value) => [digit, value]));
+  const write = (id: number): string => {
+    let text = "";
+    for (let left = id, place = 0; place < width; place++) {
+      text = (digits[left % digits.length] ?? "") + text;
+      left = Math.floor(left / digits.length);
+    }
+    return text;
   };
+  const read = (href: string): number | undefined => {
+    let id = 0;
+    const tail = [...href.slice(-2 * width)].slice(-width);
+    if (tail.length !== width) return undefined;
+    for (const digit of tail) {
+      const value = values.get(digit);
+      if (value === undefined) return undefined;
+      id = id * digits.length + value;
+    }
+    return id;
+  };
+  return { write, read };
 }
 
-function marker(marks: string, id: number): string {
-  return `${marks[Math.floor(id / marks.length)]}${marks[id % marks.length]}`;
+/**
+ * Up to `ALPHABET_SIZE` Private Use Area characters `content` does not hold,
+ * from the Basic Multilingual Plane's area and then planes 15 and 16.
+ */
+function markAlphabet(content: string): string[] {
+  const held = new Set(
+    content.match(/[\uE000-\uF8FF\u{F0000}-\u{FFFFD}\u{100000}-\u{10FFFD}]/gu),
+  );
+  const marks: string[] = [];
+  for (const [first, last] of [
+    [0xe000, 0xf8ff],
+    [0xf0000, 0xffffd],
+    [0x100000, 0x10fffd],
+  ] as const)
+    for (let code = first; code <= last; code++) {
+      const mark = String.fromCodePoint(code);
+      if (!held.has(mark)) marks.push(mark);
+      if (marks.length === ALPHABET_SIZE) return marks;
+    }
+  return marks;
 }
 
 function indexesOf(content: string, text: string): number[] {
