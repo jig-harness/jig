@@ -213,9 +213,13 @@ or as a release pull request) and the tag after verification.
 
 - **Publishing.** Uploading to a package registry, creating a GitHub
   Release, announcing a version: each is a repository's own pipeline,
-  started by the tag this module makes. The module asks only that it start
-  from the tag; [mappings.md](mappings.md#publishing-without-a-stored-token)
-  shows how a registry lets that job publish without a stored token, and
+  started by the tag this module makes. The module asks only that a
+  release's publishing start from the tag. A
+  [preview package](mappings.md#packages-to-try-before-the-merge) built
+  from a pull request is not a release: a separate job publishes it, from
+  the pull request's commit, and it moves none of the release channels.
+  [mappings.md](mappings.md#publishing-without-a-stored-token) shows how
+  a registry lets the release's job publish without a stored token, and
   [what to check](mappings.md#checking-what-the-package-holds) in the
   package before it does.
 - **Pre-release and calendar versions.** The practice holds for them, but
