@@ -314,8 +314,9 @@ It fails (exit 1), listing each problem with its file and line, when:
 2. conflict markers remain in a mapped path, or in any other staged change;
 3. a mapped path has no decision, an unknown one, or lacks a required reason;
 4. what is staged for a mapped path differs from the working tree, or the
-   configuration, the change-area catalog (or the file a link to it resolves
-   to) or a `.gitattributes` file differs between the working tree and the
+   configuration, the change-area catalog (or any symbolic link, file or
+   directory, that reading either passes through, or the file it finally
+   reads) or a `.gitattributes` file differs between the working tree and the
    index, whatever its assume-unchanged or skip-worktree flag, ignored or not:
    the check classifies paths by the working tree, and the commit carries what
    is staged;

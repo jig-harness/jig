@@ -39,13 +39,23 @@
 import {
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, posix, relative } from "node:path";
+import {
+  isAbsolute,
+  join,
+  parse,
+  posix,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { fail, runMain } from "../../../shared/cli.ts";
 import {
   type Classification,
@@ -111,16 +121,53 @@ function inside(root: string, file: string): string | null {
     : rel;
 }
 
+/** Hops after which a chain of symbolic links counts as a loop. */
+const MAX_LINK_HOPS = 40;
+
 /**
- * The configuration and the catalog inside `root`, each also as the file a
- * symbolic link to it resolves to (that file is what is read).
+ * Every path the file system passes through to open `file`: each symbolic
+ * link on the way (a file or a directory, at any hop of a chain) and the file
+ * finally read, all as absolute paths whose directories hold no link.
+ */
+function traversedPaths(file: string): string[] {
+  const seen: string[] = [];
+  const pending: string[] = [];
+  const restart = (path: string): string => {
+    const { root } = parse(path);
+    pending.unshift(...path.slice(root.length).split(sep).filter(Boolean));
+    return root;
+  };
+  let current = restart(resolve(file));
+  for (let hops = 0; pending.length > 0; ) {
+    const candidate = join(current, pending.shift() as string);
+    let link: string | null = null;
+    try {
+      if (lstatSync(candidate).isSymbolicLink()) link = readlinkSync(candidate);
+    } catch {
+      // A missing component: what follows cannot be read either.
+    }
+    if (link === null) {
+      current = candidate;
+      continue;
+    }
+    seen.push(candidate);
+    if (++hops > MAX_LINK_HOPS) return seen;
+    current = restart(resolve(current, link));
+  }
+  seen.push(current);
+  return seen;
+}
+
+/**
+ * The configuration and the catalog inside `root`, each also as every
+ * symbolic link a read of it passes through and the file it finally reads.
  */
 function declarationFilePaths(root: string): string[] {
   const realRoot = realpathSync(root);
   return declarationFiles()
     .flatMap((file) => [
       inside(root, file),
-      existsSync(file) ? inside(realRoot, realpathSync(file)) : null,
+      ...traversedPaths(file).map((path) => inside(realRoot, path)),
     ])
     .filter((path): path is string => path !== null);
 }
@@ -197,7 +244,14 @@ function unstagedDeclarations(
   const found = differingDeclarations(root, declarations, unmerged);
   const tracked = new Set(splitNul(git(root, ["ls-files", "-z"])));
   const reported = new Set(found.map((f) => f.path));
-  for (const path of declarations)
+  // Untracked attributes files anywhere, ignored ones included: one governing
+  // only unmapped staged files still decides their conflict-marker check. A
+  // wholly untracked directory is listed as itself, since an attributes file
+  // in it governs nothing staged.
+  const untrackedAttributes = splitNul(
+    git(root, ["ls-files", "-z", "--others", "--directory"]),
+  ).filter((path) => posix.basename(path) === ".gitattributes");
+  for (const path of new Set([...declarations, ...untrackedAttributes]))
     if (
       !tracked.has(path) &&
       !reported.has(path) &&

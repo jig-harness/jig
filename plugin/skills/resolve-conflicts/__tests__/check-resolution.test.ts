@@ -568,6 +568,77 @@ describe("a catalog reached through a symbolic link", () => {
   });
 });
 
+describe("an untracked .gitattributes file beside an automatically merged file", () => {
+  beforeEach(() => {
+    s.git("merge", "--abort");
+    s.git("checkout", "-q", "main");
+    s.commit("Add the guide", { "docs/guide.md": "guide\n" });
+    s.git("checkout", "-q", "feature");
+    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    s.write("src/config.ts", CONFIG_COMBINED);
+    s.git("add", "src/config.ts");
+    expect(record("src/config.ts", "combined").code).toBe(0);
+    expect(check().code).toBe(0);
+  });
+
+  it("fails while it governs only unmapped staged paths", () => {
+    s.write("docs/.gitattributes", "*.md conflict-marker-size=9\n");
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM docs/.gitattributes: decides how the mapped paths are classified",
+    );
+    rmSync(`${s.root}/docs/.gitattributes`);
+    expect(check().code).toBe(0);
+  });
+});
+
+describe("a catalog reached through a chain of symbolic links", () => {
+  beforeEach(() => {
+    s.git("merge", "--abort");
+    writeCatalog("schema.json", "bun run gen:schema", "config/catalog.yaml");
+    writeCatalog("openapi.json", "bun run gen:openapi", "config/other.yaml");
+    writeCatalog("openapi.json", "bun run gen:openapi", "alt/catalog.yaml");
+    symlinkSync("config", `${s.root}/cfg`);
+    symlinkSync("cfg/catalog.yaml", `${s.root}/link.yaml`);
+    symlinkSync("link.yaml", `${s.root}/catalog.yaml`);
+    s.overlay("drive:\n  change_areas_catalog: catalog.yaml\n");
+    s.commit("Describe the feature API", { "openapi.json": "feature\n" });
+    s.git("checkout", "-q", "main");
+    s.commit("Describe the main API", { "openapi.json": "main\n" });
+    s.git("checkout", "-q", "feature");
+    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    s.write("src/config.ts", CONFIG_COMBINED);
+    s.write("openapi.json", "feature\nmain\n");
+    s.git("add", "src/config.ts", "openapi.json");
+    expect(record("src/config.ts", "combined").code).toBe(0);
+    expect(record("openapi.json", "combined").code).toBe(0);
+    expect(check().code).toBe(0);
+  });
+
+  it("fails while a link between the configured path and the file read is retargeted", () => {
+    rmSync(`${s.root}/link.yaml`);
+    symlinkSync("config/other.yaml", `${s.root}/link.yaml`);
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM link.yaml: decides how the mapped paths are classified, and the working tree differs from what is staged",
+    );
+  });
+
+  it("fails while a linked directory on the way is retargeted", () => {
+    rmSync(`${s.root}/cfg`);
+    symlinkSync("alt", `${s.root}/cfg`);
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM cfg: decides how the mapped paths are classified, and the working tree differs from what is staged",
+    );
+  });
+});
+
 describe("a catalog outside the repository that an obligation command changes", () => {
   beforeEach(() => {
     s.git("merge", "--abort");
