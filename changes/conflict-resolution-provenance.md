@@ -6,7 +6,9 @@ release: minor
 
 - Conflict resolution accepts repository obligations over the whole resolved
   diff, including automatically merged files and hunks, with optional
-  validation commands.
+  validation commands. Commands run only while every tracked file on disk
+  matches the staged tree, and a command that changes either invalidates the
+  run.
 
 ### Changed
 

@@ -114,9 +114,10 @@ test("runtime rejects malformed obligations with the configuration source", () =
   expect(run.stderr).toContain(".config/jig.yaml");
 });
 
-function resolvedMerge(): Scratch {
+function resolvedMerge(setup?: (s: Scratch) => void): Scratch {
   const s = new Scratch();
   scratch = s;
+  setup?.(s);
   mergeConflict(s);
   let run = s.script("conflict-map.ts");
   expectSpawnExit({ ...run, exitCode: run.code }, 0);
@@ -187,6 +188,49 @@ test("CLI rechecks staged provenance after a configured command", () => {
   expectSpawnExit({ ...run, exitCode: run.code }, 1);
   expect(JSON.parse(run.stdout).problems).toContainEqual(
     expect.objectContaining({ path: "unrelated.txt" }),
+  );
+});
+
+test("a command that restages a checked path invalidates every result", () => {
+  const s = resolvedMerge();
+  setObligations(s, [
+    { check: "Validate the config", command: "true" },
+    {
+      check: "Format",
+      command:
+        "echo 'export const broken =' >> src/config.ts; git add src/config.ts",
+    },
+  ]);
+  const run = s.script("check-resolution.ts", ["--json"]);
+  expectSpawnExit({ ...run, exitCode: run.code }, 1);
+  const report = JSON.parse(run.stdout);
+  expect(report.obligations).toMatchObject([
+    { status: "passed" },
+    { status: "passed" },
+  ]);
+  expect(report.problems).toContainEqual(
+    expect.objectContaining({
+      path: "resolve_conflicts.obligations",
+      message: expect.stringContaining("changed the staged tree"),
+    }),
+  );
+});
+
+test("commands do not run while the working tree differs from the staged tree", () => {
+  const s = resolvedMerge((setup) =>
+    setup.commit("Add the notes", { "notes.md": "notes\n" }),
+  );
+  s.write("notes.md", "notes with an unstaged fix\n");
+  setObligations(s, [{ check: "Validate", command: "true" }]);
+  const run = s.script("check-resolution.ts", ["--json"]);
+  expectSpawnExit({ ...run, exitCode: run.code }, 1);
+  const report = JSON.parse(run.stdout);
+  expect(report.obligations).toMatchObject([{ status: "not-run" }]);
+  expect(report.problems).toContainEqual(
+    expect.objectContaining({
+      path: "notes.md",
+      message: expect.stringContaining("differs from the staged tree"),
+    }),
   );
 });
 

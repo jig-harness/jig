@@ -44,7 +44,10 @@ resolve_conflicts:
 The agent checks each obligation against the **whole staged diff**, including
 auto-merged files and hunks, and includes the evidence and outcome in its
 resolution report. Optional commands run from the repository root with a
-deadline; failures block conclusion. A passing command supplements the text
+deadline; failures block conclusion. Commands read files on disk, so they run
+only when every tracked file matches the staged tree, and a command that
+changes the staged tree or a tracked file invalidates the whole run: review
+the change, stage or discard it, and check again. A passing command supplements the text
 review. With no obligations configured, there are none to run.
 
 See [configuration](../../CONFIGURATION.md#procedure-skills) for field details.

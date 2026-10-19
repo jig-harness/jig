@@ -417,7 +417,9 @@ resolve_conflicts:
 `obligations` defaults to an empty list. Each entry has nonempty `check`
 text and an optional nonempty `command`, run from the repository root with
 a deadline. The checker reports every obligation; a failed command blocks
-conclusion. Text-only entries require the agent's review in Step 6.
+conclusion. Commands run only when every tracked file on disk matches the
+staged tree, and a command that changes the staged tree or a tracked file
+fails the check, so its results never certify a tree it did not see. Text-only entries require the agent's review in Step 6.
 
 Each generated entry's `paths` are globs over repository-relative paths (`*` and `?`
 stay within one directory; `**` spans any number; `{a,b}` matches either

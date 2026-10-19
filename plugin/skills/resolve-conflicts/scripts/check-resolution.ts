@@ -39,12 +39,14 @@ import {
   gitRaw,
   indexBlob,
   readBlob,
+  splitNul,
   topLevel,
 } from "./lib/git.ts";
 import { markerLines } from "./lib/markers.ts";
 import {
   obligationEntries,
   runObligations,
+  type ObligationEntry,
   type ObligationResult,
 } from "./lib/obligations.ts";
 import { provenanceProblems } from "./lib/provenance.ts";
@@ -273,35 +275,86 @@ function render(f: Finding): string {
   return `${f.path}${f.line === undefined ? "" : `:${f.line}`}: ${f.message}`;
 }
 
-/** Validate commands against a checked resolution, then verify their final index. */
+/** The staged tree, plus every tracked path whose file on disk differs from it. */
+interface TreeState {
+  tree: string;
+  unstaged: string[];
+}
+
+function treeState(root: string): TreeState {
+  return {
+    tree: git(root, ["write-tree"]).trim(),
+    unstaged: splitNul(git(root, ["diff", "--name-only", "-z"])).sort(),
+  };
+}
+
+function notRun(
+  entries: readonly ObligationEntry[],
+  output: string,
+): ObligationResult[] {
+  return entries.map((entry) => ({
+    check: entry.check,
+    command: entry.command ?? null,
+    status: "not-run",
+    output,
+  }));
+}
+
+/**
+ * Commands read files on disk, so they run only when the disk matches the
+ * staged tree, and their results stand only if no command changed either.
+ */
 async function checkWithObligations(
   root: string,
   snapshot: Snapshot,
 ): Promise<{ result: CheckResult; obligations: ObligationResult[] }> {
   const entries = obligationEntries();
-  let result = checkResolution(root, snapshot);
-  const obligations: ObligationResult[] =
-    result.exit === 0
-      ? await runObligations(root, entries)
-      : entries.map((entry) => ({
-          check: entry.check,
-          command: entry.command ?? null,
-          status: "not-run",
-          output: "Fix the resolution before running obligations.",
-        }));
-  // A configured command can edit or stage files. Check the result that will
-  // actually be committed, rather than certifying the index from before it ran.
-  if (result.exit === 0 && entries.some((entry) => entry.command !== undefined))
-    result = checkResolution(root, snapshot);
+  const result = checkResolution(root, snapshot);
+  if (result.exit !== 0)
+    return {
+      result,
+      obligations: notRun(
+        entries,
+        "Fix the resolution before running obligations.",
+      ),
+    };
+  if (!entries.some((entry) => entry.command !== undefined))
+    return { result, obligations: await runObligations(root, entries) };
+
+  const before = treeState(root);
+  if (before.unstaged.length > 0) {
+    for (const path of before.unstaged)
+      result.problems.push({
+        path,
+        message:
+          "differs from the staged tree: obligation commands check files on disk, so stage or discard it first",
+      });
+    result.exit = 1;
+    return {
+      result,
+      obligations: notRun(
+        entries,
+        "The working tree differs from the staged tree.",
+      ),
+    };
+  }
+  const obligations = await runObligations(root, entries);
+  const after = treeState(root);
+  const final = checkResolution(root, snapshot);
+  if (after.tree !== before.tree || after.unstaged.length > 0)
+    final.problems.push({
+      path: "resolve_conflicts.obligations",
+      message:
+        "a command changed the staged tree or the working tree, so its results describe an earlier state: review the change, stage or discard it, and run check-resolution.ts again",
+    });
   for (const obligation of obligations)
     if (obligation.status === "failed")
-      result.problems.push({
+      final.problems.push({
         path: "resolve_conflicts.obligations",
         message: `${obligation.check}: ${obligation.output}`,
       });
-  if (result.exit !== 4 && result.problems.length > 0) result.exit = 1;
-
-  return { result, obligations };
+  if (final.exit !== 4 && final.problems.length > 0) final.exit = 1;
+  return { result: final, obligations };
 }
 
 function reportObligations(
