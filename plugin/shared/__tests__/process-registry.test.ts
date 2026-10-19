@@ -1,7 +1,8 @@
 import { captureRegisteredProcessTrees } from "../process-tree.ts";
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   createProcessRegistry,
   markProcessRegistryUnconfirmed,
@@ -420,3 +421,110 @@ for (const terminal of [
       registry.dispose();
     }
   });
+
+test("an interrupted completion write leaves no final authority and permits a complete retry", () => {
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      `
+    import {mock} from 'bun:test';
+    const fs=await import('node:fs');
+    const write=fs.writeFileSync;
+    let injected=false,armed=false;
+    mock.module('node:fs',()=>({...fs,writeFileSync(path,data,options){
+      if(armed && !injected && (typeof path==='number'||String(path).endsWith('.result.json')||String(path).endsWith('.tmp'))){
+        injected=true;write(path,'{',options);throw Object.assign(Error('full disk'),{code:'ENOSPC'});
+      }
+      return write(path,data,options);
+    }}));
+    const registry=await import(${JSON.stringify(resolve(import.meta.dir, "../process-registry.ts"))});
+    const scope=registry.createProcessRegistry();
+    try{
+      const final=registry.processCompletionPath(scope.dir,'runner');
+      registry.beginProcessRegistration(scope.dir,'runner',final);armed=true;
+      try{registry.publishProcessCompletion(scope.dir,'runner',{exitCode:0,treeWitnessed:true});throw Error('injection missed');}
+      catch(error){if(error.code!=='ENOSPC')throw error;}
+      if(fs.existsSync(final))throw Error('partial write occupied authoritative path');
+      if(registry.processRegistrySnapshot(scope.dir).complete)throw Error('pending write certified completion');
+      registry.publishProcessCompletion(scope.dir,'runner',{exitCode:0,treeWitnessed:true});
+      if(!registry.processRegistrySnapshot(scope.dir).complete)throw Error('complete retry failed');
+      if(fs.readdirSync(scope.dir).some(name=>name.endsWith('.tmp')))throw Error('own failed temporary leaked');
+      console.log('retry verified');
+    }finally{scope.dispose();}
+  `,
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  expectSpawnExit(result, 0);
+  expect(result.stdout.toString()).toContain("retry verified");
+});
+
+for (const firstWitness of [false, true])
+  test("an overlapping completion preserves the first terminal authority and foreign temporary", () => {
+    const result = Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `
+      import {mock} from 'bun:test';
+      const fs=await import('node:fs');
+      const write=fs.writeFileSync,link=fs.linkSync;
+      let final;
+      mock.module('node:fs',()=>({...fs,linkSync(source,target){
+        write(target,JSON.stringify({exitCode:7,treeWitnessed:${firstWitness}}),{flag:'wx'});
+        return link(source,target);
+      }}));
+      const registry=await import(${JSON.stringify(resolve(import.meta.dir, "../process-registry.ts"))});
+      const scope=registry.createProcessRegistry();
+      try{
+        final=registry.processCompletionPath(scope.dir,'runner');
+        const foreign=scope.dir+'/foreign.tmp';write(foreign,'other publisher');
+        let rejected=false;
+        try{registry.publishProcessCompletion(scope.dir,'runner',{exitCode:0,treeWitnessed:${!firstWitness}});}
+        catch(error){if(error.code!=='EEXIST')throw error;rejected=true;}
+        if(!rejected)throw Error('overlapping authority replaced first result');
+        const saved=JSON.parse(fs.readFileSync(final,'utf8'));
+        if(saved.exitCode!==7||saved.treeWitnessed!==${firstWitness})throw Error('first result changed');
+        if(fs.readFileSync(foreign,'utf8')!=='other publisher')throw Error('foreign temporary removed');
+        if(fs.readdirSync(scope.dir).filter(name=>name.endsWith('.tmp')).length!==1)throw Error('own temporary leaked');
+        console.log('exclusive commit verified');
+      }finally{scope.dispose();}
+    `,
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    expectSpawnExit(result, 0);
+    expect(result.stdout.toString()).toContain("exclusive commit verified");
+  });
+
+test("a temporary-name collision never removes another publisher's file", () => {
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      `
+    import {mock} from 'bun:test';
+    const crypto=await import('node:crypto');
+    mock.module('node:crypto',()=>({...crypto,randomUUID:()=> 'collision'}));
+    const fs=await import('node:fs');
+    const registry=await import(${JSON.stringify(resolve(import.meta.dir, "../process-registry.ts"))});
+    const scope=registry.createProcessRegistry();
+    try{
+      const final=registry.processCompletionPath(scope.dir,'runner');
+      const foreign=final+'.'+process.pid+'.collision.tmp';
+      fs.writeFileSync(foreign,'other publisher',{flag:'wx'});
+      let rejected=false;
+      try{registry.publishProcessCompletion(scope.dir,'runner',{exitCode:0,treeWitnessed:true});}
+      catch(error){if(error.code!=='EEXIST')throw error;rejected=true;}
+      if(!rejected||fs.existsSync(final))throw Error('collision admitted publication');
+      if(fs.readFileSync(foreign,'utf8')!=='other publisher')throw Error('collision deleted foreign temporary');
+      console.log('collision retained');
+    }finally{scope.dispose();}
+  `,
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  expectSpawnExit(result, 0);
+  expect(result.stdout.toString()).toContain("collision retained");
+});

@@ -1,6 +1,10 @@
+import { randomUUID } from "node:crypto";
 import {
   type Dirent,
   mkdtempSync,
+  linkSync,
+  openSync,
+  closeSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -64,14 +68,27 @@ export function publishProcessCompletion(
     throw new Defect(
       "process completion requires an integer status and explicit tree witness",
     );
-  writeFileSync(
-    processCompletionPath(dir, entry),
-    JSON.stringify({
-      exitCode: result.exitCode,
-      treeWitnessed: result.treeWitnessed,
-    }),
-    { flag: "wx" },
-  );
+  const final = processCompletionPath(dir, entry);
+  const temporary = `${final}.${process.pid}.${randomUUID()}.tmp`;
+  const descriptor = openSync(temporary, "wx");
+  try {
+    try {
+      writeFileSync(
+        descriptor,
+        JSON.stringify({
+          exitCode: result.exitCode,
+          treeWitnessed: result.treeWitnessed,
+        }),
+      );
+    } finally {
+      closeSync(descriptor);
+    }
+    // Linking a closed, complete file installs one immutable authority. A
+    // competing terminal record wins without replacement on either platform.
+    linkSync(temporary, final);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
 }
 
 /** Retain the completion location so readers can reconcile an unfinished handoff. */
