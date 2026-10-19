@@ -232,6 +232,47 @@ describe("a correct combined resolution", () => {
     });
   });
 
+  it("reads a staged file's line numbers when diff settings fuse its hunks", () => {
+    s.git("merge", "--abort");
+    s.commit("Add notes", { "notes.txt": "one\ntwo\nthree\nfour\nfive\n" });
+    expect(
+      s.gitTry("-c", "merge.conflictStyle=diff3", "merge", "main").code,
+    ).not.toBe(0);
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    s.write("src/config.ts", CONFIG_COMBINED);
+    s.git("add", "src/config.ts");
+    expect(
+      record("src/config.ts", "combined", "--reason", "kept both sides").code,
+    ).toBe(0);
+    s.git("config", "diff.interHunkContext", "10");
+    s.write(
+      "notes.txt",
+      "one\n<<<<<<< HEAD\ntwo\nthree\nfour\n>>>>>>> main\nfive\n",
+    );
+    s.git("add", "notes.txt");
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM notes.txt:2: conflict marker in a staged file",
+    );
+    expect(r.stdout).toContain(
+      "PROBLEM notes.txt:6: conflict marker in a staged file",
+    );
+  });
+
+  it("scans a staged file whose zero byte lies past git's first 8000 bytes", () => {
+    s.write(
+      "notes.txt",
+      `${"\u{1F600}".repeat(3000)}\0\n<<<<<<< HEAD\ntwo\n=======\nthree\n>>>>>>> main\n`,
+    );
+    s.git("add", "notes.txt");
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM notes.txt:2: conflict marker in a staged file",
+    );
+  });
+
   it("finds a conflict marker in another staged file", () => {
     s.write(
       "notes.txt",
@@ -1044,6 +1085,62 @@ describe("attributes the commit does not carry", () => {
       "PROBLEM docs/guide.md: staged content differs from Git's automatic result",
     );
   });
+
+  for (const [name, configure] of [
+    [
+      "the user's configuration",
+      () => s.git("config", "--global", "merge.keepours.driver", "true"),
+    ],
+    [
+      "the environment",
+      () =>
+        Object.assign(s.env, {
+          GIT_CONFIG_COUNT: "1",
+          GIT_CONFIG_KEY_0: "merge.keepours.driver",
+          GIT_CONFIG_VALUE_0: "true",
+        }),
+    ],
+  ] as const)
+    it(`a merge driver ${name} configures does not make its result automatic`, () => {
+      const guide = "one\ntwo\nthree\nfour\nfive\n";
+      const root = s.git("rev-list", "--max-parents=0", "main").trim();
+      s.git("merge", "--abort");
+      configure();
+      s.git("checkout", "-q", "-b", "base2", root);
+      s.commit("Add the guide", { "docs/guide.md": guide });
+      s.git("checkout", "-q", "-b", "feature2");
+      s.commit("Feature", {
+        "docs/.gitattributes": "*.md merge=keepours\n",
+        "docs/guide.md": guide.replace("one", "ONE"),
+        "src/config.ts": CONFIG_BASE.replace(
+          "  retries: 3,\n",
+          "  retries: 3,\n  timeoutOverride: true,\n",
+        ),
+      });
+      s.git("checkout", "-q", "base2");
+      s.commit("Main", {
+        "docs/guide.md": guide.replace("five", "FIVE"),
+        "src/config.ts": CONFIG_BASE.replace("retries: 3", "retries: 5"),
+      });
+      s.git("checkout", "-q", "feature2");
+      expect(s.gitTry("merge", "base2").code).not.toBe(0);
+      expect(s.read("docs/guide.md")).toBe(guide.replace("one", "ONE"));
+      expect(s.script("conflict-map.ts").code).toBe(0);
+      s.write(
+        "src/config.ts",
+        CONFIG_BASE.replace(
+          "  retries: 3,\n",
+          "  retries: 5,\n  timeoutOverride: true,\n",
+        ),
+      );
+      s.git("add", "src/config.ts");
+      expect(record("src/config.ts", "combined").code).toBe(0);
+      const r = check();
+      expect(r.code).toBe(1);
+      expect(r.stdout).toContain(
+        "PROBLEM docs/guide.md: staged content differs from Git's automatic result",
+      );
+    });
 
   it("a merge driver only info/attributes selects does not make its result automatic", () => {
     const guide = "one\ntwo\nthree\nfour\nfive\n";

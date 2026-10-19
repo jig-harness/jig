@@ -324,7 +324,9 @@ It fails (exit 1), listing each problem with its file and line, when:
    and a working-tree change that is not staged, an untracked file, an ignored
    one, a staged link named `.gitattributes`, `$GIT_DIR/info/attributes`, the
    file `core.attributesFile` names or the system's attributes file decides
-   nothing. Conflict markers are looked for at the size git wrote them with as
+   nothing. Git's automatic result is reconstructed under no configuration at
+   all, so a merge driver configured for the repository, the user, the system
+   or the environment does not run. Conflict markers are looked for at the size git wrote them with as
    well, and in other staged changes on every added line, whatever an
    attribute says the file is;
 5. a lockfile or generated file is not recorded as `regenerated`, or any

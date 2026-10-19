@@ -7,7 +7,9 @@
  * ignored or unstaged `.gitattributes`; a staged link of that name, whose
  * target text git reads from the index as if it were attributes (a checkout
  * ignores such a link); `$GIT_DIR/info/attributes`; the file
- * `core.attributesFile` names; or the system's attributes file.
+ * `core.attributesFile` names; or the system's attributes file. Nor does any
+ * configuration decide, since configuration is what turns an attribute into
+ * behavior (a merge driver's command, above all).
  */
 import {
   copyFileSync,
@@ -44,6 +46,10 @@ const REPOSITORY_VARIABLES = [
   "GIT_ATTR_SOURCE",
 ];
 
+/** Variables that carry configuration into git besides its files. */
+const CONFIGURATION_VARIABLE =
+  /^GIT_CONFIG(?:|_PARAMETERS|_COUNT|_KEY_\d+|_VALUE_\d+|_GLOBAL|_SYSTEM|_NOSYSTEM)$/;
+
 /** A tree holding the index's regular, staged `.gitattributes` files. */
 function indexAttributesTree(root: string, scratch: string): string {
   const records = splitNul(git(root, ["ls-files", "--stage", "-z"])).filter(
@@ -77,9 +83,11 @@ export type IndexAttributesGit = (
  * `info/attributes` does not exist; `core.attributesFile` names an empty file
  * and `GIT_ATTR_NOSYSTEM` drops the system's file. Objects are the
  * repository's own (`GIT_OBJECT_DIRECTORY`), so what it writes, an automatic
- * merge's tree, is readable from the repository afterwards. The repository's
- * configuration is not read either, so a merge driver it configures does not
- * run.
+ * merge's tree, is readable from the repository afterwards. No configuration
+ * is read: not the repository's, the user's (`GIT_CONFIG_GLOBAL` names an
+ * empty file), the system's (`GIT_CONFIG_NOSYSTEM`), nor any passed in the
+ * environment. So a merge driver configured anywhere does not run, and a
+ * merge's result is git's default for the attributes the commit carries.
  */
 export function indexAttributesGit<T>(
   root: string,
@@ -114,12 +122,18 @@ export function indexAttributesGit<T>(
     if (existsSync(shallow)) copyFileSync(shallow, join(gitDir, "shallow"));
     const noAttributes = join(scratch, "attributes");
     writeFileSync(noAttributes, "");
+    const noConfiguration = join(scratch, "config");
+    writeFileSync(noConfiguration, "");
     const env: NodeJS.ProcessEnv = { ...process.env };
     for (const name of REPOSITORY_VARIABLES) delete env[name];
+    for (const name of Object.keys(env))
+      if (CONFIGURATION_VARIABLE.test(name)) delete env[name];
     Object.assign(env, {
       GIT_DIR: gitDir,
       GIT_OBJECT_DIRECTORY: objects,
       GIT_ATTR_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: noConfiguration,
+      GIT_CONFIG_NOSYSTEM: "1",
       GIT_OPTIONAL_LOCKS: "0",
     });
     const prefix = [

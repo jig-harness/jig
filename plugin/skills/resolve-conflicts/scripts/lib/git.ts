@@ -26,21 +26,47 @@ const STABLE = [
   "color.ui=false",
 ];
 
+function spawnGit(
+  root: string | null,
+  args: readonly string[],
+  encoding: "utf8" | "buffer",
+  input?: string,
+  env?: NodeJS.ProcessEnv,
+) {
+  const full = [...STABLE, ...(root === null ? [] : ["-C", root]), ...args];
+  const r = spawnSync("git", full, {
+    encoding,
+    maxBuffer: MAX_BUFFER,
+    input,
+    env,
+  });
+  if (r.error) throw new Error(`git ${args.join(" ")}: ${r.error.message}`);
+  return r;
+}
+
 export function gitRaw(
   root: string | null,
   args: readonly string[],
   input?: string,
   env?: NodeJS.ProcessEnv,
 ): GitResult {
-  const full = [...STABLE, ...(root === null ? [] : ["-C", root]), ...args];
-  const r = spawnSync("git", full, {
-    encoding: "utf8",
-    maxBuffer: MAX_BUFFER,
-    input,
-    env,
-  });
-  if (r.error) throw new Error(`git ${args.join(" ")}: ${r.error.message}`);
-  return { code: r.status ?? -1, stdout: r.stdout, stderr: r.stderr };
+  const r = spawnGit(root, args, "utf8", input, env);
+  return {
+    code: r.status ?? -1,
+    stdout: r.stdout.toString(),
+    stderr: r.stderr.toString(),
+  };
+}
+
+function succeeded<T extends { code: number; stderr: string; stdout: unknown }>(
+  args: readonly string[],
+  r: T,
+): T["stdout"] {
+  if (r.code !== 0)
+    throw new Error(
+      `git ${args.join(" ")} exited ${r.code}: ${r.stderr.trim() || String(r.stdout).trim()}`,
+    );
+  return r.stdout;
 }
 
 /** Run git and return its stdout; any non-zero exit throws with git's message. */
@@ -50,12 +76,7 @@ export function git(
   input?: string,
   env?: NodeJS.ProcessEnv,
 ): string {
-  const r = gitRaw(root, args, input, env);
-  if (r.code !== 0)
-    throw new Error(
-      `git ${args.join(" ")} exited ${r.code}: ${r.stderr.trim() || r.stdout.trim()}`,
-    );
-  return r.stdout;
+  return succeeded(args, gitRaw(root, args, input, env));
 }
 
 /** The repository's top level, or null outside a work tree. */
@@ -93,6 +114,22 @@ export function subject(root: string, commit: string): string {
 /** The content of a blob. */
 export function readBlob(root: string, blob: string): string {
   return git(root, ["cat-file", "blob", blob]);
+}
+
+/**
+ * Whether git calls a blob's content binary: a zero byte in its first 8000
+ * bytes. Read as bytes, since a decoded string counts characters, and a
+ * character can take up to 4 bytes.
+ */
+export function isBinaryBlob(root: string, blob: string): boolean {
+  const args = ["cat-file", "blob", blob];
+  const r = spawnGit(root, args, "buffer");
+  const bytes = succeeded(args, {
+    code: r.status ?? -1,
+    stdout: r.stdout as Buffer,
+    stderr: r.stderr.toString(),
+  });
+  return bytes.subarray(0, 8000).includes(0);
 }
 
 /** Split NUL-terminated output into its records, dropping the final empty one. */

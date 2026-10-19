@@ -44,7 +44,7 @@ import {
   regenerateFor,
 } from "./lib/classify.ts";
 import { indexAttributesGit } from "./lib/attributes.ts";
-import { git, readBlob, splitNul, topLevel } from "./lib/git.ts";
+import { git, isBinaryBlob, splitNul, topLevel } from "./lib/git.ts";
 import { parseHunks, writtenMarkerSize } from "./lib/markers.ts";
 import {
   detectOperation,
@@ -156,7 +156,7 @@ function isBinary(
     if (stage === null) continue;
     // A submodule entry is a commit, not file content.
     if (stage.mode === "160000") return true;
-    if (readBlob(root, stage.blob).slice(0, 8000).includes("\0")) return true;
+    if (isBinaryBlob(root, stage.blob)) return true;
   }
   return false;
 }

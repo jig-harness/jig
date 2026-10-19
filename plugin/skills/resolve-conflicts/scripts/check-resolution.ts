@@ -65,6 +65,7 @@ import {
   git,
   gitPath,
   indexBlob,
+  isBinaryBlob,
   readBlob,
   splitNul,
   topLevel,
@@ -103,7 +104,10 @@ function unstaged(root: string, path: string): boolean {
   return git(root, ["diff", "--name-only", "-z", "--", path]) !== "";
 }
 
-/** The lines `diff` adds to the new side, by line number (a `-U0` patch). */
+/**
+ * The lines `diff` adds to the new side, by line number. A context line moves
+ * the new side on too, in case a hunk carries one.
+ */
 function addedLines(diff: string): Map<number, string> {
   const added = new Map<number, string>();
   let next: number | null = null;
@@ -112,6 +116,7 @@ function addedLines(diff: string): Map<number, string> {
     if (hunk) next = Number(hunk[1]);
     else if (next !== null && line.startsWith("+"))
       added.set(next++, line.slice(1));
+    else if (next !== null && line.startsWith(" ")) next++;
   }
   return added;
 }
@@ -120,8 +125,8 @@ function addedLines(diff: string): Map<number, string> {
  * Conflict markers on the lines staged changes add outside the mapped paths,
  * at the size the commit's attributes give each path and the size a merge
  * reads. `--text` and `--no-textconv` keep any attribute from hiding a
- * file's lines; only content git would call binary (a NUL byte in its first
- * 8000) is skipped.
+ * file's lines; only content git would call binary (a zero byte in its
+ * first 8000 bytes) is skipped.
  */
 function stagedMarkers(root: string, mapped: Snapshot["paths"]): Finding[] {
   const paths = splitNul(
@@ -135,9 +140,7 @@ function stagedMarkers(root: string, mapped: Snapshot["paths"]): Finding[] {
   }
   const scanned = paths.filter((path) => {
     const blob = files.get(path);
-    return (
-      blob !== undefined && !readBlob(root, blob).slice(0, 8000).includes("\0")
-    );
+    return blob !== undefined && !isBinaryBlob(root, blob);
   });
   const committed = indexSizes(root, scanned);
   const written = writtenSizes(root, scanned);
@@ -156,6 +159,7 @@ function stagedMarkers(root: string, mapped: Snapshot["paths"]): Finding[] {
       "--text",
       "--no-color",
       "-U0",
+      "--inter-hunk-context=0",
       "--",
       path,
     ]);

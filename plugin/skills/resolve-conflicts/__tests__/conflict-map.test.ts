@@ -728,6 +728,18 @@ describe("classes", () => {
     });
   });
 
+  it("text when a side's zero byte lies past git's first 8000 bytes", () => {
+    const wide = "\u{1F600}".repeat(3000);
+    s.commit("Base", { "notes.txt": `${wide}\0\nbase\n` });
+    s.git("checkout", "-q", "-b", "feature");
+    s.commit("Feature", { "notes.txt": `${wide}\0\nfeature\n` });
+    s.git("checkout", "-q", "main");
+    s.commit("Main", { "notes.txt": `${wide}\0\nmain\n` });
+    s.git("checkout", "-q", "feature");
+    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    expect(map().paths["notes.txt"]?.class).toBe("text");
+  });
+
   for (const [name, text, expected] of [
     [
       "an unknown key",
