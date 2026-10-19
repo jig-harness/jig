@@ -297,15 +297,9 @@ repository with one released artifact. What is left:
 
 Parallel pull requests put each other in conflict, and each conflict costs a
 resolution and a CI run; nobody can say how many there are, in which files,
-or why. [design/merge-conflicts.md](merge-conflicts.md) has how it works:
+or why. [design/merge-conflicts.md](merge-conflicts.md) has how it works and
+the [conflict hotspots](../GLOSSARY.md) the report finds. What is left:
 
-- **A report from history**: `resolve-conflicts` replays every merge commit
-  with `git merge-tree`, reads the decisions its own `Conflicts resolved:`
-  sections recorded, and lists the conflicted paths with a cause each
-  (derived, structural, echo, version, sequence, tally, append, packed
-  list, adjacent, overlap) and the
-  change that removes it; the paths that keep conflicting are the
-  [conflict hotspots](../GLOSSARY.md).
 - **A live record**: `resolve-conflicts` keeps one event per resolved path
   instead of overwriting its snapshot, which covers the rebases,
   cherry-picks and reverts the replay cannot see.
@@ -315,9 +309,8 @@ or why. [design/merge-conflicts.md](merge-conflicts.md) has how it works:
 - **One file per roadmap item** follows only if the report shows the plan
   or the roadmap conflicting where items are added or removed side by side.
 
-Done when the report run on Jig's history lists its conflicts by path and
-cause with a remedy for each, a resolution by `resolve-conflicts` leaves its
-events, and an audit scores M12's new criterion from the report.
+Done when a resolution by `resolve-conflicts` leaves its events, and an
+audit scores M12's new criterion from the report.
 
 ## Later
 

@@ -54,3 +54,40 @@ it("maps, records and checks from a copy outside this repository", () => {
   expect(check.stderr).toContain("passed");
   expect(check.stdout).toBe("Conflicts resolved:\n- src/config.ts: combined\n");
 });
+
+it("replays the history from a copy outside this repository", () => {
+  const h = new Scratch();
+  try {
+    h.env.JIG_HOME = join(h.home, "jig-home");
+    const base = h.commit("base", { "a.txt": "x\n" });
+    h.git("checkout", "-q", "-b", "feature");
+    const theirs = h.commit("theirs", { "a.txt": "z\n" });
+    h.git("checkout", "-q", "main");
+    const ours = h.commit("ours", { "a.txt": "y\n" });
+    expect(base).not.toBe(ours);
+    const merge = h
+      .git(
+        "commit-tree",
+        "HEAD^{tree}",
+        "-p",
+        ours,
+        "-p",
+        theirs,
+        "-m",
+        "Merge",
+      )
+      .trim();
+    h.git("reset", "-q", "--hard", merge);
+    const scripts = join(cache, "skills", "resolve-conflicts", "scripts");
+    const r = h.script(join(scripts, "history.ts"), ["--json", "--all"]);
+    expectSpawnExit(
+      { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
+      0,
+    );
+    const report = JSON.parse(r.stdout);
+    expect(report.totals).toMatchObject({ merges: 1, conflicted: 1 });
+    expect(report.confidence).not.toBeNull();
+  } finally {
+    h.cleanup();
+  }
+});

@@ -377,17 +377,17 @@ every night, where Windows leaves out only the suites listed in
 
 | Part | macOS | Linux | Windows | Why |
 | --- | --- | --- | --- | --- |
-| `drive-pr` | yes | yes | no | Supervises its agent processes through [POSIX](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) process groups and signals, and finds them with `ps`; its suite runs on Windows every night, with the tests that need that work skipped |
+| `drive-pr` | yes | yes | no | Its state, locks and paths are not yet hardened for Windows file systems, and its instructions assume a [POSIX](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) shell; its suite runs on Windows every night, with the tests that need that work skipped |
 | `do-item` | yes | yes | no | Its pickup record uses hard links and owner-only file modes; its suite runs on Windows every night, with the tests that need that work skipped |
 | The launcher | yes | no | no | Its one provider, Conductor, is a macOS app |
 | Every other skill | yes | yes | yes | — |
 | Developing Jig (`bun run gates`) | yes | yes | yes, without the launcher's suite | — |
 
-The supervision code already has Windows branches (it stops a process tree
-with `taskkill` and runs commands through `cmd.exe`); what is left is finding
-and waiting on a pass's processes without `ps` and POSIX signals, state and
-locks that hold up on Windows file systems, and the skills' instructions
-under Git Bash. On every system, Jig keeps its
+The supervision code already has Windows branches (it finds and stops a
+pass's processes from native process snapshots and a polled stop request, and
+runs commands through `cmd.exe`); what is left is state and locks that hold up
+on Windows file systems, and the skills' instructions under Git Bash. On every
+system, Jig keeps its
 state under `~/.local/state/jig` and `~/.cache/jig` in the home folder,
 rather than in each system's own application-data folder. Windows support
 for the drive and `do-item` is listed under the roadmap's later work; until

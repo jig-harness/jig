@@ -61,7 +61,11 @@ export function parseObligations(section: unknown): ObligationEntry[] {
   if (section === undefined || section === null) return [];
   if (!isRecord(section))
     throw new ObligationConfigError("resolve_conflicts must be a mapping");
-  knownKeys(section, ["generated", "obligations"], "resolve_conflicts");
+  knownKeys(
+    section,
+    ["generated", "hotspot_min_merges", "obligations"],
+    "resolve_conflicts",
+  );
   const entries = section.obligations;
   if (entries === undefined) return [];
   if (!Array.isArray(entries))

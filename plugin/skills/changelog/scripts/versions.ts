@@ -200,7 +200,8 @@ export function releasableVersion(
   return version;
 }
 
-type Span = [start: number, end: number];
+/** Where a value sits in a file's text: from `start` up to `end`. */
+export type Span = [start: number, end: number];
 
 /** Whether `a` and `b` are the same path. */
 const same = (a: readonly string[], b: readonly string[]) =>
@@ -480,6 +481,45 @@ function yamlSpans(text: string, target: readonly string[]): Span[] {
   return found;
 }
 
+/** The positions of the values at a key, per kind of file. */
+const SPANS = { json: jsonSpans, toml: tomlSpans, yaml: yamlSpans };
+
+/** A value no version file holds, written in a probe edit to see where `withVersion` writes. */
+const PROBE_VERSION = "0.0.0-span-probe";
+
+/**
+ * Where in `text` the release step writes the version: the span `withVersion`
+ * edits, holding the version `readVersion` reads. It is found by making that
+ * edit, so the span is one the release step can move on its own. Null when
+ * the file holds no readable version there, or when `withVersion` refuses the
+ * edit (the value written twice, escaped, inside an inline table, or shared
+ * through a YAML alias).
+ */
+export function versionSpan(file: VersionFile, text: string): Span | null {
+  const version = versionIn(file, text);
+  if (version === null || version === PROBE_VERSION) return null;
+  let probed: string;
+  try {
+    probed = withVersion(file, text, version, PROBE_VERSION);
+  } catch (error) {
+    swallow(error, `${file.path}: ${file.key} cannot be moved on its own`);
+    return null;
+  }
+  const kind = kindOf(file.path);
+  const at = text.indexOf(version);
+  const spans: Span[] =
+    kind === "plain"
+      ? [[at, at + version.length]]
+      : SPANS[kind](text, parseField(file.key));
+  const [start, end] = spans.length === 1 ? (spans[0] ?? [0, 0]) : [0, 0];
+  // The span is the stretch the edit replaced, and nothing else changed.
+  return spans.length === 1 &&
+    text.slice(start, end) === version &&
+    `${text.slice(0, start)}${PROBE_VERSION}${text.slice(end)}` === probed
+    ? [start, end]
+    : null;
+}
+
 /** The most values an expanded version file may hold. */
 const MAX_VALUES = 100_000;
 
@@ -558,10 +598,7 @@ export function withVersion(
     throw new ChangelogError(
       `${name}: ${file.key} holds ${JSON.stringify(held)}, not the version ${from}`,
     );
-  const spans = { json: jsonSpans, toml: tomlSpans, yaml: yamlSpans }[kind](
-    text,
-    path,
-  );
+  const spans = SPANS[kind](text, path);
   if (spans.length !== 1)
     throw new ChangelogError(
       `${name}: expected ${file.key} to be written once as "${from}", found ${spans.length}`,

@@ -24,6 +24,7 @@ import {
   parseTrackerConfig,
 } from "../../do-item/scripts/lib/tracker/config.ts";
 import { DEFAULT_MAX_ROUNDS } from "../../drive-pr/scripts/lib/overlay.ts";
+import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
 import {
   CANONICAL_STATES,
@@ -241,6 +242,7 @@ describe("the reading skills", () => {
       "work_batch.max_items": DEFAULT_MAX_ITEMS,
       "work_batch.ranking.provenance": DEFAULT_RANKING.provenance,
       "work_batch.ranking.shared_area_label": DEFAULT_RANKING.sharedAreaLabel,
+      "resolve_conflicts.hotspot_min_merges": DEFAULT_HOTSPOT_MIN_MERGES,
     });
   });
 

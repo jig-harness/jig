@@ -19,6 +19,9 @@
  *
  * Precedence, first match wins: `resolve_conflicts.generated`, then the
  * catalog's `generated[].outputs`, then the built-in lockfile table.
+ *
+ * The section's other key, `hotspot_min_merges`, is read here too, so one
+ * reader validates the whole section: the history report's hotspot threshold.
  */
 import { posix } from "node:path";
 import {
@@ -29,7 +32,7 @@ import { OUTPUT_PATH_RE } from "../../../change-areas/scripts/lib/catalog.ts";
 import { catalogPathFromOverlay } from "../../../do-item/scripts/determine_agent.ts";
 import { fail } from "../../../../shared/cli.ts";
 import { fieldInMessage } from "../../../../shared/config-layers.ts";
-import { sourceIn } from "../../../../shared/consumer.ts";
+import { readConfig, sourceIn } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import {
   stagedCatalog,
@@ -84,7 +87,14 @@ function firstInvalidGlob(paths: readonly string[]): string | null {
 }
 
 const SECTION = "resolve_conflicts";
+const KNOWN_KEYS = ["generated", "hotspot_min_merges", "obligations"];
 
+/** The least number of merges a path conflicts in to count as a hotspot, when unset. */
+export const DEFAULT_HOTSPOT_MIN_MERGES = 3;
+
+type Bad = (what: string) => never;
+
+/**
 /**
  * The merged configuration, or why the repository's own file cannot be read
  * yet because it is unmerged. The map still runs then, so the file's conflict
@@ -107,16 +117,15 @@ function mapConfiguration(): {
 }
 
 /**
- * The `resolve_conflicts.generated` entries, validated. A repository without
- * the configuration file or the section gets an empty list, and so does one
- * whose file is unmerged (`catalogGeneratedEntries` reports it); a malformed
- * section stops the script with exit 2 and the exact field at fault.
+ * The `resolve_conflicts` section of `overlay`, its keys checked, with the
+ * reporter of a malformed field; null when it has no such section.
  */
-export function generatedEntries(): GeneratedEntry[] {
-  const overlay = mapConfiguration().values;
+function readSection(
+  overlay: Record<string, unknown>,
+): { section: Record<string, unknown>; bad: Bad } | null {
   const section = overlay[SECTION];
-  if (section === undefined || section === null) return [];
-  const bad = (what: string): never =>
+  if (section === undefined || section === null) return null;
+  const bad: Bad = (what) =>
     fail(
       2,
       `resolve-conflicts: ${what} in ${sourceIn(overlay, fieldInMessage(what, SECTION))}`,
@@ -124,11 +133,24 @@ export function generatedEntries(): GeneratedEntry[] {
   if (typeof section !== "object" || Array.isArray(section))
     bad(`${SECTION} must be a mapping`);
   for (const key of Object.keys(section as object))
-    if (key !== "generated" && key !== "obligations")
+    if (!KNOWN_KEYS.includes(key))
       bad(
-        `${SECTION}.${key} is not a known key (known: generated, obligations)`,
+        `${SECTION}.${key} is not a known key (known: ${KNOWN_KEYS.join(", ")})`,
       );
-  const generated = (section as Record<string, unknown>).generated;
+  return { section: section as Record<string, unknown>, bad };
+}
+
+/**
+ * The `resolve_conflicts.generated` entries, validated. A repository without
+ * the configuration file or the section gets an empty list, and so does one
+ * whose file is unmerged (`catalogGeneratedEntries` reports it); a malformed
+ * section stops the script with exit 2 and the exact field at fault.
+ */
+export function generatedEntries(): GeneratedEntry[] {
+  const read = readSection(mapConfiguration().values);
+  if (read === null) return [];
+  const { section, bad } = read;
+  const generated = section.generated;
   if (generated === undefined || generated === null) return [];
   if (!Array.isArray(generated)) bad(`${SECTION}.generated must be a list`);
   return (generated as unknown[]).map((entry, i) => {
@@ -156,6 +178,29 @@ export function generatedEntries(): GeneratedEntry[] {
       source: "configuration",
     };
   });
+}
+
+/**
+ * `resolve_conflicts.hotspot_min_merges`: a path that conflicted in at least
+ * this many merges of the report's range is a hotspot. The history report
+ * certifies no commit, so it reads the configuration as it stands, not the
+ * index. A malformed value stops the script with exit 2.
+ */
+export function hotspotMinMerges(): number {
+  let overlay: Record<string, unknown>;
+  try {
+    overlay = readConfig();
+  } catch (err) {
+    fail(2, `resolve-conflicts: ${err instanceof Error ? err.message : err}`);
+  }
+  const read = readSection(overlay);
+  const value = read?.section.hotspot_min_merges;
+  if (value === undefined) return DEFAULT_HOTSPOT_MIN_MERGES;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
+    read?.bad(
+      `${SECTION}.hotspot_min_merges must be a whole number of 1 or more`,
+    );
+  return value as number;
 }
 
 /** The catalog's generated entries, and what was wrong with the catalog or an entry. */

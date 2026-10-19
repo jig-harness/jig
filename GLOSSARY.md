@@ -578,6 +578,11 @@ make, use the entry's term instead.
   pull requests merge, usually because it keeps in one place something every
   change adds to (a count, a list, a version). Measuring the conflicts
   finds it; moving that fact out of the shared place removes it.
+- **Merge replay** — merging the two parents of a past merge commit again,
+  without a working tree (`git merge-tree`), to see what conflicted then and
+  why. Jig's conflict report replays every merge in a range of time and gives
+  each conflicting region a *cause*: a fact every change edits in one place
+  (a count, a list, a version), or two changes to the same lines.
 - **Changelog** — a file listing each release's notable changes, newest
   first, written for the people who use the *released artifact* it belongs
   to. Jig's follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):

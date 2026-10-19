@@ -145,7 +145,7 @@ start a sentence with it.
 
 | Layout | What it is | Use it when |
 |---|---|---|
-| `document` (default) | One page set as a report. For a single call the first screen shows the question, the owners, the status, the reversibility, the recommendation and the whole outcome matrix; a source with several calls opens on the overview question and the call index, and each call's matrix sits in its own section below. Hover or focus on an option, a call or an owner traces it across the page. A reader can pick one option for each open call and copy the picks as text | The reader is a human who must decide. This is the layout for almost every sheet |
+| `document` (default) | One page set as a report. For a single call the first screen shows the question, the owners, the status, the reversibility, the recommendation and the whole outcome matrix; a source with several calls opens on the overview question and the call index, and each call's matrix sits in its own section below. Hover or focus on an option, a call or an owner traces it across the page. A reader can pick one option for each open call, add a note to each pick, and copy the picks as text | The reader is a human who must decide. This is the layout for almost every sheet |
 | `compact` | The drawing sheet: panels with grid references, one sheet for each call and an overview | The author asks for it |
 
 Both layouts read the same source. The markdown elaboration and the comment do
@@ -153,7 +153,8 @@ not depend on the layout. The document sheet records its layout in the
 embedded source block (`data-template="document"`). A sheet without that
 attribute is a compact sheet.
 
-The picks on a document sheet are kept in the reader's browser, for each
+A reader can also write a note on each pick; the note belongs to that option and
+joins the copy text under its pick line. The picks and their notes on a document sheet are kept in the reader's browser, for each
 decision id. They are not a ruling. The decision record stays canonical. The
 copy text names each pick by call id and option id, for example
 `(b) option 1: Evict by age, cap the memory`, so the record of a ruling

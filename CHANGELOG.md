@@ -316,6 +316,44 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.66.0] - 2026-10-19
+
+### Added
+
+- `resolve-conflicts` reports where a repository's merges conflicted, and
+  why: `bun <skill-dir>/scripts/history.ts` replays every merge commit of the
+  last 30 days (`--days`, `--since`/`--until` or `--all` for another range)
+  with `git merge-tree`, which changes nothing in the repository, and lists
+  the conflicted paths most often first, each with a cause (a lockfile, a
+  release version, a count, a list every change adds to, two changes to the
+  same lines, …) and the change that removes it. It also names the
+  [conflict hotspots](GLOSSARY.md), shows each week's conflicted merges by
+  cause so the effect of a fix shows, reads the decisions earlier
+  resolutions recorded in their `Conflicts resolved:` sections, and says how
+  often each cause was right when a sample was checked by hand. `--json`
+  prints it as a versioned `merge-conflicts/v1` object. It reads git only, never fetches, and keeps today's attributes out of the past
+  merges, running none of the repository's merge drivers or filters; it needs git 2.43 or later (2.45 in a
+  partial clone), and in a shallow clone it skips the merges whose history
+  the clone cuts and says the report is partial. See the skill's
+  [history report section](plugin/skills/resolve-conflicts/SKILL.md#where-past-merges-conflicted-the-history-report).
+- `resolve_conflicts.hotspot_min_merges` in `.config/jig.yaml`: how many
+  merges in the report's range a path must conflict in to count as a
+  hotspot (3 by default).
+
+## [0.65.1] - 2026-10-19
+
+### Changed
+
+- The Windows support table in EXTENDING.md no longer lists finding and stopping a pass's processes as missing: `drive-pr` does that on Windows now, and state, locks and the skills' instructions under Git Bash remain.
+
+## [0.65.0] - 2026-10-19
+
+### Added
+
+- `decide`: a document decision sheet lets the reader write a note on each
+  pick in the My picks tray. The note belongs to that option, shows under its
+  pick line in the copy text, and is kept in the browser with the pick.
+
 ## [0.64.0] - 2026-10-19
 
 ### Added
@@ -3130,7 +3168,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.64.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.66.0...HEAD
+[0.66.0]: https://github.com/jig-harness/jig/compare/v0.65.1...v0.66.0
+[0.65.1]: https://github.com/jig-harness/jig/compare/v0.65.0...v0.65.1
+[0.65.0]: https://github.com/jig-harness/jig/compare/v0.64.0...v0.65.0
 [0.64.0]: https://github.com/jig-harness/jig/compare/v0.63.0...v0.64.0
 [0.63.0]: https://github.com/jig-harness/jig/compare/v0.62.0...v0.63.0
 [0.62.0]: https://github.com/jig-harness/jig/compare/v0.61.1...v0.62.0
