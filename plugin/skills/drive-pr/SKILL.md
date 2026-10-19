@@ -79,8 +79,8 @@ or a human) on macOS, Linux and Windows. Two equivalent invocation forms:
   short form; prefix `bun ` on Windows.
 
 The scripts spawn each other via their own runtime, so a drive started either
-way stays self-consistent; `gh` and `git` are the only external binaries they
-call.
+way stays self-consistent. Forge and repository operations use `gh` and
+`git`; process snapshots use `ps` on POSIX and PowerShell on Windows.
 
 ## Drafts are driven, and marked Ready at the declared round
 
@@ -340,12 +340,15 @@ you look:
   unset) `oauthAccount` for a Claude pass,
   `OPENAI_API_KEY` (same fingerprint treatment) / `$CODEX_HOME/auth.json` for
   a Codex one, `null` with a stated reason when neither resolves); `--json`
-  for machines; `--stop <PR>` SIGTERMs a live driver,
-  which stops its pass tree and then releases its locks. POSIX-only: it
-  verifies the pid via `ps` before signaling and refuses where that probe
-  cannot run (e.g. Windows) — the listing and banner suppress the stop hint
-  there. Read-only over lock state: a stale lock stays the next acquire's to
-  recover.
+  for machines; `--stop <PR>` requests that a live driver stop its pass
+  tree and then release its locks. Process identity is verified through the
+  platform process table (`ps` on POSIX, PowerShell on Windows), and a
+  cooperative stop request lets a Windows driver run its own cleanup.
+  Confirmed cleanup publishes a receipt for that acquisition before releasing
+  claims. A matching receipt and disappearance of captured identities can
+  confirm shutdown after a temporary cancellation marker made the registry
+  uncertain; registry disappearance alone cannot.
+  A stale lock stays the next acquire's to recover.
 - **Progress liveness / `--doctor`** — a claim heartbeat proves the
   driver *process* is alive, never that the drive is making *progress*: a driver
   that hit a quota wall, exhausted its pass's context, or wedged on a
@@ -647,11 +650,12 @@ pre-commit hook runs a long suite, a push that runs the pre-push suite), use the
 **foreground wait**. It is two calls, launched once and waited on as often as
 the ceiling requires, all inside this turn.
 
-Launch — one call, returns at once. `foreground-wait.ts` runs the command in
-the pass's own process group — deliberately not detached into a session of its
-own, so `drive.ts`'s deadline and stop signalling still reach it and its
-termination witness can see it — and records its output, result and pids in one
-generation directory per launch under the gitignored
+Launch — one call, returns at once. On POSIX, `foreground-wait.ts` keeps the
+command in the pass's own process group, so the pass's deadline and stop
+signals reach it. On Windows, the runner starts independently so it survives
+the launcher, and its recorded creation identity joins the pass's cancellation
+registry. The helper records its output, result and pids in one generation
+directory per launch under the gitignored
 `.context/foreground-wait/` (the directory is the atomic launch claim). Forward the round's own
 flags in the command (`--bots-only` when the round is driven `--bots-only`,
 per § 6), or a human thread on a touched file refuses the push:
@@ -674,16 +678,23 @@ ${CLAUDE_SKILL_DIR}/scripts/foreground-wait.ts wait
 ```
 
 `wait` never returns the command's own exit status as its own — that would
-collide with its control codes. `0` means the command finished and exited `0`;
-`30` means it finished and failed (the `command-exit: N` line carries the
-status); `20` means still running — call `wait` again; `21` means no process
+collide with its control codes. `0` means the command finished and exited `0`
+with its process tree confirmed stopped; `30` means the command failed or
+its process tree could not be confirmed stopped (the `command-exit: N` line
+preserves the command's status); `20` means still running — call `wait` again; `21` means no process
 recorded for the launch is alive and no result was published. Each `wait`
 relays only output not yet shown (a bounded tail if a great deal arrived).
 
+The supervisor establishes its own process identity before executing the
+command. If ownership cannot be established, the command does not execute and
+the wait reports failure. A short successful command can therefore finish
+before the next process snapshot without losing its ownership anchor.
+
 Never call `launch` to resume a wait: a second copy of the command (a second
 push, or a commit racing the first's `index.lock`) would start beside the
-first. `launch` refuses (exit `3`) while an earlier launch is still alive, but
-that is a backstop, not the procedure. Only on exit `21` — no recorded runner, command or descendant is alive — is a
+first. `launch` refuses (exit `3`) while any earlier generation is still alive
+or has an unverified process tree, and retains that generation's evidence.
+That refusal is a backstop, not the procedure. Only on exit `21` — no recorded runner, command or descendant is alive — is a
 relaunch allowed, and then only after the step's own check: `git log` for a commit that may already
 have landed, and for `finish-round.ts` its idempotence. `21` does not see a
 descendant that outlived both the runner and the command (re-parented to init),
@@ -2698,12 +2709,14 @@ do not remove it.
 
 The deadline is implemented once per script family. `scripts/lib/proc.ts`
 is the chokepoint for this skill's scripts — the timer runs in the process that
-spawned the child, so it needs no external binary and works on Windows. The
+spawned the child. On Windows, tree enumeration uses the native process
+provider through PowerShell. The
 resolve-review-comments scripts the loop invokes (`await-round.ts`,
 `converge.ts`, `reply-to-thread.ts`, `list-unresolved-threads.ts`,
 `resolve-thread.ts`) are TypeScript too and get the same guarantee from that
-skill's own chokepoints (`lib/gh.ts`, `lib/proc.ts`). Every deadline kills
-the process **group**: the caller is waiting on the pipe, not on the command,
+skill's own chokepoints (`lib/gh.ts`, `lib/proc.ts`). Every deadline ends
+the process **group** on POSIX, or the captured process identities on Windows:
+the caller is waiting on the pipe, not on the command,
 so a surviving descendant keeps it blocked no matter what happened to the
 process the deadline signalled.
 
@@ -2711,12 +2724,14 @@ That group isolation is also why a **cancellation** has to be forwarded rather
 than merely delivered. A deadlined child leads its own group, so a signal sent
 to the driver — `kill <pid>`, a supervisor shutting a worker down — never
 reaches it, and the call runs to completion after the operator believes it was
-cancelled. `lib/proc.ts` installs a `SIGINT`/`SIGTERM`/`SIGHUP` handler at import time (the
+cancelled. `lib/proc.ts` installs a `SIGINT`/`SIGTERM`/`SIGHUP` handler
+(and `SIGBREAK` on Windows) at import time (the
 only point early enough to run before `drive.ts`'s and `lock.ts`'s own
 handlers, which exit) that TERMs every live group it detached, escalates to
 `SIGKILL`, and then gets out of the way: a caller's own handler still runs and owns
 the outcome, and with no caller handler the signal is re-raised so the process
-dies from it exactly as it would have. A child the caller detached itself or
+dies from it exactly as it would have on POSIX. Windows exits with the
+corresponding status after cleanup because POSIX signal re-raising is unavailable. A child the caller detached itself or
 took a `RunHandle` on is excluded — `drive.ts`'s pass orders its own `stop()`
 against the lock release, and that ordering must not be pre-empted. The reach
 is the whole tree: a nested script's own `spawnSync` grandchild dies with it.
@@ -2729,7 +2744,7 @@ is the whole tree: a nested script's own `spawnSync` grandchild dies with it.
 channel from a live session — a human, or the orchestrating session that
 spawned this drive — toward a running `drive.ts`, in the same working tree.
 It is the only way to get a message *into* a running headless drive short of
-`drives.ts --stop` (a hard kill). Append-only JSON Lines logs live
+`drives.ts --stop` (which also stops the active pass). Append-only JSON Lines logs live
 under the gitignored `.context/drive-mailbox/`: `inbox.jsonl` (any sender may
 append a `note` or a `directive`) and `outbox.jsonl` (the driver alone appends
 acks and responses to it). `drive.ts` folds directive state at round
@@ -2782,8 +2797,8 @@ remain one in-flight phase; use `hold-push` for a push gate. An unreadable
 mailbox stops the drive with exit `1`, never treating unknown directives as
 clear. The pause wait is bounded by `$DRIVE_PR_PAUSE_MAX_SEC` (default 1800
 seconds, valid range 1–86400); on expiry the drive exits `19` and releases its
-locks. A graceful stop exits `18`. `drives.ts --stop <PR>` remains the
-immediate `SIGTERM` path.
+locks. A graceful stop exits `18`. `drives.ts --stop <PR>` requests immediate cancellation of the active
+pass, followed by lock release only once termination is witnessed.
 
 A pass may run `mailbox.ts check <pr>` to read unseen notes — optional,
 advisory, and never a reason to change what a round does on its own; it

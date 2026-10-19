@@ -81,12 +81,12 @@
  * progress age, and none of the three is trusted alone.
  */
 
-import { run } from "./proc.ts";
+import { processTable } from "../../../../shared/process-table.ts";
 
 /**
  * `true`/`false` are positive answers; `null` is "the probe could not run or
  * could not be parsed" — no `ps` on `PATH`, a non-zero exit, unparsable
- * output, or a platform (Windows) with no POSIX `ps` at all. `classifyDrive`
+ * output, or an unavailable native process provider. `classifyDrive`
  * must never turn `null` into `HEALTHY`; it is `WEDGED`'s own fail-closed
  * requirement (`passChild === false`, never merely falsy) that makes this
  * distinction load-bearing rather than decorative.
@@ -187,6 +187,9 @@ const RUNTIME_BASENAME = /(?:^|[\\/])(?:bun|node)(?:\.exe)?$/i;
  * fallback only fires once every such candidate has failed.
  */
 function isOwnHelperInvocation(args: string): boolean {
+  const absolute = (path: string) =>
+    /^(?:[A-Za-z]:[\\/]|[\\/])/.test(path.replace(/^['"]/, ""));
+  const unquote = (path: string) => path.replace(/^['"]|['"]$/g, "");
   const trimmed = args.trimStart();
   const match = OWN_HELPER_SCRIPT.exec(trimmed);
   if (match === null) return false;
@@ -242,7 +245,7 @@ function isOwnHelperInvocation(args: string): boolean {
   // exactly `.ts` (not any `\.\w+$`) avoids reintroducing that same
   // collision: `My.Worktree` does not end in `.ts`, so it is not mistaken
   // for a complete script path the way `pass.ts` is.
-  const isCompleteScriptPath = (s: string) => /\.ts$/.test(s);
+  const isCompleteScriptPath = (s: string) => /\.ts$/.test(unquote(s));
 
   // A genuine continuing path may still embed whitespace of its own (the
   // checkout-root-space fixture above), so the test is not "no whitespace
@@ -255,7 +258,7 @@ function isOwnHelperInvocation(args: string): boolean {
     for (const ws of s.matchAll(/\s+/g)) {
       const before = s.slice(0, ws.index as number);
       const after = s.slice((ws.index as number) + ws[0].length);
-      if (after.startsWith("/") || isCompleteScriptPath(before)) return true;
+      if (absolute(after) || isCompleteScriptPath(before)) return true;
     }
     return false;
   };
@@ -265,14 +268,14 @@ function isOwnHelperInvocation(args: string): boolean {
     const before = prefix.slice(0, ws.index as number);
     const after = prefix.slice((ws.index as number) + ws[0].length);
     if (
-      RUNTIME_BASENAME.test(before) &&
-      after.startsWith("/") &&
+      RUNTIME_BASENAME.test(unquote(before)) &&
+      absolute(after) &&
       !isFlagged(after) &&
       !hasFreshPathRestart(after)
     ) {
       return true;
     }
-    if (after.startsWith("/") || isCompleteScriptPath(before)) {
+    if (absolute(after) || isCompleteScriptPath(before)) {
       freshPathRestart = true;
     }
   }
@@ -287,7 +290,7 @@ function isOwnHelperInvocation(args: string): boolean {
   // `prefix` is exactly that: one absolute shebang path whose checkout root
   // happens to embed a space, so accept it on `tsArgv()`'s own
   // absolute-path guarantee.
-  return !freshPathRestart && prefix.startsWith("/") && !isFlagged(prefix);
+  return !freshPathRestart && absolute(prefix) && !isFlagged(prefix);
 }
 
 /** Exported for `pass-child.test.ts` — synthetic fixtures for {@link findPassChild}. */
@@ -317,17 +320,6 @@ export function parsePassChildRows(output: string): ProcRow[] {
   }
   return rows;
 }
-
-/**
- * Deadline for the one `ps` call this function makes — the same 5s bound
- * `hasLiveGroupMemberPs` (`proc.ts`) already uses for an equivalent
- * "enumerate every process on this host" probe, chosen there for the same
- * reason: this is a diagnostic sweep, not a step a round is waiting on, so a
- * generous-but-bounded deadline is the right trade — long enough that a
- * merely-busy host does not misreport `null`, short enough that a hung `ps`
- * cannot wedge `--doctor` itself.
- */
-const PS_PROBE_TIMEOUT_SEC = 5;
 
 /**
  * The pure tree-walk: given an ALREADY-PARSED process snapshot, does `pid`
@@ -387,9 +379,9 @@ export function findPassChild(pid: number, rows: readonly ProcRow[]): boolean {
 }
 
 /**
- * One `ps -A` read of the whole process table, parsed — or `null` when the
- * probe could not run or could not be parsed (no `ps` on `PATH`, a non-zero
- * exit, an output shape this parser does not recognise, Windows).
+ * One native read of the whole process table, parsed — or `null` when the
+ * probe could not run or could not be parsed. Windows uses the native
+ * CIM process table; POSIX uses `ps`.
  *
  * SEPARATE FROM {@link hasPassChild} so a caller with SEVERAL pids to ask
  * about takes ONE snapshot rather than one per pid. `drives.ts` is exactly
@@ -410,19 +402,7 @@ export function findPassChild(pid: number, rows: readonly ProcRow[]): boolean {
  * answer racing its own separate instant.
  */
 export async function snapshotProcesses(): Promise<ProcRow[] | null> {
-  const r = await run(["ps", "-A", "-o", "pid=,ppid=,args="], {
-    stderr: "ignore",
-    timeoutSec: PS_PROBE_TIMEOUT_SEC,
-  });
-  if (r.spawnFailed || r.code !== 0) return null;
-  const rows = parsePassChildRows(r.stdout);
-  // `ps -A` always lists at least itself; zero PARSED rows from a
-  // successful, non-empty invocation means the output shape did not match
-  // what this parser expects (a `ps` variant this skill has not seen) rather
-  // than a genuinely process-less host — fail closed rather than read it as
-  // "no descendants".
-  if (rows.length === 0) return null;
-  return rows;
+  return processTable();
 }
 
 /**
