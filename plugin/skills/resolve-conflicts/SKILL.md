@@ -37,8 +37,10 @@ goes to a human.
 
 Jig maintains this procedure and ships it in the `jig` plugin.
 A repository adds its own generated files and merge obligations in `.config/jig.yaml`
-(the [consumer overlay](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md));
-without that file the skill works on its defaults.
+(the [consumer overlay](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)),
+and the skill also reads the `generated:` entries of its change-area catalog
+(`drive.change_areas_catalog`), so a generator declared there is not stated
+twice; without that file the skill works on its defaults.
 
 ### Paths and working directory
 
@@ -89,7 +91,7 @@ from this side before they are regenerated.
 |--------|--------------|------------|
 | `scripts/conflict-map.ts [--json] [--integration ours\|theirs]` | Maps the stopped operation and writes the snapshot. Read-only otherwise | 0 mapped; 2 usage, not in a git work tree, or invalid configuration; 3 nothing in progress, or the stored snapshot is unreadable (it is never replaced) |
 | `scripts/record.ts <path> <decision> [--reason "…"] [--command "…"] [--dropped "…"]` | Records one path's decision in the snapshot | 0 recorded; 2 usage (unknown path or decision, missing reason, no known regeneration command, or `regenerated` for a path that is not a lockfile or generated file); 3 nothing in progress, or no snapshot for this operation |
-| `scripts/check-resolution.ts [--json \| --message \| --commit-message]` | Verifies the resolution; prints the commit-message section | 0 passes; 1 problems; 2 usage or invalid obligation configuration; 3 nothing in progress, or no snapshot for this operation; 4 needs a human (wins over 1) |
+| `scripts/check-resolution.ts [--json \| --message \| --commit-message]` | Verifies the resolution; prints the commit-message section | 0 passes; 1 problems; 2 usage or invalid configuration; 3 nothing in progress, or no snapshot for this operation; 4 needs a human (wins over 1) |
 
 ## Step 1: Start or find the operation
 
@@ -149,8 +151,8 @@ integration side and the merge base, and for every conflicted path:
 - its **kind**: `both-modified`, `both-added`, `deleted-by-ours`,
   `deleted-by-theirs`, `added-by-ours`, `added-by-theirs` or `both-deleted`;
 - its **class**: `lockfile` (by file name), `generated` (by the
-  repository's configuration), `binary` or `text`, with the regeneration
-  command for the derived classes;
+  repository's configuration or its change-area catalog), `binary` or `text`,
+  with the regeneration command for the derived classes;
 - its conflict regions (line ranges);
 - the **intent** of each side: the commits that changed the path since the
   merge base (at most 20 per side), and, for a path one side deleted, where
@@ -248,6 +250,7 @@ jig/conflicts.json)`, which is never committed. Its shape:
     "integrationWhy": "main is the default branch"
   },
   "warning": null,
+  "catalogIncomplete": null,
   "mappedAt": "2026-01-01T00:00:00.000Z",
   "paths": {
     "src/a.ts": {
@@ -278,13 +281,22 @@ jig/conflicts.json)`, which is never committed. Its shape:
 
 `resolution` is the part you fill in; `record.ts` writes it, and you may
 edit it by hand to the same shape. `regenerate` is
-`{ "command", "cwd", "source": "built-in" | "configuration" }` for a derived
-file. `dropped` is `{ "why": "…", "lines": [{ "side": "theirs", "text": "…" }] }`.
+`{ "command", "cwd", "source": "built-in" | "configuration" | "catalog" }` for
+a derived file, and `null` for a `generated` path whose catalog entry declares
+no command (then `record.ts` needs `--command`). `catalogIncomplete` says why
+the change-area catalog's generated files could not all be read when the map
+was written (the catalog could not be read, or an entry's `outputs` are
+malformed), and keeps the check refusing until a map that reads them all
+clears it. `dropped` is `{ "why": "…", "lines": [{ "side": "theirs", "text": "…" }] }`.
 
 The snapshot belongs to one operation (its kind, `HEAD`, and the incoming
-commit). Running `conflict-map.ts` again for the same operation keeps the
-decisions already recorded and maps paths that are newly unmerged; a snapshot
-of a different operation is replaced, and the output says so. Each stop of a
+commit). Running `conflict-map.ts` again for the same operation classifies
+every mapped path afresh (a staged one from its stored conflict stages), maps
+paths that are newly unmerged, and keeps each recorded decision while the
+path's class and regeneration command are the ones it was recorded under. A
+decision recorded under another class or command is cleared, the output names
+the path, and you record it again. A snapshot of a different operation is
+replaced, and the output says so. Each stop of a
 rebase is a different operation. An unreadable snapshot is never replaced
 (exit 3): once a path is staged, git no longer knows its conflict stages, and
 only the snapshot does. Restore it, or, if nothing has been staged since it
@@ -301,7 +313,13 @@ It fails (exit 1), listing each problem with its file and line, when:
 1. a path is still unmerged;
 2. conflict markers remain in a mapped path, or in any other staged change;
 3. a mapped path has no decision, an unknown one, or lacks a required reason;
-4. what is staged for a mapped path differs from the working tree;
+4. what is staged for a mapped path differs from the working tree, or the
+   configuration, the change-area catalog (or any symbolic link, file or
+   directory, that reading either passes through, or the file it finally
+   reads) or a `.gitattributes` file differs between the working tree and the
+   index, whatever its assume-unchanged or skip-worktree flag, ignored or not:
+   the check classifies paths by the working tree, and the commit carries what
+   is staged;
 5. a lockfile or generated file is not recorded as `regenerated`, or any
    other path is;
 6. a staged path is outside the operation's changed-file set, or its staged
@@ -429,11 +447,41 @@ Each generated entry's `paths` are globs over repository-relative paths (`*` and
 stay within one directory; `**` spans any number; `{a,b}` matches either
 alternative; `[...]` matches one character of a class, `[!...]` or `[^...]`
 one outside it, and never `/`), and `command` rebuilds them, run from the repository
-root. An entry also overrides the built-in lockfile table for a path it
-matches. Unknown keys, wrong types and a glob that cannot compile (an
+root. Unknown keys, wrong types and a glob that cannot compile (an
 unclosed `{`, a backwards range such as `[z-a]`) are refused with the field
 named (exit 2). `JIG_OVERLAY` points the
 scripts at another configuration file.
+
+**The change-area catalog is read too.** When `drive.change_areas_catalog`
+names a catalog, every `generated[].outputs` path of every area (a literal
+file path, matched exactly, never a glob) is a generated file, rebuilt by that entry's `command` (run from the repository root), the
+class `generated` and the source `catalog` in the map. The catalog states what
+a generator writes once; `resolve_conflicts.generated` is for the files it does
+not declare. A path is classified by the first of these that matches:
+
+1. `resolve_conflicts.generated`, in the order written;
+2. the catalog's `generated[].outputs`, in the catalog's order;
+3. the built-in lockfile table below.
+
+An entry in the list above therefore overrides the catalog and the table, and
+the catalog overrides the table. The following problems are reported, never
+skipped: a catalog entry with no `command` still claims its outputs as
+generated files (never hand-merged) and the map warns that no command is
+known, so `record.ts` needs `--command` for it; an entry whose `outputs` are
+not a list of literal file paths is named in the warning and its outputs are
+classified by the other rules; and a catalog that cannot be read (it may be
+among the conflicted paths) is named in the warning while the map goes on
+without it. In the last two cases `check-resolution.ts` refuses until a later
+map reads every entry. Resolve or correct the catalog first, then run
+`conflict-map.ts` again: it reclassifies every mapped path, a staged one
+included, gives every derived path the command that now applies, and clears
+each decision recorded under a class or command that changed, so
+`check-resolution.ts` asks for that path's decision again. The check itself
+classifies every mapped path again from the configuration and catalog as they
+stand when it runs: a path whose class or command differs from the map's (a
+declaration added, changed or removed since the map) fails until the map runs
+again, and so does a catalog that cannot be read at that point. A `drive.change_areas_catalog` that is not a path is
+refused (exit 2).
 
 Built-in lockfiles, matched by file name in any directory and regenerated in
 that directory:
@@ -458,7 +506,9 @@ that directory:
   it); a removed line that also exists elsewhere in the file is not noticed.
   The semantic search in Step 3 is still yours to do.
 - The conflict-marker size comes from the path's `conflict-marker-size`
-  attribute (default 7).
+  attribute (default 7) when the path is first mapped, and stays that size
+  for the operation, since git wrote the markers then; the check also looks
+  for markers of the size the attribute gives at check time.
 - A `git am` session is not mapped.
 
 ## Related skills

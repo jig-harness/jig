@@ -76,8 +76,19 @@ describe("parseHunks", () => {
 });
 
 describe("regenerateFor", () => {
+  const configured = (paths: string[], command: string | null) => ({
+    paths,
+    command,
+    source: "configuration" as const,
+  });
+  const catalog = (paths: string[], command: string | null) => ({
+    paths,
+    command,
+    source: "catalog" as const,
+  });
+
   it("matches configured globs with alternatives and character classes", () => {
-    const entries = [{ paths: ["gen/{api,web}/[ab].ts"], command: "make" }];
+    const entries = [configured(["gen/{api,web}/[ab].ts"], "make")];
     expect(regenerateFor("gen/web/b.ts", entries)?.class).toBe("generated");
     expect(regenerateFor("gen/cli/b.ts", entries)).toBeNull();
   });
@@ -86,9 +97,11 @@ describe("regenerateFor", () => {
     expect(Object.keys(LOCKFILES)).toContain("Cargo.lock");
     expect(regenerateFor("services/api/go.sum", [])).toEqual({
       class: "lockfile",
-      command: "go mod tidy",
-      cwd: "services/api",
-      source: "built-in",
+      regenerate: {
+        command: "go mod tidy",
+        cwd: "services/api",
+        source: "built-in",
+      },
     });
     expect(regenerateFor("src/index.ts", [])).toBeNull();
   });
@@ -100,8 +113,47 @@ describe("regenerateFor", () => {
 
   it("lets configuration win over the table", () => {
     expect(
-      regenerateFor("go.sum", [{ paths: ["go.sum"], command: "make deps" }]),
-    ).toMatchObject({ class: "generated", command: "make deps", cwd: "." });
+      regenerateFor("go.sum", [configured(["go.sum"], "make deps")]),
+    ).toMatchObject({
+      class: "generated",
+      regenerate: { command: "make deps", cwd: ".", source: "configuration" },
+    });
+  });
+
+  it("reads a catalog entry as generated, run from the root", () => {
+    expect(
+      regenerateFor("openapi.json", [catalog(["openapi.json"], "bun run gen")]),
+    ).toEqual({
+      class: "generated",
+      regenerate: { command: "bun run gen", cwd: ".", source: "catalog" },
+    });
+  });
+
+  it("orders configuration, then the catalog, then the lockfile table", () => {
+    const entries = [
+      configured(["bun.lock", "openapi.json"], "from configuration"),
+      catalog(["bun.lock", "openapi.json", "schema.sql"], "from catalog"),
+    ];
+    expect(regenerateFor("bun.lock", entries)?.regenerate?.command).toBe(
+      "from configuration",
+    );
+    expect(regenerateFor("openapi.json", entries)?.regenerate?.source).toBe(
+      "configuration",
+    );
+    expect(regenerateFor("schema.sql", entries)?.regenerate?.command).toBe(
+      "from catalog",
+    );
+    expect(
+      regenerateFor("bun.lock", [catalog(["bun.lock"], "from catalog")])
+        ?.regenerate?.command,
+    ).toBe("from catalog");
+    expect(regenerateFor("bun.lock", [])?.regenerate?.source).toBe("built-in");
+  });
+
+  it("keeps a catalog entry without a command a generated file with no command", () => {
+    expect(
+      regenerateFor("openapi.json", [catalog(["openapi.json"], null)]),
+    ).toEqual({ class: "generated", regenerate: null });
   });
 });
 
