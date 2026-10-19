@@ -287,6 +287,19 @@ test("the command line names one command, its version and its bundle", () => {
   expect(() => parseArgs(["publish"])).toThrow("usage");
 });
 
+test("release.yml hands its secrets to the latest channel's push job", () => {
+  const read = (name: string) =>
+    load(readFileSync(join(root, ".github/workflows", name), "utf8")) as {
+      jobs: Record<string, Record<string, unknown>>;
+    };
+  // The push job reads the App's key from its environment, which a called
+  // workflow sees only when its caller passes `secrets: inherit`.
+  expect(read("channels.yml").jobs.push?.environment).toBe("release");
+  const latest = read("release.yml").jobs.latest;
+  expect(latest?.uses).toBe("./.github/workflows/channels.yml");
+  expect(latest?.secrets).toBe("inherit");
+});
+
 // --- The whole path, against a scratch origin -------------------------------
 
 let scratch: string;

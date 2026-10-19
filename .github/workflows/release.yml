@@ -264,3 +264,6 @@ jobs:
     uses: ./.github/workflows/channels.yml
     with:
       command: latest
+    # A called workflow reads its job's environment secrets (the release
+    # App's key, in `release`) only when the caller hands its secrets on.
+    secrets: inherit
