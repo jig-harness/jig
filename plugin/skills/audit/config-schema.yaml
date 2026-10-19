@@ -1,0 +1,607 @@
+# Every field of a repository's `.config/jig.yaml`, in machine-readable form.
+#
+# One list, read three ways: the audit skill's configuration-fit check
+# validates a repository's file against it, the audit skill's tests check that
+# plugin/CONFIGURATION.md documents exactly these fields with the same readers,
+# and the same tests check the value sets here against the constants the
+# reading skills validate with. A field added to a skill is added here, to
+# CONFIGURATION.md and to the skill in one pull request.
+#
+# Field entries, keyed by the dotted path of the field:
+#   type      string | command | path | regex | boolean | integer | enum
+#             | list | map | any
+#               command: a shell command line; its program must resolve
+#               path:    relative to the repository root unless absolute
+#   values    enum: the allowed values; integer: words allowed besides a number
+#   min       integer: the least allowed number
+#   pattern   string: a regular expression the value must match
+#   nullable  true when `null` is accepted and means "not set"
+#   items     list: the type of each entry: a type name; `fields:` for a
+#             list of mappings, each field typed; or, for a nested list or map,
+#             `{ type: list, items: … }` or `{ type: map, values_type: … }`
+#   distinct  list: entries must be distinct
+#   nonempty  list: at least one entry
+#   keys      map: the only keys allowed (absent: any key)
+#   values_type  map: the type of each value (default string)
+#   exists    path: `required` when the reading skill refuses a configured path
+#             that does not exist; `expected` when a missing one only makes
+#             the field useless
+#   read_by   the skills that read the field (CONFIGURATION.md's "Read by")
+#   repository_only  true for a field that describes one repository: the user
+#             file refuses it (CONFIGURATION.md § Configuration layers)
+#   default   the value a skill uses when the field is absent, where that is
+#             one fixed value; a starter configuration never writes it
+#   deprecated  the message a re-run prints: what to use instead
+#   since     the plugin version that added the field; fields older than the
+#             audit skill carry none. A pull request writes `next`, which the
+#             release step replaces with the version it releases
+version: 1
+
+# Maps whose keys the skills look up: an unknown key there is refused, since
+# it would silently keep the default it was written to change. Unknown keys
+# elsewhere are ignored, so other tooling can share the file.
+strict:
+  - changelog
+  - changelog.release
+  - pull_requests
+  - issue_tracker.states
+  - issue_tracker.labels
+  - resolve_conflicts
+  - reflection
+  - code_stats
+  - work_batch
+  - work_batch.ranking
+
+# Sections a skill refuses outright, with what to do instead.
+refused:
+  do_issue: "renamed do_item: rename the section (its fields are unchanged); do-item refuses to run while it exists"
+
+fields:
+  gates.command:
+    type: command
+    read_by: [resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar]
+    repository_only: true
+
+  review.bots:
+    type: list
+    items: string
+    read_by: [resolve-review-comments, drive-pr, review]
+  review.job_pattern:
+    type: regex
+    nullable: true
+    read_by: [resolve-review-comments]
+  review.required_checks:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [resolve-review-comments]
+  review.deferral_team:
+    type: string
+    read_by: [resolve-review-comments]
+  review.repo_label:
+    type: string
+    read_by: [resolve-review-comments, work-batch]
+    repository_only: true
+  review.repo_slug:
+    type: string
+    pattern: "^[^/\\s]+/[^/\\s]+$"
+    read_by: [resolve-review-comments]
+    repository_only: true
+  review.taxonomy.types:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [resolve-review-comments, work-batch]
+  review.taxonomy.repos:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [resolve-review-comments, drive-pr, work-batch]
+  review.taxonomy.sizes:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [resolve-review-comments, work-batch]
+  review.taxonomy.categories:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [resolve-review-comments]
+  review.taxonomy.context_prefixes:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [resolve-review-comments, work-batch]
+  review.taxonomy.ownership_prefixes:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [resolve-review-comments]
+  review.taxonomy.provenance_label:
+    type: string
+    read_by: [resolve-review-comments, drive-pr]
+    deprecated: "use issue_tracker.labels.followup; the older name is still read while that is unset"
+  review.taxonomy.epic_label:
+    type: string
+    read_by: [resolve-review-comments, drive-pr]
+    deprecated: "use issue_tracker.labels.epic; the older name is still read while that is unset"
+  review.reviewer_app:
+    type: string
+    read_by: [drive-pr]
+  review.reviewer_check_pattern:
+    type: regex
+    read_by: [drive-pr]
+  review.sticky_marker:
+    type: string
+    read_by: [drive-pr]
+  review.reviewed_sha_marker:
+    type: string
+    read_by: [drive-pr]
+  review.severity_formats:
+    type: list
+    nullable: true
+    items:
+      fields:
+        login: string
+        shape: string
+        severities: { type: map, values_type: string }
+    read_by: [drive-pr, resolve-review-comments]
+    since: 0.61.0
+
+  repository.base_branch:
+    type: string
+    pattern: "^(?!origin/)[^\\s~^:?*\\[\\\\]+$"
+    read_by: [drive-pr, do-item, review, descar, changelog]
+    repository_only: true
+
+  pull_requests.stacking:
+    type: enum
+    values: [none, native, branch]
+    default: none
+    read_by: [do-item]
+  pull_requests.max_stack_depth:
+    type: integer
+    min: 1
+    read_by: [do-item]
+  pull_requests.open_as:
+    type: enum
+    values: [draft, ready]
+    read_by: [do-item]
+  pull_requests.mark_ready:
+    type: integer
+    min: 1
+    values: [converged, never]
+    default: 1
+    read_by: [drive-pr]
+  pull_requests.branch_name:
+    type: string
+    pattern: "\\{key(_lower)?\\}"
+    default: "{key_lower}-{slug}"
+    read_by: [do-item]
+  pull_requests.issue_link:
+    type: enum
+    values: [closes, refs, none]
+    default: closes
+    read_by: [do-item]
+  pull_requests.size_budget:
+    type: integer
+    min: 1
+    read_by: [do-item]
+  pull_requests.labels:
+    type: list
+    items: string
+    distinct: true
+    read_by: [do-item]
+  pull_requests.title_format:
+    type: enum
+    values: [conventional, free]
+    read_by: [do-item]
+
+  drive.validation_plan_command:
+    type: command
+    read_by: [drive-pr, fix-ci, resolve-conflicts, review, descar]
+  drive.load_guard_command:
+    type: command
+    read_by: [drive-pr]
+  drive.change_areas_catalog:
+    type: path
+    exists: expected
+    read_by: [drive-pr, do-item, review, decide, work-batch, change-areas]
+  drive.reviews_drafts:
+    type: boolean
+    read_by: [drive-pr, do-item]
+  drive.max_rounds:
+    type: integer
+    min: 1
+    default: 10
+    since: 0.33.0
+    read_by: [drive-pr]
+  drive.escape_baseline_doc:
+    type: path
+    exists: expected
+    read_by: [drive-pr]
+
+  ci.required_checks:
+    type: list
+    items: string
+    distinct: true
+    read_by: [drive-pr, changelog]
+    repository_only: true
+  ci.hold_label:
+    type: string
+    read_by: [drive-pr]
+
+  issue_tracker.adapter:
+    type: enum
+    values: [linear]
+    default: linear
+    read_by: [do-item, drive-pr, decide, work-batch]
+  issue_tracker.team:
+    type: string
+    pattern: "^[A-Z][A-Z0-9]*$"
+    read_by: [do-item, drive-pr, review, work-batch]
+    repository_only: true
+  issue_tracker.states:
+    type: map
+    keys: [triage, backlog, todo, in_progress, in_review, ops_pending, done, canceled, duplicate]
+    read_by: [do-item, work-batch]
+  issue_tracker.labels.epic:
+    type: string
+    read_by: [do-item, resolve-review-comments, drive-pr, work-batch]
+  issue_tracker.labels.hitl:
+    type: string
+    read_by: [do-item, decide, work-batch]
+  issue_tracker.labels.manual_ops:
+    type: string
+    read_by: [do-item, work-batch]
+  issue_tracker.labels.followup:
+    type: string
+    read_by: [do-item, resolve-review-comments, drive-pr, work-batch]
+  issue_tracker.labels.bug:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [do-item]
+  issue_tracker.labels.pattern_prefix:
+    type: string
+    read_by: [do-item, reflect, review-reflections]
+  issue_tracker.labels.batch_sizes:
+    type: list
+    items: string
+    distinct: true
+    read_by: [do-item, work-batch]
+  issue_tracker.labels.extractable_tails:
+    type: list
+    items: string
+    distinct: true
+    read_by: [do-item]
+  issue_tracker.file_command:
+    type: string
+    read_by: [do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections]
+
+  do_item.agents.default:
+    type: string
+    read_by: [do-item]
+  do_item.agents.integrator:
+    type: string
+    read_by: [do-item]
+  do_item.agents.catalog:
+    type: map
+    read_by: [do-item]
+  do_item.agents.codearea_areas:
+    type: map
+    read_by: [do-item, work-batch]
+  do_item.agents.labels:
+    type: map
+    read_by: [do-item, work-batch]
+  do_item.agents.title_keywords:
+    type: map
+    read_by: [do-item]
+  do_item.scouts:
+    type: map
+    values_type: { type: list, items: string }
+    read_by: [do-item]
+  do_item.gates:
+    type: list
+    items:
+      fields:
+        labels: { type: list, items: string }
+        paths: { type: list, items: string }
+        skill: string
+    read_by: [do-item]
+  do_item.execution_plan_block:
+    type: string
+    default: execution-plan-v1
+    read_by: [do-item]
+
+  work_batch.point_budget:
+    type: integer
+    min: 1
+    default: 16
+    read_by: [work-batch]
+    since: 0.57.0
+  work_batch.size_points:
+    type: map
+    values_type: integer
+    read_by: [work-batch]
+    since: 0.57.0
+  work_batch.max_items:
+    type: integer
+    min: 1
+    default: 6
+    read_by: [work-batch]
+    since: 0.57.0
+  work_batch.solo_flags:
+    type: list
+    items: string
+    distinct: true
+    read_by: [work-batch]
+    since: 0.57.0
+  work_batch.sizes:
+    type: list
+    items: string
+    distinct: true
+    nonempty: true
+    read_by: [work-batch]
+    since: 0.57.0
+  work_batch.ranking.sizes:
+    type: map
+    values_type: integer
+    read_by: [work-batch]
+    since: 0.57.0
+  work_batch.ranking.provenance:
+    type: integer
+    min: 0
+    default: 3
+    read_by: [work-batch]
+    since: 0.57.0
+  work_batch.ranking.shared_area_label:
+    type: integer
+    min: 0
+    default: 1
+    read_by: [work-batch]
+    since: 0.57.0
+
+  fleet_health.config:
+    type: path
+    exists: expected
+    read_by: [drive-pr]
+  fleet_health.snapshot_dir:
+    type: path
+    read_by: [drive-pr]
+
+  adr.directory:
+    type: path
+    exists: required
+    read_by: [adr, review, decide, explain]
+  adr.rules_file:
+    type: path
+    exists: required
+    read_by: [adr, review]
+  descar.lint_command:
+    type: command
+    read_by: [descar]
+  promote_memory.lint_command:
+    type: command
+    read_by: [promote-memory]
+  promote_memory.target_dir:
+    type: path
+    read_by: [promote-memory]
+  fix_ci.regenerate_commands:
+    type: list
+    items: command
+    read_by: [fix-ci]
+  resolve_conflicts.generated:
+    type: list
+    items:
+      fields:
+        paths: { type: list, items: string }
+        command: command
+    read_by: [resolve-conflicts]
+  resolve_conflicts.obligations:
+    type: list
+    items: { type: map, values_type: string }
+    read_by: [resolve-conflicts]
+    since: 0.62.0
+  github_actions.conventions_doc:
+    type: path
+    exists: expected
+    read_by: [github-actions]
+  design_brief.kit:
+    type: path
+    exists: expected
+    read_by: [design-brief-builder]
+  design_brief.design_language:
+    type: path
+    exists: expected
+    read_by: [design-brief-builder]
+  design_brief.prototypes:
+    type: path
+    read_by: [design-brief-builder]
+  decide.policy_files:
+    type: list
+    items: path
+    read_by: [decide]
+  decide.rules_directory:
+    type: path
+    read_by: [decide]
+  decide.glossary_file:
+    type: path
+    exists: expected
+    read_by: [decide, explain]
+  decide.architect_agent:
+    type: string
+    read_by: [decide]
+  decide.escalation_labels:
+    type: list
+    items: string
+    read_by: [decide]
+  explain.figure_build_command:
+    type: command
+    read_by: [explain]
+
+  reflection.enabled:
+    type: boolean
+    read_by: [reflect, review-reflections, drive-pr, resolve-review-comments]
+    since: 0.28.0
+  reflection.store:
+    type: enum
+    values: [filesystem, command, notion]
+    read_by: [reflect, review-reflections]
+    since: 0.28.0
+  reflection.path:
+    type: path
+    read_by: [reflect, review-reflections]
+    since: 0.28.0
+  reflection.command:
+    type: any
+    read_by: [reflect, review-reflections]
+    since: 0.28.0
+  reflection.notion.database:
+    type: string
+    read_by: [reflect, review-reflections]
+    since: 0.30.0
+  reflection.journal:
+    type: path
+    read_by: [reflect, resolve-review-comments]
+    since: 0.28.0
+  reflection.escalate_after:
+    type: integer
+    min: 1
+    read_by: [reflect, review-reflections]
+    since: 0.28.0
+  reflection.timeout_sec:
+    type: integer
+    min: 1
+    read_by: [reflect, review-reflections]
+    since: 0.28.0
+  reflection.mode:
+    type: enum
+    values: [quick, comprehensive]
+    read_by: [reflect]
+    since: 0.28.0
+
+  changelog.file:
+    type: path
+    exists: required
+    read_by: [changelog]
+    repository_only: true
+    since: 0.44.0
+  changelog.format:
+    type: enum
+    values: [keep-a-changelog, common-changelog]
+    read_by: [changelog]
+    repository_only: true
+    since: 0.44.0
+  changelog.notes_dir:
+    type: path
+    default: changes
+    read_by: [changelog]
+    repository_only: true
+    since: 0.44.0
+  changelog.version:
+    type: map
+    keys: [files, tags]
+    values_type: any
+    read_by: [changelog]
+    repository_only: true
+    since: 0.44.0
+  changelog.release_paths:
+    type: list
+    items: string
+    read_by: [changelog]
+    repository_only: true
+    since: 0.44.0
+  changelog.note_paths:
+    type: list
+    items: string
+    read_by: [changelog]
+    repository_only: true
+    since: 0.44.0
+  changelog.placeholders:
+    type: list
+    items:
+      fields:
+        files: { type: list, items: string }
+        from: string
+        to: string
+    read_by: [changelog]
+    repository_only: true
+    since: 0.44.0
+  changelog.after_version:
+    type: command
+    read_by: [changelog]
+    repository_only: true
+    since: 0.44.0
+  changelog.unreleased:
+    type: enum
+    values: [write, wait]
+    read_by: [changelog]
+    repository_only: true
+    since: 0.44.0
+  changelog.authors:
+    type: boolean
+    default: true
+    read_by: [changelog]
+    repository_only: true
+    since: 0.44.0
+  changelog.tag_prefix:
+    type: string
+    default: v
+    read_by: [changelog]
+    repository_only: true
+    since: 0.44.0
+  changelog.release.push:
+    type: enum
+    values: [direct, pull-request]
+    default: direct
+    read_by: [changelog]
+    repository_only: true
+    since: 0.44.0
+  changelog.release.branch:
+    type: string
+    default: changelog-release
+    read_by: [changelog]
+    repository_only: true
+    since: 0.44.0
+
+  code_stats.areas:
+    type: list
+    items: { type: map, values_type: any }
+    read_by: [code-stats]
+    repository_only: true
+    since: 0.50.0
+  code_stats.default_area:
+    type: string
+    default: production
+    read_by: [code-stats]
+    repository_only: true
+    since: 0.50.0
+  code_stats.kinds:
+    type: map
+    keys: [code, test, docs, config, data, generated, fixture, asset, vendored, other]
+    values_type: { type: list, items: string }
+    read_by: [code-stats]
+    repository_only: true
+    since: 0.50.0
+  code_stats.modules:
+    type: list
+    items: string
+    nonempty: true
+    read_by: [code-stats]
+    repository_only: true
+    since: 0.50.0
+  code_stats.classify_command:
+    type: command
+    nullable: true
+    read_by: [code-stats]
+    repository_only: true
+    since: 0.50.0

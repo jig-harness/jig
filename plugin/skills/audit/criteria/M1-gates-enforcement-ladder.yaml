@@ -1,0 +1,437 @@
+# Machine-evaluable maturity criteria for M1 — gates & enforcement ladder.
+# Schema: README.md in this folder. Criteria are observable
+# repo facts scored absent → convention → mechanical.
+#
+# Not scored here: the cross-worktree resource mutex named under Strict in the
+# README — it applies only where parallel agents share one machine and is
+# scored by module M12.
+module: M1
+name: gates-enforcement-ladder
+purpose: >-
+  Stated rules become checks, ordered from convention to hard gate, so what
+  nobody checks does not quietly erode.
+criteria:
+  - id: gate-set-documented
+    level: lite
+    requires: convention
+    statement: >-
+      An ordered gate set (format, lint, types, tests, build) is stated in
+      one canonical place and runnable with a single command.
+    observe:
+      - "instruction file (or equivalent canonical doc) lists the ordered gates"
+      - "one script/task runs the whole set"
+
+  - id: ci-runs-gates-on-pr
+    level: lite
+    requires: mechanical
+    statement: >-
+      CI runs the gate set on every pull request and a failing run blocks
+      the merge.
+    observe:
+      - "CI workflow triggered on pull requests runs the gate set"
+      - "the workflow's jobs are required checks (branch protection or
+        pipelines-must-succeed setting)"
+    probe:
+      files: &ci-config
+        - ".github/workflows/*.yml"
+        - ".github/workflows/*.yaml"
+        - ".forgejo/workflows/*"
+        - ".gitea/workflows/*"
+        - ".gitlab-ci.yml"
+        - ".circleci/config.yml"
+        - ".circleci/config.yaml"
+        - "azure-pipelines.yml"
+        - "azure-pipelines.yaml"
+        - ".azure-pipelines/**"
+        - ".pipelines/**"
+        - "bitbucket-pipelines.yml"
+        - "Jenkinsfile"
+        - "**/Jenkinsfile"
+        - "**/*.jenkinsfile"
+        - ".buildkite/**"
+        - ".drone.yml"
+        - ".drone.yaml"
+        - ".woodpecker.yml"
+        - ".woodpecker.yaml"
+        - ".woodpecker/**"
+        - ".travis.yml"
+        - ".cirrus.yml"
+        - ".cirrus.star"
+        - "appveyor.yml"
+        - ".appveyor.yml"
+        - ".semaphore/**"
+        - ".teamcity/**"
+        - "bitrise.yml"
+        - "codemagic.yaml"
+        - "codefresh.yml"
+        - "cloudbuild.yaml"
+        - "cloudbuild.yml"
+        - "buildspec.yml"
+        - "buildspec.yaml"
+        - ".tekton/**"
+        - ".harness/**"
+        - ".build.yml"
+        - ".builds/**"
+        - "**/*.gocd.yaml"
+        - "**/*.gocd.yml"
+        - ".concourse/**"
+        - "ci/pipeline*.yml"
+        - "ci/pipeline*.yaml"
+        - ".onedev-buildspec.yml"
+
+  - id: precommit-autofix-hooks
+    level: standard
+    requires: mechanical
+    statement: >-
+      A managed pre-commit hook runs auto-fixing checks and re-stages what
+      they fixed.
+    observe:
+      - "hook-manager config present (lefthook.yml, .husky/, or
+        .pre-commit-config.yaml)"
+      - "pre-commit entry runs a fixer and stages its output
+        (e.g. stage_fixed or an explicit git add)"
+    probe: &hook-manager
+      any:
+        - files:
+            - "lefthook.yml"
+            - "lefthook.yaml"
+            - "lefthook.toml"
+            - "lefthook.json"
+            - ".lefthook.yml"
+            - ".lefthook.yaml"
+            - ".lefthook.toml"
+            - ".lefthook.json"
+            - ".config/lefthook.yml"
+            - ".config/lefthook.yaml"
+            - ".config/lefthook.toml"
+            - ".config/lefthook.json"
+            - ".husky/**"
+            - ".pre-commit-config.yaml"
+            - ".githooks/**"
+            - ".git-hooks/**"
+            - ".overcommit.yml"
+            - ".rusty-hook.toml"
+            - "rusty-hook.toml"
+            - ".cargo-husky/**"
+            - ".simple-git-hooks.*"
+            - "simple-git-hooks.*"
+            - "captainhook.json"
+            - "grumphp.yml"
+            - "grumphp.yml.dist"
+            - "hk.pkl"
+            - "**/pre-commit"
+            - "**/pre-push"
+            - "**/commit-msg"
+        - grep: { files: ["package.json"], pattern: "\"(simple-git-hooks|husky|pre-commit|gitHooks|ghooks)\"" }
+        - grep:
+            files: ["package.json", "Makefile", "GNUmakefile", "justfile", "Taskfile.y*ml", "mise.toml", ".mise.toml", "**/*.sh"]
+            pattern: "core\\.hooksPath"
+
+  - id: grep-gates-tested-and-wired
+    level: standard
+    requires: mechanical
+    statement: >-
+      The team's top codebase-wide rules (target: five or more) exist as
+      grep-gate scripts, each with a paired self-test, wired into both the
+      pre-push hook and CI.
+    observe:
+      - "check-<rule> scripts present"
+      - "each has a paired self-test (e.g. check-<rule>.test.ts) with fixtures"
+      - "both hook config and CI workflow invoke them"
+    probe:
+      all:
+        - mechanical:
+            files: *ci-config
+        - mechanical: *hook-manager
+
+  - id: escape-hatch-documented
+    level: standard
+    requires: convention
+    statement: >-
+      The hook bypass (--no-verify) is documented next to the hooks, with
+      when it is legitimate and the note that CI re-runs everything.
+    observe:
+      - "hook config or gate docs mention --no-verify and its conditions"
+      - "every hook-enforced check also appears in CI"
+    probe: *hook-manager
+
+  - id: third-party-automation-pinned-and-updated
+    level: standard
+    requires: mechanical
+    statement: >-
+      Third-party CI automation is pinned to immutable revisions and an
+      automated updater proposes pin changes through the normal gate set.
+    observe:
+      - "external CI actions, remote includes, and containerized CI tools use
+        immutable commit or digest references"
+      - "dependency-updater configuration covers those references"
+      - "proposed updates run the same required gates as other changes"
+    probe: &updater
+      any:
+        - files:
+            - ".github/dependabot.yml"
+            - ".github/dependabot.yaml"
+            - "renovate.json"
+            - "renovate.json5"
+            - ".renovaterc"
+            - ".renovaterc.json"
+            - ".renovaterc.json5"
+            - ".github/renovate.json"
+            - ".github/renovate.json5"
+            - ".gitlab/renovate.json"
+            - ".gitlab/renovate.json5"
+            - ".gitea/renovate.json"
+            - ".gitea/renovate.json5"
+            - ".forgejo/renovate.json"
+            - ".forgejo/renovate.json5"
+            - "updatecli.yaml"
+            - "updatecli.yml"
+            - "updatecli.d/**"
+            - ".updatecli/**"
+        - grep: { files: ["package.json"], pattern: "\"renovate\"" }
+        - grep:
+            files:
+              - ".github/workflows/*.yml"
+              - ".github/workflows/*.yaml"
+              - ".forgejo/workflows/*"
+              - ".gitea/workflows/*"
+              - ".gitlab-ci.yml"
+            pattern: "renovate|dependabot|updatecli"
+
+  - id: dependency-release-cooldown
+    level: standard
+    requires: mechanical
+    statement: >-
+      A minimum release age holds for application dependencies in the
+      updater's configuration and in every package manager the repository
+      installs with, and its exemptions are a list of exact package names.
+    observe:
+      - "the updater's configuration sets a minimum release age for the
+        application's dependencies (Renovate minimumReleaseAge, Dependabot
+        cooldown)"
+      - "each installer's configuration sets the same age in its own unit
+        (bunfig.toml, .npmrc, pnpm-workspace.yaml, .yarnrc.yml)"
+      - "the exemptions name exact packages, never a pattern"
+    probe: *updater
+    since: 0.47.0
+
+  - id: install-scripts-allowlisted
+    level: standard
+    requires: mechanical
+    statement: >-
+      Only the packages a list names may run lifecycle scripts at install
+      time, every installer the repository uses blocks the rest, and the
+      updater never auto-merges a listed package.
+    observe:
+      - "each installer's allowlist is present (package.json
+        trustedDependencies, pnpm-workspace.yaml onlyBuiltDependencies, or
+        ignore-scripts with the allowed packages rebuilt on purpose)"
+      - "the updater's configuration sets automerge off for the listed
+        packages, or no auto-merge reaches them"
+    since: 0.47.0
+
+  - id: supply-chain-policy-lockstep
+    level: strict
+    requires: mechanical
+    statement: >-
+      One policy file states the release cooldown, its exemptions and the
+      install-script allowlist, and a gate in the required set checks that
+      every installer and the updater state the same values, running before
+      any install that could run a script.
+    observe:
+      - "a policy file names the three values once"
+      - "a gate compares each installer's and the updater's file with it and
+        runs in the required CI set"
+      - "the gate's CI step precedes the dependency install, or the install
+        runs with scripts disabled"
+    since: 0.47.0
+
+  - id: updater-self-checked
+    level: strict
+    requires: mechanical
+    statement: >-
+      Range-valued version overrides are excluded from the updater's normal
+      path, and every custom extraction pattern of the updater has a check
+      that re-applies it to the tree and requires exactly one value.
+    observe:
+      - "an updater rule leaves overrides that are not exact versions alone"
+      - "a check runs each custom manager's own patterns against the tree and
+        fails on zero or several matches, in CI"
+      - "expected-absent where the repository has neither overrides nor
+        custom extraction patterns"
+    probe: *updater
+    since: 0.47.0
+
+  - id: secret-scan-blocks-in-ci
+    level: standard
+    requires: mechanical
+    statement: >-
+      A required CI job scans exactly the commits a change introduces for
+      secrets with a pinned scanner, and fails on a finding or on an empty
+      commit range.
+    observe:
+      - "a workflow runs a secret scanner over the merge-base-to-head range on
+        pull requests, from a full-history checkout"
+      - "the job fails when the range resolves to zero commits"
+      - "the job is in the required set"
+    probe:
+      mechanical:
+        files: *ci-config
+    since: 0.47.0
+
+  - id: secret-scan-local-and-forge-layers
+    level: strict
+    requires: mechanical
+    statement: >-
+      Beside the CI scan, a pre-commit hook scans the staged changes for
+      secrets on the committer's machine, and the forge's push protection is
+      on.
+    observe:
+      - "the hook manager's pre-commit configuration runs a secret scanner
+        over the staged changes"
+      - "push protection is enabled for the repository or its organization
+        (a host setting the audit reads, or the team states)"
+    probe:
+      all:
+        - mechanical:
+            files: *ci-config
+        - *hook-manager
+    since: 0.47.0
+
+  - id: gate-outcomes-distinguish-could-not-check
+    level: standard
+    requires: mechanical
+    statement: >-
+      Every repository-written gate has three outcomes, passed, found
+      violations and could not check (exit 0, 1 and 2), and reports a missing
+      or unreadable input, an input empty where its format requires content,
+      or a failed command as could not check, never as a pass.
+    observe:
+      - "check scripts exit with a distinct status (conventionally 2) and a
+        could-not-check message when their input is missing or unreadable,
+        empty where its format requires content, or a command they run fails"
+      - "self-tests assert that status for at least one such input per gate"
+      - "no gate prints a pass for a scan root that does not exist"
+    since: 0.21.0
+
+  - id: stale-exceptions-fail
+    level: standard
+    requires: mechanical
+    statement: >-
+      Every allowlist entry and suppression token a repository-written gate
+      honors carries a non-empty reason the gate checks, and an entry that no
+      longer suppresses anything fails the gate.
+    observe:
+      - "gates reject a suppression or allowlist entry without a reason"
+      - "gates report an entry that matched no finding in the run as stale and
+        fail on it"
+      - "self-tests cover a stale entry"
+    since: 0.21.0
+
+  - id: suppression-token-registry
+    level: strict
+    requires: convention
+    statement: >-
+      A single registry page lists every suppression token a live gate
+      honors, with syntax, consuming gate, placement, and justification
+      requirement, plus a registration rule for new tokens.
+    observe:
+      - "registry doc present in the docs tree"
+      - "tokens parsed by check scripts appear in it"
+
+  - id: commit-msg-process-markers
+    level: strict
+    requires: mechanical
+    statement: >-
+      Mandatory-review areas are enforced by a commit-msg hook requiring a
+      review-marker tag when protected paths are staged, re-checked by a
+      gate the committer cannot skip.
+    observe:
+      - "commit-msg hook checks staged paths against a marker in the message"
+      - "CI (or another unskippable rung) re-verifies the marker"
+    probe: *hook-manager
+
+  - id: gate-self-tests-in-ci
+    level: strict
+    requires: mechanical
+    statement: >-
+      CI runs each grep gate's self-test alongside the gate, so a silently
+      broken gate fails the pipeline.
+    observe:
+      - "CI workflow runs each gate's self-test, not only the gates"
+    probe:
+      mechanical:
+        files: *ci-config
+
+  - id: gate-self-tests-cover-empty-input
+    level: strict
+    requires: mechanical
+    statement: >-
+      Each repository-written gate's self-test includes a case where the gate
+      has nothing to examine (its input or section missing, or empty where
+      the input's format requires content, such as a scan root with no file)
+      and asserts that the gate does not pass on it.
+    observe:
+      - "every gate's test suite has a case where the input is missing, or
+        empty where its format requires content, expecting the
+        could-not-check status"
+      - "an input whose format allows zero entries may pass when empty, and
+        the gate's output then says it examined zero"
+      - "those self-tests run in CI"
+    since: 0.21.0
+
+  - id: agent-runtime-hooks-self-tested
+    level: strict
+    requires: mechanical
+    statement: >-
+      Every hook the repository registers in an agent runtime (around tool
+      calls, on prompt and session events) has a self-test beside it that
+      feeds it the runtime's payload and asserts each outcome, and one runner
+      discovers every hook's test and runs it in CI.
+    observe:
+      - "each command a runtime's hook registration names (a settings file's
+        hooks, a hooks.json, a plugin's hooks/) has a test beside it or in
+        the hooks' test directory"
+      - "a runner discovers the tests by name rather than listing them, and a
+        CI job in the required set runs it"
+    since: 0.47.0
+
+  - id: existing-findings-ratcheted
+    level: strict
+    requires: mechanical
+    statement: >-
+      A rule that still has findings is ratcheted rather than left advisory: a
+      required gate fails a change that adds a finding to it or loosens its
+      configuration, measured against the merge base, and a rule whose count
+      reaches zero is promoted to blocking.
+    observe:
+      - "a gate counts findings per rule in the change and in the merge base
+        and fails when a count grows"
+      - "loosening a rule's configuration fails the gate unless explicitly
+        acknowledged (a commit trailer or equivalent)"
+      - "the gate runs in the required CI set"
+
+  - id: advisory-gates-carry-promotion-conditions
+    level: strict
+    requires: convention
+    statement: >-
+      Every advisory (non-blocking) gate states its promotion condition and
+      a review date; none is advisory indefinitely without one.
+    observe:
+      - "continue-on-error / allow_failure gates carry a promotion condition
+        and date in config comments or the gate catalog"
+
+  - id: retries-classify-errors
+    level: strict
+    requires: mechanical
+    since: 0.38.0
+    statement: >-
+      Every retry in the pipeline's steps and in the gates and scripts it
+      runs retries only an error a classifier marks transient, aborts at
+      once on any other with the command's own message and status, and the
+      classifier is tested against messages recorded from the real tool.
+    observe:
+      - "each retry loop (a CI step, a gate, a script the pipeline runs) classifies the failure before retrying: a pattern list with reasons, a closed set of error codes, or the provider's own failure classes"
+      - "an error outside the transient set ends the step with the original message and exit status, not after the retry budget"
+      - "a test feeds the classifier messages recorded from the real tool (a fixture file, a copied log line) and asserts its answer"
+      - "expected-absent when nothing in the pipeline or its scripts retries"

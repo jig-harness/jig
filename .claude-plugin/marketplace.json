@@ -1,0 +1,12 @@
+{
+  "name": "jig",
+  "description": "The Jig Harness agent skills and agents for Claude Code.",
+  "owner": { "name": "Docomply" },
+  "plugins": [
+    {
+      "name": "jig",
+      "source": "./plugin",
+      "description": "The shared agent skills of Jig Harness (drive-pr, do-item, resolve-review-comments, resolve-conflicts and procedure skills) and the review-arbiter agent."
+    }
+  ]
+}

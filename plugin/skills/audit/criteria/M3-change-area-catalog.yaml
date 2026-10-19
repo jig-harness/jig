@@ -1,0 +1,151 @@
+# Machine-evaluable criteria for M3 (change-area catalog).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+module: M3
+name: change-area-catalog
+purpose: >-
+  One catalog says what kind of change touches which paths and what must
+  follow, instead of path lists copied across CI, review and deploy.
+criteria:
+  - id: catalog-is-single-source
+    level: lite
+    requires: convention
+    statement: >-
+      One catalog file is the single place that maps path patterns to named
+      change-areas and their implications; consumers reference area names
+      rather than re-listing the path patterns.
+    observe:
+      - "a single catalog file (yaml/json/toml) lists areas with their path globs"
+      - "at least one consumer (CI, review docs, deploy) refers to area names, not copied globs"
+
+  - id: catalog-schema-validated
+    level: lite
+    requires: mechanical
+    statement: >-
+      A check validates the catalog's structure: area ids are well-formed,
+      every implied-by reference names an existing area, and no area implies
+      itself. That check must run independently of catalog-derived
+      selection — unconditionally on every CI event, or behind a literal,
+      hand-written path match on the catalog file — never resolved through
+      the catalog itself, or a change that deletes the catalog's own paths
+      resolves to nothing and skips the very check meant to catch that (see
+      the module README's § self-check paradox).
+    observe:
+      - "a script/schema validates area-id format and rejects unknown fields"
+      - "a check fails on a dangling impliedBy reference or a self-implication"
+      - "running the change-areas skill's `scripts/check.ts`, or a composer's `runCheck`, in CI counts as this check: it validates the ids, rejects unknown fields and fails on a dangling or self-referencing impliedBy"
+      - "this check runs unconditionally or behind a literal path match on the catalog file itself, never behind a resolver lookup — a fixture that deletes the catalog file's own path from the catalog still runs this check rather than silently resolving to no seeded areas and skipping it, and a separate fixture with a real schema or graph defect (a dangling reference, a self-implication) proves the check fails"
+
+  - id: catalog-graph-validated
+    level: standard
+    requires: mechanical
+    statement: >-
+      A CI check enforces the graph invariants of the implied-by relation
+      (referential integrity, no cycles) and, for any area declaring
+      `generated:`, that each `generated[].source` glob resolves to a real
+      on-disk path — a mistyped source path silently disables a freshness
+      coupling (see M3's `reference/catalog/README.md`'s § Graph validation,
+      point 7) and is otherwise invisible to a checker that only validates
+      the `impliedBy` graph. If the repo wires an agent-gate-depth consumer
+      at all — whether or not any area currently declares `validation:` —
+      a schema check alone is not enough either: the safety-critical part
+      is the *computation*, not the shape — an implementation that parses
+      the block correctly but silently drops the fail-closed default to the
+      deepest declared profile (unmatched file, missing
+      `validation.profile`), or, where the repository computes a
+      remote-machine requirement, derives it from the seeds instead of their
+      closure, would still pass a schema-only check while under-validating
+      (see M3's `reference/catalog/README.md` § Agent gate depth).
+    observe:
+      - "a CI job runs the catalog checker (referential integrity + cycle detection); the change-areas skill's `scripts/check.ts`, or a composer's `runCheck`, counts, and also checks each `generated[].source` against the repository's files"
+      - "a cycle or dangling reference fails the build"
+      - "if any area declares `generated:`, the checker also expands each `generated[].source` glob and fails the build when it matches no on-disk path — and this expansion runs on every CI event (or is triggered by a match against any declared `generated[].source` glob, not just the catalog file), so deleting the last file a glob matches without touching the catalog still re-validates the now-broken declaration"
+      - "if any area declares `generated:`, a test fixture proves activation, not just glob resolution: a change touching only a `generated[].source` path seeds the *owning* area, as a `paths` match would (M3's `reference/catalog/README.md`'s § Generated-output coupling, Activation), so that area's freshness check is in the change's validation plan, and the test fails if that source-only change does not select it"
+      - "if the repo wires an agent-gate-depth consumer at all — whether or not any area currently declares `validation:` — a test fixture proves the computed profile: an unmatched file and a seeded area with no `validation:` block or no `validation.profile` both select the deepest declared profile as the fail-closed default; where the repository's composer computes a remote-machine requirement, a fixture proves it is read from the seeds' `impliedBy` closure, not from the seeds alone; a resolver relying entirely on the documented defaults (no area declares `validation:` yet) must still be exercised, not skipped just because there's no explicit block to point the fixture at"
+      - "for each of deploy tiers, post-deploy actions, mandatory reviews (`review.skills` and the review-gate table), and tracker labels and flags (`tracker.labels`, `tracker.flags`) that the repo actually generates a consumer view for, a test fixture proves that projection reads the correct side of § Seeds vs. closure (deploy tiers, post-deploy actions and `review.skills` from the seeded areas' `impliedBy` closure; tracker labels and flags from the seeds alone) — a fixture where a seed's closure differs from the seed set catches a projection reading the wrong side (e.g. a `core-lib` change whose closure reaches `api-service` must not skip `api-service`'s `review.skills`); a repo that generates none of these has nothing to fixture and is unaffected"
+
+  - id: workspace-coverage-gated
+    level: standard
+    requires: mechanical
+    statement: >-
+      Every workspace directory on disk maps to at least one area, and each
+      area's declared workspace exists and is matched by one of its own globs;
+      a new unmapped workspace fails CI.
+    observe:
+      - "a check maps each apps/* and packages/* dir to an area's workspace"
+      - "a check fails when a workspace is absent, unglobbed, or uncovered"
+
+  - id: consumer-view-generated
+    level: standard
+    requires: mechanical
+    statement: >-
+      At least one consumer view (CI job selection, review-gate table, or
+      component directory) is a projection generated from the catalog: either
+      derived on every run, so no copy exists to go stale, or committed with
+      a freshness gate that fails when the copy is stale.
+    observe:
+      - "a generator emits a consumer view from the catalog"
+      - "the view is derived at run time (for example CI area flags written
+        by the resolver on every run), or a CI drift check fails when the
+        committed projection is out of date"
+
+  - id: ci-selection-resolver-driven
+    level: strict
+    requires: mechanical
+    statement: >-
+      CI job selection is driven by the resolver (seed match + implied-by
+      closure), so a change to a shared area mechanically triggers the jobs of
+      every area that depends on it.
+    observe:
+      - "a CI setup step resolves changed files to areas and gates downstream jobs on the result; the change-areas skill's `--format gha` outputs (`<area>=` for the closure), or a composer's, written by that step and read by the jobs' conditions, count"
+      - "a shared-area change triggers dependent-area jobs whose own paths did not change"
+
+  - id: all-consumers-generated
+    level: strict
+    requires: mechanical
+    statement: >-
+      Every consumer view is a generated projection with a freshness gate; no
+      consumer re-hardcodes the catalog's path patterns.
+    observe:
+      - "each consumer (CI, review table, labels, deploy tiers, post-deploy) is generated and drift-gated"
+      - "no consumer file contains a hand-maintained copy of the area path globs"
+
+  - id: regex-shortcut-sync-checked
+    level: strict
+    requires: mechanical
+    statement: >-
+      Any hand-maintained CI shortcut regex is checked against the catalog in
+      both directions and against the union of files tracked at the current
+      and base refs (the two directional checks alone can pass while a
+      whole unmapped tracked file still slips through — see
+      M3's reference/regex-mirror/README.md).
+      If no shortcut exists, score this expected-absent: there is no
+      duplicate classification to keep in sync.
+    observe:
+      - "no hand-maintained CI shortcut regex exists — CI job selection is driven entirely by the resolver (see ci-selection-resolver-driven) — in which case this criterion is expected-absent"
+      - "checkFilterSegmentCoverage asserts every regex alternative's prefix matches a component-boundary literal head of some area's parsed paths: value — never a substring scan of the catalog file's raw text, which a notes: field's prose could satisfy"
+      - "checkFilterCoverage asserts every non-denied code area (or, for a deploy shortcut, every area whose closure reaches a deploy-critical area) has its paths: glob matched by some regex alternative, compared the same parsed-values way"
+      - "a check asserts every tracked file the regex calls code-bearing matches at least one catalog area, checked against the union of current- and base-ref tracked files (checkFilterFileCoverage)"
+      - "if the shortcut gates deployment specifically rather than answering the general \"did any code change?\" question, a check also asserts every matching tracked file's area closure reaches a deploy-critical area (checkFilterCodeAreaCoverage)"
+
+  - id: area-class-resolved
+    level: strict
+    requires: mechanical
+    since: 0.26.0
+    statement: >-
+      Where no general code shortcut exists, score this expected-absent.
+      Otherwise, every file the regex shortcut classifies as code must resolve, through
+      the union of the `impliedBy` closures of every area it directly
+      matches, to the checker's **code-bearing anchor set** — a second,
+      externally-corroborated, deliberately narrower list, kept independent
+      of the code-bearing deny-list `regex-shortcut-sync-checked` uses,
+      since testing against that same default-inclusive list would be
+      tautological (closure is reflexive). Full rationale, the multi-area
+      quantifier, and the anchor-corroboration protocol are in
+      M3's `reference/regex-mirror/README.md` § Matching an area is not
+      the same as being code-bearing.
+    observe:
+      - "a check computes, for each regex-classified-as-code file, whether the union of the impliedBy closures of every area it directly matches reaches the anchor set — not any single matched area's closure alone, and not merely avoidance of the deny-list"
+      - "a fixture proves the anchor set and the deny-list are checked as two distinct lists (an area off the deny-list but not anchored still fails)"
+      - "an overlapping-match fixture proves the union quantifier: a file matched by two areas, where only one reaches an anchor, passes — a file matched only by the non-reaching area fails"
+      - "every anchor has a source-controlled deployment/release *reference* — a checked-in Kubernetes/Terraform/CI/package-publish artifact naming its build output — **or**, for a non-shipping code-bearing anchor (a repo-owned test harness, linter, or build tool), a reference to an enabled heavy-gate/build CI job running on its own paths, per M3's reference/regex-mirror/README.md's baseline-recipe protocol — not a catalog-derived signal, and not a mere textual mention (a comment, a disabled job) of the workspace; this proves the reference exists outside the catalog, not that the anchor is currently live in production"

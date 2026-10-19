@@ -1,0 +1,887 @@
+<!doctype html>
+<!--
+  Template for the code-stats skill's `--html` report. The renderer
+  (lib/render-html.ts) replaces the data placeholder below with the encoded
+  per-file rows; everything else is static. Self-contained: no network.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codebase statistics</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-0: #f4f4f2;
+    --surface-1: #fcfcfb;
+    --border: #e2e1dc;
+    --grid: #ecebe7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #77766f;
+    --accent: #2a78d6;
+    --chip-on: #dbe8fa;
+    --k-code: #2a78d6;
+    --k-test: #eb6834;
+    --k-docs: #1baf7a;
+    --k-config: #eda100;
+    --k-data: #e87ba4;
+    --k-generated: #008300;
+    --k-fixture: #6250d6;
+    --k-other: #e34948;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-0: #121211;
+      --surface-1: #1a1a19;
+      --border: #2e2e2c;
+      --grid: #262624;
+      --text-primary: #f0efec;
+      --text-secondary: #c3c2b7;
+      --text-muted: #8f8e86;
+      --accent: #3987e5;
+      --chip-on: #1f3350;
+      --k-code: #3987e5;
+      --k-test: #d95926;
+      --k-docs: #199e70;
+      --k-config: #c98500;
+      --k-data: #d55181;
+      --k-generated: #008300;
+      --k-fixture: #9085e9;
+      --k-other: #e66767;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-0: #121211;
+    --surface-1: #1a1a19;
+    --border: #2e2e2c;
+    --grid: #262624;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8f8e86;
+    --accent: #3987e5;
+    --chip-on: #1f3350;
+    --k-code: #3987e5;
+    --k-test: #d95926;
+    --k-docs: #199e70;
+    --k-config: #c98500;
+    --k-data: #d55181;
+    --k-generated: #008300;
+    --k-fixture: #9085e9;
+    --k-other: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .viz-root {
+    font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--surface-0); color: var(--text-primary); min-height: 100vh;
+  }
+  .num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  header.top { padding: 20px 28px 8px; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  header.top h1 { font-size: 20px; margin: 0; font-weight: 650; }
+  header.top .meta { color: var(--text-secondary); font-size: 13px; }
+  header.top .theme { margin-left: auto; }
+  main { padding: 0 28px 48px; }
+  section.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; margin-top: 16px; }
+  section.card h2 { font-size: 15px; margin: 0 0 4px; font-weight: 650; }
+  section.card .sub { color: var(--text-secondary); font-size: 12.5px; margin: 0 0 12px; }
+
+  /* Filter bar */
+  .filters { position: sticky; top: 0; z-index: 20; background: var(--surface-0); padding: 10px 28px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .filters label.lbl { font-size: 12px; color: var(--text-secondary); margin-right: 2px; }
+  details.ms { position: relative; }
+  details.ms > summary { list-style: none; cursor: pointer; border: 1px solid var(--border); background: var(--surface-1); border-radius: 6px; padding: 5px 10px; font-size: 13px; user-select: none; white-space: nowrap; }
+  details.ms > summary::-webkit-details-marker { display: none; }
+  details.ms[data-active="1"] > summary { border-color: var(--accent); background: var(--chip-on); }
+  details.ms .panel { position: absolute; top: calc(100% + 4px); left: 0; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 8px; min-width: 240px; max-height: 420px; overflow: auto; z-index: 30; }
+  details.ms .panel .acts { display: flex; gap: 6px; margin-bottom: 6px; position: sticky; top: -8px; background: var(--surface-1); padding: 4px 0; }
+  details.ms .panel input[type=search] { flex: 1; min-width: 0; }
+  details.ms .opt { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 4px; font-size: 13px; cursor: pointer; }
+  details.ms .opt:hover { background: var(--grid); }
+  details.ms .opt .cnt { margin-left: auto; color: var(--text-muted); font-size: 12px; }
+  button, select, input[type=search], input[type=text] { font: inherit; font-size: 13px; color: var(--text-primary); background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible, .bar-row:focus-visible, .tree-row .tg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* A control that looks like the header or cell it sits in */
+  button.plain { all: unset; display: block; width: 100%; text-align: inherit; cursor: pointer; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin: 0; padding: 0; min-width: 0; }
+  .seg button { border: 0; border-radius: 0; padding: 4px 10px; }
+  .seg button[aria-pressed="true"] { background: var(--chip-on); color: var(--text-primary); font-weight: 600; }
+  .active-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 28px 0; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; background: var(--chip-on); border-radius: 999px; padding: 2px 4px 2px 10px; }
+  .chip button { border: 0; background: transparent; padding: 0 6px; line-height: 1; }
+
+  /* KPI tiles */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 16px; }
+  .kpi { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .kpi .k { font-size: 12px; color: var(--text-secondary); }
+  .kpi .v { font-size: 24px; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .kpi .s { font-size: 12px; color: var(--text-muted); }
+
+  /* Legend */
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--text-secondary); margin-bottom: 10px; }
+  .legend .it { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border-radius: 4px; padding: 1px 4px; }
+  .legend .it[aria-pressed="false"] { opacity: .4; }
+  .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
+
+  /* Bar charts */
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); gap: 16px; }
+  .grid2 > section.card { margin-top: 16px; }
+  .bars { display: grid; grid-template-columns: minmax(120px, max-content) 1fr 92px; gap: 3px 10px; align-items: center; }
+  .bar-row { display: contents; cursor: pointer; }
+  .bar-row .lab { font-size: 12.5px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+  .bar-row.sel .lab { font-weight: 650; color: var(--accent); }
+  .bar-row.off > * { opacity: .4; }
+  .bar-row:hover .lab { text-decoration: underline; }
+  .track { height: 16px; display: flex; gap: 2px; min-width: 0; }
+  .track .s { height: 100%; min-width: 0; }
+  .track .s:first-child { border-radius: 0; }
+  .track .s:last-child { border-radius: 0 4px 4px 0; }
+  .bar-row .val { font-size: 12px; color: var(--text-secondary); }
+  .more { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+
+  /* Tables */
+  .tbl-wrap { overflow: auto; max-height: 640px; border: 1px solid var(--border); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { padding: 5px 10px; border-bottom: 1px solid var(--grid); }
+  th { position: sticky; top: 0; background: var(--surface-1); text-align: left; font-weight: 600; color: var(--text-secondary); cursor: pointer; white-space: nowrap; z-index: 1; }
+  th.num { text-align: right; }
+  th[aria-sort="descending"]::after { content: " ↓"; }
+  th[aria-sort="ascending"]::after { content: " ↑"; }
+  tr.total td { font-weight: 650; background: var(--surface-0); position: sticky; bottom: 0; }
+  tbody tr:hover td { background: var(--grid); }
+  td.path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  td .mini { display: inline-block; height: 8px; border-radius: 0 3px 3px 0; background: var(--accent); vertical-align: middle; opacity: .75; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; font-size: 13px; }
+  .toolbar .sp { flex: 1; }
+  .tree-row .tg { display: inline-block; width: 18px; cursor: pointer; color: var(--text-muted); user-select: none; border-radius: 3px; text-align: center; }
+  .tree-row td.name { white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .tree-row td.name .file { color: var(--text-secondary); }
+  .cell-bar { display: flex; gap: 2px; height: 10px; width: 160px; }
+  .cell-bar .s { height: 100%; }
+  .cell-bar .s:last-child { border-radius: 0 3px 3px 0; }
+
+  #tip { position: fixed; pointer-events: none; z-index: 50; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 8px 10px; font-size: 12px; min-width: 200px; display: none; }
+  #tip .t { font-weight: 650; margin-bottom: 4px; }
+  #tip .r { display: flex; align-items: center; gap: 6px; }
+  #tip .r .n { margin-left: auto; font-variant-numeric: tabular-nums; padding-left: 12px; }
+  #tip .r.hi { font-weight: 650; }
+  footer { color: var(--text-muted); font-size: 12px; padding: 24px 28px; }
+  details.help summary { cursor: pointer; color: var(--text-secondary); font-size: 13px; }
+  details.help dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; font-size: 12.5px; margin: 8px 0 0; }
+  details.help dt { font-weight: 600; }
+  details.help dd { margin: 0; color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<div class="viz-root">
+  <header class="top">
+    <h1 id="title">Codebase statistics</h1>
+    <span class="meta" id="meta"></span>
+    <fieldset class="theme seg" aria-label="Theme">
+      <button type="button" data-theme-btn="auto" aria-pressed="true">Auto</button>
+      <button type="button" data-theme-btn="light" aria-pressed="false">Light</button>
+      <button type="button" data-theme-btn="dark" aria-pressed="false">Dark</button>
+    </fieldset>
+  </header>
+
+  <div class="filters" id="filters">
+    <span id="ms-area"></span>
+    <span id="ms-kind"></span>
+    <span id="ms-language"></span>
+    <span id="ms-module"></span>
+    <input type="search" id="q" placeholder="Path contains… (regex ok: /re/)" style="min-width:240px" aria-label="Filter by path">
+    <span class="lbl" style="margin-left:8px">Metric</span>
+    <fieldset class="seg" aria-label="Metric" id="metric-seg"></fieldset>
+    <button type="button" id="reset">Reset filters</button>
+  </div>
+  <div class="active-filters" id="active"></div>
+
+  <main>
+    <div class="kpis" id="kpis"></div>
+
+    <section class="card">
+      <h2>By area</h2>
+      <p class="sub">What a file is <em>for</em>. Bars are split by kind (what a file <em>is</em>). Click a bar to filter; click a legend entry to hide a kind.</p>
+      <div class="legend" data-legend></div>
+      <div class="bars" id="chart-area"></div>
+    </section>
+
+    <div class="grid2">
+      <section class="card">
+        <h2>By language</h2>
+        <p class="sub">Top 20 under the current filters.</p>
+        <div class="legend" data-legend></div>
+        <div class="bars" id="chart-language"></div>
+        <div class="more" id="chart-language-more"></div>
+      </section>
+      <section class="card">
+        <h2>By module</h2>
+        <p class="sub">Modules from the workspace manifests, <code>code_stats.modules</code>, or the top folders. Top 25.</p>
+        <div class="legend" data-legend></div>
+        <div class="bars" id="chart-module"></div>
+        <div class="more" id="chart-module-more"></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Pivot</h2>
+      <p class="sub">Pick any two dimensions. Click a column header to sort. Export what you see as CSV.</p>
+      <div class="toolbar">
+        <label>Rows <select id="pv-rows"></select></label>
+        <label>Columns <select id="pv-cols"></select></label>
+        <span class="sp"></span>
+        <button type="button" id="pv-csv">Download CSV</button>
+        <button type="button" id="pv-copy">Copy as TSV</button>
+      </div>
+      <div class="tbl-wrap"><table id="pivot"></table></div>
+    </section>
+
+    <section class="card">
+      <h2>Directory explorer</h2>
+      <p class="sub">Files, size and lines per directory under the current filters. Expand with ▸; the bar shows the selected metric split by kind.</p>
+      <div class="toolbar">
+        <button type="button" id="tree-expand">Expand one level</button>
+        <button type="button" id="tree-collapse">Collapse all</button>
+        <label><input type="checkbox" id="tree-files"> show files</label>
+        <span class="sp"></span>
+        <button type="button" id="tree-csv">Download CSV (all directories)</button>
+      </div>
+      <div class="tbl-wrap"><table id="tree"></table></div>
+    </section>
+
+    <section class="card">
+      <h2>Largest files</h2>
+      <p class="sub">Top 200 by the selected metric under the current filters.</p>
+      <div class="tbl-wrap"><table id="largest"></table></div>
+    </section>
+
+    <section class="card">
+      <details class="help">
+        <summary>How files are classified</summary>
+        <p class="sub" style="margin-top:8px">Every git-tracked file gets exactly one <b>area</b> (the first matching rule of <code>code_stats.areas</code>, or of the default areas), one <b>kind</b>, a <b>language</b> (from the extension, a shebang line or the <code>linguist-language</code> attribute) and a <b>module</b>. <b>LOC</b> (lines of code) = non-blank, non-comment lines; <b>Lines</b> = all lines. Binary and media files are <i>asset</i>: sized, never line-counted. A file is <b>unclassified</b> when its kind is <i>other</i> or no area rule matched it, so it fell to the default area. <code>--explain &lt;path&gt;</code> prints the rule behind each value of one file.</p>
+        <dl id="area-help"></dl>
+        <dl>
+          <dt>code</dt><dd>Hand-written source in a programming, markup or style language</dd>
+          <dt>test</dt><dd>Code a test convention below matches; a file in a test folder that is not code is a fixture (or docs)</dd>
+          <dt>docs</dt><dd>Markdown, MDX, reStructuredText, AsciiDoc, text; files with the <code>linguist-documentation</code> attribute</dd>
+          <dt>config</dt><dd>JSON, YAML, TOML, XML, dotfiles and build files, outside areas marked <code>content: true</code></dd>
+          <dt>data</dt><dd>CSV, NDJSON, RDF; and structured files inside areas marked <code>content: true</code></dd>
+          <dt>generated</dt><dd>Lockfiles, generated folders and names, protobuf output, files with the <code>linguist-generated</code> attribute, files headed by a “@generated” or “DO NOT EDIT” banner</dd>
+          <dt>fixture</dt><dd>Fixture, snapshot and mock folders, Go’s testdata/, and files in test folders that are not code</dd>
+          <dt>vendored</dt><dd>vendor/, third_party/, node_modules/, submodules and files with the <code>linguist-vendored</code> attribute; left out of the totals unless the report was made with <code>--include-vendored</code></dd>
+          <dt>asset / other</dt><dd>Binary and media files; symbolic links and anything no rule matched (charted together as “other”)</dd>
+        </dl>
+        <table id="convention-help" style="margin-top:10px"></table>
+      </details>
+    </section>
+  </main>
+  <footer id="foot"></footer>
+  <div id="tip" role="tooltip"></div>
+</div>
+
+<script id="code-stats-data" type="application/json">"__CODE_STATS_DATA__"</script>
+<script>
+(() => {
+  'use strict';
+  const D = JSON.parse(document.getElementById('code-stats-data').textContent);
+  if (!D || !Array.isArray(D.files)) {
+    document.querySelector('main').textContent = 'No data embedded in this report.';
+    return;
+  }
+  // Row layout: must match EncodedRow in lib/render-html.ts
+  const P = 0, A = 1, K = 2, L = 3, M = 4, Bytes = 5, Raw = 6, Code = 7, Comment = 8, FellThrough = 10;
+  const unclassified = (r) => D.kinds[r[K]] === 'other' || r[FellThrough] === 1;
+  const Rows = D.files;
+
+  // Kind → colour group (8 categorical slots; asset folds into "other")
+  const Groups = ['code', 'test', 'docs', 'config', 'data', 'generated', 'fixture', 'other'];
+  const kindGroup = D.kinds.map((k) => (Groups.includes(k) ? Groups.indexOf(k) : Groups.length - 1));
+  const gColor = (g) => `var(--k-${Groups[g]})`;
+
+  const Metrics = {
+    code: { label: 'LOC', long: 'LOC (non-blank, non-comment)', get: (r) => r[Code], fmt: fmtInt },
+    raw: { label: 'Lines', long: 'All lines', get: (r) => r[Raw], fmt: fmtInt },
+    files: { label: 'Files', long: 'File count', get: () => 1, fmt: fmtInt },
+    bytes: { label: 'Size', long: 'Size on disk', get: (r) => r[Bytes], fmt: fmtBytes },
+  };
+
+  const Dims = {
+    area: { label: 'Area', of: (r) => D.areas[r[A]], values: D.areas },
+    kind: { label: 'Kind', of: (r) => D.kinds[r[K]], values: D.kinds },
+    language: { label: 'Language', of: (r) => D.languages[r[L]], values: D.languages },
+    module: { label: 'Module', of: (r) => D.modules[r[M]], values: D.modules },
+    dir1: { label: 'Directory (depth 1)', of: (r) => dirAt(r[P], 1) },
+    dir2: { label: 'Directory (depth 2)', of: (r) => dirAt(r[P], 2) },
+    dir3: { label: 'Directory (depth 3)', of: (r) => dirAt(r[P], 3) },
+    ext: { label: 'Extension', of: (r) => extOf(r[P]) },
+    testsplit: { label: 'Code vs test', of: (r) => (D.kinds[r[K]] === 'test' ? 'test' : D.kinds[r[K]] === 'code' ? 'code' : 'non-code') },
+    classified: { label: 'Classified or not', of: (r) => (unclassified(r) ? 'unclassified' : 'classified') },
+  };
+  const FilterDims = ['area', 'kind', 'language', 'module'];
+
+  const state = {
+    sel: { area: new Set(), kind: new Set(), language: new Set(), module: new Set() },
+    q: '',
+    metric: 'code',
+    hiddenGroups: new Set(),
+    pvRows: 'module',
+    pvCols: 'kind',
+    pvSort: { col: '__total', dir: -1 },
+    lgSort: { col: 'metric', dir: -1 },
+    expanded: new Set(['']),
+    treeFiles: false,
+  };
+
+  // ---------- helpers ----------
+  function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
+  function fmtBytes(n) {
+    if (n < 1024) return `${Math.round(n)} B`;
+    if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`;
+    if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
+    return `${(n / 1024 ** 3).toFixed(2)} GB`;
+  }
+  function fmtCompact(n, metric) {
+    if (metric === 'bytes') return fmtBytes(n);
+    if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 1 : 2)}M`;
+    if (n >= 1e4) return `${(n / 1e3).toFixed(n >= 1e5 ? 0 : 1)}k`;
+    return fmtInt(n);
+  }
+  function pct(a, b) { return b ? `${((a / b) * 100).toFixed(1)}%` : '—'; }
+  function dirAt(path, depth) {
+    const parts = path.split('/');
+    parts.pop();
+    if (parts.length === 0) return '<root files>';
+    return parts.slice(0, depth).join('/');
+  }
+  function extOf(path) {
+    const f = path.slice(path.lastIndexOf('/') + 1);
+    const i = f.lastIndexOf('.');
+    return i > 0 ? f.slice(i + 1).toLowerCase() : '(none)';
+  }
+  function el(tag, attrs, ...children) {
+    const e = document.createElement(tag);
+    if (attrs) for (const [k, v] of Object.entries(attrs)) {
+      if (v == null || v === false) continue;
+      if (k === 'class') e.className = v;
+      else if (k === 'style') e.style.cssText = v;
+      else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v === true ? '' : v);
+    }
+    for (const c of children.flat()) if (c != null && c !== false) e.append(c instanceof Node ? c : String(c));
+    return e;
+  }
+  // Repository-sized lists are appended in a loop, never spread into one call: a spread past the engine's argument limit throws
+  function fill(host, nodes) {
+    const f = document.createDocumentFragment();
+    for (const n of nodes) f.append(n);
+    host.replaceChildren(f);
+  }
+  function maxOf(values, floor = 1) {
+    let m = floor;
+    for (const v of values) if (v > m) m = v;
+    return m;
+  }
+  function download(name, text, type) {
+    const a = el('a', { href: URL.createObjectURL(new Blob([text], { type })), download: name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  // Spreadsheets evaluate a text cell starting with one of these as a formula; numbers stay numeric
+  function safeText(v) { return typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? `'${v}` : String(v); }
+  function quoted(s, special) { return special.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
+  function csvCell(v) { return quoted(safeText(v), /[",\r\n]/); }
+  function tsvCell(v) { return quoted(safeText(v), /[\t"\r\n]/); }
+  const M_ = () => Metrics[state.metric];
+
+  // ---------- filtering ----------
+  let pathRe = null;
+  function compileQuery() {
+    const q = state.q.trim();
+    pathRe = null;
+    if (!q) return;
+    const m = /^\/(.+)\/([a-z]*)$/.exec(q);
+    // g/y make test() stateful (lastIndex), so successive rows would disagree
+    try { pathRe = m ? new RegExp(m[1], m[2].replace(/[gy]/g, '')) : null; } catch { pathRe = null; }
+    if (!pathRe) {
+      const lower = q.toLowerCase();
+      pathRe = { test: (s) => s.toLowerCase().includes(lower) };
+    }
+  }
+  function passes(r, except) {
+    const s = state.sel;
+    if (except !== 'area' && s.area.size && !s.area.has(D.areas[r[A]])) return false;
+    if (except !== 'kind' && s.kind.size && !s.kind.has(D.kinds[r[K]])) return false;
+    if (except !== 'language' && s.language.size && !s.language.has(D.languages[r[L]])) return false;
+    if (except !== 'module' && s.module.size && !s.module.has(D.modules[r[M]])) return false;
+    if (pathRe && !pathRe.test(r[P])) return false;
+    return true;
+  }
+  function visible(r) { return !state.hiddenGroups.has(kindGroup[r[K]]); }
+
+  // ---------- tooltip ----------
+  const tip = document.getElementById('tip');
+  function showTip(ev, title, groups, hi) {
+    tip.replaceChildren(el('div', { class: 't' }, title));
+    const total = groups.reduce((a, b) => a + b, 0);
+    groups.forEach((v, g) => {
+      if (!v) return;
+      tip.append(el('div', { class: `r${g === hi ? ' hi' : ''}` },
+        el('span', { class: 'sw', style: `background:${gColor(g)}` }), Groups[g],
+        el('span', { class: 'n' }, `${M_().fmt(v)} · ${pct(v, total)}`)));
+    });
+    tip.append(el('div', { class: 'r hi', style: 'margin-top:4px' }, 'Total', el('span', { class: 'n' }, M_().fmt(total))));
+    tip.style.display = 'block';
+    moveTip(ev);
+  }
+  function moveTip(ev) {
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = ev.clientX + 14, y = ev.clientY + 14;
+    if (x + w > innerWidth - 8) x = ev.clientX - w - 14;
+    if (y + h > innerHeight - 8) y = ev.clientY - h - 14;
+    tip.style.left = `${x}px`; tip.style.top = `${y}px`;
+  }
+  function hideTip() { tip.style.display = 'none'; }
+
+  // ---------- multi-select filters ----------
+  const msRefs = {};
+  function buildMultiSelect(dim) {
+    const host = document.getElementById(`ms-${dim}`);
+    const det = el('details', { class: 'ms' });
+    const sum = el('summary');
+    const search = el('input', { type: 'search', placeholder: 'Find…', 'aria-label': `Find ${Dims[dim].label}` });
+    const list = el('div');
+    const panel = el('div', { class: 'panel' },
+      el('div', { class: 'acts' }, search,
+        el('button', { type: 'button', onclick: () => { state.sel[dim].clear(); update(); } }, 'Clear')),
+      list);
+    det.append(sum, panel);
+    host.append(det);
+    search.addEventListener('input', () => renderOptions());
+    document.addEventListener('click', (e) => { if (det.open && !det.contains(e.target)) det.open = false; });
+    function renderOptions() {
+      // Counts reflect every OTHER active filter, so options show what selecting them would yield
+      const counts = new Map();
+      for (const r of Rows) if (passes(r, dim)) { const v = Dims[dim].of(r); counts.set(v, (counts.get(v) || 0) + M_().get(r)); }
+      const term = search.value.trim().toLowerCase();
+      const values = Dims[dim].values.slice();
+      if (dim === 'language' || dim === 'module') values.sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0));
+      fill(list, values.filter((v) => !term || v.toLowerCase().includes(term)).map((v) => {
+        const cb = el('input', { type: 'checkbox' });
+        cb.checked = state.sel[dim].has(v);
+        cb.addEventListener('change', () => { cb.checked ? state.sel[dim].add(v) : state.sel[dim].delete(v); update(); });
+        return el('label', { class: 'opt', title: dim === 'area' ? D.areaDescriptions[v] || '' : '' }, cb,
+          dim === 'kind' ? el('span', { class: 'sw', style: `background:${gColor(kindGroup[D.kinds.indexOf(v)])}` }) : null,
+          v, el('span', { class: 'cnt' }, counts.has(v) ? fmtCompact(counts.get(v), state.metric) : '0'));
+      }));
+      const n = state.sel[dim].size;
+      sum.textContent = `${Dims[dim].label}: ${n === 0 ? 'all' : n === 1 ? [...state.sel[dim]][0] : `${n} selected`} ▾`;
+      det.dataset.active = n ? '1' : '0';
+    }
+    msRefs[dim] = renderOptions;
+  }
+
+  function toggleSel(dim, v, additive) {
+    const s = state.sel[dim];
+    if (additive) { s.has(v) ? s.delete(v) : s.add(v); }
+    else if (s.size === 1 && s.has(v)) s.clear();
+    else { s.clear(); s.add(v); }
+    update();
+  }
+
+  // ---------- KPIs ----------
+  function renderKpis(rows) {
+    let files = 0, bytes = 0, raw = 0, code = 0, test = 0, comment = 0, allLoc = 0, uFiles = 0, uLoc = 0;
+    for (const r of rows) {
+      files++; bytes += r[Bytes]; raw += r[Raw]; comment += r[Comment]; allLoc += r[Code];
+      if (unclassified(r)) { uFiles++; uLoc += r[Code]; }
+      const k = D.kinds[r[K]];
+      if (k === 'code') code += r[Code]; else if (k === 'test') test += r[Code];
+    }
+    const tiles = [
+      ['Files', fmtInt(files), rows.length === Rows.length ? (D.missingFromWorkingTree ? `${fmtInt(D.missingFromWorkingTree)} tracked files missing, not counted` : 'all tracked files') : `${pct(files, Rows.length)} of ${fmtInt(Rows.length)} tracked`],
+      ['Size', fmtBytes(bytes), `${fmtBytes(files ? bytes / files : 0)} avg / file`],
+      ['Code LOC', fmtInt(code), 'kind = code'],
+      ['Test LOC', fmtInt(test), 'kind = test'],
+      ['Test : code', code ? (test / code).toFixed(2) : '—', 'test LOC per code LOC'],
+      ['All LOC', fmtInt(allLoc), 'every kind, non-blank non-comment'],
+      ['All lines', fmtInt(raw), `${pct(comment, raw)} comments`],
+      ['Unclassified', pct(uFiles, files), `${fmtInt(uFiles)} files, ${pct(uLoc, allLoc)} of LOC: kind other or no area rule (${D.defaultArea})`],
+    ];
+    document.getElementById('kpis').replaceChildren(...tiles.map(([k, v, s]) =>
+      el('div', { class: 'kpi' }, el('div', { class: 'k' }, k), el('div', { class: 'v' }, v), el('div', { class: 's' }, s))));
+  }
+
+  // ---------- legends ----------
+  function renderLegends() {
+    for (const host of document.querySelectorAll('[data-legend]')) {
+      host.replaceChildren(...Groups.map((g, i) => el('span', {
+        class: 'it', role: 'button', tabindex: '0', 'aria-pressed': String(!state.hiddenGroups.has(i)),
+        title: 'Show/hide this kind in the charts',
+        onclick: () => { state.hiddenGroups.has(i) ? state.hiddenGroups.delete(i) : state.hiddenGroups.add(i); update(); },
+        onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } },
+      }, el('span', { class: 'sw', style: `background:${gColor(i)}` }), g)));
+    }
+  }
+
+  // ---------- stacked bar charts ----------
+  function aggregateGroups(rows, keyOf) {
+    const map = new Map();
+    for (const r of rows) {
+      if (!visible(r)) continue;
+      const key = keyOf(r);
+      let g = map.get(key);
+      if (!g) { g = new Array(Groups.length).fill(0); map.set(key, g); }
+      g[kindGroup[r[K]]] += M_().get(r);
+    }
+    return [...map.entries()].map(([key, g]) => ({ key, g, total: g.reduce((a, b) => a + b, 0) }));
+  }
+  function renderBars(hostId, rows, dim, top, fixedOrder) {
+    let items = aggregateGroups(rows, Dims[dim].of).filter((x) => x.total > 0);
+    if (fixedOrder) items.sort((a, b) => fixedOrder.indexOf(a.key) - fixedOrder.indexOf(b.key));
+    else items.sort((a, b) => b.total - a.total);
+    const more = document.getElementById(`${hostId}-more`);
+    if (more) {
+      const rest = items.slice(top);
+      more.textContent = rest.length ? `…and ${rest.length} more (${M_().fmt(rest.reduce((a, x) => a + x.total, 0))})` : '';
+    }
+    items = items.slice(0, top);
+    const max = maxOf(items.map((x) => x.total));
+    const host = document.getElementById(hostId);
+    fill(host, items.map((x) => {
+      const track = el('div', { class: 'track' });
+      x.g.forEach((v, gi) => {
+        if (!v) return;
+        const s = el('div', { class: 's', style: `width:${(v / max) * 100}%;background:${gColor(gi)}` });
+        s.addEventListener('mousemove', (e) => showTip(e, x.key, x.g, gi));
+        s.addEventListener('mouseleave', hideTip);
+        track.append(s);
+      });
+      const sel = state.sel[dim];
+      const row = el('div', {
+        class: `bar-row${sel.has(x.key) ? ' sel' : sel.size ? ' off' : ''}`, role: 'button', tabindex: '0',
+        title: `${dim === 'area' ? `${D.areaDescriptions[x.key] || ''}\n` : ''}Click to filter (shift/cmd-click to add)`,
+        onclick: (e) => toggleSel(dim, x.key, e.shiftKey || e.metaKey || e.ctrlKey),
+        onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSel(dim, x.key, e.shiftKey || e.metaKey || e.ctrlKey); } },
+      }, el('div', { class: 'lab' }, x.key), track, el('div', { class: 'val num' }, M_().fmt(x.total)));
+      return row;
+    }));
+    if (!items.length) host.replaceChildren(el('div', { class: 'more' }, 'Nothing matches the current filters.'));
+  }
+
+  // ---------- pivot ----------
+  function renderPivot(rows) {
+    const rDim = Dims[state.pvRows], cDimKey = state.pvCols, cDim = cDimKey === 'none' ? null : Dims[cDimKey];
+    const get = M_().get;
+    const cells = new Map(); const colTotals = new Map(); const rowTotals = new Map();
+    const stats = new Map(); // row → {files, bytes, loc, lines}
+    let grand = 0;
+    for (const r of rows) {
+      const rk = rDim.of(r), ck = cDim ? cDim.of(r) : '';
+      const v = get(r);
+      grand += v;
+      rowTotals.set(rk, (rowTotals.get(rk) || 0) + v);
+      colTotals.set(ck, (colTotals.get(ck) || 0) + v);
+      let row = cells.get(rk); if (!row) { row = new Map(); cells.set(rk, row); }
+      row.set(ck, (row.get(ck) || 0) + v);
+      let st = stats.get(rk); if (!st) { st = { files: 0, bytes: 0, code: 0, raw: 0 }; stats.set(rk, st); }
+      st.files++; st.bytes += r[Bytes]; st.code += r[Code]; st.raw += r[Raw];
+    }
+    let cols = [...colTotals.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+    if (cDim && cDim.values) cols = cDim.values.filter((v) => colTotals.has(v));
+    const Cap = 14;
+    let folded = false;
+    if (cDim && cols.length > Cap) {
+      const keep = new Set([...colTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, Cap - 1).map(([k]) => k));
+      cols = cols.filter((c) => keep.has(c));
+      folded = true;
+    }
+    const otherOf = (rk) => {
+      const row = cells.get(rk); let s = 0;
+      for (const [ck, v] of row) if (!cols.includes(ck)) s += v;
+      return s;
+    };
+    // Column keys are tagged: data columns are 'd:<value>', synthetic ones '__<name>'. A
+    // repository-derived value (a directory named __total, say) can then never select a
+    // synthetic computation or the row-label branch.
+    const colKeys = cDim ? [...cols.map((c) => `d:${c}`), ...(folded ? ['__other'] : [])] : [];
+    const val = (rk, ck) => ck.startsWith('d:') ? (cells.get(rk).get(ck.slice(2)) || 0) : ck === '__total' ? rowTotals.get(rk) : ck === '__other' ? otherOf(rk) : ck === '__share' ? rowTotals.get(rk) : ck === '__files' ? stats.get(rk).files : ck === '__bytes' ? stats.get(rk).bytes : ck === '__code' ? stats.get(rk).code : ck === '__raw' ? stats.get(rk).raw : 0;
+    const extra = cDim ? [] : [['__files', 'Files'], ['__bytes', 'Size'], ['__code', 'LOC'], ['__raw', 'Lines']].filter(([k]) => k.slice(2) !== state.metric);
+    const columns = [['__row', rDim.label], ...colKeys.map((k) => [k, k === '__other' ? 'other' : k.slice(2)]), ...extra, ['__total', cDim ? 'Total' : M_().long], ['__share', 'Share']];
+
+    const rowKeys = [...cells.keys()];
+    const { col, dir } = state.pvSort;
+    const valid = columns.some(([k]) => k === col);
+    const sc = valid ? col : '__total';
+    rowKeys.sort((a, b) => sc === '__row' ? dir * a.localeCompare(b) : dir * (val(a, sc) - val(b, sc)));
+
+    const fmtCol = (k, v) => (k === '__files' ? fmtInt(v) : k === '__bytes' ? fmtBytes(v) : k === '__code' || k === '__raw' ? fmtInt(v) : k === '__share' ? pct(v, grand) : M_().fmt(v));
+    const max = maxOf(rowKeys.map((k) => rowTotals.get(k)));
+    const thead = el('thead', null, el('tr', null, columns.map(([k, label]) => el('th', {
+      class: k === '__row' ? '' : 'num', 'aria-sort': k === sc ? (dir < 0 ? 'descending' : 'ascending') : null,
+    }, el('button', { type: 'button', class: 'plain', onclick: () => { state.pvSort = { col: k, dir: k === sc ? -dir : k === '__row' ? 1 : -1 }; renderPivot(currentRows); } }, label)))));
+    const tbody = el('tbody', null, rowKeys.map((rk) => el('tr', null, columns.map(([k]) => {
+      if (k === '__row') {
+        const canFilter = state.sel[state.pvRows] !== undefined;
+        return el('td', { class: state.pvRows.startsWith('dir') ? 'path' : '' }, canFilter
+          ? el('button', { type: 'button', class: 'plain', title: 'Click to filter', onclick: (e) => toggleSel(state.pvRows, rk, e.shiftKey || e.metaKey) }, rk)
+          : rk);
+      }
+      if (k === '__share') return el('td', { class: 'num' }, el('span', { class: 'mini', style: `width:${(rowTotals.get(rk) / max) * 60}px;margin-right:6px` }), pct(rowTotals.get(rk), grand));
+      return el('td', { class: 'num' }, fmtCol(k, val(rk, k)));
+    }))));
+    const totalRow = el('tr', { class: 'total' }, ...columns.map(([k]) => {
+      if (k === '__row') return el('td', null, `Total (${rowKeys.length} rows)`);
+      if (k === '__share') return el('td', { class: 'num' }, '100%');
+      let s = 0; for (const rk of rowKeys) s += val(rk, k);
+      return el('td', { class: 'num' }, fmtCol(k, s));
+    }));
+    tbody.append(totalRow);
+    document.getElementById('pivot').replaceChildren(thead, tbody);
+    pivotExport = () => [columns.map(([, l]) => l), ...rowKeys.map((rk) => columns.map(([k]) => k === '__row' ? rk : k === '__share' ? (grand ? (rowTotals.get(rk) / grand * 100).toFixed(2) : '0') : val(rk, k)))];
+  }
+  let pivotExport = () => [];
+
+  // ---------- directory tree ----------
+  function buildTree(rows) {
+    const root = { name: '', path: '', kids: new Map(), files: [], agg: null };
+    for (const r of rows) {
+      const parts = r[P].split('/');
+      let node = root;
+      for (let i = 0; i < parts.length - 1; i++) {
+        const p = parts.slice(0, i + 1).join('/');
+        let k = node.kids.get(parts[i]);
+        if (!k) { k = { name: parts[i], path: p, kids: new Map(), files: [], agg: null }; node.kids.set(parts[i], k); }
+        node = k;
+      }
+      node.files.push(r);
+    }
+    (function agg(n) {
+      const a = { files: 0, bytes: 0, code: 0, test: 0, raw: 0, m: 0, g: new Array(Groups.length).fill(0) };
+      for (const r of n.files) addRow(a, r);
+      for (const k of n.kids.values()) { const b = agg(k); a.files += b.files; a.bytes += b.bytes; a.code += b.code; a.test += b.test; a.raw += b.raw; a.m += b.m; b.g.forEach((v, i) => { a.g[i] += v; }); }
+      n.agg = a; return a;
+    })(root);
+    return root;
+  }
+  function addRow(a, r) {
+    a.files++; a.bytes += r[Bytes]; a.raw += r[Raw];
+    const k = D.kinds[r[K]];
+    if (k === 'code') a.code += r[Code]; else if (k === 'test') a.test += r[Code];
+    const v = M_().get(r); a.m += v; a.g[kindGroup[r[K]]] += v;
+  }
+  let treeRoot = null;
+  function renderTree(rows) {
+    treeRoot = buildTree(rows);
+    const max = maxOf([...[...treeRoot.kids.values()].map((k) => k.agg.m), ...treeRoot.files.map((r) => M_().get(r))]);
+    const head = el('thead', null, el('tr', null,
+      el('th', null, 'Path'), el('th', { class: 'num' }, 'Files'), el('th', { class: 'num' }, 'Size'),
+      el('th', { class: 'num' }, 'Code LOC'), el('th', { class: 'num' }, 'Test LOC'), el('th', { class: 'num' }, 'Lines'),
+      el('th', { class: 'num' }, 'Share'), el('th', null, `${M_().label} by kind`)));
+    const body = el('tbody');
+    const total = treeRoot.agg.m;
+    const kidsSorted = (n) => [...n.kids.values()].sort((a, b) => b.agg.m - a.agg.m || a.name.localeCompare(b.name));
+    function cellBar(g, m) {
+      const b = el('div', { class: 'cell-bar' });
+      g.forEach((v, i) => { if (v && !state.hiddenGroups.has(i)) b.append(el('div', { class: 's', style: `width:${(v / max) * 100}%;background:${gColor(i)}` })); });
+      b.addEventListener('mousemove', (e) => showTip(e, 'Breakdown', g, -1));
+      b.addEventListener('mouseleave', hideTip);
+      return b;
+    }
+    function walk(n, depth) {
+      for (const k of kidsSorted(n)) {
+        const open = state.expanded.has(k.path);
+        const hasKids = k.kids.size > 0 || (state.treeFiles && k.files.length > 0);
+        const tg = el('span', { class: 'tg', role: 'button', tabindex: '0', 'aria-expanded': hasKids ? String(open) : null,
+          onclick: () => { open ? state.expanded.delete(k.path) : state.expanded.add(k.path); renderTree(currentRows); },
+          onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } } }, hasKids ? (open ? '▾' : '▸') : '');
+        body.append(el('tr', { class: 'tree-row' },
+          el('td', { class: 'name', style: `padding-left:${8 + depth * 16}px` }, tg, `${k.name}/`),
+          el('td', { class: 'num' }, fmtInt(k.agg.files)), el('td', { class: 'num' }, fmtBytes(k.agg.bytes)),
+          el('td', { class: 'num' }, fmtInt(k.agg.code)), el('td', { class: 'num' }, fmtInt(k.agg.test)),
+          el('td', { class: 'num' }, fmtInt(k.agg.raw)), el('td', { class: 'num' }, pct(k.agg.m, total)),
+          el('td', null, cellBar(k.agg.g, k.agg.m))));
+        if (open) walk(k, depth + 1);
+      }
+      if (state.treeFiles || n === treeRoot) {
+        const files = n.files.slice().sort((a, b) => M_().get(b) - M_().get(a));
+        for (const r of files) {
+          const g = new Array(Groups.length).fill(0); g[kindGroup[r[K]]] = M_().get(r);
+          const kind = D.kinds[r[K]];
+          body.append(el('tr', { class: 'tree-row' },
+            el('td', { class: 'name', style: `padding-left:${8 + depth * 16}px`, title: `${D.areas[r[A]]} · ${kind} · ${D.languages[r[L]]}` }, el('span', { class: 'tg' }), el('span', { class: 'file' }, r[P].slice(r[P].lastIndexOf('/') + 1))),
+            el('td', { class: 'num' }, '1'), el('td', { class: 'num' }, fmtBytes(r[Bytes])),
+            el('td', { class: 'num' }, kind === 'code' ? fmtInt(r[Code]) : ''), el('td', { class: 'num' }, kind === 'test' ? fmtInt(r[Code]) : ''),
+            el('td', { class: 'num' }, fmtInt(r[Raw])), el('td', { class: 'num' }, pct(M_().get(r), total)),
+            el('td', null, cellBar(g, g[kindGroup[r[K]]]))));
+        }
+      }
+    }
+    walk(treeRoot, 0);
+    const a = treeRoot.agg;
+    body.append(el('tr', { class: 'total' }, el('td', null, 'Total'), el('td', { class: 'num' }, fmtInt(a.files)), el('td', { class: 'num' }, fmtBytes(a.bytes)),
+      el('td', { class: 'num' }, fmtInt(a.code)), el('td', { class: 'num' }, fmtInt(a.test)), el('td', { class: 'num' }, fmtInt(a.raw)), el('td', { class: 'num' }, '100%'), el('td')));
+    document.getElementById('tree').replaceChildren(head, body);
+  }
+  function treeCsv() {
+    const out = [['directory', 'depth', 'files', 'bytes', 'code_loc', 'test_loc', 'lines', ...Groups.map((g) => `${state.metric}_${g}`)]];
+    (function walk(n, depth) {
+      for (const k of [...n.kids.values()].sort((a, b) => a.path.localeCompare(b.path))) {
+        out.push([k.path, depth, k.agg.files, k.agg.bytes, k.agg.code, k.agg.test, k.agg.raw, ...k.agg.g]);
+        walk(k, depth + 1);
+      }
+    })(treeRoot, 1);
+    download('code-stats-directories.csv', out.map((r) => r.map(csvCell).join(',')).join('\n'), 'text/csv');
+  }
+
+  // ---------- largest files ----------
+  function renderLargest(rows) {
+    const cols = [
+      ['path', 'Path', (r) => r[P]], ['area', 'Area', (r) => D.areas[r[A]]], ['kind', 'Kind', (r) => D.kinds[r[K]]],
+      ['language', 'Language', (r) => D.languages[r[L]]], ['bytes', 'Size', (r) => r[Bytes]], ['code', 'LOC', (r) => r[Code]],
+      ['raw', 'Lines', (r) => r[Raw]], ['comment', 'Comments', (r) => r[Comment]],
+    ];
+    const s = state.lgSort.col === 'metric' ? state.metric === 'files' ? 'code' : state.metric : state.lgSort.col;
+    const getter = cols.find((c) => c[0] === s)[2];
+    const top = rows.slice().sort((a, b) => {
+      const x = getter(a), y = getter(b);
+      return state.lgSort.dir * (typeof x === 'number' ? x - y : String(x).localeCompare(String(y)));
+    }).slice(0, 200);
+    const head = el('thead', null, el('tr', null, el('th', { class: 'num' }, '#'), ...cols.map(([k, label]) => el('th', {
+      class: ['bytes', 'code', 'raw', 'comment'].includes(k) ? 'num' : '', 'aria-sort': k === s ? (state.lgSort.dir < 0 ? 'descending' : 'ascending') : null,
+    }, el('button', { type: 'button', class: 'plain', onclick: () => { state.lgSort = { col: k, dir: k === s ? -state.lgSort.dir : ['path', 'area', 'kind', 'language'].includes(k) ? 1 : -1 }; renderLargest(currentRows); } }, label)))));
+    const body = el('tbody', null, ...top.map((r, i) => el('tr', null, el('td', { class: 'num' }, i + 1),
+      el('td', { class: 'path' }, r[P]), el('td', null, D.areas[r[A]]),
+      el('td', null, el('span', { class: 'sw', style: `background:${gColor(kindGroup[r[K]])};margin-right:6px` }), D.kinds[r[K]]),
+      el('td', null, D.languages[r[L]]), el('td', { class: 'num' }, fmtBytes(r[Bytes])), el('td', { class: 'num' }, fmtInt(r[Code])),
+      el('td', { class: 'num' }, fmtInt(r[Raw])), el('td', { class: 'num' }, fmtInt(r[Comment])))));
+    document.getElementById('largest').replaceChildren(head, body);
+  }
+
+  // ---------- active filter chips ----------
+  function renderActive() {
+    const chips = [];
+    for (const dim of FilterDims) for (const v of state.sel[dim]) {
+      chips.push(el('span', { class: 'chip' }, `${Dims[dim].label}: ${v}`, el('button', { type: 'button', 'aria-label': `Remove ${v}`, onclick: () => { state.sel[dim].delete(v); update(); } }, '×')));
+    }
+    if (state.q.trim()) chips.push(el('span', { class: 'chip' }, `Path: ${state.q.trim()}`, el('button', { type: 'button', 'aria-label': 'Clear path filter', onclick: () => { state.q = ''; document.getElementById('q').value = ''; compileQuery(); update(); } }, '×')));
+    for (const g of state.hiddenGroups) chips.push(el('span', { class: 'chip' }, `Hidden in charts: ${Groups[g]}`, el('button', { type: 'button', 'aria-label': `Show ${Groups[g]}`, onclick: () => { state.hiddenGroups.delete(g); update(); } }, '×')));
+    fill(document.getElementById('active'), chips);
+  }
+
+  // ---------- URL hash (shareable state) ----------
+  function saveHash() {
+    const o = {};
+    for (const d of FilterDims) if (state.sel[d].size) o[d] = [...state.sel[d]];
+    if (state.q) o.q = state.q;
+    if (state.metric !== 'code') o.metric = state.metric;
+    if (state.pvRows !== 'module') o.rows = state.pvRows;
+    if (state.pvCols !== 'kind') o.cols = state.pvCols;
+    if (state.hiddenGroups.size) o.hide = [...state.hiddenGroups].sort((a, b) => a - b).map((i) => Groups[i]);
+    const h = Object.keys(o).length ? `#${encodeURIComponent(JSON.stringify(o))}` : ' ';
+    history.replaceState(null, '', h === ' ' ? location.pathname + location.search : h);
+  }
+  function loadHash() {
+    if (!location.hash) return;
+    try {
+      const o = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+      // Own properties only: `in` would accept inherited names such as 'toString'
+      const own = (obj, k) => typeof k === 'string' && Object.hasOwn(obj, k);
+      for (const d of FilterDims) if (Array.isArray(o[d])) state.sel[d] = new Set(o[d].filter((v) => Dims[d].values.includes(v)));
+      if (typeof o.q === 'string') state.q = o.q;
+      if (own(Metrics, o.metric)) state.metric = o.metric;
+      if (own(Dims, o.rows)) state.pvRows = o.rows;
+      if (o.cols === 'none' || own(Dims, o.cols)) state.pvCols = o.cols;
+      if (Array.isArray(o.hide)) state.hiddenGroups = new Set(o.hide.map((g) => Groups.indexOf(g)).filter((i) => i >= 0));
+    } catch { /* ignore malformed hash */ }
+  }
+
+  // ---------- main update ----------
+  let currentRows = Rows;
+  function update() {
+    currentRows = Rows.filter((r) => passes(r));
+    for (const d of FilterDims) msRefs[d]();
+    renderActive();
+    renderLegends();
+    renderKpis(currentRows);
+    // Each chart ignores its own dimension's selection, so unselected bars stay clickable (shift/cmd-click adds them)
+    const chartRows = (dim) => Rows.filter((r) => passes(r, dim));
+    renderBars('chart-area', chartRows('area'), 'area', 99, D.areas);
+    renderBars('chart-language', chartRows('language'), 'language', 20);
+    renderBars('chart-module', chartRows('module'), 'module', 25);
+    renderPivot(currentRows);
+    renderTree(currentRows);
+    renderLargest(currentRows);
+    for (const b of document.querySelectorAll('#metric-seg button')) b.setAttribute('aria-pressed', String(b.dataset.m === state.metric));
+    saveHash();
+  }
+
+  // ---------- wiring ----------
+  loadHash();
+  compileQuery();
+  document.title = `${D.repository}: codebase statistics`;
+  document.getElementById('title').textContent = `${D.repository}: codebase statistics`;
+  document.getElementById('meta').textContent =
+    `${D.branch ? `${D.branch} @ ` : ''}${D.commit} · generated ${D.generatedAt.replace('T', ' ').slice(0, 16)} UTC · ${fmtInt(Rows.length)} tracked files · ${D.includeVendored ? 'vendored files included' : `${fmtInt(D.vendoredExcluded)} vendored files left out`}${D.missingFromWorkingTree ? ` · ${fmtInt(D.missingFromWorkingTree)} tracked files missing from the working tree, not counted` : ''}`;
+  document.getElementById('foot').textContent = "Generated by Jig's code-stats skill (--html) · data embedded; works offline · state is kept in the URL hash, so a filtered view can be bookmarked.";
+  document.getElementById('convention-help').replaceChildren(
+    el('thead', null, el('tr', null, el('th', null, 'Ecosystem'), el('th', null, 'Built-in rule'), el('th', null, 'Kind'))),
+    el('tbody', null, ...D.conventions.map((c) => el('tr', null, el('td', null, c.ecosystem), el('td', null, c.rule), el('td', null, c.kind)))));
+  document.getElementById('area-help').replaceChildren(...D.areas.flatMap((a) => [el('dt', null, a), el('dd', null, D.areaDescriptions[a] || '')]));
+  for (const d of FilterDims) buildMultiSelect(d);
+  document.getElementById('metric-seg').replaceChildren(...Object.entries(Metrics).map(([k, m]) =>
+    el('button', { type: 'button', 'data-m': k, 'aria-pressed': String(k === state.metric), title: m.long, onclick: () => { state.metric = k; update(); } }, m.label)));
+  const q = document.getElementById('q');
+  q.value = state.q;
+  let qt = 0;
+  q.addEventListener('input', () => { clearTimeout(qt); qt = setTimeout(() => { state.q = q.value; compileQuery(); update(); }, 150); });
+  document.getElementById('reset').addEventListener('click', () => {
+    for (const d of FilterDims) state.sel[d].clear();
+    state.q = ''; q.value = ''; compileQuery(); state.hiddenGroups.clear(); update();
+  });
+  const pvOpts = (sel, withNone) => {
+    const opts = Object.entries(Dims).map(([k, d]) => el('option', { value: k }, d.label));
+    if (withNone) opts.unshift(el('option', { value: 'none' }, '— none (show all metrics) —'));
+    sel.replaceChildren(...opts);
+  };
+  const pvRows = document.getElementById('pv-rows'), pvCols = document.getElementById('pv-cols');
+  pvOpts(pvRows, false); pvOpts(pvCols, true);
+  pvRows.value = state.pvRows; pvCols.value = state.pvCols;
+  pvRows.addEventListener('change', () => { state.pvRows = pvRows.value; state.pvSort = { col: '__total', dir: -1 }; update(); });
+  pvCols.addEventListener('change', () => { state.pvCols = pvCols.value; state.pvSort = { col: '__total', dir: -1 }; update(); });
+  document.getElementById('pv-csv').addEventListener('click', () =>
+    download(`code-stats-${state.pvRows}-by-${state.pvCols}-${state.metric}.csv`, pivotExport().map((r) => r.map(csvCell).join(',')).join('\n'), 'text/csv'));
+  document.getElementById('pv-copy').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    try { await navigator.clipboard.writeText(pivotExport().map((r) => r.map(tsvCell).join('\t')).join('\n')); btn.textContent = 'Copied ✓'; }
+    catch { btn.textContent = 'Copy failed'; }
+    setTimeout(() => (btn.textContent = 'Copy as TSV'), 1500);
+  });
+  document.getElementById('tree-expand').addEventListener('click', () => {
+    // Expand every currently visible directory by one level
+    const next = new Set(state.expanded);
+    (function walk(n) { for (const k of n.kids.values()) { if (state.expanded.has(k.path)) walk(k); else next.add(k.path); } })(treeRoot);
+    state.expanded = next; renderTree(currentRows);
+  });
+  document.getElementById('tree-collapse').addEventListener('click', () => { state.expanded = new Set(['']); renderTree(currentRows); });
+  document.getElementById('tree-files').addEventListener('change', (e) => { state.treeFiles = e.target.checked; renderTree(currentRows); });
+  document.getElementById('tree-csv').addEventListener('click', treeCsv);
+  document.addEventListener('scroll', hideTip, { passive: true });
+
+  // Theme toggle — wins over the OS setting in both directions
+  const themeBtns = document.querySelectorAll('[data-theme-btn]');
+  function setTheme(t) {
+    if (t === 'auto') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', t);
+    for (const b of themeBtns) b.setAttribute('aria-pressed', String(b.dataset.themeBtn === t));
+  }
+  for (const b of themeBtns) b.addEventListener('click', () => setTheme(b.dataset.themeBtn));
+
+  update();
+})();
+</script>
+</body>
+</html>

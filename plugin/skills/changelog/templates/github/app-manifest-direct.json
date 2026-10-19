@@ -1,0 +1,15 @@
+{
+  "name": "<app-name>",
+  "url": "https://github.com/<owner>/<repository>",
+  "description": "Pushes the changelog skill's release commits and tags to <owner>/<repository>.",
+  "public": false,
+  "hook_attributes": {
+    "url": "https://github.com/<owner>/<repository>",
+    "active": false
+  },
+  "redirect_url": "https://github.com/<owner>/<repository>",
+  "default_permissions": {
+    "contents": "write"
+  },
+  "default_events": []
+}

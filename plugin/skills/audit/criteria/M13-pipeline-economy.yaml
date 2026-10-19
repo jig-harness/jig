@@ -1,0 +1,429 @@
+# Machine-evaluable criteria for M13 (pipeline economy).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+#
+# A repository without CI scores these criteria absent, not expected-absent:
+# they presuppose M1's CI, which can still come (the probes write that absent).
+# The cancellation and timeout probes read the syntax of GitHub-style workflows
+# only; on any other provider, where the setting may live in the host or in a
+# syntax they do not read, they hold and the agent scores the criterion.
+module: M13
+name: pipeline-economy
+purpose: >-
+  CI is spent only where it changes a merge decision, and no saving turns a
+  failure into a pass.
+criteria:
+  - id: superseded-pr-runs-cancelled
+    level: lite
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      A new push to a pull request cancels that pull request's runs for the
+      older head, so CI is not spent on a head no one will merge.
+    observe:
+      - "every pull-request workflow declares a concurrency group keyed by the pull request (or its ref) with cancel-in-progress, or the provider's equivalent (GitLab: interruptible jobs with auto-cancel)"
+      - "the group is not shared with runs that check something the surviving run does not"
+    probe:
+      any:
+        - grep:
+            files:
+              - ".github/workflows/*.yml"
+              - ".github/workflows/*.yaml"
+              - ".forgejo/workflows/*"
+              - ".gitea/workflows/*"
+            pattern: "[Cc]ancel"
+        - files: &ci-outside-github-family
+            - ".gitlab-ci.yml"
+            - ".circleci/config.yml"
+            - ".circleci/config.yaml"
+            - "azure-pipelines.yml"
+            - "azure-pipelines.yaml"
+            - ".azure-pipelines/**"
+            - ".pipelines/**"
+            - "bitbucket-pipelines.yml"
+            - "Jenkinsfile"
+            - "**/Jenkinsfile"
+            - "**/*.jenkinsfile"
+            - ".buildkite/**"
+            - ".drone.yml"
+            - ".drone.yaml"
+            - ".woodpecker.yml"
+            - ".woodpecker.yaml"
+            - ".woodpecker/**"
+            - ".travis.yml"
+            - ".cirrus.yml"
+            - ".cirrus.star"
+            - "appveyor.yml"
+            - ".appveyor.yml"
+            - ".semaphore/**"
+            - ".teamcity/**"
+            - "bitrise.yml"
+            - "codemagic.yaml"
+            - "codefresh.yml"
+            - "cloudbuild.yaml"
+            - "cloudbuild.yml"
+            - "buildspec.yml"
+            - "buildspec.yaml"
+            - ".tekton/**"
+            - ".harness/**"
+            - ".build.yml"
+            - ".builds/**"
+            - "**/*.gocd.yaml"
+            - "**/*.gocd.yml"
+            - ".concourse/**"
+            - "ci/pipeline*.yml"
+            - "ci/pipeline*.yaml"
+            - ".onedev-buildspec.yml"
+
+  - id: every-job-has-timeout
+    level: lite
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      Every CI job declares its own timeout, below the provider's default
+      limit, so a hung job fails at a bound the team chose instead of holding
+      a runner until that limit.
+    observe:
+      - "each job carries timeout-minutes (GitHub Actions), timeout (GitLab CI) or the provider's equivalent"
+      - "each value is below the provider's default job limit (360 minutes on GitHub-hosted runners)"
+    probe:
+      any:
+        - grep:
+            files:
+              - ".github/workflows/*.yml"
+              - ".github/workflows/*.yaml"
+              - ".forgejo/workflows/*"
+              - ".gitea/workflows/*"
+            pattern: "timeout-minutes"
+        - files: *ci-outside-github-family
+
+  - id: no-required-pipeline-path-filtered
+    level: lite
+    requires: convention
+    since: 0.25.0
+    statement: >-
+      No workflow that reports a required check is filtered by changed paths
+      at its trigger; selection happens inside the run, so every head gets a
+      verdict.
+    observe:
+      - "the workflows behind the required checks have no on.pull_request.paths / paths-ignore (or the provider's trigger-level equivalent)"
+      - "path-dependent work is selected by jobs inside the workflow instead"
+
+  - id: resolver-drives-selection
+    level: standard
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      One resolver job per run reads the change-area catalog and decides which
+      jobs the change needs; every other job reads its answer, and a changed
+      file no area matches selects every job or fails the change.
+    observe:
+      - "one small job runs the catalog resolver and publishes its result (job outputs on GitHub Actions), or the jobs' change rules are generated from the catalog, or the resolver writes a child pipeline that the parent waits for (GitLab CI)"
+      - "the other jobs' conditions come from the resolver's answer or the catalog, not from path patterns written by hand per job"
+      - "an unmatched file selects every job, or a gate fails the change until the file belongs to an area (fail closed)"
+    probe:
+      files: &ci-config
+        - ".github/workflows/*.yml"
+        - ".github/workflows/*.yaml"
+        - ".forgejo/workflows/*"
+        - ".gitea/workflows/*"
+        - ".gitlab-ci.yml"
+        - ".circleci/config.yml"
+        - ".circleci/config.yaml"
+        - "azure-pipelines.yml"
+        - "azure-pipelines.yaml"
+        - ".azure-pipelines/**"
+        - ".pipelines/**"
+        - "bitbucket-pipelines.yml"
+        - "Jenkinsfile"
+        - "**/Jenkinsfile"
+        - "**/*.jenkinsfile"
+        - ".buildkite/**"
+        - ".drone.yml"
+        - ".drone.yaml"
+        - ".woodpecker.yml"
+        - ".woodpecker.yaml"
+        - ".woodpecker/**"
+        - ".travis.yml"
+        - ".cirrus.yml"
+        - ".cirrus.star"
+        - "appveyor.yml"
+        - ".appveyor.yml"
+        - ".semaphore/**"
+        - ".teamcity/**"
+        - "bitrise.yml"
+        - "codemagic.yaml"
+        - "codefresh.yml"
+        - "cloudbuild.yaml"
+        - "cloudbuild.yml"
+        - "buildspec.yml"
+        - "buildspec.yaml"
+        - ".tekton/**"
+        - ".harness/**"
+        - ".build.yml"
+        - ".builds/**"
+        - "**/*.gocd.yaml"
+        - "**/*.gocd.yml"
+        - ".concourse/**"
+        - "ci/pipeline*.yml"
+        - "ci/pipeline*.yaml"
+        - ".onedev-buildspec.yml"
+
+  - id: aggregate-required-check
+    level: standard
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      One verdict is the required check (an aggregator job, or the provider's
+      own verdict on the whole pipeline): it is given whenever the run was not
+      cancelled, fails when a selected job failed, was cancelled or was
+      skipped because a job it needs failed, and passes a job skipped only
+      because the change did not need it.
+    observe:
+      - "where each job reports its own check (GitHub Actions), an aggregator job needs every selected job, runs on !cancelled() (not always()), and compares each needed job's result with whether the resolver selected it"
+      - "where the provider judges the whole pipeline (GitLab CI's \"Pipelines must succeed\"), that built-in verdict is the required check, no job that must block is allowed to fail, and a child pipeline mirrors its status to its trigger job"
+      - "the merge rule requires that one verdict, not the individual jobs"
+    probe:
+      files: *ci-config
+
+  - id: heavy-non-gating-suites-scheduled
+    level: standard
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      A slow suite that no merge and no verified pointer waits for runs on a
+      schedule or on demand, and a cheap per-change proxy runs in its place.
+    observe:
+      - "the slow suite's workflow triggers on a schedule, on manual dispatch, or both, not on every pull request"
+      - "a per-change job checks a cheap proxy of it (the suite still compiles, its images still build)"
+      - "a suite is waited for when it is a required check on the default branch, the required aggregator needs it, or the verified pointer advances only after it succeeds; a branch with no required check still waits for what its verified pointer needs"
+      - "a suite is fast only when the repository's written record classifies its speed so: the record names it fast, or states a duration threshold its recorded CI durations stay below; where a suite runs (a placement table such as PIPELINE-ECONOMY.md's) classifies nothing; a suite the record names slow, or whose recorded durations exceed the stated threshold, is slow even when the record also names it fast; durations without a stated threshold classify nothing, the auditor never estimates, and an unclassified suite counts as slow"
+      - "the criterion covers each suite nothing waits for that is not classified fast; expected-absent when no such suite exists"
+
+  - id: workflow-conventions-linted
+    level: strict
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      A lint over the parsed CI configuration fails a job without a timeout, a
+      pull-request workflow without a cancelling concurrency group, a required
+      workflow filtered at its trigger, and an aggregator that runs on
+      always(); it fails closed on a file it cannot parse, every exception it
+      accepts carries a reason, and an exception that suppresses nothing fails
+      it.
+    observe:
+      - "a script or rule set reads the parsed workflow files and checks these conventions"
+      - "a file that does not parse (a repeated key included) makes it fail, not pass"
+      - "its exceptions are checked in, each with a reason; an entry without one, or one that suppresses no finding, fails the lint"
+      - "it runs in CI on changes to the workflow files, with its own self-test"
+    probe:
+      files: *ci-config
+
+  - id: job-timeout-ceiling-linted
+    level: strict
+    requires: mechanical
+    since: 0.32.0
+    statement: >-
+      The CI-configuration lint fails a job whose timeout, written as a
+      number, is above an hour, unless a reasoned exception covers that job,
+      so a timeout stays a generous backstop against a hang rather than
+      drifting toward the provider's default.
+    observe:
+      - "the lint fails a literal job timeout above 60 minutes, and passes one of exactly 60"
+      - "a job above the ceiling passes only through a checked-in exception that gives a reason"
+      - "a timeout written as an expression is outside this criterion: its value is known only at run time, and review checks it"
+    probe:
+      files: *ci-config
+
+  - id: ci-cost-measured
+    level: strict
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      CI time or cost is measured per workflow and job from the provider's
+      records, so a decision about what to run where cites a number.
+    observe:
+      - "a job or script collects run durations or billable minutes per workflow and job"
+      - "the result is published on a cadence (a report, a dashboard, an issue)"
+      - "the measures are runner-minutes per pipeline and job, cost per change (runner-minutes per merged change), queue wait and cache hit rate, each a registered metric (M11's registry) with a wired source"
+
+  - id: queue-stall-watchdog
+    level: strict
+    requires: mechanical
+    since: 0.25.0
+    statement: >-
+      A watchdog fails loudly when runs wait for a runner longer than a set
+      bound, because job timeouts do not count time spent in the queue.
+    observe:
+      - "a scheduled job reads queued runs or jobs and their wait time from the provider"
+      - "a wait over the bound fails the job or opens an alert someone sees"
+
+  - id: ci-hold-fails-held-heads
+    level: standard
+    requires: mechanical
+    since: 0.38.0
+    statement: >-
+      Where a hold label suppresses CI on intermediate heads, a required
+      check fails on every held head from the instant the label is applied,
+      every workflow that honours the label runs on its application and its
+      removal, and only the pull request's own hold label, never the kind of
+      label event, skips work.
+    observe:
+      - "a step in a required job, or in a job the required job needs directly while itself running on !cancelled(), fails while the hold label is present, does not continue on error, and its message names the label to remove"
+      - "every pull-request workflow with a job the hold skips, or reporting a required check, triggers on labeled and unlabeled beside opened, synchronize and reopened"
+      - "each skipped job's condition tests the pull request's label set for the exact hold label, not the event's action, so an unrelated label event still runs real CI"
+      - "the driver that removes the label accepts only check runs that started after the removal"
+      - "expected-absent when no hold label is configured (no ci.hold_label or equivalent)"
+
+  - id: ci-hold-shape-linted
+    level: strict
+    requires: mechanical
+    since: 0.38.0
+    statement: >-
+      Where a hold label is configured, the CI-configuration lint fails a
+      workflow of the hold that misses a label event, a skipped job whose
+      condition is not a negated test of the pull request's labels for the
+      exact hold label, and a hold with no step that fails a required check
+      while the label is present.
+    observe:
+      - "the lint reads the hold label from the repository's configuration and reports its hold rules as not applicable without one"
+      - "it fails a pull-request trigger of a workflow in the hold that lists fewer than opened, synchronize, reopened, labeled and unlabeled"
+      - "it accepts a guard only as a negated contains over the pull request's label names with the exact label, and a held-head check only as the positive test, in a job whose failure reaches the required check"
+      - "it runs in CI on changes to the workflow files, with its own self-test"
+      - "expected-absent when no hold label is configured"
+
+  - id: cache-keys-complete
+    level: standard
+    requires: convention
+    since: 0.38.0
+    statement: >-
+      Every cache the pipeline uses has a written key scheme naming every
+      input that changes its output, the values of the environment variables
+      the task reads included, and no workflow carries a standing cache
+      bypass in place of a complete key.
+    observe:
+      - "a document (the pipeline-economy policy page or the cache's own) names each cache and what its key covers: sources, lockfile, toolchain version, environment values"
+      - "the task runner or cache step is configured to hash those inputs (declared environment lists, a hash over the lockfiles, no input list that leaves a read file out)"
+      - "no workflow step forces a rerun or disables the cache as a standing fix (--force, --skip-cache or the equivalent); a bypass, where present, is a one-off with its reason beside it"
+      - "expected-absent when the pipeline uses no cache"
+
+  - id: cache-one-namespace
+    level: standard
+    requires: mechanical
+    since: 0.38.0
+    statement: >-
+      Pipelines that share a cache produce an identical key-affecting
+      environment, checked by a lint, and a job whose cache credential is
+      empty fails before its first task rather than running apart from the
+      shared cache.
+    observe:
+      - "the jobs that share a cache are declared as a group and a lint (the cache-env-parity rule of M13's workflow-convention lint, or equivalent) fails when their key-affecting environment differs"
+      - "a step at the top of each such job fails when a cache credential is empty, since the provider substitutes an empty string for an absent secret"
+      - "where the tool shares its cache across working copies by itself, nothing in the configuration switches that off, and a test pins the setting that would"
+      - "expected-absent when the cache takes no key-affecting environment variable and no credential, so there is nothing to compare or require"
+
+  - id: cache-hit-rate-reported
+    level: standard
+    requires: mechanical
+    since: 0.38.0
+    statement: >-
+      Every run that uses a cache reports its hit rate (hits and misses) in
+      the run's summary, and the rate is a registered process metric.
+    observe:
+      - "a step reads the task runner's run summary or the cache step's outputs and writes hits, misses and the rate to the run's summary or outputs"
+      - "the metric registry (M11) carries the cache hit rate with a wired source"
+      - "expected-absent when the pipeline uses no cache"
+
+  - id: cache-retention-bounded
+    level: strict
+    requires: mechanical
+    since: 0.38.0
+    statement: >-
+      Every cache has a retention bound that a scheduled prune or the store's
+      own eviction enforces, with the window written beside its key scheme,
+      and a declared cache that stores nothing is detected.
+    observe:
+      - "each cache's bound is written beside its key scheme, naming what enforces it: the provider's eviction, a retention rule on the store, or a scheduled prune over a local or persistent cache directory"
+      - "a shared local cache (a task runner's cache directory on a shared machine) is pruned on a schedule, with the window recorded"
+      - "a check reads the provider's cache usage, or the hit-rate report alarms on zero over a window, so a cache that is declared but stores nothing is seen"
+      - "expected-absent when the pipeline uses no cache"
+
+  - id: cache-wiring-checked
+    level: strict
+    requires: mechanical
+    since: 0.38.0
+    statement: >-
+      A gate fails a cache wired on some steps and not on others: in a
+      container build, every step that invokes the package manager in a stage
+      whose store is on a cache mount carries the mount, and no step pins the
+      store with a per-command flag.
+    observe:
+      - "a check over the Dockerfiles (M13's cache-mount coverage gate or equivalent) runs in CI on changes to them, with its own self-test"
+      - "it fails closed on a Dockerfile it cannot read (a heredoc body, a dynamic command, a pin set to an expansion)"
+      - "expected-absent when no container build keeps a store on a cache mount"
+
+  - id: cache-trust-boundary
+    level: strict
+    requires: mechanical
+    since: 0.38.0
+    statement: >-
+      Only trusted contexts write to a shared cache, its entries are signed
+      or verified on read, and an untrusted run (a pull request from a fork)
+      gets no cache credentials and runs uncached rather than under a
+      namespace of its own.
+    observe:
+      - "the shared cache's signature or verification is on (the task runner's remote-cache signature with its key, or the store's own integrity check) and an entry that does not verify is recomputed"
+      - "cache credentials reach only trusted triggers: no pull_request_target or equivalent gives a fork's run secrets, and the fork run's cache steps are skipped or read-only"
+      - "the provider's own cache scoping is kept, not widened: a pull request's cache is readable from its branch alone, and only the default branch's caches are read by every pull request"
+      - "expected-absent when no cache is shared through credentials"
+
+  - id: runner-class-follows-work
+    level: standard
+    requires: convention
+    since: 0.38.0
+    statement: >-
+      Each CI job's runner class is written down with the measurement behind
+      it, the jobs that only decide or report (the resolver, the aggregator,
+      an echo job) run on the smallest class, and a machine's parallelism is
+      set once as a product, the task runner's package concurrency times the
+      workers per package, at or below its cores.
+    observe:
+      - "the pipeline-economy policy page, or a comment at the job, names each job's runner class, and a class above the smallest carries the wall time, processor use or runner-minutes that earned it"
+      - "the resolver, the aggregator and other jobs that only decide or report run on the smallest class the pool offers"
+      - "where a task runner runs packages in parallel and the test runner forks workers per package, a per-package worker cap is set in every package that invokes the test runner, and its product with the package concurrency is at or below the cores of the class"
+      - "expected-absent when the provider offers one runner class and no job runs a worker-forking test runner under a task runner"
+
+  - id: one-authoritative-leg
+    level: standard
+    requires: convention
+    since: 0.38.0
+    statement: >-
+      CI is the single authority for every check: the written record says so
+      and that skipping a hook never changes what merges, each leg before CI
+      (a hook, a remote sandbox) selects no more work than CI does for the
+      same change, and a leg that holds a machine beyond CI is an opt-in
+      recorded with the failure class it catches that CI cannot and a
+      checkable reopen condition in each direction.
+    observe:
+      - "the hooks' configuration or the contributor guide states that CI is the authority and that skipping a hook never changes what merges"
+      - "the pre-push hook's and any sandbox's commands select by the same resolver (the change-area catalog) or the same changed-since filter CI uses, not by an unscoped whole-repository run"
+      - "a sandbox without the repository's history receives the resolved package list from the leg that dispatches it"
+      - "an extra leg that holds a machine per push is opt-in per change area or per change, and its record (the cost ledger) names the failure class it catches that CI cannot and a reopen condition in each direction"
+      - "expected-absent when no leg runs before CI (no hooks and no sandbox)"
+
+  - id: cost-decisions-reopenable
+    level: strict
+    requires: mechanical
+    since: 0.38.0
+    statement: >-
+      Every decision that changed what the pipeline spends (a runner resized,
+      a leg narrowed or added, a suite moved, a cache turned on) is in a cost
+      ledger with its measurement before and after in one unit, or a due date
+      for the after, and a reopen condition naming a registered metric, a
+      comparator, a threshold and a window; a gate fails an entry without
+      them.
+    observe:
+      - "a ledger (M13's ci-cost-ledger.yaml or equivalent) holds one entry per such decision with its unit, its before and its after, or a measure_by date while the after is pending"
+      - "each entry's reopen condition names a metric id the metrics registry carries, a comparator, a numeric threshold and a window"
+      - "a check (M13's cost-ledger gate or equivalent) fails an entry without its measurements, past its due date or with a reopen condition that is not checkable, and runs in CI on changes to the ledger, with its own self-test"
+      - "a repository whose pipeline has had no such decision yet has an empty ledger, which the check reports as nothing to check; the criterion is absent, not expected-absent, until the first decision is recorded"

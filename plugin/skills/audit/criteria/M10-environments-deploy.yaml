@@ -1,0 +1,312 @@
+# Machine-evaluable criteria for M10 (Environments & deploy).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+#
+# Repo-shape note: several criteria are deploy-specific. A library-shaped repo
+# (a published package with no environments of its own) is "expected-absent" on
+# those — it can attain a level by documenting that it does not deploy, without
+# the deploy machinery counting against it. The auditor calibrates by repo shape.
+module: M10
+name: environments-deploy
+purpose: >-
+  Merged and verified are kept apart, so only an integrated, verified state
+  reaches users.
+criteria:
+  - id: environments-and-deploy-documented
+    level: lite
+    requires: convention
+    statement: >-
+      The deployable environments and the path from merge to production are
+      written down once (a deploy runbook / CI-architecture doc), so where code
+      goes and how it gets there is not tribal knowledge.
+    observe:
+      - "a doc names the environments and describes the merge -> verify -> deploy -> promote path"
+      - "a deploy runbook exists (how a release actually happens)"
+
+  - id: pr-gates-run-before-merge
+    level: lite
+    requires: convention
+    statement: >-
+      Per-PR gates run on every pull request before merge, and the pipeline
+      states that a green merge is not yet a production-ready fact.
+    observe:
+      - "PR-scoped checks run on every pull request (informing the human merge)"
+      - "the architecture doc distinguishes 'merged' from 'verified'"
+
+  - id: verification-separated-from-pr-gates
+    level: standard
+    requires: mechanical
+    statement: >-
+      CI has a distinct post-merge verification stage that runs on the integrated
+      default branch, separate from the per-PR gates.
+    observe:
+      - "a workflow triggered on push to the default branch runs the heavier verification suite"
+      - "it is separate from the pull_request gate workflow"
+      - "a suite runs per change only when a merge or the verified pointer waits for it; slow suites neither waits for run on a schedule or on demand"
+    probe:
+      files: &ci-config
+        - ".github/workflows/*.yml"
+        - ".github/workflows/*.yaml"
+        - ".forgejo/workflows/*"
+        - ".gitea/workflows/*"
+        - ".gitlab-ci.yml"
+        - ".circleci/config.yml"
+        - ".circleci/config.yaml"
+        - "azure-pipelines.yml"
+        - "azure-pipelines.yaml"
+        - ".azure-pipelines/**"
+        - ".pipelines/**"
+        - "bitbucket-pipelines.yml"
+        - "Jenkinsfile"
+        - "**/Jenkinsfile"
+        - "**/*.jenkinsfile"
+        - ".buildkite/**"
+        - ".drone.yml"
+        - ".drone.yaml"
+        - ".woodpecker.yml"
+        - ".woodpecker.yaml"
+        - ".woodpecker/**"
+        - ".travis.yml"
+        - ".cirrus.yml"
+        - ".cirrus.star"
+        - "appveyor.yml"
+        - ".appveyor.yml"
+        - ".semaphore/**"
+        - ".teamcity/**"
+        - "bitrise.yml"
+        - "codemagic.yaml"
+        - "codefresh.yml"
+        - "cloudbuild.yaml"
+        - "cloudbuild.yml"
+        - "buildspec.yml"
+        - "buildspec.yaml"
+        - ".tekton/**"
+        - ".harness/**"
+        - ".build.yml"
+        - ".builds/**"
+        - "**/*.gocd.yaml"
+        - "**/*.gocd.yml"
+        - ".concourse/**"
+        - "ci/pipeline*.yml"
+        - "ci/pipeline*.yaml"
+        - ".onedev-buildspec.yml"
+
+  - id: verified-pointer-advances-on-verification
+    level: standard
+    requires: mechanical
+    statement: >-
+      An explicit `verified` pointer (a branch or tag) is advanced only by the
+      post-merge verification stage passing — never by a merge alone.
+    observe:
+      - "a verified branch/tag exists and is moved by a verification job on success"
+      - "nothing else advances it (merge does not move it)"
+
+  - id: deploys-verified-artifacts-only
+    level: standard
+    requires: mechanical
+    statement: >-
+      Deploy jobs ship what the `verified` pointer points at, not a mutable
+      branch or a moving tag (expected-absent for a library-shaped repo, which
+      publishes rather than deploys environments).
+    observe:
+      - "deploy jobs check out / download the verified pointer or its artifact"
+      - "no deploy job targets main / HEAD / :latest for a real environment"
+      - "every job after the first in a promotion takes the commit from an upstream job's output (needs.<job>.outputs.<sha>, a dotenv variable), never fetching a branch or the verified pointer by name again; the promote-safety lint's rule (c) is green over the deploy workflows, and the other jobs of a promotion (migrate, verify), which the lint does not examine, are inspected by hand"
+
+  - id: artifacts-built-once-promoted-by-digest
+    level: standard
+    requires: mechanical
+    statement: >-
+      What reaches production is the artifact verification approved, built
+      once and addressed by digest, with per-environment settings supplied at
+      deploy time rather than compiled in (expected-absent for a
+      library-shaped repo, which publishes rather than deploys environments).
+    observe:
+      - "deploy commands or deployment manifests name the artifact by its content digest (an image as image@sha256:..., a web bundle by its content hash), and a check rejects a movable name, such as a tag, where a digest belongs"
+      - "promotion re-tags or copies the verified artifact; no production job rebuilds it"
+      - "per-environment configuration reaches the artifact at deploy time (a runtime config file such as env.js, environment variables, a ConfigMap), not as a build-time constant"
+    since: 0.20.0
+
+  - id: freshness-watchdog-runs
+    level: standard
+    requires: mechanical
+    statement: >-
+      A scheduled watchdog fails when the `verified` pointer lags the
+      default-branch tip beyond a threshold, counting only code-bearing
+      changes, so a stalled verifier pages someone instead of silently
+      shipping stale code.
+    observe:
+      - "a scheduled job computes the pointer's lag (in commits or in time) and fails past a threshold, or decides by cause (watchdog-decides-by-cause)"
+      - "the lag counts only commits that change a path verification builds or tests (a path filter on the range, or the cause mode's code-ahead check); a documentation-only tip does not fail it"
+      - "its failure is wired to a page and/or an automatic heal (a dispatch of verification)"
+
+  - id: created-resources-have-reapers
+    level: standard
+    requires: mechanical
+    since: 0.37.0
+    statement: >-
+      Every resource the delivery system creates (a preview deployment, an
+      ephemeral environment, a test tenant, a per-worktree data namespace)
+      has a scheduled reaper keyed to the resource's owner that reads an
+      expiry written at creation; a destructive reaper reports by default,
+      acts only on an explicit opt-in, and refuses production (expected-absent
+      for a library-shaped repo that creates no environments, tenants or
+      namespaces).
+    observe:
+      - "each create step (a preview deploy, an environment spawner, a tenant factory, a namespace create) writes an owner and an expiry at creation (an annotation, a comment, a registry row), or the host keeps the resource by age"
+      - "a scheduled workflow or job per resource kind removes what has expired, lost its creator or exceeds a keep-newest count, and fails on a listing error rather than reading it as nothing to do"
+      - "the reaper's default is a report (--dry-run); it acts only when a repository variable or a dispatch input opts in, and refuses the production environment or namespace before anything is rendered"
+      - "one owner's reaper touches only that owner's resources; a resource without an owner or expiry is reported, never reaped"
+
+  - id: promotion-gap-from-ancestry
+    level: standard
+    requires: mechanical
+    since: 0.37.0
+    statement: >-
+      Which changes have reached which environment is computed from
+      version-control ancestry between the environments' pointers, on a
+      schedule and whenever a pointer moves, and published as a report and a
+      metric; no tracker field tracks it by hand (expected-absent for a
+      library-shaped repo with a single release line and no environments).
+    observe:
+      - "a scheduled job, also triggered by a push to each pointer branch, lists the work items the commits in <lower pointer>..<higher pointer> name in their subjects and trailers, per environment pair"
+      - "it refuses to report when the lower pointer is not an ancestor of the higher one, and fails on an unresolvable ref or a failed git call rather than reporting an empty gap"
+      - "its output reaches where the team reads (a run summary, an artifact, a pinned document) and its count is a metric in the metrics registry"
+      - "no tracker status or field records which environment a work item has reached"
+
+  - id: environment-currency-checked
+    level: strict
+    requires: mechanical
+    since: 0.37.0
+    statement: >-
+      A scheduled check that runs against an environment that is deliberately
+      behind first confirms the environment runs a version the check applies
+      to: the floor is derived from history, the deployed version is read
+      from the environment's pin, ancestry decides, and a non-current
+      environment's cell is removed from the matrix rather than skipped
+      (expected-absent where no scheduled check runs against an environment
+      that is deliberately behind).
+    observe:
+      - "a currency job derives the floor as the newest commit touching the check's dependency paths (git log -1 -- <paths>), never from a hand-kept minimum version"
+      - "it reads the deployed version from the environment's pin (a manifests commit, an identity endpoint) and tests ancestry (git merge-base --is-ancestor <floor> <deployed>)"
+      - "it emits the list of current environments, and the check's matrix is built from that output, so a stale environment has no cell; the cell is not merely skipped by a condition"
+      - "an unreadable pin, a dependency path that no longer exists or a failed git lookup counts the environment as stale; the check's other cells still run when the currency job itself fails"
+
+  - id: watchdog-decides-by-cause
+    level: strict
+    requires: mechanical
+    since: 0.37.0
+    statement: >-
+      The watchdog decides why the `verified` pointer lags and acts by cause:
+      it heals only a dropped trigger, by dispatching verification at the
+      tip, and only up to a budget of dispatches at the same tip; it fails
+      when the heals at a tip keep ending without a verdict, when
+      verification succeeded but the pointer did not move, when the pointer
+      diverged from the integration branch, and when a verification run has
+      waited for a runner past a bound, which it cancels; and verification covers the whole range from the pointer to
+      the tip, so a superseded or cancelled run is covered by its successor
+      (expected-absent for a library-shaped repo with no verified pointer).
+    observe:
+      - "the watchdog's lag counts only changes to paths verification builds or tests; a documentation-only tip does not fail it"
+      - "it reads the tip's verification runs and tells running (fine), failed (fine, no heal), succeeded with the pointer unmoved (fail, never re-run) and no conclusive run past a grace window (heal: a dispatch of verification at the tip) apart; a run that was cancelled or timed out counts as no verdict"
+      - "it counts its own dispatches at the current tip that ended without a verdict and, past a budget, fails instead of dispatching again"
+      - "it fails on a pointer that is not an ancestor of the integration branch, naming a back-merge as the recovery; nothing force-resets the pointer"
+      - "it reads the verification runs' jobs and cancels, then fails on, a run whose job has waited for a runner past a bound; a job waiting for an environment approval does not count"
+      - "every read fails closed: a failed or malformed listing is not read as no runs, and an ancestry check that errors is not read as not an ancestor"
+      - "the watchdog runs on a runner pool other than the one verification runs on, or from outside the provider"
+      - "the verification workflow's change detection diffs the whole verified..tip range, never the tip against its parent; its concurrency keeps one pending run per integration branch without cancelling a running one, gives a dispatch from another ref its own slot, and accepts a manual dispatch"
+
+  - id: verify-and-promote-gates-self-tested-in-ci
+    level: strict
+    requires: mechanical
+    statement: >-
+      The verified-pointer freshness gate and the promote-safety lint both run in
+      CI, each with a self-test, so a broken deploy gate fails loudly.
+    observe:
+      - "bun check-verified-fresh.ts and bun check-promote-safety.ts run in CI"
+      - "each ships a paired self-test exercising a known pass and a known fail, run in CI"
+    probe:
+      mechanical:
+        files: *ci-config
+
+  - id: production-promotion-manual-and-gated
+    level: strict
+    requires: mechanical
+    statement: >-
+      Promotion to production is a manual action behind an environment protection
+      rule and cannot auto-fire on push (expected-absent for a library-shaped
+      repo with no production environment).
+    observe:
+      - "the production deploy uses a manual trigger and a protected environment (required reviewers / wait timer)"
+      - "no workflow auto-deploys to production on push; the promote-safety lint over the deploy workflows is green"
+
+  - id: ephemeral-envs-and-test-data-factory
+    level: strict
+    requires: mechanical
+    statement: >-
+      Disposable preview environments are created and destroyed per PR, and a
+      seeded, tenant-isolated, resettable test-data factory exists (expected-absent
+      for a library-shaped repo with no runnable environment).
+    observe:
+      - "a workflow creates a preview environment on PR open and destroys it on close"
+      - "a factory seeds a known dataset per isolated tenant and can reset to it in one command"
+
+  - id: promotions-serialized-from-trusted-ref
+    level: strict
+    requires: mechanical
+    statement: >-
+      Promotions to one environment never drop a queued request, and each
+      waits until no earlier promotion is active before its first change and
+      checks again just before the migration; the promotion workflow and its
+      gate code load from the trusted ref, the only ref the production
+      environment admits (expected-absent for a library-shaped repo with no
+      production environment).
+    observe:
+      - "the promotion's serialization queues every request: no concurrency group that keeps only one pending run guards it alone (GitHub: a group keyed per run plus a lock job that waits for earlier active promotions; GitLab: a resource_group held across the whole mutating sequence, on the one job or trigger job with strategy: depend that runs it, not on each job separately)"
+      - "the lock refuses a re-run of a promotion (GitHub: github.run_attempt above 1), which keeps its original run id, and is checked again just before the migration or other irreversible step"
+      - "the gate job checks its code out from the verified pointer, and the production environment admits only that ref (GitHub: its deployment branches and tags rule lists only verified; GitLab: production credentials are released only to the verified ref, e.g. an ID token whose cloud trust policy admits only that ref, since protected variables reach every protected ref)"
+    since: 0.20.0
+
+  - id: deploy-verifies-live-identity
+    level: strict
+    requires: mechanical
+    statement: >-
+      A deploy is complete only when the live environment reports the exact
+      artifact identity that was promoted, its rollouts are ready, and a
+      readiness check that exercises the application's critical dependencies
+      passes; anything downstream
+      reads a manifest of what actually deployed (expected-absent for a
+      library-shaped repo with no runnable environment).
+    observe:
+      - "a job after every deploy compares the live spec's image (or a build-info identity) with the promoted digest before waiting on rollout status"
+      - "it waits for rollouts to be ready (e.g. kubectl rollout status, argocd app wait --health) and calls a readiness endpoint that exercises the application's critical dependencies (for an application with a database, one that queries it), each under a deadline"
+      - "the deploy run publishes a manifest of the parts it deployed, and downstream workflows read it rather than the run's conclusion"
+    since: 0.20.0
+
+  - id: release-state-off-source-line
+    level: strict
+    requires: mechanical
+    statement: >-
+      Release pointers only fast-forward to verified source, and rendered
+      deployment state lives on its own ref, written only by a dedicated
+      machine identity that the ref's protection admits (expected-absent for a
+      repository with neither a release pointer nor rendered deployment state
+      in git; a repository with only one of them is scored on that one).
+    observe:
+      - "the release pointer advances only by a fast-forward to the gated commit (git merge --ff-only, then a check that it equals the gated commit), only after the identity check passes, a gated commit older than the pointer is refused once the promotion holds the lock, before its first change, and no job commits generated files to it"
+      - "rendered manifests are committed to a dedicated ref that a GitOps controller reads (Argo CD targetRevision, Flux GitRepository ref)"
+      - "only one job holds the writer identity's credentials, and the ref's protection restricts pushes to that identity with no pull-request requirement (or an explicit bypass for it)"
+    since: 0.20.0
+
+  - id: pipeline-index-derived-or-gated
+    level: standard
+    requires: mechanical
+    since: 0.38.0
+    statement: >-
+      Where the repository keeps a page listing its pipelines, that page is
+      generated from the pipeline files or a check fails when a pipeline is
+      missing from it or it names one that no longer exists; a hand-kept
+      page with no check does not count.
+    observe:
+      - "a generator writes the page from the pipeline files (header comments, names) with a drift gate in CI, or a CI check compares the page's entries with the pipeline files in both directions"
+      - "expected-absent when no such page exists: the provider's list is the index"

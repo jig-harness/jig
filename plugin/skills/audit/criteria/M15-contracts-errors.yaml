@@ -1,0 +1,407 @@
+# Machine-evaluable criteria for M15 (contracts and error handling).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+#
+# Repo-shape note: a library or a command-line tool serves no network
+# interface, so the server-side-detail rule has nothing to apply to; a
+# repository whose lint rejects un-awaited promises and that starts no
+# detached work has nothing to route through a helper; a system that
+# reports failures to no caller beyond an exit status or a thrown typed
+# error emits no codes, so it has no registry to hold, no constructor to
+# keep out of reach and no orphans to audit, and its boundary writes an exit
+# status rather than a coded response. Those criteria are expected-absent
+# there, or scored against the shape without codes.
+module: M15
+name: contracts-errors
+purpose: >-
+  A failure keeps its cause, travels on one of three declared channels, is
+  branched on by type or code, and reaches callers through one boundary.
+criteria:
+  - id: error-contract-written
+    level: lite
+    requires: convention
+    since: 0.42.0
+    statement: >-
+      The error contract is written where agents and people read it: the
+      three failure channels and which situation takes which, never swallow
+      and keep the cause, branch on type or code and never on message text,
+      a failure inside a transaction aborts it (rolls it back, by the path
+      the transaction tool rolls back on), and errors reach callers only
+      through one boundary.
+    observe:
+      - "an error-handling doc, rule file or the instruction file states the three channels (a result type for expected outcomes, a typed error with a code at module boundaries, a defect primitive for bugs), the cause rule, the type-or-code rule, the transaction rule (a failure inside a transaction rolls it back, with the path that does so for the tool in use) and the boundary"
+      - "the instruction file points at it"
+
+  - id: typed-error-with-code
+    level: lite
+    requires: convention
+    since: 0.42.0
+    statement: >-
+      One shared module defines the typed error that crosses module
+      boundaries, carrying the tag a caller branches on (the registered code
+      and its metadata, severity, message key and recovery hint, where the
+      system emits codes), and the one defect primitive beside it; a result
+      type, where one is used, is one type whose error arm carries a tag
+      (expected-absent where no failure crosses a module boundary to a
+      caller that branches on it: a command-line tool whose every failure
+      ends the process with a status and a message).
+    observe:
+      - "a module defines the base error type with a code or kind field (and the code's metadata where codes exist), and the defect primitive (invariant() or a defect error type)"
+      - "the result type, where present, is a single tagged union, not several shapes ({ success }, { ok }, an outcome union) across the codebase"
+
+  - id: error-code-registry
+    level: lite
+    requires: convention
+    since: 0.42.0
+    statement: >-
+      Every error code the system can emit is declared once, in one registry
+      (a data file or one code module), with its metadata (severity, message
+      key, recovery hint, transport status) and in one declared code format;
+      the error contract names the registry as the only place a code is
+      minted (expected-absent where the system emits no codes because it
+      reports failures to no caller beyond an exit status or a thrown typed
+      error: a library, a command-line tool).
+    observe:
+      - "one registry file or module declares every code with its metadata, and the code format is declared once (a pattern the registry and its scanners share)"
+      - "the error contract or the registry's own header says no code is constructed anywhere else and names what is generated from it"
+
+  - id: swallowing-forms-linted
+    level: standard
+    requires: mechanical
+    since: 0.42.0
+    statement: >-
+      A lint run in CI flags the forms that turn a failure into a default
+      value, an empty result or silence: a catch that returns a default
+      without looking at its error, a child process whose error output is
+      discarded, and a parsed input cast to a concrete type; it blocks the
+      merge directly or under a ratchet on its count.
+    observe:
+      - "lint rules (GritQL plugins, no-restricted-syntax selectors, Ruff BLE001/S110/B904, errcheck/nilerr, clippy unwrap_used, Error Prone CatchAndPrintStackTrace) cover the three forms"
+      - "they run in the CI gate set and block, or a ratchet fails a change that adds a finding"
+    probe:
+      mechanical:
+        files: &ci-config
+          - ".github/workflows/*.yml"
+          - ".github/workflows/*.yaml"
+          - ".forgejo/workflows/*"
+          - ".gitea/workflows/*"
+          - ".gitlab-ci.yml"
+          - ".circleci/config.yml"
+          - ".circleci/config.yaml"
+          - "azure-pipelines.yml"
+          - "azure-pipelines.yaml"
+          - ".azure-pipelines/**"
+          - ".pipelines/**"
+          - "bitbucket-pipelines.yml"
+          - "Jenkinsfile"
+          - "**/Jenkinsfile"
+          - "**/*.jenkinsfile"
+          - ".buildkite/**"
+          - ".drone.yml"
+          - ".drone.yaml"
+          - ".woodpecker.yml"
+          - ".woodpecker.yaml"
+          - ".woodpecker/**"
+          - ".travis.yml"
+          - ".cirrus.yml"
+          - ".cirrus.star"
+          - "appveyor.yml"
+          - ".appveyor.yml"
+          - ".semaphore/**"
+          - ".teamcity/**"
+          - "bitrise.yml"
+          - "codemagic.yaml"
+          - "codefresh.yml"
+          - "cloudbuild.yaml"
+          - "cloudbuild.yml"
+          - "buildspec.yml"
+          - "buildspec.yaml"
+          - ".tekton/**"
+          - ".harness/**"
+          - ".build.yml"
+          - ".builds/**"
+          - "**/*.gocd.yaml"
+          - "**/*.gocd.yml"
+          - ".concourse/**"
+          - "ci/pipeline*.yml"
+          - "ci/pipeline*.yaml"
+          - ".onedev-buildspec.yml"
+
+  - id: one-error-boundary
+    level: standard
+    requires: mechanical
+    since: 0.42.0
+    statement: >-
+      Errors reach callers only through one boundary per transport (an
+      error-handler plugin, a top-level middleware, an interceptor, the exit
+      code boundary of a command-line tool) that writes one fixed shape and
+      maps an error it does not know to an opaque generic failure: on a
+      transport that carries codes, a response of code, message key,
+      severity, recovery hint and correlation id, with an unknown error
+      mapped to a registered generic code; on a command-line transport, or
+      where the system emits no codes, an exit status per outcome and one
+      message line, with an unknown error mapped to the generic failure
+      status. No route or command builds an error response or exit of its
+      own.
+    observe:
+      - "one error handler is registered on each transport's entry point and is the only place that maps an error to a status"
+      - "an unknown error maps to a registered generic code (or, on a command-line transport or where no codes exist, to the boundary's generic failure status), not to the error's own status or shape"
+      - "no route or command writes an error body or exit code of its own (a lint or a grep gate over the handlers, or a count under a ratchet, is what makes this mechanical)"
+
+  - id: server-failures-hide-detail
+    level: standard
+    requires: mechanical
+    since: 0.42.0
+    statement: >-
+      On a server-side failure the boundary sends no internal detail (no
+      exception text, no interpolated template, no identifier), logs the
+      detail through an allowlist keyed by the correlation id, and a test run
+      in CI sends an unknown error through the boundary and asserts that the
+      body holds the public field set (code, message key, severity, recovery
+      hint, correlation id) with the generic code, and that no internal
+      detail (stack, cause, query text, file path, the internal message) is
+      in it (expected-absent where the repository serves no network
+      interface).
+    observe:
+      - "the boundary strips details on a 5xx or INTERNAL status and the framework's own stack traces are off in production (debug=False, include-stacktrace=never, or the equivalent)"
+      - "a test in the CI gate set asserts the body of an unknown error holds the public field set with the generic code and carries no stack, cause, query text, file path or internal message"
+
+  - id: detached-work-reported
+    level: standard
+    requires: convention
+    since: 0.42.0
+    statement: >-
+      Work nobody awaits goes through one helper that reports a failure
+      with its cause and never rejects, and each long-running entry point
+      installs one process-level handler for unhandled rejections that
+      reports the same way, falls back to standard error and never throws
+      (expected-absent where a lint rejects un-awaited promises and the
+      repository starts no detached work).
+    observe:
+      - "a helper (runDetached, a task set with a done callback, a spawn wrapper that recovers a panic) is the way detached work starts; a lint for un-awaited promises (noFloatingPromises, no-floating-promises) still accepts a promise started with void, so the helper with that lint alone scores convention; it scores mechanical only when a check in CI also rejects a detached start outside the helper's module (for TypeScript, Biome noVoid or ESLint no-void with that module excluded, or no-floating-promises with ignoreVoid: false)"
+      - "each server or worker entry point installs the unhandled-rejection handler (or the ecosystem's equivalent: loop.set_exception_handler, a panic hook, setDefaultUncaughtExceptionHandler) once, and on Node runs in the default unhandled-rejection mode, with no --unhandled-rejections=strict in its start command or NODE_OPTIONS"
+
+  - id: error-code-copies-generated
+    level: standard
+    requires: mechanical
+    since: 0.42.0
+    statement: >-
+      Every other copy of the codes (the client's code union, each locale's
+      message catalog, the public error reference) is generated from the
+      registry and carries a drift check in CI that regenerates through the
+      generator's own function and compares the whole text; a registered
+      code with no message entry in a locale, or with a placeholder entry,
+      fails the check (expected-absent where no client, locale catalog or
+      public reference holds a copy of the codes).
+    observe:
+      - "each copy of the codes is a generated file with a regenerate command and a --check (or diff) step in the CI gate set; none is hand-edited"
+      - "the catalog check fails on a code with no entry in a locale and on a placeholder entry, in the working tree or already merged"
+
+  - id: no-inline-error-codes
+    level: standard
+    requires: mechanical
+    since: 0.42.0
+    statement: >-
+      No code is constructed outside the registry: the constructor is not
+      reachable from elsewhere, or a gate in CI rejects a construction
+      outside the registry over every package that depends on the error
+      module, with an allowlist that is empty or lists existing debt by
+      identity (file and code) rather than by count (expected-absent where
+      the system emits no codes because it reports failures to no caller
+      beyond an exit status or a thrown typed error: a library, a
+      command-line tool).
+    observe:
+      - "the registry module does not export the constructor, or a gate (a grep gate, a lint rule on the constructor call, an architecture test) runs in the CI gate set over every dependent package and blocks"
+      - "the gate's allowlist, where one exists, names each tolerated construction by file and code, and a stale entry fails the gate"
+
+  - id: native-throw-linted
+    level: strict
+    requires: mechanical
+    since: 0.42.0
+    statement: >-
+      A lint flags a thrown native error (throw new Error and the built-in
+      siblings) outside the typed error family's own module and the defect
+      primitive, blocking the merge directly or under a ratchet on its count.
+    observe:
+      - "a lint rule (GritQL plugin, no-restricted-syntax, Ruff TRY002, a grep gate on errors.New / fmt.Errorf outside the error package) covers the thrown native error, with the typed family's module and the defect primitive excluded by path"
+      - "it runs in the CI gate set and blocks, or a ratchet fails a change that adds a finding"
+
+  - id: message-branch-linted
+    level: strict
+    requires: mechanical
+    since: 0.42.0
+    statement: >-
+      A lint flags a branch on an error's message text (equality, prefix,
+      substring, a regular expression on .message, str(e), err.Error(),
+      getMessage()) in a catch clause, blocking the merge directly or under a
+      ratchet on its count.
+    observe:
+      - "a lint rule or grep gate covers the message test inside a catch clause, in the forms the language allows"
+      - "it runs in the CI gate set and blocks, or a ratchet fails a change that adds a finding"
+
+  - id: error-code-orphans-audited
+    level: strict
+    requires: mechanical
+    since: 0.42.0
+    statement: >-
+      An audit in CI reports every registered code that nothing outside the
+      registry references (an orphan) against a baseline that names each
+      accepted orphan with its reason and fails on a stale entry, and every
+      code-shaped literal in a hand-written document that no registry entry
+      declares (a reverse orphan) (expected-absent where the system emits no
+      codes because it reports failures to no caller beyond an exit status
+      or a thrown typed error: a library, a command-line tool).
+    observe:
+      - "an audit script runs in the CI gate set over the source packages and the hand-written documents and blocks on an orphan outside the baseline or on an unregistered code in a document"
+      - "the baseline lists accepted orphans by code with a reason each, and an entry for a code that is referenced or not registered fails the audit"
+
+  - id: telemetry-keyed-on-code
+    level: strict
+    requires: convention
+    since: 0.42.0
+    statement: >-
+      Error metrics and span attributes are keyed on the error's code and
+      its type, never its message; structured logs carry the code and type
+      as fields and a message or cause chain only as diagnostic detail that
+      passes through redaction; and a method that returns a result type
+      records the arm it returned as an outcome rather than as an error
+      (expected-absent where the repository emits no telemetry).
+    observe:
+      - "the telemetry wrapper or the boundary records error.code and error.type (the class name) as metric labels and span attributes and never error.message there; a structured log carries code and type as fields, and a message or cause chain in it goes through the redacting allowlist and is not a field anything aggregates on"
+      - "a returned error arm is recorded as an outcome dimension, with span status ERROR reserved for a thrown error"
+
+  - id: migration-discipline-written
+    level: lite
+    requires: convention
+    since: 0.42.0
+    statement: >-
+      Where the repository has database migrations, the discipline is
+      written beside them or in the instruction file: a merged migration is
+      never edited, renamed or deleted and is corrected by a new one, a
+      migration changes structure only, each migration's ledger entry lands
+      with it, and a migration's commit carries a review marker
+      (expected-absent where the repository has no database migrations).
+    observe:
+      - "a document beside the migrations directory, or the instruction file, states the four rules: immutable once merged with fix forward, structure only, the ledger entry each migration needs, and the review marker"
+      - "the instruction file points at it, or is it"
+
+  - id: applied-migrations-immutable
+    level: standard
+    requires: mechanical
+    since: 0.42.0
+    statement: >-
+      A gate in CI fails a change that modifies, renames or deletes a
+      migration file the base branch already holds, allowing only a
+      restoration to content the file held before on that branch, and the
+      migration runner records each file's hash when it applies it and
+      refuses to run while an applied file's hash differs or the file is
+      gone (expected-absent where the repository has no database
+      migrations).
+    observe:
+      - "a script in the CI gate set diffs the migrations directory against the merge base and blocks on a modified, renamed or deleted migration file, with a restoration to a prior state the one allowed edit"
+      - "the runner (the tool's own validation, or the repository's wrapper) compares the hash recorded at apply with the file and refuses to continue on a difference or a missing file, in every environment"
+
+  - id: migration-ledger-integrity
+    level: standard
+    requires: mechanical
+    since: 0.42.0
+    statement: >-
+      A check in CI holds the migration ledger and the files one to one, in
+      strictly increasing order with no gap in the sequence and every field
+      the runner reads explicit on each entry, so no migration is skipped
+      silently or left without an entry (expected-absent where the
+      repository has no database migrations).
+    observe:
+      - "a script in the CI gate set reads the ledger (a journal, a changelog, a revision chain, the files' own numbering) and the files, and blocks on a file without an entry, an entry without a file, a duplicated or non-increasing order key, a gap in the index, or a missing field"
+      - "where the tool's own validation refuses a behind or unlisted migration (Flyway validate, Alembic with more than one head, goose without -allow-missing), that validation runs in CI and is the check"
+
+  - id: migrations-structure-only
+    level: strict
+    requires: mechanical
+    since: 0.42.0
+    statement: >-
+      A check in CI parses each migration with the database's grammar and
+      blocks on a data statement (insert, update, delete, merge) anywhere
+      in the statement tree, a procedural block or a function body
+      included, fails a file whose dynamic statements it cannot read, and
+      takes its exceptions from an allowlist outside the migration files
+      that names each statement by identity under a reviewer's reason
+      (expected-absent where the repository has no database migrations).
+    observe:
+      - "a script in the CI gate set parses the migrations through a grammar parser (libpg_query bindings, sqlglot, ScriptDom, or the language's syntax tree for migrations written as code), not a regular expression over the text, and blocks on a data statement at any depth"
+      - "an unreadable dynamic statement fails the file as could not check, and the allowlist lives outside the migrations, lists statements by file and identity with a reason each, and a stale entry fails the check"
+
+  - id: interface-policy-written
+    level: lite
+    requires: convention
+    since: 0.42.0
+    statement: >-
+      Where the repository serves an interface (HTTP, RPC, GraphQL), the
+      interface policy is written beside the contract or in the instruction
+      file: an operation is internal unless a named external consumer
+      justifies publishing it, a change that publishes one names its
+      consumer, every request input declares a bound, and an operation
+      declares every failure status its code can produce (expected-absent
+      where the repository serves no interface).
+    observe:
+      - "a document beside the contract, or the instruction file, states internal by default with the consumer question, the bound on every input (and the named schemas that carry the bounds), and the declared failure statuses"
+      - "the pull-request template or the review checklist asks who the external consumer of a newly published operation is"
+
+  - id: published-contract-filtered
+    level: standard
+    requires: mechanical
+    since: 0.42.0
+    statement: >-
+      The published and the internal contract documents are generated from
+      one source in which each operation is marked once (a tag, an
+      extension field, a path prefix, a package or a schema directive), and
+      a gate in CI fails when the published document holds an operation
+      carrying the internal mark (expected-absent where the repository
+      serves no interface).
+    observe:
+      - "one generator writes the published document without the marked operations and the internal one with only them, from the route schemas or the schema source, and a drift check keeps both fresh"
+      - "a script in the CI gate set reads the published document and blocks on an internal tag, path, extension or package in it"
+
+  - id: input-bounds-ratcheted
+    level: standard
+    requires: mechanical
+    since: 0.42.0
+    statement: >-
+      A check in CI counts the request input fields of the contract that
+      declare no bound (a string with no maximum length, pattern or format;
+      a number with no maximum; an array with no maximum item count; a
+      field with no type) and fails when the count exceeds the base
+      branch's or a committed ceiling, with a field that is unbounded on
+      purpose marked by a reason in the contract (expected-absent where the
+      repository serves no interface).
+    observe:
+      - "a script in the CI gate set walks the contract document, or the request schemas, and blocks when the count of unbounded fields rises above the merge base's or a ceiling, or is above zero"
+      - "an exception is a reason beside the field in the contract or the schema, not a count, and an exception without a reason fails the check"
+
+  - id: unbounded-inputs-zero
+    level: strict
+    requires: mechanical
+    since: 0.42.0
+    statement: >-
+      The count of request input fields of the contract that declare no
+      bound is zero, and a check in CI holds it there by failing on any
+      unbounded field (expected-absent where the repository serves no
+      interface).
+    observe:
+      - "the unbounded-input check in the CI gate set runs with a ceiling of zero (count-unbounded-inputs.ts --max 0, or a committed ceiling of 0) and blocks"
+      - "running it over the current contract document reports a count of zero"
+
+  - id: failure-statuses-declared
+    level: strict
+    requires: convention
+    since: 0.42.0
+    statement: >-
+      Each operation's declared failure responses name every status its
+      code can produce: the boundary's generic server-side status, the
+      validation status, the authentication and authorization refusals
+      where those layers run, and the transport status of each domain error
+      the handler throws; the review checks the list against the handler
+      (expected-absent where the repository serves no interface).
+    observe:
+      - "the contract's operations declare the generic server-side failure, the validation failure and each domain error's status, and every success response carries a schema"
+      - "the review checklist or the review skill checks a changed operation's declared statuses against the codes its handler throws, or a generator derives the list from the codes the route declares"

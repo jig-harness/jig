@@ -1,0 +1,974 @@
+# Jig audit record: written by /jig:audit, read by its next run.
+# Each criterion carries its level, pass bar and statement as comments.
+version: 1
+plugin_version: 0.15.0
+date: "2026-10-12"
+commit: 63ddae6aeb6934da06fdb3754647791e58cd87c3
+shape: library
+criteria:
+  # M0 instruction-architecture
+  M0/universal-instruction-file:   # lite, requires convention
+    # A vendor-neutral universal instruction file (AGENTS.md or equivalent) exists at the repo root and stays small (on the order of 150 lines).
+    score: absent
+    evidence: "probe: no tracked file matches AGENTS.md, CLAUDE.md, GEMINI.md, .github/copilot-instructions.md, .cursorrules, .cursor/rules/**, .windsurfrules, .clinerules, .junie/guidelines.md, CONVENTIONS.md"
+  M0/instruction-file-stays-small:   # lite, requires convention
+    # The universal instruction file stays small (on the order of 150 lines): what every session needs, with longer practice detail linked from it rather than written into it.
+    score: absent
+    evidence: "No instruction file exists (see universal-instruction-file), so there is none to keep small. Met only vacuously, so it is not counted as met."
+  M0/gates-and-guardrails-listed:   # lite, requires convention
+    # The universal instruction file lists the quality gates (runnable commands) and the critical guardrails.
+    score: absent
+    evidence: "No instruction file exists. The gates are only package.json:19-22 (test = lint && unit && type). They are not listed anywhere in prose: grep of readme.md and .github/*.md finds no contributing or gates section."
+  M0/glossary-exists:   # lite, requires convention
+    # A one-page domain glossary exists with canonical terms and explicit avoid-aliases, and the universal instruction file points to it.
+    score: absent
+    evidence: "probe: no tracked file matches **/GLOSSARY.md, **/CONTEXT.md, **/glossary/*.md"
+  M0/tool-deltas-are-pointers:   # standard, requires convention
+    # Every tool-specific instruction file (CLAUDE.md, .cursor rules, copilot-instructions.md, ...) carries only runtime-specific content and points back to the universal file, duplicating none of it.
+    score: absent
+    evidence: "There are no tool-specific instruction files and no universal file for them to point to (same search as universal-instruction-file). Met only vacuously, so it is not counted as met."
+  M0/per-directory-instructions:   # standard, requires convention
+    # Directories whose conventions differ from the repo default carry their own nested instruction file, and the universal file states the closest-file-wins policy.
+    score: absent
+    evidence: "No nested AGENTS.md or CLAUDE.md under lib/, types/, test/, test-d/ or docs/ (git ls-files grep for agents|claude). No closest-file-wins policy is stated."
+  M0/conditional-rules-documented:   # standard, requires convention
+    # If a conditional-rules directory exists, its README documents the loading semantics — path-frontmatter rules load on match, frontmatter-less rules always load — and each rule is scoped to the narrowest paths that cover it.
+    score: expected-absent
+    evidence: "No conditional-rules directory (.claude/rules, .cursor/rules, .agents/) exists in git ls-files, so the criterion does not apply. The only path-scoped rules are xo's per-file override (package.json, files: **/*.md), which is lint config, not agent rules."
+  M0/load-model-recorded:   # standard, requires convention
+    # What each agent runtime the team uses actually loads is recorded in one place, with the date it was observed and a procedure to check it again, and which instruction file wins when two disagree is written as an authoring convention, not assumed runtime behaviour.
+    # Scored at plugin 0.22.0 from this record's existing evidence; not observed in the original run.
+    score: absent
+    evidence: "No instruction file exists (same search as universal-instruction-file), so nothing records what a runtime loads."
+  M0/dispositions-with-flip-conditions:   # standard, requires convention
+    # Behavioral defaults (dispositions) are written down, and every disposition states the condition under which it flips.
+    score: absent
+    evidence: "No dispositions document. The nearest thing is .github/security.md:5 ('No AI slop will be accepted.'), a policy line with no flip condition."
+  M0/model-pins-are-family-aliases:   # standard, requires mechanical
+    # Every model tier an agent or skill declares lives in its metadata (or, for a judgment pass inside a skill, in that skill's configuration) as a family alias, never a versioned model id (where the runtime has no family aliases, the vendor's most general model name, or one central name mapped to a release in a single place), a CI check over that metadata enforces it, and any committed roster of the assignments is generated from the metadata and drift-checked (expected-absent for a repository whose agents and skills pin no model, in metadata or at invocation).
+    score: expected-absent
+    evidence: "No agent or skill definitions and no instruction files (same search as universal-instruction-file), so nothing pins a model and no roster exists."
+  M0/instruction-freshness-checked:   # strict, requires mechanical
+    # Countable facts and referenced paths in instruction files are verified against reality by a CI check that fails on drift.
+    score: absent
+    evidence: "There are no instruction files to check. lychee (main.yml:31-35, fail: true) checks links in *.md, docs/*.md and .github/**/*.md, but nothing re-derives countable facts."
+  M0/instruction-set-owned:   # strict, requires convention
+    # The instruction set has a named owner and a stated review cadence.
+    score: absent
+    evidence: "No instruction set. readme.md:458-461 names the project maintainers, but no owner or review cadence is stated for any instructions."
+  M0/context-budget-gated:   # strict, requires mechanical
+    # CI measures the always-loaded context against the smallest budget of every runtime and reviewer that reads it (the cumulative root-to-directory instruction chain, each skill and agent description, and the aggregate skill listing) in a step that runs before dependencies are installed, and fails when any is over.
+    # Scored at plugin 0.22.0 from this record's existing evidence; not observed in the original run.
+    score: absent
+    evidence: "There are no instruction files or skills to measure, and no CI step in .github/workflows/ measures an always-loaded budget."
+  # M1 gates-enforcement-ladder
+  M1/gate-set-documented:   # lite, requires convention
+    # An ordered gate set (format, lint, types, tests, build) is stated in one canonical place and runnable with a single command.
+    score: convention
+    evidence: "package.json:19 'test': 'npm run lint && npm run unit && npm run type' runs the set in one command (xo, then node:test+c8, then tsd+tsc). No build step is expected. Nothing outside package.json states the set: no AGENTS.md/CONTRIBUTING*. The lychee link gate is CI-only (main.yml:31-35)."
+  M1/ci-runs-gates-on-pr:   # lite, requires mechanical
+    # CI runs the gate set on every pull request and a failing run blocks the merge.
+    # probe found: .github/workflows/main.yml
+    score: advisory
+    evidence: ".github/workflows/main.yml:2-4 runs on push+pull_request: 3 OS x Node 22/24/26 runs type (:38) and unit (:39). lint (:36-37) and lychee (:31-35) run only on the ubuntu/node26 leg. main is unprotected (config-fit: requires no checks), so CI reports but cannot block a merge."
+  M1/precommit-autofix-hooks:   # standard, requires mechanical
+    # A managed pre-commit hook runs auto-fixing checks and re-stages what they fixed.
+    score: absent
+    evidence: "probe: no tracked file matches lefthook.yml, lefthook.yaml, lefthook.toml, lefthook.json, .lefthook.yml, .lefthook.yaml, .config/lefthook.yml, .config/lefthook.yaml, .husky/**, .pre-commit-config.yaml, .githooks/**, .overcommit.yml, .rusty-hook.toml, .cargo-husky/**; no tracked package.json contains /\"(simple-git-hooks|husky|pre-commit)\"/"
+  M1/grep-gates-tested-and-wired:   # standard, requires mechanical
+    # The team's top codebase-wide rules (target: five or more) exist as grep-gate scripts, each with a paired self-test, wired into both the pre-push hook and CI.
+    score: absent
+    evidence: "git ls-files grep for scripts/, tools/, check-*, *.sh, *.mjs: only test fixtures (test/fixtures/hello.sh). Codebase rules exist only as xo rule overrides (package.json xo block). No custom check scripts, so none have self-tests or hook/CI wiring."
+  M1/escape-hatch-documented:   # standard, requires convention
+    # The hook bypass (--no-verify) is documented next to the hooks, with when it is legitimate and the note that CI re-runs everything.
+    score: absent
+    evidence: "No hooks exist, so there is no bypass to document. grep 'no-verify' in readme.md, docs/*.md, .github/*.md: none. Every check present runs in CI only (main.yml)."
+  M1/third-party-automation-pinned-and-updated:   # standard, requires mechanical
+    # Third-party CI automation is pinned to immutable revisions and an automated updater proposes pin changes through the normal gate set.
+    score: absent
+    evidence: "main.yml pins actions by mutable major tag, not SHA: actions/cache@v6 (:21), checkout@v7 (:26), setup-node@v7 (:27), lychee-action@v2 (:31), codecov-action@v4 (:40). No .github/dependabot.yml or renovate.json (git ls-files grep)."
+  M1/gate-outcomes-distinguish-could-not-check:   # standard, requires mechanical
+    # Every repository-written gate has three outcomes, passed, found violations and could not check (exit 0, 1 and 2), and reports a missing or unreadable input, an input empty where its format requires content, or a failed command as could not check, never as a pass.
+    score: absent
+    evidence: "No repository-written gate exists to distinguish the outcomes (see M1/grep-gates-tested-and-wired); the checks are xo, node:test, tsd and lychee, run as configured."
+  M1/stale-exceptions-fail:   # standard, requires mechanical
+    # Every allowlist entry and suppression token a repository-written gate honors carries a non-empty reason the gate checks, and an entry that no longer suppresses anything fails the gate.
+    score: absent
+    evidence: "No repository-written gate exists to honor a suppression (see M1/grep-gates-tested-and-wired); the suppressions recorded under M1/suppression-token-registry are tool-native."
+  M1/suppression-token-registry:   # strict, requires convention
+    # A single registry page lists every suppression token a live gate honors, with syntax, consuming gate, placement, and justification requirement, plus a registration rule for new tokens.
+    score: absent
+    evidence: "git grep: 104 suppression lines (eslint-disable / @ts-expect-error / @ts-ignore) in 73 files. No registry page in docs/, readme.md or .github/. docs/ is user-facing product documentation only."
+  M1/commit-msg-process-markers:   # strict, requires mechanical
+    # Mandatory-review areas are enforced by a commit-msg hook requiring a review-marker tag when protected paths are staged, re-checked by a gate the committer cannot skip.
+    score: absent
+    evidence: "No hook manager (see precommit probe) and no commit-msg hook. main.yml has no step that checks commit messages or protected paths. No CODEOWNERS (git ls-files grep)."
+  M1/gate-self-tests-in-ci:   # strict, requires mechanical
+    # CI runs each grep gate's self-test alongside the gate, so a silently broken gate fails the pipeline.
+    # probe found: .github/workflows/main.yml
+    score: absent
+    evidence: "No grep gates exist, so there are no self-tests. main.yml runs only lychee, npm run lint/type/unit and the codecov upload."
+  M1/gate-self-tests-cover-empty-input:   # strict, requires mechanical
+    # Each repository-written gate's self-test includes a case where the gate has nothing to examine (its input or section missing, or empty where the input's format requires content, such as a scan root with no file) and asserts that the gate does not pass on it.
+    score: absent
+    evidence: "No repository-written gate, so no gate self-test (see M1/gate-self-tests-in-ci)."
+  M1/advisory-gates-carry-promotion-conditions:   # strict, requires convention
+    # Every advisory (non-blocking) gate states its promotion condition and a review date; none is advisory indefinitely without one.
+    score: absent
+    evidence: "The codecov upload is advisory (main.yml:44 fail_ci_if_error: false). .github/codecov.yml has only notify.after_n_builds: 6: no thresholds, no promotion condition, no review date, no comment."
+  M1/existing-findings-ratcheted:   # strict, requires mechanical
+    # A rule that still has findings is ratcheted rather than left advisory: a required gate fails a change that adds a finding to it or loosens its configuration, measured against the merge base, and a rule whose count reaches zero is promoted to blocking.
+    score: absent
+    evidence: "xo runs each rule as an error or switches it off (package.json xo overrides); nothing counts findings against a base"
+  M1/dependency-release-cooldown:   # standard, requires mechanical
+    # A minimum release age holds for application dependencies in the updater's configuration and in every package manager the repository installs with, and its exemptions are a list of exact package names.
+    score: absent
+    evidence: "No updater configuration in the tree (no renovate.json, .github/renovate.json or .github/dependabot.yml) and .npmrc holds only package-lock=false: no minimum release age is set anywhere"
+  M1/install-scripts-allowlisted:   # standard, requires mechanical
+    # Only the packages a list names may run lifecycle scripts at install time, every installer the repository uses blocks the rest, and the updater never auto-merges a listed package.
+    score: absent
+    evidence: "main.yml's npm install runs lifecycle scripts: .npmrc sets no ignore-scripts, package.json has no allowlist an installer reads, and no updater configuration exists to hold an auto-merge rule"
+  M1/supply-chain-policy-lockstep:   # strict, requires mechanical
+    # One policy file states the release cooldown, its exemptions and the install-script allowlist, and a gate in the required set checks that every installer and the updater state the same values, running before any install that could run a script.
+    score: absent
+    evidence: "No policy file and no gate: the steps before npm install in main.yml are the link-checker cache, the checkout and setup-node"
+  M1/updater-self-checked:   # strict, requires mechanical
+    # Range-valued version overrides are excluded from the updater's normal path, and every custom extraction pattern of the updater has a check that re-applies it to the tree and requires exactly one value.
+    score: expected-absent
+    evidence: "package.json carries no overrides field and the tree has no updater configuration, so there are neither range-valued overrides nor custom extraction patterns to check"
+  M1/secret-scan-blocks-in-ci:   # standard, requires mechanical
+    # A required CI job scans exactly the commits a change introduces for secrets with a pinned scanner, and fails on a finding or on an empty commit range.
+    score: absent
+    evidence: "main.yml runs no secret scanner: its steps are the cache, the checkout, setup-node, npm install, the lychee link check, lint, type, unit and the codecov upload"
+  M1/secret-scan-local-and-forge-layers:   # strict, requires mechanical
+    # Beside the CI scan, a pre-commit hook scans the staged changes for secrets on the committer's machine, and the forge's push protection is on.
+    score: absent
+    evidence: "No hook manager configuration (no lefthook.yml, .husky/ or .pre-commit-config.yaml) and nothing in the tree records push protection; the host setting was not read"
+  M1/agent-runtime-hooks-self-tested:   # strict, requires mechanical
+    # Every hook the repository registers in an agent runtime (around tool calls, on prompt and session events) has a self-test beside it that feeds it the runtime's payload and asserts each outcome, and one runner discovers every hook's test and runs it in CI.
+    score: expected-absent
+    evidence: "No agent-runtime hook is registered: the tree has no .claude/, .codex/ or hooks.json, and no instruction file at the root"
+  M1/retries-classify-errors:   # strict, requires mechanical
+    # Every retry in the pipeline's steps and in the gates and scripts it runs retries only an error a classifier marks transient, aborts at once on any other with the command's own message and status, and the classifier is tested against messages recorded from the real tool.
+    score: expected-absent
+    evidence: "Nothing in the pipeline or its scripts retries: main.yml's steps run each command once, and package.json's scripts (xo, c8 with node --test, tsd and tsc) carry no retry"
+  # M2 generated-artifact-freshness
+  M2/derived-inventory-exists:   # lite, requires convention
+    # Every committed derived file is listed in one canonical place together with the command that regenerates it.
+    score: expected-absent
+    evidence: "No committed derived files. index.d.ts and types/**/*.ts are hand-written and tsd-tested (test-d/). There is no build or generate script in package.json scripts. grep -ril 'generated|do not edit|@generated': none. .gitignore excludes coverage, lychee."
+  M2/hand-editing-forbidden:   # lite, requires convention
+    # Hand-editing derived files is documented as forbidden, and each derived file's header identifies it as generated with its regenerate command.
+    score: expected-absent
+    evidence: "No derived files to protect (same searches as derived-inventory-exists). Every committed file under lib/, types/, docs/ is source."
+  M2/committed-derived-full-triad:   # standard, requires mechanical
+    # Every committed derived file has the full freshness triad: a regenerate script, a CI drift check that fails when the file is stale, and a pre-commit hook that regenerates and stages it when its inputs change.
+    score: expected-absent
+    evidence: "No committed derived files, which is the healthy 'drop' rung for a no-build ESM library (package.json files: index.js, index.d.ts, lib/**/*.js, types/**/*.ts)."
+  M2/instruction-path-references-checked:   # standard, requires mechanical
+    # A CI check verifies that repo paths referenced in instruction files resolve to existing files or directories.
+    score: advisory
+    evidence: "No instruction files exist. Nearest analogue: lychee --include-fragments, fail: true over *.md, docs/*.md, .github/**/*.md (main.yml:31-35) checks relative paths and anchors. Runs only on the ubuntu/node26 leg, and main is unprotected, so it cannot block."
+  M2/prose-facts-ci-checked:   # strict, requires mechanical
+    # Derivable facts stated in prose (counts, rosters) are re-derived and compared by a CI check that commits no generated file.
+    score: absent
+    evidence: "The one derivable roster is the hand-kept readme 'Documentation' nav (readme.md:93-118 vs docs/*.md). It is currently complete (22/22, checked by listing) but nothing re-derives it. lychee catches broken links, not missing entries."
+  M2/schema-artifacts-use-ephemeral-replay:   # strict, requires mechanical
+    # Every schema-like committed artifact's drift check replays its source of truth from scratch in a throwaway environment, normalizes both sides identically, and compares.
+    score: expected-absent
+    evidence: "No schema-like generated artifacts (no DB, migrations, OpenAPI or codegen). The .d.ts files are the hand-written source of truth, checked by tsd+tsc (package.json:22)."
+  M2/artifact-inventory-generated-and-gated:   # strict, requires mechanical
+    # The derived-file inventory is itself a generated artifact with its own drift gate, so the inventory cannot silently omit a new derived file.
+    score: expected-absent
+    evidence: "No derived files, so there is no inventory to generate (see derived-inventory-exists)."
+  M2/toolchain-pins-one-source:   # standard, requires mechanical
+    # Each toolchain version (the runtime, the compiler, the package manager) is declared in one source file; every other place that repeats it (CI setup steps, container build arguments, package-manager fields, a type package that tracks the runtime) is checked in CI to equal it; and a pin that differs on purpose is registered as an exception with a reason.
+    score: absent
+    evidence: "The Node.js version is repeated in main.yml's matrix (26, 24, 22), package.json's engines (>=22) and @types/node (^26) with no file named as their source and no check comparing them; no .nvmrc or .node-version"
+  M2/numbers-in-prose-rule-stated:   # standard, requires convention
+    # The universal instruction file states the test for a number in prose: one that constrains its content stays, one that tallies an adjacent list is dropped or registered as a fact a commit-nothing check derives.
+    score: absent
+    evidence: "No universal instruction file or linked rule at the root (readme.md and docs/*.md document the library for its users): the constraint-versus-tally test is stated nowhere"
+  M2/regeneration-after-merge-via-pull-request:   # strict, requires mechanical
+    # Every derived file regenerated after a merge reaches the protected branch through a pull request on a fixed branch per generator that a person merges, with no CI-skip marker on its branch commit or its merge commit, published with a credential scoped to contents and pull requests.
+    score: expected-absent
+    evidence: "No derived file is regenerated after a merge: main.yml runs checks only, and the tree holds no generator and no generated artifact"
+  M2/generator-reaches-every-input:   # standard, requires mechanical
+    # Every generator that selects its inputs by a list it maintains has a CI check that the set it reads equals the set of inputs that exist, reporting an unreached input and a listed input that no longer exists.
+    score: expected-absent
+    evidence: "No generator with a maintained input list: the tree holds no generated file"
+  M2/derivation-one-way-compared-as-data:   # standard, requires mechanical
+    # A contract artifact that disagrees with its source is regenerated, never edited to match; each link of a chain of derived files has its own drift check; a structured artifact's drift check compares parsed data with both sides normalized identically; and no derived schema is authored twice.
+    score: expected-absent
+    evidence: "No derived contract artifact: index.d.ts and types/ are hand-written declarations checked by test-d/, not generated from another file"
+  # M3 change-area-catalog
+  M3/catalog-is-single-source:   # lite, requires convention
+    # One catalog file is the single place that maps path patterns to named change-areas and their implications; consumers reference area names rather than re-listing the path patterns.
+    score: absent
+    evidence: "No path-to-area catalog: git ls-files grep for catalog/areas *.yml/*.yaml/*.json found only main.yml and codecov.yml. main.yml has no paths:/paths-ignore filters and runs every gate on every change. Low need: single package, one job."
+  M3/catalog-schema-validated:   # lite, requires mechanical
+    # A check validates the catalog's structure: area ids are well-formed, every implied-by reference names an existing area, and no area implies itself.
+    score: absent
+    evidence: "No catalog exists to validate (see catalog-is-single-source)."
+  M3/catalog-graph-validated:   # standard, requires mechanical
+    # A CI check enforces the graph invariants of the implied-by relation: referential integrity and no cycles.
+    score: absent
+    evidence: "No catalog or implied-by graph, and no checker in main.yml."
+  M3/workspace-coverage-gated:   # standard, requires mechanical
+    # Every workspace directory on disk maps to at least one area, and each area's declared workspace exists and is matched by one of its own globs; a new unmapped workspace fails CI.
+    score: expected-absent
+    evidence: "Single-package repo: package.json has no workspaces field and there are no apps/* or packages/* dirs (top-level: lib, types, test, test-d, docs, media)."
+  M3/consumer-view-generated:   # standard, requires mechanical
+    # At least one consumer view (CI job selection, review-gate table, or component directory) is a projection generated from the catalog and carries a freshness gate that fails when the committed copy is stale.
+    score: absent
+    evidence: "No catalog, so no generated consumer view. CI job selection is a fixed matrix in main.yml:9-19 with no path-based selection."
+  M3/ci-selection-resolver-driven:   # strict, requires mechanical
+    # CI job selection is driven by the resolver (seed match + implied-by closure), so a change to a shared area mechanically triggers the jobs of every area that depends on it.
+    score: absent
+    evidence: "No resolver: main.yml runs the full 9-leg matrix on every push/PR with no changed-file resolution step. Running everything also covers dependent areas trivially."
+  M3/all-consumers-generated:   # strict, requires mechanical
+    # Every consumer view is a generated projection with a freshness gate; no consumer re-hardcodes the catalog's path patterns.
+    score: absent
+    evidence: "No catalog or generated consumers. No consumer re-hardcodes path globs either (main.yml has no paths: filters; codecov.yml has no path config)."
+  M3/regex-shortcut-sync-checked:   # strict, requires mechanical
+    # Any hand-maintained CI shortcut regex is checked against the catalog in both directions and against the union of files tracked at the current and base refs (the two directional checks alone can pass while a whole unmapped tracked file still slips through — see reference/regex-mirror/README.md).
+    score: expected-absent
+    evidence: "Vacuous: there is no hand-maintained CI shortcut regex. grep main.yml for paths:/paths-ignore/dorny/changed-files: none. lychee --exclude patterns are URL filters, not change selectors."
+  M3/area-class-resolved:   # strict, requires mechanical
+    score: expected-absent
+    evidence: "No hand-maintained CI shortcut regex: the existing regex-shortcut-sync-checked evidence records no paths:/paths-ignore/dorny/changed-files in main.yml; lychee exclusions filter URLs rather than changes."
+  # M4 docs-governance
+  M4/governance-model-written:   # lite, requires convention
+    # A written governance model names the frontmatter fields, the status/lifecycle vocabulary, the de-scarring rule, and the authority hierarchy for resolving conflicts between docs.
+    score: absent
+    evidence: "No schema or governance doc. docs/*.md (22 files) are product docs with no frontmatter: every one opens with <picture>. .github/ holds only codecov.yml, security.md and workflows/main.yml."
+  M4/docs-start-from-template:   # lite, requires convention
+    # New docs start from a schema-conformant template rather than a copied neighbor.
+    score: absent
+    evidence: "git ls-files has no doc template (template hits are product code only: lib/methods/template.js). New docs/*.md pages copy their neighbors' <picture> header by convention."
+  M4/frontmatter-machine-validated:   # standard, requires mechanical
+    # A check validates every doc's frontmatter against the schema (required fields present, enum membership, date format) and runs in CI.
+    score: absent
+    evidence: "No doc has frontmatter, so nothing validates it. The CI doc checks are lychee links (main.yml:31-35) and xo on **/*.md code blocks (package.json xo override). Neither is a frontmatter check."
+  M4/index-generated-and-freshness-gated:   # standard, requires mechanical
+    # The navigation index is generated from the tree and a CI drift gate fails when the committed index no longer matches what the generator produces.
+    score: convention
+    evidence: "The readme.md:90-118 Documentation nav is maintained by hand and currently complete (22/22 docs/*.md). lychee checks link and anchor integrity only, and only on the ubuntu/node26 leg (main.yml:35). No index generator or drift gate."
+  M4/frontmatter-subset-declared:   # standard, requires mechanical
+    # The frontmatter check either reads documents with a full YAML parser, or states the subset of YAML it reads and rejects every construct outside it with an error instead of guessing at a value.
+    score: absent
+    evidence: "No frontmatter check exists (see M4/frontmatter-machine-validated), so none states or enforces what it reads."
+  M4/authority-hierarchy-written:   # standard, requires convention
+    # A single-valued authority hierarchy is written down so contradictions between docs resolve without a judgment call.
+    score: absent
+    evidence: "No precedence between readme.md, docs/api.md and types/*.d.ts is written anywhere (grep for authority|precedence|source of truth in *.md gives no hits)."
+  M4/descarring-lint-blocks-approval:   # strict, requires mechanical
+    # A scar lint prevents a doc from reaching status approved while carrying review scars (strikethroughs, resolution phrasing, reviewer dialogue), with a self-test proving the lint still catches scars.
+    score: absent
+    evidence: "No doc statuses, no 'approved' state and no scar lint in main.yml or package.json scripts."
+  M4/stale-doc-gate:   # strict, requires mechanical
+    # A CI check requires last_updated to advance in the same diff when a doc's body changes, so freshness metadata cannot silently lie.
+    score: absent
+    evidence: "No last_updated field in any doc and no diff-aware freshness check in .github/workflows/main.yml."
+  M4/generators-stamp-sticky-utc:   # strict, requires mechanical
+    # Every generator that writes a dated document into the docs tree stamps last_updated with the UTC date, and advances it only when its output changed.
+    score: expected-absent
+    evidence: "No generator writes into docs/: package.json scripts build, lint and test only, and no doc carries a last_updated date to stamp."
+  M4/orphan-report-generated:   # strict, requires mechanical
+    # The index generator also writes a report of the documents no other document lists as related, and the freshness gate covers that report; orphans themselves warn and never fail.
+    score: absent
+    evidence: "No index generator and no related: lists; the readme.md:90-118 nav is hand-maintained (see M4/index-generated-and-freshness-gated)."
+  M4/path-rules-enforce-subtree-vocabulary:   # strict, requires mechanical
+    # Where a subtree of the docs tree requires frontmatter fields or values that differ from the rest of the tree, path-scoped rules in the schema enforce them in the frontmatter check, and a rule that cannot be evaluated fails the check.
+    score: expected-absent
+    evidence: "docs/ is one flat set of product pages with no frontmatter; no subtree requires fields or values of its own."
+  M4/wiki-lint-cadence-and-promotion:   # strict, requires mechanical
+    # A scheduled wiki-lint runs the health checks (stale, broken links, orphans, retrospection backlog) and posts findings, and raw-to-compiled promotion (retrospection backlog) is tracked.
+    score: absent
+    evidence: "main.yml triggers only on push and pull_request, with no schedule. No activity log, retrospective or raw-notes backlog in git ls-files."
+  # M5 adr-practice
+  M5/adrs-exist-numbered-from-template:   # lite, requires convention
+    # Decisions are captured as numbered ADR files from a shared template with consistent frontmatter (a decision date and a status).
+    score: absent
+    evidence: "probe: no tracked file matches **/ADR-[0-9]*.md, **/adr/**/[0-9][0-9][0-9]*.md, **/adrs/**/[0-9][0-9][0-9]*.md, **/decisions/**/[0-9][0-9][0-9]*.md"
+  M5/amendment-discipline-documented:   # lite, requires convention
+    # The evolution rule is written down: an approved ADR is amended (dated Amendments entry) or superseded, never silently rewritten.
+    score: absent
+    evidence: "No ADR conventions anywhere (git grep -iE 'supersed|decision record|ADR' over *.md gives no hits)."
+  M5/numbering-gate-enforced:   # standard, requires mechanical
+    # A check fails when two ADRs claim the same number, and it runs in CI (the authority), ideally mirrored in a pre-push hook.
+    score: absent
+    evidence: "No ADRs and no duplicate-number check in main.yml or package.json scripts."
+  M5/adr-frontmatter-validated:   # standard, requires mechanical
+    # ADR frontmatter is machine-validated, including the ADR-specific fields decision_date, supersedes, and superseded_by.
+    score: absent
+    evidence: "No ADRs and no frontmatter checker (see M4/frontmatter-machine-validated)."
+  M5/supersession-metadata-used:   # standard, requires convention
+    # Superseding a decision updates both files: the new ADR sets supersedes and the old one sets superseded_by plus a deprecated status.
+    score: absent
+    evidence: "No ADRs. Decisions are changed in place, e.g. commit 698a1b8 'Tweaks' (2026-09-28) swapped ava for node --test with no recorded rationale."
+  M5/decisions-extracted-to-rules:   # strict, requires mechanical
+    # Pattern-checkable ADR decisions are distilled into a machine-readable rules catalog, each rule citing its ADR, and a checker enforces them on changed code in CI.
+    score: absent
+    evidence: "The nearest analogue is the inline xo overrides (package.json, about 30 rules switched off). They cite no decision record, and there is no rules catalog."
+  M5/numbering-gate-mirrored-both-rungs:   # strict, requires mechanical
+    # The numbering gate runs both client-side (pre-push) and server-side (CI), so a duplicate cannot be pushed past a bypassed local hook.
+    score: absent
+    evidence: "No numbering gate in CI and no pre-push hook (no .husky/, lefthook.yml or simple-git-hooks entry in package.json)."
+  M5/rule-checker-self-tested:   # strict, requires mechanical
+    # The ADR-rule checker ships with a self-test proving it still catches known violations, run in CI so a broken rule gate fails loudly.
+    score: absent
+    evidence: "No ADR-rule checker exists to self-test."
+  M5/skeleton-changes-need-recorded-authority:   # strict, requires mechanical
+    # The files that hold the architecture's contracts are listed in a machine-readable inventory, and a check blocks a change to one unless the change edits the inventory or a commit trailer names an approved decision record; the check fails when an inventory entry matches no file, and the agent instructions tell agents to read the inventory before modifying and treat those files as read-only.
+    score: absent
+    evidence: "No skeleton inventory, no commit-msg hook and no ADRs for a trailer to name"
+  # M6 feature-delivery-pipeline
+  M6/pipeline-stages-documented:   # lite, requires convention
+    # The pipeline stages — research spike, PRD, architecture, design-prototype loop, epic decomposition — are named in one document, with the per-stage review-then-de-scar rule stated.
+    score: expected-absent
+    evidence: "A mature utility library with no product-feature delivery: no PRD, architecture, research or roadmap files (git ls-files grep for prd|rfc|architecture|design|research|roadmap hits only product code). Features arrive as single PRs."
+  M6/stage-templates-committed:   # lite, requires convention
+    # Committed templates exist for the PRD, the architecture doc, and the research note, and the pipeline doc points each stage at its template.
+    score: expected-absent
+    evidence: "No PRD, architecture or research templates, and no .github/ISSUE_TEMPLATE or PULL_REQUEST_TEMPLATE. A stage pipeline does not fit this repo's shape."
+  M6/artifact-from-template-gated:   # standard, requires mechanical
+    # Each stage produces a named artifact from its committed template, and a required-sections check fails a stage artifact that is missing a required heading.
+    score: expected-absent
+    evidence: "No stage artifacts exist to gate. CI (main.yml) checks only code, types and links."
+  M6/per-stage-adversarial-review-contract:   # standard, requires convention
+    # Per-stage adversarial review is a documented contract — a fresh-context, red-team critique clears before the next stage consumes the artifact, and acceptance (status: accepted) records that it happened.
+    score: expected-absent
+    evidence: "No pipeline stages. Review happens on PRs by the two maintainers (readme.md:458-461); that belongs to M7, not here."
+  M6/descarring-applied:   # standard, requires convention
+    # Accepted artifacts are de-scarred — the finished document carries no review findings or reviewer dialogue, only the result.
+    score: expected-absent
+    evidence: "No accepted stage artifacts exist to de-scar."
+  M6/stage-gates-self-tested-in-ci:   # strict, requires mechanical
+    # The required-sections gate and the stage-review-record gate each ship a self-test and run in CI, so a broken pipeline gate fails loudly.
+    score: expected-absent
+    evidence: "No stage gates. main.yml has one test job: lychee, lint, type, unit, codecov."
+  M6/epic-flag-labels-drive-gates:   # strict, requires mechanical
+    # Epic decomposition sets flag labels on sub-issues, and those labels drive which downstream reviews and gates fire (via the tasks and change-area modules), not a reviewer's memory.
+    score: expected-absent
+    evidence: "No epic decomposition and no label-driven gating. main.yml has no label or paths conditions."
+  M6/design-loop-feedback-contract:   # strict, requires convention
+    # The design-prototype loop's feedback into requirements and architecture is a written contract — the prototype may reopen the PRD and the architecture rather than being a rendering step at the end.
+    score: expected-absent
+    evidence: "No design or prototype loop. The library has no UI and no PRD or architecture to reopen."
+  # M7 pr-lifecycle-review
+  M7/lifecycle-documented:   # lite, requires convention
+    # The PR lifecycle is written down once — open as a draft (or Ready, where the repository declares that no reviewer reviews drafts), self-review, review, resolve threads, Ready (by a human or an adopted review driver), human merges — and referenced by the instructions.
+    score: absent
+    evidence: "No PR lifecycle written anywhere: git ls-files | grep -iE 'CONTRIBUTING|PULL_REQUEST_TEMPLATE|ISSUE_TEMPLATE|AGENTS|CLAUDE' finds nothing; .github/ has only workflows/main.yml, codecov.yml, security.md. In practice recent merged PRs target main and a maintainer merges them."
+  M7/self-review-before-request:   # lite, requires convention
+    # Authors are expected to read their own full diff and run the local gate set before requesting review.
+    score: absent
+    evidence: "No doc or template asks for self-review or a local 'npm test' before requesting review. The nearest analogue is the package.json:19 'test' script (lint && unit && type), which nothing tells contributors to run."
+  M7/reviews-selected-by-change-area:   # standard, requires mechanical
+    # Which mandatory reviews a PR needs is derived from the change-area catalog (a generated projection), not a hand-kept list or reviewer memory.
+    score: absent
+    evidence: "No CODEOWNERS, no change-area catalog, and no paths: filters in .github/workflows/main.yml. Review routing is by maintainer habit (gh pr list --limit 100 --json reviews)."
+  M7/automated-reviewer-comment-only-with-bar:   # standard, requires convention
+    # Any automated reviewer runs comment-only, and a pre-committed precision bar for ever flipping it (or a lens) to blocking is written down.
+    score: expected-absent
+    evidence: "No automated reviewer is wired: no review-bot config in git ls-files, and all review authors across the last 100 merged PRs are humans. A reviewer vendor appears only as a sponsor logo (readme.md:26)."
+  M7/automated-review-source-independent:   # standard, requires mechanical
+    # A secret-bearing or merge-relevant automated reviewer gets its runtime, prompts, and active policy from a pinned external source, separately hosted service, or target base branch — never the PR head it reviews.
+    score: expected-absent
+    evidence: "No secret-bearing or merge-relevant reviewer exists. The only secret, CODECOV_TOKEN (main.yml:42), feeds a coverage upload under the plain pull_request trigger."
+  M7/comment-resolution-loop-gated:   # standard, requires mechanical
+    # Every review thread reaches a terminal state (addressed / rejected / deferred / moot) with an audit trail, and no PR merges with an open thread.
+    score: absent
+    evidence: "No terminal-state contract and no unresolved-threads check. main.yml has a single 'test' job (lint, link check, type, unit, codecov). Threads are resolved informally in PR conversation."
+  M7/moot-distinct-from-rejected:   # standard, requires convention
+    # A finding whose anchored code no longer exists has its own terminal state, distinct from rejection, so a learning loop is not told the reviewer was wrong when it was right about deleted code.
+    score: absent
+    evidence: "No review-outcome vocabulary exists in the repository. grep -riE 'moot|wontfix|terminal state' over non-node_modules files finds nothing."
+  M7/verdict-declared-not-inferred:   # standard, requires convention
+    # The author declares the terminal state in a machine-readable, anchored form at reply time, rather than leaving it to be reconstructed from prose.
+    score: absent
+    evidence: "No verdict encoding (leading token, trailer or field) and no export adapter. Replies are free prose in PR comments."
+  M7/verdict-validated-at-write-time:   # strict, requires mechanical
+    # The tool that posts thread replies validates the declared verdict as the reply is written, so a missing verdict fails immediately instead of becoming an unclassifiable row at export.
+    score: absent
+    evidence: "No reply-posting tool exists in the repository: no scripts/ directory, and package.json scripts are only test/lint/unit/type."
+  M7/review-loop-convergence-rules:   # strict, requires mechanical
+    # The loop's stop condition distinguishes 'no open threads' from 'the reviewer has not reported yet', and re-checks that the PR is still open each round.
+    score: absent
+    evidence: "No review-loop automation. Rounds end when a maintainer decides to merge. No workflow other than .github/workflows/main.yml exists."
+  M7/post-merge-obligations-settled:   # standard, requires convention
+    # After a merge, each class of residual obligation (tracker state, deferred findings, out-of-tree actions, temporary scaffolding, live verification, the next step) is settled as owed and filed or done, or as not owed with the evidence that settled it, and a deferred reply is checked against the tracker rather than trusted.
+    score: absent
+    evidence: "No PR lifecycle written anywhere, so no post-merge stage: git ls-files | grep -iE 'CONTRIBUTING|PULL_REQUEST_TEMPLATE|AGENTS|CLAUDE' finds nothing, and .github/ holds only workflows/main.yml, codecov.yml and security.md."
+  M7/pr-target-wiring-fork-safe:   # standard, requires mechanical
+    # No secret-bearing reviewer workflow checks out and runs untrusted fork code, and a lint enforces it.
+    score: expected-absent
+    evidence: "No privileged trigger to lint: grep -r pull_request_target finds nothing, and main.yml triggers only on push/pull_request."
+  M7/human-ready-and-merge-enforced:   # strict, requires mechanical
+    # Merging is mechanically reserved to humans — branch protection requires a human actor and green required checks. (Who may mark Ready is a convention, scored under hitl-registry-published: GitHub and GitLab let any writer take the draft-to-Ready transition.)
+    score: convention
+    evidence: "gh api repos/sindresorhus/execa/branches/main returns protected:false, enforcement_level off, and /rulesets is empty. Humans merge by habit only; 84/100 merged PRs had no reviewDecision."
+  M7/pr-shape-policy-declared:   # standard, requires convention
+    # How pull requests are shaped is declared once where the PR-opening agent reads it: whether they may stack and how, the maximum stack depth, branch naming, the issue link, and a size budget.
+    score: absent
+    evidence: "No stacking, branch-naming, issue-link or size-budget policy anywhere (no CONTRIBUTING or PR template; readme.md has only a Maintainers list at :458-461)."
+  M7/pr-final-target-resolvable:   # strict, requires mechanical
+    # Every open PR's final integration target is resolvable by tooling, and the tool that opens PRs refuses one whose target is not: a stack the policy forbids, a base no open PR chain leads from, a stack deeper than allowed, or a change over the size budget without a stated reason.
+    score: absent
+    evidence: "No PR-opening tool or policy. On the last 30 merged PRs every base is main by practice (gh pr list --json baseRefName), but nothing checks it."
+  M7/hitl-registry-published:   # strict, requires convention
+    # The human-only decision classes (merge, promote a reviewer to blocking, expand scope, overrule a human, and mark Ready unless delegated to a review driver) are listed in one registry, and a hitl label revokes autonomous merge.
+    score: absent
+    evidence: "No human-only decision registry and no hitl label. Forge labels are the near-default set plus 2 Issuehunt labels (gh api repos/sindresorhus/execa/labels)."
+  M7/reviewer-promotion-gated-on-measurement:   # strict, requires mechanical
+    # Promoting a reviewer or lens from comment-only to blocking is gated on measured precision (from the M8 corpus / parity report), not a hunch.
+    score: expected-absent
+    evidence: "There is no automated reviewer or lens that could be promoted to blocking. All review is by human maintainers."
+  M7/review-gates-self-tested:   # strict, requires mechanical
+    # The PR-target safety lint and the unresolved-threads gate each ship a self-test that runs in CI, so a broken review gate fails loudly.
+    score: absent
+    evidence: "Neither a PR-target safety lint nor an unresolved-threads gate exists, so there are no self-tests. CI is only main.yml's test matrix."
+  # M8 learning-loop
+  M8/flywheel-documented:   # lite, requires convention
+    # The miss->lens flywheel is written down (classify, file with a durable id, pre-fix fixture, additive lens, validate, measure) and referenced by the instructions.
+    score: absent
+    evidence: "No miss-to-lens loop doc (grep -riE 'retrospective|postmortem|lessons|regression fixture' finds nothing). Informal habit: 15/15 recent fix commits also touch test/ (git log --grep '^fix' -i -15 --stat)."
+  M8/miss-taxonomy-exists:   # lite, requires convention
+    # A closed miss taxonomy exists and misses are classified against it, so recurring classes are countable rather than anecdotal.
+    score: absent
+    evidence: "No taxonomy file in git ls-files. The only categorization is the generic 'bug' forge label."
+  M8/reflection-habit:   # lite, requires convention
+    # A session-reflection step captures end-of-session feedback into an inbox for later processing (not lost at session end).
+    score: absent
+    evidence: "No reflect step, inbox or agent scaffolding (no AGENTS.md/CLAUDE.md/.claude/.cursor in git ls-files)."
+  M8/corpus-machine-readable:   # standard, requires mechanical
+    # Misses live in a machine-readable corpus where every entry has a unique lever id, a valid taxonomy category, and a pinned pre-fix commit, and a lint validates it in CI.
+    score: absent
+    evidence: "No miss corpus or corpus lint. Regression tests are ordinary node --test files under test/ with no lever id, category or pinned commit."
+  M8/lenses-additive:   # standard, requires convention
+    # New coverage is added as numbered, additive lenses each linked to the lever that motivated it; existing lenses are not silently rewritten away.
+    score: absent
+    evidence: "No review lenses or checklists exist. The xo override block in package.json is lint configuration, not a lens list."
+  M8/scaffolding-changes-approved:   # standard, requires convention
+    # Scaffolding / meta-spec changes proposed by reflection require human approval before they are applied.
+    score: absent
+    evidence: "There is no reflection-to-proposal flow. The only process stance is .github/security.md:5 'No AI slop will be accepted.'"
+  M8/audit-catalog-maintained:   # standard, requires convention
+    # Every drift-prone area that no gate fully covers is a row in an audit catalog with an owner, a cadence, a last-audited date and its open work, and an area audited only by hand names the issue that tracks the gap in tooling (expected-absent for a repository whose every area a gate fully covers).
+    score: absent
+    evidence: "No audit catalog or equivalent list of areas with cadences and last-audited dates is tracked."
+  M8/validate-then-gate-enforced:   # strict, requires mechanical
+    # A fixture may enter the blocking regression corpus (required: true) only with a recorded live validation, enforced by the corpus lint.
+    score: absent
+    evidence: "No corpus or required-fixture lint (no scripts/ directory; main.yml runs only lychee, lint, type, unit and codecov)."
+  M8/parity-measured:   # strict, requires mechanical
+    # A parity report measures recall / precision / missed_blockers against oracles on a schedule; a missed blocker fails loudly and reviewer promotion to blocking is gated on measured precision.
+    score: absent
+    evidence: "No parity report or scheduled job. main.yml has no schedule: trigger, and there are no automated reviewers to compare."
+  M8/learning-gates-self-tested:   # strict, requires mechanical
+    # The corpus lint and the parity report each ship a self-test that runs in CI, so a broken learning-loop gate fails loudly.
+    score: absent
+    evidence: "There are no corpus or parity gates, so there is nothing to self-test."
+  M8/memory-promotion-tracked:   # strict, requires convention
+    # Durable lessons are promoted from an agent's private memory into git-tracked, shared memory through a review point, not an automatic dump.
+    score: absent
+    evidence: "No agent memory, private or shared. git ls-files has no .claude/, memory/, docs/agent* or AGENTS.md."
+  M8/reflection-triggered-on-an-observable:   # strict, requires mechanical
+    # Session reflection is prompted by an observable signal — such as a review whose FINAL round count, at convergence, met a threshold — rather than by the author remembering, and the signal is recorded so entries can be ranked.
+    score: absent
+    evidence: "No reflection step or trigger of any kind (see M8/reflection-habit); main.yml has no review-loop step."
+  # M9 tasks-memory
+  M9/taxonomy-documented:   # lite, requires convention
+    # An issue taxonomy is written down once — a closed set of types and statuses plus named flag labels — and referenced by the instructions.
+    score: absent
+    evidence: "Labels exist only on the forge (near-default set plus Issuehunt) and are not written down in the repository. None is a flag label that fires a process."
+  M9/memory-location-designated:   # lite, requires convention
+    # A persistent, multi-session location for agent memory is designated (the how tier), distinct from the tracker and from in-session task lists.
+    score: absent
+    evidence: "No designated agent memory home and no tiering doc. git ls-files | grep -iE 'memory|AGENTS|CLAUDE|\\.claude' finds nothing."
+  M9/taxonomy-validated-ssot:   # standard, requires mechanical
+    # The taxonomy is a single validated source-of-truth file, and the label-taxonomy lint runs mechanically so it can't drift into folksonomy.
+    score: absent
+    evidence: "No label-taxonomy file and no label lint: no .github/labels.yml, and main.yml has no label step."
+  M9/flag-labels-fire-gates:   # standard, requires mechanical
+    # Flag labels actually fire process, not just categorize — e.g. a migration flag triggers a required check and a hitl flag is honoured.
+    score: absent
+    evidence: "No label is wired to any check. main.yml has no 'labeled' trigger and no label conditions."
+  M9/gate-flags-scoped-to-shipping-item:   # standard, requires convention
+    # A flag label that fires a gate goes on the work item whose change ships, never on the epic that contains it, the epic flag marks the container without replacing its type, and every copy of the taxonomy's key sets equals its source.
+    score: absent
+    evidence: "No flag label fires a process and no taxonomy is written down (see M9/taxonomy-documented), so nothing says which item carries one."
+  M9/epic-closure-requires-acceptance:   # standard, requires convention
+    # An epic closes when its newest verdict accepts that its designed scope is delivered, or on a recorded human waiver that cannot override a rejection, never on its count of open children; tails it was never scoped to finish are linked back and given a comment naming the epic before they are extracted and it closes.
+    score: absent
+    evidence: "No closure rule: issues are closed manually on GitHub (see M9/required-phases-gate-closure)."
+  M9/issues-prioritized-at-creation:   # standard, requires mechanical
+    # Every path that files an issue sets its priority and category at creation, the priority from one shared severity mapping and the category supplied with the finding and validated against one category list; it validates the mandatory taxonomy before the write, and appends to an existing container when one fits; the ranked shortlist a person picks from is computed, not hand-kept.
+    score: absent
+    evidence: "No priority labels in the forge's near-default label set (see M9/taxonomy-documented)."
+  M9/memory-promotion-documented:   # standard, requires convention
+    # The path that lifts a durable lesson from private per-session memory into git-tracked shared memory through a review point is documented.
+    score: absent
+    evidence: "No private-to-shared promotion flow documented anywhere (same searches as memory-location-designated)."
+  M9/taxonomy-gates-self-tested:   # strict, requires mechanical
+    # The label-taxonomy lint and the required-phases gate each ship a self-test that runs in CI, so a broken tasks/memory gate fails loudly.
+    score: absent
+    evidence: "There are no label-taxonomy or required-phases gates, so there is nothing to self-test."
+  M9/required-phases-gate-closure:   # strict, requires mechanical
+    # Required-phase formulas gate item closure — an item cannot reach a done state with a phase the formula marks required left unrecorded.
+    score: absent
+    evidence: "No phase formulas and no closure gate. Issues are closed manually on GitHub."
+  M9/hitl-flag-revokes-autonomy:   # strict, requires mechanical
+    # The hitl flag mechanically revokes autonomous execution/merge for the issue and its PR (the same rule M7 and M0 use).
+    score: absent
+    evidence: "No hitl label exists (gh api .../labels) and nothing merges automatically; none of it is mechanical."
+  # M10 environments-deploy
+  M10/environments-and-deploy-documented:   # lite, requires convention
+    # The deployable environments and the path from merge to production are written down once (a deploy runbook / CI-architecture doc), so where code goes and how it gets there is not tribal knowledge.
+    score: absent
+    evidence: "No release or publish doc: no CONTRIBUTING*, RELEASE*, CHANGELOG* (git ls-files grep); grep publish/release in readme.md, docs/, .github/*.md finds nothing. Release only visible in history: commit 63ddae6 '10.1.0' + tag v10.1.0, .npmrc package-lock=false."
+  M10/pr-gates-run-before-merge:   # lite, requires convention
+    # Per-PR gates run on every pull request before merge, and the pipeline states that a green merge is not yet a production-ready fact.
+    score: advisory
+    evidence: "main.yml:4 pull_request runs the full matrix on every PR. main is unprotected (config-fit: requires no checks), so nothing blocks a merge. No doc separates merged from verified (none exists), though a manual-publish library has no verified stage for it to name."
+  M10/verification-separated-from-pr-gates:   # standard, requires mechanical
+    # CI has a distinct post-merge verification stage that runs on the integrated default branch, separate from the per-PR gates.
+    # probe found: .github/workflows/main.yml
+    score: expected-absent
+    evidence: "One job on push+pull_request (main.yml:2-4); push re-runs the same full 9-leg suite. The library publishes to npm by hand and no environment consumes a verified state, so a separate heavier post-merge stage has no consumer."
+  M10/verified-pointer-advances-on-verification:   # standard, requires mechanical
+    # An explicit `verified` pointer (a branch or tag) is advanced only by the post-merge verification stage passing — never by a merge alone.
+    score: expected-absent
+    evidence: "Library shape: no environments. Release tags (v10.1.0) are cut by the maintainer, not by CI. No workflow pushes tags or branches (main.yml has no write permissions/steps)."
+  M10/deploys-verified-artifacts-only:   # standard, requires mechanical
+    # Deploy jobs ship what the `verified` pointer points at, not a mutable branch or a moving tag (expected-absent for a library-shaped repo, which publishes rather than deploys environments).
+    score: expected-absent
+    evidence: "Library shape: no deploy jobs (only .github/workflows/main.yml, which has no publish/deploy step). npm publish is manual."
+  M10/artifacts-built-once-promoted-by-digest:   # standard, requires mechanical
+    # What reaches production is the artifact verification approved, built once and addressed by digest, with per-environment settings supplied at deploy time rather than compiled in (expected-absent for a library-shaped repo, which publishes rather than deploys environments).
+    score: expected-absent
+    evidence: "Library shape: no deployable artifact or environment; npm publish is manual."
+  M10/freshness-watchdog-runs:   # standard, requires mechanical
+    # A scheduled watchdog fails when the `verified` pointer lags the default-branch tip beyond a threshold, so a stalled verifier pages someone instead of silently shipping stale code.
+    score: expected-absent
+    evidence: "No verified pointer to watch. main.yml has no schedule: trigger."
+  M10/created-resources-have-reapers:   # standard, requires mechanical
+    # Every resource the delivery system creates (a preview deployment, an ephemeral environment, a test tenant, a per-worktree data namespace) has a scheduled reaper keyed to the resource's owner that reads an expiry written at creation; a destructive reaper reports by default, acts only on an explicit opt-in, and refuses production (expected-absent for a library-shaped repo that creates no environments, tenants or namespaces).
+    score: expected-absent
+    evidence: "Library shape: no environments, tenants or namespaces are created; main.yml runs the test matrix only."
+  M10/promotion-gap-from-ancestry:   # standard, requires mechanical
+    # Which changes have reached which environment is computed from version-control ancestry between the environments' pointers, on a schedule and whenever a pointer moves, and published as a report and a metric; no tracker field tracks it by hand (expected-absent for a library-shaped repo with a single release line and no environments).
+    score: expected-absent
+    evidence: "Library shape: one release line published to npm, no environment pointers to diff."
+  M10/environment-currency-checked:   # strict, requires mechanical
+    # A scheduled check that runs against an environment that is deliberately behind first confirms the environment runs a version the check applies to: the floor is derived from history, the deployed version is read from the environment's pin, ancestry decides, and a non-current environment's cell is removed from the matrix rather than skipped (expected-absent where no scheduled check runs against an environment that is deliberately behind).
+    score: expected-absent
+    evidence: "Library shape: no scheduled check runs against a deployed environment; main.yml has no schedule: trigger."
+  M10/watchdog-decides-by-cause:   # strict, requires mechanical
+    # The watchdog decides why the `verified` pointer lags and acts by cause: it heals only a dropped trigger, by dispatching verification at the tip, and only up to a budget of dispatches at the same tip; it fails when the heals at a tip keep ending without a verdict, when verification succeeded but the pointer did not move, when the pointer diverged from the integration branch, and when a verification run has waited for a runner past a bound, which it cancels; and verification covers the whole range from the pointer to the tip, so a superseded or cancelled run is covered by its successor (expected-absent for a library-shaped repo with no verified pointer).
+    score: expected-absent
+    evidence: "Library shape: no verified pointer and no post-merge verification workflow to watch; main.yml has no schedule: trigger."
+  M10/verify-and-promote-gates-self-tested-in-ci:   # strict, requires mechanical
+    # The verified-pointer freshness gate and the promote-safety lint both run in CI, each with a self-test, so a broken deploy gate fails loudly.
+    score: expected-absent
+    evidence: "No verify or promote gates exist for a library with no environments (single workflow main.yml, no deploy workflows)."
+  M10/production-promotion-manual-and-gated:   # strict, requires mechanical
+    # Promotion to production is a manual action behind an environment protection rule and cannot auto-fire on push (expected-absent for a library-shaped repo with no production environment).
+    score: expected-absent
+    evidence: "No production environment. No environment: key or deploy workflow in .github/workflows/."
+  M10/ephemeral-envs-and-test-data-factory:   # strict, requires mechanical
+    # Disposable preview environments are created and destroyed per PR, and a seeded, tenant-isolated, resettable test-data factory exists (expected-absent for a library-shaped repo with no runnable environment).
+    score: expected-absent
+    evidence: "Library shape: no runnable service or tenants. Tests spawn local fixtures (test/fixtures/), and no preview workflow exists."
+  M10/promotions-serialized-from-trusted-ref:   # strict, requires mechanical
+    # Promotions to one environment never drop a queued request, and each waits until no earlier promotion is active before its first change and checks again just before the migration; the promotion workflow and its gate code load from the trusted ref, the only ref the production environment admits (expected-absent for a library-shaped repo with no production environment).
+    score: expected-absent
+    evidence: "No production environment and no promotion workflow (only .github/workflows/main.yml)."
+  M10/deploy-verifies-live-identity:   # strict, requires mechanical
+    # A deploy is complete only when the live environment reports the exact artifact identity that was promoted, its rollouts are ready, and a readiness check that exercises the application's critical dependencies passes; anything downstream reads a manifest of what actually deployed (expected-absent for a library-shaped repo with no runnable environment).
+    score: expected-absent
+    evidence: "Library shape: no runnable environment to verify."
+  M10/release-state-off-source-line:   # strict, requires mechanical
+    # Release pointers only fast-forward to verified source, and rendered deployment state lives on its own ref, written only by a dedicated machine identity that the ref's protection admits (expected-absent for a repository with neither a release pointer nor rendered deployment state in git; a repository with only one of them is scored on that one).
+    score: expected-absent
+    evidence: "No rendered deployment state or GitOps controller; release tags are cut by the maintainer."
+  M10/pipeline-index-derived-or-gated:   # standard, requires mechanical
+    # Where the repository keeps a page listing its pipelines, that page is generated from the pipeline files or a check fails when a pipeline is missing from it or it names one that no longer exists; a hand-kept page with no check does not count.
+    score: expected-absent
+    evidence: "No page lists the pipelines: main.yml is the only workflow, and the provider's list is the index"
+  # M11 process-observability
+  M11/process-events-documented:   # lite, requires convention
+    # The process events the team measures (review outcome + cost, gate pass/fail + duration, cycle times) are named and documented as a closed set, distinct from product analytics.
+    score: absent
+    evidence: "No telemetry or event-schema doc. grep -riE 'telemetry|metrics|event schema' finds nothing relevant to the delivery process."
+  M11/at-least-one-event-emitted:   # lite, requires convention
+    # At least one process event is actually emitted by the machinery that runs the process (not merely described).
+    score: absent
+    evidence: "No process event is emitted. The nearest analogue is an advisory coverage upload (codecov-action fail_ci_if_error:false, main.yml:40-45), which measures code, not process."
+  M11/metrics-registry-no-dark-instruments:   # standard, requires mechanical
+    # A metrics registry exists where every metric declares a wired source and an owner, and a check fails the build if any source is missing, empty, or a placeholder (a dark instrument).
+    score: absent
+    evidence: "No metrics registry file in git ls-files and no no-dark-instruments check in main.yml."
+  M11/review-and-gate-events-validated:   # standard, requires mechanical
+    # Review outcomes and gate results are emitted as typed events and validated against the declared event schema by a lint.
+    score: absent
+    evidence: "No review_completed or gate_result events and no schema lint. Gate results exist only as GitHub Actions run status."
+  M11/scheduled-jobs-staleness-watched:   # standard, requires mechanical
+    # Every scheduled job is declared in a cadence registry with the interval it must produce a result at, a check fails a scheduled workflow missing from it, and a scheduled watcher classifies each job's run history and fails for a job that is stale (no result inside its cadence plus grace) or red, so a schedule that stopped running never reads as green (expected-absent for a repository with no scheduled job).
+    score: expected-absent
+    evidence: "No scheduled job: main.yml triggers on push and pull_request only and has no schedule: trigger."
+  M11/observability-gates-self-tested:   # strict, requires mechanical
+    # The no-dark-instruments gate and the event-schema lint each ship a self-test that runs in CI, so a broken observability gate fails loudly.
+    score: absent
+    evidence: "There are no observability gates, so there is nothing to self-test."
+  M11/promotion-cites-recorded-measurement:   # strict, requires mechanical
+    # Promoting a gate to blocking, or a reviewer/lens from comment-only to blocking, cites a recorded measurement from a provably live instrument (ties to M7's precision bar and M8's parity report).
+    score: absent
+    evidence: "No promotion record. Codecov has stayed advisory with no threshold (.github/codecov.yml)."
+  M11/process-dashboards-reviewed:   # strict, requires convention
+    # Dashboards for gate pass-rate, review-adoption, and reviewer cost exist, render from the registry, and are reviewed on a cadence.
+    score: absent
+    evidence: "No pass-rate, adoption or cost dashboards and no review cadence. Nothing in the repository refers to the hosted coverage UI."
+  M11/heartbeat-reports-to-external-monitor:   # strict, requires mechanical
+    # The heartbeat watcher reports to a monitor outside the system it watches on both outcomes, a success when no job is red or stale and a failure otherwise, and the monitor raises an incident when a report does not arrive, so a watcher that itself stopped is an incident (expected-absent for a repository with no scheduled job).
+    score: expected-absent
+    evidence: "No scheduled job, so no watcher to report to a monitor; main.yml has no schedule: trigger."
+  # M12 parallel-agent-ergonomics
+  M12/branch-reuse-and-footgun-bans-written:   # lite, requires convention
+    # The branch reuse-before-create rule and the shared-state footgun bans (no git stash across worktrees, no root install with the wrong package manager) are written down where agents will read them.
+    score: expected-absent
+    evidence: "Single-checkout library that parallel agents do not work on. git grep -iE 'worktree|git stash' over non-code files gives no hits. Lockfile-free npm (.npmrc package-lock=false) leaves no package-manager split to ban."
+  M12/port-allocation-convention-exists:   # lite, requires convention
+    # A per-worktree port-allocation convention exists, so two worktrees do not default to the same port.
+    score: expected-absent
+    evidence: "No dev server or listening service. The library spawns subprocesses and has no ports to allocate per worktree. No parallel-agent workflow."
+  M12/change-records-one-file-per-change:   # lite, requires convention
+    # A change records its changelog entry (and any version bump) in a file of its own, not as an edit to a file every change edits, so merging one change does not put the others in conflict.
+    score: expected-absent
+    evidence: "No changelog or version that changes with each pull request: git ls-files has no CHANGELOG*, and package.json's version moves only in the maintainer's release commit (63ddae6 '10.1.0', tag v10.1.0)."
+  M12/port-allocation-scripted:   # standard, requires mechanical
+    # Per-worktree port allocation is scripted and deterministic — the same worktree identity always maps to the same in-range port.
+    score: expected-absent
+    evidence: "Same as port-allocation-convention-exists: no ports and no worktree workflow. No scripts/ dir; package.json scripts are only test/lint/unit/type."
+  M12/heavy-run-mutex-scripted-with-ci-bypass:   # standard, requires mechanical
+    # Heavy build/test runs pass through a scripted cross-worktree mutex that serializes them on one machine and bypasses under CI.
+    score: expected-absent
+    evidence: "No parallel worktrees share a machine. The test run is serialized inside one process (package.json:21 --test-concurrency=1), not across worktrees."
+  M12/worktree-hooks-wired:   # standard, requires mechanical
+    # Worktree create/remove hooks are wired — create allocates and surfaces the port slot, remove nudges reflection.
+    score: expected-absent
+    evidence: "No worktree workflow, and no hook manager (.husky/, lefthook.yml, .pre-commit-config.yaml absent from git ls-files)."
+  M12/worktree-namespaces-keyed-and-reaped:   # standard, requires mechanical
+    # Where worktrees share a database server, each worktree's data namespace is derived from its identity by a script, created with an owner and an expiry, and reaped by its owner through a command that reports before it drops and refuses the production namespace (expected-absent for a repository with no database or no parallel worktrees).
+    score: expected-absent
+    evidence: "No database and no parallel-worktree setup; the test suite needs no shared server."
+  M12/change-records-assembled-after-merge:   # standard, requires mechanical
+    # A release step assembles the per-change notes into the changelog and sets the version after the merge, one run at a time, and a check fails a change whose note it cannot read or that edits what the step writes.
+    score: expected-absent
+    evidence: "Same as change-records-one-file-per-change: no per-change changelog or version to assemble; releases are cut by the maintainer."
+  M12/unattended-agent-control-channel:   # standard, requires mechanical
+    # An agent left running unattended can be reached without killing it, through a control channel whose directives (at least stopping, pausing or holding its push) are a closed set enforced by code and fail closed, while free-text notes only advise (expected-absent where no agent runs unattended).
+    score: expected-absent
+    evidence: "No agent runs unattended: no review loop or agent runner is configured. Single-checkout library."
+  M12/utilities-self-tested-in-ci:   # strict, requires mechanical
+    # The port allocator and the resource lock each ship a self-test that runs in CI, so a broken utility fails loudly instead of silently misallocating.
+    score: expected-absent
+    evidence: "No port allocator or resource lock exists to self-test. Repo shape rules them out."
+  M12/teardown-nudges-reflection-wired:   # strict, requires mechanical
+    # The worktree teardown hook's reflection nudge is wired to the learning loop, so a session's lessons have a durable destination.
+    score: expected-absent
+    evidence: "No worktree teardown hook and no learning-loop destination. Single-checkout library."
+  M12/footgun-bans-enforced-where-mechanizable:   # strict, requires mechanical
+    # The footgun bans are enforced where mechanizable — e.g. a hook or lint rejects a root install with a package manager the repo did not declare.
+    score: expected-absent
+    evidence: "No footguns to enforce: one package manager (npm, no packageManager field, package-lock=false in .npmrc) and no parallel agents."
+  M12/verdict-line-per-part:   # standard, requires convention
+    # A gate run with several parts ends each part with one named verdict line, and its reader treats a part without one as not run, never as passed.
+    score: absent
+    evidence: "package.json's test script chains lint, unit and type with &&: npm prints each part's banner as it starts but no line names a part's outcome, and the chain stops at the first failure so a later part prints nothing; in main.yml the parts are separate steps whose status is the provider's, and no written rule says what a missing verdict means"
+  M12/gate-quiet-invocation-named:   # lite, requires convention
+    # The gate commands name a quiet invocation for agents (a reporter flag or a script), with the rule that no filter in a pipe stands between a gate and its exit status.
+    score: absent
+    evidence: "No quiet invocation is named: package.json's scripts carry no reporter flag or quiet script, the repository has no instruction file, and no written rule forbids piping a gate through a filter"
+  M12/gate-output-quiet-on-green:   # standard, requires mechanical
+    # Each gate command an agent runs has a quiet form that prints a summary on success and the full output on failure, and exits with the gate's own status rather than a filter's.
+    score: absent
+    evidence: "No quiet form: package.json's test, lint, unit and type scripts print their full output on success and failure alike, and nothing names a condensed form for agents"
+  M12/quiet-wrapper-self-tested:   # strict, requires mechanical
+    # The quiet wrapper ships a self-test, run in CI, proving that a failing run keeps its status and prints in full, and the agent runtime applies the quiet form by itself where it has a hook for that.
+    score: absent
+    evidence: "No quiet wrapper exists to self-test (see M12/gate-output-quiet-on-green), and no tracked agent hook applies a quiet form"
+  # M13 pipeline-economy
+  M13/superseded-pr-runs-cancelled:   # lite, requires mechanical
+    # A new push to a pull request cancels that pull request's runs for the older head, so CI is not spent on a head no one will merge.
+    score: absent
+    evidence: ".github/workflows/main.yml (the only workflow) declares no concurrency group, so every push to a pull request runs all nine matrix legs to the end"
+  M13/every-job-has-timeout:   # lite, requires mechanical
+    # Every CI job declares its own timeout, below the provider's default limit, so a hung job fails at a bound the team chose instead of holding a runner until that limit.
+    score: absent
+    evidence: ".github/workflows/main.yml (the only workflow) sets no timeout-minutes on its job, so each leg may run to GitHub's 360-minute default"
+  M13/no-required-pipeline-path-filtered:   # lite, requires convention
+    # No workflow that reports a required check is filtered by changed paths at its trigger; selection happens inside the run, so every head gets a verdict.
+    score: convention
+    evidence: ".github/workflows/main.yml triggers on push and pull_request with no paths or paths-ignore; nothing checks it"
+  M13/resolver-drives-selection:   # standard, requires mechanical
+    # One resolver job per run reads the change-area catalog and decides which jobs the change needs; every other job reads its answer, and a changed file no area matches selects every job or fails the change.
+    score: absent
+    evidence: "No change-area catalog or resolver job; main.yml runs the whole matrix for every change, selecting steps only by matrix leg"
+  M13/aggregate-required-check:   # standard, requires mechanical
+    # One verdict is the required check (an aggregator job, or the provider's own verdict on the whole pipeline): it is given whenever the run was not cancelled, fails when a selected job failed, was cancelled or was skipped because a job it needs failed, and passes a job skipped only because the change did not need it.
+    score: absent
+    evidence: "No aggregator job: main.yml has one matrix job whose nine legs report separately"
+  M13/heavy-non-gating-suites-scheduled:   # standard, requires mechanical
+    # A slow suite that no merge and no verified pointer waits for runs on a schedule or on demand, and a cheap per-change proxy runs in its place.
+    score: absent
+    evidence: "main has no required check (scored under M1) and no verified pointer, so nothing waits for the suites main.yml runs on each pull request (lint, types, unit tests, link check); no record classifies a suite as fast, so each counts as slow, and none runs on a schedule"
+  M13/workflow-conventions-linted:   # strict, requires mechanical
+    # A lint over the CI configuration fails a job without a timeout, a required workflow filtered at its trigger, an aggregator that runs on always(), and a concurrency key that drops runs it does not cover.
+    score: absent
+    evidence: "No lint reads .github/workflows/"
+  M13/job-timeout-ceiling-linted:   # strict, requires mechanical
+    # The CI-configuration lint fails a job whose timeout, written as a number, is above an hour, unless a reasoned exception covers that job, so a timeout stays a generous backstop against a hang rather than drifting toward the provider's default.
+    score: absent
+    evidence: "No lint reads .github/workflows/, so nothing bounds a job timeout"
+  M13/ci-cost-measured:   # strict, requires mechanical
+    # CI time or cost is measured per workflow and job from the provider's records, so a decision about what to run where cites a number.
+    score: absent
+    evidence: "No job or script collects CI durations or minutes"
+  M13/queue-stall-watchdog:   # strict, requires mechanical
+    # A watchdog fails loudly when runs wait for a runner longer than a set bound, because job timeouts do not count time spent in the queue.
+    score: absent
+    evidence: "No scheduled workflow"
+  M13/ci-hold-fails-held-heads:   # standard, requires mechanical
+    # Where a hold label suppresses CI on intermediate heads, a required check fails on every held head from the instant the label is applied, every workflow that honours the label runs on its application and its removal, and only the pull request's own hold label, never the kind of label event, skips work.
+    score: expected-absent
+    evidence: "No hold label is configured: no .config/jig.yaml, and no job in main.yml is conditioned on a label"
+  M13/ci-hold-shape-linted:   # strict, requires mechanical
+    # Where a hold label is configured, the CI-configuration lint fails a workflow of the hold that misses a label event, a skipped job whose condition is not a negated test of the pull request's labels for the exact hold label, and a hold with no step that fails a required check while the label is present.
+    score: expected-absent
+    evidence: "No hold label is configured, so there is no hold shape to lint"
+  M13/cache-keys-complete:   # standard, requires convention
+    # Every cache the pipeline uses has a written key scheme naming every input that changes its output, the values of the environment variables the task reads included, and no workflow carries a standing cache bypass in place of a complete key.
+    score: absent
+    evidence: "One cache, actions/cache for the link checker's .lycheecache in main.yml, keyed by the commit sha with a prefix restore key; no document names the cache or what its key covers, and no step bypasses it"
+  M13/cache-one-namespace:   # standard, requires mechanical
+    # Pipelines that share a cache produce an identical key-affecting environment, checked by a lint, and a job whose cache credential is empty fails before its first task rather than writing a namespace of its own.
+    score: expected-absent
+    evidence: "The one cache (actions/cache in main.yml) is keyed by the commit sha with no environment value or credential in its key, and no job shares a remote cache"
+  M13/cache-hit-rate-reported:   # standard, requires mechanical
+    # Every run that uses a cache reports its hit rate (hits and misses) in the run's summary, and the rate is a registered process metric.
+    score: absent
+    evidence: "main.yml's actions/cache step for .lycheecache writes nothing about hits or misses to the run summary, and no metric registry exists"
+  M13/cache-retention-bounded:   # strict, requires mechanical
+    # Every cache has a retention bound that a scheduled prune or the store's own eviction enforces, with the window written beside its key scheme, and a declared cache that stores nothing is detected.
+    score: absent
+    evidence: "The .lycheecache cache relies on the provider's own eviction: no window is written beside a key scheme (none exists), and nothing reads the cache's usage or alarms on zero hits"
+  M13/cache-wiring-checked:   # strict, requires mechanical
+    # A gate fails a cache wired on some steps and not on others: in a container build, every step that invokes the package manager in a stage whose store is on a cache mount carries the mount, and no step pins the store with a per-command flag.
+    score: expected-absent
+    evidence: "No Dockerfile or container build in the tree; the only cache is the link checker's"
+  M13/cache-trust-boundary:   # strict, requires mechanical
+    # Only trusted contexts write to a shared cache, its entries are signed or verified on read, and an untrusted run (a pull request from a fork) gets no cache credentials and runs uncached rather than under a namespace of its own.
+    score: expected-absent
+    evidence: "The only cache is the provider's own actions/cache, scoped by the provider and reached without a credential; no remote task-runner cache is shared"
+  M13/runner-class-follows-work:   # standard, requires convention
+    # Each CI job's runner class is written down with the measurement behind it, the jobs that only decide or report (the resolver, the aggregator, an echo job) run on the smallest class, and a machine's parallelism is set once as a product, the task runner's package concurrency times the workers per package, at or below its cores.
+    score: absent
+    evidence: "Every job runs on ${{ matrix.os }}-latest, the default hosted class, with no measurement recorded beside it; there is no resolver or aggregator to put on the smallest class, and node --test runs with --test-concurrency=1 under no task runner"
+  M13/one-authoritative-leg:   # standard, requires convention
+    # CI is the single authority for every check: the written record says so and that skipping a hook never changes what merges, each leg before CI (a hook, a remote sandbox) selects no more work than CI does for the same change, and a leg that holds a machine beyond CI is an opt-in recorded with the failure class it catches that CI cannot and a checkable reopen condition in each direction.
+    score: expected-absent
+    evidence: "No leg runs before CI: no hook manager, no pre-push hook and no sandbox; main.yml is the only place the checks run"
+  M13/cost-decisions-reopenable:   # strict, requires mechanical
+    # Every decision that changed what the pipeline spends (a runner resized, a leg narrowed or added, a suite moved, a cache turned on) is in a cost ledger with its measurement before and after in one unit, or a due date for the after, and a reopen condition naming a registered metric, a comparator, a threshold and a window; a gate fails an entry without them.
+    score: absent
+    evidence: "No cost ledger and no recorded pipeline-spend decision: main.yml runs one matrix job on the default runners"
+  # M14 testing-strategy
+  M14/test-tiers-declared:   # lite, requires convention
+    # Every test suite has a written tier (unit, integration, end-to-end or the repository's own names) with the trigger that runs it and its time budget.
+    score: absent
+    evidence: "No suite has a written tier, trigger or budget: there is one unit suite (package.json:21) plus the type tests (package.json:22), all run on every push and pull_request by .github/workflows/main.yml, and no document names a tier"
+  M14/testing-rules-written:   # lite, requires convention
+    # The testing rules are written where agents and people read them: test doubles reject what the real dependency rejects, runtime code reads time from an injected clock, waits poll with a deadline instead of sleeping, tests change the home directory, working directory or environment only in a subprocess, and a new test is seen to fail before its pass is trusted.
+    score: absent
+    evidence: "No instruction file, contributing guide or testing document (no AGENTS.md, CONTRIBUTING.md or docs page on testing); the testing rules are not written anywhere"
+  M14/tier-budgets-enforced:   # standard, requires mechanical
+    # Every CI job that runs tests has an enforced budget on the suite's elapsed time: a job timeout, a timeout on the command that runs the suite, or a step that fails when the suite runs over its tier's budget. A per-test timeout alone does not count: it bounds one test, not the suite.
+    score: absent
+    evidence: "The CI job in .github/workflows/main.yml has no timeout-minutes and no step bounds the suite; --test-timeout=240000 (package.json:21) bounds each test, not the suite"
+  M14/full-e2e-never-per-change:   # standard, requires mechanical
+    # The full end-to-end sweep, whose journeys other checks already cover, runs only on a schedule or on demand, and a check over the CI configuration fails when its workflow gains a per-change trigger (end-to-end tests that are the only check of a critical journey may run after every merge; expected-absent where the repository has no end-to-end suite).
+    score: expected-absent
+    evidence: "No end-to-end suite: a library with no running system; every test under test/ spawns subprocesses from the unit run"
+  M14/tests-type-checked:   # standard, requires mechanical
+    # Test files are type-checked in CI by the same kind of check as runtime code (for a compiled language, the test sources compile in CI).
+    score: absent
+    evidence: "The tests are JavaScript (test/**/*.js) and tsconfig.json type-checks only index.d.ts; tsd checks the type tests in test-d/, not the runtime tests"
+  M14/tests-come-with-changes:   # standard, requires mechanical
+    # A CI check fails a change whose changed source file has no test, unless the file is listed in a registered exemption with a reason, and a pre-push hook runs the same check before the push.
+    score: absent
+    evidence: "No CI check or hook maps changed files under lib/ to tests"
+  M14/fixed-sleeps-banned:   # standard, requires mechanical
+    # A gate rejects fixed sleeps in test and tooling code, except those carrying a suppression token registered for local timing; waits for external state poll with a deadline.
+    score: absent
+    evidence: "No sleep rule in the xo configuration; 38 files under test/ call setTimeout, most through node:timers/promises (for example test/pipe/methods.js:2)"
+  M14/clock-reads-linted:   # strict, requires mechanical
+    # A lint rule rejects direct wall-clock reads in runtime code outside the one system-clock adapter, so runtime code gets the current time from an injected clock.
+    score: absent
+    evidence: "No clock rule in the xo configuration; lib/verbose/log.js:30 reads new Date() directly"
+  M14/predicates-proven-against-engine:   # strict, requires mechanical
+    # Isolation and visibility predicates (tenant scope, soft delete, authorization) are tested in CI against the engine that evaluates them, with data that would leak if the predicate were missing (expected-absent where the repository has no such predicates).
+    score: expected-absent
+    evidence: "No database, tenant model or authorization layer: a subprocess library"
+  M14/developer-state-isolated:   # strict, requires mechanical
+    # Test runs cannot touch the developer's real state: the home directory, temp directory and the tool's own configuration point at per-run locations before any code under test starts (the test command launches the runner with them set, or tests spawn the code under test as a subprocess with them set), and a lint rejects in-process changes to them in test files.
+    score: absent
+    evidence: "Tests change process-global state in-process: nine process.chdir calls under test/ (for example test/methods/node.js:14), and the xo configuration turns node-test/no-process-env-mutation off (package.json:120)"
+  M14/doubles-and-builders-typed:   # strict, requires convention
+    # Test doubles and test-data builders are typed against the real contract, doubles reject inputs the real dependency rejects, and builders return one declared type with deterministic defaults.
+    score: absent
+    evidence: "Tests and their helpers (test/helpers/) are untyped JavaScript, and no rule says how a double or builder must behave"
+  M14/coverage-trend-scheduled:   # strict, requires mechanical
+    # A scheduled CI job publishes coverage as a trend, also when it is below target, refuses to publish incomplete data, and no merge is blocked on a per-file coverage threshold.
+    score: absent
+    evidence: "Coverage is uploaded to Codecov from every matrix leg on each push and pull request (.github/workflows/main.yml, fail_ci_if_error: false), not on a schedule, and nothing refuses incomplete data; .github/codecov.yml sets no per-file threshold"
+  M14/stale-test-triage-written:   # lite, requires convention
+    # The procedure for a test failure the change did not cause is written where agents and people read it: the failure is reproduced on a freshly fetched base in a throwaway worktree before it is attributed, never with a stash, and a failed fetch is no answer; a test that fails on the base too is fixed inline when cheap or deleted with a tracker item recording what it covered; a test is regenerated only when its premise is obsolete and the new test asserts what the old one protected.
+    score: absent
+    evidence: "No testing document, rule file or instruction file at the root: readme.md and docs/*.md document the library for its users, and .github/ holds codecov.yml, security.md and the workflow; nothing states a fresh-base reproduction or a fix-or-delete rule"
+  M14/spawn-exit-assertions-print-output:   # standard, requires convention
+    # A test that asserts a spawned process's exit status asserts it through a helper that prints the child's captured output when the assertion fails, and the rule is written where agents and people read it (expected-absent where no test spawns a process).
+    score: absent
+    evidence: "The tests spawn subprocesses throughout (the library's purpose) and assert their exit codes directly through node:assert (assert.equal(exitCode, 0) in test/arguments/command-resolution.js:170, and the same shape across test/), with no shared helper that prints the child's output on a mismatch and no written rule"
+  M14/provisioned-suites-executed:   # standard, requires mechanical
+    # Every CI job that exists for a suite that can run nothing (a job that provisions a database, a queue, a browser or a credential the suite skips itself without; a shard or path selection of one suite) fails when that suite executed zero tests, counted from the runner's machine-readable report as the test cases not skipped, and fails when the report is missing (expected-absent where no job exists for such a suite).
+    score: absent
+    evidence: "main.yml's unit step runs node --test over the glob test/!(fixtures|helpers)/*.js and nothing reads a report to confirm that a test case executed; no job provisions a dependency, but the glob is a selection that can match nothing, and whether that fails the step was not verified"
+  M14/dependency-workarounds-pinned:   # standard, requires convention
+    # Every workaround for a defect in a dependency has a test beside it that asserts the defective behaviour against the real dependency and names the workaround, and the written rule is that a pin failing after an upgrade retires or adapts the workaround rather than updating the assertion (expected-absent where the repository has no such workaround).
+    score: absent
+    evidence: "lib/terminate/graceful.js converts a DOMException cancel reason into an Error because V8 cannot serialize it, a workaround for a Node.js defect its comment links, and no test asserts that defect against Node.js itself or names the workaround; no written rule about a pin failing after an upgrade"
+  M14/next-release-canary:   # strict, requires mechanical
+    # A scheduled workflow with no per-change trigger, which is not a required check, runs the suites with behaviour pins and the integration tier with its dependencies provisioned, and a compiled-binary smoke test where the product ships a binary, against the next release of the runtime or a driver, and records the build it used.
+    score: absent
+    evidence: "main.yml is the only workflow: it has no schedule, pins the released lines 26, 24 and 22 on every push and pull request, and writes no runtime build to the run summary"
+  # M15 contracts-errors
+  M15/error-contract-written:   # lite, requires convention
+    # The error contract is written where agents and people read it: the three failure channels and which situation takes which, never swallow and keep the cause, branch on type or code and never on message text, a failure inside a transaction aborts it (rolls it back, by the path the transaction tool rolls back on), and errors reach callers only through one boundary.
+    score: absent
+    evidence: "No contract for the library's own failures: docs/errors.md (Subprocess failure, Preventing exceptions, Exit code, Failure reason, Error message) tells callers how to handle an ExecaError, and no instruction or contributing file exists at the root to state a channel, cause or branching rule for the code itself"
+  M15/typed-error-with-code:   # lite, requires convention
+    # One shared module defines the typed error that crosses module boundaries, carrying the tag a caller branches on (the registered code and its metadata, severity, message key and recovery hint, where the system emits codes), and the one defect primitive beside it; a result type, where one is used, is one type whose error arm carries a tag (expected-absent where no failure crosses a module boundary to a caller that branches on it: a command-line tool whose every failure ends the process with a status and a message).
+    score: absent
+    evidence: "ExecaError and ExecaSyncError (lib/return/final-error.js) are the typed family and keep the original as error.cause, but carry no tag a caller branches on: a failure is told apart by boolean properties (docs/errors.md, Failure reason; error.code is Node's system error code, docs/api.md:706); DiscardedError there is a control-flow signal, not a defect primitive; no result type"
+  M15/error-code-registry:   # lite, requires convention
+    # Every error code the system can emit is declared once, in one registry (a data file or one code module), with its metadata (severity, message key, recovery hint, transport status) and in one declared code format; the error contract names the registry as the only place a code is minted (expected-absent where the system emits no codes because it reports failures to no caller beyond an exit status or a thrown typed error: a library, a command-line tool).
+    score: expected-absent
+    evidence: "execa emits no codes of its own: a failure reaches the caller as a thrown ExecaError told apart by its properties (docs/errors.md, Failure reason), error.code is Node's system error code when the subprocess fails to spawn (docs/api.md:706), and no caller receives anything beyond that thrown error, so there is no registry to hold"
+  M15/swallowing-forms-linted:   # standard, requires mechanical
+    # A lint run in CI flags the forms that turn a failure into a default value, an empty result or silence: a catch that returns a default without looking at its error, a child process whose error output is discarded, and a parsed input cast to a concrete type; it blocks the merge directly or under a ratchet on its count.
+    score: absent
+    evidence: "xo (package.json, run by npm test in CI) accepts the forms: empty catch blocks in lib/io/pipeline.js:20 and lib/terminate/kill.js:92, a catch returning a fallback in lib/resolve/exit-async.js:35; no rule covers a discarded child error output (a feature of this library) or a cast (plain JavaScript)"
+  M15/one-error-boundary:   # standard, requires mechanical
+    # Errors reach callers only through one boundary per transport (an error-handler plugin, a top-level middleware, an interceptor, the exit code boundary of a command-line tool) that writes one fixed shape and maps an error it does not know to an opaque generic failure: on a transport that carries codes, a response of code, message key, severity, recovery hint and correlation id, with an unknown error mapped to a registered generic code; on a command-line transport, or where the system emits no codes, an exit status per outcome and one message line, with an unknown error mapped to the generic failure status. No route or command builds an error response or exit of its own.
+    score: absent
+    evidence: "No single boundary: a subprocess failure reaches the caller as an ExecaError or ExecaSyncError built in one place (makeError in lib/return/result.js through getFinalError in lib/return/final-error.js, thrown by handleResult in lib/return/reject.js) with one documented shape (docs/api.md), but option validation and the ipc methods throw TypeError and Error directly from 33 files under lib/ (see M15/native-throw-linted), so those failures reach the caller in no shared shape"
+  M15/server-failures-hide-detail:   # standard, requires mechanical
+    # On a server-side failure the boundary sends no internal detail (no exception text, no interpolated template, no identifier), logs the detail through an allowlist keyed by the correlation id, and a test run in CI sends an unknown error through the boundary and asserts that the body holds the public field set (code, message key, severity, recovery hint, correlation id) with the generic code, and that no internal detail (stack, cause, query text, file path, the internal message) is in it (expected-absent where the repository serves no network interface).
+    score: expected-absent
+    evidence: "A library: no network interface and no response to strip"
+  M15/detached-work-reported:   # standard, requires convention
+    # Work nobody awaits goes through one helper that reports a failure with its cause and never rejects, and each long-running entry point installs one process-level handler for unhandled rejections that reports the same way, falls back to standard error and never throws (expected-absent where a lint rejects un-awaited promises and the repository starts no detached work).
+    score: absent
+    evidence: "No helper for work nobody awaits and no process-level handler, which a library should not install; the un-awaited promise is not linted either: nothing in package.json's xo configuration names a floating-promise rule, and lib/ipc/send.js:15 reasons about unhandledRejection by hand"
+  M15/error-code-copies-generated:   # standard, requires mechanical
+    # Every other copy of the codes (the client's code union, each locale's message catalog, the public error reference) is generated from the registry and carries a drift check in CI that regenerates through the generator's own function and compares the whole text; a registered code with no message entry in a locale, or with a placeholder entry, fails the check (expected-absent where no client, locale catalog or public reference holds a copy of the codes).
+    score: expected-absent
+    evidence: "No code to copy: the library declares no codes, has no client package, no locale catalog and no public code reference (docs/api.md documents the error's properties)"
+  M15/no-inline-error-codes:   # standard, requires mechanical
+    # No code is constructed outside the registry: the constructor is not reachable from elsewhere, or a gate in CI rejects a construction outside the registry over every package that depends on the error module, with an allowlist that is empty or lists existing debt by identity (file and code) rather than by count (expected-absent where the system emits no codes because it reports failures to no caller beyond an exit status or a thrown typed error: a library, a command-line tool).
+    score: expected-absent
+    evidence: "execa emits no codes of its own (see M15/error-code-registry): failures are TypeError, Error or the two ExecaError classes, so there is no code constructor to keep out of reach"
+  M15/native-throw-linted:   # strict, requires mechanical
+    # A lint flags a thrown native error (throw new Error and the built-in siblings) outside the typed error family's own module and the defect primitive, blocking the merge directly or under a ratchet on its count.
+    score: absent
+    evidence: "throw new TypeError and throw new Error are the throws in 33 files under lib/ (option validation, the ipc methods), the typed family being reserved for subprocess failure; no lint rule covers them"
+  M15/message-branch-linted:   # strict, requires mechanical
+    # A lint flags a branch on an error's message text (equality, prefix, substring, a regular expression on .message, str(e), err.Error(), getMessage()) in a catch clause, blocking the merge directly or under a ratchet on its count.
+    score: absent
+    evidence: "No lint rule covers a test of an error's message; lib/ branches on none (its uses of .message rewrite or forward the text, lib/arguments/cwd.js:16), so the rule has no finding to show, and nothing holds it"
+  M15/error-code-orphans-audited:   # strict, requires mechanical
+    # An audit in CI reports every registered code that nothing outside the registry references (an orphan) against a baseline that names each accepted orphan with its reason and fails on a stale entry, and every code-shaped literal in a hand-written document that no registry entry declares (a reverse orphan) (expected-absent where the system emits no codes because it reports failures to no caller beyond an exit status or a thrown typed error: a library, a command-line tool).
+    score: expected-absent
+    evidence: "execa emits no codes of its own (see M15/error-code-registry), so there is no set of declared codes to audit against the code or the documents"
+  M15/telemetry-keyed-on-code:   # strict, requires convention
+    # Error metrics and span attributes are keyed on the error's code and its type, never its message; structured logs carry the code and type as fields and a message or cause chain only as diagnostic detail that passes through redaction; and a method that returns a result type records the arm it returned as an outcome rather than as an error (expected-absent where the repository emits no telemetry).
+    score: expected-absent
+    evidence: "A library that emits no telemetry: no metrics, spans or structured logs; the verbose option prints lines to standard error for a person (lib/verbose/)"
+  M15/migration-discipline-written:   # lite, requires convention
+    # Where the repository has database migrations, the discipline is written beside them or in the instruction file: a merged migration is never edited, renamed or deleted and is corrected by a new one, a migration changes structure only, each migration's ledger entry lands with it, and a migration's commit carries a review marker (expected-absent where the repository has no database migrations).
+    score: expected-absent
+    evidence: "A process-execution library with no database: lib/ spawns child processes and the repository holds no migrations directory, SQL file, journal or revision chain, so there is no discipline to write beside one"
+  M15/applied-migrations-immutable:   # standard, requires mechanical
+    # A gate in CI fails a change that modifies, renames or deletes a migration file the base branch already holds, allowing only a restoration to content the file held before on that branch, and the migration runner records each file's hash when it applies it and refuses to run while an applied file's hash differs or the file is gone (expected-absent where the repository has no database migrations).
+    score: expected-absent
+    evidence: "No migrations to hold immutable: the library stores nothing in a database, and npm test (lint, unit, type) runs no migration tool"
+  M15/migration-ledger-integrity:   # standard, requires mechanical
+    # A check in CI holds the migration ledger and the files one to one, in strictly increasing order with no gap in the sequence and every field the runner reads explicit on each entry, so no migration is skipped silently or left without an entry (expected-absent where the repository has no database migrations).
+    score: expected-absent
+    evidence: "No migration ledger: no journal, changelog or revision chain exists, since the library has no database"
+  M15/migrations-structure-only:   # strict, requires mechanical
+    # A check in CI parses each migration with the database's grammar and blocks on a data statement (insert, update, delete, merge) anywhere in the statement tree, a procedural block or a function body included, fails a file whose dynamic statements it cannot read, and takes its exceptions from an allowlist outside the migration files that names each statement by identity under a reviewer's reason (expected-absent where the repository has no database migrations).
+    score: expected-absent
+    evidence: "No migrations to parse: the library has no database and no migrations directory"
+  M15/interface-policy-written:   # lite, requires convention
+    # Where the repository serves an interface (HTTP, RPC, GraphQL), the interface policy is written beside the contract or in the instruction file: an operation is internal unless a named external consumer justifies publishing it, a change that publishes one names its consumer, every request input declares a bound, and an operation declares every failure status its code can produce (expected-absent where the repository serves no interface).
+    score: expected-absent
+    evidence: "A process-execution library serves no interface: its surface is the functions index.js exports, versioned by semver, with no served contract to keep a policy beside"
+  M15/published-contract-filtered:   # standard, requires mechanical
+    # The published and the internal contract documents are generated from one source in which each operation is marked once (a tag, an extension field, a path prefix, a package or a schema directive), and a gate in CI fails when the published document holds an operation carrying the internal mark (expected-absent where the repository serves no interface).
+    score: expected-absent
+    evidence: "No contract document: the library declares no HTTP, RPC or GraphQL operation; its type declarations (index.d.ts) are the package's export surface, not a served interface"
+  M15/input-bounds-ratcheted:   # standard, requires mechanical
+    # A check in CI counts the request input fields of the contract that declare no bound (a string with no maximum length, pattern or format; a number with no maximum; an array with no maximum item count; a field with no type) and fails when the count exceeds the base branch's or a committed ceiling, with a field that is unbounded on purpose marked by a reason in the contract (expected-absent where the repository serves no interface).
+    score: expected-absent
+    evidence: "No request inputs: the library's options are validated by lib/arguments/ at the call, not through a served contract"
+  M15/unbounded-inputs-zero:   # strict, requires mechanical
+    # The count of request input fields of the contract that declare no bound is zero, and a check in CI holds it there by failing on any unbounded field (expected-absent where the repository serves no interface).
+    score: expected-absent
+    evidence: "No request inputs: the library serves no contract, so there is no count of unbounded fields to hold at zero"
+  M15/failure-statuses-declared:   # strict, requires convention
+    # Each operation's declared failure responses name every status its code can produce: the boundary's generic server-side status, the validation status, the authentication and authorization refusals where those layers run, and the transport status of each domain error the handler throws; the review checks the list against the handler (expected-absent where the repository serves no interface).
+    score: expected-absent
+    evidence: "No operations with failure statuses: failures are thrown ExecaError instances and the subprocess's own exit code (docs/errors.md), not a served interface's responses"
+  # M16 releases-versions
+  M16/released-artifacts-and-entry-rule-written:   # lite, requires convention
+    # The repository names each artifact it releases, with its changelog and where its version lives, and writes down which changes get a changelog entry (those the artifact's consumers would notice) and how a change's version bump is judged (expected-absent where the repository releases no versioned artifact).
+    score: absent
+    evidence: "execa publishes one npm package (version 10.1.0 in package.json) but keeps no changelog file (the root holds none) and no written rule for what a release lists or how the bump is chosen; its notes are GitHub Releases written by the maintainer at release time, which no contributor document describes."
+  M16/each-release-tagged:   # lite, requires convention
+    # Each released version has a git tag naming it, so a consumer and a publishing job can find the exact code of every version (expected-absent where the repository releases no versioned artifact).
+    score: convention
+    evidence: "Each release has a v<version> tag (v10.0.0, v10.0.1, v10.1.0, the audited commit's) with a GitHub Release by the maintainer; tagging is a step of the maintainer's release by hand, and nothing checks that a version has its tag."
+  M16/version-set-after-merge-by-one-run:   # standard, requires mechanical
+    # A release step on the integration branch, one run at a time, sets each artifact's version after the merge from the bump its waiting changes ask for, and no pull request sets the version itself (expected-absent where the repository releases no versioned artifact).
+    score: absent
+    evidence: "The version in package.json is moved by hand at release time; the only workflow, .github/workflows/main.yml, runs the tests and sets no version."
+  M16/shipped-change-requires-release:   # standard, requires mechanical
+    # A check fails a pull request that changes what an artifact ships without a change record asking for a release, so no shipped change reaches the integration branch unversioned (expected-absent where the repository releases no versioned artifact).
+    score: absent
+    evidence: "No pull-request check asks a change to the shipped source to say which release it needs; there are no change records."
+  M16/changelog-and-version-per-artifact:   # standard, requires convention
+    # A repository that releases several artifacts at their own versions keeps a changelog and a version per artifact, and each change record names the artifacts it reaches (expected-absent where the repository releases one artifact, or none).
+    score: expected-absent
+    evidence: "execa releases one npm package, so one changelog and one version suffice."
+  M16/release-tag-after-verification:   # strict, requires mechanical
+    # Each version is tagged automatically on the commit that released it, and on no other, only once that commit's own required checks have passed, and publishing starts from the tag (expected-absent where the repository releases no versioned artifact).
+    score: absent
+    evidence: "No workflow tags or publishes (main.yml only tests): the tag and the npm publish are made by hand, not by a job that reads the releasing commit's checks first."
+  M16/release-identity-narrowed:   # strict, requires mechanical
+    # The identity that writes the release to the integration branch passes its rules only as far as the release needs (contents only, never workflows; its key held by an environment only the integration branch may use; force pushes and deletion still blocked for it), or the release arrives as a pull request a person merges (expected-absent where the repository releases no versioned artifact).
+    score: absent
+    evidence: "Releases are pushed and published by the maintainer by hand; no dedicated release identity and no release pull request exists."
+declined: []
