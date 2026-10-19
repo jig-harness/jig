@@ -9,7 +9,7 @@ import { swallow } from "../../../../shared/errors.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { CAUSES, type Cause, remedyFor, REMEDIES } from "./causes.ts";
 import type { PathClass } from "./classify.ts";
-import type { PullRequestHead, Resolution } from "./replay.ts";
+import type { PullRequestHead, Resolution, SubjectBranches } from "./replay.ts";
 import type { Kind } from "./snapshot.ts";
 
 export const SCHEMA = "merge-conflicts/v1";
@@ -39,6 +39,8 @@ export interface PathRecord {
 }
 
 export interface MergeRecord {
+  /** The kind of operation; a replayed record is always a merge. */
+  operation: "merge";
   commit: string;
   /** First parent (ours) and second parent (theirs). */
   parents: [string, string];
@@ -46,6 +48,10 @@ export interface MergeRecord {
   subject: string;
   /** The pull request the subject names (`Merge pull request #12 …`, `… (#12)`). */
   pullRequest: number | null;
+  /** The branches the subject names: the one merged in, and the one merged into. */
+  branches: SubjectBranches;
+  /** The fetched pull-request head refs the merge commit is reachable from. */
+  containedIn: PullRequestHead[];
   /** The fetched pull-request head refs each parent is the tip of. */
   parentHeads: { ours: PullRequestHead[]; theirs: PullRequestHead[] };
   conflicted: boolean;
@@ -60,7 +66,7 @@ export interface SkippedMerge {
   commit: string;
   date: string;
   subject: string;
-  reason: "octopus" | "replay-failed";
+  reason: "octopus" | "shallow" | "replay-failed";
   detail: string;
 }
 
@@ -119,6 +125,8 @@ export interface Report {
   generatedAt: string;
   range: Range;
   hotspotMinMerges: number;
+  /** A shallow clone: merges whose history it cuts are skipped, so the results are partial. */
+  shallow: boolean;
   totals: {
     merges: number;
     conflicted: number;
@@ -136,6 +144,9 @@ export interface Report {
   confidence: Confidence | null;
   limits: string[];
 }
+
+const SHALLOW_LIMIT =
+  "This clone is shallow: a merge whose history its boundary cuts is skipped, so the results are partial. Fetch the full history (git fetch --unshallow) for a complete report.";
 
 export const LIMITS = [
   "It sees only merge commits that still exist: a conflict resolved during a rebase, a cherry-pick or a revert, or on a branch deleted after a squash merge, leaves nothing to replay.",
@@ -313,11 +324,50 @@ class Tallies {
   }
 }
 
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Every week of the range, a week without a merge as a row of zeros, so a gap
+ * shows. An open end of the range is the first or the last merge's week (now,
+ * for a range with only a start).
+ */
+function allWeeks(
+  byWeek: ReadonlyMap<string, WeekSummary>,
+  range: Range,
+  merges: readonly MergeRecord[],
+  now: Date,
+): WeekSummary[] {
+  const dates = merges.map((m) => Date.parse(m.date));
+  const first =
+    range.since !== null ? Date.parse(range.since) : Math.min(...dates);
+  const last =
+    range.until !== null
+      ? Date.parse(range.until) - 1
+      : range.since !== null
+        ? now.getTime()
+        : Math.max(...dates);
+  if (!Number.isFinite(first) || !Number.isFinite(last) || first > last)
+    return [];
+  const weeks: WeekSummary[] = [];
+  for (
+    let at = Date.parse(weekOf(new Date(first).toISOString()));
+    at <= last;
+    at += WEEK_MS
+  ) {
+    const week = new Date(at).toISOString().slice(0, 10);
+    weeks.push(
+      byWeek.get(week) ?? { week, merges: 0, conflicted: 0, causes: {} },
+    );
+  }
+  return weeks;
+}
+
 export function buildReport(input: {
   range: Range;
   hotspotMinMerges: number;
   merges: MergeRecord[];
   skipped: SkippedMerge[];
+  shallow?: boolean;
   confidence: Confidence | null;
   now?: Date;
 }): Report {
@@ -325,11 +375,14 @@ export function buildReport(input: {
   const tallies = new Tallies();
   for (const merge of merges) tallies.addMerge(merge);
   const paths = tallies.paths(hotspotMinMerges);
+  const shallow = input.shallow ?? false;
+  const now = input.now ?? new Date();
   return {
     schema: SCHEMA,
-    generatedAt: (input.now ?? new Date()).toISOString(),
+    generatedAt: now.toISOString(),
     range: input.range,
     hotspotMinMerges,
+    shallow,
     totals: {
       merges: merges.length,
       conflicted: merges.filter((m) => m.conflicted).length,
@@ -341,13 +394,11 @@ export function buildReport(input: {
     causes: tallies.causes(confidence),
     paths,
     hotspots: paths.filter((p) => p.hotspot).map((p) => p.path),
-    weeks: [...tallies.byWeek.values()].sort((a, b) =>
-      a.week.localeCompare(b.week),
-    ),
+    weeks: allWeeks(tallies.byWeek, input.range, merges, now),
     merges,
     skipped: input.skipped,
     confidence,
-    limits: LIMITS,
+    limits: shallow ? [SHALLOW_LIMIT, ...LIMITS] : LIMITS,
   };
 }
 
@@ -368,11 +419,10 @@ function headline(report: Report): string[] {
       ? ` (${totals.mechanical} mechanical: no structural path and no overlap region)`
       : "";
   const skipped =
-    totals.skipped > 0
-      ? `; ${totals.skipped} skipped (listed with --json)`
-      : "";
+    totals.skipped > 0 ? `; ${totals.skipped} skipped (listed below)` : "";
   return [
     `Merge conflicts, ${report.range.label}`,
+    ...(report.shallow ? [`Partial: ${SHALLOW_LIMIT}`] : []),
     `${plural(totals.merges, "merge")} replayed, ${totals.conflicted} conflicted${mechanical}${skipped}`,
   ];
 }
@@ -414,6 +464,17 @@ function summaryLines(report: Report): string[] {
   ];
 }
 
+function skippedLines(skipped: readonly SkippedMerge[]): string[] {
+  if (skipped.length === 0) return [];
+  return [
+    "",
+    "Skipped:",
+    ...skipped.map(
+      (s) => `  ${s.commit.slice(0, 12)} (${s.reason}): ${s.detail}`,
+    ),
+  ];
+}
+
 function accuracyLine(cause: Cause, a: Accuracy | undefined): string {
   const result =
     a === undefined || a.checked === 0
@@ -441,6 +502,7 @@ export function renderReport(report: Report, limit: number): string {
   return [
     ...headline(report),
     ...body,
+    ...skippedLines(report.skipped),
     ...confidenceLines(report.confidence),
     "",
     "Limits:",

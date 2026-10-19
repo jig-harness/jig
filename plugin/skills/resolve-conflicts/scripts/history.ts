@@ -18,15 +18,18 @@
  * Each merge's two parents are merged again with `git merge-tree
  * --write-tree` (diff3 style, so every region carries its merge base). Git's
  * new objects go to a temporary object directory that is removed afterwards:
- * no ref, index, working tree or object of the repository changes. It reads
- * git only, and needs git 2.38 or later.
+ * no ref, index, working tree or object of the repository changes. Today's
+ * attributes and merge drivers are kept out of the past merges. It reads git
+ * only, needs git 2.40 or later, and 2.45 or later in a partial clone. In a
+ * shallow clone, a merge whose history the clone cuts is skipped.
  *
  * Reads `resolve_conflicts.generated` and `resolve_conflicts.hotspot_min_merges`
  * from the configuration, and the release step's version files from
  * `changelog.version` (the repository's own `.config/jig.yaml`).
  *
  * Exit codes: 0 the report was printed; 1 a git call failed; 2 usage error,
- * not inside a git repository, invalid configuration, or git older than 2.38.
+ * not inside a git repository, invalid configuration, git older than 2.40, or
+ * a partial clone with git older than 2.45.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -60,7 +63,14 @@ import { parseRegionLines } from "./lib/markers.ts";
 import {
   type ConflictedPath,
   Git,
+  cutByBoundary,
   gitIsRecentEnough,
+  isPartialClone,
+  mergeBases,
+  NO_LAZY_FETCH_GIT,
+  pullRequestHeadsContaining,
+  shallowBoundary,
+  subjectBranches,
   MIN_GIT,
   type MergeCommit,
   mergeCommits,
@@ -327,6 +337,7 @@ function regionCauseOf(
     theirs: netAboveReader(git, base?.blob ?? null, theirs?.blob ?? null),
   };
   const ctx: RegionContext = {
+    inBase: base !== null,
     file: {
       base: linesOf(texts.base),
       ours: linesOf(texts.ours),
@@ -396,7 +407,7 @@ function pathRecord(
   const causes: Cause[] =
     regions.length > 0
       ? ordered(regions.map((r) => r.cause))
-      : [derived ? "derived" : "structural"];
+      : [pathLevelCause(conflicted, derived !== null, binary)];
   return {
     path,
     kind: kindOf(stages),
@@ -409,18 +420,40 @@ function pathRecord(
   };
 }
 
-function short(sha: string): string {
-  return sha.slice(0, 12);
+/** Git's kinds of conflict that leave text regions in the file. */
+const TEXT_CONFLICTS = new Set(["contents", "add/add"]);
+
+/**
+ * The cause of a path with no region read: `derived` for a lockfile or a
+ * generated file; `structural` when git reports the conflict without text
+ * regions; `overlap` for a text conflict whose regions could not be read,
+ * which settles nothing.
+ */
+function pathLevelCause(
+  conflicted: ConflictedPath,
+  derived: boolean,
+  binary: boolean,
+): Cause {
+  if (derived) return "derived";
+  const textual =
+    !binary &&
+    conflicted.conflicts.length > 0 &&
+    conflicted.conflicts.every((kind) => TEXT_CONFLICTS.has(kind));
+  return textual ? "overlap" : "structural";
 }
 
-/** Replay one two-parent merge. */
+/**
+ * Replay one two-parent merge. `unrelated` when its parents share no commit
+ * (in a full clone), as the original merge must have allowed.
+ */
 export function replayMerge(
   git: Git,
   merge: MergeCommit,
   setup: Setup,
+  unrelated = false,
 ): MergeRecord {
   const [ours, theirs] = merge.parents as [string, string];
-  const merged = mergeTree(git, ours, theirs);
+  const merged = mergeTree(git, ours, theirs, unrelated);
   const specs = merged.paths.flatMap((p) => [
     `${merged.tree}:${p.path}`,
     p.stages.base?.blob ?? "",
@@ -452,11 +485,15 @@ export function replayMerge(
     .sort((a, b) => a.path.localeCompare(b.path));
   const conflictedPaths = new Set(paths.map((p) => p.path));
   return {
+    operation: "merge",
     commit: merge.commit,
     parents: [ours, theirs],
     date: merge.date,
     subject: merge.subject,
     pullRequest: prNumber(merge.subject),
+    branches: subjectBranches(merge.subject),
+    containedIn:
+      setup.heads.size > 0 ? pullRequestHeadsContaining(git, merge.commit) : [],
     parentHeads: {
       ours: setup.heads.get(ours) ?? [],
       theirs: setup.heads.get(theirs) ?? [],
@@ -470,7 +507,7 @@ export function replayMerge(
   };
 }
 
-function checkGit(git: Git): void {
+function checkGit(git: Git): [number, number, number] {
   let output = "";
   try {
     output = git.text(["--version"]);
@@ -484,30 +521,30 @@ function checkGit(git: Git): void {
   if (version === null || !gitIsRecentEnough(version))
     fail(
       2,
-      `history: needs git ${MIN_GIT.join(".")} or later for merge-tree --write-tree; found ${output.trim() || "no version"}.`,
+      `history: needs git ${MIN_GIT.join(".")} or later (merge-tree --write-tree, GIT_ATTR_SOURCE); found ${output.trim() || "no version"}.`,
     );
+  return version as [number, number, number];
 }
 
-async function main(): Promise<number> {
-  const options = parseArgs(process.argv.slice(2));
-  if (typeof options === "string") fail(2, `history: ${options}`, USAGE);
-  const repo = new Git(process.cwd());
-  checkGit(repo);
-  if (repo.raw(["rev-parse", "--git-dir"]).code !== 0)
-    fail(2, "history: not inside a git repository.");
-  const setup: Setup = {
-    entries: generatedEntries(),
-    versionFiles: releaseVersionFiles(consumerRoot()),
-    heads: pullRequestHeads(repo),
-  };
-  const minMerges = hotspotMinMerges();
-  const inRange = mergeCommits(repo).filter(
-    (m) =>
-      (options.since === null || m.time * 1000 >= options.since) &&
-      (options.until === null || m.time * 1000 < options.until),
+/** A partial clone fetches the objects it lacks; before git 2.45 nothing stops the replay from doing so. */
+function refusePartialClone(git: Git, version: readonly number[]): void {
+  if (gitIsRecentEnough(version, NO_LAZY_FETCH_GIT) || !isPartialClone(git))
+    return;
+  fail(
+    2,
+    `history: this is a partial clone, and git before ${NO_LAZY_FETCH_GIT.join(".")} would fetch the objects it lacks over the network; the replay reads git only. Use git ${NO_LAZY_FETCH_GIT.join(".")} or later, or a full clone.`,
   );
+}
+
+/** Replay every merge of `inRange`, or say why one is skipped. */
+function replayAll(
+  repo: Git,
+  inRange: readonly MergeCommit[],
+  setup: Setup,
+): { merges: MergeRecord[]; skipped: SkippedMerge[] } {
   const merges: MergeRecord[] = [];
   const skipped: SkippedMerge[] = [];
+  const boundary = shallowBoundary(repo);
   withScratchObjects(repo, (git) => {
     for (const merge of inRange) {
       const skip = (reason: SkippedMerge["reason"], detail: string) =>
@@ -526,12 +563,50 @@ async function main(): Promise<number> {
         continue;
       }
       try {
-        merges.push(replayMerge(git, merge, setup));
+        const bases = mergeBases(
+          git,
+          merge.parents[0] as string,
+          merge.parents[1] as string,
+        );
+        if (cutByBoundary(git, merge.parents, bases, boundary)) {
+          skip(
+            "shallow",
+            "the shallow clone's boundary hides history between its parents and their merge base",
+          );
+          continue;
+        }
+        merges.push(replayMerge(git, merge, setup, bases.length === 0));
       } catch (err) {
         skip("replay-failed", err instanceof Error ? err.message : String(err));
       }
     }
   });
+  return { merges, skipped };
+}
+
+async function main(): Promise<number> {
+  const options = parseArgs(process.argv.slice(2));
+  if (typeof options === "string") fail(2, `history: ${options}`, USAGE);
+  const repo = new Git(process.cwd());
+  const version = checkGit(repo);
+  if (repo.raw(["rev-parse", "--git-dir"]).code !== 0)
+    fail(2, "history: not inside a git repository.");
+  refusePartialClone(repo, version);
+  const setup: Setup = {
+    entries: generatedEntries(),
+    versionFiles: releaseVersionFiles(consumerRoot()),
+    heads: pullRequestHeads(repo),
+  };
+  const minMerges = hotspotMinMerges();
+  const seconds = (ms: number | null) =>
+    ms === null ? null : Math.ceil(ms / 1000);
+  const inRange = mergeCommits(
+    repo,
+    seconds(options.since),
+    seconds(options.until),
+  );
+  const shallow = shallowBoundary(repo).size > 0;
+  const { merges, skipped } = replayAll(repo, inRange, setup);
   const range: Range = {
     since:
       options.since === null ? null : new Date(options.since).toISOString(),
@@ -544,14 +619,11 @@ async function main(): Promise<number> {
     hotspotMinMerges: minMerges,
     merges,
     skipped,
+    shallow,
     confidence: loadConfidence(),
   });
   if (options.json) console.log(JSON.stringify(report, null, 2));
-  else {
-    console.log(renderReport(report, options.limit));
-    for (const s of skipped)
-      console.error(`skipped ${short(s.commit)} (${s.reason}): ${s.detail}`);
-  }
+  else console.log(renderReport(report, options.limit));
   return 0;
 }
 

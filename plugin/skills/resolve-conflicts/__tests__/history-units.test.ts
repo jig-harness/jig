@@ -15,9 +15,11 @@ import {
 } from "../scripts/lib/causes.ts";
 import {
   gitIsRecentEnough,
+  NO_LAZY_FETCH_GIT,
   parseGitVersion,
   parseMergeTree,
   parseResolutionSection,
+  subjectBranches,
 } from "../scripts/lib/replay.ts";
 import { weekOf } from "../scripts/lib/report.ts";
 
@@ -32,11 +34,13 @@ describe("git's version", () => {
     expect(parseGitVersion("not git")).toBeNull();
   });
 
-  it("needs 2.38 or later", () => {
-    expect(gitIsRecentEnough([2, 37, 9])).toBe(false);
+  it("needs 2.40 or later, and 2.45 or later to keep a partial clone from fetching", () => {
+    expect(gitIsRecentEnough([2, 39, 9])).toBe(false);
     expect(gitIsRecentEnough([1, 99, 0])).toBe(false);
-    expect(gitIsRecentEnough([2, 38, 0])).toBe(true);
+    expect(gitIsRecentEnough([2, 40, 0])).toBe(true);
     expect(gitIsRecentEnough([3, 0, 0])).toBe(true);
+    expect(gitIsRecentEnough([2, 44, 3], NO_LAZY_FETCH_GIT)).toBe(false);
+    expect(gitIsRecentEnough([2, 45, 0], NO_LAZY_FETCH_GIT)).toBe(true);
   });
 });
 
@@ -178,6 +182,7 @@ describe("the Conflicts resolved: section", () => {
 
 describe("the cause rules", () => {
   const none: RegionContext = {
+    inBase: true,
     file: { base: null, ours: null, theirs: null },
     release: { base: null, ours: null, theirs: null },
     netAbove: () => null,
@@ -247,4 +252,28 @@ it("names a week by its Monday", () => {
   expect(weekOf("2026-10-19T10:00:00+02:00")).toBe("2026-10-19");
   expect(weekOf("2026-10-25T23:00:00Z")).toBe("2026-10-19");
   expect(weekOf("2026-10-18T23:30:00Z")).toBe("2026-10-12");
+});
+
+it("reads the branches a merge's subject names", () => {
+  expect(subjectBranches("Merge branch 'a' into b")).toEqual({
+    theirs: "a",
+    ours: "b",
+  });
+  expect(subjectBranches("Merge branch 'a'")).toEqual({
+    theirs: "a",
+    ours: null,
+  });
+  expect(
+    subjectBranches("Merge remote-tracking branch 'origin/main' into feat/x"),
+  ).toEqual({
+    theirs: "origin/main",
+    ours: "feat/x",
+  });
+  expect(
+    subjectBranches("Merge pull request #12 from owner/fix/thing"),
+  ).toEqual({
+    theirs: "fix/thing",
+    ours: null,
+  });
+  expect(subjectBranches("Add a thing")).toEqual({ theirs: null, ours: null });
 });

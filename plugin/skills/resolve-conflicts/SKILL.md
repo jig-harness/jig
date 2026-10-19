@@ -430,15 +430,28 @@ bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --since 2026-01-01 --until 2026-03-
 bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --all --json
 ```
 
+A bare date is a day in UTC: `--since` starts at its midnight, and `--until`
+ends after it.
+
 It [replays](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) every merge commit the repository's refs reach in the range
 (fetched pull-request heads such as `refs/pull/*/head` included; the stash
-and a forge's synthetic `refs/pull/*/merge` commits left out): it merges the
+and a forge's synthetic `refs/pull/*/merge` commits, under `refs/remotes/`
+too, left out): it merges the
 merge's two parents again with `git merge-tree --write-tree`, which needs no
 working tree, in diff3 style so every conflicting region carries its
 [merge base](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). Git's
 new objects go to a temporary object directory, removed afterwards, so no
-ref, index, working tree or object of the repository changes. A merge with
-more than two parents is skipped and listed. It needs git 2.38 or later.
+ref, index, working tree or object of the repository changes. Today's
+attributes do not reach a past merge: they are read from the empty tree, and
+every configured merge driver is replaced by `false`, so no command of the
+repository's runs and every region is written with markers of the default
+size. It reads git only and never fetches: it needs git 2.40 or later, and
+refuses a partial clone below git 2.45, which cannot be kept from fetching
+the objects it lacks. A merge with more than two parents is skipped; in a
+shallow clone, so is a merge whose history the clone cuts (its merge base
+hidden), and the report says its results are partial. A merge git cannot
+replay (an object missing) is skipped too. Every skipped merge is listed
+with its reason.
 
 Each conflicting region gets one cause, the first of these that matches; a
 path git reports as conflicting without text regions gets `structural` for
@@ -448,12 +461,12 @@ the whole path, with git's own kind of conflict (`modify/delete`, `binary`,
 | Cause | The region | The change that removes it |
 |-------|------------|----------------------------|
 | `derived` | the path is a lockfile or a generated file, as `conflict-map.ts` classes it | regenerate it; keep it out of pull requests if a step after the merge can write it |
-| `structural` | no text regions: modify/delete, rename, binary, file/directory, mode | none from the regions; resolving it stays a decision |
+| `structural` | git reports the conflict without text regions: modify/delete, rename, binary, file/directory, mode (a text conflict whose regions cannot be read is `overlap`) | none from the regions; resolving it stays a decision |
 | `echo` | the sides are identical, or one side's edit (adding at least one line) is already in the other, in the same order | keep the side that contains the other; rebuild a branch on its base once the branch it was built on merges |
 | `version` | the sides differ only in the release version the changelog skill's release step writes (`changelog.version`), or in a last-updated date | move the version after the merge; take a date from git |
 | `sequence` | both sides add an entry with the next ordinal, one past the base's highest | identifiers that cannot collide, or one renumbering step |
 | `tally` | only numbers differ, and each side's number moved by the lines that side added to the file, or added above the line it names | derive the number where it is used; key a register by name, not line |
-| `append` | the base side is empty: both sides added lines at the same place | one file per entry, or a sorted list with one entry per line; in source code the report asks whether it is the same fix written twice |
+| `append` | the base side is empty: both sides added lines at the same place (not in a file both sides added, which had no base) | one file per entry, or a sorted list with one entry per line; in source code the report asks whether it is the same fix written twice |
 | `packed-list` | one line in every side, and each side only adds items to a list in it | one item per line |
 | `adjacent` | the lines each side changed touch but do not overlap | split what changes for different reasons onto lines or files of its own |
 | `overlap` | none of the above | two pieces of work changed the same thing: plan them apart, or land one first |
@@ -477,10 +490,13 @@ squash merge, leaves nothing to replay, and a conflict met again in a later
 merge counts again.
 
 `--json` prints the same as a `merge-conflicts/v1` object: `range`,
-`totals`, `causes`, `paths`, `hotspots`, `weeks`, `confidence`, `limits`,
-`skipped`, and `merges`, one record per replayed merge (its commit, both
-parents and the pull-request heads each is the tip of, its date, subject and
-the pull request the subject names, and each conflicted path with its kind,
+`shallow`, `totals`, `causes`, `paths`, `hotspots`, `weeks` (every week of the
+range, one without a merge as zeros), `confidence`, `limits`, `skipped` (each
+with its reason: `octopus`, `shallow` or `replay-failed`), and `merges`, one
+record per replayed merge (`operation: "merge"`, its commit, both parents
+and the pull-request heads each is the tip of, the pull-request heads that
+contain the merge, its date, subject, the pull request and the branches the
+subject names, and each conflicted path with its kind,
 git's kinds of conflict, class, causes, regions, and the decision and reason
 its `Conflicts resolved:` section recorded).
 
@@ -488,7 +504,7 @@ its `Conflicts resolved:` section recorded).
 |------|---------|
 | 0 | the report was printed |
 | 1 | a git call failed |
-| 2 | usage error, not inside a git repository, invalid configuration, or git older than 2.38 |
+| 2 | usage error, not inside a git repository, invalid configuration, git older than 2.40, or a partial clone with git older than 2.45 |
 
 ## Related skills
 

@@ -207,6 +207,8 @@ export type SideName = "base" | "ours" | "theirs";
 
 /** What a rule may read beyond the region. */
 export interface RegionContext {
+  /** Whether the file existed in the merge base; a file both sides added did not. */
+  inBase: boolean;
   /** The whole file in each version, as lines; null where that version is absent or unreadable. */
   file: Record<SideName, string[] | null>;
   /** The release version each version of the file holds at a key the release step writes, if the path is a version file. */
@@ -411,9 +413,14 @@ export function isTally(r: Region, ctx: RegionContext): boolean {
   );
 }
 
-/** `append`: the base side of the region is empty, so both sides added lines at the same place. */
-export function isAppend(r: Region): boolean {
-  return r.base.length === 0;
+/**
+ * `append`: the base side of the region is empty, so both sides added lines
+ * at the same place. A file both sides added has an empty base everywhere
+ * because it did not exist, not because lines were added at one place, so
+ * its regions are not `append`.
+ */
+export function isAppend(r: Region, ctx: RegionContext): boolean {
+  return r.base.length === 0 && ctx.inBase;
 }
 
 /** What separates the items of a list written on one line. */
@@ -477,7 +484,7 @@ export function regionCause(r: Region, ctx: RegionContext): Cause {
   if (isVersion(r, ctx)) return "version";
   if (isSequence(r, ctx)) return "sequence";
   if (isTally(r, ctx)) return "tally";
-  if (isAppend(r)) return "append";
+  if (isAppend(r, ctx)) return "append";
   if (isPackedList(r)) return "packed-list";
   if (isAdjacent(r)) return "adjacent";
   return "overlap";

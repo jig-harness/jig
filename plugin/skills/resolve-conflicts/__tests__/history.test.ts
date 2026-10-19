@@ -5,8 +5,16 @@
  * repository is left as it was.
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { delimiter, join, relative } from "node:path";
+import { pathToFileURL } from "node:url";
+import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import type { MergeRecord, PathRecord, Report } from "../scripts/lib/report.ts";
@@ -362,9 +370,10 @@ describe("the merge record", () => {
       { "a.txt": "x\n" },
       { "a.txt": "y\n" },
       { "a.txt": "z\n" },
-      "Merge pull request #7 from feature",
+      "Merge pull request #7 from owner/feature",
     );
     s.git("update-ref", "refs/pull/7/head", conflicted.parentsAre[1]);
+    s.git("update-ref", "refs/pull/8/head", conflicted.commit);
     merge({ "b.txt": "1\n" }, { "c.txt": "2\n" }, { "d.txt": "3\n" });
     const rep = report();
     const byCommit = new Map(rep.merges.map((m) => [m.commit, m]));
@@ -374,6 +383,9 @@ describe("the merge record", () => {
     expect(first.parentHeads.theirs).toEqual([
       { ref: "refs/pull/7/head", number: 7 },
     ]);
+    expect(first.operation).toBe("merge");
+    expect(first.branches).toEqual({ theirs: "feature", ours: null });
+    expect(first.containedIn).toEqual([{ ref: "refs/pull/8/head", number: 8 }]);
     expect(rep.totals).toMatchObject({ merges: 2, conflicted: 1 });
     expect(rep.merges.filter((m) => !m.conflicted)).toHaveLength(1);
   });
@@ -385,6 +397,12 @@ describe("the merge record", () => {
       .git("commit-tree", tree, "-p", "HEAD", "-p", "HEAD~1", "-m", "synthetic")
       .trim();
     s.git("update-ref", "refs/pull/9/merge", synthetic);
+    s.git("update-ref", "refs/remotes/origin/pull/10/merge", synthetic);
+    s.git(
+      "update-ref",
+      "refs/remotes/origin/merge-requests/11/merge",
+      synthetic,
+    );
     s.write("a.txt", "dirty\n");
     s.git("stash", "-q");
     expect(report().totals.merges).toBe(1);
@@ -421,7 +439,7 @@ describe("the merge record", () => {
     });
   });
 
-  it("replays a merge of unrelated histories, and a repository with no commit", () => {
+  it("replays a merge of unrelated histories, and a repository with no commit; a file both sides added is overlap, not append", () => {
     const empty = report();
     expect(empty.totals).toMatchObject({ merges: 0, conflicted: 0 });
     const ours = commitAll("root one", { "a.txt": "one\n" });
@@ -436,7 +454,8 @@ describe("the merge record", () => {
     const rep = report();
     expect(pathOf(rep, "a.txt")).toMatchObject({
       kind: "both-added",
-      causes: ["append"],
+      causes: ["overlap"],
+      mechanical: false,
     });
   });
 });
@@ -465,6 +484,10 @@ describe("the report", () => {
     expect(report([]).totals.merges).toBe(1);
     expect(report(["--days", "200"]).totals.merges).toBe(2);
     expect(report(["--all"]).totals.merges).toBe(2);
+    const weeks = report(["--days", "200"]).weeks;
+    expect(weeks.length).toBeGreaterThanOrEqual(28);
+    expect(weeks.filter((w) => w.merges === 0).length).toBe(weeks.length - 2);
+    expect(weeks.reduce((n, w) => n + w.merges, 0)).toBe(2);
     const old = report([
       "--since",
       iso(120 * DAY).slice(0, 10),
@@ -540,6 +563,7 @@ describe("the report", () => {
         "hotspotMinMerges",
         "hotspots",
         "limits",
+        "shallow",
         "merges",
         "paths",
         "range",
@@ -580,7 +604,10 @@ describe("the report", () => {
     const m = rep.merges[0] as MergeRecord;
     expect(Object.keys(m).sort()).toEqual(
       [
+        "branches",
         "commit",
+        "containedIn",
+        "operation",
         "conflicted",
         "date",
         "mechanical",
@@ -636,11 +663,13 @@ describe("the repository is left as it was", () => {
     expect(readdirSync(scratchTmp)).toEqual([]);
   });
 
-  it("works from a linked worktree, reading the shared objects", () => {
+  it("works from a linked worktree, reading the shared objects and changing none", () => {
     merge({ "a.txt": "x\n" }, { "a.txt": "y\n" }, { "a.txt": "z\n" });
     const linked = join(s.home, "linked");
     s.git("worktree", "add", "-q", "--detach", linked);
+    const before = state();
     const r = s.script("history.ts", ["--json", "--all"], linked);
+    expect(state()).toBe(before);
     expectSpawnExit(
       { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
       0,
@@ -649,15 +678,206 @@ describe("the repository is left as it was", () => {
   });
 });
 
-it("refuses a git older than 2.38 with a message", () => {
+it("refuses a git older than 2.40 with a message", () => {
   const bin = join(s.home, "bin");
   mkdirSync(bin);
   writeFakeProgram(
     join(bin, "git"),
-    '#!/usr/bin/env bun\nconsole.log("git version 2.37.1");\n',
+    '#!/usr/bin/env bun\nconsole.log("git version 2.39.5");\n',
   );
   s.env.PATH = `${bin}${delimiter}${s.env.PATH ?? ""}`;
   const r = run(["--all"]);
   expectSpawnExit({ exitCode: r.code, stdout: r.stdout, stderr: r.stderr }, 2);
-  expect(r.stderr).toContain("needs git 2.38 or later");
+  expect(r.stderr).toContain("needs git 2.40 or later");
+});
+
+describe("what the replay must not trust or run", () => {
+  it("skips a merge whose history a shallow clone cuts, and says the report is partial", () => {
+    commitAll("base", { "f.txt": "1\n2\n3\n4\n5\n" });
+    s.git("checkout", "-q", "-b", "feature");
+    const theirs = commitAll("feature", { "f.txt": "1\n2\n3\n4\nfive\n" });
+    s.git("checkout", "-q", "main");
+    commitAll("main one", { "g.txt": "g\n" });
+    const ours = commitAll("main two", { "f.txt": "one\n2\n3\n4\n5\n" });
+    const commit = s
+      .git(
+        "commit-tree",
+        "HEAD^{tree}",
+        "-p",
+        ours,
+        "-p",
+        theirs,
+        "-m",
+        "Merge branch 'feature'",
+      )
+      .trim();
+    s.git("reset", "-q", "--hard", commit);
+    expect(report().totals).toMatchObject({ merges: 1, conflicted: 0 });
+    const clone = join(s.home, "shallow");
+    const cloned = s.run(
+      "git",
+      ["clone", "-q", "--depth", "2", pathToFileURL(s.root).href, clone],
+      s.home,
+    );
+    expectSpawnExit(
+      { exitCode: cloned.code, stdout: cloned.stdout, stderr: cloned.stderr },
+      0,
+    );
+    const r = s.script("history.ts", ["--json", "--all"], clone);
+    expectSpawnExit(
+      { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
+      0,
+    );
+    const rep = JSON.parse(r.stdout) as Report;
+    expect(rep.shallow).toBe(true);
+    expect(rep.totals).toMatchObject({ merges: 0, conflicted: 0, skipped: 1 });
+    expect(rep.skipped[0]).toMatchObject({ commit, reason: "shallow" });
+    expect(rep.limits[0]).toContain("shallow");
+    const text = s.script("history.ts", ["--all"], clone);
+    expectSpawnExit(
+      { exitCode: text.code, stdout: text.stdout, stderr: text.stderr },
+      0,
+    );
+    expect(text.stdout).toContain("Partial: This clone is shallow");
+    expect(text.stdout).toContain("1 skipped (listed below)");
+    expect(text.stdout).toContain(`${commit.slice(0, 12)} (shallow)`);
+  });
+
+  it("runs no merge driver and reads no attribute from today's tree", () => {
+    const marker = join(s.home, "driver-ran");
+    s.git(
+      "config",
+      "merge.touchy.driver",
+      `touch '${marker.replaceAll("\\", "/")}'; false`,
+    );
+    mkdirSync(join(s.root, ".git", "info"), { recursive: true });
+    writeFileSync(
+      join(s.root, ".git", "info", "attributes"),
+      "*.txt merge=touchy\n",
+    );
+    merge(
+      { "a.txt": "x\n", "notes.md": "a\n" },
+      { "a.txt": "y\n", "notes.md": "a\nb\n" },
+      { "a.txt": "z\n", "notes.md": "a\nc\n" },
+    );
+    // Today's working tree asks for a union merge, which would leave no conflict.
+    s.write(".gitattributes", "*.md merge=union\n");
+    const rep = report();
+    expect(existsSync(marker)).toBe(false);
+    expect(causesOf("notes.md", rep)).toEqual(["append"]);
+    // The silenced driver leaves no markers: a text conflict with no region read is overlap.
+    expect(pathOf(rep, "a.txt")).toMatchObject({
+      causes: ["overlap"],
+      regions: [],
+      mechanical: false,
+    });
+  });
+
+  it("refuses a partial clone when git cannot be kept from fetching", () => {
+    merge({ "a.txt": "x\n" }, { "a.txt": "y\n" }, { "a.txt": "z\n" });
+    s.git("config", "remote.origin.promisor", "true");
+    const real = Bun.which("git", { PATH: s.env.PATH ?? "" }) as string;
+    const fake = (version: string) => {
+      const bin = join(s.home, `bin-${version}`);
+      mkdirSync(bin);
+      writeFakeProgram(
+        join(bin, "git"),
+        [
+          "#!/usr/bin/env bun",
+          "const args = process.argv.slice(2);",
+          `if (args.includes("--version")) { console.log("git version ${version}"); process.exit(0); }`,
+          `const r = Bun.spawnSync([${JSON.stringify(real)}, ...args], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });`,
+          "process.exit(r.exitCode ?? 1);",
+          "",
+        ].join("\n"),
+      );
+      return bin;
+    };
+    const path = s.env.PATH ?? "";
+    s.env.PATH = `${fake("2.44.0")}${delimiter}${path}`;
+    const old = run(["--all"]);
+    expectSpawnExit(
+      { exitCode: old.code, stdout: old.stdout, stderr: old.stderr },
+      2,
+    );
+    expect(old.stderr).toContain("partial clone");
+    s.env.PATH = `${fake("2.45.0")}${delimiter}${path}`;
+    const recent = run(["--json", "--all"]);
+    expectSpawnExit(
+      { exitCode: recent.code, stdout: recent.stdout, stderr: recent.stderr },
+      0,
+    );
+  });
+
+  it("skips a merge it cannot replay and replays the rest", () => {
+    const broken = merge(
+      { "a.txt": "x\n" },
+      { "a.txt": "y\n" },
+      { "a.txt": "z\n" },
+    );
+    merge({ "b.txt": "1\n" }, { "b.txt": "2\n" }, { "b.txt": "3\n" });
+    const blob = s.git("rev-parse", `${broken.parentsAre[1]}:a.txt`).trim();
+    rmSync(join(s.root, ".git", "objects", blob.slice(0, 2), blob.slice(2)));
+    const rep = report();
+    expect(rep.totals).toMatchObject({ merges: 1, skipped: 1 });
+    expect(rep.skipped[0]).toMatchObject({
+      commit: broken.commit,
+      reason: "replay-failed",
+    });
+  });
+
+  it("reads paths holding a space or a newline", () => {
+    const git = (args: string[], input?: string) => {
+      const r = spawnSync("git", args, {
+        cwd: s.root,
+        env: s.env,
+        input: input ?? "",
+      });
+      expectSpawnExit(
+        { exitCode: r.status, stdout: r.stdout, stderr: r.stderr },
+        0,
+        args.join(" "),
+      );
+      return r.stdout.trim();
+    };
+    const tree = (files: Record<string, string>) =>
+      git(
+        ["mktree", "-z"],
+        Object.entries(files)
+          .map(
+            ([path, text]) =>
+              `100644 blob ${git(["hash-object", "-w", "--stdin"], text)}\t${path}\0`,
+          )
+          .join(""),
+      );
+    const odd = ["a b.txt", "new\nline.txt"];
+    const side = (text: string) =>
+      tree(Object.fromEntries(odd.map((p) => [p, text])));
+    const base = git(["commit-tree", side("x\n"), "-m", "base"]);
+    const ours = git(["commit-tree", side("y\n"), "-p", base, "-m", "ours"]);
+    const theirs = git([
+      "commit-tree",
+      side("z\n"),
+      "-p",
+      base,
+      "-m",
+      "theirs",
+    ]);
+    const commit = git([
+      "commit-tree",
+      side("y\n"),
+      "-p",
+      ours,
+      "-p",
+      theirs,
+      "-m",
+      "odd",
+    ]);
+    git(["update-ref", "refs/heads/odd", commit]);
+    const rep = report();
+    for (const path of odd) {
+      expect(causesOf(path, rep)).toEqual(["overlap"]);
+      expect(pathOf(rep, path).regions).toHaveLength(1);
+    }
+  });
 });

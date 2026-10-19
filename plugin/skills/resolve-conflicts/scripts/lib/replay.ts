@@ -10,14 +10,28 @@
  * working tree or object of the repository changes.
  */
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { registerCleanup } from "../../../../shared/cleanup.ts";
 import { splitNul } from "./git.ts";
+import { DECISIONS } from "./snapshot.ts";
 
-/** The oldest git whose `merge-tree --write-tree` the replay reads. */
-export const MIN_GIT: readonly [number, number] = [2, 38];
+/**
+ * The oldest git the replay runs with: `merge-tree --write-tree` came in
+ * 2.38, and `GIT_ATTR_SOURCE`, which keeps today's attributes out of a past
+ * merge, in 2.40.
+ */
+export const MIN_GIT: readonly [number, number] = [2, 40];
+
+/** The oldest git that honours `GIT_NO_LAZY_FETCH`, so a partial clone never fetches. */
+export const NO_LAZY_FETCH_GIT: readonly [number, number] = [2, 45];
 
 const MAX_BUFFER = 512 * 1024 * 1024;
 
@@ -33,10 +47,13 @@ export function parseGitVersion(
   return [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)];
 }
 
-/** Whether `version` is at least `MIN_GIT`. */
-export function gitIsRecentEnough(version: readonly number[]): boolean {
+/** Whether `version` is at least `floor` (`MIN_GIT` by default). */
+export function gitIsRecentEnough(
+  version: readonly number[],
+  floor: readonly [number, number] = MIN_GIT,
+): boolean {
   const [major = 0, minor = 0] = version;
-  return major > MIN_GIT[0] || (major === MIN_GIT[0] && minor >= MIN_GIT[1]);
+  return major > floor[0] || (major === floor[0] && minor >= floor[1]);
 }
 
 /** A git call the replay depends on failed. */
@@ -54,17 +71,22 @@ export interface Raw {
 export class Git {
   readonly cwd: string;
   readonly env: Record<string, string | undefined>;
+  /** `-c key=value` settings passed before every command. */
+  readonly settings: readonly string[];
 
   constructor(
     cwd: string,
     env: Record<string, string | undefined> = process.env,
+    settings: readonly string[] = [],
   ) {
     this.cwd = cwd;
     this.env = env;
+    this.settings = settings;
   }
 
   raw(args: readonly string[], input?: string): Raw {
-    const r = spawnSync("git", [...STABLE, ...args], {
+    const config = this.settings.flatMap((setting) => ["-c", setting]);
+    const r = spawnSync("git", [...STABLE, ...config, ...args], {
       cwd: this.cwd,
       env: this.env,
       input,
@@ -90,30 +112,83 @@ export class Git {
   }
 }
 
+/** Whether the repository is a partial clone, whose missing objects git would fetch. */
+export function isPartialClone(git: Git): boolean {
+  const out = git.raw([
+    "config",
+    "--get-regexp",
+    "^(extensions\\.partialclone|remote\\..*\\.promisor)$",
+  ]);
+  return out.stdout
+    .toString("utf8")
+    .split("\n")
+    .some((line) => {
+      const [key = "", value = ""] = line.split(" ");
+      return key === "extensions.partialclone"
+        ? value !== ""
+        : ["true", "yes", "on", "1"].includes(value.toLowerCase());
+    });
+}
+
+/** Every configured merge driver's command, set to `false`: no driver of the repository's or a person's runs. */
+function silencedDrivers(repo: Git): string[] {
+  const out = repo.raw([
+    "config",
+    "--name-only",
+    "--get-regexp",
+    "^merge\\..+\\.driver$",
+  ]);
+  return out.stdout
+    .toString("utf8")
+    .split("\n")
+    .filter((key) => key !== "")
+    .map((key) => `${key}=false`);
+}
+
 /**
  * Run `body` with a git runner whose new objects go to a temporary object
  * directory, removed when `body` returns or throws, and on an interrupt.
+ *
+ * The runner also keeps today's attributes out of past merges: they are read
+ * from the empty tree rather than the working tree (`GIT_ATTR_SOURCE`), not
+ * from the system or a person's attributes file, and every configured merge
+ * driver is replaced by `false`, so no command of the repository's runs and
+ * every region is written with markers of the default size.
  */
 export function withScratchObjects<T>(repo: Git, body: (git: Git) => T): T {
   const objects = repo
     .text(["rev-parse", "--path-format=absolute", "--git-path", "objects"])
     .trim();
+  const emptyTree = repo
+    .text(["hash-object", "-t", "tree", "--stdin"], "")
+    .trim();
   const scratch = mkdtempSync(join(tmpdir(), "jig-merge-replay-"));
   const remove = () => rmSync(scratch, { recursive: true, force: true });
-  const alternates = [objects, repo.env.GIT_ALTERNATE_OBJECT_DIRECTORIES]
-    .filter((dir): dir is string => typeof dir === "string" && dir !== "")
-    .join(delimiter);
-  const git = new Git(repo.cwd, {
-    ...repo.env,
-    GIT_OBJECT_DIRECTORY: scratch,
-    GIT_ALTERNATE_OBJECT_DIRECTORIES: alternates,
-    // A partial clone's missing object is an error here, never a fetch.
-    GIT_NO_LAZY_FETCH: "1",
-    GIT_OPTIONAL_LOCKS: "0",
-  });
   // Removed on return, on a throw, and on an interrupt or exit that skips both.
   const cleanup = registerCleanup(remove);
   try {
+    const objectDir = join(scratch, "objects");
+    mkdirSync(objectDir);
+    const noAttributes = join(scratch, "attributes");
+    writeFileSync(noAttributes, "");
+    const alternates = [objects, repo.env.GIT_ALTERNATE_OBJECT_DIRECTORIES]
+      .filter((dir): dir is string => typeof dir === "string" && dir !== "")
+      .join(delimiter);
+    const git = new Git(
+      repo.cwd,
+      {
+        ...repo.env,
+        GIT_OBJECT_DIRECTORY: objectDir,
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: alternates,
+        // A partial clone's missing object is an error here, never a fetch
+        // (git 2.45 and later; an older git is refused a partial clone).
+        GIT_NO_LAZY_FETCH: "1",
+        GIT_OPTIONAL_LOCKS: "0",
+        GIT_ATTR_SOURCE: emptyTree,
+        GIT_ATTR_NOSYSTEM: "1",
+      },
+      [`core.attributesFile=${noAttributes}`, ...silencedDrivers(repo)],
+    );
     return body(git);
   } finally {
     cleanup[Symbol.dispose]();
@@ -140,19 +215,53 @@ const EXCLUDED_REFS = [
   "refs/stash",
   "refs/pull/*/merge",
   "refs/merge-requests/*/merge",
+  "refs/remotes/*/pull/*/merge",
+  "refs/remotes/*/merge-requests/*/merge",
 ];
 
-/** Every merge commit the repository's refs reach, newest first. */
-export function mergeCommits(git: Git): MergeCommit[] {
+/**
+ * Every merge commit the repository's refs reach whose committer date falls
+ * in `[since, until)` (seconds; null is open), newest first. A first pass reads
+ * only ids and dates; the messages are read for the merges in range. Git's own
+ * `--since` is not used: it stops a walk at a commit with an older date, and a
+ * skewed clock would hide the merges behind it.
+ */
+export function mergeCommits(
+  git: Git,
+  since: number | null = null,
+  until: number | null = null,
+): MergeCommit[] {
   const out = git.text([
     "log",
     ...EXCLUDED_REFS.map((ref) => `--exclude=${ref}`),
     "--all",
     "--merges",
-    "-z",
-    "--format=%H%x1f%P%x1f%cI%x1f%ct%x1f%s%x1f%B",
+    "--format=%H %ct",
   ]);
-  return splitNul(out).map((record) => {
+  const wanted = out
+    .split("\n")
+    .map((line) => line.split(" "))
+    .filter(([commit = "", time = ""]) => {
+      const t = Number(time);
+      return (
+        commit !== "" &&
+        (since === null || t >= since) &&
+        (until === null || t < until)
+      );
+    })
+    .map(([commit = ""]) => commit);
+  if (wanted.length === 0) return [];
+  const bodies = git.text(
+    [
+      "log",
+      "--no-walk=unsorted",
+      "--stdin",
+      "-z",
+      "--format=%H%x1f%P%x1f%cI%x1f%ct%x1f%s%x1f%B",
+    ],
+    `${wanted.join("\n")}\n`,
+  );
+  return splitNul(bodies).map((record) => {
     const [
       commit = "",
       parents = "",
@@ -170,6 +279,51 @@ export function mergeCommits(git: Git): MergeCommit[] {
       message: body.join("\x1f"),
     };
   });
+}
+
+/** The merge bases of two commits; none for unrelated histories, or a base hidden by a shallow clone. */
+export function mergeBases(git: Git, a: string, b: string): string[] {
+  const r = git.raw(["merge-base", "--all", a, b]);
+  if (r.code === 1) return [];
+  if (r.code !== 0)
+    throw new ReplayError(
+      `git merge-base exited ${r.code}: ${r.stderr.trim()}`,
+    );
+  return r.stdout
+    .toString("utf8")
+    .split("\n")
+    .filter((line) => line !== "");
+}
+
+/** The commits a shallow clone's history stops at; empty for a full clone. */
+export function shallowBoundary(git: Git): Set<string> {
+  if (git.text(["rev-parse", "--is-shallow-repository"]).trim() !== "true")
+    return new Set();
+  const file = git
+    .text(["rev-parse", "--path-format=absolute", "--git-path", "shallow"])
+    .trim();
+  return new Set(
+    readFileSync(file, "utf8")
+      .split("\n")
+      .filter((line) => line !== ""),
+  );
+}
+
+/**
+ * Whether a shallow clone's boundary cuts the history between a merge's
+ * parents and their merge bases: a commit there whose parents the clone does
+ * not hold could hide a better base, so the replay cannot be trusted.
+ */
+export function cutByBoundary(
+  git: Git,
+  parents: readonly string[],
+  bases: readonly string[],
+  boundary: ReadonlySet<string>,
+): boolean {
+  if (boundary.size === 0) return false;
+  if (bases.length === 0) return true;
+  const between = git.text(["rev-list", ...parents, "--not", ...bases]);
+  return between.split("\n").some((commit) => boundary.has(commit));
 }
 
 export interface PullRequestHead {
@@ -206,6 +360,54 @@ export function pullRequestHeads(git: Git): Map<string, PullRequestHead[]> {
     }
   }
   return heads;
+}
+
+/**
+ * The fetched pull-request head refs that contain `commit` (it is reachable
+ * from them): one `git for-each-ref --contains` per merge, run only when the
+ * clone has such refs.
+ */
+export function pullRequestHeadsContaining(
+  git: Git,
+  commit: string,
+): PullRequestHead[] {
+  const out = git.text([
+    "for-each-ref",
+    `--contains=${commit}`,
+    "--format=%(refname)",
+    "refs/pull",
+    "refs/merge-requests",
+    "refs/remotes",
+  ]);
+  return out.split("\n").flatMap((ref) => {
+    for (const pattern of PR_HEAD_PATTERNS) {
+      const match = ref.match(pattern);
+      if (match) return [{ ref, number: Number(match[1]) }];
+    }
+    return [];
+  });
+}
+
+export interface SubjectBranches {
+  /** The branch (or tag) merged in, as the subject names it. */
+  theirs: string | null;
+  /** The branch merged into, when the subject names it. */
+  ours: string | null;
+}
+
+/**
+ * The branches a merge's subject names: git's own `Merge branch 'a' into b`,
+ * `Merge remote-tracking branch 'origin/a' into b` and `Merge tag 'v1'`, and a
+ * forge's `Merge pull request #12 from owner/branch`.
+ */
+export function subjectBranches(subject: string): SubjectBranches {
+  const git = subject.match(
+    /^Merge (?:remote-tracking )?(?:branch|tag) '([^']+)'(?: of \S+)?(?: into (\S+))?/,
+  );
+  if (git) return { theirs: git[1] ?? null, ours: git[2] ?? null };
+  const forge = subject.match(/^Merge pull request #\d+ from [^/\s]+\/(\S+)/);
+  if (forge) return { theirs: forge[1] ?? null, ours: null };
+  return { theirs: null, ours: null };
 }
 
 export interface StageEntry {
@@ -302,15 +504,24 @@ export function parseMergeTree(output: string, clean: boolean): TreeMerge {
   return { tree: parts[0] ?? "", clean, paths: [...byPath.values()] };
 }
 
-/** Merge two commits as git would, conflicted regions in diff3 style (with their base). */
-export function mergeTree(git: Git, ours: string, theirs: string): TreeMerge {
+/**
+ * Merge two commits as git would, conflicted regions in diff3 style (with
+ * their base). `unrelated` merges histories that share no commit, as the
+ * original merge must have.
+ */
+export function mergeTree(
+  git: Git,
+  ours: string,
+  theirs: string,
+  unrelated = false,
+): TreeMerge {
   const r = git.raw([
     "-c",
     "merge.conflictStyle=diff3",
     "merge-tree",
     "--write-tree",
     "-z",
-    "--allow-unrelated-histories",
+    ...(unrelated ? ["--allow-unrelated-histories"] : []),
     ours,
     theirs,
   ]);
@@ -373,16 +584,6 @@ export interface Resolution {
   dropped: string | null;
 }
 
-const DECISION_WORDS = [
-  "combined",
-  "ours",
-  "theirs",
-  "rewritten",
-  "regenerated",
-  "deleted",
-  "escalate",
-];
-
 /**
  * The `Conflicts resolved:` section of a commit message, by path: the lines
  * `check-resolution.ts --message` writes,
@@ -406,7 +607,7 @@ export function parseResolutionSection(
 }
 
 const RESOLUTION_LINE = new RegExp(
-  `^- (.+?): (${DECISION_WORDS.join("|")})(?=$| \\(| — | Dropped on purpose: )(.*)$`,
+  `^- (.+?): (${DECISIONS.join("|")})(?=$| \\(| — | Dropped on purpose: )(.*)$`,
 );
 const DROPPED = " Dropped on purpose: ";
 
