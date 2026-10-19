@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { renameWithRetry } from "../../../shared/rename-with-retry.ts";
 /**
  * Drive review rounds on one PR until it reaches exactly one terminal state.
  *
@@ -157,7 +158,6 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  renameSync,
   rmdirSync,
   rmSync,
   statSync,
@@ -165,7 +165,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { hostname } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { format } from "node:util";
 import { ciPolicy } from "./lib/ci-policy.ts";
@@ -1191,8 +1191,11 @@ function takeLock(lock: DriveLock): boolean {
       join(staging, claimName(nonce)),
       formatClaim(process.pid, hostname(), lock.diag),
     );
-    renameSync(staging, lock.dir);
-  } catch {
+    renameWithRetry(staging, lock.dir);
+  } catch (error) {
+    console.error(
+      `drive.ts: could not publish lock at ${lock.dir} (${errnoCode(error) ?? "unknown"}).`,
+    );
     rmSync(staging, { recursive: true, force: true });
     return false;
   }
@@ -1797,7 +1800,7 @@ function refreshAccountIdentity(
       // perspective — never a torn write of this call's own making: a
       // concurrent reader of `dest` sees either the complete old content or
       // the complete new content, nothing in between.
-      renameSync(tmp, dest);
+      renameWithRetry(tmp, dest);
       // The `existsSync` check above narrows the exposure but does not close
       // it: a recovery can still land in the gap between that check and this
       // rename, retiring `lock.dir` (removing `dest`, then `rmdirSync`-ing the
@@ -5483,16 +5486,9 @@ async function main(): Promise<number> {
   }
 }
 
-// Guarded, the same way summary-findings.ts guards its own entry (and for the
-// portability reason documented there — `import.meta.main` is Bun-only on the
-// Node versions this skill supports). Unguarded, merely IMPORTING this module
-// ran the whole driver against the importer's argv: a probe of an exported
-// helper printed the usage banner, and under a different argv would have taken
-// this worktree's drive locks from inside a test run.
-if (
-  process.argv[1] !== undefined &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+// Bun resolves the entry module's identity, including Windows path aliases.
+// Importing helpers must never start the driver or acquire its locks.
+if (import.meta.main) {
   runMain("drive.ts", async () => {
     try {
       return await span("drive", {}, main);

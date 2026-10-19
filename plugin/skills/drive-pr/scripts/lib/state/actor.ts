@@ -40,6 +40,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { fail } from "../cli.ts";
 import { git, gitCallTimeoutSeconds, gitIdentityEnv } from "../proc.ts";
 
@@ -105,10 +106,19 @@ export async function worktreeKey(): Promise<string> {
   // the git call actually produced and both consumers derive from the same
   // resolution. sha256 of a short path per call is immaterial next to the
   // subprocess the memo exists to avoid.
-  return createHash("sha256")
-    .update(await worktreeRoot())
-    .digest("hex")
-    .slice(0, 16);
+  return worktreePathKey(await worktreeRoot());
+}
+
+/** Both the driver and reaper use the filesystem's spelling of a tree, so
+ * Windows drive casing, folder aliases and short names cannot change its key.
+ * Case folding is deliberately left to the filesystem: Windows directories
+ * may themselves be case sensitive. Missing/unreadable paths throw rather than
+ * inventing an identity the reaper could mistake for a deleted tree. */
+export function worktreePathKey(path: string): string {
+  const real = realpathSync.native(path);
+  const canonical =
+    process.platform === "win32" ? real.replaceAll("\\", "/") : real;
+  return createHash("sha256").update(canonical).digest("hex").slice(0, 16);
 }
 
 async function resolveWorktreeRoot(): Promise<string> {

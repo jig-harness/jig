@@ -41,7 +41,9 @@
  *     precondition at all (`sweepLockQuarantine`'s own doc comment, and
  *     `drive-state.ts`'s call site: *"`reset` is simply a convenient,
  *     low-traffic place to trigger it, not a safety requirement for it"*).
- *     The fence survives; only the inodes go.
+ *     POSIX keeps the fence as a single file; Windows retains nonempty
+ *     directories and repairs older file fences. Orphan staging copies are
+ *     recovered on both platforms.
  *
  *   RETIRE — deletes a whole per-PR or per-worktree family outright, and is
  *     gated on the LIFECYCLE predicate: once a PR's own state is being
@@ -145,9 +147,10 @@
  */
 
 import { reapTraceDays } from "../../../shared/trace.ts";
-import { createHash } from "node:crypto";
+import { worktreePathKey } from "./lib/state/actor.ts";
 import {
   existsSync,
+  lstatSync,
   readdirSync,
   readFileSync,
   realpathSync,
@@ -483,10 +486,9 @@ function isReapOwnArtifact(name: string): boolean {
  * registration can be pruned or lost by a git operation elsewhere while the
  * checkout, and a process still holding the lease, remain. `judgeActorFamily`'s
  * `liveTreeLeaseFor` veto is what closes that gap; this set alone is a strong
- * but not exact predicate. Re-derived here rather than imported because
- * `worktreeKey` deliberately answers only for the CURRENT process's tree and
- * accepts no override — the identity it exists to protect must not be settable
- * (see its own doc comment) — while this needs the key of every OTHER tree.
+ * but not exact predicate. `worktreePathKey` supplies the same filesystem
+ * canonicalization and hash as the driver's `worktreeKey`, while this lists
+ * every registered tree rather than only the current process's tree.
  *
  * Returns `null` when git could not be asked, which fails the whole per-actor
  * predicate closed: an empty set would read as "no tree exists" and retire
@@ -518,9 +520,13 @@ async function liveWorktreeKeys(): Promise<Set<string> | null> {
     // checking that it was needed for parity, not just for its own sake).
     const path = line.slice("worktree ".length).trim();
     if (path === "") continue;
-    keys.add(
-      `wt-${createHash("sha256").update(path).digest("hex").slice(0, 16)}`,
-    );
+    try {
+      keys.add(`wt-${worktreePathKey(path)}`);
+    } catch (error) {
+      // Git can retain registrations after a tree was deleted. An unreadable
+      // existing tree, however, cannot safely be called absent.
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return null;
+    }
   }
   // A repository always has at least one worktree, so an EMPTY set means the
   // porcelain output was not what this parser expects — same fail-closed
@@ -640,6 +646,23 @@ function isSweepable(name: string): boolean {
   );
 }
 
+/** Windows retains nonempty directory fences because a directory can replace
+ * a regular file there. They are a completed safe shape, not failed compaction.
+ * Empty directories cannot fence a delayed rename and must still report work.
+ * Unreadable entries fail closed so the sweep's postcondition surfaces them. */
+function quarantineNeedsCompaction(path: string): boolean {
+  try {
+    if (process.platform === "win32") {
+      const entry = lstatSync(path);
+      if (entry.isSymbolicLink()) return true;
+      return !entry.isDirectory() || readdirSync(path).length === 0;
+    }
+    return statSync(path).isDirectory();
+  } catch {
+    return true;
+  }
+}
+
 /**
  * The subset of a family's anchors that still has uncompacted work.
  *
@@ -660,6 +683,7 @@ function isSweepable(name: string): boolean {
  * quarantine between this scan and the sweep. Compaction is an optimisation,
  * not a correctness requirement — anything missed is picked up next week.
  */
+
 function anchorsWithUncompactedWork(
   stateDir: string,
   family: Family,
@@ -670,9 +694,12 @@ function anchorsWithUncompactedWork(
     const anchor = anchorOf(name);
     if (anchor === null || !family.anchors.has(anchor)) continue;
     if (todo.has(anchor)) continue;
-    try {
-      if (statSync(join(stateDir, name)).isDirectory()) todo.add(anchor);
-    } catch {
+    // Orphan staging copies are recovery work on every platform, including
+    // Windows where ordinary directory fences intentionally stay uncompressed.
+    if (
+      name.startsWith(".compacting.") ||
+      quarantineNeedsCompaction(join(stateDir, name))
+    ) {
       todo.add(anchor);
     }
   }
@@ -697,8 +724,12 @@ function anchorsWithUncompactedWork(
  * A `.compacting.*` staging leftover is the ONE `isSweepable` shape this
  * inverts the polarity for. Every other shape is compacted IN PLACE
  * (`compactQuarantineEntry` turns the SAME name from a directory into a single
- * empty file), so "still a directory" means "still needs work". A
- * `.compacting.*` name is different: `sweepLockQuarantine`'s own handling of it
+ * empty file), so "still a directory" means "still needs work" on POSIX.
+ * Windows keeps a nonempty directory at the canonical path instead: a regular
+ * file there would allow a delayed directory rename to replace the fence.
+ * Such retained directories need no work and earn no compaction credit.
+ *
+ * A `.compacting.*` name is different: `sweepLockQuarantine`'s own handling of it
  * (`lib/state/lock.ts`) restores/confirms a fence at the CANONICAL path it
  * names, then deletes the staging copy itself outright — so a successful sweep
  * makes the staging name DISAPPEAR, and checking for its continued existence
@@ -711,8 +742,8 @@ function anchorsWithUncompactedWork(
  * a tombstoned directory, restoring a fence rather than compacting anything —
  * and that path was never in `family.names` (it did not exist when `classify()`
  * ran, so nothing could have captured it). Checking only the vanished staging
- * name therefore reports success for a generation that is still, in fact, an
- * uncompacted multi-inode directory. Resolved via the SAME
+ * name therefore misses the canonical fence's platform-specific requirements.
+ * Resolved via the SAME
  * `COMPACTING_STAGING_RE` capture `sweepLockQuarantine` uses to find that
  * canonical path, and checked directly.
  */
@@ -725,21 +756,18 @@ export function anchorStillNeedsCompaction(
     if (!isSweepable(name) || anchorOf(name) !== anchor) continue;
     const p = join(stateDir, name);
     if (name.startsWith(".compacting.")) {
-      if (existsSync(p)) return true;
+      try {
+        lstatSync(p);
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") return true;
+      }
       const canonical = COMPACTING_STAGING_RE.exec(name)?.[1];
       if (canonical === undefined) continue;
-      try {
-        if (statSync(join(stateDir, canonical)).isDirectory()) return true;
-      } catch {
-        return true;
-      }
+      if (quarantineNeedsCompaction(join(stateDir, canonical))) return true;
       continue;
     }
-    try {
-      if (statSync(p).isDirectory()) return true;
-    } catch {
-      return true;
-    }
+    if (quarantineNeedsCompaction(p)) return true;
   }
   return false;
 }
@@ -1608,7 +1636,8 @@ async function main(): Promise<number> {
       entriesRetirable: retirable,
       // `anchorsCompactable` is the candidate count (works in both modes, like
       // `entriesRetirable`); `anchorsCompacted` credits only anchors
-      // `anchorStillNeedsCompaction` confirmed actually shrank — crediting the
+      // `anchorStillNeedsCompaction` confirmed reached a safe completed shape
+      // (including recovered orphan staging copies) — crediting the
       // candidate count unconditionally reported success for anchors a
       // read-only filesystem (or any other swallowed write failure) left
       // untouched.

@@ -15,14 +15,18 @@
  */
 
 import { poll, PollTimeoutError } from "../../../../../shared/retry.ts";
-import { swallow } from "../../../../../shared/errors.ts";
+import {
+  renameWithRetry,
+  mkdirWithRetry,
+} from "../../../../../shared/rename-with-retry.ts";
+import { errnoCode, swallow } from "../../../../../shared/errors.ts";
 import { registerCleanup } from "../../../../../shared/cleanup.ts";
 import { randomBytes } from "node:crypto";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
-  renameSync,
   rmdirSync,
   rmSync,
   statSync,
@@ -31,6 +35,22 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { ExitError, sleep, testDelaySeconds, testPacing } from "../cli.ts";
+
+/** A failed lock move must remain diagnosable as contention or a filesystem fault. */
+function renameLock(
+  source: string,
+  destination: string,
+  deadlineMs?: number,
+): void {
+  try {
+    renameWithRetry(source, destination, { deadlineMs });
+  } catch (error) {
+    console.error(
+      `lock: rename ${source} -> ${destination} failed (${errnoCode(error) ?? "unknown"}).`,
+    );
+    throw error;
+  }
+}
 
 /**
  * The hard ceiling on how long ONE `acquire()` may wait, whatever
@@ -328,8 +348,16 @@ export function createLock(
   // CPU core for up to a second under contention.
   const RECOVERING_GATE_BACKOFF_MS = 5;
   const recoveringBackoffFlag = new Int32Array(new SharedArrayBuffer(4));
-  function recoveringGateBackoff(): void {
-    Atomics.wait(recoveringBackoffFlag, 0, 0, RECOVERING_GATE_BACKOFF_MS);
+  function recoveringGateBackoff(deadlineMs: number): void {
+    Atomics.wait(
+      recoveringBackoffFlag,
+      0,
+      0,
+      Math.max(
+        0,
+        Math.min(RECOVERING_GATE_BACKOFF_MS, deadlineMs - performance.now()),
+      ),
+    );
   }
 
   // Test-only concurrency hook for `recoveringIsLive`'s own staleness-check-
@@ -366,7 +394,7 @@ export function createLock(
    * contenders that would displace the SAME holder collide instead of one
    * silently destroying the other's live gate.
    */
-  function recoveringIsLive(): boolean {
+  function recoveringIsLive(deadlineMs?: number): boolean {
     let mtimeMs: number;
     try {
       mtimeMs = statSync(recovering).mtimeMs;
@@ -398,7 +426,7 @@ export function createLock(
     const doomed = recoveringQuarantinePath(holder);
     let moved = true;
     try {
-      renameSync(recovering, doomed);
+      renameLock(recovering, doomed, deadlineMs);
     } catch {
       // Someone else is already breaking (or released) this exact holder —
       // nothing of ours moved.
@@ -442,11 +470,12 @@ export function createLock(
     // carries no state worth preserving beyond its own exclusivity, but
     // discarding it here would silently strip the fresh holder of the
     // gate it believes it holds, letting whatever it is protecting overlap
-    // with a second dance — worse than the accepted, narrow residual a bare
-    // restore leaves (a fourth-order compounded race landing in THIS
-    // restore's own vacancy window).
+    // with a second dance. Restoration gets a fresh bounded cleanup window:
+    // an expired acquisition deadline must not strand another live holder.
+    // A path swap in the restore's vacancy window remains a narrow residual
+    // race in this protocol.
     try {
-      renameSync(doomed, recovering);
+      renameLock(doomed, recovering);
     } catch {
       console.error(
         `${label}: broke a .recovering hold that turned out to belong to another driver, and it could not be restored (it is at ${doomed}).`,
@@ -463,17 +492,20 @@ export function createLock(
    * what "could not get the gate this attempt" means for its own protocol;
    * this function never waits unboundedly.
    */
-  function acquireRecoveringGate(): string | null {
+  function acquireRecoveringGate(outerDeadline?: number): string | null {
     // `performance.now()`, not `Date.now()` — the outer `acquireDeadline`
     // already switched for exactly this reason:
     // a wall-clock adjustment mid-contention (or a persistent EACCES/EROFS
     // failure) can make a `Date.now()`-based deadline unreachable, and the
     // outer, monotonic deadline can't regain control while THIS inner loop
     // is the one stuck.
-    const deadline = performance.now() + RECOVERING_GATE_WAIT_MS;
+    const deadline = Math.min(
+      performance.now() + RECOVERING_GATE_WAIT_MS,
+      outerDeadline ?? Infinity,
+    );
     for (;;) {
       try {
-        mkdirSync(recovering);
+        mkdirWithRetry(recovering, { deadlineMs: deadline });
       } catch {
         // Check the deadline unconditionally, BEFORE branching on
         // `recoveringIsLive()` — a `mkdirSync` failure that is not genuine
@@ -492,8 +524,8 @@ export function createLock(
         // iteration, and without backoff on THIS branch too the loop still
         // hot-spins the full `RECOVERING_GATE_WAIT_MS` window even though
         // it is now correctly bounded.
-        recoveringIsLive();
-        recoveringGateBackoff();
+        recoveringIsLive(deadline);
+        recoveringGateBackoff(deadline);
         continue;
       }
       const holder = `owner.${randomBytes(12).toString("hex")}`;
@@ -518,7 +550,7 @@ export function createLock(
   function releaseRecoveringGate(holder: string): void {
     const doomed = recoveringQuarantinePath(holder);
     try {
-      renameSync(recovering, doomed);
+      renameLock(recovering, doomed);
     } catch {
       // Someone else's breaker already reclaimed this exact holder (this
       // process was suspended past RECOVERING_STALE_MS) — not ours to
@@ -540,7 +572,7 @@ export function createLock(
     // it rather than leave that successor believing it holds something that
     // no longer exists.
     try {
-      renameSync(doomed, recovering);
+      renameLock(doomed, recovering);
     } catch {
       console.error(
         `${label}: released .recovering but it belonged to another driver, and it could not be restored (it is at ${doomed}).`,
@@ -594,7 +626,7 @@ export function createLock(
     }
     try {
       try {
-        renameSync(lock, doomed);
+        renameLock(lock, doomed);
       } catch {
         // This generation's slot is already claimed — by a breaker that went
         // through the SAME quarantine protocol to recover it as stale, or
@@ -614,7 +646,7 @@ export function createLock(
         return;
       }
       try {
-        renameSync(doomed, lock);
+        renameLock(doomed, lock);
       } catch {
         console.error(
           `${label}: released ${lock} but it belonged to another driver, and it could not be restored (it is at ${doomed}).`,
@@ -752,7 +784,7 @@ export function createLock(
     if (generation !== null) {
       const doomed = quarantinePath(generation);
       try {
-        renameSync(lock, doomed);
+        renameLock(lock, doomed);
         tombstone(doomed, "abandoned");
       } catch {
         // A rename loser has moved nothing.
@@ -771,8 +803,8 @@ export function createLock(
   }
 
   /** Finalize only under the recovery gate, closing its restore-to-publication gap. */
-  function finalizeAcquisition(): boolean {
-    const gateHolder = acquireRecoveringGate();
+  function finalizeAcquisition(deadlineMs?: number): boolean {
+    const gateHolder = acquireRecoveringGate(deadlineMs);
     if (gateHolder === null) {
       try {
         // Only return an empty directory: an intervening restore may own it.
@@ -807,8 +839,12 @@ export function createLock(
   }
 
   /** Claim before checking identity; restore any fresh generation caught in the gap. */
-  function recoverStaleLock(staleMs: number, staleMinutes: number): boolean {
-    const gateHolder = acquireRecoveringGate();
+  function recoverStaleLock(
+    staleMs: number,
+    staleMinutes: number,
+    deadlineMs?: number,
+  ): boolean {
+    const gateHolder = acquireRecoveringGate(deadlineMs);
     if (gateHolder === null) return false;
     try {
       const generation = generationOf(lock);
@@ -817,7 +853,7 @@ export function createLock(
       if (generation === null) return false;
       const doomed = quarantinePath(generation);
       try {
-        renameSync(lock, doomed);
+        renameLock(lock, doomed, deadlineMs);
       } catch (error) {
         swallow(
           error,
@@ -835,7 +871,7 @@ export function createLock(
         return true;
       }
       try {
-        renameSync(doomed, lock);
+        renameLock(doomed, lock);
       } catch {
         console.error(
           `${label}: quarantined ${lock} but it was not actually stale, and it could not be restored (it is at ${doomed}).`,
@@ -847,13 +883,15 @@ export function createLock(
     }
   }
 
-  function attemptAcquisition(): "occupied" | "recovering" | "held" {
+  function attemptAcquisition(
+    deadlineMs?: number,
+  ): "occupied" | "recovering" | "held" {
     try {
-      mkdirSync(lock);
+      mkdirWithRetry(lock, { deadlineMs });
     } catch {
       return "occupied";
     }
-    return finalizeAcquisition() ? "held" : "recovering";
+    return finalizeAcquisition(deadlineMs) ? "held" : "recovering";
   }
 
   async function acquire(maxWaitSec?: number): Promise<void> {
@@ -875,10 +913,10 @@ export function createLock(
       ...(maxWaitSec === undefined ? [] : [Math.max(0, maxWaitSec)]),
     );
     // Elapsed time against the moment this call started, not an iteration
-    // counter — a fresh-acquisition attempt can now itself block for up to
-    // `RECOVERING_GATE_WAIT_MS` before the outer backoff sleep runs, so
-    // counting loop passes as if each were ~1s made a nominal 30s bound run for
-    // roughly twice that, and made the `within ${limit}s` message false.
+    // counter: an attempt includes Windows sharing retries and recovery-gate
+    // waits, as well as the polling backoff. Nested retry windows share this
+    // deadline, so they cannot restart a fresh wait after its budget is spent.
+    // Filesystem calls and mandatory cleanup still run to completion.
     // `performance.now()`, not `Date.now()`: this measures ELAPSED duration,
     // and `Date.now()` is wall-clock — an NTP or administrator clock adjustment
     // can move it backward mid-acquire, making `> acquireDeadline` stay false
@@ -889,6 +927,9 @@ export function createLock(
     // themselves wall-clock and have no monotonic equivalent to compare
     // against.
     const acquireDeadline = performance.now() + limit * 1000;
+    // Zero means one attempt, whose internal windows remain bounded. Positive
+    // timeouts also cap every nested Windows retry and recovery-gate wait.
+    const operationDeadline = limit === 0 ? undefined : acquireDeadline;
     // Pacing between acquire attempts. This is a POLLING mutex — a waiter only
     // notices a release on its next attempt — so this interval is the lock's
     // handoff latency, and with N contenders the serialized cost is ~N × this.
@@ -936,16 +977,21 @@ export function createLock(
     try {
       await poll(
         async () => {
-          const result = attemptAcquisition();
+          const result = attemptAcquisition(operationDeadline);
           if (result === "held") return acceptAcquisition();
           if (result === "occupied" && olderThan(lock, staleMs)) {
             await testAcquireStall();
-            const recovered = recoverStaleLock(staleMs, staleMinutes);
+            const recovered = recoverStaleLock(
+              staleMs,
+              staleMinutes,
+              operationDeadline,
+            );
             // A successful stale break opened a vacancy. Claim it immediately
             // while budget remains, rather than sleeping through that budget.
             if (recovered && performance.now() <= acquireDeadline) {
               firstAttempt = false;
-              if (attemptAcquisition() === "held") return acceptAcquisition();
+              if (attemptAcquisition(operationDeadline) === "held")
+                return acceptAcquisition();
             }
           }
           firstAttempt = false;
@@ -996,7 +1042,7 @@ export function createLock(
  * holder resuming after either is not a remote edge case; it is this file's
  * entire stated threat model.
  *
- * Compaction sidesteps that instead of re-deriving it: a bare `rename(2)`
+ * On POSIX systems, compaction sidesteps that instead of re-deriving it: a bare `rename(2)`
  * of a directory onto an EXISTING REGULAR FILE fails with `ENOTDIR`, the
  * identical hard failure a rename onto a non-empty directory already gets
  * from `tombstone`'s own marker file — so replacing a tombstoned
@@ -1014,6 +1060,8 @@ export function createLock(
  * precondition from its caller at all — unlike a delete, it is safe to call
  * for any PR, at any point, whether or not that PR's drive is finished;
  * running it from `reset` is a convenient trigger, not a requirement.
+ * Windows keeps the nonempty directory because a directory rename can
+ * replace a regular file there.
  *
  * Never `statSync`-then-delete-by-canonical-path — this file's own established
  * reasoning for why that is unsafe elsewhere (`acquire`'s own malformed-entry
@@ -1078,8 +1126,8 @@ export function createLock(
  * is being retired, and a lock in the middle of the very reset that calls
  * this is exactly such a live path.
  *
- * `onEntry`, when given, is called once per directory entry visited — before
- * this function decides whether the entry is even a quarantine member. A
+ * `onEntry`, when given, runs for each directory entry visited, including
+ * Windows staging discovery, before mutation of any quarantine member. A
  * single anchor can carry a large backlog (reap-state.ts's own header cites
  * 112k entries measured in nine days on one machine), and every step in the
  * loop below is a synchronous syscall with no `await` anywhere in it, so a
@@ -1140,55 +1188,169 @@ export function sweepLockQuarantine(file: string, onEntry?: () => void): void {
   } catch {
     return; // the state dir itself is already gone — nothing to sweep
   }
+  const windows = process.platform === "win32";
+  const stagedFences = windows
+    ? windowsQuarantineStages(dir, entries, compactingEntryPattern, onEntry)
+    : new Map<string, string>();
   for (const entry of entries) {
     onEntry?.();
     // The capture group is mandatory, so the name is present exactly when the
     // entry matches at all.
     const canonicalName = compactingEntryPattern.exec(entry)?.[1];
     if (canonicalName !== undefined) {
-      const staging = join(dir, entry);
-      // A staging copy an EARLIER call claimed but never finished with.
-      // Two distinct reasons this can still be sitting here, and they need
-      // OPPOSITE handling before it is safe to delete:
-      //
-      //  1. `compactQuarantineEntry`'s `rmSync(staging)` threw AFTER it had
-      //     already restored a fence at the canonical path (that function's
-      //     own comment). The canonical path exists; this leftover is pure
-      //     debris and deleting it costs nothing.
-      //  2. The process was killed between the claim rename and EITHER of
-      //     `rmSync`/`writeFileSync` — `staging` is the ONLY remaining copy of
-      //     this generation's fence, and the canonical path is genuinely
-      //     vacant. Deleting it outright here would destroy the last copy of
-      //     the fence with nothing left to restore it, re-opening the exact
-      //     unfenced-generation window the whole tombstone mechanism exists to
-      //     close.
-      //
-      // The two are told apart by whether the canonical path exists. Case 2
-      // restores a fence there FIRST — the same non-empty-directory marker
-      // `compactQuarantineEntry`'s own EEXIST/failure fallback uses — before
-      // this leftover is removed.
-      const canonicalPath = join(dir, canonicalName);
-      if (!existsSync(canonicalPath)) {
-        try {
-          mkdirSync(join(canonicalPath, "tombstone"), { recursive: true });
-        } catch {
-          // Could not restore a fence — leave the leftover for the next
-          // sweep rather than delete the only remaining copy of it.
-          continue;
-        }
-      }
-      try {
-        rmSync(staging, { recursive: true, force: true });
-      } catch {
-        // still stuck — leave it for the next sweep
-      }
+      recoverQuarantineStaging(
+        join(dir, entry),
+        join(dir, canonicalName),
+        windows,
+        stagedFences,
+      );
       continue;
     }
     if (!quarantineRe.test(entry)) {
       continue;
     }
-    compactQuarantineEntry(join(dir, entry));
+    const path = join(dir, entry);
+    if (windows) repairWindowsQuarantineFence(path, stagedFences);
+    else compactQuarantineEntry(path);
   }
+}
+
+/** Restore a canonical fence before deleting the last staged copy of its generation. */
+function recoverQuarantineStaging(
+  staging: string,
+  canonical: string,
+  windows: boolean,
+  stagedFences: Map<string, string>,
+): void {
+  if (windows) {
+    if (repairWindowsQuarantineFence(canonical, stagedFences))
+      discardWindowsStaging(staging, canonical);
+    return;
+  }
+  // POSIX regular-file fences already block directory renames. A vanished
+  // canonical path means a killed compaction left staging as the sole copy.
+  if (!existsSync(canonical)) {
+    try {
+      mkdirSync(join(canonical, "tombstone"), { recursive: true });
+    } catch {
+      return; // Keep the only copy if no canonical fence can be restored.
+    }
+  }
+  try {
+    rmSync(staging, { recursive: true, force: true });
+  } catch {
+    // Retain the staging entry for the next sweep.
+  }
+}
+
+/** A symlink or an empty directory cannot stop a delayed directory rename. */
+function windowsQuarantineFence(path: string): boolean {
+  try {
+    return lstatSync(path).isDirectory() && readdirSync(path).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Reuse complete staged guards before allocating another for a blocked publication. */
+function windowsQuarantineStages(
+  dir: string,
+  entries: string[],
+  pattern: RegExp,
+  onEntry?: () => void,
+): Map<string, string> {
+  const stages = new Map<string, string>();
+  for (const entry of entries) {
+    onEntry?.();
+    const canonical = pattern.exec(entry)?.[1];
+    if (canonical === undefined) continue;
+    const staging = join(dir, entry);
+    if (windowsQuarantineFence(staging))
+      stages.set(join(dir, canonical), staging);
+  }
+  return stages;
+}
+
+/** Publish a complete guard without opening a vacancy at the canonical path. */
+function newWindowsQuarantineFence(path: string): string | null {
+  const staging = join(
+    dirname(path),
+    `.compacting.${basename(path)}.${randomBytes(12).toString("hex")}`,
+  );
+  let created = false;
+  try {
+    mkdirSync(staging);
+    created = true;
+    writeFileSync(join(staging, "tombstone"), "quarantine fence\n", {
+      flag: "wx",
+    });
+    return staging;
+  } catch (error) {
+    if (created) {
+      try {
+        rmdirSync(staging);
+      } catch (cleanupError) {
+        swallow(
+          cleanupError,
+          "incomplete quarantine staging is not empty or cannot be removed",
+        );
+      }
+    }
+    swallow(
+      error,
+      "quarantine guard could not be staged; retain existing entries",
+    );
+    return null;
+  }
+}
+
+/** An orphan is expendable only once the canonical path is itself a strong fence. */
+function discardWindowsStaging(staging: string, canonical: string): void {
+  if (!windowsQuarantineFence(canonical)) return;
+  try {
+    rmSync(staging, { recursive: true, force: true });
+  } catch (error) {
+    swallow(
+      error,
+      "quarantine staging cleanup will be retried by the next sweep",
+    );
+  }
+}
+
+/** The compactor writes only empty files; other entry shapes may contain foreign data. */
+function repairableWindowsQuarantine(path: string): boolean {
+  try {
+    const entry = lstatSync(path);
+    if (entry.isDirectory()) return true;
+    return entry.isFile() && entry.size === 0;
+  } catch (error) {
+    return errnoCode(error) === "ENOENT";
+  }
+}
+
+function repairWindowsQuarantineFence(
+  path: string,
+  stages: Map<string, string>,
+): boolean {
+  if (windowsQuarantineFence(path)) return true;
+  if (!repairableWindowsQuarantine(path)) return false;
+  let staging = stages.get(path);
+  if (staging === undefined) {
+    staging = newWindowsQuarantineFence(path) ?? undefined;
+    if (staging === undefined) return false;
+    stages.set(path, staging);
+  }
+  try {
+    renameLock(staging, path);
+  } catch (error) {
+    swallow(
+      error,
+      "quarantine guard publication failed; retain staging until a real fence is verified",
+    );
+  }
+  if (!windowsQuarantineFence(path)) return false;
+  discardWindowsStaging(staging, path);
+  return true;
 }
 
 /** Compact one quarantine entry at `path` — see `sweepLockQuarantine`. */
@@ -1214,7 +1376,7 @@ function compactQuarantineEntry(path: string): void {
     `.compacting.${basename(path)}.${randomBytes(12).toString("hex")}`,
   );
   try {
-    renameSync(path, staging);
+    renameLock(path, staging);
   } catch {
     // Lost a race to claim this exact entry — most likely a concurrent
     // sweep already did (or is doing) the identical compaction — nothing

@@ -52,12 +52,12 @@
  *     kept, and every line is capped at LINE_CAP with a trailing marker.
  */
 
+import { renameWithRetry } from "../../../shared/rename-with-retry.ts";
 import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  renameSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -756,7 +756,7 @@ function writeAtomic(path: string, text: string): void {
   const tmp = `${path}.tmp-${process.pid}`;
   try {
     writeFileSync(tmp, text, { mode: 0o600 });
-    renameSync(tmp, path);
+    renameWithRetry(tmp, path);
   } catch (err) {
     // A failed write (a full disk leaves a partial file) or rename must not
     // strand the tmp file — nothing else prunes it.

@@ -7,12 +7,12 @@
  * identifier to that head or a PR claim. Existing valid pins are first-write-wins.
  */
 
+import { renameWithRetry } from "../../../../shared/rename-with-retry.ts";
 import {
   linkSync,
   lstatSync,
   mkdirSync,
   readFileSync,
-  renameSync,
   unlinkSync,
   utimesSync,
   writeFileSync,
@@ -151,7 +151,7 @@ function replaceInvalidPin(tmp: string, pin: string): "captured" | "kept" {
       unlinkSync(tmp);
       return "kept";
     }
-    renameSync(tmp, pin);
+    renameWithRetry(tmp, pin);
     return "captured";
   });
 }
@@ -232,7 +232,7 @@ export function captureIntentChain(input: CaptureInput): CaptureResult {
     mkdirSync(chainDir, { recursive: true });
     writeFileSync(tmp, pickup.text, { mode: 0o600 });
     if (input.refresh) {
-      withFileLock(pinLock(pin), () => renameSync(tmp, pin));
+      withFileLock(pinLock(pin), () => renameWithRetry(tmp, pin));
     } else {
       // First-write-wins must hold across concurrent invocations of the
       // manual CLI, so creation is exclusive: `link` fails with EEXIST where a

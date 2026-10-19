@@ -337,17 +337,77 @@ round. A repository that did not is never asked for one.
 
 - **The per-clone state dir** — `~/.local/state/jig/drive-pr/<clone-key>/` by default (`resolveStateDir()` in `<skill-dir>/scripts/lib/state/store.ts`; `$DRIVE_PR_STATE_DIR` overrides it — § Relocating the state dir) — the drive state (rounds, attempts, verified commit, parked/held items, Ready-mark round), the round counter, the locks, the leases. Clone-wide by design, *not* worktree-local: every linked worktree driving this PR shares one round budget, one parked set and one held batch, so a second worktree cannot silently re-arm an escalation the first one parked. The locks answer different questions, and only the PR-keyed one bears on "can this PR be driven twice":
   - `pr-drive-<PR>.lock`, keyed by **PR** — refuses a second drive of *this PR* anywhere in the clone (exit `11`).
-  - `pr-drive-worktree-<key>.lock`, keyed by **working tree** (`--show-toplevel`) — stops two drivers colliding over one checkout's files even when they drive *different* PRs. Separate worktrees are meant to run concurrently, so this key deliberately does not gate them.
+  - `pr-drive-worktree-<key>.lock`, keyed by **working tree** (the filesystem canonical path of `--show-toplevel`, including Windows path aliases) — stops two drivers colliding over one checkout's files even when they drive *different* PRs. Separate worktrees are meant to run concurrently, so this key deliberately does not gate them.
 
   Each held item's `actor` stamp reuses that same tree key, but it only **records** which tree made a promise — it grants no exclusivity of its own.
 - **`.context/pr-drive-<PR>.md`** — the human-readable handoff: where the drive stands and how to resume.
 - **GitHub** — the shared truth: threads and their resolution state, outcome replies, the drive's announce comments, the reviewer check-runs.
 
 The state dir grows with every lock generation. `bun <skill-dir>/scripts/reap-state.ts`
-(dry-run by default, `--delete` to act) compacts what is still in use and
+(dry-run by default, `--delete` to act) compacts what is still in use on POSIX
+systems, retains nonempty [directory fences](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on Windows, and
 deletes the files of merged PRs and removed worktrees; run it weekly from the
 machine's own scheduler if you drive many PRs. [`SKILL.md`](SKILL.md) § Running
 it (the *State reaping* entry) explains what it may and may not delete.
+On Windows, the sweep upgrades older empty file fences by atomically publishing
+a complete directory fence. Failed publication retains its staging until a real
+nonempty directory fence can be verified. An existing empty directory that
+Windows refuses to replace remains unfinished; later sweeps reuse its staged
+fence. Nonempty files and symbolic links remain untouched.
+
+On Windows, state writes and lock moves wait briefly for another process's
+sharing handle for up to two seconds before reporting failure. Lock failures include the filesystem
+error code. The state volume must support hard links; a refusal names
+`$DRIVE_PR_STATE_DIR` so you can choose another volume.
+
+## Upgrading worktree identity
+
+Canonical worktree paths can produce different keys from earlier releases,
+including Windows path aliases. Existing actor stamps on held items, leases
+and worktree locks are not migrated. Upgrade while every participant in a
+clone is stopped; mixed versions can otherwise use different locks for the
+same checkout. Keep the old plugin copy available until cleanup is complete.
+Here, `<old-skill-dir>` means that copy's `drive-pr` skill directory.
+Prevent new work and automatic starts or restarts throughout this procedure.
+Use each participant's original state-directory configuration. For commands
+run from a worktree, unset `DRIVE_PR_WORKTREE` or set it explicitly to that
+intended tree; an inherited value overrides the current directory.
+
+1. **Inventory and finish held work with the old version.** Run
+   `bun <old-skill-dir>/scripts/drives.ts --doctor --json` for its health view
+   and reported `stateDir`; its rows omit some held-only and lease-only work.
+   Enumerate that actual directory. Include every `drive-pr-<PR>.json`,
+   `pr-drive-lease-<PR>-<actor>.json` and `drive-tree-lease-<actor>.json`,
+   taking PRs and worktrees from the records' `pr` and `worktree` fields where
+   present. Include claims in `pr-drive-<PR>.lock` and
+   `pr-drive-worktree-<key>.lock`. Defer on any unreadable or unaccounted record.
+   For every inventoried PR, finish pending replies and resolutions through
+   the old resolver. Confirm
+   `bun <old-skill-dir>/scripts/drive-state.ts held <PR>` returns `[]`.
+2. **Stop all old participants and repeat the inventory.** Run
+   `bun <old-skill-dir>/scripts/drives.ts --stop <PR>` for each live drive,
+   stop interactive and sessionless resolvers, and disable hooks and scheduled
+   reapers that can access this clone's state. Confirm the stop commands
+   succeed and the old `drives.ts` listing has no live drivers. Repeat the full
+   directory inventory and `held <PR>` checks after shutdown, before clearing
+   ownership. If new held work appears, finish it with the old version and
+   repeat shutdown and inventory.
+3. **Clear old ownership from each worktree.** Verify each lease's actor and
+   recorded worktree match the intended stopped tree. Run
+   `bun <old-skill-dir>/scripts/drive-state.ts clear-lease <PR>` from that
+   worktree, using its state-directory configuration and intended tree anchor,
+   for every PR it used. The plain command clears both its old-key per-PR lease
+   and its tree lease; `clear-lease --all` does not replace this step. Confirm
+   the inventoried per-PR and tree lease files were removed; then check
+   `bun <old-skill-dir>/scripts/drive-state.ts lease <PR> --all` returns `[]`
+   for every affected PR, and check the old `drives.ts` listing again.
+   The live-lease listing alone does not prove old lease files were removed.
+4. **Upgrade together, then resume.** Update every participant before
+   re-enabling hooks, reapers or drives. Preserve the state directory, round
+   budgets and parked work. Do not reset state or release unfinished held work
+   to make the upgrade proceed. If any old participant or ownership record
+   cannot be accounted for, defer the upgrade rather than clearing live
+   foreign ownership.
 
 ## Relocating the state dir
 
