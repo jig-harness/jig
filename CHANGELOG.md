@@ -316,6 +316,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.65.1] - 2026-10-19
+
+### Changed
+
+- The Windows support table in EXTENDING.md no longer lists finding and stopping a pass's processes as missing: `drive-pr` does that on Windows now, and state, locks and the skills' instructions under Git Bash remain.
+
 ## [0.65.0] - 2026-10-19
 
 ### Added
@@ -3138,7 +3144,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.65.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.65.1...HEAD
+[0.65.1]: https://github.com/jig-harness/jig/compare/v0.65.0...v0.65.1
 [0.65.0]: https://github.com/jig-harness/jig/compare/v0.64.0...v0.65.0
 [0.64.0]: https://github.com/jig-harness/jig/compare/v0.63.0...v0.64.0
 [0.63.0]: https://github.com/jig-harness/jig/compare/v0.62.0...v0.63.0
