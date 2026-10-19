@@ -1,9 +1,10 @@
-// The link destinations a Markdown file declares, read the way a CommonMark
-// renderer reads them: inline links and images (`[text](dest "title")`, with
-// `<dest>` for a destination that holds spaces) and link reference
-// definitions (`[label]: dest "title"`). Text inside fenced code blocks and
-// code spans is literal, so it declares no link. A title is not part of the
-// destination. Indented code blocks and HTML are not read.
+// The link destinations a Markdown file declares, read by a CommonMark
+// renderer: Bun's own (`Bun.markdown`), so code spans, fences, escapes,
+// containers, multi-line destinations and reference definitions are parsed as
+// a renderer parses them rather than approximated. A link or image declares
+// its destination; a reference link declares its definition's, and a
+// definition nothing uses renders nothing, so declares nothing. Raw HTML is
+// not read.
 
 /** One destination and the 1-based line it starts on. */
 export interface MarkdownLink {
@@ -11,109 +12,92 @@ export interface MarkdownLink {
   line: number;
 }
 
-/** Every link destination `content` declares, in document order. */
+/** Every link destination `content` declares, ordered by line. */
 export function markdownLinks(content: string): MarkdownLink[] {
-  const text = blankCodeSpans(blankFences(content));
-  const found: { target: string; index: number }[] = [];
-  for (const match of text.matchAll(/\]\(/g)) {
-    const start = match.index + 2;
-    const target = destinationAt(text, start);
-    if (target !== null) found.push({ target, index: start });
-  }
-  for (const match of text.matchAll(
-    /^ {0,3}\[(?!\^)(?:[^\]\\\n]|\\.)+\]:[ \t]*(<[^<>\n]*>|\S+)/gm,
-  )) {
-    const raw = match[1] ?? "";
-    found.push({
-      target: unescapeDestination(raw.startsWith("<") ? raw.slice(1, -1) : raw),
-      index: match.index + match[0].length - raw.length,
-    });
-  }
-  return found
-    .sort((a, b) => a.index - b.index)
-    .map(({ target, index }) => ({
-      target,
-      line: content.slice(0, index).split("\n").length,
-    }));
-}
-
-/** `text` with every character of a fenced code block, fences included, blanked. */
-function blankFences(content: string): string {
-  let fence: string | null = null;
-  return content
-    .split("\n")
-    .map((line) => {
-      if (fence === null) {
-        fence = openingFence(line);
-        return fence === null ? line : blank(line);
-      }
-      if (closesFence(line, fence)) fence = null;
-      return blank(line);
-    })
-    .join("\n");
-}
-
-/** The fence `line` opens, or null when it opens none. */
-function openingFence(line: string): string | null {
-  const opening = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
-  const marker = opening?.[1] ?? "";
-  if (!marker) return null;
-  return marker.startsWith("`") && opening?.[2]?.includes("`") ? null : marker;
-}
-
-/** Whether `line` closes the block `fence` opened. */
-function closesFence(line: string, fence: string): boolean {
-  const marker = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(line)?.[1] ?? "";
-  return marker[0] === fence[0] && marker.length >= fence.length;
-}
-
-/** `text` with every code span blanked; a span never crosses a blank line. */
-function blankCodeSpans(text: string): string {
-  return text.replace(/(`+)(?:(?!\n[ \t]*\n)[\s\S])*?(?<!`)\1(?!`)/g, blank);
-}
-
-/** Spaces in place of every character but a newline, so offsets hold. */
-function blank(text: string): string {
-  return text.replace(/[^\n]/g, " ");
+  const raw: string[] = [];
+  const collect = (children: string, href: string) => {
+    raw.push(href);
+    return children;
+  };
+  Bun.markdown.render(content, {
+    link: (children, { href }) => collect(children, href),
+    image: (children, { src }) => collect(children, src),
+  });
+  let cursor = 0;
+  const links = raw.map((href) => {
+    const at = sourceIndex(content, href, cursor);
+    if (at.advance) cursor = at.index + href.length;
+    return {
+      target: autolinkedEmail(content, href)
+        ? `mailto:${href}`
+        : unescapeDestination(href),
+      line: content.slice(0, at.index).split("\n").length,
+    };
+  });
+  return links.sort((a, b) => a.line - b.line);
 }
 
 /**
- * The destination of an inline link whose `(` ends just before `start`, or
- * null when what follows is not a destination (and so no link). A
- * destination never crosses a line.
+ * Where `href`, as the renderer reported it (its source text), is written. An
+ * inline link's destination follows its own `(` after the previous link's; a
+ * reference link's is at its definition, earlier or later in the file, and
+ * moves nothing on. The line is the destination's, so it can name a line where
+ * the same text stood in prose before the link.
  */
-function destinationAt(text: string, start: number): string | null {
-  const lineEnd = text.indexOf("\n", start);
-  const rest = text.slice(start, lineEnd < 0 ? undefined : lineEnd).trimStart();
-  if (rest.startsWith("<")) {
-    const inner = /^<([^<>]*)>/.exec(rest)?.[1];
-    return inner === undefined ? null : unescapeDestination(inner);
-  }
-  const end = bareEnd(rest);
-  return end === null ? null : unescapeDestination(rest.slice(0, end));
+function sourceIndex(
+  content: string,
+  href: string,
+  cursor: number,
+): { index: number; advance: boolean } {
+  const text = href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const opener = new RegExp(`(?:\\(|\\]:)\\s*<?${text}`, "g");
+  opener.lastIndex = cursor;
+  const inline = opener.exec(content);
+  if (inline !== null && content[inline.index] === "(")
+    return {
+      index: inline.index + inline[0].length - href.length,
+      advance: true,
+    };
+  opener.lastIndex = 0;
+  const anywhere = opener.exec(content) ?? inline;
+  const index = anywhere
+    ? anywhere.index + anywhere[0].length - href.length
+    : Math.max(content.indexOf(href), 0);
+  return { index, advance: false };
+}
+
+/** Whether `href` is an email autolink (`<a@b.c>`), which renders as mailto. */
+function autolinkedEmail(content: string, href: string): boolean {
+  return (
+    /^[\w.!#$%&'*+/=?^`{|}~-]+@[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?)*$/i.test(
+      href,
+    ) && content.includes(`<${href}>`)
+  );
 }
 
 /**
- * Where a destination not in angle brackets ends in `rest`: at whitespace or
- * at the `)` that closes the link, its own parentheses balanced; null when
- * they are not.
+ * A destination as the renderer's source text holds it, with its backslash
+ * escapes removed and its character references decoded, left to right, so an
+ * escaped `&` starts no reference.
  */
-function bareEnd(rest: string): number | null {
-  let depth = 0;
-  for (const { 0: token, index } of rest.matchAll(
-    /\\.|[()\s]|[^()\s\\]+|\\/g,
-  )) {
-    if (/^\s$/.test(token) || (token === ")" && depth === 0))
-      return depth === 0 ? index : null;
-    if (token === "(") depth++;
-    else if (token === ")") depth--;
-  }
-  return depth === 0 ? rest.length : null;
-}
-
-/** A destination with its backslash escapes removed. */
 function unescapeDestination(target: string): string {
-  return target.replace(/\\([!-/:-@[-`{-~])/g, "$1");
+  return target.replace(
+    /\\([!-/:-@[-`{-~])|&(?:#\d{1,7}|#[xX][\da-fA-F]{1,6}|[A-Za-z][A-Za-z\d]{1,31});/g,
+    (whole, escaped: string | undefined) =>
+      escaped ?? characterReference(whole),
+  );
+}
+
+/** The text one character reference stands for; an unknown one as written. */
+function characterReference(reference: string): string {
+  const html = Bun.markdown.html(reference).trim();
+  return html
+    .replace(/^<p>|<\/p>$/g, "")
+    .replace(
+      /&(lt|gt|quot|amp);/g,
+      (_, name: string) =>
+        ({ lt: "<", gt: ">", quot: '"', amp: "&" })[name] ?? "",
+    );
 }
 
 /** A destination's percent-encoding decoded, or the destination as written. */
