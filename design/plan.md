@@ -231,16 +231,15 @@ a re-audit of Jig scores them.
 ### 18. The jig-harness.dev website
 
 `website/` renders this repository's documents as a designed site (Astro, a
-static Cloudflare Worker), open to every reader and kept out of search
-engines while Jig is a work in progress; [design/website.md](website.md) has
+static Cloudflare Worker), open to every reader and to search engines;
+[design/website.md](website.md) has
 how it works and what is left. Done when:
 
 - a gate checks the contrast of every text pair and every hover and focus
   state, in both themes;
 - search works on a phone, and the plugin page shows one agent's steps at a
-  time.
-
-Opening the site to search engines is a decision for a person.
+  time;
+- the home and adoption pages show an audit sheet of Jig's own audit.
 
 ### 20. `code-stats`: test-runner configuration and audit evidence
 

@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --bun astro dev",
-    "build": "bun scripts/audit-example.ts && bun --bun astro build && bun scripts/markdown-twins.ts && bun scripts/check-links.ts",
+    "build": "bun --bun astro build && bun scripts/markdown-twins.ts && bun scripts/check-links.ts",
     "check": "bun --bun astro check",
     "preview": "bun --bun astro preview",
     "jig-still": "bun scripts/jig-still.ts",

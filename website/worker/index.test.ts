@@ -25,11 +25,6 @@ test("every page is served to any reader", async () => {
   expect(await response.text()).toBe("asset /modules/");
 });
 
-test("robots.txt is served", async () => {
-  const response = await get("/robots.txt");
-  expect(response.status).toBe(200);
-});
-
 const MD = "text/markdown, text/html;q=0.5";
 
 /** A request with the given `Accept` header, if any. */

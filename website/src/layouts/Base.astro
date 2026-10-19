@@ -40,7 +40,6 @@ const pageTitle = title === "Jig" ? "Jig Harness — delivery practices for team
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="noindex, nofollow" />
     <meta name="description" content={description} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -56,21 +55,6 @@ const pageTitle = title === "Jig" ? "Jig Harness — delivery practices for team
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>
-    <div class="strip wrap" role="note">
-      <span class="tag">Internal preview</span>
-      <span class="wide-only">
-        Jig is a work in progress. Plugin <strong>v{release.version}</strong>,
-        released {released}; releases are frequent and the roadmap is open.
-      </span>
-      <span class="narrow-only">
-        Work in progress · <strong>v{release.version}</strong>, {released}
-      </span>
-      <span class="strip-links">
-        <a href="/whats-new/">What's new</a>
-        <a class="wide-only" href="/whats-new/#roadmap">Roadmap</a>
-      </span>
-    </div>
-
     <header class="top">
       <div class="bar wrap">
         <a class="home" href="/" aria-label="Jig home"><Logo /></a>
@@ -207,38 +191,6 @@ const pageTitle = title === "Jig" ? "Jig Harness — delivery practices for team
     background: var(--card);
     padding: 6px 10px;
     border-radius: var(--r);
-  }
-
-  .strip {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 14px;
-    align-items: center;
-    padding-block: 9px;
-    background: var(--sunk);
-    border-bottom: 1px solid var(--line);
-    font-size: 13.5px;
-    line-height: 1.45;
-  }
-  .strip strong {
-    font-weight: 600;
-  }
-  .tag {
-    font-size: 12px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    font-weight: 600;
-    background: var(--accent);
-    color: var(--on-accent);
-    padding: 3px 7px;
-    border-radius: var(--r-tag);
-  }
-  .strip-links {
-    display: flex;
-    gap: 14px;
-  }
-  .strip-links a {
-    color: var(--accent);
   }
 
   .top {

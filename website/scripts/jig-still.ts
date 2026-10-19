@@ -37,7 +37,7 @@ try {
   await page.addStyleTag({
     content: `:root { --bg: #fff !important; --ink: #000 !important; }
       html, body { background: #fff !important; }
-      .strip, header, .hero > :not(.hero-plate) { visibility: hidden !important; }`,
+      header, .hero > :not(.hero-plate) { visibility: hidden !important; }`,
   });
   // The model re-reads its colors when the theme attribute changes.
   await page.evaluate(() => {

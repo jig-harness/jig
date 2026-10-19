@@ -1,5 +1,4 @@
 ---
-import AuditSpecimen from "../../components/AuditSpecimen.astro";
 import SideIndex from "../../components/SideIndex.astro";
 import SkillCommand from "../../components/SkillCommand.astro";
 import Base from "../../layouts/Base.astro";
@@ -75,8 +74,7 @@ const auditStation = `st-${stations.length + 1}`;
         <h3><span class="num">{stations.length + 1}</span>{" "}Run your first audit</h3>
         <p>In the repository, start a session and run:</p>
         <SkillCommand name="audit" />
-        <p>On a first audit it asks which profile you aim for. What you will see is a sheet like this one, a real run on an open-source library:</p>
-        <AuditSpecimen compact />
+        <p>On a first audit it asks which profile you aim for. What you will see is one self-contained HTML sheet: where you stand against each module, and what to do first.</p>
       </section>
 
       <section class="guides" id="guides">
