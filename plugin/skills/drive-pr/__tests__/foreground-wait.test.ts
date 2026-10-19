@@ -643,7 +643,11 @@ describe("foreground-wait.ts", () => {
           "Bun reaps the inherited-pipe child on Windows; POSIX needs the runner deadline",
           { windows: "job-reaped", posix: "deadline" },
         );
-        expectSpawnExit(w, 30);
+        // A reaped tree is verified only when the runner's tracker saw the
+        // child before its parent exited, a race this fixture does not control;
+        // the exit must agree with whichever verdict the runner reached.
+        const unverified = out(w).includes("process tree remains unverified");
+        expectSpawnExit(w, completion === "job-reaped" && !unverified ? 0 : 30);
         expect(out(w)).toContain(
           completion === "job-reaped" ? "command-exit: 0" : "command-exit: 124",
         );

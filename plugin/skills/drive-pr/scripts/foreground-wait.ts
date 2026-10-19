@@ -229,12 +229,16 @@ function killZero(pid: number): boolean {
  * the snapshot guarantees the runner's pid is already readable. Reading the
  * files first lets the launcher finish in between, leaving roots that name
  * only a dead launcher — a live launch misread as finished.
+ *
+ * Windows reuses a process number within seconds, so there a root row created
+ * after its pid was recorded is another process, and neither it nor its
+ * children belong to the launch.
  */
-async function liveTree(readRoots: () => number[]): Promise<boolean> {
+async function liveTree(readRoots: () => RecordedPid[]): Promise<boolean> {
   const rows = await processTable();
   const roots = readRoots();
   // `ps` unavailable: fail toward "still running", as lib/proc.ts does.
-  if (rows === null) return roots.some(killZero);
+  if (rows === null) return roots.some((root) => killZero(root.pid));
   const children = new Map<number, PsRow[]>();
   for (const row of rows) {
     children.set(row.ppid, [...(children.get(row.ppid) ?? []), row]);
@@ -243,14 +247,28 @@ async function liveTree(readRoots: () => number[]): Promise<boolean> {
   const stack = [...roots];
   const seen = new Set<number>();
   while (stack.length > 0) {
-    const pid = stack.pop() as number;
+    const { pid, recordedAt } = stack.pop() as RecordedPid;
     if (seen.has(pid)) continue;
     seen.add(pid);
     const row = byPid.get(pid);
+    if (row && reusedAfterRecording(row, recordedAt)) continue;
     if (row && !row.stat.startsWith("Z")) return true;
-    for (const c of children.get(pid) ?? []) stack.push(c.pid);
+    for (const c of children.get(pid) ?? [])
+      stack.push({ pid: c.pid, recordedAt: null });
   }
   return false;
+}
+
+/** Slack for coarse file timestamps against the process creation clock. */
+const RECORD_CLOCK_SLACK_MS = 2000;
+
+/** A Windows process created after its pid was recorded reused the number. */
+function reusedAfterRecording(row: PsRow, recordedAt: number | null): boolean {
+  if (process.platform !== "win32" || recordedAt === null) return false;
+  const created = Date.parse(row.start);
+  return (
+    Number.isFinite(created) && created > recordedAt + RECORD_CLOCK_SLACK_MS
+  );
 }
 
 /** Signal one pid; already-gone or not-ours pids are skipped. */
@@ -310,10 +328,30 @@ function unresolvedResult(result: Result | "unreadable" | null): boolean {
   return result === "unreadable" || result?.treeWitnessed === false;
 }
 
+interface RecordedPid {
+  pid: number;
+  /** When the pid file was written; null when its time is unreadable. */
+  recordedAt: number | null;
+}
+
+function recordedPidFiles(dir: string): RecordedPid[] {
+  const recorded: RecordedPid[] = [];
+  for (const name of ["launcher.pid", "runner.pid", "cmd.pid"]) {
+    const pid = readPid(dir, name);
+    if (pid === null) continue;
+    let recordedAt: number | null = null;
+    try {
+      recordedAt = statSync(at(dir, name)).mtimeMs;
+    } catch {
+      // Unreadable time: the pid stays a root, and is never judged reused.
+    }
+    recorded.push({ pid, recordedAt });
+  }
+  return recorded;
+}
+
 function recordedPids(dir: string): number[] {
-  return ["launcher.pid", "runner.pid", "cmd.pid"]
-    .map((name) => readPid(dir, name))
-    .filter((pid): pid is number => pid !== null);
+  return recordedPidFiles(dir).map((recorded) => recorded.pid);
 }
 
 function unrecordedClaimRunning(dir: string): boolean {
@@ -330,10 +368,20 @@ async function running(dir: string): Promise<boolean> {
   const result = readResult(dir);
   if (result !== null) return unresolvedResult(result);
   if (readPid(dir, "launcher.pid") === null) return unrecordedClaimRunning(dir);
-  const live = await liveTree(() => recordedPids(dir));
+  const snapshotStarted = Date.now();
+  const live = await liveTree(() => recordedPidFiles(dir));
   const terminal = readResult(dir);
+  // A signal probe covers only a pid recorded after the snapshot began. One the
+  // snapshot already saw dead stays dead: a later probe can answer only for a
+  // process that reused its number.
   return terminal === null
-    ? live || recordedPids(dir).some(killZero)
+    ? live ||
+        recordedPidFiles(dir).some(
+          (recorded) =>
+            (recorded.recordedAt === null ||
+              recorded.recordedAt >= snapshotStarted - RECORD_CLOCK_SLACK_MS) &&
+            killZero(recorded.pid),
+        )
     : unresolvedResult(terminal);
 }
 
