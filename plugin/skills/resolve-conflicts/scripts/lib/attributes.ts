@@ -129,8 +129,13 @@ function mirror(source: string, target: string, except: ReadonlySet<string>) {
   }
 }
 
+/** The configuration files git reads from a git directory. */
+const CONFIG_FILES = ["config", "config.worktree"] as const;
+
 /**
- * The repository's git directories without the configuration and
+ * The repository's git directories without the configuration (`config`, and
+ * `config.worktree`, read with `extensions.worktreeConfig` from whichever git
+ * directory is the worktree's own, the common one for the main worktree) and
  * `info/attributes`: everything else a merge reads there (references, replace
  * refs among them, `HEAD`, `shallow`, `info/grafts`, the `modules`
  * directory) is the repository's own. The index is not copied: the runner
@@ -144,7 +149,7 @@ function mirrorGitDir(root: string, scratch: string): string {
   const gitDir = path("--absolute-git-dir");
   const commonDir = path("--git-common-dir");
   const common = join(scratch, "common");
-  mirror(commonDir, common, new Set(["config", "info", "index"]));
+  mirror(commonDir, common, new Set([...CONFIG_FILES, "info", "index"]));
   const info = join(commonDir, "info");
   if (existsSync(info))
     mirror(info, join(common, "info"), new Set(["attributes"]));
@@ -169,7 +174,7 @@ function mirrorGitDir(root: string, scratch: string): string {
   if (gitDir === commonDir) return common;
   // A linked worktree's own directory: its HEAD and per-worktree refs.
   const worktree = join(scratch, "git");
-  mirror(gitDir, worktree, new Set(["commondir", "config.worktree", "index"]));
+  mirror(gitDir, worktree, new Set([...CONFIG_FILES, "commondir", "index"]));
   writeFileSync(join(worktree, "commondir"), `${common}\n`);
   return worktree;
 }

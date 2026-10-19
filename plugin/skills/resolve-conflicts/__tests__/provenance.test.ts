@@ -318,6 +318,37 @@ describe("staged content provenance", () => {
       "PROBLEM clean.txt: staged content differs from Git's automatic result",
     );
   });
+  it("reconstructs the merge without the main worktree's own configuration", () => {
+    const lines = "one\ntwo\nthree\nfour\nfive\n";
+    const attributes = "clean.txt merge=keepours\n";
+    s.commit("Base", {
+      ".gitattributes": attributes,
+      "conflict.txt": "base\n",
+      "clean.txt": lines,
+    });
+    s.git("checkout", "-q", "-b", "feature");
+    s.commit("Feature", {
+      "conflict.txt": "feature\n",
+      "clean.txt": lines.replace("one", "ONE"),
+    });
+    s.git("checkout", "-q", "main");
+    s.commit("Main", {
+      "conflict.txt": "main\n",
+      "clean.txt": lines.replace("five", "FIVE"),
+    });
+    s.git("checkout", "-q", "feature");
+    s.git("config", "extensions.worktreeConfig", "true");
+    s.git("config", "--worktree", "merge.keepours.driver", "true");
+    ok(s.gitTry("merge", "main"), 1);
+    expect(s.read("clean.txt")).toBe(lines.replace("one", "ONE"));
+    map();
+    resolve();
+    const r = s.script("check-resolution.ts", []);
+    ok(r, 1);
+    expect(r.stdout).toContain(
+      "PROBLEM clean.txt: staged content differs from Git's automatic result",
+    );
+  });
   it("reconstructs the merge in a SHA-256 repository", () => {
     rmSync(join(s.root, ".git"), { recursive: true, force: true });
     s.git("init", "-q", "--object-format=sha256");
