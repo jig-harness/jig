@@ -1337,7 +1337,10 @@ make, use the entry's term instead.
   crates.io offer it.
 - **Provenance** — a signed, public record a package registry keeps beside
   a published version, naming the repository, commit and workflow that
-  built it, so anyone installing it can check where it came from.
+  built it, so anyone installing it can check where it came from. A
+  publish attestation, such as PyPI's, is narrower: it names the workflow
+  that uploaded the file, which proves where it was published from, not
+  where it was built.
 - **Preview package** — a package built from a pull request's commit, so a
   consumer can install and try the change before it merges. It is not a
   release: no changelog entry, no version the release step chose, no tag,

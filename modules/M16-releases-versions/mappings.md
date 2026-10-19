@@ -106,8 +106,10 @@ A check on the source cannot see the package built from it: a file left out
 of what gets published, an entry point that points at nothing once the build
 has run, types that resolve under one module setting and not another, a test
 folder shipped inside the library. These checks read what the build packs.
-Run them in the pull request's checks, so the commit the tag later lands on
-has passed them.
+Make them required checks, so they run on the pull request for early
+feedback and again on the releasing commit: the release step changes
+versions and the changelog in a commit of its own, and the tag lands on that
+commit only once its required checks have passed.
 
 | Ecosystem | Check | What it reads |
 |-----------|-------|---------------|
@@ -115,7 +117,7 @@ has passed them.
 | npm, with TypeScript types | [Are the Types Wrong?](https://github.com/arethetypeswrong/arethetypeswrong.github.io) (`attw --pack .`) | the tarball `npm pack` makes: whether each entry point's types resolve under `node10`, `node16` and `bundler` module resolution, and whether the module format the types claim is the one the code ships |
 | npm | `npm pack --dry-run` | the list of files the tarball would hold, for a check that compares it with the list the repository expects |
 | Python | [`twine check`](https://twine.readthedocs.io/en/stable/) | the built distributions' metadata: whether the long description renders on PyPI |
-| Python | [check-wheel-contents](https://github.com/jwodder/check-wheel-contents) | a built wheel: compiled `.pyc` files, duplicate files, a top-level `tests` or `docs` package, modules of the source tree missing from the wheel |
+| Python | [check-wheel-contents](https://github.com/jwodder/check-wheel-contents) | a built wheel: compiled `.pyc` files, duplicate files, a top-level `tests` or `docs` package, and, given the source tree (`--package` or `--src-dir`), modules of it missing from the wheel |
 | Rust | `cargo package --list`, `cargo publish --dry-run` | the files the crate's archive would hold; the dry run also builds the packaged crate on its own, which catches a file the build needs and the package leaves out |
 
 ## The release identity
@@ -143,11 +145,15 @@ this workflow, and nothing else. Name a deployment environment in the
 registry's configuration and let only the release tags use it, so a workflow
 on another branch cannot publish.
 
-| Registry | CI providers | The publishing job |
+| Registry | CI providers | The publishing job, on GitHub Actions |
 |----------|--------------|--------------------|
 | [npm](https://docs.npmjs.com/trusted-publishers) | GitHub Actions, GitLab CI/CD and CircleCI, on their hosted runners | `permissions: id-token: write` and `npm publish` with npm 11.5.1 or later (Node 22.14.0 or later). A public package published from a public repository on GitHub or GitLab gets [provenance](../../GLOSSARY.md) without a flag. Once it works, the package's publishing access can disallow tokens altogether |
-| [PyPI](https://docs.pypi.org/trusted-publishers/) | GitHub Actions, GitLab CI/CD, Google Cloud, ActiveState | `permissions: id-token: write` and [`pypa/gh-action-pypi-publish`](https://github.com/pypa/gh-action-pypi-publish), which also uploads each file's provenance by default; the credential lasts 15 minutes |
-| [crates.io](https://blog.rust-lang.org/2025/07/11/crates-io-development-update-2025-07) | GitHub Actions | `permissions: id-token: write`, [`rust-lang/crates-io-auth-action`](https://github.com/rust-lang/crates-io-auth-action) for the credential, then `cargo publish`. The crate's first version is published by hand; the trusted publisher is then set in the crate's settings |
+| [PyPI](https://docs.pypi.org/trusted-publishers/) | GitHub Actions, GitLab CI/CD, Google Cloud, ActiveState | `permissions: id-token: write` and [`pypa/gh-action-pypi-publish`](https://github.com/pypa/gh-action-pypi-publish), which also uploads a publish attestation for each file by default: it names the workflow that uploaded the file, not the one that built it; the credential lasts 15 minutes |
+| [crates.io](https://blog.rust-lang.org/2025/07/11/crates-io-development-update-2025-07) | GitHub Actions | `permissions: id-token: write`, [`rust-lang/crates-io-auth-action`](https://github.com/rust-lang/crates-io-auth-action) in a step with an `id`, then `cargo publish` with that step's `token` output as `CARGO_REGISTRY_TOKEN`. The crate's first version is published by hand; the trusted publisher is then set in the crate's settings |
+
+The other CI providers request the identity token their own way (GitLab
+CI/CD's `id_tokens` with the registry as its audience, for one); the
+registry's page linked in the first column gives the steps for each.
 
 ## Release channels
 
@@ -172,7 +178,7 @@ request's own code, so it holds none of the release's credentials.
 | Ecosystem | A preview package |
 |-----------|-------------------|
 | npm | [pkg.pr.new](https://github.com/stackblitz-labs/pkg.pr.new): its GitHub App installed on the repository, and `pkg-pr-new publish` run once in the pull request's workflow. It serves the package from an address of its own (`npm i https://pkg.pr.new/<owner>/<repo>/<package>@<commit>`, or `@<pull-request>`) and publishes nothing to npm |
-| npm, in the registry | a prerelease version under a dist-tag of its own (`npm publish --tag <tag>`), never `latest`; Changesets' [snapshot releases](https://github.com/changesets/changesets/blob/main/docs/snapshot-releases.md) (`changeset version --snapshot <tag>`, then `changeset publish --tag <tag>`) write and publish one. npm allows unpublishing only within limits, so these versions stay in the registry; prefer an address outside it |
-| Python | PyPI's [test index](https://test.pypi.org/), separate from PyPI itself (`pip install --index-url https://test.pypi.org/simple/ <package>`), or the wheel kept as an artifact of the pull request's CI run |
+| npm, in the registry | a prerelease version under a dist-tag of its own (`npm publish --tag <tag>`), never `latest`; Changesets' [snapshot releases](https://github.com/changesets/changesets/blob/main/docs/snapshot-releases.md) (`changeset version --snapshot <tag>`, then `changeset publish --tag <tag> --no-git-tag`, since it creates git tags otherwise) write and publish one. Publishing to npm needs the registry's permission, which the job running the pull request's code must not hold: publish from a separate job that receives the built package and runs nothing from the pull request, as the release identity's job does. npm allows unpublishing only within limits, so these versions stay in the registry; prefer an address outside it |
+| Python | PyPI's [test index](https://test.pypi.org/), separate from PyPI itself: install the package's dependencies from PyPI first, then the preview alone (`pip install --index-url https://test.pypi.org/simple/ --no-deps <package>`), since the test index does not hold them; or the wheel kept as an artifact of the pull request's CI run |
 | Rust | a git dependency on the pull request's commit (`<crate> = { git = "<url>", rev = "<commit>" }`) |
 | Go | `go get <module>@<commit>`, which resolves the commit to a pseudo-version |
