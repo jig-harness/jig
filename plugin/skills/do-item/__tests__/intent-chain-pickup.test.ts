@@ -217,14 +217,10 @@ describe("immutable pickup sources", () => {
     rmSync(file(token));
     const target = join(dir, "target.json");
     writeFileSync(target, body);
-    // Windows has no O_NOFOLLOW, so the helper reads through a symlink there;
-    // the file-system piece of the Windows work lifts this guard.
-    exceptOnWindows("Windows has no O_NOFOLLOW", () => {
-      symlinkSync(target, file(token));
-      expect(() => readPickup(dir, token)).toThrow();
-      expect(() => writePickup(dir, ["ENG-7"], text)).toThrow();
-      rmSync(file(token));
-    });
+    symlinkSync(target, file(token));
+    expect(() => readPickup(dir, token)).toThrow();
+    expect(() => writePickup(dir, ["ENG-7"], text)).toThrow();
+    rmSync(file(token));
     mkdirSync(file(token));
     expect(() => readPickup(dir, token)).toThrow("regular file");
     expect(() => readPickup(dir, "f".repeat(64))).toThrow();

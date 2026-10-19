@@ -317,6 +317,13 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.66.1] - 2026-10-19
+
+### Fixed
+
+- `drive-pr` and `do-item` retry Windows sharing violations during atomic state writes and lock moves, preserve directory lock fences on Windows, and identify worktrees by their canonical filesystem paths. Pickup records retain their no-symlink protection when Windows lacks Unix open flags, and unsupported state volumes report how to relocate `$DRIVE_PR_STATE_DIR`.
+- Existing drives must finish held work and stop before the worktree identity upgrade. The `drive-pr` README documents clearing old leases with the old plugin before upgrading participants together.
+
 ## [0.66.0] - 2026-10-19
 
 ### Added
@@ -3169,7 +3176,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.66.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.66.1...HEAD
+[0.66.1]: https://github.com/jig-harness/jig/compare/v0.66.0...v0.66.1
 [0.66.0]: https://github.com/jig-harness/jig/compare/v0.65.1...v0.66.0
 [0.65.1]: https://github.com/jig-harness/jig/compare/v0.65.0...v0.65.1
 [0.65.0]: https://github.com/jig-harness/jig/compare/v0.64.0...v0.65.0

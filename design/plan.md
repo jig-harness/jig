@@ -345,14 +345,7 @@ audit scores M12's new criterion from the report.
   it (`skipsOnWindows` in
   [lib/test-helpers/windows-skip.ts](../lib/test-helpers/windows-skip.ts)).
   The steps land in this order, each as its own pull request:
-  1. **State, locks and paths** (`file-system`). Renames retried while
-     another process holds the target open, lock renames retried before
-     reading as claimed, both sides of a worktree's identity normalised
-     before hashing (a mismatch makes a live worktree look deleted),
-     `drive.ts` started through `import.meta.main`, the pickup record's
-     no-link guard kept where `O_NOFOLLOW` does not exist, and a clear error
-     on a volume without hard links.
-  2. **The skills under Git Bash** (`git-bash`). Every script command led by
+  1. **The skills under Git Bash** (`git-bash`). Every script command led by
      `bun`, the `ps`, `setsid` and `nohup` instructions replaced by the
      scripts' own commands, the pass command resolved through
      [`PATHEXT`](../GLOSSARY.md) (an npm-installed agent CLI is a `.cmd`),
@@ -364,11 +357,11 @@ audit scores M12's new criterion from the report.
      quoted for `cmd.exe`'s own rules, tested with arguments holding
      spaces, quotes, `%` and `^`. Done when a pickup, a driven round and a
      stop work end to end on a Windows machine.
-  3. **Job Objects** (optional): each pass in a
+  2. **Job Objects** (optional): each pass in a
      Windows [Job Object](../GLOSSARY.md), for a kill no directly started
      descendant escapes and a sound check that the tree is gone; or a
      recorded decision that captured process identities are enough.
-  4. **PowerShell** (`powershell`, later): the shell constructs in the
+  3. **PowerShell** (`powershell`, later): the shell constructs in the
      skills' instructions (`$(…)`, heredocs, pipes into `grep` or `tail`,
      `test`, `mktemp`, and `review`'s file-set logic) moved into the scripts
      they feed, so the skills run under Codex on Windows without Git Bash.

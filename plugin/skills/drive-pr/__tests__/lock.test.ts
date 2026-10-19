@@ -36,7 +36,10 @@ import { basename, join } from "node:path";
 import { ExitError } from "../scripts/lib/cli.ts";
 import { createLock, sweepLockQuarantine } from "../scripts/lib/state/lock.ts";
 import { fileURLToPath } from "node:url";
-import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
+import {
+  byPlatform,
+  exceptOnWindows,
+} from "../../../../lib/test-helpers/windows-skip.ts";
 
 let dir: string;
 let file: string;
@@ -699,8 +702,23 @@ describe("lock.ts single-instance mutex", () => {
   });
 });
 
+/** A fence stays a nonempty directory on Windows, which can replace a file with a directory. */
+function expectSweptFence(path: string): void {
+  const directory =
+    byPlatform(
+      "Windows directory renames must meet a nonempty directory fence",
+      {
+        windows: "directory",
+        posix: "file",
+      },
+    ) === "directory";
+  expect(statSync(path).isDirectory()).toBe(directory);
+  if (directory) expect(existsSync(join(path, "tombstone"))).toBe(true);
+  else expect(readFileSync(path, "utf8")).toBe("");
+}
+
 describe("sweepLockQuarantine", () => {
-  it("compacts a tombstone left by a normal acquire/release round-trip into an empty file at the SAME path", async () => {
+  it("sweeps a released tombstone while retaining the fence at the same path", async () => {
     const solo = createLock(file, "test", "999");
     await solo.acquire();
     const ownMarker = readdirSync(lock).find((f) => f.startsWith("owner."));
@@ -714,11 +732,10 @@ describe("sweepLockQuarantine", () => {
     // Still present at the exact same path — the fence a foreign rename
     // would collide against is never removed, only shrunk.
     expect(existsSync(doomed)).toBe(true);
-    expect(statSync(doomed).isDirectory()).toBe(false);
-    expect(readFileSync(doomed, "utf8")).toBe("");
+    expectSweptFence(doomed);
   });
 
-  it("compacts a `.recovering` tombstone alongside a `lock` tombstone", () => {
+  it("sweeps a `.recovering` tombstone alongside a `lock` tombstone", () => {
     // Plant one of each family by hand — the same shapes `tombstone()`
     // itself produces for `lock`'s own stale-break and `.recovering`'s own
     // stale-break, respectively.
@@ -731,8 +748,8 @@ describe("sweepLockQuarantine", () => {
 
     sweepLockQuarantine(file);
 
-    expect(statSync(lockDoomed).isDirectory()).toBe(false);
-    expect(statSync(recoveringDoomed).isDirectory()).toBe(false);
+    expectSweptFence(lockDoomed);
+    expectSweptFence(recoveringDoomed);
   });
 
   it("is idempotent — a second sweep leaves an already-compacted entry alone (the SAME file, not a fresh one)", () => {
@@ -741,7 +758,7 @@ describe("sweepLockQuarantine", () => {
     writeFileSync(join(lockDoomed, "tombstone"), "broken by pid 1\n");
 
     sweepLockQuarantine(file);
-    expect(statSync(lockDoomed).isDirectory()).toBe(false);
+    expectSweptFence(lockDoomed);
     const inoAfterFirstSweep = statSync(lockDoomed).ino;
 
     // A second pass must not throw trying to `rmSync`+recreate a path that
@@ -754,7 +771,7 @@ describe("sweepLockQuarantine", () => {
     // recreated".
     expect(() => sweepLockQuarantine(file)).not.toThrow();
     expect(existsSync(lockDoomed)).toBe(true);
-    expect(readFileSync(lockDoomed, "utf8")).toBe("");
+    expectSweptFence(lockDoomed);
     expect(statSync(lockDoomed).ino).toBe(inoAfterFirstSweep);
   });
 
@@ -772,7 +789,7 @@ describe("sweepLockQuarantine", () => {
 
     expect(existsSync(join(lock, "owner.live1"))).toBe(true);
     expect(existsSync(join(recovering, "owner.live2"))).toBe(true);
-    expect(statSync(lockDoomed).isDirectory()).toBe(false);
+    expectSweptFence(lockDoomed);
   });
 
   it("leaves an unrelated file whose name merely shares the lock prefix alone", () => {
@@ -787,36 +804,28 @@ describe("sweepLockQuarantine", () => {
     expect(readFileSync(decoy, "utf8")).toBe("unrelated");
   });
 
-  it.skipIf(
-    skipsOnWindows(
-      "file-system",
-      "rename of a directory onto an existing regular file succeeds on Windows instead of failing with ENOTDIR, so the compacted-entry fence does not hold",
-    ),
-  )(
-    "a rename onto a compacted entry still fails outright — the fence survives compaction",
-    async () => {
-      // The property this whole function depends on: `tombstone()` makes a
-      // quarantine path permanently non-empty so `rename(2)` refuses to
-      // replace it (`quarantinePath`'s own doc comment). Compacting the
-      // directory into a file must preserve exactly that — a directory
-      // renamed onto an existing regular file fails with ENOTDIR, not silent
-      // replacement.
-      const solo = createLock(file, "test", "999");
-      await solo.acquire();
-      const ownMarker = readdirSync(lock).find((f) => f.startsWith("owner."));
-      if (ownMarker === undefined) throw new Error("no owner marker");
-      solo.release();
-      const doomed = `${lock}.stale.${ownMarker}`;
-      sweepLockQuarantine(file);
-      expect(statSync(doomed).isDirectory()).toBe(false);
+  it("a rename onto a compacted entry still fails outright — the fence survives compaction", async () => {
+    // The property this whole function depends on: `tombstone()` makes a
+    // quarantine path permanently non-empty so `rename(2)` refuses to
+    // replace it (`quarantinePath`'s own doc comment). Compacting the
+    // directory into a file must preserve exactly that — a directory
+    // renamed onto an existing regular file fails with ENOTDIR, not silent
+    // replacement.
+    const solo = createLock(file, "test", "999");
+    await solo.acquire();
+    const ownMarker = readdirSync(lock).find((f) => f.startsWith("owner."));
+    if (ownMarker === undefined) throw new Error("no owner marker");
+    solo.release();
+    const doomed = `${lock}.stale.${ownMarker}`;
+    sweepLockQuarantine(file);
+    expectSweptFence(doomed);
 
-      const impostor = `${dir}/impostor-dir`;
-      mkdirSync(impostor);
-      expect(() => renameSync(impostor, doomed)).toThrow();
-      // Untouched by the failed attempt.
-      expect(readFileSync(doomed, "utf8")).toBe("");
-    },
-  );
+    const impostor = `${dir}/impostor-dir`;
+    mkdirSync(impostor);
+    expect(() => renameSync(impostor, doomed)).toThrow();
+    // Untouched by the failed attempt.
+    expectSweptFence(doomed);
+  });
 
   it("is a no-op when the state directory itself does not exist", () => {
     const missing = join(dir, "nowhere", "drive-pr-999.json");
@@ -881,7 +890,12 @@ describe("sweepLockQuarantine", () => {
       // exercising a REAL leftover, not asserting a vacuous "already
       // empty" list.
       leftover = readdirSync(dir).find((f) => f.includes(".compacting."));
-      expect(leftover).toBeDefined();
+      exceptOnWindows(
+        "Windows retains directory fences without starting compaction",
+        () => {
+          expect(leftover).toBeDefined();
+        },
+      );
     } finally {
       // Always restore the real module — `mock.module` is process-global
       // and never torn down automatically, so leaving the override in
@@ -895,7 +909,8 @@ describe("sweepLockQuarantine", () => {
     // sweep retries and cleans it up rather than leaving it as permanent
     // debris.
     sweepLockQuarantine(file);
-    expect(existsSync(join(dir, leftover as string))).toBe(false);
+    if (leftover !== undefined)
+      expect(existsSync(join(dir, leftover))).toBe(false);
   });
 
   it("leaves no `.compacting.*` staging leftovers behind — the private claim is always cleaned up", () => {

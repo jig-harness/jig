@@ -9,6 +9,7 @@
  */
 
 import { afterEach, describe, expect, it, mock } from "bun:test";
+import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   existsSync,
   mkdtempSync,
@@ -826,3 +827,101 @@ describe("createExclusiveDurable", () => {
     },
   );
 });
+
+for (const code of [
+  "ENOTSUP",
+  "EOPNOTSUPP",
+  "ENOSYS",
+  "EXDEV",
+  "EPERM",
+  "EACCES",
+]) {
+  it(`explains the state-directory hard-link requirement for ${code}`, async () => {
+    dir = mkdtempSync(join(tmpdir(), "fsutil-no-hardlinks-"));
+    const target = join(dir, "clone-id");
+    const actualFs = await import("node:fs");
+    const realFs = { ...actualFs };
+    const failure = Object.assign(new Error("link unavailable"), { code });
+    mock.module("node:fs", () => ({
+      ...realFs,
+      linkSync: () => {
+        throw failure;
+      },
+    }));
+    try {
+      let caught: unknown;
+      try {
+        createExclusiveDurable(target, "identity");
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(ExclusiveWriteOwnFailure);
+      expect((caught as Error).message).toContain("hard links");
+      expect((caught as Error).message).toContain("DRIVE_PR_STATE_DIR");
+      expect((caught as Error).cause).toBe(failure);
+      expect(existsSync(target)).toBe(false);
+      expect(readdirSync(dir)).toEqual([]);
+    } finally {
+      mock.module("node:fs", () => realFs);
+    }
+  });
+}
+
+it("publishes complete JSON while another process repeatedly opens and reads the target", async () => {
+  dir = mkdtempSync(join(tmpdir(), "fsutil-concurrent-reader-"));
+  const target = join(dir, "state.json");
+  const ready = join(dir, "ready");
+  const stop = join(dir, "stop");
+  const reader = join(dir, "reader.ts");
+  atomicWrite(
+    target,
+    JSON.stringify({ revision: 0, payload: "x".repeat(65536) }),
+  );
+  writeFileSyncReal(
+    reader,
+    `
+    import { existsSync, readFileSync, writeFileSync } from "node:fs";
+    const [target, ready, stop] = process.argv.slice(2);
+    let reads = 0;
+    const deadline = Date.now() + 10000;
+    do {
+      const value = JSON.parse(readFileSync(target, "utf8"));
+      if (!Number.isInteger(value.revision) || value.payload !== "x".repeat(65536)) {
+        throw new Error("partial state observed");
+      }
+      if (++reads === 1) writeFileSync(ready, "ready");
+      if (Date.now() > deadline) throw new Error("writer never stopped");
+    } while (!existsSync(stop));
+    console.log(reads);
+  `,
+  );
+  const child = Bun.spawn([process.execPath, reader, target, ready, stop], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  try {
+    const deadline = Date.now() + 10000;
+    while (
+      !existsSync(ready) &&
+      Date.now() < deadline &&
+      child.exitCode === null
+    ) {
+      await Bun.sleep(5);
+    }
+    expect(existsSync(ready)).toBe(true);
+    for (let revision = 1; revision <= 100; revision++) {
+      atomicWrite(
+        target,
+        JSON.stringify({ revision, payload: "x".repeat(65536) }),
+      );
+    }
+    writeFileSyncReal(stop, "stop");
+    await expectSpawnExited(child, 0, "concurrent state reader");
+    const reads = Number(await new Response(child.stdout).text());
+    expect(reads).toBeGreaterThan(1);
+    expect(JSON.parse(readFileSync(target, "utf8")).revision).toBe(100);
+  } finally {
+    child.kill();
+    await child.exited;
+  }
+}, 15000);
