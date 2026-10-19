@@ -60,22 +60,53 @@ const CHUNK = 64 * 1024;
 export const MAX_LINE = 4 * 1024 * 1024;
 const GROUPS = process.platform !== "win32";
 
-/** Send a signal to a process group; false when no process of it is left. */
-function signalGroup(pid: number, signal: NodeJS.Signals | 0): boolean {
+/** What a signal to a process group found. */
+type GroupState =
+  /** A member took the signal. */
+  | "signalled"
+  /** Members exist and none could be signalled. macOS answers so for a group
+   * whose members are exiting but not yet reaped, whoever owns them; a member
+   * of another user gets the same answer. It is not proof the group is gone. */
+  | "unsignalable"
+  /** No process of the group is left. */
+  | "gone";
+
+/** Send a signal to a process group; 0 only asks whether it has members. */
+function signalGroup(pid: number, signal: NodeJS.Signals | 0): GroupState {
   try {
     process.kill(-pid, signal);
-    return true;
+    return "signalled";
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return "gone";
+    if (code === "EPERM") return "unsignalable";
     throw error;
   }
 }
 
+/** How long a killed group has to be reaped before it is reported. */
+const REAP_MS = 2_000;
+
+/** Wait until the group has no process left or the deadline passes. */
+async function waitGone(pid: number, deadline: number): Promise<boolean> {
+  while (signalGroup(pid, 0) !== "gone") {
+    if (Date.now() >= deadline) return false;
+    await Bun.sleep(50);
+  }
+  return true;
+}
+
 /** Wait until the group has no process left or the deadline passes, then
- * kill what is left. */
+ * kill what is left. A group that still answers after the kill is reported,
+ * not assumed gone: its members are exiting slowly, or beyond this process's
+ * reach. */
 async function reapGroup(pid: number, deadline: number): Promise<void> {
-  while (signalGroup(pid, 0) && Date.now() < deadline) await Bun.sleep(50);
+  if (await waitGone(pid, deadline)) return;
   signalGroup(pid, "SIGKILL");
+  if (!(await waitGone(pid, Date.now() + REAP_MS)))
+    process.stderr.write(
+      `spooled-run: process group ${pid} still has members after SIGKILL\n`,
+    );
 }
 
 /** Run `command`, spooling its standard output and error to files. Throws
@@ -101,7 +132,8 @@ export async function spooledRun(
       detached: GROUPS,
     });
     const signal = (name: NodeJS.Signals) => {
-      if (!GROUPS || !signalGroup(child.pid, name)) child.kill(name);
+      if (!GROUPS || signalGroup(child.pid, name) !== "signalled")
+        child.kill(name);
     };
     const forward = (name: NodeJS.Signals) => {
       interrupted ??= name;

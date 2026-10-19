@@ -28,12 +28,16 @@ async function until(ready: () => boolean, what: string, ms = 10_000) {
     await Bun.sleep(20);
   }
 }
+/** Whether `pid` still exists. macOS answers EPERM, whoever owns it, for a
+ * process that is exiting and not yet reaped: it exists until ESRCH. */
 const alive = (pid: number) => {
   try {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return false;
+    if (code === "EPERM") return true;
     throw error;
   }
 };
