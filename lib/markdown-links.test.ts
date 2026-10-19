@@ -98,6 +98,43 @@ test("autolinks are read with their scheme", () => {
   ).toEqual(["https://example.com/a", "mailto:someone@example.com"]);
 });
 
+test("a destination written like an email is mailto only where it is an autolink", () => {
+  expect(
+    markdownLinks(
+      "[broken](missing@example.com)\n\n`<missing@example.com>`",
+    ).map((link) => link.target),
+  ).toEqual(["missing@example.com"]);
+  expect(
+    markdownLinks("![i](a@example.com) <a@example.com>").map(
+      (link) => link.target,
+    ),
+  ).toEqual(["a@example.com", "mailto:a@example.com"]);
+  expect(
+    markdownLinks("[x](<a@example.com>)\n\n[r]\n\n[r]: <b@example.com>").map(
+      (link) => link.target,
+    ),
+  ).toEqual(["a@example.com", "b@example.com"]);
+});
+
+test("a link's line is where the renderer read it, not where its text first stands", () => {
+  expect(
+    markdownLinks("`[example](missing.md)`\n[broken](missing.md)"),
+  ).toEqual([{ target: "missing.md", line: 2 }]);
+  expect(
+    markdownLinks(
+      "```\n[x](missing.md)\n```\n[unused]: missing.md\n[broken](missing.md)",
+    ),
+  ).toEqual([{ target: "missing.md", line: 5 }]);
+  expect(
+    markdownLinks("See (missing.md).\n\n[b][r]\n\n[r]: missing.md"),
+  ).toEqual([{ target: "missing.md", line: 5 }]);
+  expect(markdownLinks("[a](x.md)\n[b](x.md)\n`(x.md)`\n[c](x.md)")).toEqual([
+    { target: "x.md", line: 1 },
+    { target: "x.md", line: 2 },
+    { target: "x.md", line: 4 },
+  ]);
+});
+
 test("percent-encoding is decoded, and a malformed one is kept as written", () => {
   expect(decode("a%20b.md")).toBe("a b.md");
   expect(decode("100%.md")).toBe("100%.md");
