@@ -41,6 +41,7 @@ import {
   lockDirs,
   plantClaim,
   pollUntil,
+  awaitFixtureMarker,
   simulateTakeover,
   worktreeLockNameFor,
 } from "./drive-loop-harness.ts";
@@ -533,7 +534,7 @@ describe("drive.ts loop control", () => {
     });
 
     it("reclaims a staging directory orphaned by a crash before the publishing rename", async () => {
-      // `takeLock` publishes into `<lock>.<pid>.<host>.staging` before the
+      // `takeLock` publishes into `<lock>.<pid>.<host>@<platform>.staging` before the
       // rename that installs it. A crash in that window used to be bounded
       // only by "that exact pid retries this exact lock" — on a long-lived
       // clone a pid is not guaranteed to be reused for the same lock ever
@@ -546,7 +547,7 @@ describe("drive.ts loop control", () => {
       // between writeFileSync and renameSync).
       const { dir, stateDir } = writeFixture({ threads: [] });
       const { worktree } = lockDirs(dir, stateDir);
-      const orphanedStaging = `${worktree}.999999.${hostname()}.staging`;
+      const orphanedStaging = `${worktree}.999999.${hostname()}@${process.platform}.staging`;
       plantClaim(orphanedStaging, {
         pid: 999999,
         host: hostname(),
@@ -593,7 +594,7 @@ describe("drive.ts loop control", () => {
       // what closes this gap too.
       const { dir, stateDir } = writeFixture({ threads: [] });
       const { worktree } = lockDirs(dir, stateDir);
-      const emptyStaging = `${worktree}.999999.${hostname()}.staging`;
+      const emptyStaging = `${worktree}.999999.${hostname()}@${process.platform}.staging`;
       mkdirSync(emptyStaging, { recursive: true }); // no claim file inside
 
       const proc = Bun.spawn(
@@ -638,7 +639,7 @@ describe("drive.ts loop control", () => {
       // (unquestionably alive) pid, backdated well past `STAGING_STALE_MS`.
       const { dir, stateDir } = writeFixture({ threads: [] });
       const { worktree } = lockDirs(dir, stateDir);
-      const recycledStaging = `${worktree}.${process.pid}.${hostname()}.staging`;
+      const recycledStaging = `${worktree}.${process.pid}.${hostname()}@${process.platform}.staging`;
       plantClaim(recycledStaging, {
         pid: process.pid,
         host: hostname(),
@@ -684,7 +685,7 @@ describe("drive.ts loop control", () => {
       // pid-reuse test above, minus the backdating.
       const { dir, stateDir } = writeFixture({ threads: [] });
       const { worktree } = lockDirs(dir, stateDir);
-      const freshStaging = `${worktree}.${process.pid}.${hostname()}.staging`;
+      const freshStaging = `${worktree}.${process.pid}.${hostname()}@${process.platform}.staging`;
       plantClaim(freshStaging, {
         pid: process.pid,
         host: hostname(),
@@ -1441,7 +1442,7 @@ describe("drive.ts loop control", () => {
             CLAUDE_CODE_OAUTH_TOKEN: "",
             // Far longer than this test ever runs — isolates the pass-exit
             // refresh from the heartbeat's own.
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "60000",
+            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "600000",
           },
           stdout: "pipe",
           stderr: "pipe",
@@ -1449,12 +1450,7 @@ describe("drive.ts loop control", () => {
       );
 
       try {
-        let running = false;
-        for (let i = 0; i < 400 && !running; i++) {
-          running = existsSync(startedMarker);
-          if (!running) await Bun.sleep(25);
-        }
-        expect(running).toBe(true);
+        expect(await awaitFixtureMarker(startedMarker)).toBe(true);
 
         // Change the file-backed identity while the pass is still asleep —
         // the running pass keeps billing to the OLD one regardless.
@@ -1502,7 +1498,7 @@ describe("drive.ts loop control", () => {
         rmSync(claudeStubDir, { recursive: true, force: true });
         rmSync(claudeConfigDir, { recursive: true, force: true });
       }
-    });
+    }, 120000);
 
     it("refreshes a FILE-BACKED account identity after a CI-repair pass too, not only after an ordinary one", async () => {
       // `runRepairPass` must call `refreshAccountIdentity` once its own

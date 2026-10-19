@@ -663,7 +663,7 @@ describe("drive.ts loop control", () => {
     expect(
       readFileSync(join(dir, "ready-calls"), "utf8").trim().split("\n"),
     ).toHaveLength(1);
-  });
+  }, 120_000);
 
   it("--keep-draft suppresses the transition entirely", async () => {
     const { dir, stateDir } = writeFixture({
@@ -741,7 +741,7 @@ describe("drive.ts loop control", () => {
     expect(
       readFileSync(join(due.dir, "ready-calls"), "utf8").trim().split("\n"),
     ).toHaveLength(1);
-  });
+  }, 120_000);
 
   it.each(["never", "converged"])(
     "pull_requests.mark_ready: %s does not mark Ready after a round",

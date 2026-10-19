@@ -50,6 +50,7 @@ import {
   claimLive,
   parseClaimText,
   stagingLive,
+  parseStagingHost,
 } from "./lib/claim.ts";
 import { fail, runMain } from "./lib/cli.ts";
 import { type RunHandle, type RunResult, run } from "./lib/proc.ts";
@@ -264,7 +265,7 @@ function lockClaim(
   if (staging !== null) {
     const record = {
       pid: Number.parseInt(staging[1] as string, 10),
-      host: staging[2] as string,
+      ...parseStagingHost(staging[2] as string),
     };
     const ageMs = Math.max(0, Date.now() - info.mtimeMs);
     if (isStagingLive({ ...record, ageMs })) {

@@ -1020,7 +1020,10 @@ describe("publishMigratedMarker", () => {
     // A pid this large is never a real, running process.
     const deadPid = 999_999_999;
     mkdirSync(
-      join(legacyDir, `pr-drive-4172.lock.${deadPid}.${hostname()}.staging`),
+      join(
+        legacyDir,
+        `pr-drive-4172.lock.${deadPid}.${hostname()}@${process.platform}.staging`,
+      ),
     );
 
     const result = publishMigratedMarker(legacyDir, marker);
