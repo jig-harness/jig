@@ -5,8 +5,11 @@
 //
 // "Directly" means a token only a direct call uses: Linear's API host, its
 // SDK package, the name prefix of a Linear MCP server's tools, or a run of
-// the `linear` command-line client (an argument list or a spawn that starts
-// with `linear`, or a command line `linear <subcommand>`). The file is matched
+// the `linear` command-line client (an argument list, or any call, whose
+// first element is the literal `linear`, or a command line
+// `linear <subcommand>`). A spawn is recognised by the program name in the
+// place a program name goes, never by the name of the function called, so an
+// imported alias or a wrapper is found like `spawnSync` itself. The file is matched
 // as a whole, so an argument list or a spawn split over several lines is
 // found like one written on a single line; a command line stays on one line.
 //
@@ -69,7 +72,7 @@ export const TOKENS: { what: string; pattern: RegExp }[] = [
   {
     what: "a run of the `linear` command-line client",
     pattern:
-      /\[\s*["'`]linear["'`]\s*,|\b(?:spawn|spawnSync|execFile|execFileSync|exec|execSync)\(\s*["'`]linear\b|(?<![\w./-])linear[ \t]+(?:api|auth|config|issues?|teams?|projects?|labels?|cycles?|comments?|documents?|milestones?|initiatives?)\b/,
+      /[[(]\s*(?:\/\*[\s\S]*?\*\/\s*)*["'`]linear["'`]\s*,|(?<![\w./-])linear[ \t]+(?:api|auth|config|issues?|teams?|projects?|labels?|cycles?|comments?|documents?|milestones?|initiatives?)\b/,
   },
 ];
 

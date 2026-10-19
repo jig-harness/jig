@@ -943,6 +943,23 @@ categories:
       );
     });
 
+    test("an open category's bare prefix is not a label, even where its pattern matches an empty slug", () => {
+      const { report } = fit({
+        ".config/jig.yaml":
+          'issue_tracker:\n  labels:\n    extractable_tails: ["pattern:"]\n',
+        "label-taxonomy.yaml": `${taxonomy}categories:
+  - id: pattern
+    prefix: "pattern:"
+    open: ".*"
+`,
+      });
+      expect(
+        report.findings.find(
+          (f) => f.id === "taxonomy:issue_tracker.labels.extractable_tails",
+        )?.message,
+      ).toContain("names pattern:, which");
+    });
+
     test("a configured taxonomy that does not exist is the schema's path finding alone", () => {
       const { report } = fit({
         ".config/jig.yaml": "issue_tracker:\n  taxonomy: docs/absent.yaml\n",

@@ -152,8 +152,10 @@ const known = (label: string, taxonomy: Taxonomy) =>
 function defined(label: string, taxonomy: Taxonomy): boolean {
   if (known(label, taxonomy)) return true;
   const category = taxonomy.categories.find((c) => label.startsWith(c.prefix));
-  if (category)
-    return category.open?.test(label.slice(category.prefix.length)) ?? false;
+  if (category) {
+    const slug = label.slice(category.prefix.length);
+    return slug !== "" && (category.open?.test(slug) ?? false);
+  }
   const colon = label.indexOf(":");
   if (colon <= 0) return false;
   return (

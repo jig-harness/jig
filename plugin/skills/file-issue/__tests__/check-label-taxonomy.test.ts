@@ -53,6 +53,11 @@ const cases: [string, number, string][] = [
     "group 'size' has a 'required:' that is not true or false",
   ],
   [
+    "bad/group-required-null.yaml",
+    1,
+    "group 'size' has a 'required:' that is not true or false",
+  ],
+  [
     "bad/category-missing-prefix.yaml",
     1,
     "category 'area' declares no 'prefix:'",
@@ -84,6 +89,11 @@ const cases: [string, number, string][] = [
   ],
   [
     "bad/category-recommended-not-boolean.yaml",
+    1,
+    "category 'area' has a 'recommended:' that is not true or false",
+  ],
+  [
+    "bad/category-recommended-null.yaml",
     1,
     "category 'area' has a 'recommended:' that is not true or false",
   ],

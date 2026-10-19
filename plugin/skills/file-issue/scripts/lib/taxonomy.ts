@@ -217,7 +217,7 @@ function texts(
   return [];
 }
 
-/** A boolean field, or `false` when absent; reports any other value. */
+/** A boolean field, or `false` when absent; reports any other value, `null` included. */
 function flagField(
   problems: string[],
   what: string,
@@ -225,7 +225,7 @@ function flagField(
   name: string,
 ): boolean {
   const value = entry[name];
-  if (value === undefined || value === null) return false;
+  if (value === undefined) return false;
   if (typeof value === "boolean") return value;
   problems.push(`${what} has a '${name}:' that is not true or false`);
   return false;

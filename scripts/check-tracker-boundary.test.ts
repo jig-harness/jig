@@ -71,6 +71,11 @@ describe("tokens", () => {
     ['Bun.spawn(["linear", "api", query]);'],
     ['spawnSync("linear", ["issue", "view"]);'],
     ["run `linear issue create --title x`"],
+    ['spawnSync ("linear", ["issue", "create"]);'],
+    ['spawnSync( /* the client */ "linear", ["issue", "create"]);'],
+    [
+      'import { execFileSync as run } from "node:child_process"; run("linear", ["issue", "create"]);',
+    ],
   ])("a direct call is found: %s", (line) => {
     expect(violations("plugin/x.ts", `ok\n${line}\n`)).toMatchObject([
       { rule: "tracker-boundary", file: "plugin/x.ts", line: 2 },
@@ -93,6 +98,8 @@ describe("tokens", () => {
   test.each([
     ['type Linear = ResolutionJson["linear"];'],
     ['export const DEFAULT_ADAPTER = "linear";'],
+    ['sides.add("linear");'],
+    ['Object.hasOwn(area, "linear");'],
     ["the work runs in a linear order"],
     ["the Linear adapter, through tracker.ts"],
     ["call `mcp__github__create_issue`"],
