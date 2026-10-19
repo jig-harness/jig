@@ -111,6 +111,7 @@ export const DOCUMENT_LABEL = {
   addRightWhen: "Add “Right when” to each pick",
   addOpenInputs: "Add open inputs and next steps",
   note: "Note",
+  pickNote: "Note on this pick",
   textToCopy: "Text to copy",
   copyText: "Copy text",
   copied: "Copied",
