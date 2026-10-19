@@ -161,6 +161,36 @@ test("a label that repeats its destination keeps the link at its definition", ()
   ]);
 });
 
+test("an email autolink stands where it is read, whatever text repeats its address", () => {
+  expect(markdownLinks("Contact a@b.c\n\n<a@b.c>")).toEqual([
+    { target: "mailto:a@b.c", line: 3 },
+  ]);
+  expect(markdownLinks("`a@b.c`\n[r]: a@b.c\n<a@b.c>")).toEqual([
+    { target: "mailto:a@b.c", line: 3 },
+  ]);
+});
+
+test("a file that already holds Private Use Area characters is still marked", () => {
+  expect(markdownLinks("\n[broken](<missing@example.com>)")).toEqual([
+    { target: "missing@example.com", line: 2 },
+  ]);
+  expect(markdownLinks(" `x.md`\n[a](x.md)\n<a@b.c>")).toEqual([
+    { target: "x.md", line: 2 },
+    { target: "mailto:a@b.c", line: 3 },
+  ]);
+});
+
+test("a link and an image whose destinations differ only by a leading ! are told apart", () => {
+  expect(markdownLinks("[l](!a.md)\n![i](a.md)")).toEqual([
+    { target: "!a.md", line: 1 },
+    { target: "a.md", line: 2 },
+  ]);
+  expect(markdownLinks("![i](a@b.c)\n[l](<!a@b.c>)")).toEqual([
+    { target: "a@b.c", line: 1 },
+    { target: "!a@b.c", line: 2 },
+  ]);
+});
+
 test("a file is rendered twice however many links repeat a destination", () => {
   const render = Bun.markdown.render;
   let renders = 0;

@@ -8,13 +8,16 @@
 //
 // The renderer reports no source positions, so where a destination stands is
 // asked of it in one more render. Every place where a destination's text ends
-// and a destination could end gets a marker naming that place, and each link
-// the renderer reads carries the marker of the place it was read from. Text
-// that only repeats a destination (in code, prose or an unused definition)
-// renders as no link, so its marker is never read. A link the markers take
-// away stands at the first place of its text no other link was read from.
-// Only such a link can be an email autolink, since a marker leaves no email an
-// email. Two renders, then, whatever the file holds.
+// and a destination could end gets a marker naming that place, drawn from
+// characters the file does not hold, and each link the renderer reads carries
+// the marker of the place it was read from. Text that only repeats a
+// destination (in code, prose or an unused definition) renders as no link, so
+// its marker is never read. A marker would leave an email autolink no email,
+// so each `<address>` the file holds is written as a URI autolink for that
+// render: it stays a link exactly where the address was one, and a link whose
+// text is its whole destination is an autolink. Two renders, then, whatever
+// the file holds; a link the markers still miss stands at the first place of
+// its text no other link was read from, and is never taken for an autolink.
 
 /** One destination and the 1-based line it starts on. */
 export interface MarkdownLink {
@@ -26,26 +29,23 @@ export interface MarkdownLink {
 interface Rendered {
   href: string;
   image: boolean;
+  /** Whether the link's text is its whole destination, as an autolink's is. */
+  autolink: boolean;
 }
 
-/** A destination, where its source text starts, and whether a marker read it. */
-interface Placed extends Rendered {
+/** Where a destination's source text starts, and whether it is an email autolink. */
+interface Read {
   at: number;
-  marked: boolean;
+  email: boolean;
 }
 
 /** Every link destination `content` declares, ordered by line. */
 export function markdownLinks(content: string): MarkdownLink[] {
   const lineOf = lineFinder(content);
-  const links = place(content, render(content)).map(
-    ({ href, image, at, marked }) => ({
-      target:
-        !image && !marked && emailAutolink(content, href, at)
-          ? `mailto:${href}`
-          : unescapeDestination(href),
-      line: lineOf(at),
-    }),
-  );
+  const links = place(content, render(content)).map(({ href, at, email }) => ({
+    target: email ? `mailto:${href}` : unescapeDestination(href),
+    line: lineOf(at),
+  }));
   return links.sort((a, b) => a.line - b.line);
 }
 
@@ -53,11 +53,11 @@ function render(content: string): Rendered[] {
   const rendered: Rendered[] = [];
   Bun.markdown.render(content, {
     link: (children, { href }) => {
-      rendered.push({ href, image: false });
+      rendered.push({ href, image: false, autolink: children === href });
       return children;
     },
     image: (children, { src }) => {
-      rendered.push({ href: src, image: true });
+      rendered.push({ href: src, image: true, autolink: false });
       return children;
     },
   });
@@ -69,17 +69,17 @@ function render(content: string): Rendered[] {
  * stands where the marker says; the rest take, in order, the places of their
  * text no marker claimed, or its first place when every one is claimed.
  */
-function place(content: string, rendered: Rendered[]): Placed[] {
+function place(content: string, rendered: Rendered[]): (Rendered & Read)[] {
   const starts = new Map<string, number[]>();
   for (const { href } of rendered)
     if (!starts.has(href)) starts.set(href, indexesOf(content, href));
   const read = readMarked(content, starts);
   const claimed = new Set<number>();
-  const placed = rendered.map((link): Placed => {
-    const at = read.get(key(link))?.shift();
-    if (at === undefined) return { ...link, at: -1, marked: false };
-    claimed.add(at);
-    return { ...link, at, marked: true };
+  const placed = rendered.map((link) => {
+    const found = read.get(key(link))?.shift();
+    if (found === undefined) return { ...link, at: -1, email: false };
+    claimed.add(found.at);
+    return { ...link, ...found };
   });
   const free = new Map<string, number[]>();
   for (const [href, list] of starts)
@@ -93,64 +93,147 @@ function place(content: string, rendered: Rendered[]): Placed[] {
   return placed;
 }
 
-const key = ({ href, image }: Rendered) => `${image ? "!" : ""}${href}`;
+const key = ({ href, image }: Pick<Rendered, "href" | "image">) =>
+  JSON.stringify([image, href]);
 
 /**
- * The places each destination was read from, by `key`, in render order: the
- * file rendered again with a marker at every place a destination's text ends
- * and a destination could end, before `)`, `>`, whitespace or the file's end.
- * A marker is two characters of the Private Use Area, so a file that holds
- * one already is not marked.
+ * What each destination was read as, by `key`, in render order: the file
+ * rendered again as `markFile` writes it.
  */
 function readMarked(
   content: string,
   starts: Map<string, number[]>,
-): Map<string, number[]> {
-  const read = new Map<string, number[]>();
-  const ends = [
+): Map<string, Read[]> {
+  const read = new Map<string, Read[]>();
+  const ends = markableEnds(content, starts);
+  const marks = markAlphabet(content);
+  if (ends.length === 0 || ends.length > marks.length ** 2) return read;
+  const addresses = enclosedAddresses(content, starts);
+  const file = markFile(content, ends, addresses, marks);
+  const idOf = markerIds(marks);
+  for (const link of render(file.marked)) {
+    const id = idOf(link.href.slice(-2));
+    const end = id === undefined ? undefined : ends[id];
+    if (id === undefined || end === undefined) continue;
+    const start = (file.markEnds[id] ?? 0) - link.href.length;
+    if (!file.marked.startsWith(link.href, start)) continue;
+    const at = file.sourceOf(start);
+    const found = key({ href: content.slice(at, end), image: link.image });
+    const list = read.get(found) ?? [];
+    list.push({ at, email: link.autolink && addresses.get(end) === at });
+    read.set(found, list);
+  }
+  return read;
+}
+
+/**
+ * Every place a destination's text ends and a destination could end: before
+ * `)`, `>`, whitespace or the file's end.
+ */
+function markableEnds(
+  content: string,
+  starts: Map<string, number[]>,
+): number[] {
+  return [
     ...new Set(
       [...starts].flatMap(([href, list]) => list.map((at) => at + href.length)),
     ),
   ]
     .filter((end) => /^[ \t\n\r\f\v)>]?$/.test(content[end] ?? ""))
     .sort((a, b) => a - b);
-  if (ends.length === 0 || ends.length > MARKS ** 2 || PRIVATE.test(content))
-    return read;
+}
+
+/** The start of each address `<` and `>` enclose, by where it ends. */
+function enclosedAddresses(
+  content: string,
+  starts: Map<string, number[]>,
+): Map<number, number> {
+  const addresses = new Map<number, number>();
+  for (const [href, list] of starts)
+    if (EMAIL.test(href))
+      for (const at of list)
+        if (content[at - 1] === "<" && content[at + href.length] === ">")
+          addresses.set(at + href.length, at);
+  return addresses;
+}
+
+/**
+ * `content` with marker `id` at `ends[id]` and `SCHEME` before every
+ * enclosed address; where each marker ends in it; and the place in `content`
+ * an index of it was written from.
+ */
+function markFile(
+  content: string,
+  ends: number[],
+  addresses: Map<number, number>,
+  marks: string,
+): {
+  marked: string;
+  markEnds: number[];
+  sourceOf: (index: number) => number;
+} {
+  const cuts = [
+    ...ends.map((at, id) => ({ at, id, text: marker(marks, id) })),
+    ...[...addresses.values()].map((at) => ({ at, id: -1, text: SCHEME })),
+  ].sort((a, b) => a.at - b.at);
+  const inserted: { from: number; to: number; at: number }[] = [];
+  const markEnds: number[] = [];
   let marked = "";
-  ends.forEach((end, id) => {
-    marked += content.slice(ends[id - 1] ?? 0, end) + marker(id);
-  });
-  marked += content.slice(ends.at(-1));
-  for (const link of render(marked)) {
-    const id = markerId(link.href.slice(-2));
-    const href = link.href.replace(MARKER, "");
-    const end = id === undefined ? undefined : ends[id];
-    if (end === undefined || !content.startsWith(href, end - href.length))
-      continue;
-    const list = read.get(key({ ...link, href })) ?? [];
-    list.push(end - href.length);
-    read.set(key({ ...link, href }), list);
+  let from = 0;
+  for (const cut of cuts) {
+    marked += content.slice(from, cut.at);
+    inserted.push({
+      from: marked.length,
+      to: marked.length + cut.text.length,
+      at: cut.at,
+    });
+    marked += cut.text;
+    if (cut.id !== -1) markEnds[cut.id] = marked.length;
+    from = cut.at;
   }
-  return read;
+  marked += content.slice(from);
+  const sourceOf = (index: number): number => {
+    let shift = 0;
+    for (const piece of inserted) {
+      if (piece.from >= index) break;
+      if (piece.to > index) return piece.at;
+      shift += piece.to - piece.from;
+    }
+    return index - shift;
+  };
+  return { marked, markEnds, sourceOf };
 }
 
-const MARK = 0xe000;
-const MARKS = 0x1900;
-const PRIVATE = /[\ue000-\uf8ff]/;
-const MARKER = /[\ue000-\uf8ff]{2}/g;
+/** A URI scheme that turns `<address>` into a URI autolink holding a marker. */
+const SCHEME = "jig-mark:";
 
-function marker(id: number): string {
-  return String.fromCharCode(
-    MARK + Math.floor(id / MARKS),
-    MARK + (id % MARKS),
-  );
+const EMAIL =
+  /^[\w.!#$%&'*+/=?^`{|}~-]+@[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?)*$/i;
+
+/** The Private Use Area characters `content` does not hold. */
+function markAlphabet(content: string): string {
+  const held = new Set(content.match(/[-]/g));
+  let marks = "";
+  for (let code = 0xe000; code <= 0xf8ff; code++) {
+    const mark = String.fromCharCode(code);
+    if (!held.has(mark)) marks += mark;
+  }
+  return marks;
 }
 
-function markerId(text: string): number | undefined {
-  const [high, low] = [text.charCodeAt(0) - MARK, text.charCodeAt(1) - MARK];
-  return high >= 0 && high < MARKS && low >= 0 && low < MARKS
-    ? high * MARKS + low
-    : undefined;
+/** The id of the marker two characters write, if they write one. */
+function markerIds(marks: string): (text: string) => number | undefined {
+  const ids = new Map([...marks].map((mark, index) => [mark, index]));
+  return (text) => {
+    const [high, low] = [...text].map((mark) => ids.get(mark));
+    return high === undefined || low === undefined || text.length !== 2
+      ? undefined
+      : high * marks.length + low;
+  };
+}
+
+function marker(marks: string, id: number): string {
+  return `${marks[Math.floor(id / marks.length)]}${marks[id % marks.length]}`;
 }
 
 function indexesOf(content: string, text: string): number[] {
@@ -181,21 +264,6 @@ function lineFinder(content: string): (index: number) => number {
     }
     return low + 1;
   };
-}
-
-/**
- * Whether the link to `href`, written at `at`, is an email autolink
- * (`<a@b.c>`). Only a link no marker read is asked: a marker inside
- * `[x](<a@b.c>)` or a definition leaves a link, inside an autolink none.
- */
-function emailAutolink(content: string, href: string, at: number): boolean {
-  return (
-    /^[\w.!#$%&'*+/=?^`{|}~-]+@[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?)*$/i.test(
-      href,
-    ) &&
-    content[at - 1] === "<" &&
-    content[at + href.length] === ">"
-  );
 }
 
 /**
