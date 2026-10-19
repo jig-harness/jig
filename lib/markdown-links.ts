@@ -28,7 +28,8 @@
 // emphasis delimiter) is left out, the places whose markers keep the outline
 // found by halving, and a link the markers still miss stands at the first
 // place of its text no other link was read from. Two renders, then, unless a
-// marker changes the document; then about two more per such marker.
+// marker changes the document; then about two more per such marker, and never
+// more than a fixed number, the places a marker matters most to tried first.
 
 /** One destination and the 1-based line it starts on. */
 export interface MarkdownLink {
@@ -236,16 +237,13 @@ function readMarked(
   if (ends.length === 0) return read;
   const markers = markerSet(unmarked.digits, ends.length);
   const addresses = enclosedAddresses(content, starts);
-  const kept = keepOutline(
-    ends.map((_, id) => id),
-    (ids) => {
-      const file = markFile(content, ends, ids, addresses, markers.write);
-      const rendering = render(file.marked, unmarked.strip);
-      return rendering.outline === unmarked.plain.outline
-        ? { file, links: rendering.links }
-        : undefined;
-    },
-  );
+  const kept = keepOutline(byPriority(content, ends, addresses), (ids) => {
+    const file = markFile(content, ends, ids, addresses, markers.write);
+    const rendering = render(file.marked, unmarked.strip);
+    return rendering.outline === unmarked.plain.outline
+      ? { file, links: rendering.links }
+      : undefined;
+  });
   return kept === undefined
     ? read
     : readLinks(content, ends, addresses, kept, markers.read);
@@ -277,18 +275,45 @@ function readLinks(
 }
 
 /**
+ * The ids of `ends`, the places a marker is most needed at first: an enclosed
+ * address's end (unmarked, an email autolink reads as a file), then a place
+ * before `)` or `>`, then the rest, where a line ends and a block's own
+ * marker (a fence, a rule, a heading's underline) can stand.
+ */
+function byPriority(
+  content: string,
+  ends: number[],
+  addresses: Map<number, number>,
+): number[] {
+  const rank = (end: number) =>
+    addresses.has(end) ? 0 : /[)>]/.test(content[end] ?? "") ? 1 : 2;
+  return ends
+    .map((end, id) => ({ id, rank: rank(end) }))
+    .sort((a, b) => a.rank - b.rank || a.id - b.id)
+    .map(({ id }) => id);
+}
+
+/** The most marked renders one file gets, whatever its markers change. */
+const MARKED_RENDERS = 64;
+
+/**
  * The result of `attempt` for the most places it accepts: all of `ids` when
  * it accepts them, else the places found by halving, each half tried beside
- * every place already kept. Every place kept was tried in one attempt with
- * all the others, so the result is that attempt's. Undefined when none is.
+ * every place already kept, earlier ids first. Every place kept was tried in
+ * one attempt with all the others, so the result is that attempt's. After
+ * `MARKED_RENDERS` attempts the places not yet tried are left out, so a file
+ * whose markers keep changing it costs a bounded number of renders. Undefined
+ * when no attempt is accepted.
  */
 function keepOutline<T>(
   ids: number[],
   attempt: (ids: number[]) => T | undefined,
 ): T | undefined {
   let last: T | undefined;
+  let left = MARKED_RENDERS;
   const grow = (kept: number[], trying: number[]): number[] => {
-    if (trying.length === 0) return kept;
+    if (trying.length === 0 || left === 0) return kept;
+    left--;
     const all = [...kept, ...trying];
     const result = attempt(all);
     if (result !== undefined) {

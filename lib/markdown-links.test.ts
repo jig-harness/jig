@@ -280,6 +280,27 @@ test("each marker that changes the document costs a bounded number of renders", 
   expect(renders).toBeLessThan(80);
 });
 
+test("a file whose markers keep changing it costs a fixed number of renders", () => {
+  const render = Bun.markdown.render;
+  let renders = 0;
+  Bun.markdown.render = ((...args: Parameters<typeof render>) => {
+    renders++;
+    return render(...args);
+  }) as typeof render;
+  try {
+    const rules = "***\n\npara\n\n".repeat(400);
+    const links = markdownLinks(`[r](***)\n\n${rules}<a@b.c> [s](***)\n`);
+    expect(links).toEqual([
+      { target: "***", line: 1 },
+      { target: "mailto:a@b.c", line: 1603 },
+      { target: "***", line: 1603 },
+    ]);
+  } finally {
+    Bun.markdown.render = render;
+  }
+  expect(renders).toBeLessThanOrEqual(65);
+});
+
 test("percent-encoding is decoded, and a malformed one is kept as written", () => {
   expect(decode("a%20b.md")).toBe("a b.md");
   expect(decode("100%.md")).toBe("100%.md");
