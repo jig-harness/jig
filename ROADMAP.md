@@ -76,7 +76,7 @@ remote named `origin`. They move into configuration.
 
 Jira, and a plan file kept in the repository, beside Linear. The
 [tracker interface](GLOSSARY.md) first gains attaching a file, the one
-operation the skills still reach Linear for directly.
+operation the skills need that the interface does not have yet.
 
 ### 15. M14 Testing strategy: the rest
 

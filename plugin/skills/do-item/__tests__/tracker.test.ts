@@ -1195,9 +1195,12 @@ describe("Linear adapter: filing and planning", () => {
         { state: { type: { nin: ["completed", "canceled", "duplicate"] } } },
       ],
     });
+    expect(calls[0]?.variables.includeArchived).toBe(false);
     await t.searchIssues("login", { includeClosed: true });
     const closed = calls.at(-1)?.variables.filter as { and: unknown[] };
     expect(closed.and).toHaveLength(2);
+    // The tracker archives completed issues; a closed search reads them too.
+    expect(calls.at(-1)?.variables.includeArchived).toBe(true);
   });
 
   it("refuses an empty search and a truncated label list on a hit", async () => {

@@ -1340,7 +1340,7 @@ describe("tracker.ts", () => {
         {
           operation: "query TrackerSearch",
           variables:
-            '{"filter":{"and":[{"team":{"key":{"eq":"ENG"}}},{"or":[{"title":{"containsIgnoreCase":"--force"}},{"description":{"containsIgnoreCase":"--force"}}]}]},"after":null}',
+            '{"filter":{"and":[{"team":{"key":{"eq":"ENG"}}},{"or":[{"title":{"containsIgnoreCase":"--force"}},{"description":{"containsIgnoreCase":"--force"}}]}]},"includeArchived":true,"after":null}',
           payload:
             '{"data":{"issues":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}',
         },
@@ -1358,7 +1358,7 @@ describe("tracker.ts", () => {
         {
           operation: "query TrackerSearch",
           variables:
-            '{"filter":{"and":[{"team":{"key":{"eq":"ENG"}}},{"or":[{"title":{"containsIgnoreCase":"login"}},{"description":{"containsIgnoreCase":"login"}}]}]},"after":null}',
+            '{"filter":{"and":[{"team":{"key":{"eq":"ENG"}}},{"or":[{"title":{"containsIgnoreCase":"login"}},{"description":{"containsIgnoreCase":"login"}}]}]},"includeArchived":true,"after":null}',
           payload:
             '{"data":{"issues":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"identifier":"ENG-3","title":"Flaky login","state":{"name":"Todo","type":"unstarted"},"labels":{"pageInfo":{"hasNextPage":false},"nodes":[{"name":"bug"}]}}]}}}',
         },

@@ -947,9 +947,11 @@ mutation TrackerCreate($input: IssueCreateInput!) {
   issueCreate(input: $input) { success issue { identifier url } }
 }`;
 
+// `includeArchived`: the tracker archives completed issues, so a search that
+// asks for closed issues must ask for archived ones too.
 const SEARCH_QUERY = `
-query TrackerSearch($filter: IssueFilter!, $after: String) {
-  issues(first: 100, after: $after, filter: $filter) {
+query TrackerSearch($filter: IssueFilter!, $includeArchived: Boolean!, $after: String) {
+  issues(first: 100, after: $after, filter: $filter, includeArchived: $includeArchived) {
     pageInfo { hasNextPage endCursor }
     nodes { identifier title state { name type } ${LABELS} }
   }
@@ -1666,6 +1668,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
               ...(opts.includeClosed === true ? [] : [OPEN]),
             ],
           },
+          includeArchived: opts.includeClosed === true,
         },
         (d) => d.issues,
         `issues containing '${text}'`,

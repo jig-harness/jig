@@ -330,8 +330,8 @@ parent's set and on each child's. Every set passes before step 9.
 ### 9. Confirm
 
 **exact** — Show the user the plan: each issue's title, labels, priority,
-parent and relations, and the body (in full for a single issue; per child,
-its summary and acceptance criteria). Write nothing until the user
+parent and relations, and each issue's body in full, children's included:
+the body is what step 10 writes. Write nothing until the user
 accepts; apply their changes and validate again.
 
 ### 10. Write
