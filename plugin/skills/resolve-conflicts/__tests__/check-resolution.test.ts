@@ -422,6 +422,14 @@ describe("a file the change-area catalog declares generated", () => {
     s.git("add", "catalog.yaml");
     expect(s.script("conflict-map.ts").code).toBe(0);
     expect(record("openapi.json", "regenerated").code).toBe(0);
+    expect(
+      record(
+        "catalog.yaml",
+        "rewritten",
+        "--reason",
+        "the API generator is renamed",
+      ).code,
+    ).toBe(0);
     expect(check().code).toBe(0);
   });
 
@@ -481,7 +489,7 @@ describe("a generated declaration the catalog gains after the map", () => {
     expect(check().code).toBe(0);
   });
 
-  it("fails while a .gitattributes file is not staged", () => {
+  it("fails while a .gitattributes file outside the operation is added, staged or not", () => {
     s.write("src/.gitattributes", "*.ts conflict-marker-size=9\n");
     const r = check();
     expect(r.code).toBe(1);
@@ -489,6 +497,11 @@ describe("a generated declaration the catalog gains after the map", () => {
       "PROBLEM src/.gitattributes: decides how the mapped paths are classified",
     );
     s.git("add", "src/.gitattributes");
+    expect(check().stdout).toContain(
+      "PROBLEM src/.gitattributes: staged path is outside this operation",
+    );
+    s.git("rm", "-q", "--cached", "src/.gitattributes");
+    rmSync(`${s.root}/src/.gitattributes`);
     expect(check().code).toBe(0);
   });
 });

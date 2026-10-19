@@ -110,8 +110,10 @@ export function generatedEntries(): GeneratedEntry[] {
   if (typeof section !== "object" || Array.isArray(section))
     bad(`${SECTION} must be a mapping`);
   for (const key of Object.keys(section as object))
-    if (key !== "generated")
-      bad(`${SECTION}.${key} is not a known key (known: generated)`);
+    if (key !== "generated" && key !== "obligations")
+      bad(
+        `${SECTION}.${key} is not a known key (known: generated, obligations)`,
+      );
   const generated = (section as Record<string, unknown>).generated;
   if (generated === undefined || generated === null) return [];
   if (!Array.isArray(generated)) bad(`${SECTION}.generated must be a list`);

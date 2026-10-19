@@ -70,7 +70,7 @@ import {
 export const INTENT_CAP = 20;
 const DEFAULT_MARKER_SIZE = 7;
 
-interface Unmerged {
+export interface Unmerged {
   base: Stage | null;
   ours: Stage | null;
   theirs: Stage | null;
@@ -274,18 +274,19 @@ export function classifyPaths(
 }
 
 /**
- * Map every unmerged path of the operation in progress. `recordedSizes` holds
- * the marker size an earlier map of the same operation recorded for a path:
- * git wrote that path's markers when the operation stopped, so a
- * `conflict-marker-size` changed since does not describe them.
+ * Map every unmerged path of the operation in progress, or the paths given in
+ * `unmerged` with their stages. `recordedSizes` holds the marker size an
+ * earlier map of the same operation recorded for a path: git wrote that
+ * path's markers when the operation stopped, so a `conflict-marker-size`
+ * changed since does not describe them.
  */
 export function mapConflicts(
   root: string,
   op: Operation,
   catalog: CatalogGenerated = catalogGeneratedEntries(),
   recordedSizes: ReadonlyMap<string, number> = new Map(),
+  unmerged = unmergedPaths(root),
 ): Record<string, PathEntry> {
-  const unmerged = unmergedPaths(root);
   const paths = [...unmerged.keys()].sort();
   const classes = classifyPaths(root, unmerged, derivedEntries(catalog));
   const intent = intentReader(root, op);

@@ -84,6 +84,7 @@ import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts"
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
 import { detectPackageManager } from "../../fix-ci/scripts/consumer-config.ts";
 import { journalPath } from "../../reflect/scripts/lib/context.ts";
+import { parseObligations } from "../../resolve-conflicts/scripts/lib/obligations.ts";
 import { parseReflection } from "../../reflect/scripts/lib/settings.ts";
 import {
   parseWorkBatchSection,
@@ -847,6 +848,9 @@ function skillValidation(
   });
   attempt("adr", () => adrConfig(path));
   attempt("changelog", () => changelogValidation(config, root));
+  attempt("resolve-conflicts", () =>
+    parseObligations(config.resolve_conflicts),
+  );
   attempt("code-stats", () => parseCodeStatsConfig(config.code_stats));
   // The size points are the cross-field rule's to report.
   const batchSizes = batchSizesOf(config);
