@@ -71,6 +71,7 @@
  *
  * Registered in hooks.json beside this file; tested in __tests__/.
  */
+import { renameWithRetry } from "../shared/rename-with-retry.ts";
 import {
   closeSync,
   existsSync,
@@ -78,7 +79,6 @@ import {
   openSync,
   readFileSync,
   readSync,
-  renameSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -454,7 +454,7 @@ function saveState(file: string, state: State): void {
   const temporary = `${file}.${process.pid}.tmp`;
   try {
     writeFileSync(temporary, JSON.stringify(state));
-    renameSync(temporary, file);
+    renameWithRetry(temporary, file);
   } catch (error) {
     couldNotCheck(`cannot write the state file ${file} (${message(error)})`);
   }

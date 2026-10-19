@@ -1022,6 +1022,12 @@ make, use the entry's term instead.
   session currently owns a piece of work, such as a pull request's review
   threads. Other sessions read it and stand back; a lease whose holder died
   expires instead of blocking forever.
+- **Directory fence** — a nonempty directory retained at the path reserved
+  for one lock acquisition after its release or recovery. A delayed process
+  trying to move that same acquisition there cannot replace the nonempty
+  directory, so it cannot remove a newer holder's lock. Windows retains this
+  shape because a directory move there can replace an ordinary file.
+  *Avoid*: directory guard.
 - **Control channel** — the way a person, or the session that started it,
   reaches an agent running unattended without killing it, kept with that
   agent's worktree (in its *worktree scratch*, or in the runner that started

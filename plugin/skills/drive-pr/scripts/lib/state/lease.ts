@@ -1112,6 +1112,7 @@ interface DirIdentity {
 function statDirIdentity(dir: string): DirIdentity | null {
   try {
     const st = statSync(dir, { bigint: true });
+    if (!st.isDirectory()) return null;
     return { dev: st.dev, ino: st.ino };
   } catch {
     return null;
@@ -1119,7 +1120,11 @@ function statDirIdentity(dir: string): DirIdentity | null {
 }
 
 function sameDirIdentity(a: DirIdentity, b: DirIdentity | null): boolean {
-  return b !== null && a.dev === b.dev && a.ino === b.ino;
+  // A filesystem with no inode identity must not turn two zero placeholders
+  // into proof that an enumeration still names the same directory. Keep the
+  // zero identity distinct from null: null can mean a legitimately absent
+  // directory in sameDirIdentity2.
+  return b !== null && a.ino !== 0n && a.dev === b.dev && a.ino === b.ino;
 }
 
 /**
@@ -1153,7 +1158,7 @@ function sameDirIdentity2(
  */
 export function stateDirIdentityToken(dir: string): string {
   const id = statDirIdentity(dir);
-  return id === null ? "" : `${id.dev}:${id.ino}`;
+  return id === null || id.ino === 0n ? "" : `${id.dev}:${id.ino}`;
 }
 
 /**
@@ -1170,6 +1175,7 @@ export function parseDirIdentityToken(
   if (token === "") return { kind: "absent" };
   const m = /^(\d+):(\d+)$/.exec(token);
   if (m === null) return { kind: "bad" };
+  if (BigInt(m[2] as string) === 0n) return { kind: "bad" };
   // `BigInt`, with no safe-integer ceiling: a 64-bit device or inode above
   // `Number.MAX_SAFE_INTEGER` is a legitimate value on some filesystems, and
   // rejecting it here would refuse every child fence on such a machine even

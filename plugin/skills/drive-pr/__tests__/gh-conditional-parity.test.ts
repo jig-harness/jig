@@ -1,33 +1,51 @@
-/**
- * `gh-conditional.ts` exists twice as a byte-identical PARITY COPY: in the
- * plugin's `shared/` and in drive-pr's `scripts/lib/`, each built on the
- * `proc.ts` beside it. Two copies of the code that decides whether a
- * rate-limited poll may be skipped is exactly the kind of thing that drifts
- * silently, so this pins them together. Behavioural coverage lives in
- * `shared/__tests__/gh-conditional.test.ts`, against the shared copy.
- */
-
+/** The drive and shared callers bind one cache implementation to their own process transports. */
 import { describe, expect, it } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import * as shared from "../../../shared/gh-conditional.ts";
+import * as drive from "../scripts/lib/gh-conditional.ts";
+import { createConditionalCache } from "../../../shared/gh-conditional.ts";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const skills = join(here, "..", "..");
-const COPIES = [
-  join(skills, "drive-pr", "scripts", "lib", "gh-conditional.ts"),
-  join(skills, "..", "shared", "gh-conditional.ts"),
-];
-
-describe("gh-conditional.ts parity copies", () => {
-  it("both copies exist (a missing copy must fail, not vacuously match)", () => {
-    for (const f of COPIES) expect(existsSync(f)).toBe(true);
+describe("shared conditional cache", () => {
+  it("exposes the same API to the drive and other skills", () => {
+    expect(Object.keys(drive).sort()).toEqual(
+      Object.keys(shared)
+        .filter((key) => key !== "createConditionalCache")
+        .sort(),
+    );
+    expect(drive.ghCacheDir()).toBe(shared.ghCacheDir());
+    expect(typeof drive.cachedRepoView).toBe("function");
   });
 
-  it("are byte-identical", () => {
-    const [a, b] = COPIES.map((f) => readFileSync(f, "utf8"));
-    // A non-trivial body, so two empty reads cannot agree.
-    expect((a ?? "").length).toBeGreaterThan(1000);
-    expect(a).toBe(b);
+  it("retains each caller's process transport without sharing bindings", async () => {
+    const calls: string[][] = [];
+    const makeCache = (name: string) =>
+      createConditionalCache({
+        ghCall: async (args) => {
+          calls.push([name, ...args]);
+          return {
+            code: 0,
+            stdout: name,
+            stderr: "",
+            stderrTail: "",
+            bufferExceeded: false,
+            timedOut: false,
+            spawnFailed: false,
+          };
+        },
+        git: async () => {
+          throw new Error("a disabled cache must not resolve repository scope");
+        },
+      });
+    const first = makeCache("first");
+    const second = makeCache("second");
+    expect((await first.cachedRepoView(["--json", "name"])).stdout).toBe(
+      "first",
+    );
+    expect((await second.cachedRepoView(["--json", "name"])).stdout).toBe(
+      "second",
+    );
+    expect(calls).toEqual([
+      ["first", "repo", "view", "--json", "name"],
+      ["second", "repo", "view", "--json", "name"],
+    ]);
   });
 });

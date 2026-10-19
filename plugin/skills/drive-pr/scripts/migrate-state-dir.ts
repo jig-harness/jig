@@ -173,14 +173,14 @@ interface ManifestEntry {
 
 interface ArtifactIdentity {
   readonly name: string;
-  readonly dev: number;
-  readonly ino: number;
+  readonly dev: bigint;
+  readonly ino: bigint;
   readonly kind: "directory" | "file";
 }
 
 interface DirectoryIdentity {
-  readonly dev: number;
-  readonly ino: number;
+  readonly dev: bigint;
+  readonly ino: bigint;
 }
 
 /**
@@ -231,8 +231,8 @@ function canonicalDestination(path: string): {
   return { path: join(parent, basename(path)), existed: false };
 }
 
-function assertSameDirectory(path: string, dev: number, ino: number): void {
-  const now = lstatSync(path);
+function assertSameDirectory(path: string, dev: bigint, ino: bigint): void {
+  const now = lstatSync(path, { bigint: true });
   if (
     now.isSymbolicLink() ||
     !now.isDirectory() ||
@@ -244,9 +244,11 @@ function assertSameDirectory(path: string, dev: number, ino: number): void {
 }
 
 function directoryIdentity(path: string): DirectoryIdentity {
-  const info = lstatSync(path);
-  if (info.isSymbolicLink() || !info.isDirectory()) {
-    throw new Error(`expected a real directory: ${path}`);
+  const info = lstatSync(path, { bigint: true });
+  if (info.isSymbolicLink() || !info.isDirectory() || info.ino === 0n) {
+    throw new Error(
+      `expected a real directory with filesystem identity: ${path}`,
+    );
   }
   return { dev: info.dev, ino: info.ino };
 }
@@ -316,8 +318,12 @@ async function captureArtifactIdentities(
   const identities: ArtifactIdentity[] = [];
   for (const entry of artifacts) {
     await checkSignal(signal);
-    const info = lstatSync(entry.path);
-    if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile())) {
+    const info = lstatSync(entry.path, { bigint: true });
+    if (
+      info.ino === 0n ||
+      info.isSymbolicLink() ||
+      (!info.isDirectory() && !info.isFile())
+    ) {
       throw new Error(
         `artifact must be a real file or directory: ${entry.name}`,
       );
@@ -336,7 +342,7 @@ function assertArtifactIdentity(
   source: string,
   identity: ArtifactIdentity,
 ): void {
-  const info = lstatSync(join(source, identity.name));
+  const info = lstatSync(join(source, identity.name), { bigint: true });
   const kind = info.isDirectory() ? "directory" : info.isFile() ? "file" : null;
   if (
     info.isSymbolicLink() ||
@@ -1039,10 +1045,7 @@ async function migrateStateDirImpl(
   if (!isAbsolute(sourceArg) || !isAbsolute(destinationArg)) {
     throw new Error("source and destination must be absolute paths");
   }
-  const sourceInfo = lstatSync(sourceArg);
-  if (sourceInfo.isSymbolicLink() || !sourceInfo.isDirectory()) {
-    throw new Error(`source must be a real directory: ${sourceArg}`);
-  }
+  const sourceInfo = directoryIdentity(sourceArg);
   const source = realpathSync(sourceArg);
   assertNoStaleMigrationJournal(source);
   const destinationResult = canonicalDestination(destinationArg);
@@ -1194,7 +1197,7 @@ async function migrateStateDirImpl(
   }
   const sameFilesystem =
     !options.forceCrossFilesystem &&
-    statSync(dirname(destination)).dev === sourceInfo.dev;
+    statSync(dirname(destination), { bigint: true }).dev === sourceInfo.dev;
   // A `source` that is itself a mount point has a device that differs from
   // its own parent's. Only the cross-filesystem (copy-verify-remove) path is
   // exposed to this: its `quarantineSourceArtifacts` stages a safety-net

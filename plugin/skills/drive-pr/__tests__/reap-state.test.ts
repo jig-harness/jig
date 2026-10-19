@@ -55,9 +55,23 @@ import {
   retirementStillSafe,
 } from "../scripts/reap-state.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
 
 const REAP = join(import.meta.dir, "..", "scripts", "reap-state.ts");
 const DAY_MS = 86_400_000;
+
+function compactsDirectoryFences(): boolean {
+  return (
+    byPlatform(
+      "Windows preserves nonempty directory fences to block delayed directory replacement",
+      {
+        windows: "no",
+        posix: "yes",
+      },
+    ) === "yes"
+  );
+}
 
 let root: string;
 let repo: string;
@@ -136,7 +150,7 @@ async function reapJson(
   opts: { stateDir: string; ghDir?: string; cwd?: string },
 ) {
   const r = await runReap(["--json", ...args], opts);
-  expect(r.exitCode).toBe(0);
+  expectSpawnExit(r, 0);
   return JSON.parse(r.stdout) as {
     entries: number;
     previousSnapshot: { entries: number; timestampMs: number } | null;
@@ -740,6 +754,27 @@ describe("retirementStillSafe — the immediate-before-delete revalidation", () 
 });
 
 describe("anchorStillNeedsCompaction — verifying sweepLockQuarantine actually did something", () => {
+  it("accepts a retained nonempty Windows directory fence without crediting compaction", () => {
+    const d = freshStateDir();
+    const name = "drive-pr-4172.json.lock.stale.owner.aaaaaaaaaaaaaaaaaaaaaaaa";
+    plantQuarantine(d, name);
+    const probe = join(d, "windows-fence-probe.ts");
+    writeFileSync(
+      probe,
+      `
+      Object.defineProperty(process, "platform", { value: "win32" });
+      const { anchorStillNeedsCompaction } = await import(${JSON.stringify(REAP)});
+      const family = { names: [${JSON.stringify(name)}] };
+      if (anchorStillNeedsCompaction(${JSON.stringify(d)}, family, "drive-pr-4172.json"))
+        throw new Error("a retained nonempty Windows fence is already safe");
+    `,
+    );
+    const result = Bun.spawnSync([process.execPath, probe], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(result, 0);
+  });
   // `sweepLockQuarantine` is `void` and swallows every internal write failure
   // (a read-only state dir, EACCES, ENOSPC), so the caller cannot tell
   // "compacted" from "silently did nothing" from its return alone — this
@@ -750,7 +785,7 @@ describe("anchorStillNeedsCompaction — verifying sweepLockQuarantine actually 
   // directory permission checks entirely, so a chmod-based fixture would pass
   // vacuously without exercising the failure path at all.
 
-  it("reports still-needing-compaction for an uncompacted (directory) entry", () => {
+  it("recognizes the platform's completed directory-fence shape", () => {
     const d = freshStateDir();
     plantQuarantine(
       d,
@@ -764,11 +799,11 @@ describe("anchorStillNeedsCompaction — verifying sweepLockQuarantine actually 
       anchors: new Set<string>(),
     };
     expect(anchorStillNeedsCompaction(d, family, "drive-pr-4172.json")).toBe(
-      true,
+      compactsDirectoryFences(),
     );
   });
 
-  it("reports no work left for an already-compacted (single-file) entry", () => {
+  it("recognizes whether a single-file fence is safe on this platform", () => {
     const d = freshStateDir();
     writeFileSync(
       join(d, "drive-pr-4172.json.lock.stale.owner.aaaaaaaaaaaaaaaaaaaaaaaa"),
@@ -782,7 +817,27 @@ describe("anchorStillNeedsCompaction — verifying sweepLockQuarantine actually 
       anchors: new Set<string>(),
     };
     expect(anchorStillNeedsCompaction(d, family, "drive-pr-4172.json")).toBe(
-      false,
+      !compactsDirectoryFences(),
+    );
+  });
+
+  it("leaves a nonempty foreign file unfinished on Windows instead of accepting it as a fence", () => {
+    const d = freshStateDir();
+    const canonical =
+      "drive-pr-4172.json.lock.stale.owner.aaaaaaaaaaaaaaaaaaaaaaaa";
+    writeFileSync(join(d, canonical), "foreign canonical data");
+    const family = {
+      id: "pr:4172",
+      kind: "pr" as const,
+      subject: "4172",
+      names: [canonical],
+      anchors: new Set<string>(),
+    };
+    expect(anchorStillNeedsCompaction(d, family, "drive-pr-4172.json")).toBe(
+      !compactsDirectoryFences(),
+    );
+    expect(readFileSync(join(d, canonical), "utf8")).toBe(
+      "foreign canonical data",
     );
   });
 
@@ -803,7 +858,7 @@ describe("anchorStillNeedsCompaction — verifying sweepLockQuarantine actually 
     );
   });
 
-  it("still reports work left when recovery only restores a fence (canonical did not pre-exist)", () => {
+  it("checks the restored canonical fence when recovering an orphaned staging copy", () => {
     // The exact case this pins: when the canonical path named by a
     // `.compacting.*` staging leftover did NOT already exist,
     // `sweepLockQuarantine`'s recovery CREATES one — a tombstoned DIRECTORY,
@@ -827,7 +882,7 @@ describe("anchorStillNeedsCompaction — verifying sweepLockQuarantine actually 
     expect(existsSync(join(d, staging))).toBe(false);
     expect(statSync(join(d, canonical)).isDirectory()).toBe(true);
     expect(anchorStillNeedsCompaction(d, family, "drive-pr-4172.json")).toBe(
-      true,
+      compactsDirectoryFences(),
     );
   });
 
@@ -856,7 +911,9 @@ describe("anchorStillNeedsCompaction — verifying sweepLockQuarantine actually 
     };
     sweepLockQuarantine(join(d, "drive-pr-4172.json"));
     expect(existsSync(join(d, staging))).toBe(false);
-    expect(statSync(join(d, canonical)).isDirectory()).toBe(false);
+    expect(statSync(join(d, canonical)).isDirectory()).toBe(
+      !compactsDirectoryFences(),
+    );
     expect(anchorStillNeedsCompaction(d, family, "drive-pr-4172.json")).toBe(
       false,
     );
@@ -1130,7 +1187,43 @@ describe("the worktree predicate", () => {
 });
 
 describe("compaction — what happens to everything that is NOT retired", () => {
-  it("compacts a kept family’s quarantine to an empty file at the same path", async () => {
+  it("recovers an orphan staging file even when the canonical fence already needs no compaction", async () => {
+    const d = freshStateDir();
+    writeFileSync(join(d, "drive-pr-4172.json"), "{}");
+    const name = "drive-pr-4172.json.lock.stale.owner.aaaaaaaaaaaaaaaaaaaaaaaa";
+    if (compactsDirectoryFences()) writeFileSync(join(d, name), "");
+    else plantQuarantine(d, name);
+    const staging = `.compacting.${name}.${"0".repeat(24)}`;
+    writeFileSync(join(d, staging), "orphaned private copy");
+    const result = await reapJson(["--delete"], {
+      stateDir: d,
+      ghDir: GH_OPEN(),
+    });
+    expect(result.anchorsCompactable).toBe(1);
+    expect(result.anchorsCompacted).toBe(1);
+    expect(existsSync(join(d, staging))).toBe(false);
+    expect(existsSync(join(d, name))).toBe(true);
+    const next = await reapJson(["--delete"], {
+      stateDir: d,
+      ghDir: GH_OPEN(),
+    });
+    expect(next.anchorsCompactable).toBe(0);
+    expect(next.anchorsCompacted).toBe(0);
+  });
+
+  it("does not call an empty directory a completed fence", () => {
+    const d = freshStateDir();
+    const name = "drive-pr-4172.json.lock.stale.owner.aaaaaaaaaaaaaaaaaaaaaaaa";
+    mkdirSync(join(d, name));
+    const family = { names: [name] } as Parameters<
+      typeof anchorStillNeedsCompaction
+    >[1];
+    expect(anchorStillNeedsCompaction(d, family, "drive-pr-4172.json")).toBe(
+      true,
+    );
+  });
+
+  it("keeps a safe generation fence in the platform's completed shape", async () => {
     const d = freshStateDir();
     writeFileSync(join(d, "drive-pr-4172.json"), "{}");
     const q = plantQuarantine(
@@ -1144,14 +1237,17 @@ describe("compaction — what happens to everything that is NOT retired", () => 
     const r = await reapJson(["--delete"], { stateDir: d, ghDir: GH_OPEN() });
 
     expect(r.retire).toEqual([]);
-    expect(r.anchorsCompacted).toBe(1);
+    expect(r.anchorsCompactable).toBe(compactsDirectoryFences() ? 1 : 0);
+    expect(r.anchorsCompacted).toBe(compactsDirectoryFences() ? 1 : 0);
     // The FENCE is what must survive: same generation-keyed path, still
     // present, so a later rename onto it still fails — only now it is one
     // inode instead of three. Deleting it instead would let that later rename
     // succeed onto the freed path — a TOCTOU race.
     for (const p of [q, qr]) {
       expect(existsSync(p)).toBe(true);
-      expect(statSync(p).isDirectory()).toBe(false);
+      expect(statSync(p).isDirectory()).toBe(!compactsDirectoryFences());
+      if (!compactsDirectoryFences())
+        expect(readdirSync(p).length).toBeGreaterThan(0);
     }
   });
 
@@ -1166,10 +1262,9 @@ describe("compaction — what happens to everything that is NOT retired", () => 
     writeFileSync(join(d, "drive-pr-4172.json"), "{}");
     // The COMPACTED shape: an empty file at the generation-keyed path, which
     // is what a previous run leaves behind.
-    writeFileSync(
-      join(d, "drive-pr-4172.json.lock.stale.owner.aaaaaaaaaaaaaaaaaaaaaaaa"),
-      "",
-    );
+    const name = "drive-pr-4172.json.lock.stale.owner.aaaaaaaaaaaaaaaaaaaaaaaa";
+    if (compactsDirectoryFences()) writeFileSync(join(d, name), "");
+    else plantQuarantine(d, name);
 
     const r = await reapJson(["--delete"], { stateDir: d, ghDir: GH_OPEN() });
     expect(r.retire).toEqual([]);
@@ -1220,7 +1315,7 @@ describe("compaction — what happens to everything that is NOT retired", () => 
       "drive-pr-4172.json.lock.stale.owner.aaaaaaaaaaaaaaaaaaaaaaaa",
     );
     await reapJson(["--delete"], { stateDir: d, ghDir: GH_MERGED() });
-    expect(statSync(q).isDirectory()).toBe(false);
+    expect(statSync(q).isDirectory()).toBe(!compactsDirectoryFences());
   });
 });
 
@@ -1896,7 +1991,7 @@ describe("dry run", () => {
     // `--delete` would do, so a zero here would mean the guard was placed
     // before the accounting instead of before the syscall. `anchorsCompacted`
     // (actual successes) stays 0 in a dry run, which never attempts anything.
-    expect(r.anchorsCompactable).toBe(1);
+    expect(r.anchorsCompactable).toBe(compactsDirectoryFences() ? 1 : 0);
     expect(r.anchorsCompacted).toBe(0);
     expect(statSync(q).isDirectory()).toBe(true);
     expect(existsSync(join(q, "tombstone"))).toBe(true);
