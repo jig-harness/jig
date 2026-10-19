@@ -1344,7 +1344,8 @@ make, use the entry's term instead.
 - **Preview package** — a package built from a pull request's commit, so a
   consumer can install and try the change before it merges. It is not a
   release: no changelog entry, no version the release step chose, no tag,
-  and it moves no release channel.
+  and it moves none of the release channels; one published to the
+  registry gets a channel name of its own that no release uses.
 - **Promotion** — moving a version from a release channel that takes every
   version to one that takes only proven ones, once a written rule holds (a
   time on the first channel, checks green, no open regression). A

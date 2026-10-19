@@ -171,14 +171,15 @@ A consumer can try a change before it merges only if they can install it. A
 [preview package](../../GLOSSARY.md) is built from a pull request's commit
 and installed from an address that names the pull request or the commit. It
 is not a release: it has no changelog entry, no version the release step
-chose and no tag, and it never moves a release channel, so the version is
-still chosen once, after the merge. The job that builds it runs the pull
-request's own code, so it holds none of the release's credentials.
+chose and no tag, and it moves none of the release channels (a preview in
+the registry gets a dist-tag of its own that no release uses), so the
+version is still chosen once, after the merge. The job that builds it runs
+the pull request's own code, so it holds none of the release's credentials.
 
 | Ecosystem | A preview package |
 |-----------|-------------------|
 | npm | [pkg.pr.new](https://github.com/stackblitz-labs/pkg.pr.new): its GitHub App installed on the repository, and `pkg-pr-new publish` run once in the pull request's workflow. It serves the package from an address of its own (`npm i https://pkg.pr.new/<owner>/<repo>/<package>@<commit>`, or `@<pull-request>`) and publishes nothing to npm |
-| npm, in the registry | a prerelease version under a dist-tag of its own (`npm publish --tag <tag>`), never `latest`; Changesets' [snapshot releases](https://github.com/changesets/changesets/blob/main/docs/snapshot-releases.md) (`changeset version --snapshot <tag>`, then `changeset publish --tag <tag> --no-git-tag`, since it creates git tags otherwise) write and publish one. Publishing to npm needs the registry's permission, which the job running the pull request's code must not hold: publish from a separate job that receives the built package and runs nothing from the pull request, as the release identity's job does. npm allows unpublishing only within limits, so these versions stay in the registry; prefer an address outside it |
+| npm, in the registry | a prerelease version under a dist-tag of its own that no release uses, never `latest`. The pull request's job writes the version (Changesets' [snapshot releases](https://github.com/changesets/changesets/blob/main/docs/snapshot-releases.md): `changeset version --snapshot <tag>`), builds, and packs it into a tarball with `npm pack`, which it keeps as an artifact. Publishing to npm needs the registry's permission, which no job that runs the pull request's code may hold, and publishing a package directory (`npm publish`, `changeset publish`) runs that package's own scripts (`prepublishOnly`, `prepare`, `postpublish`). So a separate job receives the tarball and publishes it as it is, running none of them: `npm publish <tarball> --tag <tag> --ignore-scripts`. npm allows unpublishing only within limits, so these versions stay in the registry; prefer an address outside it |
 | Python | PyPI's [test index](https://test.pypi.org/), separate from PyPI itself: install the package's dependencies from PyPI first, then the preview alone (`pip install --index-url https://test.pypi.org/simple/ --no-deps <package>`), since the test index does not hold them; or the wheel kept as an artifact of the pull request's CI run |
 | Rust | a git dependency on the pull request's commit (`<crate> = { git = "<url>", rev = "<commit>" }`) |
 | Go | `go get <module>@<commit>`, which resolves the commit to a pseudo-version |
