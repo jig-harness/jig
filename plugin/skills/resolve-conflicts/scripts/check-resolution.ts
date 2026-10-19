@@ -48,12 +48,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import {
+  dirname,
   isAbsolute,
   join,
   parse,
   posix,
   relative,
-  resolve,
   sep,
 } from "node:path";
 import { fail, runMain } from "../../../shared/cli.ts";
@@ -128,18 +128,33 @@ const MAX_LINK_HOPS = 40;
  * Every path the file system passes through to open `file`: each symbolic
  * link on the way (a file or a directory, at any hop of a chain) and the file
  * finally read, all as absolute paths whose directories hold no link.
+ *
+ * Components are taken in the order the system takes them, and a `..` steps
+ * out of the directory reached so far, which holds no link. Nothing is
+ * normalized as text first: `cfg/..` is the parent of wherever `cfg` leads,
+ * not the directory holding `cfg`.
  */
 function traversedPaths(file: string): string[] {
   const seen: string[] = [];
   const pending: string[] = [];
-  const restart = (path: string): string => {
+  // Continues at `path`, read from `from`: from its root when absolute.
+  const restart = (path: string, from: string): string => {
     const { root } = parse(path);
-    pending.unshift(...path.slice(root.length).split(sep).filter(Boolean));
-    return root;
+    pending.unshift(...path.slice(root.length).split(/[\\/]/));
+    return root === "" ? from : root;
   };
-  let current = restart(resolve(file));
+  let current = restart(
+    isAbsolute(file) ? file : `${process.cwd()}${sep}${file}`,
+    "",
+  );
   for (let hops = 0; pending.length > 0; ) {
-    const candidate = join(current, pending.shift() as string);
+    const name = pending.shift() as string;
+    if (name === "" || name === ".") continue;
+    if (name === "..") {
+      current = dirname(current);
+      continue;
+    }
+    const candidate = join(current, name);
     let link: string | null = null;
     try {
       if (lstatSync(candidate).isSymbolicLink()) link = readlinkSync(candidate);
@@ -152,10 +167,15 @@ function traversedPaths(file: string): string[] {
     }
     seen.push(candidate);
     if (++hops > MAX_LINK_HOPS) return seen;
-    current = restart(resolve(current, link));
+    current = restart(link, current);
   }
   seen.push(current);
   return seen;
+}
+
+/** The file a read of `file` opens, or `null` when no file is there. */
+function finalTarget(file: string): string | null {
+  return existsSync(file) ? realpathSync(file) : null;
 }
 
 /**
@@ -165,10 +185,14 @@ function traversedPaths(file: string): string[] {
 function declarationFilePaths(root: string): string[] {
   const realRoot = realpathSync(root);
   return declarationFiles()
-    .flatMap((file) => [
-      inside(root, file),
-      ...traversedPaths(file).map((path) => inside(realRoot, path)),
-    ])
+    .flatMap((file) => {
+      const target = finalTarget(file);
+      return [
+        inside(root, file),
+        ...traversedPaths(file).map((path) => inside(realRoot, path)),
+        target === null ? null : inside(realRoot, target),
+      ];
+    })
     .filter((path): path is string => path !== null);
 }
 

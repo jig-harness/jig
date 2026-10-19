@@ -639,6 +639,44 @@ describe("a catalog reached through a chain of symbolic links", () => {
   });
 });
 
+describe("a catalog whose link target climbs out of a linked directory", () => {
+  beforeEach(() => {
+    s.git("merge", "--abort");
+    writeCatalog("schema.json", "bun run gen:schema", "config/defs.yaml");
+    writeCatalog("openapi.json", "bun run gen:openapi", "defs.yaml");
+    symlinkSync("config/nested", `${s.root}/cfg`);
+    symlinkSync("cfg/../defs.yaml", `${s.root}/catalog.yaml`);
+    s.overlay("drive:\n  change_areas_catalog: catalog.yaml\n");
+    s.commit("Describe the feature API", {
+      "openapi.json": "feature\n",
+      "config/nested/keep": "",
+    });
+    s.git("checkout", "-q", "main");
+    s.commit("Describe the main API", { "openapi.json": "main\n" });
+    s.git("checkout", "-q", "feature");
+    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    s.write("src/config.ts", CONFIG_COMBINED);
+    s.write("openapi.json", "feature\nmain\n");
+    s.git("add", "src/config.ts", "openapi.json");
+    expect(record("src/config.ts", "combined").code).toBe(0);
+    expect(record("openapi.json", "combined").code).toBe(0);
+    expect(check().code).toBe(0);
+  });
+
+  it("fails while the file the system reads differs from what is staged", () => {
+    const mapped = s.read("config/defs.yaml");
+    writeCatalog("openapi.json", "bun run gen:openapi", "config/defs.yaml");
+    s.git("add", "config/defs.yaml");
+    s.write("config/defs.yaml", mapped);
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM config/defs.yaml: decides how the mapped paths are classified, and the working tree differs from what is staged",
+    );
+  });
+});
+
 describe("a catalog outside the repository that an obligation command changes", () => {
   beforeEach(() => {
     s.git("merge", "--abort");
