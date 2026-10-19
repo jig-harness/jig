@@ -116,6 +116,16 @@ describe("tokens", () => {
     ['/* unclosed \nspawnSync("linear", args);'],
     ['// spawnSync("linear", ["issue", "create"]);'],
     ['/* Bun.spawn(["linear", "api"]) */'],
+    [
+      'import { execFileSync /* binding */ as run } from "node:child_process";\nrun("linear", args);',
+    ],
+    [
+      'const { spawnSync /* a */ : /* b */ sp } = require("node:child_process");\nsp("linear", args);',
+    ],
+    ['const run /* binding */ = cp.spawnSync;\nrun("linear", args);'],
+    ['const run = cp /* a */ . /* b */ spawnSync;\nrun("linear", args);'],
+    ['cp /* launch */ .execFileSync("linear", args);'],
+    ['new /* a */ Deno /* b */ . /* c */ Command("linear", { args });'],
   ])(
     "a call written around comments or through an alias is found: %s",
     (code) => {
@@ -135,6 +145,10 @@ describe("tokens", () => {
       'from subprocess import (\n  PIPE,  # pipes\n  call as c,\n)\nc("linear")',
     ],
     ['from subprocess import run as r\nr("linear")'],
+    ['from subprocess import PIPE, \\\n    run as r\nr("linear", stdout=PIPE)'],
+    ['from subprocess \\\n    import run\nrun("linear")'],
+    ['import subprocess \\\n    as sp\nsp.run("linear")'],
+    ['import subprocess as sp\nsp \\\n    .run("linear")'],
   ])("a Python run is found: %s", (code) => {
     expect(violations("plugin/x.py", code)).toMatchObject([
       { rule: "tracker-boundary", file: "plugin/x.py" },

@@ -13,8 +13,9 @@
 // or a command line `linear <subcommand>`. A call to any other function with
 // `linear` first (`console.log("linear", v)`) names the client without
 // running it. Runs are looked for in the file's text as written, with any
-// comment between two of a run's tokens read as white space: no comment can
-// hide a run, and a run written inside a comment's prose is reported like
+// comment or continued line between two tokens read as white space, in a
+// run and in the bindings that name a launcher alike: no comment can hide a
+// run, and a run written inside a comment's prose is reported like
 // one in the code, so the check can over-report but never miss. Nothing is
 // lexed, so no string, regular expression or template the check reads wrongly
 // can blank code out of its view. The file is matched as a whole, so an
@@ -104,24 +105,30 @@ const LAUNCHERS = [
 /** The names `subprocess` exports that start a process. */
 const SUBPROCESS = ["run", "call", "Popen", "check_call", "check_output"];
 
+/**
+ * What may stand between two of a run's tokens: white space, a comment in
+ * any of the languages' syntaxes, and a backslash ending a line (a continued
+ * line in Python and shell). A comment cannot end early (a line comment runs
+ * to its line's end, a block comment to its first closing marker), so a gap
+ * matches in one way only and a scan stays linear in the file's length.
+ * Every pattern below separates its tokens with `GAP` (or `GAP1` where they
+ * must be separated) and never with bare white space.
+ */
+const SPACE = String.raw`(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\n]*(?![^\n])|#[^\n]*(?![^\n])|\\\r?\n)`;
+const GAP = `${SPACE}*`;
+const GAP1 = `${SPACE}+`;
+const DOT = String.raw`${GAP}\.${GAP}`;
+
 /** Launchers whose name means one only on their own module. */
 const QUALIFIED = [
-  String.raw`Bun\s*\.\s*spawn(?:Sync)?`,
-  String.raw`Deno\s*\.\s*Command`,
-  String.raw`subprocess\s*\.\s*(?:run|call)`,
-  String.raw`os\s*\.\s*exec[lv]p?e?`,
+  String.raw`Bun${DOT}spawn(?:Sync)?`,
+  String.raw`Deno${DOT}Command`,
+  String.raw`subprocess${DOT}(?:run|call)`,
+  String.raw`os${DOT}exec[lv]p?e?`,
 ];
 
 const IDENT = String.raw`[A-Za-z_$][\w$]*`;
 const quoteName = (name: string) => name.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
-
-/**
- * What may stand between two of a run's tokens: white space, and comments in
- * any of the languages' syntaxes. A comment cannot end early (a line comment
- * runs to its line's end, a block comment to its first closing marker), so a
- * gap matches in one way only and a scan stays linear in the file's length.
- */
-const GAP = String.raw`(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\n]*(?![^\n])|#[^\n]*(?![^\n]))*`;
 
 /**
  * The names `from subprocess import …` binds to a launcher, under its alias
@@ -130,7 +137,10 @@ const GAP = String.raw`(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\n]*(?![^\n])|#[^\
 function subprocessImports(code: string): string[] {
   const bound: string[] = [];
   for (const m of code.matchAll(
-    /\bfrom\s+subprocess\s+import\s+(\([^)]*\)?|[^\n]*)/g,
+    new RegExp(
+      String.raw`\bfrom${GAP1}subprocess${GAP1}import${GAP1}(\([^)]*\)?|(?:\\\r?\n|[^\n])*)`,
+      "g",
+    ),
   ))
     for (const item of (m[1] as string)
       .replace(/#[^\n]*/g, "")
@@ -157,7 +167,10 @@ function launcherNames(code: string): {
   const names = new Set(LAUNCHERS);
   const modules = new Set<string>();
   for (const m of code.matchAll(
-    new RegExp(String.raw`\bimport\s+subprocess\s+as\s+(${IDENT})`, "g"),
+    new RegExp(
+      String.raw`\bimport${GAP1}subprocess${GAP1}as${GAP1}(${IDENT})`,
+      "g",
+    ),
   ))
     modules.add(m[1] as string);
   for (const name of subprocessImports(code)) names.add(name);
@@ -166,12 +179,12 @@ function launcherNames(code: string): {
     const known = [...names].map(quoteName).join("|");
     const qualified = [
       ...QUALIFIED,
-      String.raw`(?:${IDENT}\s*\.\s*)?(?:${known})`,
+      String.raw`(?:${IDENT}${DOT})?(?:${known})`,
     ].join("|");
     for (const pattern of [
-      String.raw`(?<![\w$])(?:${known})\s+as\s+(${IDENT})`,
-      String.raw`(?<![\w$.])(?:${known})\s*:\s*(${IDENT})`,
-      String.raw`\b(?:const|let|var)\s+(${IDENT})\s*=\s*(?:${qualified})(?![\w$]|\s*[(.])`,
+      String.raw`(?<![\w$])(?:${known})${GAP1}as${GAP1}(${IDENT})`,
+      String.raw`(?<![\w$.])(?:${known})${GAP}:${GAP}(${IDENT})`,
+      String.raw`\b(?:const|let|var)${GAP1}(${IDENT})${GAP}=${GAP}(?:${qualified})(?![\w$]|${GAP}[(.])`,
     ])
       for (const m of code.matchAll(new RegExp(pattern, "g")))
         names.add(m[1] as string);
@@ -186,15 +199,15 @@ function runPattern(code: string): RegExp {
     ...QUALIFIED,
     ...[...modules].map(
       (m) =>
-        String.raw`${quoteName(m)}\s*\.\s*(?:run|call|Popen|check_call|check_output)`,
+        String.raw`${quoteName(m)}${DOT}(?:run|call|Popen|check_call|check_output)`,
     ),
-    String.raw`(?:${IDENT}\s*\.\s*)?(?:${[...names].map(quoteName).join("|")})`,
+    String.raw`(?:${IDENT}${DOT})?(?:${[...names].map(quoteName).join("|")})`,
   ].join("|");
   return new RegExp(
     [
       String.raw`\[${GAP}${LINEAR}${GAP},`,
       String.raw`\(${GAP}${LINEAR}${GAP},${GAP}\[`,
-      String.raw`(?<![\w$.])(?:new\s+)?(?:${launcher})${GAP}\(${GAP}${LINEAR}`,
+      String.raw`(?<![\w$.])(?:new${GAP1})?(?:${launcher})${GAP}\(${GAP}${LINEAR}`,
       String.raw`(?<![\w./-])linear[ \t]+(?:api|auth|config|issues?|teams?|projects?|labels?|cycles?|comments?|documents?|milestones?|initiatives?)\b`,
     ].join("|"),
     "g",
