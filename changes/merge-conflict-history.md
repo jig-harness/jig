@@ -16,7 +16,7 @@ release: minor
   resolutions recorded in their `Conflicts resolved:` sections, and says how
   often each cause was right when a sample was checked by hand. `--json`
   prints it as a versioned `merge-conflicts/v1` object. It reads git only, never fetches, and keeps today's attributes and merge
-  drivers out of the past merges; it needs git 2.40 or later (2.45 in a
+  drivers out of the past merges; it needs git 2.43 or later (2.45 in a
   partial clone), and in a shallow clone it skips the merges whose history
   the clone cuts and says the report is partial. See the skill's
   [history report section](../plugin/skills/resolve-conflicts/SKILL.md#where-past-merges-conflicted-the-history-report).

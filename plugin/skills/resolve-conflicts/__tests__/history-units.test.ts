@@ -34,10 +34,10 @@ describe("git's version", () => {
     expect(parseGitVersion("not git")).toBeNull();
   });
 
-  it("needs 2.40 or later, and 2.45 or later to keep a partial clone from fetching", () => {
-    expect(gitIsRecentEnough([2, 39, 9])).toBe(false);
+  it("needs 2.43 or later, and 2.45 or later to keep a partial clone from fetching", () => {
+    expect(gitIsRecentEnough([2, 42, 9])).toBe(false);
     expect(gitIsRecentEnough([1, 99, 0])).toBe(false);
-    expect(gitIsRecentEnough([2, 40, 0])).toBe(true);
+    expect(gitIsRecentEnough([2, 43, 0])).toBe(true);
     expect(gitIsRecentEnough([3, 0, 0])).toBe(true);
     expect(gitIsRecentEnough([2, 44, 3], NO_LAZY_FETCH_GIT)).toBe(false);
     expect(gitIsRecentEnough([2, 45, 0], NO_LAZY_FETCH_GIT)).toBe(true);

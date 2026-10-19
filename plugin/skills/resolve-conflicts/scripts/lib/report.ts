@@ -50,8 +50,6 @@ export interface MergeRecord {
   pullRequest: number | null;
   /** The branches the subject names: the one merged in, and the one merged into. */
   branches: SubjectBranches;
-  /** The fetched pull-request head refs the merge commit is reachable from. */
-  containedIn: PullRequestHead[];
   /** The fetched pull-request head refs each parent is the tip of. */
   parentHeads: { ours: PullRequestHead[]; theirs: PullRequestHead[] };
   conflicted: boolean;
@@ -443,6 +441,26 @@ function pathLines(report: Report, limit: number): string[] {
   return out;
 }
 
+/** The weekly trend, a run of weeks without a merge on one line. */
+function weekLines(weeks: readonly WeekSummary[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < weeks.length; i++) {
+    const w = weeks[i] as WeekSummary;
+    if (w.merges > 0) {
+      out.push(
+        `  ${w.week}  ${w.conflicted} of ${plural(w.merges, "merge")} conflicted${w.conflicted > 0 ? `: ${causeList(w.causes)}` : ""}`,
+      );
+      continue;
+    }
+    let last = i;
+    while ((weeks[last + 1]?.merges ?? 1) === 0) last++;
+    const through = last > i ? ` – ${(weeks[last] as WeekSummary).week}` : "";
+    out.push(`  ${w.week}${through}  no merges`);
+    i = last;
+  }
+  return out;
+}
+
 function summaryLines(report: Report): string[] {
   const hotspots =
     report.hotspots.length > 0 ? report.hotspots.join(", ") : "none";
@@ -457,10 +475,7 @@ function summaryLines(report: Report): string[] {
     ),
     "",
     "Per week, conflicted merges by cause:",
-    ...report.weeks.map(
-      (w) =>
-        `  ${w.week}  ${w.conflicted} of ${plural(w.merges, "merge")} conflicted${w.conflicted > 0 ? `: ${causeList(w.causes)}` : ""}`,
-    ),
+    ...weekLines(report.weeks),
   ];
 }
 

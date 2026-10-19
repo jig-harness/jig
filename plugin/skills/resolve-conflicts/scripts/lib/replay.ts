@@ -24,11 +24,11 @@ import { splitNul } from "./git.ts";
 import { DECISIONS } from "./snapshot.ts";
 
 /**
- * The oldest git the replay runs with: `merge-tree --write-tree` came in
- * 2.38, and `GIT_ATTR_SOURCE`, which keeps today's attributes out of a past
- * merge, in 2.40.
+ * The oldest git the replay runs with: `GIT_ATTR_SOURCE`, which keeps today's
+ * attributes out of a past merge, came in 2.41, and `merge-tree` reads it
+ * without crashing from 2.43.
  */
-export const MIN_GIT: readonly [number, number] = [2, 40];
+export const MIN_GIT: readonly [number, number] = [2, 43];
 
 /** The oldest git that honours `GIT_NO_LAZY_FETCH`, so a partial clone never fetches. */
 export const NO_LAZY_FETCH_GIT: readonly [number, number] = [2, 45];
@@ -149,11 +149,13 @@ function silencedDrivers(repo: Git): string[] {
  * Run `body` with a git runner whose new objects go to a temporary object
  * directory, removed when `body` returns or throws, and on an interrupt.
  *
- * The runner also keeps today's attributes out of past merges: they are read
- * from the empty tree rather than the working tree (`GIT_ATTR_SOURCE`), not
- * from the system or a person's attributes file, and every configured merge
- * driver is replaced by `false`, so no command of the repository's runs and
- * every region is written with markers of the default size.
+ * The runner also keeps today's attributes out of past merges: the working
+ * tree's and the index's are read from the empty tree instead
+ * (`GIT_ATTR_SOURCE`), and the system's and a person's attributes files are
+ * not read. Git still reads `$GIT_DIR/info/attributes`, which nothing here
+ * can redirect, so a marker size or a built-in driver (`union`, `binary`)
+ * set there still applies. Every configured merge driver is replaced by
+ * `false`, so no command of the repository's runs, whichever file names it.
  */
 export function withScratchObjects<T>(repo: Git, body: (git: Git) => T): T {
   const objects = repo
@@ -360,32 +362,6 @@ export function pullRequestHeads(git: Git): Map<string, PullRequestHead[]> {
     }
   }
   return heads;
-}
-
-/**
- * The fetched pull-request head refs that contain `commit` (it is reachable
- * from them): one `git for-each-ref --contains` per merge, run only when the
- * clone has such refs.
- */
-export function pullRequestHeadsContaining(
-  git: Git,
-  commit: string,
-): PullRequestHead[] {
-  const out = git.text([
-    "for-each-ref",
-    `--contains=${commit}`,
-    "--format=%(refname)",
-    "refs/pull",
-    "refs/merge-requests",
-    "refs/remotes",
-  ]);
-  return out.split("\n").flatMap((ref) => {
-    for (const pattern of PR_HEAD_PATTERNS) {
-      const match = ref.match(pattern);
-      if (match) return [{ ref, number: Number(match[1]) }];
-    }
-    return [];
-  });
 }
 
 export interface SubjectBranches {

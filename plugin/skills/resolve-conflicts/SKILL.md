@@ -442,10 +442,14 @@ working tree, in diff3 style so every conflicting region carries its
 [merge base](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). Git's
 new objects go to a temporary object directory, removed afterwards, so no
 ref, index, working tree or object of the repository changes. Today's
-attributes do not reach a past merge: they are read from the empty tree, and
-every configured merge driver is replaced by `false`, so no command of the
-repository's runs and every region is written with markers of the default
-size. It reads git only and never fetches: it needs git 2.40 or later, and
+attributes do not reach a past merge: the working tree's and the index's
+`.gitattributes` are read from the empty tree instead, and the system's and a
+person's attributes files are not read. The exception is
+`.git/info/attributes`, which git always reads: a `conflict-marker-size` or a
+built-in driver (`merge=union`, `merge=binary`) set there still applies.
+Every configured merge driver is replaced by `false`, so no command of the
+repository's runs, whichever file names it. It reads git only and never
+fetches: it needs git 2.43 or later, and
 refuses a partial clone below git 2.45, which cannot be kept from fetching
 the objects it lacks. A merge with more than two parents is skipped; in a
 shallow clone, so is a merge whose history the clone cuts (its merge base
@@ -494,8 +498,7 @@ merge counts again.
 range, one without a merge as zeros), `confidence`, `limits`, `skipped` (each
 with its reason: `octopus`, `shallow` or `replay-failed`), and `merges`, one
 record per replayed merge (`operation: "merge"`, its commit, both parents
-and the pull-request heads each is the tip of, the pull-request heads that
-contain the merge, its date, subject, the pull request and the branches the
+and the pull-request heads each is the tip of, its date, subject, the pull request and the branches the
 subject names, and each conflicted path with its kind,
 git's kinds of conflict, class, causes, regions, and the decision and reason
 its `Conflicts resolved:` section recorded).
@@ -504,7 +507,7 @@ its `Conflicts resolved:` section recorded).
 |------|---------|
 | 0 | the report was printed |
 | 1 | a git call failed |
-| 2 | usage error, not inside a git repository, invalid configuration, git older than 2.40, or a partial clone with git older than 2.45 |
+| 2 | usage error, not inside a git repository, invalid configuration, git older than 2.43, or a partial clone with git older than 2.45 |
 
 ## Related skills
 

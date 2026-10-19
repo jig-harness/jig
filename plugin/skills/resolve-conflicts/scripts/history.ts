@@ -20,7 +20,7 @@
  * new objects go to a temporary object directory that is removed afterwards:
  * no ref, index, working tree or object of the repository changes. Today's
  * attributes and merge drivers are kept out of the past merges. It reads git
- * only, needs git 2.40 or later, and 2.45 or later in a partial clone. In a
+ * only, needs git 2.43 or later, and 2.45 or later in a partial clone. In a
  * shallow clone, a merge whose history the clone cuts is skipped.
  *
  * Reads `resolve_conflicts.generated` and `resolve_conflicts.hotspot_min_merges`
@@ -28,7 +28,7 @@
  * `changelog.version` (the repository's own `.config/jig.yaml`).
  *
  * Exit codes: 0 the report was printed; 1 a git call failed; 2 usage error,
- * not inside a git repository, invalid configuration, git older than 2.40, or
+ * not inside a git repository, invalid configuration, git older than 2.43, or
  * a partial clone with git older than 2.45.
  */
 import { readFileSync } from "node:fs";
@@ -68,7 +68,6 @@ import {
   isPartialClone,
   mergeBases,
   NO_LAZY_FETCH_GIT,
-  pullRequestHeadsContaining,
   shallowBoundary,
   subjectBranches,
   MIN_GIT,
@@ -492,8 +491,6 @@ export function replayMerge(
     subject: merge.subject,
     pullRequest: prNumber(merge.subject),
     branches: subjectBranches(merge.subject),
-    containedIn:
-      setup.heads.size > 0 ? pullRequestHeadsContaining(git, merge.commit) : [],
     parentHeads: {
       ours: setup.heads.get(ours) ?? [],
       theirs: setup.heads.get(theirs) ?? [],
@@ -521,7 +518,7 @@ function checkGit(git: Git): [number, number, number] {
   if (version === null || !gitIsRecentEnough(version))
     fail(
       2,
-      `history: needs git ${MIN_GIT.join(".")} or later (merge-tree --write-tree, GIT_ATTR_SOURCE); found ${output.trim() || "no version"}.`,
+      `history: needs git ${MIN_GIT.join(".")} or later (merge-tree reading GIT_ATTR_SOURCE); found ${output.trim() || "no version"}.`,
     );
   return version as [number, number, number];
 }

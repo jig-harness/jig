@@ -373,7 +373,6 @@ describe("the merge record", () => {
       "Merge pull request #7 from owner/feature",
     );
     s.git("update-ref", "refs/pull/7/head", conflicted.parentsAre[1]);
-    s.git("update-ref", "refs/pull/8/head", conflicted.commit);
     merge({ "b.txt": "1\n" }, { "c.txt": "2\n" }, { "d.txt": "3\n" });
     const rep = report();
     const byCommit = new Map(rep.merges.map((m) => [m.commit, m]));
@@ -385,7 +384,6 @@ describe("the merge record", () => {
     ]);
     expect(first.operation).toBe("merge");
     expect(first.branches).toEqual({ theirs: "feature", ours: null });
-    expect(first.containedIn).toEqual([{ ref: "refs/pull/8/head", number: 8 }]);
     expect(rep.totals).toMatchObject({ merges: 2, conflicted: 1 });
     expect(rep.merges.filter((m) => !m.conflicted)).toHaveLength(1);
   });
@@ -488,6 +486,17 @@ describe("the report", () => {
     expect(weeks.length).toBeGreaterThanOrEqual(28);
     expect(weeks.filter((w) => w.merges === 0).length).toBe(weeks.length - 2);
     expect(weeks.reduce((n, w) => n + w.merges, 0)).toBe(2);
+    const trend = run(["--days", "200"]);
+    expectSpawnExit(
+      { exitCode: trend.code, stdout: trend.stdout, stderr: trend.stderr },
+      0,
+    );
+    expect(trend.stdout).toMatch(
+      /\d{4}-\d{2}-\d{2} – \d{4}-\d{2}-\d{2} {2}no merges/,
+    );
+    expect(trend.stdout.match(/no merges/g)?.length ?? 0).toBeLessThanOrEqual(
+      3,
+    );
     const old = report([
       "--since",
       iso(120 * DAY).slice(0, 10),
@@ -606,7 +615,6 @@ describe("the report", () => {
       [
         "branches",
         "commit",
-        "containedIn",
         "operation",
         "conflicted",
         "date",
@@ -678,17 +686,17 @@ describe("the repository is left as it was", () => {
   });
 });
 
-it("refuses a git older than 2.40 with a message", () => {
+it("refuses a git older than 2.43 with a message", () => {
   const bin = join(s.home, "bin");
   mkdirSync(bin);
   writeFakeProgram(
     join(bin, "git"),
-    '#!/usr/bin/env bun\nconsole.log("git version 2.39.5");\n',
+    '#!/usr/bin/env bun\nconsole.log("git version 2.42.2");\n',
   );
   s.env.PATH = `${bin}${delimiter}${s.env.PATH ?? ""}`;
   const r = run(["--all"]);
   expectSpawnExit({ exitCode: r.code, stdout: r.stdout, stderr: r.stderr }, 2);
-  expect(r.stderr).toContain("needs git 2.40 or later");
+  expect(r.stderr).toContain("needs git 2.43 or later");
 });
 
 describe("what the replay must not trust or run", () => {
