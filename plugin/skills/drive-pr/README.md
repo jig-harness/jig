@@ -349,9 +349,12 @@ systems, retains nonempty directory fences on Windows, and
 deletes the files of merged PRs and removed worktrees; run it weekly from the
 machine's own scheduler if you drive many PRs. [`SKILL.md`](SKILL.md) § Running
 it (the *State reaping* entry) explains what it may and may not delete.
+On Windows, the sweep upgrades older file fences by atomically publishing a
+complete directory guard. Failed publication retains its staging until a real
+nonempty directory fence can be verified.
 
 On Windows, state writes and lock moves wait briefly for another process's
-sharing handle before reporting failure. Lock failures include the filesystem
+sharing handle for up to two seconds before reporting failure. Lock failures include the filesystem
 error code. The state volume must support hard links; a refusal names
 `$DRIVE_PR_STATE_DIR` so you can choose another volume.
 

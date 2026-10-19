@@ -417,7 +417,9 @@ you look:
   entries**: `sweepLockQuarantine` collapses a quarantine directory into a
   single empty file at the same path, because that file is the fence a later
   `rename(2)` has to fail against. Windows keeps the nonempty directory
-  fence: a directory rename there can replace a regular file. A family still in use therefore keeps every
+  fence: a directory rename there can replace a regular file. The sweep
+  upgrades older file fences by publishing a complete directory atomically;
+  staging is retained until the canonical path is a real nonempty directory. A family still in use therefore keeps every
   entry it has ever minted, and only *retire* removes any — so a
   `drive-tree-lease-wt-*` family whose worktree still exists never shrinks at
   all. On a clone with many long-lived worktrees the entry count grows without
@@ -429,7 +431,7 @@ you look:
   sweep here is unsafe. Run it on a schedule (weekly is enough) from the
   machine's own scheduler; the skill ships no installer for one.
 - **Windows filesystem access** — state writes and lock moves retry sharing
-  errors (`EPERM`, `EACCES`, `EBUSY`) with a bounded wait. Exclusive directory
+  errors (`EPERM`, `EACCES`, `EBUSY`) for up to two seconds. Exclusive directory
   creation also retries a pending deletion; an actual occupant still refuses
   the claim. Worktree keys resolve the filesystem's canonical path before
   hashing, including Windows path aliases. The state volume must support

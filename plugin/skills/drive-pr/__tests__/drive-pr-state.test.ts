@@ -1239,17 +1239,17 @@ describe("drive-state.ts durability", () => {
     expect(existsSync(path)).toBe(false);
   });
 
-  it("`reset` also compacts the lock`s own permanent quarantine tombstones", async () => {
+  it("`reset` sweeps quarantine history while retaining every permanent fence", async () => {
     // `lock.ts`'s own `tombstone()` never sweeps `${lock}.stale.*` or
     // `${lock}.recovering.stale.*` — deliberately, see its doc comment — so
     // without this, "forget everything for this PR" left an unbounded pile
-    // of inode-consuming quarantine directories behind forever. `reset` is a
+    // of inode-consuming quarantine directories on POSIX systems. `reset` is a
     // convenient trigger for the compaction, not a safety precondition for
     // it (see `sweepLockQuarantine`'s own doc comment for why a delete-based
     // sweep gated on `reset`'s live-lease/live-claim checks alone is NOT
     // actually safe): compaction never removes the permanent fence, only
-    // shrinks it to an empty file at the same path, so it needs none of
-    // that.
+    // shrinks it to an empty file on POSIX systems. Windows retains the
+    // nonempty directory, which a directory rename cannot replace.
     const d = stateDirFor("reset-lock-quarantine");
     const file = join(d, "drive-pr-999.json");
     const lock = `${file}.lock`;
@@ -1262,13 +1262,20 @@ describe("drive-state.ts durability", () => {
 
     expect((await state(d, ["reset", "999"])).exitCode).toBe(0);
 
-    // Still present at the same generation-keyed path — the fence a foreign
-    // rename would collide against is never removed — but compacted from a
-    // directory down to a single empty file.
-    expect(existsSync(lockDoomed)).toBe(true);
-    expect(statSync(lockDoomed).isDirectory()).toBe(false);
-    expect(existsSync(recoveringDoomed)).toBe(true);
-    expect(statSync(recoveringDoomed).isDirectory()).toBe(false);
+    // Every generation-keyed path remains fenced: POSIX shrinks it to an
+    // empty file, while Windows retains the nonempty directory.
+    const directoryFence =
+      byPlatform("Windows retains nonempty directory fences", {
+        windows: "directory",
+        posix: "file",
+      }) === "directory";
+    for (const fence of [lockDoomed, recoveringDoomed]) {
+      expect(existsSync(fence)).toBe(true);
+      expect(statSync(fence).isDirectory()).toBe(directoryFence);
+      if (directoryFence)
+        expect(existsSync(join(fence, "tombstone"))).toBe(true);
+      else expect(readFileSync(fence, "utf8")).toBe("");
+    }
 
     // `reset` itself acquires and releases this PR's own lock (to check for
     // a live lease/claim before it deletes anything), and releasing ALWAYS
@@ -1282,7 +1289,7 @@ describe("drive-state.ts durability", () => {
     // when `store.locked()` releases the lock AFTER its callback returns, so
     // a sweep run before that never sees them. Enumerate every entry this
     // PR's lock has produced and require ALL of them, not just the
-    // pre-planted two, to be compacted.
+    // pre-planted two, to retain the platform's permanent fence.
     const lockBase = basename(lock);
     const quarantineEntries = readdirSync(d).filter(
       (f) =>
@@ -1291,7 +1298,11 @@ describe("drive-state.ts durability", () => {
     );
     expect(quarantineEntries.length).toBeGreaterThan(2);
     for (const entry of quarantineEntries) {
-      expect(statSync(join(d, entry)).isDirectory()).toBe(false);
+      const fence = join(d, entry);
+      expect(statSync(fence).isDirectory()).toBe(directoryFence);
+      if (directoryFence)
+        expect(existsSync(join(fence, "tombstone"))).toBe(true);
+      else expect(readFileSync(fence, "utf8")).toBe("");
     }
   });
 

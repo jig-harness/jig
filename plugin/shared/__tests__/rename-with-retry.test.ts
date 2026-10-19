@@ -5,20 +5,32 @@ function error(code: string): Error & { code: string } {
   return Object.assign(new Error(code), { code });
 }
 
+function retryClock(delays: number[] = []) {
+  let elapsed = 0;
+  return {
+    random: () => 0,
+    now: () => elapsed,
+    sleep: (ms: number) => {
+      delays.push(ms);
+      elapsed += ms;
+    },
+  };
+}
+
 for (const code of ["EPERM", "EACCES", "EBUSY"]) {
   test(`rename retries Windows ${code} without changing either path`, () => {
     const calls: string[][] = [];
     const delays: number[] = [];
     renameWithRetry("source", "destination", {
+      ...retryClock(delays),
       platform: "win32",
       rename: (...paths) => {
         calls.push(paths);
         if (calls.length < 3) throw error(code);
       },
-      sleep: (ms) => delays.push(ms),
     });
     expect(calls).toEqual(Array(3).fill(["source", "destination"]));
-    expect(delays).toEqual([10, 20]);
+    expect(delays).toEqual([5, 5]);
   });
 }
 
@@ -28,16 +40,17 @@ test("persistent sharing errors stop at the bound and preserve the original erro
   const delays: number[] = [];
   expect(() =>
     renameWithRetry("source", "destination", {
+      ...retryClock(delays),
       platform: "win32",
       rename: () => {
         attempts++;
         throw failure;
       },
-      sleep: (ms) => delays.push(ms),
     }),
   ).toThrow(failure);
-  expect(attempts).toBe(5);
-  expect(delays).toEqual([10, 20, 40, 80]);
+  expect(attempts).toBe(401);
+  expect(delays).toHaveLength(400);
+  expect(delays.reduce((sum, ms) => sum + ms, 0)).toBe(2000);
 });
 
 for (const [platform, code] of [
@@ -57,7 +70,6 @@ for (const [platform, code] of [
           attempts++;
           throw failure;
         },
-        sleep: (ms) => delays.push(ms),
       }),
     ).toThrow(failure);
     expect(attempts).toBe(1);
@@ -85,6 +97,7 @@ test("mkdir treats EEXIST as an occupied lock without retrying", () => {
   let attempts = 0;
   expect(() =>
     mkdirWithRetry("lock", {
+      ...retryClock(),
       platform: "win32",
       lstat: () => ({}),
       mkdir: () => {
@@ -112,11 +125,11 @@ test("mkdir retries Windows EEXIST only when the directory entry is already abse
       inspected.push(path);
       throw error("ENOENT");
     },
-    sleep: (ms) => delays.push(ms),
+    ...retryClock(delays),
   });
   expect(attempts).toBe(3);
   expect(inspected).toEqual(["lock", "lock"]);
-  expect(delays).toEqual([10, 20]);
+  expect(delays).toEqual([5, 5]);
 });
 
 for (const code of ["EACCES", "EIO"]) {
@@ -126,6 +139,7 @@ for (const code of ["EACCES", "EIO"]) {
     const occupied = error("EEXIST");
     expect(() =>
       mkdirWithRetry("lock", {
+        ...retryClock(),
         platform: "win32",
         mkdir: () => {
           attempts++;
@@ -142,5 +156,115 @@ for (const code of ["EACCES", "EIO"]) {
     ).toThrow(occupied);
     expect(attempts).toBe(1);
     expect(inspections).toBe(1);
+  });
+}
+
+test("rename can catch a reader closing its handle after 350ms", () => {
+  let elapsed = 0;
+  let attempts = 0;
+  renameWithRetry("source", "destination", {
+    platform: "win32",
+    now: () => elapsed,
+    random: () => 0,
+    sleep: (ms) => {
+      elapsed += ms;
+    },
+    rename: () => {
+      attempts++;
+      if (elapsed < 350) throw error("EPERM");
+    },
+  });
+  expect(elapsed).toBe(350);
+  expect(attempts).toBeGreaterThan(5);
+});
+
+test("a positively identified nonempty directory destination is occupied immediately", () => {
+  let attempts = 0;
+  const failure = error("EPERM");
+  expect(() =>
+    renameWithRetry("source", "destination", {
+      platform: "win32",
+      rename: () => {
+        attempts++;
+        throw failure;
+      },
+      lstat: () => ({ isDirectory: () => true }),
+      readdir: () => ["owner.live"],
+      sleep: () => {
+        throw new Error("occupied directory must not wait");
+      },
+    }),
+  ).toThrow(failure);
+  expect(attempts).toBe(1);
+});
+
+test("an unreadable destination retains bounded sharing retries", () => {
+  let elapsed = 0;
+  renameWithRetry("source", "destination", {
+    platform: "win32",
+    now: () => elapsed,
+    random: () => 0,
+    sleep: (ms) => {
+      elapsed += ms;
+    },
+    rename: () => {
+      if (elapsed < 350) throw error("EBUSY");
+    },
+    lstat: () => {
+      throw error("EACCES");
+    },
+  });
+  expect(elapsed).toBe(350);
+});
+
+test("mkdir retries an ambiguous sharing failure while the removed name is unreadable", () => {
+  let attempts = 0;
+  const delays: number[] = [];
+  mkdirWithRetry("lock", {
+    ...retryClock(delays),
+    platform: "win32",
+    mkdir: () => {
+      if (++attempts < 3) throw error("EACCES");
+    },
+    lstat: () => {
+      throw error("EACCES");
+    },
+  });
+  expect(attempts).toBe(3);
+  expect(delays).toEqual([5, 5]);
+});
+
+for (const budget of [0, 12]) {
+  test(`caller deadline caps sharing retries at ${budget}ms while retaining the initial attempt`, () => {
+    for (const operation of ["rename", "mkdir"]) {
+      let elapsed = 100;
+      let attempts = 0;
+      const failure = error("EACCES");
+      const fail = () => {
+        attempts++;
+        throw failure;
+      };
+      const options = {
+        platform: "win32" as const,
+        deadlineMs: 100 + budget,
+        now: () => elapsed,
+        random: () => 0,
+        sleep: (ms: number) => {
+          elapsed += ms;
+        },
+        rename: fail,
+        mkdir: fail,
+        lstat: () => {
+          throw error("ENOENT");
+        },
+      };
+      expect(() => {
+        if (operation === "rename")
+          renameWithRetry("source", "destination", options);
+        else mkdirWithRetry("lock", options);
+      }).toThrow(failure);
+      expect(elapsed).toBe(100 + budget);
+      expect(attempts).toBe(budget === 0 ? 1 : 4);
+    }
   });
 }

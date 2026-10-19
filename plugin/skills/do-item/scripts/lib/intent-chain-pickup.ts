@@ -1,3 +1,4 @@
+import { renameWithRetry } from "../../../../shared/rename-with-retry.ts";
 import { retrySync } from "../../../../shared/retry.ts";
 /** Immutable pickup sources for late PR capture.
  * Identifier aliases and session copies describe the latest pickup; this
@@ -17,7 +18,6 @@ import {
   readdirSync,
   readFileSync,
   readSync,
-  renameSync,
   unlinkSync,
   utimesSync,
   writeFileSync,
@@ -115,7 +115,7 @@ function reclaimStaleLock(lock: string): boolean {
   }
   const aside = `${lock}.reclaim-${process.pid}-${randomUUID()}`;
   try {
-    renameSync(lock, aside);
+    renameWithRetry(lock, aside);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
     throw error;
