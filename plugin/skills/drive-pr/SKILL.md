@@ -416,10 +416,14 @@ you look:
   only ever compacted. **Compaction shrinks inodes, not directory
   entries**: `sweepLockQuarantine` collapses a quarantine directory into a
   single empty file at the same path, because that file is the fence a later
-  `rename(2)` has to fail against. Windows keeps the nonempty directory
-  fence: a directory rename there can replace a regular file. The sweep
-  upgrades older file fences by publishing a complete directory atomically;
-  staging is retained until the canonical path is a real nonempty directory. A family still in use therefore keeps every
+  `rename(2)` has to fail against. Windows keeps the nonempty
+  [directory fence](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
+  a directory rename there can replace a regular file. The sweep upgrades older
+  empty file fences by publishing a complete directory fence atomically;
+  staging is retained until the canonical path is a real nonempty directory.
+  An empty directory Windows refuses to replace remains unfinished and reuses
+  its staged fence; nonempty files and symbolic links remain untouched.
+  A family still in use therefore keeps every
   entry it has ever minted, and only *retire* removes any — so a
   `drive-tree-lease-wt-*` family whose worktree still exists never shrinks at
   all. On a clone with many long-lived worktrees the entry count grows without
@@ -434,7 +438,10 @@ you look:
   errors (`EPERM`, `EACCES`, `EBUSY`) for up to two seconds. Exclusive directory
   creation also retries a pending deletion; an actual occupant still refuses
   the claim. Worktree keys resolve the filesystem's canonical path before
-  hashing, including Windows path aliases. The state volume must support
+  hashing, including Windows path aliases. When upgrading from raw-path keys,
+  follow [Upgrading worktree identity](README.md#upgrading-worktree-identity)
+  before starting a new-version participant: old actor stamps are not migrated.
+  The state volume must support
   hard links; a refusal names `$DRIVE_PR_STATE_DIR` so it can be relocated.
 - **State directory** — `resolveStateDir()` (`lib/state/store.ts`) defaults to
   `~/.local/state/jig/drive-pr/<clone-key>/`, one directory per clone

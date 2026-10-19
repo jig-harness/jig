@@ -733,7 +733,6 @@ describe("sweepLockQuarantine", () => {
     // would collide against is never removed, only shrunk.
     expect(existsSync(doomed)).toBe(true);
     expectSweptFence(doomed);
-    expectSweptFence(doomed);
   });
 
   it("sweeps a `.recovering` tombstone alongside a `lock` tombstone", () => {

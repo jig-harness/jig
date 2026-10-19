@@ -282,7 +282,7 @@ function windowsFenceScenario(body: string): void {
     const retryRename = retry.renameWithRetry;
     const realRename = fs.renameSync;
     const dir = ${JSON.stringify(dir)};
-    const file = join(dir, 'state.json');
+    const file = join(dir, 'drive-pr-4172.json');
     const fence = file + '.lock.stale.owner.' + 'a'.repeat(24);
     const staging = join(dir, '.compacting.' + basename(fence) + '.' + 'b'.repeat(24));
     let elapsed = 0;
@@ -290,6 +290,8 @@ function windowsFenceScenario(body: string): void {
       if (${JSON.stringify(emulate)}) {
         try {
           const entry = fs.lstatSync(destination);
+          if (entry.isDirectory() && fs.readdirSync(destination).length === 0)
+            throw Object.assign(new Error('Windows refuses replacing an existing empty directory'), { code: 'EPERM' });
           if (entry.isFile() || entry.isSymbolicLink()) fs.unlinkSync(destination);
         } catch (error) { if (error.code !== 'ENOENT') throw error; }
       }
@@ -328,12 +330,30 @@ it("atomically upgrades a reserved Windows legacy file fence to a nonempty direc
   `);
 });
 
-it("publishes a complete guard over a reserved empty Windows quarantine directory", () => {
+it("retains a complete staged guard when Windows cannot replace an empty canonical directory", () => {
+  const reaperModule = fileURLToPath(
+    new URL("../scripts/reap-state.ts", import.meta.url),
+  );
   windowsFenceScenario(`
     fs.mkdirSync(fence);
+    const identity = fs.lstatSync(fence, { bigint: true }).ino;
     sweepLockQuarantine(file);
-    assert(strong(fence), 'empty directory was not upgraded');
-    assert(fs.existsSync(join(fence, 'tombstone')));
+    assert(fs.lstatSync(fence).isDirectory());
+    assert.equal(fs.lstatSync(fence, { bigint: true }).ino, identity);
+    assert.deepEqual(fs.readdirSync(fence), [], 'canonical directory was modified');
+    const before = fs.readdirSync(dir).sort();
+    const staged = before.filter((name) => name.startsWith('.compacting.'));
+    assert.equal(staged.length, 1);
+    assert(strong(join(dir, staged[0])), 'complete guard was not retained');
+    const { anchorStillNeedsCompaction } = await import(${JSON.stringify(reaperModule)});
+    const family = { id: 'pr:4172', kind: 'pr', subject: '4172', names: before, anchors: new Set([basename(file)]) };
+    assert(anchorStillNeedsCompaction(dir, family, basename(file)), 'unfinished repair was credited');
+    sweepLockQuarantine(file);
+    assert.deepEqual(fs.readdirSync(dir).sort(), before, 'repeated repair allocated more staging');
+    assert.deepEqual(fs.readdirSync(fence), []);
+    assert.equal(fs.lstatSync(fence, { bigint: true }).ino, identity);
+    assert(strong(join(dir, staged[0])));
+    assert(anchorStillNeedsCompaction(dir, family, basename(file)));
   `);
 });
 
