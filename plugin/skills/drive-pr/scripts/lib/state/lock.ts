@@ -1317,11 +1317,23 @@ function discardWindowsStaging(staging: string, canonical: string): void {
   }
 }
 
+/** The compactor writes only empty files; other entry shapes may contain foreign data. */
+function repairableWindowsQuarantine(path: string): boolean {
+  try {
+    const entry = lstatSync(path);
+    if (entry.isDirectory()) return true;
+    return entry.isFile() && entry.size === 0;
+  } catch (error) {
+    return errnoCode(error) === "ENOENT";
+  }
+}
+
 function repairWindowsQuarantineFence(
   path: string,
   stages: Map<string, string>,
 ): boolean {
   if (windowsQuarantineFence(path)) return true;
+  if (!repairableWindowsQuarantine(path)) return false;
   let staging = stages.get(path);
   if (staging === undefined) {
     staging = newWindowsQuarantineFence(path) ?? undefined;

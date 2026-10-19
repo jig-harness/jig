@@ -353,7 +353,7 @@ it("recovers orphan staging directories and files before discarding them on Wind
 
 it("retains orphan data and reuses a staged Windows guard when publication stays blocked", () => {
   windowsFenceScenario(`
-    fs.writeFileSync(fence, 'legacy');
+    fs.writeFileSync(fence, '');
     fs.writeFileSync(staging, 'orphan record');
     renameEntry = (source, destination) => {
       if (destination === fence) throw Object.assign(new Error('blocked publication'), { code: 'EACCES' });
@@ -361,7 +361,7 @@ it("retains orphan data and reuses a staged Windows guard when publication stays
     };
     sweepLockQuarantine(file);
     const afterFirst = fs.readdirSync(dir).sort();
-    assert.equal(fs.readFileSync(fence, 'utf8'), 'legacy');
+    assert.equal(fs.readFileSync(fence, 'utf8'), '');
     assert.equal(fs.readFileSync(staging, 'utf8'), 'orphan record');
     assert(afterFirst.some((name) => name !== basename(staging) && name.startsWith('.compacting.')));
     sweepLockQuarantine(file);
@@ -377,11 +377,10 @@ it("does not mistake a canonical Windows symlink for a strong fence", () => {
     fs.writeFileSync(join(outside, 'tombstone'), 'outside data');
     fs.symlinkSync(outside, fence, 'junction');
     fs.writeFileSync(staging, 'orphan record');
-    renameEntry = (source, destination) => {
-      if (destination === fence) throw Object.assign(new Error('blocked symlink replacement'), { code: 'EACCES' });
-      return replaceEntry(source, destination);
-    };
+    let publications = 0;
+    renameEntry = (source, destination) => { publications++; return replaceEntry(source, destination); };
     sweepLockQuarantine(file);
+    assert.equal(publications, 0, 'symlink should not be replaced');
     assert(fs.lstatSync(fence).isSymbolicLink());
     assert.equal(fs.readFileSync(staging, 'utf8'), 'orphan record');
     assert.equal(fs.readFileSync(join(outside, 'tombstone'), 'utf8'), 'outside data');
@@ -391,7 +390,7 @@ it("does not mistake a canonical Windows symlink for a strong fence", () => {
 
 it("preserves a competing nonempty Windows directory fence and then cleans only reserved staging", () => {
   windowsFenceScenario(`
-    fs.writeFileSync(fence, 'legacy');
+    fs.writeFileSync(fence, '');
     fs.writeFileSync(staging, 'orphan record');
     let replaced = false;
     renameEntry = (source, destination) => {
@@ -412,7 +411,7 @@ it("preserves a competing nonempty Windows directory fence and then cleans only 
 
 it("removes only its own incomplete empty staging directory when the guard marker cannot be written", () => {
   windowsFenceScenario(`
-    fs.writeFileSync(fence, 'legacy');
+    fs.writeFileSync(fence, '');
     fs.writeFileSync(staging, 'orphan record');
     const actualFs = { ...fs };
     const realWrite = fs.writeFileSync;
@@ -426,9 +425,28 @@ it("removes only its own incomplete empty staging directory when the guard marke
     }));
     for (let attempt = 0; attempt < 2; attempt++) {
       sweepLockQuarantine(file);
-      assert.equal(fs.readFileSync(fence, 'utf8'), 'legacy');
+      assert.equal(fs.readFileSync(fence, 'utf8'), '');
       assert.equal(fs.readFileSync(staging, 'utf8'), 'orphan record');
       assert.deepEqual(fs.readdirSync(dir).filter((name) => name.startsWith('.compacting.')), [basename(staging)]);
+    }
+  `);
+});
+
+it("preserves a nonempty canonical decoy and its matching Windows orphan staging", () => {
+  for (const shape of ["directory", "file"])
+    windowsFenceScenario(`
+    fs.writeFileSync(fence, 'foreign canonical data');
+    if (${JSON.stringify(shape)} === 'directory') {
+      fs.mkdirSync(staging);
+      fs.writeFileSync(join(staging, 'tombstone'), 'staged generation');
+    } else fs.writeFileSync(staging, 'staged generation');
+    const before = fs.readdirSync(dir).sort();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      sweepLockQuarantine(file);
+      assert.equal(fs.readFileSync(fence, 'utf8'), 'foreign canonical data');
+      const record = ${JSON.stringify(shape)} === 'directory' ? join(staging, 'tombstone') : staging;
+      assert.equal(fs.readFileSync(record, 'utf8'), 'staged generation');
+      assert.deepEqual(fs.readdirSync(dir).sort(), before);
     }
   `);
 });

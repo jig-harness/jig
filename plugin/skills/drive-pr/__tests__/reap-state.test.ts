@@ -821,6 +821,26 @@ describe("anchorStillNeedsCompaction — verifying sweepLockQuarantine actually 
     );
   });
 
+  it("leaves a nonempty foreign file unfinished on Windows instead of accepting it as a fence", () => {
+    const d = freshStateDir();
+    const canonical =
+      "drive-pr-4172.json.lock.stale.owner.aaaaaaaaaaaaaaaaaaaaaaaa";
+    writeFileSync(join(d, canonical), "foreign canonical data");
+    const family = {
+      id: "pr:4172",
+      kind: "pr" as const,
+      subject: "4172",
+      names: [canonical],
+      anchors: new Set<string>(),
+    };
+    expect(anchorStillNeedsCompaction(d, family, "drive-pr-4172.json")).toBe(
+      !compactsDirectoryFences(),
+    );
+    expect(readFileSync(join(d, canonical), "utf8")).toBe(
+      "foreign canonical data",
+    );
+  });
+
   it("fails closed when the entry cannot be stat’ed at all", () => {
     const d = freshStateDir();
     // Never written — `compactQuarantineEntry`'s own success and failure
