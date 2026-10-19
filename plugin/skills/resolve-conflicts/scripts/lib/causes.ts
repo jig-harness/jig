@@ -495,9 +495,11 @@ const quotes = (prose: boolean): string[] =>
  * `and` or `or` are one token, so `b and c` growing into `b, c and d` keeps
  * its items in place; elsewhere every separator is itself, since `a | b` and
  * `a, b` differ. Null for a line whose items cannot be told without guessing
- * at its language: a quote that closes nowhere, or in code a `/`, which opens
+ * at its language: a quote that closes nowhere; in code a `/`, which opens
  * a regular expression literal or a comment as often as it divides, so
- * `[/a,b/, c]` would read as items it does not hold.
+ * `[/a,b/, c]` would read as items it does not hold; and in code a template
+ * literal's `${`, whose expression can hold literals of its own, so where the
+ * template ends takes a parser, not a pattern.
  */
 function tokens(line: string, prose: boolean): string[] | null {
   const literal = prose ? LITERAL.prose : LITERAL.code;
@@ -505,6 +507,8 @@ function tokens(line: string, prose: boolean): string[] | null {
     line.match(new RegExp(`${literal}|[\\p{L}\\p{N}_]+|\\S`, "gu")) ?? [];
   if (found.some((token) => quotes(prose).includes(token))) return null;
   if (!prose && found.some((token) => token === "/")) return null;
+  if (!prose && found.some((t) => t.startsWith("`") && t.includes("${")))
+    return null;
   return found.map((token) =>
     prose && PROSE_SEPARATORS.has(token) ? PROSE_SEPARATOR : token,
   );

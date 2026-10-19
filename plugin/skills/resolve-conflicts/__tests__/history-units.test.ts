@@ -421,6 +421,30 @@ describe("the cause rules", () => {
         "return [`a,y,b`, c];",
       ),
     ).toBe(false);
+    // An interpolation nests literals inside a template: the items cannot be
+    // told. `$(` stands for the template's interpolation opener.
+    const interpolated = (...lines: string[]) =>
+      both(
+        ...(lines.map((l) => l.replaceAll("$(", "$" + "{")) as [
+          string,
+          string,
+          string,
+        ]),
+      );
+    expect(
+      interpolated(
+        "return [`a$(`x,y`}b`];",
+        "return [`a$(`x,z,y`}b`];",
+        "return [`a$(`x,w,y`}b`];",
+      ),
+    ).toBe(false);
+    expect(
+      interpolated(
+        "return [`$(a}`, b];",
+        "return [`$(a}`, b, c];",
+        "return [`$(a}`, b, d];",
+      ),
+    ).toBe(false);
     // A `/` may open a regular expression literal: the items cannot be told.
     expect(
       both(
