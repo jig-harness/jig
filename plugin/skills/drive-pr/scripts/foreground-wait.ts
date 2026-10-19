@@ -442,6 +442,36 @@ function registerRunnerSnapshot(
   return true;
 }
 
+/** A test fixture can establish captured identities before starting its unchanged deadline. */
+function armCommandDeadline(
+  seconds: number,
+  timers: NodeJS.Timeout[],
+  terminate: (code: number, note: string) => Promise<void>,
+): void {
+  const start = () =>
+    timers.push(
+      setTimeout(() => {
+        void terminate(124, `deadline of ${seconds}s reached`);
+      }, seconds * 1000),
+    );
+  const gate =
+    process.env.NODE_ENV === "test"
+      ? process.env.DRIVE_PR_FOREGROUND_WAIT_DEADLINE_GATE
+      : undefined;
+  if (!gate) {
+    start();
+    return;
+  }
+  const readyBy = Date.now() + 20000;
+  const readiness = setInterval(() => {
+    if (!existsSync(gate) && Date.now() < readyBy) return;
+    clearInterval(readiness);
+    if (existsSync(gate)) start();
+    else void terminate(125, "test deadline gate did not become ready");
+  }, 20);
+  timers.push(readiness);
+}
+
 /** Test-only acknowledgment of identities already bound by the runner's tracker. */
 function acknowledgeCapture(
   tree: ForegroundTreeState,
@@ -736,11 +766,7 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
     }, TRACK_POLL_MS) as unknown as NodeJS.Timeout,
   );
   const seconds = deadlineSec() ?? DEFAULT_DEADLINE_SEC;
-  timers.push(
-    setTimeout(() => {
-      void terminate(124, `deadline of ${seconds}s reached`);
-    }, seconds * 1000),
-  );
+  armCommandDeadline(seconds, timers, terminate);
   // `close` follows `error` for a failed spawn; the first outcome wins.
   child.on("error", (err) => {
     write(`foreground-wait: could not start command: ${err.message}\n`);

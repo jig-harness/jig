@@ -4,9 +4,13 @@ import {
   signalIdentityTargets,
   identityTargetsGone,
 } from "../../../shared/process-tree.ts";
-import type { ProcessRow } from "../../../shared/process-table.ts";
+import {
+  processTable,
+  type ProcessRow,
+} from "../../../shared/process-table.ts";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
+import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import {
@@ -19,7 +23,7 @@ import {
   useDrivePrSuite,
   writeFixture,
 } from "./drive-pr-harness.ts";
-import { lockDirs, pollUntil } from "./drive-loop-harness.ts";
+import { lockDirs } from "./drive-loop-harness.ts";
 
 useDrivePrSuite();
 
@@ -134,24 +138,48 @@ describe("cooperative driver stop", () => {
     ]);
     let captured: ProcessRow[] | null = null;
     try {
-      expect(
-        await pollUntil(async () => {
-          if (driver.exitCode !== null) {
-            const [stdout, stderr] = await output;
-            expectSpawnExit(
-              { exitCode: driver.exitCode, stdout, stderr },
-              143,
-              "driver exited before pass started",
-            );
-          }
-          return existsSync(marker);
-        }, 600),
-      ).toBe(true);
-      captured = await captureProcessTree(driver.pid);
-      if (captured === null) {
-        expect(captured).not.toBeNull();
-        return;
+      const readinessMs = Number(
+        byPlatform(
+          "Native Windows launches the driver and its CLI helpers before starting the pass",
+          { windows: "45000", posix: "15000" },
+        ),
+      );
+      const readyUntil = Date.now() + readinessMs;
+      while (
+        !existsSync(marker) &&
+        driver.exitCode === null &&
+        Date.now() < readyUntil
+      )
+        await Bun.sleep(25);
+      if (driver.exitCode !== null) {
+        const [stdout, stderr] = await output;
+        expectSpawnExit(
+          { exitCode: driver.exitCode, stdout, stderr },
+          143,
+          "driver exited before pass started",
+        );
       }
+      const driverLog = join(stateDir, "drive-pr-999.log");
+      expect(
+        existsSync(marker),
+        `pass did not start within ${readinessMs}ms; driver exit=${String(driver.exitCode)}\n${existsSync(driverLog) ? readFileSync(driverLog, "utf8") : "driver log not created"}`,
+      ).toBe(true);
+      const captureOwned = () =>
+        captureProcessTree(driver.pid, () =>
+          processTable(
+            Math.max(0.001, Math.min(5, (readyUntil - Date.now()) / 1000)),
+          ),
+        );
+      captured = await captureOwned();
+      while (captured === null && Date.now() < readyUntil) {
+        await Bun.sleep(50);
+        captured = await captureOwned();
+      }
+      expect(
+        captured,
+        `driver process tree remained unreadable before the startup deadline; driver exit=${String(driver.exitCode)}\n${readFileSync(driverLog, "utf8")}`,
+      ).not.toBeNull();
+      if (captured === null) return;
       expect(readdirSync(pr).filter((n) => n.startsWith("claim.")).length).toBe(
         1,
       );
@@ -191,5 +219,5 @@ describe("cooperative driver stop", () => {
       await driver.exited;
       await output;
     }
-  }, 60000);
+  }, 120000);
 });

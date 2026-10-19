@@ -247,11 +247,13 @@ describe("foreground-wait.ts", () => {
   const capturedCommand = async (marker: string, pids: number[]) => {
     const deadline = Date.now() + 20000;
     let complete = false;
+    let captured: { pid: number; start: string }[] = [];
     while (!complete && Date.now() < deadline) {
       try {
         const capture = JSON.parse(readFileSync(marker, "utf8")) as {
-          targets: { pid: number }[];
+          targets: { pid: number; start: string }[];
         };
+        captured = capture.targets;
         complete = pids.every((pid) =>
           capture.targets.some((target) => target.pid === pid),
         );
@@ -261,6 +263,7 @@ describe("foreground-wait.ts", () => {
       if (!complete) await sleepMs(20);
     }
     expect(complete).toBe(true);
+    return captured;
   };
 
   const capturedRunner = async (runner: number, pids: number[]) => {
@@ -405,51 +408,59 @@ describe("foreground-wait.ts", () => {
     "the deadline also ends a SIGTERM-resistant descendant before a result is published",
     async () => {
       const gate = join(cwd, "witness.gate");
+      const capture = join(cwd, "stubborn-capture.json");
+      const deadlineGate = join(cwd, "start-deadline");
       writeFileSync(gate, "");
-      // The shell exits on SIGTERM; its child ignores it and outlives the shell.
       expectSpawnExit(
         runWith(
           {
+            ...captureEnv(capture),
             DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "2",
             DRIVE_PR_FOREGROUND_WAIT_WITNESS_GATE: gate,
+            DRIVE_PR_FOREGROUND_WAIT_DEADLINE_GATE: deadlineGate,
           },
           "launch",
           "--",
           ...bunCommand(
             childTree(
-              `require("node:fs").writeFileSync("stubborn.pid",String(process.pid)); process.on("SIGTERM",()=>{}); ${busy}`,
+              `require("node:fs").writeFileSync("stubborn.pid",String(process.pid));process.on("SIGTERM",()=>{});${busy}`,
             ),
           ),
         ),
         0,
       );
-      // Hold the termination witness open: while it cannot confirm the tree is
-      // dead, no terminal result may exist, however long we look. Removing the
-      // gate then lets publication proceed — ordering established by the gate,
-      // not by sampling.
-      let stubborn: number | null = null;
-      for (let i = 0; i < 100 && stubborn === null; i++) {
-        if (existsSync(join(cwd, "stubborn.pid"))) {
-          const n = Number.parseInt(
-            readFileSync(join(cwd, "stubborn.pid"), "utf8"),
-            10,
-          );
-          if (Number.isInteger(n)) stubborn = n;
-        }
-        await sleepMs(50);
+      const ready = Date.now() + 20000;
+      const pidFile = join(cwd, "stubborn.pid");
+      while (
+        (!existsSync(pidFile) || pidOf("cmd.pid") === null) &&
+        Date.now() < ready
+      )
+        await sleepMs(20);
+      expect(existsSync(pidFile)).toBe(true);
+      const stubborn = Number(readFileSync(pidFile, "utf8"));
+      const command = pidOf("cmd.pid") as number;
+      const captured = await capturedCommand(capture, [command, stubborn]);
+      const identity = captured.find((target) => target.pid === stubborn);
+      expect(identity?.start).toBeTruthy();
+      // The real two-second command deadline begins only after this fixture
+      // establishes both identities. The publication gate holds their witness.
+      writeFileSync(deadlineGate, "");
+      const deadline = Date.now() + 25000;
+      let gone = false;
+      while (!gone && Date.now() < deadline) {
+        gone = await identityTargetsGone(identity ? [identity] : []);
+        if (!gone) await sleepMs(20);
       }
-      expect(stubborn).not.toBeNull();
-      // Well past the 2s deadline and its 1s kill grace: the runner has
-      // signalled but may not publish.
-      await sleepMs(4000);
+      expect(gone).toBe(true);
       expect(existsSync(join(latestGen(), "result.json"))).toBe(false);
-      const still = run("wait", "--max-sec", "1");
-      expectSpawnExit(still, 20);
+      expectSpawnExit(run("wait", "--max-sec", "1"), 20);
       rmSync(gate);
-      const w = run("wait", "--max-sec", "30");
-      expectSpawnExit(w, 30);
-      expect(out(w)).toContain("command-exit: 124");
-      expect(await alive(stubborn as number)).toBe(false);
+      const waited = run("wait", "--max-sec", "30");
+      expectSpawnExit(waited, 30);
+      expect(out(waited)).toContain("command-exit: 124");
+      expect(
+        JSON.parse(readFileSync(join(latestGen(), "result.json"), "utf8")),
+      ).toMatchObject({ exitCode: 124, treeWitnessed: true });
     },
     T,
   );

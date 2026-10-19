@@ -539,7 +539,7 @@ describe("hasPassChild — the native process table integration", () => {
       await ready(file);
       // The first native CIM query can reach its own bound while Windows starts
       // the provider. Unknown remains unknown until a readable snapshot arrives.
-      const deadline = Date.now() + 20_000;
+      const deadline = Date.now() + 45_000;
       let observed = await hasPassChild(child.pid);
       while (observed === null && Date.now() < deadline) {
         await Bun.sleep(50);
