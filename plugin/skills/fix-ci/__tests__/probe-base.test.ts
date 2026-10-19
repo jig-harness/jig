@@ -234,6 +234,39 @@ describe("probe-base", () => {
     expect(existsSync(join(clone, "installed"))).toBe(false);
   });
 
+  test("Windows setup uses a POSIX shell for repository install syntax", () => {
+    writeFileSync(join(seed, SETUP), INSTALLS);
+    publish(NEEDS_SETUP, "the check needs a POSIX setup");
+    const args = [
+      "--base",
+      "main",
+      "--setup",
+      `READY=yes; [ "$READY" = yes ] && ${SETUP_COMMAND}`,
+      ...CHECK_COMMAND,
+    ];
+    const bootstrap = `
+      import { mock } from "bun:test";
+      const cp = await import("node:child_process");
+      const original = cp.spawnSync;
+      mock.module("node:child_process", () => ({ ...cp, spawnSync(command, args, options) {
+        const shell = typeof args === "object" && !Array.isArray(args) ? args.shell : options?.shell;
+        if (shell === true) throw new Error("Windows default shell would select cmd.exe");
+        return original(command, args, options);
+      }}));
+      const { main } = await import(${JSON.stringify(SCRIPT)});
+      Object.defineProperty(process, "platform", { value: "win32" });
+      process.exitCode = await main(${JSON.stringify(args)});
+    `;
+    const r = spawnSync(process.execPath, ["-e", bootstrap], {
+      cwd: clone,
+      env: cleanEnv(),
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    expectSpawnExit({ ...r, exitCode: r.status }, 0);
+    expect(verdict(r.stdout).verdict).toBe("change");
+  });
+
   test("a setup command that fails is no answer", () => {
     const r = run([
       "--base",

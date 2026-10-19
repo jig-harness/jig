@@ -44,8 +44,8 @@ path that produces the exit, not because none of them name one.
 | `10` | — | — | **Reserved**, never emitted. A draft PR is not a stop: drafts are driven — see § A draft PR is reviewed, and then marked Ready. The code is kept unused so it never takes on a second meaning |
 | `12` | — | **yes** | `drive.ts` only: the review converged, but the worktree is not clean — uncommitted state, an unconcluded merge/cherry-pick/revert/rebase/am (present even over an otherwise-empty `git status`), local HEAD no longer matching the reviewed head (a commit landed here that was never pushed or reviewed, also invisible to `git status`), or any of those probes being unreadable; every one of them fails closed to the same refusal. The convergence is real; the leftovers are edits no round shipped, an unfinished git operation, or an unreviewed local commit. Commit/push/discard as appropriate, or resolve/abort the operation, then re-run. The draft→Ready transition sits **behind** this gate, so a PR still owed that transition when 12 fires stays a draft, and the retry after the cleanup marks it. It never *reverts* one already made: `mark-ready.ts` runs at the end of every completed round from the round `pull_requests.mark_ready` declares (default `1`) and is durably once-only, so a drive that completed that round has already marked the PR and exit 12 leaves it Ready over an unclean tree. The PR is still a draft, then, when no completed round reached the declared one (convergence before it, including at the very first gate), when the repository marks Ready only at convergence (`converged`), or when it never does (`never`, or a drive started with `--keep-draft`, which skips `mark-ready.ts` entirely no matter how many rounds run) — in the last case the draft state is the requested outcome, not a transition still owed — see § A draft PR is reviewed, and then marked Ready |
 | `11` | — | **yes** | `drive.ts` only: a single-instance lock is already held — either this PR's (`pr-drive-<PR>.lock`) or this working tree's (`pr-drive-worktree-<key>.lock`), both in the clone-wide state dir, so a driver in another managed worktree of the same clone collides too. The drive is already armed; do nothing. `drive-state.ts` raises the same code for its own **session lease** over *(working tree, PR)* when a second live agent session in one checkout attempts a state mutation — a different mechanism with the same exit — and for its **tree lease** when that second session is driving a *different* PR from the same tree, which the per-PR lease alone cannot see. `reply-to-thread.ts` and `answer-summary-finding.ts` raise it too, refusing to `POST` rather than refusing to write state — both check **both** fences, the per-PR session lease and the tree lease, so either one can produce this refusal — `reply-to-thread.ts` through the spawned `assert-post-allowed.ts` (it lives in the sibling skill), `answer-summary-finding.ts` through `lib/state/lease.ts` directly (it lives in this one). All of these — a *live* conflicting holder — name that holder's pid; confirm that process is gone before clearing either. Two exceptions, both on the tree lease, neither naming a pid because neither has a live holder to name: the unreadable-but-fresh case (a file that exists but cannot be parsed as a lease, mirroring `unreadableLeaseFilesFor`'s fail-closed ruling for the PR-wide gate) points at the path instead; and `assertTreeLeaseUnchanged`'s "the lease is simply gone" case (an admitted lease that no longer exists by the time the fence re-checks — `clear-lease` is the common cause but not the only one an operator could have caused, so the message deliberately does not guess which) |
-| `13` | `DRIVE_HELD_BY_OTHER_WORKTREE` | **yes** | Another live **working tree** is driving this PR, and this one attempted a state mutation. Raised by `drive-state.ts`, propagated by `drive-status.ts`, and raised by `drive.ts` at its own round-opening `bump-attempt` — the worktree/PR locks above do **not** subsume it, because those are only ever held by another `drive.ts` and an interactive pass in another tree takes no lock at all. The cross-tree twin of `11`, and deliberately not the same code: `11` names a session in the reader's own tree, which they can see and clear where they stand, while `13` names a tree they are not in — and whose driver is very likely the one that should finish. The refusal carries that tree's path, and — when the holder is a session rather than a working tree — its pid and the platform's own liveness check. It **self-clears**: the gate is derived from the live lease set by the same `leaseAlive` test the session lease uses, so a dead or idle worktree never wedges the PR. Inspect with `drive-state.ts lease <PR> --all`; take the PR over deliberately — the only route that reaches a tree you cannot stand in — with `drive-state.ts clear-lease <PR> --all`. Reading the drive is never gated, from any tree |
-| `1` | `INDETERMINATE` | **yes** | The state could not be read. Never reported as settled. `drive.ts` also reuses this code for two cases `drive-status.ts` itself never produces: a round-agent pass that returned a nonzero exit other than `5` (mapped straight to `1` — the agent's own logs are the recovery path), and a **second consecutive** failed or unconfirmed `mark-ready.ts` call after a completed round. The latter's recovery depends on why it failed: an ordinary failure is cleared with `gh pr ready <PR>` by hand, but a repeated `claimed-by-other` is an orphaned Ready-mark lease and needs `drive-state.ts release-ready-mark <PR>` — never `gh pr ready` directly, which fires the remote transition the lease exists to hold once |
+| `13` | `DRIVE_HELD_BY_OTHER_WORKTREE` | **yes** | Another live **working tree** is driving this PR, and this one attempted a state mutation. Raised by `drive-state.ts`, propagated by `drive-status.ts`, and raised by `drive.ts` at its own round-opening `bump-attempt` — the worktree/PR locks above do **not** subsume it, because those are only ever held by another `drive.ts` and an interactive pass in another tree takes no lock at all. The cross-tree twin of `11`, and deliberately not the same code: `11` names a session in the reader's own tree, which they can see and clear where they stand, while `13` names a tree they are not in — and whose driver is very likely the one that should finish. The refusal carries that tree's path, and — when the holder is a session rather than a working tree — its pid and the platform's own liveness check. It **self-clears**: the gate is derived from the live lease set by the same `leaseAlive` test the session lease uses, so a dead or idle worktree never wedges the PR. Inspect with `bun "<skill-dir>/scripts/drive-state.ts" lease <PR> --all`; take the PR over deliberately — the only route that reaches a tree you cannot stand in — with `bun "<skill-dir>/scripts/drive-state.ts" clear-lease <PR> --all`. Reading the drive is never gated, from any tree |
+| `1` | `INDETERMINATE` | **yes** | The state could not be read. Never reported as settled. `drive.ts` also reuses this code for two cases `drive-status.ts` itself never produces: a round-agent pass that returned a nonzero exit other than `5` (mapped straight to `1` — the agent's own logs are the recovery path), and a **second consecutive** failed or unconfirmed `mark-ready.ts` call after a completed round. The latter's recovery depends on why it failed: an ordinary failure is cleared with `gh pr ready <PR>` by hand, but a repeated `claimed-by-other` is an orphaned Ready-mark lease and needs `bun "<skill-dir>/scripts/drive-state.ts" release-ready-mark <PR>` — never `gh pr ready` directly, which fires the remote transition the lease exists to hold once |
 | `14` | — | **yes** | `drive.ts` only: the loop **stalled** — `$DRIVE_PR_STALL_ROUNDS` (default 2, `0` disables) consecutive completed passes changed nothing observable: the reviewed head did not move, local HEAD (measured in the driven tree) did not move, and the unresolved-thread, summary-finding and parked **key sets** came back identical — set equality, not equal counts, because thread A resolved and thread B posted leaves the count untouched across a round that did real work. A pass that exits 0 without acting — the measured case is a pass standing down after mistaking its own parent driver for a competing drive — otherwise burns the whole `--max-rounds` budget while every round header looks like progress, and the exhausted-budget `6` then reads as "the reviewer kept finding things". This stop fires early and names what did not happen instead. Recovery: **read the leftover report first** — the stop prints what the driven worktree still holds (uncommitted paths, an unconcluded git operation such as a stray `MERGE_HEAD` even over an otherwise-clean porcelain status, a positive "clean", or "unreadable"; never silence), because a pass can make substantive, correct edits and still trip this stop by standing down before committing them, and the stall predicate keys on head/threads/findings, none of which an uncommitted edit or a dangling merge state moves. Recover that work before anything that discards state; then read the pass output for what it decided, fix why it did not act, re-arm. A *different* code from `13` deliberately: `13` names another working tree owning the PR (recoverable by waiting or handing off), and `14` names this pass being stuck (recoverable by reading its own output) — sharing one code would collapse a distinction a caller reading the exit alone needs. See § 8 |
 | `15` | `PASS_DEADLINE` | **yes** | `drive.ts` only: the pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 5400s = 90 minutes; `--pass-timeout`, `0` disables) and drive.ts sent its process tree a kill signal. **The one stop in this loop that can fire while a round is still in flight**, which is the gap it exists to close: `--max-rounds`, the stall streak (`14`) and the status poll's `--timeout` all fire only *between* rounds, while the driver's claim heartbeat keeps refreshing from a timer throughout — so a pass that never returns waits forever and `drives.ts` reports it *live* and healthy the entire time (measured: a pass dead mid-`git merge`, the driver polling 24 minutes for a head change that could never arrive). Distinguished from a pass that merely *exited* 124 by `RunResult.timedOut`, never by the code, since the pass is an arbitrary command whose exit space is its own. Termination is then re-witnessed (`passHandle.stop()`) before the locks are released — a descendant in uninterruptible sleep survives the signal, and the POSIX witness (`groupGone()`, polling `kill(-pgid, 0)`) correctly keeps the locks held rather than reporting the tree gone in that case. A group whose only remaining member is a *zombie* — unreaped under a container PID 1 that does not reap orphans — would strand this witness for the full window too, since `kill(-pgid, 0)` cannot tell a zombie from a running process; `hasLiveGroupMember()` (`lib/proc.ts`) therefore checks each member's actual state and reports the group gone once nothing left in it can act. A descendant that itself escaped the process group (`setpgid`/`setsid`) is a *separate*, still-open **known gap, not a covered case**: `kill(-pgid, 0)`, and `hasLiveGroupMember()`'s own per-member scan alike, answer about membership of the *original* group only, so an escaped survivor is invisible to either and `stop()` can report a false witness. **Recovery: a witnessed-killed pass was not rolled back.** Check `git status --short` for an uncommitted fix and `git rev-list --count @{u}..HEAD` for a committed-but-unpushed one before re-arming — the same checks exit `14` and a `HEAD_LAG` death need, and for the same reason: each is a pass ending somewhere in the fix→gates→commit→push sequence. Widen the deadline if a legitimate round reaches it; it is a backstop against a wedge, not a budget |
 | `16` | `QUOTA_PARKED` | **yes** | `drive.ts` only: the pass died on a subscription usage wall that will not reopen within the sleep bound. **Not a failure of the drive loop or of `drive.ts` itself** — nothing about the PR or the mechanism needs fixing, and reporting it as `1` would send an operator to read a pass that did nothing wrong. That does not mean the *working tree* is necessarily clean, though: the pass could have modified or committed locally before it hit the wall. **Recovery: check for that leftover work before re-arming.** Check `git status --short` for an uncommitted fix and `git rev-list --count @{u}..HEAD` for a committed-but-unpushed one — the same checks exit `15` needs, and for the same reason: a pass can end anywhere in the fix→gates→commit→push sequence. Detected by `lib/quota/`, one adapter per vendor, from the vendor's own durable record rather than from the pass's stdout (which `drive.ts` deliberately does not capture): for Claude Code an `{"error":"rate_limit","apiErrorStatus":429}` transcript entry reading `You've hit your session limit · resets <clock> (<zone>)`; for Codex a `token_count` event carrying `used_percent`, `window_minutes` and an absolute `resets_at`. A **short** window whose reset resolves inside `$DRIVE_PR_QUOTA_MAX_SLEEP_SEC` (default 6h) never reaches this code at all — the driver sleeps through it, locks held and refreshing, and resumes. This code is every other case: a weekly window, an unclassifiable one, a reset that could not be resolved, or one beyond the bound. A reset already in the past is deliberately NOT one of them: `planFor()` clamps it to `sleep(0)` and the driver retries immediately, since the window is open right now, not merely likely to be. The asymmetry is deliberate — sleeping when it should have stopped strands a drive and its locks for days; stopping when it could have slept costs a re-arm — so every uncertainty resolves here. **Do not dispatch a successor session in this state**: one on the same subscription is behind the same wall, so a handoff converts one parked drive into two. Re-arm on the clock instead. The `.context/pr-drive-<PR>.md` trail is unaffected and stays current — it is written at the top of every round, and it is what makes that re-arm cheap. The round it consumed is not refunded, because unwinding a durable counter from a failure path would mutate the state the loop's own bounds are read from |
@@ -196,7 +196,7 @@ Override for another reviewer:
 
 ```bash
 DRIVE_PR_REVIEWER_APP=some-other-review-app DRIVE_PR_SHA_MARKER=reviewed-sha \
-  <skill-dir>/scripts/drive-status.ts 123 --json
+  bun "<skill-dir>/scripts/drive-status.ts" 123 --json
 ```
 
 ## The stranded-check-run bypass
@@ -227,7 +227,7 @@ past the block **only** when all of the following hold:
    enough, the same rule the main-line reviewed-SHA gate applies; a marker
    naming an *older* head means the review really is still running, and the
    block stays.
-2. Its `ai-review-round` is **strictly greater** than `drive-state.ts rounds
+2. Its `ai-review-round` is **strictly greater** than `bun "<skill-dir>/scripts/drive-state.ts" rounds
    <PR>` — the count of heads *this drive* has already dispatched a round for.
    **This is weaker than it reads, and deliberately kept anyway.** The two
    counters answer different questions: `rounds` is per-drive and restarts at
@@ -423,7 +423,7 @@ ever said" the same observation. That state reports `AWAITING_REVIEWER` (exit
 Once the only unresolved threads await a human, the loop wakes, re-enumerates
 the same undeferrable threads, discovers nothing it may act on, and burns turns.
 
-**Guard**: `drive-state.ts park` records the item and the decision it needs;
+**Guard**: `bun "<skill-dir>/scripts/drive-state.ts" park` records the item and the decision it needs;
 parked items stop counting as live work, so the drive reaches `HITL_PARKED` and
 `drive.ts` deliberately does not re-arm.
 
@@ -453,7 +453,7 @@ worth exactly what the mandatory pre-push gates behind it are worth.
 
 ### 8. Unbounded spinning
 
-**Guard**: `drive.ts --max-rounds` (default `drive.max_rounds`, else 10). Hitting it exits `6` with an
+**Guard**: `bun "<skill-dir>/scripts/drive.ts" --max-rounds` (default `drive.max_rounds`, else 10). Hitting it exits `6` with an
 explicit non-convergence report naming the state that was still live — not a
 quiet stop that reads like success.
 
@@ -496,7 +496,7 @@ firing over a pass that *had* worked:
   — or commit and push, while the API head this gate read is still stale — with
   every other field standing, and the report would then state, falsely, that
   nothing was pushed. Note what *measured* excludes: a caller-supplied
-  `drive-status.ts --head SHA` (`localSource: flag`) is an assertion about one
+  `bun "<skill-dir>/scripts/drive-status.ts" --head SHA` (`localSource: flag`) is an assertion about one
   instant, not a continuing measurement, so a driver forwarding one frozen value
   to every gate would see a local head that never moves however much the pass
   pushes. `drive.ts` therefore has no `--head` to forward — it drives the tree
@@ -535,7 +535,7 @@ clone and an unserialised read-modify-write silently drops one driver's parked
 decision. And a state file that exists but does not parse is **indeterminate**,
 never a fresh drive: it is preserved as found and every command refuses, since
 substituting empty state there discards the parked decisions and the round
-budget the file exists to carry. `drive-state.ts reset <PR>` is the deliberate
+budget the file exists to carry. `bun "<skill-dir>/scripts/drive-state.ts" reset <PR>` is the deliberate
 way out.
 
 A held item's per-key claim (below) has its own, separate staleness knob —
@@ -718,20 +718,15 @@ sample the outcome vocabulary feeds, and is unrepairable once posted.
 Every **state-mutating** `drive-state.ts` command except `clear-lease` therefore
 takes a lease over *(this working tree, this PR)* first, and exits `11` when
 another live session holds it, naming that session's pid and the liveness check
-that settles it. That check is chosen for the platform rather than hardcoded —
-`ps -p <pid>` on POSIX, `Get-Process -Id <pid>` on Windows, which these scripts
-support deliberately and where `ps` is normally absent — and host-qualified as
-`ssh <host> …` when the lease is another machine's, since a pid means nothing
-outside its own host and an unqualified check fails toward "gone", exactly the
-direction that invites clearing a live lease.
+that settles it. Run the process-check command printed in the refusal. It is
+chosen for the holder's platform and qualified for the recorded host when
+remote: a pid has meaning only on its own host. Do not substitute a local
+process probe for a remote holder's check.
 
-The remote form is selected the same way, from the lease's **own recorded**
-`platform`: the reader's platform says nothing about the writer's, but the
-writer knows its own and records it, so a Windows holder's refusal reads
-`ssh <host> Get-Process -Id <pid>`. Where no platform was recorded there is
-nothing to be precise with, and the refusal says so in words — naming the pid
-and host and telling the reader to run that host's own process check — rather
-than printing a command that may not run. `pidCheckCommand` in `lib/proc.ts`
+The remote form uses the lease's **own recorded** `platform`, rather than the
+reader's platform. When the writer recorded no platform, the refusal names
+the pid and host and asks for that host's process check rather than guessing a
+command. `pidCheckCommand` in `lib/proc.ts`
 owns all of that and `leaseLivenessHint` in `lib/state/lease.ts` owns the
 wording, so the two refusal sites cannot drift. The readers take nothing: the
 session being refused is the one that most needs to see the state and the lease
@@ -857,7 +852,7 @@ same-actor concurrency this whole mechanism closes. Flooring the window is
 sufficient on its own: the quantity an admission token would have to fence
 against is bounded, so it can simply be out-waited.
 
-`drive-state.ts clear-lease [PR]` is the way out for a human taking over from a
+`bun "<skill-dir>/scripts/drive-state.ts" clear-lease [PR]` is the way out for a human taking over from a
 session they know is gone; it reports the record it dropped, so the evidence for
 whether that was right survives the override. `lease [PR]` reads it without
 changing anything, and `reset [PR]` sweeps the PR's leases from every tree — the
@@ -1152,7 +1147,7 @@ sibling's next mutating command re-claims it.
 The items replied to with a fix-dependent outcome — `accepted`, or a `moot`
 whose premise is this round's unpushed fix — and deliberately not yet resolved,
 because the change answering them is not on the PR. SKILL.md § 3 records each
-one at reply time (`drive-state.ts hold --key K --kind thread|finding --outcome
+one at reply time (`bun "<skill-dir>/scripts/drive-state.ts" hold --key K --kind thread|finding --outcome
 accepted|moot`); § 6 reads them back (`held`), resolves them after the push, and
 releases each key immediately after its own resolve succeeds
 (`release-held --key K --token T`, the token from `claim-held`) — a `finding`
@@ -1280,12 +1275,12 @@ start.
 - **`--git-common-dir` state refuses.** `resolveStateDir()` exits `2`, naming
   the entries it found, while that location still holds unmigrated state, so a
   drive never starts on the wrong (empty) side. Fix:
-  `bun <skill-dir>/scripts/migrate-legacy-state.ts --apply` (bare, without
+  `bun "<skill-dir>/scripts/migrate-legacy-state.ts" --apply` (bare, without
   `--apply`, it is a dry run that changes nothing — the same posture as
   `reap-state.ts`'s `--delete`). `lib/state/legacy-state.ts`'s doc comment
   states the full guarantee, and `SKILL.md`'s "State directory" bullet the
   day-to-day summary. State already outside the repository under another
-  default moves with `migrate-state-dir.ts --from <old dir>`.
+  default moves with `bun "<skill-dir>/scripts/migrate-state-dir.ts" --from <old dir>`.
 - **Worktree-private state is not detected.** `drive-state.ts` carries a
   one-time warning for orphans of that layout (`lib/state/orphans.ts`), but it
   looks for them under the resolved state directory's `worktrees/` and is
@@ -1659,7 +1654,7 @@ recovers every one of these eventually, on its own; the gap this closes is the
 "eventually" for however long a PR's gate happens to stay stuck, which nothing
 bounds.
 
-**Guard**: `reconcile-replied-threads.ts [PR...] [--all-open] [--dry-run]`
+**Guard**: `bun "<skill-dir>/scripts/reconcile-replied-threads.ts" [PR...] [--all-open] [--dry-run]`
 mirrors `triage-thread.ts`'s own inline reconciliation predicate (SKILL.md § 3) — a trusted
 (`OWNER`/`MEMBER`/`COLLABORATOR`) author's last *qualifying* comment on an
 unresolved, non-truncated thread opening with a bold outcome token (not
@@ -1672,7 +1667,7 @@ claims and get resolved immediately (releasing any stale prior fix-dependent
 hold for the same thread — a trusted author can supersede their own earlier
 `accepted`/`moot` reply with a merit outcome, and a hold left standing after
 that would have step 6 later try to resolve an already-resolved thread);
-`accepted` / `moot` are fix-dependent and get re-held via `drive-state.ts hold
+`accepted` / `moot` are fix-dependent and get re-held via `bun "<skill-dir>/scripts/drive-state.ts" hold
 --unconfirmed --comment-url <url>` (insert-if-absent by key, outcome, **and**
 the qualifying comment's own permalink — required and recorded on the
 ordinary, live-pass-confirmed `hold` path too, so a later comment that
@@ -2083,7 +2078,7 @@ ever settle" trade § 15 measured and declined.
 
 ## The context-economy dial (`--handoff-at`)
 
-`drive.ts --handoff-at <pct|never>` sets when the driving session should hand off
+`bun "<skill-dir>/scripts/drive.ts" --handoff-at <pct|never>` sets when the driving session should hand off
 rather than degrade, and exports it to the pass as `$DRIVE_PR_HANDOFF_AT`.
 `50` is the default; `75` and `never` trade late-session quality for fewer
 session boundaries. `careful` / `eager` / `continuous` are aliases for `50` /
@@ -2105,7 +2100,7 @@ large enough to strain a single context, the interactive `/loop /jig:drive-pr --
 where one session spans rounds, and `never`, whose point is surviving compaction
 *within* a round.
 
-`never` is **gated** on the held batch above: `drive.ts` probes `drive-state.ts
+`never` is **gated** on the held batch above: `drive.ts` probes `bun "<skill-dir>/scripts/drive-state.ts"
 held-keys` and refuses (exit `2`) if it is unavailable — an older or vendored
 `drive-state.ts`, or state this driver cannot read. Running continuously is
 precisely the case where a mid-round compaction is expected, so the setting whose
@@ -2137,7 +2132,7 @@ counts nothing and reports could not check
 
 **When such a warning fires mid-drive, the round is over.** Finish only the
 step in flight — a push already underway, a reply already promised — then
-`drive-state.ts handoff [PR]`, report, and end the turn. Starting another
+`bun "<skill-dir>/scripts/drive-state.ts" handoff [PR]`, report, and end the turn. Starting another
 triage-fix-validate cycle inside the margin buys one more finding and risks
 losing the handoff for the whole round.
 

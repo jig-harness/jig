@@ -4871,7 +4871,7 @@ describe("drive-state.ts durability", () => {
         expect(refused.stderr).toContain(
           // Windows has no ps; the refusal names its own process probe there.
           byPlatform("Windows has no ps", {
-            windows: `Get-Process -Id ${a.pid}`,
+            windows: `powershell.exe -NoProfile -Command "Get-Process -Id ${a.pid}"`,
             posix: `ps -p ${a.pid}`,
           }),
         );
@@ -5631,7 +5631,7 @@ describe("drive-state.ts durability", () => {
       // `platform`, and this reads it back.
       const other = `${hostname()}-elsewhere`;
       expect(pidCheckCommand(42, other, "win32")).toBe(
-        `ssh ${other} Get-Process -Id 42`,
+        `ssh ${other} powershell.exe -NoProfile -Command "Get-Process -Id 42"`,
       );
       expect(pidCheckCommand(42, other, "linux")).toBe(`ssh ${other} ps -p 42`);
       // Unknown remote platform is answered honestly rather than guessed — a
@@ -5642,7 +5642,7 @@ describe("drive-state.ts durability", () => {
       const localExpected =
         // Windows has no ps, so the local probe there is Get-Process.
         byPlatform("Windows has no ps", {
-          windows: "Get-Process -Id 42",
+          windows: 'powershell.exe -NoProfile -Command "Get-Process -Id 42"',
           posix: "ps -p 42",
         });
       expect(pidCheckCommand(42, hostname())).toBe(localExpected);

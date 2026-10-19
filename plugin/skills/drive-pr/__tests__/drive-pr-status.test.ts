@@ -262,7 +262,7 @@ describe("drive-status.ts surfaces drive-state.ts’s stderr", () => {
       expect(stderr).toContain(
         // Windows has no ps; the refusal names its own process probe there.
         byPlatform("Windows has no ps", {
-          windows: `Get-Process -Id ${holder.pid}`,
+          windows: `powershell.exe -NoProfile -Command "Get-Process -Id ${holder.pid}"`,
           posix: `ps -p ${holder.pid}`,
         }),
       );
@@ -344,7 +344,7 @@ describe("drive-status.ts surfaces drive-state.ts’s stderr", () => {
       expect(stderr).toContain(
         // Windows has no ps; the refusal names its own process probe there.
         byPlatform("Windows has no ps", {
-          windows: `Get-Process -Id ${holder.pid}`,
+          windows: `powershell.exe -NoProfile -Command "Get-Process -Id ${holder.pid}"`,
           posix: `ps -p ${holder.pid}`,
         }),
       );

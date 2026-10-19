@@ -377,22 +377,21 @@ every night, where Windows leaves out only the suites listed in
 
 | Part | macOS | Linux | Windows | Why |
 | --- | --- | --- | --- | --- |
-| `drive-pr` | yes | yes | no | Its state, locks and paths are not yet hardened for Windows file systems, and its instructions assume a [POSIX](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) shell; its suite runs on Windows every night, with the tests that need that work skipped |
-| `do-item` | yes | yes | no | Its pickup record uses hard links and owner-only file modes; its suite runs on Windows every night, with the tests that need that work skipped |
+| `drive-pr` | yes | yes | Git Bash; full smoke pending | Requires Git for Windows; native PowerShell support is planned |
+| `do-item` | yes | yes | Git Bash; full smoke pending | Requires Git for Windows; native PowerShell support is planned |
 | The launcher | yes | no | no | Its one provider, Conductor, is a macOS app |
 | Every other skill | yes | yes | yes | — |
 | Developing Jig (`bun run gates`) | yes | yes | yes, without the launcher's suite | — |
 
-The supervision code already has Windows branches (it finds and stops a
-pass's processes from native process snapshots and a polled stop request, and
-runs commands through `cmd.exe`); what is left is state and locks that hold up
-on Windows file systems, and the skills' instructions under Git Bash. On every
-system, Jig keeps its
+The supervision code finds and stops Windows processes from native snapshots
+and a polled stop request. Batch command shims run through `cmd.exe`; skill
+instructions and `fix-ci` setup commands use Git Bash's shell. The complete
+Claude Code pickup, draft pull request, drive round and stop smoke test on
+Windows remains pending. See the [requirements](README.md#requirements) for
+the current platform boundary. On every system, Jig keeps its
 state under `~/.local/state/jig` and `~/.cache/jig` in the home folder,
-rather than in each system's own application-data folder. Windows support
-for the drive and `do-item` is listed under the roadmap's later work; until
-then, run them in WSL (the Windows Subsystem for Linux), which is a Linux
-system.
+rather than in each system's own application-data folder. PowerShell support
+remains on the roadmap.
 
 ## Practice mappings
 
