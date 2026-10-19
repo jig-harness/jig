@@ -297,11 +297,8 @@ repository with one released artifact. What is left:
 
 Parallel pull requests put each other in conflict, and each conflict costs a
 resolution and a CI run; nobody can say how many there are, in which files,
-or why. [design/merge-conflicts.md](merge-conflicts.md) has how it works.
-`resolve-conflicts`' history report replays every merge commit with
-`git merge-tree` and lists the conflicted paths with a cause each and the
-change that removes it; the paths that keep conflicting are the
-[conflict hotspots](../GLOSSARY.md). What is left:
+or why. [design/merge-conflicts.md](merge-conflicts.md) has how it works and
+the [conflict hotspots](../GLOSSARY.md) the report finds. What is left:
 
 - **A live record**: `resolve-conflicts` keeps one event per resolved path
   instead of overwriting its snapshot, which covers the rebases,

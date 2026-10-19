@@ -72,8 +72,14 @@ path, the kind of file, the conflicting regions with a cause for each
    and removes it afterwards: no ref, index, working tree or object of the
    repository changes. It needs no setup and nothing installed
    in the past, so a repository can measure its history on the day it
-   adopts Jig. It needs git 2.38 or later and exits with a message on an
-   older one.
+   adopts Jig. Today's attributes and merge drivers are kept out of the
+   past merges (attributes are read from the empty tree, and every
+   configured driver is replaced by `false`), and it never fetches: it
+   needs git 2.40 or later, for `GIT_ATTR_SOURCE`, refuses a partial clone
+   below git 2.45, which cannot be kept from fetching, and exits with a
+   message otherwise. In a shallow clone a merge whose merge base the
+   boundary hides would replay as if the two sides had added every file, so
+   it is skipped and the report says its results are partial.
 2. **Resolution sections**: `resolve-conflicts` writes a
    `Conflicts resolved:` section into the merge commit's message, one line
    per path with its decision and reason. The replay reads the section of
@@ -132,7 +138,7 @@ being reported as mechanical.
 | `version` | the sides differ only in the release version of an artifact the repository's release step writes (the files `changelog.version` names, on the lines that hold the version), or in a date stamp (`last_updated`); a dependency, runtime or protocol version that differs is a choice between the sides, and leaves the region `overlap` | the version moves after the merge (ADR-0004's release step); a date comes from git instead of the file |
 | `sequence` | both sides add an entry with the same next ordinal (a migration number) | identifiers that cannot collide (a timestamp), or one step that renumbers the entry everywhere it is named |
 | `tally` | with every number replaced by one placeholder, the two sides are equal, and, read from the three versions of the file, each side's number moved from the base by the net number of lines that side added to the file (a count of a list with one entry per line), or by the net number of lines it added above a stored line number; a number that differs any other way (a setting, a limit), or one that counts something outside the file, leaves the region `overlap` | derive the number where it is used ([M2](../modules/M2-generated-artifact-freshness/README.md#which-numbers-in-prose-may-stay)); a register that stores line numbers keys its entries by name instead |
-| `append` | the base side of the region is empty: both sides added lines at the same place | one file per entry (as change notes are), or a sorted list with one entry per line |
+| `append` | the base side of the region is empty: both sides added lines at the same place; a file both sides added has no base, and its regions are not `append` | one file per entry (as change notes are), or a sorted list with one entry per line |
 | `packed-list` | the region is one line in every side, and each side adds items to a list in it, changing or removing none | one item per line, or stop listing what another file already lists |
 | `adjacent` | the lines each side changed do not overlap, but touch | split what changes for different reasons onto lines or files of its own |
 | `overlap` | none of the above: both sides changed the same lines | two pieces of work changed the same thing; plan them apart ([M12](../modules/M12-parallel-agent-ergonomics/README.md)) or land one first |
