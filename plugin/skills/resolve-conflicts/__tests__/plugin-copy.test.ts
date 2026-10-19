@@ -7,6 +7,7 @@ import { afterAll, beforeAll, expect, it } from "bun:test";
 import { cpSync, existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { CONFIG_COMBINED, mergeConflict, Scratch } from "./scratch.ts";
 
 const plugin = join(import.meta.dir, "..", "..", "..");
@@ -31,7 +32,7 @@ it("maps, records and checks from a copy outside this repository", () => {
     expect(existsSync(join(dir, "node_modules"))).toBe(false);
   const scripts = join(cache, "skills", "resolve-conflicts", "scripts");
   s.overlay(
-    'resolve_conflicts:\n  generated:\n    - paths: ["gen/**"]\n      command: make gen\n',
+    'resolve_conflicts:\n  obligations:\n    - check: "Keep shared validation in all changed callers."\n      command: git diff --cached --name-only\n  generated:\n    - paths: ["gen/**"]\n      command: make gen\n',
   );
   mergeConflict(s);
 
@@ -46,6 +47,10 @@ it("maps, records and checks from a copy outside this repository", () => {
     s.script(join(scripts, "record.ts"), ["src/config.ts", "combined"]).code,
   ).toBe(0);
   const check = s.script(join(scripts, "check-resolution.ts"), ["--message"]);
-  expect(check.code).toBe(0);
+  expectSpawnExit({ ...check, exitCode: check.code }, 0);
+  expect(check.stderr).toContain(
+    "Keep shared validation in all changed callers.",
+  );
+  expect(check.stderr).toContain("passed");
   expect(check.stdout).toBe("Conflicts resolved:\n- src/config.ts: combined\n");
 });
