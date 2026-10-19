@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { markdownFiles } from "../lib/files.ts";
+import { decode, markdownLinks } from "../lib/markdown-links.ts";
 import {
   couldNotCheck,
   type Finding,
@@ -28,15 +29,14 @@ export function checkLinks(root = "."): number {
   const findings: Finding[] = [];
   for (const file of files) {
     const content = readFileSync(file, "utf8");
-    for (const match of content.matchAll(/\]\(([^)]*)\)/g)) {
-      const target = match[1] ?? "";
-      if (/^(https?:\/\/|mailto:|#|<)/.test(target)) continue;
-      const path = target.split("#")[0]?.replace(/ $/, "") ?? "";
-      if (path && !existsSync(join(dirname(file), path)))
+    for (const { target, line } of markdownLinks(content)) {
+      if (/^([a-z][a-z0-9+.-]*:|#)/i.test(target)) continue;
+      const path = target.split(/[?#]/)[0] ?? "";
+      if (path && !existsSync(join(dirname(file), decode(path))))
         findings.push({
           rule: RULE,
           file: repoPath(root, file),
-          line: content.slice(0, match.index).split("\n").length,
+          line,
           problem: `broken link to ${target}`,
           remedy:
             "point the link at an existing file, relative to this document's folder, or remove it",

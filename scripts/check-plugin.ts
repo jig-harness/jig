@@ -7,12 +7,20 @@
 // or `claude` is missing where JIG_REQUIRE_CLAUDE=1 (CI) demands it.
 // Without that variable a missing `claude` skips the validator with a warning,
 // so a contributor without Claude Code can still run the gates. A relative
-// link in a shipped Markdown file must resolve inside the artifact: a link to
-// the rest of the repository is an absolute URL (modules/AGENTS.md).
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+// link in a shipped Markdown file must resolve inside `plugin/`, the part a
+// machine installs: a link to the rest of the repository is an absolute URL
+// (modules/AGENTS.md).
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { cli } from "../lib/cli.ts";
+import { decode, markdownLinks } from "../lib/markdown-links.ts";
 import {
   couldNotCheck,
   type Finding,
@@ -144,9 +152,9 @@ const UNCHECKED_DIRS = ["templates", "fixtures", "fixture", "seeds"];
 
 /**
  * The relative links in the artifact's Markdown (`written`, paths inside
- * `out`) that point at nothing the artifact holds: a target outside
+ * `out`) that point at nothing the installed plugin holds: a target outside
  * `plugin/` resolves in the repository but not where the plugin is
- * installed or on a release channel's branch.
+ * installed.
  */
 export function linkFindings(out: string, written: string[]): Finding[] {
   return written
@@ -158,29 +166,37 @@ export function linkFindings(out: string, written: string[]): Finding[] {
     .flatMap((path) => brokenLinks(out, path));
 }
 
-/** The relative links in one artifact file that leave the artifact or miss. */
+/** The relative links in one artifact file that leave the plugin or miss. */
 function brokenLinks(out: string, path: string): Finding[] {
   const content = readFileSync(join(out, path), "utf8");
-  return [...content.matchAll(/\]\(([^)]*)\)/g)]
-    .filter((match) => !resolvesInside(out, path, match[1] ?? ""))
-    .map((match) => ({
+  return markdownLinks(content)
+    .filter(({ target }) => !resolvesInside(out, path, target))
+    .map(({ target, line }) => ({
       rule: RULE,
       file: path,
-      line: content.slice(0, match.index).split("\n").length,
-      problem: `the link to ${match[1]} resolves to nothing the installed plugin holds`,
+      line,
+      problem: `the link to ${target} resolves to nothing the installed plugin holds`,
       remedy:
         "link a file outside plugin/ by its absolute URL (https://github.com/jig-harness/jig/blob/main/…), as modules/AGENTS.md says",
     }));
 }
 
-/** Whether a link target is a URL or anchor, or a file the artifact holds. */
+/**
+ * Whether a link target is a URL or anchor, or a file inside the installed
+ * plugin: `plugin/` alone is copied to a machine, so a marketplace file the
+ * artifact also holds is outside it. Symbolic links are followed, so one that
+ * points out of the plugin is outside it too.
+ */
 function resolvesInside(out: string, path: string, target: string): boolean {
-  if (/^(https?:\/\/|mailto:|#|<)/.test(target)) return true;
-  const bare = target.split("#")[0]?.replace(/ $/, "") ?? "";
+  if (/^([a-z][a-z0-9+.-]*:|#)/i.test(target)) return true;
+  const bare = decode(target.split(/[?#]/)[0] ?? "");
   if (!bare) return true;
   const resolved = join(out, dirname(path), bare);
+  if (!existsSync(resolved)) return false;
+  const root = realpathSync(join(out, PLUGIN_DIR));
+  const inside = relative(root, realpathSync(resolved));
   return (
-    !relative(out, resolved).startsWith(`..${sep}`) && existsSync(resolved)
+    inside !== ".." && !inside.startsWith(`..${sep}`) && !isAbsolute(inside)
   );
 }
 

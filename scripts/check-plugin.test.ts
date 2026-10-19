@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -71,6 +72,52 @@ test("a link out of the plugin is a finding, unless it is a URL or in a template
     expect(found).toEqual([
       "plugin/README.md: the link to ../GLOSSARY.md resolves to nothing the installed plugin holds",
       "plugin/skills/x/SKILL.md: the link to ../../../mise.toml resolves to nothing the installed plugin holds",
+    ]);
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test("every way Markdown spells a link is read, and only links are", () => {
+  const out = mkdtempSync(join(tmpdir(), "jig-plugin-links-"));
+  try {
+    const docs: Record<string, string> = {
+      "plugin/README.md": [
+        '[c](CONFIGURATION.md "Reference") [a](<CONFIGURATION.md>) [p](<a (b).md>)',
+        "`[x](../nope.md)` and ``[y](../nope.md)``",
+        "```md",
+        "[z](../nope.md)",
+        "```",
+        "~~~",
+        "[w](../nope.md)",
+        "~~~",
+        "[g](<../GLOSSARY.md>) [r][ref] [m](../.claude-plugin/marketplace.json)",
+        "[l](linked/SKILL.md)",
+        "",
+        '[ref]: ../CONTRIBUTING.md "Contributing"',
+        "[ok]: <CONFIGURATION.md>",
+        "",
+      ].join("\n"),
+      "plugin/CONFIGURATION.md": "",
+      "plugin/a (b).md": "",
+    };
+    for (const [path, text] of Object.entries(docs)) {
+      mkdirSync(dirname(join(out, path)), { recursive: true });
+      writeFileSync(join(out, path), text);
+    }
+    mkdirSync(join(out, ".claude-plugin"));
+    writeFileSync(join(out, ".claude-plugin/marketplace.json"), "{}");
+    mkdirSync(join(out, "elsewhere"));
+    writeFileSync(join(out, "elsewhere/SKILL.md"), "");
+    symlinkSync(join(out, "elsewhere"), join(out, "plugin/linked"));
+    const found = linkFindings(out, ["plugin/README.md"]).map(
+      (f) => `${f.line}: ${f.problem}`,
+    );
+    expect(found).toEqual([
+      "9: the link to ../GLOSSARY.md resolves to nothing the installed plugin holds",
+      "9: the link to ../.claude-plugin/marketplace.json resolves to nothing the installed plugin holds",
+      "10: the link to linked/SKILL.md resolves to nothing the installed plugin holds",
+      "12: the link to ../CONTRIBUTING.md resolves to nothing the installed plugin holds",
     ]);
   } finally {
     rmSync(out, { recursive: true, force: true });
@@ -167,6 +214,7 @@ function runGate(
         env: {
           ...withoutLeakyGitEnv(),
           GITHUB_ACTIONS: "",
+          JIG_REQUIRE_CLAUDE: "",
           ...env,
           PATH: [bin, dirname(process.execPath), dirname(git)].join(delimiter),
         },
