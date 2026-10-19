@@ -11,9 +11,11 @@ and lives with the rest. With this built, a repository can list where its
 merges conflict, sorted by how often, with the cause of each conflict and the
 change that removes it, and can see whether a fix worked.
 
-This is the design of [plan.md](plan.md) item 22. Nothing is built yet. The
-[`resolve-conflicts` skill](../plugin/skills/resolve-conflicts/SKILL.md)
-already maps each conflict and records a decision and a reason for each path;
+This is the design of [plan.md](plan.md) item 22. The replay, its causes and
+the report (step 1 of the build order) are built: `history.ts` in the
+[`resolve-conflicts` skill](../plugin/skills/resolve-conflicts/SKILL.md#where-past-merges-conflicted-the-history-report).
+The live record, the practice and the learning loop are not. The skill
+also maps each conflict and records a decision and a reason for each path;
 that record is the richest source this design uses, and today it is
 overwritten by the next operation.
 
@@ -108,8 +110,9 @@ the only record of those operations and count on their own.
 
 ### Causes
 
-A path that git reports as conflicting without text regions has one cause,
-`structural`, for the path as a whole. Every other conflicted path gets a
+A lockfile or generated file is `derived`, whatever git reports for it. Any
+other path that git reports as conflicting without text regions has one
+cause, `structural`, for the path as a whole. Every other conflicted path gets a
 cause for each conflicting region, in this order; the first that matches
 wins. Each region has three sides: the [merge base](../GLOSSARY.md), ours
 and theirs. A cause is derived from the region and, where its row says so,
@@ -125,12 +128,12 @@ being reported as mechanical.
 | --- | --- | --- |
 | `derived` | the path is a lockfile or a generated file (the classification `resolve-conflicts` already makes) | regenerate it; keep it out of pull requests if a step after the merge can write it |
 | `structural` | a path-level cause: git reports the path's conflict without text regions (a binary file, a modify/delete, a rename, a file/directory or a mode conflict) | none from the regions; the report lists it with git's own kind of conflict, and resolving it stays a decision |
-| `echo` | the two sides of the region are identical, or one side's edit from the base is already in the other side: every line it added is there, every line it removed is not, and the lines the two share stand in the same order (a branch built on another that was squash-merged underneath it); anything less, including sides that only nearly match, is not `echo` | keep the side that contains the other; rebuild a branch on its base once the branch it was built on merges |
-| `version` | the sides differ only in the release version of an artifact the repository's release step writes, or in a date stamp (`last_updated`); a dependency, runtime or protocol version that differs is a choice between the sides, and leaves the region `overlap` | the version moves after the merge (ADR-0004's release step); a date comes from git instead of the file |
+| `echo` | the two sides of the region are identical, or one side's edit from the base is already in the other side: every line it added is there, every line it removed is not, and the lines the two share stand in the same order (a branch built on another that was squash-merged underneath it); the contained edit adds at least one line, since an edit that only removes lines is in any rewrite of them; anything less, including sides that only nearly match, is not `echo` | keep the side that contains the other; rebuild a branch on its base once the branch it was built on merges |
+| `version` | the sides differ only in the release version of an artifact the repository's release step writes (the files `changelog.version` names, on the lines that hold the version), or in a date stamp (`last_updated`); a dependency, runtime or protocol version that differs is a choice between the sides, and leaves the region `overlap` | the version moves after the merge (ADR-0004's release step); a date comes from git instead of the file |
 | `sequence` | both sides add an entry with the same next ordinal (a migration number) | identifiers that cannot collide (a timestamp), or one step that renumbers the entry everywhere it is named |
 | `tally` | with every number replaced by one placeholder, the two sides are equal, and, read from the three versions of the file, each side's number moved from the base by the net number of lines that side added to the file (a count of a list with one entry per line), or by the net number of lines it added above a stored line number; a number that differs any other way (a setting, a limit), or one that counts something outside the file, leaves the region `overlap` | derive the number where it is used ([M2](../modules/M2-generated-artifact-freshness/README.md#which-numbers-in-prose-may-stay)); a register that stores line numbers keys its entries by name instead |
 | `append` | the base side of the region is empty: both sides added lines at the same place | one file per entry (as change notes are), or a sorted list with one entry per line |
-| `packed-list` | the region is one line in every side, and each side adds items to a list in it | one item per line, or stop listing what another file already lists |
+| `packed-list` | the region is one line in every side, and each side adds items to a list in it, changing or removing none | one item per line, or stop listing what another file already lists |
 | `adjacent` | the lines each side changed do not overlap, but touch | split what changes for different reasons onto lines or files of its own |
 | `overlap` | none of the above: both sides changed the same lines | two pieces of work changed the same thing; plan them apart ([M12](../modules/M12-parallel-agent-ergonomics/README.md)) or land one first |
 
@@ -146,7 +149,12 @@ regard to the file's structure (ADR-0004, Alternatives considered).
 The causes are recognised from the regions' shape, so the report says how
 sure it is. Building the replay includes hand-checking a sample of regions
 for each cause, and the report states the result for each, so a cause that
-is often wrong is named as such. An `append` in source code can be the same
+is often wrong is named as such. The result is kept beside the skill
+(`references/cause-accuracy.json`), and the report prints it. On Jig's
+history, every sampled region was right except some `overlap` ones: counts
+of something outside the file, and release versions in a region that held
+another change too, which the rules leave to `overlap` because the region
+does not settle them. An `append` in source code can be the same
 fix written twice, so the report names the remedy for an `append` in code as
 a question, not an instruction.
 
