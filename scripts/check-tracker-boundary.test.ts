@@ -103,6 +103,8 @@ describe("tokens", () => {
     ["const run = cp.spawnSync;\nconst go = run;\ngo(`linear`, args);"],
     ['wrapper("linear", ["issue", "create"]);'],
     ['const url = "https://example.com/x"; spawnSync("linear", args);'],
+    ['const open = /[/*]/; spawnSync("linear", args);'],
+    ["const s = 'it\\'s // x'; spawnSync(\"linear\", args);"],
   ])(
     "a call written around comments or through an alias is found: %s",
     (code) => {

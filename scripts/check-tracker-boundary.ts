@@ -173,73 +173,55 @@ function runPattern(code: string): RegExp {
 }
 
 /**
+ * A comment, or a literal a comment marker inside of must not start one, in
+ * each language's syntax. Each alternative begins with a character no other
+ * begins with, and none nests a quantifier over overlapping input, so a scan
+ * is linear in the file's length. A JavaScript `/` opens a regular
+ * expression literal only where an operand is expected (after an operator or
+ * a bracket); a one-line literal left open ends at its line break.
+ */
+const LEXEMES: Record<Language, RegExp> = {
+  js: new RegExp(
+    [
+      String.raw`\/\/[^\n]*`,
+      String.raw`\/\*[\s\S]*?(?:\*\/|$)`,
+      String.raw`"(?:\\.|[^"\\\n])*"?`,
+      String.raw`'(?:\\.|[^'\\\n])*'?`,
+      String.raw`\`(?:\\[\s\S]|[^\`\\])*\`?`,
+      String.raw`(?<=(?:^|[(,=:[!&|?{};+\-*%<>~^])\s*)\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]?|[^/\\\n[])*\/?`,
+    ].join("|"),
+    "g",
+  ),
+  hash: new RegExp(
+    [
+      String.raw`(?<!\S)#[^\n]*`,
+      String.raw`"(?:\\[\s\S]|[^"\\])*"?`,
+      String.raw`'(?:\\[\s\S]|[^'\\])*'?`,
+    ].join("|"),
+    "g",
+  ),
+};
+
+type Language = "js" | "hash";
+
+/**
  * `text` with every comment replaced by spaces, line breaks kept, so a
  * match's offset is its offset in the file. The comment syntax is the file's
- * language's: line and block comments for JavaScript and TypeScript, `#` for shell
- * and Python; other files are returned unchanged. Strings (and a JavaScript
- * regular expression literal) are skipped, so a comment marker inside one
- * starts nothing.
+ * language's: line and block comments for JavaScript and TypeScript, `#` for
+ * shell and Python; other files are returned unchanged. Strings and
+ * JavaScript regular expression literals are skipped, so a comment marker
+ * inside one starts nothing.
  */
 export function blankComments(path: string, text: string): string {
-  const js = /\.[cm]?[jt]s$/.test(path);
-  const hash = /\.(?:sh|bash|py)$/.test(path);
-  if (!js && !hash) return text;
-  const out = text.split("");
-  const blank = (from: number, to: number) => {
-    for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = " ";
-  };
-  let i = 0;
-  let previous = ""; // the last significant character before `i`
-  while (i < text.length) {
-    const c = text[i] as string;
-    const next = text[i + 1];
-    if (js && c === "/" && next === "/") {
-      const end = text.indexOf("\n", i);
-      const stop = end === -1 ? text.length : end;
-      blank(i, stop);
-      i = stop;
-      continue;
-    }
-    if (js && c === "/" && next === "*") {
-      const end = text.indexOf("*/", i + 2);
-      const stop = end === -1 ? text.length : end + 2;
-      blank(i, stop);
-      i = stop;
-      continue;
-    }
-    if (hash && c === "#" && (i === 0 || /\s/.test(text[i - 1] as string))) {
-      const end = text.indexOf("\n", i);
-      const stop = end === -1 ? text.length : end;
-      blank(i, stop);
-      i = stop;
-      continue;
-    }
-    const regex =
-      js &&
-      c === "/" &&
-      (previous === "" || /[(,=:[!&|?{};+\-*%<>~^]/.test(previous));
-    if (c === '"' || c === "'" || c === "`" || regex) {
-      let k = i + 1;
-      let inClass = false;
-      while (k < text.length) {
-        const d = text[k];
-        if (d === "\\") {
-          k += 2;
-          continue;
-        }
-        if (d === c && !inClass) break;
-        if (d === "\n" && js && c !== "`") break;
-        if (regex && (d === "[" || d === "]")) inClass = d === "[";
-        k++;
-      }
-      i = k + 1;
-      previous = c;
-      continue;
-    }
-    if (!/\s/.test(c)) previous = c;
-    i++;
-  }
-  return out.join("");
+  const language: Language | null = /\.[cm]?[jt]s$/.test(path)
+    ? "js"
+    : /\.(?:sh|bash|py)$/.test(path)
+      ? "hash"
+      : null;
+  if (!language) return text;
+  return text.replace(LEXEMES[language], (lexeme) =>
+    /^(?:\/[/*]|#)/.test(lexeme) ? lexeme.replace(/[^\n]/g, " ") : lexeme,
+  );
 }
 
 /** Whether the boundary applies to a repository path. */
