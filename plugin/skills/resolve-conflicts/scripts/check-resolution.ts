@@ -145,7 +145,7 @@ function stagedMarkers(root: string, mapped: Snapshot["paths"]): Finding[] {
   ]);
   if (r.code !== 0 && r.code !== 2)
     throw new Error(
-      `git diff --cached --check exited ${r.code}: ${r.stderr.trim()}`,
+      `git --attr-source diff --cached --check exited ${r.code} (Git 2.41 or newer is required): ${r.stderr.trim()}`,
     );
   const found: Finding[] = [];
   for (const line of r.stdout.split("\n")) {
@@ -276,27 +276,28 @@ function checkPath(
 }
 
 /**
- * A catalog whose generated declarations could not all be honoured, when the
- * conflicts were mapped or now, may leave a generated file classified as text.
+ * Generated declarations (the configuration's or the catalog's) that could not
+ * all be honoured, when the conflicts were mapped or now, may leave a
+ * generated file classified as text.
  */
 function incompleteCatalog(
   snapshot: Snapshot,
   catalog: CatalogGenerated,
 ): Finding[] {
   const fix =
-    "so a file it declares generated may be classified as text: resolve or correct the catalog, then run conflict-map.ts again";
+    "so a file they declare generated may be classified as text: resolve or correct them, then run conflict-map.ts again";
   if (snapshot.catalogIncomplete)
     return [
       {
         path: "(conflict map)",
-        message: `the change-area catalog's generated files could not all be read when the conflicts were mapped (${snapshot.catalogIncomplete}), ${fix}`,
+        message: `the generated files the configuration and change-area catalog declare could not all be read when the conflicts were mapped (${snapshot.catalogIncomplete}), ${fix}`,
       },
     ];
   if (catalog.incomplete)
     return [
       {
         path: "(conflict map)",
-        message: `the change-area catalog's generated files cannot all be read now (${catalog.incomplete}), ${fix}`,
+        message: `the generated files the configuration and change-area catalog declare cannot all be read now (${catalog.incomplete}), ${fix}`,
       },
     ];
   return [];

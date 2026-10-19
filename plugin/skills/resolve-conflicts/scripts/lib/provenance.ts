@@ -84,7 +84,7 @@ function automaticTree(
     throw new DecodeError(
       "git merge-tree",
       "$",
-      `cannot reconstruct the automatic result (Git 2.40 or newer is required): ${result.stderr.trim()}`,
+      `cannot reconstruct the automatic result (Git 2.41 or newer is required): ${result.stderr.trim()}`,
     );
   return parseAutomaticTree(result.stdout);
 }

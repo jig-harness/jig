@@ -31,7 +31,11 @@ import { fail } from "../../../../shared/cli.ts";
 import { fieldInMessage } from "../../../../shared/config-layers.ts";
 import { sourceIn } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
-import { stagedCatalog, stagedConfig } from "./staged-config.ts";
+import {
+  stagedCatalog,
+  stagedConfig,
+  UnmergedDeclarationError,
+} from "./staged-config.ts";
 
 export type PathClass = "lockfile" | "generated" | "binary" | "text";
 
@@ -82,17 +86,34 @@ function firstInvalidGlob(paths: readonly string[]): string | null {
 const SECTION = "resolve_conflicts";
 
 /**
+ * The merged configuration, or why the repository's own file cannot be read
+ * yet because it is unmerged. The map still runs then, so the file's conflict
+ * is recorded; nothing it declares is honoured, and the map says so.
+ */
+function mapConfiguration(): {
+  values: Record<string, unknown>;
+  unmerged: string | null;
+} {
+  try {
+    return { values: stagedConfig(), unmerged: null };
+  } catch (err) {
+    if (err instanceof UnmergedDeclarationError)
+      return { values: {}, unmerged: err.message };
+    return fail(
+      2,
+      `resolve-conflicts: ${err instanceof Error ? err.message : err}`,
+    );
+  }
+}
+
+/**
  * The `resolve_conflicts.generated` entries, validated. A repository without
- * the configuration file or the section gets an empty list; a malformed
+ * the configuration file or the section gets an empty list, and so does one
+ * whose file is unmerged (`catalogGeneratedEntries` reports it); a malformed
  * section stops the script with exit 2 and the exact field at fault.
  */
 export function generatedEntries(): GeneratedEntry[] {
-  let overlay: Record<string, unknown>;
-  try {
-    overlay = stagedConfig();
-  } catch (err) {
-    fail(2, `resolve-conflicts: ${err instanceof Error ? err.message : err}`);
-  }
+  const overlay = mapConfiguration().values;
   const section = overlay[SECTION];
   if (section === undefined || section === null) return [];
   const bad = (what: string): never =>
@@ -152,16 +173,17 @@ export interface CatalogGenerated {
   incomplete: string | null;
 }
 
-/** The catalog path `drive.change_areas_catalog` names, or `null` when unset. */
-function configuredCatalogPath(): string | null {
-  let overlay: Record<string, unknown>;
+/**
+ * The catalog path `drive.change_areas_catalog` names, as written (absolute,
+ * or relative to the repository), or `null` when unset.
+ */
+function configuredCatalogPath(
+  overlay: Record<string, unknown>,
+): string | null {
   try {
-    overlay = stagedConfig();
-  } catch (err) {
-    fail(2, `resolve-conflicts: ${err instanceof Error ? err.message : err}`);
-  }
-  try {
-    return catalogPathFromOverlay(overlay);
+    if (catalogPathFromOverlay(overlay) === null) return null;
+    return (overlay.drive as Record<string, unknown>)
+      .change_areas_catalog as string;
   } catch (err) {
     const what = err instanceof Error ? err.message : String(err);
     return fail(
@@ -211,8 +233,9 @@ function catalogEntry(
 /**
  * The generated entries of the change-area catalog the repository declares in
  * `drive.change_areas_catalog`: each area's `generated[].outputs` with that
- * entry's `command`. No catalog configured gives an empty result. A catalog
- * that cannot be read, or an entry whose `outputs` are malformed, is reported
+ * entry's `command`. No catalog configured gives an empty result. An unmerged
+ * configuration, a catalog that cannot be read, or an entry whose `outputs`
+ * are malformed, is reported
  * and marks the map incomplete, not fatal: the catalog may be among the
  * conflicted paths, and the map must still run so it can be resolved first.
  * An entry without a `command` still claims its outputs, so a derived file is
@@ -224,7 +247,15 @@ export function catalogGeneratedEntries(): CatalogGenerated {
     problems: [],
     incomplete: null,
   };
-  const path = configuredCatalogPath();
+  const config = mapConfiguration();
+  if (config.unmerged !== null) {
+    result.incomplete = config.unmerged;
+    result.problems.push(
+      `${config.unmerged}. Files it or its change-area catalog declares as generated are classified by the other rules until it is staged; resolve and stage it, then run conflict-map.ts again (check-resolution.ts refuses until then).`,
+    );
+    return result;
+  }
+  const path = configuredCatalogPath(config.values);
   if (path === null) return result;
   let areas: ReturnType<typeof stagedCatalog>;
   try {

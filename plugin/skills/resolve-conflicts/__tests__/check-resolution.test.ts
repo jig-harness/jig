@@ -445,7 +445,7 @@ describe("a file the change-area catalog declares generated", () => {
     const r = check();
     expect(r.code).toBe(1);
     expect(r.stdout).toContain(
-      "PROBLEM (conflict map): the change-area catalog's generated files cannot all be read now",
+      "PROBLEM (conflict map): the generated files the configuration and change-area catalog declare cannot all be read now",
     );
   });
 });
@@ -854,7 +854,7 @@ describe("a conflicted catalog recorded deleted", () => {
     const r = check();
     expect(r.code).toBe(1);
     expect(r.stdout).toContain(
-      "PROBLEM (conflict map): the change-area catalog's generated files could not all be read when the conflicts were mapped",
+      "PROBLEM (conflict map): the generated files the configuration and change-area catalog declare could not all be read when the conflicts were mapped",
     );
   });
 });

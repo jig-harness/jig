@@ -49,11 +49,13 @@ directory containing this `SKILL.md`. Claude Code fills it in. In any other
 harness, replace it with that path yourself before running a command: a shell
 would expand the unset variable to an empty string.
 
-Git 2.40 or newer is required to reconstruct the automatic merge result
-without trusting already staged content. Cherry-picking or reverting a merge
-commit with `-m` is unsupported: Git does not reliably retain the selected
-parent for reconstruction. The mapper refuses it before writing a snapshot;
-resolve and validate that operation manually. Merges recreated by
+Git 2.41 or newer is required: to reconstruct the automatic merge result
+without trusting already staged content, and to read the staged
+`.gitattributes` files when scanning staged changes for conflict markers.
+Cherry-picking or reverting a merge commit with `-m` is unsupported: Git
+does not reliably retain the selected parent for reconstruction. The mapper
+refuses it before writing a snapshot; resolve and validate that operation
+manually. Merges recreated by
 `git rebase --rebase-merges` are supported through their replayed parents.
 
 Run every command from the root of the repository with the conflicts. Never
@@ -284,8 +286,9 @@ edit it by hand to the same shape. `regenerate` is
 `{ "command", "cwd", "source": "built-in" | "configuration" | "catalog" }` for
 a derived file, and `null` for a `generated` path whose catalog entry declares
 no command (then `record.ts` needs `--command`). `catalogIncomplete` says why
-the change-area catalog's generated files could not all be read when the map
-was written (the catalog could not be read, or an entry's `outputs` are
+the generated files the configuration and the change-area catalog declare
+could not all be read when the map was written (the configuration was
+unmerged, the catalog could not be read, or an entry's `outputs` are
 malformed), and keeps the check refusing until a map that reads them all
 clears it. `dropped` is `{ "why": "…", "lines": [{ "side": "theirs", "text": "…" }] }`.
 

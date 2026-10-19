@@ -31,7 +31,22 @@ describe("readIndexFile", () => {
     s.commit("Add a file", { "a.txt": "x\n" });
     s.write("b.txt", "untracked\n");
     expect(read("b.txt")).toEqual({ found: "absent" });
-    expect(read("a.txt/inside")).toEqual({ found: "absent" });
+    expect(read("missing/inside")).toEqual({ found: "absent" });
+  });
+
+  it("reads through directories only", () => {
+    s.commit("Add files", { "a.txt": "x\n", "policy.yaml": "p\n" });
+    symlinkSync("a.txt/../policy.yaml", `${s.root}/through-file`);
+    symlinkSync("missing/../policy.yaml", `${s.root}/through-missing`);
+    s.git("add", "through-file", "through-missing");
+    expect(read("a.txt/inside")).toEqual({
+      found: "unreadable",
+      reason: "a.txt/inside reads through a.txt, which is not a directory",
+    });
+    expect(read("a.txt/../policy.yaml")).toMatchObject({ found: "unreadable" });
+    expect(read("through-file")).toMatchObject({ found: "unreadable" });
+    expect(read("missing/../policy.yaml")).toEqual({ found: "absent" });
+    expect(read("through-missing")).toEqual({ found: "absent" });
   });
 
   it("follows links through the index, directories included", () => {

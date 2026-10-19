@@ -22,21 +22,32 @@ interface Entry {
   blob: string;
 }
 
-/** The stage-0 entries by path, and the paths that are only conflict stages. */
-function indexEntries(root: string): {
+/** What the index holds, by path. */
+interface Index {
+  /** The stage-0 entries. */
   staged: Map<string, Entry>;
+  /** The paths that are only conflict stages. */
   unmerged: Set<string>;
-} {
+  /** Every directory an entry lies in. */
+  directories: Set<string>;
+}
+
+function indexEntries(root: string): Index {
   const staged = new Map<string, Entry>();
   const unmerged = new Set<string>();
+  const directories = new Set<string>();
   for (const record of splitNul(git(root, ["ls-files", "--stage", "-z"]))) {
     const match = record.match(/^(\d+) ([0-9a-f]+) (\d)\t(.*)$/s);
     if (!match) continue;
     const [, mode = "", blob = "", stage = "", path = ""] = match;
     if (stage === "0") staged.set(path, { mode, blob });
     else unmerged.add(path);
+    for (let slash = path.indexOf("/"); slash !== -1; ) {
+      directories.add(path.slice(0, slash));
+      slash = path.indexOf("/", slash + 1);
+    }
   }
-  return { staged, unmerged };
+  return { staged, unmerged, directories };
 }
 
 /** A path's components, the empty and `.` ones dropped. */
@@ -62,53 +73,93 @@ function linkComponents(
 }
 
 /**
+ * How a read of `path` that goes on through `at` (no link) ends: through a
+ * file it fails, through a directory the index does not hold it finds nothing
+ * (`null`); `undefined` when `at` is a directory and the read goes on.
+ */
+function readThrough(
+  path: string,
+  at: string,
+  entry: Entry | undefined,
+  directories: ReadonlySet<string>,
+): { problem: string } | null | undefined {
+  if (entry !== undefined)
+    return { problem: `${path} reads through ${at}, which is not a directory` };
+  return directories.has(at) ? undefined : null;
+}
+
+/** How a walk ends: the file reached, why it cannot be, or nothing there. */
+type Walked =
+  | { file: string }
+  | { problem: string }
+  | { unmerged: string }
+  | null;
+
+/** A walk under way: the components still to take and those taken. */
+interface Walk {
+  path: string;
+  pending: string[];
+  reached: string[];
+  hops: number;
+}
+
+/**
+ * Take the walk's next component: `undefined` while it goes on, else how it
+ * ends. A link's target components are taken next, in its place.
+ */
+function step(root: string, walk: Walk, index: Index): Walked | undefined {
+  const { path, pending, reached } = walk;
+  const name = pending.shift() as string;
+  if (name === "..")
+    return reached.pop() === undefined
+      ? { problem: `${path} leaves the repository` }
+      : undefined;
+  reached.push(name);
+  const at = reached.join("/");
+  const entry = index.staged.get(at);
+  // A conflicted component may be a link: where it leads is not known yet.
+  if (entry === undefined && index.unmerged.has(at)) return { unmerged: at };
+  if (entry?.mode !== SYMLINK_MODE)
+    return pending.length > 0
+      ? readThrough(path, at, entry, index.directories)
+      : undefined;
+  const target = linkComponents(root, entry, at, ++walk.hops);
+  if ("problem" in target) return target;
+  reached.pop();
+  pending.unshift(...target);
+  return undefined;
+}
+
+/**
  * The file a read of `path` (repository-relative) reaches, each symbolic link
  * on the way followed through the link entries the index holds, or why it
  * cannot be reached. Components are taken in the order the system takes them,
- * and a `..` steps out of the directory reached so far.
+ * and a `..` steps out of the directory reached so far. A component a later
+ * one is read through must be a directory the index holds: through a file the
+ * read fails, through a missing directory it finds nothing (`null`).
  */
-function walk(
-  root: string,
-  path: string,
-  staged: ReadonlyMap<string, Entry>,
-  unmerged: ReadonlySet<string>,
-): { file: string } | { problem: string } | { unmerged: string } {
-  const pending = components(path);
-  const reached: string[] = [];
-  let hops = 0;
-  while (pending.length > 0) {
-    const name = pending.shift() as string;
-    if (name === "..") {
-      if (reached.pop() === undefined)
-        return { problem: `${path} leaves the repository` };
-      continue;
-    }
-    reached.push(name);
-    const at = reached.join("/");
-    const entry = staged.get(at);
-    // A conflicted component may be a link: where it leads is not known yet.
-    if (entry === undefined && unmerged.has(at)) return { unmerged: at };
-    if (entry?.mode !== SYMLINK_MODE) continue;
-    const target = linkComponents(root, entry, at, ++hops);
-    if ("problem" in target) return target;
-    reached.pop();
-    pending.unshift(...target);
+function walk(root: string, path: string, index: Index): Walked {
+  const state: Walk = { path, pending: components(path), reached: [], hops: 0 };
+  while (state.pending.length > 0) {
+    const ended = step(root, state, index);
+    if (ended !== undefined) return ended;
   }
-  return reached.length === 0
+  return state.reached.length === 0
     ? { problem: `${path} names no file` }
-    : { file: reached.join("/") };
+    : { file: state.reached.join("/") };
 }
 
 /** The file a read of `path` opens in the index. */
 export function readIndexFile(root: string, path: string): IndexRead {
-  const { staged, unmerged } = indexEntries(root);
-  const reached = walk(root, path, staged, unmerged);
+  const index = indexEntries(root);
+  const reached = walk(root, path, index);
+  if (reached === null) return { found: "absent" };
   if ("problem" in reached)
     return { found: "unreadable", reason: reached.problem };
   if ("unmerged" in reached)
     return { found: "unmerged", path: reached.unmerged };
   const { file } = reached;
-  const entry = staged.get(file);
+  const entry = index.staged.get(file);
   if (entry === undefined) return { found: "absent" };
   if (entry.mode !== "100644" && entry.mode !== "100755")
     return { found: "unreadable", reason: `${file} is not a regular file` };

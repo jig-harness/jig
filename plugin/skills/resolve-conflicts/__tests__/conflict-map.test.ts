@@ -244,6 +244,74 @@ describe("classes", () => {
     expect(map().paths["gen.txt"]?.class).toBe("generated");
   });
 
+  it.skipIf(process.platform === "win32")(
+    "reads the JIG_OVERLAY file by its name as given, a trailing space included",
+    () => {
+      s.write(
+        "ov.yaml ",
+        'resolve_conflicts:\n  generated:\n    - paths: ["gen/**"]\n      command: make gen\n',
+      );
+      s.env.JIG_OVERLAY = "ov.yaml ";
+      conflictEverywhere(["gen/x.txt"]);
+      expect(map().paths["gen/x.txt"]?.class).toBe("generated");
+    },
+  );
+
+  it("follows a linked directory on the way to the catalog through the index, not the disk", () => {
+    const catalog = (output: string) =>
+      `areas:\n  api:\n    paths: ["src/**"]\n    generated:\n      - outputs: [${output}]\n        source: ["src/**"]\n        command: make gen\n`;
+    s.write("config/catalog.yaml", catalog("gen.txt"));
+    s.write("alt/catalog.yaml", catalog("other.txt"));
+    symlinkSync("config", `${s.root}/cfg`);
+    s.overlay("drive:\n  change_areas_catalog: cfg/catalog.yaml\n");
+    conflictEverywhere(["gen.txt"]);
+    rmSync(`${s.root}/cfg`);
+    symlinkSync("alt", `${s.root}/cfg`);
+    expect(map().paths["gen.txt"]?.class).toBe("generated");
+  });
+
+  it("takes a configured catalog path's `..` after a link from where the link leads", () => {
+    const catalog = (output: string) =>
+      `areas:\n  api:\n    paths: ["src/**"]\n    generated:\n      - outputs: [${output}]\n        source: ["src/**"]\n        command: make gen\n`;
+    s.write("config/nested/keep", "");
+    s.write("config/defs.yaml", catalog("gen.txt"));
+    s.write("defs.yaml", catalog("other.txt"));
+    symlinkSync("config/nested", `${s.root}/cfg`);
+    s.overlay("drive:\n  change_areas_catalog: cfg/../defs.yaml\n");
+    conflictEverywhere(["gen.txt"]);
+    expect(map().paths["gen.txt"]?.class).toBe("generated");
+  });
+
+  it("maps an unmerged configuration, incomplete until it is staged and mapped again", () => {
+    const declare = (command: string) =>
+      `resolve_conflicts:\n  generated:\n    - paths: ["gen/**"]\n      command: ${command}\n`;
+    s.commit("Base", {
+      ".config/jig.yaml": declare("make gen"),
+      "gen/x.txt": "base\n",
+    });
+    s.git("checkout", "-q", "-b", "feature");
+    s.commit("Feature", {
+      ".config/jig.yaml": declare("make feature"),
+      "gen/x.txt": "feature\n",
+    });
+    s.git("checkout", "-q", "main");
+    s.commit("Main", {
+      ".config/jig.yaml": declare("make main"),
+      "gen/x.txt": "main\n",
+    });
+    s.git("checkout", "-q", "feature");
+    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    const first = map();
+    expect(first.paths[".config/jig.yaml"]).toBeDefined();
+    expect(first.catalogIncomplete).toContain(".config/jig.yaml is unmerged");
+    s.overlay(declare("make gen"));
+    s.git("add", ".config/jig.yaml");
+    const again = map();
+    expect(again.catalogIncomplete).toBeNull();
+    expect(again.paths[".config/jig.yaml"]).toBeDefined();
+    expect(again.paths["gen/x.txt"]?.regenerate?.command).toBe("make gen");
+  });
+
   it("lockfiles by name, generated files by configuration, binary by content", () => {
     s.overlay(
       [
@@ -480,7 +548,7 @@ describe("classes", () => {
         const before = s.script("check-resolution.ts");
         expect(before.code).toBe(1);
         expect(before.stdout).toContain(
-          "PROBLEM (conflict map): the change-area catalog's generated files could not all be read when the conflicts were mapped",
+          "PROBLEM (conflict map): the generated files the configuration and change-area catalog declare could not all be read when the conflicts were mapped",
         );
         expect(map().catalogIncomplete).toBeNull();
         const after = s.script("check-resolution.ts");
@@ -578,7 +646,7 @@ describe("classes", () => {
       const r = s.script("check-resolution.ts");
       expect(r.code).toBe(1);
       expect(r.stdout).toContain(
-        'PROBLEM (conflict map): the change-area catalog\'s generated files could not all be read when the conflicts were mapped (catalog area api.generated[0].outputs: "**" is not a literal',
+        'PROBLEM (conflict map): the generated files the configuration and change-area catalog declare could not all be read when the conflicts were mapped (catalog area api.generated[0].outputs: "**" is not a literal',
       );
       useCatalog();
       s.git("add", "catalog.yaml", ".config/jig.yaml");

@@ -9,15 +9,7 @@
  * None of them is part of the commit.
  */
 import { realpathSync } from "node:fs";
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-  relative,
-  resolve,
-  sep,
-} from "node:path";
+import { isAbsolute, sep } from "node:path";
 import {
   consumerRoot,
   layeredConfig,
@@ -33,6 +25,9 @@ import { readIndexFile } from "./index-files.ts";
 /** A declaration that cannot be read from the index. */
 export class StagedDeclarationError extends Error {}
 
+/** A declaration the index holds only as conflict stages. */
+export class UnmergedDeclarationError extends StagedDeclarationError {}
+
 /** A staged declaration's text, or why it cannot be had; `null` when absent. */
 function stagedText(root: string, path: string): string | null {
   const read = readIndexFile(root, path);
@@ -42,7 +37,7 @@ function stagedText(root: string, path: string): string | null {
     case "absent":
       return null;
     case "unmerged":
-      throw new StagedDeclarationError(
+      throw new UnmergedDeclarationError(
         `${read.path} is unmerged: resolve and stage it first (the check reads what is staged)`,
       );
     case "unreadable":
@@ -52,60 +47,77 @@ function stagedText(root: string, path: string): string | null {
   }
 }
 
+/** A disk path's components: on Windows either separator divides them. */
+function diskComponents(path: string): string[] {
+  return path.split(sep === "/" ? "/" : /[\\/]/);
+}
+
+/** Where `path` really is, or `path` as given when it cannot be resolved. */
+function located(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
 /**
- * `path` below `root` as git names it (`/` separated), or `null` when it lies
- * outside. Both are compared by real location, the parent directory resolved
- * and the name itself left alone, so an alias of the repository (a symlinked
- * parent, `/var` for `/private/var`) is still the repository, and a link at
- * the path itself stays the link the index holds.
+ * `path` (absolute, or relative to `root`) as git names a path below the
+ * repository (`/` separated), or `null` when it does not lead into it. Only
+ * the leading components that reach the repository are resolved on disk, so
+ * an alias of it (a symlinked parent, `/var` for `/private/var`) is still the
+ * repository. The components after them are kept as written, links and `..`
+ * included, for the index walk to follow: a link inside the repository leads
+ * where the index says, whatever the disk holds.
  */
 function insideRoot(root: string, path: string): string | null {
-  const located = (file: string): string => {
-    try {
-      return join(realpathSync(dirname(file)), basename(file));
-    } catch {
-      return file;
-    }
-  };
-  let realRoot = root;
-  try {
-    realRoot = realpathSync(root);
-  } catch {
-    // A root that cannot be resolved is compared as given.
+  const realRoot = located(root);
+  const parts = isAbsolute(path)
+    ? diskComponents(path)
+    : [...diskComponents(root), ...diskComponents(path)];
+  for (let reach = 1; reach < parts.length; reach++) {
+    const rest = parts
+      .slice(reach)
+      .filter((name) => name !== "" && name !== ".");
+    if (rest.length === 0) return null;
+    // A `..` straight after the repository climbs out of it on disk.
+    if (rest[0] === "..") continue;
+    // The first component alone is the file-system root (`/`, `C:\\`).
+    const prefix = parts.slice(0, reach).join(sep) + (reach === 1 ? sep : "");
+    if (located(prefix) === realRoot) return rest.join("/");
   }
-  const relativePath = relative(realRoot, located(path));
-  return relativePath === "" ||
-    relativePath === ".." ||
-    relativePath.startsWith(`..${sep}`) ||
-    isAbsolute(relativePath)
-    ? null
-    : relativePath.split(sep).join("/");
+  return null;
 }
 
 /**
  * The merged configuration with the repository's own file read from the
  * index, a file `JIG_OVERLAY` names inside the repository included. Throws
- * what `layeredConfig` throws, and when the file is unmerged.
+ * what `layeredConfig` throws, and `UnmergedDeclarationError` while the file
+ * is unmerged.
  */
 export function stagedConfig(): Record<string, unknown> {
   const root = consumerRoot();
-  const named = process.env.JIG_OVERLAY?.trim();
+  const named = process.env.JIG_OVERLAY;
   const inIndex =
-    named === undefined || named === ""
+    named === undefined || named.trim() === ""
       ? OVERLAY_RELPATH
-      : insideRoot(root, resolve(root, named));
+      : insideRoot(root, named);
   if (inIndex === null) return layeredConfig(root).values;
   return layeredConfig(root, process.env, stagedText(root, inIndex)).values;
 }
 
 /**
- * The change-area catalog at `path` (absolute), read from the index when it
- * lies inside the repository. Throws with the path and the reason.
+ * The change-area catalog at `configured` (absolute, or relative to the
+ * repository, as configured), read from the index when it lies inside the
+ * repository. Throws with the path and the reason.
  */
-export function stagedCatalog(path: string): Map<string, CatalogArea> {
+export function stagedCatalog(configured: string): Map<string, CatalogArea> {
   const root = consumerRoot();
-  const inIndex = insideRoot(root, path);
-  if (inIndex === null) return loadCatalogFile(path);
+  const inIndex = insideRoot(root, configured);
+  if (inIndex === null)
+    return loadCatalogFile(
+      isAbsolute(configured) ? configured : `${root}${sep}${configured}`,
+    );
   let text: string | null;
   try {
     text = stagedText(root, inIndex);
