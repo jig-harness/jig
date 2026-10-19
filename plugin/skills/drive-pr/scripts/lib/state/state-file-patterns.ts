@@ -36,6 +36,7 @@ export type ArtifactFamily =
   | "reaper-snapshot"
   | "remote-mutation-lock"
   | "state"
+  | "stop-completion"
   | "tree-lease";
 
 /**
@@ -101,6 +102,11 @@ export const PLAIN_ENTRIES: readonly {
   readonly key: "pr" | "actor";
   readonly family: ArtifactFamily;
 }[] = [
+  {
+    re: /^drive-pr-([0-9]+)\.stop-complete\.[0-9a-f]{24}\.json(?:\.[0-9]+\.tmp)?$/,
+    key: "pr",
+    family: "stop-completion",
+  },
   // The driver log, and the generation `lib/driver-log.ts` rotates it to.
   { re: /^drive-pr-([0-9]+)\.log(?:\.1)?$/, key: "pr", family: "log" },
   {

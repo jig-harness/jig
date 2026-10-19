@@ -1,3 +1,8 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, delimiter } from "node:path";
+import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { expect, test } from "bun:test";
 import {
   parsePosixProcessTable,
@@ -141,3 +146,44 @@ test("Windows historical parent links never adopt children older than the curren
   expect(rows?.find((r) => r.pid === 12)?.ppid).toBe(10);
   expect(rows?.find((r) => r.pid === 13)?.ppid).toBe(10);
 });
+
+test("a native probe excludes only its owned helper PID and retains a similarly named foreign process", () => {
+  const dir = mkdtempSync(join(tmpdir(), "owned-probe-"));
+  const marker = join(dir, "probe.pid");
+  try {
+    writeFakeProgram(
+      join(dir, "powershell.exe"),
+      `#!/usr/bin/env bun\nconst fs=require("node:fs");const pid=process.platform==="win32"?process.ppid:process.pid;fs.writeFileSync(${JSON.stringify(marker)},String(pid));process.stdout.write(JSON.stringify([pid,90000001].map(ProcessId=>({ProcessId,ParentProcessId:0,CreationDate:"2026-10-19T00:00:00.0000000Z",CommandLine:"powershell.exe identical-query"}))));\n`,
+    );
+    const result = Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `Object.defineProperty(process,"platform",{value:"win32"});const {processTable}=await import(${JSON.stringify(join(import.meta.dir, "../process-table.ts"))});const rows=await processTable();console.log(JSON.stringify({rows,probe:Number(require("node:fs").readFileSync(${JSON.stringify(marker)},"utf8"))}));`,
+      ],
+      {
+        env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}` },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expectSpawnExit(result, 0);
+    const parsed = JSON.parse(result.stdout.toString()) as {
+      rows: ProcessRow[];
+      probe: number;
+    };
+    expect(parsed.rows.some((row) => row.pid === parsed.probe)).toBe(false);
+    expect(parsed.rows).toEqual([
+      {
+        pid: 90000001,
+        ppid: 0,
+        pgid: 0,
+        start: "2026-10-19T00:00:00.0000000Z",
+        stat: "R",
+        args: "powershell.exe identical-query",
+      },
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 30000);

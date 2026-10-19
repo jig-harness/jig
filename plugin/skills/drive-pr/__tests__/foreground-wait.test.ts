@@ -16,6 +16,7 @@ import { processTable } from "../../../shared/process-table.ts";
 import {
   beginProcessRegistration,
   processRegistryRoots,
+  processCompletionPath,
 } from "../../../shared/process-registry.ts";
 import {
   captureProcessTree,
@@ -145,29 +146,78 @@ describe("foreground-wait.ts", () => {
       T,
     );
 
+  for (const registered of [false, true])
+    test(
+      `ordinary fast successful commands can be waited and relaunched without capture acknowledgment (${registered ? "registered" : "standalone"})`,
+      () => {
+        const registry = join(cwd, "fast-registry");
+        if (registered) mkdirSync(registry);
+        const runFast = (...args: string[]) =>
+          runWith(
+            registered ? { JIG_PROCESS_REGISTRY_DIR: registry } : {},
+            ...args,
+          );
+        for (let launch = 0; launch < 2; launch++) {
+          expectSpawnExit(
+            runFast("launch", "--", process.execPath, "-e", ""),
+            0,
+          );
+          const waited = runFast("wait");
+          expectSpawnExit(waited, 0);
+          expect(out(waited)).toContain("command-exit: 0");
+        }
+        if (registered) expect(processRegistryRoots(registry)).toEqual([]);
+      },
+      T,
+    );
+
   test(
-    "a successful bound command exits wait with 0",
+    "an unavailable initial ownership snapshot executes no user command",
     () => {
-      const marker = join(cwd, "captured.json");
-      const command = afterCapture(
-        marker,
-        `console.log("bound-success");process.exit(0);`,
+      const shim = join(cwd, "unavailable-shim");
+      const dir = join(cwd, "unbound");
+      mkdirSync(shim);
+      mkdirSync(dir);
+      writeFakeProgram(
+        join(shim, "powershell.exe"),
+        "#!/usr/bin/env bun\nprocess.exit(1);\n",
       );
-      expectSpawnExit(
-        runWith(
-          { NODE_ENV: "test", DRIVE_PR_FOREGROUND_WAIT_CAPTURE_ACK: marker },
-          "launch",
-          "--",
-          ...bunCommand(command),
+      const marker = join(cwd, "must-not-execute");
+      const args = [
+        process.execPath,
+        SCRIPT,
+        "_run",
+        dir,
+        "fixture",
+        "--",
+        ...bunCommand(
+          `require("node:fs").writeFileSync(${JSON.stringify(marker)},"executed");`,
         ),
-        0,
+      ];
+      const result = Bun.spawnSync(
+        [
+          process.execPath,
+          "-e",
+          `Object.defineProperty(process,"platform",{value:"win32"});process.argv=${JSON.stringify(args)};await import(${JSON.stringify(SCRIPT)});`,
+        ],
+        {
+          cwd,
+          env: {
+            ...process.env,
+            ...PACING,
+            PATH: `${shim}${delimiter}${process.env.PATH}`,
+            DRIVE_PR_FOREGROUND_WAIT_CANCEL_MS: "1000",
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+          timeout: 10000,
+        },
       );
-      const waited = run("wait");
-      expectSpawnExit(waited, 0);
-      expect(out(waited)).toContain("bound-success");
+      expectSpawnExit(result, 0);
+      expect(existsSync(marker)).toBe(false);
       expect(
-        JSON.parse(readFileSync(join(latestGen(), "result.json"), "utf8")),
-      ).toMatchObject({ exitCode: 0, treeWitnessed: true });
+        JSON.parse(readFileSync(join(dir, "result.json"), "utf8")),
+      ).toMatchObject({ exitCode: 125, treeWitnessed: true });
     },
     T,
   );
@@ -221,14 +271,12 @@ describe("foreground-wait.ts", () => {
   test(
     "repeated waits relay only output not yet shown",
     () => {
-      const capture = join(cwd, "output-capture.json");
       expectSpawnExit(
-        runWith(
-          captureEnv(capture),
+        run(
           "launch",
           "--",
           ...bunCommand(
-            `console.log("first");setTimeout(()=>{${afterCapture(capture, 'console.log("second");')}},3000)`,
+            'console.log("first");setTimeout(()=>console.log("second"),3000)',
           ),
         ),
         0,
@@ -679,19 +727,12 @@ describe("foreground-wait.ts", () => {
   test(
     "retained output is bounded at the writer and the truncation is reported",
     () => {
-      const capture = join(cwd, "retention-capture.json");
       // 20 MiB of output against a 16 MiB retention cap.
       expectSpawnExit(
-        runWith(
-          captureEnv(capture),
+        run(
           "launch",
           "--",
-          ...bunCommand(
-            afterCapture(
-              capture,
-              'process.stdout.write("x".repeat(20971520));',
-            ),
-          ),
+          ...bunCommand('process.stdout.write("x".repeat(20971520));'),
         ),
         0,
       );
@@ -822,18 +863,19 @@ describe("foreground-wait.ts", () => {
       `an unavailable Windows process table (${mode}) ends the owned child without certifying the tree`,
       async () => {
         const shim = join(cwd, "shim");
-        const dir = join(cwd, "direct");
+        const dir = join(stateRoot(), "gen-1");
         const registry = join(cwd, "registry");
         mkdirSync(shim);
-        mkdirSync(dir);
+        mkdirSync(dir, { recursive: true });
         mkdirSync(registry);
         const snapshotFile = join(cwd, "native-snapshot.json");
+        const runnerFile = join(cwd, "runner-own.pid");
+        const marker = join(cwd, "owned.pid");
         writeFakeProgram(
           join(shim, "powershell.exe"),
-          `#!/usr/bin/env bun\nconst fs=require("node:fs");if(!fs.existsSync(${JSON.stringify(snapshotFile)}))process.exit(1);process.stdout.write(fs.readFileSync(${JSON.stringify(snapshotFile)}));\n`,
+          `#!/usr/bin/env bun\nconst fs=require("node:fs");if(!fs.existsSync(${JSON.stringify(marker)})){process.stdout.write(JSON.stringify([{ProcessId:Number(fs.readFileSync(${JSON.stringify(runnerFile)},"utf8")),ParentProcessId:0,CreationDate:"2026-10-19T00:00:00.0000000Z",CommandLine:"runner"}]));}else{if(!fs.existsSync(${JSON.stringify(snapshotFile)}))process.exit(1);process.stdout.write(fs.readFileSync(${JSON.stringify(snapshotFile)}));}\n`,
         );
         beginProcessRegistration(registry, "fixture", join(dir, "result.json"));
-        const marker = join(cwd, "owned.pid");
         const command = `require("node:fs").writeFileSync(${JSON.stringify(marker)},String(process.pid)); setInterval(()=>{},1000); setTimeout(()=>process.exit(0),30000);`;
         const args = [
           process.execPath,
@@ -850,7 +892,7 @@ describe("foreground-wait.ts", () => {
           [
             process.execPath,
             "-e",
-            `Object.defineProperty(process,"platform",{value:"win32"});process.argv=${JSON.stringify(args)};await import(${JSON.stringify(SCRIPT)});`,
+            `Object.defineProperty(process,"platform",{value:"win32"});require("node:fs").writeFileSync(${JSON.stringify(runnerFile)},String(process.pid));process.argv=${JSON.stringify(args)};await import(${JSON.stringify(SCRIPT)});`,
           ],
           {
             cwd,
@@ -908,7 +950,13 @@ describe("foreground-wait.ts", () => {
           if (mode === "recovered") {
             expect(runnerExited).toBe(false);
             expect(existsSync(join(dir, "result.json"))).toBe(false);
-            expect(processRegistryRoots(registry)).toBeNull();
+            expect(processRegistryRoots(registry)).toEqual([
+              {
+                pid: runner.pid,
+                start: "2026-10-19T00:00:00.0000000Z",
+                resultFile: processCompletionPath(registry, "fixture"),
+              },
+            ]);
             // Recover enumeration only after the owned child was forced. Its
             // absence now cannot establish what happened to unobserved descendants.
             writeFileSync(
@@ -931,6 +979,23 @@ describe("foreground-wait.ts", () => {
             JSON.parse(readFileSync(join(dir, "result.json"), "utf8")),
           ).toMatchObject({ exitCode: 124, treeWitnessed: false });
           expect(processRegistryRoots(registry)).toBeNull();
+          if (mode === "permanent outage") {
+            // Loss of the public copy cannot erase the registered authority.
+            rmSync(join(dir, "result.json"));
+            const waited = Bun.spawnSync(
+              [process.execPath, SCRIPT, "wait", "--max-sec", "120"],
+              {
+                cwd,
+                env: { ...process.env, ...PACING },
+                stdout: "pipe",
+                stderr: "pipe",
+                timeout: 3000,
+              },
+            );
+            expectSpawnExit(waited, 30);
+            expect(waited.stdout.toString()).toContain("command-exit: 124");
+            expectSpawnExit(run("launch", "--", ...bunCommand("")), 3);
+          }
         } finally {
           const targets = await captureProcessTree(runner.pid);
           if (targets) await forceIdentityTargetsAndWitness(targets);
@@ -952,9 +1017,11 @@ describe("foreground-wait.ts", () => {
         const dir = join(stateRoot(), "gen-1");
         mkdirSync(shim);
         mkdirSync(dir, { recursive: true });
+        const runnerFile = join(cwd, "bound-runner.pid");
+        const queries = join(cwd, "probe-started");
         writeFakeProgram(
           join(shim, "powershell.exe"),
-          "#!/usr/bin/env bun\nsetTimeout(()=>process.exit(1),10000);\n",
+          `#!/usr/bin/env bun\nconst fs=require("node:fs");if(!fs.existsSync(${JSON.stringify(queries)})){fs.writeFileSync(${JSON.stringify(queries)},"first");process.stdout.write(JSON.stringify([{ProcessId:Number(fs.readFileSync(${JSON.stringify(runnerFile)},"utf8")),ParentProcessId:0,CreationDate:"2026-10-19T00:00:00.0000000Z",CommandLine:"runner"}]));}else{setTimeout(()=>process.exit(1),10000);}\n`,
         );
         const args = [
           process.execPath,
@@ -969,7 +1036,7 @@ describe("foreground-wait.ts", () => {
           [
             process.execPath,
             "-e",
-            `Object.defineProperty(process,"platform",{value:"win32"});process.argv=${JSON.stringify(args)};await import(${JSON.stringify(SCRIPT)});`,
+            `Object.defineProperty(process,"platform",{value:"win32"});require("node:fs").writeFileSync(${JSON.stringify(runnerFile)},String(process.pid));process.argv=${JSON.stringify(args)};await import(${JSON.stringify(SCRIPT)});`,
           ],
           {
             cwd,
@@ -1061,6 +1128,190 @@ describe("foreground-wait.ts", () => {
         rmSync(join(older, "runner.pid"), { force: true });
         rmSync(join(older, "launcher.pid"), { force: true });
       }
+    },
+    T,
+  );
+
+  for (const newer of [false, true])
+    test(
+      `a ${newer ? "new active generation" : "published unresolved result"} during liveness enumeration prevents admission`,
+      async () => {
+        const older = join(stateRoot(), "gen-1");
+        mkdirSync(older, { recursive: true });
+        const shim = join(cwd, "admission-shim");
+        mkdirSync(shim);
+        const queried = join(cwd, "query-open");
+        const release = join(cwd, "release-query");
+        const finish = join(cwd, "finish-owner");
+        const executed = join(cwd, "new-command-executed");
+        const resultFile = join(older, "result.json");
+        const owner = Bun.spawn(
+          bunCommand(
+            `const fs=require("node:fs");setInterval(()=>{if(fs.existsSync(${JSON.stringify(finish)})){fs.writeFileSync(${JSON.stringify(resultFile)},JSON.stringify({exitCode:0,treeWitnessed:${JSON.stringify(newer)}}));process.exit(0)}},10);`,
+          ),
+          { stdout: "pipe", stderr: "pipe" },
+        );
+        const contender = newer
+          ? Bun.spawn(bunCommand(busy), { stdout: "ignore", stderr: "ignore" })
+          : null;
+        writeFileSync(join(older, "launcher.pid"), String(owner.pid));
+        writeFileSync(join(older, "runner.pid"), String(owner.pid));
+        writeFakeProgram(
+          join(shim, "powershell.exe"),
+          `#!/usr/bin/env bun\nconst fs=require("node:fs");fs.writeFileSync(${JSON.stringify(queried)},"ready");const deadline=Date.now()+10000;while(!fs.existsSync(${JSON.stringify(release)})&&Date.now()<deadline)await Bun.sleep(10);process.stdout.write(JSON.stringify([{ProcessId:90000001,ParentProcessId:0,CreationDate:"2026-10-19T00:00:00.0000000Z",CommandLine:"foreign"}]));\n`,
+        );
+        const args = [
+          process.execPath,
+          SCRIPT,
+          "launch",
+          "--",
+          ...bunCommand(
+            `require("node:fs").writeFileSync(${JSON.stringify(executed)},"executed");`,
+          ),
+        ];
+        const launcher = Bun.spawn(
+          [
+            process.execPath,
+            "-e",
+            `Object.defineProperty(process,"platform",{value:"win32"});process.argv=${JSON.stringify(args)};await import(${JSON.stringify(SCRIPT)});`,
+          ],
+          {
+            cwd,
+            env: {
+              ...process.env,
+              ...PACING,
+              PATH: `${shim}${delimiter}${process.env.PATH}`,
+            },
+            stdout: "pipe",
+            stderr: "pipe",
+          },
+        );
+        try {
+          const deadline = Date.now() + 10000;
+          while (!existsSync(queried) && Date.now() < deadline)
+            await sleepMs(20);
+          expect(existsSync(queried)).toBe(true);
+          if (contender) {
+            const active = join(stateRoot(), "gen-3");
+            mkdirSync(active);
+            writeFileSync(join(active, "launcher.pid"), String(contender.pid));
+            writeFileSync(join(active, "runner.pid"), String(contender.pid));
+          }
+          writeFileSync(finish, "");
+          expectSpawnExit(
+            {
+              exitCode: await owner.exited,
+              stdout: await new Response(owner.stdout).text(),
+              stderr: await new Response(owner.stderr).text(),
+            },
+            0,
+          );
+          writeFileSync(release, "");
+          expectSpawnExit(
+            {
+              exitCode: await launcher.exited,
+              stdout: await new Response(launcher.stdout).text(),
+              stderr: await new Response(launcher.stderr).text(),
+            },
+            3,
+          );
+          expect(JSON.parse(readFileSync(resultFile, "utf8"))).toMatchObject({
+            treeWitnessed: newer,
+          });
+          expect(existsSync(join(stateRoot(), "gen-2"))).toBe(false);
+          expect(existsSync(executed)).toBe(false);
+        } finally {
+          writeFileSync(release, "");
+          if (contender) {
+            contender.kill("SIGKILL");
+            await contender.exited;
+          }
+          const unexpected = join(stateRoot(), "gen-2", "runner.pid");
+          if (existsSync(unexpected)) {
+            const targets = await captureProcessTree(
+              Number(readFileSync(unexpected, "utf8")),
+            );
+            if (targets) await forceIdentityTargetsAndWitness(targets);
+          }
+          owner.kill("SIGKILL");
+          launcher.kill("SIGKILL");
+          await owner.exited;
+          await launcher.exited;
+        }
+      },
+      T,
+    );
+
+  for (const witness of ["omitted", "malformed", "false"] as const)
+    test(
+      `an internal ${witness} witness cannot become legacy success or admit new work`,
+      () => {
+        const registry = join(cwd, "internal-registry");
+        const dir = join(stateRoot(), "gen-1");
+        mkdirSync(registry);
+        mkdirSync(dir, { recursive: true });
+        const authority = processCompletionPath(registry, "unique-entry");
+        const terminal =
+          witness === "omitted"
+            ? { exitCode: 0 }
+            : {
+                exitCode: 0,
+                treeWitnessed: witness === "false" ? false : "false",
+              };
+        writeFileSync(authority, JSON.stringify(terminal));
+        writeFileSync(
+          join(dir, "runner.identity.json"),
+          JSON.stringify({
+            pid: 90000004,
+            start: "bound",
+            resultFile: authority,
+          }),
+        );
+        writeFileSync(join(dir, "log"), "");
+        const waited = Bun.spawnSync(
+          [process.execPath, SCRIPT, "wait", "--max-sec", "120"],
+          {
+            cwd,
+            env: { ...process.env, ...PACING },
+            stdout: "pipe",
+            stderr: "pipe",
+            timeout: 3000,
+          },
+        );
+        expectSpawnExit(waited, 30);
+        expect(waited.stdout.toString()).toContain(
+          witness === "false"
+            ? "process tree remains unverified"
+            : "result file unreadable",
+        );
+        const marker = join(cwd, "forbidden-command");
+        expectSpawnExit(
+          run(
+            "launch",
+            "--",
+            ...bunCommand(
+              `require("node:fs").writeFileSync(${JSON.stringify(marker)},"executed");`,
+            ),
+          ),
+          3,
+        );
+        expect(existsSync(marker)).toBe(false);
+        expect(existsSync(authority)).toBe(true);
+        expect(existsSync(join(dir, "runner.identity.json"))).toBe(true);
+      },
+      T,
+    );
+
+  test(
+    "a legacy public result with an omitted witness remains a successful completion",
+    () => {
+      const dir = join(stateRoot(), "gen-1");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "result.json"), JSON.stringify({ exitCode: 0 }));
+      writeFileSync(join(dir, "log"), "");
+      expectSpawnExit(run("wait"), 0);
+      expectSpawnExit(run("launch", "--", ...bunCommand("")), 0);
+      expectSpawnExit(run("wait"), 0);
     },
     T,
   );

@@ -132,7 +132,9 @@ export async function processTable(
           new Error("native process probe failed", { cause: stderrTail }),
           "native process enumeration unavailable",
         );
-      resolve(rows);
+      // The completed native query is an observer, not owned workload. Its
+      // OS child handle identifies this exact probe without command-line guesses.
+      resolve(rows?.filter((row) => row.pid !== child.pid) ?? null);
     };
     const timer = setTimeout(() => {
       try {

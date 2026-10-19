@@ -96,7 +96,11 @@ import {
   signalIdentityTargets,
   identityTargetsGone,
 } from "../../../shared/process-tree.ts";
-import { requestDriverStop } from "./lib/stop-request.ts";
+import {
+  requestDriverStop,
+  driverStopCompleted,
+  consumeDriverStopCompletion,
+} from "./lib/stop-request.ts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
@@ -1074,7 +1078,13 @@ async function stop(stateDir: string, pr: string): Promise<number> {
   }
   const verified = await verifyDriverClaim(row, pid);
   if ("code" in verified) return verified.code;
-  return stopVerifiedDriver(row, verified.owner);
+  return consumeStopResult(row, await stopVerifiedDriver(row, verified.owner));
+}
+
+function consumeStopResult(row: LockRow, code: number): number {
+  if (code === 0 && row.nonce !== null)
+    consumeDriverStopCompletion(row.dir, row.nonce);
+  return code;
 }
 
 async function verifyDriverClaim(
@@ -1194,7 +1204,13 @@ async function stopVerifiedDriver(
       ? join(row.dir, `processes.${row.nonce}`)
       : null;
   const registryState: WindowsTreeState = { root: owner, targets };
-  const refreshRegistered = registryCompletionTracker(registry, registryState);
+  const completed = () =>
+    row.nonce !== null && driverStopCompleted(row.dir, row.nonce, owner.pid);
+  const refreshRegistered = registryCompletionTracker(
+    registry,
+    registryState,
+    completed,
+  );
   if (!(await refreshRegistered())) {
     console.log(
       `driver pid ${pid}'s registry is incomplete; requesting cleanup while retaining its known process identities.`,
@@ -1222,6 +1238,7 @@ async function stopVerifiedDriver(
     refreshRegistered,
     graceSec,
     registryState,
+    completed,
   );
 }
 
@@ -1229,10 +1246,11 @@ async function stopVerifiedDriver(
 export function registryCompletionTracker(
   registry: string | null,
   state: WindowsTreeState,
+  completed: () => boolean = () => false,
 ): (control?: ProcessTreeControl) => Promise<boolean> {
   let complete = false;
   return async (control = {}) => {
-    if (registry === null) return true;
+    if (completed() || registry === null) return true;
     if (!existsSync(registry)) return complete;
     complete = (
       await captureRegisteredTreeSnapshot(registry, { ...control, state })
@@ -1246,6 +1264,7 @@ async function forceKnownStopTargets(
   targets: ProcessRow[],
   refreshRegistered: (control?: ProcessTreeControl) => Promise<boolean>,
   state: WindowsTreeState,
+  completed: () => boolean,
 ): Promise<boolean> {
   const deadline = Date.now() + 30_000;
   const control: ProcessTreeControl = {
@@ -1269,7 +1288,7 @@ async function forceKnownStopTargets(
     const root = await refreshOwner();
     const complete = await refreshRegistered(control);
     if (targets.length !== count) continue;
-    return gone && root.complete && complete;
+    return gone && ((root.complete && complete) || completed());
   }
   return false;
 }
@@ -1281,6 +1300,7 @@ export async function forceStopDriver(
   refreshRegistered: (control?: ProcessTreeControl) => Promise<boolean>,
   graceSec: number,
   registryState: WindowsTreeState = { root: owner, targets },
+  completed: () => boolean = () => false,
 ): Promise<number> {
   console.log(
     `driver pid ${owner.pid} outlived the ${graceSec}s grace — forcing its captured process identities to exit.`,
@@ -1290,6 +1310,7 @@ export async function forceStopDriver(
     targets,
     refreshRegistered,
     registryState,
+    completed,
   );
   if (!confirmed) {
     console.log(

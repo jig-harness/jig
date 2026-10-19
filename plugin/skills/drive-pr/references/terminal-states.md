@@ -631,6 +631,27 @@ individually verified identities rather than trusting a tree-kill command's
 exit status. A process created outside the captured tree remains outside
 this guarantee; containment of arbitrary escaped descendants is separate work.
 
+After confirming helper, pass, and registered-runner cancellation, a driver
+handling a cooperative stop atomically publishes
+`drive-pr-<PR>.stop-complete.<nonce>.json` beside its PR lock. The receipt binds
+that acquisition and stop request. It is published before claims are released;
+a publication failure retains the claims. When a temporary cancellation marker
+made the operator's registry snapshot incomplete, only this matching receipt
+plus disappearance of its captured process identities can confirm the stop.
+Missing, malformed, or other-generation receipts cannot turn an unreadable or
+missing registry into proof of completion.
+
+The operator removes its receipt after confirming completion. Receipts and
+publication temporaries left by an interrupted operator belong to the PR's
+artifact family and follow its existing migration and retirement policy.
+
+A registered foreground supervisor keeps its terminal proof inside the
+acquisition's process registry. Later launches may remove older command logs
+and result directories without removing that proof. Confirmed completion stays
+available until the registry is retired, including when an identity handoff
+finishes late. An unverified or malformed terminal record retains uncertainty
+and the known process identities.
+
 A pid recorded on **another host or platform** is unanswerable here and counts as alive; the
 cost is a refusal a human clears by removing the directory, against two live
 drivers if it guessed the other way.

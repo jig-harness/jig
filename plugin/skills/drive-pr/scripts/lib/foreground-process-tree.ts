@@ -63,3 +63,23 @@ export function trackForegroundProcessTree(
   state.targets = retained;
   state.unresolved = state.unknown.size > 0;
 }
+
+/** A persistent, prebound supervisor is an anchor, never a termination target. */
+export function trackForegroundAnchor(
+  rows: ProcessRow[] | null,
+  state: ForegroundTreeState,
+): void {
+  const anchor = state.root;
+  if (!anchor?.start) {
+    state.unresolved = true;
+    return;
+  }
+  trackForegroundProcessTree(anchor.pid, false, rows, state);
+  state.targets = state.targets.filter((target) => target.pid !== anchor.pid);
+  // This code is executing in the anchor. Its absence from enumeration is an
+  // unreadable ownership boundary, never evidence that its children are gone.
+  if (
+    !rows?.some((row) => row.pid === anchor.pid && row.start === anchor.start)
+  )
+    state.unresolved = true;
+}

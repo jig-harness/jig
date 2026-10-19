@@ -1,11 +1,14 @@
 import { captureRegisteredProcessTrees } from "../process-tree.ts";
 import { expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   createProcessRegistry,
   markProcessRegistryUnconfirmed,
   clearProcessRegistryUnconfirmed,
+  processCompletionPath,
+  publishProcessCompletion,
+  publishProcessIdentity,
   beginProcessRegistration,
   handoffProcessRegistration,
   processRegistryRoots,
@@ -332,3 +335,88 @@ test("an owner retries past only its own failed-stop marker while ancestors rema
     ancestor.dispose();
   }
 });
+
+test("retained acquisition completion fences a late identity publisher after generation cleanup", () => {
+  const registry = createProcessRegistry();
+  const generation = createProcessRegistry();
+  const publicResult = join(generation.dir, "result.json");
+  const first = "runner-first-nonce";
+  try {
+    const authority = processCompletionPath(registry.dir, first);
+    beginProcessRegistration(registry.dir, first, authority);
+    publishProcessIdentity(
+      registry.dir,
+      first,
+      { pid: 123, start: "owned" },
+      authority,
+    );
+    writeFileSync(
+      publicResult,
+      JSON.stringify({ exitCode: 0, treeWitnessed: true }),
+    );
+    publishProcessCompletion(registry.dir, first, {
+      exitCode: 0,
+      treeWitnessed: true,
+    });
+    generation.dispose();
+    expect(existsSync(publicResult)).toBe(false);
+    expect(processRegistryRoots(registry.dir)).toEqual([]);
+    expect(JSON.parse(readFileSync(authority, "utf8"))).toEqual({
+      exitCode: 0,
+      treeWitnessed: true,
+    });
+    // A delayed publisher keeps the same authority even after its old public
+    // result and identity record have been removed.
+    publishProcessIdentity(
+      registry.dir,
+      first,
+      { pid: 123, start: "owned" },
+      authority,
+    );
+    expect(processRegistryRoots(registry.dir)).toEqual([]);
+    const next = "runner-distinct-nonce";
+    beginProcessRegistration(
+      registry.dir,
+      next,
+      processCompletionPath(registry.dir, next),
+    );
+    expect(processRegistryRoots(registry.dir)).toBeNull();
+  } finally {
+    registry.dispose();
+    generation.dispose();
+  }
+});
+
+for (const terminal of [
+  { exitCode: 0, treeWitnessed: false },
+  { exitCode: 0, treeWitnessed: "false" },
+])
+  test("an unresolved durable terminal witness preserves actionable roots and withholds confirmation", () => {
+    const registry = createProcessRegistry();
+    try {
+      const authority = processCompletionPath(registry.dir, "runner");
+      publishProcessIdentity(
+        registry.dir,
+        "runner",
+        { pid: 123, start: "owned" },
+        authority,
+      );
+      writeFileSync(authority, JSON.stringify(terminal));
+      expect(() =>
+        publishProcessCompletion(registry.dir, "runner", {
+          exitCode: 0,
+          treeWitnessed: true,
+        }),
+      ).toThrow();
+      const snapshot = processRegistrySnapshot(registry.dir);
+      expect(snapshot.complete).toBe(false);
+      expect(snapshot.roots).toEqual([
+        { pid: 123, start: "owned", resultFile: authority },
+      ]);
+      expect(snapshot.roots.map(processIdentityUnwitnessed)).toEqual([
+        terminal.treeWitnessed === false,
+      ]);
+    } finally {
+      registry.dispose();
+    }
+  });

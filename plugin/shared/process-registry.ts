@@ -8,8 +8,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
-import { swallow } from "./errors.ts";
+import { isAbsolute, join, resolve } from "node:path";
+import { Defect, swallow } from "./errors.ts";
 import { processTable, type ProcessRow } from "./process-table.ts";
 
 export const PROCESS_REGISTRY_ENV = "JIG_PROCESS_REGISTRY_DIR";
@@ -44,6 +44,34 @@ export function markProcessRegistryUnconfirmed(dir: string): string {
 }
 export function clearProcessRegistryUnconfirmed(marker: string): void {
   rmSync(marker, { force: true });
+}
+
+/** Completion authority belongs to the acquisition, independent of launch-log retention. */
+export function processCompletionPath(dir: string, entry: string): string {
+  return resolve(dir, `${entry}.result.json`);
+}
+
+/** One terminal witness per unique entry; retain it until its registry is retired. */
+export function publishProcessCompletion(
+  dir: string,
+  entry: string,
+  result: { exitCode: number; treeWitnessed?: boolean },
+): void {
+  if (
+    !Number.isInteger(result.exitCode) ||
+    typeof result.treeWitnessed !== "boolean"
+  )
+    throw new Defect(
+      "process completion requires an integer status and explicit tree witness",
+    );
+  writeFileSync(
+    processCompletionPath(dir, entry),
+    JSON.stringify({
+      exitCode: result.exitCode,
+      treeWitnessed: result.treeWitnessed,
+    }),
+    { flag: "wx" },
+  );
 }
 
 /** Retain the completion location so readers can reconcile an unfinished handoff. */
@@ -235,6 +263,29 @@ function readRegistryFile(
   }
 }
 
+/** Retain terminal authority files while collecting actionable identity records. */
+function collectRegistryFile(
+  entry: Dirent,
+  path: string,
+  snapshot: ProcessRegistrySnapshot,
+): void {
+  // Publication temporaries never authorize cancellation; a pending marker
+  // protects an unfinished identity handoff until the record is renamed.
+  if (entry.isFile() && entry.name.endsWith(".tmp")) return;
+  if (!entry.isFile()) {
+    snapshot.complete = false;
+    return;
+  }
+  if (entry.name.endsWith(".result.json")) {
+    if (completionWitness({ resultFile: resolve(path) }) !== true)
+      snapshot.complete = false;
+    return;
+  }
+  const root = readRegistryFile(path, entry.name.endsWith(".pending"));
+  if (root === null) snapshot.complete = false;
+  else if (root !== false) snapshot.roots.push(root);
+}
+
 function registryDirectorySnapshot(
   dir: string,
   directories: string[],
@@ -252,16 +303,7 @@ function registryDirectorySnapshot(
       directories.push(path);
       continue;
     }
-    // Publication temporaries never authorize cancellation; a pending marker
-    // protects an unfinished identity handoff until the record is renamed.
-    if (entry.isFile() && entry.name.endsWith(".tmp")) continue;
-    if (!entry.isFile()) {
-      snapshot.complete = false;
-      continue;
-    }
-    const root = readRegistryFile(path, entry.name.endsWith(".pending"));
-    if (root === null) snapshot.complete = false;
-    else if (root !== false) snapshot.roots.push(root);
+    collectRegistryFile(entry, path, snapshot);
   }
   return snapshot;
 }

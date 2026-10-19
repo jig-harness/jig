@@ -344,6 +344,10 @@ you look:
   tree and then release its locks. Process identity is verified through the
   platform process table (`ps` on POSIX, PowerShell on Windows), and a
   cooperative stop request lets a Windows driver run its own cleanup.
+  Confirmed cleanup publishes a receipt for that acquisition before releasing
+  claims. A matching receipt and disappearance of captured identities can
+  confirm shutdown after a temporary cancellation marker made the registry
+  uncertain; registry disappearance alone cannot.
   A stale lock stays the next acquire's to recover.
 - **Progress liveness / `--doctor`** — a claim heartbeat proves the
   driver *process* is alive, never that the drive is making *progress*: a driver
@@ -680,6 +684,11 @@ its process tree could not be confirmed stopped (the `command-exit: N` line
 preserves the command's status); `20` means still running — call `wait` again; `21` means no process
 recorded for the launch is alive and no result was published. Each `wait`
 relays only output not yet shown (a bounded tail if a great deal arrived).
+
+The supervisor establishes its own process identity before executing the
+command. If ownership cannot be established, the command does not execute and
+the wait reports failure. A short successful command can therefore finish
+before the next process snapshot without losing its ownership anchor.
 
 Never call `launch` to resume a wait: a second copy of the command (a second
 push, or a commit racing the first's `index.lock`) would start beside the

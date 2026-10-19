@@ -57,11 +57,16 @@
  * `finish-round.ts` idempotence) stays the authority before relaunching.
  */
 import {
-  trackForegroundProcessTree,
+  trackForegroundAnchor,
   type ForegroundTreeState,
 } from "./lib/foreground-process-tree.ts";
+import {
+  claimGenerationLauncher,
+  ownsGenerationLauncher,
+} from "./lib/foreground-claim.ts";
 import { liveOrUnknownTargets } from "../../../shared/process-uncertainty.ts";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { swallow } from "../../../shared/errors.ts";
 import {
   appendFileSync,
@@ -78,7 +83,7 @@ import {
   writeFileSync,
   writeSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, isAbsolute } from "node:path";
 import { testPacing } from "./lib/cli.ts";
 import { readTimeoutEnv } from "./lib/proc.ts";
 import {
@@ -90,6 +95,9 @@ import {
   clearPendingProcessRegistration,
   handoffProcessRegistration,
   publishProcessIdentity,
+  processCompletionPath,
+  publishProcessCompletion,
+  processIdentityCompleted,
 } from "../../../shared/process-registry.ts";
 import { signalIdentityTargets } from "../../../shared/process-tree.ts";
 import {
@@ -134,7 +142,7 @@ interface Result {
   signal: string | null;
   /** Why the runner itself ended the command (deadline, unwritable log). */
   note?: string;
-  /** Registry proof requires true; helper commands retain legacy compatibility when absent. */
+  /** Registry authorities require a boolean; only legacy public results may omit it. */
   treeWitnessed?: boolean;
 }
 
@@ -166,14 +174,37 @@ function readPid(dir: string, name: string): number | null {
   }
 }
 
-function readResult(dir: string): Result | "unreadable" | null {
-  if (!existsSync(at(dir, "result.json"))) return null;
+/** The registered authority remains available if a public result copy cannot be written. */
+function registeredResultFile(dir: string): string | "unreadable" | null {
+  const identity = at(dir, "runner.identity.json");
+  if (!existsSync(identity)) return null;
   try {
-    const r = JSON.parse(
-      readFileSync(at(dir, "result.json"), "utf8"),
-    ) as Result;
+    const record: unknown = JSON.parse(readFileSync(identity, "utf8"));
+    if (!record || typeof record !== "object") return "unreadable";
+    if (!("resultFile" in record)) return null;
+    return typeof record.resultFile === "string" &&
+      isAbsolute(record.resultFile)
+      ? record.resultFile
+      : "unreadable";
+  } catch {
+    return "unreadable";
+  }
+}
+
+function readResult(dir: string): Result | "unreadable" | null {
+  let file = at(dir, "result.json");
+  const publicResult = existsSync(file);
+  if (!publicResult) {
+    const authority = registeredResultFile(dir);
+    if (authority === "unreadable") return authority;
+    if (authority === null || !existsSync(authority)) return null;
+    file = authority;
+  }
+  try {
+    const r = JSON.parse(readFileSync(file, "utf8")) as Result;
     return Number.isInteger(r.exitCode) &&
-      (r.treeWitnessed === undefined || typeof r.treeWitnessed === "boolean")
+      ((publicResult && r.treeWitnessed === undefined) ||
+        typeof r.treeWitnessed === "boolean")
       ? r
       : "unreadable";
   } catch {
@@ -279,24 +310,39 @@ function unresolvedResult(result: Result | "unreadable" | null): boolean {
   return result === "unreadable" || result?.treeWitnessed === false;
 }
 
+function recordedPids(dir: string): number[] {
+  return ["launcher.pid", "runner.pid", "cmd.pid"]
+    .map((name) => readPid(dir, name))
+    .filter((pid): pid is number => pid !== null);
+}
+
+function unrecordedClaimRunning(dir: string): boolean {
+  try {
+    return Date.now() - statSync(dir).mtimeMs < CLAIM_GRACE_MS;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+/** Terminal proof is re-read after native enumeration, which may outlive its writer. */
 async function running(dir: string): Promise<boolean> {
   const result = readResult(dir);
   if (result !== null) return unresolvedResult(result);
-  if (readPid(dir, "launcher.pid") === null) {
-    // Claimed but nothing recorded yet: mid-creation, unless the creator died.
-    try {
-      return Date.now() - statSync(dir).mtimeMs < CLAIM_GRACE_MS;
-    } catch (err) {
-      // Removed by a newer launch: superseded, not running.
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
-      throw err;
-    }
-  }
-  return liveTree(() =>
-    ["launcher.pid", "runner.pid", "cmd.pid"]
-      .map((n) => readPid(dir, n))
-      .filter((p): p is number => p !== null),
-  );
+  if (readPid(dir, "launcher.pid") === null) return unrecordedClaimRunning(dir);
+  const live = await liveTree(() => recordedPids(dir));
+  const terminal = readResult(dir);
+  return terminal === null
+    ? live || recordedPids(dir).some(killZero)
+    : unresolvedResult(terminal);
+}
+
+/** Synchronous final validation: a live writer can still publish unresolved completion. */
+function blocksAdmission(dir: string): boolean {
+  const result = readResult(dir);
+  if (result !== null) return unresolvedResult(result);
+  const pids = recordedPids(dir);
+  return pids.length > 0 ? pids.some(killZero) : unrecordedClaimRunning(dir);
 }
 
 /** Complete the handoff while the child handle still proves ownership. */
@@ -307,40 +353,41 @@ async function recordRunnerIdentity(
   dir: string,
 ): Promise<void> {
   if (!registry || runner.pid === undefined) return;
+  const authority = processCompletionPath(registry, entry);
+  const identity = { pid: runner.pid, start: "", resultFile: authority };
   await handoffProcessRegistration(
     registry,
     entry,
     runner.pid,
-    () => {
-      const result = readResult(dir);
-      return (
-        result !== null &&
-        result !== "unreadable" &&
-        result.treeWitnessed === true
-      );
-    },
+    () => processIdentityCompleted(identity),
     () =>
       runner.exitCode === null &&
       runner.signalCode === null &&
       readResult(dir) === null,
-    { resultFile: at(dir, "result.json") },
+    { resultFile: authority },
   );
 }
 
+interface StartedRunner {
+  runner: ReturnType<typeof spawn>;
+  registry: string | undefined;
+  entry: string;
+}
+
 /** Start and register the supervisor before its launcher returns. */
-async function startRunner(
-  dir: string,
-  argv: string[],
-  next: number,
-): Promise<void> {
+function startRunner(dir: string, argv: string[], next: number): StartedRunner {
   // A Windows pass cannot rely on a process group after this launcher
   // exits. Publish the runner's creation identity in the pass's registry
   // before returning; the pass can then stop its recorded tree even after
   // Windows has reparented it. A pending registration is unknown, not empty.
   const registry = process.env.JIG_PROCESS_REGISTRY_DIR;
-  const entry = `${process.pid}-${next}`;
+  const entry = `${process.pid}-${next}-${randomUUID()}`;
   if (registry)
-    beginProcessRegistration(registry, entry, at(dir, "result.json"));
+    beginProcessRegistration(
+      registry,
+      entry,
+      processCompletionPath(registry, entry),
+    );
   const runner = spawn(
     process.execPath,
     [process.argv[1] as string, "_run", dir, entry, "--", ...argv],
@@ -356,10 +403,7 @@ async function startRunner(
   );
   runner.unref();
   writeAtomic(dir, "runner.pid", String(runner.pid));
-  await recordRunnerIdentity(registry, entry, runner, dir);
-  console.log(
-    `foreground-wait: launched (gen ${next}, runner pid ${runner.pid})`,
-  );
+  return { runner, registry, entry };
 }
 
 async function anyGenerationRunning(gens: number[]): Promise<boolean> {
@@ -367,11 +411,20 @@ async function anyGenerationRunning(gens: number[]): Promise<boolean> {
   return false;
 }
 
-/** Keep unresolved completion evidence even if it appears during a new claim. */
-function removeCompletedGenerations(gens: number[]): void {
-  for (const gen of gens)
-    if (!unresolvedResult(readResult(genDir(gen))))
-      rmSync(genDir(gen), { recursive: true, force: true });
+/** The claim is admitted and spawned in one synchronous transaction after all awaits. */
+function commitRunnerAdmission(
+  dir: string,
+  argv: string[],
+  next: number,
+): StartedRunner | null {
+  if (!ownsGenerationLauncher(dir, process.pid)) return null;
+  const gens = generations().filter((gen) => genDir(gen) !== dir);
+  if (gens.some((gen) => blocksAdmission(genDir(gen)))) {
+    rmSync(dir, { recursive: true, force: true });
+    return null;
+  }
+  for (const gen of gens) rmSync(genDir(gen), { recursive: true, force: true });
+  return startRunner(dir, argv, next);
 }
 
 async function launch(argv: string[]): Promise<number> {
@@ -404,14 +457,39 @@ async function launch(argv: string[]): Promise<number> {
       throw err;
     }
     const dir = genDir(next);
-    writeAtomic(dir, "launcher.pid", String(process.pid));
-    removeCompletedGenerations(gens);
-    await startRunner(dir, argv, next);
+    if (!claimGenerationLauncher(dir, process.pid)) {
+      console.error(
+        "foreground-wait: launch claim belongs to another launcher; retained its evidence",
+      );
+      return 3;
+    }
+    const started = commitRunnerAdmission(dir, argv, next);
+    if (started === null) {
+      console.error(
+        "foreground-wait: an earlier launch remains unresolved; retained its evidence",
+      );
+      return 3;
+    }
+    await recordRunnerIdentity(
+      started.registry,
+      started.entry,
+      started.runner,
+      dir,
+    );
+    console.log(
+      `foreground-wait: launched (gen ${next}, runner pid ${started.runner.pid})`,
+    );
     return 0;
   }
 }
 
-function publish(dir: string, result: Result): void {
+function publish(
+  dir: string,
+  result: Result,
+  registry?: string,
+  entry?: string,
+): void {
+  if (registry && entry) publishProcessCompletion(registry, entry, result);
   writeAtomic(dir, "result.json", JSON.stringify(result));
 }
 
@@ -433,12 +511,16 @@ function registerRunnerSnapshot(
   registry: string | undefined,
   entry: string | undefined,
   rows: ProcessRow[] | null,
-  resultFile: string,
 ): boolean {
   if (!registry || !entry) return false;
   const self = rows?.find((row) => row.pid === process.pid);
   if (!self?.start) return false;
-  publishProcessIdentity(registry, entry, self, resultFile);
+  publishProcessIdentity(
+    registry,
+    entry,
+    self,
+    processCompletionPath(registry, entry),
+  );
   return true;
 }
 
@@ -488,10 +570,61 @@ function acknowledgeCapture(
     );
 }
 
-function run(dir: string, argv: string[], entry: string | undefined): void {
+/** Bind the stable supervisor before any user command is allowed to execute. */
+async function bindRunner(): Promise<{
+  root: Target;
+  rows: Awaited<ReturnType<typeof processTable>>;
+} | null> {
+  const deadline = Date.now() + CANCEL_BUDGET_MS;
+  while (Date.now() < deadline) {
+    const rows = await processTable(
+      Math.max(0.001, Math.min(5, (deadline - Date.now()) / 1000)),
+    );
+    const own = rows?.find(
+      (row) =>
+        row.pid === process.pid && row.start && !row.stat.startsWith("Z"),
+    );
+    if (own) return { root: { pid: own.pid, start: own.start }, rows };
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.max(0, Math.min(100, deadline - Date.now()))),
+    );
+  }
+  return null;
+}
+
+async function run(
+  dir: string,
+  argv: string[],
+  entry: string | undefined,
+): Promise<void> {
   const registry = process.env.JIG_PROCESS_REGISTRY_DIR;
   let registered = false;
   const log = at(dir, "log");
+  const bound = await bindRunner();
+  if (bound === null) {
+    const note =
+      "could not establish supervisor ownership; command was not started";
+    appendFileSync(log, `foreground-wait: ${note}\n`);
+    publish(
+      dir,
+      { exitCode: 125, signal: null, treeWitnessed: true, note },
+      registry,
+      entry,
+    );
+    if (registry && entry) clearPendingProcessRegistration(registry, entry);
+    return;
+  }
+  writeAtomic(
+    dir,
+    "runner.identity.json",
+    JSON.stringify({
+      ...bound.root,
+      ...(registry && entry
+        ? { resultFile: processCompletionPath(registry, entry) }
+        : {}),
+    }),
+  );
+  registered = registerRunnerSnapshot(registry, entry, bound.rows);
   // Output passes through the runner so retention is bounded at the writer.
   const child = spawn(argv[0] as string, argv.slice(1), {
     stdio: ["ignore", "pipe", "pipe"],
@@ -508,13 +641,13 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
   // Captured BEFORE the first signal: once the command dies, its surviving
   // descendants are re-parented and a fresh snapshot no longer reaches them.
   const tree: ForegroundTreeState = {
-    root: null,
+    root: bound.root,
     targets: [],
     unknown: new Set(),
     unresolved: false,
     unverifiable: false,
   };
-  let lastRows: PsRow[] | null = null;
+  let lastRows: PsRow[] | null = bound.rows;
   let cancellationDeadline: number | undefined;
   const snapshot = () =>
     processTable(
@@ -546,19 +679,9 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
         const rows = await snapshot();
         if (settled) return;
         if (!registered)
-          registered = registerRunnerSnapshot(
-            registry,
-            entry,
-            rows,
-            at(dir, "result.json"),
-          );
+          registered = registerRunnerSnapshot(registry, entry, rows);
         lastRows = rows;
-        trackForegroundProcessTree(
-          child.pid,
-          child.exitCode !== null || child.signalCode !== null,
-          rows,
-          tree,
-        );
+        trackForegroundAnchor(rows, tree);
         acknowledgeCapture(tree, rows);
       })
       .finally(() => {
@@ -593,8 +716,12 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
       // Reinstate the pending boundary before publishing that report, even if
       // this runner's own identity was recorded earlier.
       if (registry && entry && result.treeWitnessed !== true)
-        beginProcessRegistration(registry, entry, at(dir, "result.json"));
-      publish(dir, result);
+        beginProcessRegistration(
+          registry,
+          entry,
+          processCompletionPath(registry, entry),
+        );
+      publish(dir, result, registry, entry);
       if (registry && entry && result.treeWitnessed === true)
         clearPendingProcessRegistration(registry, entry);
     } catch {
@@ -638,16 +765,14 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
       if (polling) return;
       polling = true;
       try {
+        // Finish any earlier tracker query before enumerating the anchored
+        // workload; a concurrent observer must never become a target.
+        await tracking;
+        if (settled) return;
         const rows = await snapshot();
         if (settled) return;
         lastRows = rows;
-        if (child.pid !== undefined)
-          trackForegroundProcessTree(
-            child.pid,
-            child.exitCode !== null || child.signalCode !== null,
-            rows,
-            tree,
-          );
+        trackForegroundAnchor(rows, tree);
         forceUnresolvedOwnedChild();
         beginGrace();
         const now = Date.now();
@@ -889,7 +1014,7 @@ function finish(dir: string, result: Result | "unreadable"): number {
   relayLog(dir);
   if (result === "unreadable") {
     console.log("foreground-wait: result file unreadable");
-    return 1;
+    return 30;
   }
   if (result.note) console.log(`foreground-wait: ${result.note}`);
   if (result.treeWitnessed === false)
@@ -941,7 +1066,7 @@ const after = sep === -1 ? [] : rest.slice(sep + 1);
 if (cmd === "launch") {
   process.exit(await launch(after));
 } else if (cmd === "_run") {
-  run(rest[0] as string, after, rest[1]);
+  await run(rest[0] as string, after, rest[1]);
 } else if (cmd === "wait") {
   const i = rest.indexOf("--max-sec");
   const n = i === -1 ? 540 : Number.parseInt(rest[i + 1] ?? "", 10);

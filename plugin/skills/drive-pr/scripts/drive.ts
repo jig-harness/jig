@@ -139,7 +139,11 @@ import {
   type WindowsTreeState,
 } from "../../../shared/process-tree.ts";
 import { PROCESS_REGISTRY_ENV } from "../../../shared/process-registry.ts";
-import { driverStopRequested, stopRequestPath } from "./lib/stop-request.ts";
+import {
+  driverStopRequested,
+  stopRequestPath,
+  publishDriverStopCompletion,
+} from "./lib/stop-request.ts";
 import {
   registerCleanup,
   registerSignalHandler,
@@ -1392,6 +1396,7 @@ export function driverStopExitCode(sig: string): number {
 }
 
 let driverShuttingDown = false;
+let driverStopConfirmed = false;
 
 export function installStopControls(
   held: DriveLock[],
@@ -1413,6 +1418,7 @@ export function installStopControls(
       );
       confirmed = helpersGone && gone;
     } finally {
+      driverStopConfirmed = confirmed;
       if (!confirmed) held.length = 0;
     }
   });
@@ -1535,6 +1541,24 @@ const registrationDrains = new Map<
   string,
   Promise<{ survived: boolean; confirmed: boolean }>
 >();
+
+/** Publish success only behind the cancellation barrier, before claims are released. */
+export function driverStopCompletionCleanup(held: DriveLock[]): Disposable {
+  return registerCleanup(() => {
+    if (!driverStopConfirmed) return;
+    try {
+      for (const lock of held)
+        if (
+          lock.nonce !== undefined &&
+          driverStopRequested(lock.dir, lock.nonce)
+        )
+          publishDriverStopCompletion(lock.dir, lock.nonce, process.pid);
+    } catch (error) {
+      held.length = 0;
+      throw error;
+    }
+  });
+}
 
 function createDriverRegistry(held: DriveLock[]): void {
   // The registry belongs to this acquisition. Detached foreground runners
@@ -2768,6 +2792,7 @@ async function main(): Promise<number> {
     );
   }
   createDriverRegistry(held);
+  lockResources.use(driverStopCompletionCleanup(held));
   driverLogRotates = true;
   // Renewal starts the moment the last lock is held, and runs on its own timer
   // for the rest of the drive — a claim must stay fresh DURING a pass, not
