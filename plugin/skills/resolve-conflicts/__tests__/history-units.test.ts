@@ -393,6 +393,49 @@ describe("the cause rules", () => {
     expect(both("f(a, b);", "f(a, b, c);", "f(a, b, g(x, y));")).toBe(true);
     // A separator alone adds no item.
     expect(both("f(a, b);", "f(a, b, c);", "f(a, b,);")).toBe(false);
+    // Items added after a trailing separator keep it.
+    expect(
+      both("return [a, b,];", "return [a, b, c,];", "return [a, b, d,];"),
+    ).toBe(true);
+    expect(both("a, b,", "a, b, c,", "a, b, d,")).toBe(true);
+    expect(
+      both("return [a, b,];", "return [a, b, c,];", "return [a, b,,];"),
+    ).toBe(false);
+  });
+
+  it("packed-list: a code line is read as its language reads it, or not at all", () => {
+    const both = (base: string, ours: string, theirs: string) =>
+      isPackedList({ base: [base], ours: [ours], theirs: [theirs] }, none);
+    // A template literal escapes a backtick inside it.
+    expect(
+      both(
+        "return [`a\\`b`, c];",
+        "return [`a\\`b`, c, d];",
+        "return [`a\\`b`, c, e];",
+      ),
+    ).toBe(true);
+    expect(
+      both(
+        "return [`a,b`, c];",
+        "return [`a,x,b`, c];",
+        "return [`a,y,b`, c];",
+      ),
+    ).toBe(false);
+    // A `/` may open a regular expression literal: the items cannot be told.
+    expect(
+      both(
+        "return [/a,b/, c];",
+        "return [/a,x,b/, c];",
+        "return [/a,y,b/, c];",
+      ),
+    ).toBe(false);
+    expect(
+      both(
+        "return [a, b]; // c",
+        "return [a, b, d]; // c",
+        "return [a, b, e]; // c",
+      ),
+    ).toBe(false);
   });
 
   it("packed-list: a code span delimited by a run of backticks is one item", () => {

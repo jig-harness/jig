@@ -469,13 +469,21 @@ const PROSE_SEPARATOR = "\u0000separator\u0000";
 
 /**
  * A quoted literal, whole: what it holds is one item, separators and spaces
- * included. A run of backticks opens a literal that the next run of the same
+ * included. Each literal is read as the language it stands in reads it. In
+ * prose a run of backticks opens a literal that the next run of the same
  * length closes, with no escapes inside (a Markdown code span), so ``a,b``
- * is one literal, not two empty ones around `a,b`.
+ * is one literal, not two empty ones around `a,b`. In code a backtick opens a
+ * template literal, which a backslash escapes inside, like a quoted string.
  */
-const QUOTED =
-  /"(?:[^"\\]|\\.)*"|(?<!`)(?<ticks>`+)(?!`)[\s\S]*?(?<!`)\k<ticks>(?!`)/u;
+const DOUBLE_QUOTED = /"(?:[^"\\]|\\.)*"/u;
+const CODE_SPAN = /(?<!`)(?<ticks>`+)(?!`)[\s\S]*?(?<!`)\k<ticks>(?!`)/u;
 const SINGLE_QUOTED = /'(?:[^'\\]|\\.)*'/u;
+const TEMPLATE = /`(?:[^`\\]|\\.)*`/u;
+
+const LITERAL = {
+  prose: `${DOUBLE_QUOTED.source}|${CODE_SPAN.source}`,
+  code: `${DOUBLE_QUOTED.source}|${SINGLE_QUOTED.source}|${TEMPLATE.source}`,
+};
 
 /** The quotes that open a literal: in prose `'` is an apostrophe. */
 const quotes = (prose: boolean): string[] =>
@@ -486,16 +494,17 @@ const quotes = (prose: boolean): string[] =>
  * `_`, and each other non-blank character. In prose a comma and a closing
  * `and` or `or` are one token, so `b and c` growing into `b, c and d` keeps
  * its items in place; elsewhere every separator is itself, since `a | b` and
- * `a, b` differ. Null for a line with a quote that closes nowhere, whose
- * items cannot be told.
+ * `a, b` differ. Null for a line whose items cannot be told without guessing
+ * at its language: a quote that closes nowhere, or in code a `/`, which opens
+ * a regular expression literal or a comment as often as it divides, so
+ * `[/a,b/, c]` would read as items it does not hold.
  */
 function tokens(line: string, prose: boolean): string[] | null {
-  const literal = prose
-    ? QUOTED.source
-    : `${QUOTED.source}|${SINGLE_QUOTED.source}`;
+  const literal = prose ? LITERAL.prose : LITERAL.code;
   const found =
     line.match(new RegExp(`${literal}|[\\p{L}\\p{N}_]+|\\S`, "gu")) ?? [];
   if (found.some((token) => quotes(prose).includes(token))) return null;
+  if (!prose && found.some((token) => token === "/")) return null;
   return found.map((token) =>
     prose && PROSE_SEPARATORS.has(token) ? PROSE_SEPARATOR : token,
   );
@@ -549,7 +558,8 @@ function wholeItems(tokens: readonly string[]): boolean {
  * line), adds whole items at an item boundary: a separator and items placed
  * where an item ends (before a separator, a closing bracket or the end), or
  * items and a separator placed where an item starts (after a separator, an
- * opening bracket or the start; in prose also before the sentence's end).
+ * opening bracket or the start; in prose also before the sentence's end) or
+ * after a trailing separator (`[a, b,]` becoming `[a, b, c,]`).
  * Anything else, `b` becoming `b + d,` or `b` becoming `b, x + e`, changes an
  * item the base has.
  */
@@ -559,28 +569,44 @@ function addsWholeItems(
   after: string | null,
   prose: boolean,
 ): boolean {
-  const first = run[0] as string;
-  const last = run.at(-1) as string;
-  const itemEnds =
-    before !== null && !isSeparator(before) && !OPENERS.has(before);
-  const itemStarts =
-    after !== null && !isSeparator(after) && !CLOSERS.has(after);
-  const endBoundary =
+  return (
+    (isSeparator(run[0] as string) &&
+      endsAnItem(before, after, prose) &&
+      wholeItems(run.slice(1))) ||
+    (isSeparator(run.at(-1) as string) &&
+      startsAnItem(before, after) &&
+      wholeItems(run.slice(0, -1)))
+  );
+}
+
+/** Whether a run between `before` and `after` stands where an item ends. */
+function endsAnItem(
+  before: string | null,
+  after: string | null,
+  prose: boolean,
+): boolean {
+  if (before === null || isSeparator(before) || OPENERS.has(before))
+    return false;
+  return (
     after === null ||
     isSeparator(after) ||
     CLOSERS.has(after) ||
-    (prose && SENTENCE_ENDS.has(after));
-  const startBoundary =
-    before === null || isSeparator(before) || OPENERS.has(before);
+    (prose && SENTENCE_ENDS.has(after))
+  );
+}
+
+/**
+ * Whether a run between `before` and `after` stands where an item starts, or
+ * after a list's trailing separator, before its closing bracket or the end.
+ */
+function startsAnItem(before: string | null, after: string | null): boolean {
+  if (before !== null && !isSeparator(before) && !OPENERS.has(before))
+    return false;
+  if (after !== null && !isSeparator(after) && !CLOSERS.has(after)) return true;
   return (
-    (isSeparator(first) &&
-      itemEnds &&
-      endBoundary &&
-      wholeItems(run.slice(1))) ||
-    (isSeparator(last) &&
-      startBoundary &&
-      itemStarts &&
-      wholeItems(run.slice(0, -1)))
+    before !== null &&
+    isSeparator(before) &&
+    (after === null || CLOSERS.has(after))
   );
 }
 
