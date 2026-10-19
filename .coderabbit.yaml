@@ -173,12 +173,24 @@ reviews:
     ignore_usernames:
       - "renovate[bot]"
 
+  # Every finishing touch commits to the pull-request branch, so each one is
+  # off: CodeRabbit comments, and changes reach a branch only through its
+  # author. Several default to on; simplify is set too so the file states the
+  # whole rule. No custom recipe is defined.
   finishing_touches:
-    # Generated tests would skip the rule that a test is seen to fail once
-    # before its pass is trusted (M14).
+    # Generated tests would also skip the rule that a test is seen to fail
+    # once before its pass is trusted (M14).
     unit_tests:
       enabled: false
     docstrings:
+      enabled: false
+    simplify:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
       enabled: false
 
 chat:
