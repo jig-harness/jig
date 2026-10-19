@@ -484,29 +484,38 @@ function yamlSpans(text: string, target: readonly string[]): Span[] {
 /** The positions of the values at a key, per kind of file. */
 const SPANS = { json: jsonSpans, toml: tomlSpans, yaml: yamlSpans };
 
+/** A value no version file holds, written in a probe edit to see where `withVersion` writes. */
+const PROBE_VERSION = "0.0.0-span-probe";
+
 /**
- * Where in `text` the release step writes the version: the one span
- * `withVersion` edits, holding the version `readVersion` reads. Null when the
- * file holds no readable version there, or holds it in a form `withVersion`
- * refuses (written twice, escaped, or inside an inline table).
+ * Where in `text` the release step writes the version: the span `withVersion`
+ * edits, holding the version `readVersion` reads. It is found by making that
+ * edit, so the span is one the release step can move on its own. Null when
+ * the file holds no readable version there, or when `withVersion` refuses the
+ * edit (the value written twice, escaped, inside an inline table, or shared
+ * through a YAML alias).
  */
 export function versionSpan(file: VersionFile, text: string): Span | null {
   const version = versionIn(file, text);
-  if (version === null) return null;
-  const kind = kindOf(file.path);
-  if (kind === "plain") {
-    const start = text.indexOf(version);
-    return [start, start + version.length];
-  }
-  let spans: Span[];
+  if (version === null || version === PROBE_VERSION) return null;
+  let probed: string;
   try {
-    spans = SPANS[kind](text, parseField(file.key));
+    probed = withVersion(file, text, version, PROBE_VERSION);
   } catch (error) {
-    swallow(error, `${file.path}: ${file.key} is not written in place`);
+    swallow(error, `${file.path}: ${file.key} cannot be moved on its own`);
     return null;
   }
+  const kind = kindOf(file.path);
+  const at = text.indexOf(version);
+  const spans: Span[] =
+    kind === "plain"
+      ? [[at, at + version.length]]
+      : SPANS[kind](text, parseField(file.key));
   const [start, end] = spans.length === 1 ? (spans[0] ?? [0, 0]) : [0, 0];
-  return spans.length === 1 && text.slice(start, end) === version
+  // The span is the stretch the edit replaced, and nothing else changed.
+  return spans.length === 1 &&
+    text.slice(start, end) === version &&
+    `${text.slice(0, start)}${PROBE_VERSION}${text.slice(end)}` === probed
     ? [start, end]
     : null;
 }

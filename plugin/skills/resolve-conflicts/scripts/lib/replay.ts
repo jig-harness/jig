@@ -112,31 +112,48 @@ export class Git {
   }
 }
 
+/** Each `key\nvalue` entry of `git config -z` output as a key and its value, null for a key with none. */
+function configEntries(out: string): { key: string; value: string | null }[] {
+  return splitNul(out).map((entry) => {
+    const newline = entry.indexOf("\n");
+    return newline < 0
+      ? { key: entry, value: null }
+      : { key: entry.slice(0, newline), value: entry.slice(newline + 1) };
+  });
+}
+
 /**
  * Whether the repository is a partial clone, whose missing objects git would
- * fetch: `extensions.partialClone` set, a remote marked `promisor` (a key
- * with no value is true to git), or a remote with a `partialCloneFilter`,
- * which makes it a promisor remote by itself.
+ * fetch: `extensions.partialClone` set, a remote marked `promisor` (read as
+ * git reads a boolean, so a key with no value, `2` or `-1` is true), or a
+ * remote with a `partialCloneFilter`, which makes it a promisor remote by
+ * itself. A `promisor` value git cannot read as a boolean counts as one.
  */
 export function isPartialClone(git: Git): boolean {
   const out = git.raw([
     "config",
     "-z",
     "--get-regexp",
-    "^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$",
+    "^(extensions\\.partialclone|remote\\..*\\.partialclonefilter)$",
   ]);
-  return splitNul(out.stdout.toString("utf8")).some((entry) => {
-    const newline = entry.indexOf("\n");
-    const key = newline < 0 ? entry : entry.slice(0, newline);
-    const value = newline < 0 ? null : entry.slice(newline + 1);
-    if (key.endsWith(".partialclonefilter")) return true;
-    if (key.endsWith(".promisor"))
-      return (
-        value === null ||
-        ["true", "yes", "on", "1"].includes(value.trim().toLowerCase())
-      );
-    return value !== null && value !== "";
-  });
+  const others = configEntries(out.stdout.toString("utf8")).some(
+    ({ key, value }) =>
+      key.endsWith(".partialclonefilter") || (value !== null && value !== ""),
+  );
+  if (others) return true;
+  const promisor = git.raw([
+    "config",
+    "-z",
+    "--type=bool",
+    "--get-regexp",
+    "^remote\\..*\\.promisor$",
+  ]);
+  // 1 is "no such key"; any other failure is a value git would not read as a boolean.
+  if (promisor.code === 1) return false;
+  if (promisor.code !== 0) return true;
+  return configEntries(promisor.stdout.toString("utf8")).some(
+    ({ value }) => value === "true",
+  );
 }
 
 /** Every configured merge driver's command, set to `false`: no driver of the repository's or a person's runs. */
@@ -174,7 +191,8 @@ export function quoteAlternate(dir: string): string {
  * not read. Git still reads `$GIT_DIR/info/attributes`, which nothing here
  * can redirect, so a marker size or a built-in driver (`union`, `binary`)
  * set there still applies. Every configured merge driver is replaced by
- * `false`, so no command of the repository's runs, whichever file names it.
+ * `false` and renormalization is off, so no merge driver or filter command
+ * of the repository's runs, whichever file names it.
  */
 export function withScratchObjects<T>(repo: Git, body: (git: Git) => T): T {
   const objects = repo
@@ -211,7 +229,12 @@ export function withScratchObjects<T>(repo: Git, body: (git: Git) => T): T {
         GIT_ATTR_SOURCE: emptyTree,
         GIT_ATTR_NOSYSTEM: "1",
       },
-      [`core.attributesFile=${noAttributes}`, ...silencedDrivers(repo)],
+      [
+        `core.attributesFile=${noAttributes}`,
+        // Renormalizing runs the configured clean and smudge filters on each side.
+        "merge.renormalize=false",
+        ...silencedDrivers(repo),
+      ],
     );
     return body(git);
   } finally {
@@ -542,14 +565,40 @@ export function mergeTree(
 
 const DEFAULT_MARKER_SIZE = 7;
 
+/** The first git that reads a marker size as a whole integer; before it, as C's `atoi`. */
+export const STRICT_MARKER_SIZE_GIT: readonly [number, number] = [2, 48];
+
+const INT_MAX = 2 ** 31 - 1;
+const LEADING_INTEGER = /^[\t\n\v\f\r ]*([+-]?\d+)/;
+const WHOLE_INTEGER = /^[\t\n\v\f\r ]*([+-]?\d+)$/;
+
+/**
+ * The marker size git writes for a `conflict-marker-size` value, as the
+ * running git reads it. From 2.48 the value is a whole decimal integer
+ * (leading blanks and a sign allowed, nothing after) that fits an `int`;
+ * before, the leading digits count and anything after them is ignored. A
+ * value it cannot read, or one not above 0, is the default.
+ */
+export function markerSizeOf(
+  value: string,
+  gitVersion: readonly number[],
+): number {
+  const strict = gitIsRecentEnough(gitVersion, STRICT_MARKER_SIZE_GIT);
+  const match = (strict ? WHOLE_INTEGER : LEADING_INTEGER).exec(value);
+  const size = match ? Number.parseInt(match[1] as string, 10) : 0;
+  return size > 0 && size <= INT_MAX ? size : DEFAULT_MARKER_SIZE;
+}
+
 /**
  * The conflict-marker size git writes for each path: the
  * `conflict-marker-size` attribute the replay's git still reads (from
- * `$GIT_DIR/info/attributes`), 7 where none is set.
+ * `$GIT_DIR/info/attributes`), read as that git reads it; 7 where none is
+ * set or git cannot read it.
  */
 export function markerSizes(
   git: Git,
   paths: readonly string[],
+  gitVersion: readonly number[],
 ): Map<string, number> {
   const sizes = new Map<string, number>();
   if (paths.length === 0) return sizes;
@@ -560,8 +609,7 @@ export function markerSizes(
     ),
   );
   for (let i = 0; i + 2 < out.length; i += 3) {
-    const size = Number(out[i + 2]);
-    if (Number.isInteger(size) && size > 0) sizes.set(out[i] as string, size);
+    sizes.set(out[i] as string, markerSizeOf(out[i + 2] as string, gitVersion));
   }
   return new Map(
     paths.map((path) => [path, sizes.get(path) ?? DEFAULT_MARKER_SIZE]),

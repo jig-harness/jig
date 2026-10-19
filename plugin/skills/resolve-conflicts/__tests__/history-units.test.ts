@@ -17,6 +17,7 @@ import {
 } from "../scripts/lib/causes.ts";
 import {
   gitIsRecentEnough,
+  markerSizeOf,
   NO_LAZY_FETCH_GIT,
   parseGitVersion,
   parseMergeTree,
@@ -108,6 +109,30 @@ describe("the command line", () => {
     expect(
       parseArgs(["--since", "2026-01-01T10:00:00+02:00"], now),
     ).toMatchObject({ since: Date.parse("2026-01-01T08:00:00Z") });
+  });
+});
+
+describe("the marker size, read as the running git reads it", () => {
+  const values = [
+    "12",
+    "12suffix",
+    "12.5",
+    " +9",
+    "-3",
+    "0",
+    "unspecified",
+    "set",
+    "99999999999",
+  ];
+  it("before 2.48: the leading digits, anything after ignored", () => {
+    expect(values.map((v) => markerSizeOf(v, [2, 47, 0]))).toEqual([
+      12, 12, 12, 9, 7, 7, 7, 7, 7,
+    ]);
+  });
+  it("from 2.48: a whole integer only, else the default", () => {
+    expect(values.map((v) => markerSizeOf(v, [2, 48, 0]))).toEqual([
+      12, 7, 7, 9, 7, 7, 7, 7, 7,
+    ]);
   });
 });
 
@@ -249,7 +274,7 @@ describe("the cause rules", () => {
   const none: RegionContext = {
     inBase: true,
     file: { base: null, ours: null, theirs: null },
-    release: { base: null, ours: null, theirs: null },
+    release: { base: [], ours: [], theirs: [] },
     prose: false,
     netAbove: () => null,
   };
@@ -349,6 +374,61 @@ describe("the cause rules", () => {
     ).toBe(true);
   });
 
+  it("packed-list: a quoted literal is one item; a change inside it is not an added item", () => {
+    expect(
+      isPackedList(
+        {
+          base: ['return ["a,b"];'],
+          ours: ['return ["a,c,b"];'],
+          theirs: ['return ["a,d,b"];'],
+        },
+        none,
+      ),
+    ).toBe(false);
+    expect(
+      isPackedList(
+        {
+          base: ['return ["a b", c];'],
+          ours: ['return ["a  b", c, d];'],
+          theirs: ['return ["a b", c, e];'],
+        },
+        none,
+      ),
+    ).toBe(false);
+    expect(
+      isPackedList(
+        {
+          base: ["return ['a,b', c];"],
+          ours: ["return ['a,b', c, d];"],
+          theirs: ["return ['a,b', c, 'e,f'];"],
+        },
+        none,
+      ),
+    ).toBe(true);
+    // A quote that closes nowhere: the items cannot be told.
+    expect(
+      isPackedList(
+        {
+          base: ['x = "a, b'],
+          ours: ['x = "a, b, c'],
+          theirs: ['x = "a, b, d'],
+        },
+        none,
+      ),
+    ).toBe(false);
+    // In prose an apostrophe opens nothing.
+    expect(
+      isPackedList(
+        {
+          base: ["Jig's a, b and c"],
+          ours: ["Jig's a, b, c and d"],
+          theirs: ["Jig's a, b, c and e"],
+        },
+        prose,
+      ),
+    ).toBe(true);
+  });
+
   it("sequence: only when both sides add; a changed line is not explained by the collision", () => {
     const ctx = {
       ...none,
@@ -393,9 +473,9 @@ describe("the cause rules", () => {
       ...none,
       file: { base: null, ours, theirs },
       release: {
-        base: null,
-        ours: field('  "version": "1.1.0",', "1.1.0"),
-        theirs: field('  "version": "1.0.1",', "1.0.1"),
+        base: [],
+        ours: [field('  "version": "1.1.0",', "1.1.0")],
+        theirs: [field('  "version": "1.0.1",', "1.0.1")],
       },
     });
     expect(
@@ -433,6 +513,79 @@ describe("the cause rules", () => {
         ctx(pkg("1.1.0"), pkg("1.0.1")),
       ),
     ).toBe(false);
+  });
+
+  it("version: every configured field of the file is masked, each on its own", () => {
+    const field = (line: string, version: string) => {
+      const start = line.indexOf(version);
+      return { version, line, start, end: start + version.length };
+    };
+    const chart = (v: string, app: string) => [
+      `version: ${v}`,
+      `appVersion: ${app}`,
+    ];
+    const ctx: RegionContext = {
+      ...none,
+      file: {
+        base: null,
+        ours: chart("1.1.0", "2.1.0"),
+        theirs: chart("1.0.1", "2.0.1"),
+      },
+      release: {
+        base: [],
+        ours: [
+          field("version: 1.1.0", "1.1.0"),
+          field("appVersion: 2.1.0", "2.1.0"),
+        ],
+        theirs: [
+          field("version: 1.0.1", "1.0.1"),
+          field("appVersion: 2.0.1", "2.0.1"),
+        ],
+      },
+    };
+    expect(
+      isVersion(
+        {
+          base: chart("1.0.0", "2.0.0"),
+          ours: chart("1.1.0", "2.1.0"),
+          theirs: chart("1.0.1", "2.0.1"),
+        },
+        ctx,
+      ),
+    ).toBe(true);
+    // Two fields on one line are masked from its end, so each keeps its offsets.
+    const line = (v: string, app: string) =>
+      `{"version": "${v}", "appVersion": "${app}"}`;
+    const pair = (v: string, app: string) => {
+      const text = line(v, app);
+      const at = text.indexOf(app, text.indexOf("appVersion"));
+      return [
+        field(text, v),
+        { version: app, line: text, start: at, end: at + app.length },
+      ];
+    };
+    expect(
+      isVersion(
+        {
+          base: [line("1.0.0", "2.0.0")],
+          ours: [line("1.1.0", "2.1.0")],
+          theirs: [line("1.0.1", "2.0.1")],
+        },
+        {
+          ...none,
+          file: {
+            base: null,
+            ours: [line("1.1.0", "2.1.0")],
+            theirs: [line("1.0.1", "2.0.1")],
+          },
+          release: {
+            base: [],
+            ours: pair("1.1.0", "2.1.0"),
+            theirs: pair("1.0.1", "2.0.1"),
+          },
+        },
+      ),
+    ).toBe(true);
   });
 
   it("adjacent: insertions at one place overlap; a change beside the other's does not", () => {

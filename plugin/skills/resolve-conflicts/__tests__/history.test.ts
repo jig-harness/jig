@@ -834,6 +834,38 @@ describe("what the replay must not trust or run", () => {
     });
   });
 
+  it("runs no filter, even where the repository asks merges to renormalize", () => {
+    const marker = join(s.home, "filter-ran").replaceAll("\\", "/");
+    s.git("config", "merge.renormalize", "true");
+    for (const kind of ["clean", "smudge"])
+      s.git("config", `filter.touchy.${kind}`, `touch '${marker}'; cat`);
+    s.git("config", "filter.touchy.process", `touch '${marker}'; false`);
+    mkdirSync(join(s.root, ".git", "info"), { recursive: true });
+    writeFileSync(
+      join(s.root, ".git", "info", "attributes"),
+      "*.txt filter=touchy\n",
+    );
+    merge({ "a.txt": "x\n" }, { "a.txt": "y\n" }, { "a.txt": "z\n" });
+    rmSync(marker, { force: true });
+    const rep = report();
+    expect(existsSync(marker)).toBe(false);
+    expect(rep.merges[0]?.conflicted).toBe(true);
+  });
+
+  it("reads a marker size git cannot take whole as the running git does", () => {
+    mkdirSync(join(s.root, ".git", "info"), { recursive: true });
+    writeFileSync(
+      join(s.root, ".git", "info", "attributes"),
+      "*.md conflict-marker-size=12suffix\n",
+    );
+    merge(
+      { "notes.md": "a\n" },
+      { "notes.md": "a\nb\n" },
+      { "notes.md": "a\nc\n" },
+    );
+    expect(causesOf("notes.md", report())).toEqual(["append"]);
+  });
+
   it("reads regions at the marker size $GIT_DIR/info/attributes sets", () => {
     mkdirSync(join(s.root, ".git", "info"), { recursive: true });
     writeFileSync(
@@ -922,10 +954,12 @@ describe("what the replay must not trust or run", () => {
     const config = join(s.root, ".git", "config");
     const plain = readFileSync(config, "utf8");
     s.env.PATH = `${fake("2.44.0")}${delimiter}${path}`;
-    // A promisor set true, set with no value (true to git), or a filter alone.
+    // A promisor set true, with no value or any nonzero number (true to git), or a filter alone.
     for (const remote of [
       "\tpromisor = true\n",
       "\tpromisor\n",
+      "\tpromisor = 2\n",
+      "\tpromisor = -1\n",
       "\tpartialclonefilter = blob:none\n",
     ]) {
       writeFileSync(config, `${plain}[remote "origin"]\n${remote}`);

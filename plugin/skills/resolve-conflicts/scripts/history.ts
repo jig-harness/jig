@@ -285,6 +285,8 @@ function releaseVersionFiles(root: string): VersionFile[] {
 interface Setup {
   entries: GeneratedEntry[];
   versionFiles: VersionFile[];
+  /** The running git's version, which decides how it reads a marker size. */
+  gitVersion: readonly number[];
   heads: Map<string, PullRequestHead[]>;
 }
 
@@ -346,25 +348,27 @@ function regionCauseOf(
   texts: Record<SideName, string | null>,
   versionFiles: VersionFile[],
 ) {
-  const release = (side: SideName): ReleaseField | null => {
+  // Every key configured for the path: a file can carry more than one release version.
+  const release = (side: SideName): ReleaseField[] => {
     const text = texts[side];
-    if (text === null) return null;
-    for (const file of versionFiles) {
-      if (file.path !== conflicted.path) continue;
+    if (text === null) return [];
+    return versionFiles.flatMap((file) => {
+      if (file.path !== conflicted.path) return [];
       const span = versionSpan(file, text);
-      if (span === null) continue;
+      if (span === null) return [];
       const [from, to] = span;
       const start = text.lastIndexOf("\n", from - 1) + 1;
       const end = text.indexOf("\n", from);
       const line = text.slice(start, end < 0 ? undefined : end);
-      return {
-        version: text.slice(from, to),
-        line: line.replace(/\r$/, ""),
-        start: from - start,
-        end: to - start,
-      };
-    }
-    return null;
+      return [
+        {
+          version: text.slice(from, to),
+          line: line.replace(/\r$/, ""),
+          start: from - start,
+          end: to - start,
+        },
+      ];
+    });
   };
   const { base, ours, theirs } = conflicted.stages;
   const above = {
@@ -510,6 +514,7 @@ export function replayMerge(
   const sizes = markerSizes(
     git,
     merged.paths.map((p) => p.path),
+    setup.gitVersion,
   );
   const paths = merged.paths
     .map((p) => {
@@ -644,6 +649,7 @@ async function main(): Promise<number> {
   const setup: Setup = {
     entries: generatedEntries(),
     versionFiles: releaseVersionFiles(consumerRoot()),
+    gitVersion: version,
     heads: pullRequestHeads(repo),
   };
   const minMerges = hotspotMinMerges();

@@ -494,9 +494,10 @@ attributes do not reach a past merge: the working tree's and the index's
 person's attributes files are not read. The exception is
 `.git/info/attributes`, which git always reads: a built-in driver
 (`merge=union`, `merge=binary`) set there still applies, and the report reads
-regions at the `conflict-marker-size` set there.
-Every configured merge driver is replaced by `false`, so no command of the
-repository's runs, whichever file names it. It reads git only and never
+regions at the `conflict-marker-size` set there, as the running git reads the
+value. Every configured merge driver is replaced by `false` and
+renormalization (`merge.renormalize`) is off, so no merge driver or filter
+command of the repository's runs, whichever file names it. It reads git only and never
 fetches: it needs git 2.43 or later, and
 refuses a partial clone below git 2.45, which cannot be kept from fetching
 the objects it lacks. A merge with more than two parents is skipped; in a
@@ -516,11 +517,11 @@ the whole path, with git's own kind of conflict (`modify/delete`, `binary`,
 | `derived` | the path is a lockfile or a generated file, as `conflict-map.ts` classes it | regenerate it; keep it out of pull requests if a step after the merge can write it |
 | `structural` | git reports the conflict without text regions: modify/delete, rename, binary, file/directory, mode (a text conflict whose regions cannot be read is `overlap`) | none from the regions; resolving it stays a decision |
 | `echo` | the sides are identical, or one side's edit (adding at least one line) is already in the other, in the same order | keep the side that contains the other; rebuild a branch on its base once the branch it was built on merges |
-| `version` | the sides differ only in the release version the changelog skill's release step writes (`changelog.version`), at the one place that step writes it, or in a last-updated date | move the version after the merge; take a date from git |
+| `version` | the sides differ only in release versions the changelog skill's release step writes (`changelog.version`, each key configured for the file), at the one place that step writes each and can move it on its own, or in a last-updated date | move the version after the merge; take a date from git |
 | `sequence` | both sides only add lines, among them an entry with the same next ordinal, one past the base's highest | identifiers that cannot collide, or one renumbering step |
 | `tally` | only numbers differ, and each side's number moved by the lines that side added to the file, or added above the line it names | derive the number where it is used; key a register by name, not line |
 | `append` | the base side is empty: both sides added lines at the same place (not in a file both sides added, which had no base) | one file per entry, or a sorted list with one entry per line; in source code the report asks whether it is the same fix written twice |
-| `packed-list` | one line in every side, and each side only adds whole items to a list in it, changing no item or separator (in prose, a closing `and` or `or` may move) | one item per line |
+| `packed-list` | one line in every side, and each side only adds whole items to a list in it, changing no item or separator; a quoted literal is one item, and a line with a quote that closes nowhere is not read (in prose, a closing `and` or `or` may move) | one item per line |
 | `adjacent` | the lines each side changed touch but do not overlap | split what changes for different reasons onto lines or files of its own |
 | `overlap` | none of the above | two pieces of work changed the same thing: plan them apart, or land one first |
 

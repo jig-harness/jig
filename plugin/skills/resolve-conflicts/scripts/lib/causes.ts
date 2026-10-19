@@ -237,8 +237,8 @@ export interface RegionContext {
   inBase: boolean;
   /** The whole file in each version, as lines; null where that version is absent or unreadable. */
   file: Record<SideName, string[] | null>;
-  /** Where each version of the file holds the release version the release step writes, if the path is a version file. */
-  release: Record<SideName, ReleaseField | null>;
+  /** Where each version of the file holds a release version the release step writes: one field per configured key of the path. */
+  release: Record<SideName, readonly ReleaseField[]>;
   /** Whether the file is prose, where a list's items are separated by commas and a closing `and` or `or`. */
   prose: boolean;
   /**
@@ -289,26 +289,28 @@ const PLACEHOLDER_VERSION = "\u0000version\u0000";
 const PLACEHOLDER_DATE = "\u0000date\u0000";
 
 /**
- * The lines with the release version masked where the release field holds it
- * and every date stamp masked. The field's line is told by its whole text,
+ * The lines with the release version masked where each release field holds
+ * it and every date stamp masked. A field's line is told by its whole text,
  * which must stand once in the file: another line with the same text could be
- * the one in the region, so then nothing is masked.
+ * the one in the region, so then that field is not masked.
  */
 function stamped(
   lines: readonly string[],
-  release: ReleaseField | null,
+  release: readonly ReleaseField[],
   file: readonly string[] | null,
 ): string[] {
-  const field =
-    release !== null &&
-    file !== null &&
-    file.filter((line) => line === release.line).length === 1
-      ? release
-      : null;
+  const fields =
+    file === null
+      ? []
+      : release
+          .filter((f) => file.filter((line) => line === f.line).length === 1)
+          // Masked from the end of a line, so an earlier field's offsets still hold.
+          .toSorted((a, b) => b.start - a.start);
   return lines.map((line) => {
     let out = line;
-    if (field !== null && line === field.line)
-      out = `${line.slice(0, field.start)}${PLACEHOLDER_VERSION}${line.slice(field.end)}`;
+    for (const field of fields)
+      if (line === field.line)
+        out = `${out.slice(0, field.start)}${PLACEHOLDER_VERSION}${out.slice(field.end)}`;
     if (DATE_STAMP_KEY.test(out)) out = out.replace(DATE, PLACEHOLDER_DATE);
     return out;
   });
@@ -465,14 +467,30 @@ const CONJUNCTIONS = ["and", "or"];
 
 const PROSE_SEPARATOR = "\u0000separator\u0000";
 
+/** A quoted literal, whole: what it holds is one item, separators and spaces included. */
+const QUOTED = /"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`/u;
+const SINGLE_QUOTED = /'(?:[^'\\]|\\.)*'/u;
+
+/** The quotes that open a literal: in prose `'` is an apostrophe. */
+const quotes = (prose: boolean): string[] =>
+  prose ? ['"', "`"] : ['"', "`", "'"];
+
 /**
- * A line as tokens: each run of letters, digits and `_`, and each other
- * non-blank character. In prose a comma and a closing `and` or `or` are one
- * token, so `b and c` growing into `b, c and d` keeps its items in place;
- * elsewhere every separator is itself, since `a | b` and `a, b` differ.
+ * A line as tokens: each quoted literal, each run of letters, digits and
+ * `_`, and each other non-blank character. In prose a comma and a closing
+ * `and` or `or` are one token, so `b and c` growing into `b, c and d` keeps
+ * its items in place; elsewhere every separator is itself, since `a | b` and
+ * `a, b` differ. Null for a line with a quote that closes nowhere, whose
+ * items cannot be told.
  */
-function tokens(line: string, prose: boolean): string[] {
-  return (line.match(/[\p{L}\p{N}_]+|\S/gu) ?? []).map((token) =>
+function tokens(line: string, prose: boolean): string[] | null {
+  const literal = prose
+    ? QUOTED.source
+    : `${QUOTED.source}|${SINGLE_QUOTED.source}`;
+  const found =
+    line.match(new RegExp(`${literal}|[\\p{L}\\p{N}_]+|\\S`, "gu")) ?? [];
+  if (found.some((token) => quotes(prose).includes(token))) return null;
+  return found.map((token) =>
     prose && PROSE_SEPARATORS.has(token) ? PROSE_SEPARATOR : token,
   );
 }
@@ -501,6 +519,7 @@ function addsItems(from: string, to: string, prose: boolean): boolean {
     return false;
   const before = tokens(from, prose);
   const after = tokens(to, prose);
+  if (before === null || after === null) return false;
   const pairs = align(before, after);
   if (pairs === null || pairs.length !== before.length) return false;
   let inserted = 0;

@@ -226,6 +226,16 @@ describe("where the version is written", () => {
       null,
     );
     expect(versionSpan(file("package.json"), `{"name": "p"}`)).toBe(null);
+    // A YAML alias shares the value with another path, which an edit would move too.
+    const shared = `info: &shared\n  version: 1.0.0\nother: *shared\n`;
+    expect(versionSpan(file("chart.yaml", "info.version"), shared)).toBe(null);
+  });
+
+  test("a version that begins as the probe does is still found whole", () => {
+    const yaml = `info:\n  version: 0.0.1\n`;
+    expect(
+      at(yaml, versionSpan(file("chart.yaml", "info.version"), yaml)),
+    ).toEqual(["info:\n  version: ", "0.0.1"]);
   });
 });
 

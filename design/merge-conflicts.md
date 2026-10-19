@@ -75,10 +75,11 @@ path, the kind of file, the conflicting regions with a cause for each
    adopts Jig. Today's attributes and merge drivers are kept out of the
    past merges: the working tree's and the index's attributes are read
    from the empty tree, the system's and a person's attributes files are
-   not read, and every configured driver is replaced by `false`. Git still
-   reads `.git/info/attributes`, so a marker size or a built-in driver set
-   there still applies (the report reads regions at that marker size), but
-   no driver command runs. It never fetches: it
+   not read, every configured driver is replaced by `false`, and
+   renormalization is off. Git still reads `.git/info/attributes`, so a
+   marker size or a built-in driver set there still applies (the report
+   reads regions at that marker size, as the running git reads the value),
+   but no driver or filter command runs. It never fetches: it
    needs git 2.43 or later, the first whose `merge-tree` reads
    `GIT_ATTR_SOURCE` reliably, refuses a partial clone
    below git 2.45, which cannot be kept from fetching, and exits with a
@@ -144,7 +145,7 @@ being reported as mechanical.
 | `sequence` | both sides add an entry with the same next ordinal (a migration number) | identifiers that cannot collide (a timestamp), or one step that renumbers the entry everywhere it is named |
 | `tally` | with every number replaced by one placeholder, the two sides are equal, and, read from the three versions of the file, each side's number moved from the base by the net number of lines that side added to the file (a count of a list with one entry per line), or by the net number of lines it added above a stored line number; a number that differs any other way (a setting, a limit), or one that counts something outside the file, leaves the region `overlap` | derive the number where it is used ([M2](../modules/M2-generated-artifact-freshness/README.md#which-numbers-in-prose-may-stay)); a register that stores line numbers keys its entries by name instead |
 | `append` | the base side of the region is empty: both sides added lines at the same place; a file both sides added has no base, and its regions are not `append` | one file per entry (as change notes are), or a sorted list with one entry per line |
-| `packed-list` | the region is one line in every side, and each side adds items to a list in it, changing or removing none and keeping its separators (in prose, a closing `and` or `or` may move) | one item per line, or stop listing what another file already lists |
+| `packed-list` | the region is one line in every side, and each side adds items to a list in it, changing or removing none and keeping its separators; a quoted literal is one item (in prose, a closing `and` or `or` may move) | one item per line, or stop listing what another file already lists |
 | `adjacent` | the lines each side changed do not overlap, but touch | split what changes for different reasons onto lines or files of its own |
 | `overlap` | none of the above: both sides changed the same lines | two pieces of work changed the same thing; plan them apart ([M12](../modules/M12-parallel-agent-ergonomics/README.md)) or land one first |
 
