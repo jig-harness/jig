@@ -699,23 +699,145 @@ describe("foreground-wait.ts", () => {
     T,
   );
 
+  for (const mode of [
+    "recovered",
+    "permanent outage",
+    "unknown live identity",
+  ] as const)
+    test(
+      `an unavailable Windows process table (${mode}) ends the owned child without certifying the tree`,
+      async () => {
+        const shim = join(cwd, "shim");
+        const dir = join(cwd, "direct");
+        const registry = join(cwd, "registry");
+        mkdirSync(shim);
+        mkdirSync(dir);
+        mkdirSync(registry);
+        const snapshotFile = join(cwd, "native-snapshot.json");
+        writeFakeProgram(
+          join(shim, "powershell.exe"),
+          `#!/usr/bin/env bun\nconst fs=require("node:fs");if(!fs.existsSync(${JSON.stringify(snapshotFile)}))process.exit(1);process.stdout.write(fs.readFileSync(${JSON.stringify(snapshotFile)}));\n`,
+        );
+        beginProcessRegistration(registry, "fixture", join(dir, "result.json"));
+        const marker = join(cwd, "owned.pid");
+        const command = `require("node:fs").writeFileSync(${JSON.stringify(marker)},String(process.pid)); setInterval(()=>{},1000); setTimeout(()=>process.exit(0),30000);`;
+        const args = [
+          process.execPath,
+          SCRIPT,
+          "_run",
+          dir,
+          "fixture",
+          "--",
+          ...bunCommand(command),
+        ];
+        // Modeling the platform only in this subprocess exercises the native
+        // Windows cancellation branch without changing the test worker's state.
+        const runner = Bun.spawn(
+          [
+            process.execPath,
+            "-e",
+            `Object.defineProperty(process,"platform",{value:"win32"});process.argv=${JSON.stringify(args)};await import(${JSON.stringify(SCRIPT)});`,
+          ],
+          {
+            cwd,
+            env: {
+              ...process.env,
+              ...PACING,
+              PATH: `${shim}${delimiter}${process.env.PATH}`,
+              JIG_PROCESS_REGISTRY_DIR: registry,
+              DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "1",
+              DRIVE_PR_FOREGROUND_WAIT_KILL_GRACE_MS: "100",
+              ...(mode === "recovered"
+                ? {}
+                : { DRIVE_PR_FOREGROUND_WAIT_CANCEL_MS: "2000" }),
+            },
+            stdout: "pipe",
+            stderr: "pipe",
+          },
+        );
+        let runnerExited = false;
+        void runner.exited.then(() => {
+          runnerExited = true;
+        });
+        try {
+          const readyDeadline = Date.now() + 10_000;
+          while (!existsSync(marker) && Date.now() < readyDeadline)
+            await sleepMs(20);
+          expect(existsSync(marker)).toBe(true);
+          const pid = Number(readFileSync(marker, "utf8"));
+          if (mode === "unknown live identity")
+            writeFileSync(
+              snapshotFile,
+              JSON.stringify([
+                {
+                  ProcessId: runner.pid,
+                  ParentProcessId: process.pid,
+                  CreationDate: "2026-10-19T00:00:00.0000000Z",
+                  CommandLine: "runner",
+                },
+                {
+                  ProcessId: pid,
+                  ParentProcessId: runner.pid,
+                  CreationDate: null,
+                  CommandLine: "command",
+                },
+              ]),
+            );
+
+          const deadline = Date.now() + 10_000;
+          let childGone = false;
+          while (!childGone && Date.now() < deadline) {
+            childGone = !(await alive(pid));
+            if (!childGone) await sleepMs(20);
+          }
+          expect(childGone).toBe(true);
+          if (mode === "recovered") {
+            expect(runnerExited).toBe(false);
+            expect(existsSync(join(dir, "result.json"))).toBe(false);
+            expect(processRegistryRoots(registry)).toBeNull();
+            // Recover enumeration only after the owned child was forced. Its
+            // absence now cannot establish what happened to unobserved descendants.
+            writeFileSync(
+              snapshotFile,
+              JSON.stringify([
+                {
+                  ProcessId: runner.pid,
+                  ParentProcessId: process.pid,
+                  CreationDate: "2026-10-19T00:00:00.0000000Z",
+                  CommandLine: "foreground runner",
+                },
+              ]),
+            );
+          }
+          const recoveryDeadline = Date.now() + 10_000;
+          while (!runnerExited && Date.now() < recoveryDeadline)
+            await sleepMs(20);
+          expect(runnerExited).toBe(true);
+          expect(
+            JSON.parse(readFileSync(join(dir, "result.json"), "utf8")),
+          ).toMatchObject({ exitCode: 124, treeWitnessed: false });
+          expect(processRegistryRoots(registry)).toBeNull();
+        } finally {
+          const targets = await captureProcessTree(runner.pid);
+          if (targets) await forceIdentityTargetsAndWitness(targets);
+          runner.kill("SIGKILL");
+          await runner.exited;
+        }
+      },
+      T,
+    );
+
   test(
-    "an unavailable Windows process table still ends the owned child after grace without certifying the tree",
-    async () => {
+    "a deadline supersedes natural exit while its cancellation capture remains blocked",
+    () => {
       const shim = join(cwd, "shim");
-      const dir = join(cwd, "direct");
-      const registry = join(cwd, "registry");
+      const dir = join(cwd, "blocked-close");
       mkdirSync(shim);
       mkdirSync(dir);
-      mkdirSync(registry);
-      const snapshotFile = join(cwd, "native-snapshot.json");
       writeFakeProgram(
         join(shim, "powershell.exe"),
-        `#!/usr/bin/env bun\nconst fs=require("node:fs");if(!fs.existsSync(${JSON.stringify(snapshotFile)}))process.exit(1);process.stdout.write(fs.readFileSync(${JSON.stringify(snapshotFile)}));\n`,
+        "#!/usr/bin/env bun\nsetTimeout(()=>process.exit(1),10000);\n",
       );
-      beginProcessRegistration(registry, "fixture", join(dir, "result.json"));
-      const marker = join(cwd, "owned.pid");
-      const command = `require("node:fs").writeFileSync(${JSON.stringify(marker)},String(process.pid)); setInterval(()=>{},1000); setTimeout(()=>process.exit(0),30000);`;
       const args = [
         process.execPath,
         SCRIPT,
@@ -723,11 +845,9 @@ describe("foreground-wait.ts", () => {
         dir,
         "fixture",
         "--",
-        ...bunCommand(command),
+        ...bunCommand("process.exit(0)"),
       ];
-      // Modeling the platform only in this subprocess exercises the native
-      // Windows cancellation branch without changing the test worker's state.
-      const runner = Bun.spawn(
+      const result = Bun.spawnSync(
         [
           process.execPath,
           "-e",
@@ -739,61 +859,18 @@ describe("foreground-wait.ts", () => {
             ...process.env,
             ...PACING,
             PATH: `${shim}${delimiter}${process.env.PATH}`,
-            JIG_PROCESS_REGISTRY_DIR: registry,
             DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "1",
-            DRIVE_PR_FOREGROUND_WAIT_KILL_GRACE_MS: "100",
+            DRIVE_PR_FOREGROUND_WAIT_CANCEL_MS: "2000",
           },
           stdout: "pipe",
           stderr: "pipe",
+          timeout: 10000,
         },
       );
-      let runnerExited = false;
-      void runner.exited.then(() => {
-        runnerExited = true;
-      });
-      try {
-        const readyDeadline = Date.now() + 10_000;
-        while (!existsSync(marker) && Date.now() < readyDeadline)
-          await sleepMs(20);
-        expect(existsSync(marker)).toBe(true);
-        const pid = Number(readFileSync(marker, "utf8"));
-        const deadline = Date.now() + 10_000;
-        let childGone = false;
-        while (!childGone && Date.now() < deadline) {
-          childGone = !(await alive(pid));
-          if (!childGone) await sleepMs(20);
-        }
-        expect(childGone).toBe(true);
-        expect(runnerExited).toBe(false);
-        expect(existsSync(join(dir, "result.json"))).toBe(false);
-        expect(processRegistryRoots(registry)).toBeNull();
-        // Recover enumeration only after the owned child was forced. Its
-        // absence now cannot establish what happened to unobserved descendants.
-        writeFileSync(
-          snapshotFile,
-          JSON.stringify([
-            {
-              ProcessId: runner.pid,
-              ParentProcessId: process.pid,
-              CreationDate: "2026-10-19T00:00:00.0000000Z",
-              CommandLine: "foreground runner",
-            },
-          ]),
-        );
-        const recoveryDeadline = Date.now() + 10_000;
-        while (!runnerExited && Date.now() < recoveryDeadline)
-          await sleepMs(20);
-        expect(runnerExited).toBe(true);
-        expect(
-          JSON.parse(readFileSync(join(dir, "result.json"), "utf8")),
-        ).toMatchObject({ exitCode: 124, treeWitnessed: false });
-        expect(processRegistryRoots(registry)).toBeNull();
-      } finally {
-        const targets = await captureProcessTree(runner.pid);
-        if (targets) await forceIdentityTargetsAndWitness(targets);
-        runner.kill("SIGKILL");
-        await runner.exited;
-      }
+      expectSpawnExit(result, 0);
+      expect(
+        JSON.parse(readFileSync(join(dir, "result.json"), "utf8")),
+      ).toMatchObject({ exitCode: 124, treeWitnessed: false });
     },
     T,
   );

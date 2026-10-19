@@ -106,7 +106,6 @@ describe("cooperative driver stop", () => {
       DRIVE_PR_FIXTURES: dir,
       DRIVE_PR_STATE_DIR: stateDir,
       DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-      DRIVE_PR_STOP_GRACE_SEC: "15",
     };
     const driver = Bun.spawn(
       scriptArgv(
@@ -160,7 +159,11 @@ describe("cooperative driver stop", () => {
         stop.exited,
       ]);
       expectSpawnExit(
-        { exitCode: stopCode, stdout: stopOut, stderr: stopErr },
+        {
+          exitCode: stopCode,
+          stdout: stopOut,
+          stderr: `${stopErr}\n--- driver log ---\n${readFileSync(join(stateDir, "drive-pr-999.log"), "utf8")}`,
+        },
         0,
       );
       expect(stopOut).toContain("requested stop");

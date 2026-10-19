@@ -3,6 +3,7 @@ import {
   parsePosixProcessTable,
   parseWindowsProcessTable,
   processTable,
+  type ProcessRow,
 } from "../process-table.ts";
 
 test("POSIX snapshot preserves identity, group and command whitespace", () => {
@@ -74,11 +75,25 @@ test("Windows system processes allow null command lines but require identity", (
 });
 
 test("host snapshot includes this process with a usable identity", async () => {
-  const rows = await processTable();
-  const own = rows?.find((r) => r.pid === process.pid);
-  expect(own?.start).toBeTruthy();
+  const deadline = Date.now() + 20_000;
+  let rows: ProcessRow[] | null = null;
+  let own: ProcessRow | undefined;
+  let attempts = 0;
+  do {
+    attempts++;
+    rows = await processTable(
+      Math.min(5, Math.max(0.001, (deadline - Date.now()) / 1000)),
+    );
+    own = rows?.find((row) => row.pid === process.pid);
+    if (own?.start) break;
+    await Bun.sleep(Math.min(100, Math.max(0, deadline - Date.now())));
+  } while (Date.now() < deadline);
+  expect(
+    own?.start,
+    `pid ${process.pid} had no usable identity after ${attempts} snapshots; last snapshot ${rows === null ? "unreadable" : `contained ${rows.length} rows`}`,
+  ).toBeTruthy();
   expect(own?.ppid).toBe(process.ppid);
-});
+}, 30_000);
 
 test("inaccessible identities preserve the pid without authorizing a kill", () => {
   expect(

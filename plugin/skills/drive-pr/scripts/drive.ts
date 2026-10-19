@@ -1393,7 +1393,10 @@ export function driverStopExitCode(sig: string): number {
 
 let driverShuttingDown = false;
 
-export function installStopControls(held: DriveLock[]): Disposable {
+export function installStopControls(
+  held: DriveLock[],
+  registry?: string,
+): Disposable {
   let shuttingDown = false;
   let requested = false;
   const cancellation = registerSignalHandler(async (sig) => {
@@ -1406,6 +1409,7 @@ export function installStopControls(held: DriveLock[]): Disposable {
       const helpersGone = await cancelTrackedProcesses();
       const gone = await stopActivePass(
         `received ${requested ? "stop request" : sig}`,
+        registry ?? driverRegistry,
       );
       confirmed = helpersGone && gone;
     } finally {
@@ -1490,15 +1494,37 @@ export async function finishDriverPassRegistrations(
 
 async function requireDriverPassRegistrations(
   held: DriveLock[],
+  registry?: string,
 ): Promise<void> {
-  if (!(await finishDriverPassRegistrations(held)))
+  if (!(await finishDriverPassRegistrations(held, registry)))
     fail(1, "retained acquisition work prevented a clean driver completion");
 }
 
-function driverRegistryDrain(held: DriveLock[]): AsyncDisposable {
+function driverRegistryDrain(
+  held: DriveLock[],
+  registry?: string,
+): AsyncDisposable {
   return {
     [Symbol.asyncDispose]() {
-      return requireDriverPassRegistrations(held);
+      return requireDriverPassRegistrations(held, registry);
+    },
+  };
+}
+
+/** Keep signal and cooperative cancellation installed until the final drain settles. */
+export function installDriverLifecycle(
+  held: DriveLock[],
+  registry?: string,
+): AsyncDisposable {
+  const controls = installStopControls(held, registry);
+  const drain = driverRegistryDrain(held, registry);
+  return {
+    async [Symbol.asyncDispose]() {
+      try {
+        await drain[Symbol.asyncDispose]();
+      } finally {
+        controls[Symbol.dispose]();
+      }
     },
   };
 }
@@ -1540,15 +1566,19 @@ function createDriverRegistry(held: DriveLock[]): void {
  * prevent, while a lock left behind costs a refusal a human clears in one
  * command (`acquire` says how) or that the staleness window clears by itself.
  */
-async function stopActivePass(why: string): Promise<boolean> {
+async function stopActivePass(
+  why: string,
+  registry: string | null = driverRegistry,
+): Promise<boolean> {
   const handle = activePass;
-  if (handle === null) return (await drainDriverRegistrations()).confirmed;
+  if (handle === null)
+    return (await drainDriverRegistrations(registry)).confirmed;
   console.error(`drive.ts: stopping the active pass — ${why}`);
   // Recorded before the await so the loop can re-join this same wait — `stop()`
   // memoises, so a second caller shares the outcome rather than restarting it.
   passStopWitness = handle.stop();
   const passGone = await passStopWitness;
-  const registered = await drainDriverRegistrations();
+  const registered = await drainDriverRegistrations(registry);
   const gone = passGone && registered.confirmed;
   if (!gone) {
     console.error(
@@ -2724,10 +2754,8 @@ async function main(): Promise<number> {
   ];
   const held: DriveLock[] = [];
   using lockResources = new DisposableStack();
-  await using registryDrain = driverRegistryDrain(held);
-  void registryDrain;
-  using stopControls = installStopControls(held);
-  void stopControls;
+  await using lifecycle = installDriverLifecycle(held);
+  void lifecycle;
   for (const lock of locks) {
     acquire(lock, pr);
     held.push(lock);

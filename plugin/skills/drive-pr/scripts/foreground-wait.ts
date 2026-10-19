@@ -116,6 +116,12 @@ const KILL_GRACE_MS = testPacing(
   10_000,
   10,
 );
+/** One budget covers capture, grace, force and the final witness. */
+const CANCEL_BUDGET_MS = testPacing(
+  "DRIVE_PR_FOREGROUND_WAIT_CANCEL_MS",
+  30_000,
+  100,
+);
 const DEFAULT_DEADLINE_SEC = 5400;
 const DEADLINE_ENV = "DRIVE_PR_FOREGROUND_WAIT_TIMEOUT";
 /** Most bytes the runner retains in the log; the rest is dropped and said so. */
@@ -234,6 +240,7 @@ const WAIT_POLL_MS = testPacing("DRIVE_PR_FOREGROUND_WAIT_POLL_MS", 2000, 10);
 async function stillLive(
   targets: Target[],
   rows: PsRow[] | null,
+  deadline?: number,
 ): Promise<Target[]> {
   const live = witnessStep(
     targets,
@@ -244,7 +251,11 @@ async function stillLive(
     killZero,
   );
   if (process.platform === "win32" && rows !== null) {
-    await signalIdentityTargets(live, "SIGKILL");
+    await signalIdentityTargets(
+      live,
+      "SIGKILL",
+      deadline === undefined ? {} : { deadline },
+    );
   }
   const gate = process.env[WITNESS_GATE_ENV];
   return gate && existsSync(gate)
@@ -438,6 +449,17 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
     unverifiable: false,
   };
   let lastRows: PsRow[] | null = null;
+  let cancellationDeadline: number | undefined;
+  const snapshot = () =>
+    processTable(
+      cancellationDeadline === undefined
+        ? 5
+        : Math.max(
+            0.001,
+            Math.min(5, (cancellationDeadline - Date.now()) / 1000),
+          ),
+    );
+
   let witnessing = false;
   // Tracking and signalling are separate duties. `track` only maintains
   // `tree.targets` — every identity observed under the command, minus those verified
@@ -455,7 +477,7 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
     tracking = tracking
       .then(async () => {
         if (child.pid === undefined || (witnessing && !recapture)) return;
-        const rows = await processTable();
+        const rows = await snapshot();
         if (settled) return;
         if (!registered)
           registered = registerRunnerSnapshot(
@@ -513,8 +535,26 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
       // launch lost (exit 21) once nothing is alive, rather than hanging.
     }
   };
+  const armCancellationBudget = (result: Result) => {
+    if (cancellationDeadline !== undefined) return;
+    cancellationDeadline = Date.now() + CANCEL_BUDGET_MS;
+    timers.push(
+      setTimeout(() => {
+        const reason = termination ?? result;
+        forceOwnedChild(child);
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        child.unref();
+        settle({
+          ...reason,
+          treeWitnessed: false,
+          note: `${reason.note ? `${reason.note}; ` : ""}process-tree cancellation could not be witnessed within its budget; descendants may survive`,
+        });
+      }, CANCEL_BUDGET_MS),
+    );
+  };
   // A verified result requires the captured targets to be witnessed dead.
-  // Unreadable snapshots withhold publication. If the complete tree could not
+  // Unreadable snapshots withhold verified publication. If the complete tree could not
   // be captured, a later report retains treeWitnessed:false and says so.
   const forceUnresolvedOwnedChild = () => {
     if (process.platform !== "win32" || !tree.unresolved) return;
@@ -531,7 +571,8 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
       if (polling) return;
       polling = true;
       try {
-        const rows = await processTable();
+        const rows = await snapshot();
+        if (settled) return;
         lastRows = rows;
         if (child.pid !== undefined)
           trackForegroundProcessTree(
@@ -548,7 +589,7 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
         );
         const waiting = tree.targets.filter((t) => !due.includes(t));
         tree.targets = [
-          ...(await stillLive(due, rows)),
+          ...(await stillLive(due, rows, cancellationDeadline)),
           ...(rows === null ? waiting : liveOrUnknownTargets(waiting, rows)),
         ];
         const witnessGate = process.env[WITNESS_GATE_ENV];
@@ -585,6 +626,7 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
   ) => {
     if (termination !== null || settled) return;
     termination = { exitCode, signal, note };
+    armCancellationBudget({ exitCode, signal, note });
     try {
       appendFileSync(
         log,
@@ -594,6 +636,7 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
       // Best effort: the result's `note` still carries the reason.
     }
     await capture();
+    if (settled) return;
     // Begin grace for every verified tracked identity. POSIX sends SIGTERM;
     // Windows allows the same interval before identity-checked force.
     beginGrace();
@@ -671,6 +714,7 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
     });
   });
   child.on("close", async (code, signal) => {
+    if (settled) return;
     // The command can exit on SIGTERM while a descendant ignores it, and
     // settling clears the scheduled SIGKILL — so finish the kill here, on the
     // targets captured before signalling, before a terminal result exists.
@@ -683,6 +727,7 @@ function run(dir: string, argv: string[], entry: string | undefined): void {
       return;
     }
     const exitCode = code ?? (signal ? 128 : 1);
+    armCancellationBudget({ exitCode, signal: signal ?? null });
     // Command exit alone is not tree proof. End any descendants the tracker
     // observed through the same grace and witness path, retaining uncertainty
     // when the complete tree could not be captured.
