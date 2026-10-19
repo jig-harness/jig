@@ -6,7 +6,8 @@
  *
  * What it does: traces one option, call or owner across the sheet on hover and
  * focus; marks the current section in the top bar and shows the time left;
- * lets the reader pick one option per open call and copy the picks as text.
+ * lets the reader pick one option per open call, add a note to each pick, and
+ * copy the picks as text.
  *
  * It reads the embedded source (`#decision-source`), never the page, for what
  * a call holds, and the `labels.ts` table for every word it writes, so the
@@ -17,6 +18,9 @@
  * A pick is dropped on load when its call has a ruling, or names an option
  * that is no longer there: a sheet regenerated after a ruling must not show
  * a stored pick for a ruled call, in the top bar, the call index or the tray.
+ * A pick's note belongs to its option, keyed by call id and option id: it
+ * shows and copies only while that option is the pick, and goes under the same
+ * rule as the pick.
  *
  * This is plain script text, not TypeScript. It must hold no backtick and no
  * dollar-brace, because the module wraps it in a template literal.
@@ -33,7 +37,7 @@ const TRACE_FROM = ".chip,.cchip,.ref,.bar-c,.own[tabindex]";
 const SCRIPT_BODY = String.raw`
 var d=document,W=window,D;
 try{D=JSON.parse(d.getElementById('decision-source').textContent)}catch(e){return}
-var multi=D.calls.length>1,KEY='decision-sheet:'+D.id,S={p:Object.create(null),why:false,open:false,note:''};
+var multi=D.calls.length>1,KEY='decision-sheet:'+D.id,S={p:Object.create(null),n:Object.create(null),why:false,open:false,note:''};
 ${KS.helpers}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function words(call,opt){return [call===undefined?'':'('+call+')',opt===undefined?'':L.refOption+' '+opt].filter(Boolean).join(' ')}
@@ -43,11 +47,12 @@ var calls=D.calls,open=calls.filter(function(c){return !c.ruling});
 function opt(c,id){return c.options.filter(function(o){return o.id===id})[0]}
 try{var sv=JSON.parse(localStorage.getItem(KEY));if(sv&&typeof sv==='object')for(var x in sv)S[x]=sv[x]}catch(e){}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
-// Keep only picks that still mean something: an open call and an option it still has.
-function clean(){var p=Object.create(null),bad=false,stored=S.p&&typeof S.p==='object'?S.p:{};
+// Keep only picks, and notes on options, that still mean something: an open call and an option it still has.
+function clean(){var p=Object.create(null),n=Object.create(null),bad=false,stored=S.p&&typeof S.p==='object'?S.p:{},notes=S.n&&typeof S.n==='object'?S.n:{};
  if(stored!==S.p)bad=true;
  Object.keys(stored).forEach(function(k){var c=byId[k];if(c&&!c.ruling&&typeof stored[k]==='string'&&opt(c,stored[k]))p[k]=stored[k];else bad=true});
- S.p=p;S.why=!!S.why;S.open=!!S.open;S.note=typeof S.note==='string'?S.note:'';return bad}
+ Object.keys(notes).forEach(function(k){var i=k.indexOf('-'),c=byId[k.slice(0,i)];if(i>0&&c&&!c.ruling&&typeof notes[k]==='string'&&notes[k]&&opt(c,k.slice(i+1)))n[k]=notes[k];else bad=true});
+ S.p=p;S.n=n;S.why=!!S.why;S.open=!!S.open;S.note=typeof S.note==='string'?S.note:'';return bad}
 if(clean())save();
 // tracing: one option, call or owner, wherever it appears
 ${KS.trace(TRACE_FROM)}
@@ -59,6 +64,8 @@ ${KS.inView}
 var btn=d.querySelector('.bar-picks'),tray=null,list,pre,done;
 $$('[data-js]').forEach(function(e){e.hidden=false});
 $$('.pick').forEach(function(b){b.hidden=false});
+function noteKey(k,id){return k+'-'+id}
+function pickNote(k){var v=S.p[k],t=v&&S.n[noteKey(k,v)];return t&&t.trim()?t.trim():''}
 function setPick(k,id){if(!byId[k]||byId[k].ruling||!opt(byId[k],id))return;if(S.p[k]===id)delete S.p[k];else S.p[k]=id;save();sync()}
 function mentions(k,id){var seen={},out=[],n=0;
  $$('.ref[data-t="o-'+k+'-'+id+'"]').forEach(function(r){if(r.closest('#o-'+k+'-'+id))return;var p=r.closest('[data-place]');var lab=p?p.getAttribute('data-place'):'';if(!lab||seen[lab])return;seen[lab]=1;
@@ -69,6 +76,7 @@ function text(){var out=[D.id+': '+D.title,D.url,'',multi?L.copyPicksHead:L.copy
   if(c.ruling){o=opt(c,c.ruling.option);line+=L.copyRuled+' '+c.ruling.ruledAt+': '+words(undefined,o.id)+': '+o.name}
   else if(S.p[c.id]){o=opt(c,S.p[c.id]);line+=words(undefined,o.id)+': '+o.name;
    if(c.recommended)line+=c.recommended===o.id?' ('+L.copyRecommendedPick+')':' ('+L.copyRecommended+': '+words(undefined,c.recommended)+')';
+   if(pickNote(c.id))line+='\n    '+L.copyNote+' '+pickNote(c.id).replace(/\n/g,'\n    ');
    if(S.why)line+='\n    '+L.copyRightWhen+' '+plain(o.rightWhen)}
   else{line+=L.copyNoPick;if(c.recommended)line+=' ('+L.copyRecommended+': '+words(undefined,c.recommended)+')'}
   if(S.open&&c.openInput&&!c.ruling)line+='\n    '+L.copyOpenInput+' '+plain(c.openInput);
@@ -83,9 +91,10 @@ function renderTray(){if(!tray)return;
   if(c.ruling){var r=opt(c,c.ruling.option);return h+'<span class="nm">'+L.stateDone+' '+esc(LRULED)+' '+esc(c.ruling.ruledAt)+': '+esc(r.id+'. '+r.name)+'</span></li>'}
   h+='<span class="row" role="group" aria-label="'+esc(L.refOption+(multi?' ('+c.id+')':''))+'">'+c.options.map(function(o){
    return '<button type="button" class="o" data-call="'+esc(c.id)+'" data-opt="'+esc(o.id)+'" aria-pressed="'+(S.p[c.id]===o.id)+'" title="'+esc(o.name)+'"><span class="vh">'+esc(L.refOption)+' </span>'+esc(o.id)+'</button>'}).join('')+'</span>';
-  if(S.p[c.id]){var o=opt(c,S.p[c.id]),m=mentions(c.id,o.id);h+='<span class="nm">'+esc(o.id+'. '+o.name)+'</span><button type="button" class="tbtn rm" data-call="'+esc(c.id)+'" data-opt="'+esc(o.id)+'">'+esc(L.removePick)+'</button>'+(m?'<span class="ment">'+esc(L.alsoMentioned)+': '+m+'</span>':'')}
+  if(S.p[c.id]){var o=opt(c,S.p[c.id]),m=mentions(c.id,o.id);h+='<span class="nm">'+esc(o.id+'. '+o.name)+'</span><button type="button" class="tbtn rm" data-call="'+esc(c.id)+'" data-opt="'+esc(o.id)+'">'+esc(L.removePick)+'</button>'+(m?'<span class="ment">'+esc(L.alsoMentioned)+': '+m+'</span>':'')+'<label class="pn"><span>'+esc(L.pickNote)+'</span><textarea rows="2" data-note="'+esc(noteKey(c.id,o.id))+'"></textarea></label>'}
   else h+='<span class="nm none">'+esc(L.noPickYet)+'</span>';
   return h+'</li>'}).join('');
+ $$('textarea[data-note]',list).forEach(function(t){t.value=S.n[t.getAttribute('data-note')]||''});
  pre.textContent=text();
  if(fk){var back=tray.querySelector('.o[data-call="'+fk.c+'"][data-opt="'+fk.o+'"]');if(fk.rm)back=tray.querySelector('.rm[data-call="'+fk.c+'"]')||back;if(back)back.focus()}}
 function sync(){
@@ -109,7 +118,8 @@ if(btn&&open.length){btn.hidden=false;tray=d.createElement('aside');tray.id='tra
  var ta=tray.querySelector('textarea');ta.value=S.note||'';ta.addEventListener('input',function(){S.note=ta.value;save();pre.textContent=text()});
  btn.addEventListener('click',function(){toggle(tray.hidden)});
  tray.querySelector('.x').addEventListener('click',function(){toggle(false)});
- tray.querySelector('.clear').addEventListener('click',function(){S.p=Object.create(null);save();sync()});
+ list.addEventListener('input',function(e){var t=e.target,k=t.getAttribute&&t.getAttribute('data-note');if(!k)return;if(t.value)S.n[k]=t.value;else delete S.n[k];save();pre.textContent=text()});
+ tray.querySelector('.clear').addEventListener('click',function(){S.p=Object.create(null);S.n=Object.create(null);save();sync()});
  tray.querySelector('.copy').addEventListener('click',function(){var t=text();function ok(){done.textContent=L.copied;setTimeout(function(){done.textContent=''},2500)}
   function fb(){var ae=d.activeElement,a=d.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';d.body.appendChild(a);a.select();try{if(d.execCommand('copy'))ok();else done.textContent=L.copyFallback}catch(e){done.textContent=L.copyFallback}d.body.removeChild(a);if(ae&&ae.focus)ae.focus()}
   if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(ok,fb);else fb()});

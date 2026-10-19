@@ -191,7 +191,8 @@ ${K.refHl}
 .tray-list .ment{font-size:14px;color:var(--sec);line-height:1.45}
 .ck{display:flex;gap:8px;align-items:center;font-size:14px;margin:6px 0}
 .nt{display:flex;flex-direction:column;gap:4px;font-size:14px;margin:10px 0 16px}
-.nt textarea{font:inherit;font-size:14px;border:1px solid var(--rule);border-radius:3px;padding:8px;resize:vertical;color:var(--ink)}
+.pn{display:flex;flex-direction:column;gap:4px;font-size:14px}
+.pn textarea,.nt textarea{font:inherit;font-size:14px;border:1px solid var(--rule);border-radius:3px;padding:8px;resize:vertical;color:var(--ink)}
 .preview{white-space:pre-wrap;font:13px/1.5 var(--mono);background:var(--bg);border:1px solid var(--hair);border-radius:3px;padding:12px;margin:6px 0 14px;max-height:16rem;overflow:auto}
 .tray-a{display:flex;align-items:center;gap:14px}
 .copy{font:inherit;font-weight:600;color:#fff;background:var(--blue);border:1px solid var(--blue);border-radius:3px;padding:8px 16px;cursor:pointer}
