@@ -1,7 +1,7 @@
 # Recommended third-party skills
 
 Jig ships the procedures it maintains itself. Other people maintain
-excellent [skills](../GLOSSARY.md) for neighbouring jobs, and a repository gets
+excellent [skills](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) for neighbouring jobs, and a repository gets
 more from installing those from their source than from a copy here: their
 authors keep improving them, and a copy would drift. This page lists the ones
 that work well alongside Jig, what each is good for, and where it fits
@@ -21,7 +21,7 @@ marketplace.
 
 | Skill | What it is for | Where it fits |
 |-------|----------------|---------------|
-| `skill-creator` | Drafts a new skill, writes evaluation prompts for it, and iterates on its description so agents invoke it at the right time | Writing your repository's own skills, or a Jig skill (see [Adding or changing a plugin skill](../CONTRIBUTING.md#adding-or-changing-a-plugin-skill)) |
+| `skill-creator` | Drafts a new skill, writes evaluation prompts for it, and iterates on its description so agents invoke it at the right time | Writing your repository's own skills, or a Jig skill (see [Adding or changing a plugin skill](https://github.com/jig-harness/jig/blob/main/CONTRIBUTING.md#adding-or-changing-a-plugin-skill)) |
 | `webapp-testing` | Drives a local web application in a real browser (Playwright) to check behaviour and capture screenshots and logs | Verifying a user-facing change before `drive-pr` pushes it; a browser check that complements the repository's gates |
 
 ## Engineering practice
@@ -32,7 +32,7 @@ From [mattpocock/skills](https://github.com/mattpocock/skills) by Matt Pocock
 | Skill | What it is for | Where it fits |
 |-------|----------------|---------------|
 | `diagnosing-bugs` | A diagnosis loop for hard bugs and performance regressions: reproduce, build a feedback loop, form and test hypotheses, prove the fix | Before `do-item` implements a bug fix, or when `fix-ci` meets a failure whose cause is not in the log |
-| `grill-me` | Interviews you about a plan until the open questions are answered | Turning a rough idea into a tracker item that `do-item` can pick up; the requirement stage of M6's [feature-delivery pipeline](../modules/M6-feature-delivery-pipeline/README.md) |
+| `grill-me` | Interviews you about a plan until the open questions are answered | Turning a rough idea into a tracker item that `do-item` can pick up; the requirement stage of M6's [feature-delivery pipeline](https://github.com/jig-harness/jig/blob/main/modules/M6-feature-delivery-pipeline/README.md) |
 | `to-spec` | Turns a settled conversation into a specification and files it in the issue tracker | The same stage: the item `do-item` later picks up |
 | `tdd` | Red–green–refactor with the agent | Implementing an item test-first inside `do-item` |
 
@@ -56,7 +56,7 @@ From [garrytan/gstack](https://github.com/garrytan/gstack) by Garry Tan (MIT).
 
 | Skill | What it is for | Where it fits |
 |-------|----------------|---------------|
-| `freeze`, `unfreeze`, `guard`, `careful` | Restrict which directories a session may edit, and warn before destructive commands | A narrow fix or a sensitive area: keep an agent inside the paths an item is about. Complements M12's [parallel-agent ergonomics](../modules/M12-parallel-agent-ergonomics/README.md) |
+| `freeze`, `unfreeze`, `guard`, `careful` | Restrict which directories a session may edit, and warn before destructive commands | A narrow fix or a sensitive area: keep an agent inside the paths an item is about. Complements M12's [parallel-agent ergonomics](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/README.md) |
 | `plan-ceo-review` | Reviews a plan from the product side: is this the right thing to build, and is the scope right | Before an epic is broken into items; the product review of M6's pipeline, alongside Jig's `decide` for technical dilemmas |
 
 ## Credits
@@ -81,4 +81,4 @@ Jig's own skills owe these ideas and code to others:
   to choose between.
 - Record the choice where agents read it: name the installed skills, and when
   to use each, in your repository's `AGENTS.md`
-  ([M0](../modules/M0-instruction-architecture/README.md)).
+  ([M0](https://github.com/jig-harness/jig/blob/main/modules/M0-instruction-architecture/README.md)).

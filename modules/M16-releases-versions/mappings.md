@@ -109,3 +109,13 @@ release App as its one bypass actor, or GitLab's protected tags.
 
 Either way, the job that holds the key runs nothing from the repository:
 the release step runs in an earlier job without it and hands its commit on.
+
+## Release channels
+
+A channel is a name a consumer installs from that the release tooling moves
+from one released version to another.
+
+| Ecosystem | A channel is | Promotion and rollback |
+|-----------|--------------|------------------------|
+| npm | a dist-tag (`latest`, `next`, or one of the project's own) | `npm dist-tag add <package>@<version> <tag>` points the tag at another published version, earlier or later |
+| A plugin installed from a Git repository | a branch of generated commits, each holding the plugin as installed, built from a version's tag | a new commit on the branch, carrying a later version's tree or an earlier one's; Jig's plugin does this ([plugin/README.md](../../plugin/README.md#release-channels)) |

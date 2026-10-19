@@ -1,0 +1,251 @@
+# Moves the `jig` plugin's release channels (plugin/README.md § Release
+# channels). Each channel is a branch of generated commits, each holding the
+# plugin as installed, built from one version's tag (tools/plugin/channel.ts):
+#
+# - `latest` follows every tagged version. release.yml calls this workflow
+#   with `command: latest` after every tag run, so `latest` catches up even
+#   when an earlier run failed.
+# - `stable` moves only when a person promotes a version or rolls back:
+#     gh workflow run channels.yml -f command=promote -f version=0.62.0
+#     gh workflow run channels.yml -f command=rollback -f version=0.61.1
+#   `bun tools/plugin/channel.ts check <version>` shows the verdict first.
+#   The promotion rule (soak on latest, gates green on the tagged commit, no
+#   open regression in a version it would ship, never a withdrawn version)
+#   is in that script; a refusal fails the run and names each reason.
+#
+# The `plan` job holds no key: it reads the tags, the channels and GitHub's
+# checks and issues with this workflow's own read-only token, writes the
+# channel's next commit and hands it on as a git bundle. The `push` job alone
+# reads the `release` environment, which only main may use, and runs nothing
+# from the repository: before it pushes, it checks the commit against the
+# run's request and the tag it names (the action and version asked for; one
+# commit on top of the channel's tip, forward unless it is a rollback; for a
+# rollback, exactly the tagged versions it steps back over as withdrawn, and
+# none otherwise; dated now; every file the tag's plugin ships and no other,
+# plus the generated README; the version the tag's manifest carries), so a
+# `plan` job that went wrong can neither put another tree on a channel nor
+# write a record later promotions would misread. It pushes without force as
+# the `jig-release` App, the one actor the channels' ruleset lets update them.
+name: channels
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: promote a version to stable, or roll stable back to one
+        type: choice
+        options: [promote, rollback]
+        required: true
+      version:
+        description: the version, e.g. 0.62.0
+        type: string
+        required: true
+      across-breaking:
+        description: let a rollback cross a breaking release
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      command:
+        description: "`latest`: advance the latest channel to the newest tagged version"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+# One run per channel at a time, never cancelled once it runs; a stable
+# request made while another waits replaces the waiting one. A `latest` call
+# is serialized by its caller's job (release.yml), so its own group is unique
+# to it.
+concurrency:
+  group: ${{ inputs.command == 'latest' && format('channel-call-{0}', github.run_id) || 'channel-stable' }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read
+      issues: read
+    outputs:
+      changed: ${{ steps.plan.outputs.changed }}
+      channel: ${{ steps.plan.outputs.channel }}
+      start: ${{ steps.plan.outputs.start }}
+      commit: ${{ steps.plan.outputs.commit }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: main
+          fetch-depth: 0
+          # Nothing in this job pushes; the repository is public, so the
+          # script fetches the tags and channels without a credential.
+          persist-credentials: false
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - id: plan
+        env:
+          COMMAND: ${{ inputs.command }}
+          VERSION: ${{ inputs.version }}
+          ACROSS_BREAKING: ${{ inputs.across-breaking }}
+          GH_TOKEN: ${{ github.token }}
+          GIT_AUTHOR_NAME: jig-release[bot]
+          GIT_AUTHOR_EMAIL: 344515474+jig-release[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: jig-release[bot]
+          GIT_COMMITTER_EMAIL: 344515474+jig-release[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          args=("$COMMAND")
+          case "$COMMAND" in
+            promote | rollback)
+              [[ "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+                { echo "::error::'$VERSION' is not a version"; exit 1; }
+              args+=("$VERSION") ;;
+            latest) ;;
+            *) echo "::error::unknown command '$COMMAND'"; exit 1 ;;
+          esac
+          [ "$ACROSS_BREAKING" = true ] && args+=(--across-breaking)
+          bun tools/plugin/channel.ts "${args[@]}" --bundle "$RUNNER_TEMP/jig-channel.bundle"
+      - if: steps.plan.outputs.changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: jig-channel
+          path: ${{ runner.temp }}/jig-channel.bundle
+          if-no-files-found: error
+          retention-days: 1
+
+  push:
+    needs: plan
+    if: needs.plan.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions: {}
+    steps:
+      - name: Check what the plan job handed on
+        env:
+          # The request, from the run's inputs rather than from the plan job.
+          # A call keeps its caller's event name, so the command, not the
+          # event, says which channel this run may move.
+          COMMAND: ${{ inputs.command }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
+          START: ${{ needs.plan.outputs.start }}
+          COMMIT: ${{ needs.plan.outputs.commit }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          case "$COMMAND" in
+            latest) expected=latest ;;
+            promote | rollback) expected=stable ;;
+            *) fail "unknown command '$COMMAND'" ;;
+          esac
+          [ "$CHANNEL" = "$expected" ] || fail "this run may move $expected, not '$CHANNEL'"
+          [ -z "$START" ] || [[ "$START" =~ ^[0-9a-f]{40}$ ]] || fail "the channel's tip is not a commit hash"
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail "the channel commit is not a commit hash"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: jig-channel
+          path: ${{ runner.temp }}/jig-channel
+      - name: Mint the release App's token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Check the commit against its tag, and push
+        env:
+          TOKEN: ${{ steps.app.outputs.token }}
+          COMMAND: ${{ inputs.command }}
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
+          START: ${{ needs.plan.outputs.start }}
+          COMMIT: ${{ needs.plan.outputs.commit }}
+          BUNDLE: ${{ runner.temp }}/jig-channel/jig-channel.bundle
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          remote="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          # An empty repository with no hooks: the bundle is read as data.
+          repo="$RUNNER_TEMP/channel-push"
+          git init -q "$repo"
+          cd "$repo"
+          git config core.hooksPath /dev/null
+          [ -z "$START" ] || git fetch -q --no-tags --depth=1 "$remote" "$START"
+          git bundle verify -q "$BUNDLE"
+          git fetch -q --no-tags "$BUNDLE" "refs/jig-channel/out/$CHANNEL:refs/heads/channel-push"
+          [ "$(git rev-parse refs/heads/channel-push)" = "$COMMIT" ] || fail "the bundle does not hold the channel commit"
+          # One commit on top of the channel's tip, or the channel's first.
+          [ "$(git rev-list --parents -n 1 "$COMMIT")" = "${COMMIT}${START:+ $START}" ] ||
+            fail "the channel commit is not one commit on top of '${START:-nothing}'"
+          trailer() { git log -1 --format=%B "${2:-$COMMIT}" | sed -n "s/^Jig-$1: \([^ ]*\)$/\1/p" | tail -n 1; }
+          # Whether version $1 is newer than version $2.
+          newer() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)" = "$1" ]; }
+          [ "$(trailer Channel)" = "$CHANNEL" ] || fail "the commit's Jig-Channel is not $CHANNEL"
+          # Later runs read the action, the version, the withdrawn versions
+          # and the commit's date as the channel's record, so each is checked
+          # against the request and the tags rather than taken from the plan.
+          action=$(trailer Action)
+          [ "$action" = "$COMMAND" ] || fail "Jig-Action '$action' is not the requested $COMMAND"
+          version=$(trailer Version)
+          source=$(trailer Source)
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "Jig-Version '$version' is not a version"
+          [[ "$source" =~ ^[0-9a-f]{40}$ ]] || fail "Jig-Source '$source' is not a commit hash"
+          [ "$COMMAND" = latest ] || [ "$version" = "${VERSION#v}" ] ||
+            fail "Jig-Version $version is not the requested ${VERSION#v}"
+          from=""
+          [ -z "$START" ] || from=$(trailer Version "$START")
+          if [ "$COMMAND" = rollback ]; then
+            [ -n "$from" ] || fail "a rollback needs a version on $CHANNEL to go back from"
+            newer "$from" "$version" || fail "a rollback to v$version is not older than v$from"
+            # Every tagged version above the one restored, up to the one left.
+            withdrawn=$(git ls-remote --tags "$remote" 'refs/tags/v*' | cut -f2 |
+              sed -n 's#^refs/tags/v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$#\1#p' |
+              while read -r v; do
+                if newer "$v" "$version" && ! newer "$v" "$from"; then echo "$v"; fi
+              done | sort -t. -k1,1n -k2,2n -k3,3n | paste -sd, -)
+            [ -n "$withdrawn" ] || fail "a rollback that withdraws no version"
+            [ "$(trailer Withdrawn)" = "$withdrawn" ] ||
+              fail "Jig-Withdrawn '$(trailer Withdrawn)' is not the versions rolled back over, '$withdrawn'"
+          else
+            [ -z "$(trailer Withdrawn)" ] || fail "a $COMMAND withdraws no version"
+            [ -z "$from" ] || newer "$version" "$from" || fail "v$version is not newer than $CHANNEL's v$from"
+          fi
+          # Soak is measured from these dates: written now, after the tip.
+          now=$(date +%s)
+          when=$(git log -1 --format=%ct "$COMMIT")
+          [ "$(git log -1 --format=%at "$COMMIT")" = "$when" ] || fail "the commit's author and committer dates differ"
+          if [ "$when" -lt $((now - 3600)) ] || [ "$when" -gt $((now + 300)) ]; then
+            fail "the commit is dated $(date -u -d "@$when" +%FT%TZ 2>/dev/null || echo "$when"), not within the last hour"
+          fi
+          [ -z "$START" ] || [ "$when" -ge "$(git log -1 --format=%ct "$START")" ] ||
+            fail "the commit is dated before the channel's tip"
+          tagged=$(git ls-remote "$remote" "refs/tags/v$version^{}" "refs/tags/v$version" | sort -k2 | tail -n 1 | cut -f1)
+          [ "$tagged" = "$source" ] || fail "v$version names $tagged, not the commit's Jig-Source $source"
+          git fetch -q --no-tags --depth=1 "$remote" "$source"
+          [ "$(git show "$source:plugin/.claude-plugin/plugin.json" | jq -r .version)" = "$version" ] ||
+            fail "v$version's manifest does not carry version $version"
+          # The files the tag's plugin ships, by the rule in
+          # tools/plugin/artifact.ts (isShipped): the marketplace files and
+          # plugin/, less __tests__/ directories, AGENTS.md and CLAUDE.md.
+          git ls-tree -r --full-tree "$source" -- plugin .claude-plugin/marketplace.json .agents/plugins/marketplace.json |
+            grep -Ev $'\tplugin/(.*/)?__tests__/|\tplugin/(.*/)?(AGENTS|CLAUDE)\\.md$' > "$RUNNER_TEMP/shipped" || true
+          [ -s "$RUNNER_TEMP/shipped" ] || fail "v$version ships no files"
+          # Plus the README channelReadme (tools/plugin/artifact.ts) writes,
+          # as a regular file with exactly that text.
+          readme=$(printf '%s\n' \
+            "# Jig plugin, \`$CHANNEL\` channel" \
+            "" \
+            "This branch is generated: it holds version $version of the \`jig\`" \
+            "plugin as the agent tools install it, built from the tagged source on" \
+            "\`main\`. Never edit it; every commit here is written by the release" \
+            "tooling. How to install from it, and what each channel means:" \
+            "https://github.com/jig-harness/jig/blob/main/plugin/README.md#release-channels" |
+            git hash-object --stdin)
+          { cat "$RUNNER_TEMP/shipped"; printf '100644 blob %s\tREADME.md\n' "$readme"; } | LC_ALL=C sort > "$RUNNER_TEMP/expected"
+          git ls-tree -r --full-tree "$COMMIT" | LC_ALL=C sort > "$RUNNER_TEMP/actual"
+          diff "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual" || fail "the channel commit's files differ from what v$version ships"
+          git push -q "$remote" "$COMMIT:refs/heads/$CHANNEL"
+          echo "::notice::$CHANNEL now carries v$version"
