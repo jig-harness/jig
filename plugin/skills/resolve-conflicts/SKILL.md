@@ -329,10 +329,11 @@ It fails (exit 1), listing each problem with its file and line, when:
    `merge.directoryRenames`, `merge.renameLimit`, `diff.renames`,
    `diff.renameLimit`) and `core.useReplaceRefs`, so a merge driver
    configured for the repository, the user, the system or the environment
-   does not run. It reads the repository's own history and submodules: its
-   replace refs, and each submodule's repository in the working tree or
-   under the repository's `modules` directory, so a submodule git
-   fast-forwarded is not reported as a conflict. Conflict markers are looked for at the size git wrote them with as
+   does not run. Everything else in the repository's git directory is read
+   as it stands: its references (replace refs among them), `HEAD`, the
+   index, `shallow`, `info/grafts` and the `modules` directory, in a linked
+   worktree too, so a submodule git fast-forwarded is not reported as a
+   conflict, whether or not `.gitmodules` is in the working tree. Conflict markers are looked for at the size git wrote them with as
    well, and in other staged changes on every added line, whatever an
    attribute says the file is;
 5. a lockfile or generated file is not recorded as `regenerated`, or any

@@ -14,8 +14,11 @@
 import {
   copyFileSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
+  readdirSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -38,7 +41,7 @@ export const THROWAWAY_INDEX_CONFIG = [
 const REGULAR_ATTRIBUTES_FILE =
   /^100(?:644|755) [0-9a-f]+ 0\t(?:.*\/)?\.gitattributes$/s;
 
-/** Variables that would point git back at the repository's own git directory. */
+/** Variables that would point git at the repository's git directory itself. */
 const REPOSITORY_VARIABLES = [
   "GIT_DIR",
   "GIT_COMMON_DIR",
@@ -100,23 +103,90 @@ export type IndexAttributesGit = (
 ) => GitResult;
 
 /**
+ * Mirror the git directory `source` into `target`, entry by entry, leaving
+ * out `except`: a directory is linked, a file copied (git refuses a `HEAD`
+ * that is a link anywhere but into `refs/`). Nothing the runner does writes
+ * to a mirrored file.
+ */
+function mirror(source: string, target: string, except: ReadonlySet<string>) {
+  mkdirSync(target);
+  for (const name of readdirSync(source)) {
+    if (except.has(name)) continue;
+    const from = join(source, name);
+    const to = join(target, name);
+    try {
+      if (statSync(from).isDirectory()) symlinkSync(from, to, "junction");
+      else copyFileSync(from, to);
+    } catch (error) {
+      // A lock file git removed meanwhile, or a dangling link: nothing to read.
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+}
+
+/**
+ * The repository's git directories without the configuration and
+ * `info/attributes`: everything else a merge reads there (references, replace
+ * refs among them, `HEAD`, `shallow`, `info/grafts`, the `modules`
+ * directory) is the repository's own. The index is not copied: the runner
+ * reads the repository's own (`GIT_INDEX_FILE`). The configuration keeps
+ * only the repository's format (`core.repositoryformatversion` and its
+ * `extensions`), without which its objects and references cannot be read.
+ */
+function mirrorGitDir(root: string, scratch: string): string {
+  const path = (...args: string[]) =>
+    git(root, ["rev-parse", "--path-format=absolute", ...args]).trim();
+  const gitDir = path("--absolute-git-dir");
+  const commonDir = path("--git-common-dir");
+  const common = join(scratch, "common");
+  mirror(commonDir, common, new Set(["config", "info", "index"]));
+  const info = join(commonDir, "info");
+  if (existsSync(info))
+    mirror(info, join(common, "info"), new Set(["attributes"]));
+  const format = gitRaw(root, [
+    "config",
+    "--local",
+    "--get-regexp",
+    "^(core\\.repositoryformatversion|extensions\\..*)$",
+  ]);
+  writeFileSync(join(common, "config"), "");
+  for (const line of format.code === 0 ? format.stdout.split("\n") : []) {
+    const at = line.indexOf(" ");
+    if (at > 0)
+      git(null, [
+        "config",
+        "--file",
+        join(common, "config"),
+        line.slice(0, at),
+        line.slice(at + 1),
+      ]);
+  }
+  if (gitDir === commonDir) return common;
+  // A linked worktree's own directory: its HEAD and per-worktree refs.
+  const worktree = join(scratch, "git");
+  mirror(gitDir, worktree, new Set(["commondir", "config.worktree", "index"]));
+  writeFileSync(join(worktree, "commondir"), `${common}\n`);
+  return worktree;
+}
+
+/**
  * Run `body` with a git runner whose only attributes are the index's
  * `.gitattributes` files, passed as `--attr-source` (Git 2.41). The runner
- * works in a scratch git directory created without templates, so its
- * `info/attributes` does not exist; `core.attributesFile` names an empty file
- * and `GIT_ATTR_NOSYSTEM` drops the system's file. Objects are the
+ * works in a mirror of the repository's git directories that leaves out
+ * their configuration and `info/attributes` (`mirrorGitDir`), so a merge
+ * reads the repository's own references, index, history and submodule
+ * repositories; `core.attributesFile` names an
+ * empty file and `GIT_ATTR_NOSYSTEM` drops the system's file. Objects are the
  * repository's own (`GIT_OBJECT_DIRECTORY`), so what it writes, an automatic
- * merge's tree, is readable from the repository afterwards. Its working tree
- * is the repository's and its `modules` directory links to the repository's,
- * so a merge reaches the same submodule repositories (to fast-forward one),
- * and the repository's replace refs are copied in, so it reads the same
- * commits;
- * `--attr-source` takes precedence over the working tree's `.gitattributes`
- * files, so they still decide nothing. No configuration
- * is read: not the repository's, the user's (`GIT_CONFIG_GLOBAL` names an
- * empty file), the system's (`GIT_CONFIG_NOSYSTEM`), nor any passed in the
- * environment, except the settings that decide rename detection and
- * replacement objects, passed on as the repository has them. So a merge driver configured anywhere does not
+ * merge's tree, is readable from the repository afterwards, and so is its
+ * index (`GIT_INDEX_FILE`) and working tree (`GIT_WORK_TREE`).
+ * `--attr-source` takes precedence over the working tree's and the index's
+ * `.gitattributes` files, so they still decide nothing. No configuration is
+ * read but the repository's format: not the repository's settings, the
+ * user's (`GIT_CONFIG_GLOBAL` names an empty file), the system's
+ * (`GIT_CONFIG_NOSYSTEM`), nor any passed in the environment, except the
+ * settings that decide rename detection and replacement objects, passed on as
+ * the repository has them. So a merge driver configured anywhere does not
  * run, and a merge's result is git's for the attributes the commit carries.
  */
 export function indexAttributesGit<T>(
@@ -126,41 +196,17 @@ export function indexAttributesGit<T>(
   const scratch = mkdtempSync(join(tmpdir(), "resolve-conflicts-attributes-"));
   try {
     const tree = indexAttributesTree(root, scratch);
-    const objects = git(root, [
-      "rev-parse",
-      "--path-format=absolute",
-      "--git-path",
-      "objects",
-    ]).trim();
-    const format = git(root, ["rev-parse", "--show-object-format"]).trim();
-    const gitDir = join(scratch, "git");
-    git(null, [
-      "init",
-      "--bare",
-      "--quiet",
-      "--template=",
-      `--object-format=${format}`,
-      gitDir,
-    ]);
-    // A shallow clone's merge base is computed within the history it has.
-    const shallow = git(root, [
-      "rev-parse",
-      "--path-format=absolute",
-      "--git-path",
-      "shallow",
-    ]).trim();
-    if (existsSync(shallow)) copyFileSync(shallow, join(gitDir, "shallow"));
-    // A submodule's repository is found where the merge itself finds it: in
-    // the working tree, or under the repository's `modules` directory.
-    const modules = git(root, [
-      "rev-parse",
-      "--path-format=absolute",
-      "--git-path",
-      "modules",
-    ]).trim();
-    if (existsSync(modules))
-      symlinkSync(modules, join(gitDir, "modules"), "junction");
+    const path = (name: string) =>
+      git(root, [
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-path",
+        name,
+      ]).trim();
+    const objects = path("objects");
+    const index = path("index");
     const workTree = git(root, ["rev-parse", "--show-toplevel"]).trim();
+    const gitDir = mirrorGitDir(root, scratch);
     const noAttributes = join(scratch, "attributes");
     writeFileSync(noAttributes, "");
     const noConfiguration = join(scratch, "config");
@@ -173,19 +219,12 @@ export function indexAttributesGit<T>(
       GIT_DIR: gitDir,
       GIT_WORK_TREE: workTree,
       GIT_OBJECT_DIRECTORY: objects,
+      GIT_INDEX_FILE: index,
       GIT_ATTR_NOSYSTEM: "1",
       GIT_CONFIG_GLOBAL: noConfiguration,
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_OPTIONAL_LOCKS: "0",
     });
-    // Replacement objects stand in for the commits the merge reads.
-    const replaceBase = process.env.GIT_REPLACE_REF_BASE || "refs/replace/";
-    const replacements = git(root, [
-      "for-each-ref",
-      "--format=create %(refname) %(objectname)",
-      replaceBase,
-    ]);
-    if (replacements) git(root, ["update-ref", "--stdin"], replacements, env);
     const prefix = [
       ...mergeSettings(root),
       "-c",
