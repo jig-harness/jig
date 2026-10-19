@@ -1,0 +1,30 @@
+# Dependabot for jig itself: security updates only. Renovate (renovate.json5)
+# is the one version updater, so every ecosystem below sets
+# `open-pull-requests-limit: 0`, which turns off its version-update pull
+# requests. Security-update pull requests keep their own fixed limit, and
+# `cooldown` does not apply to them, so a fix is not held back.
+#
+# The entries exist to give those security pull requests the repo's
+# conventions: a Conventional Commits title and the labels that mark a
+# security update. Renovate's `vulnerabilityAlerts` uses the same labels, so
+# the labels do not tell the two bots apart; the pull request's author does.
+# The security-updates setting itself is host-side (Settings > Advanced
+# Security) and cannot be enabled from this file.
+#
+# Bun has no entry: Dependabot supports Bun version updates but not Bun
+# security updates, so an entry with version updates turned off would do
+# nothing. Security fixes for the root and /website bun.lock files come from
+# Renovate's `vulnerabilityAlerts` alone.
+#
+# Dependabot raises no alert for a SHA-pinned Action (see renovate.json5), so
+# the github-actions entry only matters for an Action referenced by tag.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    labels: ["dependencies", "security"]
+    commit-message:
+      prefix: "ci"
