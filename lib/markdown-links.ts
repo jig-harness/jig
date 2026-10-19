@@ -6,11 +6,15 @@
 // definition nothing uses renders nothing, so declares nothing. Raw HTML is
 // not read.
 //
-// The renderer reports no source positions, so where a destination stands, and
-// whether a link is an email autolink, is asked of the renderer too: change
-// one place in the source and render again. The place that changes the link
-// is where the link is written; text that only repeats it (in code, prose or
-// an unused definition) changes nothing.
+// The renderer reports no source positions, so where a destination stands is
+// asked of it in one more render. Every place where a destination's text ends
+// and a destination could end gets a marker naming that place, and each link
+// the renderer reads carries the marker of the place it was read from. Text
+// that only repeats a destination (in code, prose or an unused definition)
+// renders as no link, so its marker is never read. A link the markers take
+// away stands at the first place of its text no other link was read from.
+// Only such a link can be an email autolink, since a marker leaves no email an
+// email. Two renders, then, whatever the file holds.
 
 /** One destination and the 1-based line it starts on. */
 export interface MarkdownLink {
@@ -24,20 +28,24 @@ interface Rendered {
   image: boolean;
 }
 
+/** A destination, where its source text starts, and whether a marker read it. */
+interface Placed extends Rendered {
+  at: number;
+  marked: boolean;
+}
+
 /** Every link destination `content` declares, ordered by line. */
 export function markdownLinks(content: string): MarkdownLink[] {
-  const rendered = render(content);
-  const at = sourceIndexes(content, rendered);
-  const links = rendered.map(({ href, image }, i) => {
-    const index = at[i] ?? 0;
-    return {
+  const lineOf = lineFinder(content);
+  const links = place(content, render(content)).map(
+    ({ href, image, at, marked }) => ({
       target:
-        !image && emailAutolink(content, href, index, rendered.length)
+        !image && !marked && emailAutolink(content, href, at)
           ? `mailto:${href}`
           : unescapeDestination(href),
-      line: content.slice(0, index).split("\n").length,
-    };
-  });
+      line: lineOf(at),
+    }),
+  );
   return links.sort((a, b) => a.line - b.line);
 }
 
@@ -57,39 +65,92 @@ function render(content: string): Rendered[] {
 }
 
 /**
- * Where each destination's source text starts: the occurrence of that text
- * whose change changes this destination. A reference link's is its
- * definition's. Text with one occurrence needs no asking; text with no letter
- * or digit to change falls back to its first occurrence.
+ * Where each rendered destination's source text starts. A link a marker read
+ * stands where the marker says; the rest take, in order, the places of their
+ * text no marker claimed, or its first place when every one is claimed.
  */
-function sourceIndexes(content: string, rendered: Rendered[]): number[] {
-  const at = rendered.map(() => -1);
-  for (const href of new Set(rendered.map((link) => link.href))) {
-    const occurrences = indexesOf(content, href);
-    const change = href.search(/[a-z\d]/i);
-    const asked = occurrences.length > 1 && change !== -1 ? occurrences : [];
-    for (const index of asked)
-      for (const i of changedLinks(content, rendered, href, index + change))
-        if (at[i] === -1) at[i] = index;
-    rendered.forEach((link, i) => {
-      if (link.href === href && at[i] === -1) at[i] = occurrences[0] ?? 0;
-    });
-  }
-  return at;
+function place(content: string, rendered: Rendered[]): Placed[] {
+  const starts = new Map<string, number[]>();
+  for (const { href } of rendered)
+    if (!starts.has(href)) starts.set(href, indexesOf(content, href));
+  const read = readMarked(content, starts);
+  const claimed = new Set<number>();
+  const placed = rendered.map((link): Placed => {
+    const at = read.get(key(link))?.shift();
+    if (at === undefined) return { ...link, at: -1, marked: false };
+    claimed.add(at);
+    return { ...link, at, marked: true };
+  });
+  const free = new Map<string, number[]>();
+  for (const [href, list] of starts)
+    free.set(
+      href,
+      list.filter((at) => !claimed.has(at)),
+    );
+  for (const link of placed)
+    if (link.at === -1)
+      link.at = free.get(link.href)?.shift() ?? starts.get(link.href)?.[0] ?? 0;
+  return placed;
 }
 
-/** The links to `href` that change when the character at `index` does. */
-function changedLinks(
+const key = ({ href, image }: Rendered) => `${image ? "!" : ""}${href}`;
+
+/**
+ * The places each destination was read from, by `key`, in render order: the
+ * file rendered again with a marker at every place a destination's text ends
+ * and a destination could end, before `)`, `>`, whitespace or the file's end.
+ * A marker is two characters of the Private Use Area, so a file that holds
+ * one already is not marked.
+ */
+function readMarked(
   content: string,
-  rendered: Rendered[],
-  href: string,
-  index: number,
-): number[] {
-  const changed = render(replaceAt(content, index));
-  if (changed.length !== rendered.length) return [];
-  return rendered.flatMap((link, i) =>
-    link.href === href && changed[i]?.href !== href ? [i] : [],
+  starts: Map<string, number[]>,
+): Map<string, number[]> {
+  const read = new Map<string, number[]>();
+  const ends = [
+    ...new Set(
+      [...starts].flatMap(([href, list]) => list.map((at) => at + href.length)),
+    ),
+  ]
+    .filter((end) => /^[ \t\n\r\f\v)>]?$/.test(content[end] ?? ""))
+    .sort((a, b) => a - b);
+  if (ends.length === 0 || ends.length > MARKS ** 2 || PRIVATE.test(content))
+    return read;
+  let marked = "";
+  ends.forEach((end, id) => {
+    marked += content.slice(ends[id - 1] ?? 0, end) + marker(id);
+  });
+  marked += content.slice(ends.at(-1));
+  for (const link of render(marked)) {
+    const id = markerId(link.href.slice(-2));
+    const href = link.href.replace(MARKER, "");
+    const end = id === undefined ? undefined : ends[id];
+    if (end === undefined || !content.startsWith(href, end - href.length))
+      continue;
+    const list = read.get(key({ ...link, href })) ?? [];
+    list.push(end - href.length);
+    read.set(key({ ...link, href }), list);
+  }
+  return read;
+}
+
+const MARK = 0xe000;
+const MARKS = 0x1900;
+const PRIVATE = /[\ue000-\uf8ff]/;
+const MARKER = /[\ue000-\uf8ff]{2}/g;
+
+function marker(id: number): string {
+  return String.fromCharCode(
+    MARK + Math.floor(id / MARKS),
+    MARK + (id % MARKS),
   );
+}
+
+function markerId(text: string): number | undefined {
+  const [high, low] = [text.charCodeAt(0) - MARK, text.charCodeAt(1) - MARK];
+  return high >= 0 && high < MARKS && low >= 0 && low < MARKS
+    ? high * MARKS + low
+    : undefined;
 }
 
 function indexesOf(content: string, text: string): number[] {
@@ -103,39 +164,38 @@ function indexesOf(content: string, text: string): number[] {
   return found;
 }
 
-/** `content` with the letter or digit at `index` changed to another. */
-function replaceAt(content: string, index: number): string {
-  const char = content[index] ?? "";
-  const other = /\d/.test(char)
-    ? String((Number(char) + 1) % 10)
-    : /[zZ]/.test(char)
-      ? String.fromCharCode(char.charCodeAt(0) - 25)
-      : String.fromCharCode(char.charCodeAt(0) + 1);
-  return content.slice(0, index) + other + content.slice(index + 1);
+/**
+ * The 1-based line of an index in `content`, which ends a line at CRLF, CR or
+ * LF, as CommonMark does.
+ */
+function lineFinder(content: string): (index: number) => number {
+  const starts = [0];
+  for (const ending of content.matchAll(/\r\n?|\n/g))
+    starts.push(ending.index + ending[0].length);
+  return (index) => {
+    let [low, high] = [0, starts.length - 1];
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if ((starts[middle] ?? 0) <= index) low = middle;
+      else high = middle - 1;
+    }
+    return low + 1;
+  };
 }
 
 /**
  * Whether the link to `href`, written at `at`, is an email autolink
- * (`<a@b.c>`), which renders as mailto: its `<` is the autolink's own when the
- * link is gone without it. In `[x](<a@b.c>)` or a definition the `<` only
- * brackets a destination, which stays a link.
+ * (`<a@b.c>`). Only a link no marker read is asked: a marker inside
+ * `[x](<a@b.c>)` or a definition leaves a link, inside an autolink none.
  */
-function emailAutolink(
-  content: string,
-  href: string,
-  at: number,
-  count: number,
-): boolean {
-  if (
-    !/^[\w.!#$%&'*+/=?^`{|}~-]+@[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?)*$/i.test(
+function emailAutolink(content: string, href: string, at: number): boolean {
+  return (
+    /^[\w.!#$%&'*+/=?^`{|}~-]+@[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?(?:\.[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?)*$/i.test(
       href,
-    ) ||
-    content[at - 1] !== "<" ||
-    content[at + href.length] !== ">"
-  )
-    return false;
-  const without = `${content.slice(0, at - 1)} ${content.slice(at)}`;
-  return render(without).length < count;
+    ) &&
+    content[at - 1] === "<" &&
+    content[at + href.length] === ">"
+  );
 }
 
 /**

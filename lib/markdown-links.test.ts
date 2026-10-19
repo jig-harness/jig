@@ -135,6 +135,49 @@ test("a link's line is where the renderer read it, not where its text first stan
   ]);
 });
 
+test("a destination with no letter or digit, or none in ASCII, is placed where it is read", () => {
+  expect(markdownLinks("`!!!`\n[broken](!!!)\n[again](!!!)")).toEqual([
+    { target: "!!!", line: 2 },
+    { target: "!!!", line: 3 },
+  ]);
+  expect(markdownLinks("`é`\n[broken](é)")).toEqual([{ target: "é", line: 2 }]);
+});
+
+test("a line ends at CR, LF or CRLF", () => {
+  expect(markdownLinks("intro\r[broken](missing.md)\r\n\n[b](x.md)")).toEqual([
+    { target: "missing.md", line: 2 },
+    { target: "x.md", line: 4 },
+  ]);
+});
+
+test("a label that repeats its destination keeps the link at its definition", () => {
+  expect(markdownLinks("[x.md]\n\n[x.md]: x.md")).toEqual([
+    { target: "x.md", line: 3 },
+  ]);
+  expect(markdownLinks("<a@b.c>\n[x](<a@b.c>)\n<a@b.c>")).toEqual([
+    { target: "mailto:a@b.c", line: 1 },
+    { target: "a@b.c", line: 2 },
+    { target: "mailto:a@b.c", line: 3 },
+  ]);
+});
+
+test("a file is rendered twice however many links repeat a destination", () => {
+  const render = Bun.markdown.render;
+  let renders = 0;
+  Bun.markdown.render = ((...args: Parameters<typeof render>) => {
+    renders++;
+    return render(...args);
+  }) as typeof render;
+  try {
+    const links = markdownLinks(`${"[a](x.md)\n".repeat(1000)}\`x.md\``);
+    expect(links).toHaveLength(1000);
+    expect(links.at(-1)).toEqual({ target: "x.md", line: 1000 });
+  } finally {
+    Bun.markdown.render = render;
+  }
+  expect(renders).toBe(2);
+});
+
 test("percent-encoding is decoded, and a malformed one is kept as written", () => {
   expect(decode("a%20b.md")).toBe("a b.md");
   expect(decode("100%.md")).toBe("100%.md");
