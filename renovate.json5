@@ -1,8 +1,8 @@
 // Renovate update policy for jig itself (dogfoods M1's "pin and update"
 // invariant: see modules/M1-gates-enforcement-ladder/mappings.md).
 //
-// Scope: GitHub Actions, the mise runtime pin, and package dependencies with
-// Bun's lockfile. Consumer templates and fixture inputs are examples, not
+// Scope: GitHub Actions, the mise runtime pin, package dependencies with
+// Bun's lockfile, and versions a workflow pins under a `# renovate:` comment. Consumer templates and fixture inputs are examples, not
 // dependencies of Jig's executable toolchain.
 //
 // Every update arrives as a normal PR and runs `bun run gates`. Nothing

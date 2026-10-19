@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, join, resolve } from "node:path";
+import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  spawnSync,
+  withoutLeakyGitEnv,
+} from "../plugin/shared/guarded-git-spawn.ts";
 import { manifestFindings } from "./check-plugin.ts";
 
 const root = resolve(import.meta.dir, "..");
@@ -91,3 +97,73 @@ test("a version that is not major.minor.patch is a finding", () => {
     'version "next" is not major.minor.patch',
   ]);
 });
+
+/**
+ * Run the gate in a child whose `PATH` holds a stub `claude` (exiting
+ * `stubExit`) or none, beside Bun and git.
+ */
+function runGate(
+  stubExit: number | null,
+  env: Record<string, string> = {},
+): { status: number | null; stdout: string; stderr: string } {
+  const bin = mkdtempSync(join(tmpdir(), "jig-check-plugin-"));
+  try {
+    if (stubExit !== null)
+      writeFileSync(
+        join(bin, "claude"),
+        `#!/bin/sh\necho "stub validator: $*"\nexit ${stubExit}\n`,
+        { mode: 0o755 },
+      );
+    const git = spawnSync("sh", ["-c", "command -v git"], {
+      env: withoutLeakyGitEnv(),
+    }).stdout.trim();
+    const result = spawnSync(
+      process.execPath,
+      [join(root, "scripts/check-plugin.ts"), root],
+      {
+        env: {
+          ...withoutLeakyGitEnv(),
+          GITHUB_ACTIONS: "",
+          ...env,
+          PATH: [bin, dirname(process.execPath), dirname(git)].join(delimiter),
+        },
+        timeout: 60_000,
+      },
+    );
+    return {
+      status: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    };
+  } finally {
+    rmSync(bin, { recursive: true, force: true });
+  }
+}
+
+test.skipIf(process.platform === "win32")(
+  "without claude the validator is skipped, unless JIG_REQUIRE_CLAUDE=1",
+  () => {
+    const skipped = runGate(null);
+    expectSpawnExit({ ...skipped, exitCode: skipped.status }, 0);
+    expect(skipped.stderr).toContain("claude is not on PATH");
+    const required = runGate(null, { JIG_REQUIRE_CLAUDE: "1" });
+    expectSpawnExit({ ...required, exitCode: required.status }, 2);
+    expect(required.stderr).toContain("JIG_REQUIRE_CLAUDE=1 demands");
+  },
+  60_000,
+);
+
+test.skipIf(process.platform === "win32")(
+  "a validator that fails on the artifact is a finding",
+  () => {
+    const failed = runGate(1);
+    expectSpawnExit({ ...failed, exitCode: failed.status }, 1);
+    expect(failed.stderr).toContain(
+      "claude plugin validate --strict fails as installed",
+    );
+    const passed = runGate(0);
+    expectSpawnExit({ ...passed, exitCode: passed.status }, 0);
+    expect(passed.stdout).toContain("passes on the artifact");
+  },
+  60_000,
+);

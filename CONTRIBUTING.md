@@ -473,7 +473,7 @@ repository.
 ## Releasing the plugin
 
 This repository is the `jig` plugin: both agent tools install `plugin/`,
-from the release channels built out of each version's tag
+from the [release channels](GLOSSARY.md) built out of each version's tag
 ([ADR-0002](docs/adr/ADR-0002-the-plugin-is-its-directory.md),
 [plugin/README.md § Release channels](plugin/README.md#release-channels)). The
 rules for changing anything under `plugin/` (running from a copy outside this
@@ -516,17 +516,18 @@ A release goes like this:
    ```sh
    bun tools/plugin/channel.ts status          # each channel, and what latest has that stable lacks
    bun tools/plugin/channel.ts check 0.62.0    # the promotion rule's verdict, read-only
-   gh workflow run channels.yml -f command=promote -f version=0.62.0
-   gh workflow run channels.yml -f command=rollback -f version=0.61.1
+   gh workflow run channels.yml --repo jig-harness/jig -f command=promote -f version=0.62.0
+   gh workflow run channels.yml --repo jig-harness/jig -f command=rollback -f version=0.61.1
    ```
 
    The run refuses, naming each reason, unless the rule in
    [plugin/README.md § Release channels](plugin/README.md#release-channels)
-   holds. A bug report that says a version broke something that worked
+   holds. `channel.ts` reads the tags and channels from the `origin` remote, so
+   run it in a clone of this repository, not of a fork. A bug report that says a version broke something that worked
    before gets the `regression` label when it is triaged, with the version it
-   was found in in its "Plugin version" field: while it is open, no version
-   from that one on is promoted. A rollback across a breaking release needs
-   `-f across-breaking=true`. One `stable` request runs at a time; a second
+   was found in in its "Plugin version" field: while it is open, no promotion
+   that would bring that version to `stable` runs. A rollback across a breaking release needs
+   `-f across-breaking=true`, which applies to a rollback only. One `stable` request runs at a time; a second
    one made while another waits replaces it.
 
 The workflows push, tag and move the channels as the `jig-release` GitHub

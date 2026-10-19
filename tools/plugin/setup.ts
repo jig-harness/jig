@@ -194,7 +194,13 @@ function codexConfig(): unknown {
     if (code(error) === "ENOENT") return null;
     throw error;
   }
-  return Bun.TOML.parse(text);
+  try {
+    return Bun.TOML.parse(text);
+  } catch (error) {
+    throw new SetupError(
+      `${join(home, "config.toml")} is not TOML: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 /** Split `<base>#<ref>` into the address and the ref, if it names one. */
@@ -248,7 +254,7 @@ function refuseOtherSource(
   if (!explicit || sameSource(registered.location, requested)) return;
   const remove =
     harness === "claude"
-      ? `claude plugin marketplace remove ${MARKETPLACE}`
+      ? `claude plugin marketplace remove ${MARKETPLACE} --scope user`
       : `codex plugin marketplace remove ${MARKETPLACE}`;
   throw new Error(
     `${harness}: the ${MARKETPLACE} marketplace is registered from ${registered.location}, not ${requested}. To switch, run \`${remove}\` (it uninstalls ${PLUGIN_ID} too) and rerun this command, which installs it again; repositories that enable ${PLUGIN_ID} need no change.`,
@@ -259,8 +265,10 @@ function refuseOtherSource(
 function adviseChannel(harness: Harness, registered: Registered): void {
   const { base, ref } = splitSource(registered.location);
   if (!registered.git || ref !== undefined) return;
+  // A marketplace added as `owner/repo` is a Git address setup cannot take.
+  const source = isGitAddress(base) ? base : DEFAULT_SOURCE;
   console.warn(
-    `${harness}: ${PLUGIN_ID} follows main, the source address, which receives each version before its gates pass. To follow a release channel instead: bun tools/plugin/setup.ts --${harness} --channel ${DEFAULT_CHANNEL} --source ${base}`,
+    `${harness}: ${PLUGIN_ID} follows main, the source address, which receives each version before its gates pass. To follow a release channel instead: bun tools/plugin/setup.ts --${harness} --channel ${DEFAULT_CHANNEL} --source ${source}`,
   );
 }
 

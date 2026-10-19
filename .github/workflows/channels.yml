@@ -51,10 +51,12 @@ on:
 permissions:
   contents: read
 
-# One run per channel at a time, never cancelled. A called run is serialized
-# by its caller's job (release.yml), so its own group is unique to it.
+# One run per channel at a time, never cancelled once it runs; a stable
+# request made while another waits replaces the waiting one. A `latest` call
+# is serialized by its caller's job (release.yml), so its own group is unique
+# to it.
 concurrency:
-  group: ${{ github.event_name == 'workflow_dispatch' && 'channel-stable' || format('channel-call-{0}', github.run_id) }}
+  group: ${{ inputs.command == 'latest' && format('channel-call-{0}', github.run_id) || 'channel-stable' }}
   cancel-in-progress: false
 
 jobs:
@@ -121,13 +123,16 @@ jobs:
     steps:
       - name: Check what the plan job handed on
         env:
+          EVENT: ${{ github.event_name }}
           CHANNEL: ${{ needs.plan.outputs.channel }}
           START: ${{ needs.plan.outputs.start }}
           COMMIT: ${{ needs.plan.outputs.commit }}
         run: |
           set -euo pipefail
           fail() { echo "::error::$1"; exit 1; }
-          [ "$CHANNEL" = latest ] || [ "$CHANNEL" = stable ] || fail "'$CHANNEL' is not a channel"
+          # A person's request moves stable; a call from release.yml, latest.
+          if [ "$EVENT" = workflow_dispatch ]; then expected=stable; else expected=latest; fi
+          [ "$CHANNEL" = "$expected" ] || fail "this run may move $expected, not '$CHANNEL'"
           [ -z "$START" ] || [[ "$START" =~ ^[0-9a-f]{40}$ ]] || fail "the channel's tip is not a commit hash"
           [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail "the channel commit is not a commit hash"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -166,6 +171,13 @@ jobs:
             fail "the channel commit is not one commit on top of '${START:-nothing}'"
           trailer() { git log -1 --format=%B "$COMMIT" | sed -n "s/^Jig-$1: \([^ ]*\)$/\1/p" | tail -n 1; }
           [ "$(trailer Channel)" = "$CHANNEL" ] || fail "the commit's Jig-Channel is not $CHANNEL"
+          # Later promotions read the action and the withdrawn versions.
+          case "$CHANNEL:$(trailer Action)" in
+            latest:latest | stable:promote) ;;
+            stable:rollback)
+              [ -n "$(trailer Withdrawn)" ] || fail "a rollback that withdraws no version" ;;
+            *) fail "Jig-Action '$(trailer Action)' does not move $CHANNEL" ;;
+          esac
           version=$(trailer Version)
           source=$(trailer Source)
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "Jig-Version '$version' is not a version"

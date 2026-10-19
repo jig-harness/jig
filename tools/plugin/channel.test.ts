@@ -221,6 +221,25 @@ test("a rollback returns only to a version stable carried, and not across a brea
   expect(
     evaluateRollback("0.61.0", tag("0.61.0"), "success", breaking, true),
   ).toEqual([]);
+  // A version a rollback withdrew never returns, by a rollback either.
+  const withdrawnHistory = [
+    entry("0.61.4", at(50), "promote"),
+    entry("0.61.0", at(40), "rollback", ["0.61.2", "0.61.3"]),
+    entry("0.61.3", at(30), "promote"),
+    entry("0.61.2", at(20), "promote"),
+    entry("0.61.0", at(10), "promote"),
+  ];
+  expect(
+    evaluateRollback(
+      "0.61.2",
+      tag("0.61.2"),
+      "success",
+      withdrawnHistory,
+      false,
+    ),
+  ).toEqual([
+    "v0.61.2 was withdrawn from stable by a rollback; it never returns",
+  ]);
   expect(crossesBreaking("0.62.0", "0.61.0")).toBe(true);
   expect(crossesBreaking("1.2.0", "1.1.0")).toBe(false);
   expect(crossesBreaking("0.62.3", "0.62.1")).toBe(false);

@@ -281,6 +281,10 @@ export function evaluateRollback(
     failures.push(
       `stable never carried v${candidate}; a rollback returns only to a version promoted before`,
     );
+  if (history.some((entry) => entry.withdrawn.includes(candidate)))
+    failures.push(
+      `v${candidate} was withdrawn from stable by a rollback; it never returns`,
+    );
   return failures;
 }
 
@@ -652,6 +656,11 @@ function printStatus(state: State): void {
 /** A command's outcome before anything is written: a plan, or an exit code. */
 type Planned = Plan | { exit: number };
 
+/** Every version a rollback withdrew from stable. */
+function withdrawnFrom(state: State): string[] {
+  return state.stable.history.flatMap((entry) => entry.withdrawn);
+}
+
 /** `latest`'s next commit: the newest tagged version, if latest lacks it. */
 function planLatest(
   state: State,
@@ -714,7 +723,7 @@ function stableFailures(
     gates,
     soakStart: tag ? soakStart(version, tag, state.latest.history) : null,
     stable: state.stableVersion,
-    withdrawn: state.stable.history.flatMap((entry) => entry.withdrawn),
+    withdrawn: withdrawnFrom(state),
     regressions: sources.regressions(),
     now,
   });
@@ -749,7 +758,13 @@ function planStable(
     : [];
   const body = rollback
     ? `Rolls stable back from v${from} to v${version}, withdrawing v${withdrawn.join(", v")}.`
-    : `Versions this promotion adds, oldest first: ${versionsBetween(state.released, from, version).join(", ")}.`;
+    : `Versions this promotion adds, oldest first: ${versionsBetween(
+        state.released,
+        from,
+        version,
+      )
+        .filter((v) => !withdrawnFrom(state).includes(v))
+        .join(", ")}.`;
   const action = args.command as Action;
   return {
     channel: "stable",

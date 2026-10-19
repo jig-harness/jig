@@ -581,12 +581,13 @@ Paths inside the cache change with each release, so never store them.
   machine that follows `main`.
 - **Remove**: `claude plugin uninstall jig@jig` and
   `codex plugin remove jig@jig` (add
-  `claude plugin marketplace remove jig` /
+  `claude plugin marketplace remove jig --scope user` /
   `codex plugin marketplace remove jig` to forget the source too).
 
 ## Release channels
 
-A channel is a branch of this repository that the tools install from. It
+A [release channel](../GLOSSARY.md) is a branch of this repository that the
+tools install from. It
 holds the plugin as the tools install it: the two marketplace files and
 `plugin/`, without the tests (`__tests__/`) and the instructions for agents
 working on Jig itself (`AGENTS.md`, `CLAUDE.md`). Everything else under
@@ -600,7 +601,7 @@ and which commit it was built from.
 | `stable` | A version that spent 72 hours on `latest` without an open regression | When Jig's maintainers promote a version, or roll back | Most machines, organization rollouts, container images |
 | `latest` | Every version | When a version is tagged, which happens once its release commit has passed the gates | Jig's maintainers, and teams that want each change as soon as it ships |
 
-**Promotion.** A version moves from `latest` to `stable` only when all of
+**[Promotion](../GLOSSARY.md).** A version moves from `latest` to `stable` only when all of
 these hold, and the promotion command refuses otherwise, naming each
 reason:
 
@@ -629,11 +630,14 @@ lists each promotion and the versions it brought.
 
 **Switching channels.** Neither tool re-adds a registered marketplace from
 another ref, and removing the marketplace uninstalls the plugin, so a switch
-is three steps. The plugin's id stays `jig@jig`, so repositories that enable
-it need no change.
+is three steps, and the plugin is uninstalled between the first and the last.
+Remove the user-level registration only (`--scope user`): without it, Claude
+Code also removes a declaration a repository committed in its
+`.claude/settings.json`. The plugin's id stays `jig@jig`, so repositories
+that enable it need no change.
 
 ```sh
-claude plugin marketplace remove jig
+claude plugin marketplace remove jig --scope user
 claude plugin install jig --marketplace https://github.com/jig-harness/jig.git#latest
 
 codex plugin marketplace remove jig

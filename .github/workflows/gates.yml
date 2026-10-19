@@ -106,6 +106,8 @@ jobs:
       # (scripts/check-plugin.ts). The native binary comes from its platform
       # package, which has no install script, rather than as a dependency,
       # which would add hundreds of megabytes to every contributor's install.
+      # npm checks the tarball against the registry's integrity record for the
+      # pinned version; no hash of it is kept here.
       - name: Fetch Claude Code for the plugin check
         env:
           # renovate: datasource=npm depName=@anthropic-ai/claude-code-linux-x64
