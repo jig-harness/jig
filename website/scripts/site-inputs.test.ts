@@ -815,7 +815,7 @@ async function buildClosure(files: string[]) {
   const entries = files.filter(
     (f) => /^website\/.*\.ts$/.test(f) && !f.endsWith(".test.ts"),
   );
-  entries.push("plugin/skills/audit/scripts/report.ts", ...astro.code);
+  entries.push(...astro.code);
   const build = await Bun.build({
     entrypoints: [...new Set(entries)].map((f) => join(root, f)),
     target: "bun",
@@ -840,9 +840,7 @@ test("Jig's catalog selects the website for every file the site's build reads", 
   expect(astro.unresolved).toEqual([]);
   expect(entries).toContain("website/astro.config.ts");
   expect(entries).toContain("website/src/lib/data/index.ts");
-  expect(entries).toContain("website/src/scripts/specimen.ts");
-  expect(imported).toContain("plugin/skills/audit/scripts/report.ts");
-  expect(sources.has("plugin/skills/audit/scripts/report.ts")).toBe(true);
+  expect(entries).toContain("website/src/scripts/module.ts");
   const { patterns, unparsed: unparsedPatterns } = collectionPatterns(sources);
   expect(unparsedPatterns).toEqual([]);
   expect(patterns).toContain("plugin/skills/*/SKILL.md");

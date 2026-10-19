@@ -301,7 +301,7 @@ areas:
     # renders or parses (website/src/content.config.ts and
     # website/src/lib/data/index.ts), and the audit skill with the code its
     # renderer imports, whose criteria, profiles and fixtures the build
-    # renders the live audit example and the module pages with. A document's
+    # renders the module pages with. A document's
     # link to any other file is checked by the gate set's link check, not by
     # the site's build. website/scripts/site-inputs.test.ts fails when the site's
     # build imports, or its content collection or a read takes in, a

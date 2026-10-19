@@ -17,9 +17,7 @@ So most changes reach it by themselves. What does not:
 - **a document's shape** a parser relies on: a renamed heading or table
   column usually drops content without failing the build;
 - **a new kind of thing** (a module, skill, principle, profile, station,
-  configuration layer) that a page lists by hand or a test counts;
-- **the live audit example**, rendered from a committed run with its own
-  caption.
+  configuration layer) that a page lists by hand or a test counts.
 
 This skill finds those among the commits since the last check, fixes them in
 one pull request, and files follow-ups for what is too big to handle in one

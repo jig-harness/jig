@@ -24,11 +24,9 @@ Ask these of every `content` commit. One yes is enough to look closer.
    public roadmap the site renders, or in design/plan.md, whose items the
    roadmap repeats) a page links to
    (`#rm-item-<n>`) or describes as not built yet?
-5. **Did it change the audit's renderer, its report or record format, or the
-   committed run** the live audit example is built from?
-6. **Did it change a fact in the site's frame**: the repository address, the
+5. **Did it change a fact in the site's frame**: the repository address, the
    default branch, the install or first-run steps, the footer's claims?
-7. **Does a rendered document now speak to Jig's maintainers rather than its
+6. **Does a rendered document now speak to Jig's maintainers rather than its
    readers?** A tool the maintainers use stated as Jig's default or as what
    it is built for, a "today" that names one implementation where the
    reader needs what is supported and planned, or a note about how Jig
@@ -90,9 +88,6 @@ Ask these of every `content` commit. One yes is enough to look closer.
   and the factory, adopt and plugin pages) with the line on each;
   a page renamed, added or removed there is a change to those lists too. The
   lists of modules, skills and principles follow their documents.
-- **Live audit example** (`website/scripts/audit-example.ts` and
-  `website/src/components/AuditSpecimen.astro`): the committed run it renders
-  and the caption naming its repository, commit, plugin version and date.
 
 ## What the parsers rely on
 

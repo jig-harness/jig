@@ -47,9 +47,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
     gives it. A link whose text is a bare file name reads as the page's name.
   - `rehype-blocks.ts` gives code blocks a language label and a Copy button,
     and makes tables scroll on a narrow screen.
-- **Build**: `bun run build` renders the live audit example
-  (`scripts/audit-example.ts`, with the audit skill's own renderer and a
-  committed run), builds the site, and runs `scripts/check-links.ts`, which
+- **Build**: `bun run build` builds the site and runs `scripts/check-links.ts`, which
   reads each page's links and ids with an HTML parser, resolves every link
   against its page, and fails on any site link to a missing page or anchor,
   and on a built file that sets its own base URL, whose links it does not
@@ -59,7 +57,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
 
 | Route | Source | What the page adds |
 |-------|--------|--------------------|
-| `/` | README, FACTORY.md, profiles | the evaluator's path: the plain statement and two reader paths beside the jig, a model drawn as a technical drawing that the first stretch of scrolling closes and the pointer swivels; the factory miniature; the map strip (the compact module map, starting on Team/Standard, each row opening its module's popover, with what a filled cell means); the limits; the enforcement ladder; the profiles; the live audit; the ways to use Jig, one plate each; and where to start, above the foundation plate rising from the page's foot |
+| `/` | README, FACTORY.md, profiles | the evaluator's path: the plain statement and two reader paths beside the jig, a model drawn as a technical drawing that the first stretch of scrolling closes and the pointer swivels; the factory miniature; the map strip (the compact module map, starting on Team/Standard, each row opening its module's popover, with what a filled cell means); the limits; the enforcement ladder; the profiles; the day-one audit text; the ways to use Jig, one plate each; and where to start, above the foundation plate rising from the page's foot |
 | `/features/` | FEATURES.md, the plugin README's skill tables, ROADMAP.md, FACTORY.md | what a team gets: the intro beside its plate, an at-a-glance card per feature (its plate, number, title and skill chips) linking to its section, then one section per feature: its prose beside its plate, the skills that run it as actor chips, the modules that state the practice as chips, the factory stations its skills run linked into `/factory/`, and what is on the roadmap as roadmap chips beside each entry |
 | `/modules/` | modules/README.md, profiles.yaml | the full map: every module at three levels, in id order, with a profile switch, scaffolding jobs and the skills that run each |
 | `/modules/<Mn>/` | the module README, its criteria YAML, its mappings.md | three numbered parts (the idea, the practice by level with the audit's criteria, the mechanics folded), the CI-provider switch for the mappings, and a rail: commands, scaffolding job, target per profile, adoption order |
@@ -95,7 +93,7 @@ maintainers ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions
   the same popover and draws the glyph when its text is the bare name),
   module chips, the actor line, the station box, the cross-section figure,
   the station-by-actor matrix, the module map, the plan rail, the side
-  index, the ladder, the section head, the plate, the live audit specimen.
+  index, the ladder, the section head, the plate.
   A page that opens with a plate beside its intro uses `.intro-row` and
   `.intro-plate` (`global.css`); the plate drops out below 1000 pixels.
   Adding `bleed` to the row makes the plate a
@@ -248,8 +246,7 @@ Every page reads fully without JavaScript; scripts in `website/src/scripts/`
 only enhance it: the theme switch, Copy buttons, term definitions beside a
 term, search (an index filtered in the browser), the module page's level
 tabs and CI switch, the map's profile switch, the adoption guides' profile
-choice, and the audit specimen (inert until clicked, then usable, or full
-screen).
+choice.
 
 ### Hosting and access
 
@@ -383,10 +380,12 @@ Open, each its own pull request:
 4. **Skill page summary cards.** "It never" and "Runs on" for each skill,
    once the skills' READMEs state their limits and platforms in a form a
    page can read.
-5. **The live audit example shows Jig's own audit.** It shows a third
-   party's repository today; Jig's own audit, rendered at build from a
-   committed run of the audit skill on this repository, replaces it, and
-   `website/scripts/audit-example.ts` and the specimen's caption follow.
+5. **The live audit example returns, showing Jig's own audit.** No page
+   shows an audit sheet until a committed run of the audit skill on this
+   repository exists. Then a build step renders it with the audit skill's
+   renderer, and the home page and the adoption page embed it with a caption
+   naming that run. It rests inert so the page keeps its scroll, usable
+   after a click, in full screen or in its own tab.
 
 ## Left out
 

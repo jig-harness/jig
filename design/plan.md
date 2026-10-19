@@ -239,7 +239,7 @@ how it works and what is left. Done when:
   state, in both themes;
 - search works on a phone, and the plugin page shows one agent's steps at a
   time;
-- the live audit example shows Jig's own audit.
+- the home and adoption pages show an audit sheet of Jig's own audit.
 
 ### 20. `code-stats`: test-runner configuration and audit evidence
 
