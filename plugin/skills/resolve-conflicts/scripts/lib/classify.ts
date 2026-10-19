@@ -26,6 +26,7 @@ import {
   loadCatalogFile,
   matchesGlob,
 } from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
+import { OUTPUT_PATH_RE } from "../../../change-areas/scripts/lib/catalog.ts";
 import { catalogPathFromOverlay } from "../../../do-item/scripts/determine_agent.ts";
 import { fail } from "../../../../shared/cli.ts";
 import { fieldInMessage } from "../../../../shared/config-layers.ts";
@@ -42,6 +43,7 @@ export interface Regenerate {
 }
 
 export interface GeneratedEntry {
+  /** Globs from the configuration; literal file paths from the catalog. */
   paths: string[];
   /** `null` for a catalog entry that declares outputs but no command. */
   command: string | null;
@@ -138,6 +140,12 @@ export interface CatalogGenerated {
   entries: GeneratedEntry[];
   /** One line per problem, for the map to print: nothing here is skipped silently. */
   problems: string[];
+  /**
+   * Why the catalog could not be read, or `null`. Set, the map is incomplete:
+   * a file only the catalog declares generated was classified by the other
+   * rules, so the check refuses until a map with a readable catalog clears it.
+   */
+  unreadable: string | null;
 }
 
 /** The catalog path `drive.change_areas_catalog` names, or `null` when unset. */
@@ -172,9 +180,15 @@ function catalogEntry(
   )
     return { problems: [`${at}.outputs is not a nonempty list of paths`] };
   const paths = outputs as string[];
-  const invalid = paths.find((p) => globProblem(p) !== null);
+  // The catalog declares literal output files, never globs: `**` would claim
+  // every conflicted path as generated.
+  const invalid = paths.find((p) => !OUTPUT_PATH_RE.test(p));
   if (invalid !== undefined)
-    return { problems: [`${at}.outputs: "${invalid}" is not a valid glob`] };
+    return {
+      problems: [
+        `${at}.outputs: "${invalid}" is not a literal repository-relative file path`,
+      ],
+    };
   const command =
     typeof entry.command === "string" && entry.command.trim() !== ""
       ? entry.command
@@ -200,15 +214,20 @@ function catalogEntry(
  * hand-merged, and is reported.
  */
 export function catalogGeneratedEntries(): CatalogGenerated {
-  const result: CatalogGenerated = { entries: [], problems: [] };
+  const result: CatalogGenerated = {
+    entries: [],
+    problems: [],
+    unreadable: null,
+  };
   const path = configuredCatalogPath();
   if (path === null) return result;
   let areas: ReturnType<typeof loadCatalogFile>;
   try {
     areas = loadCatalogFile(path);
   } catch (err) {
+    result.unreadable = err instanceof Error ? err.message : String(err);
     result.problems.push(
-      `${err instanceof Error ? err.message : err}. Files that only the catalog declares as generated are classified by the other rules until it can be read; resolve the catalog first if it is itself conflicted, then run conflict-map.ts again.`,
+      `${result.unreadable}. Files that only the catalog declares as generated are classified by the other rules until it can be read; resolve the catalog first if it is itself conflicted, then run conflict-map.ts again (check-resolution.ts refuses until then).`,
     );
     return result;
   }
@@ -241,7 +260,11 @@ export function regenerateFor(
   entries: readonly GeneratedEntry[],
 ): Derived | null {
   for (const entry of entries)
-    if (entry.paths.some((glob) => matchesGlob(path, glob)))
+    if (
+      entry.paths.some((p) =>
+        entry.source === "catalog" ? p === path : matchesGlob(path, p),
+      )
+    )
       return {
         class: "generated",
         regenerate:

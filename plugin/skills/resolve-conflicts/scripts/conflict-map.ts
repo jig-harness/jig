@@ -280,8 +280,9 @@ export function mapConflicts(
  * recorded decision and every path mapped earlier (a staged path is no longer
  * unmerged, but its entry is still what the check needs); a different
  * operation's snapshot is replaced. A kept path that `entries` (or the
- * lockfile table) now declares derived is reclassified, so a generator the
- * catalog declared only after the path was staged still owes a regeneration.
+ * lockfile table) now declares derived is reclassified, and a derived one
+ * takes the current command: a generator the catalog declared, or gave a
+ * command, only after the path was staged still owes that regeneration.
  */
 export function mergeSnapshot(
   previous: Snapshot | null,
@@ -299,10 +300,7 @@ export function mergeSnapshot(
     previous.paths,
   );
   for (const [path, entry] of Object.entries(paths)) {
-    const derived =
-      entry.class === "text" || entry.class === "binary"
-        ? regenerateFor(path, entries)
-        : null;
+    const derived = regenerateFor(path, entries);
     if (derived)
       paths[path] = {
         ...entry,
@@ -438,6 +436,7 @@ async function main(): Promise<number> {
       integrationWhy: op.integrationWhy,
     },
     warning: warningOf(op.warning, catalog),
+    catalogUnread: catalog.unreadable,
     mappedAt: new Date().toISOString(),
     paths,
   };

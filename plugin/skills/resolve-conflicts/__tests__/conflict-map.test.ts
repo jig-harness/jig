@@ -51,6 +51,7 @@ interface Map {
     integration: string;
   };
   warning: string | null;
+  catalogUnread?: string | null;
   paths: Record<string, MappedPath>;
 }
 
@@ -435,6 +436,60 @@ describe("classes", () => {
           "PROBLEM openapi.json: is a generated file: take the integration side, regenerate it (bun run gen:openapi) and record regenerated",
         );
       });
+
+      it("refuses the check until the map runs again with the catalog readable", () => {
+        map();
+        s.write("openapi.json", "hand merged\n");
+        s.git("add", "openapi.json");
+        expect(s.script("record.ts", ["openapi.json", "combined"]).code).toBe(
+          0,
+        );
+        resolveCatalog();
+        expect(s.script("record.ts", ["catalog.yaml", "combined"]).code).toBe(
+          0,
+        );
+        const before = s.script("check-resolution.ts");
+        expect(before.code).toBe(1);
+        expect(before.stdout).toContain(
+          "PROBLEM (conflict map): the change-area catalog could not be read when the conflicts were mapped",
+        );
+        expect(map().catalogUnread).toBeNull();
+        const after = s.script("check-resolution.ts");
+        expect(after.stdout).not.toContain("(conflict map)");
+        expect(after.stdout).toContain(
+          "PROBLEM openapi.json: is a generated file",
+        );
+      });
+    });
+
+    it("gives a staged derived path the command the catalog declares once it is resolved", () => {
+      s.overlay("drive:\n  change_areas_catalog: catalog.yaml\n");
+      conflictEverywhere(["catalog.yaml", "bun.lock"]);
+      expect(map().paths["bun.lock"]?.regenerate?.source).toBe("built-in");
+      s.git("add", "bun.lock");
+      s.write(
+        "catalog.yaml",
+        CATALOG.replace(
+          "outputs: [openapi.json, docs/api.md]",
+          "outputs: [bun.lock]",
+        ),
+      );
+      s.git("add", "catalog.yaml");
+      expect(map().paths["bun.lock"]).toMatchObject({
+        class: "generated",
+        regenerate: { command: "bun run gen:openapi", source: "catalog" },
+      });
+    });
+
+    it("reports an output that is not a literal file path, and ignores its entry", () => {
+      useCatalog(CATALOG.replace("outputs: [schema.sql]", 'outputs: ["**"]'));
+      conflictEverywhere(["schema.sql", "src/a.ts"]);
+      const m = map();
+      expect(m.warning).toContain(
+        'catalog area api.generated[1].outputs: "**" is not a literal repository-relative file path',
+      );
+      expect(m.paths["schema.sql"]?.class).toBe("text");
+      expect(m.paths["src/a.ts"]?.class).toBe("text");
     });
 
     it("reports an entry whose outputs are not a list of paths", () => {

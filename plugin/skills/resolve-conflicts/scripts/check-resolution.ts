@@ -195,6 +195,17 @@ function checkPath(
   }
 }
 
+/** A map written without the change-area catalog may have classified a generated file as text. */
+function incompleteMap(snapshot: Snapshot): Finding[] {
+  if (!snapshot.catalogUnread) return [];
+  return [
+    {
+      path: "(conflict map)",
+      message: `the change-area catalog could not be read when the conflicts were mapped (${snapshot.catalogUnread}), so a file it declares generated may be classified as text: resolve the catalog, then run conflict-map.ts again`,
+    },
+  ];
+}
+
 export function checkResolution(root: string, snapshot: Snapshot): CheckResult {
   const result: CheckResult = {
     exit: 0,
@@ -202,6 +213,7 @@ export function checkResolution(root: string, snapshot: Snapshot): CheckResult {
     notes: [],
     escalations: [],
   };
+  result.problems.push(...incompleteMap(snapshot));
   const unmerged = unmergedPaths(root);
   for (const path of [...unmerged.keys()].sort()) {
     const entry = Object.hasOwn(snapshot.paths, path)

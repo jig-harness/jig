@@ -122,6 +122,13 @@ export interface Snapshot {
     integrationWhy: string;
   };
   warning: string | null;
+  /**
+   * Why the change-area catalog could not be read when the map was written,
+   * or `null`. While set, the classes are incomplete and the check refuses;
+   * a map with a readable catalog clears it. Absent in a snapshot an earlier
+   * version wrote, which is read as `null`.
+   */
+  catalogUnread?: string | null;
   mappedAt: string;
   paths: Record<string, PathEntry>;
 }
@@ -334,7 +341,14 @@ export function snapshotProblem(value: unknown): string | null {
     return "integration side is neither ours nor theirs";
   if (typeof sides.integrationWhy !== "string")
     return "no reason for the integration side";
+  return mapProblem(value);
+}
+
+/** Why the snapshot's map-level fields and paths are malformed, or null. */
+function mapProblem(value: Record<string, unknown>): string | null {
   if (!isStringOrNull(value.warning)) return "warning is not a string";
+  if (!isStringOrNull(value.catalogUnread ?? null))
+    return "catalogUnread is not a string";
   if (typeof value.mappedAt !== "string") return "no mapping time";
   if (!isRecord(value.paths)) return "the path map is not an object";
   for (const [path, entry] of Object.entries(value.paths)) {

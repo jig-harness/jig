@@ -231,6 +231,7 @@ jig/conflicts.json)`, which is never committed. Its shape:
     "integrationWhy": "main is the default branch"
   },
   "warning": null,
+  "catalogUnread": null,
   "mappedAt": "2026-01-01T00:00:00.000Z",
   "paths": {
     "src/a.ts": {
@@ -263,7 +264,9 @@ jig/conflicts.json)`, which is never committed. Its shape:
 edit it by hand to the same shape. `regenerate` is
 `{ "command", "cwd", "source": "built-in" | "configuration" | "catalog" }` for
 a derived file, and `null` for a `generated` path whose catalog entry declares
-no command (then `record.ts` needs `--command`). `dropped` is `{ "why": "…", "lines": [{ "side": "theirs", "text": "…" }] }`.
+no command (then `record.ts` needs `--command`). `catalogUnread` says why the
+change-area catalog could not be read when the map was written, and keeps the
+check refusing until a map with a readable catalog clears it. `dropped` is `{ "why": "…", "lines": [{ "side": "theirs", "text": "…" }] }`.
 
 The snapshot belongs to one operation (its kind, `HEAD`, and the incoming
 commit). Running `conflict-map.ts` again for the same operation keeps the
@@ -395,8 +398,8 @@ named (exit 2). `JIG_OVERLAY` points the
 scripts at another configuration file.
 
 **The change-area catalog is read too.** When `drive.change_areas_catalog`
-names a catalog, every `generated[].outputs` path of every area is a generated
-file, rebuilt by that entry's `command` (run from the repository root), the
+names a catalog, every `generated[].outputs` path of every area (a literal
+file path, matched exactly, never a glob) is a generated file, rebuilt by that entry's `command` (run from the repository root), the
 class `generated` and the source `catalog` in the map. The catalog states what
 a generator writes once; `resolve_conflicts.generated` is for the files it does
 not declare. A path is classified by the first of these that matches:
@@ -406,16 +409,18 @@ not declare. A path is classified by the first of these that matches:
 3. the built-in lockfile table below.
 
 An entry in the list above therefore overrides the catalog and the table, and
-the catalog overrides the table. Three things are reported, never skipped:
-a catalog entry with no `command` still claims its outputs as generated files
-(never hand-merged) and the map warns that no command is known, so
-`record.ts` needs `--command` for it; an entry whose `outputs` are not a
-list of valid paths is named in the warning and ignored; and a catalog that
-cannot be read (it may be among the conflicted paths) is named in the warning
-while the map goes on without it. Resolve the catalog first, then run
-`conflict-map.ts` again: it keeps the decisions already recorded and
+the catalog overrides the table. The following problems are reported, never
+skipped: a catalog entry with no `command` still claims its outputs as
+generated files (never hand-merged) and the map warns that no command is
+known, so `record.ts` needs `--command` for it; an entry whose `outputs` are
+not a list of literal file paths is named in the warning and ignored; and a
+catalog that cannot be read (it may be among the conflicted paths) is named in
+the warning while the map goes on without it, and `check-resolution.ts`
+refuses until a later map reads it. Resolve the catalog first, then run
+`conflict-map.ts` again: it keeps the decisions already recorded,
 reclassifies every mapped path, a staged one included, that the catalog now
-declares generated (check-resolution.ts then asks for `regenerated`). A `drive.change_areas_catalog` that is not a path is
+declares generated, and gives every derived path the command that now applies
+(check-resolution.ts then asks for `regenerated`). A `drive.change_areas_catalog` that is not a path is
 refused (exit 2).
 
 Built-in lockfiles, matched by file name in any directory and regenerated in
