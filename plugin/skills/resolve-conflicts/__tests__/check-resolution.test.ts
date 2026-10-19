@@ -356,9 +356,13 @@ describe("derived files", () => {
 });
 
 /** A catalog whose one generated entry writes `output` with `command`. */
-function writeCatalog(output: string, command: string): void {
+function writeCatalog(
+  output: string,
+  command: string,
+  file = "catalog.yaml",
+): void {
   s.write(
-    "catalog.yaml",
+    file,
     [
       "areas:",
       "  api:",
@@ -503,6 +507,73 @@ describe("a generated declaration the catalog gains after the map", () => {
     s.git("rm", "-q", "--cached", "src/.gitattributes");
     rmSync(`${s.root}/src/.gitattributes`);
     expect(check().code).toBe(0);
+  });
+});
+
+describe("a catalog whose file name starts with two dots", () => {
+  beforeEach(() => {
+    s.git("merge", "--abort");
+    writeCatalog("schema.json", "bun run gen:schema", "..catalog.yaml");
+    s.overlay("drive:\n  change_areas_catalog: ..catalog.yaml\n");
+    s.commit("Describe the feature API", { "openapi.json": "feature\n" });
+    s.git("checkout", "-q", "main");
+    s.commit("Describe the main API", { "openapi.json": "main\n" });
+    s.git("checkout", "-q", "feature");
+    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    s.write("src/config.ts", CONFIG_COMBINED);
+    s.write("openapi.json", "feature\nmain\n");
+    s.git("add", "src/config.ts", "openapi.json");
+    expect(record("src/config.ts", "combined").code).toBe(0);
+    expect(record("openapi.json", "combined").code).toBe(0);
+  });
+
+  it("is checked as a declaration inside the repository", () => {
+    const mapped = s.read("..catalog.yaml");
+    writeCatalog("openapi.json", "bun run gen:openapi", "..catalog.yaml");
+    s.git("add", "..catalog.yaml");
+    s.write("..catalog.yaml", mapped);
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM ..catalog.yaml: decides how the mapped paths are classified, and the working tree differs from what is staged",
+    );
+  });
+});
+
+describe("a conflicted catalog recorded deleted", () => {
+  beforeEach(() => {
+    s.git("merge", "--abort");
+    writeCatalog("schema.json", "bun run gen:schema");
+    s.overlay("drive:\n  change_areas_catalog: catalog.yaml\n");
+    s.commit("Declare the feature schema");
+    s.git("checkout", "-q", "main");
+    writeCatalog("schema.json", "bun run gen:main-schema");
+    s.commit("Declare the main schema");
+    s.git("checkout", "-q", "feature");
+    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    s.write("src/config.ts", CONFIG_COMBINED);
+    s.git("add", "src/config.ts");
+    expect(record("src/config.ts", "combined").code).toBe(0);
+    s.git("rm", "-q", "catalog.yaml");
+    expect(
+      record(
+        "catalog.yaml",
+        "deleted",
+        "--reason",
+        "the schema is no longer generated",
+      ).code,
+    ).toBe(0);
+  });
+
+  it("fails while a recreated catalog is not staged", () => {
+    writeCatalog("schema.json", "bun run gen:schema");
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM catalog.yaml: decides how the mapped paths are classified, and the working tree differs from what is staged",
+    );
   });
 });
 

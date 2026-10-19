@@ -107,7 +107,13 @@ function declarationPaths(root: string): Set<string> {
   return new Set(
     declarationFiles()
       .map((file) => relative(root, file).replaceAll("\\", "/"))
-      .filter((rel) => rel !== "" && !rel.startsWith("..") && !isAbsolute(rel)),
+      .filter(
+        (rel) =>
+          rel !== "" &&
+          rel !== ".." &&
+          !rel.startsWith("../") &&
+          !isAbsolute(rel),
+      ),
   );
 }
 
@@ -116,13 +122,11 @@ function declarationPaths(root: string): Set<string> {
  * catalog, every `.gitattributes`) whose working tree differs from the index.
  * The check reads them from the working tree, but the commit carries what is
  * staged, so a difference would certify a requirement the commit does not
- * have. A mapped or unmerged path (the catalog may be one) is reported as
- * such already.
+ * have. Mapped paths are checked too: a mapped declaration recorded deleted
+ * and recreated unstaged is checked nowhere else. An unmerged path (the
+ * catalog may be one) is reported as unmerged.
  */
-function unstagedDeclarations(
-  root: string,
-  mapped: Snapshot["paths"],
-): Finding[] {
+function unstagedDeclarations(root: string): Finding[] {
   const declarations = declarationPaths(root);
   // Pathspecs are literal here (lib/git.ts), so the whole status is filtered.
   const records = splitNul(
@@ -141,8 +145,7 @@ function unstagedDeclarations(
       continue;
     // An unmerged entry (U in either column, AA, DD) is reported as unmerged.
     const xy = record.slice(0, 2);
-    if (xy[1] === " " || /U|AA|DD/.test(xy) || Object.hasOwn(mapped, path))
-      continue;
+    if (xy[1] === " " || /U|AA|DD/.test(xy)) continue;
     found.push({
       path,
       message:
@@ -370,7 +373,7 @@ export function checkResolution(
   if (incomplete.length === 0)
     result.problems.push(...changedRequirements(snapshot, now));
   const unmerged = unmergedPaths(root);
-  result.problems.push(...unstagedDeclarations(root, snapshot.paths));
+  result.problems.push(...unstagedDeclarations(root));
   for (const path of [...unmerged.keys()].sort()) {
     const entry = Object.hasOwn(snapshot.paths, path)
       ? snapshot.paths[path]
