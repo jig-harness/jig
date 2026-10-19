@@ -50,6 +50,7 @@ import {
   type Classification,
   classifyPaths,
   derivedEntries,
+  indexSizes,
   sameRequirement,
   unmergedPaths,
   writtenSizes,
@@ -58,12 +59,11 @@ import {
   type CatalogGenerated,
   catalogGeneratedEntries,
 } from "./lib/classify.ts";
-import { indexAttrSource, THROWAWAY_INDEX_CONFIG } from "./lib/attributes.ts";
+import { THROWAWAY_INDEX_CONFIG } from "./lib/attributes.ts";
 import { droppedLines } from "./lib/drops.ts";
 import {
   git,
   gitPath,
-  gitRaw,
   indexBlob,
   readBlob,
   splitNul,
@@ -103,30 +103,65 @@ function unstaged(root: string, path: string): boolean {
   return git(root, ["diff", "--name-only", "-z", "--", path]) !== "";
 }
 
-/** Conflict markers in staged changes outside the mapped paths. */
+/** The lines `diff` adds to the new side, by line number (a `-U0` patch). */
+function addedLines(diff: string): Map<number, string> {
+  const added = new Map<number, string>();
+  let next: number | null = null;
+  for (const line of diff.split("\n")) {
+    const hunk = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) next = Number(hunk[1]);
+    else if (next !== null && line.startsWith("+"))
+      added.set(next++, line.slice(1));
+  }
+  return added;
+}
+
+/**
+ * Conflict markers on the lines staged changes add outside the mapped paths,
+ * at the size the commit's attributes give each path and the size a merge
+ * reads. `--text` and `--no-textconv` keep any attribute from hiding a
+ * file's lines; only content git would call binary (a NUL byte in its first
+ * 8000) is skipped.
+ */
 function stagedMarkers(root: string, mapped: Snapshot["paths"]): Finding[] {
-  // Exit 2 means it found something (whitespace errors count too); only the
-  // marker lines matter here.
-  const r = gitRaw(root, [
-    indexAttrSource(root),
-    "diff",
-    "--cached",
-    "--check",
-    "--no-ext-diff",
-  ]);
-  if (r.code !== 0 && r.code !== 2)
-    throw new Error(
-      `git --attr-source diff --cached --check exited ${r.code} (Git 2.41 or newer is required): ${r.stderr.trim()}`,
+  const paths = splitNul(
+    git(root, ["diff", "--cached", "--name-only", "--no-renames", "-z"]),
+  ).filter((path) => !Object.hasOwn(mapped, path));
+  // Regular files only: a link's target and a submodule's commit are not lines.
+  const files = new Map<string, string>();
+  for (const record of splitNul(git(root, ["ls-files", "--stage", "-z"]))) {
+    const match = record.match(/^100(?:644|755) ([0-9a-f]+) 0\t(.*)$/s);
+    if (match) files.set(match[2] as string, match[1] as string);
+  }
+  const scanned = paths.filter((path) => {
+    const blob = files.get(path);
+    return (
+      blob !== undefined && !readBlob(root, blob).slice(0, 8000).includes("\0")
     );
+  });
+  const committed = indexSizes(root, scanned);
+  const written = writtenSizes(root, scanned);
   const found: Finding[] = [];
-  for (const line of r.stdout.split("\n")) {
-    const match = line.match(/^(.*):(\d+): leftover conflict marker$/);
-    if (!match || Object.hasOwn(mapped, match[1] as string)) continue;
-    found.push({
-      path: match[1] as string,
-      line: Number(match[2]),
-      message: "conflict marker in a staged file",
-    });
+  for (const path of scanned) {
+    const sizes = new Set([
+      committed.get(path) as number,
+      written.get(path) as number,
+    ]);
+    const diff = git(root, [
+      "diff",
+      "--cached",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--no-renames",
+      "--text",
+      "--no-color",
+      "-U0",
+      "--",
+      path,
+    ]);
+    for (const [line, text] of addedLines(diff))
+      if ([...sizes].some((size) => markerLines(text, size).length > 0))
+        found.push({ path, line, message: "conflict marker in a staged file" });
   }
   return found;
 }

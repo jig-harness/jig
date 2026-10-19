@@ -51,7 +51,7 @@ would expand the unset variable to an empty string.
 
 Git 2.41 or newer is required: to reconstruct the automatic merge result
 without trusting already staged content, and to read every attribute from
-the staged `.gitattributes` files (`git --attr-source`).
+the staged `.gitattributes` files alone (`git --attr-source`).
 Cherry-picking or reverting a merge commit with `-m` is unsupported: Git
 does not reliably retain the selected parent for reconstruction. The mapper
 refuses it before writing a snapshot; resolve and validate that operation
@@ -321,8 +321,11 @@ It fails (exit 1), listing each problem with its file and line, when:
    index holds) and the `.gitattributes` files are read from the index, as the
    commit carries them: a change to one of them takes effect once it is staged,
    and a working-tree change that is not staged, an untracked file, an ignored
-   one or a staged link named `.gitattributes` decides nothing. Conflict
-   markers are looked for at the size git wrote them with as well;
+   one, a staged link named `.gitattributes`, `$GIT_DIR/info/attributes`, the
+   file `core.attributesFile` names or the system's attributes file decides
+   nothing. Conflict markers are looked for at the size git wrote them with as
+   well, and in other staged changes on every added line, whatever an
+   attribute says the file is;
 5. a lockfile or generated file is not recorded as `regenerated`, or any
    other path is;
 6. a staged path is outside the operation's changed-file set, or its staged
@@ -510,10 +513,11 @@ that directory:
   kept but reformatted counts as dropped (record `rewritten`, or acknowledge
   it); a removed line that also exists elsewhere in the file is not noticed.
   The semantic search in Step 3 is still yours to do.
-- The conflict-marker size comes from the path's `conflict-marker-size`
-  attribute (default 7) when the path is first mapped, and stays that size
-  for the operation, since git wrote the markers then; the check also looks
-  for markers of the size the attribute gives at check time.
+- The conflict-marker size is the size of the markers git wrote into the
+  path when it is first mapped (the `conflict-marker-size` attribute, default
+  7, when no complete region is found in the file), and stays that size for
+  the operation; the check also looks for markers of the size the attributes
+  give at check time. Map before editing a conflicted file.
 - A `git am` session is not mapped.
 
 ## Where past merges conflicted: the history report

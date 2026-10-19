@@ -43,9 +43,9 @@ import {
   type Regenerate,
   regenerateFor,
 } from "./lib/classify.ts";
-import { indexAttrSource } from "./lib/attributes.ts";
+import { indexAttributesGit } from "./lib/attributes.ts";
 import { git, readBlob, splitNul, topLevel } from "./lib/git.ts";
-import { parseHunks } from "./lib/markers.ts";
+import { parseHunks, writtenMarkerSize } from "./lib/markers.ts";
 import {
   detectOperation,
   NoOperation,
@@ -103,7 +103,8 @@ type AttributeSource = "index" | "merge";
 
 /**
  * `git check-attr` values for `names`, per path. From the `index`: the
- * attributes the commit carries (lib/attributes.ts), which classify a path.
+ * attributes the commit carries and nothing else (lib/attributes.ts), which
+ * classify a path.
  * As the `merge` read them: the working tree's files first, then the
  * index's, which is how git found the marker size it wrote.
  */
@@ -115,18 +116,19 @@ function attributes(
 ): Map<string, Record<string, string>> {
   const result = new Map<string, Record<string, string>>();
   if (paths.length === 0) return result;
+  const args = ["check-attr", "-z", "--stdin", ...names];
+  const input = `${paths.join("\0")}\0`;
   const out = splitNul(
-    git(
-      root,
-      [
-        ...(source === "index" ? [indexAttrSource(root)] : []),
-        "check-attr",
-        "-z",
-        "--stdin",
-        ...names,
-      ],
-      `${paths.join("\0")}\0`,
-    ),
+    source === "index"
+      ? indexAttributesGit(root, (run) => {
+          const r = run(args, input);
+          if (r.code !== 0)
+            throw new Error(
+              `git --attr-source check-attr exited ${r.code} (Git 2.41 or newer is required): ${r.stderr.trim()}`,
+            );
+          return r.stdout;
+        })
+      : git(root, args, input),
   );
   for (let i = 0; i + 2 < out.length; i += 3) {
     const path = out[i] as string;
@@ -312,12 +314,20 @@ export function writtenSizes(
   return new Map(paths.map((path) => [path, markerSizeOf(attrs.get(path))]));
 }
 
+/** The `conflict-marker-size` the attributes the commit carries give each path. */
+export function indexSizes(root: string, paths: string[]): Map<string, number> {
+  const attrs = attributes(root, paths, "index", ["conflict-marker-size"]);
+  return new Map(paths.map((path) => [path, markerSizeOf(attrs.get(path))]));
+}
+
 /**
  * Map every unmerged path of the operation in progress, or the paths given in
  * `unmerged` with their stages. A path's marker size is the one git wrote its
- * markers with: the size an earlier map of the same operation recorded
- * (`recordedSizes`), else the size the merge read; a `conflict-marker-size`
- * changed since the operation stopped does not describe them.
+ * markers with: the size of the markers in the file, else the size an earlier
+ * map of the same operation recorded (`recordedSizes`), else the size the
+ * merge reads; a `conflict-marker-size` changed or removed since the
+ * operation stopped does not describe them, and neither does a size recorded
+ * before the operation was started again.
  */
 export function mapConflicts(
   root: string,
@@ -340,13 +350,16 @@ export function mapConflicts(
     const kind = kindOf(stages);
     const classified = classes.get(path) as Classification;
     const { class: cls, regenerate } = classified;
-    const markerSize =
-      recordedSizes.get(path) ?? written.get(path) ?? classified.markerSize;
     const file = join(root, path);
+    const content =
+      cls !== "binary" && existsSync(file) ? readFileSync(file, "utf8") : null;
+    const expected =
+      recordedSizes.get(path) ?? written.get(path) ?? classified.markerSize;
+    const markerSize =
+      (content === null ? null : writtenMarkerSize(content, expected)) ??
+      expected;
     const hunks =
-      cls === "text" && existsSync(file)
-        ? parseHunks(readFileSync(file, "utf8"), markerSize)
-        : [];
+      cls === "text" && content !== null ? parseHunks(content, markerSize) : [];
     mapped[path] = {
       kind,
       class: cls,

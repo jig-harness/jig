@@ -114,6 +114,16 @@ describe("readIndexFile", () => {
     expect(read("a.txt/..")).toMatchObject({ found: "unreadable" });
   });
 
+  it("cannot read through an index link with an empty target", () => {
+    s.commit("Add a file", { "policy.yaml": "p\n" });
+    const empty = s.git("hash-object", "-w", "/dev/null").trim();
+    s.git("update-index", "--add", "--cacheinfo", `120000,${empty},cfg`);
+    expect(read("cfg/policy.yaml")).toEqual({
+      found: "unreadable",
+      reason: "cfg is a link with no target",
+    });
+  });
+
   it("reports a file under a conflicted link as unmerged", () => {
     s.commit("Add targets", { "a/x.yaml": "a\n", "b/x.yaml": "b\n" });
     symlinkSync("a", `${s.root}/cfg`);

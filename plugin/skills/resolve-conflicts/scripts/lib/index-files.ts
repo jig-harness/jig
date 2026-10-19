@@ -72,6 +72,7 @@ function linkComponents(
       problem: `${at} passes through more than ${MAX_LINK_HOPS} symbolic links`,
     };
   const target = readBlob(root, entry.blob);
+  if (target === "") return { problem: `${at} is a link with no target` };
   return target.startsWith("/")
     ? { problem: `${at} links outside the repository` }
     : components(target);

@@ -958,6 +958,51 @@ describe("attributes the commit does not carry", () => {
     );
   });
 
+  it("info/attributes, core.attributesFile and the system's file do not make a mapped path binary", () => {
+    s.write(".git/info/attributes", "src/config.ts -diff\n");
+    s.write("user-attributes", "src/config.ts binary\n");
+    s.git("config", "core.attributesFile", `${s.root}/user-attributes`);
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    stageWithMarkers();
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toMatch(
+      /PROBLEM src\/config\.ts:\d+: conflict marker left in the staged file/,
+    );
+  });
+
+  it("an attribute outside the commit does not hide markers in another staged file", () => {
+    s.write(".git/info/attributes", "notes.txt -diff\n");
+    s.write(
+      "notes.txt",
+      "one\n<<<<<<< HEAD\ntwo\n=======\nthree\n>>>>>>> main\n",
+    );
+    s.git("add", "notes.txt");
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    const r = check();
+    expect(r.stdout).toContain(
+      "PROBLEM notes.txt:2: conflict marker in a staged file",
+    );
+  });
+
+  it("markers written at a size from a file removed before the first map are found", () => {
+    s.git("merge", "--abort");
+    s.write("src/.gitattributes", "*.ts conflict-marker-size=9\n");
+    s.write(".git/info/exclude", "/src/.gitattributes\n");
+    expect(
+      s.gitTry("-c", "merge.conflictStyle=diff3", "merge", "main").code,
+    ).not.toBe(0);
+    expect(s.read("src/config.ts")).toContain("<<<<<<<<< ");
+    rmSync(`${s.root}/src/.gitattributes`);
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    stageWithMarkers();
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toMatch(
+      /PROBLEM src\/config\.ts:\d+: conflict marker left in the staged file/,
+    );
+  });
+
   it("a merge driver only an untracked file selects does not make its result automatic", () => {
     const guide = "one\ntwo\nthree\nfour\nfive\n";
     const root = s.git("rev-list", "--max-parents=0", "main").trim();
@@ -981,6 +1026,47 @@ describe("attributes the commit does not carry", () => {
     s.git("checkout", "-q", "feature2");
     s.write("docs/.gitattributes", "*.md merge=keepours\n");
     s.write(".git/info/exclude", "/docs/.gitattributes\n");
+    expect(s.gitTry("merge", "base2").code).not.toBe(0);
+    expect(s.read("docs/guide.md")).toBe(guide.replace("one", "ONE"));
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    s.write(
+      "src/config.ts",
+      CONFIG_BASE.replace(
+        "  retries: 3,\n",
+        "  retries: 5,\n  timeoutOverride: true,\n",
+      ),
+    );
+    s.git("add", "src/config.ts");
+    expect(record("src/config.ts", "combined").code).toBe(0);
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM docs/guide.md: staged content differs from Git's automatic result",
+    );
+  });
+
+  it("a merge driver only info/attributes selects does not make its result automatic", () => {
+    const guide = "one\ntwo\nthree\nfour\nfive\n";
+    const root = s.git("rev-list", "--max-parents=0", "main").trim();
+    s.git("merge", "--abort");
+    s.git("config", "merge.keepours.driver", "true");
+    s.git("checkout", "-q", "-b", "base2", root);
+    s.commit("Add the guide", { "docs/guide.md": guide });
+    s.git("checkout", "-q", "-b", "feature2");
+    s.commit("Feature", {
+      "docs/guide.md": guide.replace("one", "ONE"),
+      "src/config.ts": CONFIG_BASE.replace(
+        "  retries: 3,\n",
+        "  retries: 3,\n  timeoutOverride: true,\n",
+      ),
+    });
+    s.git("checkout", "-q", "base2");
+    s.commit("Main", {
+      "docs/guide.md": guide.replace("five", "FIVE"),
+      "src/config.ts": CONFIG_BASE.replace("retries: 3", "retries: 5"),
+    });
+    s.git("checkout", "-q", "feature2");
+    s.write(".git/info/attributes", "*.md merge=keepours\n");
     expect(s.gitTry("merge", "base2").code).not.toBe(0);
     expect(s.read("docs/guide.md")).toBe(guide.replace("one", "ONE"));
     expect(s.script("conflict-map.ts").code).toBe(0);
