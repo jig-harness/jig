@@ -217,8 +217,9 @@ jobs:
           now=$(date +%s)
           when=$(git log -1 --format=%ct "$COMMIT")
           [ "$(git log -1 --format=%at "$COMMIT")" = "$when" ] || fail "the commit's author and committer dates differ"
-          [ "$when" -ge $((now - 3600)) ] && [ "$when" -le $((now + 300)) ] ||
+          if [ "$when" -lt $((now - 3600)) ] || [ "$when" -gt $((now + 300)) ]; then
             fail "the commit is dated $(date -u -d "@$when" +%FT%TZ 2>/dev/null || echo "$when"), not within the last hour"
+          fi
           [ -z "$START" ] || [ "$when" -ge "$(git log -1 --format=%ct "$START")" ] ||
             fail "the commit is dated before the channel's tip"
           tagged=$(git ls-remote "$remote" "refs/tags/v$version^{}" "refs/tags/v$version" | sort -k2 | tail -n 1 | cut -f1)
