@@ -419,6 +419,7 @@ describe("a file the change-area catalog declares generated", () => {
     expect(r.stdout).toContain(
       "PROBLEM openapi.json: mapped as generated (bun run gen:openapi), but the configuration and change-area catalog now make it generated (bun run gen:api): run conflict-map.ts again and record the path again",
     );
+    s.git("add", "catalog.yaml");
     expect(s.script("conflict-map.ts").code).toBe(0);
     expect(record("openapi.json", "regenerated").code).toBe(0);
     expect(check().code).toBe(0);
@@ -463,6 +464,56 @@ describe("a generated declaration the catalog gains after the map", () => {
     expect(r.code).toBe(1);
     expect(r.stdout).toContain(
       "PROBLEM openapi.json: mapped as text, but the configuration and change-area catalog now make it generated (bun run gen:openapi): run conflict-map.ts again and record the path again",
+    );
+  });
+
+  it("fails while the staged catalog declares it generated and the working tree's does not", () => {
+    const mapped = s.read("catalog.yaml");
+    writeCatalog("openapi.json", "bun run gen:openapi");
+    s.git("add", "catalog.yaml");
+    s.write("catalog.yaml", mapped);
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM catalog.yaml: decides how the mapped paths are classified, and the working tree differs from what is staged",
+    );
+    s.git("add", "catalog.yaml");
+    expect(check().code).toBe(0);
+  });
+
+  it("fails while a .gitattributes file is not staged", () => {
+    s.write("src/.gitattributes", "*.ts conflict-marker-size=9\n");
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM src/.gitattributes: decides how the mapped paths are classified",
+    );
+    s.git("add", "src/.gitattributes");
+    expect(check().code).toBe(0);
+  });
+});
+
+describe("a conflict-marker-size changed after the markers were written", () => {
+  beforeEach(() => {
+    s.git("merge", "--abort");
+    s.commit("Mark conflicts with nine characters", {
+      ".gitattributes": "src/config.ts conflict-marker-size=9\n",
+    });
+    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    expect(s.read("src/config.ts")).toContain("<<<<<<<<< ");
+    s.git("add", "src/config.ts");
+    expect(record("src/config.ts", "combined").code).toBe(0);
+  });
+
+  it("still finds the markers git wrote once the attribute and the map move to another size", () => {
+    s.write(".gitattributes", "src/config.ts conflict-marker-size=7\n");
+    s.git("add", ".gitattributes");
+    expect(s.script("conflict-map.ts").code).toBe(0);
+    const r = check();
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain(
+      "PROBLEM src/config.ts:2: conflict marker left in the staged file",
     );
   });
 });

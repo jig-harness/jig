@@ -19,6 +19,9 @@
  * generated file was not regenerated; when the configuration and change-area
  * catalog as they stand now classify a mapped path differently from the map
  * (its decision answered another requirement), or the catalog cannot be read;
+ * when the configuration, the catalog or a `.gitattributes` file differs
+ * between the working tree and the index (the check classifies by the one,
+ * the commit carries the other);
  * and when a side's change is dropped
  * without that being the recorded decision (the dropped-change check; see
  * lib/drops.ts).
@@ -32,6 +35,7 @@
  * concluded either way.
  */
 import { existsSync, readFileSync } from "node:fs";
+import { isAbsolute, posix, relative } from "node:path";
 import { fail, runMain } from "../../../shared/cli.ts";
 import {
   type Classification,
@@ -43,6 +47,7 @@ import {
 import {
   type CatalogGenerated,
   catalogGeneratedEntries,
+  declarationFiles,
 } from "./lib/classify.ts";
 import { droppedLines } from "./lib/drops.ts";
 import {
@@ -51,6 +56,7 @@ import {
   gitRaw,
   indexBlob,
   readBlob,
+  splitNul,
   topLevel,
 } from "./lib/git.ts";
 import { markerLines } from "./lib/markers.ts";
@@ -80,6 +86,56 @@ function unstaged(root: string, path: string): boolean {
   return git(root, ["diff", "--name-only", "-z", "--", path]) !== "";
 }
 
+/** The repository-relative paths of the declaration files inside `root`. */
+function declarationPaths(root: string): Set<string> {
+  return new Set(
+    declarationFiles()
+      .map((file) => relative(root, file).replaceAll("\\", "/"))
+      .filter((rel) => rel !== "" && !rel.startsWith("..") && !isAbsolute(rel)),
+  );
+}
+
+/**
+ * The files that decide a path's class or marker size (the configuration, the
+ * catalog, every `.gitattributes`) whose working tree differs from the index.
+ * The check reads them from the working tree, but the commit carries what is
+ * staged, so a difference would certify a requirement the commit does not
+ * have. A mapped or unmerged path (the catalog may be one) is reported as
+ * such already.
+ */
+function unstagedDeclarations(
+  root: string,
+  mapped: Snapshot["paths"],
+): Finding[] {
+  const declarations = declarationPaths(root);
+  // Pathspecs are literal here (lib/git.ts), so the whole status is filtered.
+  const records = splitNul(
+    git(root, [
+      "status",
+      "--porcelain=v1",
+      "-z",
+      "--untracked-files=all",
+      "--no-renames",
+    ]),
+  );
+  const found: Finding[] = [];
+  for (const record of records) {
+    const path = record.slice(3);
+    if (!declarations.has(path) && posix.basename(path) !== ".gitattributes")
+      continue;
+    // An unmerged entry (U in either column, AA, DD) is reported as unmerged.
+    const xy = record.slice(0, 2);
+    if (xy[1] === " " || /U|AA|DD/.test(xy) || Object.hasOwn(mapped, path))
+      continue;
+    found.push({
+      path,
+      message:
+        "decides how the mapped paths are classified, and the working tree differs from what is staged: the check reads the working tree, the commit takes what is staged. git add it, or restore it from the index, then run this again",
+    });
+  }
+  return found;
+}
+
 /** Conflict markers in staged changes outside the mapped paths. */
 function stagedMarkers(root: string, mapped: Snapshot["paths"]): Finding[] {
   // Exit 2 means it found something (whitespace errors count too); only the
@@ -107,6 +163,7 @@ function checkPath(
   path: string,
   entry: PathEntry,
   stillUnmerged: boolean,
+  currentMarkerSize: number,
   result: CheckResult,
 ): void {
   const problem = (message: string, line?: number) =>
@@ -176,7 +233,14 @@ function checkPath(
 
   if (entry.class === "binary") return;
   const text = readBlob(root, blob);
-  for (const line of markerLines(text, entry.markerSize))
+  // The markers git wrote have the mapped size; markers rewritten since
+  // (git checkout --conflict) have the size the attribute gives now.
+  const lines = new Set(
+    [...new Set([entry.markerSize, currentMarkerSize])].flatMap((size) =>
+      markerLines(text, size),
+    ),
+  );
+  for (const line of [...lines].sort((a, b) => a - b))
     problem("conflict marker left in the staged file", line);
 
   if (entry.class !== "text") return;
@@ -247,14 +311,9 @@ function describeClass(c: Classification): string {
  * decision was recorded against the snapshot's.
  */
 function changedRequirements(
-  root: string,
   snapshot: Snapshot,
-  catalog: CatalogGenerated,
+  now: ReadonlyMap<string, Classification>,
 ): Finding[] {
-  const stages = new Map(
-    Object.entries(snapshot.paths).map(([path, entry]) => [path, entry.stages]),
-  );
-  const now = classifyPaths(root, stages, derivedEntries(catalog));
   const found: Finding[] = [];
   for (const [path, entry] of Object.entries(snapshot.paths).sort()) {
     const after = now.get(path) as Classification;
@@ -278,13 +337,24 @@ export function checkResolution(
     notes: [],
     escalations: [],
   };
+  const now = classifyPaths(
+    root,
+    new Map(
+      Object.entries(snapshot.paths).map(([path, entry]) => [
+        path,
+        entry.stages,
+      ]),
+    ),
+    derivedEntries(catalog),
+  );
   const incomplete = incompleteCatalog(snapshot, catalog);
   result.problems.push(...incomplete);
   // A catalog that cannot be read now would report its generated files as
   // changed to text; the refusal above already covers them.
   if (incomplete.length === 0)
-    result.problems.push(...changedRequirements(root, snapshot, catalog));
+    result.problems.push(...changedRequirements(snapshot, now));
   const unmerged = unmergedPaths(root);
+  result.problems.push(...unstagedDeclarations(root, snapshot.paths));
   for (const path of [...unmerged.keys()].sort()) {
     const entry = Object.hasOwn(snapshot.paths, path)
       ? snapshot.paths[path]
@@ -304,6 +374,7 @@ export function checkResolution(
       path,
       snapshot.paths[path] as PathEntry,
       unmerged.has(path),
+      (now.get(path) as Classification).markerSize,
       result,
     );
   result.problems.push(...stagedMarkers(root, snapshot.paths));

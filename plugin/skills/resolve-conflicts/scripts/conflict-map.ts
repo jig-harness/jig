@@ -13,8 +13,9 @@
  *
  * Writes the map to `<git-dir>/jig/conflicts.json`, the snapshot that
  * record.ts fills in and check-resolution.ts verifies. Running it again for
- * the same operation classifies every mapped path afresh and keeps each
- * decision recorded under the class and command the path still has; a
+ * the same operation classifies every mapped path afresh, keeps each path's
+ * marker size (git wrote its markers when the operation stopped), and keeps
+ * each decision recorded under the class and command the path still has; a
  * snapshot for a different operation is replaced. Reads nothing else into the
  * repository and changes nothing else.
  *
@@ -272,11 +273,17 @@ export function classifyPaths(
   return result;
 }
 
-/** Map every unmerged path of the operation in progress. */
+/**
+ * Map every unmerged path of the operation in progress. `recordedSizes` holds
+ * the marker size an earlier map of the same operation recorded for a path:
+ * git wrote that path's markers when the operation stopped, so a
+ * `conflict-marker-size` changed since does not describe them.
+ */
 export function mapConflicts(
   root: string,
   op: Operation,
   catalog: CatalogGenerated = catalogGeneratedEntries(),
+  recordedSizes: ReadonlyMap<string, number> = new Map(),
 ): Record<string, PathEntry> {
   const unmerged = unmergedPaths(root);
   const paths = [...unmerged.keys()].sort();
@@ -287,11 +294,9 @@ export function mapConflicts(
   for (const path of paths) {
     const stages = unmerged.get(path) as Unmerged;
     const kind = kindOf(stages);
-    const {
-      class: cls,
-      markerSize,
-      regenerate,
-    } = classes.get(path) as Classification;
+    const classified = classes.get(path) as Classification;
+    const { class: cls, regenerate } = classified;
+    const markerSize = recordedSizes.get(path) ?? classified.markerSize;
     const file = join(root, path);
     const hunks =
       cls === "text" && existsSync(file)
@@ -311,13 +316,22 @@ export function mapConflicts(
   return mapped;
 }
 
-/** A staged path's entry under its new classification; its conflict regions are a text file's only. */
+/**
+ * A staged path's entry under its new classification. Its marker size stays
+ * the one its markers were written with; its conflict regions are a text
+ * file's only.
+ */
 function restaged(
   before: PathEntry,
   now: Classification | undefined,
 ): PathEntry {
   if (now === undefined) return before;
-  return { ...before, ...now, hunks: now.class === "text" ? before.hunks : [] };
+  return {
+    ...before,
+    ...now,
+    markerSize: before.markerSize,
+    hunks: now.class === "text" ? before.hunks : [],
+  };
 }
 
 /** Whether a decision recorded under `before` still answers what `after` requires. */
@@ -461,6 +475,33 @@ function stagedSince(
   return staged;
 }
 
+/** The stored snapshot, or `null` when there is none; an unreadable one stops the map. */
+function storedSnapshot(root: string): Snapshot | null {
+  try {
+    return loadSnapshot(root);
+  } catch (err) {
+    // A path staged since the map was written is no longer unmerged, so its
+    // conflict stages and decision exist only in that snapshot: never replace it.
+    return fail(
+      3,
+      `conflict-map: the stored snapshot is unreadable: ${err instanceof Error ? err.message : err}`,
+      "Restore it if any conflicted path has been staged since it was written. If none has, move it aside and run conflict-map.ts again.",
+    );
+  }
+}
+
+/** The marker size an earlier map of the same operation recorded for each path. */
+function recordedSizes(
+  previous: Snapshot | null,
+  op: Operation,
+): Map<string, number> {
+  const sizes = new Map<string, number>();
+  if (previous !== null && sameOperation(previous, op))
+    for (const [path, entry] of Object.entries(previous.paths))
+      sizes.set(path, entry.markerSize);
+  return sizes;
+}
+
 function usage(): never {
   fail(2, "usage: conflict-map.ts [--json] [--integration ours|theirs]");
 }
@@ -488,8 +529,9 @@ async function main(): Promise<number> {
       fail(3, `conflict-map: ${err.message} Nothing to map.`);
     throw err;
   }
+  const previous = storedSnapshot(root);
   const catalog = catalogGeneratedEntries();
-  const paths = mapConflicts(root, op, catalog);
+  const paths = mapConflicts(root, op, catalog, recordedSizes(previous, op));
   const fresh: Snapshot = {
     version: 1,
     operation: {
@@ -509,18 +551,6 @@ async function main(): Promise<number> {
     mappedAt: new Date().toISOString(),
     paths,
   };
-  let previous: Snapshot | null = null;
-  try {
-    previous = loadSnapshot(root);
-  } catch (err) {
-    // A path staged since the map was written is no longer unmerged, so its
-    // conflict stages and decision exist only in that snapshot: never replace it.
-    fail(
-      3,
-      `conflict-map: the stored snapshot is unreadable: ${err instanceof Error ? err.message : err}`,
-      "Restore it if any conflicted path has been staged since it was written. If none has, move it aside and run conflict-map.ts again.",
-    );
-  }
   const { snapshot, note } = mergeSnapshot(
     previous,
     fresh,

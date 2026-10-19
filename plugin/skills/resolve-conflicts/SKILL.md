@@ -294,7 +294,10 @@ It fails (exit 1), listing each problem with its file and line, when:
 1. a path is still unmerged;
 2. conflict markers remain in a mapped path, or in any other staged change;
 3. a mapped path has no decision, an unknown one, or lacks a required reason;
-4. what is staged for a mapped path differs from the working tree;
+4. what is staged for a mapped path differs from the working tree, or the
+   configuration, the change-area catalog or a `.gitattributes` file differs
+   between the working tree and the index: the check classifies paths by the
+   working tree, and the commit carries what is staged;
 5. a lockfile or generated file is not recorded as `regenerated`, or any
    other path is;
 6. **a change is dropped.** For every text path it takes the lines each side
@@ -457,7 +460,9 @@ that directory:
   it); a removed line that also exists elsewhere in the file is not noticed.
   The semantic search in Step 3 is still yours to do.
 - The conflict-marker size comes from the path's `conflict-marker-size`
-  attribute (default 7).
+  attribute (default 7) when the path is first mapped, and stays that size
+  for the operation, since git wrote the markers then; the check also looks
+  for markers of the size the attribute gives at check time.
 - A `git am` session is not mapped.
 
 ## Related skills
