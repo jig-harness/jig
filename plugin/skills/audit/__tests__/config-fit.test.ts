@@ -886,6 +886,30 @@ categories:
       ).toContain("names tiny, which docs/labels.yaml does not define");
     });
 
+    test("batch_sizes must name group labels: a type or a category label is not a size", () => {
+      const grouped = `${taxonomy}groups:
+  - id: size
+    labels: [{id: small}]
+categories:
+  - id: stakeholder
+    prefix: "hitl:"
+    labels: [{id: legal}]
+`;
+      const { report } = fit({
+        ".config/jig.yaml": `issue_tracker:
+  labels:
+    batch_sizes: [small, bug, "hitl:legal"]
+`,
+        "label-taxonomy.yaml": grouped,
+      });
+      const finding = report.findings.find(
+        (f) => f.id === "taxonomy:issue_tracker.labels.batch_sizes",
+      );
+      expect(finding?.message).toContain(
+        "names bug, hitl:legal, which label-taxonomy.yaml does not define as a group label",
+      );
+    });
+
     test("a category-prefixed label counts only as a closed category's exact label or an open category's matching slug", () => {
       const categorised = `${taxonomy}categories:
   - id: stakeholder

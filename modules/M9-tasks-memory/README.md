@@ -172,8 +172,9 @@ severity can be a security issue and a performance one: the filing path takes
 it from the finding and checks it against one category list, never derives it
 from severity. A finding that came with no category is filed as an explicit
 `unknown`, which the check accepts, rather than with a guessed one. That list
-is kept beside the label taxonomy, not in it (the taxonomy's schema holds
-types, statuses and flags only); where Jig's tooling reads it is in
+is kept beside the label taxonomy, not in it (the taxonomy's label
+categories are label families, not this classification); where Jig's
+tooling reads it is in
 [mappings.md](mappings.md#issue-trackers--the-work-item-rules). Before
 writing, the filing path validates the mandatory taxonomy (type and the other
 required groups), and appends to an existing container when one fits instead

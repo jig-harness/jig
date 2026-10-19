@@ -16,7 +16,7 @@ duplicate first.
 
 It is the runnable form of
 [M9 — Tasks & memory](https://github.com/jig-harness/jig/blob/main/modules/M9-tasks-memory/README.md),
-and holds that module's two label checks: the taxonomy lint and the label
+and holds that module's label checks: the taxonomy lint and the label
 validator. The agent's procedure is [SKILL.md](SKILL.md).
 
 ## Use it
@@ -47,7 +47,10 @@ the repository configured.
    uses. Commit it as `label-taxonomy.yaml` at the root, or anywhere with
    `issue_tracker.taxonomy` pointing at it.
 2. Make sure every label in it exists in the tracker, once and under exactly
-   that name (`validate-labels.ts --check-tracker` reports any that do not).
+   that name: compare the taxonomy with what `tracker.ts available-labels`
+   (in the `do-item` skill) lists. `validate-labels.ts --check-tracker`
+   checks only the labels of the set it is given, so it finds a missing
+   label when an issue first uses it, not before.
 3. Optionally set `issue_tracker.file_command: /jig:file-issue`, so the
    other skills that file issues (`do-item`, `decide`, `reflect`, …) tell
    the agent to file through this one.
@@ -59,6 +62,7 @@ the repository configured.
 | `issue_tracker.team` | none (required) | The tracker team the issues are filed in |
 | `issue_tracker.labels` | the default roles | Which label is the human-in-the-loop flag, the operator-step flag, the epic flag, the review follow-up flag and the pattern prefix |
 | `drive.change_areas_catalog` | none | The change-area catalog labels are derived from when a diff exists |
+| `review.taxonomy.categories` | none | The category list an issue's category is checked against; `unknown` is always allowed |
 
 The [configuration reference](https://github.com/jig-harness/jig/blob/main/plugin/CONFIGURATION.md#issue_tracker)
 has every field.
@@ -90,8 +94,9 @@ A taxonomy is a closed vocabulary in families:
 names, closed non-empty types and statuses, every flag firing something
 with a scope and a rule for when it applies, every group with labels,
 every category with a prefix that no other prefix begins and with labels
-or an open pattern that compiles, every `requires` naming a label of the
-file, and no unknown key or repeated key.
+or an open pattern that compiles, no type, flag or group label inside a
+category's prefix, every `requires` naming a label of the file, and no
+unknown key (at the top level or in any entry) or repeated key.
 
 ```bash
 bun <plugin>/skills/file-issue/scripts/check-label-taxonomy.ts [label-taxonomy.yaml]
@@ -112,7 +117,8 @@ bun <plugin>/skills/file-issue/scripts/validate-labels.ts [--taxonomy <path>] [-
 echo '["bug", "small", "app"]' | bun <plugin>/skills/file-issue/scripts/validate-labels.ts
 ```
 
-It rejects (exit `3`) a label the taxonomy does not define, an open
+It rejects (exit `3`) an empty label or one with whitespace around its
+name, a label the taxonomy does not define, an open
 category's label whose slug does not match, no type or two, two labels of
 one group or none of a required group, a label whose `requires` is unmet
 (a facet without its umbrella), and a flag without a label of a category
@@ -126,7 +132,8 @@ prints `{ valid, labels, errors, warnings, parsed }`.
 
 ## Labels from the change
 
-When the issue follows a change, the labels come from the repository's
+When the issue follows a change and the repository has a change-area
+catalog, the labels come from the repository's
 [change-area catalog](https://github.com/jig-harness/jig/blob/main/plugin/skills/change-areas/README.md):
 the areas the diff touches carry the labels and flags to apply. Only the
 areas a changed file matches directly count, never the areas they imply.
@@ -138,8 +145,8 @@ flag on a change that touched only build scripts. A flag the change needs
 that no directly matched area carries is a gap in the catalog, to be fixed
 there.
 
-Without a diff, the labels come from the description, against each flag's
-written conditions in the taxonomy.
+Without a diff or without a catalog, the labels come from the description,
+against each flag's written conditions in the taxonomy.
 
 ## A durable issue body
 

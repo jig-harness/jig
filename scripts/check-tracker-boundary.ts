@@ -6,7 +6,9 @@
 // "Directly" means a token only a direct call uses: Linear's API host, its
 // SDK package, the name prefix of a Linear MCP server's tools, or a run of
 // the `linear` command-line client (an argument list or a spawn that starts
-// with `linear`, or a command line `linear <subcommand>`).
+// with `linear`, or a command line `linear <subcommand>`). The file is matched
+// as a whole, so an argument list or a spawn split over several lines is
+// found like one written on a single line; a command line stays on one line.
 //
 // Scope: every code file (TypeScript, JavaScript, shell, Python) under
 // `plugin/` outside the adapters' directory, and every file of the planning
@@ -67,7 +69,7 @@ export const TOKENS: { what: string; pattern: RegExp }[] = [
   {
     what: "a run of the `linear` command-line client",
     pattern:
-      /\[\s*["'`]linear["'`]\s*,|\b(?:spawn|spawnSync|execFile|execFileSync|exec|execSync)\(\s*["'`]linear\b|(?<![\w./-])linear\s+(?:api|auth|config|issues?|teams?|projects?|labels?|cycles?|comments?|documents?|milestones?|initiatives?)\b/,
+      /\[\s*["'`]linear["'`]\s*,|\b(?:spawn|spawnSync|execFile|execFileSync|exec|execSync)\(\s*["'`]linear\b|(?<![\w./-])linear[ \t]+(?:api|auth|config|issues?|teams?|projects?|labels?|cycles?|comments?|documents?|milestones?|initiatives?)\b/,
   },
 ];
 
@@ -78,21 +80,36 @@ export function inScope(path: string): boolean {
   return CODE.test(path) || PLANNING_SKILLS.some((p) => path.startsWith(p));
 }
 
-/** Every line of a file that holds a token, one finding per token. */
+/**
+ * Every place in a file that holds a token, one finding per token and line;
+ * a construct over several lines is reported at the line it starts on.
+ */
 export function violations(path: string, text: string): Finding[] {
-  const findings: Finding[] = [];
-  text.split("\n").forEach((line, index) => {
-    for (const token of TOKENS)
-      if (token.pattern.test(line))
-        findings.push({
+  const findings: { line: number; order: number; finding: Finding }[] = [];
+  TOKENS.forEach((token, order) => {
+    const lines = new Set<number>();
+    for (const match of text.matchAll(
+      new RegExp(token.pattern, `${token.pattern.flags}g`),
+    )) {
+      const line = text.slice(0, match.index).split("\n").length;
+      if (lines.has(line)) continue;
+      lines.add(line);
+      findings.push({
+        line,
+        order,
+        finding: {
           rule: RULE,
           file: path,
-          line: index + 1,
+          line,
           problem: `names ${token.what}, reaching Linear outside the tracker interface`,
           remedy: `go through the Tracker port or do-item/scripts/tracker.ts (add the operation to ${ADAPTERS}port.ts and its adapters if it is missing); a procedure names the interface's command, not a tracker's tool`,
-        });
+        },
+      });
+    }
   });
-  return findings;
+  return findings
+    .sort((a, b) => a.line - b.line || a.order - b.order)
+    .map((f) => f.finding);
 }
 
 /**

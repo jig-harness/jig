@@ -106,6 +106,53 @@ describe("unknown labels", () => {
   });
 });
 
+describe("label names are checked as written", () => {
+  test("whitespace around a name is rejected, not trimmed", () => {
+    const result = check(...base, " area:api ");
+    expect(result.valid).toBe(false);
+    expect(result.errors.join("\n")).toContain(
+      "whitespace around ' area:api ' (write the exact name: 'area:api')",
+    );
+    expect(result.labels).not.toContain(" area:api ");
+  });
+
+  test("an empty label is rejected, not dropped", () => {
+    expect(errors(...base, "")).toContain("an empty label");
+  });
+});
+
+describe("family ids that are Object.prototype names", () => {
+  const prototypeNamed = lintTaxonomyText(`version: 1
+types: [{id: bug}]
+statuses: [{id: todo}]
+groups:
+  - id: __proto__
+    required: true
+    labels: [{id: small}]
+  - id: constructor
+    labels: [{id: app}]
+categories:
+  - id: toString
+    prefix: "area:"
+    labels: [{id: api}]
+`);
+
+  test("still lint, and are validated like any other id", () => {
+    expect(prototypeNamed.problems).toEqual([]);
+    const tax = prototypeNamed.taxonomy as Taxonomy;
+    expect(validateLabels(["bug"], tax).errors).toContain(
+      "no label of required group '__proto__' (one of: small)",
+    );
+    const full = validateLabels(["bug", "small", "app", "area:api"], tax);
+    expect(full.errors).toEqual([]);
+    expect(Object.entries(full.parsed.groups)).toEqual([
+      ["__proto__", ["small"]],
+      ["constructor", ["app"]],
+    ]);
+    expect(Object.hasOwn(full.parsed.categories, "toString")).toBe(true);
+  });
+});
+
 describe("open categories", () => {
   test("any slug matching the pattern is accepted, the seeded one included", () => {
     for (const label of ["pattern:missing-await", "pattern:off-by-one"])

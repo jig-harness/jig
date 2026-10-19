@@ -77,6 +77,20 @@ describe("tokens", () => {
     ]);
   });
   test.each([
+    ['Bun.spawn([\n  "linear",\n  "api",\n  query,\n]);'],
+    ['spawnSync(\n  "linear",\n  ["issue", "view"],\n);'],
+    ["execFileSync(\n\t`linear`, args);"],
+  ])("a direct call split over lines is found where it starts: %s", (code) => {
+    expect(violations("plugin/x.ts", `ok\n${code}\n`)).toMatchObject([
+      { rule: "tracker-boundary", file: "plugin/x.ts", line: 2 },
+    ]);
+  });
+  test("a command line does not run on across a line break", () => {
+    expect(
+      violations("plugin/x.md", "work in a linear\nissue order\n"),
+    ).toEqual([]);
+  });
+  test.each([
     ['type Linear = ResolutionJson["linear"];'],
     ['export const DEFAULT_ADAPTER = "linear";'],
     ["the work runs in a linear order"],

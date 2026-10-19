@@ -2,6 +2,8 @@
  * Check one issue's labels against the repository's label taxonomy.
  *
  * Errors (the label set may not be written):
+ *   - an empty label, or one with whitespace around its name (the tracker
+ *     adapter resolves names exactly, so a set is checked as it is written);
  *   - a label the taxonomy does not define (not a type, group label, flag,
  *     closed category label, or slug of an open category);
  *   - an open category's label whose slug does not match its pattern;
@@ -15,6 +17,11 @@
  */
 import type { LabelCategory, Taxonomy } from "./taxonomy.ts";
 
+/**
+ * The family maps have no prototype, so a family whose id is an
+ * `Object.prototype` name (`__proto__`, `constructor`) reads as absent until
+ * one of its labels is added.
+ */
 export interface ParsedLabels {
   types: string[];
   /** Group id → its labels on the issue. */
@@ -41,16 +48,20 @@ function categoryOf(
   return categories.find((c) => label.startsWith(c.prefix));
 }
 
+/** A family's labels on the issue; none when the map has no entry for it. */
+const of = (map: Record<string, string[]>, key: string) =>
+  Object.hasOwn(map, key) ? (map[key] as string[]) : [];
+
 const add = (map: Record<string, string[]>, key: string, label: string) => {
-  map[key] = [...(map[key] ?? []), label];
+  map[key] = [...of(map, key), label];
 };
 
 /** Sort each label into its family; `errors` gets a bad open-category slug. */
 function parse(labels: string[], taxonomy: Taxonomy, errors: string[]) {
   const parsed: ParsedLabels = {
     types: [],
-    groups: {},
-    categories: {},
+    groups: Object.create(null),
+    categories: Object.create(null),
     flags: [],
     unknown: [],
   };
@@ -100,7 +111,7 @@ function typeErrors(parsed: ParsedLabels, taxonomy: Taxonomy): string[] {
 /** At most one label of each group, and one of each required group. */
 function groupErrors(parsed: ParsedLabels, taxonomy: Taxonomy): string[] {
   return taxonomy.groups.flatMap((group) => {
-    const found = parsed.groups[group.id] ?? [];
+    const found = of(parsed.groups, group.id);
     if (found.length > 1)
       return [
         `more than one label of group '${group.id}': ${found.join(", ")} (pick one)`,
@@ -153,7 +164,7 @@ function flagErrors(
         ? [`'${flag.id}' requires ${quoted(missing)} beside it`]
         : [];
       for (const id of flag.requiresCategory)
-        if (!(parsed.categories[id] ?? []).length) {
+        if (!of(parsed.categories, id).length) {
           const prefix = taxonomy.categories.find((c) => c.id === id)?.prefix;
           errors.push(
             `'${flag.id}' requires at least one label of category '${id}' (${prefix}…) beside it`,
@@ -168,8 +179,15 @@ export function validateLabels(
   input: string[],
   taxonomy: Taxonomy,
 ): Validation {
-  const labels = [...new Set(input.map((l) => l.trim()).filter(Boolean))];
   const errors: string[] = [];
+  if (input.some((l) => !l.trim()))
+    errors.push("an empty label (every label needs a name)");
+  const padded = input.filter((l) => l.trim() && l.trim() !== l);
+  if (padded.length)
+    errors.push(
+      `whitespace around ${quoted(padded)} (write the exact name: ${quoted(padded.map((l) => l.trim()))})`,
+    );
+  const labels = [...new Set(input.filter((l) => l.trim() === l && l))];
   const warnings: string[] = [];
   const parsed = parse(labels, taxonomy, errors);
   const present = new Set(labels);
@@ -180,7 +198,7 @@ export function validateLabels(
   for (const category of taxonomy.categories) {
     const checks = categoryChecks(
       category,
-      parsed.categories[category.id] ?? [],
+      of(parsed.categories, category.id),
       present,
     );
     errors.push(...checks.errors);

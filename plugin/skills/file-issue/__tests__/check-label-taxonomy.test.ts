@@ -34,6 +34,16 @@ const cases: [string, number, string][] = [
   ["bad/flag-requires-unknown.yaml", 1, "requires 'legal'"],
   ["bad/flag-requires-self.yaml", 1, "requires itself"],
   ["bad/unknown-key.yaml", 1, "unknown top-level key"],
+  [
+    "bad/group-misspelt-key.yaml",
+    1,
+    "'groups' entry 'size' has an unknown key 'requred:'",
+  ],
+  [
+    "bad/flag-in-category-namespace.yaml",
+    1,
+    "label 'area:api' begins category 'area''s prefix 'area:'",
+  ],
   ["bad/group-label-duplicates-type.yaml", 1, "duplicate label id 'bug'"],
   ["bad/duplicate-family-id.yaml", 1, "duplicate family id 'size'"],
   ["bad/group-empty-labels.yaml", 1, "group 'size' declares no 'labels:'"],

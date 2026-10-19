@@ -5,6 +5,9 @@
   https://github.com/jig-harness/jig/blob/main/plugin/skills/file-issue/README.md#a-durable-issue-body
 -->
 
+**Category**: <one of the repository's `review.taxonomy.categories`, or
+`unknown`>
+
 ## Problem
 
 <What is wrong or missing, and for whom. For a bug: what happens now, what

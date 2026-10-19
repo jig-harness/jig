@@ -24,6 +24,11 @@
  *               may set `max` and `recommended` (warnings) and `requires`
  *               (labels that must all be present whenever one of its labels is)
  *
+ * Every entry may also carry `notes`; any other key, at the top level or in
+ * an entry, is reported, so a misspelt rule (`requred:`) is never read as an
+ * absent one. A type, flag or group label may not begin with a category's
+ * prefix, so every label belongs to exactly one family.
+ *
  * The file is read with a full YAML parser that rejects a repeated key, so
  * every spelling of an entry (flow or block, quoted or plain) is checked
  * alike. A field must be a text or a list of non-empty texts; anything else (a
@@ -42,6 +47,33 @@ const TAXONOMY_KEYS = [
   "categories",
 ];
 const SCHEMA = TAXONOMY_KEYS.join("/");
+/** The keys an entry of each kind may carry. */
+const ENTRY_KEYS: Record<string, string[]> = {
+  types: ["id", "notes"],
+  statuses: ["id", "notes"],
+  flags: [
+    "id",
+    "notes",
+    "fires",
+    "scope",
+    "apply_when",
+    "do_not_apply_when",
+    "requires",
+    "requires_category",
+  ],
+  groups: ["id", "notes", "required", "labels"],
+  categories: [
+    "id",
+    "notes",
+    "prefix",
+    "labels",
+    "open",
+    "max",
+    "recommended",
+    "requires",
+  ],
+  label: ["id", "notes"],
+};
 const FLAG_SCOPES = ["shipping-item", "container"];
 
 /** A single-select family: at most one of its labels per issue. */
@@ -120,12 +152,30 @@ function taxonomyEntry(where: string, entry: unknown): Entry | string {
     : `a '${where}' entry has an id that is not a single name`;
 }
 
-/** A list's entries with their ids, and the problems of those without one. */
-function entriesOf(where: string, list: unknown[]) {
+/** The keys of an entry its kind does not allow. */
+function unknownKeys(where: string, { id, entry }: Entry, kind: string) {
+  const allowed = ENTRY_KEYS[kind] ?? [];
+  return Object.keys(entry)
+    .filter((key) => !allowed.includes(key))
+    .map(
+      (key) =>
+        `'${where}' entry '${id}' has an unknown key '${key}:' (allowed: ${allowed.join(", ")})`,
+    );
+}
+
+/**
+ * A list's entries with their ids, and the problems of those without one or
+ * with a key their kind does not allow.
+ */
+function entriesOf(where: string, list: unknown[], kind: string) {
   const found = list.map((entry) => taxonomyEntry(where, entry));
+  const entries = found.filter((f): f is Entry => typeof f !== "string");
   return {
-    entries: found.filter((f): f is Entry => typeof f !== "string"),
-    problems: found.filter((f): f is string => typeof f === "string"),
+    entries,
+    problems: [
+      ...found.filter((f): f is string => typeof f === "string"),
+      ...entries.flatMap((e) => unknownKeys(where, e, kind)),
+    ],
   };
 }
 
@@ -229,7 +279,7 @@ function readGroup({ id, entry }: Entry, problems: string[]): LabelGroup {
   if (!Array.isArray(entry.labels) || entry.labels.length === 0)
     problems.push(`${what} declares no 'labels:' (must be a non-empty list)`);
   else {
-    const read = entriesOf(`groups.${id}.labels`, entry.labels);
+    const read = entriesOf(`groups.${id}.labels`, entry.labels, "label");
     problems.push(...read.problems);
     labels = read.entries.map((e) => e.id);
   }
@@ -248,7 +298,7 @@ function categoryLabels(
     problems.push(`${what} has a 'labels:' that is not a list`);
     return [];
   }
-  const read = entriesOf(`categories.${id}.labels`, entry.labels);
+  const read = entriesOf(`categories.${id}.labels`, entry.labels, "label");
   problems.push(...read.problems);
   return read.entries.map((e) => `${prefix}${e.id}`);
 }
@@ -344,6 +394,25 @@ function prefixProblems(categories: LabelCategory[]): string[] {
   return problems;
 }
 
+/**
+ * No type, flag or group label may begin with a category's prefix: the
+ * validator would read it as the explicit label and never apply the
+ * category's rules to it.
+ */
+function prefixedNameProblems(
+  names: string[],
+  categories: LabelCategory[],
+): string[] {
+  return names.flatMap((name) =>
+    categories
+      .filter((c) => c.prefix && name.startsWith(c.prefix))
+      .map(
+        (c) =>
+          `label '${name}' begins category '${c.id}''s prefix '${c.prefix}' (a category's prefix is its own: rename the label or make it one of the category's labels)`,
+      ),
+  );
+}
+
 const NOT_DEFINED =
   "which is not a type, group label, flag or category label in this file";
 
@@ -413,7 +482,7 @@ export function lintTaxonomy(doc: unknown): TaxonomyLint {
     const { list, problem } = sectionEntries(doc, section);
     if (problem) problems.push(problem);
     count[section] = list.length;
-    const read = entriesOf(section, list);
+    const read = entriesOf(section, list, section);
     problems.push(...read.problems);
     sections[section] = read.entries;
   }
@@ -439,6 +508,12 @@ export function lintTaxonomy(doc: unknown): TaxonomyLint {
     ),
   );
   problems.push(...prefixProblems(categories));
+  problems.push(
+    ...prefixedNameProblems(
+      [...ids("types"), ...ids("flags"), ...groups.flatMap((g) => g.labels)],
+      categories,
+    ),
+  );
   const labels = new Set([
     ...ids("types"),
     ...ids("flags"),

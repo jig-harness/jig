@@ -15,7 +15,9 @@
 #   categories  optional: prefixed multi-select families (`area:billing`)
 #
 # Every label name must be unique across the file (a category label's name is
-# its prefix and its id). `types` and `statuses` must be non-empty. Grow them
+# its prefix and its id). Every entry may carry `notes`; any key not listed
+# below for its kind is rejected, so a misspelt rule never reads as absent.
+# `types` and `statuses` must be non-empty. Grow them
 # deliberately: a new type or status is a real change to how every issue is
 # read.
 #
@@ -53,7 +55,8 @@
 # A category is a family of prefixed labels an issue may carry several of:
 #   id           the family's name
 #   prefix       required; a label's name is the prefix and its id. No prefix
-#                may begin another's
+#                may begin another's, and no type, flag or group label may
+#                begin with one
 #   labels       the closed labels; optional when `open` is set, where they
 #                are seeded examples
 #   open         optional; a regular expression: any slug it matches after

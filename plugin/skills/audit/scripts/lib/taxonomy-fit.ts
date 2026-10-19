@@ -39,6 +39,8 @@ interface Taxonomy {
   flags: Set<string>;
   /** Every group label and closed category label, by full name. */
   labels: Set<string>;
+  /** The group labels alone: the only labels a size can be. */
+  groupLabels: Set<string>;
   /** The categories' prefixes, each with its open pattern; `null` = closed. */
   categories: { prefix: string; open: RegExp | null }[];
   hasGroups: boolean;
@@ -110,8 +112,12 @@ function parseTaxonomy(root: string, path: string): Taxonomy {
   const groups = families(parsed, "groups");
   const categories = families(parsed, "categories");
   const labels = new Set<string>();
+  const groupLabels = new Set<string>();
   for (const group of groups)
-    for (const id of ids(group.labels, "groups.labels")) labels.add(id);
+    for (const id of ids(group.labels, "groups.labels")) {
+      labels.add(id);
+      groupLabels.add(id);
+    }
   const prefixed: Taxonomy["categories"] = [];
   for (const category of categories) {
     const prefix = typeof category.prefix === "string" ? category.prefix : "";
@@ -124,6 +130,7 @@ function parseTaxonomy(root: string, path: string): Taxonomy {
     types: ids(parsed.types, "types", true),
     flags: ids(parsed.flags, "flags"),
     labels,
+    groupLabels,
     categories: prefixed,
     hasGroups: groups.length > 0,
   };
@@ -175,22 +182,38 @@ function labelFindings(
   taxonomy: Taxonomy,
   path: string,
 ): Finding[] {
-  const roles = [...SINGLE_ROLES, ...LIST_ROLES];
-  if (taxonomy.hasGroups) roles.push("batch_sizes");
-  return roles.flatMap(roleFields).flatMap((field) => {
-    const unknown = configuredLabels(config, field).filter(
-      (label) => !defined(label, taxonomy),
-    );
-    return unknown.length
+  const finding = (field: string, unknown: string[], what: string) =>
+    unknown.length
       ? [
           {
             id: `taxonomy:${field}`,
             severity: "warning" as const,
-            message: `${field} names ${unknown.join(", ")}, which ${path} does not define as a label`,
+            message: `${field} names ${unknown.join(", ")}, which ${path} does not define as ${what}`,
           },
         ]
       : [];
-  });
+  const roleChecks = [...SINGLE_ROLES, ...LIST_ROLES]
+    .flatMap(roleFields)
+    .flatMap((field) =>
+      finding(
+        field,
+        configuredLabels(config, field).filter(
+          (label) => !defined(label, taxonomy),
+        ),
+        "a label",
+      ),
+    );
+  if (!taxonomy.hasGroups) return roleChecks;
+  const sizes = roleFields("batch_sizes").flatMap((field) =>
+    finding(
+      field,
+      configuredLabels(config, field).filter(
+        (label) => !taxonomy.groupLabels.has(label),
+      ),
+      "a group label",
+    ),
+  );
+  return [...roleChecks, ...sizes];
 }
 
 /**

@@ -58,6 +58,7 @@ reader; to read one value yourself, run
 | `issue_tracker.adapter` | Which tracker adapter the tracker scripts use | The default adapter |
 | `issue_tracker.labels` | The label each role names (`hitl`, `manual_ops`, `epic`, `followup`, `bug`, `pattern_prefix`); `tracker.ts labels` prints them | The defaults in the [configuration reference](../../CONFIGURATION.md#issue_tracker) |
 | `drive.change_areas_catalog` | The change-area catalog labels are derived from when a diff exists | No catalog: labels come from the description |
+| `review.taxonomy.categories` | The category list an issue's category is checked against (with `unknown`, always allowed) | No list: the category is `unknown` |
 
 The taxonomy's own schema (types, statuses, flags, groups, categories) is
 described in the header of
@@ -162,8 +163,22 @@ a recurring pattern's label.
 **judgment** — From the conversation (and `$ARGUMENTS`, when given), extract:
 the problem and for whom; why it matters now; what done looks like; the
 approach discussed, if any; open questions. Draft a title (imperative, one
-line), the type, a size (when the taxonomy has a size group), and a
-priority.
+line), the type, a size (when the taxonomy has a size group), a
+priority, and a category.
+
+The **category** is a classification of its own (a security issue and a
+performance one can share a severity), never derived from the priority. Take
+it from the discussion, or from the finding when the issue defers one, and
+check it against the repository's category list:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" review.taxonomy.categories
+```
+
+It must be one of that list or `unknown` (with the field not set, only
+`unknown`). When nothing says which it is,
+write `unknown` rather than a guess. It is recorded in the body (step 5),
+not as a label: it is not part of the label taxonomy.
 
 ### 3. Ask only what is missing
 
@@ -211,6 +226,7 @@ up:
   not one.
 - **Out of scope**, whenever the change sits near code someone might be
   tempted to fix on the way.
+- **The category** from step 2, on the template's `**Category**:` line.
 - **The repository's own terms**, from its glossary, where it has one.
 - **An operator checklist** when the issue carries the `manual_ops` role's
   label: every concrete step a person performs outside the code after the
@@ -229,10 +245,18 @@ commit that may be gone by then.
 
 ### 6. Derive the labels
 
-**exact** when a diff exists, **judgment** otherwise.
+**exact** when a diff exists and the repository has a change-area catalog,
+**judgment** otherwise. Read whether it has one first:
 
-**With a diff** (the issue follows a change already made or under review),
-resolve it against the change-area catalog and take the tracker
+```bash
+bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" drive.change_areas_catalog
+```
+
+`... is not set in any layer` (exit `2`) means no catalog: take the
+description path below, even with a diff.
+
+**With a diff and a catalog** (the issue follows a change already made or
+under review), resolve the diff against the catalog and take the tracker
 projection, the `linear` field of the resolver's JSON (`labels` and
 `flags`):
 
@@ -259,7 +283,8 @@ it, that is a gap in the catalog: say so (and file it if the user agrees),
 and add the flag here from the description instead; never fall back to the
 closure.
 
-**Without a diff**, choose each label from the description, against the
+**Without a diff or without a catalog**, choose each label from the
+description, against the
 taxonomy's `apply_when` and `do_not_apply_when` for every flag and the
 `notes` of every label.
 
@@ -271,8 +296,9 @@ Then complete the set, in both cases:
 - a label of every **recommended category** that fits, within its `max`;
 - the **flags** whose condition holds, scoped as rule 3 says, with what
   each `requires` beside it;
-- the `hitl` label with at least one stakeholder facet when a person must
-  decide; the `manual_ops` label when a step outside the code is needed
+- the `hitl` label when a person must decide, with a facet of each category
+  its `requires_category` names (otherwise a facet only when certain, as
+  rule 5 says); the `manual_ops` label when a step outside the code is needed
   (and the checklist from step 5); the `followup` label when the issue
   defers a review finding.
 
@@ -292,8 +318,8 @@ each delivers, its labels and the order between them.
   becomes a pull request itself.
 - Each **child** is one deliverable with its own durable body, its own
   size, and the flags its own change fires. A child a person must decide
-  carries the `hitl` label and its facet, and its body opens with what the
-  person must decide.
+  carries the `hitl` label (with the facets the taxonomy requires beside
+  it), and its body opens with what the person must decide.
 - Record the order: a child that must land first `blocks` the next.
 
 ### 8. Validate every label set
@@ -346,7 +372,7 @@ and `duplicated_by` (the other issue is a duplicate of `<KEY>`).
 ## Filed <KEY>: <title>
 
 - Labels: <labels> (warnings: <any, or none>)
-- Priority: <priority>
+- Priority: <priority> · Category: <category>
 - Parent: <key, or none> · Sub-issues: <keys, or none>
 - Relations: <KEY blocks …, related …, or none>
 - Next: `/jig:do-item <KEY>` (or the first child to pick up)
@@ -389,13 +415,23 @@ toward the split.
 **exact** — Validate the issue's resulting label set and every new child's
 ([rule 1](#the-rules-every-write-obeys)); show the user the change (labels
 added and removed, the new body if any, the children, the relations) and
-write only after they accept:
+write only after they accept.
+
+Create the children first, with `"parent": "<KEY>"`, as in
+[File, step 10](#10-write), so each flag moving from the issue to a child
+is on the child before it leaves the issue. Only once every child exists,
+change the issue:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update <KEY> < .context/file-issue/patch.json
 ```
 
-with `addLabels` and `removeLabels` rather than a whole label list, then
-create the children with `"parent": "<KEY>"` and record the relations as in
-[File, steps 10 and 11](#10-write). Report as in
+with `addLabels` and `removeLabels` rather than a whole label list. When a
+child cannot be created, stop before the update: the issue keeps its flags,
+so no flag is lost, and report which children exist (with their keys) and
+which do not. Do not retry blindly; ask the user whether to create the rest
+or remove the ones created. When the update itself fails after the children
+exist, report that the issue still carries the flags its children now carry,
+and the update that would remove them. Then record the relations as in
+[File, step 11](#11-record-the-relations). Report as in
 [File, step 12](#12-report), headed `## Planned <KEY>: <title>`.
