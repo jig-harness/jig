@@ -406,6 +406,12 @@ fields:
         paths: { type: list, items: string }
         command: command
     read_by: [resolve-conflicts]
+  resolve_conflicts.hotspot_min_merges:
+    type: integer
+    min: 1
+    default: 3
+    since: next
+    read_by: [resolve-conflicts]
   resolve_conflicts.obligations:
     type: list
     items: { type: map, values_type: string }
