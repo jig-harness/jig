@@ -327,7 +327,8 @@ It fails (exit 1), listing each problem with its file and line, when:
    nothing. Git's automatic result is reconstructed under no configuration
    but the repository's rename-detection settings (`merge.renames`,
    `merge.directoryRenames`, `merge.renameLimit`, `diff.renames`,
-   `diff.renameLimit`) and `core.useReplaceRefs`, so a merge driver
+   `diff.renameLimit`), its renormalization (`merge.renormalize`,
+   `core.autocrlf`) and `core.useReplaceRefs`, so a merge driver
    configured for the repository, the user, the system or the environment
    does not run. Everything else in the repository's git directory is read
    as it stands: its references (replace refs among them), `HEAD`, the

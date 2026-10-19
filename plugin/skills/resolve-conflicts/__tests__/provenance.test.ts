@@ -326,6 +326,29 @@ describe("staged content provenance", () => {
     resolve();
     check();
   });
+  for (const by of ["a text attribute", "core.autocrlf"]) {
+    it(`reconstructs the merge with the repository's renormalization under ${by}`, () => {
+      const lines = "one\r\ntwo\r\nthree\r\n";
+      s.commit("Base", { "conflict.txt": "base\n", "crlf.txt": lines });
+      s.git("checkout", "-q", "-b", "feature");
+      if (by === "core.autocrlf") s.git("config", "core.autocrlf", "true");
+      else s.write(".gitattributes", "crlf.txt text=auto\n");
+      s.git("add", "--renormalize", ".");
+      s.commit("Feature", { "conflict.txt": "feature\n" });
+      s.git("checkout", "-q", "main");
+      s.commit("Main", {
+        "conflict.txt": "main\n",
+        "crlf.txt": lines.replace("two", "TWO"),
+      });
+      s.git("checkout", "-q", "feature");
+      s.git("config", "merge.renormalize", "true");
+      ok(s.gitTry("merge", "main"), 1);
+      expect(s.git("ls-files", "-u", "--", "crlf.txt")).toBe("");
+      map();
+      resolve();
+      check();
+    });
+  }
   it("reconstructs a revert of the root commit", () => {
     const root = s.commit("Root", {
       "conflict.txt": "base\n",

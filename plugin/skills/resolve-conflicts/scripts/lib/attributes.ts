@@ -51,16 +51,21 @@ const REPOSITORY_VARIABLES = [
 ];
 
 /**
- * Settings that decide which renames and which history a merge finds, and
- * nothing else: the one configuration the reconstruction takes from the
- * repository as it stands, so that it finds what the operation itself found.
+ * Settings that decide which renames and which history a merge finds and
+ * what content it compares, and nothing else: the one configuration the
+ * reconstruction takes from the repository as it stands, so that it finds
+ * what the operation itself found. `merge.renormalize` normalizes the three
+ * stages before the content merge, and `core.autocrlf` decides that
+ * normalization where no attribute does.
  */
 const MERGE_SETTINGS = [
   "merge.renames",
   "merge.directoryRenames",
   "merge.renameLimit",
+  "merge.renormalize",
   "diff.renames",
   "diff.renameLimit",
+  "core.autocrlf",
   "core.useReplaceRefs",
 ];
 
@@ -185,8 +190,8 @@ function mirrorGitDir(root: string, scratch: string): string {
  * read but the repository's format: not the repository's settings, the
  * user's (`GIT_CONFIG_GLOBAL` names an empty file), the system's
  * (`GIT_CONFIG_NOSYSTEM`), nor any passed in the environment, except the
- * settings that decide rename detection and replacement objects, passed on as
- * the repository has them. So a merge driver configured anywhere does not
+ * settings that decide rename detection, renormalization and replacement
+ * objects, passed on as the repository has them. So a merge driver configured anywhere does not
  * run, and a merge's result is git's for the attributes the commit carries.
  */
 export function indexAttributesGit<T>(
