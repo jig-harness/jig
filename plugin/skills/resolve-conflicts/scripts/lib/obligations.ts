@@ -126,10 +126,16 @@ async function runCommand(
   };
 }
 
-/** Commands complement the agent's inspection of all staged hunks; text is never certified by a command. */
+/**
+ * Commands complement the agent's inspection of all staged hunks; text is never
+ * certified by a command. `stale`, asked before each command, names why the
+ * state a command would check is no longer the one the run started from; once
+ * it does, that command and every later one are not run.
+ */
 export async function runObligations(
   root: string,
   entries: readonly ObligationEntry[],
+  stale: () => string | null = () => null,
 ): Promise<ObligationResult[]> {
   const timeout = readTimeoutEnv("RESOLVE_CONFLICTS_COMMAND_TIMEOUT", 120);
   if (!timeout.ok)
@@ -138,6 +144,7 @@ export async function runObligations(
       "resolve-conflicts: RESOLVE_CONFLICTS_COMMAND_TIMEOUT must be a positive whole number of seconds no greater than 2147483",
     );
   const results: ObligationResult[] = [];
+  let stopped: string | null = null;
   for (const entry of entries) {
     if (entry.command === undefined) {
       results.push({
@@ -147,11 +154,19 @@ export async function runObligations(
         output:
           "Inspect the whole resolved staged diff, including auto-merged hunks.",
       });
-    } else {
-      results.push(
-        await runCommand(root, entry.check, entry.command, timeout.seconds),
-      );
+      continue;
     }
+    stopped ??= stale();
+    results.push(
+      stopped === null
+        ? await runCommand(root, entry.check, entry.command, timeout.seconds)
+        : {
+            check: entry.check,
+            command: entry.command,
+            status: "not-run",
+            output: stopped,
+          },
+    );
   }
   return results;
 }

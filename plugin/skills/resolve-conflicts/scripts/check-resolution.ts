@@ -29,7 +29,8 @@
  * printed. Exit 4 wins over exit 1, since an escalated resolution is not
  * concluded either way.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readlinkSync } from "node:fs";
+import { join } from "node:path";
 import { fail, runMain } from "../../../shared/cli.ts";
 import { unmergedPaths } from "./conflict-map.ts";
 import { droppedLines } from "./lib/drops.ts";
@@ -278,14 +279,107 @@ function render(f: Finding): string {
 /** The staged tree, plus every tracked path whose file on disk differs from it. */
 interface TreeState {
   tree: string;
-  unstaged: string[];
+  differing: Finding[];
 }
 
+const DIFFERS =
+  "differs from the staged tree: obligation commands check files on disk, so stage or discard it first";
+const SKIPPED_DIFFERS =
+  "is marked assume-unchanged or skip-worktree, so git does not compare it, and its file on disk differs from the staged tree: clear the flag (git update-index --no-assume-unchanged --no-skip-worktree -- <path>), then stage or discard it";
+
+/**
+ * `git diff` deliberately skips some paths, so a clean diff alone does not
+ * prove the disk matches the index: submodule ignore settings hide a moved or
+ * dirty submodule (overridden here), and an assume-unchanged or skip-worktree
+ * entry is never compared at all (each is compared independently).
+ */
 function treeState(root: string): TreeState {
-  return {
-    tree: git(root, ["write-tree"]).trim(),
-    unstaged: splitNul(git(root, ["diff", "--name-only", "-z"])).sort(),
-  };
+  const unstaged = splitNul(
+    git(root, ["diff", "--name-only", "-z", "--ignore-submodules=none"]),
+  );
+  const skipped = new Set(skippedMismatches(root));
+  const differing = [...new Set([...unstaged, ...skipped])]
+    .sort()
+    .map((path) => ({
+      path,
+      message: skipped.has(path) ? SKIPPED_DIFFERS : DIFFERS,
+    }));
+  return { tree: git(root, ["write-tree"]).trim(), differing };
+}
+
+interface IndexEntry {
+  path: string;
+  mode: string;
+  blob: string;
+}
+
+/** Stage-0 entries marked assume-unchanged (a lowercase tag) or skip-worktree (S). */
+function skippedEntries(root: string): IndexEntry[] {
+  const entries: IndexEntry[] = [];
+  for (const record of splitNul(git(root, ["ls-files", "-s", "-v", "-z"]))) {
+    const match = record.match(/^(\S) (\d+) ([0-9a-f]+) \d\t(.*)$/s);
+    if (!match) continue;
+    const [, tag = "", mode = "", blob = "", path = ""] = match;
+    if (tag === tag.toLowerCase() || tag === "S")
+      entries.push({ path, mode, blob });
+  }
+  return entries;
+}
+
+/**
+ * Whether an entry's file matches its staged mode without reading content:
+ * `"content"` when only a regular file's blob is left to compare.
+ */
+function shapeMatches(
+  root: string,
+  entry: IndexEntry,
+  fileMode: boolean,
+): boolean | "content" {
+  const full = join(root, entry.path);
+  const stat = lstatSync(full, { throwIfNoEntry: false });
+  if (stat === undefined) return false;
+  if (entry.mode === "120000")
+    return (
+      stat.isSymbolicLink() &&
+      git(root, ["hash-object", "--stdin"], readlinkSync(full)).trim() ===
+        entry.blob
+    );
+  if (entry.mode !== "100644" && entry.mode !== "100755") return false;
+  if (!stat.isFile()) return false;
+  const executable = (stat.mode & 0o111) !== 0;
+  if (fileMode && executable !== (entry.mode === "100755")) return false;
+  return "content";
+}
+
+/** Entries git does not compare with disk whose file differs from the staged blob or mode. */
+function skippedMismatches(root: string): string[] {
+  const entries = skippedEntries(root);
+  if (entries.length === 0) return [];
+  const fileMode =
+    process.platform !== "win32" &&
+    gitRaw(root, [
+      "config",
+      "--type=bool",
+      "--get",
+      "core.fileMode",
+    ]).stdout.trim() !== "false";
+  const mismatched: string[] = [];
+  const regular: IndexEntry[] = [];
+  for (const entry of entries) {
+    const shape = shapeMatches(root, entry, fileMode);
+    if (shape === "content") regular.push(entry);
+    else if (!shape) mismatched.push(entry.path);
+  }
+  if (regular.length === 0) return mismatched;
+  const hashes = git(
+    root,
+    ["hash-object", "--stdin-paths"],
+    `${regular.map((entry) => entry.path).join("\n")}\n`,
+  ).split("\n");
+  regular.forEach((entry, i) => {
+    if (hashes[i] !== entry.blob) mismatched.push(entry.path);
+  });
+  return mismatched;
 }
 
 function notRun(
@@ -301,8 +395,10 @@ function notRun(
 }
 
 /**
- * Commands read files on disk, so they run only when the disk matches the
- * staged tree, and their results stand only if no command changed either.
+ * Commands read files on disk, so each runs only while the disk matches the
+ * staged tree: the state is checked before every command and after the last,
+ * a change stops the commands not yet run, and results stand only if no
+ * command changed either.
  */
 async function checkWithObligations(
   root: string,
@@ -322,13 +418,8 @@ async function checkWithObligations(
     return { result, obligations: await runObligations(root, entries) };
 
   const before = treeState(root);
-  if (before.unstaged.length > 0) {
-    for (const path of before.unstaged)
-      result.problems.push({
-        path,
-        message:
-          "differs from the staged tree: obligation commands check files on disk, so stage or discard it first",
-      });
+  if (before.differing.length > 0) {
+    result.problems.push(...before.differing);
     result.exit = 1;
     return {
       result,
@@ -338,10 +429,18 @@ async function checkWithObligations(
       ),
     };
   }
-  const obligations = await runObligations(root, entries);
-  const after = treeState(root);
+  const unchanged = () => {
+    const now = treeState(root);
+    return now.tree === before.tree && now.differing.length === 0;
+  };
+  const obligations = await runObligations(root, entries, () =>
+    unchanged()
+      ? null
+      : "An earlier command changed the staged tree or the working tree, so this command did not run.",
+  );
+  const changed = !unchanged();
   const final = checkResolution(root, snapshot);
-  if (after.tree !== before.tree || after.unstaged.length > 0)
+  if (changed || obligations.some((o) => o.status === "not-run"))
     final.problems.push({
       path: "resolve_conflicts.obligations",
       message:

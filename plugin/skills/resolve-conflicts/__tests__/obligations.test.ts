@@ -253,3 +253,87 @@ test("a missing shell is reported as a failed command", () => {
   expect(JSON.parse(run.stdout)[0].status).toBe("failed");
   expect(JSON.parse(run.stdout)[0].output).toContain("exit 127");
 });
+
+test("a command that changes a file stops the later commands, even when the file is restored", () => {
+  const s = resolvedMerge((setup) =>
+    setup.commit("Add the helper", { "helper.txt": "staged\n" }),
+  );
+  setObligations(s, [
+    { check: "Prepare", command: "echo edited > helper.txt" },
+    { check: "Validate and restore", command: "echo staged > helper.txt" },
+  ]);
+  const run = s.script("check-resolution.ts", ["--json"]);
+  expectSpawnExit({ ...run, exitCode: run.code }, 1);
+  const report = JSON.parse(run.stdout);
+  expect(report.obligations).toMatchObject([
+    { status: "passed" },
+    {
+      status: "not-run",
+      output: expect.stringContaining("An earlier command changed"),
+    },
+  ]);
+  expect(s.read("helper.txt")).toBe("edited\n");
+  expect(report.problems).toContainEqual(
+    expect.objectContaining({ path: "resolve_conflicts.obligations" }),
+  );
+});
+
+test("an ignored submodule setting does not hide a moved submodule from the state check", () => {
+  const s = resolvedMerge((setup) => {
+    setup.run("git", ["init", "-q", "sub"]);
+    setup.run("git", [
+      "-C",
+      "sub",
+      "commit",
+      "-q",
+      "--allow-empty",
+      "-m",
+      "one",
+    ]);
+    setup.git("add", "sub");
+    setup.git("commit", "-q", "-m", "Add the submodule");
+  });
+  const moved = s.run("git", [
+    "-C",
+    "sub",
+    "commit",
+    "-q",
+    "--allow-empty",
+    "-m",
+    "two",
+  ]);
+  expectSpawnExit({ ...moved, exitCode: moved.code }, 0);
+  s.git("config", "diff.ignoreSubmodules", "all");
+  s.git("config", "submodule.sub.ignore", "all");
+  setObligations(s, [{ check: "Validate", command: "true" }]);
+  const run = s.script("check-resolution.ts", ["--json"]);
+  expectSpawnExit({ ...run, exitCode: run.code }, 1);
+  const report = JSON.parse(run.stdout);
+  expect(report.obligations).toMatchObject([{ status: "not-run" }]);
+  expect(report.problems).toContainEqual(
+    expect.objectContaining({ path: "sub" }),
+  );
+});
+
+for (const flag of ["--assume-unchanged", "--skip-worktree"])
+  test(`a ${flag} entry is compared with disk independently of git diff`, () => {
+    const s = resolvedMerge((setup) =>
+      setup.commit("Add the helper", { "helper.txt": "staged\n" }),
+    );
+    s.git("update-index", flag, "--", "helper.txt");
+    setObligations(s, [{ check: "Validate", command: "true" }]);
+    let run = s.script("check-resolution.ts", ["--json"]);
+    expectSpawnExit({ ...run, exitCode: run.code }, 0);
+
+    s.write("helper.txt", "edited on disk\n");
+    run = s.script("check-resolution.ts", ["--json"]);
+    expectSpawnExit({ ...run, exitCode: run.code }, 1);
+    const report = JSON.parse(run.stdout);
+    expect(report.obligations).toMatchObject([{ status: "not-run" }]);
+    expect(report.problems).toContainEqual(
+      expect.objectContaining({
+        path: "helper.txt",
+        message: expect.stringContaining("assume-unchanged or skip-worktree"),
+      }),
+    );
+  });
