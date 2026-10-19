@@ -208,8 +208,8 @@ describe("readPrState — a numeric PR", () => {
     expect(Date.now() - t0).toBeLessThan(
       Number(
         byPlatform(
-          "Windows cancellation includes CIM identity checks and a disappearance witness",
-          { windows: "30000", posix: "3500" },
+          "Windows cancellation allows the 30s aggregate cleanup budget after the caller deadline, plus scheduling headroom",
+          { windows: "35000", posix: "3500" },
         ),
       ),
     );
@@ -250,8 +250,8 @@ describe("readPrState — a URL or branch (no REST path)", () => {
     expect(Date.now() - t0).toBeLessThan(
       Number(
         byPlatform(
-          "Windows cancellation includes CIM identity checks and a disappearance witness",
-          { windows: "30000", posix: "3500" },
+          "Windows cancellation allows the 30s aggregate cleanup budget after the caller deadline, plus scheduling headroom",
+          { windows: "35000", posix: "3500" },
         ),
       ),
     );

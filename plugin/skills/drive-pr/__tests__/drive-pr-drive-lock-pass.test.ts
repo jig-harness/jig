@@ -34,6 +34,7 @@ import {
   lockDirs,
   plantClaim,
   pollUntil,
+  awaitFixtureMarker,
   simulateTakeover,
 } from "./drive-loop-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
@@ -128,18 +129,6 @@ describe("drive.ts loop control", () => {
             `: pass for 999; : > ${JSON.stringify(join(dir, "pass-started"))}; ` +
               `(sleep ${LATE_GRANDCHILD_SECONDS}; : > ${JSON.stringify(join(dir, "pass-late"))}) & wait`,
           ];
-
-    async function awaitFixtureMarker(marker: string): Promise<boolean> {
-      const budgetMs = Number(
-        byPlatform(
-          "native Windows must launch the CLI and Git Bash fixture chain before a pass can announce itself",
-          { windows: "60000", posix: "10000" },
-        ),
-      );
-      const deadline = Date.now() + budgetMs;
-      while (!existsSync(marker) && Date.now() < deadline) await Bun.sleep(25);
-      return existsSync(marker);
-    }
 
     /**
      * Poll for the pass's own announcement, so the window is not guessed.

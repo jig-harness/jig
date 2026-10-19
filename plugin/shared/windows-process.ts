@@ -2,11 +2,12 @@ import type { ChildProcess } from "node:child_process";
 import {
   createProcessRegistry,
   PROCESS_REGISTRY_ENV,
+  processRegistryRoots,
 } from "./process-registry.ts";
 import {
-  captureRegisteredProcessTrees,
-  forceIdentityTargetsAndWitness,
+  reapRegisteredProcessTrees,
   stopWindowsTree,
+  type WindowsTreeState,
 } from "./process-tree.ts";
 
 /** One cancellation promise owns a Windows child's registry until its tree settles. */
@@ -16,35 +17,65 @@ export function windowsProcessLifecycle(
   const enabled = process.platform === "win32";
   const inherited =
     env?.[PROCESS_REGISTRY_ENV] ?? process.env[PROCESS_REGISTRY_ENV];
-  const owned = enabled && !inherited ? createProcessRegistry() : undefined;
-  const dir = inherited ?? owned?.dir;
+  const owned = enabled ? createProcessRegistry(inherited) : undefined;
+  const dir = owned?.dir;
   const childEnv = dir
     ? { ...(env ?? process.env), [PROCESS_REGISTRY_ENV]: dir }
     : env;
   let stopping: Promise<boolean> | undefined;
-  let settled = false;
+  let child: ChildProcess | undefined;
+  let confirmedStop = false;
   let keepRegistry = false;
   let groupSurvived = false;
+  const state: WindowsTreeState = { root: null, targets: [] };
+  const killOwned = (): void => {
+    if (!child || child.exitCode !== null || child.signalCode !== null) return;
+    try {
+      child.kill("SIGKILL");
+    } catch {
+      /* The child handle has already closed. */
+    }
+  };
   const stop = (
     pid: number | undefined,
     graceMs: number,
     stillOwned?: () => boolean,
-  ): Promise<boolean> =>
-    (stopping ??=
-      pid === undefined
-        ? Promise.resolve(false)
-        : stopWindowsTree(pid, graceMs, dir, stillOwned));
+  ): Promise<boolean> => {
+    if (confirmedStop) return Promise.resolve(true);
+    if (stopping) return stopping;
+    if (pid === undefined) return Promise.resolve(false);
+    const pending = stopWindowsTree(pid, graceMs, dir, stillOwned, {
+      state,
+      killOwned,
+    });
+    stopping = pending;
+    void pending.then((confirmed) => {
+      confirmedStop = confirmed;
+      keepRegistry = !confirmed;
+      if (stopping === pending) stopping = undefined;
+    });
+    return pending;
+  };
+  const dispose = (): void => {
+    // A normal command can leave a registered runner behind. Its scope remains
+    // discoverable by the acquisition owner until cancellation verifies its exit.
+    if (
+      confirmedStop ||
+      (!keepRegistry && dir && processRegistryRoots(dir)?.length === 0)
+    )
+      owned?.dispose();
+  };
   const finish = (done: () => void): void => {
-    if (stopping && !settled) {
-      void stopping.then((confirmed) => {
-        keepRegistry = !confirmed;
-        settled = true;
-        finish(done);
+    const pending = stopping;
+    if (pending) {
+      void pending.then(() => {
+        dispose();
+        done();
       });
-      return;
+    } else {
+      dispose();
+      done();
     }
-    if (!keepRegistry) owned?.dispose();
-    done();
   };
   return {
     enabled,
@@ -52,19 +83,26 @@ export function windowsProcessLifecycle(
     dir,
     stop,
     finish,
-    dispose: () => owned?.dispose(),
+    dispose,
+    bind: (spawned: ChildProcess) => {
+      child = spawned;
+    },
     get groupSurvived() {
       return groupSurvived;
     },
     reap(pid: number | undefined): void {
       if (!enabled || !dir || pid === undefined) return;
-      stopping ??= (async () => {
-        const targets = await captureRegisteredProcessTrees(dir);
-        groupSurvived = targets === null || targets.length > 0;
-        if (targets === null) return false;
-        if (!groupSurvived) return true;
-        return forceIdentityTargetsAndWitness(targets);
-      })();
+      if (stopping) return;
+      const pending = reapRegisteredProcessTrees(dir).then((result) => {
+        groupSurvived = result.survived;
+        if (result.confirmed) owned?.dispose();
+        return result.confirmed;
+      });
+      stopping = pending;
+      void pending.then((confirmed) => {
+        keepRegistry = !confirmed;
+        if (stopping === pending) stopping = undefined;
+      });
     },
     signal(
       child: ChildProcess,

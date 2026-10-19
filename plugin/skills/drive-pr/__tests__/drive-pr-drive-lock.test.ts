@@ -41,6 +41,7 @@ import {
   lockDirs,
   plantClaim,
   pollUntil,
+  awaitFixtureMarker,
   simulateTakeover,
   worktreeLockNameFor,
 } from "./drive-loop-harness.ts";
@@ -1441,7 +1442,7 @@ describe("drive.ts loop control", () => {
             CLAUDE_CODE_OAUTH_TOKEN: "",
             // Far longer than this test ever runs — isolates the pass-exit
             // refresh from the heartbeat's own.
-            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "60000",
+            DRIVE_PR_LOCK_HEARTBEAT_REFRESH_MS: "600000",
           },
           stdout: "pipe",
           stderr: "pipe",
@@ -1449,12 +1450,7 @@ describe("drive.ts loop control", () => {
       );
 
       try {
-        let running = false;
-        for (let i = 0; i < 400 && !running; i++) {
-          running = existsSync(startedMarker);
-          if (!running) await Bun.sleep(25);
-        }
-        expect(running).toBe(true);
+        expect(await awaitFixtureMarker(startedMarker)).toBe(true);
 
         // Change the file-backed identity while the pass is still asleep —
         // the running pass keeps billing to the OLD one regardless.
@@ -1502,7 +1498,7 @@ describe("drive.ts loop control", () => {
         rmSync(claudeStubDir, { recursive: true, force: true });
         rmSync(claudeConfigDir, { recursive: true, force: true });
       }
-    });
+    }, 120000);
 
     it("refreshes a FILE-BACKED account identity after a CI-repair pass too, not only after an ordinary one", async () => {
       // `runRepairPass` must call `refreshAccountIdentity` once its own

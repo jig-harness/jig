@@ -532,6 +532,8 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
       return;
     }
 
+    windows.bind(child);
+
     // Tracked for the whole time it is live, so a signal to this process is
     // forwarded into the group `detached` just put it beyond reach of. Only a
     // group THIS library detached on its own initiative: an undetached child

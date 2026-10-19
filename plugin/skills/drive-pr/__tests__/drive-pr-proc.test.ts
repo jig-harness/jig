@@ -1175,7 +1175,11 @@ describe("cancellation reaches a deadlined child", () => {
       expect(existsSync(completedA)).toBe(false);
       expect(existsSync(completedB)).toBe(false);
     } finally {
+      const exited = new Promise<void>((resolve) =>
+        child.once("exit", () => resolve()),
+      );
       child.kill("SIGKILL");
+      if (child.exitCode === null && child.signalCode === null) await exited;
       rmSync(dir, { recursive: true, force: true });
     }
   }, 60_000);

@@ -1373,18 +1373,24 @@ let quotaSleepAbort: AbortController | null = null;
  */
 let passStopWitness: Promise<boolean> | null = null;
 
+/** Conventional exit status for the driver's signal and cooperative stop paths. */
+export function driverStopExitCode(sig: string): number {
+  return sig === "SIGINT"
+    ? 130
+    : sig === "SIGTERM" || sig === "stop request"
+      ? 143
+      : sig === "SIGBREAK"
+        ? 149
+        : 129;
+}
+
 function installStopControls(
   held: DriveLock[],
   releaseAll: () => void,
 ): Disposable {
   let shuttingDown = false;
   const shutDown = (sig: string): Promise<void> | undefined => {
-    const code =
-      sig === "SIGINT"
-        ? 130
-        : sig === "SIGTERM" || sig === "stop request"
-          ? 143
-          : 129;
+    const code = driverStopExitCode(sig);
     // A repeated signal forces termination without unlocking a live pass.
     if (shuttingDown) {
       held.length = 0;

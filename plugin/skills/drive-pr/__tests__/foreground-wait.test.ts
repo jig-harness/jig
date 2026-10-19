@@ -14,8 +14,13 @@ import { tmpdir } from "node:os";
 import { join, resolve, delimiter } from "node:path";
 import { processTable } from "../../../shared/process-table.ts";
 import {
+  beginProcessRegistration,
+  processRegistryRoots,
+} from "../../../shared/process-registry.ts";
+import {
   captureProcessTree,
   signalIdentityTargets,
+  forceIdentityTargetsAndWitness,
 } from "../../../shared/process-tree.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import {
@@ -293,6 +298,9 @@ describe("foreground-wait.ts", () => {
       expectSpawnExit(w, 30);
       expect(out(w)).toContain("deadline of 2s reached");
       expect(out(w)).toContain("command-exit: 124");
+      expect(
+        JSON.parse(readFileSync(join(latestGen(), "result.json"), "utf8")),
+      ).toMatchObject({ treeWitnessed: true });
       expect(await alive(cmdPid)).toBe(false);
     },
     T,
@@ -372,6 +380,7 @@ describe("foreground-wait.ts", () => {
       );
       const w = run("wait", "--max-sec", "40");
       expectSpawnExit(w, 30);
+      expect(out(w)).toContain("command-exit: 124");
       exceptOnWindows("Windows has no cooperative POSIX TERM handler", () =>
         expect(existsSync(join(cwd, "termed.marker"))).toBe(true),
       );
@@ -397,7 +406,10 @@ describe("foreground-wait.ts", () => {
       );
       const w = run("wait", "--max-sec", "60");
       expectSpawnExit(w, 0);
-      expect(out(w)).toContain("descendants still running");
+      exceptOnWindows(
+        "Bun's Windows job reaps the descendant when its command exits",
+        () => expect(out(w)).toContain("descendants still running"),
+      );
       const bg = Number.parseInt(readFileSync(join(cwd, "bg.pid"), "utf8"), 10);
       expect(Number.isInteger(bg)).toBe(true);
       expect(await alive(bg)).toBe(false);
@@ -472,9 +484,24 @@ describe("foreground-wait.ts", () => {
       );
       try {
         const w = run("wait", "--max-sec", "40");
-        expectSpawnExit(w, 30);
-        expect(out(w)).toContain("deadline of 2s reached");
-        expect(out(w)).toContain("command-exit: 124");
+        const completion = byPlatform(
+          "Bun reaps the inherited-pipe child on Windows; POSIX needs the runner deadline",
+          { windows: "job-reaped", posix: "deadline" },
+        );
+        expectSpawnExit(w, completion === "job-reaped" ? 0 : 30);
+        expect(out(w)).toContain(
+          completion === "job-reaped" ? "command-exit: 0" : "command-exit: 124",
+        );
+        const bg = Number.parseInt(
+          readFileSync(join(cwd, "bg.pid"), "utf8"),
+          10,
+        );
+        expect(Number.isInteger(bg)).toBe(true);
+        if (completion === "job-reaped") expect(await alive(bg)).toBe(false);
+        exceptOnWindows(
+          "POSIX inherited pipes keep the runner waiting until its deadline",
+          () => expect(out(w)).toContain("deadline of 2s reached"),
+        );
       } finally {
         const bg = Number.parseInt(
           readFileSync(join(cwd, "bg.pid"), "utf8"),
@@ -609,7 +636,7 @@ describe("foreground-wait.ts", () => {
       expect(pidOf("cmd.pid")).not.toBeNull();
       const targets = await captureProcessTree(recorded.pid);
       expect(targets?.length).toBeGreaterThan(1);
-      await signalIdentityTargets(targets ?? [], "SIGKILL");
+      expect(await forceIdentityTargetsAndWitness(targets ?? [])).toBe(true);
       const deadline = Date.now() + 20_000;
       while ((await alive(recorded.pid)) && Date.now() < deadline)
         await sleepMs(20);
@@ -619,6 +646,131 @@ describe("foreground-wait.ts", () => {
       // before its own kill arrives, or die before publishing a result.
       const expected = existsSync(join(latestGen(), "result.json")) ? 30 : 21;
       expectSpawnExit(run("wait", "--max-sec", "1"), expected);
+    },
+    T,
+  );
+
+  test(
+    "a finished runner clears a still-pending handoff",
+    () => {
+      const registry = join(cwd, "registry");
+      const dir = join(cwd, "runner");
+      mkdirSync(registry);
+      mkdirSync(dir);
+      beginProcessRegistration(registry, "fixture", join(dir, "result.json"));
+      expect(processRegistryRoots(registry)).toBeNull();
+      const result = runWith(
+        { JIG_PROCESS_REGISTRY_DIR: registry },
+        "_run",
+        dir,
+        "fixture",
+        "--",
+        "/nonexistent/foreground-command",
+      );
+      expectSpawnExit(result, 0);
+      expect(
+        JSON.parse(readFileSync(join(dir, "result.json"), "utf8")),
+      ).toMatchObject({ exitCode: 127, treeWitnessed: true });
+      expect(processRegistryRoots(registry)).toEqual([]);
+    },
+    T,
+  );
+
+  test(
+    "an unavailable Windows process table still ends the owned child after grace without certifying the tree",
+    async () => {
+      const shim = join(cwd, "shim");
+      const dir = join(cwd, "direct");
+      const registry = join(cwd, "registry");
+      mkdirSync(shim);
+      mkdirSync(dir);
+      mkdirSync(registry);
+      const snapshotFile = join(cwd, "native-snapshot.json");
+      writeFakeProgram(
+        join(shim, "powershell.exe"),
+        `#!/usr/bin/env bun\nconst fs=require("node:fs");if(!fs.existsSync(${JSON.stringify(snapshotFile)}))process.exit(1);process.stdout.write(fs.readFileSync(${JSON.stringify(snapshotFile)}));\n`,
+      );
+      beginProcessRegistration(registry, "fixture", join(dir, "result.json"));
+      const marker = join(cwd, "owned.pid");
+      const command = `require("node:fs").writeFileSync(${JSON.stringify(marker)},String(process.pid)); setInterval(()=>{},1000); setTimeout(()=>process.exit(0),30000);`;
+      const args = [
+        process.execPath,
+        SCRIPT,
+        "_run",
+        dir,
+        "fixture",
+        "--",
+        ...bunCommand(command),
+      ];
+      // Modeling the platform only in this subprocess exercises the native
+      // Windows cancellation branch without changing the test worker's state.
+      const runner = Bun.spawn(
+        [
+          process.execPath,
+          "-e",
+          `Object.defineProperty(process,"platform",{value:"win32"});process.argv=${JSON.stringify(args)};await import(${JSON.stringify(SCRIPT)});`,
+        ],
+        {
+          cwd,
+          env: {
+            ...process.env,
+            ...PACING,
+            PATH: `${shim}${delimiter}${process.env.PATH}`,
+            JIG_PROCESS_REGISTRY_DIR: registry,
+            DRIVE_PR_FOREGROUND_WAIT_TIMEOUT: "1",
+            DRIVE_PR_FOREGROUND_WAIT_KILL_GRACE_MS: "100",
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      let runnerExited = false;
+      void runner.exited.then(() => {
+        runnerExited = true;
+      });
+      try {
+        const readyDeadline = Date.now() + 10_000;
+        while (!existsSync(marker) && Date.now() < readyDeadline)
+          await sleepMs(20);
+        expect(existsSync(marker)).toBe(true);
+        const pid = Number(readFileSync(marker, "utf8"));
+        const deadline = Date.now() + 10_000;
+        let childGone = false;
+        while (!childGone && Date.now() < deadline) {
+          childGone = !(await alive(pid));
+          if (!childGone) await sleepMs(20);
+        }
+        expect(childGone).toBe(true);
+        expect(runnerExited).toBe(false);
+        expect(existsSync(join(dir, "result.json"))).toBe(false);
+        expect(processRegistryRoots(registry)).toBeNull();
+        // Recover enumeration only after the owned child was forced. Its
+        // absence now cannot establish what happened to unobserved descendants.
+        writeFileSync(
+          snapshotFile,
+          JSON.stringify([
+            {
+              ProcessId: runner.pid,
+              ParentProcessId: process.pid,
+              CreationDate: "2026-10-19T00:00:00.0000000Z",
+              CommandLine: "foreground runner",
+            },
+          ]),
+        );
+        const recoveryDeadline = Date.now() + 10_000;
+        while (!runnerExited && Date.now() < recoveryDeadline)
+          await sleepMs(20);
+        expect(runnerExited).toBe(true);
+        expect(
+          JSON.parse(readFileSync(join(dir, "result.json"), "utf8")),
+        ).toMatchObject({ exitCode: 124, treeWitnessed: false });
+        expect(processRegistryRoots(registry)).toBeNull();
+      } finally {
+        const targets = await captureProcessTree(runner.pid);
+        if (targets) await forceIdentityTargetsAndWitness(targets);
+        runner.kill("SIGKILL");
+        await runner.exited;
+      }
     },
     T,
   );

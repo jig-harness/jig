@@ -57,6 +57,7 @@
  * `finish-round.ts` idempotence) stays the authority before relaunching.
  */
 import { spawn } from "node:child_process";
+import { swallow } from "../../../shared/errors.ts";
 import {
   appendFileSync,
   closeSync,
@@ -75,7 +76,16 @@ import {
 import { join } from "node:path";
 import { testPacing } from "./lib/cli.ts";
 import { readTimeoutEnv } from "./lib/proc.ts";
-import { processTable } from "../../../shared/process-table.ts";
+import {
+  processTable,
+  type ProcessRow,
+} from "../../../shared/process-table.ts";
+import {
+  beginProcessRegistration,
+  clearPendingProcessRegistration,
+  handoffProcessRegistration,
+  publishProcessIdentity,
+} from "../../../shared/process-registry.ts";
 import { signalIdentityTargets } from "../../../shared/process-tree.ts";
 import {
   liveTargets,
@@ -114,6 +124,8 @@ interface Result {
   signal: string | null;
   /** Why the runner itself ended the command (deadline, unwritable log). */
   note?: string;
+  /** Explicit completion proof for registry reconciliation; legacy or unknown is false. */
+  treeWitnessed?: boolean;
 }
 
 function generations(): number[] {
@@ -263,28 +275,32 @@ async function running(dir: string): Promise<boolean> {
   );
 }
 
-/** Complete the pass registry handoff, retaining a pending marker on unknown identity. */
+/** Complete the handoff while the child handle still proves ownership. */
 async function recordRunnerIdentity(
   registry: string | undefined,
   entry: string,
-  runnerPid: number | undefined,
+  runner: ReturnType<typeof spawn>,
   dir: string,
 ): Promise<void> {
-  if (!registry) return;
-  const rows = await processTable();
-  const identity = rows?.find((row) => row.pid === runnerPid);
-  if (identity?.start) {
-    writeAtomic(
-      registry,
-      `${entry}.json`,
-      JSON.stringify({ pid: identity.pid, start: identity.start }),
-    );
-    rmSync(join(registry, `${entry}.pending`), { force: true });
-  } else if (readResult(dir) !== null) {
-    // A runner which finished before enumeration has already witnessed
-    // its command tree and published the result.
-    rmSync(join(registry, `${entry}.pending`), { force: true });
-  }
+  if (!registry || runner.pid === undefined) return;
+  await handoffProcessRegistration(
+    registry,
+    entry,
+    runner.pid,
+    () => {
+      const result = readResult(dir);
+      return (
+        result !== null &&
+        result !== "unreadable" &&
+        result.treeWitnessed === true
+      );
+    },
+    () =>
+      runner.exitCode === null &&
+      runner.signalCode === null &&
+      readResult(dir) === null,
+    { resultFile: at(dir, "result.json") },
+  );
 }
 
 /** Start and register the supervisor before its launcher returns. */
@@ -299,10 +315,11 @@ async function startRunner(
   // Windows has reparented it. A pending registration is unknown, not empty.
   const registry = process.env.JIG_PROCESS_REGISTRY_DIR;
   const entry = `${process.pid}-${next}`;
-  if (registry) writeFileSync(join(registry, `${entry}.pending`), "");
+  if (registry)
+    beginProcessRegistration(registry, entry, at(dir, "result.json"));
   const runner = spawn(
     process.execPath,
-    [process.argv[1] as string, "_run", dir, "--", ...argv],
+    [process.argv[1] as string, "_run", dir, entry, "--", ...argv],
     {
       stdio: "ignore",
       cwd: process.cwd(),
@@ -315,7 +332,7 @@ async function startRunner(
   );
   runner.unref();
   writeAtomic(dir, "runner.pid", String(runner.pid));
-  await recordRunnerIdentity(registry, entry, runner.pid, dir);
+  await recordRunnerIdentity(registry, entry, runner, dir);
   console.log(
     `foreground-wait: launched (gen ${next}, runner pid ${runner.pid})`,
   );
@@ -363,7 +380,36 @@ function publish(dir: string, result: Result): void {
   writeAtomic(dir, "result.json", JSON.stringify(result));
 }
 
-function run(dir: string, argv: string[]): void {
+/** Force only this still-owned OS child handle when native identity lookup is unavailable. */
+function forceOwnedChild(child: ReturnType<typeof spawn>): void {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  try {
+    child.kill("SIGKILL");
+  } catch (error) {
+    swallow(
+      error,
+      "owned foreground command could not be forced; tree remains unknown",
+    );
+  }
+}
+
+/** A readable runner identity can finish a handoff whose launch-time probe failed. */
+function registerRunnerSnapshot(
+  registry: string | undefined,
+  entry: string | undefined,
+  rows: ProcessRow[] | null,
+  resultFile: string,
+): boolean {
+  if (!registry || !entry) return false;
+  const self = rows?.find((row) => row.pid === process.pid);
+  if (!self?.start) return false;
+  publishProcessIdentity(registry, entry, self, resultFile);
+  return true;
+}
+
+function run(dir: string, argv: string[], entry: string | undefined): void {
+  const registry = process.env.JIG_PROCESS_REGISTRY_DIR;
+  let registered = false;
   const log = at(dir, "log");
   // Output passes through the runner so retention is bounded at the writer.
   const child = spawn(argv[0] as string, argv.slice(1), {
@@ -381,14 +427,14 @@ function run(dir: string, argv: string[]): void {
   // Captured BEFORE the first signal: once the command dies, its surviving
   // descendants are re-parented and a fresh snapshot no longer reaches them.
   let doomed: Target[] = [];
-  // `ps` failed at capture time: the tree is UNKNOWN, not empty. The witness
+  // Native enumeration failed at capture time: the tree is unknown, not empty. The witness
   // publishes nothing until a later capture succeeds.
   let captureUnresolved = false;
   // The command's own identity, recorded at the first readable snapshot and
   // checked on every later one: a recapture never adopts a pid's new owner.
   let rootIdentity: Target | null = null;
-  // No identity was ever recorded and the command is gone: its descendants
-  // can no longer be witnessed, and the result says so.
+  // The complete tree was never captured, or the owned command was forced
+  // during an unreadable snapshot: a later report must retain that uncertainty.
   let unverifiable = false;
   let witnessing = false;
   // Tracking and signalling are separate duties. `track` only maintains
@@ -408,6 +454,14 @@ function run(dir: string, argv: string[]): void {
       .then(async () => {
         if (child.pid === undefined || (witnessing && !recapture)) return;
         const rows = await processTable();
+        if (settled) return;
+        if (!registered)
+          registered = registerRunnerSnapshot(
+            registry,
+            entry,
+            rows,
+            at(dir, "result.json"),
+          );
         if (
           rows?.some(
             (r) =>
@@ -444,19 +498,18 @@ function run(dir: string, argv: string[]): void {
     return tracking;
   };
   const capture = () => track(true);
-  // When each identity was sent SIGTERM. The invariant every path that ends the
-  // command shares: each live tracked identity is TERMed ONCE, then gets
-  // `KILL_GRACE_MS` before the witness may SIGKILL it — including an identity
-  // only recovered after a failed snapshot, which was never signalled.
-  const termed = new Map<string, number>();
+  // Every tracked identity gets one grace interval before force. POSIX first
+  // sends SIGTERM; Windows starts the interval without a cooperative signal.
+  // An identity recovered after an unreadable snapshot gets its own full grace.
+  const graceStarted = new Map<string, number>();
   const idOf = (t: Target) => `${t.pid}:${t.start}`;
-  const termLive = () => {
+  const beginGrace = () => {
     for (const t of doomed) {
-      if (termed.has(idOf(t))) continue;
+      if (graceStarted.has(idOf(t))) continue;
       // Windows has no cooperative POSIX TERM: retain the identity and let
       // the witness force termination after the grace.
       if (process.platform !== "win32") signalPid(t.pid, "SIGTERM");
-      termed.set(idOf(t), Date.now());
+      graceStarted.set(idOf(t), Date.now());
     }
   };
   const timers: NodeJS.Timeout[] = [];
@@ -465,18 +518,29 @@ function run(dir: string, argv: string[]): void {
     settled = true;
     for (const t of timers) clearTimeout(t);
     try {
+      // A terminal report can explicitly retain uncertainty about descendants.
+      // Reinstate the pending boundary before publishing that report, even if
+      // this runner's own identity was recorded earlier.
+      if (registry && entry && result.treeWitnessed !== true)
+        beginProcessRegistration(registry, entry, at(dir, "result.json"));
       publish(dir, result);
+      if (registry && entry && result.treeWitnessed === true)
+        clearPendingProcessRegistration(registry, entry);
     } catch {
       // The result cannot be written (disk full): `wait` then reports the
       // launch lost (exit 21) once nothing is alive, rather than hanging.
     }
   };
-  // A terminal result is a claim that nothing of the command is still running,
-  // so it is published only after the captured targets are WITNESSED dead —
-  // SIGKILL delivery is not termination (it can stay pending in uninterruptible
-  // sleep). Until then the runner stays alive re-signalling and publishes
-  // nothing, so `wait` keeps reporting the launch as running and `launch`
-  // keeps refusing a competing command.
+  // A verified result requires the captured targets to be witnessed dead.
+  // Unreadable snapshots withhold publication. If the complete tree could not
+  // be captured, a later report retains treeWitnessed:false and says so.
+  const forceUnresolvedOwnedChild = () => {
+    if (process.platform !== "win32" || !captureUnresolved) return;
+    // A handle can safely end our command while CIM is unavailable, but cannot
+    // establish what its unobserved descendants did during that outage.
+    unverifiable = true;
+    forceOwnedChild(child);
+  };
   const settleWhenTerminated = (result: Result) => {
     if (settled || witnessing) return;
     witnessing = true;
@@ -487,11 +551,12 @@ function run(dir: string, argv: string[]): void {
       try {
         // Shrinks monotonically: a target seen dead is never signalled again.
         if (captureUnresolved) await capture();
-        if (!captureUnresolved) termLive();
-        // Only an identity whose TERM grace has elapsed is escalated to SIGKILL.
+        forceUnresolvedOwnedChild();
+        if (!captureUnresolved) beginGrace();
+        // Only an identity whose grace elapsed is eligible for force.
         const now = Date.now();
         const due = doomed.filter(
-          (t) => now - (termed.get(idOf(t)) ?? now) >= KILL_GRACE_MS,
+          (t) => now - (graceStarted.get(idOf(t)) ?? now) >= KILL_GRACE_MS,
         );
         const waiting = doomed.filter((t) => !due.includes(t));
         let rows = await processTable();
@@ -511,9 +576,10 @@ function run(dir: string, argv: string[]): void {
           unverifiable
             ? {
                 ...result,
-                note: `${result.note ? `${result.note}; ` : ""}the command's process tree could not be witnessed (its identity was never recorded, so its descendants were not tracked), so descendants may survive`,
+                treeWitnessed: false,
+                note: `${result.note ? `${result.note}; ` : ""}the command's complete process tree could not be witnessed, so descendants may survive`,
               }
-            : result,
+            : { ...result, treeWitnessed: true },
         );
       } finally {
         polling = false;
@@ -521,12 +587,9 @@ function run(dir: string, argv: string[]): void {
     }, WITNESS_POLL_MS);
     timers.push(poll as unknown as NodeJS.Timeout);
   };
-  // Every way the runner ends the command itself — the deadline, a log it can
-  // no longer write — goes through here, so each is bounded the same way: the
-  // tree is signalled, and the result is published on OUR terms after the kill
-  // grace, never contingent on `close`. `close` waits for the stdio pipes as
-  // well as the exit, and a descendant that outlived its parent (re-parented,
-  // so invisible to `captureTree`) holds them open indefinitely.
+  // Deadline and log failure share the same grace and owned-child fallback.
+  // Closing pipes lets the runner keep checking tree identities even when an
+  // unobserved descendant inherited those pipes and outlived its parent.
   const terminate = async (
     exitCode: number,
     note: string,
@@ -543,12 +606,11 @@ function run(dir: string, argv: string[]): void {
       // Best effort: the result's `note` still carries the reason.
     }
     await capture();
-    // SIGTERM every live tracked identity (verified against this snapshot), so
-    // descendants observed earlier get the same chance to clean up as the root.
-    if (!captureUnresolved) termLive();
-    // Capture failed: still TERM the command itself by pid (it is our
-    // unreaped child, so the number cannot have been reused); its descendants
-    // were tracked while it ran, so they are already in `doomed`.
+    // Begin grace for every verified tracked identity. POSIX sends SIGTERM;
+    // Windows allows the same interval before identity-checked force.
+    if (!captureUnresolved) beginGrace();
+    // On POSIX, an unreadable capture still allows TERM of our unreaped child.
+    // Windows uses the child handle to force it after the grace below.
     if (
       process.platform !== "win32" &&
       captureUnresolved &&
@@ -560,6 +622,7 @@ function run(dir: string, argv: string[]): void {
     }
     timers.push(
       setTimeout(() => {
+        forceUnresolvedOwnedChild();
         child.stdout?.destroy();
         child.stderr?.destroy();
         child.unref();
@@ -613,7 +676,11 @@ function run(dir: string, argv: string[]): void {
   // `close` follows `error` for a failed spawn; the first outcome wins.
   child.on("error", (err) => {
     write(`foreground-wait: could not start command: ${err.message}\n`);
-    settle({ exitCode: 127, signal: null });
+    settle({
+      exitCode: 127,
+      signal: null,
+      treeWitnessed: child.pid === undefined,
+    });
   });
   child.on("close", async (code, signal) => {
     // The command can exit on SIGTERM while a descendant ignores it, and
@@ -628,10 +695,9 @@ function run(dir: string, argv: string[]): void {
       return;
     }
     const exitCode = code ?? (signal ? 128 : 1);
-    // A terminal result claims nothing of the command is still running. The
-    // command exiting on its own does not establish that: a descendant the
-    // tracker already captured can outlive it, so end it through the same
-    // TERM → grace → witnessed-KILL path the deadline uses.
+    // Command exit alone is not tree proof. End any descendants the tracker
+    // observed through the same grace and witness path, retaining uncertainty
+    // when the complete tree could not be captured.
     await capture();
     if (doomed.length > 0 || captureUnresolved) {
       void terminate(
@@ -641,7 +707,11 @@ function run(dir: string, argv: string[]): void {
       );
       return;
     }
-    settle({ exitCode, signal: signal ?? null });
+    settle({
+      exitCode,
+      signal: signal ?? null,
+      treeWitnessed: !unverifiable && !captureUnresolved,
+    });
   });
 }
 
@@ -767,7 +837,7 @@ const after = sep === -1 ? [] : rest.slice(sep + 1);
 if (cmd === "launch") {
   process.exit(await launch(after));
 } else if (cmd === "_run") {
-  run(rest[0] as string, after);
+  run(rest[0] as string, after, rest[1]);
 } else if (cmd === "wait") {
   const i = rest.indexOf("--max-sec");
   const n = i === -1 ? 540 : Number.parseInt(rest[i + 1] ?? "", 10);

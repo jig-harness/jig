@@ -89,7 +89,10 @@ import {
 } from "../../../shared/process-table.ts";
 import {
   captureProcessTree,
-  captureRegisteredProcessTrees,
+  captureRegisteredTreeSnapshot,
+  type WindowsTreeState,
+  type ProcessTreeControl,
+  forceIdentityTargetsAndWitness,
   signalIdentityTargets,
   identityTargetsGone,
 } from "../../../shared/process-tree.ts";
@@ -1190,33 +1193,18 @@ async function stopVerifiedDriver(
     process.platform === "win32" && row.platform !== null && row.nonce !== null
       ? join(row.dir, `processes.${row.nonce}`)
       : null;
-  const refreshRegistered = async (): Promise<boolean> => {
-    if (registry === null) return true;
-    const registered = await captureRegisteredProcessTrees(registry);
-    if (registered === null) return false;
-    for (const process of registered) {
-      if (
-        !targets.some((p) => p.pid === process.pid && p.start === process.start)
-      )
-        targets.push(process);
-    }
-    return true;
-  };
+  const registryState: WindowsTreeState = { root: owner, targets };
+  const refreshRegistered = registryCompletionTracker(registry, registryState);
   if (!(await refreshRegistered())) {
     console.log(
-      `refusing to stop pid ${pid}: its foreground runner registry is unreadable or has a pending launch.`,
+      `driver pid ${pid}'s registry is incomplete; requesting cleanup while retaining its known process identities.`,
     );
-    return 1;
   }
   if (!(await requestVerifiedDriverStop(row, owner))) return 1;
   const graceSec = testPacing("DRIVE_PR_STOP_GRACE_SEC", 30, 1);
   const deadline = Date.now() + graceSec * 1000;
   while (Date.now() < deadline) {
-    if (
-      registry !== null &&
-      existsSync(registry) &&
-      !(await refreshRegistered())
-    ) {
+    if (!(await refreshRegistered())) {
       await sleep(0.25);
       continue;
     }
@@ -1228,52 +1216,91 @@ async function stopVerifiedDriver(
     }
     await sleep(0.25);
   }
-  return forceStopDriver(owner, targets, refreshRegistered, graceSec);
+  return forceStopDriver(
+    owner,
+    targets,
+    refreshRegistered,
+    graceSec,
+    registryState,
+  );
 }
 
-async function forceStopDriver(
+/** Directory removal cannot turn an unreadable registration into completed work. */
+export function registryCompletionTracker(
+  registry: string | null,
+  state: WindowsTreeState,
+): (control?: ProcessTreeControl) => Promise<boolean> {
+  let complete = false;
+  return async (control = {}) => {
+    if (registry === null) return true;
+    if (!existsSync(registry)) return complete;
+    complete = (
+      await captureRegisteredTreeSnapshot(registry, { ...control, state })
+    ).complete;
+    return complete;
+  };
+}
+
+async function forceKnownStopTargets(
   owner: ProcessRow,
   targets: ProcessRow[],
-  refreshRegistered: () => Promise<boolean>,
-  graceSec: number,
-): Promise<number> {
-  const pid = owner.pid;
-  const beforeForce = await processTable();
-  if (beforeForce === null) return 1;
-  if (beforeForce.some((p) => p.pid === pid && p.start === owner.start)) {
-    const latest = await captureProcessTree(pid, async () => beforeForce);
-    if (latest === null) return 1;
-    for (const process of latest) {
-      if (
-        !targets.some((p) => p.pid === process.pid && p.start === process.start)
-      )
-        targets.push(process);
-    }
+  refreshRegistered: (control?: ProcessTreeControl) => Promise<boolean>,
+  state: WindowsTreeState,
+): Promise<boolean> {
+  const deadline = Date.now() + 30_000;
+  const control: ProcessTreeControl = {
+    deadline,
+    state,
+    onKilled: (target) => {
+      state.forcedIdentities ??= new Set();
+      state.forcedIdentities.add(`${target.pid}:${target.start}`);
+    },
+  };
+  const refreshOwner = () =>
+    captureRegisteredTreeSnapshot("", {
+      ...control,
+      registrySnapshot: () => ({ roots: [owner], complete: true }),
+    });
+  while (Date.now() < deadline) {
+    await refreshOwner();
+    await refreshRegistered(control);
+    const count = targets.length;
+    const gone = await forceIdentityTargetsAndWitness(targets, control);
+    const root = await refreshOwner();
+    const complete = await refreshRegistered(control);
+    if (targets.length !== count) continue;
+    return gone && root.complete && complete;
   }
-  if (!(await refreshRegistered())) {
+  return false;
+}
+
+/** Force known identities even when a pending registration withholds completion. */
+export async function forceStopDriver(
+  owner: ProcessRow,
+  targets: ProcessRow[],
+  refreshRegistered: (control?: ProcessTreeControl) => Promise<boolean>,
+  graceSec: number,
+  registryState: WindowsTreeState = { root: owner, targets },
+): Promise<number> {
+  console.log(
+    `driver pid ${owner.pid} outlived the ${graceSec}s grace — forcing its captured process identities to exit.`,
+  );
+  const confirmed = await forceKnownStopTargets(
+    owner,
+    targets,
+    refreshRegistered,
+    registryState,
+  );
+  if (!confirmed) {
     console.log(
-      `cannot force pid ${pid}: its foreground runner registry is unreadable or has a pending launch; inspect before restarting.`,
+      `known identities for driver pid ${owner.pid} were forced, but a complete stop could not be witnessed; inspect before restarting.`,
     );
     return 1;
   }
   console.log(
-    `driver pid ${pid} outlived the ${graceSec}s grace — forcing its captured process identities to exit.`,
+    `stopped: driver pid ${owner.pid} and its captured pass tree exited; abandoned locks are recovered by the next drive.`,
   );
-  if (!(await signalIdentityTargets(targets, "SIGKILL"))) return 1;
-  const forcedDeadline = Date.now() + 5000;
-  while (Date.now() < forcedDeadline) {
-    if (await identityTargetsGone(targets)) {
-      console.log(
-        `stopped: driver pid ${pid} and its captured pass tree exited; abandoned locks are recovered by the next drive.`,
-      );
-      return 0;
-    }
-    await sleep(0.25);
-  }
-  console.log(
-    `could not witness driver pid ${pid}'s entire captured pass tree exit; inspect before restarting.`,
-  );
-  return 1;
+  return 0;
 }
 
 async function main(): Promise<number> {

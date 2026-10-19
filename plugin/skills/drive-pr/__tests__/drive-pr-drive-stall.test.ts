@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { advanceStallStreak } from "../scripts/drive";
@@ -149,7 +150,7 @@ describe("drive.ts loop control", () => {
       ["--keep-draft", "--no-head-sync", "--", ...PASS_LOUD],
       repo.dir,
     );
-    expect(r.exitCode).toBe(12);
+    expectSpawnExit({ ...r, stdout: null }, 12);
     expect(r.stderr).toContain("uncommitted state");
     expect(r.stderr).toContain("leftover-final-verify.txt");
     expect(r.stderr).not.toContain("in this run");
