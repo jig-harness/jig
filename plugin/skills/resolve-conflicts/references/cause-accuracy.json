@@ -1,0 +1,48 @@
+{
+  "schema": "cause-accuracy/v1",
+  "source": "a sample of the regions replayed from Jig's own history, read one by one",
+  "checkedOn": "2026-10-19",
+  "causes": {
+    "derived": {
+      "checked": 0,
+      "correct": 0
+    },
+    "structural": {
+      "checked": 2,
+      "correct": 2
+    },
+    "echo": {
+      "checked": 8,
+      "correct": 8
+    },
+    "version": {
+      "checked": 10,
+      "correct": 10
+    },
+    "sequence": {
+      "checked": 5,
+      "correct": 5
+    },
+    "tally": {
+      "checked": 10,
+      "correct": 10
+    },
+    "append": {
+      "checked": 10,
+      "correct": 10
+    },
+    "packed-list": {
+      "checked": 2,
+      "correct": 2
+    },
+    "adjacent": {
+      "checked": 10,
+      "correct": 10
+    },
+    "overlap": {
+      "checked": 10,
+      "correct": 6,
+      "note": "the wrong ones were counts of something outside the file, and release versions in a region that also held another change: both fall to overlap by design, since the region alone does not settle them"
+    }
+  }
+}
