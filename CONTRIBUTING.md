@@ -411,8 +411,12 @@ rules:
   change under `plugin/` beyond a fix, since it ships to every machine; a new
   run-time dependency; a change to a gate's policy. Bugs use the "Bug"
   template; questions and ideas that are not yet work go to
-  [Discussions](https://github.com/jig-harness/jig/discussions). Outside
-  contributors file nothing anywhere else.
+  [Discussions](https://github.com/jig-harness/jig/discussions). Anything
+  that must stay private, a vulnerability or a conduct report above all,
+  never goes in a public issue: use the repository's private report form
+  (Security, then "Report a vulnerability"), as [SECURITY.md](SECURITY.md)
+  and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) describe. Outside
+  contributors file no other kind of issue.
 - **Not taken:** material that names or copies an organization's own
   repository, keys or values; a practice no repository has run; a rewrite
   of a document or a skill; and a large unsolicited pull request, which is
