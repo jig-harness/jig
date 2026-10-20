@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { withoutLeakyGitEnv } from "../../../shared/guarded-git-spawn.ts";
 import { chrome, onePixel, required } from "./support.ts";
 
 // CI without Chromium still runs the static and merge tests in handback.test.ts.
@@ -34,7 +35,9 @@ test.skipIf(!chrome && !required)(
     );
     const env = {
       ...Object.fromEntries(
-        Object.entries(process.env).filter(([key]) => !key.startsWith("JIG_")),
+        Object.entries(withoutLeakyGitEnv()).filter(
+          ([key]) => !key.startsWith("JIG_"),
+        ),
       ),
       JIG_CONSUMER_ROOT: consumer,
       JIG_USER_LAYER: "off",

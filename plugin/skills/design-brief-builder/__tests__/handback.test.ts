@@ -8,6 +8,7 @@ import {
   staticChecks,
 } from "../scripts/handback.ts";
 import { decodePng, sameImage } from "../scripts/png.ts";
+import { withoutLeakyGitEnv } from "../../../shared/guarded-git-spawn.ts";
 import { onePixel } from "./support.ts";
 
 test("overlapping round fixes remain conflicts", () => {
@@ -76,7 +77,7 @@ test("complete round keeps raw provenance, flags regressions and derives facts",
   const exec = (argv: string[]) => {
     const p = Bun.spawnSync(argv, {
       cwd: dir,
-      env: { ...process.env, JIG_CONSUMER_ROOT: dir },
+      env: { ...withoutLeakyGitEnv(), JIG_CONSUMER_ROOT: dir },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -335,7 +336,7 @@ test("a merge refuses an output set, metadata included, whose paths alias each o
   const run = (argv: string[]) =>
     Bun.spawnSync(argv, {
       cwd: dir,
-      env: { ...process.env, JIG_CONSUMER_ROOT: dir },
+      env: { ...withoutLeakyGitEnv(), JIG_CONSUMER_ROOT: dir },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -415,7 +416,9 @@ test("the landing check finds a fix lost after the merge, until it is acknowledg
   const script = resolve(import.meta.dir, "../scripts/handback.ts");
   const env = {
     ...Object.fromEntries(
-      Object.entries(process.env).filter(([key]) => !key.startsWith("JIG_")),
+      Object.entries(withoutLeakyGitEnv()).filter(
+        ([key]) => !key.startsWith("JIG_"),
+      ),
     ),
     JIG_CONSUMER_ROOT: dir,
     JIG_USER_LAYER: "off",
