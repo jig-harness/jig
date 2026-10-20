@@ -152,6 +152,12 @@ function scripted(script: string[], reapMs = 200) {
   return { io, calls, times, warnings, warnedAt };
 }
 
+/** The clock times a group polled every 50 ms is probed at, from `from`
+ * through `to`. */
+function polls(from: number, to: number): number[] {
+  return Array.from({ length: (to - from) / 50 + 1 }, (_, i) => from + i * 50);
+}
+
 test("a group probe answered EPERM is present, not gone, and not an error", () => {
   expect(signalGroup(7, 0, scripted(["EPERM"]).io)).toBe("unsignalable");
   expect(signalGroup(7, 0, scripted(["ESRCH"]).io)).toBe("gone");
@@ -173,25 +179,24 @@ test("a group that answers EPERM while exiting is waited for until ESRCH, not ki
 test("a group still answering EPERM is waited for through the grace period before it is killed", async () => {
   const { io, calls, times } = scripted(["EPERM"]);
   await reapGroup(7, 300, io);
+  // Probed until the deadline and killed exactly at it, never later.
   const killed = calls.findIndex(([, signal]) => signal === "SIGKILL");
-  expect(killed).toBeGreaterThan(0);
-  expect(times[killed]).toBeGreaterThanOrEqual(300);
+  expect(killed).toBe(polls(0, 300).length);
+  expect(times.slice(0, killed + 1)).toEqual([...polls(0, 300), 300]);
 });
 
 test("a killed group still answering EPERM is probed through the reap window, then reported", async () => {
   const { io, calls, times, warnings, warnedAt } = scripted(["EPERM"], 400);
   await reapGroup(7, 100, io);
+  // Killed at the deadline, probed through the reap window and reported
+  // exactly at its end: a shorter or longer window changes the schedule.
   const killed = calls.findIndex(([, signal]) => signal === "SIGKILL");
-  expect(killed).toBeGreaterThan(0);
-  const killedAt = times.at(killed) ?? Number.NaN;
-  const after = times.slice(killed + 1);
-  // Probed repeatedly after the kill, the last probe at the window's end.
-  expect(after.length).toBeGreaterThan(1);
-  expect(after.at(-1)).toBeGreaterThanOrEqual(killedAt + 400);
+  expect(killed).toBe(polls(0, 100).length);
+  expect(times).toEqual([...polls(0, 100), 100, ...polls(100, 500)]);
   expect(warnings).toEqual([
     "spooled-run: process group 7 still has members after SIGKILL\n",
   ]);
-  expect(warnedAt[0]).toBeGreaterThanOrEqual(killedAt + 400);
+  expect(warnedAt).toEqual([500]);
 });
 
 test("a killed group that is reaped inside the reap window is not reported", async () => {
