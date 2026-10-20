@@ -53,19 +53,28 @@ const DEFAULT_ADR_DIR = "docs/adr";
 export const REPOSITORY_NAME = /^[a-z][a-z0-9_-]*$/;
 
 /**
+ * One character of a path segment, as the path tokens read it: a word
+ * character, `.`, `@`, `$` or `-`. A quoted span adds the space. Every rule
+ * below that asks whether a path follows is built from these, so a first
+ * segment the path tokens read (`2026.10/auth.ts`) is never one the
+ * qualifier rules miss.
+ */
+const SEGMENT = String.raw`[\w.@$-]`;
+const QUOTED_SEGMENT = String.raw`[\w.@$ -]`;
+
+/**
  * What may follow a qualifier's colon: a letter, `_`, `.`, `@` or `$`, or a
  * segment that starts with a digit or `-` and goes on to a `/` or an
- * extension (`2026/auth.ts`, `-tools/x.ts`). A line suffix (`path:12-40`),
- * `https://…` and prose such as `note: x` keep their meaning. Inside a quoted
- * span a segment may contain spaces (`2026 Auth.ts`), so the quoted form is
- * built from the same rule with a space among the segment's characters: the
+ * extension (`2026/auth.ts`, `2026.10.ts`, `-tools/x.ts`). A line suffix
+ * (`path:12-40`), `https://…` and prose such as `note: x` keep their meaning.
+ * Inside a quoted span a segment may contain spaces (`2026 Auth.ts`): the
  * reader, the explainer's grammar and the misplaced-qualifier detector all
  * read a quoted span with `QUOTED_QUALIFIED_START`.
  */
 const qualifiedStart = (segment: string) =>
   String.raw`(?=[A-Za-z_.@$]|${segment}+(?:\/|\.[A-Za-z]))`;
-const QUALIFIED_START = qualifiedStart(String.raw`[\w@$-]`);
-const QUOTED_QUALIFIED_START = qualifiedStart(String.raw`[\w@$ -]`);
+const QUALIFIED_START = qualifiedStart(SEGMENT);
+const QUOTED_QUALIFIED_START = qualifiedStart(QUOTED_SEGMENT);
 
 /** The `name:` that qualifies the citation after it. */
 const QUALIFIER = new RegExp(
@@ -221,7 +230,9 @@ const NEAR_QUALIFIER = new RegExp(
   String.raw`([^\s:\`(['",;]+):(?:(?=\`)|${QUALIFIED_START})`,
   "g",
 );
-const PATH_AFTER = /^(?:ADR-\d{3,4}\b|`|[\w.@$-]+\/|[\w@$-]*\.[A-Za-z])/;
+const PATH_AFTER = new RegExp(
+  String.raw`^(?:ADR-\d{3,4}\b|\`|${SEGMENT}+\/|${SEGMENT}*\.[A-Za-z])`,
+);
 
 /** The same `name:` at the start of a quoted span that contains whitespace, read with the quoted grammar. */
 const NEAR_QUALIFIER_QUOTED = new RegExp(

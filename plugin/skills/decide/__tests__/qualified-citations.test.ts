@@ -140,6 +140,26 @@ describe("the citation grammar", () => {
     expect(citedRepositories(["beta:2026/auth.ts"])).toEqual(["beta"]);
   });
 
+  it("reads a qualified path whose first segment starts with a digit or a hyphen and has a dot", () => {
+    const dotted = [
+      "beta:2026.10/auth.ts",
+      "beta:2026.10.ts",
+      "beta:-2026.10/auth.ts",
+    ];
+    expect(citedPaths(dotted)).toEqual([
+      "beta:-2026.10/auth.ts",
+      "beta:2026.10.ts",
+      "beta:2026.10/auth.ts",
+    ]);
+    expect(citedRepositories(dotted)).toEqual(["beta"]);
+    expect(repositoryProblems(dotted, {})).toEqual([
+      'a citation names repository "beta", but verifiedAt.repositories records no commit for it',
+    ]);
+    expect(citedPaths(["`beta:2026.10 Auth.ts`"])).toEqual([
+      "beta:2026.10 Auth.ts",
+    ]);
+  });
+
   it("reads a qualified dotfile and a qualified single-segment directory", () => {
     expect(citedPaths(["beta:.gitignore", "beta:services/"])).toEqual([
       "beta:.gitignore",
@@ -347,6 +367,8 @@ describe("a qualifier the grammar does not accept", () => {
     "`Beta:2026/Auth Flow.ts`",
     "`Beta:2026 Auth.ts`",
     "`1beta:2026 plans/x.ts`",
+    "Beta:2026.10/auth.ts",
+    "`Beta:2026.10 Auth.ts`",
   ])("is named, never read as a citation of this repository: %s", (text) => {
     const problems = repositoryProblems([text], { beta: "abc1234" });
     expect(problems.length).toBeGreaterThan(0);
@@ -363,6 +385,8 @@ describe("a qualifier the grammar does not accept", () => {
           "src/a.ts:12; https://example.com/a.html; Makefile:12",
           "src/a.ts:check; auth.ts:check; ENG-123",
           "beta:2026/auth.ts; beta:.gitignore; beta:services/",
+          "beta:2026.10/auth.ts; beta:2026.10.ts; `beta:2026.10 Auth.ts`",
+          "src/a.ts:12. src/b.ts:12-40.",
         ],
         { beta: "abc1234" },
       ),

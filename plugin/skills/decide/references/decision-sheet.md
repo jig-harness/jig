@@ -206,7 +206,7 @@ another repository with that repository's name: `beta:apps/api/auth.ts#check`,
 `beta:apps/api/auth.ts:12-40` or `beta:ADR-0002`. The name is lowercase
 (letters, digits, `-` and `_`, starting with a letter) and is followed by a
 colon and then a path or an ADR, never an issue key. A path may start with a
-digit (`beta:2026/auth.ts`); a number alone after the colon is a line suffix
+digit (`beta:2026/auth.ts`, `beta:2026.10/auth.ts`); a number alone after the colon is a line suffix
 (`file.ts:12`), never a qualifier. In backticks the name goes inside
 them, and the path there may contain spaces, even in a first segment
 that starts with a digit:
