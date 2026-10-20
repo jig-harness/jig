@@ -1,7 +1,7 @@
 ---
 title: "ADR-0007: Windows cancellation uses captured process identities"
 type: adr
-status: draft
+status: approved
 description: "Captured process identities and registered runners are sufficient for cooperative drive passes; Windows cancellation accepts the late-spawn race and provides no complete-tree containment guarantee"
 lifecycle: permanent
 version: "1.0"
@@ -17,7 +17,7 @@ tags: [adr, windows, process-control]
 
 # ADR-0007: Windows cancellation uses captured process identities
 
-**Status:** Draft · **Date:** 2026-10-20 · **Deciders:** Jig's maintainers, through pull-request review
+**Status:** Approved · **Date:** 2026-10-20 · **Deciders:** Jig's maintainers, through pull-request review
 
 ## Context
 
@@ -29,7 +29,7 @@ that connected it to the pass.
 Jig captures process identifiers together with creation times, retains
 observed descendants, and registers managed runners before their launch
 handoff completes. Its cancellation code rechecks identities before force,
-then reads the process table to witness their disappearance. Unreadable
+then reads the process table to confirm their disappearance. Unreadable
 identities, unresolved registrations and missing completion evidence keep
 cleanup unconfirmed. These are observations of managed work, not an
 operating-system boundary around all possible descendants.
@@ -51,10 +51,12 @@ for their present cancellation scope and add no Job Object implementation.
 Accept the remaining race explicitly: an unregistered descendant can be
 created after capture and lose its observable parent link before another
 capture. Cancellation can confirm that its captured identities disappeared
-while that unseen descendant remains alive. A successful `stop()` is a
-witness for the observed and registered work under this cooperative model;
+while that unseen descendant remains alive. A successful `stop()` is
+evidence about the observed and registered work under this cooperative model;
 it is not proof that every descendant is gone, or containment of arbitrary
-pass commands. Registry completion receipts preserve the same scope.
+pass commands. The record a confirmed cleanup leaves in the runner
+registry says no more than that: it confirms the observed and registered
+work only.
 
 Windows currently waits through the grace interval and then forces known
 targets. It does not send a graceful console break event. Generating
@@ -67,7 +69,7 @@ Revisit this decision when a supported pass demonstrates an escaping
 descendant in normal use, or a consumer needs cancellation with an
 operating-system membership guarantee. That work must define which launch
 paths belong to the job and test their native Windows lifecycle before
-claiming a stronger witness.
+claiming stronger evidence.
 
 ## Alternatives considered
 
@@ -88,7 +90,7 @@ claiming a stronger witness.
   justified by the current cooperative scope.
 - **A parent-identifier tree kill alone:** it cannot recover a descendant
   after its parent connection disappears, and command success cannot
-  witness disappearance. Keep the captured identities and registry.
+  confirm disappearance. Keep the captured identities and registry.
 
 ## Consequences
 
@@ -103,8 +105,9 @@ claiming a stronger witness.
 
 - Late unregistered descendants can escape observation and cancellation,
   even for a cooperative command that happens to launch during shutdown.
-- There is no graceful Windows console-break delivery, no kernel membership
-  witness and no automatic job-close termination if the driver crashes.
+- There is no graceful Windows console-break delivery, no operating-system
+  record of which processes belong to the pass, and no automatic job-close
+  termination if the driver crashes.
 - A stronger cancellation requirement needs a separately validated native
   launch implementation; more snapshots cannot eliminate the race.
 
@@ -134,5 +137,6 @@ coverage does not prove absence of unseen descendants.
 Jig has no decision-rules catalog. No catalog is introduced for this record.
 The ownership and uncertainty behavior above has tests, but the scope
 decision is semantic: reviewers must check that changes preserve unknown
-results and do not describe a captured-set witness as complete-tree
-containment. A text pattern cannot establish that distinction.
+results, and that they never describe "every captured identity
+disappeared" as "every descendant is gone". A text pattern cannot
+establish that distinction.
