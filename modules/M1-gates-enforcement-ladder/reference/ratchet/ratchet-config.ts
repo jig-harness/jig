@@ -342,7 +342,9 @@ function pruned(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(pruned);
   if (typeof v !== "object" || v === null) return v;
   const out: Record<string, unknown> = {};
-  for (const key of Object.keys(v).sort()) {
+  for (const key of Object.keys(v).sort((a, b) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  )) {
     if (key === "$schema" || key === "formatter") continue;
     const x = pruned((v as Record<string, unknown>)[key]);
     const empty =
