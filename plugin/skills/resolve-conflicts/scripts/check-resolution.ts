@@ -383,7 +383,9 @@ export function checkResolution(
           : "still unmerged: resolve it, then git add it (or git rm it)",
     });
   }
-  const mapped = Object.keys(snapshot.paths).sort();
+  const mapped = Object.keys(snapshot.paths).sort((a, b) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
   const written = writtenSizes(root, mapped);
   for (const path of mapped)
     checkPath(

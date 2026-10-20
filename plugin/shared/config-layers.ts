@@ -239,30 +239,45 @@ function checkShape(value: unknown, source: string): void {
 }
 
 /**
- * One layer's text, parsed; `path` names it in errors. Empty text is an empty
- * mapping. Text that cannot be parsed, that holds anything but a mapping, or
- * whose shape `checkShape` refuses is an error naming `path`.
+ * One layer's file, parsed; `null` when it does not exist. An empty file is
+ * an empty mapping. A file that cannot be parsed, that holds anything but
+ * a mapping, or whose shape `checkShape` refuses is an error naming the file.
  */
+export function readConfigFile(path: string): Record<string, unknown> | null {
+  if (!existsSync(path)) return null;
+  let parsed: unknown;
+  try {
+    parsed = load(readFileSync(path, "utf8"));
+  } catch (err) {
+    throw parseError(path, err);
+  }
+  return checkedConfig(parsed, path);
+}
+
+/** One layer's text, parsed as `readConfigFile` parses a file; `path` names it in errors. */
 function parseConfigText(text: string, path: string): Record<string, unknown> {
   let parsed: unknown;
   try {
     parsed = load(text);
   } catch (err) {
-    throw new Error(
-      `Jig configuration could not be parsed: ${path}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    throw parseError(path, err);
   }
+  return checkedConfig(parsed, path);
+}
+
+function parseError(path: string, err: unknown): Error {
+  return new Error(
+    `Jig configuration could not be parsed: ${path}: ${err instanceof Error ? err.message : String(err)}`,
+  );
+}
+
+/** A parsed layer as a mapping: empty when there is nothing, else checked. */
+function checkedConfig(parsed: unknown, path: string): Record<string, unknown> {
   if (parsed === null || parsed === undefined) return {};
   if (!isMapping(parsed))
     throw new Error(`Jig configuration must be a mapping: ${path}`);
   checkShape(parsed, path);
   return parsed;
-}
-
-/** One layer's file, parsed (see `parseConfigText`); `null` when it does not exist. */
-export function readConfigFile(path: string): Record<string, unknown> | null {
-  if (!existsSync(path)) return null;
-  return parseConfigText(readFileSync(path, "utf8"), path);
 }
 
 /**

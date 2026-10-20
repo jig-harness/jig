@@ -79,7 +79,7 @@ function mergeSettings(root: string): string[] {
 
 /** Variables that carry configuration into git besides its files. */
 const CONFIGURATION_VARIABLE =
-  /^GIT_CONFIG(?:|_PARAMETERS|_COUNT|_KEY_\d+|_VALUE_\d+|_GLOBAL|_SYSTEM|_NOSYSTEM)$/;
+  /^GIT_CONFIG(?:_PARAMETERS|_COUNT|_KEY_\d+|_VALUE_\d+|_GLOBAL|_SYSTEM|_NOSYSTEM)?$/;
 
 /** A tree holding the index's regular, staged `.gitattributes` files. */
 function indexAttributesTree(root: string, scratch: string): string {
