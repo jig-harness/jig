@@ -532,6 +532,6 @@ Read [`references/consistency.md`](references/consistency.md) first. The
 tests live in `__tests__/` and run from the Jig repository root with
 `bun test plugin/skills/drive-pr` (the root `bunfig.toml` supplies the test
 preloads); they never run from the plugin cache.
-`__tests__/terminal-states-consistency.test.ts` checks that every terminal
+The `__tests__/terminal-states*.test.ts` suites check that every terminal
 state's exit code agrees across `scripts/`, `SKILL.md`, this page and
 `references/terminal-states.md`.
