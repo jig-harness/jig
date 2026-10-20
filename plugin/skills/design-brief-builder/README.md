@@ -49,7 +49,9 @@ extension, and no two scenario/width pairs may resolve to the same file. A scree
 empty, `.` or `..` segment, and never under `.handback-render/`. Paths and
 scenario names are compared ignoring case and Unicode normalization, as
 Windows and macOS file systems do by default: `HOME.png` and `home.png` are the
-same file, and `.HANDBACK-RENDER/` is the renderer's directory. After the rubric
+same file, and `.HANDBACK-RENDER/` is the renderer's directory. A bundle, on
+disk or in a commit the check compares, that holds two files differing only
+that way is refused, since a case-sensitive file system would keep both. After the rubric
 review passes, README and the scorecard each state exactly one
 `Bar outcome: pass` outside comments and fenced examples, and the scorecard
 names the round it reviewed with exactly one

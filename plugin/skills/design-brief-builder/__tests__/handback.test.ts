@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { parseManifest } from "../scripts/contracts.ts";
 import {
+  distinctPaths,
   mergeText,
   outcomeFailure,
   regressedHunks,
@@ -294,6 +295,18 @@ test("scenario outputs stay distinct and out of the renderer's directory", () =>
     ).toThrow();
 });
 
+test("a bundle has one path per file system identity", () => {
+  expect(distinctPaths(["shots/home.png", "shots/away.png"], "b")).toEqual([
+    "shots/home.png",
+    "shots/away.png",
+  ]);
+  expect(() =>
+    distinctPaths(["shots/home.png", "shots/HOME.png"], "b"),
+  ).toThrow("shots/home.png and shots/HOME.png differ only in case");
+  expect(() => distinctPaths(["caf\u00e9.png", "cafe\u0301.png"], "b")).toThrow(
+    "differ only in case or Unicode normalization",
+  );
+});
 test("the landing check finds a fix lost after the merge, until it is acknowledged", async () => {
   const {
     cpSync,
@@ -460,6 +473,64 @@ test("the landing check finds a fix lost after the merge, until it is acknowledg
     expect(forbidden).toContain("forbidden text 'vendor': index.html");
     expect(forbidden).toContain("forbidden text 'returned': index.html");
     expect(forbidden.some((f) => f.includes("'example'"))).toBe(false);
+    // The previous round's screenshot, now named in another spelling.
+    writeFileSync(join(dir, "bundle/home.png"), onePixel([1, 2, 3]));
+    exec(["git", "add", "bundle/home.png"]);
+    exec(["git", "commit", "-m", "previous screenshot"]);
+    const shot = exec(["git", "rev-parse", "HEAD"]);
+    report.ours = shot;
+    writeFileSync(reportPath, JSON.stringify(report));
+    const manifest = (screenshot: string) =>
+      write(
+        "bundle/design-handback.json",
+        JSON.stringify({
+          version: 1,
+          scenarios: [
+            { name: "home", url: "index.html", ready: "main", screenshot },
+          ],
+        }),
+      );
+    manifest("HOME.png");
+    const unchanged = (failures: string[]) =>
+      failures.filter((f) => f.includes("differ from the previous round"));
+    expect(unchanged(landing())).toHaveLength(1);
+    writeFileSync(join(dir, "bundle/home.png"), onePixel([4, 5, 6]));
+    expect(unchanged(landing())).toEqual([]);
+    // A tree no file system can check out as two files is refused.
+    const blob = exec(["git", "rev-parse", `${shot}:bundle/home.png`]);
+    exec([
+      "git",
+      "update-index",
+      "--add",
+      "--cacheinfo",
+      `100644,${blob},bundle/Home.png`,
+    ]);
+    const aliasTree = exec(["git", "write-tree"]);
+    exec(["git", "read-tree", "HEAD"]);
+    report.ours = exec([
+      "git",
+      "commit-tree",
+      aliasTree,
+      "-p",
+      shot,
+      "-m",
+      "alias",
+    ]);
+    writeFileSync(reportPath, JSON.stringify(report));
+    const aliased = Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `import { landingFailures } from ${JSON.stringify(script)}; landingFailures("bundle")`,
+      ],
+      { cwd: dir, env, stdout: "pipe", stderr: "pipe" },
+    );
+    expectSpawnExit(aliased, 1);
+    expect(aliased.stderr.toString()).toContain(
+      "bundle/Home.png and bundle/home.png differ only in case",
+    );
+    report.ours = shot;
+    writeFileSync(reportPath, JSON.stringify(report));
     write(
       ".config/jig.yaml",
       JSON.stringify({

@@ -242,6 +242,25 @@ function safe(root: string, path: string): string {
     throw new ExitError(2, `path escapes bundle: ${path}`);
   return target;
 }
+/**
+ * Refuses two paths with one `pathKey`: a file system that folds case or
+ * Unicode normalization stores them as one file, one that does not stores
+ * them as two, so only a bundle without such aliases has one identity per
+ * file everywhere.
+ */
+export function distinctPaths(paths: string[], source: string): string[] {
+  const seen = new Map<string, string>();
+  for (const path of paths) {
+    const other = seen.get(pathKey(path));
+    if (other !== undefined)
+      throw new ExitError(
+        2,
+        `${source}: ${other} and ${path} differ only in case or Unicode normalization`,
+      );
+    seen.set(pathKey(path), path);
+  }
+  return paths;
+}
 function list(dir: string, prefix = ""): string[] {
   return readdirSync(join(dir, prefix), { withFileTypes: true }).flatMap(
     (entry) => {
@@ -260,9 +279,12 @@ function tree(ref: string, bundle: string): Map<string, Buffer> {
       .some((line) => line.startsWith("120000 ") || line.startsWith("160000 "))
   )
     throw new ExitError(2, "Bundle cannot contain symlinks or submodules");
-  const names = git("ls-tree", "-r", "--name-only", "-z", ref, "--", bundle)
-    .split("\0")
-    .filter(Boolean);
+  const names = distinctPaths(
+    git("ls-tree", "-r", "--name-only", "-z", ref, "--", bundle)
+      .split("\0")
+      .filter(Boolean),
+    `${ref}:${bundle}`,
+  );
   return new Map(
     names.map((path) => {
       const p = Bun.spawnSync(["git", "show", `${ref}:${path}`], {
@@ -479,6 +501,10 @@ function screenshotChecks(
   previous: Map<string, Buffer>,
 ): { fresh: boolean; changed: boolean; failures: string[] } {
   const evidenceKeys = new Set(evidence.map(pathKey));
+  const delivered = new Map(files.map((p) => [pathKey(p), p]));
+  const before = new Map(
+    [...previous].map(([p, data]) => [pathKey(p), data] as const),
+  );
   const inputs = files.filter(
     (p) =>
       !p.endsWith("/") &&
@@ -494,23 +520,23 @@ function screenshotChecks(
     changed = true;
   const failures: string[] = [];
   for (const path of evidence) {
-    const file = safe(dir, path);
-    if (!existsSync(file)) {
+    const actual = delivered.get(pathKey(path));
+    if (actual === undefined || actual.endsWith("/")) {
       fresh = false;
       changed = false;
       continue;
     }
+    const file = safe(dir, actual);
     fresh &&= statSync(file).mtimeMs > newestInput;
-    const delivered = image(readFileSync(file));
-    if (typeof delivered === "string") {
-      failures.push(`screenshot is not a valid PNG (${delivered}): ${path}`);
+    const shot = image(readFileSync(file));
+    if (typeof shot === "string") {
+      failures.push(`screenshot is not a valid PNG (${shot}): ${path}`);
       changed = false;
       continue;
     }
-    const old = previous.get(path);
-    const before = old && image(old);
-    if (before)
-      changed &&= typeof before === "string" || !sameImage(before, delivered);
+    const old = before.get(pathKey(path));
+    const last = old && image(old);
+    if (last) changed &&= typeof last === "string" || !sameImage(last, shot);
   }
   return { fresh, changed, failures };
 }
@@ -632,7 +658,7 @@ export function landingFailures(requested: string): {
       2,
       "README export base differs from raw delivery report",
     );
-  const files = list(dir);
+  const files = distinctPaths(list(dir), bundle);
   const current = currentFiles(dir, files);
   const evidence = screenshots(manifest, config.widths);
   const keys = evidence.map(pathKey);
