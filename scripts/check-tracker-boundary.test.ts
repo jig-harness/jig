@@ -135,7 +135,10 @@ describe("tokens", () => {
     ],
     ['const run = ( /* grouped */ (cp.spawnSync) );\nrun("linear", args);'],
     ['(cp.spawnSync)("linear", args);'],
-    ['spawnSync(process.execPath, "linear", args);'],
+    ['spawnSync(/* program ( */ "linear", args);'],
+    ['spawnSync(/* program ) */ "linear", args);'],
+    ['spawnSync( // program (\n  "linear", args);'],
+    ['execFileSync(["linear"]);'],
   ])(
     "a call written around comments or through an alias is found: %s",
     (code) => {
@@ -171,7 +174,9 @@ describe("tokens", () => {
       'from os import spawnlp as sp\nsp(os.P_WAIT, "linear", "linear", "issue")',
     ],
     ['os.posix_spawnp("linear", ["linear", "issue"], os.environ)'],
-    ['subprocess.run(cmd("x"), "linear")'],
+    ['subprocess.run(["linear"])'],
+    ['os.spawnlp(0, "linear", "linear")'],
+    ['os.spawnvp(os.P_WAIT, /* program ( */ ["linear", "issue"])'],
     ['from asyncio import create_subprocess_exec as cse\ncse("linear")'],
     ['import asyncio as aio\naio.create_subprocess_exec("linear")'],
   ])("a Python run is found: %s", (code) => {
@@ -188,8 +193,20 @@ describe("tokens", () => {
     ['import subprocess\nimport os, json as run\nlog("linear")'],
     ['log(level, "linear", value);'],
     ['const size = (cp.spawnSync)(cmd);\nsize("linear", args);'],
+    ['spawnSync("echo", ["linear"]);'],
+    ['execFileSync("echo", ["hi", "linear"]);'],
+    ['spawnSync(process.execPath, "linear", args);'],
+    ['spawnSync(cmd("x"), "linear");'],
   ])("a call that does not launch the client is not: %s", (code) => {
     expect(violations("plugin/x.ts", code)).toEqual([]);
+  });
+  test.each([
+    ['subprocess.run(["echo", "linear"])'],
+    ['os.spawnlp(os.P_WAIT, "echo", "linear")'],
+    ['os.execlp("echo", "echo", "linear")'],
+    ['subprocess.run(cmd("x"), "linear")'],
+  ])("linear passed to another program is not a run: %s", (code) => {
+    expect(violations("plugin/x.py", code)).toEqual([]);
   });
   test("a long run of comment markers is matched in linear time", () => {
     const text = `(/*${"*//*".repeat(50_000)}`;

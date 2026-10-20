@@ -9,12 +9,15 @@
 // first element is the literal `linear`; a call whose first argument is
 // `linear` and whose second is an argument list written out; a call to a
 // process launcher (`LAUNCHERS`, `QUALIFIED` and `PYTHON_LAUNCHERS` below)
-// on any receiver, or to a name the file binds to one, with `linear` among
-// its own arguments, in any position (`os.spawnlp(os.P_WAIT, "linear", …)`
-// names the program second); or a command line `linear <subcommand>`.
-// Grouping parentheses around a launcher (`(cp.spawnSync)`) keep it one. A
-// call to any other function with `linear` first (`console.log("linear",
-// v)`) names the client without running it.
+// on any receiver, or to a name the file binds to one, with `linear` (or an
+// argument list starting with it) where that launcher takes its program: the
+// first argument, and for a launcher taking a mode first (`MODE_FIRST`:
+// `os.spawnlp(os.P_WAIT, "linear", …)`) the second; or a command line
+// `linear <subcommand>`. Grouping parentheses around a launcher
+// (`(cp.spawnSync)`) keep it one. `linear` anywhere else in a launcher's
+// arguments (`spawnSync("echo", ["linear"])`) is data for another program,
+// and a call to any other function with `linear` first
+// (`console.log("linear", v)`) names the client without running it.
 //
 // This is a text check, not a parser, and what it guarantees is stated in
 // terms of those forms. Runs are looked for in the file's text as written,
@@ -23,12 +26,13 @@
 // alike: no comment hides one of these forms, and a run written inside a
 // comment's prose is reported like one in the code. Nothing is lexed, so no
 // string, regular expression or template the check reads wrongly can blank
-// code out of its view. The file is matched as a whole, so an argument list
-// or a spawn split over several lines is found like one written on a single
-// line; a command line stays on one line. A launcher missing from the lists,
-// a program name the code assembles at run time, or `linear` inside a
-// call nested in a launcher's arguments, is not seen: a new launcher is added
-// to its list.
+// code out of its view. Only gaps are read between a launcher's opening
+// parenthesis and its program, so what a comment there holds, parentheses
+// included, cannot shift the program's position. The file is matched as a
+// whole, so an argument list or a spawn split over several lines is found
+// like one written on a single line; a command line stays on one line. A
+// launcher missing from the lists, or a program name the code assembles at
+// run time, is not seen: a new launcher is added to its list.
 //
 // Scope: every code file (TypeScript, JavaScript, shell, Python) under
 // `plugin/` outside the adapters' directory, and every file of the planning
@@ -118,8 +122,11 @@ const LAUNCHERS = [
 const PYTHON_LAUNCHERS: Record<string, string> = {
   subprocess: "run|call|Popen|check_call|check_output",
   asyncio: "create_subprocess_(?:exec|shell)",
-  os: "exec[lv]p?e?|spawn[lv]p?e?|posix_spawnp?",
+  os: "exec[lv]p?e?|posix_spawnp?",
 };
+
+/** The Python launchers that take a mode before their program, by module. */
+const MODE_FIRST: Record<string, string> = { os: "spawn[lv]p?e?" };
 
 /**
  * What may stand between two of a run's tokens: white space, a comment in
@@ -137,13 +144,17 @@ const DOT = String.raw`${GAP}\.${GAP}`;
 /** A gap that stays on its line: a Python statement ends at a bare line break. */
 const LINE_GAP = String.raw`(?:[ \t\f\v\r]|#[^\n]*(?![^\n])|\\\r?\n)*`;
 
+/** `module.name` for each of a table's modules and the names it exports. */
+const qualifiedIn = (table: Record<string, string>) =>
+  Object.entries(table).map(
+    ([module, names]) => String.raw`${module}${DOT}(?:${names})`,
+  );
+
 /** Launchers whose name means one only on their own module. */
 const QUALIFIED = [
   String.raw`Bun${DOT}spawn(?:Sync)?`,
   String.raw`Deno${DOT}Command`,
-  ...Object.entries(PYTHON_LAUNCHERS).map(
-    ([module, names]) => String.raw`${module}${DOT}(?:${names})`,
-  ),
+  ...qualifiedIn(PYTHON_LAUNCHERS),
 ];
 
 const IDENT = String.raw`[A-Za-z_$][\w$]*`;
@@ -154,12 +165,10 @@ const IDENT = String.raw`[A-Za-z_$][\w$]*`;
  * cost more than its length.
  */
 const RECEIVER = String.raw`(?:${IDENT}(?:${GAP}\([^()\n]*\))?${DOT})*`;
-/**
- * A launcher call's own arguments up to a point: anything but a parenthesis,
- * or a call nested one level deep. The two alternatives start differently,
- * so the arguments are read one way only.
- */
-const ARGS = String.raw`(?:[^()]|\([^()]*\))*?`;
+/** A launcher's mode argument: a name, a dotted one, or a number. */
+const MODE = String.raw`(?:(?:${IDENT}${DOT})*${IDENT}|\d+)`;
+/** The program where a launcher takes it: the literal, or a list starting with it. */
+const PROGRAM = String.raw`(?:\[${GAP})?${LINEAR}`;
 const quoteName = (name: string) => name.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
 
 /** One item of a Python import list: a dotted name, optionally `as` an alias. */
@@ -184,15 +193,17 @@ function importItems(list: string): [string, string | undefined][] {
     });
 }
 
-/** The names `from module import …` binds to a launcher, under their alias where they have one. */
-function fromImports(code: string): string[] {
+/** The names `from module import …` binds to one of a table's launchers, under their alias where they have one. */
+function fromImports(code: string, table: Record<string, string>): string[] {
   const names: string[] = [];
   const from = new RegExp(
     String.raw`(?<![\w$.])from${GAP1}([\w.]+)${GAP1}import${GAP}(${IMPORT_LIST})`,
     "g",
   );
   for (const m of code.matchAll(from)) {
-    const launchers = PYTHON_LAUNCHERS[m[1] as string];
+    const launchers = Object.hasOwn(table, m[1] as string)
+      ? table[m[1] as string]
+      : undefined;
     if (!launchers) continue;
     const launcher = new RegExp(`^(?:${launchers})$`);
     for (const [name, alias] of importItems(m[2] as string))
@@ -201,8 +212,11 @@ function fromImports(code: string): string[] {
   return names;
 }
 
-/** The modules `import a, module as m` names, as `[m, the pattern of its launchers]`. */
-function moduleAliases(code: string): [string, string][] {
+/** The modules of a table `import a, module as m` names, as `[m, the pattern of its launchers]`. */
+function moduleAliases(
+  code: string,
+  table: Record<string, string>,
+): [string, string][] {
   const modules: [string, string][] = [];
   const plain = new RegExp(
     String.raw`(?<![\w$.])import${GAP1}(${IMPORT_LIST})`,
@@ -210,7 +224,7 @@ function moduleAliases(code: string): [string, string][] {
   );
   for (const m of code.matchAll(plain))
     for (const [name, alias] of importItems(m[1] as string)) {
-      const launchers = PYTHON_LAUNCHERS[name];
+      const launchers = Object.hasOwn(table, name) ? table[name] : undefined;
       if (launchers && alias) modules.push([alias, launchers]);
     }
   return modules;
@@ -225,46 +239,60 @@ function moduleAliases(code: string): [string, string][] {
  * `import subprocess as sp`'s module name; followed
  * through a chain of such bindings.
  */
-function launcherNames(code: string): {
-  names: Set<string>;
-  modules: [string, string][];
-} {
-  const names = new Set(LAUNCHERS);
-  for (const name of fromImports(code)) names.add(name);
-  const modules = moduleAliases(code);
+function launcherNames(
+  code: string,
+  base: string[],
+  table: Record<string, string>,
+  qualifiedNames: string[],
+): string {
+  const names = new Set(base);
+  for (const name of fromImports(code, table)) names.add(name);
+  const known = () => [...names].map(quoteName).join("|");
+  const qualified = () =>
+    [
+      ...qualifiedNames,
+      ...(names.size ? [String.raw`(?:${IDENT}${DOT})?(?:${known()})`] : []),
+    ].join("|");
   for (let size = -1; size !== names.size; ) {
     size = names.size;
-    const known = [...names].map(quoteName).join("|");
-    const qualified = [
-      ...QUALIFIED,
-      String.raw`(?:${IDENT}${DOT})?(?:${known})`,
-    ].join("|");
     for (const pattern of [
-      String.raw`(?<![\w$])(?:${known})${GAP1}as${GAP1}(${IDENT})`,
-      String.raw`(?<![\w$.])(?:${known})${GAP}:${GAP}(${IDENT})`,
-      String.raw`\b(?:const|let|var)${GAP1}(${IDENT})${GAP}=${GAP}(?:\(${GAP})*${RECEIVER}(?:${qualified})(?:${GAP}\))*(?![\w$]|${GAP}[().])`,
+      ...(names.size
+        ? [
+            String.raw`(?<![\w$])(?:${known()})${GAP1}as${GAP1}(${IDENT})`,
+            String.raw`(?<![\w$.])(?:${known()})${GAP}:${GAP}(${IDENT})`,
+          ]
+        : []),
+      String.raw`\b(?:const|let|var)${GAP1}(${IDENT})${GAP}=${GAP}(?:\(${GAP})*${RECEIVER}(?:${qualified()})(?:${GAP}\))*(?![\w$]|${GAP}[().])`,
     ])
       for (const m of code.matchAll(new RegExp(pattern, "g")))
         names.add(m[1] as string);
   }
-  return { names, modules };
+  return [
+    qualified(),
+    ...moduleAliases(code, table).map(
+      ([m, launchers]) => String.raw`${quoteName(m)}${DOT}(?:${launchers})`,
+    ),
+  ].join("|");
 }
 
 /** The pattern of a run of the `linear` client in a file's text. */
 function runPattern(code: string): RegExp {
-  const { names, modules } = launcherNames(code);
-  const launcher = [
-    ...QUALIFIED,
-    ...modules.map(
-      ([m, launchers]) => String.raw`${quoteName(m)}${DOT}(?:${launchers})`,
-    ),
-    String.raw`(?:${IDENT}${DOT})?(?:${[...names].map(quoteName).join("|")})`,
-  ].join("|");
+  const launcher = launcherNames(code, LAUNCHERS, PYTHON_LAUNCHERS, QUALIFIED);
+  const modeFirst = launcherNames(
+    code,
+    [],
+    MODE_FIRST,
+    qualifiedIn(MODE_FIRST),
+  );
+  /** A call to one of `launchers`, through any grouping, up to its first argument. */
+  const call = (launchers: string) =>
+    String.raw`(?<![\w$])(?:new${GAP1})?(?:${launchers})(?:${GAP}\))*${GAP}\(${GAP}`;
   return new RegExp(
     [
       String.raw`\[${GAP}${LINEAR}${GAP},`,
       String.raw`\(${GAP}${LINEAR}${GAP},${GAP}\[`,
-      String.raw`(?<![\w$])(?:new${GAP1})?(?:${launcher})(?:${GAP}\))*${GAP}\(${ARGS}${LINEAR}`,
+      `${call(launcher)}${PROGRAM}`,
+      `${call(modeFirst)}${MODE}${GAP},${GAP}${PROGRAM}`,
       String.raw`(?<![\w./-])linear[ \t]+(?:api|auth|config|issues?|teams?|projects?|labels?|cycles?|comments?|documents?|milestones?|initiatives?)\b`,
     ].join("|"),
     "g",
