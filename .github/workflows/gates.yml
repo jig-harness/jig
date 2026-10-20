@@ -146,6 +146,10 @@ jobs:
           # fail here when it is missing instead of being skipped with a
           # warning.
           JIG_REQUIRE_BROWSER: "1"
+          # The runner also has Chromium, which the design-brief tests would
+          # otherwise prefer; the AppArmor profile above names Chrome's own
+          # executable alone, so they launch that one.
+          JIG_TEST_CHROMIUM: /opt/google/chrome/chrome
           # And Claude Code is fetched above, so the plugin check fails
           # without its validator instead of skipping it.
           JIG_REQUIRE_CLAUDE: "1"
