@@ -13,7 +13,8 @@
 // argument list starting with it) where that launcher takes its program: the
 // first argument, and for a launcher taking a mode first (`MODE_FIRST`:
 // `os.spawnlp(os.P_WAIT, "linear", …)`) the second, after a mode written as
-// any expression (`MODE`); or a command line
+// any expression (`MODE`, its strings read as Python reads them, triple
+// quotes included); or a command line
 // `linear <subcommand>`. Grouping parentheses around a launcher
 // (`(cp.spawnSync)`) keep it one. `linear` anywhere else in a launcher's
 // arguments (`spawnSync("echo", ["linear"])`) is data for another program,
@@ -168,8 +169,17 @@ const IDENT = String.raw`[A-Za-z_$][\w$]*`;
 const RECEIVER = String.raw`(?:${IDENT}(?:${GAP}\([^()\n]*\))?${DOT})*`;
 /** White space, a comment or a continued line, in Python (the one language a mode-first launcher is in). */
 const PY_SPACE = String.raw`(?:\s|#[^\n]*(?![^\n])|\\\r?\n)`;
-/** A one-line Python string literal. */
-const PY_STRING = String.raw`(?:'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*")`;
+/**
+ * A Python string literal as Python's lexer reads it: triple-quoted over any
+ * lines, or on one line, where a backslash escapes any character, a line
+ * break included. A one-line string never starts a triple quote (`""` before
+ * `"` opens `"""`), and a triple-quoted one ends at its first unescaped
+ * closing triple, so a string is read one way only. A prefix (`r`, `b`, `f`)
+ * is read as the characters before it.
+ */
+const pyString = (q: string) =>
+  String.raw`${q}{3}(?:[^${q}\\]|\\[\s\S]|${q}(?!${q}{2}))*${q}{3}|${q}(?!${q}{2})(?:[^${q}\\\n]|\\[\s\S])*${q}`;
+const PY_STRING = `(?:${pyString("'")}|${pyString('"')})`;
 /**
  * Any part of a Python expression, its brackets nested `depth` deep: a
  * character outside brackets, strings and gaps (a comma too, inside

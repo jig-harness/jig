@@ -186,6 +186,9 @@ describe("tokens", () => {
     ['os.spawnlp(MODES["a, b"], "linear", "linear")'],
     ['from os import spawnvp as sp\nsp(int(0), ["linear"])'],
     ['import os as o\no.spawnlp((o.P_WAIT), "linear", "linear")'],
+    ['os.spawnlp(int("""\n0\n"""), "linear", "linear")'],
+    ["os.spawnlp(int('''a, b'''), \"linear\", \"linear\")"],
+    ['os.spawnlp(MODES["a\\\nb, c"], "linear", "linear")'],
     ['from asyncio import create_subprocess_exec as cse\ncse("linear")'],
     ['import asyncio as aio\naio.create_subprocess_exec("linear")'],
   ])("a Python run is found: %s", (code) => {
@@ -214,6 +217,11 @@ describe("tokens", () => {
     ['os.spawnlp(os.P_WAIT, "echo", "linear")'],
     ['os.spawnlp(int(0), "echo", "linear")'],
     ['os.spawnlp(pick("linear", 1), "echo", "linear")'],
+    [
+      'os.spawnlp(os.P_WAIT if True else """unused", "linear", "x""", "echo", "echo")',
+    ],
+    ["os.spawnlp(m if n else '''a', 'linear', 'b''', 'echo', 'linear')"],
+    ['os.spawnlp(x if y else """a\\""", "linear", """, "echo", "linear")'],
     ['os.execlp("echo", "echo", "linear")'],
     ['subprocess.run(cmd("x"), "linear")'],
   ])("linear passed to another program is not a run: %s", (code) => {
@@ -234,6 +242,8 @@ describe("tokens", () => {
     [`os.spawnlp(${"(".repeat(20_000)}`.repeat(5)],
     [`os.spawnlp(${"x ".repeat(20_000)}`.repeat(5)],
     [`os.spawnlp(f(${" a #c\n".repeat(20_000)}`],
+    [`os.spawnlp("""${"x ".repeat(20_000)}`.repeat(5)],
+    [`os.spawnlp(${'"""a""'.repeat(20_000)}`],
   ])(
     "a binding that names no launcher is matched in linear time: %#",
     (text) => {
