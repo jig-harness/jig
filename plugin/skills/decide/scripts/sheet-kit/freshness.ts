@@ -56,9 +56,16 @@ export const REPOSITORY_NAME = /^[a-z][a-z0-9_-]*$/;
  * What may follow a qualifier's colon: a letter, `_`, `.`, `@` or `$`, or a
  * segment that starts with a digit or `-` and goes on to a `/` or an
  * extension (`2026/auth.ts`, `-tools/x.ts`). A line suffix (`path:12-40`),
- * `https://…` and prose such as `note: x` keep their meaning.
+ * `https://…` and prose such as `note: x` keep their meaning. Inside a quoted
+ * span a segment may contain spaces (`2026 Auth.ts`), so the quoted form is
+ * built from the same rule with a space among the segment's characters: the
+ * reader, the explainer's grammar and the misplaced-qualifier detector all
+ * read a quoted span with `QUOTED_QUALIFIED_START`.
  */
-const QUALIFIED_START = String.raw`(?=[A-Za-z_.@$]|[\w@$-]+(?:\/|\.[A-Za-z]))`;
+const qualifiedStart = (segment: string) =>
+  String.raw`(?=[A-Za-z_.@$]|${segment}+(?:\/|\.[A-Za-z]))`;
+const QUALIFIED_START = qualifiedStart(String.raw`[\w@$-]`);
+const QUOTED_QUALIFIED_START = qualifiedStart(String.raw`[\w@$ -]`);
 
 /** The `name:` that qualifies the citation after it. */
 const QUALIFIER = new RegExp(
@@ -66,13 +73,13 @@ const QUALIFIER = new RegExp(
   "g",
 );
 const QUALIFIED_SPAN = new RegExp(
-  String.raw`^([a-z][a-z0-9_-]*):${QUALIFIED_START}(.*)$`,
+  String.raw`^([a-z][a-z0-9_-]*):${QUOTED_QUALIFIED_START}(.*)$`,
   "s",
 );
 
-/** A leading qualifier on one citation, optionally inside its opening backtick: what the explainer's citation grammar strips before checking the rest. */
+/** A leading qualifier on one citation, optionally inside its opening backtick: what the explainer's citation grammar strips before checking the rest. The opening backtick is captured, so replacing the match with `$1` keeps the quote. */
 export const LEADING_QUALIFIER = new RegExp(
-  String.raw`^(\`?)[a-z][a-z0-9_-]*:${QUALIFIED_START}`,
+  String.raw`^(?:(\`)[a-z][a-z0-9_-]*:${QUOTED_QUALIFIED_START}|[a-z][a-z0-9_-]*:${QUALIFIED_START})`,
 );
 
 /**
@@ -216,6 +223,11 @@ const NEAR_QUALIFIER = new RegExp(
 );
 const PATH_AFTER = /^(?:ADR-\d{3,4}\b|`|[\w.@$-]+\/|[\w@$-]*\.[A-Za-z])/;
 
+/** The same `name:` at the start of a quoted span that contains whitespace, read with the quoted grammar. */
+const NEAR_QUALIFIER_QUOTED = new RegExp(
+  String.raw`^([^\s:]+):${QUOTED_QUALIFIED_START}`,
+);
+
 const STICKY_QUALIFIER = new RegExp(QUALIFIER.source, "y");
 
 /** Whether the `name:` that `NEAR_QUALIFIER` matched at `m` is a qualifier the scanner does not read. */
@@ -227,11 +239,25 @@ function isMalformed(text: string, m: RegExpExecArray): boolean {
   return STICKY_QUALIFIER.exec(text)?.[0] !== m[0] || after.startsWith("`");
 }
 
+/** The `name:` at the start of a quoted span that `QUALIFIED_SPAN` does not read, by the same rule `isMalformed` applies outside quotes. */
+function malformedInSpan(span: string): string | undefined {
+  const m = NEAR_QUALIFIER_QUOTED.exec(span);
+  if (!m || QUALIFIED_SPAN.test(span)) return undefined;
+  const name = m[1] as string;
+  const after = span.slice(m[0].length).replace(/ /g, "_");
+  return /[./]/.test(name) && !PATH_AFTER.test(after) ? undefined : `${name}:`;
+}
+
 function malformedQualifiers(citations: readonly string[]): string[] {
   const found = new Set<string>();
   for (const text of citations)
     for (const m of text.matchAll(NEAR_QUALIFIER))
       if (isMalformed(text, m)) found.add(`${m[1]}:`);
+  for (const text of citations)
+    for (const span of quotedPaths(text).paths) {
+      const name = malformedInSpan(span);
+      if (name !== undefined) found.add(name);
+    }
   for (const text of citations)
     for (const name of scanText(text).idle) found.add(name);
   return [...found].sort();

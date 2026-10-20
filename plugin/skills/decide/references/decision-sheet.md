@@ -208,7 +208,9 @@ another repository with that repository's name: `beta:apps/api/auth.ts#check`,
 colon and then a path or an ADR, never an issue key. A path may start with a
 digit (`beta:2026/auth.ts`); a number alone after the colon is a line suffix
 (`file.ts:12`), never a qualifier. In backticks the name goes inside
-them: `` `beta:.run/Backend Dev.run.xml` ``. An unqualified citation always
+them, and the path there may contain spaces, even in a first segment
+that starts with a digit:
+`` `beta:.run/Backend Dev.run.xml` ``, `` `beta:2026 Auth.ts` ``. An unqualified citation always
 means the repository the guard runs in, so two repositories that both number
 their ADRs from `ADR-0001` never read each other's file.
 
