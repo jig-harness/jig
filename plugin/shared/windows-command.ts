@@ -16,9 +16,14 @@ interface Command {
 }
 
 function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  // The code-unit-least of the case-insensitive matches, so the choice
+  // does not depend on the environment's key order.
   const key = Object.keys(env)
-    .sort()
-    .find((key) => key.toUpperCase() === name);
+    .filter((key) => key.toUpperCase() === name)
+    .reduce<string | undefined>(
+      (least, key) => (least === undefined || key < least ? key : least),
+      undefined,
+    );
   return key === undefined ? undefined : env[key];
 }
 
@@ -180,8 +185,12 @@ function expandedShimLength(
         // One pass, so an expanded value is never itself re-expanded.
         line.replace(
           /%~dp0|%dp0%|%_prog%|%comspec%|%pathext(?::[^%\n]*)?%|%\*/gi,
-          (variable) =>
-            values[variable.toUpperCase().replace(/:.*%$/, "%")] ?? variable,
+          (variable) => {
+            const name = variable.toUpperCase();
+            // %PATHEXT:find=replace% is measured as the whole value.
+            const key = name.startsWith("%PATHEXT:") ? "%PATHEXT%" : name;
+            return values[key] ?? variable;
+          },
         ).length,
     ),
   );
