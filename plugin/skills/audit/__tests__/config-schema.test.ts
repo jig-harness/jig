@@ -42,6 +42,7 @@ import {
   parseChangelogSection,
 } from "../../changelog/scripts/config.ts";
 import { FORMAT_IDS } from "../../changelog/scripts/formats.ts";
+import { DEFAULT_TAXONOMY } from "../../file-issue/scripts/lib/config.ts";
 import {
   DEFAULT_AREA as CODE_STATS_DEFAULT_AREA,
   FIELDS as CODE_STATS_FIELDS,
@@ -231,6 +232,7 @@ describe("the reading skills", () => {
       "pull_requests.issue_link": policy.issueLink,
       "drive.max_rounds": DEFAULT_MAX_ROUNDS,
       "issue_tracker.adapter": DEFAULT_ADAPTER,
+      "issue_tracker.taxonomy": DEFAULT_TAXONOMY,
       "do_item.execution_plan_block": DEFAULT_BLOCK,
       "changelog.notes_dir": CHANGELOG_DEFAULTS.notesDir,
       "changelog.authors": CHANGELOG_DEFAULTS.authors,

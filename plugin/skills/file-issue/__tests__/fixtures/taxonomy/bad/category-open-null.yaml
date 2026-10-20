@@ -1,0 +1,16 @@
+# BAD — the area category's `open:` is null and it lists no labels, so no
+# label can belong to it.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+categories:
+  - id: area
+    prefix: "area:"
+    open: null

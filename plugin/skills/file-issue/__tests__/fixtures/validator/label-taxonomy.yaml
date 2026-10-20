@@ -1,0 +1,100 @@
+# A taxonomy for the label validator's tests: every family and constraint kind
+# the schema has, with neutral names.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+  - id: chore
+  - id: docs
+
+statuses:
+  - id: todo
+  - id: in-progress
+  - id: done
+
+groups:
+  - id: size
+    required: true
+    labels:
+      - id: xs
+      - id: small
+      - id: medium
+      - id: large
+      - id: xl
+  - id: repo
+    required: true
+    labels:
+      - id: app
+      - id: website
+      - id: tooling
+  - id: urgency
+    labels:
+      - id: routine
+      - id: pressing
+
+categories:
+  - id: agent
+    prefix: "agent:"
+    max: 2
+    labels:
+      - id: backend
+      - id: frontend
+      - id: devops
+  - id: area
+    prefix: "area:"
+    recommended: true
+    max: 3
+    labels:
+      - id: api
+      - id: web
+      - id: database
+      - id: docs
+  - id: domain
+    prefix: "domain:"
+    labels:
+      - id: billing
+      - id: delivery
+  - id: delivery-stage
+    prefix: "stage:"
+    requires: ["domain:delivery"]
+    labels:
+      - id: planning
+      - id: review
+  - id: pattern
+    prefix: "pattern:"
+    open: "^[a-z][a-z0-9-]*$"
+    requires: [bug]
+    labels:
+      - id: missing-await
+  - id: hitl-stakeholder
+    prefix: "hitl:"
+    requires: [hitl]
+    labels:
+      - id: product
+      - id: legal
+      - id: technical
+
+flags:
+  - id: epic
+    scope: container
+    fires: status-roll-up
+    apply_when: the issue is the unit progress is reported on
+  - id: has-migration
+    scope: shipping-item
+    fires: migration-review
+    apply_when: the change alters a schema
+  - id: hitl
+    scope: shipping-item
+    fires: revoke-autonomy
+    apply_when: a person must decide before the change can merge
+    requires_category: [hitl-stakeholder]
+  - id: manual-ops
+    scope: shipping-item
+    fires: blocks-done-until-operator-checklist
+    apply_when: shipping needs a step a person performs outside the code
+  - id: operator-hands
+    scope: shipping-item
+    fires: route-to-operator
+    apply_when: the step outside the code needs a person rather than credentials
+    requires: [manual-ops]

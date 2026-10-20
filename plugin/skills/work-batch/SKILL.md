@@ -154,8 +154,9 @@ the release in step 4 restores them. Then, for each:
    bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" transition <KEY> in_progress
    ```
 
-   (**judgment** — the assignee through the harness's tracker tool; Linear:
-   `mcp__linear__save_issue({ id, state: "<mapped name>", assignee: "me" })`.)
+   (**judgment** — the assignee through the harness's tracker tool, the one
+   that saves an issue's state and assignee: the mapped state name, assignee
+   "me".)
 
 2. Comment on it, naming the anchor and every other issue in the batch, so a
    second agent sees it is spoken for and by which batch

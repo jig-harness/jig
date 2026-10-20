@@ -1,18 +1,25 @@
 # TEMPLATE — copy to your repo (e.g. label-taxonomy.yaml) and prune to the
 # labels YOUR tracker actually uses. This is the single source of truth (SSoT)
-# for issue classification, and it is validated by Jig's label-taxonomy
-# lint (modules/M9-tasks-memory/reference/label-taxonomy-lint/), so keep it in
-# sync with your tracker.
+# for issue classification. Jig's label-taxonomy lint validates it, and Jig's
+# label validator checks every issue's labels against it before an issue is
+# filed (both in the file-issue skill:
+# https://github.com/jig-harness/jig/blob/main/plugin/skills/file-issue/README.md),
+# so keep it in sync with your tracker.
 #
-# The schema is closed — only four top-level keys are allowed:
+# The schema is closed — only these top-level keys are allowed:
 #   version     an integer stamp (bump on a breaking change to the vocabulary)
-#   types       CLOSED list: what kind of work an issue is
+#   types       CLOSED list: what kind of work an issue is; exactly one per issue
 #   statuses    CLOSED list: where an issue is in its lifecycle
 #   flags       list: labels that FIRE a process — the point of the whole file
+#   groups      optional: more closed single-select families (a size)
+#   categories  optional: prefixed multi-select families (`area:billing`)
 #
-# Every label id must be unique across the file. `types` and `statuses` must be
-# non-empty. Grow them deliberately: a new type or status is a real change to how
-# every issue is read.
+# Every label name must be unique across the file (a category label's name is
+# its prefix and its id). Every entry may carry `notes`; any key not listed
+# below for its kind is rejected, so a misspelt rule never reads as absent.
+# `types` and `statuses` must be non-empty. Grow them
+# deliberately: a new type or status is a real change to how every issue is
+# read.
 #
 # The one rule that makes a label a trigger rather than folksonomy: every flag
 # declares what it `fires:` — the gate, review, block, or effect it turns on. A
@@ -32,9 +39,34 @@
 #                      an item (a list, or one condition)
 #   do_not_apply_when  optional; the cases that look like they qualify but do
 #                      not, and what to do instead
-#   requires           optional; label ids (types or other flags in this file)
-#                      that must be present whenever this flag is, for a label
-#                      that only means something beside another
+#   requires           optional; label names (types, group labels, other flags
+#                      or category labels in this file) that must be present
+#                      whenever this flag is, for a label that only means
+#                      something beside another
+#   requires_category  optional; category ids of which at least one label each
+#                      must be present whenever this flag is (a flag whose
+#                      facets say who must act)
+#
+# A group is a closed family an issue carries at most one label of:
+#   id        the family's name (unique among groups and categories)
+#   required  optional, default false; true: every issue carries one
+#   labels    non-empty list of label ids
+#
+# A category is a family of prefixed labels an issue may carry several of:
+#   id           the family's name
+#   prefix       required; a label's name is the prefix and its id. No prefix
+#                may begin another's, and no type, flag or group label may
+#                begin with one
+#   labels       the closed labels; optional when `open` is set, where they
+#                are seeded examples
+#   open         optional; a regular expression: any slug it matches after
+#                the prefix is a label of the category (an open vocabulary).
+#                It must match the whole slug, as if written `^(?:…)$`:
+#                `[a-z]+` accepts `flaky` and refuses `Foo bar`
+#   max          optional positive integer; more labels than this warn
+#   recommended  optional, default false; true: an issue with none warns
+#   requires     optional; label names that must all be present whenever a
+#                label of this category is (a facet and its umbrella)
 #
 # Labels carry durable classification only, never mutable operational state.
 # "This item will need a step a person performs outside the code" is a flag:
@@ -83,6 +115,46 @@ statuses:
     notes: terminal — closed without completing; counted as abandoned, not done
   - id: duplicate
     notes: terminal — closed as a copy of another item; counted as abandoned, not done
+
+# ---------------------------------------------------------------------------
+# groups — CLOSED, single-select. At most one label of each per issue; a
+# required group exactly one.
+# ---------------------------------------------------------------------------
+groups:
+  - id: size
+    required: true
+    notes: effort estimate; split an item larger than the largest size
+    labels:
+      - id: small
+        notes: under half a day
+      - id: medium
+        notes: up to two days
+      - id: large
+        notes: more than two days
+
+# ---------------------------------------------------------------------------
+# categories — prefixed, multi-select. A label's name is prefix + id.
+# ---------------------------------------------------------------------------
+categories:
+  - id: area
+    prefix: "area:"
+    recommended: true
+    max: 3
+    notes: which part of the product the work is in
+    labels:
+      - id: api
+      - id: web
+      - id: docs
+  - id: hitl-stakeholder
+    prefix: "hitl:"
+    requires: [hitl]
+    notes: >-
+      a facet of the hitl flag: who must decide, never without the flag. To
+      also require a facet whenever the flag is present, give the flag
+      `requires_category: [hitl-stakeholder]`
+    labels:
+      - id: product
+      - id: legal
 
 # ---------------------------------------------------------------------------
 # flags — each FIRES a named process. Zero or more per issue. These are the

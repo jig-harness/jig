@@ -18,10 +18,11 @@ The skills come in groups, each in the order its skills are used. The
 last column says how a skill connects to the others: what starts it, what it
 runs, what it hands over to.
 
-**Deliver a change.** One item of work, from the tracker to a merged pull request. `do-item` opens the pull request and arms `drive-pr`, and `work-batch` does the same for several small issues closed in one pull request; `drive-pr` runs one `resolve-review-comments` pass per review round, works a conflict through `resolve-conflicts`, and repairs red CI in its own repair round; `fix-ci` is the repair by hand when no drive runs or its budget is spent. Each also works by hand.
+**Deliver a change.** One item of work, from the tracker to a merged pull request. `file-issue` puts the item on the tracker, labelled by the repository's label taxonomy; `do-item` opens the pull request and arms `drive-pr`, and `work-batch` does the same for several small issues closed in one pull request; `drive-pr` runs one `resolve-review-comments` pass per review round, works a conflict through `resolve-conflicts`, and repairs red CI in its own repair round; `fix-ci` is the repair by hand when no drive runs or its budget is spent. Each also works by hand.
 
 | Skill | What it does | Invoke as | Works with |
 |-------|--------------|-----------|------------|
+| [file-issue](skills/file-issue/README.md) | Files a new tracker issue from a discussion, or plans an existing one (re-labels it, splits it into sub-issues, records its relations): writes a durable issue body, derives the labels from the change's areas or its description, checks them against the repository's label taxonomy, and searches for a duplicate before anything is written | `/jig:file-issue` | Writes through [do-item](skills/do-item/SKILL.md)'s tracker scripts, and files what do-item and [work-batch](skills/work-batch/README.md) later pick up; derives labels from [change-areas](skills/change-areas/README.md); holds the label-taxonomy lint and the label validator |
 | [do-item](skills/do-item/SKILL.md) | Picks up one work item from whatever the tracker adapter reads (an issue tracker today, a plan file in future), routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/jig:do-item` | Starts [drive-pr](skills/drive-pr/README.md) on the pull request it opens; runs its own pre-pull-request review in the same tiers as [review](skills/review/SKILL.md), plus each review skill its declared gates name; escalates a dilemma to [decide](skills/decide/SKILL.md) |
 | [work-batch](skills/work-batch/README.md) | Groups several small, independent issues from one area of the code into one pull request, one commit each: proposes a ranked batch within a point budget, holds back every issue a sensitivity flag makes solo-only, claims the batch, opens the pull request and drives it once; after the merge, closes out every issue in it | `/jig:work-batch` | The batched form of [do-item](skills/do-item/SKILL.md), whose batch check suggests it; opens the pull request under do-item's pull-request policy and starts [drive-pr](skills/drive-pr/README.md) on it |
 | [drive-pr](skills/drive-pr/README.md) | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving | `/jig:drive-pr` | Started by [do-item](skills/do-item/SKILL.md); runs [resolve-review-comments](skills/resolve-review-comments/README.md) every review round; calls [resolve-conflicts](skills/resolve-conflicts/SKILL.md) when the branch conflicts; repairs red CI in its own repair round, with the repository's CI-repair skill if it has one |
@@ -382,7 +383,8 @@ ci:
 issue_tracker:
   team: ENG                   # issue-tracker team key; required by the tracker scripts
   adapter: linear             # which tracker adapter to use; Linear is the only one today
-  file_command: "linear issue create"   # how an agent files an issue by hand
+  file_command: /jig:file-issue   # how an agent files an issue by hand
+  taxonomy: label-taxonomy.yaml   # the label taxonomy file-issue validates against; default label-taxonomy.yaml
   states:                     # the tracker's own names for the workflow states
     backlog: Backlog
     todo: Todo

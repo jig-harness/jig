@@ -1,0 +1,21 @@
+# BAD — the prefix `area:` begins `area:sub:`, so a label such as `area:sub:x`
+# would belong to both categories.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+categories:
+  - id: area
+    prefix: "area:"
+    labels:
+      - id: billing
+  - id: sub-area
+    prefix: "area:sub:"
+    labels:
+      - id: invoices

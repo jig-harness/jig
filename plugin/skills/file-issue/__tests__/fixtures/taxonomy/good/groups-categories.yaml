@@ -1,0 +1,76 @@
+# Valid taxonomy with groups and categories — must PASS. A group is a closed
+# single-select family (one size per issue); a category is a prefixed
+# multi-select family whose labels are named prefix + id. A category may be
+# open (any slug matching its pattern), require an umbrella label, and a flag
+# may require at least one label of a category beside it.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+  - id: chore
+
+statuses:
+  - id: todo
+  - id: in-progress
+  - id: done
+
+groups:
+  - id: size
+    required: true
+    notes: effort estimate
+    labels:
+      - id: xs
+        notes: under an hour
+      - id: small
+      - id: medium
+      - id: large
+  - id: component
+    labels:
+      - id: server
+      - id: client
+
+categories:
+  - id: area
+    prefix: "area:"
+    recommended: true
+    max: 3
+    labels:
+      - id: billing
+      - id: search
+      - id: delivery
+  - id: delivery-stage
+    prefix: "stage:"
+    requires: ["area:delivery"]
+    labels:
+      - id: planning
+      - id: review
+  - id: pattern
+    prefix: "pattern:"
+    open: "^[a-z][a-z0-9-]*$"
+    requires: [bug]
+    labels:
+      - id: missing-await
+        notes: a seeded example; any matching slug is accepted
+  - id: hitl-stakeholder
+    prefix: "hitl:"
+    requires: [hitl]
+    labels:
+      - id: product
+      - id: legal
+
+flags:
+  - id: hitl
+    scope: shipping-item
+    fires: revoke-autonomy
+    apply_when: a person must decide before the change can merge
+    requires_category: [hitl-stakeholder]
+  - id: manual-ops
+    scope: shipping-item
+    fires: blocks-done-until-operator-checklist
+    apply_when: shipping the change needs a step a person performs outside the code
+  - id: operator-hands
+    scope: shipping-item
+    fires: route-to-operator
+    apply_when: the step outside the code needs a person rather than credentials
+    requires: [manual-ops]

@@ -8,7 +8,7 @@
  * Input: JSON on stdin — see `ReconcileInput` below. The caller (SKILL.md
  *   Step 5a) is responsible for fetching and, for the MCP transport, fully
  *   paginating the child list before invoking this script; a script cannot
- *   itself issue `mcp__linear__*` tool calls. Fetching or pagination that
+ *   itself call the harness's tracker tools. Fetching or pagination that
  *   did not complete must be reported via `found`/`truncated`, never by
  *   silently handing over a partial `children` array.
  * Output: JSON `ReconcileDecision` on stdout.
@@ -51,8 +51,9 @@ export interface ReconcileInput {
   found?: boolean;
   /**
    * True when pagination could not confirm it reached every child — e.g. a
-   * `mcp__linear__list_issues` page fetch threw partway through the
-   * `hasNextPage` loop, or a page came back with an unreadable `pageInfo`.
+   * page fetch through the harness's issue-listing tool threw partway
+   * through the `hasNextPage` loop, or a page came back with an unreadable
+   * `pageInfo`.
    * Defaults to false. A truncated listing must not be reconciled against as
    * if it were the complete set.
    */
@@ -207,10 +208,10 @@ export function reconcileParentStatus(
   // A missing `labels` field on a still-open child used to fail the whole
   // listing closed here, on the premise that both transports always request
   // labels and return a real array on success. That premise is false for
-  // the CLI transport: `linear issue view --json`'s own `children`
-  // connection carries only `identifier`/`title`/`state` for every child,
-  // never `labels` — measured against real linear-cli 2.6.0 output (a live
-  // multi-child epic; also pinned by
+  // the CLI transport: the client's `issue view --json` output has its own
+  // `children` connection, which carries only `identifier`/`title`/`state`
+  // for every child, never `labels` — measured against real linear-cli 2.6.0
+  // output (a live multi-child epic; also pinned by
   // `scripts.test.ts`'s "reads linear-cli 2.6.0 connection envelopes"
   // fixture, whose children never carry a `labels` key at all). So the gate
   // that used to sit here made every still-open child fetched via CLI read

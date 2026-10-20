@@ -286,6 +286,12 @@ fields:
   issue_tracker.file_command:
     type: string
     read_by: [do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections]
+  issue_tracker.taxonomy:
+    type: path
+    exists: required
+    default: label-taxonomy.yaml
+    read_by: [file-issue]
+    since: next
 
   do_item.agents.default:
     type: string

@@ -1,0 +1,21 @@
+# BAD — a group and a category share the id `size`. Group and category ids name
+# families and must be unique.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+groups:
+  - id: size
+    labels:
+      - id: small
+categories:
+  - id: size
+    prefix: "size:"
+    labels:
+      - id: huge

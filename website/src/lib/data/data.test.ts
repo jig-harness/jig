@@ -231,6 +231,7 @@ test("the skills are in families, in the order they are used, each saying how it
     [
       "Deliver a change",
       [
+        "file-issue",
         "do-item",
         "work-batch",
         "drive-pr",

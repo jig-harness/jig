@@ -72,6 +72,7 @@ plugin/skills/changelog/templates/github/app-manifest-direct.json
 plugin/skills/changelog/templates/github/app-manifest-pull-request.json
 plugin/skills/changelog/templates/github/changelog.yml
 plugin/skills/changelog/templates/keep-a-changelog.md
+plugin/skills/file-issue/templates/issue-body.md
 
 Third-party code, each under the licence in the file listed, which sits
 beside it:

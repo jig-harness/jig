@@ -1,0 +1,15 @@
+# BAD — the size group lists no labels: a family with nothing to pick from
+# classifies nothing.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+groups:
+  - id: size
+    labels: []

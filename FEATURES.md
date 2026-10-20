@@ -42,6 +42,9 @@ how much it could not classify, and names the rule behind any file.
 
 ## A work item carried from pickup to merge
 
+`file-issue` puts the work item on the issue tracker first: a body that
+still holds once the code moves, labels from the repository's label taxonomy
+that are checked before anything is written, and a search for a duplicate.
 `do-item` picks up one work item from the issue tracker, implements it, opens a
 pull request the way the repository's [pull-request policy](GLOSSARY.md)
 says, and starts `drive-pr`, which runs the review rounds unattended until
@@ -55,7 +58,8 @@ merges. Outside a drive, `fix-ci` fixes a failed run from its log.
 `work-batch` carries several small items from one area of the code the same
 way, in one pull request with one commit each, so their review is paid once.
 
-- **Skills:** [`do-item`](plugin/skills/do-item/SKILL.md),
+- **Skills:** [`file-issue`](plugin/skills/file-issue/README.md),
+  [`do-item`](plugin/skills/do-item/SKILL.md),
   [`work-batch`](plugin/skills/work-batch/README.md),
   [`drive-pr`](plugin/skills/drive-pr/README.md),
   [`resolve-review-comments`](plugin/skills/resolve-review-comments/README.md),
