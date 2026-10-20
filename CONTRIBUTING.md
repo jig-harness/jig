@@ -6,6 +6,13 @@ here for the detail; [docs/](docs/README.md) says how Jig's own documents are
 governed; [plugin/AGENTS.md](plugin/AGENTS.md) adds the rules for anything
 under `plugin/`.
 
+**Contributing from outside the maintainers?** Read
+[Outside contributions](#outside-contributions) first: it says what is
+welcome and where to raise it. Work is reported on GitHub Issues, which
+anyone can use. The maintainers also track their own work in an issue tracker
+that outside contributors cannot see; the steps below that depend on it are
+marked "maintainers", and a contributor can skip them.
+
 ## Commits and pull requests
 
 - Conventional Commits (`feat:`, `docs:`, `chore:`, …), on feature branches
@@ -72,12 +79,13 @@ Jig's own form of [M7's loop](modules/M7-pr-lifecycle-review/templates/PR-LIFECY
    reviewer has reported on the current head, no thread or summary finding is
    left unanswered, and the required checks are green. A person merges; an
    agent never does ([ADR-0003](docs/adr/ADR-0003-a-person-merges.md)).
-5. After the merge, run `/followup <PR>`
+5. Maintainers: after the merge, run `/followup <PR>`
    ([.claude/skills/followup/](.claude/skills/followup/SKILL.md)): the
    tracker item and deferred findings, the release tag, what the merge did
    to the website, the status pages and documents that cite them, the
    consumer repositories, and cleanup. Its fixes go in one follow-up pull
-   request.
+   request. A contributor's pull request owes nothing here; the maintainer
+   who merges it runs this step.
 
 ## Jig's own skills
 
@@ -104,7 +112,16 @@ bun modules/M0-instruction-architecture/reference/sync-skills-mirror.ts
   site up to date with the commits since its last check, recorded in
   `website/content-sync.yaml`.
 
-### Filing issues from this repository
+### Filing issues from this repository (maintainers)
+
+This section is for Jig's maintainers, who file their work in a tracker
+(Linear) that outside contributors cannot reach. A contributor opens a
+[GitHub issue](https://github.com/jig-harness/jig/issues/new/choose) with the
+bug or "Proposed change" template, or a
+[discussion](https://github.com/jig-harness/jig/discussions) for a question or
+an idea ([Outside contributions](#outside-contributions)), and needs nothing
+below. A maintainer who accepts such an issue files the tracked work from it
+and links the two.
 
 `/jig:file-issue` needs a [label taxonomy](GLOSSARY.md) to check the labels
 before it writes an issue. Jig's maintainers use the taxonomy in their
@@ -389,10 +406,13 @@ rules:
   already exists (an issue tracker, a reflection store, a launcher
   provider); a bug fix with a test that fails without it; a correction to
   text or a link; an audit criterion's probe made more precise.
-- **Open an issue first** (the "Proposed change" template): a new module,
-  criterion or skill; a change to an invariant a module states; a change
-  under `plugin/` beyond a fix, since it ships to every machine; a new
-  run-time dependency; a change to a gate's policy.
+- **Open a GitHub issue first** (the "Proposed change" template): a new
+  module, criterion or skill; a change to an invariant a module states; a
+  change under `plugin/` beyond a fix, since it ships to every machine; a new
+  run-time dependency; a change to a gate's policy. Bugs use the "Bug"
+  template; questions and ideas that are not yet work go to
+  [Discussions](https://github.com/jig-harness/jig/discussions). Outside
+  contributors file nothing anywhere else.
 - **Not taken:** material that names or copies an organization's own
   repository, keys or values; a practice no repository has run; a rewrite
   of a document or a skill; and a large unsolicited pull request, which is
