@@ -48,6 +48,14 @@ plugin's [configuration reference](../../CONFIGURATION.md#work_batch). To
 read one value yourself, run
 `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" <field>`.
 
+### Asking the user
+
+Where a step needs a person's answer (a verdict in step 2, an issue left
+for a person to settle), use `AskUserQuestion` under Claude Code; in any
+other interactive harness, ask a plain-text numbered question and end the
+turn. With nobody to answer, stop and state the question. Never pick on the
+user's behalf.
+
 ## When not to batch
 
 Work the issue alone with [`/jig:do-item`](../do-item/SKILL.md) when:

@@ -185,7 +185,9 @@ Issue keys in this document look like `ENG-123`.
 
 Where this skill says "ask the user", use `AskUserQuestion` under Claude Code;
 in any other interactive harness, ask a plain-text numbered question and end
-the turn. Never pick on the user's behalf.
+the turn; under a [headless runner](#headless-runners), raise it through the
+runner. With nobody to answer and no runner, stop and state the question.
+Never pick on the user's behalf.
 
 ## In the delivery loop
 
@@ -533,9 +535,11 @@ routing below remain **exact**.
    with delegation anyway. The findings still live in this session for the
    delegation prompt.
 
-4. **judgment** — **Delegate to the agent**: use the Task tool with
-   `subagent_type` set to the `primary_agent` that `determine_agent.ts`
-   printed. First create the working
+4. **judgment** — **Delegate to the agent**: use the harness's subagent
+   tool (Claude Code: the Task tool with `subagent_type` set to the
+   `primary_agent` that `determine_agent.ts` printed; elsewhere, its own
+   subagent tool briefed with that agent's definition, or this session,
+   following the same prompt, where there is none). First create the working
    branch named by `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch` (**exact**; see
    [Pull-request policy](#pull-request-policy)), from the integration branch,
    or from the predecessor's branch when this change builds on an unmerged

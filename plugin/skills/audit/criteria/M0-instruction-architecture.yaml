@@ -145,6 +145,66 @@ criteria:
       - "a repository whose agents and skills pin no model, in metadata or at invocation, meets it"
     since: 0.40.0
 
+  - id: runtime-capabilities-name-fallbacks
+    level: standard
+    requires: convention
+    statement: >-
+      Every instruction and skill step that relies on a runtime-specific
+      capability (a slash command for a skill outside a plugin, a built-in
+      tool such as a question tool, a tool the host injects) names its
+      portable fallback or the equivalent in each runtime the team uses, and
+      no gate, hook, script or skill step depends on a host-injected tool.
+    observe:
+      - "each slash command for a repository skill (one not invoked through a plugin namespace) has a fallback beside it: the runtime's skill directory or a link to the skill's SKILL.md"
+      - "each step that names one runtime's question tool also says what to do elsewhere: a plain-text question in another interactive runtime, and stop and state the question when nobody is there to answer"
+      - "each other built-in tool a step names has its fallback beside it"
+      - "no gate, hook, script or skill step needs a tool that a launcher or workspace app injects and no repository file registers; where a step mentions one, it is optional"
+      - "mechanical when a CI check fails a slash command with no fallback (M0's skill-invocation-fallback lint, or equivalent) and the rest is stated as a rule; a repository with no instruction that relies on a runtime-specific capability meets it"
+    since: next
+
+  - id: deny-lists-per-runtime
+    level: standard
+    requires: convention
+    statement: >-
+      Where the team forbids agents commands through a runtime's permission
+      rules, each runtime it uses has its own deny list in that runtime's
+      format, and each file's header names the written policy it mirrors and
+      the command forms it cannot match.
+    observe:
+      - "each runtime the team uses (from its instruction files, configuration and the load model) that has a permission format carries a deny list: Claude Code permissions.deny in .claude/settings.json, Codex prefix_rule entries in .codex/rules/*.rules"
+      - "each deny-list file's header, or a comment beside it, names the written policy it mirrors"
+      - "each file lists the forms it cannot match (for Codex: a flag after a variable argument, `run` scripts, a global flag before the verb, part of one word), or links where they are listed"
+      - "a runtime the team uses that has no deny list while another does is a gap, unless the gap is written down"
+      - "a repository that keeps no deny list for any runtime meets it (expected-absent)"
+    since: next
+
+  - id: standards-declare-scope
+    level: standard
+    requires: convention
+    statement: >-
+      Each written standard (a coding rule, a lint policy, a review lens)
+      states the classes of artifact it governs: runtime code, one-shot
+      command-line tools, tests, prose instruction files.
+    observe:
+      - "the universal instruction file or a document it links maps each standard to the artifact classes it governs, or each standard states its own"
+      - "a file's class is decided by what it does: a script that starts a long-lived server or listener counts as runtime code wherever it lives"
+      - "a rule about runtime behaviour (an injected clock, structured logging) names the classes it leaves out, such as one-shot tools and tests"
+    since: next
+
+  - id: review-stances-are-pointers
+    level: standard
+    requires: convention
+    statement: >-
+      Every stance reviewers must treat as settled policy is written in one
+      place, and the instructions and reviewer configuration that mention it
+      point to that source rather than restate it.
+    observe:
+      - "a list of standing review stances, in the instructions or the reviewer configuration, gives each as a pointer to one source (an ADR, a policy section)"
+      - "no stance's rule is restated in a second place; a pointer may say when a finding is worth raising, not what is done with it"
+      - "the review process closes a finding that contradicts a stance as rejected with a link to its source"
+      - "a repository with no standing review stance meets it"
+    since: next
+
   - id: instruction-freshness-checked
     level: strict
     requires: mechanical

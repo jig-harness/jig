@@ -39,6 +39,67 @@ Further invariants decide whether those instructions reach the agent at all:
   consumer's budget counts as not delivered to that consumer, however
   complete the file looks.
 
+Two more decide whether a delivered instruction can be followed where it
+lands, and what it applies to:
+
+- **Instructions are portable.** An instruction that relies on a capability
+  only some runtimes have (a slash command, a built-in tool, a tool the host
+  injects, a permission rule) names a [portable fallback](../../GLOSSARY.md),
+  or the equivalent in each runtime the team uses, and writes down where
+  there is none. The equivalents per runtime are in
+  [mappings.md](mappings.md#runtime-specific-capabilities-and-their-fallbacks).
+  - *Running a skill.* Prose that names a skill by its slash command also
+    gives the fallback: the runtime's own skill directory, then a direct read
+    of the skill's `SKILL.md`, with its `references/` and `scripts/`
+    resolved from the skill's directory (the symlink's target, where the
+    directory is a mirror). A skill shipped in a plugin resolves only
+    through the installed plugin, so it has no directory fallback. A
+    [lint](reference/skill-invocation-fallback/README.md) enforces it.
+  - *Asking the user.* A runner with a control plane (a service that
+    tracks the job and can reach a person) parks the job and raises the
+    question there; an interactive session uses the runtime's own question
+    tool where it has one and may use it, and otherwise asks in plain text
+    and waits; a run with nobody to answer and no control plane stops and
+    states the question, never picking for the user. A step that names only
+    one runtime's question tool does nothing anywhere else. Plain text is the
+    branch that works everywhere, so no per-runtime picker is built.
+  - *Deny lists.* A command the team forbids an agent to run is denied in
+    each runtime's own permission format, and each file says, in its header,
+    the written policy it mirrors and the forms it cannot match. The formats
+    differ, so the files are kept in step by hand, each pointing at the same
+    policy. A deny list is a backstop with known gaps, not a sandbox: no
+    format catches an alias, a command behind an environment-variable
+    prefix, or one wrapped in a subshell.
+  - *Tools the host injects.* A [host-injected tool](../../GLOSSARY.md),
+    which a launcher or workspace app adds to the session without any file
+    in the repository registering it, is a convenience only, never a
+    dependency of a gate, hook, script or skill step. Searching the
+    repository does not find it and its configuration cannot gate it, so a
+    step discovers it rather than assumes it, and its absence is the
+    ordinary case. A workspace-diff view, for example, does not replace the
+    repository's own command for deciding what a change must run.
+- **Rules declare their scope.** Each standard says which
+  [artifact classes](../../GLOSSARY.md) it governs: runtime code (services,
+  workers, route handlers), one-shot command-line tools (a process that
+  exits after its work), tests, and prose instruction files. Where a file
+  lives does not decide its class: a script under `scripts/` that starts a
+  long-lived server or listener is runtime code. A rule applied outside its
+  scope is a known source of false findings. For example,
+  [M14](../M14-testing-strategy/README.md#core-pieces)'s
+  [injected clock](../../GLOSSARY.md) governs runtime code: a script that
+  exits after its work already gets the same testability by taking the
+  instant as a parameter, and a test's own setup and polling deadlines are
+  outside it too.
+  - *Standing review stances point to their source.* A stance reviewers must
+    treat as settled policy is written once, and the instructions reviewers
+    read point to it, never copy it: a paraphrase drifts from its source. A
+    pointer may say what a reviewer needs to decide whether to raise a
+    finding; what is done with the finding belongs to the source. A finding
+    that contradicts the stance is closed as rejected with the stance's
+    [standing rejection](../../GLOSSARY.md), as the
+    [triage rubric](../../plugin/skills/resolve-review-comments/references/triage-rubric.md#standing-rejections)
+    of the comment-resolution loop does.
+
 ## The layers
 
 1. **Universal instruction file** (`AGENTS.md` at repo root) — project
@@ -81,12 +142,19 @@ Further invariants decide whether those instructions reach the agent at all:
   procedure to check it again. Model pins in agent and skill metadata are
   family aliases, checked over the metadata itself, and a roster of them,
   where one is kept, is generated from it
-  ([model routing policy](reference/model-routing-policy.md)).
+  ([model routing policy](reference/model-routing-policy.md)). Instructions
+  and skills that rely on a runtime-specific capability name its fallback,
+  no gate, hook, script or skill step depends on a host-injected tool, and
+  where the team denies commands, each runtime it uses has its own deny
+  list, its header naming the policy it mirrors and its gaps. Each standard declares the artifact
+  classes it governs, and standing review stances are pointers to one
+  source.
 - **Strict** — instruction files carry freshness checks (M2): countable facts
   are CI-verified against reality, referenced paths are checked to exist, and
   the instruction set has a named owner and review cadence. CI fails a change
   that puts the always-loaded context over its smallest consumer's budget,
-  before dependencies are installed.
+  before dependencies are installed, and a slash command that names no
+  fallback.
 
 ## Adoption steps
 
@@ -105,15 +173,25 @@ Further invariants decide whether those instructions reach the agent at all:
    [`templates/dispositions.md`](templates/dispositions.md), each with its flip
    condition. Record what each runtime you use loads, with the date and a way
    to check it again: start from [What each runtime loads](mappings.md#what-each-runtime-loads)
-   and observe your own repository. This is **Standard**.
+   and observe your own repository. Go through the instructions and skills
+   for runtime-specific capabilities and give each its fallback from
+   [the capability table](mappings.md#runtime-specific-capabilities-and-their-fallbacks);
+   write each runtime's deny list in its own format, its header naming the
+   written policy it mirrors and the forms it cannot match. Fill in the
+   skeleton's *Standards scope by artifact class* and *Standing review
+   stances* sections: which classes each standard governs, and a pointer to
+   each settled stance's source. This is **Standard**.
 3. Check the instruction files mechanically in CI: stated counts and
    referenced paths with [M2](../M2-generated-artifact-freshness/)'s
    [`prose-facts`](../M2-generated-artifact-freshness/reference/prose-facts/)
    checks, and the always-loaded context with the
    [context-budget checks](reference/context-budget/README.md), in a step
    before dependencies are installed
-   ([recipe](mappings.md#ci-recipe-before-dependencies-install)). Name an
-   owner for the instruction set and a review cadence. This is **Strict**.
+   ([recipe](mappings.md#ci-recipe-before-dependencies-install)), and slash
+   commands with the
+   [skill-invocation fallback lint](reference/skill-invocation-fallback/README.md).
+   Name an owner for the instruction set and a review cadence. This is
+   **Strict**.
 
 ## Status
 
@@ -149,9 +227,18 @@ What this module provides:
   chain against the smallest consumer's byte budget, and skill and agent
   descriptions against their per-item caps and the aggregate skill listing.
   Built-ins only, with self-tests and fixtures beside them.
+- [`reference/skill-invocation-fallback/`](reference/skill-invocation-fallback/README.md)
+  — a lint that fails a bare `/<skill>` with no fallback marker (a
+  `SKILL.md` link, the runtime's skill directory, an interop document)
+  within a window of lines; plugin-namespaced commands are not checked, and
+  a whole file is exempt only when it is on the exemption list and opens
+  with a generated-file banner that carries the exemption marker. Built-ins
+  only, with its self-test and fixtures.
 - [`mappings.md`](mappings.md) (Claude Code, Codex, Cursor and Copilot file
   conventions, what each runtime loads, the budgets per consumer with their
-  dates, and the CI recipe) and the module's
+  dates, the CI recipe, and each runtime-specific capability with its
+  fallback per runtime, deny-list formats and their gaps included) and the
+  module's
   [maturity criteria](../../plugin/skills/audit/criteria/M0-instruction-architecture.yaml).
 
 Jig's own [`AGENTS.md`](../../AGENTS.md), the `CLAUDE.md` files that
@@ -159,7 +246,13 @@ import it, and the nested `AGENTS.md` files, each with a `CLAUDE.md` beside it
 that imports it, are a working instance of this module; `bun run gates` and
 CI run the context-budget checks over Jig itself, with the soft description
 target enforced for the plugin's skills, since every repository that
-installs the plugin pays for them.
+installs the plugin pays for them. The skill-invocation fallback lint runs
+over Jig's instruction files and its own maintenance skills
+(`.claude/skills`); the plugin's skills are invoked as `/jig:<name>`, which
+the lint leaves out by design, so a plugin skill's procedure is held to the
+fallback rule by [plugin/AGENTS.md](../../plugin/AGENTS.md) and review
+instead. Jig commits no deny list for any runtime, so it has none to keep
+in step.
 
 What the context-budget checks leave out, and why: MCP server instruction
 blocks, skills from a person's own setup or another plugin, and a person's
@@ -168,6 +261,14 @@ repository file shows them, so they are measured in a running session
 instead. Whether a runtime received a rule at all is the observation in
 [mappings.md](mappings.md#what-each-runtime-loads); the checks measure what
 the repository asks each runtime to load, not what arrived.
+
+Left out on purpose: a per-runtime question picker (plain text is the
+branch every runtime has), a deny list generated for every runtime from one
+source (the formats match differently, so a projection would hide each
+one's gaps rather than state them), and a lint for capabilities other than
+slash commands, such as a built-in tool named with no fallback beside it:
+their names are open-ended, so they are left to review until a working
+repository has a check worth bringing in.
 
 Future: a reference generator for the model roster, which arrives when the
 working tool moves here (the routing policy states what it renders and

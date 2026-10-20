@@ -220,7 +220,6 @@ Practices a working repository validated, for modules that exist today:
 - **M0, M4 and M5**:
   - a reference generator for the model roster, when the working tool moves
     here;
-  - instructions that keep working in every runtime;
   - deferred promises in documents that point at live tracker items;
   - files that change only with an approved decision record.
 

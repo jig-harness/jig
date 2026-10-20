@@ -22,6 +22,12 @@ Claude Code, Codex, Cursor, GitHub Copilot, and others.
 <!-- One pointer line per runtime that needs a delta file, e.g.:
      **Claude Code users**: see `/CLAUDE.md` for tool-specific features. -->
 
+**Runtime-specific capabilities** (a slash command, a built-in tool, a tool
+the host injects) are named with their fallback: a skill's `SKILL.md` beside
+its `/<name>`, a plain-text question where no question tool exists.
+<!-- Equivalents per runtime:
+     https://github.com/jig-harness/jig/blob/main/modules/M0-instruction-architecture/mappings.md#runtime-specific-capabilities-and-their-fallbacks -->
+
 **Domain glossary**: before writing any spec, issue, code comment, or PR
 description that reasons about domain concepts, skim [`/GLOSSARY.md`](GLOSSARY.md).
 Use the canonical terms; flag the **_Avoid_** aliases when teammates or
@@ -103,6 +109,40 @@ this one with local conventions; it never contradicts it:
 | `/<apps/backend/>` | <backend stack, service patterns> |
 | `/<apps/web/>` | <frontend stack, UI rules> |
 | `/<packages/*/>` | <package-specific patterns> |
+
+## Standards scope by artifact class
+
+Each standard governs only the classes of file it names. Applying one
+outside them produces false findings. A file's class is what it does, not
+where it lives: a file under `scripts/` that starts a long-lived server or
+listener is runtime code.
+
+| Class | What it is | Standards that govern it |
+|-------|------------|--------------------------|
+| Runtime code | services, workers, route handlers | <standards, linked> |
+| One-shot tools | command-line scripts that exit after their work | <standards, linked> |
+| Tests | test files, fixtures, test helpers | <standards, linked> |
+| Instruction files | `AGENTS.md`, rules, skills | <standards, linked> |
+
+<!-- Example: an injected-clock rule
+     (https://github.com/jig-harness/jig/blob/main/modules/M14-testing-strategy/README.md#core-pieces)
+     governs runtime code only. A script that exits after its work takes the
+     instant as a parameter, which gives the same testability; a test's own
+     setup and polling deadlines are outside it too. -->
+
+## Standing review stances
+
+Settled positions a reviewer must not reopen. Each line points to the one
+place the stance is written, never restates it; a finding that contradicts
+one is closed as rejected with a link to that source.
+
+- **<Stance name>** → `<docs/adr/ADR-NNNN-….md>`
+- **<Stance name>** → `<docs/policy.md#section>`
+
+<!-- A pointer may say what a reviewer needs to decide whether to raise a
+     finding ("applies to runtime code only"); what is done with the finding
+     belongs to the source. See
+     https://github.com/jig-harness/jig/blob/main/modules/M0-instruction-architecture/README.md#invariant -->
 
 ## Key references
 

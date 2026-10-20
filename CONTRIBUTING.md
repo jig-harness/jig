@@ -198,7 +198,10 @@ design. Run all with one command: `bun run gates`. The set, cheapest first:
    `renovate.json5` state `.config/supply-chain-policy.yaml`, which CI also
    runs before installing dependencies); Markdown links
    and the paths the `AGENTS.md`, `CLAUDE.md` and `CONTRIBUTING.md` files
-   name resolve; a blank line before every table; terms of art defined in the
+   name resolve; each slash command for one of Jig's own skills in those
+   files and in the skills naming its fallback
+   (`scripts/check-skill-fallbacks.ts`, M0's skill-invocation-fallback
+   check); a blank line before every table; terms of art defined in the
    glossary (acronym proxy; escape hatch: `scripts/glossary-allowlist.txt`,
    each entry under a reason and removed once nothing uses it);
    no origin references; plugin code reaching Linear only through the

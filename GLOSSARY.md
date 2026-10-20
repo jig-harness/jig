@@ -87,6 +87,18 @@ make, use the entry's term instead.
 - **Load path** — the way a file reaches a runtime's context: read natively,
   or brought in by an import. A text pointer ("see `AGENTS.md`") is not a
   load path; the model may or may not follow it.
+- **Portable fallback** — what an instruction says to do in a runtime that
+  lacks the capability it relies on: read the skill's `SKILL.md` where there
+  is no slash command, ask in plain text where there is no question tool.
+  See [M0](modules/M0-instruction-architecture/README.md#invariant).
+- **Host-injected tool** — a tool a launcher or workspace app adds to an
+  agent session without any file in the repository registering it (often an
+  *MCP* server). Searching the repository does not find it and its
+  configuration cannot gate it, so it is a convenience, never a dependency.
+- **Artifact class** — the kind of file a standard governs, decided by what
+  the file does rather than where it lives: runtime code (services, workers,
+  route handlers), one-shot command-line tools that exit after their work,
+  tests, and prose instruction files.
 - **Vendoring** — copying external material into a repo so it remains
   available and stable regardless of the original's location or lifetime.
 - **MCP (Model Context Protocol)** — an open standard for connecting AI
@@ -1067,6 +1079,11 @@ make, use the entry's term instead.
   hands a contested finding to when the triage rubric cannot settle it. It
   reads the code, rules fix now, reject, won't fix, defer or escalate, and
   never edits; only an escalation reaches a human.
+- **Standing rejection** — the prepared answer to a review finding that
+  contradicts a settled project stance: the finding is closed as *rejected*
+  with a link to the one place the stance is written, however small the
+  asked-for edit. A **standing review stance** is such a stance; the
+  instructions reviewers read point to its source and never restate it.
 - **Moot (as a resolution)** — the terminal state for a review finding whose
   anchored code no longer exists: deleted or rewritten by a later commit.
   Distinct from *rejected* on purpose — rejected asserts the reviewer was

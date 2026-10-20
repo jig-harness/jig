@@ -1,0 +1,69 @@
+# Skill-invocation fallback — a slash command says how to run it without one
+
+An instruction that says "run `/release-notes`" works in a runtime that has
+slash commands and has discovered that [skill](../../../../GLOSSARY.md).
+Read by any other runtime, it names a command that does not exist there, and
+the agent either guesses or skips the step. The fix is a
+[portable fallback](../../../../GLOSSARY.md) beside the invocation: the
+runtime's own skill directory, or the skill's `SKILL.md` read directly, as
+[M0's invariant](../../README.md#invariant) asks.
+
+This check finds every bare `/<skill>` for the skills it is given and fails
+each one with no fallback marker within a window of lines around it.
+
+## Files
+
+| File | Role |
+|------|------|
+| `check-skill-invocation-fallback.ts` | `(--skill <name> \| --skills <dir>)... [--marker <regex>] [--window <lines>] [--exempt <file>]... [--banner <regex>] [--file-marker <text>] <path>...`: scans the files named and the Markdown under each directory named; prints `file:line` and the fix for each invocation with no marker within the window |
+| `fixtures/` | Two skills, a document whose invocation names its fallback, one whose invocation does not, and a generated file that carries the exemption marker in its banner |
+
+The script's header comment states what counts as an invocation and what it
+leaves out. It exits 0 when every invocation names a fallback, 1 on a
+finding, and 2 on a usage error, a path that does not exist, or no skill to
+check. Its self-test sits beside it.
+
+## What it decides
+
+- **An invocation** is `/<skill>` after the start of a line, a blank, a
+  backtick, or an opening parenthesis or bracket, and not continued by
+  another name character. A path (`skills/<skill>/`, `/<skill>/SKILL.md`,
+  `/<skill>.md`) is not one.
+- **A plugin's skills are not checked.** A plugin-namespaced command
+  (`/<plugin>:<skill>`) resolves only through the installed plugin, so there
+  is no directory to fall back to; the plugin's own installation notes cover
+  the runtimes it supports.
+- **A marker** is, by default, a link to a `SKILL.md`, a mention of
+  `.agents/skills`, or a link to an interop document (a link whose target
+  holds `interop`). `--marker` replaces it with the repository's own, such as
+  the path of the document that says how each runtime runs a skill. The
+  default window is 10 lines on either side.
+- **A whole file is exempted only by three facts together**: it is named with
+  `--exempt`, it opens with a generated-file banner, and the banner carries
+  the file-level marker (`skill-invocation-fallback: exempt-file` by
+  default). A marker alone would be an exemption a file grants itself, and
+  the list alone would hide a hand-written file. A listed file that does not
+  carry both is a finding, and its lines are still checked. There is no
+  per-line exemption: a fallback is one link.
+
+Try it with the pinned Bun runtime:
+
+```sh
+bun check-skill-invocation-fallback.ts --skills fixtures/skills fixtures/docs/with-fallback.md
+bun check-skill-invocation-fallback.ts --skills fixtures/skills fixtures/docs
+```
+
+The second run fails on `without-fallback.md` and on `generated.md`, which
+passes once named with `--exempt fixtures/docs/generated.md`.
+
+## Wiring it
+
+Name the skills a runtime scans by directory (`--skills .claude/skills`), so
+a new skill is checked without a change to the command, and name the
+instruction files and skill folders that invoke them. Run it from a pinned
+Jig checkout, or vendor the folder with `lib/cli.ts`, `lib/files.ts` and
+`lib/findings.ts`, keeping their paths relative to it. It uses only Bun's
+built-ins, so it can run in the same step as the
+[context-budget checks](../context-budget/README.md), before dependencies
+are installed. The recipe is in
+[mappings.md](../../mappings.md#runtime-specific-capabilities-and-their-fallbacks).
