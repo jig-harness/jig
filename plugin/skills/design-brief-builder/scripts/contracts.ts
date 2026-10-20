@@ -2,11 +2,11 @@ import { decodeJson, isRecord, isStringArray } from "../../../shared/guards.ts";
 export interface Scenario {
   name: string;
   url: string;
+  ready: string;
   screenshot: string;
 }
 export interface Manifest {
   version: 1;
-  prototype: string;
   scenarios: Scenario[];
 }
 export interface Report {
@@ -25,28 +25,48 @@ export interface Settings {
   scorecard: string;
   browser_executable: string;
 }
+/** The renderer's own output directory: never bundle input or delivered evidence. */
+export const renderDirectory = ".handback-render";
+export const reportFile = "handback-report.json";
+/** The file name a scenario's verification image is written under. */
+export function renderName(scenario: string): string {
+  return scenario.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
 function nonempty(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
+}
+function reserved(path: string): boolean {
+  const normalized = path.replace(/^(?:\.\/)+/, "");
+  return (
+    normalized === reportFile ||
+    normalized === renderDirectory ||
+    normalized.startsWith(`${renderDirectory}/`)
+  );
 }
 function scenario(v: unknown): v is Scenario {
   return (
     isRecord(v) &&
     nonempty(v.name) &&
     nonempty(v.url) &&
+    nonempty(v.ready) &&
     nonempty(v.screenshot) &&
-    /\.png$/i.test(v.screenshot)
+    /\.png$/i.test(v.screenshot) &&
+    !reserved(v.screenshot)
   );
+}
+function distinct(values: string[]): boolean {
+  return new Set(values).size === values.length;
 }
 function manifest(v: unknown): v is Manifest {
   return (
     isRecord(v) &&
     v.version === 1 &&
-    nonempty(v.prototype) &&
     Array.isArray(v.scenarios) &&
     v.scenarios.length > 0 &&
     v.scenarios.every(scenario) &&
-    new Set(v.scenarios.map((s) => s.name)).size === v.scenarios.length &&
-    new Set(v.scenarios.map((s) => s.screenshot)).size === v.scenarios.length
+    distinct(v.scenarios.map((s) => s.name)) &&
+    distinct(v.scenarios.map((s) => renderName(s.name))) &&
+    distinct(v.scenarios.map((s) => s.screenshot))
   );
 }
 function regression(v: unknown): boolean {
@@ -90,3 +110,5 @@ export function validSettings(v: unknown): v is Settings {
       (isStringArray(v.forbidden_terms) && v.forbidden_terms.every(nonempty)))
   );
 }
+export const settingsRequirement =
+  "design_brief.handback needs distinct positive integer widths and nonempty rubric, scorecard and browser_executable; forbidden_terms, when set, lists nonempty strings";

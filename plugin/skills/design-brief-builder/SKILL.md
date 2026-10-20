@@ -43,7 +43,10 @@ is for. Never `cd` into the skill directory.
 The repository's design sources are read from its Jig configuration
 (every layer, `.config/jig.yaml` among them) with
 `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" design_brief --json`;
-exit 2 means no layer sets the section. Every field is optional:
+exit 2 means no layer sets the section. The preparation fields below are
+optional; the handback fields under `design_brief.handback` are listed in
+§ After the session: handoff back, and four of them are required for the
+landing check:
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
@@ -182,7 +185,8 @@ bun "${CLAUDE_SKILL_DIR}/scripts/handback.ts" merge "<bundle>" HEAD "<scratch-ou
 
 This merges the recorded raw export base, saved repository version and returned
 export into a new scratch directory. Exit 1 means conflicts or lost repository
-hunks need review. Copy the staged bundle to its canonical path and run the landing check below
+hunks need review. Replace the canonical bundle directory with the staged one, so files the
+merge deleted are gone too, and run the landing check below
 immediately, before manual review, to list mechanical findings. Resolve
 conflicts, clear each resolved conflict entry in
 `handback-report.json`, and explicitly acknowledge each reported regression
@@ -195,10 +199,11 @@ bun "${CLAUDE_SKILL_DIR}/scripts/handback.ts" check "<bundle>"
 
 Configure `design_brief.handback` through the shared configuration reader:
 `forbidden_terms` (default empty), and required `widths`, `rubric`, `scorecard`,
-`browser_executable`. Scenario names and URLs come from the bundle's
-`design-handback.json`, never a built-in scenario list. Both its README and
-consumer scorecard must state `Bar outcome: pass`. Missing evidence, browser
-availability or unresolved review fails closed. A passed landing check allows
+`browser_executable`. Scenario names, URLs and ready selectors come from the
+bundle's `design-handback.json`, never a built-in scenario list. Its README and
+the consumer scorecard each state exactly one `Bar outcome: pass`, and the
+scorecard names the round it reviewed with `Reviewed export base: <commit>`.
+Missing evidence, browser availability or unresolved review fails closed. A passed landing check allows
 planning production implementation with the repository's own process.
 
 ## References

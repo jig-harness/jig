@@ -452,6 +452,7 @@ fields:
     type: list
     items: integer
     nonempty: true
+    distinct: true
     read_by: [design-brief-builder]
     since: next
   design_brief.handback.rubric:

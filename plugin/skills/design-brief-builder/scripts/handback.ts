@@ -12,18 +12,22 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
 import { isRecord, decodeJson, isStringArray } from "../../../shared/guards.ts";
 import {
   parseManifest,
   parseReport,
+  renderDirectory,
+  reportFile,
+  settingsRequirement,
   validSettings,
   type Report,
   type Manifest,
   type Settings,
 } from "./contracts.ts";
 import { renderBundle } from "./browser.ts";
+import { decodePng, sameImage, type Image } from "./png.ts";
 
 function run(argv: string[], cwd = consumerRoot()): string {
   const p = Bun.spawnSync(argv, {
@@ -103,8 +107,11 @@ export function regressedHunks(
         if (merged === base) return true;
         const match = hunk.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
         if (!match) return true;
-        const start = Math.max(0, Number(match[1]) - 1);
         const count = match[2] === undefined ? 1 : Number(match[2]);
+        // A zero-count hunk names the boundary after line N, not a line at N.
+        const start = count
+          ? Math.max(0, Number(match[1]) - 1)
+          : Number(match[1]);
         const oursLines = ours.split("\n");
         const mergedLines = merged.split("\n");
         const from = Math.max(0, start - 1),
@@ -143,16 +150,32 @@ function fileChecks(path: string, text: string, terms: string[]): string[] {
       failures.push(`forbidden text '${term}': ${path}`);
   return failures;
 }
+/** The one `Bar outcome:` a document declares, outside comments and fenced examples. */
+export function outcomeFailure(text: string, source: string): string | null {
+  const operative = text
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
+    .replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^\1[ \t]*$|(?![\s\S]))/gm, "");
+  const outcomes = [
+    ...operative.matchAll(/^Bar outcome:[ \t]*(\S*)[ \t]*$/gim),
+  ];
+  if (outcomes.length !== 1)
+    return `${source} requires exactly one Bar outcome line, found ${outcomes.length}`;
+  return outcomes[0]?.[1] === "pass"
+    ? null
+    : `${source} requires Bar outcome: pass`;
+}
 export function staticChecks(input: StaticInput): string[] {
   const failures: string[] = [];
   for (const [path, text] of Object.entries(input.files))
     failures.push(...fileChecks(path, text, input.terms));
   if (!input.screenshotFresh)
-    failures.push("screenshots must be newer than the prototype");
+    failures.push(
+      "screenshots must be newer than every file the scenarios can load",
+    );
   if (!input.screenshotChanged)
     failures.push("screenshots must differ from the previous round");
-  if (!/^Bar outcome: pass\s*$/im.test(input.readme))
-    failures.push("README requires Bar outcome: pass");
+  const outcome = outcomeFailure(input.readme, "README");
+  if (outcome) failures.push(outcome);
   return failures;
 }
 function safe(root: string, path: string): string {
@@ -265,29 +288,44 @@ function writeMetadata(output: string, report: Report): void {
     : "";
   writeFileSync(
     join(output, "README.md"),
-    `${previous.replace(/^(?:Previous )?Export base(?: provenance)?:.*\n?/gim, "").trimEnd()}\n\nExport base: ${report.exportBase}\nExport base provenance: raw export\nPrevious export base: ${report.previousExportBase}\nPrevious export base provenance: ${report.provenance}\n`,
+    `${previous.replace(exportMetadata, "").trimEnd()}\n\nExport base: ${report.exportBase}\nExport base provenance: raw export\nPrevious export base: ${report.previousExportBase}\nPrevious export base provenance: ${report.provenance}\n`,
   );
   writeFileSync(
     join(output, "handback-report.json"),
     `${JSON.stringify(report, null, 2)}\n`,
   );
 }
-function validateBundlePath(bundle: string): void {
+/** The bundle as Git names it: repository-relative, `/`-separated, no `./`. */
+function bundlePath(bundle: string): string {
+  const path = relative(consumerRoot(), resolve(consumerRoot(), bundle));
   if (
     !bundle ||
     bundle.startsWith("-") ||
     isAbsolute(bundle) ||
-    relative(consumerRoot(), resolve(consumerRoot(), bundle)).startsWith("..")
+    !path ||
+    path === ".." ||
+    path.startsWith(`..${sep}`) ||
+    isAbsolute(path)
   )
     throw new ExitError(2, "Bundle must be a repository-relative directory");
+  return path.split(sep).join("/");
 }
+/** README export-base lines are rewritten each round, so they are never a repository fix. */
+function comparable(
+  path: string,
+  file: Buffer | undefined,
+): Buffer | undefined {
+  if (path !== "README.md" || !file) return file;
+  return Buffer.from(file.toString().replace(exportMetadata, ""));
+}
+const exportMetadata = /^(?:Previous )?Export base(?: provenance)?:.*\n?/gim;
 export function mergeBundle(
-  bundle: string,
+  requested: string,
   raw: string,
   output: string,
   ours: string,
 ): Report {
-  validateBundlePath(bundle);
+  const bundle = bundlePath(requested);
   const oursFiles = tree(ours, bundle);
   const readme = oursFiles.get("README.md")?.toString() ?? "";
   const base = baseOf(readme, bundle, ours);
@@ -312,13 +350,20 @@ export function mergeBundle(
     ...oursFiles.keys(),
     ...returned.keys(),
   ])) {
-    if (path === "handback-report.json") continue;
+    if (path === reportFile) continue;
     const b = baseFiles.get(path),
       o = oursFiles.get(path),
       t = returned.get(path);
     const { result, conflict } = mergeFile(b, o, t);
     if (conflict) report.conflicts.push(path);
-    report.regressions.push(...lostHunks(path, b, o, result));
+    report.regressions.push(
+      ...lostHunks(
+        path,
+        comparable(path, b),
+        comparable(path, o),
+        comparable(path, result),
+      ),
+    );
     if (result) {
       mkdirSync(dirname(safe(output, path)), { recursive: true });
       writeFileSync(safe(output, path), result);
@@ -331,44 +376,111 @@ function settings(): Settings {
   const value = (
     readConfig().design_brief as { handback?: Settings } | undefined
   )?.handback;
-  if (!validSettings(value))
-    throw new ExitError(
-      2,
-      "Configure design_brief.handback widths, rubric, scorecard and browser_executable",
-    );
+  if (!validSettings(value)) throw new ExitError(2, settingsRequirement);
   return value;
 }
-function screenshotStatus(
+/** Every delivered screenshot path, with the width it is evidence for. */
+function screenshots(manifest: Manifest, widths: number[]): string[] {
+  return manifest.scenarios.flatMap((s) =>
+    widths.map((width) =>
+      width === widths[0]
+        ? s.screenshot.replace(/^(?:\.\/)+/, "")
+        : s.screenshot
+            .replace(/^(?:\.\/)+/, "")
+            .replace(/(\.[^.]+)$/, `-${width}$1`),
+    ),
+  );
+}
+function image(data: Buffer): Image | string {
+  try {
+    return decodePng(data);
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+/**
+ * Screenshots must postdate every file the renderer can load, and differ as
+ * images from the previous round's.
+ */
+function screenshotChecks(
   dir: string,
-  manifest: Manifest,
-  config: Settings,
+  files: string[],
+  evidence: string[],
   previous: Map<string, Buffer>,
-): { fresh: boolean; changed: boolean } {
-  const prototype = statSync(safe(dir, manifest.prototype));
+): { fresh: boolean; changed: boolean; failures: string[] } {
+  const inputs = files.filter(
+    (p) =>
+      !p.endsWith("/") &&
+      !evidence.includes(p) &&
+      !generated(p) &&
+      p !== "README.md",
+  );
+  const newestInput = Math.max(
+    0,
+    ...inputs.map((p) => statSync(safe(dir, p)).mtimeMs),
+  );
   let fresh = true,
     changed = true;
-  for (const s of manifest.scenarios)
-    for (const width of config.widths) {
-      const path =
-        width === config.widths[0]
-          ? s.screenshot
-          : s.screenshot.replace(/(\.[^.]+)$/, `-${width}$1`);
-      const image = safe(dir, path);
-      if (!existsSync(image)) {
-        fresh = false;
-        changed = false;
-        continue;
-      }
-      fresh &&= statSync(image).mtimeMs > prototype.mtimeMs;
-      const old = previous.get(path);
-      if (old) changed &&= !old.equals(readFileSync(image));
+  const failures: string[] = [];
+  for (const path of evidence) {
+    const file = safe(dir, path);
+    if (!existsSync(file)) {
+      fresh = false;
+      changed = false;
+      continue;
     }
-  return { fresh, changed };
+    fresh &&= statSync(file).mtimeMs > newestInput;
+    const delivered = image(readFileSync(file));
+    if (typeof delivered === "string") {
+      failures.push(`screenshot is not a valid PNG (${delivered}): ${path}`);
+      changed = false;
+      continue;
+    }
+    const old = previous.get(path);
+    const before = old && image(old);
+    if (before)
+      changed &&= typeof before === "string" || !sameImage(before, delivered);
+  }
+  return { fresh, changed, failures };
+}
+function generated(path: string): boolean {
+  return path === reportFile || path.startsWith(`${renderDirectory}/`);
+}
+/** The final bundle's files, as the merge would compare them. */
+function currentFiles(dir: string, files: string[]): Map<string, Buffer> {
+  return new Map(
+    files
+      .filter((p) => !p.endsWith("/") && !generated(p))
+      .map((p) => [p, readFileSync(safe(dir, p))] as const),
+  );
+}
+/**
+ * Lost repository hunks in the files as they stand now, so an edit after the
+ * merge cannot drop a fix the report never listed.
+ */
+function currentRegressions(
+  bundle: string,
+  report: Report,
+  current: Map<string, Buffer>,
+): Report["regressions"] {
+  const base = tree(report.previousExportBase, bundle);
+  const ours = tree(report.ours, bundle);
+  return [...new Set([...base.keys(), ...ours.keys(), ...current.keys()])]
+    .filter((path) => !generated(path))
+    .flatMap((path) =>
+      lostHunks(
+        path,
+        comparable(path, base.get(path)),
+        comparable(path, ours.get(path)),
+        comparable(path, current.get(path)),
+      ),
+    );
 }
 function evidenceChecks(
   root: string,
   config: Settings,
   report: Report,
+  regressions: Report["regressions"],
 ): string[] {
   const failures: string[] = [];
   for (const path of [config.rubric, config.scorecard])
@@ -377,40 +489,45 @@ function evidenceChecks(
       !readFileSync(safe(root, path), "utf8").trim()
     )
       failures.push(`missing or empty review evidence: ${path}`);
-  if (
-    existsSync(safe(root, config.scorecard)) &&
-    !/^Bar outcome: pass\s*$/im.test(
-      readFileSync(safe(root, config.scorecard), "utf8"),
+  if (existsSync(safe(root, config.scorecard))) {
+    const scorecard = readFileSync(safe(root, config.scorecard), "utf8");
+    const outcome = outcomeFailure(scorecard, "scorecard");
+    if (outcome) failures.push(outcome);
+    if (
+      !new RegExp(`^Reviewed export base: ${report.exportBase}\\s*$`, "m").test(
+        scorecard,
+      )
     )
-  )
-    failures.push("scorecard requires Bar outcome: pass");
+      failures.push(
+        `scorecard must record the round it reviewed: Reviewed export base: ${report.exportBase}`,
+      );
+  }
   for (const path of report.conflicts)
     failures.push(
       `resolve recorded conflict and remove its report entry: ${path}`,
     );
-  for (const regression of report.regressions)
-    if (regression.acknowledged !== true)
+  const acknowledged = new Set(
+    report.regressions
+      .filter((r) => r.acknowledged === true)
+      .map((r) => `${r.file}\0${r.hunk}`),
+  );
+  for (const regression of regressions)
+    if (!acknowledged.has(`${regression.file}\0${regression.hunk}`))
       failures.push(
         `review lost repository hunk: ${regression.file}: ${regression.hunk}`,
       );
   return failures;
 }
 function textEvidence(
-  dir: string,
   config: Settings,
   readme: string,
+  current: Map<string, Buffer>,
+  files: string[],
 ): { files: Record<string, string>; terms: string[] } {
-  const allPaths = list(dir);
   const textFiles = Object.fromEntries(
-    allPaths
-      .filter(
-        (p) =>
-          !p.endsWith("/") &&
-          !p.startsWith(".handback-render/") &&
-          !p.endsWith("handback-report.json") &&
-          !/\.(png|jpg|jpeg|webp|woff2?|ttf|ico|pdf)$/i.test(p),
-      )
-      .map((p) => [p, readFileSync(safe(dir, p), "utf8")]),
+    [...current]
+      .filter(([p]) => !/\.(png|jpg|jpeg|webp|woff2?|ttf|ico|pdf)$/i.test(p))
+      .map(([p, data]) => [p, data.toString("utf8")]),
   );
   const terms = [
     ...(config.forbidden_terms ?? []),
@@ -422,22 +539,25 @@ function textEvidence(
   ];
   return {
     files: {
-      ...Object.fromEntries(allPaths.map((path) => [path, ""])),
+      ...Object.fromEntries(files.map((path) => [path, ""])),
       ...textFiles,
     },
     terms,
   };
 }
-export async function checkBundle(bundle: string): Promise<string[]> {
+/** Everything the landing check verifies without a browser, and what the browser then renders. */
+export function landingFailures(requested: string): {
+  failures: string[];
+  render: () => Promise<string[]>;
+} {
   const root = consumerRoot();
+  const bundle = bundlePath(requested);
   const dir = safe(root, bundle);
   const config = settings();
   const manifest = parseManifest(
     readFileSync(join(dir, "design-handback.json"), "utf8"),
   );
-  const report = parseReport(
-    readFileSync(join(dir, "handback-report.json"), "utf8"),
-  );
+  const report = parseReport(readFileSync(join(dir, reportFile), "utf8"));
   git("merge-base", "--is-ancestor", report.exportBase, "HEAD");
   const readme = readFileSync(join(dir, "README.md"), "utf8");
   if (!readme.includes(`Export base: ${report.exportBase}`))
@@ -445,29 +565,48 @@ export async function checkBundle(bundle: string): Promise<string[]> {
       2,
       "README export base differs from raw delivery report",
     );
-  const previous = tree(report.ours, bundle);
-  const { fresh, changed } = screenshotStatus(dir, manifest, config, previous);
-  const { files, terms } = textEvidence(dir, config, readme);
-  const failures = staticChecks({
+  const files = list(dir);
+  const current = currentFiles(dir, files);
+  const shots = screenshotChecks(
+    dir,
     files,
+    screenshots(manifest, config.widths),
+    tree(report.ours, bundle),
+  );
+  const { files: text, terms } = textEvidence(config, readme, current, files);
+  const failures = staticChecks({
+    files: text,
     terms,
     readme,
-    screenshotFresh: fresh,
-    screenshotChanged: changed,
+    screenshotFresh: shots.fresh,
+    screenshotChanged: shots.changed,
   });
-  failures.push(...evidenceChecks(root, config, report));
+  failures.push(...shots.failures);
   failures.push(
-    ...(
-      await renderBundle(
-        dir,
-        manifest.scenarios,
-        config.widths,
-        config.browser_executable,
-        terms,
-      )
-    ).failures,
+    ...evidenceChecks(
+      root,
+      config,
+      report,
+      currentRegressions(bundle, report, current),
+    ),
   );
-  return failures;
+  return {
+    failures,
+    render: async () =>
+      (
+        await renderBundle(
+          dir,
+          manifest.scenarios,
+          config.widths,
+          config.browser_executable,
+          terms,
+        )
+      ).failures,
+  };
+}
+export async function checkBundle(requested: string): Promise<string[]> {
+  const landing = landingFailures(requested);
+  return [...landing.failures, ...(await landing.render())];
 }
 export function facts(argv: string[], output: string): void {
   if (!argv.length) throw new ExitError(2, "Facts source command is empty");

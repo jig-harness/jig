@@ -12,20 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-
-const chrome =
-  process.env.JIG_TEST_CHROMIUM ??
-  [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    join(
-      process.env.PROGRAMFILES ?? "C:/Program Files",
-      "Google/Chrome/Application/chrome.exe",
-    ),
-  ].find(existsSync) ??
-  Bun.which("chromium") ??
-  Bun.which("chromium-browser") ??
-  Bun.which("google-chrome");
-const required = process.env.JIG_REQUIRE_BROWSER === "1";
+import { chrome, onePixel, required } from "./support.ts";
 
 // CI without Chromium still runs the static and merge tests in handback.test.ts.
 test.skipIf(!chrome && !required)(
@@ -68,10 +55,7 @@ test.skipIf(!chrome && !required)(
       mkdirSync(resolve(target, ".."), { recursive: true });
       writeFileSync(target, text);
     };
-    const png = Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==",
-      "base64",
-    );
+    const png = onePixel([255, 255, 255]);
     try {
       expect(existsSync(join(cache, "node_modules"))).toBe(false);
       run(["git", "init"]);
@@ -98,11 +82,11 @@ test.skipIf(!chrome && !required)(
         "bundle/design-handback.json",
         JSON.stringify({
           version: 1,
-          prototype: "index.html",
           scenarios: [
             {
               name: "home",
               url: "index.html",
+              ready: "body",
               screenshot: "screenshots/home.png",
             },
           ],
@@ -139,7 +123,8 @@ test.skipIf(!chrome && !required)(
           regressions: [],
         }),
       );
-      utimesSync(join(consumer, "bundle/index.html"), 20, 20);
+      for (const input of ["index.html", "design-handback.json"])
+        utimesSync(join(consumer, "bundle", input), 20, 20);
       for (const name of ["home.png", "home-1280.png"])
         utimesSync(join(consumer, "bundle/screenshots", name), 10, 10);
       const failed = JSON.parse(
@@ -167,13 +152,17 @@ test.skipIf(!chrome && !required)(
         '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body>Accepted design</body></html>',
       );
       rmSync(join(consumer, "bundle/uploads"), { recursive: true });
-      // PNG permits trailing bytes; these distinguish the new delivered evidence from the previous export.
-      const delivered = Buffer.concat([png, Buffer.from("new export")]);
+      write(
+        "scorecard.md",
+        `Bar outcome: pass\nReviewed export base: ${raw}\n`,
+      );
+      const delivered = onePixel([20, 40, 60]);
       for (const name of ["home.png", "home-1280.png"]) {
         write(`bundle/screenshots/${name}`, delivered);
         utimesSync(join(consumer, "bundle/screenshots", name), 30, 30);
       }
-      utimesSync(join(consumer, "bundle/index.html"), 20, 20);
+      for (const input of ["index.html", "design-handback.json"])
+        utimesSync(join(consumer, "bundle", input), 20, 20);
       const passed = JSON.parse(
         run([process.execPath, script, "check", "bundle"]),
       ) as { failures: string[] };

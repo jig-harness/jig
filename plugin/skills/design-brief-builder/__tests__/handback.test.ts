@@ -1,9 +1,13 @@
 import { expect, test } from "bun:test";
+import { parseManifest } from "../scripts/contracts.ts";
 import {
   mergeText,
+  outcomeFailure,
   regressedHunks,
   staticChecks,
 } from "../scripts/handback.ts";
+import { decodePng, sameImage } from "../scripts/png.ts";
+import { onePixel } from "./support.ts";
 
 test("overlapping round fixes remain conflicts", () => {
   const result = mergeText(
@@ -119,7 +123,7 @@ test("complete round keeps raw provenance, flags regressions and derives facts",
       process.execPath,
       script,
       "merge",
-      "bundle",
+      "./bundle/",
       raw,
       join(dir, "staged"),
       "--ours",
@@ -183,3 +187,206 @@ test("deleted and added repository lines are reported when reverted", () => {
   ).toHaveLength(1);
   expect(regressedHunks("keep\n", "new\nkeep\n", "keep\n")).toHaveLength(1);
 });
+
+test("a deleted line is checked on both sides of where it was", () => {
+  // Without the merged===base shortcut: the merge changed a later line too.
+  expect(
+    regressedHunks(
+      "first\nretired\nlast\n",
+      "first\nlast\n",
+      "first\nretired\nchanged-last\n",
+    ),
+  ).toHaveLength(1);
+  expect(
+    regressedHunks(
+      "first\nretired\nlast\n",
+      "first\nlast\n",
+      "first\nlast\nadded\n",
+    ),
+  ).toEqual([]);
+});
+test("one operative bar outcome, outside comments and examples", () => {
+  expect(outcomeFailure("Bar outcome: pass\n", "README")).toBeNull();
+  for (const text of [
+    "Bar outcome: fail\nBar outcome: pass\n",
+    "<!--\nBar outcome: pass\n-->\n",
+    "```\nBar outcome: pass\n```\n",
+    "Bar outcome: fail\n```md\nBar outcome: pass\n```\n",
+  ])
+    expect(outcomeFailure(text, "README")).not.toBeNull();
+});
+test("screenshots compare as images, not bytes", () => {
+  const white = onePixel([255, 255, 255]);
+  const reencoded = onePixel([255, 255, 255], { level: 0 });
+  expect(reencoded.equals(white)).toBe(false);
+  expect(sameImage(decodePng(white), decodePng(reencoded))).toBe(true);
+  expect(
+    sameImage(decodePng(white), decodePng(onePixel([255, 255, 254]))),
+  ).toBe(false);
+  expect(() =>
+    decodePng(Buffer.concat([white, Buffer.from("new export")])),
+  ).toThrow("data after the image end");
+  expect(() => decodePng(Buffer.from("not an image"))).toThrow("not a PNG");
+});
+test("scenario outputs stay distinct and out of the renderer's directory", () => {
+  const manifest = (scenarios: object[]) =>
+    JSON.stringify({ version: 1, scenarios });
+  const scenario = (name: string, screenshot = `${name}.png`) => ({
+    name,
+    url: "index.html",
+    ready: "main",
+    screenshot,
+  });
+  expect(() => parseManifest(manifest([scenario("home")]))).not.toThrow();
+  expect(() =>
+    parseManifest(manifest([scenario("empty state"), scenario("empty/state")])),
+  ).toThrow();
+  expect(() =>
+    parseManifest(
+      manifest([scenario("home", ".handback-render/home-390.png")]),
+    ),
+  ).toThrow();
+  expect(() =>
+    parseManifest(manifest([{ ...scenario("home"), ready: undefined }])),
+  ).toThrow();
+});
+
+test("the landing check finds a fix lost after the merge, until it is acknowledged", async () => {
+  const {
+    cpSync,
+    mkdtempSync,
+    mkdirSync,
+    writeFileSync,
+    readFileSync,
+    rmSync,
+  } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join, resolve } = await import("node:path");
+  const { expectSpawnExit } = await import(
+    "../../../../lib/test-helpers/expect-spawn-exit.ts"
+  );
+  const dir = mkdtempSync(join(tmpdir(), "jig-landing-"));
+  const script = resolve(import.meta.dir, "../scripts/handback.ts");
+  const env = {
+    ...Object.fromEntries(
+      Object.entries(process.env).filter(([key]) => !key.startsWith("JIG_")),
+    ),
+    JIG_CONSUMER_ROOT: dir,
+    JIG_USER_LAYER: "off",
+  };
+  const exec = (argv: string[], expected = 0) => {
+    const p = Bun.spawnSync(argv, {
+      cwd: dir,
+      env,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(p, expected);
+    return p.stdout.toString().trim();
+  };
+  const write = (path: string, text: string) => {
+    mkdirSync(resolve(dir, path, ".."), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  };
+  const landing = () =>
+    JSON.parse(
+      exec([
+        process.execPath,
+        "-e",
+        `import { landingFailures } from ${JSON.stringify(script)}; console.log(JSON.stringify(landingFailures("bundle").failures))`,
+      ]),
+    ) as string[];
+  try {
+    exec(["git", "init"]);
+    exec(["git", "config", "user.email", "test@example.test"]);
+    exec(["git", "config", "user.name", "Test"]);
+    write(
+      ".config/jig.yaml",
+      JSON.stringify({
+        design_brief: {
+          handback: {
+            widths: [390],
+            rubric: "rubric.md",
+            scorecard: "scorecard.md",
+            browser_executable: "unused-without-rendering",
+          },
+        },
+      }),
+    );
+    write("rubric.md", "Review the scenario.\n");
+    write("bundle/README.md", "Bar outcome: pass\n");
+    write(
+      "bundle/design-handback.json",
+      JSON.stringify({
+        version: 1,
+        scenarios: [
+          {
+            name: "home",
+            url: "index.html",
+            ready: "main",
+            screenshot: "home.png",
+          },
+        ],
+      }),
+    );
+    write(
+      "bundle/index.html",
+      "<main>vendor: old</main>\n<p>a</p>\n<p>b</p>\n",
+    );
+    exec(["git", "add", "."]);
+    exec(["git", "commit", "-m", "raw base"]);
+    const base = exec(["git", "rev-parse", "HEAD"]);
+    write("bundle/README.md", `Bar outcome: pass\nExport base: ${base}\n`);
+    write(
+      "bundle/index.html",
+      "<main>vendor: neutral</main>\n<p>a</p>\n<p>b</p>\n",
+    );
+    exec(["git", "add", "."]);
+    exec(["git", "commit", "-m", "accepted fixes"]);
+    const ours = exec(["git", "rev-parse", "HEAD"]);
+    write(
+      "bundle/index.html",
+      "<main>vendor: old</main>\n<p>a</p>\n<p>returned</p>\n",
+    );
+    exec(["git", "add", "."]);
+    exec(["git", "commit", "-m", "raw returned"]);
+    const raw = exec(["git", "rev-parse", "HEAD"]);
+    exec([
+      process.execPath,
+      script,
+      "merge",
+      "bundle",
+      raw,
+      join(dir, "staged"),
+      "--ours",
+      ours,
+    ]);
+    rmSync(join(dir, "bundle"), { recursive: true });
+    cpSync(join(dir, "staged"), join(dir, "bundle"), { recursive: true });
+    write("scorecard.md", `Bar outcome: pass\nReviewed export base: ${raw}\n`);
+    const reportPath = join(dir, "bundle/handback-report.json");
+    const report = JSON.parse(readFileSync(reportPath, "utf8"));
+    expect(report.regressions).toEqual([]);
+    expect(readFileSync(join(dir, "bundle/index.html"), "utf8")).toContain(
+      "vendor: neutral",
+    );
+    const lost = (failures: string[]) =>
+      failures.filter((f) =>
+        f.startsWith("review lost repository hunk: index.html"),
+      );
+    expect(lost(landing())).toEqual([]);
+    write(
+      "bundle/index.html",
+      "<main>vendor: old</main>\n<p>a</p>\n<p>returned</p>\n",
+    );
+    expect(lost(landing())).toHaveLength(1);
+    const hunk = lost(landing())[0]?.slice(
+      "review lost repository hunk: index.html: ".length,
+    );
+    report.regressions = [{ file: "index.html", hunk, acknowledged: true }];
+    writeFileSync(reportPath, JSON.stringify(report));
+    expect(lost(landing())).toEqual([]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 30_000);
