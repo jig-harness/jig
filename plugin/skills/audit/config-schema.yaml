@@ -291,7 +291,7 @@ fields:
     exists: required
     default: label-taxonomy.yaml
     read_by: [file-issue]
-    since: next
+    since: 0.67.0
 
   do_item.agents.default:
     type: string
