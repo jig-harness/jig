@@ -45,7 +45,7 @@ The repository's design sources are read from its Jig configuration
 `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" design_brief --json`;
 exit 2 means no layer sets the section. The preparation fields below are
 optional; the handback fields under `design_brief.handback` are listed in
-§ After the session: handoff back, and four of them are required for the
+§ After the session: handoff back, which names the required fields for the
 landing check:
 
 | Field | What it sets | When absent |
@@ -205,8 +205,11 @@ Configure `design_brief.handback` through the shared configuration reader:
 `browser_executable`. Scenario names, URLs and ready selectors come from the
 bundle's `design-handback.json`, never a built-in scenario list. Its README and
 the consumer scorecard each state exactly one `Bar outcome: pass`, and the
-scorecard names the round it reviewed with `Reviewed export base: <commit>`.
-Missing evidence, browser availability or unresolved review fails closed. A passed landing check allows
+scorecard names the round it reviewed with exactly one
+`Reviewed export base: <commit>`, all outside comments and fenced examples.
+Delivered screenshots are valid non-interlaced PNG files at bundle-relative
+paths without `.` or `..` segments.
+Missing evidence, a missing or unusable browser, or unresolved review fails closed. A passed landing check allows
 planning production implementation with the repository's own process.
 
 ## References

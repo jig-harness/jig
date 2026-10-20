@@ -35,13 +35,30 @@ export function renderName(scenario: string): string {
 function nonempty(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
 }
+/**
+ * A delivered screenshot's path as the bundle names it: leading `./` dropped,
+ * then `/`-separated segments with no empty, `.` or `..` segment and no
+ * backslash, so the reserved-path and uniqueness checks compare the file the
+ * landing check will read.
+ */
+export function screenshotPath(path: string): string | null {
+  const stripped = path.replace(/^(?:\.\/)+/, "");
+  const segments = stripped.split("/");
+  return stripped.includes("\\") ||
+    segments.some((s) => s === "" || s === "." || s === "..")
+    ? null
+    : stripped;
+}
 function reserved(path: string): boolean {
-  const normalized = path.replace(/^(?:\.\/)+/, "");
   return (
-    normalized === reportFile ||
-    normalized === renderDirectory ||
-    normalized.startsWith(`${renderDirectory}/`)
+    path === reportFile ||
+    path === renderDirectory ||
+    path.startsWith(`${renderDirectory}/`)
   );
+}
+function canonical(path: string): boolean {
+  const normalized = screenshotPath(path);
+  return normalized !== null && !reserved(normalized);
 }
 function scenario(v: unknown): v is Scenario {
   return (
@@ -51,10 +68,10 @@ function scenario(v: unknown): v is Scenario {
     nonempty(v.ready) &&
     nonempty(v.screenshot) &&
     /\.png$/i.test(v.screenshot) &&
-    !reserved(v.screenshot)
+    canonical(v.screenshot)
   );
 }
-function distinct(values: string[]): boolean {
+function distinct(values: unknown[]): boolean {
   return new Set(values).size === values.length;
 }
 function manifest(v: unknown): v is Manifest {
@@ -66,7 +83,7 @@ function manifest(v: unknown): v is Manifest {
     v.scenarios.every(scenario) &&
     distinct(v.scenarios.map((s) => s.name)) &&
     distinct(v.scenarios.map((s) => renderName(s.name))) &&
-    distinct(v.scenarios.map((s) => s.screenshot))
+    distinct(v.scenarios.map((s) => screenshotPath(s.screenshot)))
   );
 }
 function regression(v: unknown): boolean {

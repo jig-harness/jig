@@ -45,10 +45,12 @@ it, within a bounded time, before inspecting the page, and a scenario that never
 matches fails. Scenario names must stay distinct once characters other than
 letters, digits, `_` and `-` become `_`. The delivered screenshot path
 is for the first configured width; later widths append `-<width>` before the
-extension, and no screenshot may sit under `.handback-render/`. After the rubric
+extension. A screenshot path is relative to the bundle, `/`-separated, with no
+empty, `.` or `..` segment, and never under `.handback-render/`. After the rubric
 review passes, README and the scorecard each state exactly one
 `Bar outcome: pass` outside comments and fenced examples, and the scorecard
-names the round it reviewed with `Reviewed export base: <raw-export-commit>`. README may extend the configured terms with a comma-separated
+names the round it reviewed with exactly one
+`Reviewed export base: <raw-export-commit>` there. README may extend the configured terms with a comma-separated
 `Forbidden terms: ...` line; that declaration itself is excluded from scanning.
 
 ## Land one returned round
@@ -82,14 +84,25 @@ names the round it reviewed with `Reviewed export base: <raw-export-commit>`. RE
    can require review when unrelated earlier lines move. It does not mistake
    repeated text elsewhere for a surviving fix. For each conflict resolve the
    file and remove its entry from `conflicts`; for each regression restore the
-   fix or decide to accept it, then set its `acknowledged` to `true`.
+   fix or decide to accept it, then set its `acknowledged` to `true`. A lost
+   hunk the landing check finds that the report does not list yet is accepted
+   the same way: add `{"file": "<file>", "hunk": "<hunk>", "acknowledged": true}`
+   to `regressions`, copying the file and hunk from the failure line
+   `review lost repository hunk: <file>: <hunk>`. A file that is binary on any
+   side reports the hunk `binary content differs from the repository version`
+   when it differs from the repository's changed version.
 4. Keep `handback-report.json`
    and the generated README's export-base metadata. Supply fresh delivered
-   screenshots at every configured width, as decodable `.png` images with modification
+   screenshots at every configured width, as valid non-interlaced `.png` images
+   of at most 256 MiB of decoded image data, with modification
    times strictly newer than every other bundle file except README and the
    report. Git snapshots do not preserve delivery modification
    times: capture the delivered screenshots after resolving the merge. Existing scenario screenshots must differ, as
-   images, from those in the saved landed commit. New scenario paths have no prior image.
+   images, from those in the saved landed commit: pixels are compared as
+   colors and transparency, whatever the color type, bit depth or compression.
+   New scenario paths have no prior image. Browser screenshots are
+   non-interlaced; re-save an interlaced export without interlacing (for
+   example `magick in.png -interlace none out.png`).
 5. Run the mechanical landing check, then commit the accepted fixes:
 
    ```sh

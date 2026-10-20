@@ -212,8 +212,17 @@ test("one operative bar outcome, outside comments and examples", () => {
     "<!--\nBar outcome: pass\n-->\n",
     "```\nBar outcome: pass\n```\n",
     "Bar outcome: fail\n```md\nBar outcome: pass\n```\n",
+    "   ```md\nBar outcome: pass\n   ```\n",
+    "````\nBar outcome: pass\n```\nstill fenced\n````\n",
+    "~~~\nBar outcome: pass\n",
   ])
     expect(outcomeFailure(text, "README")).not.toBeNull();
+  for (const text of [
+    "    ```\nBar outcome: pass\n",
+    "```\nexample\n```\nBar outcome: pass\n",
+    "``` not `a fence\nBar outcome: pass\n",
+  ])
+    expect(outcomeFailure(text, "README")).toBeNull();
 });
 test("screenshots compare as images, not bytes", () => {
   const white = onePixel([255, 255, 255]);
@@ -249,6 +258,24 @@ test("scenario outputs stay distinct and out of the renderer's directory", () =>
   expect(() =>
     parseManifest(manifest([{ ...scenario("home"), ready: undefined }])),
   ).toThrow();
+  for (const screenshot of [
+    "x/../.handback-render/home-390.png",
+    "./.handback-render/home-390.png",
+    "/tmp/home.png",
+    "shots//home.png",
+    "shots\\home.png",
+  ])
+    expect(() =>
+      parseManifest(manifest([scenario("home", screenshot)])),
+    ).toThrow();
+  expect(() =>
+    parseManifest(
+      manifest([scenario("a", "./home.png"), scenario("b", "home.png")]),
+    ),
+  ).toThrow();
+  expect(() =>
+    parseManifest(manifest([scenario("home", "./shots/home.png")])),
+  ).not.toThrow();
 });
 
 test("the landing check finds a fix lost after the merge, until it is acknowledged", async () => {
@@ -386,6 +413,24 @@ test("the landing check finds a fix lost after the merge, until it is acknowledg
     report.regressions = [{ file: "index.html", hunk, acknowledged: true }];
     writeFileSync(reportPath, JSON.stringify(report));
     expect(lost(landing())).toEqual([]);
+    write(
+      "bundle/index.html",
+      "<main>vendor: old</main>\n<p>a</p>\n<p>returned</p>\n\0",
+    );
+    expect(lost(landing())).toEqual([
+      "review lost repository hunk: index.html: binary content differs from the repository version",
+    ]);
+    const reviewed = (failures: string[]) =>
+      failures.filter((f) => f.startsWith("scorecard must record"));
+    expect(reviewed(landing())).toEqual([]);
+    for (const scorecard of [
+      `Bar outcome: pass\nReviewed export base: ${base}\n<!-- Reviewed export base: ${raw} -->\n`,
+      `Bar outcome: pass\nReviewed export base: ${base}\n\`\`\`\nReviewed export base: ${raw}\n\`\`\`\n`,
+      `Bar outcome: pass\nReviewed export base: ${base}\nReviewed export base: ${raw}\n`,
+    ]) {
+      write("scorecard.md", scorecard);
+      expect(reviewed(landing())).toHaveLength(1);
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

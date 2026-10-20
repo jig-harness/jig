@@ -17,6 +17,7 @@ import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
 import { isRecord, decodeJson, isStringArray } from "../../../shared/guards.ts";
 import {
   parseManifest,
+  screenshotPath,
   parseReport,
   renderDirectory,
   reportFile,
@@ -150,17 +151,61 @@ function fileChecks(path: string, text: string, terms: string[]): string[] {
       failures.push(`forbidden text '${term}': ${path}`);
   return failures;
 }
+/**
+ * The Markdown a reader sees as prose: HTML comments removed, and fenced code
+ * blocks removed by CommonMark's rules (an opening fence indented up to three
+ * spaces, closed by a fence of the same character at least as long, or by the
+ * end of the document).
+ */
+function operative(text: string): string {
+  const lines = text.replace(/<!--[\s\S]*?(?:-->|$)/g, "").split("\n");
+  const kept: string[] = [];
+  let fence: { char: string; length: number } | null = null;
+  for (const line of lines) {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      if (
+        marker?.[1]?.[0] === fence.char &&
+        marker[1].length >= fence.length &&
+        !marker[2]?.trim()
+      )
+        fence = null;
+      continue;
+    }
+    if (marker?.[1] && !(marker[1][0] === "`" && marker[2]?.includes("`"))) {
+      fence = { char: marker[1][0] ?? "", length: marker[1].length };
+      continue;
+    }
+    kept.push(line);
+  }
+  return kept.join("\n");
+}
+/** Every value a document declares as a `<label>: <value>` line in its operative prose. */
+function declarations(text: string, label: string): string[] {
+  return [
+    ...operative(text).matchAll(
+      new RegExp(`^${label}:[ \\t]*(\\S*)[ \\t]*$`, "gim"),
+    ),
+  ].map((m) => m[1] ?? "");
+}
+/** The one `<label>:` value a document declares, or why it does not declare exactly one. */
+function declared(
+  text: string,
+  label: string,
+  source: string,
+): { value: string } | { failure: string } {
+  const values = declarations(text, label);
+  return values.length === 1
+    ? { value: values[0] ?? "" }
+    : {
+        failure: `${source} requires exactly one ${label} line, found ${values.length}`,
+      };
+}
 /** The one `Bar outcome:` a document declares, outside comments and fenced examples. */
 export function outcomeFailure(text: string, source: string): string | null {
-  const operative = text
-    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
-    .replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^\1[ \t]*$|(?![\s\S]))/gm, "");
-  const outcomes = [
-    ...operative.matchAll(/^Bar outcome:[ \t]*(\S*)[ \t]*$/gim),
-  ];
-  if (outcomes.length !== 1)
-    return `${source} requires exactly one Bar outcome line, found ${outcomes.length}`;
-  return outcomes[0]?.[1] === "pass"
+  const outcome = declared(text, "Bar outcome", source);
+  if ("failure" in outcome) return outcome.failure;
+  return outcome.value === "pass"
     ? null
     : `${source} requires Bar outcome: pass`;
 }
@@ -229,9 +274,17 @@ function baseOf(
   bundle: string,
   ours: string,
 ): { commit: string; provenance: string } {
-  const marker = readme.match(/^Export base: ([a-f\d]{40,64})\s*$/im);
+  const recorded = declarations(readme, "Export base");
+  if (recorded.length > 1)
+    throw new ExitError(2, "README records more than one Export base");
+  const marker = recorded[0]?.match(/^[a-f\d]{40,64}$/) ? recorded[0] : null;
+  if (recorded.length && !marker)
+    throw new ExitError(
+      2,
+      `README Export base is not a commit: ${recorded[0]}`,
+    );
   const commit =
-    marker?.[1] ??
+    marker ??
     git(
       "log",
       "--reverse",
@@ -275,7 +328,16 @@ function lostHunks(
   o: Buffer | undefined,
   result: Buffer | undefined,
 ): Report["regressions"] {
-  if ([b, o, result].some((v) => v?.includes(0))) return [];
+  if ([b, o, result].some((v) => v?.includes(0)))
+    return same(b, o) || same(o, result)
+      ? []
+      : [
+          {
+            file,
+            hunk: "binary content differs from the repository version",
+            acknowledged: false,
+          },
+        ];
   return regressedHunks(
     b?.toString() ?? "",
     o?.toString() ?? "",
@@ -384,10 +446,11 @@ function screenshots(manifest: Manifest, widths: number[]): string[] {
   return manifest.scenarios.flatMap((s) =>
     widths.map((width) =>
       width === widths[0]
-        ? s.screenshot.replace(/^(?:\.\/)+/, "")
-        : s.screenshot
-            .replace(/^(?:\.\/)+/, "")
-            .replace(/(\.[^.]+)$/, `-${width}$1`),
+        ? (screenshotPath(s.screenshot) ?? "")
+        : (screenshotPath(s.screenshot) ?? "").replace(
+            /(\.[^.]+)$/,
+            `-${width}$1`,
+          ),
     ),
   );
 }
@@ -493,11 +556,8 @@ function evidenceChecks(
     const scorecard = readFileSync(safe(root, config.scorecard), "utf8");
     const outcome = outcomeFailure(scorecard, "scorecard");
     if (outcome) failures.push(outcome);
-    if (
-      !new RegExp(`^Reviewed export base: ${report.exportBase}\\s*$`, "m").test(
-        scorecard,
-      )
-    )
+    const reviewed = declared(scorecard, "Reviewed export base", "scorecard");
+    if ("value" in reviewed ? reviewed.value !== report.exportBase : true)
       failures.push(
         `scorecard must record the round it reviewed: Reviewed export base: ${report.exportBase}`,
       );
@@ -560,7 +620,8 @@ export function landingFailures(requested: string): {
   const report = parseReport(readFileSync(join(dir, reportFile), "utf8"));
   git("merge-base", "--is-ancestor", report.exportBase, "HEAD");
   const readme = readFileSync(join(dir, "README.md"), "utf8");
-  if (!readme.includes(`Export base: ${report.exportBase}`))
+  const recorded = declared(readme, "Export base", "README");
+  if (!("value" in recorded) || recorded.value !== report.exportBase)
     throw new ExitError(
       2,
       "README export base differs from raw delivery report",

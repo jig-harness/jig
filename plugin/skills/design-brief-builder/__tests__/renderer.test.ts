@@ -37,6 +37,35 @@ const ready = '<p id="ready">ready</p>';
 const browserTest = test.skipIf(!chrome && !required);
 
 browserTest(
+  "WebRTC cannot send UDP around the proxy",
+  async () => {
+    expect(chrome).toBeTruthy();
+    let packets = 0;
+    const listener = await Bun.udpSocket({
+      hostname: "127.0.0.1",
+      socket: { data: () => void packets++ },
+    });
+    try {
+      await render(
+        {
+          "index.html": `<!doctype html><script>
+            const peer = new RTCPeerConnection({ iceServers: [{ urls: "stun:127.0.0.1:${listener.port}" }] });
+            peer.createDataChannel("probe");
+            peer.createOffer().then((offer) => peer.setLocalDescription(offer));
+            setTimeout(() => document.body.insertAdjacentHTML("beforeend", '${ready}'), 2000);
+          </script>`,
+        },
+        [{ name: "home", url: "index.html" }],
+      );
+      expect(packets).toBe(0);
+    } finally {
+      listener.close();
+    }
+  },
+  60_000,
+);
+
+browserTest(
   "an external WebSocket is refused by the browser, not only reported",
   async () => {
     expect(chrome).toBeTruthy();

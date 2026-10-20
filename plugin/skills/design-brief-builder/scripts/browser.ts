@@ -637,6 +637,8 @@ export async function renderBundle(
         "--use-mock-keychain",
         `--proxy-server=http://127.0.0.1:${sink.port}`,
         `--proxy-bypass-list=<-loopback>;127.0.0.1:${server.port}`,
+        // WebRTC's UDP does not go through the proxy; without this, STUN reaches any host.
+        "--webrtc-ip-handling-policy=disable_non_proxied_udp",
         "--remote-debugging-address=127.0.0.1",
         "--remote-debugging-port=0",
         `--user-data-dir=${profile}`,
