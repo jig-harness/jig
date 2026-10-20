@@ -30,6 +30,19 @@ function npmShim(runtime: string, target = "entry.js"): string {
   ].join("\r\n");
 }
 
+/** The shape current npm writes: PATHEXT edited in the ELSE branch, shebang arguments kept. */
+function currentNpmShim(runtime: string, interpreterArgs = ""): string {
+  return npmShim(runtime)
+    .replace(
+      `  SET "_prog=${runtime}"\r\n)\r\n\r\n`,
+      `  SET "_prog=${runtime}"\r\n  SET PATHEXT=%PATHEXT:;.JS;=;%\r\n)\r\n\r\n`,
+    )
+    .replace(
+      'set PATHEXT=%PATHEXT:;.JS;=;% & "%_prog%"  ',
+      `"%_prog%" ${interpreterArgs} `,
+    );
+}
+
 describe("Windows command launch", () => {
   test("PATH and PATHEXT are case insensitive and preserve search order", () => {
     const files = new Set(["C:\\first\\claude.CMD", "C:\\second\\claude.EXE"]);
@@ -60,6 +73,37 @@ describe("Windows command launch", () => {
         isFile: (file) => file === "C:\\bin\\agent.CMD",
       }),
     ).toBe("C:\\bin\\agent.CMD");
+  });
+
+  test("bare names search cwd before PATH unless the child disables it", () => {
+    const files = new Set(["C:\\repo\\agent.EXE", "C:\\global\\agent.EXE"]);
+    const options = {
+      cwd: "C:\\repo",
+      isFile: (file: string) => files.has(file),
+    };
+    expect(
+      resolveWindowsCommand("agent", {
+        ...options,
+        env: { PATH: "C:\\global" },
+      }),
+    ).toBe("C:\\repo\\agent.EXE");
+    expect(
+      resolveWindowsCommand("agent", {
+        ...options,
+        env: { PATH: "C:\\global", NoDefaultCurrentDirectoryInExePath: "1" },
+      }),
+    ).toBe("C:\\global\\agent.EXE");
+  });
+
+  test("PATHEXT types this module cannot launch are skipped", () => {
+    const files = new Set(["C:\\first\\agent.JS", "C:\\second\\agent.EXE"]);
+    expect(
+      resolveWindowsCommand("agent", {
+        cwd: "C:\\repo",
+        env: { PATH: "C:\\first;C:\\second", PATHEXT: ".JS;.EXE" },
+        isFile: (file) => files.has(file),
+      }),
+    ).toBe("C:\\second\\agent.EXE");
   });
 
   test("explicit relative paths resolve extensions without searching PATH", () => {
@@ -130,6 +174,55 @@ describe("Windows command launch", () => {
         readBatchSource: () => "node entry.js %*\r\n",
       }),
     ).toThrow(/JavaScript entry point/);
+  });
+
+  test("current npm shims and their shebang interpreter arguments are recognized", () => {
+    const options = { cwd: "C:\\repo", env: {}, isFile: () => true };
+    const launch = (source: string) =>
+      windowsCommand(["agent.cmd", "a & b"], {
+        ...options,
+        readBatchSource: () => source,
+      });
+    const expected = launch(npmShim("node")).args;
+    expect(launch(currentNpmShim("node")).args).toEqual(expected);
+    expect(
+      launch(currentNpmShim("node", "--no-warnings --enable-source-maps")).args,
+    ).toEqual(expected);
+    // A quote or cmd syntax among the interpreter arguments would change how
+    // %* is reparsed; `env -S VAR=value` adds SET lines the grammar refuses.
+    expect(() => launch(currentNpmShim("node", '--title="x"'))).toThrow(
+      /JavaScript entry point/,
+    );
+    expect(() => launch(currentNpmShim("node", "--a&b"))).toThrow(
+      /JavaScript entry point/,
+    );
+    expect(() =>
+      launch(
+        currentNpmShim("node").replace(
+          "CALL :find_dp0\r\n",
+          "CALL :find_dp0\r\n@SET NODE_OPTIONS=--x\r\n",
+        ),
+      ),
+    ).toThrow(/JavaScript entry point/);
+  });
+
+  test("a batch launch longer than cmd.exe's command line is refused before spawning", () => {
+    const options = { cwd: "C:\\repo", env: {}, isFile: () => true };
+    const direct = (prompt: string) =>
+      windowsCommand(["C:\\bin\\direct.bat", prompt], {
+        ...options,
+        readBatchSource: () => "@echo off\r\necho %1\r\n",
+      });
+    expect(() => direct("x".repeat(9000))).toThrow(/8191-character/);
+    expect(direct("x".repeat(8000)).args[4]?.length).toBeLessThan(8191);
+    // The shim's extra escape layer turns 2,000 ampersands into 8,000 characters.
+    const shim = (prompt: string) =>
+      windowsCommand(["agent.cmd", prompt], {
+        ...options,
+        readBatchSource: () => npmShim("node"),
+      });
+    expect(() => shim("&".repeat(2000))).toThrow(/8191-character/);
+    expect(shim("&".repeat(1500)).args[4]).toContain("^^^&");
   });
 
   test("batch line breaks are refused rather than interpreted as commands", () => {

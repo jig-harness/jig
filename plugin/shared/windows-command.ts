@@ -29,7 +29,8 @@ function isFile(path: string): boolean {
 type WindowsCommandErrorCode =
   | "unsupported-argument"
   | "batch-too-large"
-  | "unsupported-forwarding";
+  | "unsupported-forwarding"
+  | "command-too-long";
 
 /** A launcher shape cmd cannot preserve safely; the caller reports a spawn failure. */
 class WindowsCommandError extends Error {
@@ -41,18 +42,30 @@ class WindowsCommandError extends Error {
   }
 }
 
-/** Resolve using the child's environment, not the driver's PATH or PATHEXT. */
+/** The PATHEXT types this module can launch: native images and batch files. */
+const LAUNCHABLE = /^\.(com|exe|bat|cmd)$/i;
+
+/**
+ * Resolve using the child's environment, not the driver's PATH or PATHEXT.
+ * A bare name searches cwd before PATH, as native Windows spawning does,
+ * unless NoDefaultCurrentDirectoryInExePath is set.
+ */
 export function resolveWindowsCommand(
   command: string,
   options: WindowsCommandOptions,
 ): string {
   const extensions = (envValue(options.env, "PATHEXT") || ".COM;.EXE;.BAT;.CMD")
     .split(";")
-    .filter((ext) => /^\.[a-z0-9]+$/i.test(ext));
+    .filter((ext) => LAUNCHABLE.test(ext));
   const suffixes = win32.extname(command) ? ["", ...extensions] : extensions;
+  const searchesCwd =
+    envValue(options.env, "NODEFAULTCURRENTDIRECTORYINEXEPATH") === undefined;
   const directories = /[\\/:]/.test(command)
     ? [options.cwd]
-    : (envValue(options.env, "PATH") ?? "").split(";");
+    : [
+        ...(searchesCwd ? [options.cwd] : []),
+        ...(envValue(options.env, "PATH") ?? "").split(";"),
+      ];
   const exists = options.isFile ?? isFile;
   for (const directory of directories) {
     const base = win32.resolve(
@@ -92,33 +105,45 @@ function batchArgument(value: string, forwardsArguments: boolean): string {
   return forwardsArguments ? escapeMeta(escaped) : escaped;
 }
 
-/** The npm Node.js shim grammar; CALL or extra commands change expansion. */
-const NPM_BATCH_LINES = [
-  /^@echo off$/i,
-  /^goto start$/i,
-  /^:find_dp0$/i,
-  /^set dp0=%~dp0$/i,
-  /^exit \/b$/i,
-  /^:start$/i,
-  /^setlocal$/i,
-  /^call :find_dp0$/i,
-  /^$/,
-  /^if exist "[^"\r\n]+" \($/i,
-  /^ {2}set "_prog=[^"\r\n]+"$/i,
-  /^\) else \($/i,
-  /^ {2}set "_prog=[^"\r\n]+"$/i,
-  /^\)$/,
-  /^$/,
-  /^endLocal & goto #_undefined_# 2>NUL \|\| title %COMSPEC% & (?:set PATHEXT=%PATHEXT:;.JS;=;% & )?"%_prog%" {1,2}"%dp0%\\[^"\r\n]+" %\*$/i,
-];
+/** A shebang argument npm copies into the shim; quotes or cmd syntax would reparse %*. */
+const SHIM_ARGUMENT = String.raw`[^\s"%^&|<>()!]+`;
+
+/**
+ * The npm Node.js shim grammar: the shebang's interpreter arguments may sit
+ * between _prog and the entry point, and the PATHEXT edit sits either in the
+ * ELSE branch or on the final line. CALL, extra commands or environment
+ * declarations from `env -S VAR=value` change expansion and are refused.
+ */
+const NPM_BATCH_SHIM = new RegExp(
+  `^${[
+    "@echo off",
+    "goto start",
+    ":find_dp0",
+    "set dp0=%~dp0",
+    "exit /b",
+    ":start",
+    "setlocal",
+    "call :find_dp0",
+    "",
+    String.raw`if exist "[^"\n]+" \(`,
+    String.raw` {2}set "_prog=[^"\n]+"`,
+    String.raw`\) else \(`,
+    String.raw` {2}set "_prog=[^"\n]+"(?:\n {2}set PATHEXT=%PATHEXT:;\.JS;=;%)?`,
+    String.raw`\)`,
+    "",
+    String.raw`endLocal & goto #_undefined_# 2>NUL \|\| title %COMSPEC% & (?:set PATHEXT=%PATHEXT:;\.JS;=;% & )?"%_prog%" (?:(?:${SHIM_ARGUMENT} )+| ?)"%dp0%\\[^"\n]+" %\*`,
+  ].join("\n")}$`,
+  "i",
+);
 
 function isNpmBatchShim(source: string): boolean {
-  const lines = source.replace(/\r\n/g, "\n").trimEnd().split("\n");
-  return (
-    lines.length === NPM_BATCH_LINES.length &&
-    NPM_BATCH_LINES.every((pattern, index) => pattern.test(lines[index] ?? ""))
-  );
+  return NPM_BATCH_SHIM.test(source.replace(/\r\n/g, "\n").trimEnd());
 }
+
+/** cmd.exe's maximum command-line length, in characters. */
+const CMD_LINE_LIMIT = 8191;
+/** Room for the shim's own expanded runtime and entry-point paths. */
+const SHIM_PATH_RESERVE = 2 * 260;
 
 /** Native binaries stay shell-free; only .cmd/.bat files enter cmd.exe. */
 export function windowsCommand(
@@ -161,6 +186,16 @@ export function windowsCommand(
     escapeMeta(win32.normalize(command)),
     ...args.map((arg) => batchArgument(arg, forwardsArguments)),
   ].join(" ");
+  // The shim's final line re-expands %* with its own paths in front of it.
+  const shimReserve = forwardsArguments
+    ? (source.trimEnd().split(/\r?\n/).at(-1)?.length ?? 0) + SHIM_PATH_RESERVE
+    : 0;
+  if (`/d /s /v:off /c "${line}"`.length + shimReserve > CMD_LINE_LIMIT) {
+    throw new WindowsCommandError(
+      "command-too-long",
+      `Windows batch launch exceeds cmd.exe's ${CMD_LINE_LIMIT}-character command line once escaped; launch the executable directly or pass long input through a file or stdin`,
+    );
+  }
   return {
     command: envValue(options.env, "COMSPEC") ?? "cmd.exe",
     args: ["/d", "/s", "/v:off", "/c", `"${line}"`],

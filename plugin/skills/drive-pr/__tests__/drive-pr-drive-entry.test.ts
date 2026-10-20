@@ -100,8 +100,8 @@ describe("drive.ts loop control", () => {
     expect(driverPass).toContain("foreground wait");
     // Launch-once / repeated-wait contract, and that the launch stays in the
     // pass's process group (no setsid/perl escape from drive.ts's witness).
-    expect(driverPass).toMatch(/foreground-wait\.ts launch --/);
-    expect(driverPass).toMatch(/foreground-wait\.ts wait/);
+    expect(driverPass).toMatch(/foreground-wait\.ts"? launch --/);
+    expect(driverPass).toMatch(/foreground-wait\.ts"? wait/);
     expect(driverPass).toMatch(/Never call `launch` to resume a wait/);
     expect(driverPass).toMatch(/exit `21`/);
     expect(driverPass).toContain("--bots-only");
@@ -115,7 +115,7 @@ describe("drive.ts loop control", () => {
     // The decision table must precede the FIRST gate invocation anywhere in
     // the skill — the gate's --bump-attempt takes the session lease — and no
     // gate command may sit between the section heading and that table.
-    const gateCmd = "drive-status.ts [PR] --json --once --bump-attempt";
+    const gateCmd = 'drive-status.ts" [PR] --json --once --bump-attempt';
     const table = skill.indexOf("| Signal | Mode |");
     const gate = skill.indexOf(gateCmd);
     expect(table).toBeGreaterThan(entry);
@@ -124,7 +124,7 @@ describe("drive.ts loop control", () => {
     expect(skill.slice(entry, table)).not.toContain("drive-status.ts");
     // The arm command keeps the portable one-line `bun` form and --bots-only.
     expect(section).toContain(
-      'bun ${CLAUDE_SKILL_DIR}/scripts/drive.ts <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"',
+      'bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"',
     );
   });
 

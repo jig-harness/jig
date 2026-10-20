@@ -46,8 +46,12 @@ For Windows `.cmd` or `.bat` pass launchers, arguments cannot contain carriage
 returns, newlines or null bytes. Supply multiline
 prompts through a file or standard input using the agent CLI's input options.
 Batch wrappers that forward all arguments are supported only in npm's generated
-`_prog` form; for other forwarding wrappers, launch the underlying executable
-and its JavaScript entry point directly.
+`_prog` form, with or without the interpreter arguments npm copies from the
+entry point's first line; a wrapper that also sets environment variables, or
+any other forwarding wrapper, is refused: launch the underlying executable and
+its JavaScript entry point directly. A launch whose escaped command line would
+exceed cmd.exe's 8,191-character limit is refused too; pass long input through
+a file or standard input.
 
 ## Consumer configuration
 
