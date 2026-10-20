@@ -1,3 +1,4 @@
+import { spawnCommand } from "./windows-command.ts";
 export {
   lastBytes,
   MAX_BUFFER_BYTES,
@@ -45,7 +46,7 @@ import { registerSignalHandler, shutdownRequested } from "./cleanup.ts";
  * rejected rather than quietly floored.
  */
 
-import { type SpawnOptions, spawn } from "node:child_process";
+import type { SpawnOptions } from "node:child_process";
 import { traceEnv, traceGhRunner, traceRunner } from "./trace.ts";
 import { fail } from "./cli.ts";
 import { errnoCode } from "./errors.ts";
@@ -447,8 +448,8 @@ if (!cancellation.handlerRegistered) {
 }
 
 /**
- * Spawn `argv` directly — never through a shell — and resolve with its
- * captured output. The deadline, when given, kills the child with SIGTERM,
+ * Spawn `argv` directly, or through cmd for Windows batch shims, and resolve
+ * with its captured output. The deadline, when given, kills the child with SIGTERM,
  * escalates to SIGKILL two seconds later, and then resolves on its own
  * authority rather than waiting for 'close' (a surviving grandchild holds the
  * pipes open and would defeat the deadline entirely). Either way the result
@@ -482,7 +483,7 @@ export const ghCall = traceGhRunner<RunResult, RunOptions>(
 function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
   return new Promise((resolve) => {
     if (shutdownRequested()) return;
-    const [cmd, ...args] = argv;
+    const cmd = argv[0];
     if (!cmd) {
       resolve({
         code: 127,
@@ -527,9 +528,9 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
         opts.stderr ?? "pipe",
       ],
     };
-    let child: ReturnType<typeof spawn>;
+    let child: ReturnType<typeof spawnCommand>;
     try {
-      child = spawn(cmd, args, spawnOpts);
+      child = spawnCommand(argv, spawnOpts);
     } catch (e) {
       windows.dispose();
       const message = e instanceof Error ? e.message : String(e);

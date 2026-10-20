@@ -170,7 +170,9 @@ shell in the worktree before the command; a setup that fails is no answer
 (exit 2). Install into the worktree itself: an install that links the
 package to the working checkout (an editable install, a workspace link)
 runs the change's code against the base's test and gets the verdict
-backwards. The setup runs in a shell of its own, so the command must find
+backwards. On Windows the setup runs through `sh` from Git for Windows;
+install Git for Windows and put its shell on `PATH`. PowerShell setup syntax
+is not supported. The setup runs in a shell of its own, so the command must find
 what it installed without activation: `uv run pytest`, `.venv/bin/python -m
 pytest`, `bundle exec rspec`, never a bare `pytest` that resolves from the
 caller's environment.

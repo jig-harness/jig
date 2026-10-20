@@ -153,11 +153,13 @@ on the command it lacks. The `resolve-conflicts` history report is the
 exception: it checks git's version first, and refuses an older git, or a
 partial clone on a git that cannot be kept from fetching.
 
-- **macOS or Linux for `drive-pr` and `do-item`.** The driver supervises
-  agent processes through [POSIX](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) process groups and
-  signals, so it does not run on Windows, and `do-item` is not tested there.
-  The other skills run on all three systems
-  ([operating systems](EXTENDING.md#operating-systems)).
+- **macOS and Linux; Git Bash on Windows.** On Windows, install Git for
+  Windows and run the skills through its Git Bash shell. The instructions
+  use Bash and the utilities bundled with Git for Windows; PowerShell
+  support is planned. Native Windows tests run in CI, but the complete
+  Claude Code pickup → draft pull request → drive round → stop smoke test
+  is still pending. See [drive-pr](skills/drive-pr/README.md) and
+  [do-item](skills/do-item/README.md) for the current validation limits.
 
 ## Install the plugin
 

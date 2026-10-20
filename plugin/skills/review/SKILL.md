@@ -47,6 +47,11 @@ a command below says to run it inside the base snapshot (see
 [Policy comes from the base branch](#policy-comes-from-the-base-branch-not-the-change-under-review)).
 Never `cd` into the skill directory.
 
+Run shell examples in Bash; on Windows, use Git Bash from Git for Windows
+with Bun, Git and Git Bash’s bundled utilities on `PATH`. The file-list
+commands need null-delimited records (`sort -zu`, `read -r -d ''` and
+`grep -qzxF`) to preserve paths containing spaces and shell punctuation.
+
 ### Consumer configuration
 
 Every field is optional. Read them from the base branch's copy of
