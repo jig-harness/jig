@@ -127,8 +127,11 @@ Steps:
    earlier bundles in the prototypes directory) so reuse is the default. Never
    invent primitive names here.
 3. **Reality-ground** (audit first, or defer to Phase 2). Generate data-facts tables from source commands before writing counts:
-   `bun "${CLAUDE_SKILL_DIR}/scripts/handback.ts" facts '["bun","scripts/export-design-facts.ts"]' "/tmp/design-brief-<flow-slug>/uploads/reference-specs/data-facts.md"`.
-   The consumer command returns a nonempty JSON object; the output records its
+   `bun "${CLAUDE_SKILL_DIR}/scripts/handback.ts" facts '<command-argv-json>' "/tmp/design-brief-<flow-slug>/uploads/reference-specs/data-facts.md"`,
+   where `<command-argv-json>` is the JSON argument array of a repository
+   command that prints a nonempty JSON object of named facts (for example
+   `["bun","<facts script>"]`). If the repository has no such command, ask
+   the user for one rather than counting by hand. The output records its
    argument array, UTC timestamp and source-output digest. Do not hand-count
    entity cardinalities. Two reality-grounding tables with `file:line` citations, one for the entity's content and one for AI and
    automation, each row
