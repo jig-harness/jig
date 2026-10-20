@@ -147,8 +147,14 @@ describe("drive-state.ts durability", () => {
         }
         expect(events.map((e) => process.listenerCount(e))).toEqual(before);
       } finally {
-        process.env.DRIVE_PR_LOCK_TIMEOUT = prev.t;
-        process.env.DRIVE_PR_LOCK_STALE_MIN = prev.s;
+        // Assigning undefined would store the string "undefined".
+        for (const [key, value] of [
+          ["DRIVE_PR_LOCK_TIMEOUT", prev.t],
+          ["DRIVE_PR_LOCK_STALE_MIN", prev.s],
+        ] as const) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
       }
     });
 

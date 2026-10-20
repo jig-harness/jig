@@ -257,7 +257,9 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
         DRIVE_PR_STATE_DIR_IDENTITY: "",
       });
       expect(r.exitCode).toBe(1);
-      expect(r.stderr).toContain("is not");
+      expect(r.stderr).toContain(
+        "$DRIVE_PR_STATE_DIR is set but $DRIVE_PR_STATE_DIR_IDENTITY is not",
+      );
     });
 
     it("still allows a baseline-less caller on the NON-override path", async () => {
@@ -312,7 +314,9 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
           DRIVE_PR_STATE_DIR_IDENTITY: bad,
         });
         expect(r.exitCode).toBe(1);
-        expect(r.stderr).toContain("not a");
+        expect(r.stderr).toContain(
+          "$DRIVE_PR_STATE_DIR_IDENTITY is set but not a '<dev>:<ino>' pair",
+        );
       }
     });
   });
@@ -378,8 +382,8 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
       );
       // The superseded shape: exporting only when non-empty, i.e. treating an
       // unreadable identity as "no baseline inherited".
-      expect(src).not.toContain(
-        "if (stateDirIdentity !== '')\n    process.env.DRIVE_PR_STATE_DIR_IDENTITY",
+      expect(src).not.toMatch(
+        /if\s*\(\s*stateDirIdentity\s*!==?\s*(["'`])\1\s*\)\s*\{?\s*process\.env\.DRIVE_PR_STATE_DIR_IDENTITY/,
       );
     });
 

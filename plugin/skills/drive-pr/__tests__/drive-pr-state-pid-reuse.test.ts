@@ -519,8 +519,14 @@ describe("drive-state.ts durability", () => {
         expect(elapsed).toBeLessThan(4_000);
         lock.dispose();
       } finally {
-        process.env.DRIVE_PR_LOCK_TIMEOUT = prev.t;
-        process.env.DRIVE_PR_LOCK_STALE_MIN = prev.s;
+        // Assigning undefined would store the string "undefined".
+        for (const [key, value] of [
+          ["DRIVE_PR_LOCK_TIMEOUT", prev.t],
+          ["DRIVE_PR_LOCK_STALE_MIN", prev.s],
+        ] as const) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
       }
     });
 
@@ -705,8 +711,14 @@ describe("drive-state.ts durability", () => {
         // Every lease still present — the sweep is all-or-nothing.
         for (const f of files) expect(existsSync(f)).toBe(true);
       } finally {
-        process.env.DRIVE_PR_LOCK_TIMEOUT = prev.t;
-        process.env.DRIVE_PR_LOCK_STALE_MIN = prev.s;
+        // Assigning undefined would store the string "undefined".
+        for (const [key, value] of [
+          ["DRIVE_PR_LOCK_TIMEOUT", prev.t],
+          ["DRIVE_PR_LOCK_STALE_MIN", prev.s],
+        ] as const) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
       }
     });
   });
