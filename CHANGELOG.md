@@ -317,6 +317,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.70.0] - 2026-10-20
+
+### Added
+
+- `design-brief-builder` owns returned design bundles: it stages a three-way merge against the recorded raw export, reports lost repository fixes, and checks every scenario before landing. Configure `design_brief.handback` with viewport widths, a Chrome or Chromium executable, rubric and scorecard paths, and any forbidden terms; each bundle supplies its scenario manifest, with a ready selector per scenario, the scorecard names the export base it reviewed, and delivered screenshots are non-interlaced PNG files. Brief data-facts tables are generated from source commands with their command and timestamp recorded.
+
 ## [0.69.0] - 2026-10-20
 
 A decision sheet or an explainer sheet can now cite a fact of another
@@ -3237,7 +3243,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.69.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.70.0...HEAD
+[0.70.0]: https://github.com/jig-harness/jig/compare/v0.69.0...v0.70.0
 [0.69.0]: https://github.com/jig-harness/jig/compare/v0.68.0...v0.69.0
 [0.68.0]: https://github.com/jig-harness/jig/compare/v0.67.0...v0.68.0
 [0.67.0]: https://github.com/jig-harness/jig/compare/v0.66.1...v0.67.0

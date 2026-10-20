@@ -130,8 +130,9 @@ What this module provides:
 
 Both gates have paired self-tests and fixtures beside them. The
 [`/jig:design-brief-builder`](../../plugin/skills/design-brief-builder/SKILL.md)
-skill runs the first step of the design-prototype loop: it assembles the brief
-for an external design session and audits it before the session starts.
+skill prepares the design-prototype loop's brief and audits it before the
+external session starts. It also merges the returned bundle with repository
+fixes and runs its mechanical landing checks before acceptance.
 
 Deliberately left out: tiered time estimates, named critique personas, a
 model-routing table and specific tool picks (a named tracker, named

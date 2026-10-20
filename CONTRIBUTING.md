@@ -104,6 +104,50 @@ bun modules/M0-instruction-architecture/reference/sync-skills-mirror.ts
   site up to date with the commits since its last check, recorded in
   `website/content-sync.yaml`.
 
+### Filing issues from this repository
+
+`/jig:file-issue` needs a [label taxonomy](GLOSSARY.md) to check the labels
+before it writes an issue. Jig's maintainers use the taxonomy in their
+maintained external standards checkout; the organization's label names and
+other tracker values stay outside this repository.
+
+On each machine, make that checkout available and merge this setting into
+the existing `issue_tracker` section of `$HOME/.jig/jig.yaml` (or
+`$JIG_HOME/jig.yaml` when `JIG_HOME` is set):
+
+```yaml
+issue_tracker:
+  taxonomy: /absolute/path/to/standards-checkout/policies/label-taxonomy.yaml
+```
+
+Use an absolute path: relative paths resolve against the repository being
+worked on, and `~` in the setting is not expanded. This user setting applies
+to every repository on the machine unless repository or environment
+configuration overrides it. Keep the path and the organization's taxonomy
+out of tracked files.
+
+From a Jig checkout, set `plugin_dir` to the installed Jig plugin's absolute
+path and check the resolved setting, the taxonomy, and the proposed labels:
+
+```sh
+plugin_dir=/absolute/path/to/installed/jig/plugin
+bun "$plugin_dir/skills/resolve-review-comments/scripts/jig-config.ts" issue_tracker.taxonomy
+bun "$plugin_dir/skills/file-issue/scripts/check-label-taxonomy.ts"
+bun "$plugin_dir/skills/file-issue/scripts/validate-labels.ts" --check-tracker "<label>" "<another-label>"
+```
+
+Replace the label placeholders with the intended labels, quoting names that
+contain spaces. The first command reports which configuration layer supplies the
+path; the second checks the taxonomy without tracker access. The last also
+needs credentials that can read labels in the configured tracker team.
+With the Linear adapter, provide `LINEAR_API_KEY` or `LINEAR_API_TOKEN` to
+the shell running the command, or sign in to the `linear` command-line
+client. An agent's MCP connection alone does not authenticate this script.
+
+On a fresh machine, finish this setup before filing. A missing or unreadable
+taxonomy stops the skill before it writes; a path in user configuration
+does not fetch the external checkout.
+
 ## Toolchain
 
 Runnable tooling and gates are written in Bun + TypeScript
