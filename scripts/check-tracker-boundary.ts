@@ -12,7 +12,8 @@
 // on any receiver, or to a name the file binds to one, with `linear` (or an
 // argument list starting with it) where that launcher takes its program: the
 // first argument, and for a launcher taking a mode first (`MODE_FIRST`:
-// `os.spawnlp(os.P_WAIT, "linear", …)`) the second; or a command line
+// `os.spawnlp(os.P_WAIT, "linear", …)`) the second, after a mode written as
+// any expression (`MODE`); or a command line
 // `linear <subcommand>`. Grouping parentheses around a launcher
 // (`(cp.spawnSync)`) keep it one. `linear` anywhere else in a launcher's
 // arguments (`spawnSync("echo", ["linear"])`) is data for another program,
@@ -165,8 +166,35 @@ const IDENT = String.raw`[A-Za-z_$][\w$]*`;
  * cost more than its length.
  */
 const RECEIVER = String.raw`(?:${IDENT}(?:${GAP}\([^()\n]*\))?${DOT})*`;
-/** A launcher's mode argument: a name, a dotted one, or a number. */
-const MODE = String.raw`(?:(?:${IDENT}${DOT})*${IDENT}|\d+)`;
+/** White space, a comment or a continued line, in Python (the one language a mode-first launcher is in). */
+const PY_SPACE = String.raw`(?:\s|#[^\n]*(?![^\n])|\\\r?\n)`;
+/** A one-line Python string literal. */
+const PY_STRING = String.raw`(?:'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*")`;
+/**
+ * Any part of a Python expression, its brackets nested `depth` deep: a
+ * character outside brackets, strings and gaps (a comma too, inside
+ * brackets), a gap, a string, or a bracketed group. Each part starts with a
+ * character no other part starts with, so an expression is read one way only.
+ */
+const pyPart = (depth: number, comma: boolean): string => {
+  const plain = String.raw`[^\s#\\'"()[\]{}${comma ? "" : ","}]`;
+  const inner = depth ? `${pyPart(depth - 1, true)}*` : "";
+  const groups = depth
+    ? [
+        String.raw`\(${inner}\)`,
+        String.raw`\[${inner}\]`,
+        String.raw`\{${inner}\}`,
+      ]
+    : [];
+  return `(?:${[plain, PY_SPACE, PY_STRING, ...groups].join("|")})`;
+};
+/**
+ * A launcher's mode argument: any one argument expression, read up to the
+ * comma that ends it (`os.P_WAIT`, `(os.P_WAIT)`, `int(0)`, `modes[0]`,
+ * `a if b else c`), with brackets nested up to 4 deep. It starts with
+ * something other than a gap, which the call before it has read.
+ */
+const MODE = `(?!${PY_SPACE})${pyPart(4, false)}+`;
 /** The program where a launcher takes it: the literal, or a list starting with it. */
 const PROGRAM = String.raw`(?:\[${GAP})?${LINEAR}`;
 const quoteName = (name: string) => name.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
@@ -292,7 +320,7 @@ function runPattern(code: string): RegExp {
       String.raw`\[${GAP}${LINEAR}${GAP},`,
       String.raw`\(${GAP}${LINEAR}${GAP},${GAP}\[`,
       `${call(launcher)}${PROGRAM}`,
-      `${call(modeFirst)}${MODE}${GAP},${GAP}${PROGRAM}`,
+      `${call(modeFirst)}${MODE},${GAP}${PROGRAM}`,
       String.raw`(?<![\w./-])linear[ \t]+(?:api|auth|config|issues?|teams?|projects?|labels?|cycles?|comments?|documents?|milestones?|initiatives?)\b`,
     ].join("|"),
     "g",
