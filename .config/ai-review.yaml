@@ -66,6 +66,7 @@ high_risk_path_patterns:
   - source: '^\.github/workflows/'
   - source: '^\.config/ai-review\.yaml$'
   - source: '^\.config/change-areas\.yaml$'
+  - source: '^\.coderabbit\.yaml$'
   - source: '^AGENTS\.md$'
   - source: '^CLAUDE\.md$'
   - source: '^CONTRIBUTING\.md$'
