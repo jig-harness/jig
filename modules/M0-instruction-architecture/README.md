@@ -38,6 +38,12 @@ Further invariants decide whether those instructions reach the agent at all:
   aggregate discovery budgets before dependencies are installed. Text past a
   consumer's budget counts as not delivered to that consumer, however
   complete the file looks.
+- **A skill loads the way it was written to.** Only a
+  [skill](../../GLOSSARY.md)'s description is read before it is chosen, its
+  `SKILL.md` when it runs, and each of its
+  [references](../../GLOSSARY.md) when `SKILL.md` sends the agent there. The
+  [authoring rules](#skills) keep each step working, and a structural check
+  holds a repository's skills to them, with counts that may only fall.
 
 ## The layers
 
@@ -69,6 +75,48 @@ Further invariants decide whether those instructions reach the agent at all:
    "backward compatibility deferred until first real customer data — here is
    the flip condition"). A disposition without a flip condition becomes dogma.
 
+## Skills
+
+A skill is written for the moment each part of it is read. The rules below
+apply to every skill a repository maintains; the ones a script can count are
+counted by the [skill-authoring check](reference/skill-authoring/README.md).
+
+- **The description leads with the trigger** that tells this skill apart
+  from its neighbours: the situation or the words a user would bring, not an
+  inventory of what the skill can do. The skill's name already supplies the
+  domain. How long a description may be is the
+  [context budget](reference/context-budget/README.md)'s rule.
+- **Negative triggers go in the description too** ("not for X; use Y
+  instead"), kept short. The description is all that is read before the
+  choice, so a [negative trigger](../../GLOSSARY.md) written only in the body
+  can redirect an agent that already chose wrongly, never prevent the choice.
+  A longer "Not this skill" section in the body is an addition, not the place
+  for it. *Counted:* a body that says when not to use the skill under a
+  description that says nothing of the kind.
+- **References sit one hop from `SKILL.md`.** `SKILL.md` names every
+  reference and says when to read it; a reference reached only through
+  another reference is often read in part, or not at all. *Counted:* each
+  reference `SKILL.md` does not name.
+- **A reference over 100 lines opens with a table of contents** linking to
+  its headings, so an agent that reads only the top still sees what the rest
+  holds. *Counted.*
+- **Incident history stays out of instruction bodies.** Keep the rule an
+  incident taught and link the document that tells its history; ids of old
+  issues and pull requests cost context in every invocation and explain
+  nothing to the agent. *Counted:* issue and pull-request ids past 5 per 100
+  prose lines.
+- **No time-sensitive phrasing.** "As of March", "recently added" and
+  "currently the only option" go stale without anyone noticing; state the
+  condition or the version instead. *Counted:* the common markers.
+- **Discovery controls are used for what they do**
+  ([what each runtime offers](mappings.md#skill-discovery-controls)). Scope a
+  skill tied to a file area to those paths, so it is listed only once a
+  matching file is read; keep workflow entry points and skills needed before
+  any file is chosen unscoped. Make a skill explicit-only (never listed,
+  started only by the user) when the user must decide to start it, not merely
+  because it changes something: check first whether a workflow calls it.
+  Hiding a skill from the user's menu saves no discovery budget.
+
 ## Maturity levels
 
 - **Lite** — one universal instruction file (≤ ~150 lines) + a glossary.
@@ -81,12 +129,14 @@ Further invariants decide whether those instructions reach the agent at all:
   procedure to check it again. Model pins in agent and skill metadata are
   family aliases, checked over the metadata itself, and a roster of them,
   where one is kept, is generated from it
-  ([model routing policy](reference/model-routing-policy.md)).
+  ([model routing policy](reference/model-routing-policy.md)). Skills the
+  repository maintains follow written [authoring rules](#skills).
 - **Strict** — instruction files carry freshness checks (M2): countable facts
   are CI-verified against reality, referenced paths are checked to exist, and
   the instruction set has a named owner and review cadence. CI fails a change
   that puts the always-loaded context over its smallest consumer's budget,
-  before dependencies are installed.
+  before dependencies are installed, and one that adds to any skill file's
+  count of a skill-authoring rule.
 
 ## Adoption steps
 
@@ -105,15 +155,21 @@ Further invariants decide whether those instructions reach the agent at all:
    [`templates/dispositions.md`](templates/dispositions.md), each with its flip
    condition. Record what each runtime you use loads, with the date and a way
    to check it again: start from [What each runtime loads](mappings.md#what-each-runtime-loads)
-   and observe your own repository. This is **Standard**.
+   and observe your own repository. If the repository keeps skills, write the
+   [authoring rules](#skills) where its skill authors read them. This is
+   **Standard**.
 3. Check the instruction files mechanically in CI: stated counts and
    referenced paths with [M2](../M2-generated-artifact-freshness/)'s
    [`prose-facts`](../M2-generated-artifact-freshness/reference/prose-facts/)
    checks, and the always-loaded context with the
    [context-budget checks](reference/context-budget/README.md), in a step
    before dependencies are installed
-   ([recipe](mappings.md#ci-recipe-before-dependencies-install)). Name an
-   owner for the instruction set and a review cadence. This is **Strict**.
+   ([recipe](mappings.md#ci-recipe-before-dependencies-install)). Run the
+   [skill-authoring check](reference/skill-authoring/README.md) over the
+   repository's skills as a per-file counter of
+   [M1's ratchet](../M1-gates-enforcement-ladder/reference/ratchet/README.md),
+   so existing debt may stay and only fall. Name an owner for the instruction
+   set and a review cadence. This is **Strict**.
 
 ## Status
 
@@ -149,6 +205,12 @@ What this module provides:
   chain against the smallest consumer's byte budget, and skill and agent
   descriptions against their per-item caps and the aggregate skill listing.
   Built-ins only, with self-tests and fixtures beside them.
+- [`reference/skill-authoring/`](reference/skill-authoring/README.md) — counts
+  the [authoring rules](#skills) a script can see, per rule and per skill
+  file: references `SKILL.md` does not name, long references without a table
+  of contents, issue-id density, time-sensitive phrasing, and negative
+  triggers only in the body. Its JSON output is a counter M1's ratchet
+  compares per file against the merge base, so no baseline file is kept.
 - [`mappings.md`](mappings.md) (Claude Code, Codex, Cursor and Copilot file
   conventions, what each runtime loads, the budgets per consumer with their
   dates, and the CI recipe) and the module's
@@ -159,7 +221,9 @@ import it, and the nested `AGENTS.md` files, each with a `CLAUDE.md` beside it
 that imports it, are a working instance of this module; `bun run gates` and
 CI run the context-budget checks over Jig itself, with the soft description
 target enforced for the plugin's skills, since every repository that
-installs the plugin pays for them.
+installs the plugin pays for them. The plugin's skills follow the authoring
+rules ([plugin/AGENTS.md](../../plugin/AGENTS.md#authoring-a-skill)), and
+`bun run quality` holds each skill file's counts so they only fall.
 
 What the context-budget checks leave out, and why: MCP server instruction
 blocks, skills from a person's own setup or another plugin, and a person's
@@ -169,7 +233,12 @@ instead. Whether a runtime received a rule at all is the observation in
 [mappings.md](mappings.md#what-each-runtime-loads); the checks measure what
 the repository asks each runtime to load, not what arrived.
 
-Future: a reference generator for the model roster, which arrives when the
+Future: labels that mark each section of a skill as **exact** (run the named
+command as written) or **judgment** (reach the stated outcome by the means
+that fit), with a check that a prescribed command sits under an **exact**
+label. Some of Jig's skills already use the labels; they become a rule once
+their effect is measured with more than one review per skill, since a single
+review gives no estimate of how much reviewers vary. Also future: a reference generator for the model roster, which arrives when the
 working tool moves here (the routing policy states what it renders and
 rejects; its generate-and-check mechanism belongs with
 [M2](../M2-generated-artifact-freshness/)), and a pull-request review step that
