@@ -317,6 +317,36 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.69.0] - 2026-10-20
+
+A decision sheet or an explainer sheet can now cite a fact of another
+repository, and the freshness guard checks it against that repository.
+
+### Added
+
+- **Qualified citations.** `beta:ADR-0002` and `beta:apps/api/auth.ts#check`
+  name a file or an ADR of the repository `beta`. Each is checked against a
+  clone of `beta` at the commit recorded for it in the new
+  `verifiedAt.repositories` of the sheet source (`{ "beta": "<commit>" }`). To
+  use the form, a consumer configures the clone in `.config/jig.yaml` (or
+  the user file, for a name the repository file leaves out) as
+  `sheets.repositories: { beta: ../beta }`, a map from the name to the
+  clone's folder.
+
+  A qualified citation whose name has no recorded commit, or a malformed
+  qualifier, makes the source invalid (`validate` and `render` exit `1`). One
+  whose clone is not configured, not a git clone's top, or lacks the
+  recorded commit fails `validate` (exit `1`) and `render --require-fresh`
+  (exit `3`). Each names the missing piece instead of being skipped.
+
+### Fixed
+
+- A citation of another repository's ADR was only expressible as a bare
+  `ADR-NNNN`, which the guard resolved in this repository: when both number
+  their ADRs from `ADR-0001`, it checked the wrong file and reported the
+  citation as checked. A bare `ADR-NNNN` still means this repository; cite
+  the other one with its name.
+
 ## [0.68.0] - 2026-10-20
 
 ### Added
@@ -3207,7 +3237,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.68.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.69.0...HEAD
+[0.69.0]: https://github.com/jig-harness/jig/compare/v0.68.0...v0.69.0
 [0.68.0]: https://github.com/jig-harness/jig/compare/v0.67.0...v0.68.0
 [0.67.0]: https://github.com/jig-harness/jig/compare/v0.66.1...v0.67.0
 [0.66.1]: https://github.com/jig-harness/jig/compare/v0.66.0...v0.66.1

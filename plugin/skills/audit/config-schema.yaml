@@ -396,7 +396,7 @@ fields:
     type: map
     values_type: path
     read_by: [decide, explain]
-    since: next
+    since: 0.69.0
   descar.lint_command:
     type: command
     read_by: [descar]
