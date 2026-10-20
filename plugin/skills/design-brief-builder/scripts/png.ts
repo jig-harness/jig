@@ -18,6 +18,12 @@ const colorTypes: Record<number, { channels: number; depths: number[] }> = {
  * size the header declares.
  */
 export const maxImageBytes = 256 * 1024 * 1024;
+/**
+ * The most pixels one screenshot may hold, which bounds comparison work the
+ * way {@link maxImageBytes} bounds memory: a low-depth image packs many
+ * pixels into few bytes. The same full-page capture fits.
+ */
+export const maxImagePixels = 64 * 1024 * 1024;
 
 type Rgba = [number, number, number, number];
 export interface Image {
@@ -171,6 +177,8 @@ function header(body: Buffer): Header {
   if (body[10] || body[11]) invalid("unknown compression or filter method");
   if (body[12] === 1) invalid("interlaced PNG is not supported");
   if (body[12]) invalid("unknown interlace method");
+  if (width * height > maxImagePixels)
+    invalid(`image exceeds ${maxImagePixels} pixels`);
   return { width, height, depth, colorType, channels: type.channels };
 }
 /** The palette's entry count, after checking it may and must be present. */
@@ -278,7 +286,10 @@ function colorOf(
   }
 }
 
-/** Throws when the data is not a valid, non-interlaced PNG within {@link maxImageBytes}. */
+/**
+ * Throws when the data is not a valid, non-interlaced PNG within
+ * {@link maxImageBytes} and {@link maxImagePixels}.
+ */
 export function decodePng(data: Buffer): Image {
   const found = chunks(data);
   const h = header(found.header);
@@ -286,6 +297,11 @@ export function decodePng(data: Buffer): Image {
   checkTransparency(found.transparency, h, entries);
   const { raw, stride } = pixelData(Buffer.concat(found.idat), h);
   const sample = sampler(raw, stride, h.depth);
+  // Every index is checked here, so a decoded image is valid whether or not it is ever compared.
+  if (h.colorType === 3)
+    for (let y = 0; y < h.height; y++)
+      for (let x = 0; x < h.width; x++)
+        if (sample(y, x) >= entries) invalid("palette index out of range");
   const color = colorOf(h, { ...found, entries });
   return {
     width: h.width,

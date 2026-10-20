@@ -45,13 +45,16 @@ it, within a bounded time, before inspecting the page, and a scenario that never
 matches fails. Scenario names must stay distinct once characters other than
 letters, digits, `_` and `-` become `_`. The delivered screenshot path
 is for the first configured width; later widths append `-<width>` before the
-extension. A screenshot path is relative to the bundle, `/`-separated, with no
+extension, and no two scenario/width pairs may resolve to the same file. A screenshot path is relative to the bundle, `/`-separated, with no
 empty, `.` or `..` segment, and never under `.handback-render/`. After the rubric
 review passes, README and the scorecard each state exactly one
 `Bar outcome: pass` outside comments and fenced examples, and the scorecard
 names the round it reviewed with exactly one
-`Reviewed export base: <raw-export-commit>` there. README may extend the configured terms with a comma-separated
-`Forbidden terms: ...` line; that declaration itself is excluded from scanning.
+`Reviewed export base: <raw-export-commit>` there. README may extend the configured terms with comma-separated
+`Forbidden terms: ...` lines outside comments and fenced examples; every such
+line counts, and the declarations themselves are excluded from scanning. A
+declaration line counts by its label alone: anything after the colon is its
+value, so `Bar outcome: fail (two blockers)` is a second, failing outcome.
 
 ## Land one returned round
 

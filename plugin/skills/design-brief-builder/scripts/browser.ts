@@ -597,29 +597,35 @@ export async function renderBundle(
   )
     throw new ExitError(2, "Render widths must be positive integers");
   const bundleRoot = await realpath(root);
-  const profile = await mkdtemp(join(tmpdir(), "jig-design-browser-"));
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch: (request) => serveFile(bundleRoot, request),
-  });
-  // Every connection except to the bundle's server goes through this proxy,
-  // which closes it unanswered: WebSockets and workers included.
-  const sink = Bun.listen({
-    hostname: "127.0.0.1",
-    port: 0,
-    socket: {
-      open: (socket) => {
-        socket.end();
-      },
-      data: () => undefined,
-    },
-  });
+  // Each resource is acquired inside the cleanup boundary, so a failure
+  // part-way releases whatever was already acquired.
+  let profile: string | undefined;
+  let server: ReturnType<typeof Bun.serve> | undefined;
+  let sink: { stop(closeActiveConnections?: boolean): void } | undefined;
   let browser: ReturnType<typeof Bun.spawn> | undefined;
   let client: Client | undefined;
   let session: Client | undefined;
   let diagnostics: ReturnType<typeof drain> | undefined;
   try {
+    profile = await mkdtemp(join(tmpdir(), "jig-design-browser-"));
+    server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => serveFile(bundleRoot, request),
+    });
+    // Every connection except to the bundle's server goes through this proxy,
+    // which closes it unanswered: WebSockets and workers included.
+    const proxy = Bun.listen({
+      hostname: "127.0.0.1",
+      port: 0,
+      socket: {
+        open: (socket) => {
+          socket.end();
+        },
+        data: () => undefined,
+      },
+    });
+    sink = proxy;
     browser = Bun.spawn(
       [
         browserExecutable,
@@ -635,7 +641,7 @@ export async function renderBundle(
         "--disable-sync",
         "--password-store=basic",
         "--use-mock-keychain",
-        `--proxy-server=http://127.0.0.1:${sink.port}`,
+        `--proxy-server=http://127.0.0.1:${proxy.port}`,
         `--proxy-bypass-list=<-loopback>;127.0.0.1:${server.port}`,
         // WebRTC's UDP does not go through the proxy; without this, STUN reaches any host.
         "--webrtc-ip-handling-policy=disable_non_proxied_udp",
@@ -670,8 +676,8 @@ export async function renderBundle(
     session?.close();
     if (browser) await stopBrowser(browser);
     diagnostics?.stop();
-    server.stop(true);
-    sink.stop(true);
-    await rm(profile, { recursive: true, force: true });
+    server?.stop(true);
+    sink?.stop(true);
+    if (profile) await rm(profile, { recursive: true, force: true });
   }
 }

@@ -91,6 +91,10 @@ export function regressedHunks(
         "git",
         "diff",
         "--no-index",
+        // Parsed by machine: no user color, external diff or textconv may reshape it.
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
         "--unified=0",
         join(dir, "base"),
         join(dir, "ours"),
@@ -180,13 +184,15 @@ function operative(text: string): string {
   }
   return kept.join("\n");
 }
-/** Every value a document declares as a `<label>: <value>` line in its operative prose. */
+/**
+ * Every value a document declares as a `<label>:` line in its operative
+ * prose: each line that starts with the label counts, and its whole trimmed
+ * remainder is the value, so a malformed declaration is compared, never dropped.
+ */
 function declarations(text: string, label: string): string[] {
   return [
-    ...operative(text).matchAll(
-      new RegExp(`^${label}:[ \\t]*(\\S*)[ \\t]*$`, "gim"),
-    ),
-  ].map((m) => m[1] ?? "");
+    ...operative(text).matchAll(new RegExp(`^${label}:(.*)$`, "gim")),
+  ].map((m) => (m[1] ?? "").trim());
 }
 /** The one `<label>:` value a document declares, or why it does not declare exactly one. */
 function declared(
@@ -591,11 +597,12 @@ function textEvidence(
   );
   const terms = [
     ...(config.forbidden_terms ?? []),
-    ...(readme
-      .match(/^Forbidden terms: (.+)$/im)?.[1]
-      ?.split(",")
-      .map((s) => s.trim())
-      .filter(Boolean) ?? []),
+    ...declarations(readme, "Forbidden terms").flatMap((line) =>
+      line
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
   ];
   return {
     files: {
@@ -628,10 +635,17 @@ export function landingFailures(requested: string): {
     );
   const files = list(dir);
   const current = currentFiles(dir, files);
+  const evidence = screenshots(manifest, config.widths);
+  const collision = evidence.find((path, i) => evidence.indexOf(path) !== i);
+  if (collision !== undefined)
+    throw new ExitError(
+      2,
+      `design-handback.json: two scenario/width screenshots both resolve to ${collision}`,
+    );
   const shots = screenshotChecks(
     dir,
     files,
-    screenshots(manifest, config.widths),
+    evidence,
     tree(report.ours, bundle),
   );
   const { files: text, terms } = textEvidence(config, readme, current, files);

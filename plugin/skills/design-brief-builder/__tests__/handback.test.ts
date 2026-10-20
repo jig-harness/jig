@@ -209,6 +209,8 @@ test("one operative bar outcome, outside comments and examples", () => {
   expect(outcomeFailure("Bar outcome: pass\n", "README")).toBeNull();
   for (const text of [
     "Bar outcome: fail\nBar outcome: pass\n",
+    "Bar outcome: fail (two blockers)\nBar outcome: pass\n",
+    "Bar outcome: pass (pending review)\n",
     "<!--\nBar outcome: pass\n-->\n",
     "```\nBar outcome: pass\n```\n",
     "Bar outcome: fail\n```md\nBar outcome: pass\n```\n",
@@ -325,6 +327,9 @@ test("the landing check finds a fix lost after the merge, until it is acknowledg
     ) as string[];
   try {
     exec(["git", "init"]);
+    // Machine-read diffs must not take on the consumer's color settings.
+    exec(["git", "config", "color.ui", "always"]);
+    exec(["git", "config", "color.diff", "always"]);
     exec(["git", "config", "user.email", "test@example.test"]);
     exec(["git", "config", "user.name", "Test"]);
     write(
@@ -427,10 +432,65 @@ test("the landing check finds a fix lost after the merge, until it is acknowledg
       `Bar outcome: pass\nReviewed export base: ${base}\n<!-- Reviewed export base: ${raw} -->\n`,
       `Bar outcome: pass\nReviewed export base: ${base}\n\`\`\`\nReviewed export base: ${raw}\n\`\`\`\n`,
       `Bar outcome: pass\nReviewed export base: ${base}\nReviewed export base: ${raw}\n`,
+      `Bar outcome: pass\nReviewed export base: ${base} (round 2)\nReviewed export base: ${raw}\n`,
     ]) {
       write("scorecard.md", scorecard);
       expect(reviewed(landing())).toHaveLength(1);
     }
+    const readme = readFileSync(join(dir, "bundle/README.md"), "utf8");
+    write(
+      "bundle/README.md",
+      `${readme}\n\`\`\`\nForbidden terms: example\n\`\`\`\nForbidden terms: vendor\nForbidden terms: returned\n`,
+    );
+    const forbidden = landing().filter((f) => f.startsWith("forbidden text"));
+    expect(forbidden).toContain("forbidden text 'vendor': index.html");
+    expect(forbidden).toContain("forbidden text 'returned': index.html");
+    expect(forbidden.some((f) => f.includes("'example'"))).toBe(false);
+    write(
+      ".config/jig.yaml",
+      JSON.stringify({
+        design_brief: {
+          handback: {
+            widths: [390, 1280],
+            rubric: "rubric.md",
+            scorecard: "scorecard.md",
+            browser_executable: "unused-without-rendering",
+          },
+        },
+      }),
+    );
+    write(
+      "bundle/design-handback.json",
+      JSON.stringify({
+        version: 1,
+        scenarios: [
+          {
+            name: "a",
+            url: "index.html",
+            ready: "main",
+            screenshot: "home.png",
+          },
+          {
+            name: "b",
+            url: "index.html",
+            ready: "main",
+            screenshot: "home-1280.png",
+          },
+        ],
+      }),
+    );
+    const collision = Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `import { landingFailures } from ${JSON.stringify(script)}; landingFailures("bundle")`,
+      ],
+      { cwd: dir, env, stdout: "pipe", stderr: "pipe" },
+    );
+    expectSpawnExit(collision, 1);
+    expect(collision.stderr.toString()).toContain(
+      "both resolve to home-1280.png",
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

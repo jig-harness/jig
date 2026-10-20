@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import { deflateSync } from "node:zlib";
-import { decodePng, maxImageBytes, sameImage } from "../scripts/png.ts";
+import {
+  decodePng,
+  maxImageBytes,
+  maxImagePixels,
+  sameImage,
+} from "../scripts/png.ts";
 import { png } from "./support.ts";
 
 const same = (a: Buffer, b: Buffer) => sameImage(decodePng(a), decodePng(b));
@@ -95,11 +100,9 @@ test("invalid PNG structure is refused", () => {
       png({ interlace: 1, rows: [[1, 2, 3]] }),
     ],
   ];
+  // Decoding alone refuses: an image that is never compared is still checked.
   for (const [reason, data] of cases)
-    expect(() => {
-      const image = decodePng(data);
-      sameImage(image, image);
-    }).toThrow(reason);
+    expect(() => decodePng(data)).toThrow(reason);
   expect(() =>
     decodePng(
       png({ rows: [[1, 2, 3]], before: [["tEXt", Buffer.from("a\0b")]] }),
@@ -113,6 +116,26 @@ test("decompression is bounded by the declared size", () => {
     data: deflateSync(Buffer.alloc(10_000_000)),
   });
   expect(() => decodePng(bomb)).toThrow("image data exceeds its declared size");
-  const huge = png({ width: 20_000, height: 20_000, rows: [[0, 0, 0]] });
+  const huge = png({
+    colorType: 6,
+    depth: 16,
+    width: 8192,
+    height: 8192,
+    rows: [[0, 0, 0, 0, 0, 0, 0, 0]],
+  });
   expect(() => decodePng(huge)).toThrow(`image exceeds ${maxImageBytes}`);
+});
+
+test("pixel count is bounded even when the decoded bytes are not", () => {
+  // 1-bit grayscale packs eight pixels a byte: 128 MiB of data, a billion pixels.
+  const dense = png({
+    colorType: 0,
+    depth: 1,
+    width: 32_768,
+    height: 32_768,
+    rows: [[0]],
+  });
+  expect(() => decodePng(dense)).toThrow(
+    `image exceeds ${maxImagePixels} pixels`,
+  );
 });
