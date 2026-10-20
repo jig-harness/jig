@@ -164,7 +164,7 @@ describe("the citation grammar", () => {
 
   it("does not read a qualified token as an unqualified one", () => {
     // A bare scan would find `ADR-0002` and `docs/adr/ADR-0002-x.md`'s ADR in the consumer repository.
-    const { alpha, beta, others } = twoRepositories();
+    const { alpha, others } = twoRepositories();
     const result = checkFreshness(
       ["beta:docs/adr/ADR-0002-beta-decision.md", "beta:ADR-0002"],
       alpha.commit,
@@ -174,7 +174,6 @@ describe("the citation grammar", () => {
     );
     expect(result.checked).toEqual(["beta:docs/adr/ADR-0002-beta-decision.md"]);
     expect(result.unresolved).toEqual([]);
-    expect(beta.dir).not.toBe(alpha.dir);
   });
 });
 
@@ -396,7 +395,10 @@ describe("sheets.repositories", () => {
       ),
     ).toEqual({
       beta: { root: beta.dir, adrDirectory: "docs/decisions" },
-      local: { root: "/work/local-clone", adrDirectory: "docs/adr" },
+      local: {
+        root: resolve("/work/alpha", "../local-clone"),
+        adrDirectory: "docs/adr",
+      },
     });
   });
 
