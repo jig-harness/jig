@@ -160,29 +160,38 @@ describe("final CI keep-waiting gate", () => {
   it("keeps the driver skip branch free of terminal returns and ahead of full status", () => {
     // Verbatim pin of the orchestration boundary; behavioural probes above
     // test the gate. A missing/moved wiring must not leave those green.
-    const source = readFileSync(
-      new URL("../scripts/drive.ts", import.meta.url),
-      "utf8",
+    const driver = (name: string) =>
+      readFileSync(
+        new URL(`../scripts/lib/driver/${name}.ts`, import.meta.url),
+        "utf8",
+      );
+    const roundStep = driver("round-step");
+    const branch = `  const skippedFinalCi = await context.finalCiWait.skip(
+    context.witnessWaits,
+    context.witnessWaitLimit,
+  );
+  if (skippedFinalCi !== null) {
+    if (skippedFinalCi === "witness") context.witnessWaits += 1;
+    await sleep(FINAL_CI_POLL_SECONDS);
+    return "continue";
+  }
+
+  return null;
+}`;
+    expect(roundStep).toContain(branch);
+    // The skip runs at the round boundary, before the round's full status.
+    expect(roundStep).toContain(
+      "const stage = await waitForRoundBoundary(context);\n    if (stage !== null) return stage;\n  }\n  const readRoundStatusResult = await readRoundStatus(",
     );
-    const branch = `    const skippedFinalCi = await finalCiWait.skip(
-      witnessWaits,
-      witnessWaitLimit,
+    const convergence = driver("convergence-ci");
+    expect(convergence).toContain(
+      "const finalCiSignals = await context.finalCiWait.prime();\n  const release = await run(",
     );
-    if (skippedFinalCi !== null) {
-      if (skippedFinalCi === "witness") witnessWaits += 1;
-      await sleep(FINAL_CI_POLL_SECONDS);
-      continue;
-    }
-    const statusRes = await run(`;
-    expect(source).toContain(branch);
-    expect(source).toContain(
-      "const finalCiSignals = await finalCiWait.prime();\n        const release = await run(",
+    expect(convergence).toContain(
+      'context.finalCiWait.remember(reviewedHead, finalCiSignals, false);\n    await sleep(FINAL_CI_POLL_SECONDS);\n    return "continue";',
     );
-    expect(source).toContain(
-      "finalCiWait.remember(reviewedHead, finalCiSignals, false);\n          await sleep(FINAL_CI_POLL_SECONDS);\n          continue;",
-    );
-    expect(source).toContain(
-      "finalCiWait.remember(reviewedHead, finalCiSignals, true);\n          await sleep(FINAL_CI_POLL_SECONDS);\n          continue;",
+    expect(convergence).toContain(
+      'context.finalCiWait.remember(reviewedHead, finalCiSignals, true);\n  await sleep(FINAL_CI_POLL_SECONDS);\n  return "continue";',
     );
   });
 });

@@ -296,7 +296,7 @@ report identical to an ordinary clean completion.
 Deliberately NOT covered: a check-run that is `in_progress` with no sticky at
 all, one whose sticky names an earlier head, and one whose sticky predates the
 run's own start (a re-run on an unchanged head), all keep blocking (see mode
-2c in `__tests__/drive-pr-status.test.ts`) — the bypass must not race a review
+2c in `__tests__/drive-pr-status-convergence-evidence.test.ts`) — the bypass must not race a review
 that is genuinely still running. Also not built: naming the stall itself (a
 `REVIEWER_STALLED` state once a check-run has been `in_progress` past some
 multiple of its observed duration). Opt-in `JIG_TRACE` spans record drive and

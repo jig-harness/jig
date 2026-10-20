@@ -93,8 +93,8 @@ Read [skills/drive-pr/references/consistency.md](skills/drive-pr/references/cons
 first. The suite runs from this repository's root (`bun test
 plugin/skills/drive-pr`; the root `bunfig.toml` supplies the preloads), never
 from the plugin cache, and
-`skills/drive-pr/__tests__/terminal-states-consistency.test.ts`
-checks that every terminal state's exit code agrees across `scripts/`,
+the `skills/drive-pr/__tests__/terminal-states*.test.ts` suites
+check that every terminal state's exit code agrees across `scripts/`,
 `SKILL.md`, the README and `skills/drive-pr/references/terminal-states.md`. When a script's
 behaviour changes, search `SKILL.md` and `references/` for sentences that
 state the old behaviour, in the same edit.
