@@ -583,6 +583,11 @@ make, use the entry's term instead.
   why. Jig's conflict report replays every merge in a range of time and gives
   each conflicting region a *cause*: a fact every change edits in one place
   (a count, a list, a version), or two changes to the same lines.
+- **Live conflict record** — the line of JSON Jig's conflict tooling appends,
+  for each conflicted file, when a merge, rebase, cherry-pick or revert
+  concludes: which file, why it conflicted, what was decided, and whether a
+  review-loop round started the resolution. It keeps the conflicts a merge replay cannot see, because a
+  rebase leaves no merge commit to merge again.
 - **Changelog** — a file listing each release's notable changes, newest
   first, written for the people who use the *released artifact* it belongs
   to. Jig's follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):

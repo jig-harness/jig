@@ -46,6 +46,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fail, runMain } from "../../../shared/cli.ts";
+import { type PathCauses, snapshotCauses } from "./lib/live-causes.ts";
 import {
   type Classification,
   classifyPaths,
@@ -408,14 +409,23 @@ export function checkResolution(
   return result;
 }
 
-/** The "Conflicts resolved:" section for the commit message. */
-export function messageSection(snapshot: Snapshot): string {
+/**
+ * The "Conflicts resolved:" section for the commit message: each path's
+ * decision, then its cause when `causes` has one, then the command and the
+ * reason.
+ */
+export function messageSection(
+  snapshot: Snapshot,
+  causes: ReadonlyMap<string, PathCauses> = new Map(),
+): string {
   const lines = ["Conflicts resolved:"];
   for (const path of Object.keys(snapshot.paths).sort()) {
     const { decision, reason, command, dropped } = (
       snapshot.paths[path] as PathEntry
     ).resolution;
     let line = `- ${path}: ${decision}`;
+    const cause = causes.get(path)?.cause;
+    if (cause) line += ` [cause: ${cause}]`;
     if (decision === "regenerated" && command) line += ` (${command})`;
     if (reason) line += ` — ${reason}`;
     if (dropped) line += ` Dropped on purpose: ${dropped.why}`;
@@ -647,6 +657,10 @@ async function main(): Promise<number> {
     catalogGeneratedEntries(),
   );
 
+  const causes =
+    mode !== "" && result.exit === 0
+      ? snapshotCauses(root, snapshot.paths)
+      : new Map<string, PathCauses>();
   if (mode === "--json") {
     console.log(
       JSON.stringify(
@@ -654,7 +668,7 @@ async function main(): Promise<number> {
           ...result,
           operation: snapshot.operation,
           obligations,
-          message: result.exit === 0 ? messageSection(snapshot) : null,
+          message: result.exit === 0 ? messageSection(snapshot, causes) : null,
         },
         null,
         2,
@@ -674,8 +688,8 @@ async function main(): Promise<number> {
     if (result.exit !== 0) return result.exit;
     console.log(
       mode === "--message"
-        ? messageSection(snapshot)
-        : `${preparedMessage(root)}\n\n${messageSection(snapshot)}`,
+        ? messageSection(snapshot, causes)
+        : `${preparedMessage(root)}\n\n${messageSection(snapshot, causes)}`,
     );
     return 0;
   }

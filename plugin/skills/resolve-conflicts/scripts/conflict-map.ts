@@ -45,6 +45,7 @@ import {
 } from "./lib/classify.ts";
 import { indexAttributesGit } from "./lib/attributes.ts";
 import { git, isBinaryBlob, splitNul, topLevel } from "./lib/git.ts";
+import { recordConcluded } from "./lib/events.ts";
 import { parseHunks, writtenMarkerSize } from "./lib/markers.ts";
 import {
   detectOperation,
@@ -53,6 +54,7 @@ import {
   type SideName,
 } from "./lib/operation.ts";
 import {
+  describeOperation,
   emptyResolution,
   type Intent,
   type IntentCommit,
@@ -560,6 +562,25 @@ function recordedSizes(
   return sizes;
 }
 
+/**
+ * An earlier operation's snapshot is about to be overwritten: keep its events
+ * if it concluded and nobody recorded them (each stop of a rebase is a new
+ * operation, and `events.ts` runs once, after the last). Never stops the map.
+ */
+function recordBeforeReplacing(root: string, previous: Snapshot): void {
+  try {
+    const done = recordConcluded(root, previous);
+    if (done.written > 0)
+      console.error(
+        `conflict-map: recorded ${done.written} merge_conflict event${done.written === 1 ? "" : "s"} of the ${describeOperation(previous.operation)} before replacing its snapshot`,
+      );
+  } catch (err) {
+    console.error(
+      `conflict-map: could not record the events of the ${describeOperation(previous.operation)}: ${err instanceof Error ? err.message : err}`,
+    );
+  }
+}
+
 function usage(): never {
   fail(2, "usage: conflict-map.ts [--json] [--integration ours|theirs]");
 }
@@ -614,6 +635,8 @@ async function main(): Promise<number> {
     fresh,
     classifyPaths(root, stagedSince(previous, fresh), derivedEntries(catalog)),
   );
+  if (previous !== null && !sameOperation(previous, op))
+    recordBeforeReplacing(root, previous);
   const file = saveSnapshot(root, snapshot);
   if (json) console.log(JSON.stringify(snapshot, null, 2));
   else {

@@ -209,7 +209,7 @@ describe("a correct combined resolution", () => {
     const r = check("--message");
     ok(r, 0);
     expect(r.stdout).toBe(
-      "Conflicts resolved:\n- src/config.ts: combined — kept the retry limit from main and this branch's timeout override\n",
+      "Conflicts resolved:\n- src/config.ts: combined [cause: adjacent] — kept the retry limit from main and this branch's timeout override\n",
     );
   });
 
@@ -380,7 +380,7 @@ describe("derived files", () => {
     );
     const r = check("--message");
     ok(r, 0);
-    expect(r.stdout).toContain("- bun.lock: regenerated (bun install)\n");
+    expect(r.stdout).toContain("regenerated [cause: derived] (bun install)\n");
   });
 
   it("a regenerated lockfile that was not staged again fails", () => {
@@ -480,7 +480,7 @@ describe("a file the change-area catalog declares generated", () => {
     const r = check("--message");
     ok(r, 0);
     expect(r.stdout).toContain(
-      "- openapi.json: regenerated (bun run gen:openapi)\n",
+      "- openapi.json: regenerated [cause: derived] (bun run gen:openapi)\n",
     );
   });
 
