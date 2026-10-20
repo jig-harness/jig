@@ -278,6 +278,55 @@ describe("Windows command launch", () => {
     expect(() => shim("x".repeat(longest + 1))).toThrow(/8191-character/);
   });
 
+  test("the length guard keeps dollar sequences in the shim directory literal", () => {
+    const runtime = "%dp0%\\node.exe";
+    const shim = (prompt: string) =>
+      windowsCommand(["C:\\repo$$\\agent.CMD", prompt], {
+        cwd: "C:\\repo",
+        env: { PATHEXT: `.CMD;${".ZZZ;".repeat(199)}` },
+        isFile: () => true,
+        readBatchSource: () => npmShim(runtime),
+      });
+    // Expand by hand with split/join, which treats `$$` as two characters.
+    const expanded = (length: number) =>
+      (npmShim(runtime).trimEnd().split("\r\n").slice(-1)[0] ?? "")
+        .split("%COMSPEC%")
+        .join("C:\\Windows\\System32\\cmd.exe")
+        .split("%PATHEXT:;.JS;=;%")
+        .join(`.CMD;${".ZZZ;".repeat(199)}`)
+        .split("%_prog%")
+        .join(runtime)
+        .split("%dp0%")
+        .join("C:\\repo$$\\")
+        .split("%*")
+        .join(`^"${"x".repeat(length)}^"`).length;
+    let longest = 0;
+    while (expanded(longest + 1) <= 8191) longest += 1;
+    expect(shim("x".repeat(longest)).args[4]).toContain("agent.CMD");
+    expect(() => shim("x".repeat(longest + 1))).toThrow(/8191-character/);
+  });
+
+  test("an npm shim path holding a variable other than %dp0% is refused", () => {
+    const launch = (source: string) =>
+      windowsCommand(["agent.cmd", "a & b"], {
+        cwd: "C:\\repo",
+        env: {},
+        isFile: () => true,
+        readBatchSource: () => source,
+      });
+    // The estimate cannot bound what an unknown reference expands to.
+    expect(() => launch(npmShim("%RUNTIME%"))).toThrow(
+      /JavaScript entry point/,
+    );
+    expect(() => launch(currentNpmShim("%RUNTIME%\\node.exe"))).toThrow(
+      /JavaScript entry point/,
+    );
+    expect(() => launch(npmShim("node", "%TARGET%.js"))).toThrow(
+      /JavaScript entry point/,
+    );
+    expect(launch(npmShim("%dp0%\\node.exe")).args[4]).toContain("agent.cmd");
+  });
+
   test("batch line breaks are refused rather than interpreted as commands", () => {
     expect(() =>
       windowsCommand(["agent.cmd", "one\nwhoami"], {

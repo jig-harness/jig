@@ -105,12 +105,18 @@ function batchArgument(value: string, forwardsArguments: boolean): string {
 
 /** A shebang argument npm copies into the shim; quotes or cmd syntax would reparse %*. */
 const SHIM_ARGUMENT = String.raw`[^\s"%^&|<>()!]+`;
+/**
+ * A path in the shim. The only variable reference it may hold is %dp0%, so
+ * every reference the grammar admits is one the length estimate expands.
+ */
+const SHIM_PATH = String.raw`(?:[^"%\n]|%dp0%)+`;
 
 /**
  * The npm Node.js shim grammar: the shebang's interpreter arguments may sit
  * between _prog and the entry point, and the PATHEXT edit sits either in the
- * ELSE branch or on the final line. CALL, extra commands or environment
- * declarations from `env -S VAR=value` change expansion and are refused.
+ * ELSE branch or on the final line. CALL, extra commands, environment
+ * declarations from `env -S VAR=value` and variable references other than
+ * %dp0% in a path change expansion and are refused.
  */
 const NPM_BATCH_SHIM = new RegExp(
   `^${[
@@ -123,13 +129,13 @@ const NPM_BATCH_SHIM = new RegExp(
     "setlocal",
     "call :find_dp0",
     "",
-    String.raw`if exist "[^"\n]+" \(`,
-    String.raw` {2}set "_prog=[^"\n]+"`,
+    String.raw`if exist "${SHIM_PATH}" \(`,
+    String.raw` {2}set "_prog=${SHIM_PATH}"`,
     String.raw`\) else \(`,
-    String.raw` {2}set "_prog=[^"\n]+"(?:\n {2}set PATHEXT=%PATHEXT:;\.JS;=;%)?`,
+    String.raw` {2}set "_prog=${SHIM_PATH}"(?:\n {2}set PATHEXT=%PATHEXT:;\.JS;=;%)?`,
     String.raw`\)`,
     "",
-    String.raw`endLocal & goto #_undefined_# 2>NUL \|\| title %COMSPEC% & (?:set PATHEXT=%PATHEXT:;\.JS;=;% & )?"%_prog%" (?:(?:${SHIM_ARGUMENT} )+| ?)"%dp0%\\[^"\n]+" %\*`,
+    String.raw`endLocal & goto #_undefined_# 2>NUL \|\| title %COMSPEC% & (?:set PATHEXT=%PATHEXT:;\.JS;=;% & )?"%_prog%" (?:(?:${SHIM_ARGUMENT} )+| ?)"%dp0%\\[^"%\n]+" %\*`,
   ].join("\n")}$`,
   "i",
 );
@@ -157,7 +163,8 @@ function expandedShimLength(
 ): number {
   const dp0 = `${win32.dirname(batchFile)}\\`;
   const programs = [...source.matchAll(/set "_prog=([^"\n]+)"/gi)].map(
-    (match) => (match[1] ?? "").replace(/%dp0%/gi, dp0),
+    // A callback, so `$` sequences in the directory stay literal.
+    (match) => (match[1] ?? "").replace(/%dp0%/gi, () => dp0),
   );
   const values: Record<string, string> = {
     "%~DP0": dp0,
