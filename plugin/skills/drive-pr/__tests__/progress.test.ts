@@ -490,13 +490,20 @@ describe("drive.ts — the claim-refresh timer never opens the state store (stru
   // scan over a KNOWN, small function body — bounded by its own opening/closing
   // brace count reaching zero, not by an arbitrary line window — is the pin,
   // not a guess at where the function happens to end today.
-  const source = readFileSync(DRIVE, "utf8");
+  // The timer's functions live in the driver modules drive.ts delegates to.
+  const source = [
+    DRIVE,
+    join(SCRIPTS, "lib", "driver", "lifecycle.ts"),
+    join(SCRIPTS, "lib", "driver", "identity.ts"),
+  ]
+    .map((file) => readFileSync(file, "utf8"))
+    .join("\n");
 
   function extractFunctionBody(name: string): string {
     const start = source.indexOf(`function ${name}(`);
     if (start === -1) {
       throw new Error(
-        `extractFunctionBody: no 'function ${name}(' in drive.ts`,
+        `extractFunctionBody: no 'function ${name}(' in the driver sources`,
       );
     }
     const braceStart = source.indexOf("{", start);
@@ -578,16 +585,16 @@ describe("drive.ts — the claim-refresh timer never opens the state store (stru
 }`;
 
   const NOTE_TAKEOVER_GOLDEN = `{
-  if (compromised !== "") return;
-  compromised = lock.what;
+  if (driverRuntime.compromised !== "") return;
+  driverRuntime.compromised = lock.what;
   void stopActivePass(\`the \${lock.what} lock was recovered by another driver\`);
-  quotaSleepAbort?.abort();
+  driverRuntime.quotaSleepAbort?.abort();
 }`;
 
   const START_HEARTBEAT_GOLDEN = `{
   const timer = setInterval(() => {
     for (const lock of locks) touchLock(lock);
-    if (compromised === "" && activePass === null) {
+    if (driverRuntime.compromised === "" && driverRuntime.activePass === null) {
       refreshAccountIdentity(locks, passArgv);
     }
   }, heartbeatRefreshMs());

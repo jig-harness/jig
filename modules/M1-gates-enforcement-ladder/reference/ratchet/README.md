@@ -27,7 +27,9 @@ above the chosen limit from growing, including in test files.
   Blank lines count; a final newline terminates the last line. This catches
   growth inside an already oversized file. Choose a source-and-test scope
   and exclude generated and vendored outputs; prose need not share a code
-  limit. Untracked files obey Git ignore rules.
+  limit. Untracked files obey Git ignore rules. A scope that matches no file
+  is a configuration error (exit 2), so a mistyped expression cannot pass as
+  a tree without excess.
 - **Totals per rule are compared**, not per-file counts, so moving code
   between files passes. When a total grows, the files whose counts grew are
   listed.

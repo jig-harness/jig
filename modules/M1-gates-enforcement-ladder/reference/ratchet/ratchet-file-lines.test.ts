@@ -98,7 +98,6 @@ describe("source file line ratchet", () => {
       { ...counter, limit: 4 },
       { ...counter, files: "^one\\.ts$" },
       { ...counter, exclude: "large" },
-      { ...counter, exclude: "" },
       null,
     ]) {
       const r = repo({ "one.ts": lines(1) }, wiring);
@@ -117,6 +116,21 @@ describe("source file line ratchet", () => {
       JSON.stringify({ ...wiring, counters: [{ ...counter, limit: 2 }] }),
     );
     check(r, 0);
+  });
+
+  test("a scope that matches no file is a configuration error, not a clean tree", () => {
+    for (const changed of [
+      { files: "\\.tss$" },
+      { exclude: "\\.ts$" },
+      { exclude: "" },
+    ]) {
+      const r = repo({ "one.ts": lines(5) }, wiring);
+      r.write(
+        "ratchet.json",
+        JSON.stringify({ ...wiring, counters: [{ ...counter, ...changed }] }),
+      );
+      expect(check(r, 2)).toContain("source-size: no file matches files");
+    }
   });
 
   test("an invalid threshold or scope is a configuration error", () => {
