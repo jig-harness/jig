@@ -81,7 +81,10 @@ export const LEADING_QUALIFIER = new RegExp(
  * contains whitespace (`.run/Backend Dev.run.xml`) is one citation, taken
  * whole and blanked before the other patterns run, or they would split it at
  * the space. A span without whitespace is an ordinary citation: its content
- * stays in the text for those patterns, set off by spaces.
+ * stays in the text for those patterns, set off by spaces. A whole span is
+ * returned as written; its qualifier is split off before its line suffix is,
+ * because a qualified path may start with digits (`beta:2026/x y.ts`) that
+ * read like a line suffix.
  */
 const BACKTICK_SPAN = /`([^`\n]*)`/g;
 const SUFFIX = /(?:#|:\d).*$/;
@@ -90,7 +93,7 @@ function quotedPaths(text: string): { paths: string[]; rest: string } {
   const paths: string[] = [];
   const rest = text.replace(BACKTICK_SPAN, (_, span: string) => {
     if (!/\s/.test(span)) return ` ${span} `;
-    const path = span.trim().replace(SUFFIX, "");
+    const path = span.trim();
     if (path) paths.push(path);
     return " ";
   });
@@ -114,11 +117,14 @@ interface Cited {
  */
 function scanText(text: string): { cited: Cited[]; idle: string[] } {
   const { paths, rest } = quotedPaths(text);
-  const out: Cited[] = paths.map((path) => {
-    const qualified = QUALIFIED_SPAN.exec(path);
-    return qualified
-      ? { repository: qualified[1], kind: "path", name: qualified[2] as string }
-      : { kind: "path", name: path };
+  const out: Cited[] = paths.flatMap((span): Cited[] => {
+    const qualified = QUALIFIED_SPAN.exec(span);
+    const name = (qualified ? (qualified[2] as string) : span).replace(
+      SUFFIX,
+      "",
+    );
+    if (!name) return [];
+    return [{ repository: qualified?.[1], kind: "path", name }];
   });
   const qualifiedAt = new Map<number, string>();
   const blanked = rest.replace(
@@ -193,27 +199,39 @@ export const citedRepositories = (citations: readonly string[]): string[] =>
   ].sort();
 
 /**
- * A `name:` placed directly before an ADR, a backtick or anything path-shaped
- * (a directory `dir/`, a dotfile, a file with an extension), the way a
- * qualifier is. Every such `name:` is either a qualifier the scanner reads
- * (`QUALIFIER` matches at the same place) or named as malformed
- * (`Beta:ADR-0002`, `see:beta:ADR-0002`, `beta:` outside the backticks): read
- * as an ordinary citation it would resolve in the consumer repository or not
- * at all.
+ * A `name:` placed the way a qualifier is: directly before a backtick or
+ * anything `QUALIFIED_START` accepts, so the detector and the reader share one
+ * notion of what may follow a qualifier. Every such `name:` is either a
+ * qualifier the scanner reads (`QUALIFIER` matches at the same place) or named
+ * as malformed (`Beta:ADR-0002`, `1beta:ENG-123`, `see:beta:ADR-0002`, `beta:`
+ * outside the backticks): read as an ordinary citation it would resolve in the
+ * consumer repository or not at all. A name with a `.` or `/` is a path, and
+ * `auth.ts:check` cites a symbol in it; such a name is named only before an
+ * ADR, a backtick or a path (`PATH_AFTER`), where it can only be a misplaced
+ * qualifier.
  */
-const NEAR_QUALIFIER =
-  /([^\s:`(['",;]+):(?=ADR-\d{3,4}\b|`|[\w.@$-]+\/|[\w@$-]*\.[A-Za-z])/g;
+const NEAR_QUALIFIER = new RegExp(
+  String.raw`([^\s:\`(['",;]+):(?:(?=\`)|${QUALIFIED_START})`,
+  "g",
+);
+const PATH_AFTER = /^(?:ADR-\d{3,4}\b|`|[\w.@$-]+\/|[\w@$-]*\.[A-Za-z])/;
+
+const STICKY_QUALIFIER = new RegExp(QUALIFIER.source, "y");
+
+/** Whether the `name:` that `NEAR_QUALIFIER` matched at `m` is a qualifier the scanner does not read. */
+function isMalformed(text: string, m: RegExpExecArray): boolean {
+  const at = m.index;
+  const after = text.slice(at + m[0].length);
+  if (/[./]/.test(m[1] as string) && !PATH_AFTER.test(after)) return false;
+  STICKY_QUALIFIER.lastIndex = at;
+  return STICKY_QUALIFIER.exec(text)?.[0] !== m[0] || after.startsWith("`");
+}
 
 function malformedQualifiers(citations: readonly string[]): string[] {
   const found = new Set<string>();
-  const qualifier = new RegExp(QUALIFIER.source, "y");
   for (const text of citations)
-    for (const m of text.matchAll(NEAR_QUALIFIER)) {
-      qualifier.lastIndex = m.index ?? 0;
-      const read = qualifier.exec(text)?.[0] === m[0];
-      if (!read || text[(m.index ?? 0) + m[0].length] === "`")
-        found.add(`${m[1]}:`);
-    }
+    for (const m of text.matchAll(NEAR_QUALIFIER))
+      if (isMalformed(text, m)) found.add(`${m[1]}:`);
   for (const text of citations)
     for (const name of scanText(text).idle) found.add(name);
   return [...found].sort();

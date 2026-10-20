@@ -156,6 +156,12 @@ describe("the citation grammar", () => {
     ]);
   });
 
+  it("splits the qualifier off a quoted path before its line suffix", () => {
+    const quoted = ["`beta:2026/Auth Flow.ts`", "`beta:2026/Auth Flow.ts:12`"];
+    expect(citedPaths(quoted)).toEqual(["beta:2026/Auth Flow.ts"]);
+    expect(citedRepositories(quoted)).toEqual(["beta"]);
+  });
+
   it("does not read a qualified token as an unqualified one", () => {
     // A bare scan would find `ADR-0002` and `docs/adr/ADR-0002-x.md`'s ADR in the consumer repository.
     const { alpha, beta, others } = twoRepositories();
@@ -323,6 +329,9 @@ describe("a qualifier the grammar does not accept", () => {
     "Beta:services/",
     "Beta:2026/auth.ts",
     "beta:ENG-123",
+    "Beta:ENG-123",
+    "1beta:ENG-123",
+    "`Beta:2026/Auth Flow.ts`",
   ])("is named, never read as a citation of this repository: %s", (text) => {
     const problems = repositoryProblems([text], { beta: "abc1234" });
     expect(problems.length).toBeGreaterThan(0);
@@ -337,6 +346,7 @@ describe("a qualifier the grammar does not accept", () => {
           "beta:ADR-0002; (beta:apps/api/auth.ts:12-40)",
           "`beta:.run/Backend Dev.run.xml`",
           "src/a.ts:12; https://example.com/a.html; Makefile:12",
+          "src/a.ts:check; auth.ts:check; ENG-123",
           "beta:2026/auth.ts; beta:.gitignore; beta:services/",
         ],
         { beta: "abc1234" },
