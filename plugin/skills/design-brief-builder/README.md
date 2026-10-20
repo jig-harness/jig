@@ -26,6 +26,9 @@ Only `forbidden_terms` defaults (to empty). All other fields are required:
 The browser must be an installed Chromium-compatible executable supporting
 Chrome's debugging protocol. The runner uses Bun's built-in networking APIs
 and starts a separate headless profile. No plugin package installation is needed.
+The browser keeps its sandbox, since bundles are untrusted. A Linux host that
+restricts unprivileged user namespaces (Ubuntu's AppArmor does by default) must
+allow them, or Chromium cannot start and the check times out.
 
 Each bundle has a `README.md` and `design-handback.json`:
 
