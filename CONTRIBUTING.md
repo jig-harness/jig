@@ -176,6 +176,10 @@ violations and 2 when the only failures are stages that could not check.
 Two unrelated failures surface in one run rather than two; fix every stage
 the list names, not only the first.
 
+The repository test command uses 4 parallel file workers. Many suites spawn
+their own subprocesses; bounding file workers keeps those fixtures within
+their deadlines when several workspaces run checks on one machine.
+
 CI runs the same command on Linux for every pull request
 (`.github/workflows/gates.yml`); the catalog decides which of its jobs and
 steps a pull request needs. macOS and Windows run once a day against `main`

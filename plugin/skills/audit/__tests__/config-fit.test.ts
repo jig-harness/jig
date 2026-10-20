@@ -1970,201 +1970,188 @@ jobs:
       }).report.findings.find((f) => f.id === "suggestion:gates.command:ci")
         ?.message;
 
-    test("a runner that only mentions a file CI runs, or names another file of that name, does not cover it", () => {
-      for (const [file, text] of [
-        [
-          "scripts/gates.ts",
-          "// TODO: run scripts/check-analytics.sh\nconsole.log('ok');\n",
-        ],
-        ["scripts/gates.sh", "# ./scripts/check-analytics.sh is not run yet\n"],
-        ["scripts/gates.ts", "await $`./tools/check-analytics.sh`;\n"],
-        ["scripts/gates.ts", "console.log('scripts/check-analytics.sh');\n"],
-        ["scripts/gates.sh", "make test # TODO: scripts/check-analytics.sh\n"],
-        [
-          "scripts/gates.ts",
-          "await run(['bun', 'test']); // then ./scripts/check-analytics.sh\n",
-        ],
-        ["scripts/gates.sh", "echo scripts/check-analytics.sh\n"],
-        // A command or call shaped string is still only a string.
-        [
-          "scripts/gates.ts",
-          "console.log('spawnSync(\"./scripts/check-analytics.sh\")');\n",
-        ],
-        ["scripts/gates.sh", 'echo "done; ./scripts/check-analytics.sh"\n'],
-        ["scripts/gates.ts", "console.log(`./scripts/check-analytics.sh`);\n"],
-        [
-          "scripts/gates.ts",
-          'log("say \\"hi\\"; bash scripts/check-analytics.sh");\n',
-        ],
-        // An escaped quote, a string over several lines, an inline block comment.
-        [
-          "scripts/gates.ts",
-          "console.log('don\\'t; ./scripts/check-analytics.sh');\n",
-        ],
-        [
-          "scripts/gates.ts",
-          "console.log(`checks:\n./scripts/check-analytics.sh\n`);\n",
-        ],
-        [
-          "scripts/gates.ts",
-          'const x = 1; /* spawnSync("./scripts/check-analytics.sh"); */\n',
-        ],
-        [
-          "scripts/gates.sh",
-          "echo 'first line\n./scripts/check-analytics.sh'\n",
-        ],
-        [
-          "scripts/gates.py",
-          '"""Runs:\n./scripts/check-analytics.sh\n"""\nprint("ok")  # spawnSync("./scripts/check-analytics.sh")\n',
-        ],
-        // A here-document's body, quoted, tab-indented or piped on.
-        [
-          "scripts/gates.sh",
-          "cat <<'EOF'\n./scripts/check-analytics.sh\nEOF\n",
-        ],
-        [
-          "scripts/gates.sh",
-          "cat <<-EOF\n\t./scripts/check-analytics.sh\n\tEOF\necho ok\n",
-        ],
-        [
-          "scripts/gates.sh",
-          'cat <<"EOF" | tee notes.txt\n./scripts/check-analytics.sh\nEOF\n',
-        ],
-        ["scripts/gates.sh", "cat <<EOF\n./scripts/check-analytics.sh\nEOF\n"],
-        [
-          "scripts/gates.sh",
-          "cat <<END-TEXT\nEND\n./scripts/check-analytics.sh\nEND-TEXT\n",
-        ],
-        // A quoted empty delimiter, closed by an empty line.
-        [
-          "scripts/gates.sh",
-          "cat <<''\n./scripts/check-analytics.sh\n\necho ok\n",
-        ],
-        // A double-quoted delimiter with an escaped quote in it.
-        [
-          "scripts/gates.sh",
-          'cat <<"E\\"OF"\n./scripts/check-analytics.sh\nE"OF\n',
-        ],
-        // An unquoted body's backslash-newline joins the next line to it.
-        [
-          "scripts/gates.sh",
-          "cat <<EOF\ntext \\\nEOF\n./scripts/check-analytics.sh\nEOF\n",
-        ],
-        // A quoted delimiter, or part of one, leaves the body's substitutions text.
-        [
-          "scripts/gates.sh",
-          "cat <<'EOF'\n$(./scripts/check-analytics.sh)\nEOF\n",
-        ],
-        [
-          "scripts/gates.sh",
-          'cat <<E"OF"\n$(./scripts/check-analytics.sh)\nEOF\n',
-        ],
-        [
-          "scripts/gates.sh",
-          "cat <<EOF\n\\$(./scripts/check-analytics.sh)\nEOF\n",
-        ],
-        // An escaped separator is a literal argument.
-        ["scripts/gates.sh", "echo \\; ./scripts/check-analytics.sh\n"],
-        ["scripts/gates.sh", "echo \\| ./scripts/check-analytics.sh\n"],
-        ["scripts/gates.sh", "echo \\& ./scripts/check-analytics.sh\n"],
-        // An argument list no call runs.
-        [
-          "scripts/gates.ts",
-          'const examples = ["bash", "scripts/check-analytics.sh"]; console.log("ok");\n',
-        ],
-        [
-          "scripts/gates.ts",
-          'console.log(["bash", "scripts/check-analytics.sh"]);\n',
-        ],
-      ] as const) {
+    test.each([
+      [
+        "scripts/gates.ts",
+        "// TODO: run scripts/check-analytics.sh\nconsole.log('ok');\n",
+      ],
+      ["scripts/gates.sh", "# ./scripts/check-analytics.sh is not run yet\n"],
+      ["scripts/gates.ts", "await $`./tools/check-analytics.sh`;\n"],
+      ["scripts/gates.ts", "console.log('scripts/check-analytics.sh');\n"],
+      ["scripts/gates.sh", "make test # TODO: scripts/check-analytics.sh\n"],
+      [
+        "scripts/gates.ts",
+        "await run(['bun', 'test']); // then ./scripts/check-analytics.sh\n",
+      ],
+      ["scripts/gates.sh", "echo scripts/check-analytics.sh\n"],
+      // A command or call shaped string is still only a string.
+      [
+        "scripts/gates.ts",
+        "console.log('spawnSync(\"./scripts/check-analytics.sh\")');\n",
+      ],
+      ["scripts/gates.sh", 'echo "done; ./scripts/check-analytics.sh"\n'],
+      ["scripts/gates.ts", "console.log(`./scripts/check-analytics.sh`);\n"],
+      [
+        "scripts/gates.ts",
+        'log("say \\"hi\\"; bash scripts/check-analytics.sh");\n',
+      ],
+      // An escaped quote, a string over several lines, an inline block comment.
+      [
+        "scripts/gates.ts",
+        "console.log('don\\'t; ./scripts/check-analytics.sh');\n",
+      ],
+      [
+        "scripts/gates.ts",
+        "console.log(`checks:\n./scripts/check-analytics.sh\n`);\n",
+      ],
+      [
+        "scripts/gates.ts",
+        'const x = 1; /* spawnSync("./scripts/check-analytics.sh"); */\n',
+      ],
+      ["scripts/gates.sh", "echo 'first line\n./scripts/check-analytics.sh'\n"],
+      [
+        "scripts/gates.py",
+        '"""Runs:\n./scripts/check-analytics.sh\n"""\nprint("ok")  # spawnSync("./scripts/check-analytics.sh")\n',
+      ],
+      // A here-document's body, quoted, tab-indented or piped on.
+      ["scripts/gates.sh", "cat <<'EOF'\n./scripts/check-analytics.sh\nEOF\n"],
+      [
+        "scripts/gates.sh",
+        "cat <<-EOF\n\t./scripts/check-analytics.sh\n\tEOF\necho ok\n",
+      ],
+      [
+        "scripts/gates.sh",
+        'cat <<"EOF" | tee notes.txt\n./scripts/check-analytics.sh\nEOF\n',
+      ],
+      ["scripts/gates.sh", "cat <<EOF\n./scripts/check-analytics.sh\nEOF\n"],
+      [
+        "scripts/gates.sh",
+        "cat <<END-TEXT\nEND\n./scripts/check-analytics.sh\nEND-TEXT\n",
+      ],
+      // A quoted empty delimiter, closed by an empty line.
+      [
+        "scripts/gates.sh",
+        "cat <<''\n./scripts/check-analytics.sh\n\necho ok\n",
+      ],
+      // A double-quoted delimiter with an escaped quote in it.
+      [
+        "scripts/gates.sh",
+        'cat <<"E\\"OF"\n./scripts/check-analytics.sh\nE"OF\n',
+      ],
+      // An unquoted body's backslash-newline joins the next line to it.
+      [
+        "scripts/gates.sh",
+        "cat <<EOF\ntext \\\nEOF\n./scripts/check-analytics.sh\nEOF\n",
+      ],
+      // A quoted delimiter, or part of one, leaves the body's substitutions text.
+      [
+        "scripts/gates.sh",
+        "cat <<'EOF'\n$(./scripts/check-analytics.sh)\nEOF\n",
+      ],
+      [
+        "scripts/gates.sh",
+        'cat <<E"OF"\n$(./scripts/check-analytics.sh)\nEOF\n',
+      ],
+      [
+        "scripts/gates.sh",
+        "cat <<EOF\n\\$(./scripts/check-analytics.sh)\nEOF\n",
+      ],
+      // An escaped separator is a literal argument.
+      ["scripts/gates.sh", "echo \\; ./scripts/check-analytics.sh\n"],
+      ["scripts/gates.sh", "echo \\| ./scripts/check-analytics.sh\n"],
+      ["scripts/gates.sh", "echo \\& ./scripts/check-analytics.sh\n"],
+      // An argument list no call runs.
+      [
+        "scripts/gates.ts",
+        'const examples = ["bash", "scripts/check-analytics.sh"]; console.log("ok");\n',
+      ],
+      [
+        "scripts/gates.ts",
+        'console.log(["bash", "scripts/check-analytics.sh"]);\n',
+      ],
+    ] as const)(
+      "a runner that only mentions a file CI runs, or names another file of that name, does not cover it [case %# %s]",
+      (file, text) => {
         expect(runnerFit(file, text)).toContain(
           "`./scripts/check-analytics.sh`",
         );
-      }
-    });
+      },
+    );
 
-    test("a runner that runs a file CI runs, as a command or through a shell or spawn call, covers it", () => {
-      for (const [file, text] of [
-        [
-          "scripts/gates.sh",
-          "set -e\nbun test && ./scripts/check-analytics.sh\n",
-        ],
-        [
-          "scripts/gates.sh",
-          "if true; then bash scripts/check-analytics.sh; fi\n",
-        ],
-        ["scripts/gates.ts", "await $`./scripts/check-analytics.sh`;\n"],
-        [
-          "scripts/gates.ts",
-          "spawnSync('./scripts/check-analytics.sh', { stdio: 'inherit' });\n",
-        ],
-        ["scripts/gates.ts", 'run(["bash", "scripts/check-analytics.sh"]);\n'],
-        [
-          "scripts/gates.py",
-          'subprocess.run(["bash", "scripts/check-analytics.sh"])\n',
-        ],
-        // A command substitution runs its command, inside double quotes too.
-        ["scripts/gates.sh", 'echo "$(./scripts/check-analytics.sh)"\n'],
-        ["scripts/gates.sh", "result=`./scripts/check-analytics.sh`\n"],
-        // After a here-document, and on the line that opens one.
-        [
-          "scripts/gates.sh",
-          "cat <<EOF\nnotes\nEOF\n./scripts/check-analytics.sh\n",
-        ],
-        [
-          "scripts/gates.sh",
-          "cat <<'EOF' && ./scripts/check-analytics.sh\nbody\nEOF\n",
-        ],
-        // A substitution in an unquoted body runs.
-        [
-          "scripts/gates.sh",
-          "cat <<EOF\n$(./scripts/check-analytics.sh)\nEOF\n",
-        ],
-        [
-          "scripts/gates.sh",
-          "cat <<EOF\n`./scripts/check-analytics.sh`\nEOF\n",
-        ],
-        // A delimiter is a whole shell word, with its quotes removed.
-        [
-          "scripts/gates.sh",
-          "cat <<END-TEXT\nbody\nEND-TEXT\n./scripts/check-analytics.sh\n",
-        ],
-        [
-          "scripts/gates.sh",
-          'cat <<E"OF"\nbody\nEOF\n./scripts/check-analytics.sh\n',
-        ],
-        [
-          "scripts/gates.sh",
-          'cat <<"E\\"OF"\nbody\nE"OF\n./scripts/check-analytics.sh\n',
-        ],
-        [
-          "scripts/gates.sh",
-          "cat <<''\nbody\n\n./scripts/check-analytics.sh\n",
-        ],
-        // An unquoted body's closing line is a logical line; an escaped backslash continues nothing.
-        [
-          "scripts/gates.sh",
-          "cat <<EOF\nbody\nEO\\\nF\n./scripts/check-analytics.sh\n",
-        ],
-        [
-          "scripts/gates.sh",
-          "cat <<EOF\ntext \\\\\nEOF\n./scripts/check-analytics.sh\nEOF\n",
-        ],
-        // A here-string, or a shift, opens no here-document.
-        [
-          "scripts/gates.sh",
-          "cat <<<notes\n./scripts/check-analytics.sh\nnotes\n",
-        ],
-        ["scripts/gates.sh", "echo $((1<<2))\n./scripts/check-analytics.sh\n"],
-        ["scripts/gates.sh", "(( n = 1<<2 ))\n./scripts/check-analytics.sh\n"],
-        [
-          "scripts/gates.ts",
-          'spawnSync("bash", ["scripts/check-analytics.sh"]);\n',
-        ],
-      ] as const) {
+    test.each([
+      [
+        "scripts/gates.sh",
+        "set -e\nbun test && ./scripts/check-analytics.sh\n",
+      ],
+      [
+        "scripts/gates.sh",
+        "if true; then bash scripts/check-analytics.sh; fi\n",
+      ],
+      ["scripts/gates.ts", "await $`./scripts/check-analytics.sh`;\n"],
+      [
+        "scripts/gates.ts",
+        "spawnSync('./scripts/check-analytics.sh', { stdio: 'inherit' });\n",
+      ],
+      ["scripts/gates.ts", 'run(["bash", "scripts/check-analytics.sh"]);\n'],
+      [
+        "scripts/gates.py",
+        'subprocess.run(["bash", "scripts/check-analytics.sh"])\n',
+      ],
+      // A command substitution runs its command, inside double quotes too.
+      ["scripts/gates.sh", 'echo "$(./scripts/check-analytics.sh)"\n'],
+      ["scripts/gates.sh", "result=`./scripts/check-analytics.sh`\n"],
+      // After a here-document, and on the line that opens one.
+      [
+        "scripts/gates.sh",
+        "cat <<EOF\nnotes\nEOF\n./scripts/check-analytics.sh\n",
+      ],
+      [
+        "scripts/gates.sh",
+        "cat <<'EOF' && ./scripts/check-analytics.sh\nbody\nEOF\n",
+      ],
+      // A substitution in an unquoted body runs.
+      ["scripts/gates.sh", "cat <<EOF\n$(./scripts/check-analytics.sh)\nEOF\n"],
+      ["scripts/gates.sh", "cat <<EOF\n`./scripts/check-analytics.sh`\nEOF\n"],
+      // A delimiter is a whole shell word, with its quotes removed.
+      [
+        "scripts/gates.sh",
+        "cat <<END-TEXT\nbody\nEND-TEXT\n./scripts/check-analytics.sh\n",
+      ],
+      [
+        "scripts/gates.sh",
+        'cat <<E"OF"\nbody\nEOF\n./scripts/check-analytics.sh\n',
+      ],
+      [
+        "scripts/gates.sh",
+        'cat <<"E\\"OF"\nbody\nE"OF\n./scripts/check-analytics.sh\n',
+      ],
+      ["scripts/gates.sh", "cat <<''\nbody\n\n./scripts/check-analytics.sh\n"],
+      // An unquoted body's closing line is a logical line; an escaped backslash continues nothing.
+      [
+        "scripts/gates.sh",
+        "cat <<EOF\nbody\nEO\\\nF\n./scripts/check-analytics.sh\n",
+      ],
+      [
+        "scripts/gates.sh",
+        "cat <<EOF\ntext \\\\\nEOF\n./scripts/check-analytics.sh\nEOF\n",
+      ],
+      // A here-string, or a shift, opens no here-document.
+      [
+        "scripts/gates.sh",
+        "cat <<<notes\n./scripts/check-analytics.sh\nnotes\n",
+      ],
+      ["scripts/gates.sh", "echo $((1<<2))\n./scripts/check-analytics.sh\n"],
+      ["scripts/gates.sh", "(( n = 1<<2 ))\n./scripts/check-analytics.sh\n"],
+      [
+        "scripts/gates.ts",
+        'spawnSync("bash", ["scripts/check-analytics.sh"]);\n',
+      ],
+    ] as const)(
+      "a runner that runs a file CI runs, as a command or through a shell or spawn call, covers it [case %# %s]",
+      (file, text) => {
         expect(runnerFit(file, text)).toBeUndefined();
-      }
-    });
+      },
+    );
 
     test("a yarn command other than an install is compared, not taken for setup", () => {
       const finding = gateFit(
