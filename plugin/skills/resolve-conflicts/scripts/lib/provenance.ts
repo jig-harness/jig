@@ -1,5 +1,6 @@
 /** Reconstruct Git's automatic result from committed inputs, never the index. */
 import { DecodeError } from "../../../../shared/guards.ts";
+import { indexAttributesGit } from "./attributes.ts";
 import { git, gitRaw, splitNul } from "./git.ts";
 import type { Operation } from "./operation.ts";
 import type { Snapshot, Stage } from "./snapshot.ts";
@@ -71,20 +72,27 @@ function isMerging(root: string, op: Inputs["operation"]): boolean {
   );
 }
 
+/**
+ * Git's automatic merge of the two sides, under the attributes the commit
+ * carries and nothing else (a merge driver or marker size the working tree,
+ * `info/attributes` or a user's or the system's attributes file alone
+ * declares changes nothing).
+ */
 function automaticTree(
   root: string,
   inputs: Inputs,
 ): { tree: string; conflicts: Set<string> } {
-  const result = gitRaw(root, [
+  const args = [
     ...mergeArguments(root, inputs.operation),
     inputs.sides.ours.commit,
     inputs.sides.theirs.commit,
-  ]);
+  ];
+  const result = indexAttributesGit(root, (run) => run(args));
   if (result.code !== 0 && result.code !== 1)
     throw new DecodeError(
       "git merge-tree",
       "$",
-      `cannot reconstruct the automatic result (Git 2.40 or newer is required): ${result.stderr.trim()}`,
+      `cannot reconstruct the automatic result (Git 2.41 or newer is required): ${result.stderr.trim()}`,
     );
   return parseAutomaticTree(result.stdout);
 }

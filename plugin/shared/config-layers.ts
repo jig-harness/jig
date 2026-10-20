@@ -249,10 +249,30 @@ export function readConfigFile(path: string): Record<string, unknown> | null {
   try {
     parsed = load(readFileSync(path, "utf8"));
   } catch (err) {
-    throw new Error(
-      `Jig configuration could not be parsed: ${path}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    throw parseError(path, err);
   }
+  return checkedConfig(parsed, path);
+}
+
+/** One layer's text, parsed as `readConfigFile` parses a file; `path` names it in errors. */
+function parseConfigText(text: string, path: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = load(text);
+  } catch (err) {
+    throw parseError(path, err);
+  }
+  return checkedConfig(parsed, path);
+}
+
+function parseError(path: string, err: unknown): Error {
+  return new Error(
+    `Jig configuration could not be parsed: ${path}: ${err instanceof Error ? err.message : String(err)}`,
+  );
+}
+
+/** A parsed layer as a mapping: empty when there is nothing, else checked. */
+function checkedConfig(parsed: unknown, path: string): Record<string, unknown> {
   if (parsed === null || parsed === undefined) return {};
   if (!isMapping(parsed))
     throw new Error(`Jig configuration must be a mapping: ${path}`);
@@ -408,10 +428,17 @@ export function mergeLayers(
   return merged;
 }
 
-/** Every layer for the repository at `root`, read and merged. */
+/**
+ * Every layer for the repository at `root`, read and merged. The repository
+ * layer comes from its file, unless `repositoryText` supplies its content
+ * (`null` for a file that does not exist): for a caller that reads the
+ * repository's files from somewhere other than the working tree, such as the
+ * git index.
+ */
 export function loadLayeredConfig(
   root: string,
   env: Env = process.env,
+  repositoryText?: string | null,
 ): LayeredConfig {
   const layers: ConfigLayer[] = [];
   const userPath = userConfigPath(env);
@@ -421,7 +448,12 @@ export function loadLayeredConfig(
     layers.push({ name: "user", source: userPath, values: user });
   }
   const repositoryPath = repositoryConfigPath(root, env);
-  const repository = readConfigFile(repositoryPath);
+  const repository =
+    repositoryText === undefined
+      ? readConfigFile(repositoryPath)
+      : repositoryText === null
+        ? null
+        : parseConfigText(repositoryText, repositoryPath);
   if (repository !== null)
     layers.push({
       name: "repository",

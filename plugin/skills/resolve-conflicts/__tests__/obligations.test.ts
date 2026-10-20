@@ -75,6 +75,7 @@ test("runtime reads layered configuration and bounds a command with a deadline",
     - check: Bound a stalled command
       command: '${process.execPath} -e "setInterval(() => {}, 1000)"'
 `);
+  scratch.git("add", ".config/jig.yaml");
   scratch.env.RESOLVE_CONFLICTS_COMMAND_TIMEOUT = "1";
   const run = scratch.script(join(scratch.root, "probe.ts"));
   expectSpawnExit({ ...run, exitCode: run.code }, 0);
@@ -108,6 +109,7 @@ test("runtime rejects malformed obligations with the configuration source", () =
   scratch.overlay(
     'resolve_conflicts:\n  obligations: [{check: Inspect, command: ""}]\n',
   );
+  scratch.git("add", ".config/jig.yaml");
   const run = scratch.script(join(scratch.root, "probe.ts"));
   expectSpawnExit({ ...run, exitCode: run.code }, 1);
   expect(run.stderr).toContain("resolve_conflicts.obligations[0].command");
@@ -128,9 +130,8 @@ function resolvedMerge(setup?: (s: Scratch) => void): Scratch {
   return s;
 }
 
-// The environment layer, not an untracked .config/jig.yaml: the check refuses
-// while a file that decides classification differs from the index, and a
-// staged one would be a change outside the operation.
+// The environment layer, not .config/jig.yaml: the file is read from the index,
+// and a staged one would be a change outside the operation.
 function setObligations(s: Scratch, entries: unknown): void {
   s.env.JIG__RESOLVE_CONFLICTS__OBLIGATIONS = JSON.stringify(entries);
 }

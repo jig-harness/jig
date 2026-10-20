@@ -5,7 +5,8 @@ another session's staged work, or break a repository rule in a file Git
 merged cleanly. `/jig:resolve-conflicts` checks the entire resolution before
 the operation is concluded, so reviewers can see what was kept and why.
 
-The skill needs Git 2.40 or newer to reconstruct the automatic result. It
+The skill needs Git 2.41 or newer, to reconstruct the automatic result and to
+read attributes from the index. It
 handles stopped merges, rebases, cherry-picks and reverts. Picking or reverting
 a merge commit with `-m` requires manual resolution and validation; Git does
 not reliably retain the selected parent, so the mapper refuses to certify it.

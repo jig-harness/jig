@@ -143,6 +143,31 @@ export function parseHunks(text: string, size = 7): Hunk[] {
   }));
 }
 
+/**
+ * The size of the markers git wrote into `text`: `expected` (the size the
+ * attributes give) when a complete conflict region parses at it, else the
+ * smallest size at which one does, since longer markers inside a region
+ * belong to a recursive merge's base. Null when no region parses at any size.
+ * The attribute that set the size may be gone by the time the path is mapped
+ * (an ignored `.gitattributes` removed); the markers it produced are not.
+ */
+export function writtenMarkerSize(
+  text: string,
+  expected: number,
+): number | null {
+  const sizes = new Set<number>();
+  for (const line of text.split("\n")) {
+    const run = line.match(/^(<+)(?: |\r?$)/);
+    if (run) sizes.add((run[1] as string).length);
+  }
+  const candidates = [expected, ...[...sizes].sort((a, b) => a - b)];
+  return (
+    candidates.find(
+      (size) => sizes.has(size) && parseRegionLines(text, size).length > 0,
+    ) ?? null
+  );
+}
+
 /** 1-based numbers of every line that is a conflict marker of this size. */
 export function markerLines(text: string, size = 7): number[] {
   const found: number[] = [];

@@ -94,6 +94,26 @@ test("the repository overrides the user, and the environment overrides both", ()
   );
 });
 
+test("supplied repository text replaces the repository file, null meaning it is absent", () => {
+  user("review:\n  bots: [user-bot]\n");
+  repository("review:\n  bots: [repo-bot]\n");
+  const supplied = loadLayeredConfig(
+    repo,
+    process.env,
+    "review:\n  repo_label: supplied\n",
+  );
+  expect(supplied.values).toEqual({
+    review: { bots: ["user-bot"], repo_label: "supplied" },
+  });
+  expect(supplied.hasRepository).toBe(true);
+  const absent = loadLayeredConfig(repo, process.env, null);
+  expect(absent.values).toEqual({ review: { bots: ["user-bot"] } });
+  expect(absent.hasRepository).toBe(false);
+  expect(() => loadLayeredConfig(repo, process.env, "- a\n")).toThrow(
+    `Jig configuration must be a mapping: ${join(repo, ".config", "jig.yaml")}`,
+  );
+});
+
 test("a user layer alone configures a repository without its own file", () => {
   user("drive:\n  reviews_drafts: false\n");
   expect(readConfig()).toEqual({ drive: { reviews_drafts: false } });
