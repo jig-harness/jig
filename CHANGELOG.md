@@ -317,6 +317,21 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.70.1] - 2026-10-20
+
+### Added
+
+- M1's reference ratchet can count source and test lines above a configured
+  file-size limit, preventing total excess from growing while existing files
+  are split. A scope that matches no file in the working tree is a
+  configuration error rather than a pass; a merge base with no matching file
+  yet counts zero excess.
+
+### Changed
+
+- The review driver's implementation and large test suites are split by
+  responsibility, preserving the commands skills invoke from the plugin cache.
+
 ## [0.70.0] - 2026-10-20
 
 ### Added
@@ -3243,7 +3258,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.70.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.70.1...HEAD
+[0.70.1]: https://github.com/jig-harness/jig/compare/v0.70.0...v0.70.1
 [0.70.0]: https://github.com/jig-harness/jig/compare/v0.69.0...v0.70.0
 [0.69.0]: https://github.com/jig-harness/jig/compare/v0.68.0...v0.69.0
 [0.68.0]: https://github.com/jig-harness/jig/compare/v0.67.0...v0.68.0
