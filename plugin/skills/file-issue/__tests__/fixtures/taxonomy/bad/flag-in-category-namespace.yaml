@@ -1,0 +1,28 @@
+# BAD — the flag `area:api` begins the open `area:` category's prefix, so the
+# validator would read it as the flag and never apply the category's
+# `requires`.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+flags:
+  - id: hitl
+    fires: a human decision
+    scope: shipping-item
+    apply_when: a person must decide
+  - id: area:api
+    fires: the interface review
+    scope: shipping-item
+    apply_when: the change touches the public interface
+
+categories:
+  - id: area
+    prefix: "area:"
+    open: "[a-z]+"
+    requires: [hitl]

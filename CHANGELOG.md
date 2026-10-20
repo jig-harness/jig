@@ -317,6 +317,26 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.67.0] - 2026-10-20
+
+### Added
+
+- The `file-issue` skill (`/jig:file-issue`) files a tracker issue from the discussion, or plans an existing one (re-labels it, splits it into sub-issues, records its relations). It writes a durable issue body, derives the labels from the change-area catalog's tracker labels of the areas a diff touches directly (else from the description), searches for a duplicate, checks every label set against the repository's label taxonomy and asks before it writes, all through the tracker scripts ([README](plugin/skills/file-issue/README.md)).
+- `validate-labels.ts` in the `file-issue` skill checks one issue's labels against the label taxonomy: an unknown label, no type or two, two labels of one group or none of a required group, and a facet without the label it requires are refused; `--check-tracker` also refuses a label the tracker lacks or has more than one of, matching names exactly as the tracker adapter does. A label is checked as it will be written: an empty one or one with whitespace around its name is refused, not trimmed.
+- The label taxonomy schema gains optional `groups` (single-select families such as a size or a repository, optionally required) and `categories` (prefixed multi-select families, optionally open to any slug matching a pattern, with `max`, `recommended` and `requires`), and a flag may declare `requires_category`. [M9's template](modules/M9-tasks-memory/templates/label-taxonomy.yaml) shows one of each.
+- The [tracker interface](GLOSSARY.md) gains creating, updating and searching issues, listing the labels an issue can carry, and reading and recording relations; the Linear adapter implements them, and `do-item`'s `tracker.ts` exposes them as `create`, `update`, `search`, `available-labels`, `relations` and `relate` ([EXTENDING.md](plugin/EXTENDING.md#issue-tracker)).
+- `issue_tracker.taxonomy` names the label taxonomy (default `label-taxonomy.yaml`); the audit's configuration check reads the file it names, counts group and category labels as defined, and checks `issue_tracker.labels.batch_sizes` against the group labels alone.
+
+### Changed
+
+- **Breaking:** `resolve-conflicts` requires Git 2.41 or newer, up from 2.40: it reads attributes with `git --attr-source`. Upgrade Git before updating the plugin; with an older Git, `conflict-map.ts` and `check-resolution.ts` stop with an error naming the version.
+- **Breaking** for a repository that runs M9's label-taxonomy lint from a Jig checkout: it moved from `modules/M9-tasks-memory/reference/label-taxonomy-lint/` to `plugin/skills/file-issue/scripts/check-label-taxonomy.ts` and no longer needs `lib/`; point the CI step at the new path ([mappings](modules/M9-tasks-memory/mappings.md)).
+- **Breaking** for a label taxonomy whose entries carry a key the schema does not list (anything but `notes` beside the documented fields): the lint now refuses it, so a misspelt rule is never read as absent. Remove or rename the key. The lint also refuses a type, flag or group label that begins with a category's prefix.
+
+### Fixed
+
+- `resolve-conflicts` classifies the conflicted paths from what the commit will carry, not from the working tree: `conflict-map.ts` and `check-resolution.ts` read `.config/jig.yaml` (or the file `JIG_OVERLAY` names inside the repository) and the change-area catalog from the git index (following the symbolic links the index holds, with `/` the only path separator; a link whose target leaves the repository is refused, never read from disk) and every attribute (classification and the reconstruction of git's automatic merge) from the index's regular `.gitattributes` files alone (`git --attr-source`): `$GIT_DIR/info/attributes`, the file `core.attributesFile` names and the system's attributes file decide nothing either, and the automatic merge is reconstructed under no configuration but the repository's rename-detection settings, its renormalization (`merge.renormalize`, `core.autocrlf`) and `core.useReplaceRefs`, so a merge driver configured for the repository, the user, the system or the environment does not run, while everything else in the repository's git directory (its references, replace refs among them, `HEAD`, the index, `shallow`, `info/grafts` and its submodules' repositories) is still read, in a linked worktree too, so a submodule git fast-forwarded is not reported as a conflict, whether or not `.gitmodules` is in the working tree. The conflict-marker scan of staged changes reads every added line whatever an attribute says the file is, skipping only content git would call binary (a zero byte in its first 8000 bytes, counted as bytes). A path's marker size is taken from the markers git wrote into it when it is first mapped, so it holds after the attribute that set it is gone, and markers are also looked for at the size the index declares. An index link with an empty target cannot be read through. A filename that holds a literal backslash, a link retargeted only on disk, an untracked or ignored `.gitattributes` file, and a staged link named `.gitattributes` no longer let a resolution pass that the committed catalog or attributes would reject. A change to the configuration or the catalog takes effect once it is staged. `check-resolution.ts` no longer reports a declaration whose working tree differs from the index, since the working tree decides nothing. A relative `JIG_OVERLAY` is taken from the working directory, as every other configuration reader takes it, and a configured path that names a directory, or ends in `/` after a file, cannot be read. While `.config/jig.yaml` itself is unmerged, `conflict-map.ts` still records the conflicts and marks the map incomplete, so `check-resolution.ts` refuses until the file is staged and the conflicts are mapped again.
+
 ## [0.66.1] - 2026-10-19
 
 ### Fixed
@@ -3176,7 +3196,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.66.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.67.0...HEAD
+[0.67.0]: https://github.com/jig-harness/jig/compare/v0.66.1...v0.67.0
 [0.66.1]: https://github.com/jig-harness/jig/compare/v0.66.0...v0.66.1
 [0.66.0]: https://github.com/jig-harness/jig/compare/v0.65.1...v0.66.0
 [0.65.1]: https://github.com/jig-harness/jig/compare/v0.65.0...v0.65.1

@@ -18,9 +18,8 @@ These rules make the skeletons more than boilerplate:
   the category is chosen for the work itself, from your one category list,
   never derived from the priority; work that arrives without one is filed
   as an explicit `unknown`, not a guessed category. The category list is
-  not part of `label-taxonomy.yaml`, whose schema holds only types, statuses
-  and flags: it is your repository's own list, kept beside the taxonomy
-  (where Jig's tooling reads it:
+  your repository's own list, kept beside the taxonomy (where Jig's tooling
+  reads it:
   [mappings.md](https://github.com/jig-harness/jig/blob/main/modules/M9-tasks-memory/mappings.md#issue-trackers--the-work-item-rules)).
   An issue filed without either is unranked, not low priority.
 - **A flag goes on the item that ships the change.** A flag that fires a gate

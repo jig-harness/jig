@@ -1,0 +1,207 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit's configuration for Jig's pull requests. Only what differs from
+# CodeRabbit's defaults is set; the reasons are in the comments.
+#
+# Posture: comment-only, like every other reviewer here (.config/ai-review.yaml).
+# Nothing below may make CodeRabbit block a merge: a person merges, and each
+# finding is decided in the review loop. So no pre-merge check runs in `error`
+# mode and `request_changes_workflow` stays off. drive-pr reads CodeRabbit's
+# native comment format (severity line, confirmation marker), so the comment
+# shape is left as CodeRabbit writes it.
+#
+# Trust: CodeRabbit reads this file from the branch under review, so a pull
+# request can change how CodeRabbit reviews it. Nothing relies on this file
+# as a policy boundary. The reviewer whose check decides convergence reads
+# its policy from the base branch (docs/README.md), and a change to this file
+# is in the high-risk `review-config` change area, so that reviewer and the
+# person who merges see it.
+#
+# AGENTS.md and the nested AGENTS.md files are read as review guidelines
+# (knowledge_base.code_guidelines), so the repository rules are not repeated
+# here. `path_instructions` adds only what is specific to a path and that the
+# gates cannot check.
+
+language: en-US
+tone_instructions: >-
+  Terse and specific. Name the defect, the file it breaks and the fix. Skip
+  praise, restating the diff and style preferences the gates already enforce.
+
+reviews:
+  # Balanced. The in-house reviewer carries the repository's invariants; this
+  # one adds static-analysis and cross-file depth (modules/M7 mappings).
+  profile: chill
+  request_changes_workflow: false
+
+  # The walkthrough keeps the file summary, effort estimate and related
+  # pull requests (many parallel branches touch the same files). The rest is
+  # noise on a documentation-and-scripts repository.
+  sequence_diagrams: false
+  poem: false
+  in_progress_fortune: false
+  suggested_reviewers: false
+
+  # Lockfiles, dist, node_modules and _generated are skipped by default. This
+  # adds the rest of the in-house reviewer's `exclude_pathspecs` and the
+  # inputs that are not Jig's own text.
+  path_filters:
+    - "!**/*.snap"
+    - "!seeds/**"
+    # Fixtures hold deliberately broken inputs for the gates' own tests.
+    - "!**/fixtures/**"
+    # Byte copies of third-party builds; the gates compare them with the
+    # installed package.
+    - "!**/vendor/**"
+    # Written by the release step from the change notes.
+    - "!CHANGELOG.md"
+    - "!website/public/brand/**"
+
+  path_instructions:
+    - path: "plugin/**"
+      instructions: |-
+        Everything here runs from a copy of the plugin directory with no
+        node_modules, so flag an import of a package that is not vendored, an
+        import or bundled-resource path that leaves plugin/, and a read of the
+        plugin's own __tests__/, AGENTS.md or CLAUDE.md (the shipped copy
+        leaves them out). Reading the consumer repository (the working
+        directory, its configuration) is expected, not a path that leaves the
+        plugin. Consumer values (bots,
+        teams, labels, commands) must come from the shared configuration
+        reader, never a hard-coded value or a direct parse of the file.
+    - path: "plugin/skills/*/SKILL.md"
+      instructions: |-
+        A skill is instructions an agent follows literally. Flag a step that
+        can be read two ways, a command that assumes a working directory, and
+        a promise (a script, flag or field) that the skill's scripts do not
+        implement.
+    - path: "**/*.test.ts"
+      instructions: |-
+        Flag a test that changes the home directory, working directory or
+        environment in the test process (it belongs in a spawned subprocess),
+        waits with a fixed sleep instead of polling to a deadline, asserts a
+        spawned child's exit code without lib/test-helpers/expect-spawn-exit.ts,
+        or asserts something that cannot fail.
+    - path: "modules/**/*.md"
+      instructions: |-
+        The README opens with a plain-language problem paragraph before any
+        mechanism. Practices are stated as tool-independent invariants; tool
+        names belong in mappings.md. Flag jargon not expanded on first use or
+        missing from GLOSSARY.md.
+    - path: "**/*.md"
+      instructions: |-
+        Flag review dialogue or "fixed/addressed" traces left in a final
+        document, a table without a blank line before it, a relative link to
+        a path that does not exist, and a number in prose that merely tallies
+        an adjacent list.
+    - path: ".github/workflows/**"
+      instructions: |-
+        Flag a third-party action not pinned to a full commit SHA, a token
+        with more permissions than the job uses, untrusted pull-request
+        content (title, branch name, body) interpolated into a `run` step, and
+        a secret reachable from a fork's pull request.
+    - path: "scripts/**"
+      instructions: |-
+        Gates and checks must be deterministic and must not weaken their own
+        scope: flag a check that turns a failure into a pass, skips a file it
+        cannot read without saying so, or has no test that fails without it.
+    - path: "changes/**"
+      instructions: |-
+        A change note describes what a team using Jig would notice, in
+        plain language, and names no organization, tracker key or foreign
+        pull request. A note for a change under plugin/ carries `release:`.
+
+  # Biome is a gate. The JavaScript linters have no configuration here, and
+  # the prose and YAML linters would restate the writing conventions
+  # (AGENTS.md) as style nits. The security and workflow scanners stay on.
+  tools:
+    biome:
+      enabled: false
+    oxc:
+      enabled: false
+    eslint:
+      enabled: false
+    markdownlint:
+      enabled: false
+    languagetool:
+      enabled: false
+    yamllint:
+      enabled: false
+
+  pre_merge_checks:
+    # Jig leaves most functions undocumented on purpose: a comment states why,
+    # not what, so a coverage percentage measures the wrong thing.
+    docstrings:
+      mode: "off"
+    title:
+      mode: warning
+      requirements: >-
+        Conventional Commits: `type(scope): summary` with type feat, fix,
+        docs, chore, refactor, test, ci or perf.
+    # The pull request template is more specific than a generic description
+    # check; the custom check below covers it. Linear holds the issues, so
+    # there is no linked GitHub issue to assess.
+    description:
+      mode: "off"
+    issue_assessment:
+      mode: "off"
+    custom_checks:
+      - name: "Pull request template"
+        mode: warning
+        instructions: |-
+          The description keeps the template's headings ("What and
+          why", "The audit", "Checklist"). "What and why" says what changes for
+          someone who uses Jig. "The audit" says what changed in the audit
+          skill (config-schema.yaml, the criteria or config-fit.ts) or why
+          nothing needed to. Pass a pull request that changes only
+          documentation if "The audit" still says why the audit is unaffected.
+          Fail when a heading is missing or left as the template's comment.
+
+  auto_review:
+    # Jig opens pull requests as drafts and marks them Ready after the first
+    # review round, so reviewers that skip drafts spend their pass on a head
+    # the in-house reviewer has already cleaned
+    # (CONTRIBUTING.md § Pull-request lifecycle).
+    drafts: false
+    # drive-pr pushes once per round and requires every reviewer to report on
+    # the current head, so any pause here would stall a drive that is still
+    # within its budget. 0 turns the pause off; the drive's own round limit
+    # (drive.max_rounds in .config/jig.yaml) bounds a loop that does not
+    # converge.
+    auto_pause_after_reviewed_commits: 0
+    # Dependency updates arrive as lockfile bumps that the supply-chain gates
+    # check; a language-model review of them adds nothing.
+    ignore_usernames:
+      - "renovate[bot]"
+
+  # Every finishing touch commits to the pull-request branch, so each one is
+  # off: CodeRabbit comments, and changes reach a branch only through its
+  # author. Several default to on; simplify is set too so the file states the
+  # whole rule. No custom recipe is defined.
+  finishing_touches:
+    # Generated tests would also skip the rule that a test is seen to fail
+    # once before its pass is trusted (M14).
+    unit_tests:
+      enabled: false
+    docstrings:
+      enabled: false
+    simplify:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
+
+chat:
+  art: false
+
+knowledge_base:
+  code_guidelines:
+    # Added to the defaults, which already read every AGENTS.md. The object
+    # form applies a document to the whole repository; a string would scope it
+    # to its own directory.
+    filePatterns:
+      # Standing decisions: CodeRabbit should not re-open what an ADR settled.
+      - files: "docs/adr/*.md, docs/dispositions.md"
+        applyTo: "**"

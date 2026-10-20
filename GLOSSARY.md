@@ -691,6 +691,23 @@ make, use the entry's term instead.
   its structural rules, for example text that asks a human to decide.
 - **Flag label** — an issue-tracker label that *drives process* rather than
   just categorizing (e.g., "has-migration" → a mandatory review gate fires).
+- **Label taxonomy** — the one file that lists every label an issue may
+  carry, in families (types, *flag labels*, *label groups*, *label
+  categories*), with the rules between them, so labels are chosen from a
+  closed vocabulary and checked before an issue is written
+  ([M9](modules/M9-tasks-memory/README.md);
+  [file-issue](plugin/skills/file-issue/README.md#the-label-taxonomy)).
+- **Label group** — a family of a *label taxonomy* an issue carries at most
+  one label of, such as a size or a repository; a required group, exactly
+  one.
+- **Label category** — a family of a *label taxonomy* whose labels share a
+  prefix (`area:billing`, `area:search`) and of which an issue may carry
+  several. An open category accepts any name matching a pattern after the
+  prefix.
+- **Facet** — a label that refines another and means nothing without it,
+  such as the stakeholder label beside a human-in-the-loop flag; the
+  *label taxonomy* says which label it requires, and the label validator
+  rejects it alone.
 - **Sensitivity flag** — a *flag label* marking a change that carries extra
   obligations, such as a database migration, a published contract, personal
   data or a manual operational step. `decide` reads them under fixed names:
@@ -1416,9 +1433,9 @@ make, use the entry's term instead.
   implementation of that set for a particular tracker. The skills call the
   interface, so supporting a new tracker means writing an adapter, not
   editing the skills, except where a skill still calls Linear directly: the
-  review skill's deferral step (roadmap item 10), the operations the
-  interface does not have yet (creating or searching issues, adding labels,
-  attaching a file), and a few reads of Linear's own answers.
+  review skill's deferral step (roadmap item 10), the one operation the
+  interface does not have yet (attaching a file), and a few reads of
+  Linear's own answers.
   [plugin/EXTENDING.md](plugin/EXTENDING.md#issue-tracker) lists
   them under "What still assumes Linear". Linear's adapter is built;
   adapters for Jira and for a plan file kept in the repository are planned

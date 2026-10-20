@@ -241,9 +241,9 @@ areas:
     reviewRisk: high
 
   review-config:
-    title: "The AI reviewer's configuration and the catalog it is derived from"
+    title: "The AI reviewers' configuration and the catalog it is derived from"
     category: infra
-    paths: [".config/ai-review.yaml", ".config/change-areas.yaml"]
+    paths: [".config/ai-review.yaml", ".config/change-areas.yaml", ".coderabbit.yaml"]
     workspace: []
     impliedBy: []
     deployTier: none

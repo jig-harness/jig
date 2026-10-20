@@ -1,0 +1,16 @@
+# BAD — the size group's `required:` is present but null, not true or false.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+groups:
+  - id: size
+    required: null
+    labels:
+      - id: small

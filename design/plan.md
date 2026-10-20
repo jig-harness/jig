@@ -182,12 +182,11 @@ golden files from the Python linter then retire with the translation.
 
 Jira, and a plan file kept in the repository. Both wait on the open decisions
 below. Before a second adapter works end to end, the
-[tracker interface](../GLOSSARY.md) gains the operations skills now reach
-through the Linear MCP tools or the `linear` command: creating an issue,
-searching open issues, adding labels and attaching a file. The deferral step
-(item 10), `decide`, `explain` and `do-item`'s instructions then use them,
-and `do-item`'s parent-status reconciliation reads the interface's answers
-instead of Linear's. [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker)
+[tracker interface](../GLOSSARY.md) gains attaching a file, which `decide`
+and `explain` now do through the Linear MCP tools or the `linear` command.
+The deferral step (item 10), `decide`, `explain` and `do-item`'s
+instructions then use the interface's operations, and `do-item`'s parent-status reconciliation reads the
+interface's answers instead of Linear's. [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker)
 lists what still assumes Linear.
 
 ### 15. M14 Testing strategy: the rest

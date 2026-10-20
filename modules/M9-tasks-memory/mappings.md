@@ -13,14 +13,20 @@ is an **option**, not a requirement: pick one row per column. Replace
 | Gate | When it runs | Rung |
 |------|--------------|------|
 | label-taxonomy lint | on any change to `label-taxonomy.yaml` | [CI](../../GLOSSARY.md) (authority — see [M1](../M1-gates-enforcement-ladder/)); cheap enough to pre-commit too |
+| label validator | before any tool writes an issue's labels | the filing path itself ([`file-issue`](../../plugin/skills/file-issue/README.md) runs it before every write) |
 | required-phases | at item close/merge (or on a status transition) | CI gate, or a tracker status-automation, over the item's exported phase record |
 
-Point one `M9` variable at wherever you vendored the module and build every path
-from it; a bare `reference/...` resolves from the repo root and will not be
-found. Each gate imports the shared implementation in `lib/module-gates.ts`, so
-vendor the module together with `lib/`, its `vendor/` folder included (a
-pinned Jig checkout keeps them in place). The label-taxonomy lint reads the
-taxonomy with the js-yaml build in `lib/vendor/`.
+The label-taxonomy lint and the label validator live in the plugin's
+[`file-issue`](../../plugin/skills/file-issue/README.md) skill
+(`plugin/skills/file-issue/scripts/`), with their self-tests, which Jig's
+own CI runs. A CI job runs the lint from a pinned Jig checkout (point `JIG`
+at it); it needs Bun and nothing else, the YAML parser being vendored in
+`plugin/shared/`. The required-phases gate stays in this module: point one
+`M9` variable at wherever you vendored the module and build its paths from
+it (a bare `reference/...` resolves from the repo root and will not be
+found). It imports the shared implementation in `lib/module-gates.ts`, so
+vendor the module together with `lib/` (a pinned Jig checkout keeps them in
+place).
 
 ### GitHub Actions
 
@@ -34,11 +40,12 @@ jobs:
   taxonomy:
     runs-on: ubuntu-latest
     env:
-      M9: modules/M9-tasks-memory        # where you vendored the module
+      JIG: .jig                          # where the pinned Jig checkout is
     steps:
       - uses: actions/checkout@<full-commit-sha> # v4
-      - run: bun test "$M9"/reference/label-taxonomy-lint/check-label-taxonomy.test.ts
-      - run: TAXONOMY=label-taxonomy.yaml bun "$M9"/reference/label-taxonomy-lint/check-label-taxonomy.ts
+      - uses: actions/checkout@<full-commit-sha> # v4
+        with: { repository: jig-harness/jig, ref: <pinned-tag>, path: .jig }
+      - run: bun "$JIG"/plugin/skills/file-issue/scripts/check-label-taxonomy.ts label-taxonomy.yaml
   required-phases:
     runs-on: ubuntu-latest
     env:
@@ -58,9 +65,9 @@ jobs:
 tasks_memory:
   variables:
     M9: modules/M9-tasks-memory
+    JIG: .jig                            # the pinned Jig checkout
   script:
-    - bun test "$M9"/reference/label-taxonomy-lint/check-label-taxonomy.test.ts
-    - TAXONOMY=label-taxonomy.yaml bun "$M9"/reference/label-taxonomy-lint/check-label-taxonomy.ts
+    - bun "$JIG"/plugin/skills/file-issue/scripts/check-label-taxonomy.ts label-taxonomy.yaml
     - bun test "$M9"/reference/required-phases/check-formula.test.ts
     - RECORD=item-phases.txt FORMULA=phase-formula.yaml bun "$M9"/reference/required-phases/check-formula.ts
 ```
@@ -88,6 +95,11 @@ the `hitl` and `manual-ops` flags through its
 file kept in the repository are planned, [ROADMAP.md](../../ROADMAP.md)
 item 12), with the label names taken from `issue_tracker.labels` in the
 repository's [configuration](../../plugin/CONFIGURATION.md#issue_tracker).
+Its [`file-issue`](../../plugin/skills/file-issue/README.md) skill applies
+the flags at filing: from the change-area catalog's tracker labels of the
+areas a diff touches directly, else from the description, and through the
+same adapter, after the label validator has passed the whole label set
+against the taxonomy (`issue_tracker.taxonomy`).
 
 The tracker-agnostic contract the gate needs is small: a `status:` and the
 completed phase ids, one per line. Any tracker that can export those (a saved

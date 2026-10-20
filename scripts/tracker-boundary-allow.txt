@@ -1,0 +1,10 @@
+# Plugin files that still reach Linear outside the tracker interface. One
+# repository path per line, under `#` lines giving the reason and the open
+# work that moves the file behind the interface. See
+# check-tracker-boundary.ts; an entry whose file no longer reaches Linear
+# directly fails the gate, so the list only shrinks.
+
+# The deferral step files deferred review findings through its own Linear
+# client, with fixed type and repository label groups. Moving it onto the
+# tracker interface is roadmap item 10.
+plugin/skills/resolve-review-comments/scripts/defer-batch.ts

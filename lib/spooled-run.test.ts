@@ -9,7 +9,16 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { lastLinesOf, lineCount, linesOf, MAX_LINE } from "./spooled-run.ts";
+import {
+  type GroupIo,
+  lastLinesOf,
+  lineCount,
+  linesOf,
+  MAX_LINE,
+  reapGroup,
+  signalCommand,
+  signalGroup,
+} from "./spooled-run.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "jig-spooled-run-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -28,12 +37,16 @@ async function until(ready: () => boolean, what: string, ms = 10_000) {
     await Bun.sleep(20);
   }
 }
+/** Whether `pid` still exists. macOS answers EPERM, whoever owns it, for a
+ * process that is exiting and not yet reaped: it exists until ESRCH. */
 const alive = (pid: number) => {
   try {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return false;
+    if (code === "EPERM") return true;
     throw error;
   }
 };
@@ -105,6 +118,113 @@ test.skipIf(process.platform === "win32")(
     const spool = JSON.parse(stdout);
     expect(spool).toEqual({ interrupted: "SIGTERM", signal: "SIGKILL" });
     await until(() => !alive(command), "the command to stop");
+  },
+);
+
+/** A system whose `kill` answers from `script` in order, its last answer
+ * repeating: `ok`, or the error code it throws. Its clock moves only when the
+ * code under test sleeps. Records every call with the clock's time, and every
+ * warning with the time it was given. */
+function scripted(script: string[], reapMs = 200) {
+  let clock = 0;
+  const calls: [number, NodeJS.Signals | 0][] = [];
+  const times: number[] = [];
+  const warnings: string[] = [];
+  const warnedAt: number[] = [];
+  const io: GroupIo = {
+    kill: (pid, signal) => {
+      calls.push([pid, signal]);
+      times.push(clock);
+      const answer = script[Math.min(calls.length, script.length) - 1];
+      if (answer === "ok") return;
+      throw Object.assign(new Error(`kill: ${answer}`), { code: answer });
+    },
+    warn: (line) => {
+      warnings.push(line);
+      warnedAt.push(clock);
+    },
+    reapMs,
+    now: () => clock,
+    sleep: async (ms) => {
+      clock += ms;
+    },
+  };
+  return { io, calls, times, warnings, warnedAt };
+}
+
+/** The clock times a group polled every 50 ms is probed at, from `from`
+ * through `to`. */
+function polls(from: number, to: number): number[] {
+  return Array.from({ length: (to - from) / 50 + 1 }, (_, i) => from + i * 50);
+}
+
+test("a group probe answered EPERM is present, not gone, and not an error", () => {
+  expect(signalGroup(7, 0, scripted(["EPERM"]).io)).toBe("unsignalable");
+  expect(signalGroup(7, 0, scripted(["ESRCH"]).io)).toBe("gone");
+  expect(signalGroup(7, 0, scripted(["ok"]).io)).toBe("signalled");
+  expect(() => signalGroup(7, 0, scripted(["EINVAL"]).io)).toThrow("EINVAL");
+});
+
+test("a group that answers EPERM while exiting is waited for until ESRCH, not killed", async () => {
+  const { io, calls, warnings } = scripted(["EPERM", "EPERM", "ESRCH"]);
+  await reapGroup(7, 5_000, io);
+  expect(calls).toEqual([
+    [-7, 0],
+    [-7, 0],
+    [-7, 0],
+  ]);
+  expect(warnings).toEqual([]);
+});
+
+test("a group still answering EPERM is waited for through the grace period before it is killed", async () => {
+  const { io, calls, times } = scripted(["EPERM"]);
+  await reapGroup(7, 300, io);
+  // Probed until the deadline and killed exactly at it, never later.
+  const killed = calls.findIndex(([, signal]) => signal === "SIGKILL");
+  expect(killed).toBe(polls(0, 300).length);
+  expect(times.slice(0, killed + 1)).toEqual([...polls(0, 300), 300]);
+});
+
+test("a killed group still answering EPERM is probed through the reap window, then reported", async () => {
+  const { io, calls, times, warnings, warnedAt } = scripted(["EPERM"], 400);
+  await reapGroup(7, 100, io);
+  // Killed at the deadline, probed through the reap window and reported
+  // exactly at its end: a shorter or longer window changes the schedule.
+  const killed = calls.findIndex(([, signal]) => signal === "SIGKILL");
+  expect(killed).toBe(polls(0, 100).length);
+  expect(times).toEqual([...polls(0, 100), 100, ...polls(100, 500)]);
+  expect(warnings).toEqual([
+    "spooled-run: process group 7 still has members after SIGKILL\n",
+  ]);
+  expect(warnedAt).toEqual([500]);
+});
+
+test("a killed group that is reaped inside the reap window is not reported", async () => {
+  // EPERM through the grace period and the kill, then three more EPERM
+  // probes, then ESRCH: well inside a 400 ms window probed every 50 ms.
+  const script = ["EPERM", "EPERM", "EPERM", "ok", "EPERM", "EPERM", "EPERM"];
+  const { io, calls, times, warnings } = scripted([...script, "ESRCH"], 400);
+  await reapGroup(7, 100, io);
+  expect(calls[3]).toEqual([-7, "SIGKILL"]);
+  expect(calls.length).toBe(script.length + 1);
+  expect(times.at(-1)).toBeLessThan((times.at(3) ?? Number.NaN) + 400);
+  expect(warnings).toEqual([]);
+});
+
+test.skipIf(process.platform === "win32")(
+  "a forwarded signal no group member takes goes to the command itself",
+  () => {
+    for (const [answer, direct] of [
+      ["EPERM", ["SIGTERM"]],
+      ["ESRCH", ["SIGTERM"]],
+      ["ok", []],
+    ] as const) {
+      const sent: NodeJS.Signals[] = [];
+      const { io, calls } = scripted([answer]);
+      signalCommand(7, "SIGTERM", (name) => sent.push(name), io);
+      expect(calls).toEqual([[-7, "SIGTERM"]]);
+      expect(sent).toEqual([...direct]);
+    }
   },
 );
 

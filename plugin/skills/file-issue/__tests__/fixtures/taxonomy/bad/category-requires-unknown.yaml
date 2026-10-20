@@ -1,0 +1,22 @@
+# BAD — the stage category requires `area:delivery`, which no category of the
+# file defines.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+categories:
+  - id: area
+    prefix: "area:"
+    labels:
+      - id: billing
+  - id: stage
+    prefix: "stage:"
+    requires: ["area:delivery"]
+    labels:
+      - id: planning

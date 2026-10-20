@@ -140,7 +140,10 @@ design. Run all with one command: `bun run gates`. The set, cheapest first:
    name resolve; a blank line before every table; terms of art defined in the
    glossary (acronym proxy; escape hatch: `scripts/glossary-allowlist.txt`,
    each entry under a reason and removed once nothing uses it);
-   no origin references; the licence files and NOTICE complete
+   no origin references; plugin code reaching Linear only through the
+   tracker interface (`scripts/check-tracker-boundary.ts`, with the files
+   that still bypass it, each under its reason, in
+   `scripts/tracker-boundary-allow.txt`); the licence files and NOTICE complete
    (`scripts/check-licences.ts`); no workflow that runs a fork's code with
    secrets (M7's PR-target safety lint); the workflows meeting M13's pipeline
    conventions (the workflow-convention lint, with its heavy suites in

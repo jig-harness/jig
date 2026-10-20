@@ -1,0 +1,17 @@
+# BAD — the size group spells `required:` as `requred:`, which would
+# otherwise read as an optional group.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+groups:
+  - id: size
+    requred: true
+    labels:
+      - id: small

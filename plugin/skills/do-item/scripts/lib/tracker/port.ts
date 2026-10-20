@@ -199,6 +199,76 @@ export interface PoolQuery {
   withNoneOf?: string[];
 }
 
+// ── Filing and planning ────────────────────────────────────────────────────
+
+/**
+ * A request refused before anything is written: input the operation cannot
+ * take (`invalid`), or a name that resolves to no tracker resource or to
+ * several (`unresolved`). Every adapter throws it for the same causes, so a
+ * caller tells its own mistake from a tracker that failed.
+ */
+export class TrackerRequestError extends Error {
+  // A declared field, not a parameter property: the repository's TypeScript
+  // settings allow erasable syntax only.
+  readonly code: "invalid" | "unresolved";
+  constructor(code: "invalid" | "unresolved", message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+/**
+ * A new issue of this team. Labels are named; the adapter resolves each to
+ * exactly one tracker label. `priority`: 0 = none, then 1 (urgent) to 4
+ * (low). `parent` is an issue key; `project` a project's name.
+ */
+export interface NewIssue {
+  title: string;
+  description: string;
+  labels: string[];
+  priority?: number;
+  parent?: string;
+  project?: string;
+}
+
+/**
+ * A change to an existing issue; an absent field stays as it is. `parent:
+ * null` removes the parent. Labels are added and removed by name, the rest
+ * of the issue's labels kept.
+ */
+export interface IssuePatch {
+  title?: string;
+  description?: string;
+  priority?: number;
+  parent?: string | null;
+  project?: string;
+  addLabels?: string[];
+  removeLabels?: string[];
+}
+
+/** The relations an issue can be given to another. */
+export const RELATION_TYPES = ["blocks", "related", "duplicate"] as const;
+
+export type RelationType = (typeof RELATION_TYPES)[number];
+
+/**
+ * One relation of an issue, seen from that issue: `blocks` it blocks
+ * `issue`, `blocked_by` `issue` blocks it; `duplicate` it is a duplicate of
+ * `issue`, `duplicated_by` `issue` is a duplicate of it; `related` links the
+ * two in either direction.
+ */
+export interface IssueRelation {
+  type: RelationType | "blocked_by" | "duplicated_by";
+  /** The other issue's key. */
+  issue: string;
+}
+
+/** A label an issue can carry, with the group it belongs to; `null` = none. */
+export interface TrackerLabel {
+  name: string;
+  group: string | null;
+}
+
 export interface Tracker {
   /** The adapter name, as `issue_tracker.adapter` spells it. */
   readonly adapter: string;
@@ -274,4 +344,34 @@ export interface Tracker {
   openChildren(key: string): Promise<PoolIssue[]>;
   /** One issue in pool form, whatever its state; `null` when it does not exist. */
   poolIssue(key: string): Promise<PoolIssue | null>;
+
+  // ── Filing and planning ──
+  /**
+   * File an issue in this team. Throws before writing anything when a label,
+   * the parent or the project does not resolve to exactly one tracker
+   * resource, or the priority is not an integer from 0 to 4.
+   */
+  createIssue(
+    issue: NewIssue,
+  ): Promise<{ identifier: string; url: string | null }>;
+  /** Change an issue. Throws on an empty patch, and as `createIssue` does. */
+  updateIssue(key: string, patch: IssuePatch): Promise<void>;
+  /** Every label an issue of this team can carry. */
+  listLabels(): Promise<TrackerLabel[]>;
+  /**
+   * This team's issues whose title or description contains `text`, ignoring
+   * case; open ones only unless `includeClosed` is set.
+   */
+  searchIssues(
+    text: string,
+    opts?: { includeClosed?: boolean },
+  ): Promise<IssueSummary[]>;
+  /** Every relation of an issue, in both directions. */
+  listRelations(key: string): Promise<IssueRelation[]>;
+  /**
+   * Record that `key` blocks `target`, relates to it, or is a duplicate of
+   * it; for `duplicate`, `key` is the duplicate and `target` the issue that
+   * stays, and the tracker may close `key`.
+   */
+  relate(key: string, type: RelationType, target: string): Promise<void>;
 }

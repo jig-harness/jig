@@ -1,0 +1,17 @@
+# BAD — the size group's label `bug` has the name of a type. Every label name
+# is unique across types, group labels, flags and category labels.
+version: 1
+
+types:
+  - id: feature
+  - id: bug
+
+statuses:
+  - id: todo
+  - id: done
+
+groups:
+  - id: size
+    labels:
+      - id: small
+      - id: bug
