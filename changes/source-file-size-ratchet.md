@@ -6,8 +6,9 @@ release: patch
 
 - M1's reference ratchet can count source and test lines above a configured
   file-size limit, preventing total excess from growing while existing files
-  are split. A scope that matches no file is a configuration error rather
-  than a pass.
+  are split. A scope that matches no file in the working tree is a
+  configuration error rather than a pass; a merge base with no matching file
+  yet counts zero excess.
 
 ### Changed
 

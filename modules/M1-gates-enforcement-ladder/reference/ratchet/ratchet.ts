@@ -190,12 +190,13 @@ function grepCounts(
   return counts;
 }
 
-function measureOne(tree: string, c: Counter): Measured {
+function measureOne(tree: string, c: Counter, historical: boolean): Measured {
   if (c.format === "file-lines") {
     const counts = fileLineCounts(
       tree,
       listedFiles(tree, ["-co", "--exclude-standard"]),
       c,
+      historical,
     );
     return { ratcheted: counts, all: counts };
   }
@@ -219,12 +220,18 @@ function measureOne(tree: string, c: Counter): Measured {
   return { ratcheted: counts, all: counts };
 }
 
-/** Measure one tree: counter name → its findings. */
+/**
+ * Measure one tree: counter name → its findings. A `historical` tree (the
+ * merge base) may predate every file a counter's scope matches.
+ */
 export function measure(
   tree: string,
   counters: Counter[],
+  historical = false,
 ): Map<string, Measured> {
-  return new Map(counters.map((c) => [c.name, measureOne(tree, c)]));
+  return new Map(
+    counters.map((c) => [c.name, measureOne(tree, c, historical)]),
+  );
 }
 
 import { fileLineCounts } from "./ratchet-file-lines.ts";
@@ -488,7 +495,7 @@ function measureOwn(
   const out = new Map<string, Measured | Error>();
   for (const c of counters) {
     try {
-      out.set(c.name, measureOne(tree, c));
+      out.set(c.name, measureOne(tree, c, true));
     } catch (error) {
       out.set(
         c.name,
@@ -569,7 +576,7 @@ function measureBase(
     const own = measureOwn(tree, config.counters);
     copyHeadConfiguration(root, tree, config);
     return {
-      counts: measure(tree, config.counters),
+      counts: measure(tree, config.counters, true),
       own,
       strictness: strictnessMap,
       unranked: unrankedMap,

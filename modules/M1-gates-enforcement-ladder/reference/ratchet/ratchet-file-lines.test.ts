@@ -133,6 +133,19 @@ describe("source file line ratchet", () => {
     }
   });
 
+  test("a merge base with no file in scope yet measures zero excess", () => {
+    for (const baseWiring of [wiring, { ...wiring, counters: [] }]) {
+      const small = repo({ "notes.md": lines(1) }, baseWiring);
+      small.write("ratchet.json", JSON.stringify(wiring));
+      small.write("first.ts", lines(2));
+      check(small, 0);
+      const large = repo({ "notes.md": lines(1) }, baseWiring);
+      large.write("ratchet.json", JSON.stringify(wiring));
+      large.write("first.ts", lines(5));
+      expect(check(large, 1)).toContain("first.ts (0 → 2)");
+    }
+  });
+
   test("an invalid threshold or scope is a configuration error", () => {
     for (const changed of [
       { limit: 0 },

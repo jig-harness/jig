@@ -6,14 +6,17 @@ import type { Counts, FileLinesCounter } from "./ratchet-types.ts";
  * already oversized file adds debt too. A final newline terminates the last
  * line; an empty file has no lines. CRLF and LF therefore count alike.
  *
- * A scope that matches no readable file measures nothing, and an empty count
- * would read as "no excess" and pass forever: a mistyped `files` expression
- * is a configuration error, not a clean tree.
+ * In the working tree, a scope that matches no readable file measures
+ * nothing, and an empty count would read as "no excess" and pass forever: a
+ * mistyped `files` expression is a configuration error, not a clean tree.
+ * A historical tree (`historical`) is held to no such check: it may predate
+ * every file the scope matches, and then its excess is zero.
  */
 export function fileLineCounts(
   tree: string,
   tracked: string[],
   counter: FileLinesCounter,
+  historical = false,
 ): Counts {
   const inScope = scope(counter);
   const excess = new Map<string, number>();
@@ -25,7 +28,7 @@ export function fileLineCounts(
     const lines = physicalLines(text);
     if (lines > counter.limit) excess.set(file, lines - counter.limit);
   }
-  if (examined === 0) throw new Error(emptyScope(counter));
+  if (examined === 0 && !historical) throw new Error(emptyScope(counter));
   return excess.size ? new Map([["excess-lines", excess]]) : new Map();
 }
 
