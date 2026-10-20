@@ -306,6 +306,91 @@ test("a bundle has one path per file system identity", () => {
   expect(() => distinctPaths(["caf\u00e9.png", "cafe\u0301.png"], "b")).toThrow(
     "differ only in case or Unicode normalization",
   );
+  expect(
+    distinctPaths(["assets/", "assets/a.js", "assets/b.js", "x.js"], "b"),
+  ).toEqual(["assets/", "assets/a.js", "assets/b.js", "x.js"]);
+  expect(() =>
+    distinctPaths(["assets", "ASSETS/", "ASSETS/a.js"], "b"),
+  ).toThrow("assets and ASSETS name one entry as both a file and a directory");
+  expect(() => distinctPaths(["assets", "ASSETS/a.js"], "b")).toThrow(
+    "as both a file and a directory",
+  );
+  expect(() => distinctPaths(["Assets/a.js", "assets/b.js"], "b")).toThrow(
+    "Assets and assets differ only in case",
+  );
+  expect(() =>
+    distinctPaths(["shots/caf\u00e9/a.png", "shots/cafe\u0301/b.png"], "b"),
+  ).toThrow("differ only in case or Unicode normalization");
+});
+test("a merge refuses a result whose sides alias each other's paths", async () => {
+  const { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } =
+    await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join, resolve } = await import("node:path");
+  const { expectSpawnExit } = await import(
+    "../../../../lib/test-helpers/expect-spawn-exit.ts"
+  );
+  const dir = mkdtempSync(join(tmpdir(), "jig-alias-"));
+  const script = resolve(import.meta.dir, "../scripts/handback.ts");
+  const run = (argv: string[]) =>
+    Bun.spawnSync(argv, {
+      cwd: dir,
+      env: { ...process.env, JIG_CONSUMER_ROOT: dir },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+  const exec = (argv: string[]) => {
+    const p = run(argv);
+    expectSpawnExit(p, 0);
+    return p.stdout.toString().trim();
+  };
+  const commit = (files: Record<string, string>) => {
+    for (const [path, body] of Object.entries(files)) {
+      mkdirSync(join(dir, path, ".."), { recursive: true });
+      writeFileSync(join(dir, path), body);
+    }
+    exec(["git", "add", "."]);
+    exec(["git", "commit", "-q", "-m", "c"]);
+    return exec(["git", "rev-parse", "HEAD"]);
+  };
+  try {
+    exec(["git", "init", "-q"]);
+    exec(["git", "config", "user.email", "test@example.test"]);
+    exec(["git", "config", "user.name", "Test"]);
+    const base = commit({ "bundle/README.md": "Bar outcome: pass\n" });
+    for (const [ours, theirs, message] of [
+      ["bundle/a.txt", "bundle/A.txt", "a.txt and A.txt differ only in case"],
+      [
+        "bundle/assets",
+        "bundle/ASSETS/a.js",
+        "assets and ASSETS name one entry as both a file and a directory",
+      ],
+    ] as const) {
+      exec(["git", "checkout", "-q", base]);
+      const accepted = commit({
+        "bundle/README.md": `Bar outcome: pass\nExport base: ${base}\n`,
+        [ours]: "ours\n",
+      });
+      exec(["git", "checkout", "-q", base]);
+      const raw = commit({ [theirs]: "returned\n" });
+      const output = join(dir, `staged-${raw}`);
+      const p = run([
+        process.execPath,
+        script,
+        "merge",
+        "bundle",
+        raw,
+        output,
+        "--ours",
+        accepted,
+      ]);
+      expectSpawnExit(p, 2);
+      expect(p.stderr.toString()).toContain(`merged bundle: ${message}`);
+      expect(existsSync(output)).toBe(false);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 test("the landing check finds a fix lost after the merge, until it is acknowledged", async () => {
   const {

@@ -50,8 +50,11 @@ empty, `.` or `..` segment, and never under `.handback-render/`. Paths and
 scenario names are compared ignoring case and Unicode normalization, as
 Windows and macOS file systems do by default: `HOME.png` and `home.png` are the
 same file, and `.HANDBACK-RENDER/` is the renderer's directory. A bundle, on
-disk or in a commit the check compares, that holds two files differing only
-that way is refused, since a case-sensitive file system would keep both. After the rubric
+disk, in a commit the check compares, or as the merge would write it, is
+refused when two of its paths, or any of their parent directories, differ only
+that way, or when one such name is both a file and a directory
+(`assets` beside `ASSETS/a.js`), since a case-sensitive file system would keep
+both. After the rubric
 review passes, README and the scorecard each state exactly one
 `Bar outcome: pass` outside comments and fenced examples, and the scorecard
 names the round it reviewed with exactly one

@@ -243,21 +243,37 @@ function safe(root: string, path: string): string {
   return target;
 }
 /**
- * Refuses two paths with one `pathKey`: a file system that folds case or
- * Unicode normalization stores them as one file, one that does not stores
- * them as two, so only a bundle without such aliases has one identity per
- * file everywhere.
+ * Refuses a bundle in which one `pathKey` names two entries: a file system
+ * that folds case or Unicode normalization stores them as one, one that does
+ * not stores them as two, so only a bundle without such aliases has one
+ * identity per entry everywhere. Every path contributes its ancestor
+ * directories as well as itself (a trailing `/` marks a directory), so a key
+ * is also refused when it is spelled two ways as a directory or names both a
+ * file and a directory.
  */
 export function distinctPaths(paths: string[], source: string): string[] {
-  const seen = new Map<string, string>();
-  for (const path of paths) {
-    const other = seen.get(pathKey(path));
-    if (other !== undefined)
+  const seen = new Map<string, { path: string; directory: boolean }>();
+  const add = (path: string, directory: boolean) => {
+    const key = pathKey(path);
+    const other = seen.get(key);
+    if (other === undefined) seen.set(key, { path, directory });
+    else if (other.directory !== directory)
       throw new ExitError(
         2,
-        `${source}: ${other} and ${path} differ only in case or Unicode normalization`,
+        `${source}: ${other.path} and ${path} name one entry as both a file and a directory where case or Unicode normalization is folded`,
       );
-    seen.set(pathKey(path), path);
+    else if (!directory || other.path !== path)
+      throw new ExitError(
+        2,
+        `${source}: ${other.path} and ${path} differ only in case or Unicode normalization`,
+      );
+  };
+  for (const path of paths) {
+    const directory = path.endsWith("/");
+    const parts = (directory ? path.slice(0, -1) : path).split("/");
+    for (let i = 1; i < parts.length; i++)
+      add(parts.slice(0, i).join("/"), true);
+    add(parts.join("/"), directory);
   }
   return paths;
 }
@@ -435,7 +451,7 @@ export function mergeBundle(
     conflicts: [],
     regressions: [],
   };
-  mkdirSync(output, { recursive: true });
+  const merged: [string, Buffer][] = [];
   for (const path of new Set([
     ...baseFiles.keys(),
     ...oursFiles.keys(),
@@ -455,10 +471,16 @@ export function mergeBundle(
         comparable(path, result),
       ),
     );
-    if (result) {
-      mkdirSync(dirname(safe(output, path)), { recursive: true });
-      writeFileSync(safe(output, path), result);
-    }
+    if (result) merged.push([path, result]);
+  }
+  distinctPaths(
+    merged.map(([path]) => path),
+    "merged bundle",
+  );
+  mkdirSync(output, { recursive: true });
+  for (const [path, result] of merged) {
+    mkdirSync(dirname(safe(output, path)), { recursive: true });
+    writeFileSync(safe(output, path), result);
   }
   writeMetadata(output, report);
   return report;
