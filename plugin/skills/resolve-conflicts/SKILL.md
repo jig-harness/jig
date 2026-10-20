@@ -49,11 +49,13 @@ directory containing this `SKILL.md`. Claude Code fills it in. In any other
 harness, replace it with that path yourself before running a command: a shell
 would expand the unset variable to an empty string.
 
-Git 2.40 or newer is required to reconstruct the automatic merge result
-without trusting already staged content. Cherry-picking or reverting a merge
-commit with `-m` is unsupported: Git does not reliably retain the selected
-parent for reconstruction. The mapper refuses it before writing a snapshot;
-resolve and validate that operation manually. Merges recreated by
+Git 2.41 or newer is required: to reconstruct the automatic merge result
+without trusting already staged content, and to read every attribute from
+the staged `.gitattributes` files alone (`git --attr-source`).
+Cherry-picking or reverting a merge commit with `-m` is unsupported: Git
+does not reliably retain the selected parent for reconstruction. The mapper
+refuses it before writing a snapshot; resolve and validate that operation
+manually. Merges recreated by
 `git rebase --rebase-merges` are supported through their replayed parents.
 
 Run every command from the root of the repository with the conflicts. Never
@@ -284,8 +286,9 @@ edit it by hand to the same shape. `regenerate` is
 `{ "command", "cwd", "source": "built-in" | "configuration" | "catalog" }` for
 a derived file, and `null` for a `generated` path whose catalog entry declares
 no command (then `record.ts` needs `--command`). `catalogIncomplete` says why
-the change-area catalog's generated files could not all be read when the map
-was written (the catalog could not be read, or an entry's `outputs` are
+the generated files the configuration and the change-area catalog declare
+could not all be read when the map was written (the configuration was
+unmerged, the catalog could not be read, or an entry's `outputs` are
 malformed), and keeps the check refusing until a map that reads them all
 clears it. `dropped` is `{ "why": "…", "lines": [{ "side": "theirs", "text": "…" }] }`.
 
@@ -313,13 +316,27 @@ It fails (exit 1), listing each problem with its file and line, when:
 1. a path is still unmerged;
 2. conflict markers remain in a mapped path, or in any other staged change;
 3. a mapped path has no decision, an unknown one, or lacks a required reason;
-4. what is staged for a mapped path differs from the working tree, or the
-   configuration, the change-area catalog (or any symbolic link, file or
-   directory, that reading either passes through, or the file it finally
-   reads) or a `.gitattributes` file differs between the working tree and the
-   index, whatever its assume-unchanged or skip-worktree flag, ignored or not:
-   the check classifies paths by the working tree, and the commit carries what
-   is staged;
+4. what is staged for a mapped path differs from the working tree. The
+   configuration, the change-area catalog (read through the symbolic links the
+   index holds; a link whose target leaves the repository is refused, never
+   read from disk) and the `.gitattributes` files are read from the index, as the
+   commit carries them: a change to one of them takes effect once it is staged,
+   and a working-tree change that is not staged, an untracked file, an ignored
+   one, a staged link named `.gitattributes`, `$GIT_DIR/info/attributes`, the
+   file `core.attributesFile` names or the system's attributes file decides
+   nothing. Git's automatic result is reconstructed under no configuration
+   but the repository's rename-detection settings (`merge.renames`,
+   `merge.directoryRenames`, `merge.renameLimit`, `diff.renames`,
+   `diff.renameLimit`), its renormalization (`merge.renormalize`,
+   `core.autocrlf`) and `core.useReplaceRefs`, so a merge driver
+   configured for the repository, the user, the system or the environment
+   does not run. Everything else in the repository's git directory is read
+   as it stands: its references (replace refs among them), `HEAD`, the
+   index, `shallow`, `info/grafts` and the `modules` directory, in a linked
+   worktree too, so a submodule git fast-forwarded is not reported as a
+   conflict, whether or not `.gitmodules` is in the working tree. Conflict markers are looked for at the size git wrote them with as
+   well, and in other staged changes on every added line, whatever an
+   attribute says the file is;
 5. a lockfile or generated file is not recorded as `regenerated`, or any
    other path is;
 6. a staged path is outside the operation's changed-file set, or its staged
@@ -507,10 +524,11 @@ that directory:
   kept but reformatted counts as dropped (record `rewritten`, or acknowledge
   it); a removed line that also exists elsewhere in the file is not noticed.
   The semantic search in Step 3 is still yours to do.
-- The conflict-marker size comes from the path's `conflict-marker-size`
-  attribute (default 7) when the path is first mapped, and stays that size
-  for the operation, since git wrote the markers then; the check also looks
-  for markers of the size the attribute gives at check time.
+- The conflict-marker size is the size of the markers git wrote into the
+  path when it is first mapped (the `conflict-marker-size` attribute, default
+  7, when no complete region is found in the file), and stays that size for
+  the operation; the check also looks for markers of the size the attributes
+  give at check time. Map before editing a conflicted file.
 - A `git am` session is not mapped.
 
 ## Where past merges conflicted: the history report

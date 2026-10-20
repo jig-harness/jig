@@ -21,7 +21,8 @@
  *     commands CI runs that the gate command does not appear to (a
  *     heuristic), and a gate program the Claude Code settings do not allow;
  *   - configured tracker labels that the repository's label taxonomy
- *     (`label-taxonomy.yaml`) does not define, and a `review.taxonomy.types`
+ *     (`issue_tracker.taxonomy`, else `label-taxonomy.yaml`) does not
+ *     define, and a `review.taxonomy.types`
  *     that differs from the taxonomy's types;
  *   - settings the repository's shape suggests but does not use;
  *   - the facts a profile suggestion rests on (`lib/profile-facts.ts`):
