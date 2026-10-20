@@ -276,3 +276,40 @@ one-off charts that drift from it.
 The specific charts, thresholds, and alert values are **yours** and stay with
 your repo (see the [README](README.md#left-out-by-design)); Jig ships the registry
 contract and the two gates, not a particular board.
+
+## Scheduled-failure issues
+
+Implement the [issue lifecycle](README.md#scheduled-failures-one-issue-per-cause)
+in a separate triage job with tracker credentials. The evidence-only test job
+has neither those credentials nor a model call. The following are recipes
+for consumer repositories, not adapters shipped by Jig. Linear is the
+[existing tracker interface](../../plugin/EXTENDING.md#issue-tracker)'s
+implemented adapter; GitHub Issues and Jira mappings describe the equivalent
+provider operations for a consumer's integration.
+
+| Tracker | Locate and identify the cause | Create and update | Recovery and recurrence |
+| --- | --- | --- | --- |
+| GitHub Issues | List the repository's issues in all states under a configured finding label, follow every page, exclude pull requests, then compare the exact fingerprint in the body | Create an issue with the fingerprint and evidence in its body; create an issue comment for each permitted recurrence and the breaker announcement | Update the issue to `state: closed` on confirmed recovery, or `state: open` when the cause returns |
+| Linear | Filter the team's issues by a configured finding label, include closed issues, paginate and compare the exact fingerprint in the description | `issueCreate` creates the finding; `issueUpdate` maintains its description; `commentCreate` adds recurrence, suppression and recovery evidence | Resolve the team's workflow state IDs and use `issueUpdate` with `stateId` for recovery and reopening; never assume a state name is shared by teams |
+| Jira Cloud | List the project's findings using a configured label and paginated search, then compare an exact fingerprint stored in the description or an issue property | Create and edit the issue, and add comments; an issue property can hold machine-readable identity, but does not enforce uniqueness | Read the issue's available transitions and invoke the configured recovery or reopening transition; a generic field edit does not substitute for a workflow transition |
+
+The provider primitives above are documented in GitHub's
+[issue API](https://docs.github.com/en/rest/issues/issues) and
+[comment API](https://docs.github.com/en/rest/issues/comments), Linear's
+[GraphQL guide](https://linear.app/developers/graphql) and
+[filtering guide](https://linear.app/developers/filtering), and Jira Cloud's
+[issue API](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/),
+[comment API](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-comments/)
+and [issue properties](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-properties/).
+These APIs provide storage and state changes; the consumer's [reconciler](../../GLOSSARY.md)
+supplies fingerprint normalization, exact matching, ordered observation
+processing, durable counters and the per-cause breaker. Labels, team/project,
+owner, workflow states and N belong to that consumer.
+
+Do not rely on search plus create as an atomic operation. Hold a durable
+per-cause lock across lookup and writes, recheck identity before creating,
+and retain operation markers so an ambiguous network timeout can be
+reconciled before retrying. A lock confined to one runner does not coordinate
+another runner. While comments are suppressed, retain observations in the
+durable ledger without updating the tracker on every run. A failure to read
+all pages or evidence fails triage and leaves existing issues open.

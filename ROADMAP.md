@@ -123,6 +123,11 @@ gains the practice of measuring and removing
 
 ## Later
 
+- **Scheduled-failure reconciliation.** A reusable reconciler for
+  [M11](modules/M11-process-observability/README.md)'s scheduled failures,
+  on the tracker interface: one issue per cause, bounded recurrence comments
+  with announced suppression, and automatic closure on confirmed recovery.
+
 - **Jira store for reflections.** Reflections kept as Jira issues, for a team
   that tracks its work in Jira.
 - **More skills.** `scaffolding-update`, which keeps agent instruction files

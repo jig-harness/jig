@@ -491,6 +491,21 @@ make, use the entry's term instead.
 
 ## Process
 
+- **Cause fingerprint** — a stable identity for one cause of a scheduled
+  failure, built from the check or prerequisite, its scope and a normalized
+  failure signature. It excludes changing details such as run IDs and times,
+  so repeated failures find one issue. See
+  [M11](modules/M11-process-observability/README.md#scheduled-failures-one-issue-per-cause).
+- **Flood breaker** — a per-cause limit on repeated failure notifications.
+  After a declared number of consecutive failures it announces suppression,
+  keeps the cause open and continues collecting evidence. Confirmed recovery
+  closes the issue and re-arms reporting; silence does not. See
+  [M11](modules/M11-process-observability/README.md#scheduled-failures-one-issue-per-cause).
+- **Reconciler** — a process that compares observed facts with recorded state
+  and applies the changes needed to make them agree. For scheduled failures,
+  it opens, updates or closes the issue for each cause from complete evidence,
+  while retaining progress so retries do not repeat changes.
+
 - **ADR (architecture decision record)** — a short numbered document capturing
   one significant decision, its context, and its consequences. Append-only
   history: superseded ADRs are marked, not rewritten.

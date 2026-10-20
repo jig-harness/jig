@@ -208,8 +208,7 @@ Practices a working repository validated, for modules that exist today:
 
 - **M10 and M11**:
   - a ledger of out-of-tree work that blocks promotion;
-  - a registry of external preconditions;
-  - one self-closing issue per cause of a scheduled failure.
+  - a registry of external preconditions.
 - **M6 and M7**:
   - an acceptance stage;
   - plan claims checked against the code before building;
@@ -312,6 +311,14 @@ Done when a resolution by `resolve-conflicts` leaves its events, and an
 audit scores M12's new criterion from the report.
 
 ## Later
+
+- **Scheduled-failure reconciliation.** Move an operated reconciler onto the
+  existing tracker interface, following the
+  [design](scheduled-failure-reconciliation.md). M11 states the per-cause
+  issue lifecycle and announced flood breaker; implementation remains open.
+  Done when evidence-only tests feed separate triage, retries and overlapping
+  runs preserve one issue per cause, and suppression and genuine recovery
+  are verified in a consumer with the source copy retired.
 
 - **Jira store for reflections.** One issue per finding, of a custom issue
   type with fields for class, severity, target, harness, model and Jig

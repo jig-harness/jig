@@ -45,7 +45,14 @@ only how they last finished.
 > incident (a **dead-man's switch**). How many failures in a row make a job
 > red is configured per job.
 
-Everything below is that one tool-independent statement made mechanical;
+> A scheduled check reports each distinct cause as **one issue**, identified by
+> a stable [cause fingerprint](../../GLOSSARY.md). Recurrences update that issue;
+> confirmed recovery closes it. A [flood breaker](../../GLOSSARY.md) for each
+> cause announces when it suppresses repeated comments after **N consecutive
+> failures**, and re-arms only on genuine recovery. The test job produces
+> evidence only; a separate triage step classifies and reconciles issues.
+
+Everything below applies these tool-independent statements;
 concrete per-backend wiring lives in [mappings.md](mappings.md).
 
 ## Core pieces
@@ -158,6 +165,72 @@ what notices if the watchdog itself stops; [M13](../M13-pipeline-economy/README.
 queue-stall check covers a run that never started, this covers a schedule
 that never fired.
 
+## Scheduled failures: one issue per cause
+
+A nightly failure can disappear in a log nobody reads. Filing a fresh issue
+for every run solves visibility by creating a second problem: one outage
+buries unrelated findings under repeated tickets. Keep one issue per cause,
+with bounded updates and an explicit recovery signal.
+
+**Separate evidence from triage.** The test job writes results and the scope
+it actually checked; it never calls a tracker or a model. A separate triage
+step reads that evidence and classifies each finding before reporting it:
+
+| Classification | Meaning | What the issue records |
+| --- | --- | --- |
+| regression | behaviour previously supported now fails | the broken expectation and evidence of the change |
+| intended change | the expectation no longer matches an approved behaviour change | the decision and the expectation to update |
+| flake | equivalent executions disagree without an intended behaviour change | the inconsistent results and the reliability work owed |
+| environment | an external dependency or execution environment prevented the check | the failed prerequisite and its owner |
+
+A successful retry alone does not prove a flake, and missing evidence does
+not justify guessing a classification. Inconclusive triage fails visibly and
+leaves existing issues open until evidence supports a decision. All classes
+retain an owner and evidence; none turns the test job's failure into a pass.
+
+**Stable identity.** A cause fingerprint uses the repository, relevant check
+or shared prerequisite, affected scope (such as an environment), and a
+normalized failure signature. It excludes run identifiers, timestamps and
+other changing log details. Runs showing the same cause find the same issue;
+independent causes get separate issues. Several checks that establish the
+same failed prerequisite can share its cause, with their evidence attached.
+Keep the fingerprint on the issue and compare it exactly after searching;
+a similar title is not identity. A recurrence comments on the existing issue
+with its classification and evidence, rather than filing another. A cause
+that returns after recovery reopens that same issue.
+
+**Recovery requires a check.** Close an issue automatically only when a later,
+complete result actually exercises its affected scope and confirms that the
+cause is absent. A skipped, cancelled, missing, partial or failed collection
+is unknown, not recovered. Nor does a green result from an unrelated check
+close it. Another cause blocking the affected check leaves the earlier cause
+unknown. Record the recovery evidence when closing. This complements the
+[heartbeat](#heartbeat-a-stopped-schedule-is-stale-never-green): a schedule
+that stopped cannot close its own failure issues through silence.
+
+**Announced flood breaker.** Choose and review a positive threshold N for
+consecutive failed observations of each cause. The first failure opens or
+reopens its issue; subsequent failures comment until the Nth failure, whose
+update announces that further recurrence comments are suppressed, why, and
+what recovery will re-arm reporting. For N = 1 the opening or reopening
+notice includes the announcement. While suppressed, keep collecting evidence
+and recording the cause's latest observation and count in durable state;
+leave the issue open. Suppression changes notification volume, never the
+check's verdict or whether other causes report. Unknown observations neither
+advance nor reset the streak. A confirmed recovery posts its evidence, closes
+the issue and clears the streak and suppression; the next failure reports
+again. Restarting the triage process, waiting a period, or a person closing
+an issue does not constitute recovery or reset the breaker.
+
+Reporting must survive retries and overlapping runs: processing the same
+observation twice neither duplicates a comment nor advances the streak, and
+an old result cannot close an issue after a newer failure. Serialize changes
+for each cause and retain durable progress across restarts. A tracker error
+fails triage visibly; it never becomes an empty finding list or a recovery.
+The [tracker mappings](mappings.md#scheduled-failure-issues) describe how a
+repository can implement this practice today. Jig's reusable [reconciler](../../GLOSSARY.md) is
+[future work](../../design/scheduled-failure-reconciliation.md).
+
 ## Maturity levels
 
 - **Lite** — the process events you care about are **named and documented**
@@ -170,7 +243,9 @@ that never fired.
   validated by the [event-schema lint](reference/event-schema-lint/);
   **every scheduled job is in the [cadence registry](templates/scheduled-jobs.yaml)
   and a scheduled watcher classifies its runs**, failing for a job that is
-  stale or red (mechanical).
+  stale or red (mechanical); scheduled failures have evidence-only test jobs
+  and separate triage that maintains one issue per cause, with confirmed
+  recovery and an announced per-cause flood breaker (mechanical).
 - **Strict** — both gates run in [CI](../../GLOSSARY.md) with their self-tests
   (mechanical); **the watcher reports to an external monitor on success and
   on failure**, so a watcher that stops is itself an incident;
@@ -204,7 +279,11 @@ that never fired.
    Make it fail on red and on stale.
 6. Have the watcher report to an external monitor on both outcomes, and have
    the monitor page when a report is missing.
-7. Gate every promote decision in [M7](../M7-pr-lifecycle-review/) /
+7. Separate scheduled-check evidence collection from triage. Adopt the
+   [issue lifecycle above](#scheduled-failures-one-issue-per-cause), choose N
+   per cause policy, and verify recurrence, suppression, recovery, unknown
+   evidence, concurrent runs and replay before enabling tracker writes.
+8. Gate every promote decision in [M7](../M7-pr-lifecycle-review/) /
    [M8](../M8-learning-loop/) on a measurement from a **live** instrument —
    never a dark one.
 
@@ -262,12 +341,20 @@ and M11 owns the emission, registry and dashboard side.
   [mappings.md](mappings.md#heartbeat-monitoring) lists the products that
   support the pattern; the module requires only a monitor that raises an
   incident when an expected report does not arrive.
-- **Remediation.** The heartbeat says a job is stale or red; it does not
-  restart it, and it opens no issue: what a person or an agent does about a
-  stale or red job is outside this module.
+- **Automatic repair.** The heartbeat says a job is stale or red; it does not
+  restart or repair it. Scheduled-failure triage maintains issues for people
+  to act on; classification does not authorize a repair or approve a changed
+  expectation.
 - **A required backend.** Telemetry backends (product-analytics tools, data
   warehouses, CI-native metrics) appear only as options in
   [mappings.md](mappings.md).
 - **CI time and cost.** Measuring what each workflow and job costs, so a
   decision about what runs where cites a number, is
   [M13 pipeline economy](../M13-pipeline-economy/README.md)'s Strict level.
+
+### Future
+
+A reusable scheduled-failure reconciler on the existing tracker interface is
+[designed](../../design/scheduled-failure-reconciliation.md), but not shipped.
+The doctrine and tracker mappings above are adoptable with a repository's own
+triage; no new runtime configuration or tracker-writing command is provided.
