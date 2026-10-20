@@ -49,6 +49,7 @@ import { calendarDate } from "./defect-escape.ts";
 import { fail, isDigits, runMain } from "./lib/cli.ts";
 import {
   buildReport,
+  inWindow,
   type CommentFact,
   type DepthResult,
   DISPOSITIONS,
@@ -198,12 +199,6 @@ function roundTimes(sample: PrSample): string[] {
     out.push(r.submittedAt);
   }
   return out;
-}
-
-function inWindow(iso: string | null, w: WindowSpec): boolean {
-  if (iso === null) return false;
-  const ms = Date.parse(iso);
-  return Number.isFinite(ms) && ms >= w.sinceMs && ms < w.untilMs;
 }
 
 /**

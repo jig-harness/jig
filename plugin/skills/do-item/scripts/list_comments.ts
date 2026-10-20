@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Fetch every comment on an issue through the consumer's tracker.
  *
@@ -28,7 +29,7 @@ export async function listComments(
   try {
     return (await tracker.listComments(issueId)).map((c) => ({
       body: c.body,
-      createdAt: c.createdAt,
+      ...definedFields({ createdAt: c.createdAt }),
     }));
   } catch (err) {
     console.error(
