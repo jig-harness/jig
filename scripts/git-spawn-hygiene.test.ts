@@ -45,9 +45,11 @@ test("scratch suites preserve a sentinel repository under hook-style env", () =>
     };
     // The guarded outer launch starts clean. This deliberately hostile harness
     // injects hook variables only into the suites whose isolation is tested.
+    // Match the repository's per-test budget in the nested runner; bound the
+    // complete suite run separately, leaving time for sentinel cleanup.
     const harness = `
       const result = Bun.spawnSync(
-        [process.execPath, "test", "scripts/freshness.test.ts", "scripts/gates.test.ts"],
+        [process.execPath, "test", "--timeout", "30000", "scripts/freshness.test.ts", "scripts/gates.test.ts"],
         { cwd: ${JSON.stringify(root)}, env: { ...process.env, ...${JSON.stringify(leaks)} } },
       );
       process.stdout.write(result.stdout);
@@ -57,7 +59,7 @@ test("scratch suites preserve a sentinel repository under hook-style env", () =>
     const result = spawnSync(process.execPath, ["-e", harness], {
       cwd: root,
       env: { ...safeEnv, JIG_BASH_PARITY: "0" },
-      timeout: 30_000,
+      timeout: 90_000,
     });
     expectSpawnExit(
       { ...result, exitCode: result.status },
@@ -71,4 +73,4 @@ test("scratch suites preserve a sentinel repository under hook-style env", () =>
   } finally {
     rmSync(sentinel, { recursive: true, force: true });
   }
-}, 40_000);
+}, 100_000);

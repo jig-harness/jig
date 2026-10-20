@@ -220,6 +220,10 @@ violations and 2 when the only failures are stages that could not check.
 Two unrelated failures surface in one run rather than two; fix every stage
 the list names, not only the first.
 
+The repository test command uses 4 parallel file workers. Many suites spawn
+their own subprocesses; bounding file workers keeps those fixtures within
+their deadlines when several workspaces run checks on one machine.
+
 CI runs the same command on Linux for every pull request
 (`.github/workflows/gates.yml`); the catalog decides which of its jobs and
 steps a pull request needs. macOS and Windows run once a day against `main`
@@ -299,13 +303,19 @@ setting): adding those layers to Jig is future work.
 
 `bun run quality` (M1's [ratchet gate](modules/M1-gates-enforcement-ladder/reference/ratchet/README.md))
 fails a change that adds a finding to a rule at `warn` in `biome.json`, to a
-flag in `tsconfig.ratchet.json`, or a suppression comment, measured against
-the merge base. Fix the finding; do not suppress it. It also fails a change
+flag in `tsconfig.ratchet.json`, a suppression comment, or the total source
+lines above the 1000-line limit per file, measured against the merge base.
+The size counter covers source and test code, including website
+styles and templates; it excludes fixtures, seeds, vendored code and build
+outputs. Split by responsibility at the source. Do not pad the exclusion
+list or raise the limit to pass. Untracked source files enter the comparison
+unless Git ignores them. Fix the finding; do not suppress it. It also fails a change
 that loosens a rule, unless a commit carries
 `Ratchet-Loosen: <name>: <reason>` in its last paragraph. Never add that
 trailer on your own initiative: only when a person has asked for that
-loosening, and say so in the pull request. When the gate reports a rule at
-zero, promote it to `error` (or move the flag into `tsconfig.json`).
+loosening, and say so in the pull request. When the gate reports a lint or compiler rule at
+zero, promote it to `error` (or move the flag into `tsconfig.json`). Keep
+the source-size counter active at zero so that any excess line fails.
 
 ### Local hooks
 

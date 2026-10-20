@@ -116,7 +116,8 @@ How to apply each is in [CONTRIBUTING.md](CONTRIBUTING.md).
   pull requests that touch the same files.
 - **Run `bun run gates` before pushing**, and fix what fails rather than
   suppressing it. Never add a `Ratchet-Loosen` trailer unless a person asked
-  for that loosening.
+  for that loosening. Source file size follows
+  [ADR-0007](docs/adr/ADR-0007-source-file-size-ratchet.md).
 - **Parallel worktrees**: reuse a branch before creating one, never move work
   with `git stash`, install only with `bun install`.
 - **Pull requests** open as drafts and are driven until every thread is
