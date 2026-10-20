@@ -84,11 +84,14 @@ prompt in a file or supply it through standard input using the agent CLI's
 supported input options; do not embed it in a batch-launcher argument. A batch
 wrapper that forwards all arguments is supported only in npm's generated
 `_prog` form, with or without the interpreter arguments npm copies from the
-entry point's first line. A wrapper that also sets environment variables, or
-any other forwarding wrapper, is refused: launch the underlying executable and
-its JavaScript entry point directly. A launch whose escaped command line would
-exceed cmd.exe's 8,191-character limit is refused too; pass long input through
-a file or standard input.
+entry point's first line. Those arguments must be plain words: one containing
+a quote or a cmd character (`%`, `^`, `&`, `|`, `<`, `>`, `(`, `)`, `!`), such
+as `--title="x"`, is refused. A wrapper that also sets environment variables,
+or any other forwarding wrapper, is refused too. In each case, launch the
+underlying executable and its JavaScript entry point directly. A launch whose
+command line would exceed cmd.exe's 8,191-character limit, either as escaped
+or once the npm wrapper expands its own variables, is refused as well; pass
+long input through a file or standard input.
 
 ## Drafts are driven, and marked Ready at the declared round
 

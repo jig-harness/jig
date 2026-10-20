@@ -8,5 +8,5 @@ release: minor
 
 ### Fixed
 
-- Windows process runners resolve executable extensions and launch batch shims with arguments preserved, allowing npm-installed agent commands to start. A bare command name is searched in the working directory before the executable search path, as native Windows spawning does, and only executable and batch extensions are tried. Batch arguments containing line breaks or null bytes, and batch launches longer than cmd.exe's 8,191-character command line, are refused; pass such content through a file or standard input.
+- Windows process runners resolve executable extensions and launch batch shims with arguments preserved, allowing npm-installed agent commands to start. A bare command name is searched in the working directory before the executable search path, as native Windows spawning does, unless `NoDefaultCurrentDirectoryInExePath` is set; empty search-path entries never add the working directory back. Only executable and batch extensions are tried. Batch arguments containing line breaks or null bytes, and batch launches longer than cmd.exe's 8,191-character command line, measured after an npm wrapper expands its own variables, are refused; pass such content through a file or standard input.
 - fix-ci runs setup commands under sh on Windows so POSIX shell syntax works with Git for Windows.

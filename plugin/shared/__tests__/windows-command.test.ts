@@ -95,6 +95,31 @@ describe("Windows command launch", () => {
     ).toBe("C:\\global\\agent.EXE");
   });
 
+  test("empty PATH components never search cwd once the child disables it", () => {
+    for (const path of [
+      undefined,
+      "",
+      ";C:\\global",
+      "C:\\global;",
+      '"";C:\\global',
+    ]) {
+      const probed: string[] = [];
+      const env: NodeJS.ProcessEnv = {
+        NoDefaultCurrentDirectoryInExePath: "1",
+      };
+      if (path !== undefined) env.PATH = path;
+      resolveWindowsCommand("agent", {
+        cwd: "C:\\repo",
+        env,
+        isFile: (file) => {
+          probed.push(file);
+          return false;
+        },
+      });
+      expect(probed.filter((file) => file.startsWith("C:\\repo"))).toEqual([]);
+    }
+  });
+
   test("PATHEXT types this module cannot launch are skipped", () => {
     const files = new Set(["C:\\first\\agent.JS", "C:\\second\\agent.EXE"]);
     expect(
@@ -215,14 +240,42 @@ describe("Windows command launch", () => {
       });
     expect(() => direct("x".repeat(9000))).toThrow(/8191-character/);
     expect(direct("x".repeat(8000)).args[4]?.length).toBeLessThan(8191);
-    // The shim's extra escape layer turns 2,000 ampersands into 8,000 characters.
+    // The shim's extra escape layer turns 2,040 ampersands into 8,160 characters.
     const shim = (prompt: string) =>
       windowsCommand(["agent.cmd", prompt], {
         ...options,
         readBatchSource: () => npmShim("node"),
       });
-    expect(() => shim("&".repeat(2000))).toThrow(/8191-character/);
-    expect(shim("&".repeat(1500)).args[4]).toContain("^^^&");
+    expect(() => shim("&".repeat(2040))).toThrow(/8191-character/);
+    expect(shim("&".repeat(2020)).args[4]).toContain("^^^&");
+  });
+
+  test("the length guard measures the npm shim after cmd expands its variables", () => {
+    const env = { PATHEXT: `.CMD;${".ZZZ;".repeat(199)}` };
+    const shim = (prompt: string) =>
+      windowsCommand(["C:\\repo\\agent.CMD", prompt], {
+        cwd: "C:\\repo",
+        env,
+        isFile: () => true,
+        readBatchSource: () => npmShim("node"),
+      });
+    // The launch line fits; the shim's final line, PATHEXT expanded, does not.
+    expect(() => shim("x".repeat(7400))).toThrow(/8191-character/);
+    // Expand the final line by hand: the guard admits exactly what fits.
+    const expanded = (length: number) =>
+      npmShim("node")
+        .trimEnd()
+        .split("\r\n")
+        .slice(-1)[0]
+        ?.replace("%COMSPEC%", "C:\\Windows\\System32\\cmd.exe")
+        .replace("%PATHEXT:;.JS;=;%", env.PATHEXT)
+        .replace("%_prog%", "node")
+        .replace("%dp0%", "C:\\repo\\")
+        .replace("%*", `^"${"x".repeat(length)}^"`).length ?? 0;
+    let longest = 0;
+    while (expanded(longest + 1) <= 8191) longest += 1;
+    expect(shim("x".repeat(longest)).args[4]).toContain("agent.CMD");
+    expect(() => shim("x".repeat(longest + 1))).toThrow(/8191-character/);
   });
 
   test("batch line breaks are refused rather than interpreted as commands", () => {

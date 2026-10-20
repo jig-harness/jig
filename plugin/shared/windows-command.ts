@@ -48,7 +48,8 @@ const LAUNCHABLE = /^\.(com|exe|bat|cmd)$/i;
 /**
  * Resolve using the child's environment, not the driver's PATH or PATHEXT.
  * A bare name searches cwd before PATH, as native Windows spawning does,
- * unless NoDefaultCurrentDirectoryInExePath is set.
+ * unless NoDefaultCurrentDirectoryInExePath is set. Empty PATH components are
+ * skipped, so an absent PATH or a stray `;` never reintroduces cwd.
  */
 export function resolveWindowsCommand(
   command: string,
@@ -60,19 +61,16 @@ export function resolveWindowsCommand(
   const suffixes = win32.extname(command) ? ["", ...extensions] : extensions;
   const searchesCwd =
     envValue(options.env, "NODEFAULTCURRENTDIRECTORYINEXEPATH") === undefined;
+  const pathDirectories = (envValue(options.env, "PATH") ?? "")
+    .split(";")
+    .map((directory) => directory.replace(/^"|"$/g, ""))
+    .filter((directory) => directory !== "");
   const directories = /[\\/:]/.test(command)
     ? [options.cwd]
-    : [
-        ...(searchesCwd ? [options.cwd] : []),
-        ...(envValue(options.env, "PATH") ?? "").split(";"),
-      ];
+    : [...(searchesCwd ? [options.cwd] : []), ...pathDirectories];
   const exists = options.isFile ?? isFile;
   for (const directory of directories) {
-    const base = win32.resolve(
-      options.cwd,
-      directory.replace(/^"|"$/g, ""),
-      command,
-    );
+    const base = win32.resolve(options.cwd, directory, command);
     for (const suffix of suffixes) {
       const candidate = base + suffix;
       if (exists(candidate)) return candidate;
@@ -140,10 +138,47 @@ function isNpmBatchShim(source: string): boolean {
   return NPM_BATCH_SHIM.test(source.replace(/\r\n/g, "\n").trimEnd());
 }
 
-/** cmd.exe's maximum command-line length, in characters. */
+/** cmd.exe's maximum command-line length, in characters, after expansion too. */
 const CMD_LINE_LIMIT = 8191;
-/** Room for the shim's own expanded runtime and entry-point paths. */
-const SHIM_PATH_RESERVE = 2 * 260;
+/** The COMSPEC cmd.exe sets for itself when the child environment has none. */
+const DEFAULT_COMSPEC = String.raw`C:\Windows\System32\cmd.exe`;
+
+/**
+ * The longest line of a recognized npm shim once cmd expands it. Every
+ * variable the grammar admits is substituted at its upper bound: PATHEXT
+ * before the `;.JS;` edit and the longer `_prog` branch. %* is the argument
+ * text with the outer cmd parse's escape layer removed, as the shim sees it.
+ */
+function expandedShimLength(
+  source: string,
+  batchFile: string,
+  argumentText: string,
+  env: NodeJS.ProcessEnv,
+): number {
+  const dp0 = `${win32.dirname(batchFile)}\\`;
+  const programs = [...source.matchAll(/set "_prog=([^"\n]+)"/gi)].map(
+    (match) => (match[1] ?? "").replace(/%dp0%/gi, dp0),
+  );
+  const values: Record<string, string> = {
+    "%~DP0": dp0,
+    "%DP0%": dp0,
+    "%_PROG%": programs.reduce((a, b) => (b.length > a.length ? b : a), ""),
+    "%COMSPEC%": envValue(env, "COMSPEC") ?? DEFAULT_COMSPEC,
+    "%PATHEXT%": envValue(env, "PATHEXT") ?? "",
+    "%*": argumentText,
+  };
+  return Math.max(
+    ...source.split(/\r?\n/).map(
+      (line) =>
+        // One pass, so an expanded value is never itself re-expanded.
+        line.replace(
+          /%~dp0|%dp0%|%_prog%|%comspec%|%pathext(?::[^%\n]*)?%|%\*/gi,
+          (variable) =>
+            values[variable.toUpperCase().replace(/:.*%$/, "%")] ?? variable,
+        ).length,
+    ),
+  );
+}
 
 /** Native binaries stay shell-free; only .cmd/.bat files enter cmd.exe. */
 export function windowsCommand(
@@ -182,15 +217,18 @@ export function windowsCommand(
       "Windows batch argument forwarding is supported only for npm-style _prog shims; launch the executable with its JavaScript entry point directly",
     );
   }
-  const line = [
-    escapeMeta(win32.normalize(command)),
-    ...args.map((arg) => batchArgument(arg, forwardsArguments)),
-  ].join(" ");
-  // The shim's final line re-expands %* with its own paths in front of it.
-  const shimReserve = forwardsArguments
-    ? (source.trimEnd().split(/\r?\n/).at(-1)?.length ?? 0) + SHIM_PATH_RESERVE
+  const batchFile = win32.normalize(command);
+  const escapedArgs = args.map((arg) => batchArgument(arg, forwardsArguments));
+  // The outer parse strips one caret layer before the shim expands %*.
+  const argumentText = args.map((arg) => batchArgument(arg, false)).join(" ");
+  const line = [escapeMeta(batchFile), ...escapedArgs].join(" ");
+  // The shim re-expands %* behind its own runtime and entry-point paths.
+  const shimLength = forwardsArguments
+    ? expandedShimLength(source, batchFile, argumentText, options.env)
     : 0;
-  if (`/d /s /v:off /c "${line}"`.length + shimReserve > CMD_LINE_LIMIT) {
+  if (
+    Math.max(`/d /s /v:off /c "${line}"`.length, shimLength) > CMD_LINE_LIMIT
+  ) {
     throw new WindowsCommandError(
       "command-too-long",
       `Windows batch launch exceeds cmd.exe's ${CMD_LINE_LIMIT}-character command line once escaped; launch the executable directly or pass long input through a file or stdin`,
