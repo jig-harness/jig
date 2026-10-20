@@ -393,21 +393,21 @@ every night, where Windows leaves out only the suites listed in
 
 | Part | macOS | Linux | Windows | Why |
 | --- | --- | --- | --- | --- |
-| `drive-pr` | yes | yes | Git Bash; full smoke pending | Requires Git for Windows; native PowerShell support is planned |
-| `do-item` | yes | yes | Git Bash; full smoke pending | Requires Git for Windows; native PowerShell support is planned |
+| `drive-pr` | yes | yes | PowerShell or Git Bash; authenticated smoke pending | Bun commands use plain arguments |
+| `do-item` | yes | yes | PowerShell or Git Bash; authenticated smoke pending | Bun commands use plain arguments |
 | The launcher | yes | no | no | Its one provider, Conductor, is a macOS app |
 | Every other skill | yes | yes | yes | — |
 | Developing Jig (`bun run gates`) | yes | yes | yes, without the launcher's suite | — |
 
 The supervision code finds and stops Windows processes from native snapshots
 and a polled stop request. Batch command shims run through `cmd.exe`; skill
-instructions and `fix-ci` setup commands use Git Bash's shell. The complete
-Claude Code pickup, draft pull request, drive round and stop smoke test on
+instructions use Bun commands with plain arguments. The `fix-ci` setup command
+runs through Bun's native shell; its external tools belong to the consumer.
+The complete authenticated Claude Code pickup, draft pull request, drive round and stop smoke test on
 Windows remains pending. See the [requirements](README.md#requirements) for
 the current platform boundary. On every system, Jig keeps its
 state under `~/.local/state/jig` and `~/.cache/jig` in the home folder,
-rather than in each system's own application-data folder. PowerShell support
-remains on the roadmap.
+rather than in each system's own application-data folder.
 
 ## Practice mappings
 

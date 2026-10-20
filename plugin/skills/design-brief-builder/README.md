@@ -69,7 +69,7 @@ value, so `Bar outcome: fail (two blockers)` is a second, failing outcome.
 
 ## Land one returned round
 
-1. Save the current landed commit with `git rev-parse HEAD`. Replace the bundle
+1. Save the current landed commit with `bun "<skill-dir>/../../shared/command.ts" -- git rev-parse HEAD`. Replace the bundle
    at its canonical repository path with the untouched raw delivery and commit
    it. This raw commit stays in branch history, preserving the next round's base.
    Land the bundle with a merge that preserves this commit. Squashing or

@@ -234,9 +234,9 @@ describe("probe-base", () => {
     expect(existsSync(join(clone, "installed"))).toBe(false);
   });
 
-  test("Windows setup uses a POSIX shell for repository install syntax", () => {
+  test("setup runs consumer install syntax through Bun without an external shell", () => {
     writeFileSync(join(seed, SETUP), INSTALLS);
-    publish(NEEDS_SETUP, "the check needs a POSIX setup");
+    publish(NEEDS_SETUP, "the check needs a portable setup");
     const args = [
       "--base",
       "main",
@@ -250,7 +250,8 @@ describe("probe-base", () => {
       const original = cp.spawnSync;
       mock.module("node:child_process", () => ({ ...cp, spawnSync(command, args, options) {
         const shell = typeof args === "object" && !Array.isArray(args) ? args.shell : options?.shell;
-        if (shell === true) throw new Error("Windows default shell would select cmd.exe");
+        if (shell) throw new Error("setup must not launch an external shell");
+        if (typeof command === "string" && command.startsWith("READY=")) throw new Error("setup must be passed as data to bun exec");
         return original(command, args, options);
       }}));
       const { main } = await import(${JSON.stringify(SCRIPT)});

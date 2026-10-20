@@ -98,7 +98,7 @@ as one sentence.
 
 ```bash
 bun <skill-dir>/scripts/ste-lint/ste-lint.ts draft.md
-# or: cat draft.md | bun <skill-dir>/scripts/ste-lint/ste-lint.ts --json
+# Add --json for machine-readable output.
 ```
 
 `<skill-dir>` is the directory of the `decide` skill (`${CLAUDE_SKILL_DIR}` in

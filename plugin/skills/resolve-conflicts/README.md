@@ -1,5 +1,10 @@
 # Resolve conflicts
 
+Run these commands in Bash or PowerShell with Bun and Git available to the
+command tool. The shared command runner writes the checked commit message to
+a file only after validation succeeds; commit that file after the command
+exits successfully.
+
 A merge can finish without conflict markers and still lose a change, pick up
 another session's staged work, or break a repository rule in a file Git
 merged cleanly. `/jig:resolve-conflicts` checks the entire resolution before
@@ -10,7 +15,7 @@ read attributes from the index. It
 handles stopped merges, rebases, cherry-picks and reverts. Picking or reverting
 a merge commit with `-m` requires manual resolution and validation; Git does
 not reliably retain the selected parent, so the mapper refuses to certify it.
-Merge commits recreated by `git rebase --rebase-merges` are supported. It names
+Merge commits recreated by a rebase using `--rebase-merges` are supported. It names
 the role of each side, maps the conflicts, regenerates derived files, records
 decisions, and checks for dropped changes. The
 [agent procedure](SKILL.md) gives the commands and exit codes.
@@ -24,7 +29,7 @@ never discard another session's edits to make the check pass.
 
 For an operation-owned path without a recorded decision, its staged content
 must match Git's automatic result. A manual change needs a recorded decision,
-even in a file that merged cleanly. Inspect `git diff --cached` to confirm the
+even in a file that merged cleanly. Inspect the output of `bun "<skill-dir>/../../shared/command.ts" -- git diff --cached` to confirm the
 hunks belong to the resolution. Blob contents, file modes and deletions all
 matter; merely appearing on a changed-file list does not establish ownership.
 

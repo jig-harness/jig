@@ -73,8 +73,9 @@ invocation with `bun`, including nested commands and the pass given to a
 launcher. Do not rely on a script's shebang. Forge and repository operations
 use `gh` and `git`; process snapshots use the runtime's platform helpers.
 
-On Windows, install Git for Windows and run the skill commands in its Git Bash
-shell. Native PowerShell support is planned. The Windows end-to-end smoke
+On Windows, install Git for Windows; these commands run in native PowerShell
+as well as POSIX shells. Replace skill-path placeholders with absolute paths
+before invoking them; do not use shell expansion for paths in another harness. The authenticated Windows end-to-end smoke
 (pick an item, open a draft PR, arm a drive, complete a round, and stop it)
 is pending.
 
@@ -161,7 +162,7 @@ consumer polling `--json` for one of these four will never see it there.
 | `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed and does **not** re-arm |
 | `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
 | `PASS_DEADLINE` | 15 | The pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 90m) and was sent a kill signal — witnessed-terminated before the locks release where the POSIX group-based witness *can* see the survivor, held instead in that case; a descendant that escaped the process group is an unhandled false-witness gap, not a covered case (see [terminal-states.md](references/terminal-states.md)). `drive.ts` only — the one stop here that can fire while a round is still *in flight*, which is where the hangs are |
-| `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so check `git status --short` / `git rev-list --count @{u}..HEAD` before re-arming, same as `PASS_DEADLINE`. A *short* window never reaches this state — the drive sleeps through that one and resumes |
+| `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` / `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count '@{u}..HEAD'` before re-arming, same as `PASS_DEADLINE`. A *short* window never reaches this state — the drive sleeps through that one and resumes |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` ended `drive.ts` at a round boundary, after any running pass completed. Resume the stop directive before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
 
@@ -302,8 +303,7 @@ it, or read `state` from the `--json` report, which is unambiguous either way.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only \
-  -- claude -p "/jig:drive-pr --bots-only 123"
+bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- claude -p "/jig:drive-pr --bots-only 123"
 ```
 
 Each round is a **fresh agent process**, so a long converge never depends on one
@@ -472,7 +472,7 @@ you look:
   dry-run-by-default posture as `reap-state.ts`'s `--delete`). Idempotent,
   copies (never moves) durable content, refuses if a live driver is still
   using the legacy location, and leaves inert lock/quarantine debris behind
-  (reported, safe to `rm -rf` manually once confident — see the script's own
+  (reported, safe to remove manually once confident — see the script's own
   header for why it does not delete that itself). State that already lives in
   some other directory outside the repository (another default location, or
   a previous `$DRIVE_PR_STATE_DIR`) moves with `bun "${CLAUDE_SKILL_DIR}/scripts/migrate-state-dir.ts" --from <old
@@ -546,7 +546,7 @@ could forge or forget.
 **exact** — Follow the admission, spawn, observation, and stop sequence; human clearance remains required where specified.
 
 1. **Resolve the PR number.** The argument, else
-   `gh pr view --json number --jq .number` for the current branch. Refuse with
+   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view --json number --jq .number` for the current branch. Refuse with
    the `gh` error if neither yields one; do not guess.
 2. **Refuse to arm an uncleared human checkpoint.** The PR serves **every**
    issue key in its branch name and every one a closing keyword names in its
@@ -593,7 +593,7 @@ could forge or forget.
    Claude Code 2.1.285: from 2.1.288 a local terminal session has no such
    limit, and from 2.1.285 to 2.1.287 every session does. When the limit fires it stops the driver mid-round. The pass's agent
    context is lost, but its edits and unpushed commits stay in the worktree:
-   check `git status --short` and `git rev-list --count @{u}..HEAD` before
+   check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count '@{u}..HEAD'` before
    re-arming. The next drive recovers the stale locks and resumes from the
    saved state.
    Do not raise `BASH_DEFAULT_TIMEOUT_MS` instead: it also becomes every
@@ -645,7 +645,7 @@ could forge or forget.
 5. **Report and stop.** State: armed, the PR, the verified driver-log path
    (`drive.ts: driver log → …` in its output, or `drive.ts: driver log
    unavailable: <reason>` when it keeps none; confirm it is a regular file
-   and can be opened for append (`test -f <path> && test -w <path>`) before
+   and can be opened for append with `bun "${CLAUDE_SKILL_DIR}/scripts/portable.ts" check-log <path>` before
    quoting it — `drive.ts` prints the path before taking its locks and its log
    writes are best effort — never a `<state dir>` template), and the handles
    `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts"` (list) and
@@ -690,8 +690,7 @@ per § 6), or a human thread on a touched file refuses the push:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/foreground-wait.ts" launch -- \
-  bun "${CLAUDE_SKILL_DIR}/scripts/finish-round.ts" --bots-only   # or: -- git commit -F "$msgfile"
+bun "${CLAUDE_SKILL_DIR}/scripts/foreground-wait.ts" launch -- bun "${CLAUDE_SKILL_DIR}/scripts/finish-round.ts" --bots-only
 ```
 
 Wait — its own call, repeated until it prints a final status. It blocks up to
@@ -722,7 +721,7 @@ push, or a commit racing the first's `index.lock`) would start beside the
 first. `launch` refuses (exit `3`) while any earlier generation is still alive
 or has an unverified process tree, and retains that generation's evidence.
 That refusal is a backstop, not the procedure. Only on exit `21` — no recorded runner, command or descendant is alive — is a
-relaunch allowed, and then only after the step's own check: `git log` for a commit that may already
+relaunch allowed, and then only after the step's own check: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git log` for a commit that may already
 have landed, and for `finish-round.ts` its idempotence. `21` does not see a
 descendant that outlived both the runner and the command (re-parented to init),
 so that check is the authority, not the exit code. When a command has
@@ -1029,28 +1028,19 @@ it exempt.
 
 ### 2. Enumerate — threads **and** summary-only findings
 
-**exact** — Run both enumerations and preserve the bootstrap, pipefail, and measurement semantics.
+**exact** — Run both enumerations and preserve enumeration failures and measurement semantics.
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-set -o pipefail
-bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/list-unresolved-threads.ts" [PR] [--bots-only] \
-  | bun "${CLAUDE_SKILL_DIR}/scripts/self-inflicted.ts" [PR]
-bun "${CLAUDE_SKILL_DIR}/scripts/summary-findings.ts" [PR] --configured-reviewer-only \
-  | bun "${CLAUDE_SKILL_DIR}/scripts/self-inflicted.ts" [PR] --summary-report
+bun "${CLAUDE_SKILL_DIR}/scripts/portable.ts" enumerate-threads [PR] [--bots-only]
+bun "${CLAUDE_SKILL_DIR}/scripts/portable.ts" enumerate-summary [PR]
 ```
 
-**If `bun` is not on `PATH` in a non-interactive shell, put it there in its own
-statement before the pipeline, never chained with `&&` into the left side of
-the pipe.** A pipeline's two sides run in separate subshells forked from the
-*current* shell, so a `PATH` change made inside the left side's own compound
-command (`source X && bun Y | bun Z`) is invisible to the right side — only a
-`source` that completes *before* the pipeline is set up updates the shell both
-forks inherit from. Chained the other way, the second `bun` call — here,
-`self-inflicted.ts` on the right of the pipe — would rely on `bun` already
-being on `PATH` from outside this script entirely, exactly the `PATH`-limited
-hook or non-interactive case the bootstrap exists to cover.
+Ensure Bun is on `PATH` before invoking the commands. Each operation runs its
+producer and the measurement filter directly, with bounded subprocesses and
+without a shell pipeline. A failed producer or filter returns its failure and
+publishes no findings, including any partial output.
 
 Both are open work. A finding the reviewer could not anchor to a diff line
 creates **no thread** — thread count reads zero while it sits live, so a
@@ -1063,17 +1053,9 @@ reads a reviewer sticky, so a round never works summary findings the gate did
 not count. `/jig:resolve-review-comments`'s `await-round.ts` calls it without
 the flag.
 
-**`set -o pipefail` is load-bearing on the first pipe, not decoration.**
-`self-inflicted.ts` is a filter that treats an empty stdin as a legitimate
-zero-thread stream and exits 0 (§ its own header: "*advisory*... the exit code
-stays 0 as long as the stream itself was readable") — which is exactly right
-when the enumerator legitimately found nothing, and exactly wrong when the
-enumerator crashed after printing nothing: without `pipefail` the pipeline's
-own exit code is the filter's `0`, silently reporting a clean, empty finding
-list for a PR the enumerator never actually finished reading. Run it once
-per shell before the pipe, or check
-`${PIPESTATUS[0]}` (bash) / `$pipestatus[1]` (zsh) explicitly if a caller
-cannot set shell options.
+An empty finding set is trustworthy only when enumeration succeeded.
+`portable.ts` checks the producer's exit before dispatching the filter, whose
+empty-input success alone would otherwise hide an unreadable enumeration.
 
 `self-inflicted.ts` is a **filter**, not a second enumerator: it
 passes every record through unchanged and adds `selfInflicted` — `true` when
@@ -1121,7 +1103,7 @@ A `false` is only as good as the anchor it blamed, though. A later commit in
 this same PR can shift the flagged statement off the thread's line while GitHub
 still reports `isOutdated: false`, so the blame lands on an unrelated older
 line. When the comment's text does not match what is at or near its anchor
-line, treat `false` as suspect and cross-check with `git blame` on the line the
+line, treat `false` as suspect and cross-check with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git blame -L "<line>,<line>" -- "<path>"` on the line the
 comment is actually about before trusting it.
 
 ### 3. Triage and act
@@ -1184,9 +1166,7 @@ declines the finding.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/triage-ladder.ts" \
-  --severity <blocker|high|medium|low|unknown> --tier <1-4> \
-  --category <token|unknown> --self-inflicted <true|false|unknown> [--pr <PR>] [--obligatory]
+bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/triage-ladder.ts" --severity <blocker|high|medium|low|unknown> --tier <tier> --category <token|unknown> --self-inflicted <true|false|unknown> [--pr <PR>] [--obligatory]
 ```
 
 `--tier` is the finding's rank in the rubric's
@@ -1229,10 +1209,14 @@ ladder arms on the PR's real depth rather than this pass's.
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
-```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR] <<'EOF'
+Write `.context/thread-reply.md` with the file editor:
+
+```text
 **accepted** — fixed the missing guard; landing in this round's still-unpushed commit.
-EOF
+```
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/thread-reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR]
 ```
 
 The reply templates in this section close their heredocs on different
@@ -1298,10 +1282,14 @@ state the fix-dependent case explicitly:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
-```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR] --moot-pending-push <<'EOF'
+Write `.context/thread-reply.md` with the file editor:
+
+```text
 **moot** — the code this anchored to is removed by this round's own unpushed fix.
-EOF
+```
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/thread-reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR] --moot-pending-push
 ```
 
 Omitting the flag is the default (resolve now) — the same behavior as every
@@ -1376,9 +1364,7 @@ directly:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold [PR] \
-  --key <threadId> --kind thread --outcome <accepted|moot> \
-  --comment-url <comment-url>
+bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold [PR] --key <threadId> --kind thread --outcome <accepted|moot> --comment-url <comment-url>
 ```
 
 `<comment-url>` is the qualifying comment's own url, from
@@ -1483,8 +1469,7 @@ Record the acknowledgment when you have acted on it:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" set-escalated [PR] \
-  --invariant "<one sentence: what THIS round believes it closed>"
+bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" set-escalated [PR] --invariant "<one sentence: what THIS round believes it closed>"
 ```
 
 Like `set-reflected`, this stamps a *position* rather than a boolean, so the duty
@@ -1539,11 +1524,14 @@ Summary-only findings answer differently, because there is no thread:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
-```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts" \
-  --outcome wont-fix --fingerprint b9a7a18089043564 [PR] <<'REPLY_EOF'
+Write `.context/finding-reason.md` with the file editor:
+
+```text
 valid, but a docs-polish item on an unchanged file; declined per the triage rubric (docs tier).
-REPLY_EOF
+```
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/finding-reason.md -- bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts"  --outcome wont-fix --fingerprint b9a7a18089043564 [PR]
 ```
 
 The outcome is a **flag**, and the body is composed for you — so the closed
@@ -1565,11 +1553,14 @@ refuses such a body, but the fix belongs at the `hold` call:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
-```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold [PR] \
-  --key b9a7a18089043564 --kind finding --outcome accepted <<'REASON_EOF'
+Write `.context/finding-reason.md` with the file editor:
+
+```text
 fixed the missing lock; will post the answer once pushed.
-REASON_EOF
+```
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/finding-reason.md -- bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold [PR]  --key b9a7a18089043564 --kind finding --outcome accepted
 ```
 
 Their marker is proof the finding is answered, so it may not exist before the
@@ -1678,9 +1669,7 @@ An arbiter `escalate`, or any decision the round is not entitled to make, is
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] \
-  --key PRRT_kwDO... --kind thread \
-  --reason "arbiter escalated: product call on whether disposal is reversible"
+bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key PRRT_kwDO... --kind thread --reason "arbiter escalated: product call on whether disposal is reversible"
 ```
 
 Parked items stop counting as live work, which is what lets the drive reach
@@ -1719,7 +1708,7 @@ This is a **piggyback, not a cadence**, and the distinction is the whole
 design. Pulling the base in "occasionally to stay fresh" is not cheap: each
 base merge pushes a new head, which burns a review round against the reviewer's
 own wind-down ceiling, and it re-arms the expensive tier — test-box decay is
-computed from `git diff <verifiedSha>`, two-dot against the worktree, so a base
+computed by `git diff` from `<verifiedSha>` against the worktree, so a base
 merge drops every file the base touched into that delta. So the script merges
 only when every one of these hold, and otherwise exits `0` having changed
 nothing, naming which one was missing:
@@ -1743,7 +1732,7 @@ loop cannot see, such as converging and wanting the local gates and the
 | Exit | Means | What to do |
 |---|---|---|
 | `0` | Nothing to do, or merged cleanly | `--json`'s `action` says which — do not infer it from the code. Continue |
-| `9` | The base **conflicts** with this branch. The worktree was *restored* — nothing is half-merged | Resolve it deliberately with [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), from its Step 1 so its pre-merge changelog conversion runs first: `git merge origin/<base>`, then map, resolve (intent-traced; derived files regenerated, never hand-merged), record, check, validate with this section's plan and conclude the merge; then push |
+| `9` | The base **conflicts** with this branch. The worktree was *restored* — nothing is half-merged | Resolve it deliberately with [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), from its Step 1 so its pre-merge changelog conversion runs first: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git merge origin/<base>`, then map, resolve (intent-traced; derived files regenerated, never hand-merged), record, check, validate with this section's plan and conclude the merge; then push |
 | `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Run `bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts"` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
 | `5` | The PR is not `OPEN` | Stop — the same liveness posture `finish-round.ts` takes before its push |
 | `11` | Another live session holds this working tree's tree lease (never under `--check`) | Stop, as for `finish-round.ts`'s `11` below |
@@ -1801,7 +1790,7 @@ override.
 
 Run each emitted check as its own top-level command and read its exit status
 before starting the next. Never paste a plan line that joins checks with `&&`
-into a script that runs under `set -e`: errexit exempts every command in a
+into a script that relies on automatic shell error exits: that mode exempts every command in a
 chain joined with `&&` except the last (bash and zsh alike), so a failure in
 the middle of the chain skips the checks after it, and the script can exit
 `0` if a later command succeeds.
@@ -1896,13 +1885,8 @@ Record it with the plan that provoked it piped in as provenance, and name the
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts" [PR] --json \
-  | bun "${CLAUDE_SKILL_DIR}/scripts/verification-fit.ts" [PR] \
-      --verdict over-strict \
-      --area docs \
-      --evidence "box re-ran the whole suite for a 3-line docs edit; requiredBy is package.json, untouched since round 1" \
-      --suggest "split docs/**/*.md out of the full-profile area" \
-      --testbox-outcome pass --testbox-minutes 18
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file .context/round-plan.json -- bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts" [PR] --json
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/round-plan.json -- bun "${CLAUDE_SKILL_DIR}/scripts/verification-fit.ts" [PR] --verdict over-strict --area docs --evidence "box re-ran the whole suite for a 3-line docs edit; requiredBy is package.json, untouched since round 1" --suggest "split docs/**/*.md out of the full-profile area" --testbox-outcome pass --testbox-minutes 18
 ```
 
 `--area` is **required**. When the repository configures its change-area
@@ -2044,7 +2028,7 @@ returned, which is the case this rule covers.
 | Exit | Means | What to do |
 |---|---|---|
 | `0` | Pushed, stamped, head-synced, batch drained | Continue to step 7 |
-| `3` | Refused *before* pushing: dirty tree, unconcluded git operation, unreadable tree | Commit or discard the leftovers, `git merge/cherry-pick/revert --abort`, then re-run |
+| `3` | Refused *before* pushing: dirty tree, unconcluded git operation, unreadable tree | Commit or discard the leftovers, resolve or abort the reported Git operation, then re-run |
 | `4` | Refused *before* pushing, in a repository with a CI hold (`bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure`): the PR-open required checks have not completed, the head moved, an interrupted hold release is still waiting for its full CI, or a hold label someone else owns is present | Read the `ci-hold:` line, wait for the checks it names, then re-run; leave an externally owned hold label to whoever added it |
 | `5` | The PR is no longer open | Two cases, both terminal: `guarded-push.ts` itself refused because the PR was already closed/merged (nothing was pushed), or the push succeeded and the PR closed/merged during the head-sync wait that follows it (`report.pushed` is `true`). Either way, stop — do not resolve anything against it. See [terminal-states.md](references/terminal-states.md) |
 | `2` | Usage error: an unknown flag, an extra argument, or no PR could be resolved | Fix the invocation and re-run; nothing ran |
@@ -2101,7 +2085,7 @@ stale hold with `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" release-held [
 park alone leaves it in `held`, and the drain posts it anyway — then re-hold
 the finding with the correct reason (§ 3), or park it (§ 4) when the right
 answer needs a human. The same holds for code: a
-resumed pass rechecks `git log` and `git status` against its last-known HEAD
+resumed pass rechecks `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git log` and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status` against its last-known HEAD
 before it starts fresh edits, not only before committing, since the
 interrupted pass (or a human) may already have committed the same fix.
 
@@ -2619,7 +2603,7 @@ On verified convergence only:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/announce-merge-ready.ts" [PR] < followups.md
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file followups.md -- bun "${CLAUDE_SKILL_DIR}/scripts/announce-merge-ready.ts" [PR]
 ```
 
 It re-checks `drive-status.ts` itself and refuses unless the state is
@@ -2663,8 +2647,9 @@ an interrupted earlier run is wrong regardless, and gating cleanup behind them
 would leave it standing for the whole of the next head's review — exactly the window in
 which a human is most likely to read it and act.
 
-Include follow-ups (deferred issue links, wont-fix items worth a human glance)
-on stdin **only when they exist**. With empty stdin the section is omitted
+Write follow-ups (deferred issue links, wont-fix items worth a human glance)
+to the input file with the file editor **only when they exist**. Otherwise run
+`announce-merge-ready.ts` directly without the input-file wrapper. With empty stdin the section is omitted
 entirely — no "Follow-ups: none" boilerplate, because a standing empty section
 trains readers to skip the block where the non-empty case needs their eyes.
 
@@ -2727,7 +2712,7 @@ real round ever reaches it; do not tighten it to make the loop feel faster. It
 exits `15` rather than `1`, because "ran out of wall clock" and "the pass is
 broken" call for different next actions — and because a killed pass strands
 whatever it was doing, so the stop names the recovery checks
-(`git status --short`, and `git rev-list --count @{u}..HEAD`).
+(`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short`, and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count '@{u}..HEAD'`).
 
 A fired deadline is an ordinary non-zero exit, and every caller treats it as an
 **unreadable** answer: a killed `gh pr view` is never "the PR is not open" and
@@ -2881,7 +2866,7 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
   `resolve-held-thread.ts` already removed it via `claim-held` — do not call
   `release-held` on one.
 - **Never dispatch a held finding's external mutation without a live claim.**
-  `claim-held --kind finding --pushed-sha "$(git rev-parse HEAD)"` first — a
+  `bun "${CLAUDE_SKILL_DIR}/scripts/portable.ts" claim-held [PR] --kind finding --key K` first — a
   non-zero exit means do not call `bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts"` for that key,
   full stop, but the exits are not interchangeable: `1` usually means another
   driver's live claim (safe to continue with a different key) or a

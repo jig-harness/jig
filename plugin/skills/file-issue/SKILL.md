@@ -56,7 +56,7 @@ reader; to read one value yourself, run
 | `issue_tracker.taxonomy` | The label taxonomy, relative to the repository root | `label-taxonomy.yaml`; without one the skill stops before writing |
 | `issue_tracker.team` | The tracker team the issues are filed in | Required: the tracker scripts stop with a message naming it |
 | `issue_tracker.adapter` | Which tracker adapter the tracker scripts use | The default adapter |
-| `issue_tracker.labels` | The label each role names (`hitl`, `manual_ops`, `epic`, `followup`, `bug`, `pattern_prefix`); `tracker.ts labels` prints them | The defaults in the [configuration reference](../../CONFIGURATION.md#issue_tracker) |
+| `issue_tracker.labels` | The label each role names (`hitl`, `manual_ops`, `epic`, `followup`, `bug`, `pattern_prefix`); the `labels` operation of `tracker.ts` prints them | The defaults in the [configuration reference](../../CONFIGURATION.md#issue_tracker) |
 | `drive.change_areas_catalog` | The change-area catalog labels are derived from when a diff exists | No catalog: labels come from the description |
 | `review.taxonomy.categories` | The category list an issue's category is checked against (with `unknown`, always allowed) | No list: the category is `unknown` |
 
@@ -78,8 +78,8 @@ tracker by another route.
 | Get an issue | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" <KEY>` |
 | Its comments | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/list_comments.ts" <KEY>` |
 | Its relations | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" relations <KEY>` |
-| Create an issue | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" create < issue.json` |
-| Change an issue | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update <KEY> < patch.json` |
+| Create an issue | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" create --input issue.json` |
+| Change an issue | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update <KEY> --input patch.json` |
 | Relate two issues | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" relate <KEY> <blocks\|related\|duplicate> <TARGET>` |
 
 `issue.json` is `{ "title", "description", "labels": [...], "priority"?,
@@ -199,7 +199,7 @@ bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" search "<terms>"
 
 It searches open issues; add `--include-closed` when the problem may have
 been fixed or declined before, and put `--` before text that itself starts
-with `--`. Read every plausible hit (`get_issue.ts <KEY>`). When one already covers
+with `--`. Read every plausible hit (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" <KEY>`). When one already covers
 the problem, ask the user: add what is new to that issue instead (a comment
 or, in plan mode, a change), file anyway and relate the two (`related`), or
 file the new issue and mark the new one as the duplicate of the existing one
@@ -261,11 +261,7 @@ projection, the `linear` field of the resolver's JSON (`labels` and
 `flags`):
 
 ```bash
-set -o pipefail
-BASE=$(git merge-base origin/main HEAD) &&
-  { git diff -z --no-renames --name-only "$BASE" &&
-    git ls-files -z --others --exclude-standard; } |
-  bun "${CLAUDE_SKILL_DIR}/../change-areas/scripts/resolve.ts" --files - -z
+bun "${CLAUDE_SKILL_DIR}/../change-areas/scripts/resolve.ts" --worktree --base origin/main
 ```
 
 (Use the repository's base branch for `origin/main`.) Apply those labels
@@ -324,7 +320,7 @@ each delivers, its labels and the order between them.
 
 ### 8. Validate every label set
 
-**exact** — Run `validate-labels.ts --check-tracker` (rule 1) on the
+**exact** — Run the `--check-tracker` mode of `validate-labels.ts` (rule 1) on the
 parent's set and on each child's. Every set passes before step 9.
 
 ### 9. Confirm
@@ -340,7 +336,7 @@ accepts; apply their changes and validate again.
 with `"parent": "<PARENT-KEY>"`, each from its own JSON file:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" create < .context/file-issue/<n>.json
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" create --input .context/file-issue/<n>.json
 ```
 
 Each prints the new issue's key and URL. On a failure, stop: report which
@@ -423,7 +419,7 @@ is on the child before it leaves the issue. Only once every child exists,
 change the issue:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update <KEY> < .context/file-issue/patch.json
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" update <KEY> --input .context/file-issue/patch.json
 ```
 
 with `addLabels` and `removeLabels` rather than a whole label list. When a

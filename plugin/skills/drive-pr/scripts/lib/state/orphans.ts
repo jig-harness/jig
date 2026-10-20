@@ -26,7 +26,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { shellQuote, stderrIsDevNull } from "../cli.ts";
+import { stderrIsDevNull } from "../cli.ts";
+
+/** A concrete command whose only shell-quoted argument contains encoded paths. */
+export function recoveryCommand(source: string, destination: string): string {
+  const encode = (value: string) => Buffer.from(value).toString("base64url");
+  const module = encode(new URL("../../portable.ts", import.meta.url).href);
+  return `bun -e "const d=s=>Buffer.from(s,'base64url').toString('utf8');const m=await import(d('${module}'));m.recoverState(d('${encode(source)}'),d('${encode(destination)}'))"`;
+}
 
 /** Every worktree-private `drive-pr-<pr>.json` under the common git dir.
  *
@@ -145,22 +152,9 @@ export function warnAboutOrphans(
   }
   if (!claimed) return;
 
-  // The suggested command is rendered with shell quoting, not hand-composed:
-  // a worktree path CAN contain an apostrophe (git places no restriction on
-  // the directory name passed to `worktree add`), and a literal `'$path'`
-  // breaks out of the quoting at that apostrophe. Copying the "helpful"
-  // instruction as-is would then run whatever shell text follows it — the
-  // exact hazard a shell-escaping helper exists to close.
-  //
-  // It is `ln` + `rm`, not `mv`, and that is the whole point rather than a
-  // stylistic preference. The absence check that produced this warning is
-  // THIS process's, seconds ago; the human runs the command later, and any
-  // concurrent driver may have created the state file in between — a plain
-  // `mv` silently overwrites it, destroying the live drive's parked decisions
-  // to recover an older one's. `ln` fails with EEXIST instead, loudly, and
-  // both paths are under the same git dir so a hard link always applies. A
-  // suggested recovery command that can itself lose parked decisions is not a
-  // recovery command.
+  // A native Bun operation publishes exclusively before removing the old path.
+  // Its hard link refuses a destination another driver created in the meantime.
+  const recover = (source: string) => recoveryCommand(source, file);
   const onlyOrphan = orphans.length === 1 ? orphans[0] : undefined;
   if (onlyOrphan !== undefined) {
     console.error(
@@ -173,11 +167,9 @@ export function warnAboutOrphans(
     console.error(
       "here DISCARDS its round budget and any PARKED HUMAN DECISIONS it holds.",
     );
+    console.error(`  To adopt it:  ${recover(onlyOrphan)}`);
     console.error(
-      `  To adopt it:  ln ${shellQuote(onlyOrphan)} ${shellQuote(file)} && rm ${shellQuote(onlyOrphan)}`,
-    );
-    console.error(
-      "  (ln, not mv: it fails rather than clobbering state another driver",
+      "  (Recovery refuses rather than clobbering state another driver",
     );
     console.error("   may have created since this warning was printed.)");
   } else {
@@ -190,12 +182,12 @@ export function warnAboutOrphans(
     console.error(
       "budget and any PARKED HUMAN DECISIONS. Inspect each and adopt the right one:",
     );
-    for (const o of orphans) console.error(`  ${o}`);
+    for (const orphan of orphans) {
+      console.error(`  ${orphan}`);
+      console.error(`    ${recover(orphan)}`);
+    }
     console.error(
-      `  ln <the right one> ${shellQuote(file)} && rm <the right one>`,
-    );
-    console.error(
-      "  (ln, not mv: it fails rather than clobbering state another driver",
+      "  (Recovery refuses rather than clobbering state another driver",
     );
     console.error("   may have created since this warning was printed.)");
   }

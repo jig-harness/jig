@@ -11,6 +11,8 @@
  * The block name comes from `do_item.execution_plan_block` in the consumer
  * overlay (default `execution-plan-v1`).
  */
+import { readFile } from "node:fs/promises";
+import { parseArgs } from "./lib/cli.ts";
 import { readConfig, withSource } from "../../../shared/consumer.ts";
 import { doItemSection } from "./lib/overlay.ts";
 import {
@@ -125,16 +127,28 @@ async function readStdin(): Promise<string> {
 }
 
 if (import.meta.main) {
-  readStdin()
-    .then((text) => {
-      console.log(
-        JSON.stringify(
-          selectExecutionIssue(JSON.parse(text), executionPlanBlock()),
-        ),
-      );
-    })
-    .catch((err: unknown) => {
-      console.error(err instanceof Error ? err.message : String(err));
-      process.exitCode = 1;
-    });
+  const args = parseArgs(process.argv.slice(2), {
+    flags: [],
+    values: ["input"],
+    noPositional: true,
+    usage: "Usage: select_execution_issue.ts [--input <path>]",
+  });
+  if (!args.ok) {
+    console.error(args.message);
+    process.exitCode = 2;
+  } else {
+    const path = args.args.values.get("input");
+    (path === undefined ? readStdin() : readFile(path, "utf8"))
+      .then((text) => {
+        console.log(
+          JSON.stringify(
+            selectExecutionIssue(JSON.parse(text), executionPlanBlock()),
+          ),
+        );
+      })
+      .catch((err: unknown) => {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exitCode = 1;
+      });
+  }
 }

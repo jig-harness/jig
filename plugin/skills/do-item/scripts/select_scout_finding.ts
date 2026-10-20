@@ -11,7 +11,7 @@
  * Output: JSON `ScoutFindingsDecision` on stdout.
  *
  * Usage:
- *     cat comments.json | bun select_scout_finding.ts --current-hash abc1234
+ *     bun select_scout_finding.ts --input comments.json --git-head
  *
  * Exit codes: 0 decided, 2 usage, 1 unreadable stdin.
  *
@@ -23,6 +23,11 @@
  * bug only a test catches.
  */
 
+import { defaultGitRunner } from "../../change-areas/scripts/lib/resolve.ts";
+import {
+  readJsonInput,
+  INVALID_JSON_INPUT,
+} from "../../../shared/json-input.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
 
 export interface ScoutFindingsComment {
@@ -216,21 +221,28 @@ async function readStdin(): Promise<string> {
 
 async function main(): Promise<number> {
   const parsed = parseArgs(process.argv.slice(2), {
-    flags: [],
-    values: ["current-hash"],
+    flags: ["git-head"],
+    values: ["current-hash", "input"],
     // This script takes NO positional — every input is `--current-hash` plus
     // stdin. `noPositional` rejects any positional, including exactly one —
     // unlike faking this with `defaultPositional: ''`, which only rejects
     // TWO or more.
     noPositional: true,
     usage:
-      "Usage: select_scout_finding.ts --current-hash <hash>  (comments JSON array on stdin)",
+      "Usage: select_scout_finding.ts (--git-head | --current-hash <hash>) [--input <file>]",
   });
   if (!parsed.ok) {
     console.error(parsed.message);
     return 2;
   }
-  const currentHash = parsed.args.values.get("current-hash");
+  let currentHash = parsed.args.values.get("current-hash");
+  if (parsed.args.flags.has("git-head")) {
+    if (currentHash !== undefined) {
+      console.error("--git-head and --current-hash are mutually exclusive");
+      return 2;
+    }
+    currentHash = defaultGitRunner(["rev-parse", "--short", "HEAD"]).trim();
+  }
   if (currentHash === undefined) {
     console.error(
       "--current-hash is required\nUsage: select_scout_finding.ts --current-hash <hash>",
@@ -238,25 +250,12 @@ async function main(): Promise<number> {
     return 2;
   }
 
-  let raw: string;
-  try {
-    raw = await readStdin();
-  } catch (err) {
-    console.error(
-      `failed to read stdin: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return 1;
-  }
+  const comments = await readJsonInput(
+    parsed.args.values.get("input"),
+    readStdin,
+  );
+  if (comments === INVALID_JSON_INPUT) return 1;
 
-  let comments: unknown;
-  try {
-    comments = JSON.parse(raw);
-  } catch (err) {
-    console.error(
-      `stdin is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return 1;
-  }
   if (!Array.isArray(comments)) {
     console.error("stdin must be a JSON array of comments");
     return 1;

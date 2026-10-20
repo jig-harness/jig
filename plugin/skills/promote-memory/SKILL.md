@@ -132,9 +132,9 @@ not proof the memory is wrong; and a clean run does not vouch for the
 memory's claims.
 
 **Without a lint command**, do the same checks by hand: every repository path
-the memory names is still tracked (`git ls-files --error-unmatch <path>`) and
-still present in the checkout (`test -e <path>`: the index still lists a file
-whose deletion is not yet staged), every symbol it names is still
+the memory names is still tracked (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git ls-files --error-unmatch <path>`) and
+still present in the checkout (check it with the harness's file-inspection
+tool: the index still lists a file whose deletion is not yet staged), every symbol it names is still
 in the file it names, and the memory carries a valid `verified_at`. Any
 failure stops the promotion the same way.
 
@@ -161,9 +161,7 @@ judgment and the pull request review's.
 
 Before writing anything, search the docs for the memory's core terms:
 
-```bash
-grep -ril "<key-term>" docs/ --include="*.md"
-```
+Search the Markdown files under `docs/` for the key term with the harness’s file-search tool.
 
 If an existing page already covers the topic, **update that page** instead of
 creating a new one. Set its `last_updated` to today's date in Coordinated Universal Time and point to the

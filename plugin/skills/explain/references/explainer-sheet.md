@@ -151,7 +151,7 @@ returned header, then `mcp__linear__create_attachment_from_upload`). Remove an
 older explainer with the same title after the new one is attached, never
 before. Post the markdown as the comment, or a shorter comment that points to
 the sheet, through the tracker scripts of `/jig:do-item`
-(`<skill-dir>/../do-item/scripts/tracker.ts comment <KEY>`). Never commit a
+(`bun "<skill-dir>/../do-item/scripts/tracker.ts" comment <KEY> --body-file <comment-file>`). Never commit a
 rendered sheet to the repository.
 
 ## What the renderer guarantees

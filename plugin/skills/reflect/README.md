@@ -223,7 +223,7 @@ unreachable. When the store is unreachable at `reflect` time, the findings
 stay in the journal until the next `reflect` sends them.
 
 **A worktree about to be removed** parks its unsent findings:
-`journal.ts park` moves them to `~/.jig/pending/<repository>-<hash>/` (under
+`journal.ts`’s `park` operation moves them to `~/.jig/pending/<repository>-<hash>/` (under
 `JIG_HOME`; the hash is of the full repository name), and the next `reflect`
 in any worktree of the same repository adopts them, with their send marks. A
 pending file holding another repository's finding is left where it is. Each
@@ -437,7 +437,7 @@ not create.
   yet merged, and otherwise its latest decision, so filters and boards on
   Status work. A property write that fails leaves the events stored and says
   so on standard error; the next append, of any event, or
-  `notion-store.ts --database <id> repair` recomputes them.
+  `bun "<skill-dir>/scripts/notion-store.ts" --database <id> repair` recomputes them.
 - **A status changed by hand is kept and surfaced.** The store also writes
   the Status it computed to a property no view shows, *Computed status*.
   Before every property update, `repair` included, a Status that differs from
@@ -493,10 +493,10 @@ Only when reflection is on; when it is off nothing below happens.
 
 | Where | What it does |
 |-------|--------------|
-| [`drive-pr`](../drive-pr/README.md) | `drive-status.ts` reports `reflectDue`, and `drive.ts` arms `$DRIVE_PR_REFLECT_DUE`, when the review rounds since the last reflection pass the threshold; the pass runs `/jig:reflect` and records it with `drive-state.ts set-reflected` |
+| [`drive-pr`](../drive-pr/README.md) | `drive-status.ts` reports `reflectDue`, and `drive.ts` arms `$DRIVE_PR_REFLECT_DUE`, when the review rounds since the last reflection pass the threshold; the pass runs `/jig:reflect` and records it with the `set-reflected` operation of `drive-state.ts` |
 | [`resolve-review-comments`](../resolve-review-comments/README.md) | `await-round.ts`, at wind-down after a pull request took more than `REFLECT_THRESHOLD` rounds, notes the round count in the journal (a `review-took-many-rounds` finding with an id derived from the pull request) and asks for `/jig:reflect`; the drive's rounds pass through it too |
 | [`do-item`](../do-item/SKILL.md) | Asks for `/jig:reflect` when a recurring pattern scout finds a class of problem |
-| [M12 worktree removal](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/templates/worktree-hooks.md) | The removal hook asks for `/jig:reflect` and runs `journal.ts park`, refusing the removal when parking fails |
+| [M12 worktree removal](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/templates/worktree-hooks.md) | The removal hook asks for `/jig:reflect` and runs `journal.ts`’s `park` operation, refusing the removal when parking fails |
 
 ## Scripts
 

@@ -9,6 +9,9 @@
 # per platform, split into parallel shards; the do-item suite runs inside the
 # gate set on both. On Windows the gate script leaves out only the POSIX-only
 # suites (see SEPARATE_SUITES and POSIX_ONLY_SUITES in scripts/gates.ts).
+# Before its gates, Windows exercises the documented pickup and drive
+# commands in PowerShell against local fake services. The normal gate set
+# runs the same smoke with native argument arrays.
 #
 # Nothing waits for this run. GitHub notifies whoever last changed the
 # schedule when it fails; workflow_dispatch runs it on demand, against any
@@ -63,6 +66,15 @@ jobs:
         run: New-Item -ItemType Directory -Force -Path "C:\Program Files\Git\tmp" | Out-Null
       - name: Install locked dependencies, scripts off
         run: bun install --frozen-lockfile --ignore-scripts
+      # This small smoke uses a local repository and strict fake services. It
+      # checks the installed artifact's documented pickup and drive commands
+      # in the actual Windows shell, independently of an authenticated agent.
+      - name: Run documented skill commands in PowerShell
+        if: matrix.os == 'windows'
+        shell: pwsh
+        env:
+          JIG_TEST_PWSH: "1"
+        run: bun test --timeout 60000 tools/plugin/powershell-smoke.test.ts --test-name-pattern PowerShell
       - name: Run gate set
         run: bun run gates
 

@@ -117,7 +117,7 @@ status message.
 
 Read each proposed issue in full first: its description and its comments
 (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" <KEY>` and
-`list_comments.ts <KEY>`). A proposal carries titles and labels only. Then
+`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/list_comments.ts" <KEY>`). A proposal carries titles and labels only. Then
 confirm what the script cannot:
 
 - **The issues are independent.** Two whose fixes touch the same function
@@ -160,19 +160,18 @@ the release in step 4 restores them. Then, for each:
 
 2. Comment on it, naming the anchor and every other issue in the batch, so a
    second agent sees it is spoken for and by which batch
-   (`tracker.ts comment <KEY> < body.md`).
+   (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" comment <KEY> --body-file body.md`).
 
 Then write the batch form of the
 [intent chain](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), as `/jig:do-item`
 [Step 3.5](../do-item/SKILL.md#step-35-write-the-intent-chain-snapshot-refocus)
 describes, with `"mode":"batch"`, the anchor as `issue` (for an area or path
 anchor, the highest-ranked issue), the anchor's parent as `epic` when it has
-one, and every claimed issue in `items`:
+one, and every claimed issue in `items`. Write that JSON to `batch-intent.json`
+with the file-writing tool:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/intent-chain.ts" <<'INTENT_CHAIN_JSON'
-{"mode":"batch","epic":{…},"issue":{"identifier":"ENG-123",…},"items":[{"identifier":"ENG-123","title":"…"},…]}
-INTENT_CHAIN_JSON
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/intent-chain.ts" --input batch-intent.json
 ```
 
 Keep the `pickupId` it prints: the pull request is captured with it in step 5.
@@ -180,12 +179,13 @@ Keep the `pickupId` it prints: the pull request is captured with it in step 5.
 ### 4. Implement, one commit per issue
 
 Name the branch with the pull-request policy, after the highest-priority
-issue in the batch. `pr-plan.ts branch` only prints the name; create the
+issue in the batch. The `branch` operation of `pr-plan.ts` only prints the
+name; create the
 branch from the planned base and switch to it before the first commit:
 
 ```bash
-branch="$(bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" branch --issue <highest-priority KEY> --title "<that issue's title>")"
-git switch -c "$branch" origin/<base>
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" branch --issue <highest-priority KEY> --title "<that issue's title>"
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git switch -c <printed-branch-name> origin/<base>
 ```
 
 When a branch of that name already exists for this batch, switch to it
@@ -210,18 +210,19 @@ Refs: <KEY>
 One commit per issue is what keeps the batch reviewable and lets one issue
 be reverted without the others.
 
-**After implementing, check the size again.** `pr-plan.ts open` (step 5)
+**After implementing, check the size again.** The `open` operation of
+`pr-plan.ts` (step 5)
 measures the diff against `pull_requests.size_budget`, and step 2's reading
 may have grown an issue. When the batch has grown past its budget, trim it in
 this order:
 
-1. **Take out** the lowest-ranked issues and their commits (`git revert`, or
+1. **Take out** the lowest-ranked issues and their commits (revert those commits, or
    an interactive rebase on the unpushed branch). Unassigning an issue alone
    would leave its diff in the pull request.
 2. **Release** each issue taken out. Read it again first. If its state and
    assignee ids are still the ones the claim set, move it back to the state
-   recorded at the claim (`tracker.ts transition <KEY> <canonical-state>`;
-   `tracker.ts states` maps a name to its canonical key) and restore the
+   recorded at the claim (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" transition <KEY> <canonical-state>`;
+   `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" states` maps a name to its canonical key) and restore the
    recorded assignee. If someone changed either since the claim, leave that
    change in place and name the issue in your report for a person to settle.
    Either way, comment on it that it left the batch and why.
@@ -300,7 +301,7 @@ When the batch pull request merges, run `/jig:work-batch after-merge <PR>`.
 The batch's own table is the checklist: every `Closes` row gets the steps a
 single issue gets after its pull request merges, not only the first.
 
-1. **List the rows**: `gh pr view <PR> --json body,mergeCommit,mergedAt`
+1. **List the rows**: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view <PR> --json "body,mergeCommit,mergedAt"`
    and take every issue key in the table's issue-link cells.
 2. **For each row**:
    - **Status**: `/jig:do-item`'s post-merge status rule decides: `done`,
@@ -342,7 +343,7 @@ batches, a planning view marking issues batchable) ask the script instead of
 keeping their own copy of the rules:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" --eligibility [--claimed KEY,KEY] [--catalog <path>] < issues.json
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file issues.json -- bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" --eligibility [--claimed KEY,KEY] [--catalog <path>]
 ```
 
 It reads no tracker. **Input**: a JSON array of issues in the tracker
@@ -420,8 +421,8 @@ proposal's `--format json` output carries the same `version`.
 
 | Script | Purpose | Exit codes |
 |--------|---------|------------|
-| `candidates.ts <anchor>` | Resolve the anchor, read its pool through the tracker interface, print the proposal (`--format table` or `json`) | `0` printed (possibly empty); `2` usage or an anchor that cannot be batched, with the reason and what to do instead; `1` configuration, catalog or tracker error |
-| `candidates.ts --eligibility` | Verdicts for issues on stdin, no tracker read | `0` printed; `2` usage or unreadable input; `1` configuration or catalog error |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" <anchor>` | Resolve the anchor, read its pool through the tracker interface, print the proposal (`--format table` or `json`) | `0` printed (possibly empty); `2` usage or an anchor that cannot be batched, with the reason and what to do instead; `1` configuration, catalog or tracker error |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" --eligibility` | Verdicts for issues on stdin, no tracker read | `0` printed; `2` usage or unreadable input; `1` configuration or catalog error |
 
 ## In the delivery loop
 

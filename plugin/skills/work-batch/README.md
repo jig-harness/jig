@@ -1,5 +1,10 @@
 # work-batch: several small issues, one pull request
 
+Run these commands in Bash or PowerShell with Bun, Git and GitHub CLI
+available to the command tool. Write tracker bodies and intent input with the
+file-writing tool, then pass file paths; branch names are read from the
+policy command output.
+
 **What problem this solves.** Most of the cost of a pull request is its
 review: the rounds of reviewer comments, the fixes, the waits for continuous
 integration (CI). That cost is paid per pull request, not per line. A team

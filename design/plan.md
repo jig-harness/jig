@@ -334,37 +334,17 @@ audit scores M12's new criterion from the report.
 - **CI logs from other providers.** `fix-ci` finds and downloads a failed run
   through GitHub Actions only (any CI's saved log already works with
   `--log`); a provider interface for those two steps.
-- **Windows for `drive-pr` and `do-item`.** Both skills, and the skills
-  they invoke, running on native Windows under Claude Code with Git for
-  Windows' Bash first, and under PowerShell (Codex on Windows) later. Much
-  of the code already handles Windows: a pass and its registered runners
-  are stopped by captured process identities, the clone key is not a path,
-  and the pass is
-  spawned from an argument list. Both suites run on Windows every night; the tests
-  that need a step below skip there, and each skip names the step that lifts
-  it (`skipsOnWindows` in
-  [lib/test-helpers/windows-skip.ts](../lib/test-helpers/windows-skip.ts)).
-  The steps land in this order, each as its own pull request:
-  1. **The skills under Git Bash** (`git-bash`). Every script command led by
-     `bun`, the `ps`, `setsid` and `nohup` instructions replaced by the
-     scripts' own commands, the pass command resolved through
-     [`PATHEXT`](../GLOSSARY.md) (an npm-installed agent CLI is a `.cmd`),
-     `fix-ci`'s setup command run under a POSIX shell, and the platform
-     support stated in the skills' READMEs. Windows runs a `.cmd` or `.bat`
-     file only through `cmd.exe`, which the process runner's shell-less
-     `spawn` never starts, so the runner gains a launch path for them: a
-     resolved `.cmd` started as `cmd.exe /d /s /c` with every argument
-     quoted for `cmd.exe`'s own rules, tested with arguments holding
-     spaces, quotes, `%` and `^`. Done when a pickup, a driven round and a
-     stop work end to end on a Windows machine.
+- **Windows for `drive-pr` and `do-item`.** The remaining acceptance work:
+  1. **Authenticated workflow** (`git-bash`): run a real pickup, draft pull
+     request, driven round and stop on Windows under Claude Code and under
+     Codex with PowerShell. The deterministic smoke uses local fake services;
+     it does not certify the agent and credential integration. Fix what the
+     authenticated run finds, and remove the corresponding validation limits
+     from the skills' READMEs.
   2. **Job Objects** (optional): each pass in a
      Windows [Job Object](../GLOSSARY.md), for a kill no directly started
      descendant escapes and a sound check that the tree is gone; or a
      recorded decision that captured process identities are enough.
-  3. **PowerShell** (`powershell`, later): the shell constructs in the
-     skills' instructions (`$(…)`, heredocs, pipes into `grep` or `tail`,
-     `test`, `mktemp`, and `review`'s file-set logic) moved into the scripts
-     they feed, so the skills run under Codex on Windows without Git Bash.
 - **Gates and workspace infrastructure.** Cross-worktree locks and
   test infrastructure, remote gates, and a runnable form of
   [M12](../modules/M12-parallel-agent-ergonomics/README.md)'s workspace lifecycle.

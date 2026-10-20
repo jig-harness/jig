@@ -13,7 +13,13 @@ interface Context {
   spanId: string;
 }
 const context = new AsyncLocalStorage<Context>();
+const propagation = new AsyncLocalStorage<boolean>();
 let root: Context | undefined;
+
+/** Keep an enumerated child environment free of ambient trace settings. */
+export function withoutTracePropagation<T>(operation: () => T): T {
+  return propagation.run(false, operation);
+}
 
 function enabled(): boolean {
   return process.env.JIG_TRACE === "1" || Boolean(process.env.JIG_TRACE_FILE);
@@ -40,7 +46,7 @@ function traceDirectory(): string {
 export function traceEnv(
   env: Record<string, string | undefined> = process.env,
 ): Record<string, string | undefined> {
-  if (!enabled()) return env;
+  if (propagation.getStore() === false || !enabled()) return env;
   const current = context.getStore() ?? inherited();
   return {
     ...env,

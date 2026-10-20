@@ -1,5 +1,10 @@
 # Resolve review comments
 
+Run these commands in Bash or PowerShell with Bun and GitHub CLI available
+to the command tool. The thread enumerator collects and labels results
+internally, stopping on either failure. Write reply bodies to files and pass
+`--body-file`; the script preserves their text verbatim.
+
 Review feedback should end in a clear decision, with fixes verified before a
 thread closes. Without a shared procedure, agents can reply to the wrong thread,
 close a finding before its fix reaches the pull request, or stop while a reviewer

@@ -161,7 +161,7 @@ the changelog. A note of an earlier branch that this one changes or deletes, and
 a correction under Unreleased, are printed as a `note:` for the reviewer.
 
 The check holds the branch to the `changelog:` section **the base holds**
-(`git show <base>:.config/jig.yaml`), so a branch cannot unset `changelog.file`,
+(read by `git show` from the base revision), so a branch cannot unset `changelog.file`,
 empty a path list or move the notes folder to pass its own check. A branch that
 changes the section is also checked against the section it proposes, which must
 parse and resolve, and the change is printed. Where the base holds no section
@@ -347,7 +347,7 @@ check from another app), as pending while its run goes on, as cancelled when
 its run was cancelled (a job with `if: ${{ !cancelled() }}` is skipped in a
 cancelled run), and as failed otherwise. A later commit's success never stands in for the releasing commit's.
 The changelog, the `changelog:` section, `ci.required_checks` and the history
-are read from the integration branch, the tags from `origin` (`git ls-remote --tags`), never from
+are read from the integration branch, the tags from `origin` (`git ls-remote` with `--tags`), never from
 the working tree or this clone's tags; a shallow clone is refused.
 
 It makes no tag. `--rerun` re-runs, once, the workflow runs of the `rerun`
@@ -372,14 +372,14 @@ answer.
 ## The release-access check
 
 ```sh
-bun release-access.ts (--app <slug> | --app-id <id>) [--root <dir>] [--repo <owner/repo>] [--input <file>|-] [--json]
+bun release-access.ts <app-selector> [--root <dir>] [--repo <owner/repo>] [--input <file>] [--json]
 ```
 
 Whether the release's GitHub App can reach the integration branch in the
 configured mode, read from GitHub's rulesets (every page of the branch's rules)
 and classic branch protection combined, the most restrictive setting winning.
-It changes nothing. The App is `--app-id`, else the id `gh api apps/<slug>`
-gives; only a bypass entry of type `Integration` with that id names it, never
+It changes nothing. The App is `--app-id`, else the id GitHub's App API
+returns for its slug; only a bypass entry of type `Integration` with that id names it, never
 a role, a team, an organization administrator or a deploy key. The repository
 is `--repo`, else `origin`'s.
 
@@ -407,7 +407,7 @@ requirement, with its reasons indented, and ends `N of M requirements hold`.
 "rulesets": [{ "branch", "id", "name", "enforcement", "source", "rules",
 "bypass" }], "organizationRulesets": [{ "id", "name" }] }`, `bypass` null where
 it was withheld. `--input` reads an offline document instead of GitHub (the
-shape `scripts/check-branch-protection.ts --input` takes in Jig, with
+shape the `--input` option of `scripts/check-branch-protection.ts` takes in Jig, with
 `release_branch`, required in `pull-request` mode, and optional `app` and
 `repo`). Exit 0 every requirement holds (or `not
 configured`); 1 one fails; 3 none fails but one is unknown, for a repository

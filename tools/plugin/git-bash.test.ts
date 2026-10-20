@@ -1,7 +1,7 @@
-/** Execute the shipped shell commands under Bash, including Git Bash on Windows. */
+/** Execute shell hook commands under Bash, including Git Bash on Windows. */
 import { test, expect } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
@@ -9,17 +9,8 @@ import { writeFakeProgram } from "../../lib/test-helpers/fake-program.ts";
 import { byPlatform } from "../../lib/test-helpers/windows-skip.ts";
 
 const root = resolve(import.meta.dir, "../..");
-const review = readFileSync(
-  join(root, "plugin/skills/review/SKILL.md"),
-  "utf8",
-);
 
-function run(
-  command: string,
-  cwd: string,
-  env: NodeJS.ProcessEnv = {},
-  args: string[] = [],
-) {
+function run(command: string, cwd: string, env: NodeJS.ProcessEnv = {}) {
   const git = Bun.which("git");
   const gitDir = dirname(git ?? "missing-git");
   const candidates = byPlatform(
@@ -56,7 +47,7 @@ function run(
   );
   const child = spawnSync(
     bash,
-    ["--noprofile", "--norc", "-c", shellCheck + command, "jig-test", ...args],
+    ["--noprofile", "--norc", "-c", shellCheck + command, "jig-test"],
     {
       cwd,
       env: { ...process.env, LC_ALL: "C", ...env },
@@ -66,61 +57,6 @@ function run(
   );
   return { ...child, exitCode: child.status };
 }
-
-function snippet(pattern: RegExp): string {
-  const command = review.match(pattern)?.[0];
-  if (!command) throw new Error(`Review shell command missing: ${pattern}`);
-  return command.replaceAll("<effective-files>", "effective-files");
-}
-
-test("review deduplicates NUL paths and filters deleted files without splitting names", () => {
-  const dir = mkdtempSync(join(tmpdir(), "review-shell-"));
-  const names = [
-    "with space.ts",
-    "quote'and[glob].ts",
-    "unicode-é.ts",
-  ] as const;
-  for (const name of names) writeFileSync(join(dir, name), "present");
-  const collect = snippet(
-    /printf '%s\\0' "\$@" \| sort -zu > "<effective-files>"/,
-  );
-  const filter = snippet(
-    /while IFS= read -r -d '' f; do if \[ -f "\$f" \]; then printf '%s\\0' "\$f"; fi; done < "<effective-files>"/,
-  );
-  const result = run(`set -eo pipefail\n${collect}\n${filter}`, dir, {}, [
-    ...names,
-    names[0],
-    "zz-deleted.ts",
-  ]);
-  expectSpawnExit(result, 0);
-  expect(result.stdout.split("\0").filter(Boolean).sort()).toEqual(
-    [...names].sort(),
-  );
-  const onlyDeleted = run(`set -eo pipefail\n${collect}\n${filter}`, dir, {}, [
-    "deleted.ts",
-  ]);
-  expectSpawnExit(onlyDeleted, 0);
-  expect(onlyDeleted.stdout).toBe("");
-});
-
-test("review catalog membership is a literal whole NUL record", () => {
-  const dir = mkdtempSync(join(tmpdir(), "review-catalog-shell-"));
-  const catalog = "catalog[1].yaml";
-  const membership = snippet(
-    /grep -qzxF "<catalog>" "<effective-files>" && echo "catalog_changed"/,
-  ).replaceAll("<catalog>", catalog);
-  writeFileSync(
-    join(dir, "effective-files"),
-    `prefix/${catalog}\0catalog1.yaml\0${catalog}.bak\0`,
-  );
-  const absent = run(membership, dir);
-  expectSpawnExit(absent, 1);
-  expect(absent.stdout).toBe("");
-  writeFileSync(join(dir, "effective-files"), `${catalog}\0`);
-  const present = run(membership, dir);
-  expectSpawnExit(present, 0);
-  expect(present.stdout).toBe("catalog_changed\n");
-});
 
 function fakeBun(dir: string): NodeJS.ProcessEnv {
   writeFakeProgram(

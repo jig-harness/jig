@@ -79,7 +79,7 @@ Linear forms are given as the adapter example.
 |-----------|-------------|-------------------------------|
 | Get issue | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" <KEY>` | `mcp__linear__get_issue` |
 | List comments | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/list_comments.ts" <KEY>` | `mcp__linear__list_comments` |
-| Post comment | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" comment <KEY> < body.md` | `mcp__linear__save_comment` |
+| Post comment | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" comment <KEY> --body-file body.md` | `mcp__linear__save_comment` |
 | Search open issues | — | `mcp__linear__list_issues` with a query |
 | Add labels | — | `mcp__linear__save_issue` with `addLabels` |
 | File a new issue | The consumer's `issue_tracker.file_command` | — |
@@ -340,7 +340,7 @@ Run its advisory linter on the draft before you post it:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/ste-lint/ste-lint.ts" draft.md
-# or: cat draft.md | bun "${CLAUDE_SKILL_DIR}/scripts/ste-lint/ste-lint.ts" --json
+# Add --json for machine-readable output.
 ```
 
 **The ADR bar.** Mint an ADR only when the decision **constrains future code

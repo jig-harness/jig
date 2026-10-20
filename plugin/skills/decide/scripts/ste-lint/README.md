@@ -8,7 +8,7 @@ rules it checks, and how to use it, live in one place:
 
 ```bash
 bun <skill-dir>/scripts/ste-lint/ste-lint.ts draft.md
-cat draft.md | bun <skill-dir>/scripts/ste-lint/ste-lint.ts --json
+bun <skill-dir>/scripts/ste-lint/ste-lint.ts draft.md --json
 ```
 
 Flags: `--json` prints the report as JSON, `--baseline N` passes the run
