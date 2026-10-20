@@ -31,6 +31,10 @@ Each repository supplies its own values in `.config/jig.yaml`
 (see [Consumer configuration](#consumer-configuration)); the repository's own
 instructions supply its policy, label taxonomy and validation commands.
 
+The human's page is [README.md](README.md). On Windows, these instructions
+require Git for Windows and Git Bash; PowerShell support is planned. Lead
+every TypeScript script command with `bun`, including sibling skills.
+
 ### Paths and working directory
 
 `${CLAUDE_SKILL_DIR}` in the commands below stands for the absolute path of the
@@ -532,7 +536,7 @@ routing below remain **exact**.
 4. **judgment** — **Delegate to the agent**: use the Task tool with
    `subagent_type` set to the `primary_agent` that `determine_agent.ts`
    printed. First create the working
-   branch named by `pr-plan.ts branch` (**exact**; see
+   branch named by `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch` (**exact**; see
    [Pull-request policy](#pull-request-policy)), from the integration branch,
    or from the predecessor's branch when this change builds on an unmerged
    pull request and `pull_requests.stacking` allows it.
@@ -646,7 +650,7 @@ routing below remain **exact**.
    command otherwise; do not substitute a fixed command list. `<base>` below
    is the branch the PR will target, as `origin/<base>`: the integration
    branch, or the predecessor's branch for a stacked PR (the `base` that
-   `pr-plan.ts open` prints).
+   `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` prints).
 
    **Skip condition — fewer than 20 non-test lines changed (Tiers 1–3 only):**
 
@@ -754,7 +758,7 @@ routing below remain **exact**.
      `## Review Notes` in the PR body, then push.
    - **`APPROVED`**: `git push -u origin <branch>`.
 
-   Then run `pr-plan.ts open` and open the PR exactly as it plans
+   Then run `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` and open the PR exactly as it plans
    ([Pull-request policy](#pull-request-policy)). An exit `3` is a policy
    refusal: follow its remedy before opening anything.
 
@@ -854,8 +858,8 @@ routing below remain **exact**.
       path before acquiring either lock and writes the log best effort, so
       neither the arm outcome nor the printed path proves the log exists.
       Never post a template such as `<state dir>` as a path. Include the
-      fleet commands too: `drives.ts` lists live drives, and `drives.ts --stop
-      <PR>` stops this one (the process probe uses `ps` on POSIX and
+      fleet commands too: `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts"` lists live drives, and
+      `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts" --stop <PR>` stops this one (the process probe uses `ps` on POSIX and
       PowerShell on Windows). These are what a human reaches for when the
       background drive is an agent they have no window into.
 
@@ -963,7 +967,7 @@ snapshot mapping are **exact**.
    - `sub_issue_analysis.all_complete` → Step 5a.
    - Otherwise, if every remaining incomplete sub-issue carries a label in
      the repository's `extractable_tails` list (by default `hitl:legal`,
-     `hitl:tactical`, `manual-ops` and `pr-followup`; `tracker.ts labels`
+     `hitl:tactical`, `manual-ops` and `pr-followup`; `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" labels`
      prints the list in effect) → also Step 5a, which re-verifies eligibility under
      the extract-and-close rule before acting. Otherwise an epic whose only
      open work is a tail would pick that tail and work it as ordinary code.
@@ -1071,7 +1075,7 @@ snapshot mapping are **exact**.
    none` (the default), do not start it on top of that branch; wait for the
    sibling to merge, or ask the user to choose another eligible sub-issue.
    With `native` or `branch`, branch from the sibling's head branch and open
-   with `pr-plan.ts open --stack-on <that branch>`.
+   with `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --stack-on <that branch>`.
 
 ### Step 5a: All sub-issues complete
 
@@ -1180,7 +1184,7 @@ data flow, not an executable harness API.
        //
        // PHASE A — an agent action, not a script. For every child whose key
        // matches /^[A-Za-z][A-Za-z0-9]*-\d+$/ (defense in depth before it
-       // reaches a command line), issue `get_issue.ts <key>` as its OWN Bash
+       // reaches a command line), issue `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" <key>` as its OWN Bash
        // call, all in the SAME turn (parallel tool calls), never one at a
        // time: each call may take up to 30 seconds. Build `childFetchResults`,
        // a Map from the REQUESTED key to the parsed stdout; omit any call that
@@ -1232,7 +1236,7 @@ data flow, not an executable harness API.
    | `listing_failed` | **Stop**: report that the tracker refresh failed or was incomplete; do not change the parent's status |
    | `keep_in_progress` | Go to Step 4b |
    | `extract_and_close_eligible` | Verify the epic's closing authorization (below); if it has one, extract and close per the rule above (see the `manual-ops` note below when the parent carries that label). Otherwise **stop**: report that every remaining sub-issue is an extractable tail but the epic has no accepting verdict or waiver yet |
-   | `set_status` | When `decision.parentState` is `done` and the parent is an epic (`listing.parentLabels` carries the configured epic label), verify its closing authorization (below) first; without one, transition it to `in_review` instead and report that it waits for an accepting verdict or a waiver. Transition the parent: `tracker.ts transition <KEY> <canonical-state>` on the script transport; Linear native: `mcp__linear__save_issue({ id: issue.id, state: <mapped name> })` |
+   | `set_status` | When `decision.parentState` is `done` and the parent is an epic (`listing.parentLabels` carries the configured epic label), verify its closing authorization (below) first; without one, transition it to `in_review` instead and report that it waits for an accepting verdict or a waiver. Transition the parent: `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition <KEY> <canonical-state>` on the script transport; Linear native: `mcp__linear__save_issue({ id: issue.id, state: <mapped name> })` |
 
    **Closing authorization.** An epic may close only when its newest verdict
    from the repository's epic acceptance review accepts it, or when a person

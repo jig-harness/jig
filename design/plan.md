@@ -340,7 +340,7 @@ audit scores M12's new criterion from the report.
   of the code already handles Windows: a pass and its registered runners
   are stopped by captured process identities, the clone key is not a path,
   and the pass is
-  spawned without a shell. Both suites run on Windows every night; the tests
+  spawned from an argument list. Both suites run on Windows every night; the tests
   that need a step below skip there, and each skip names the step that lifts
   it (`skipsOnWindows` in
   [lib/test-helpers/windows-skip.ts](../lib/test-helpers/windows-skip.ts)).

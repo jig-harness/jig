@@ -1,7 +1,7 @@
 ---
 name: drive-pr
 description: "Arm unattended PR review loop."
-allowed-tools: Read Edit Write Grep Glob Agent Bash(gh *) Bash(git *) Bash(bun *) Bash(linear *) Bash(ps *) Bash(test *) Bash(${CLAUDE_SKILL_DIR}/scripts/*) Bash(${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/*)
+allowed-tools: Read Edit Write Grep Glob Agent Bash(gh *) Bash(git *) Bash(bun *) Bash(linear *) Bash(test *)
 ---
 
 # Drive a PR to a verified terminal state
@@ -68,19 +68,30 @@ where this file says "the configured …", that is where the value comes from.
 
 **exact** — Use the documented runtime forms; the invocation syntax and script contracts are fixed.
 
-Every script under `scripts/` is TypeScript run by Bun — no bash, no `jq`, no
-coreutils — so the same files run for any agent (Claude Code, Codex,
-or a human) on macOS, Linux and Windows. Two equivalent invocation forms:
+Every script under `scripts/` is TypeScript run by Bun. Lead every script
+invocation with `bun`, including nested commands and the pass given to a
+launcher. Do not rely on a script's shebang. Forge and repository operations
+use `gh` and `git`; process snapshots use the runtime's platform helpers.
 
-- `bun ${CLAUDE_SKILL_DIR}/scripts/<name>.ts …` — works everywhere,
-  including Windows.
-- `${CLAUDE_SKILL_DIR}/scripts/<name>.ts …` — direct execution via the
-  `#!/usr/bin/env bun` shebang, macOS/Linux only. The examples below use this
-  short form; prefix `bun ` on Windows.
+On Windows, install Git for Windows and run the skill commands in its Git Bash
+shell. Native PowerShell support is planned. The Windows end-to-end smoke
+(pick an item, open a draft PR, arm a drive, complete a round, and stop it)
+is pending.
 
-The scripts spawn each other via their own runtime, so a drive started either
-way stays self-consistent. Forge and repository operations use `gh` and
-`git`; process snapshots use `ps` on POSIX and PowerShell on Windows.
+Windows `.cmd` and `.bat` pass launchers refuse arguments containing carriage
+returns, newlines or null bytes. Keep a multiline pass
+prompt in a file or supply it through standard input using the agent CLI's
+supported input options; do not embed it in a batch-launcher argument. A batch
+wrapper that forwards all arguments is supported only in npm's generated
+`_prog` form, with or without the interpreter arguments npm copies from the
+entry point's first line. Those arguments must be plain words: one containing
+a quote or a cmd character (`%`, `^`, `&`, `|`, `<`, `>`, `(`, `)`, `!`), such
+as `--title="x"`, is refused. A wrapper that also sets environment variables,
+or any other forwarding wrapper, is refused too. In each case, launch the
+underlying executable and its JavaScript entry point directly. A launch whose
+command line would exceed cmd.exe's 8,191-character limit, either as escaped
+or once the npm wrapper expands its own variables, is refused as well; pass
+long input through a file or standard input.
 
 ## Drafts are driven, and marked Ready at the declared round
 
@@ -291,7 +302,7 @@ it, or read `state` from the `--json` report, which is unambiguous either way.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/drive.ts 123 --bots-only \
+bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only \
   -- claude -p "/jig:drive-pr --bots-only 123"
 ```
 
@@ -324,7 +335,7 @@ you look:
   not captured — routing it through a pipe would change `run()`'s close
   semantics, and a detached descendant of the pass holding the pipe open
   would wedge the round.
-- **Fleet listing** — `bun ${CLAUDE_SKILL_DIR}/scripts/drives.ts` lists
+- **Fleet listing** — `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts"` lists
   every drive lock in this clone's state universe with owner, liveness (by
   exactly the rule recovery uses — `lib/claim.ts`), worktree, start time,
   log path and billing account (the billing identity the pass is
@@ -357,9 +368,9 @@ you look:
   advancing, a push landing, a held batch draining, a pass being spawned, or
   a global CI verification landing (`set-verified`'s own `'ci-verified'`
   stamp) — never by the heartbeat timer; see `withProgress` in
-  `lib/state/schema.ts`) and `quotaPark` (recorded by `drive-state.ts
+  `lib/state/schema.ts`) and `quotaPark` (recorded by `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts"
   quota-park`, cleared by the next progress event). `bun
-  ${CLAUDE_SKILL_DIR}/scripts/drives.ts --doctor` sweeps every drive in
+  "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --doctor` sweeps every drive in
   the state universe — every *lock* `drives.ts` already enumerates, plus every
   lock-less `drive-pr-<PR>.json` state file that is either *unreadable* or
   *actionable* (a recorded `quotaPark`, or a non-empty `parked` list) — never an
@@ -375,7 +386,7 @@ you look:
   `lib/doctor.ts`'s own precedence-order header) — with a recovery command
   where one exists; combines with `--json` (a genuinely different payload
   from plain `--json`, precisely because of the extra rows). Plain
-  `drives.ts`/`drives.ts --json` (no `--doctor` needed) stay *lock-rows-only*,
+  `drives.ts`/`bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --json` (no `--doctor` needed) stay *lock-rows-only*,
   unchanged in kind, but already annotate a stalled *live* row and carry the
   verdict per PR row respectively. The stall threshold defaults to 240
   minutes (`STALL_THRESHOLD_MIN_DEFAULT`, derived from `passTimeoutSeconds()`'s
@@ -387,18 +398,18 @@ you look:
   overridable via `DRIVE_PR_STALL_MIN` (floored at the default, ceilinged at
   one week, same clamping shape as `heartbeatStaleMs()`). `--doctor` is
   runnable ad hoc from an interactive session (the same way an operator runs
-  the plain listing or `drives.ts --here`), or on a periodic cadence from the
+  the plain listing or `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --here`), or on a periodic cadence from the
   machine's own scheduler (cron, launchd, a scheduled task) — a per-machine
   install the skill does not ship.
 
   **A state file missing these fields is refused, not migrated** — `DriveState`
   has no optional-and-defaulted tier (see that interface's own header), so an
   older file stops at its next state read with the ordinary "not usable drive
-  state" refusal, naming the file. `drive-state.ts reset <PR>` is the recovery;
+  state" refusal, naming the file. `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" reset <PR>` is the recovery;
   re-arming afterwards restarts the round budget. Defaulting the silence would
   make "never progressed" indistinguishable from "predates the field" — the
   false reading `--doctor` exists to prevent.
-- **State reaping** — `bun ${CLAUDE_SKILL_DIR}/scripts/reap-state.ts`
+- **State reaping** — `bun "${CLAUDE_SKILL_DIR}/scripts/reap-state.ts"`
   (dry-run by default, `--delete` to act) bounds the *inodes* this skill leaves
   in its state dir (see below) — not, on its own, the entry count that drives
   every enumeration of it. `lock.ts` mints a permanent quarantine entry per lock
@@ -456,7 +467,7 @@ you look:
   naming the found entries) rather than silently starting a fresh drive over
   it, which would leave two sessions resolving different directories with
   neither error surfacing. Run the one-time fix: `bun
-  ${CLAUDE_SKILL_DIR}/scripts/migrate-legacy-state.ts --apply` — bare,
+  "${CLAUDE_SKILL_DIR}/scripts/migrate-legacy-state.ts" --apply` — bare,
   with no `--apply`, it only reports what it would do and changes nothing (same
   dry-run-by-default posture as `reap-state.ts`'s `--delete`). Idempotent,
   copies (never moves) durable content, refuses if a live driver is still
@@ -464,7 +475,7 @@ you look:
   (reported, safe to `rm -rf` manually once confident — see the script's own
   header for why it does not delete that itself). State that already lives in
   some other directory outside the repository (another default location, or
-  a previous `$DRIVE_PR_STATE_DIR`) moves with `migrate-state-dir.ts --from <old
+  a previous `$DRIVE_PR_STATE_DIR`) moves with `bun "${CLAUDE_SKILL_DIR}/scripts/migrate-state-dir.ts" --from <old
   dir>` instead: [README.md § Relocating the state
   dir](README.md#relocating-the-state-dir).
 - **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` overrides the default
@@ -475,10 +486,10 @@ you look:
   at round 0. So if you find it set and did not set it yourself, leave it
   alone — never unset or override it for one session, worktree or command.
   Relocating it is a human, machine-wide procedure (quiesce every driver and
-  any scheduled reaper, run `migrate-state-dir.ts`, then export everywhere at
+  any scheduled reaper, run `bun "${CLAUDE_SKILL_DIR}/scripts/migrate-state-dir.ts"`, then export everywhere at
   once): [README.md § Relocating the state
   dir](README.md#relocating-the-state-dir).
-- **Session banner** — `drives.ts --here` reports whether a live driver is
+- **Session banner** — `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --here` reports whether a live driver is
   working the worktree it runs in. Its silence means "checked, and clear"; a
   read failure prints a warning rather than nothing. A repository can run it
   from its agent tool's session-start hook so that a session opening in a
@@ -544,7 +555,7 @@ could forge or forget.
    mention) is context the PR does not claim to deliver, so its gate is not
    this PR's to honour and its lookup failing is not a reason to refuse. For
    each, read its labels through `/jig:do-item`'s tracker scripts
-   (`bun ${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts <KEY>`) and, when
+   (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" <KEY>`) and, when
    it has a parent, the parent's description too, applying `/jig:do-item`'s
    human-in-the-loop (HITL) gate check
    ([`do-item/SKILL.md`](../do-item/SKILL.md) Step 4a: the repository's `hitl`
@@ -565,7 +576,7 @@ could forge or forget.
    **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
    ```bash
-   bun ${CLAUDE_SKILL_DIR}/scripts/drive.ts <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
+   bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
    ```
 
    **exact** — Pass the Bash call's `timeout` of `28800000` (8 hours) with
@@ -590,12 +601,10 @@ could forge or forget.
 
    A drive likely to run past the ceiling (8 hours here, or 2 hours on a
    machine without `BASH_MAX_TIMEOUT_MS`) must start outside the harness
-   instead: a terminal or terminal-multiplexer pane of its own, or a launch
-   in a new session (a detached `spawn`, or `setsid` where it exists) with its
-   output redirected to a file. The harness stops the whole process group of
-   a background command at its ceiling whatever the driver is doing, so the
-   driver cannot outlive it; `nohup` alone is not enough, because it only
-   ignores hangups and leaves the command in that process group.
+   instead: a terminal or terminal-multiplexer pane of its own. Run the same
+   `bun` command there and redirect output to a file if needed. Stop it with
+   `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --stop <PR>`, which verifies the
+   driver's identity and cancels its pass before releasing locks.
 
    `--bots-only` is always on: an unattended sweep never acts on human threads
    (§ 2). Forward the invocation's own drive flags — `--keep-draft`,
@@ -618,15 +627,16 @@ could forge or forget.
      clear. Key on the diagnostic, not the exit code: the driver meets this
      lease in its own round-counting `bump-attempt` call and flattens any
      failure there other than a PR-wide hold (`13`) to driver exit `1`. Clear
-     only after these positive checks: `drive-state.ts lease <PR>` names a pid, the platform's
-     process probe shows *your* session (`ps -p <pid>` on POSIX — the only
-     probe this skill's `allowed-tools` permits; where it cannot run, e.g.
-     Windows, the check cannot be completed, so do not clear — report the
-     holder and stop; the platform forms are in
-     [terminal-states.md](references/terminal-states.md)), and `drives.ts`
-     lists no live drive on this PR. Then
-     `drive-state.ts clear-lease <PR>` and re-arm once. Any other holder:
-     stop (§ 6's exit table).
+     only after these positive checks:
+     `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" lease <PR>` names a pid,
+     the process-check command printed in the refusal (from `pidCheckCommand`
+     in `scripts/lib/proc.ts`) confirms *your* session on the recorded host,
+     and `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts"` lists no live drive on
+     this PR. Use the printed command rather than choosing a host's process
+     probe yourself. If the check cannot be completed, report the holder and
+     stop. Otherwise run
+     `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" clear-lease <PR>` and
+     re-arm once. Any other holder: stop (§ 6's exit table).
    - any other non-zero exit → a failed arm; report the exit code and the
      captured output.
    - exit `0` inside the window → the drive already reached a terminal state;
@@ -638,8 +648,8 @@ could forge or forget.
    and can be opened for append (`test -f <path> && test -w <path>`) before
    quoting it — `drive.ts` prints the path before taking its locks and its log
    writes are best effort — never a `<state dir>` template), and the handles
-   `bun ${CLAUDE_SKILL_DIR}/scripts/drives.ts` (list) and
-   `drives.ts --stop <PR>` (stop). Then end the turn. After handing over, do
+   `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts"` (list) and
+   `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --stop <PR>` (stop). Then end the turn. After handing over, do
    not touch the drive's state, threads, or worktree: the driver owns them.
 
 Today the one documented pass command is Claude Code's `claude -p`. In
@@ -680,8 +690,8 @@ per § 6), or a human thread on a touched file refuses the push:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/foreground-wait.ts launch -- \
-  ${CLAUDE_SKILL_DIR}/scripts/finish-round.ts --bots-only   # or: -- git commit -F "$msgfile"
+bun "${CLAUDE_SKILL_DIR}/scripts/foreground-wait.ts" launch -- \
+  bun "${CLAUDE_SKILL_DIR}/scripts/finish-round.ts" --bots-only   # or: -- git commit -F "$msgfile"
 ```
 
 Wait — its own call, repeated until it prints a final status. It blocks up to
@@ -691,7 +701,7 @@ above that and below its 600000 ms max:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/foreground-wait.ts wait
+bun "${CLAUDE_SKILL_DIR}/scripts/foreground-wait.ts" wait
 ```
 
 `wait` never returns the command's own exit status as its own — that would
@@ -766,7 +776,7 @@ Then:
   pick up at **§ 5**: sync the base, resolve and run the round's validation
   plan over the cumulative tree, and **§ 6** to commit and push. §§ 2–4 have
   nothing to enumerate — the review converged before you were dispatched.
-- **`conflict-resolve`** — run § 5's `base-sync.ts`, which will report exit
+- **`conflict-resolve`** — run § 5's `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`, which will report exit
   `9`; merge the base and resolve the conflict with
   [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), starting
   the merge from its Step 1 rather than with a bare `git merge`: where the
@@ -801,7 +811,7 @@ conflict without a repair pass. See § Terminal states.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/drive-status.ts [PR] --json --once --bump-attempt
+bun "${CLAUDE_SKILL_DIR}/scripts/drive-status.ts" [PR] --json --once --bump-attempt
 ```
 
 Proceed only on exit `0`. Anything else is the answer for *this* gate's own
@@ -989,8 +999,8 @@ The script is still called directly for the jobs a gate on one PR cannot do:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/reconcile-replied-threads.ts [PR] [--dry-run]
-${CLAUDE_SKILL_DIR}/scripts/reconcile-replied-threads.ts --all-open --bots-only
+bun "${CLAUDE_SKILL_DIR}/scripts/reconcile-replied-threads.ts" [PR] [--dry-run]
+bun "${CLAUDE_SKILL_DIR}/scripts/reconcile-replied-threads.ts" --all-open --bots-only
 ```
 
 `--all-open` sweeps every open PR in one call, which is the answer to a PR
@@ -1025,10 +1035,10 @@ it exempt.
 
 ```bash
 set -o pipefail
-bun ${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/list-unresolved-threads.ts [PR] [--bots-only] \
-  | bun ${CLAUDE_SKILL_DIR}/scripts/self-inflicted.ts [PR]
-bun ${CLAUDE_SKILL_DIR}/scripts/summary-findings.ts [PR] --configured-reviewer-only \
-  | bun ${CLAUDE_SKILL_DIR}/scripts/self-inflicted.ts [PR] --summary-report
+bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/list-unresolved-threads.ts" [PR] [--bots-only] \
+  | bun "${CLAUDE_SKILL_DIR}/scripts/self-inflicted.ts" [PR]
+bun "${CLAUDE_SKILL_DIR}/scripts/summary-findings.ts" [PR] --configured-reviewer-only \
+  | bun "${CLAUDE_SKILL_DIR}/scripts/self-inflicted.ts" [PR] --summary-report
 ```
 
 **If `bun` is not on `PATH` in a non-interactive shell, put it there in its own
@@ -1131,7 +1141,7 @@ issue's scope and acceptance criteria, which
 [Refocus](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) puts
 back in front of an agent — re-read each round from the snapshot `/jig:do-item`
 wrote at pickup and pinned to this PR.
-Use `capture-intent-chain.ts <PR> --pickup <pickupId>` with the token retained
+Use `bun "${CLAUDE_SKILL_DIR}/scripts/capture-intent-chain.ts" <PR> --pickup <pickupId>` with the token retained
 from that pickup before arming the drive. The immutable archive survives later
 item-alias and session-copy rewrites. Capture refuses a worktree on a different
 head branch or a pickup whose owned identifiers do not match the PR; without
@@ -1166,7 +1176,7 @@ accepted finding, not merely before replying.** By the time the rubric lands
 on `accepted`, the finding is already classified — severity, category, and
 `selfInflicted` come from step 2's measurements, and tier/`--obligatory` come
 from applying the rubric to the finding as posted — so nothing about the
-finding itself remains to investigate. Invoke `triage-ladder.ts` with that
+finding itself remains to investigate. Invoke `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/triage-ladder.ts"` with that
 classification immediately, before investigating, writing, testing, or
 verifying a *fix* for it. Work done first has to be reverted when the ladder
 declines the finding.
@@ -1174,7 +1184,7 @@ declines the finding.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun ${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/triage-ladder.ts \
+bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/triage-ladder.ts" \
   --severity <blocker|high|medium|low|unknown> --tier <1-4> \
   --category <token|unknown> --self-inflicted <true|false|unknown> [--pr <PR>] [--obligatory]
 ```
@@ -1220,7 +1230,7 @@ ladder arms on the PR's real depth rather than this pass's.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts <threadId> [PR] <<'EOF'
+bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR] <<'EOF'
 **accepted** — fixed the missing guard; landing in this round's still-unpushed commit.
 EOF
 ```
@@ -1232,8 +1242,8 @@ own opener names. A terminator that does not match leaves the heredoc open, so
 the next command in the line becomes part of the body, and the body is posted
 to the PR verbatim.
 
-`triage-thread.ts` posts the reply via `reply-to-thread.ts` and records
-its disposition — `drive-state.ts hold` for accepted/moot, `resolve-thread.ts` for
+`triage-thread.ts` posts the reply via `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/reply-to-thread.ts"` and records
+its disposition — `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold` for accepted/moot, `resolve-thread.ts` for
 rejected/wont-fix/deferred — in one **self-reconciling**
 invocation: a pass killed between the reply and its durable record still
 leaves that same brief gap (this is not transactionally atomic — GitHub's
@@ -1254,7 +1264,7 @@ one — comparing against intent there would put a second outcome token on one
 triage decision, exactly what this script exists to prevent. A **deliberate**
 supersession (a trusted author overriding their own earlier verdict with new
 information) works: post the new reply with
-`reply-to-thread.ts` directly, then invoke `triage-thread.ts` to dispatch it
+`bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/reply-to-thread.ts"` directly, then invoke `bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts"` to dispatch it
 — it will find that *as* the qualifying reply and act on it. For a human thread
 deliberately left open, that dispatch call is `--cleanup-only`, not ordinary
 reconciliation — see § "Leaving a human thread open" below; invoking
@@ -1273,7 +1283,7 @@ resolve the thread in the same call (merit claims, nothing to wait on), then
 best-effort release any *stale* `accepted`/`moot` hold left on the same key by
 an earlier round — the deliberate-supersession case above, where
 `resolve-thread.ts` itself has no notion of `held` at all. `accepted` is
-always held (`drive-state.ts hold ... --comment-url <the posted or
+always held (`bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold ... --comment-url <the posted or
 reconciled comment's url>`) for `resolve-held-thread.ts` to release in
 step 6, which verifies that the push resolving a held thread is the one its
 reply promised.
@@ -1289,7 +1299,7 @@ state the fix-dependent case explicitly:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts <threadId> [PR] --moot-pending-push <<'EOF'
+bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR] --moot-pending-push <<'EOF'
 **moot** — the code this anchored to is removed by this round's own unpushed fix.
 EOF
 ```
@@ -1309,7 +1319,7 @@ releases regardless.
 
 A reply that is genuinely **not** a triage decision (a clarifying question,
 with nothing to hold or resolve) has no outcome for `triage-thread.ts` to
-dispatch on — use `reply-to-thread.ts --no-outcome` directly for that case.
+dispatch on — use `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/reply-to-thread.ts" --no-outcome` directly for that case.
 
 **Leaving a human thread open.** A merit outcome (`rejected`/`wont-fix`/
 `deferred`/plain `moot`) is resolved automatically — pass `--leave-open` to
@@ -1327,7 +1337,7 @@ above — a trusted author posts the superseding reply straight through
 `reply-to-thread.ts`, not through this script — and for it the answer is to
 stop after that post and never
 invoke `triage-thread.ts`'s resolve step at all — but that fallback still
-owes *one* follow-up call: `triage-thread.ts <threadId> [PR] --cleanup-only`,
+owes *one* follow-up call: `bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR] --cleanup-only`,
 which releases a stale `accepted`/`moot` hold this direct post superseded
 without posting or resolving anything. Stopping after the post means this
 script's own reconciliation branch — the only caller of the stale-hold
@@ -1339,7 +1349,7 @@ That leaves an **unmarked**
 reply, and it is durable anyway for the case it is documented for: every
 unattended sweep runs `--bots-only` (`drive-status.ts`'s `sweepBotsOnly` is
 forced on whenever `$DRIVE_PR_TARGET` is set, i.e. on every `drive.ts`-driven
-run), and `list-unresolved-threads.ts --bots-only` drops human-started
+run), and `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/list-unresolved-threads.ts" --bots-only` drops human-started
 threads from the sweep's input entirely (`historyOnly`) — so no unattended
 run can see that reply, let alone resolve it. It is reversible only by a
 human deliberately running `reconcile-replied-threads.ts` unscoped, which is
@@ -1360,13 +1370,13 @@ not posted, above) is recorded `--unconfirmed`, because this script never
 reads the tree — it only read GitHub's comment text, with no way to confirm
 the promised fix is actually there. If you — a live pass, with the tree in
 front of you — read the anchored code and confirm the fix genuinely landed,
-upgrade it to confirmed round-currency by calling `drive-state.ts hold`
+upgrade it to confirmed round-currency by calling `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold`
 directly:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/drive-state.ts hold [PR] \
+bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold [PR] \
   --key <threadId> --kind thread --outcome <accepted|moot> \
   --comment-url <comment-url>
 ```
@@ -1386,7 +1396,7 @@ extra check. For a summary-only finding the same split is mechanical rather
 than remembered — see below.
 
 **If step 1's report says `reflectDue: true`, reflect before triaging — and
-record it with `drive-state.ts set-reflected [PR]` once it completes.**
+record it with `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" set-reflected [PR]` once it completes.**
 Reflecting means stepping back from the findings to ask what their repetition
 says about the repository's scaffolding or the reviewer's configuration, and
 recording it with [`/jig:reflect`](../reflect/SKILL.md) (unattended: it
@@ -1473,7 +1483,7 @@ Record the acknowledgment when you have acted on it:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/drive-state.ts set-escalated [PR] \
+bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" set-escalated [PR] \
   --invariant "<one sentence: what THIS round believes it closed>"
 ```
 
@@ -1530,7 +1540,7 @@ Summary-only findings answer differently, because there is no thread:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts \
+bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts" \
   --outcome wont-fix --fingerprint b9a7a18089043564 [PR] <<'REPLY_EOF'
 valid, but a docs-polish item on an unchanged file; declined per the triage rubric (docs tier).
 REPLY_EOF
@@ -1544,7 +1554,7 @@ repeated `--fingerprint` flags and answer in a single comment.
 The **fix-dependent** outcomes — `accepted` and `moot` — are **held exactly like
 an accepted thread**, with one difference: a thread's reply is already posted
 to GitHub by hold time, so its text survives independently of this state file.
-A finding's is not — `answer-summary-finding.ts --pushed-sha` can't legally run
+A finding's is not — `bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts" --pushed-sha` can't legally run
 until step 6, after the push, so at hold time the reasoning exists nowhere but
 your own context. `hold` needs it on stdin, not just `--outcome` — and that
 stdin is the **reason alone, with no leading outcome token**. Unlike a thread
@@ -1556,9 +1566,9 @@ refuses such a body, but the fix belongs at the `hold` call:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/drive-state.ts hold [PR] \
+bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold [PR] \
   --key b9a7a18089043564 --kind finding --outcome accepted <<'REASON_EOF'
-fixed the missing lock; will post via answer-summary-finding.ts once pushed.
+fixed the missing lock; will post the answer once pushed.
 REASON_EOF
 ```
 
@@ -1568,7 +1578,7 @@ trusting it: both require `--pushed-sha`, verified against the PR's live head
 *and* this worktree's clean HEAD, so they can only be posted in step 6 after
 the push has landed. `finish-round.ts` brackets each one with a claim; when you
 post a held finding by hand instead (settling one of its refusals), do the same
-— `drive-state.ts claim-held --kind finding` before `answer-summary-finding.ts`,
+— `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" claim-held --kind finding` before `answer-summary-finding.ts`,
 `release-held --key K --token T` after (§ Guardrails).
 
 That SHA is also stamped into the marker, and it is what keeps the answer honest
@@ -1668,7 +1678,7 @@ An arbiter `escalate`, or any decision the round is not entitled to make, is
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/drive-state.ts park [PR] \
+bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] \
   --key PRRT_kwDO... --kind thread \
   --reason "arbiter escalated: product call on whether disposal is reversible"
 ```
@@ -1677,7 +1687,7 @@ Parked items stop counting as live work, which is what lets the drive reach
 `HITL_PARKED` instead of waking forever against the same undeferrable threads.
 `--reason` is required: a parked item with no framed decision is a dropped
 finding, not a checkpoint. Unpark with
-`drive-state.ts unpark [PR] --key K` once the human answers.
+`bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" unpark [PR] --key K` once the human answers.
 
 **The change note — only where the repository has opted in.** When
 `bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/check.ts" --base origin/<base>`
@@ -1698,7 +1708,7 @@ changes nothing the note says leaves it alone. Where the check prints
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/base-sync.ts [PR]
+bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts" [PR]
 ```
 
 **Before the plan is resolved, not after** — the plan describes a tree, and a
@@ -1734,7 +1744,7 @@ loop cannot see, such as converging and wanting the local gates and the
 |---|---|---|
 | `0` | Nothing to do, or merged cleanly | `--json`'s `action` says which — do not infer it from the code. Continue |
 | `9` | The base **conflicts** with this branch. The worktree was *restored* — nothing is half-merged | Resolve it deliberately with [`/jig:resolve-conflicts`](../resolve-conflicts/SKILL.md), from its Step 1 so its pre-merge changelog conversion runs first: `git merge origin/<base>`, then map, resolve (intent-traced; derived files regenerated, never hand-merged), record, check, validate with this section's plan and conclude the merge; then push |
-| `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Resolve `round-plan.ts` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `base-sync.ts`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
+| `3` | Refused before touching anything: an unconcluded git operation was already open, local changes stood in the merge's way, or an abort could not be verified. Also covers a merge git resolved cleanly (no file left unmerged) but never committed — a `pre-merge-commit` hook rejecting it, most plausibly — which `MERGE_HEAD`'s mere presence cannot distinguish from `9`'s real conflict on its own | The message names which. For the middle one: this is not the ordering rule above contradicting itself — it is a distinct, preliminary validation of the round's *own* diff, separate from (and earlier than) the plan that rule gates on `base-sync.ts` succeeding. Run `bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts"` and run what it prints against the current (dirty) tree — it already covers the uncommitted diff, so there is nothing to skip — commit, then re-run `bun "${CLAUDE_SKILL_DIR}/scripts/base-sync.ts"`. Once that succeeds, the section's normal order resumes: resolve the plan again below, now against the tree the merge just changed. Never commit merely to unblock the merge without having validated first. For the hook case: the worktree was restored; fix or bypass the hook and re-run |
 | `5` | The PR is not `OPEN` | Stop — the same liveness posture `finish-round.ts` takes before its push |
 | `11` | Another live session holds this working tree's tree lease (never under `--check`) | Stop, as for `finish-round.ts`'s `11` below |
 | `2` / `1` | Usage error, including a worktree whose branch is not the PR's head branch / a step failed | Fix the invocation, or read the step's diagnostic. For the branch mismatch, stop and report it for a human: never rename the workspace's branch, or check out or detach another worktree's branch, to make the check pass |
@@ -1768,7 +1778,7 @@ Then resolve the plan over the tree you just settled:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/round-plan.ts [PR]
+bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts" [PR]
 ```
 
 It resolves the validation plan for the PR's **whole** diff against the PR's
@@ -1886,8 +1896,8 @@ Record it with the plan that provoked it piped in as provenance, and name the
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/round-plan.ts [PR] --json \
-  | bun ${CLAUDE_SKILL_DIR}/scripts/verification-fit.ts [PR] \
+bun "${CLAUDE_SKILL_DIR}/scripts/round-plan.ts" [PR] --json \
+  | bun "${CLAUDE_SKILL_DIR}/scripts/verification-fit.ts" [PR] \
       --verdict over-strict \
       --area docs \
       --evidence "box re-ran the whole suite for a 3-line docs edit; requiredBy is package.json, untouched since round 1" \
@@ -1937,7 +1947,7 @@ Two hard edges keep this an instrument rather than a licence to under-validate:
 
 **exact** — Commit the validated tree and use the single scripted finish; retain the prescribed ordering and recovery guards.
 
-Commit the validated tree. If the held batch (`drive-state.ts held [PR]`)
+Commit the validated tree. If the held batch (`bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" held [PR]`)
 carries an item this pass did not hold — a thread's posted reply or a
 finding's stored reason — re-read it against its own finding first, as
 "Re-running after an interruption" below describes: the finish drains every
@@ -1946,7 +1956,7 @@ hold and posts each finding's stored reason as it stands. Then:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/finish-round.ts [PR]
+bun "${CLAUDE_SKILL_DIR}/scripts/finish-round.ts" [PR]
 ```
 
 Either command can outlive the Bash tool's ceiling: a commit can trip a
@@ -1965,7 +1975,7 @@ ended (`wait` exit `21`, or an interrupted pass): it is idempotent, so that
 is never a reason to stop.
 
 Only an `--interactive` session, whose process outlives the command, may
-background either one. Whenever a command is detached with `&` or `nohup`, never
+background either one through the harness. When doing so, never
 pair it with an inline heredoc — write the message to a file and pass it with
 `-F` or `<`.
 
@@ -1991,25 +2001,25 @@ That is the whole of step 6. It performs, in this exact order:
    thread is not *parked* — the mechanized catch for "fixed every finding in
    code, never called `triage-thread.ts`, went straight to step 6".
    A thread a trusted
-   author replied to but deliberately left open (`triage-thread.ts
+   author replied to but deliberately left open (`bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts"
    --leave-open`) is NOT untriaged — it has a qualifying reply, so this
    refusal does not fire for it — and neither is a thread a human already
-   *parked* (`drive-state.ts park`), including one `triage-thread.ts` itself
+   *parked* (`bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park`), including one `triage-thread.ts` itself
    refused to reply to (e.g. `commentsTruncated` — § 4 below);
-2. `ci-hold.ts ensure` — in a repository with a hold label, after observing
+2. `bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure` — in a repository with a hold label, after observing
    all required PR-open checks, adds or confirms this drive's durable
    ownership of the label (without one, prints `disabled`);
-3. `guarded-push.ts` — the push, with the PR's liveness re-checked at the
+3. `bun "${CLAUDE_SKILL_DIR}/scripts/guarded-push.ts"` — the push, with the PR's liveness re-checked at the
    instant of the push and an explicit refspec at its own head branch;
-4. `drive-state.ts stamp-held` — stamps the pushed SHA onto the holds *this*
+4. `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" stamp-held` — stamps the pushed SHA onto the holds *this*
    working tree owns, as their push provenance, without advancing
    the PR-global green-verification pointer;
-5. `drive-status.ts --json --no-count` — waits for the reported PR head to
+5. `bun "${CLAUDE_SKILL_DIR}/scripts/drive-status.ts" --json --no-count` — waits for the reported PR head to
    equal local HEAD **without counting a round** (that flag is
    load-bearing, and omitting it stales every hold before the drain reads it
    back). The head is still counted exactly once — by § 1's gate at the top of
    the next round;
-6. drains the held batch from a **fresh** `drive-state.ts held` read, one item
+6. drains the held batch from a **fresh** `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" held` read, one item
    at a time — a `thread` through `resolve-held-thread.ts`, a `finding`
    through claim → `answer-summary-finding.ts` → release, giving a claim back
    on a failed dispatch — releasing each key the instant its own external
@@ -2035,13 +2045,13 @@ returned, which is the case this rule covers.
 |---|---|---|
 | `0` | Pushed, stamped, head-synced, batch drained | Continue to step 7 |
 | `3` | Refused *before* pushing: dirty tree, unconcluded git operation, unreadable tree | Commit or discard the leftovers, `git merge/cherry-pick/revert --abort`, then re-run |
-| `4` | Refused *before* pushing, in a repository with a CI hold (`ci-hold.ts ensure`): the PR-open required checks have not completed, the head moved, an interrupted hold release is still waiting for its full CI, or a hold label someone else owns is present | Read the `ci-hold:` line, wait for the checks it names, then re-run; leave an externally owned hold label to whoever added it |
+| `4` | Refused *before* pushing, in a repository with a CI hold (`bun "${CLAUDE_SKILL_DIR}/scripts/ci-hold.ts" ensure`): the PR-open required checks have not completed, the head moved, an interrupted hold release is still waiting for its full CI, or a hold label someone else owns is present | Read the `ci-hold:` line, wait for the checks it names, then re-run; leave an externally owned hold label to whoever added it |
 | `5` | The PR is no longer open | Two cases, both terminal: `guarded-push.ts` itself refused because the PR was already closed/merged (nothing was pushed), or the push succeeded and the PR closed/merged during the head-sync wait that follows it (`report.pushed` is `true`). Either way, stop — do not resolve anything against it. See [terminal-states.md](references/terminal-states.md) |
 | `2` | Usage error: an unknown flag, an extra argument, or no PR could be resolved | Fix the invocation and re-run; nothing ran |
 | `6` | Pushed and stamped, but at least one held item was **refused** | Each refusal is named with the refusing script's own exit code and diagnostic. Reconcile it via § 3 — re-hold if the reply still stands, resolve under whatever outcome actually applies if it does not — then re-run |
-| `11` | Another live **session in your tree** holds the drive lease | Almost always stop. `drive-state.ts clear-lease [PR]` only if you know that session is gone |
+| `11` | Another live **session in your tree** holds the drive lease | Almost always stop. `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" clear-lease [PR]` only if you know that session is gone |
 | `13` | Another live **working tree** is driving this PR | Stop. It names the tree, and its session pid when it has one |
-| `7` | Refused *before* pushing: an unresolved, unparked thread anchors a file this round's own non-merge commits touch, and its triage state isn't complete and current — never triaged at all, a current accepted/fix-dependent-moot reply with no hold recorded (a crash between `reply-to-thread.ts` and the hold), an unmarked merit reply on a thread that was never actually resolved (the identical crash, on the resolve side), or an existing hold that's gone stale (a newer comment superseded it, or the *same* comment was edited in place to a different outcome) | Each offending thread is named (id, path, url) in the reason **with its own remedy** — the cases above are not interchangeable, and the command names which one applies to each thread rather than leaving that for you to work out. Follow the printed remedy (re-run `triage-thread.ts` with no new post for a stale/crash-recovered hold or resolve, post a fresh reply first for a genuinely superseded one), or park it (§ 4) if `triage-thread.ts` itself refuses, then re-run |
+| `7` | Refused *before* pushing: an unresolved, unparked thread anchors a file this round's own non-merge commits touch, and its triage state isn't complete and current — never triaged at all, a current accepted/fix-dependent-moot reply with no hold recorded (a crash between `reply-to-thread.ts` and the hold), an unmarked merit reply on a thread that was never actually resolved (the identical crash, on the resolve side), or an existing hold that's gone stale (a newer comment superseded it, or the *same* comment was edited in place to a different outcome) | Each offending thread is named (id, path, url) in the reason **with its own remedy** — the cases above are not interchangeable, and the command names which one applies to each thread rather than leaving that for you to work out. Follow the printed remedy (re-run `bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts"` with no new post for a stale/crash-recovered hold or resolve, post a fresh reply first for a genuinely superseded one), or park it (§ 4) if `triage-thread.ts` itself refuses, then re-run |
 | `1` | A step failed: the push, the stamp, the head-sync wait, an unreadable batch, or the untriaged-thread check's own infra reads (`TRIAGE_CHECK_FAILED` — an unusable round base, an unreadable `held` batch, an unreadable `parked-keys` set, or a failed `list-unresolved-threads.ts` call) | If the failure is the push, the stamp, or the head-sync wait, nothing downstream ran. An unreadable batch can instead be a **re-read** after a stale item mid-drain — in that case earlier items in the same drain may already be dispatched; the report's `items` list is the record of what actually happened, not the summary line. A `TRIAGE_CHECK_FAILED` means nothing was pushed either — the check fails closed rather than guessing at whether a thread is triaged. Read the step's own diagnostic and re-run once it is addressed |
 
 If you are refused by `11` or `13`, the right response is almost never to clear
@@ -2079,15 +2089,15 @@ reconciliation trusts whichever qualifying reply is already posted and never
 checks that it answers its own thread, so before treating an inherited held
 reply as settled, re-read the thread's finding against the reply body. On a mismatch, take § 3's
 deliberate-supersession path rather than draining the hold: post a fresh
-reply with `reply-to-thread.ts`, then invoke `triage-thread.ts` on the thread,
+reply with `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/reply-to-thread.ts"`, then invoke `bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts"` on the thread,
 which finds that reply as the qualifying one, dispatches its outcome and
 replaces the stale hold; confirm a reconciled `accepted`/`moot` hold as § 3
 describes. `--cleanup-only` is only for a human thread deliberately left open.
 A `finding` hold has no reply on GitHub yet: its reason lives only in the
-state (`drive-state.ts held`), and `finish-round.ts` posts it through the
+state (`bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" held`), and `finish-round.ts` posts it through the
 claim → `answer-summary-finding.ts` → release path (§ Guardrails). Re-read
 that reason against the finding before re-running. On a mismatch, drop the
-stale hold with `drive-state.ts release-held [PR] --key K --if-present` — a
+stale hold with `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" release-held [PR] --key K --if-present` — a
 park alone leaves it in `held`, and the drain posts it anyway — then re-hold
 the finding with the correct reason (§ 3), or park it (§ 4) when the right
 answer needs a human. The same holds for code: a
@@ -2109,7 +2119,7 @@ something you must act on, not to run a clean round.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/mark-ready.ts [PR] --round N --reason "round N completed"
+bun "${CLAUDE_SKILL_DIR}/scripts/mark-ready.ts" [PR] --round N --reason "round N completed"
 ```
 
 `--round N` applies `pull_requests.mark_ready`: before the configured round,
@@ -2121,7 +2131,7 @@ or when the repository marks Ready only at convergence or never, it prints
 but the transition may still be owed: under `pull_requests.mark_ready:
 converged`, or a round number the drive converged before reaching. Unless the
 repository marks Ready `never` or the round runs with `--keep-draft`, run
-`mark-ready.ts [PR] --reason "converged"` without `--round`, which is the
+`bun "${CLAUDE_SKILL_DIR}/scripts/mark-ready.ts" [PR] --reason "converged"` without `--round`, which is the
 transition `drive.ts` makes at convergence, then stop. The reviewers it
 summons are the next gate's to wait for.
 
@@ -2153,7 +2163,7 @@ lives in the log is a verdict nobody weighs. Then refresh the handoff:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/drive-state.ts handoff [PR]
+bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" handoff [PR]
 ```
 
 Your per-round report is qualitative. The quantitative half — what the loop has
@@ -2196,7 +2206,7 @@ PR, driven or not, at any time:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/loop-metrics.ts [PR] [--json]
+bun "${CLAUDE_SKILL_DIR}/scripts/loop-metrics.ts" [PR] [--json]
 ```
 
 ```
@@ -2297,7 +2307,7 @@ there was never anything to escape.
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/defect-escape.ts --since YYYY-MM-DD --until YYYY-MM-DD [--limit N] [--json]
+bun "${CLAUDE_SKILL_DIR}/scripts/defect-escape.ts" --since YYYY-MM-DD --until YYYY-MM-DD [--limit N] [--json]
 ```
 
 **Pass `--until` whenever you are reproducing a recorded window.** A one-sided
@@ -2344,7 +2354,7 @@ ledger:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/fractal-metrics.ts [--pr-days N] [--days N] [--until YYYY-MM-DD] [--json] [--out FILE]
+bun "${CLAUDE_SKILL_DIR}/scripts/fractal-metrics.ts" [--pr-days N] [--days N] [--until YYYY-MM-DD] [--json] [--out FILE]
 ```
 
 It prints a verdict per metric (improved / flat / worse) against the recorded
@@ -2373,7 +2383,7 @@ accepted)?
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/fleet-health.ts [--days N] [--until YYYY-MM-DD] [--limit N] [--json] [--out FILE] [--post]
+bun "${CLAUDE_SKILL_DIR}/scripts/fleet-health.ts" [--days N] [--until YYYY-MM-DD] [--limit N] [--json] [--out FILE] [--post]
 ```
 
 One command produces every signal — ceremony ratio per epic, follow-up
@@ -2410,9 +2420,9 @@ rather than degrading past it.** The threshold is a dial, set per drive:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-drive.ts 123 --handoff-at 50         # the DEFAULT. alias: careful
-drive.ts 123 --handoff-at 75         # alias: eager
-drive.ts 123 --handoff-at never      # continuous. alias: continuous
+bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --handoff-at 50         # the DEFAULT. alias: careful
+bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --handoff-at 75         # alias: eager
+bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --handoff-at never      # continuous. alias: continuous
 ```
 
 `50` is the default because it is the safest point, not the only sensible one.
@@ -2442,7 +2452,7 @@ round-trips off the transcript and injects a wrap-up instruction some turns
 short of the cap. Under Codex it counts nothing: Codex's transcript is not in
 the format it reads, so it reports could not check and no warning ever comes
 ([plugin README § Codex notes](../../README.md#codex-notes)). **When such a
-warning fires, finish only the step in flight, run `drive-state.ts handoff
+warning fires, finish only the step in flight, run `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" handoff
 [PR]`, report, and end the turn** — do not open another triage-fix-validate
 cycle inside that margin. Why the counting is an approximation:
 [terminal-states.md](references/terminal-states.md) § The turn budget.
@@ -2477,8 +2487,8 @@ closes — locking only serialises writers against each other, never against the
 process being killed mid-sequence. So treat the file as what it honestly is: an
 **orientation** aid, current as of its last regeneration, not a dispatch
 source. Before acting on anything in it that matters — the held batch above
-all — re-read it fresh: `drive-state.ts held [PR]` / `get [PR]` /
-`parked-keys [PR]`. Step 6's `finish-round.ts` already does exactly this for
+all — re-read it fresh: `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" held [PR]` / `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" get [PR]` /
+`bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" parked-keys [PR]`. Step 6's `finish-round.ts` already does exactly this for
 the held batch — it reads `held` back from state, never from memory. The same
 discipline applies to every other field the file displays.
 
@@ -2609,7 +2619,7 @@ On verified convergence only:
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-${CLAUDE_SKILL_DIR}/scripts/announce-merge-ready.ts [PR] < followups.md
+bun "${CLAUDE_SKILL_DIR}/scripts/announce-merge-ready.ts" [PR] < followups.md
 ```
 
 It re-checks `drive-status.ts` itself and refuses unless the state is
@@ -2674,7 +2684,7 @@ unattended loop has nobody to notice it has stopped (mode 13 in
 | Knob | Default | Bounds |
 |------|---------|--------|
 | `GH_CALL_TIMEOUT` | 30s | one `gh` call |
-| `DRIVE_PR_HELPER_TIMEOUT` | 120s | one helper subprocess (`drive-status.ts --once`, `list-unresolved-threads.ts`, `summary-findings.ts`, `resolve-thread.ts`) |
+| `DRIVE_PR_HELPER_TIMEOUT` | 120s | one helper subprocess (`bun "${CLAUDE_SKILL_DIR}/scripts/drive-status.ts" --once`, `list-unresolved-threads.ts`, `summary-findings.ts`, `resolve-thread.ts`) |
 | `DRIVE_PR_PUSH_TIMEOUT` | 3600s | the `git push` itself, pre-push gates included |
 | `DRIVE_PR_PASS_TIMEOUT` | 5400s | one whole pass (`--pass-timeout`; `0` disables) |
 | `DRIVE_PR_FOREGROUND_WAIT_TIMEOUT` | 5400s | one command launched through `foreground-wait.ts` (a whole `finish-round.ts`, not just its push); an unusable value is refused at launch |
@@ -2761,12 +2771,12 @@ is the whole tree: a nested script's own `spawnSync` grandchild dies with it.
 channel from a live session — a human, or the orchestrating session that
 spawned this drive — toward a running `drive.ts`, in the same working tree.
 It is the only way to get a message *into* a running headless drive short of
-`drives.ts --stop` (which also stops the active pass). Append-only JSON Lines logs live
+`bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --stop` (which also stops the active pass). Append-only JSON Lines logs live
 under the gitignored `.context/drive-mailbox/`: `inbox.jsonl` (any sender may
 append a `note` or a `directive`) and `outbox.jsonl` (the driver alone appends
 acks and responses to it). `drive.ts` folds directive state at round
 boundaries. Notes stay in the inbox until a pass chooses to read them with
-`mailbox.ts check` (§ below); they do not control the drive.
+`bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" check` (§ below); they do not control the drive.
 
 **Every directive is mechanically enforced — `hold-push`, `pause` and
 `stop` — and none needs any action from a pass to honour it.** They act at
@@ -2784,10 +2794,10 @@ second check: `guarded-push.ts` arms the push it spawns
 command of the repository's `pre-push` hook, re-reads the directive and aborts
 the push before git transfers anything — `guarded-push.ts` then reports
 that as exit `17` too. Neither check holds the mailbox lock across the hook,
-so `mailbox.ts send` never blocks on a running push. The one window left is
+so `bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" send` never blocks on a running push. The one window left is
 git's own gap between the hook exiting and the transfer starting. The second
 check exists only where the repository wires it in: its hook manager runs
-`bun <skill-dir>/scripts/push-hold-recheck.ts` after every other `pre-push`
+`bun "<skill-dir>/scripts/push-hold-recheck.ts"` after every other `pre-push`
 command, skipping it when `$DRIVE_PR_HOLD_RECHECK_PR` is unset (a push nobody
 wrapped), and the hooks are installed in the clone. It is unarmed for a push
 not made through `guarded-push.ts`. A hold stays in force until a matching
@@ -2796,8 +2806,8 @@ not made through `guarded-push.ts`. A hold stays in force until a matching
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 
 ```bash
-bun ${CLAUDE_SKILL_DIR}/scripts/mailbox.ts send <pr> --kind directive --from <you> --command hold-push
-bun ${CLAUDE_SKILL_DIR}/scripts/mailbox.ts send <pr> --kind directive --from <you> --command resume --target hold-push
+bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" send <pr> --kind directive --from <you> --command hold-push
+bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" send <pr> --kind directive --from <you> --command resume --target hold-push
 ```
 
 **`pause` and `stop` control the driver's round loop, from `drive.ts` itself.**
@@ -2814,15 +2824,15 @@ remain one in-flight phase; use `hold-push` for a push gate. An unreadable
 mailbox stops the drive with exit `1`, never treating unknown directives as
 clear. The pause wait is bounded by `$DRIVE_PR_PAUSE_MAX_SEC` (default 1800
 seconds, valid range 1–86400); on expiry the drive exits `19` and releases its
-locks. A graceful stop exits `18`. `drives.ts --stop <PR>` requests immediate cancellation of the active
+locks. A graceful stop exits `18`. `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts" --stop <PR>` requests immediate cancellation of the active
 pass, followed by lock release only once termination is witnessed.
 
-A pass may run `mailbox.ts check <pr>` to read unseen notes — optional,
+A pass may run `bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" check <pr>` to read unseen notes — optional,
 advisory, and never a reason to change what a round does on its own; it
 exists for a human or orchestrator to leave context a pass can choose to
 read, not to inject instructions a pass must obey. `check` is a pure read
 and acknowledges nothing itself; a pass that wants a note marked seen calls
-`mailbox.ts ack <pr> --id ID` explicitly, once it has actually acted on it —
+`bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" ack <pr> --id ID` explicitly, once it has actually acted on it —
 see `mailbox.ts`'s own doc comment for why acking is not folded into
 `check` automatically.
 
@@ -2847,7 +2857,7 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
 - **Never resolve an `accepted` thread before its push lands, and never call
   `resolve-thread.ts` directly on a held item.** `resolve-held-thread.ts`
   verifies `--pushed-sha` against the PR's live head *and* this worktree's
-  clean HEAD, and — atomically, via `drive-state.ts claim-held --kind
+  clean HEAD, and — atomically, via `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" claim-held --kind
   thread` — that the hold's recorded round still matches the current one
   *and* `--pushed-sha` equals **this hold's own** recorded `verifiedSha`.
   Round equality alone is not enough: it only advances when a counting
@@ -2864,7 +2874,7 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
   (its `coderabbit-skip-review-comment-follow-up` marker, no outcome token)
   is compatible with the hold. Any other later comment — human, another bot,
   an unrecognized body — still refuses.
-- **Never keep the held batch in context alone.** `drive-state.ts hold` at
+- **Never keep the held batch in context alone.** `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold` at
   reply time, `held` to read it back. Releasing differs by kind: a `finding`
   needs an explicit `release-held --key K --token T` after
   `answer-summary-finding.ts` succeeds; a `thread`'s own successful
@@ -2872,7 +2882,7 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
   `release-held` on one.
 - **Never dispatch a held finding's external mutation without a live claim.**
   `claim-held --kind finding --pushed-sha "$(git rev-parse HEAD)"` first — a
-  non-zero exit means do not call `answer-summary-finding.ts` for that key,
+  non-zero exit means do not call `bun "${CLAUDE_SKILL_DIR}/scripts/answer-summary-finding.ts"` for that key,
   full stop, but the exits are not interchangeable: `1` usually means another
   driver's live claim (safe to continue with a different key) or a
   `--pushed-sha` that is not this hold's own (reconcile via § 3), but it also

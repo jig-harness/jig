@@ -56,7 +56,8 @@ import { renameWithRetry } from "../../../shared/rename-with-retry.ts";
  *   --dry-run        report each round's decision; never invoke the pass.
  *
  * The pass command is given as ARGV after `--`, and is executed directly —
- * never through a shell. An opaque command string run through a shell would
+ * with Windows batch shims adapted through cmd.exe by the process runner.
+ * An opaque command string run through a shell would
  * have to be proven, by walking it character by character tracking quote state,
  * to name the right PR in every `;`/`&&`/`||`/`|`-separated segment — because a
  * pass that silently targets the current branch's PR edits and resolves threads
@@ -65,7 +66,7 @@ import { renameWithRetry } from "../../../shared/rename-with-retry.ts";
  * test (resolve-review-comments' converge.ts takes the same interface for the
  * same reason).
  *
- *   drive.ts 123 --bots-only -- claude -p "/jig:drive-pr --bots-only 123"
+ *   bun drive.ts 123 --bots-only -- claude -p "/jig:drive-pr --bots-only 123"
  *
  * Exit codes mirror drive-status.ts, plus 6:
  *   0  converged (SHA-verified)

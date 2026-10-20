@@ -1,3 +1,4 @@
+import { spawnCommand } from "../../../../shared/windows-command.ts";
 import { shutdownRequested } from "../../../../shared/cleanup.ts";
 import {
   captureProcessOutput,
@@ -34,7 +35,7 @@ import { processTable } from "../../../../shared/process-table.ts";
  * quietly floored.
  */
 
-import { type SpawnOptions, spawn } from "node:child_process";
+import type { SpawnOptions } from "node:child_process";
 import {
   traceRunner,
   traceEnv,
@@ -638,8 +639,8 @@ const sleep = (ms: number): Promise<void> =>
  */
 
 /**
- * Spawn `argv` directly — never through a shell — and resolve with its
- * captured output. The deadline, when given, kills the child with SIGTERM,
+ * Spawn `argv` directly, or through cmd for Windows batch shims, and resolve
+ * with its captured output. The deadline, when given, kills the child with SIGTERM,
  * escalates to SIGKILL two seconds later, and then resolves on its own
  * authority rather than waiting for 'close' (see the call site: a surviving
  * grandchild holds the pipes open and would defeat the deadline entirely).
@@ -658,7 +659,6 @@ export const run = traceRunner<RunResult, RunOptions>(runProcess, {});
 function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
   return new Promise((resolve) => {
     if (shutdownRequested()) return;
-    const [cmd, ...args] = argv;
     // A DEADLINED child gets its own process group, so the deadline can kill
     // the whole tree rather than one process. `kill(pid)` reaches the child
     // only; anything it spawned — `git push`'s pre-push hook and the build and
@@ -691,9 +691,9 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
         opts.stderr ?? "pipe",
       ],
     };
-    let child: ReturnType<typeof spawn>;
+    let child: ReturnType<typeof spawnCommand>;
     try {
-      child = spawn(cmd ?? "", args, spawnOpts);
+      child = spawnCommand(argv, spawnOpts);
     } catch (e) {
       windows.dispose();
       const message = e instanceof Error ? e.message : String(e);
@@ -1244,7 +1244,10 @@ export function pidCheckCommand(
   const remote = host !== "" && host !== hostname();
   const target = remote ? platform : process.platform;
   if (target === undefined || target === "") return null;
-  const check = target === "win32" ? `Get-Process -Id ${pid}` : `ps -p ${pid}`;
+  const check =
+    target === "win32"
+      ? `powershell.exe -NoProfile -Command "Get-Process -Id ${pid}"`
+      : `ps -p ${pid}`;
   return remote ? `ssh ${host} ${check}` : check;
 }
 
