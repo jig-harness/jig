@@ -425,7 +425,8 @@ work as part of the plugin:
   (as `plugin/shared/vendor/js-yaml.mjs` is).
 - **Windows cancellation:** follow the scope and reconsideration conditions
   in [ADR-0007](docs/adr/ADR-0007-windows-cancellation-uses-captured-process-identities.md)
-  when changing process launch, cancellation or completion witnesses.
+  when changing process launch, cancellation or the evidence that a
+  cancellation completed.
 - **Description:** keep the frontmatter `description` (and an agent's) at 512
   characters or fewer; 1,024 is the hard limit. Every repository that installs
   the plugin pays for it in every session, so
