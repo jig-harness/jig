@@ -122,22 +122,34 @@ test.skipIf(process.platform === "win32")(
 );
 
 /** A system whose `kill` answers from `script` in order, its last answer
- * repeating: `ok`, or the error code it throws. Records every call and
- * warning. */
+ * repeating: `ok`, or the error code it throws. Its clock moves only when the
+ * code under test sleeps. Records every call with the clock's time, and every
+ * warning with the time it was given. */
 function scripted(script: string[], reapMs = 200) {
+  let clock = 0;
   const calls: [number, NodeJS.Signals | 0][] = [];
+  const times: number[] = [];
   const warnings: string[] = [];
+  const warnedAt: number[] = [];
   const io: GroupIo = {
     kill: (pid, signal) => {
       calls.push([pid, signal]);
+      times.push(clock);
       const answer = script[Math.min(calls.length, script.length) - 1];
       if (answer === "ok") return;
       throw Object.assign(new Error(`kill: ${answer}`), { code: answer });
     },
-    warn: (line) => warnings.push(line),
+    warn: (line) => {
+      warnings.push(line);
+      warnedAt.push(clock);
+    },
     reapMs,
+    now: () => clock,
+    sleep: async (ms) => {
+      clock += ms;
+    },
   };
-  return { io, calls, warnings };
+  return { io, calls, times, warnings, warnedAt };
 }
 
 test("a group probe answered EPERM is present, not gone, and not an error", () => {
@@ -149,7 +161,7 @@ test("a group probe answered EPERM is present, not gone, and not an error", () =
 
 test("a group that answers EPERM while exiting is waited for until ESRCH, not killed", async () => {
   const { io, calls, warnings } = scripted(["EPERM", "EPERM", "ESRCH"]);
-  await reapGroup(7, Date.now() + 5_000, io);
+  await reapGroup(7, 5_000, io);
   expect(calls).toEqual([
     [-7, 0],
     [-7, 0],
@@ -158,16 +170,40 @@ test("a group that answers EPERM while exiting is waited for until ESRCH, not ki
   expect(warnings).toEqual([]);
 });
 
-test("a group still answering EPERM after the grace period is killed, then reported", async () => {
-  const { io, calls, warnings } = scripted(["EPERM"], 150);
-  await reapGroup(7, Date.now() + 100, io);
-  expect(calls).toContainEqual([-7, "SIGKILL"]);
+test("a group still answering EPERM is waited for through the grace period before it is killed", async () => {
+  const { io, calls, times } = scripted(["EPERM"]);
+  await reapGroup(7, 300, io);
   const killed = calls.findIndex(([, signal]) => signal === "SIGKILL");
-  // Probed after the kill, until the reap window ran out.
-  expect(calls.slice(killed + 1).length).toBeGreaterThan(0);
+  expect(killed).toBeGreaterThan(0);
+  expect(times[killed]).toBeGreaterThanOrEqual(300);
+});
+
+test("a killed group still answering EPERM is probed through the reap window, then reported", async () => {
+  const { io, calls, times, warnings, warnedAt } = scripted(["EPERM"], 400);
+  await reapGroup(7, 100, io);
+  const killed = calls.findIndex(([, signal]) => signal === "SIGKILL");
+  expect(killed).toBeGreaterThan(0);
+  const killedAt = times.at(killed) ?? Number.NaN;
+  const after = times.slice(killed + 1);
+  // Probed repeatedly after the kill, the last probe at the window's end.
+  expect(after.length).toBeGreaterThan(1);
+  expect(after.at(-1)).toBeGreaterThanOrEqual(killedAt + 400);
   expect(warnings).toEqual([
     "spooled-run: process group 7 still has members after SIGKILL\n",
   ]);
+  expect(warnedAt[0]).toBeGreaterThanOrEqual(killedAt + 400);
+});
+
+test("a killed group that is reaped inside the reap window is not reported", async () => {
+  // EPERM through the grace period and the kill, then three more EPERM
+  // probes, then ESRCH: well inside a 400 ms window probed every 50 ms.
+  const script = ["EPERM", "EPERM", "EPERM", "ok", "EPERM", "EPERM", "EPERM"];
+  const { io, calls, times, warnings } = scripted([...script, "ESRCH"], 400);
+  await reapGroup(7, 100, io);
+  expect(calls[3]).toEqual([-7, "SIGKILL"]);
+  expect(calls.length).toBe(script.length + 1);
+  expect(times.at(-1)).toBeLessThan((times.at(3) ?? Number.NaN) + 400);
+  expect(warnings).toEqual([]);
 });
 
 test.skipIf(process.platform === "win32")(

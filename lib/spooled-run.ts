@@ -80,6 +80,10 @@ export interface GroupIo {
   warn: (line: string) => void;
   /** How long a killed group has to be reaped before it is reported. */
   reapMs: number;
+  /** The clock every wait is measured on, in milliseconds. */
+  now: () => number;
+  /** Pause between probes. */
+  sleep: (ms: number) => Promise<void>;
 }
 
 const SYSTEM: GroupIo = {
@@ -90,6 +94,8 @@ const SYSTEM: GroupIo = {
     process.stderr.write(line);
   },
   reapMs: 2_000,
+  now: () => Date.now(),
+  sleep: (ms) => Bun.sleep(ms),
 };
 
 /** Send a signal to a process group; 0 only asks whether it has members. */
@@ -109,15 +115,16 @@ export function signalGroup(
   }
 }
 
-/** Wait until the group has no process left or the deadline passes. */
+/** Wait until the group has no process left or the deadline, on `io.now`,
+ * passes. */
 async function waitGone(
   pid: number,
   deadline: number,
   io: GroupIo,
 ): Promise<boolean> {
   while (signalGroup(pid, 0, io) !== "gone") {
-    if (Date.now() >= deadline) return false;
-    await Bun.sleep(50);
+    if (io.now() >= deadline) return false;
+    await io.sleep(50);
   }
   return true;
 }
@@ -133,7 +140,7 @@ export async function reapGroup(
 ): Promise<void> {
   if (await waitGone(pid, deadline, io)) return;
   signalGroup(pid, "SIGKILL", io);
-  if (!(await waitGone(pid, Date.now() + io.reapMs, io)))
+  if (!(await waitGone(pid, io.now() + io.reapMs, io)))
     io.warn(
       `spooled-run: process group ${pid} still has members after SIGKILL\n`,
     );
