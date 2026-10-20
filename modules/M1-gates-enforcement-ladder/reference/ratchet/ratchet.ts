@@ -156,10 +156,11 @@ function git(args: string[], cwd: string): string | undefined {
   return r.code === 0 ? r.stdout.trim() : undefined;
 }
 
+/** NUL-delimited and untrimmed: a file name may begin or end with a space. */
 function listedFiles(tree: string, options: string[]): string[] {
-  const listed = git(["ls-files", ...options, "-z"], tree);
-  if (listed === undefined) throw new Error(`cannot list files in ${tree}`);
-  return [...new Set(listed.split("\0"))];
+  const r = run(["git", "ls-files", ...options, "-z"], tree);
+  if (r.code !== 0) throw new Error(`cannot list files in ${tree}`);
+  return [...new Set(r.stdout.split("\0").filter(Boolean))];
 }
 
 function grepCounts(

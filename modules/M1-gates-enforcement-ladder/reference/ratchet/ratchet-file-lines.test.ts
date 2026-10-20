@@ -73,6 +73,14 @@ describe("source file line ratchet", () => {
     expect(counts?.get("excess-lines")?.get("new.ts")).toBe(2);
   });
 
+  test("a file name with a leading space is measured under its own name", () => {
+    // Sorted first in the listing, where trimming the whole NUL-delimited
+    // output would alter the name.
+    const r = repo({ " huge.ts": lines(5), "one.ts": lines(1) }, wiring);
+    r.write(" huge.ts", lines(6));
+    expect(check(r, 1)).toContain(" huge.ts (2 → 3)");
+  });
+
   test("removing exclusions tightens the counter", () => {
     const r = repo({ "vendor/large.ts": lines(5) }, wiring);
     r.write(

@@ -366,25 +366,20 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
       // executed, deliberately: `drive.ts` resolves its state directory and
       // writes its driver log INTO it before reaching this guard, so by the
       // time the guard runs a stat failure is only reachable as a transient
-      // race that no deterministic fixture can stage. That is exactly the
-      // case at issue, and a verbatim pin beats a text-matching model for
-      // "does this code actually do X" — so the pin is on the refusal itself,
-      // and it fails if the omit-the-variable form ever returns.
+      // race that no deterministic fixture can stage. So the pin is
+      // structural: the empty-identity branch holds nothing but the
+      // never-returning `fail(1, …)`, the export follows that branch
+      // unconditionally at the same block level, and it is the only
+      // assignment of the variable. Any form that continues startup without
+      // a baseline breaks one of the three.
       const src = readFileSync(
         join(SCRIPTS, "lib", "driver", "main.ts"),
         "utf8",
       );
-      expect(src).toContain(
-        "could not establish the identity of the drive state directory",
+      expect(src).toMatch(
+        /\n( +)const stateDirIdentity = stateDirIdentityToken\(stateDir\);\n\1if \(stateDirIdentity === ""\) \{\n\1 {2}fail\(\n\1 {4}1,\n\1 {4}`drive\.ts: could not establish the identity of the drive state directory:`,\n(?:\1 {4}[^\n]*\n)*\1 {2}\);\n\1\}\n\1process\.env\.DRIVE_PR_STATE_DIR_IDENTITY = stateDirIdentity;\n/,
       );
-      expect(src).toContain(
-        "process.env.DRIVE_PR_STATE_DIR_IDENTITY = stateDirIdentity;",
-      );
-      // The superseded shape: exporting only when non-empty, i.e. treating an
-      // unreadable identity as "no baseline inherited".
-      expect(src).not.toMatch(
-        /if\s*\(\s*stateDirIdentity\s*!==?\s*(["'`])\1\s*\)\s*\{?\s*process\.env\.DRIVE_PR_STATE_DIR_IDENTITY/,
-      );
+      expect(src.match(/DRIVE_PR_STATE_DIR_IDENTITY\s*=/g)).toHaveLength(1);
     });
 
     it("carries a 64-bit dev/ino through the token without rounding", () => {
