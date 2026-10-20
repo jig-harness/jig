@@ -129,6 +129,19 @@ list of entry points: list the files run by path (a script a hook, a workflow
 or a skill runs) one by one, from where they are invoked, rather than a folder
 pattern.
 
+For source-file size, the portable `file-lines` counter counts excess physical
+lines above a configured limit across source and tests, including untracked files Git does not ignore.
+[Biome’s `noExcessiveLinesPerFile`](https://biomejs.dev/linter/rules/no-excessive-lines-per-file/js/)
+can enforce an absolute limit, but its one diagnostic per oversized file
+does not increase when that file grows further. Counting its diagnostics
+would miss that growth. Fallow’s `health.maxUnitSize` limits function lines;
+its `--max-file-size` option skips large files during discovery. Neither
+substitutes for a file-size ratchet that measures excess lines.
+Jig’s [wiring](../../tools/quality/ratchet.jsonc) uses a limit of 1,000 physical
+lines for source and tests alike. Lowering the limit tightens the rule; raising
+it is a loosening that requires a person to request the existing
+`Ratchet-Loosen` acknowledgement.
+
 ## Immutable third-party automation and updates
 
 Pinning and updating are one mechanism with two halves:

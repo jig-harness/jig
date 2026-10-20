@@ -131,7 +131,7 @@
  * Test seam (never set in prod):
  *   DRIVE_PR_TERMINAL_STATES_TEST_FILES  colon-separated `path=role` pairs
  *     (role is one of the CORPUS_FILES keys below) to scan instead of the
- *     real corpus. `terminal-states-consistency.test.ts` drives
+ *     real corpus. The `terminal-states*.test.ts` suites drive
  *     `runCheck` through it.
  *   DRIVE_PR_TERMINAL_STATES_TEST_REQUIRED  companion to the above (see
  *     `testRequiredIdentifiers`): a `;`-separated identifier list applied
@@ -158,6 +158,7 @@
  *     only a source seam.
  */
 
+import { driverSourceFiles } from "./terminal-state-source-files.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, delimiter, relative, resolve } from "node:path";
 import * as ts from "typescript/unstable/ast";
@@ -234,7 +235,7 @@ export interface CorpusFile {
    * `DRIVE_PR_TERMINAL_STATES_TEST_FILES` fixture leaves it unset too UNLESS
    * the companion `DRIVE_PR_TERMINAL_STATES_TEST_REQUIRED` env var is also
    * set (see `testRequiredIdentifiers()`) — that is how
-   * `terminal-states-consistency.test.ts` exercises this check end to end
+   * `terminal-states-required-identifiers.test.ts` exercises this check end to end
    * through `runCheck()`, on a synthetic fixture, without touching the real
    * corpus files at all.
    */
@@ -607,7 +608,7 @@ const REMAP_ROLE_SUFFIX = "+remap";
  * Exists so the `requiredIdentifiers` completeness check (see that field's
  * own doc comment on `CorpusFile`) is reachable end to end through
  * `runCheck()` from a synthetic fixture, not only unit-testable via
- * `findMissingRequired` in isolation — `terminal-states-consistency.test.ts`
+ * `findMissingRequired` in isolation — `terminal-states-required-identifiers.test.ts`
  * uses it for exactly that.
  */
 function testRequiredIdentifiers(): readonly string[] | undefined {
@@ -3976,7 +3977,7 @@ function driveTsModulePath(): string {
 function driveTsSourcePath(): string {
   return (
     process.env.DRIVE_PR_TERMINAL_STATES_TEST_DRIVE_TS_SOURCE ??
-    resolve(SKILL_ROOT, "scripts/drive.ts")
+    resolve(SKILL_ROOT, "scripts/lib/driver/settings.ts")
   );
 }
 
@@ -3992,7 +3993,7 @@ function leaseTsModulePath(): string {
 function leaseTsSourcePath(): string {
   return (
     process.env.DRIVE_PR_TERMINAL_STATES_TEST_LEASE_TS_SOURCE ??
-    resolve(SKILL_ROOT, "scripts/lib/state/lease.ts")
+    resolve(SKILL_ROOT, "scripts/lib/state/lease-model.ts")
   );
 }
 
@@ -4008,7 +4009,15 @@ export function driveStatusTsSourcePath(): string {
   );
 }
 
-export async function runCheck(): Promise<number> {
+interface CorpusScan {
+  broken: BrokenPair[];
+  silent: string[];
+  missingRequired: MissingRequired[];
+  scanned: number;
+  checked: number;
+}
+
+function scanDocumentedCorpus(): CorpusScan | 1 {
   const broken: BrokenPair[] = [];
   const silent: string[] = [];
   const missingRequired: MissingRequired[] = [];
@@ -4045,35 +4054,53 @@ export async function runCheck(): Promise<number> {
       silent.push(`${relative(SKILL_ROOT, path)} (${pairs.length} < ${floor})`);
       continue;
     }
-    for (const pair of pairs) {
-      checked++;
-      const entry = TERMINAL_STATES[pair.state];
-      // `additionalExitCodes` documents `drive.ts`'s own remap (CONVERGED's
-      // `0`) — real ONLY in a file that documents `drive.ts`'s own
-      // operator-facing exit, never `drive-status.ts`'s (see
-      // `documentsDriveTsRemap`'s own doc comment on `CorpusFile`). Applying
-      // it unconditionally to every non-header file would let a genuinely
-      // wrong `CONVERGED` → `0` row pass in `SKILL.md`'s own combined
-      // primary+annotation cell AND in `references/terminal-states.md`'s own
-      // table — both document `drive-status.ts`'s contract, same as the
-      // header, so "is this the header" is the wrong special case to check
-      // for (mutation-proven). Conversely, a file that DOES
-      // document the remap (`documentsDriveTsRemap: true`) shows ONLY the
-      // remapped code for that state, never `drive-status.ts`'s raw one —
-      // so there the raw `exitCode` is not itself valid either, and
-      // `additionalExitCodes` REPLACES it rather than extending it.
-      const validExitCodes =
-        entry === undefined
-          ? []
-          : unit.documentsDriveTsRemap
-            ? (entry.additionalExitCodes ?? [entry.exitCode])
-            : [entry.exitCode];
-      if (!validExitCodes.includes(pair.exitCode)) {
-        broken.push({ pair, validExitCodes });
-      }
-    }
+    checked += checkDocumentedPairs(unit, pairs, broken);
   }
 
+  return { broken, silent, missingRequired, scanned, checked };
+}
+
+function checkDocumentedPairs(
+  unit: CorpusFile,
+  pairs: DocumentedPair[],
+  broken: BrokenPair[],
+): number {
+  let checked = 0;
+  for (const pair of pairs) {
+    checked++;
+    const entry = TERMINAL_STATES[pair.state];
+    // `additionalExitCodes` documents `drive.ts`'s own remap (CONVERGED's
+    // `0`) — real ONLY in a file that documents `drive.ts`'s own
+    // operator-facing exit, never `drive-status.ts`'s (see
+    // `documentsDriveTsRemap`'s own doc comment on `CorpusFile`). Applying
+    // it unconditionally to every non-header file would let a genuinely
+    // wrong `CONVERGED` → `0` row pass in `SKILL.md`'s own combined
+    // primary+annotation cell AND in `references/terminal-states.md`'s own
+    // table — both document `drive-status.ts`'s contract, same as the
+    // header, so "is this the header" is the wrong special case to check
+    // for (mutation-proven). Conversely, a file that DOES
+    // document the remap (`documentsDriveTsRemap: true`) shows ONLY the
+    // remapped code for that state, never `drive-status.ts`'s raw one —
+    // so there the raw `exitCode` is not itself valid either, and
+    // `additionalExitCodes` REPLACES it rather than extending it.
+    const validExitCodes =
+      entry === undefined
+        ? []
+        : unit.documentsDriveTsRemap
+          ? (entry.additionalExitCodes ?? [entry.exitCode])
+          : [entry.exitCode];
+    if (!validExitCodes.includes(pair.exitCode)) {
+      broken.push({ pair, validExitCodes });
+    }
+  }
+  return checked;
+}
+
+function reportCorpusProblems({
+  broken,
+  silent,
+  missingRequired,
+}: CorpusScan): 1 | undefined {
   if (missingRequired.length > 0) {
     console.error(
       "A required (exit, state) identifier silently disappeared from a corpus file:\n",
@@ -4161,6 +4188,12 @@ export async function runCheck(): Promise<number> {
     return 1;
   }
 
+  return undefined;
+}
+
+async function checkDriverBindings(): Promise<
+  readonly DriverOnlyExitBinding[] | 1
+> {
   // ── drive.ts itself, not just the prose corpus above ──────────
   const modulePath = driveTsModulePath();
   const bindings = driverOnlyExitBindings(modulePath);
@@ -4199,6 +4232,10 @@ export async function runCheck(): Promise<number> {
     driveTsSource,
     DRIVER_ONLY_EXIT_NAMES,
     sourcePath,
+    "driverOnlyExitCode",
+    process.env.DRIVE_PR_TERMINAL_STATES_TEST_DRIVE_TS_SOURCE === undefined
+      ? "../status/terminal-states.ts"
+      : "./lib/status/terminal-states.ts",
   );
   if (provenanceMismatches.length > 0) {
     console.error(
@@ -4223,7 +4260,15 @@ export async function runCheck(): Promise<number> {
     return 1;
   }
 
-  const bareLiterals = await findBareLiteralExits(driveTsSource, sourcePath);
+  const driverSources =
+    process.env.DRIVE_PR_TERMINAL_STATES_TEST_DRIVE_TS_SOURCE === undefined
+      ? driverSourceFiles(resolve(SKILL_ROOT, "scripts"))
+      : [sourcePath];
+  const bareLiterals: Array<BareLiteralExit & { path: string }> = [];
+  for (const path of driverSources) {
+    const exits = await findBareLiteralExits(readFileSync(path, "utf8"), path);
+    bareLiterals.push(...exits.map((exit) => ({ ...exit, path })));
+  }
   if (bareLiterals.length > 0) {
     console.error(
       `${relative(SKILL_ROOT, sourcePath)} uses a bare exit-code literal instead of`,
@@ -4231,7 +4276,7 @@ export async function runCheck(): Promise<number> {
     console.error("its named TERMINAL_STATES-derived constant:\n");
     for (const exit of bareLiterals) {
       console.error(
-        `  ${relative(SKILL_ROOT, sourcePath)}:${exit.line}  ${describeBareLiteralExit(exit)}`,
+        `  ${relative(SKILL_ROOT, exit.path)}:${exit.line}  ${describeBareLiteralExit(exit)}`,
       );
     }
     console.error(
@@ -4248,6 +4293,12 @@ export async function runCheck(): Promise<number> {
     return 1;
   }
 
+  return bindings;
+}
+
+async function checkLeaseBindings(): Promise<
+  readonly DriverOnlyExitBinding[] | 1
+> {
   // ── lease.ts's out-of-band exit constants ──────────────────────
   const leaseModulePath = leaseTsModulePath();
   const leaseBindings = outOfBandExitBindings(leaseModulePath);
@@ -4317,6 +4368,10 @@ export async function runCheck(): Promise<number> {
     return 1;
   }
 
+  return leaseBindings;
+}
+
+async function checkDriveStatusBindings(): Promise<number> {
   // ── drive-status.ts's own bare-literal scan for the same two out-of-band
   // exit codes — it only consumes SESSION_LEASE_HELD_EXIT /
   // DRIVE_HELD_ELSEWHERE_EXIT, so it needs no binding/provenance check of its
@@ -4406,6 +4461,21 @@ export async function runCheck(): Promise<number> {
     return 1;
   }
 
+  return 0;
+}
+
+export async function runCheck(): Promise<number> {
+  const corpus = scanDocumentedCorpus();
+  if (typeof corpus === "number") return corpus;
+  const corpusProblem = reportCorpusProblems(corpus);
+  if (corpusProblem !== undefined) return corpusProblem;
+  const bindings = await checkDriverBindings();
+  if (typeof bindings === "number") return bindings;
+  const leaseBindings = await checkLeaseBindings();
+  if (typeof leaseBindings === "number") return leaseBindings;
+  const statusProblem = await checkDriveStatusBindings();
+  if (statusProblem !== 0) return statusProblem;
+  const { checked, scanned } = corpus;
   console.log(
     `✅ drive-pr terminal states: ${checked} documented (exit, state) pair(s) across ${scanned} file(s) all match TERMINAL_STATES,`,
   );

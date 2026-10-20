@@ -1,9 +1,20 @@
 // Jig's wiring for the M1 ratchet gate
 // (modules/M1-gates-enforcement-ladder/reference/ratchet/). Which rules are
 // ratcheted is not listed here: a rule at "warn" in biome.json, and a flag in
-// tsconfig.ratchet.json, is ratcheted by being there.
+// tsconfig.ratchet.json, is ratcheted by being there. The file-lines counter
+// holds the sum of lines above the source-file limit, including test code.
+// Generated output is fixed through its generator, never split by hand, so
+// both of its path forms (a generated directory, a `.generated.` name) and the
+// vendored copies Jig's derived files live in stay outside the scope.
 {
   "counters": [
+    {
+      "name": "source-size",
+      "format": "file-lines",
+      "limit": 1000,
+      "files": "\\.(ts|tsx|js|jsx|mjs|cjs|css|astro|html|sh)$",
+      "exclude": "(^|/)(vendor|node_modules|dist|fixtures|seeds|_?generated)/|\\.generated\\.[^/]+$"
+    },
     {
       "name": "biome",
       "format": "biome-json",

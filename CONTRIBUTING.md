@@ -104,6 +104,50 @@ bun modules/M0-instruction-architecture/reference/sync-skills-mirror.ts
   site up to date with the commits since its last check, recorded in
   `website/content-sync.yaml`.
 
+### Filing issues from this repository
+
+`/jig:file-issue` needs a [label taxonomy](GLOSSARY.md) to check the labels
+before it writes an issue. Jig's maintainers use the taxonomy in their
+maintained external standards checkout; the organization's label names and
+other tracker values stay outside this repository.
+
+On each machine, make that checkout available and merge this setting into
+the existing `issue_tracker` section of `$HOME/.jig/jig.yaml` (or
+`$JIG_HOME/jig.yaml` when `JIG_HOME` is set):
+
+```yaml
+issue_tracker:
+  taxonomy: /absolute/path/to/standards-checkout/policies/label-taxonomy.yaml
+```
+
+Use an absolute path: relative paths resolve against the repository being
+worked on, and `~` in the setting is not expanded. This user setting applies
+to every repository on the machine unless repository or environment
+configuration overrides it. Keep the path and the organization's taxonomy
+out of tracked files.
+
+From a Jig checkout, set `plugin_dir` to the installed Jig plugin's absolute
+path and check the resolved setting, the taxonomy, and the proposed labels:
+
+```sh
+plugin_dir=/absolute/path/to/installed/jig/plugin
+bun "$plugin_dir/skills/resolve-review-comments/scripts/jig-config.ts" issue_tracker.taxonomy
+bun "$plugin_dir/skills/file-issue/scripts/check-label-taxonomy.ts"
+bun "$plugin_dir/skills/file-issue/scripts/validate-labels.ts" --check-tracker "<label>" "<another-label>"
+```
+
+Replace the label placeholders with the intended labels, quoting names that
+contain spaces. The first command reports which configuration layer supplies the
+path; the second checks the taxonomy without tracker access. The last also
+needs credentials that can read labels in the configured tracker team.
+With the Linear adapter, provide `LINEAR_API_KEY` or `LINEAR_API_TOKEN` to
+the shell running the command, or sign in to the `linear` command-line
+client. An agent's MCP connection alone does not authenticate this script.
+
+On a fresh machine, finish this setup before filing. A missing or unreadable
+taxonomy stops the skill before it writes; a path in user configuration
+does not fetch the external checkout.
+
 ## Toolchain
 
 Runnable tooling and gates are written in Bun + TypeScript
@@ -175,6 +219,10 @@ the command that reruns that stage alone, and it exits 1 when a stage found
 violations and 2 when the only failures are stages that could not check.
 Two unrelated failures surface in one run rather than two; fix every stage
 the list names, not only the first.
+
+The repository test command uses 4 parallel file workers. Many suites spawn
+their own subprocesses; bounding file workers keeps those fixtures within
+their deadlines when several workspaces run checks on one machine.
 
 CI runs the same command on Linux for every pull request
 (`.github/workflows/gates.yml`); the catalog decides which of its jobs and
@@ -255,13 +303,19 @@ setting): adding those layers to Jig is future work.
 
 `bun run quality` (M1's [ratchet gate](modules/M1-gates-enforcement-ladder/reference/ratchet/README.md))
 fails a change that adds a finding to a rule at `warn` in `biome.json`, to a
-flag in `tsconfig.ratchet.json`, or a suppression comment, measured against
-the merge base. Fix the finding; do not suppress it. It also fails a change
+flag in `tsconfig.ratchet.json`, a suppression comment, or the total source
+lines above the 1000-line limit per file, measured against the merge base.
+The size counter covers source and test code, including website
+styles and templates; it excludes fixtures, seeds, vendored code and build
+outputs. Split by responsibility at the source. Do not pad the exclusion
+list or raise the limit to pass. Untracked source files enter the comparison
+unless Git ignores them. Fix the finding; do not suppress it. It also fails a change
 that loosens a rule, unless a commit carries
 `Ratchet-Loosen: <name>: <reason>` in its last paragraph. Never add that
 trailer on your own initiative: only when a person has asked for that
-loosening, and say so in the pull request. When the gate reports a rule at
-zero, promote it to `error` (or move the flag into `tsconfig.json`).
+loosening, and say so in the pull request. When the gate reports a lint or compiler rule at
+zero, promote it to `error` (or move the flag into `tsconfig.json`). Keep
+the source-size counter active at zero so that any excess line fails.
 
 ### Local hooks
 

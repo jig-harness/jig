@@ -121,6 +121,35 @@ jobs:
           tar -xzf anthropic-ai-claude-code-linux-x64-*.tgz
           chmod +x package/claude
           echo "$dir/package" >> "$GITHUB_PATH"
+      # Ubuntu's AppArmor refuses unprivileged user namespaces, which Chrome's
+      # sandbox needs. The design-brief renderer keeps the sandbox on because
+      # it renders untrusted bundles, so the runner gives Chrome's binary
+      # alone a profile that allows them, as Chromium's AppArmor guide
+      # describes, rather than lifting the restriction for every process.
+      # Exactly one profile may attach to the executable: two that match it
+      # equally deny its execution. So Ubuntu's shipped `chrome` profile is
+      # loaded and used when the image has it, and a profile of our own is
+      # added only when it does not.
+      - name: Allow Chrome's user-namespace sandbox
+        run: |
+          set -euo pipefail
+          shipped=/etc/apparmor.d/chrome
+          if [ -e "$shipped" ]; then
+            if ! sudo grep -Eq '^[[:space:]]*userns,' "$shipped"; then
+              echo "::error::$shipped attaches Chrome but does not allow user namespaces"
+              exit 1
+            fi
+            sudo apparmor_parser -r "$shipped"
+            exit 0
+          fi
+          sudo tee /etc/apparmor.d/jig-chrome > /dev/null <<'EOF'
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile jig-chrome /opt/google/chrome/chrome flags=(unconfined) {
+            userns,
+          }
+          EOF
+          sudo apparmor_parser -r /etc/apparmor.d/jig-chrome
       - name: Run gate set
         env:
           # The drive-pr-suite job and the website steps below run the
@@ -130,6 +159,10 @@ jobs:
           # fail here when it is missing instead of being skipped with a
           # warning.
           JIG_REQUIRE_BROWSER: "1"
+          # The runner also has Chromium, which the design-brief tests would
+          # otherwise prefer; the AppArmor profile above attaches to Chrome's
+          # own executable alone, so they launch that one.
+          JIG_TEST_CHROMIUM: /opt/google/chrome/chrome
           # And Claude Code is fetched above, so the plugin check fails
           # without its validator instead of skipping it.
           JIG_REQUIRE_CLAUDE: "1"

@@ -9,13 +9,13 @@ recurring defect. When touching this skill, check:
 - **State, lock and lease constants stay in sync with their consumers.** These
   values are not duplicated across every file: state shape lives in
   `scripts/lib/state/schema.ts`, lock timing in `scripts/lib/state/lock.ts`,
-  lease timing in `scripts/lib/state/lease.ts`, and the terminal-state set in
+  lease timing in `scripts/lib/state/lease-model.ts`, and the terminal-state set in
   `scripts/lib/status/terminal-states.ts`, restated by hand in `SKILL.md`,
   `README.md`, `references/terminal-states.md` and `scripts/drive-status.ts`'s
   header. If a change
   touches a state or timeout, verify every actual consumer and the
   documentation of that constant, not every file in this list.
-  `__tests__/terminal-states-consistency.test.ts` checks the terminal states
+  The `__tests__/terminal-states*.test.ts` suites check the terminal states
   against their exit codes mechanically.
 - **New subprocess calls register for group cancellation.** A new `run()`
   call under `scripts/**` (`scripts/lib/proc.ts`) either passes `timeoutSec`

@@ -390,7 +390,10 @@ first and to the end, CI runs the same command on every pull request, and the
 order is stated in [`CONTRIBUTING.md`](../../CONTRIBUTING.md#quality-gates).
 Its ratchet covers Biome's warnings
 (including Jig's GritQL rules in `tools/quality/grit/`), the compiler flags
-being burned down and suppression comments. The
+being burned down, suppression comments and excess lines above the
+configured source-file limit, including test code. File size uses total excess
+lines, so growth in an already oversized file still fails; generated and
+vendored files stay outside the source scope. The
 [`/jig:github-actions`](../../plugin/skills/github-actions/SKILL.md)
 skill checks workflow changes against this module's pin-and-update invariant,
 and [`/jig:fix-ci`](../../plugin/skills/fix-ci/SKILL.md) repairs a red
