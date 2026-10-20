@@ -71,7 +71,7 @@ a misspelt field fails loudly instead of dropping a claim.
 | `id`, `url`, `title` | The issue key and URL of the issue that carries the call, and the question as a title |
 | `owners` | The `hitl:<stakeholder>` facets, without the prefix (`technical`, `product`) |
 | `priority`, `reversibility` | Title-block fields. Reversibility says what can be undone and what cannot |
-| `verifiedAt` | `{ date, commit }`: the day and the commit at which the facts were checked |
+| `verifiedAt` | `{ date, commit, repositories? }`: the day and the commit at which the facts were checked. `repositories` maps the name of each other repository the sheet cites to the commit its facts were checked at (see [Cite another repository](#cite-another-repository)) |
 | `question` | The question in canonical vocabulary |
 | `currentBehaviour` | What the system does now. Each claim has a `source`: a repository-rooted path (`path#symbol`, `path:12-40`), an issue or an ADR |
 | `settled` | Optional. Ground that is already decided and is not reopened |
@@ -198,6 +198,58 @@ clone), and in two more cases:
 Re-verify each claim that cites a changed file, update `verifiedAt`, and
 render again. The guard knows that a file changed. It cannot know whether a
 claim is still true. Only a reader can check that.
+
+### Cite another repository
+
+A sheet whose facts span several repositories qualifies each citation of
+another repository with that repository's name: `beta:apps/api/auth.ts#check`,
+`beta:apps/api/auth.ts:12-40` or `beta:ADR-0002`. The name is lowercase
+(letters, digits, `-` and `_`, starting with a letter) and is followed by a
+colon and then a path or an ADR, never an issue key. A path may start with a
+digit (`beta:2026/auth.ts`, `beta:2026.10/auth.ts`); a number alone after the colon is a line suffix
+(`file.ts:12`), never a qualifier. In backticks the name goes inside
+them, and the path there may contain spaces, even in a first segment
+that starts with a digit:
+`` `beta:.run/Backend Dev.run.xml` ``, `` `beta:2026 Auth.ts` ``. An unqualified citation always
+means the repository the guard runs in, so two repositories that both number
+their ADRs from `ADR-0001` never read each other's file.
+
+Each qualified name needs two things, or the source is refused:
+
+- A commit in `verifiedAt.repositories`, because a commit of this repository
+  says nothing about another one's history:
+
+  ```json
+  "verifiedAt": {
+    "date": "2026-10-20",
+    "commit": "4f2a9c1",
+    "repositories": { "beta": "9be01d7" }
+  }
+  ```
+
+- A clone, configured in `.config/jig.yaml` under `sheets.repositories`
+  ([CONFIGURATION.md](../../../CONFIGURATION.md#procedure-skills)), as a path
+  relative to this repository's root or absolute. The clone must hold the
+  recorded commit and be current, since the guard compares each cited file
+  at that commit with the clone's working tree.
+
+  ```yaml
+  sheets:
+    repositories:
+      beta: ../beta
+  ```
+
+A qualified citation whose name has no recorded commit, and a `name:` placed
+like a qualifier that the rules above do not accept (`Beta:ADR-0002`,
+`beta:ENG-123`, `beta:` outside the backticks), make the source invalid:
+`validate` and `render` both refuse it with exit code `1`, as for any other
+source error. A name with no configured clone, a clone that is missing or is
+not the top of a git clone, and a recorded commit the clone lacks fail
+`validate` (it checks the clone only inside a git checkout) and make
+`render --require-fresh` exit `3`. Changed and unresolved files of another
+repository are listed with their qualifier. An unqualified path that is not in
+this repository stays unresolved and blocks `--require-fresh`; qualify it, or
+cite it by name in the prose, which the guard does not check.
 
 Fix each linter flag in the source, not in the rendered file, and render
 again.

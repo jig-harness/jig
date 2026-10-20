@@ -8,6 +8,8 @@
  * trace.
  */
 
+import { REPOSITORY_NAME, repositoryProblems } from "./freshness.ts";
+
 /** A claim with the place it was verified: `path#symbol`, `path:line`, an issue or an ADR. */
 export interface SourcedClaim {
   text: string;
@@ -145,17 +147,67 @@ export class Checker {
       if (Object.hasOwn(value, key)) each(value[key], `${path}.${key}`);
   }
 
-  /** `{ date, commit }`: the day the facts were checked and the commit they were checked at. */
+  /**
+   * `{ date, commit, repositories? }`: the day the facts were checked, the
+   * commit they were checked at, and for each other repository a citation
+   * names (`other:ADR-0002`) the commit its facts were checked at.
+   */
   verifiedAt(value: unknown, path: string): void {
-    if (this.object(value, path, ["date", "commit"], [])) {
-      this.date(value.date, `${path}.date`);
+    if (!this.object(value, path, ["date", "commit"], ["repositories"])) return;
+    this.date(value.date, `${path}.date`);
+    this.pattern(
+      value.commit,
+      COMMIT,
+      `${path}.commit`,
+      "a lowercase git commit hash",
+    );
+    if (Object.hasOwn(value, "repositories"))
+      this.recordedRepositories(value.repositories, `${path}.repositories`);
+  }
+
+  /** Repository name to the commit its facts were checked at. */
+  private recordedRepositories(value: unknown, path: string): void {
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      Array.isArray(value) ||
+      Object.keys(value).length === 0
+    ) {
+      this.fail(path, "must be an object of repository name to commit");
+      return;
+    }
+    for (const [name, commit] of Object.entries(value)) {
+      if (!REPOSITORY_NAME.test(name))
+        this.fail(
+          `${path}.${name}`,
+          "repository names are lowercase letters, digits, - and _, starting with a letter",
+        );
       this.pattern(
-        value.commit,
+        commit,
         COMMIT,
-        `${path}.commit`,
+        `${path}.${name}`,
         "a lowercase git commit hash",
       );
     }
+  }
+
+  /**
+   * Every repository a citation qualifies has a commit in
+   * `verifiedAt.repositories`: without one the citation could not be checked.
+   */
+  qualifiedCitations(citations: readonly string[], verifiedAt: unknown): void {
+    const recorded =
+      typeof verifiedAt === "object" && verifiedAt !== null
+        ? (verifiedAt as { repositories?: unknown }).repositories
+        : undefined;
+    const commits =
+      typeof recorded === "object" &&
+      recorded !== null &&
+      !Array.isArray(recorded)
+        ? (recorded as Record<string, string>)
+        : undefined;
+    for (const problem of repositoryProblems(citations, commits))
+      this.fail("$.verifiedAt.repositories", problem);
   }
 
   /** Terms with their meaning. */

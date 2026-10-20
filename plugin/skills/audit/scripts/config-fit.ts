@@ -71,6 +71,7 @@ import {
   reviewerSelection,
 } from "../../../shared/consumer.ts";
 import { adrConfig } from "../../adr/scripts/locate.ts";
+import { sheetRepositories } from "../../decide/scripts/lib/overlay.ts";
 import {
   parseChangelogSection,
   resolve as resolveChangelog,
@@ -92,7 +93,12 @@ import {
   sizePointsMismatch,
 } from "../../work-batch/scripts/lib/policy.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
+import { ExitError } from "../../../shared/cli.ts";
 import { swallow } from "../../../shared/errors.ts";
+import {
+  settingsRequirement,
+  validSettings,
+} from "../../design-brief-builder/scripts/contracts.ts";
 import { load } from "../../../shared/yaml.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
 import { taxonomyFindings } from "./lib/taxonomy-fit.ts";
@@ -848,11 +854,17 @@ function skillValidation(
       parseSeverityFormats((review as Config).severity_formats);
   });
   attempt("adr", () => adrConfig(path));
+  attempt("decide, explain (sheets)", () => sheetRepositories(config, root));
   attempt("changelog", () => changelogValidation(config, root));
   attempt("resolve-conflicts", () =>
     parseObligations(config.resolve_conflicts),
   );
   attempt("code-stats", () => parseCodeStatsConfig(config.code_stats));
+  attempt("design-brief-builder (handback)", () => {
+    const handback = at(config, "design_brief.handback");
+    if (handback !== undefined && !validSettings(handback))
+      throw new ExitError(2, settingsRequirement);
+  });
   // The size points are the cross-field rule's to report.
   const batchSizes = batchSizesOf(config);
   if (batchSizes !== null && sizePointsFindings(config).length === 0)

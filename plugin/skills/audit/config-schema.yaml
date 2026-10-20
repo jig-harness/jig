@@ -392,6 +392,11 @@ fields:
     type: path
     exists: required
     read_by: [adr, review]
+  sheets.repositories:
+    type: map
+    values_type: path
+    read_by: [decide, explain]
+    since: 0.69.0
   descar.lint_command:
     type: command
     read_by: [descar]
@@ -438,6 +443,33 @@ fields:
   design_brief.prototypes:
     type: path
     read_by: [design-brief-builder]
+  design_brief.handback.forbidden_terms:
+    type: list
+    items: string
+    read_by: [design-brief-builder]
+    since: 0.70.0
+  design_brief.handback.widths:
+    type: list
+    items: integer
+    nonempty: true
+    distinct: true
+    read_by: [design-brief-builder]
+    since: 0.70.0
+  design_brief.handback.rubric:
+    type: path
+    exists: required
+    read_by: [design-brief-builder]
+    since: 0.70.0
+  design_brief.handback.scorecard:
+    type: path
+    exists: required
+    read_by: [design-brief-builder]
+    since: 0.70.0
+  design_brief.handback.browser_executable:
+    type: path
+    exists: required
+    read_by: [design-brief-builder]
+    since: 0.70.0
   decide.policy_files:
     type: list
     items: path

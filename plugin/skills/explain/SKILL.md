@@ -58,6 +58,7 @@ at run time:
 |-------|--------------|-------------|
 | `explain.figure_build_command` | The command that builds one figure; the skill runs it with the figure's stem as the last argument | No figure build: write explainers without figures |
 | `adr.directory` | Where a bare `ADR-NNNN` citation resolves for the freshness guard | Detected as `/jig:adr` does (`docs/adr`, `doc/adr`, `docs/decisions`, …), else `docs/adr` |
+| `sheets.repositories` | Clones of the other repositories a sheet cites (`beta:ADR-0002`): a map from repository name to a path, relative to the repository root or absolute | None: a qualified citation is refused |
 | `decide.glossary_file` | The repository's canonical vocabulary | `CONTEXT.md` |
 
 ## When to make one, and when plain text is enough

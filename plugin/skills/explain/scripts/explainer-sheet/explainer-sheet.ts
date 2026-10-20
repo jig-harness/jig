@@ -23,11 +23,14 @@ import { join, resolve } from "node:path";
 import {
   checkFreshness,
   type Freshness,
+  refusalToPost,
   repositoryRoot,
 } from "../../../decide/scripts/sheet-kit/freshness.ts";
 import {
   adrDirectory,
+  assertRepositoriesConfigured,
   figureBuildCommand,
+  otherRepositories,
   readOptionalOverlay,
 } from "../../../decide/scripts/lib/overlay.ts";
 import { extractEmbedded } from "../../../decide/scripts/sheet-kit/html.ts";
@@ -153,6 +156,11 @@ function main(argv: string[]): number {
   switch (command) {
     case "validate": {
       const source = readSource(positional(args, "<source.json>"));
+      assertRepositoriesConfigured(
+        citations(source),
+        source.verifiedAt.repositories,
+        (problems) => new SourceError(problems),
+      );
       console.log(
         JSON.stringify({
           ok: true,
@@ -169,32 +177,23 @@ function main(argv: string[]): number {
       const root = repoRoot();
       let freshness: Freshness | { error: string };
       try {
+        const overlay = readOptionalOverlay(root);
         freshness = checkFreshness(
           citations(source),
           source.verifiedAt.commit,
           root,
-          adrDirectory(readOptionalOverlay(root), root),
+          adrDirectory(overlay, root),
+          otherRepositories(overlay, root, source.verifiedAt.repositories),
         );
       } catch (err) {
         freshness = { error: (err as Error).message };
       }
-      if (args.includes("--require-fresh")) {
-        if ("error" in freshness) {
-          console.error(`refusing to render for posting: ${freshness.error}`);
-          return 3;
-        }
-        if (freshness.changed.length > 0) {
-          console.error(
-            `refusing to render for posting: cited files changed since ${freshness.commit}:\n- ${freshness.changed.join("\n- ")}\nRe-verify the claims that cite them, update verifiedAt, and render again.`,
-          );
-          return 3;
-        }
-        if (freshness.unresolved.length > 0) {
-          console.error(
-            `refusing to render for posting: these cited paths do not exist at ${freshness.commit}, so the guard cannot check them:\n- ${freshness.unresolved.join("\n- ")}\nCite repository-rooted paths, then render again.`,
-          );
-          return 3;
-        }
+      const refusal = args.includes("--require-fresh")
+        ? refusalToPost(freshness)
+        : undefined;
+      if (refusal !== undefined) {
+        console.error(`refusing to render for posting: ${refusal}`);
+        return 3;
       }
       const figures = loadFigures(source, root);
       const out = resolve(

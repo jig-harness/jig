@@ -89,7 +89,12 @@ in the ADR directory (`adr.directory`; when it is not set, the directory
 `/jig:adr` detects, else `docs/adr`). The citation rules
 of the decision sheet apply unchanged
 ([`decision-sheet.md`](../../decide/references/decision-sheet.md#render-and-check),
-section "Render and check").
+section "Render and check"). That includes the qualified form for a citation
+of another repository: `beta:ADR-0002` or `beta:apps/api/auth.ts#check`, with
+the commit in `verifiedAt.repositories` and the clone in
+`sheets.repositories` ([Cite another
+repository](../../decide/references/decision-sheet.md#cite-another-repository)).
+A bare `ADR-NNNN` always means this repository.
 
 ## Figures
 
