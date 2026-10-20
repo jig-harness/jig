@@ -71,6 +71,7 @@ import {
   reviewerSelection,
 } from "../../../shared/consumer.ts";
 import { adrConfig } from "../../adr/scripts/locate.ts";
+import { sheetRepositories } from "../../decide/scripts/lib/overlay.ts";
 import {
   parseChangelogSection,
   resolve as resolveChangelog,
@@ -848,6 +849,7 @@ function skillValidation(
       parseSeverityFormats((review as Config).severity_formats);
   });
   attempt("adr", () => adrConfig(path));
+  attempt("decide, explain (sheets)", () => sheetRepositories(config, root));
   attempt("changelog", () => changelogValidation(config, root));
   attempt("resolve-conflicts", () =>
     parseObligations(config.resolve_conflicts),

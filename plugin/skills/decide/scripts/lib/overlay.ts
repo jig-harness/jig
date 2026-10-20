@@ -16,6 +16,7 @@ import { CANDIDATE_DIRS } from "../../../adr/scripts/locate.ts";
 import {
   type Clone,
   citedRepositories,
+  cloneCommitProblem,
   type OtherRepositories,
   REPOSITORY_NAME,
   repositoryProblems,
@@ -244,8 +245,10 @@ export const otherRepositories = (
 
 /**
  * Throws `error(problems)` when a citation names a repository with no
- * recorded commit or no configured clone. Outside a checkout there is no
- * configuration to check against, and a source with no qualified citation
+ * recorded commit, no configured clone, a clone that is not the top of a git
+ * clone, or a clone that lacks the recorded commit. Whether the cited files
+ * changed is the render's question, not this one. Outside a checkout there is
+ * no configuration to check against, and a source with no qualified citation
  * reads none.
  */
 export function assertRepositoriesConfigured(
@@ -257,5 +260,19 @@ export function assertRepositoriesConfigured(
   if (root === undefined || citedRepositories(citations).length === 0) return;
   const clones = sheetRepositories(readOptionalOverlay(root), root);
   const problems = repositoryProblems(citations, recorded, Object.keys(clones));
+  for (const name of citedRepositories(citations)) {
+    if (
+      !Object.hasOwn(clones, name) ||
+      !recorded ||
+      !Object.hasOwn(recorded, name)
+    )
+      continue;
+    const problem = cloneCommitProblem(
+      name,
+      (clones[name] as Clone).root,
+      recorded[name] as string,
+    );
+    if (problem) problems.push(problem);
+  }
   if (problems.length > 0) throw error(problems);
 }

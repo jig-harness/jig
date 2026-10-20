@@ -537,6 +537,19 @@ other_tool:
     );
   });
 
+  test("decide's sheet-repository validation refuses what it would refuse", () => {
+    const refused = (repositories: string) =>
+      ids(
+        fit({
+          ".config/jig.yaml": `sheets:\n  repositories: ${repositories}\n`,
+        }).report,
+      ).includes("rejected:decide, explain (sheets)");
+    expect(refused("{ Beta: ../beta }")).toBe(true);
+    expect(refused("{ 2beta: ../beta }")).toBe(true);
+    expect(refused('{ beta: "" }')).toBe(true);
+    expect(refused("{ beta: ../beta, gamma-2: /src/gamma }")).toBe(false);
+  });
+
   test("drive-pr's severity-format validation refuses what it would refuse", () => {
     const refused = (formats: string) =>
       ids(

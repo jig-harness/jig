@@ -13,6 +13,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { gitIdentityEnv } from "../../drive-pr/scripts/lib/proc.ts";
 import { parseSource as parseExplainer } from "../../explain/scripts/explainer-sheet/source.ts";
 import { parseSource as parseDecision } from "../scripts/decision-sheet/source.ts";
@@ -32,6 +33,17 @@ function cliEnv(): NodeJS.ProcessEnv {
   delete env.JIG_OVERLAY;
   return env;
 }
+/** Asserts a CLI run's exit code, printing its output when it differs. */
+const expectExit = (
+  r: ReturnType<typeof spawnSync>,
+  code: number,
+  label?: string,
+) =>
+  expectSpawnExit(
+    { exitCode: r.status, stdout: r.stdout, stderr: r.stderr },
+    code,
+    label,
+  );
 const DECISION_CLI = resolve(
   import.meta.dir,
   "../scripts/decision-sheet/decision-sheet.ts",
@@ -118,6 +130,21 @@ describe("the citation grammar", () => {
     ];
     expect(citedRepositories(text)).toEqual([]);
     expect(citedPaths(text)).toEqual(["src/a.ts"]);
+  });
+
+  it("reads a qualified path that starts with a digit or a hyphen", () => {
+    expect(citedPaths(["beta:2026/auth.ts", "beta:-tools/auth.ts"])).toEqual([
+      "beta:-tools/auth.ts",
+      "beta:2026/auth.ts",
+    ]);
+    expect(citedRepositories(["beta:2026/auth.ts"])).toEqual(["beta"]);
+  });
+
+  it("reads a qualified dotfile and a qualified single-segment directory", () => {
+    expect(citedPaths(["beta:.gitignore", "beta:services/"])).toEqual([
+      "beta:.gitignore",
+      "beta:services/",
+    ]);
   });
 
   it("reads a qualified path inside backticks, spaces included", () => {
@@ -292,10 +319,15 @@ describe("a qualifier the grammar does not accept", () => {
     "see:beta:ADR-0002",
     "beta:`apps/api/auth.ts`",
     "Beta:apps/api/auth.ts",
+    "Beta:.gitignore",
+    "Beta:services/",
+    "Beta:2026/auth.ts",
+    "beta:ENG-123",
   ])("is named, never read as a citation of this repository: %s", (text) => {
     const problems = repositoryProblems([text], { beta: "abc1234" });
-    expect(problems).toHaveLength(1);
-    expect(problems[0]).toContain("is placed like a repository qualifier");
+    expect(problems.length).toBeGreaterThan(0);
+    for (const problem of problems)
+      expect(problem).toContain("is placed like a repository qualifier");
   });
 
   it("leaves accepted forms, line suffixes and URLs alone", () => {
@@ -305,6 +337,7 @@ describe("a qualifier the grammar does not accept", () => {
           "beta:ADR-0002; (beta:apps/api/auth.ts:12-40)",
           "`beta:.run/Backend Dev.run.xml`",
           "src/a.ts:12; https://example.com/a.html; Makefile:12",
+          "beta:2026/auth.ts; beta:.gitignore; beta:services/",
         ],
         { beta: "abc1234" },
       ),
@@ -454,10 +487,34 @@ describe("the decision source", () => {
     it("validate rejects a qualified citation for a repository with no configured clone", () => {
       const { alpha } = consumer("review:\n  bots: []\n");
       const r = run(["validate", "decision.json"], alpha.dir);
-      expect(r.status).toBe(1);
+      expectExit(r, 1);
       expect(r.stderr).toContain(
         'repository "beta", which has no clone configured: set sheets.repositories.beta',
       );
+    });
+
+    it("validate rejects a clone that is missing, not the top of a git clone, or lacks the recorded commit", () => {
+      const missing = consumer(
+        "sheets:\n  repositories:\n    beta: {beta}/gone\n",
+      );
+      const gone = run(["validate", "decision.json"], missing.alpha.dir);
+      expectExit(gone, 1);
+      expect(gone.stderr).toContain("which does not exist");
+
+      const nested = consumer(
+        "sheets:\n  repositories:\n    beta: {beta}/docs\n",
+      );
+      const sub = run(["validate", "decision.json"], nested.alpha.dir);
+      expectExit(sub, 1);
+      expect(sub.stderr).toContain("not the top of a git clone");
+
+      const stranger = repoWith({ "x.md": "x" });
+      const unknown = consumer(
+        `sheets:\n  repositories:\n    beta: ${stranger.dir}\n`,
+      );
+      const lacking = run(["validate", "decision.json"], unknown.alpha.dir);
+      expectExit(lacking, 1);
+      expect(lacking.stderr).toContain("is not in the clone of");
     });
 
     it("validate accepts it once the clone is configured", () => {
@@ -466,7 +523,7 @@ describe("the decision source", () => {
       );
       const r = run(["validate", "decision.json"], alpha.dir);
       expect(r.stderr).toBe("");
-      expect(r.status).toBe(0);
+      expectExit(r, 0);
     });
 
     it("render --require-fresh passes, then refuses once the other repository's ADR changed", () => {
@@ -478,13 +535,13 @@ describe("the decision source", () => {
           ["render", "decision.json", "--require-fresh", "--out", "out"],
           alpha.dir,
         );
-      expect(render().status).toBe(0);
+      expectExit(render(), 0);
       writeFileSync(
         join(beta.dir, "docs/adr/ADR-0002-beta-decision.md"),
         "beta decision, amended",
       );
       const stale = render();
-      expect(stale.status).toBe(3);
+      expectExit(stale, 3);
       expect(stale.stderr).toContain("beta:docs/adr/ADR-0002-beta-decision.md");
     });
 
@@ -494,7 +551,7 @@ describe("the decision source", () => {
         ["render", "decision.json", "--require-fresh", "--out", "out"],
         alpha.dir,
       );
-      expect(r.status).toBe(3);
+      expectExit(r, 3);
       expect(r.stderr).toContain("has no clone configured");
     });
   });
@@ -546,6 +603,12 @@ describe("the explainer source", () => {
     );
   });
 
+  it("rejects a qualified issue key", () => {
+    expect(() =>
+      parseExplainer(minimal(["beta:ENG-123"], { beta: "1234567" })),
+    ).toThrow(/qualifies an issue key/);
+  });
+
   it("still rejects prose and a qualifier with nothing after it", () => {
     expect(() =>
       parseExplainer(minimal(["trust me"], { beta: "1234567" })),
@@ -569,13 +632,13 @@ describe("the explainer source", () => {
         env: cliEnv(),
       });
     const refused = run();
-    expect(refused.status).toBe(1);
+    expectExit(refused, 1);
     expect(refused.stderr).toContain("has no clone configured");
     mkdirSync(join(alpha.dir, ".config"));
     writeFileSync(
       join(alpha.dir, ".config/jig.yaml"),
       `sheets:\n  repositories:\n    beta: ${beta.dir}\n`,
     );
-    expect(run().status).toBe(0);
+    expectExit(run(), 0);
   });
 });

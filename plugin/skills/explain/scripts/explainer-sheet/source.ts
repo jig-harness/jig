@@ -13,7 +13,10 @@
  * or a malformed one, is an error.
  */
 
-import { citedPaths } from "../../../decide/scripts/sheet-kit/freshness.ts";
+import {
+  citedPaths,
+  LEADING_QUALIFIER,
+} from "../../../decide/scripts/sheet-kit/freshness.ts";
 import type { GlossaryEntry } from "../../../decide/scripts/sheet-kit/inline.ts";
 import {
   Checker,
@@ -106,9 +109,6 @@ const CITATION_SYMBOL = /^(?:#[\w.$@-]+|:\d+(?:-\d+)?)$/;
 /** An ADR, or an issue key such as `ENG-123` (any tracker key but `ADR`). */
 const CITATION_ID = /^(?:ADR-\d{3,4}|(?!ADR-)[A-Z][A-Z0-9]*-\d+)$/;
 
-/** A leading `name:` (inside the backticks of a quoted path) qualifies the citation with another repository, as the freshness guard reads it. */
-const QUALIFIER = /^(`?)[a-z][a-z0-9_-]*:(?=[A-Za-z_.@$])/;
-
 /** A trailing ` (note)`: display text, not part of what is cited. */
 const NOTE = /\s+\([^()]*\)$/;
 
@@ -132,9 +132,14 @@ const referenceOf = (segment: string): string => segment.replace(NOTE, "");
  * here instead of passing as a sheet with no checkable citation.
  */
 function segmentProblem(segment: string): string | undefined {
-  // `other:` names another repository; what follows is checked as in this one.
-  const reference = referenceOf(segment).replace(QUALIFIER, "$1");
-  if (CITATION_ID.test(reference)) return undefined;
+  // `other:` names another repository; what follows is checked as in this
+  // one, except that only a path or an ADR is qualified, never an issue key.
+  const unqualified = referenceOf(segment);
+  const reference = unqualified.replace(LEADING_QUALIFIER, "$1");
+  if (CITATION_ID.test(reference))
+    return reference === unqualified || reference.startsWith("ADR-")
+      ? undefined
+      : `${JSON.stringify(segment)} qualifies an issue key; a repository qualifier names a path or an ADR`;
   const quoted = /^`([^`\n]+)`$/.exec(reference);
   const ref = quoted ? (quoted[1] as string).trim() : reference;
   const at = ref.search(/[#:]/);

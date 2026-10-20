@@ -16,9 +16,11 @@ repository, and the freshness guard checks it against that repository.
   `sheets.repositories: { beta: ../beta }`, a map from the name to the
   clone's folder.
 
-  A qualified citation whose name has no configured clone or no recorded
-  commit fails `validate` and `render --require-fresh` with a message naming
-  the missing piece, instead of being skipped.
+  A qualified citation whose name has no recorded commit, or a malformed
+  qualifier, makes the source invalid (`validate` and `render` exit `1`). One
+  whose clone is not configured, not a git clone's top, or lacks the
+  recorded commit fails `validate` (exit `1`) and `render --require-fresh`
+  (exit `3`). Each names the missing piece instead of being skipped.
 
 ### Fixed
 

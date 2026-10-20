@@ -53,12 +53,27 @@ const DEFAULT_ADR_DIR = "docs/adr";
 export const REPOSITORY_NAME = /^[a-z][a-z0-9_-]*$/;
 
 /**
- * The `name:` that qualifies the citation after it. The next character must
- * start a path or an ADR and not be a digit, so `path:12-40`, `https://…` and
- * prose such as `note: x` keep their meaning.
+ * What may follow a qualifier's colon: a letter, `_`, `.`, `@` or `$`, or a
+ * segment that starts with a digit or `-` and goes on to a `/` or an
+ * extension (`2026/auth.ts`, `-tools/x.ts`). A line suffix (`path:12-40`),
+ * `https://…` and prose such as `note: x` keep their meaning.
  */
-const QUALIFIER = /(?<=^|[\s([`'",;])([a-z][a-z0-9_-]*):(?=[A-Za-z_.@$])/g;
-const QUALIFIED_SPAN = /^([a-z][a-z0-9_-]*):(?=[A-Za-z_.@$])(.*)$/s;
+const QUALIFIED_START = String.raw`(?=[A-Za-z_.@$]|[\w@$-]+(?:\/|\.[A-Za-z]))`;
+
+/** The `name:` that qualifies the citation after it. */
+const QUALIFIER = new RegExp(
+  String.raw`(?<=^|[\s([\`'",;])([a-z][a-z0-9_-]*):${QUALIFIED_START}`,
+  "g",
+);
+const QUALIFIED_SPAN = new RegExp(
+  String.raw`^([a-z][a-z0-9_-]*):${QUALIFIED_START}(.*)$`,
+  "s",
+);
+
+/** A leading qualifier on one citation, optionally inside its opening backtick: what the explainer's citation grammar strips before checking the rest. */
+export const LEADING_QUALIFIER = new RegExp(
+  String.raw`^(\`?)[a-z][a-z0-9_-]*:${QUALIFIED_START}`,
+);
 
 /**
  * Backtick spans are matched as complete pairs, in order, so a closing
@@ -90,13 +105,14 @@ interface Cited {
 }
 
 /**
- * Everything one citation text names. Each qualifier's colon is replaced by a
- * space of the same length, so the scanners see the qualified token as an
- * ordinary one and its position still says which qualifier it follows. An ADR
- * inside a qualified path (`other:docs/adr/ADR-0002-x.md`) belongs to that
- * path's repository.
+ * Everything one citation text names, and the qualifiers that qualify none of
+ * it (`beta:ENG-123`: a qualifier names a path or an ADR). Each qualifier's
+ * colon is replaced by a space of the same length, so the scanners see the
+ * qualified token as an ordinary one and its position still says which
+ * qualifier it follows. An ADR inside a qualified path
+ * (`other:docs/adr/ADR-0002-x.md`) belongs to that path's repository.
  */
-function scan(text: string): Cited[] {
+function scanText(text: string): { cited: Cited[]; idle: string[] } {
   const { paths, rest } = quotedPaths(text);
   const out: Cited[] = paths.map((path) => {
     const qualified = QUALIFIED_SPAN.exec(path);
@@ -112,6 +128,11 @@ function scan(text: string): Cited[] {
       return `${name} `;
     },
   );
+  const used = new Set<number>();
+  const qualifierAt = (start: number) => {
+    used.add(start);
+    return qualifiedAt.get(start);
+  };
   const pathRanges: {
     start: number;
     end: number;
@@ -121,7 +142,7 @@ function scan(text: string): Cited[] {
     for (const m of blanked.matchAll(pattern)) {
       const name = m[1] as string;
       const start = (m.index ?? 0) + m[0].length - name.length;
-      const repository = qualifiedAt.get(start);
+      const repository = qualifierAt(start);
       out.push({ repository, kind: "path", name });
       pathRanges.push({ start, end: start + name.length, repository });
     }
@@ -129,13 +150,18 @@ function scan(text: string): Cited[] {
     const start = m.index ?? 0;
     const within = pathRanges.find((r) => r.start <= start && start < r.end);
     out.push({
-      repository: within ? within.repository : qualifiedAt.get(start),
+      repository: within ? within.repository : qualifierAt(start),
       kind: "adr",
       name: m[0],
     });
   }
-  return out;
+  const idle = [...qualifiedAt]
+    .filter(([at]) => !used.has(at))
+    .map(([, name]) => `${name}:`);
+  return { cited: out, idle };
 }
+
+const scan = (text: string): Cited[] => scanText(text).cited;
 
 const scanAll = (citations: readonly string[]): Cited[] =>
   citations.flatMap(scan);
@@ -167,28 +193,29 @@ export const citedRepositories = (citations: readonly string[]): string[] =>
   ].sort();
 
 /**
- * A `name:` placed directly before an ADR, a backtick or a path, the way a
- * qualifier is, but that the grammar does not accept (`Beta:ADR-0002`,
- * `see:beta:ADR-0002`, `beta:` outside the backticks). Read as an ordinary
- * citation it would resolve in the consumer repository or not at all, so it
- * is named instead.
+ * A `name:` placed directly before an ADR, a backtick or anything path-shaped
+ * (a directory `dir/`, a dotfile, a file with an extension), the way a
+ * qualifier is. Every such `name:` is either a qualifier the scanner reads
+ * (`QUALIFIER` matches at the same place) or named as malformed
+ * (`Beta:ADR-0002`, `see:beta:ADR-0002`, `beta:` outside the backticks): read
+ * as an ordinary citation it would resolve in the consumer repository or not
+ * at all.
  */
 const NEAR_QUALIFIER =
-  /([^\s:`(['",;]+):(?=ADR-\d{3,4}\b|`|(?:[\w.@$-]+\/)+[\w.@$-]|[\w@$-][\w.@$-]*\.[A-Za-z])/g;
-const QUALIFIER_LEAD = /[\s([`'",;]/;
+  /([^\s:`(['",;]+):(?=ADR-\d{3,4}\b|`|[\w.@$-]+\/|[\w@$-]*\.[A-Za-z])/g;
 
 function malformedQualifiers(citations: readonly string[]): string[] {
   const found = new Set<string>();
+  const qualifier = new RegExp(QUALIFIER.source, "y");
   for (const text of citations)
     for (const m of text.matchAll(NEAR_QUALIFIER)) {
-      const at = m.index ?? 0;
-      const led = at === 0 || QUALIFIER_LEAD.test(text[at - 1] as string);
-      const accepted =
-        led &&
-        REPOSITORY_NAME.test(m[1] as string) &&
-        text[at + m[0].length] !== "`";
-      if (!accepted) found.add(`${m[1]}:`);
+      qualifier.lastIndex = m.index ?? 0;
+      const read = qualifier.exec(text)?.[0] === m[0];
+      if (!read || text[(m.index ?? 0) + m[0].length] === "`")
+        found.add(`${m[1]}:`);
     }
+  for (const text of citations)
+    for (const name of scanText(text).idle) found.add(name);
   return [...found].sort();
 }
 
@@ -403,6 +430,22 @@ function citedIn(cited: readonly Cited[], repository: string | undefined) {
   return { paths: names("path"), adrs: names("adr") };
 }
 
+/**
+ * Why the clone configured for `name` cannot be compared at `commit`: it is
+ * not the top of a git clone, or it lacks the commit. Undefined when it can.
+ */
+export function cloneCommitProblem(
+  name: string,
+  root: string,
+  commit: string,
+): string | undefined {
+  const problem = cloneProblem(name, root);
+  if (problem) return problem;
+  if (git(["cat-file", "-e", `${commit}^{commit}`], root).status !== 0)
+    return `verifiedAt.repositories.${name} ${commit} is not in the clone of "${name}" at ${root}. Fetch it, or re-verify the facts and set a commit that exists.`;
+  return undefined;
+}
+
 /** One other repository's cited files, compared at the commit recorded for it. */
 function inspectClone(
   name: string,
@@ -410,12 +453,8 @@ function inspectClone(
   commit: string,
   cited: { paths: string[]; adrs: string[] },
 ): Freshness {
-  const problem = cloneProblem(name, clone.root);
+  const problem = cloneCommitProblem(name, clone.root, commit);
   if (problem) throw new FreshnessError(problem);
-  if (git(["cat-file", "-e", `${commit}^{commit}`], clone.root).status !== 0)
-    throw new FreshnessError(
-      `verifiedAt.repositories.${name} ${commit} is not in the clone of "${name}" at ${clone.root}. Fetch it, or re-verify the facts and set a commit that exists.`,
-    );
   return inspect(cited, commit, clone.root, clone.adrDirectory, (path) =>
     qualify(name, path),
   );
