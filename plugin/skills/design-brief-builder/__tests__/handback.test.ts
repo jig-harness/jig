@@ -322,7 +322,7 @@ test("a bundle has one path per file system identity", () => {
     distinctPaths(["shots/caf\u00e9/a.png", "shots/cafe\u0301/b.png"], "b"),
   ).toThrow("differ only in case or Unicode normalization");
 });
-test("a merge refuses a result whose sides alias each other's paths", async () => {
+test("a merge refuses an output set, metadata included, whose paths alias each other", async () => {
   const { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } =
     await import("node:fs");
   const { tmpdir } = await import("node:os");
@@ -364,6 +364,11 @@ test("a merge refuses a result whose sides alias each other's paths", async () =
         "bundle/assets",
         "bundle/ASSETS/a.js",
         "assets and ASSETS name one entry as both a file and a directory",
+      ],
+      [
+        "bundle/a.txt",
+        "bundle/Handback-Report.json/notes.txt",
+        "Handback-Report.json and handback-report.json name one entry as both a file and a directory",
       ],
     ] as const) {
       exec(["git", "checkout", "-q", base]);

@@ -389,6 +389,8 @@ function lostHunks(
     result?.toString() ?? "",
   ).map((hunk) => ({ file, hunk, acknowledged: false }));
 }
+/** The files writeMetadata() writes into every merge output. */
+const metadataPaths = ["README.md", "handback-report.json"];
 function writeMetadata(output: string, report: Report): void {
   const previous = existsSync(join(output, "README.md"))
     ? readFileSync(join(output, "README.md"), "utf8")
@@ -473,8 +475,10 @@ export function mergeBundle(
     );
     if (result) merged.push([path, result]);
   }
+  // The output set is the merged files plus what writeMetadata() adds, so a
+  // returned entry aliasing a metadata destination is refused before writing.
   distinctPaths(
-    merged.map(([path]) => path),
+    [...new Set([...merged.map(([path]) => path), ...metadataPaths])],
     "merged bundle",
   );
   mkdirSync(output, { recursive: true });
