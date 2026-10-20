@@ -60,22 +60,101 @@ const CHUNK = 64 * 1024;
 export const MAX_LINE = 4 * 1024 * 1024;
 const GROUPS = process.platform !== "win32";
 
-/** Send a signal to a process group; false when no process of it is left. */
-function signalGroup(pid: number, signal: NodeJS.Signals | 0): boolean {
+/** What a signal to a process group found. */
+export type GroupState =
+  /** A member took the signal. */
+  | "signalled"
+  /** Members exist and none could be signalled. macOS answers so for a group
+   * whose members are exiting but not yet reaped, whoever owns them; a member
+   * of another user gets the same answer. It is not proof the group is gone. */
+  | "unsignalable"
+  /** No process of the group is left. */
+  | "gone";
+
+/** The calls the group handling makes to the system; tests replace them to
+ * produce answers a real process gives only in a race. */
+export interface GroupIo {
+  /** `process.kill`: throws with the system's error code. */
+  kill: (pid: number, signal: NodeJS.Signals | 0) => void;
+  /** Report a line to the operator. */
+  warn: (line: string) => void;
+  /** How long a killed group has to be reaped before it is reported. */
+  reapMs: number;
+  /** The clock every wait is measured on, in milliseconds. */
+  now: () => number;
+  /** Pause between probes. */
+  sleep: (ms: number) => Promise<void>;
+}
+
+const SYSTEM: GroupIo = {
+  kill: (pid, signal) => {
+    process.kill(pid, signal);
+  },
+  warn: (line) => {
+    process.stderr.write(line);
+  },
+  reapMs: 2_000,
+  now: () => Date.now(),
+  sleep: (ms) => Bun.sleep(ms),
+};
+
+/** Send a signal to a process group; 0 only asks whether it has members. */
+export function signalGroup(
+  pid: number,
+  signal: NodeJS.Signals | 0,
+  io: GroupIo = SYSTEM,
+): GroupState {
   try {
-    process.kill(-pid, signal);
-    return true;
+    io.kill(-pid, signal);
+    return "signalled";
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ESRCH") return "gone";
+    if (code === "EPERM") return "unsignalable";
     throw error;
   }
 }
 
+/** Wait until the group has no process left or the deadline, on `io.now`,
+ * passes. */
+async function waitGone(
+  pid: number,
+  deadline: number,
+  io: GroupIo,
+): Promise<boolean> {
+  while (signalGroup(pid, 0, io) !== "gone") {
+    if (io.now() >= deadline) return false;
+    await io.sleep(50);
+  }
+  return true;
+}
+
 /** Wait until the group has no process left or the deadline passes, then
- * kill what is left. */
-async function reapGroup(pid: number, deadline: number): Promise<void> {
-  while (signalGroup(pid, 0) && Date.now() < deadline) await Bun.sleep(50);
-  signalGroup(pid, "SIGKILL");
+ * kill what is left. A group that still answers after the kill is reported,
+ * not assumed gone: its members are exiting slowly, or beyond this process's
+ * reach. */
+export async function reapGroup(
+  pid: number,
+  deadline: number,
+  io: GroupIo = SYSTEM,
+): Promise<void> {
+  if (await waitGone(pid, deadline, io)) return;
+  signalGroup(pid, "SIGKILL", io);
+  if (!(await waitGone(pid, io.now() + io.reapMs, io)))
+    io.warn(
+      `spooled-run: process group ${pid} still has members after SIGKILL\n`,
+    );
+}
+
+/** Send a signal to the command's group, or to the command alone (`direct`)
+ * where there are no groups or no member of the group took it. */
+export function signalCommand(
+  pid: number,
+  name: NodeJS.Signals,
+  direct: (name: NodeJS.Signals) => void,
+  io: GroupIo = SYSTEM,
+): void {
+  if (!GROUPS || signalGroup(pid, name, io) !== "signalled") direct(name);
 }
 
 /** Run `command`, spooling its standard output and error to files. Throws
@@ -100,9 +179,8 @@ export async function spooledRun(
       stderr: errFd,
       detached: GROUPS,
     });
-    const signal = (name: NodeJS.Signals) => {
-      if (!GROUPS || !signalGroup(child.pid, name)) child.kill(name);
-    };
+    const signal = (name: NodeJS.Signals) =>
+      signalCommand(child.pid, name, (direct) => child.kill(direct));
     const forward = (name: NodeJS.Signals) => {
       interrupted ??= name;
       signal(name);
