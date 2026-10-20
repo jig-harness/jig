@@ -1609,3 +1609,17 @@ make, use the entry's term instead.
   skill (`code_stats.classify_command`) when globs cannot describe its
   layout: it reads the tracked paths and prints, per file, the area, kind,
   language or module that overrides the skill's own classification.
+
+## External precondition
+
+A fact outside the repository that delivery depends on, such as branch
+protection or a workflow identity's permission to read a secret. Its registry
+declares intended state; a scheduled read proves it under the consuming
+identity. See [M10](modules/M10-environments-deploy/README.md#external-preconditions).
+
+## Reconciler
+
+A process that compares intended and observed state and maintains the
+corresponding record. For external preconditions, it maintains one current
+tracker issue while anything fails and closes it after recovery. See
+[M11](modules/M11-process-observability/README.md#one-current-issue-for-external-preconditions).

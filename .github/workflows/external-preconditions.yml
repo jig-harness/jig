@@ -1,0 +1,58 @@
+# Daily live observation of the intended host state in the external registry.
+# Uses the release App to read its branch and the workflow token only to
+# reconcile one GitHub issue. Neither identity changes host settings.
+name: external-preconditions
+on:
+  schedule:
+    - cron: "41 6 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+# Every main run observes the newest main, has no inputs, and reconciles the same
+# complete registry. One pending observation therefore covers an older one;
+# serialization prevents simultaneous issue creation.
+concurrency:
+  # Rejected dispatches from other refs cannot displace a pending main run.
+  group: external-preconditions-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
+  cancel-in-progress: false
+jobs:
+  reject-ref:
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - run: |
+          echo 'Dispatch external-preconditions from main.' >&2
+          exit 1
+  observe:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The existing release environment admits main only and holds the App key.
+    environment: release
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+      - name: Test the observer before it maintains an issue
+        run: bun test modules/M10-environments-deploy/reference/external-preconditions/ scripts/check-external-preconditions.test.ts
+      - name: Mint a read-only token for the consuming identity
+        id: app
+        # The final step records an unavailable reader identity as red.
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-administration: read
+      - name: Observe and reconcile the registry issue
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PRECONDITIONS_ISSUE_TOKEN: ${{ github.token }}
+        run: bun scripts/check-external-preconditions.ts
