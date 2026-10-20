@@ -11,6 +11,8 @@ This folder holds:
 - [adr/](adr/): Jig's standing decisions, as numbered decision records.
 - [dispositions.md](dispositions.md): how to lean when several approaches are
   viable and no rule decides, each default with the condition that changes it.
+- [LIFECYCLE.md](LIFECYCLE.md): Jig's own delivery loop, one table of stages
+  with the skill that owns each and what it hands on.
 
 ## Kinds of document
 
@@ -30,7 +32,7 @@ kind, its README included.
 | Decisions | [adr/](adr/) | amended or superseded, never rewritten |
 | Instructions | the `AGENTS.md` files, [CONTRIBUTING.md](../CONTRIBUTING.md) they point to, and the policies it points to: [GOVERNANCE.md](../GOVERNANCE.md), [SECURITY.md](../SECURITY.md), [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md), [TRADEMARK.md](../TRADEMARK.md) | in the pull request that changes the rule |
 | Terms | [GLOSSARY.md](../GLOSSARY.md) | a term enters in the commit that first uses it |
-| Reference | every document no other row places: `SKILL.md`, [CONFIGURATION.md](../plugin/CONFIGURATION.md), the skills' references, and the READMEs outside the doctrine and plans directories | describes what exists now; changes with what it describes |
+| Reference | every document no other row places: [LIFECYCLE.md](LIFECYCLE.md), `SKILL.md`, [CONFIGURATION.md](../plugin/CONFIGURATION.md), the skills' references, and the READMEs outside the doctrine and plans directories | describes what exists now; changes with what it describes |
 | Doctrine | [modules/](../modules/README.md), [principles/](../principles/README.md), [profiles/](../profiles/README.md), [adoption/](../adoption/brownfield.md), [FACTORY.md](../FACTORY.md), [FEATURES.md](../FEATURES.md), [dispositions.md](dispositions.md) | rewritten to stay current, never appended to |
 | Plans | [design/plan.md](../design/plan.md), the public [ROADMAP.md](../ROADMAP.md) (the same items, for the site's readers; `bun run gates` keeps them matched), [design/](../design/README.md) | open work only; an item and its design leave when it is finished |
 | History | [CHANGELOG.md](../CHANGELOG.md) (written from [change notes](../changes/README.md) by the release step), the audit's dated [calibration runs](../plugin/skills/audit/calibration/), git, pull requests | appended to; never edited to state what is true now |

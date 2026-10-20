@@ -216,7 +216,6 @@ Practices a working repository validated, for modules that exist today:
   - the execution-plan format the pickup skill reads;
   - a skill that runs the post-merge stage M7 states, for any repository (the
     stage and its criterion are in [M7](../modules/M7-pr-lifecycle-review/README.md));
-  - a lifecycle map with a check that every named skill exists.
 - **M0, M4 and M5**:
   - a reference generator for the model roster, when the working tool moves
     here;

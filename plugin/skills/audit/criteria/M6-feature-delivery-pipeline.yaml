@@ -129,6 +129,41 @@ criteria:
       - "sub-issues carry flag labels (e.g. has-migration, api-change, hitl)"
       - "the labels select downstream gates/reviews through M9 / M3, mechanically"
 
+  - id: lifecycle-map-published
+    level: lite
+    requires: convention
+    since: next
+    statement: >-
+      The delivery loop is published as one stage map, linked from the
+      instruction file every session loads; each stage is named, not numbered,
+      and names its owner and the artifact it hands on.
+    observe:
+      - "one document holds a table of the loop's stages, each with an owner and a handoff artifact"
+      - "the universal instruction file links that document"
+
+  - id: lifecycle-owners-resolve-gated
+    level: standard
+    requires: mechanical
+    since: next
+    statement: >-
+      A check fails when the lifecycle map names a skill, command, script or
+      document that does not resolve, and it runs in CI.
+    observe:
+      - "a check reads the map's owners and resolves each against the repository's skills, scripts and files"
+      - "CI runs the check on every pull request"
+
+  - id: lifecycle-skills-on-the-map
+    level: strict
+    requires: mechanical
+    since: next
+    statement: >-
+      Every skill the repository ships appears on the lifecycle map, as a
+      stage's owner or in its table of skills outside the loop, and the check
+      fails when one is missing (expected-absent for a repository that ships
+      no skill).
+    observe:
+      - "the lifecycle map check lists the directories of the skills the repository ships and fails a skill the map never names"
+
   - id: design-loop-feedback-contract
     level: strict
     requires: convention

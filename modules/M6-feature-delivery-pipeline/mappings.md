@@ -194,11 +194,47 @@ Add those values to your schema, and add the schema's required fields
 (`lifecycle`, `owner`, `last_updated`, `tags`) to your copies of the stage
 templates.
 
+## The lifecycle map
+
+The [lifecycle map](templates/LIFECYCLE.md) names an owner per stage, and the
+[lifecycle map gate](reference/lifecycle-map/README.md) resolves each owner
+against the places a repository keeps what it names. The owner is written as
+a code span, so the gate can read it.
+
+| Owner is | Written as | Resolved against |
+|----------|------------|------------------|
+| A skill in a plugin | `/<plugin>:<skill>` | `--skills <plugin>=<dir>`: `<dir>/<skill>/SKILL.md`, the plugin's `skills/` directory |
+| A repository's own skill or command | `/<name>` | `--skills <dir>`: `.claude/skills/<name>/SKILL.md` or `.claude/commands/<name>.md`; the [skills mirror](../M0-instruction-architecture/mappings.md#cross-runtime-skill-discovery-the-symlink-mirror) makes the same directory serve Codex, so one entry covers both runtimes |
+| A package script | `bun run <script>`, `npm run <script>`, `pnpm run <script>`, `yarn run <script>` | `scripts` in `package.json` (`--package-json`) |
+| A script in the repository | `bun <path>` or `<path>` | the file, under `--root` |
+| A tool outside the repository | `gh`, `make deploy` | only when declared: `--external gh` |
+| A document, or a person | a link | the file the link reaches, relative to the map |
+
+A runtime with no skill directory the gate can read (a hosted agent whose
+skills live in its service) names those stages' owners as a document that
+says how the stage is run, and links it.
+
+```yaml
+# .github/workflows/gates.yml — a step beside the other documentation checks
+- name: The lifecycle map names only owners that exist
+  run: >-
+    bun "$M6"/reference/lifecycle-map/check-lifecycle-map.ts docs/LIFECYCLE.md
+    --skills <plugin>=<plugin-dir>/skills --skills .claude/skills
+    --cover <plugin-dir>/skills --linked-from AGENTS.md
+```
+
+As with the other two gates, run the script from the base the change targets
+(the `M6` variable above), never from the change's own tree, and read the map
+and the skill directories as data; a change that rewrites the gate cannot then
+report itself clean. `--cover` is for a repository that ships skills and
+wants none left off the map; a repository that only uses a plugin leaves it
+out.
+
 ## CI providers
 
-Any provider works — both gates use Bun and TypeScript with self-tests. The only
+Any provider works — the three gates use Bun and TypeScript with self-tests. The only
 provider-specific piece is the changed-files query (`git diff --name-only`
 against the merge base), shown above for GitHub Actions and GitLab CI. Run the
 required-sections gate on **changed stage docs** and the stage-review-record
-gate as a **merge gate**; [CI](../../GLOSSARY.md) is the authority (see
+gate as a **merge gate**, and the lifecycle map gate with the other documentation checks; [CI](../../GLOSSARY.md) is the authority (see
 [M1](../M1-gates-enforcement-ladder/)).
