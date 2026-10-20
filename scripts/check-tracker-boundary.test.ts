@@ -152,6 +152,15 @@ describe("tokens", () => {
     ['from subprocess \\\n    import run\nrun("linear")'],
     ['import subprocess \\\n    as sp\nsp.run("linear")'],
     ['import subprocess as sp\nsp \\\n    .run("linear")'],
+    [
+      'from subprocess import (\n  # select the launcher (portable)\n  run as launch,\n)\nlaunch("linear", shell=False)',
+    ],
+    ['import os, subprocess as sp\nsp.run("linear")'],
+    ['import os as o, subprocess as sp\nsp.run("linear")'],
+    ['asyncio.create_subprocess_exec("linear", "issue", "create")'],
+    ['os.spawnlp("linear", "linear", "issue")'],
+    ['from asyncio import create_subprocess_exec as cse\ncse("linear")'],
+    ['import asyncio as aio\naio.create_subprocess_exec("linear")'],
   ])("a Python run is found: %s", (code) => {
     expect(violations("plugin/x.py", code)).toMatchObject([
       { rule: "tracker-boundary", file: "plugin/x.py" },
@@ -163,6 +172,7 @@ describe("tokens", () => {
     ['record("linear", adapter);'],
     ['const note = "// not a comment"; log("linear", note);'],
     ['from subprocess import PIPE\nrun("linear")'],
+    ['import subprocess\nimport os, json as run\nlog("linear")'],
   ])("a call that does not launch the client is not: %s", (code) => {
     expect(violations("plugin/x.ts", code)).toEqual([]);
   });
@@ -172,6 +182,19 @@ describe("tokens", () => {
     expect(violations("plugin/x.ts", text)).toEqual([]);
     expect(performance.now() - started).toBeLessThan(2_000);
   });
+  test.each([
+    [`const run = ${" ".repeat(2_000)}value;\n`.repeat(10)],
+    [`const run = ${" /* c */".repeat(500)}value;\n`.repeat(10)],
+    [`const run = ${"a.".repeat(20_000)}value;`],
+    [`from subprocess import (${" x,".repeat(20_000)}`],
+  ])(
+    "a binding that names no launcher is matched in linear time: %#",
+    (text) => {
+      const started = performance.now();
+      expect(violations("plugin/x.ts", text)).toEqual([]);
+      expect(performance.now() - started).toBeLessThan(2_000);
+    },
+  );
   test("a command line does not run on across a line break", () => {
     expect(
       violations("plugin/x.md", "work in a linear\nissue order\n"),

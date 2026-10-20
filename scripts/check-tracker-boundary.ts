@@ -8,20 +8,24 @@
 // the `linear` command-line client. A run is one of: an argument list whose
 // first element is the literal `linear`; a call whose first argument is
 // `linear` and whose second is an argument list written out; a call to a
-// process launcher (`spawnSync`, `execFile`, `Bun.spawn`, `subprocess.run`,
-// …) on any receiver, or to a name the file binds to one, whose first
-// argument is `linear`;
-// or a command line `linear <subcommand>`. A call to any other function with
-// `linear` first (`console.log("linear", v)`) names the client without
-// running it. Runs are looked for in the file's text as written, with any
-// comment or continued line between two tokens read as white space, in a
-// run and in the bindings that name a launcher alike: no comment can hide a
-// run, and a run written inside a comment's prose is reported like
-// one in the code, so the check can over-report but never miss. Nothing is
-// lexed, so no string, regular expression or template the check reads wrongly
-// can blank code out of its view. The file is matched as a whole, so an
-// argument list or a spawn split over several lines is found like one written
-// on a single line; a command line stays on one line.
+// process launcher (`LAUNCHERS`, `QUALIFIED` and `PYTHON_LAUNCHERS` below)
+// on any receiver, or to a name the file binds to one, whose first argument
+// is `linear`; or a command line `linear <subcommand>`. A call to any other
+// function with `linear` first (`console.log("linear", v)`) names the client
+// without running it.
+//
+// This is a text check, not a parser, and what it guarantees is stated in
+// terms of those forms. Runs are looked for in the file's text as written,
+// with any comment or continued line between two tokens read as white space,
+// in a run, in a Python import list and in the bindings that name a launcher
+// alike: no comment hides one of these forms, and a run written inside a
+// comment's prose is reported like one in the code. Nothing is lexed, so no
+// string, regular expression or template the check reads wrongly can blank
+// code out of its view. The file is matched as a whole, so an argument list
+// or a spawn split over several lines is found like one written on a single
+// line; a command line stays on one line. A launcher missing from the lists,
+// or a program name the code assembles at run time, is not seen: a new
+// launcher is added to its list.
 //
 // Scope: every code file (TypeScript, JavaScript, shell, Python) under
 // `plugin/` outside the adapters' directory, and every file of the planning
@@ -103,8 +107,16 @@ const LAUNCHERS = [
   "check_output",
 ];
 
-/** The names `subprocess` exports that start a process. */
-const SUBPROCESS = ["run", "call", "Popen", "check_call", "check_output"];
+/**
+ * The Python modules that start a process, each with the pattern of the
+ * names it exports that do: a run through `module.name`, through a name
+ * `from module import …` binds, or through `import module as m`'s `m`.
+ */
+const PYTHON_LAUNCHERS: Record<string, string> = {
+  subprocess: "run|call|Popen|check_call|check_output",
+  asyncio: "create_subprocess_(?:exec|shell)",
+  os: "exec[lv]p?e?|spawn[lv]p?e?|posix_spawnp?",
+};
 
 /**
  * What may stand between two of a run's tokens: white space, a comment in
@@ -119,39 +131,80 @@ const SPACE = String.raw`(?:\s|\/\*(?:[^*]|\*(?!\/))*\*\/|\/\/[^\n]*(?![^\n])|#[
 const GAP = `${SPACE}*`;
 const GAP1 = `${SPACE}+`;
 const DOT = String.raw`${GAP}\.${GAP}`;
+/** A gap that stays on its line: a Python statement ends at a bare line break. */
+const LINE_GAP = String.raw`(?:[ \t\f\v\r]|#[^\n]*(?![^\n])|\\\r?\n)*`;
 
 /** Launchers whose name means one only on their own module. */
 const QUALIFIED = [
   String.raw`Bun${DOT}spawn(?:Sync)?`,
   String.raw`Deno${DOT}Command`,
-  String.raw`subprocess${DOT}(?:run|call)`,
-  String.raw`os${DOT}exec[lv]p?e?`,
+  ...Object.entries(PYTHON_LAUNCHERS).map(
+    ([module, names]) => String.raw`${module}${DOT}(?:${names})`,
+  ),
 ];
 
 const IDENT = String.raw`[A-Za-z_$][\w$]*`;
+/**
+ * A launcher's receiver: a chain of names, each optionally called with
+ * arguments on one line (`this.cp.`, `require("node:child_process").`).
+ * Each link is a name and a dot, so the chain cannot be read two ways that
+ * cost more than its length.
+ */
+const RECEIVER = String.raw`(?:${IDENT}(?:${GAP}\([^()\n]*\))?${DOT})*`;
 const quoteName = (name: string) => name.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
 
+/** One item of a Python import list: a dotted name, optionally `as` an alias. */
+const ITEM = String.raw`[\w.]+(?:${GAP1}as${GAP1}${IDENT})?`;
+
 /**
- * The names `from subprocess import …` binds to a launcher, under its alias
- * where it has one, from one-line, continued and parenthesised import lists.
+ * A Python import list, parenthesised (over any lines) or not (on one line
+ * and its continued lines), with any comment between two of its tokens.
  */
-function subprocessImports(code: string): string[] {
-  const bound: string[] = [];
-  for (const m of code.matchAll(
-    new RegExp(
-      String.raw`\bfrom${GAP1}subprocess${GAP1}import${GAP1}(\([^)]*\)?|(?:\\\r?\n|[^\n])*)`,
-      "g",
-    ),
-  ))
-    for (const item of (m[1] as string)
-      .replace(/#[^\n]*/g, "")
-      .replace(/[()\\]/g, "")
-      .split(",")) {
+const IMPORT_LIST = String.raw`(?:\(${GAP}${ITEM}(?:${GAP},${GAP}${ITEM})*(?:${GAP},)?${GAP}\)|${ITEM}(?:${LINE_GAP},${LINE_GAP}${ITEM})*)`;
+
+/** The `[name, alias]` pairs of an import list, its comments read as white space. */
+function importItems(list: string): [string, string | undefined][] {
+  return list
+    .replace(new RegExp(SPACE, "g"), " ")
+    .replace(/[()]/g, " ")
+    .split(",")
+    .flatMap((item) => {
       const [, name, alias] =
-        /^\s*(\w+)(?:\s+as\s+(\w+))?\s*$/.exec(item) ?? [];
-      if (name && SUBPROCESS.includes(name)) bound.push(alias ?? name);
+        /^\s*([\w.]+)(?:\s+as\s+(\w+))?\s*$/.exec(item) ?? [];
+      return name ? [[name, alias] as [string, string | undefined]] : [];
+    });
+}
+
+/** The names `from module import …` binds to a launcher, under their alias where they have one. */
+function fromImports(code: string): string[] {
+  const names: string[] = [];
+  const from = new RegExp(
+    String.raw`(?<![\w$.])from${GAP1}([\w.]+)${GAP1}import${GAP}(${IMPORT_LIST})`,
+    "g",
+  );
+  for (const m of code.matchAll(from)) {
+    const launchers = PYTHON_LAUNCHERS[m[1] as string];
+    if (!launchers) continue;
+    const launcher = new RegExp(`^(?:${launchers})$`);
+    for (const [name, alias] of importItems(m[2] as string))
+      if (launcher.test(name)) names.push(alias ?? name);
+  }
+  return names;
+}
+
+/** The modules `import a, module as m` names, as `[m, the pattern of its launchers]`. */
+function moduleAliases(code: string): [string, string][] {
+  const modules: [string, string][] = [];
+  const plain = new RegExp(
+    String.raw`(?<![\w$.])import${GAP1}(${IMPORT_LIST})`,
+    "g",
+  );
+  for (const m of code.matchAll(plain))
+    for (const [name, alias] of importItems(m[1] as string)) {
+      const launchers = PYTHON_LAUNCHERS[name];
+      if (launchers && alias) modules.push([alias, launchers]);
     }
-  return bound;
+  return modules;
 }
 
 /**
@@ -159,23 +212,16 @@ function subprocessImports(code: string): string[] {
  * `const { spawnSync: run } = …`, `const run = cp.spawnSync` (on any
  * receiver: `this.cp.spawnSync`, `require(…).spawnSync`),
  * `from subprocess import run` or `… import (call, run as r)`, and
- * `import subprocess as sp`'s module name; followed through a chain of such
- * bindings.
+ * `import subprocess as sp`'s module name; followed
+ * through a chain of such bindings.
  */
 function launcherNames(code: string): {
   names: Set<string>;
-  modules: Set<string>;
+  modules: [string, string][];
 } {
   const names = new Set(LAUNCHERS);
-  const modules = new Set<string>();
-  for (const m of code.matchAll(
-    new RegExp(
-      String.raw`\bimport${GAP1}subprocess${GAP1}as${GAP1}(${IDENT})`,
-      "g",
-    ),
-  ))
-    modules.add(m[1] as string);
-  for (const name of subprocessImports(code)) names.add(name);
+  for (const name of fromImports(code)) names.add(name);
+  const modules = moduleAliases(code);
   for (let size = -1; size !== names.size; ) {
     size = names.size;
     const known = [...names].map(quoteName).join("|");
@@ -186,7 +232,7 @@ function launcherNames(code: string): {
     for (const pattern of [
       String.raw`(?<![\w$])(?:${known})${GAP1}as${GAP1}(${IDENT})`,
       String.raw`(?<![\w$.])(?:${known})${GAP}:${GAP}(${IDENT})`,
-      String.raw`\b(?:const|let|var)${GAP1}(${IDENT})${GAP}=${GAP}(?:[^;\n]*?${DOT})?(?:${qualified})(?![\w$]|${GAP}[(.])`,
+      String.raw`\b(?:const|let|var)${GAP1}(${IDENT})${GAP}=${GAP}${RECEIVER}(?:${qualified})(?![\w$]|${GAP}[(.])`,
     ])
       for (const m of code.matchAll(new RegExp(pattern, "g")))
         names.add(m[1] as string);
@@ -199,9 +245,8 @@ function runPattern(code: string): RegExp {
   const { names, modules } = launcherNames(code);
   const launcher = [
     ...QUALIFIED,
-    ...[...modules].map(
-      (m) =>
-        String.raw`${quoteName(m)}${DOT}(?:run|call|Popen|check_call|check_output)`,
+    ...modules.map(
+      ([m, launchers]) => String.raw`${quoteName(m)}${DOT}(?:${launchers})`,
     ),
     String.raw`(?:${IDENT}${DOT})?(?:${[...names].map(quoteName).join("|")})`,
   ].join("|");
