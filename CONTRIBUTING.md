@@ -423,6 +423,9 @@ work as part of the plugin:
   built-ins (its own APIs and the `node:` modules it provides), or vendor a dependency's own single-file build beside the script
   with its licence and a test that keeps it identical to the pinned package
   (as `plugin/shared/vendor/js-yaml.mjs` is).
+- **Windows cancellation:** follow the scope and reconsideration conditions
+  in [ADR-0007](docs/adr/ADR-0007-windows-cancellation-uses-captured-process-identities.md)
+  when changing process launch, cancellation or completion witnesses.
 - **Description:** keep the frontmatter `description` (and an agent's) at 512
   characters or fewer; 1,024 is the hard limit. Every repository that installs
   the plugin pays for it in every session, so
