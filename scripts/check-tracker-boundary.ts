@@ -9,10 +9,12 @@
 // first element is the literal `linear`; a call whose first argument is
 // `linear` and whose second is an argument list written out; a call to a
 // process launcher (`LAUNCHERS`, `QUALIFIED` and `PYTHON_LAUNCHERS` below)
-// on any receiver, or to a name the file binds to one, whose first argument
-// is `linear`; or a command line `linear <subcommand>`. A call to any other
-// function with `linear` first (`console.log("linear", v)`) names the client
-// without running it.
+// on any receiver, or to a name the file binds to one, with `linear` among
+// its own arguments, in any position (`os.spawnlp(os.P_WAIT, "linear", …)`
+// names the program second); or a command line `linear <subcommand>`.
+// Grouping parentheses around a launcher (`(cp.spawnSync)`) keep it one. A
+// call to any other function with `linear` first (`console.log("linear",
+// v)`) names the client without running it.
 //
 // This is a text check, not a parser, and what it guarantees is stated in
 // terms of those forms. Runs are looked for in the file's text as written,
@@ -24,8 +26,9 @@
 // code out of its view. The file is matched as a whole, so an argument list
 // or a spawn split over several lines is found like one written on a single
 // line; a command line stays on one line. A launcher missing from the lists,
-// or a program name the code assembles at run time, is not seen: a new
-// launcher is added to its list.
+// a program name the code assembles at run time, or `linear` inside a
+// call nested in a launcher's arguments, is not seen: a new launcher is added
+// to its list.
 //
 // Scope: every code file (TypeScript, JavaScript, shell, Python) under
 // `plugin/` outside the adapters' directory, and every file of the planning
@@ -151,6 +154,12 @@ const IDENT = String.raw`[A-Za-z_$][\w$]*`;
  * cost more than its length.
  */
 const RECEIVER = String.raw`(?:${IDENT}(?:${GAP}\([^()\n]*\))?${DOT})*`;
+/**
+ * A launcher call's own arguments up to a point: anything but a parenthesis,
+ * or a call nested one level deep. The two alternatives start differently,
+ * so the arguments are read one way only.
+ */
+const ARGS = String.raw`(?:[^()]|\([^()]*\))*?`;
 const quoteName = (name: string) => name.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
 
 /** One item of a Python import list: a dotted name, optionally `as` an alias. */
@@ -210,7 +219,8 @@ function moduleAliases(code: string): [string, string][] {
 /**
  * The names a file binds to a launcher: `import { execFileSync as run }`,
  * `const { spawnSync: run } = …`, `const run = cp.spawnSync` (on any
- * receiver: `this.cp.spawnSync`, `require(…).spawnSync`),
+ * receiver: `this.cp.spawnSync`, `require(…).spawnSync`, and in grouping
+ * parentheses: `(cp.spawnSync)`),
  * `from subprocess import run` or `… import (call, run as r)`, and
  * `import subprocess as sp`'s module name; followed
  * through a chain of such bindings.
@@ -232,7 +242,7 @@ function launcherNames(code: string): {
     for (const pattern of [
       String.raw`(?<![\w$])(?:${known})${GAP1}as${GAP1}(${IDENT})`,
       String.raw`(?<![\w$.])(?:${known})${GAP}:${GAP}(${IDENT})`,
-      String.raw`\b(?:const|let|var)${GAP1}(${IDENT})${GAP}=${GAP}${RECEIVER}(?:${qualified})(?![\w$]|${GAP}[(.])`,
+      String.raw`\b(?:const|let|var)${GAP1}(${IDENT})${GAP}=${GAP}(?:\(${GAP})*${RECEIVER}(?:${qualified})(?:${GAP}\))*(?![\w$]|${GAP}[().])`,
     ])
       for (const m of code.matchAll(new RegExp(pattern, "g")))
         names.add(m[1] as string);
@@ -254,7 +264,7 @@ function runPattern(code: string): RegExp {
     [
       String.raw`\[${GAP}${LINEAR}${GAP},`,
       String.raw`\(${GAP}${LINEAR}${GAP},${GAP}\[`,
-      String.raw`(?<![\w$])(?:new${GAP1})?(?:${launcher})${GAP}\(${GAP}${LINEAR}`,
+      String.raw`(?<![\w$])(?:new${GAP1})?(?:${launcher})(?:${GAP}\))*${GAP}\(${ARGS}${LINEAR}`,
       String.raw`(?<![\w./-])linear[ \t]+(?:api|auth|config|issues?|teams?|projects?|labels?|cycles?|comments?|documents?|milestones?|initiatives?)\b`,
     ].join("|"),
     "g",
