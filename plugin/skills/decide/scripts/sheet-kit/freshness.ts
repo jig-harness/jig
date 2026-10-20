@@ -167,9 +167,36 @@ export const citedRepositories = (citations: readonly string[]): string[] =>
   ].sort();
 
 /**
+ * A `name:` placed directly before an ADR, a backtick or a path, the way a
+ * qualifier is, but that the grammar does not accept (`Beta:ADR-0002`,
+ * `see:beta:ADR-0002`, `beta:` outside the backticks). Read as an ordinary
+ * citation it would resolve in the consumer repository or not at all, so it
+ * is named instead.
+ */
+const NEAR_QUALIFIER =
+  /([^\s:`(['",;]+):(?=ADR-\d{3,4}\b|`|(?:[\w.@$-]+\/)+[\w.@$-]|[\w@$-][\w.@$-]*\.[A-Za-z])/g;
+const QUALIFIER_LEAD = /[\s([`'",;]/;
+
+function malformedQualifiers(citations: readonly string[]): string[] {
+  const found = new Set<string>();
+  for (const text of citations)
+    for (const m of text.matchAll(NEAR_QUALIFIER)) {
+      const at = m.index ?? 0;
+      const led = at === 0 || QUALIFIER_LEAD.test(text[at - 1] as string);
+      const accepted =
+        led &&
+        REPOSITORY_NAME.test(m[1] as string) &&
+        text[at + m[0].length] !== "`";
+      if (!accepted) found.add(`${m[1]}:`);
+    }
+  return [...found].sort();
+}
+
+/**
  * What stops a sheet's qualified citations from being checked: a repository
  * whose commit `verifiedAt.repositories` does not record, and, when
- * `configured` is given, one with no configured clone. Every one is a
+ * `configured` is given, one with no configured clone, and a qualifier the
+ * grammar does not accept. Every one is a
  * problem, never skipped: a citation the guard does not check must not read
  * as one it did.
  */
@@ -179,7 +206,10 @@ export function repositoryProblems(
   configured?: Iterable<string>,
 ): string[] {
   const clones = configured === undefined ? undefined : new Set(configured);
-  const problems: string[] = [];
+  const problems = malformedQualifiers(citations).map(
+    (token) =>
+      `"${token}" is placed like a repository qualifier but is not one: a qualifier is a lowercase repository name (letters, digits, - and _) directly before the ADR or path, and inside the backticks of a quoted path`,
+  );
   for (const name of citedRepositories(citations)) {
     if (recorded === undefined || !Object.hasOwn(recorded, name))
       problems.push(

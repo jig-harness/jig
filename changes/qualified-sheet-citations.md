@@ -12,7 +12,7 @@ repository, and the freshness guard checks it against that repository.
   clone of `beta` at the commit recorded for it in the new
   `verifiedAt.repositories` of the sheet source (`{ "beta": "<commit>" }`). To
   use the form, a consumer configures the clone in `.config/jig.yaml` (or
-  the user file, for a per-machine location) as
+  the user file, for a name the repository file leaves out) as
   `sheets.repositories: { beta: ../beta }`, a map from the name to the
   clone's folder.
 

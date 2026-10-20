@@ -285,6 +285,41 @@ describe("checking a qualified citation", () => {
   });
 });
 
+describe("a qualifier the grammar does not accept", () => {
+  it.each([
+    "Beta:ADR-0002",
+    "**beta:ADR-0002**",
+    "see:beta:ADR-0002",
+    "beta:`apps/api/auth.ts`",
+    "Beta:apps/api/auth.ts",
+  ])("is named, never read as a citation of this repository: %s", (text) => {
+    const problems = repositoryProblems([text], { beta: "abc1234" });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("is placed like a repository qualifier");
+  });
+
+  it("leaves accepted forms, line suffixes and URLs alone", () => {
+    expect(
+      repositoryProblems(
+        [
+          "beta:ADR-0002; (beta:apps/api/auth.ts:12-40)",
+          "`beta:.run/Backend Dev.run.xml`",
+          "src/a.ts:12; https://example.com/a.html; Makefile:12",
+        ],
+        { beta: "abc1234" },
+      ),
+    ).toEqual([]);
+  });
+
+  it("fails a decision source", () => {
+    expect(() =>
+      parseDecision(
+        decisionSource(["Beta:ADR-0002"], "abcdef1", { beta: "1234567" }),
+      ),
+    ).toThrow(/is placed like a repository qualifier/);
+  });
+});
+
 describe("repositoryProblems", () => {
   it("names each missing commit and each unconfigured repository", () => {
     expect(

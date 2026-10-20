@@ -237,7 +237,9 @@ Each qualified name needs two things, or the source is refused:
   ```
 
 `validate` rejects a qualified citation whose name has no recorded commit or
-no configured clone, and `render --require-fresh` exits `3` for the same
+no configured clone (it checks the clone only inside a git checkout), a
+`name:` placed like a qualifier that the rules above do not accept
+(`Beta:ADR-0002`, `beta:` outside the backticks), and `render --require-fresh` exits `3` for the same
 reasons, for a clone that is missing or is not the top of a git clone, and for
 a recorded commit the clone lacks. Changed and unresolved files of another
 repository are listed with their qualifier. An unqualified path that is not in
