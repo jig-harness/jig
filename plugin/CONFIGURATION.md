@@ -603,6 +603,7 @@ own; `audit` checks all the others.
 | `design_brief.kit` | folder, relative to the root | Detected: a tracked folder ending in `design-kit` or `design_kit` | design-brief-builder | The design kit: voice, colours and type, rubric, component previews, logo |
 | `design_brief.design_language` | path, relative to the root | Detected: the first tracked `*design-language*.md` or `*design-system*.md` | design-brief-builder | The written design canon |
 | `design_brief.prototypes` | folder, relative to the root | none: the agent asks | design-brief-builder | Where finished design bundles land, one folder per flow |
+| `sheets.repositories` | map of repository name to folder, relative to the root or absolute; names are lowercase letters, digits, `-` and `_`, starting with a letter | none: a citation qualified with a repository name (`beta:ADR-0002`) is refused | decide, explain | The clones of the other repositories a sheet cites. A sheet qualifies such a citation with the name (`beta:apps/api/auth.ts`, `beta:ADR-0002`) and records the commit its facts were checked at in `verifiedAt.repositories`; the freshness guard compares the cited file at that commit with the clone's working tree, finds that repository's ADRs in the clone as it finds this repository's when `adr.directory` is not set (the first candidate folder that exists, else `docs/adr`), and refuses a name with no entry here, no recorded commit, or a folder that is not the top of a git clone. A bare `ADR-NNNN` always means this repository. The folders differ per machine, so set them in the user layer (`~/.jig/jig.yaml`) with absolute paths where the clones sit elsewhere |
 | `decide.policy_files` | list of paths, relative to the root | `[AGENTS.md]` | decide | Instruction files whose `##` sections are standing policy |
 | `decide.rules_directory` | folder, relative to the root | `.claude/rules` | decide | Conditional rules, one rule per `.md` file |
 | `decide.glossary_file` | path, relative to the root | `CONTEXT.md` | decide, explain | The canonical vocabulary, as `**Term**:` lines each followed by an `_Avoid_:` line |
@@ -755,6 +756,9 @@ fleet_health:
 adr:
   directory: docs/adr
   rules_file: docs/adr/rules.yaml
+sheets:
+  repositories:
+    beta: ../beta
 descar:
   lint_command: "bun scripts/check-descarring-scars.ts"
 promote_memory:

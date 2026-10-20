@@ -392,6 +392,11 @@ fields:
     type: path
     exists: required
     read_by: [adr, review]
+  sheets.repositories:
+    type: map
+    values_type: path
+    read_by: [decide, explain]
+    since: next
   descar.lint_command:
     type: command
     read_by: [descar]

@@ -10,9 +10,17 @@
  * holds a field of the wrong type is an error, never a silent default.
  */
 import { statSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { layeredConfig, withSource } from "../../../../shared/consumer.ts";
 import { CANDIDATE_DIRS } from "../../../adr/scripts/locate.ts";
+import {
+  type Clone,
+  citedRepositories,
+  type OtherRepositories,
+  REPOSITORY_NAME,
+  repositoryProblems,
+  repositoryRoot,
+} from "../sheet-kit/freshness.ts";
 
 /** Where the ADRs live when `adr.directory` is not set and none is detected (Jig module M5). */
 export const DEFAULT_ADR_DIRECTORY = "docs/adr";
@@ -53,11 +61,12 @@ export function readOptionalOverlay(repoRoot: string): Record<string, unknown> {
 function sectionOf(
   overlay: Record<string, unknown>,
   name: string,
+  field = name,
 ): Record<string, unknown> {
   const value = overlay[name];
   if (value === undefined || value === null) return {};
   if (typeof value !== "object" || Array.isArray(value))
-    throw new Error(`${name} must be a mapping`);
+    throw new Error(`${field} must be a mapping`);
   return value as Record<string, unknown>;
 }
 
@@ -177,4 +186,76 @@ export function figureBuildCommand(
   } catch (err) {
     throw withSource(overlay, "explain", err);
   }
+}
+
+/** A `sheets.repositories` entry the skills cannot use. */
+class RepositoryConfigError extends Error {
+  override name = "RepositoryConfigError";
+}
+
+/**
+ * The clones of other repositories a sheet may cite (`sheets.repositories`):
+ * a mapping from the name a citation qualifies with (`other:ADR-0002`) to the
+ * clone's location, relative to the consumer repository's root unless
+ * absolute. Each repository's ADR directory is detected in its clone, as for
+ * the consumer repository.
+ */
+export function sheetRepositories(
+  overlay: Record<string, unknown>,
+  repoRoot: string,
+): Record<string, Clone> {
+  try {
+    const configured = sectionOf(
+      sectionOf(overlay, "sheets"),
+      "repositories",
+      "sheets.repositories",
+    );
+    const clones: Record<string, Clone> = {};
+    for (const [name, location] of Object.entries(configured)) {
+      const field = `sheets.repositories.${name}`;
+      if (!REPOSITORY_NAME.test(name))
+        throw new RepositoryConfigError(
+          `${field}: a repository name is lowercase letters, digits, - and _, starting with a letter`,
+        );
+      if (typeof location !== "string" || location.trim() === "")
+        throw new RepositoryConfigError(`${field} must be a nonempty path`);
+      const path = location.trim();
+      const root = isAbsolute(path) ? path : resolve(repoRoot, path);
+      clones[name] = { root, adrDirectory: detectedAdrDirectory({}, root) };
+    }
+    return clones;
+  } catch (err) {
+    throw withSource(overlay, "sheets", err);
+  }
+}
+
+/**
+ * What the freshness guard needs for the citations that name another
+ * repository: the commit each was verified at and its configured clone.
+ */
+export const otherRepositories = (
+  overlay: Record<string, unknown>,
+  repoRoot: string,
+  recorded: Readonly<Record<string, string>> | undefined,
+): OtherRepositories => ({
+  verified: recorded ?? {},
+  clones: sheetRepositories(overlay, repoRoot),
+});
+
+/**
+ * Throws `error(problems)` when a citation names a repository with no
+ * recorded commit or no configured clone. Outside a checkout there is no
+ * configuration to check against, and a source with no qualified citation
+ * reads none.
+ */
+export function assertRepositoriesConfigured(
+  citations: readonly string[],
+  recorded: Readonly<Record<string, string>> | undefined,
+  error: (problems: string[]) => Error,
+): void {
+  const root = repositoryRoot();
+  if (root === undefined || citedRepositories(citations).length === 0) return;
+  const clones = sheetRepositories(readOptionalOverlay(root), root);
+  const problems = repositoryProblems(citations, recorded, Object.keys(clones));
+  if (problems.length > 0) throw error(problems);
 }

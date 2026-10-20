@@ -59,7 +59,12 @@ export interface ExplainerSource {
   title: string;
   /** The issue the explainer serves. Issue ids in the text link to its tracker. */
   url?: string;
-  verifiedAt: { date: string; commit: string };
+  /** `repositories` holds the commit for each other repository a citation names (`other:ADR-0002`). */
+  verifiedAt: {
+    date: string;
+    commit: string;
+    repositories?: Record<string, string>;
+  };
   summary: string;
   scope: { covers: string[]; excludes?: string[] };
   flow?: FlowStep[];
@@ -101,6 +106,9 @@ const CITATION_SYMBOL = /^(?:#[\w.$@-]+|:\d+(?:-\d+)?)$/;
 /** An ADR, or an issue key such as `ENG-123` (any tracker key but `ADR`). */
 const CITATION_ID = /^(?:ADR-\d{3,4}|(?!ADR-)[A-Z][A-Z0-9]*-\d+)$/;
 
+/** A leading `name:` (inside the backticks of a quoted path) qualifies the citation with another repository, as the freshness guard reads it. */
+const QUALIFIER = /^(`?)[a-z][a-z0-9_-]*:(?=[A-Za-z_.@$])/;
+
 /** A trailing ` (note)`: display text, not part of what is cited. */
 const NOTE = /\s+\([^()]*\)$/;
 
@@ -124,7 +132,8 @@ const referenceOf = (segment: string): string => segment.replace(NOTE, "");
  * here instead of passing as a sheet with no checkable citation.
  */
 function segmentProblem(segment: string): string | undefined {
-  const reference = referenceOf(segment);
+  // `other:` names another repository; what follows is checked as in this one.
+  const reference = referenceOf(segment).replace(QUALIFIER, "$1");
   if (CITATION_ID.test(reference)) return undefined;
   const quoted = /^`([^`\n]+)`$/.exec(reference);
   const ref = quoted ? (quoted[1] as string).trim() : reference;
@@ -348,8 +357,13 @@ export function parseSource(value: unknown): ExplainerSource {
     });
 
   // Tokens name flow steps, so they are checked once the structure holds.
-  if (c.problems.length === 0)
+  if (c.problems.length === 0) {
     checkTokens(c, value as unknown as ExplainerSource);
+    c.qualifiedCitations(
+      citations(value as unknown as ExplainerSource),
+      value.verifiedAt,
+    );
+  }
 
   if (c.problems.length > 0) throw new SourceError(c.problems);
   return value as unknown as ExplainerSource;

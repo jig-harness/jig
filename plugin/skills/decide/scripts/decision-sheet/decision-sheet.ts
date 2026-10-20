@@ -23,9 +23,14 @@ import {
   sheetAttachmentTitle,
   staleSheetAttachments,
 } from "./attachments.ts";
-import { adrDirectory, readOptionalOverlay } from "../lib/overlay.ts";
-import { checkFreshness, type Freshness } from "./freshness.ts";
-import { repositoryRoot } from "../sheet-kit/freshness.ts";
+import {
+  adrDirectory,
+  assertRepositoriesConfigured,
+  otherRepositories,
+  readOptionalOverlay,
+} from "../lib/overlay.ts";
+import { checkFreshness, claimSources, type Freshness } from "./freshness.ts";
+import { refusalToPost, repositoryRoot } from "../sheet-kit/freshness.ts";
 import { renderHtml } from "./html.ts";
 import {
   DEFAULT_TEMPLATE,
@@ -139,6 +144,11 @@ function main(argv: string[]): number {
   switch (command) {
     case "validate": {
       const source = readSource(positional(args, "<source.json>"));
+      assertRepositoriesConfigured(
+        claimSources(source),
+        source.verifiedAt.repositories,
+        (problems) => new SourceError(problems),
+      );
       console.log(
         JSON.stringify({
           ok: true,
@@ -158,32 +168,22 @@ function main(argv: string[]): number {
       let freshness: Freshness | { error: string };
       try {
         root = repoRoot();
+        const overlay = readOptionalOverlay(root);
         freshness = checkFreshness(
           source,
           root,
-          adrDirectory(readOptionalOverlay(root), root),
+          adrDirectory(overlay, root),
+          otherRepositories(overlay, root, source.verifiedAt.repositories),
         );
       } catch (err) {
         freshness = { error: (err as Error).message };
       }
-      if (args.includes("--require-fresh")) {
-        if ("error" in freshness) {
-          console.error(`refusing to render for posting: ${freshness.error}`);
-          return 3;
-        }
-        if (freshness.changed.length > 0) {
-          console.error(
-            `refusing to render for posting: cited files changed since ${freshness.commit}:\n- ${freshness.changed.join("\n- ")}\nRe-verify the claims that cite them, update verifiedAt, and render again.`,
-          );
-          return 3;
-        }
-        // Fail closed: a citation the guard cannot resolve is one it did not check.
-        if (freshness.unresolved.length > 0) {
-          console.error(
-            `refusing to render for posting: these cited paths do not exist at ${freshness.commit}, so the guard cannot check them:\n- ${freshness.unresolved.join("\n- ")}\nCite repository-rooted paths, then render again.`,
-          );
-          return 3;
-        }
+      const refusal = args.includes("--require-fresh")
+        ? refusalToPost(freshness)
+        : undefined;
+      if (refusal !== undefined) {
+        console.error(`refusing to render for posting: ${refusal}`);
+        return 3;
       }
       const template = templateFlag(args);
       const outFlag = flag(args, "--out");
