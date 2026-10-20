@@ -14,6 +14,8 @@ Replace `<placeholders>` with your values.
 | `last_updated` advanced | pre-commit: `stale-last-updated.ts --staged` | blocking: `DIFF_RANGE=<base>...HEAD` with full history |
 | Index and orphan report fresh | pre-commit: regenerate + auto-stage `INDEX.md` and `.orphans.md` | blocking: `generate-index.ts --check` |
 | No scars in approved docs | (optional) pre-commit | advisory scan + blocking self-test |
+| A deferral names an item | pre-commit: `check-deferrals.ts --staged` | blocking: `--range=<base>...HEAD` with full history |
+| The item a deferral names is still open | none: needs the tracker credential | scheduled on the default branch, never on a pull request |
 
 The pattern throughout: hooks are the fast, bypassable convenience; CI
 re-runs the same checks and is the authority (see M1).
@@ -171,6 +173,62 @@ rather than reading the schema another way.
 | [lefthook](https://github.com/evilmartians/lefthook) | pre-commit `docs-index-fresh`: `glob: "docs/**/*.md"`, `run: bun <m4>/index/generate-index.ts && git add docs/INDEX.md docs/.orphans.md`, `stage_fixed: true`; pre-commit `frontmatter`: `glob: "docs/**/*.md"`, `run: bun <m4>/frontmatter-check/frontmatter-check.ts {staged_files}`; pre-commit `docs-last-updated`: `glob: "docs/**/*.md"`, `run: bun <m4>/stale-last-updated/stale-last-updated.ts --staged {staged_files}` |
 | [husky](https://typicode.github.io/husky/) | in `.husky/pre-commit`: guard on `git diff --cached --name-only \| grep -q '^docs/.*\.md$'`, then run the generator + `git add docs/INDEX.md docs/.orphans.md`, then the frontmatter check, then `stale-last-updated.ts --staged` |
 | [pre-commit framework](https://pre-commit.com) | `repo: local` hooks with `files: '^docs/.*\.md$'`: one runs the frontmatter check, one `stale-last-updated.ts --staged`, one the index generator (a modified `INDEX.md` or `.orphans.md` fails the commit; `git add` + retry) |
+
+## Deferral references
+
+The static half runs where the other diff-aware gates run. In the GitHub
+Actions job above, add a step after the `last_updated` one; it needs the same
+full history and the same `$BASE`:
+
+```yaml
+      - name: A deferral names an item (blocking)
+        if: steps.scope.outputs.docs
+        run: bun "$M4/deferral-references/check-deferrals.ts" --ci --range="$BASE...HEAD"
+```
+
+On GitLab, in the `docs-governance` job's script:
+`bun "$M4/deferral-references/check-deferrals.ts" --ci --range="$CI_MERGE_REQUEST_DIFF_BASE_SHA...HEAD"`.
+With `--ci` and no range the gate prints `SKIP` and passes, so a job that lost
+its base says so; a malformed range is an error. Add the configuration file
+(`.config/deferral-references.yaml`) to the job's `changes:` list and to the
+set that selects the work, since a new `items` pattern changes what every
+document must satisfy.
+
+| Hook manager | Wiring |
+|--------------|--------|
+| lefthook | pre-commit `deferrals`: `glob: "*.md"`, `run: bun <m4>/deferral-references/check-deferrals.ts --staged` |
+| husky | in `.husky/pre-commit`, after the `last_updated` check: `bun <m4>/deferral-references/check-deferrals.ts --staged` |
+| pre-commit framework | `repo: local` hook, `files: '\.md$'`, `pass_filenames: false`, `entry: bun <m4>/deferral-references/check-deferrals.ts --staged` |
+
+The gate takes no file names: it judges the staged change, so `pass_filenames`
+and `{staged_files}` are unused.
+
+The live half has three steps and one credential (the
+[workflow template](templates/deferral-liveness.yml) is the GitHub Actions
+form). The scheduled trigger and the rule that a manual run is allowed only on
+the default branch are the provider specifics:
+
+| CI | Scheduled run | Credential |
+|----|---------------|------------|
+| GitHub Actions | `on: schedule`; `workflow_dispatch` with the job `if:` limited to the default branch | A repository secret, in the `env:` of the one step that calls the tracker; not a job-level or workflow-level `env:` |
+| GitLab CI | A pipeline schedule on the default branch; `rules: - if: $CI_PIPELINE_SOURCE == "schedule"` | A CI/CD variable marked masked and protected, so only protected branches' pipelines receive it |
+| Other | A scheduler that runs the default branch's pipeline | A secret that merge-request or pull-request pipelines cannot read |
+
+The provider is a command that reads item keys on standard input, one per line,
+and prints a JSON object from each key to `open`, `closed` or `not_found`. It
+must exit non-zero when it could not ask, and when it was asked about an item
+it could not classify. Per tracker:
+
+| Tracker | Provider |
+|---------|----------|
+| Linear, through Jig's tracker interface (the adapter `issue_tracker.adapter` names) | `bun <jig>/plugin/skills/do-item/scripts/tracker.ts issue-states` with `issue_tracker` in `.config/jig.yaml` and the adapter's credential in the environment (`LINEAR_API_KEY` for Linear). It reads the state category of each item through the tracker interface: `completed`, `canceled` and `duplicate` are `closed`, a missing item is `not_found`, and an issue the tracker reports without a category fails the run |
+| GitHub Issues | One `gh issue view <number> --repo <owner/name> --json state` per key, mapping `OPEN` to `open` and `CLOSED` to `closed`; an `items` pattern whose capture group is the issue number; `gh` exits non-zero for a missing issue, which the wrapper maps to `not_found` only on that error, never on a network failure |
+| Jira | `GET /rest/api/3/issue/<key>?fields=status`, mapping `status.statusCategory.key` of `done` to `closed` and any other to `open`, a 404 to `not_found`; every other status code fails the provider |
+| A plan file in the repository | A script that reads the item's status from the file; no credential, so it can run in the pull-request check beside the static half |
+
+A provider that maps a failed request to `not_found` turns an outage into a
+report that every item is gone, or the reverse; keep "does not exist" and
+"could not ask" apart.
 
 ## Schema format
 

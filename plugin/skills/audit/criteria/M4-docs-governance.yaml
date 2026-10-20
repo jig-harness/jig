@@ -112,6 +112,24 @@ criteria:
       - "a line-oriented reader with no stated subset, or one that silently takes the first of two duplicate keys, is not credited"
     since: 0.23.0
 
+  - id: deferrals-name-items
+    level: standard
+    requires: mechanical
+    statement: >-
+      A document that defers work to the tracker names the item that carries
+      it, in the same block of prose as the deferral, and a check enforces
+      this on the lines each change adds, in the pre-commit hook and in CI
+      (expected-absent where no document defers work to a tracker).
+    observe:
+      - "a check reads configured marker phrases (such as 'tracked to closure' or 'a follow-up will be filed') and item-reference patterns, and fails a block of prose with a marker and no item reference"
+      - "CI runs it over the pull request's range with history back to the merge base, and a run without a range says it skipped rather than passing"
+      - "a block is set aside only by a waiver that states its reason, and a configuration the check cannot read exits as could-not-check rather than passing"
+      - "a check that recognises unfiled promises by their wording (a list of ways to say 'a new issue will be filed') is not credited: it is always one phrasing behind"
+    probe:
+      mechanical:
+        files: *ci-config
+    since: next
+
   - id: authority-hierarchy-written
     level: standard
     requires: convention
@@ -196,3 +214,24 @@ criteria:
     observe:
       - "a scheduled job runs the wiki-lint table and records findings (e.g. to an activity log)"
       - "the retrospection/raw-notes backlog awaiting promotion is tracked"
+
+  - id: deferral-liveness-scheduled
+    level: strict
+    requires: mechanical
+    statement: >-
+      A scheduled job on the default branch asks the tracker whether the items
+      the documents' deferrals name are still open, fails a deferral that has
+      no open item left (an item closed, or one that does not exist), and
+      fails rather than passes when it could not look an item up; the tracker
+      credential is available to that job's tracker step only and never to
+      code from a pull request (expected-absent where no document defers work
+      to a tracker).
+    observe:
+      - "a workflow triggered by a schedule, with any manual trigger limited to the default branch, lists the items the deferrals name and reads their current state from the tracker"
+      - "the tracker credential is scoped to the step that calls the tracker, in a workflow no pull request triggers"
+      - "the job fails on a deferral whose items are all closed or missing, and on a tracker that could not be reached or an item it did not answer for"
+      - "a deferral that cites a closed item beside an open one passes: the verdict is per deferral, not per citation"
+    probe:
+      mechanical:
+        files: *ci-config
+    since: next

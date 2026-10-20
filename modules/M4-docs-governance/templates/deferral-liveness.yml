@@ -1,0 +1,106 @@
+# Deferral liveness — GitHub Actions skeleton (Jig module M4).
+#
+# Copy to .github/workflows/deferral-liveness.yml and replace every
+# <placeholder>. The SHAPE is the point:
+#
+#   - It asks the tracker whether the items the documents' deferrals name are
+#     still open, and fails when a deferral has none left. The static half
+#     (does a deferral name an item at all) runs offline in the pre-commit
+#     hook and the pull-request check; nothing in the text can show that an
+#     item closed since, so this half needs the tracker.
+#   - It holds the tracker credential, so it never runs on code from a pull
+#     request: it is scheduled, and a manual run is limited to the default
+#     branch. A manual run uses the workflow and every file it checks out as
+#     they are on the chosen branch; without the limit anyone able to push a
+#     branch could run a modified script with the credential in scope.
+#   - The credential is scoped to the one step that asks the tracker, not to
+#     the job, so the checkout actions and the verdict step never see it.
+#   - It fails closed: no credential, a tracker that cannot be reached, a
+#     provider that answered for fewer items than were asked, all fail the run.
+#     Nothing here turns exit 2 into a pass.
+#   - It reports in the run summary, where a red run is read, and files and
+#     closes nothing.
+#   - The Jig scripts it runs come from a pinned commit, the one third-party
+#     code that runs with the credential: pin a commit you have read.
+#
+# Register the schedule in the repository's cadence list and heartbeat
+# (module M11), so a schedule that stops running turns red.
+#
+# The practice and the provider contract:
+#   https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/reference/deferral-references/README.md
+# A provider per tracker:
+#   https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/mappings.md
+name: Deferral liveness
+
+on:
+  schedule:
+    # Weekly: an item that closed is a document to correct, not an incident.
+    - cron: "<minute> <hour> * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Scheduled runs all use the default branch, so they cover one another; a
+# manual run gets a group of its own and neither cancels nor is cancelled.
+concurrency:
+  group: deferral-liveness-${{ github.event_name == 'schedule' && 'schedule' || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  liveness:
+    name: Do the deferrals in the documents still point at open items?
+    # A scheduled run is the default branch by construction; a manual one is
+    # refused anywhere else.
+    if: ${{ github.event_name == 'schedule' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@<pinned-sha>
+        with:
+          # Nothing here pushes; do not leave write access on the checkout.
+          persist-credentials: false
+      # The reference scripts from a pinned Jig commit: the check imports a
+      # helper from its parent directory, so check out the repository.
+      - uses: actions/checkout@<pinned-sha>
+        with:
+          repository: <owner/name of the Jig repository>
+          ref: <pinned Jig commit>
+          persist-credentials: false
+          path: jig
+      - uses: oven-sh/setup-bun@<pinned-sha>
+      - name: List the items the deferrals rely on
+        # No credential. A document with no deferral gives an empty list.
+        run: >-
+          bun jig/modules/M4-docs-governance/reference/deferral-references/check-deferrals.ts
+          --all --list-keys > "$RUNNER_TEMP/keys.txt"
+      - name: Ask the tracker for their states
+        # The only step with the credential. The provider reads the keys on
+        # standard input and prints {"<key>": "open" | "closed" | "not_found"}.
+        # Replace the command with the provider for your tracker (mappings);
+        # Jig's own, for Linear, is the line below, and reads issue_tracker in
+        # .config/jig.yaml.
+        env:
+          LINEAR_API_KEY: ${{ secrets.<TRACKER_SECRET> }}
+        run: |
+          set -euo pipefail
+          if [ -z "${LINEAR_API_KEY}" ]; then
+            echo "::error::The tracker credential is not configured; nothing can be verified without it."
+            exit 1
+          fi
+          bun jig/plugin/skills/do-item/scripts/tracker.ts issue-states \
+            < "$RUNNER_TEMP/keys.txt" > "$RUNNER_TEMP/states.json"
+      - name: Fail a deferral with no open item left
+        # No credential, no network. Exit 0 clean, 1 findings, 2 nothing
+        # verified; the workflow fails on every nonzero code, and a signal
+        # (137 after an out-of-memory kill) is not a pass either. The output
+        # goes to the run summary, fenced because finding lines quote
+        # document text.
+        run: |
+          set -u
+          code=0
+          bun jig/modules/M4-docs-governance/reference/deferral-references/check-deferrals.ts \
+            --all --states "$RUNNER_TEMP/states.json" > "$RUNNER_TEMP/verdict.txt" 2>&1 || code=$?
+          cat "$RUNNER_TEMP/verdict.txt"
+          { echo '```'; cat "$RUNNER_TEMP/verdict.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$code"
