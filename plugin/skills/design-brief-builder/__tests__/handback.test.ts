@@ -278,6 +278,20 @@ test("scenario outputs stay distinct and out of the renderer's directory", () =>
   expect(() =>
     parseManifest(manifest([scenario("home", "./shots/home.png")])),
   ).not.toThrow();
+  // A case-insensitive file system stores each pair as one file.
+  for (const scenarios of [
+    [scenario("a", "shots/home.png"), scenario("b", "shots/HOME.png")],
+    [scenario("home"), scenario("HOME", "other.png")],
+    [scenario("a", "caf\u00e9.png"), scenario("b", "cafe\u0301.png")],
+  ])
+    expect(() => parseManifest(manifest(scenarios))).toThrow();
+  for (const screenshot of [
+    ".HANDBACK-RENDER/home-390.png",
+    ".Handback-Render/shots/home.png",
+  ])
+    expect(() =>
+      parseManifest(manifest([scenario("home", screenshot)])),
+    ).toThrow();
 });
 
 test("the landing check finds a fix lost after the merge, until it is acknowledged", async () => {
@@ -474,7 +488,7 @@ test("the landing check finds a fix lost after the merge, until it is acknowledg
             name: "b",
             url: "index.html",
             ready: "main",
-            screenshot: "home-1280.png",
+            screenshot: "HOME-1280.png",
           },
         ],
       }),
@@ -489,7 +503,7 @@ test("the landing check finds a fix lost after the merge, until it is acknowledg
     );
     expectSpawnExit(collision, 1);
     expect(collision.stderr.toString()).toContain(
-      "both resolve to home-1280.png",
+      "both resolve to HOME-1280.png",
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

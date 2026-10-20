@@ -168,7 +168,7 @@ browserTest(
         "late.html": `<!doctype html><script>setTimeout(() => {
           document.body.insertAdjacentHTML("beforeend", 'retired phrase${ready}');
         }, 1000)</script>`,
-        "report.html": `<!doctype html><script src="handback-report.json"></script><script src=".handback-render/x.js"></script>${ready}`,
+        "report.html": `<!doctype html><script src="handback-report.json"></script><script src=".handback-render/x.js"></script><script src=".HANDBACK-RENDER/x.js"></script><script src="Handback-Report.json"></script>${ready}`,
       },
       [
         { name: "late", url: "late.html" },
@@ -181,7 +181,7 @@ browserTest(
     );
     expect(
       failures.filter((f) => f.startsWith("report at 390px: HTTP 403")),
-    ).toHaveLength(2);
+    ).toHaveLength(4);
   },
   60_000,
 );

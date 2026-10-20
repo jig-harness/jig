@@ -46,7 +46,10 @@ matches fails. Scenario names must stay distinct once characters other than
 letters, digits, `_` and `-` become `_`. The delivered screenshot path
 is for the first configured width; later widths append `-<width>` before the
 extension, and no two scenario/width pairs may resolve to the same file. A screenshot path is relative to the bundle, `/`-separated, with no
-empty, `.` or `..` segment, and never under `.handback-render/`. After the rubric
+empty, `.` or `..` segment, and never under `.handback-render/`. Paths and
+scenario names are compared ignoring case and Unicode normalization, as
+Windows and macOS file systems do by default: `HOME.png` and `home.png` are the
+same file, and `.HANDBACK-RENDER/` is the renderer's directory. After the rubric
 review passes, README and the scorecard each state exactly one
 `Bar outcome: pass` outside comments and fenced examples, and the scorecard
 names the round it reviewed with exactly one
@@ -97,7 +100,8 @@ value, so `Bar outcome: fail (two blockers)` is a second, failing outcome.
 4. Keep `handback-report.json`
    and the generated README's export-base metadata. Supply fresh delivered
    screenshots at every configured width, as valid non-interlaced `.png` images
-   of at most 256 MiB of decoded image data, with modification
+   of at most 256 MiB of decoded image data and at most 67,108,864
+   (64 × 1024 × 1024) pixels, with modification
    times strictly newer than every other bundle file except README and the
    report. Git snapshots do not preserve delivery modification
    times: capture the delivered screenshots after resolving the merge. Existing scenario screenshots must differ, as

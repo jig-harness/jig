@@ -3,11 +3,11 @@ import { errnoCode, swallow } from "../../../shared/errors.ts";
 import { ExitError } from "../../../shared/cli.ts";
 import { mkdtemp, readFile, realpath, rm, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import {
+  generatedPath,
   renderDirectory,
   renderName,
-  reportFile,
   type Scenario,
 } from "./contracts.ts";
 type Reply = {
@@ -177,7 +177,8 @@ async function serveFile(root: string, request: Request): Promise<Response> {
       return new Response("Forbidden", { status: 403 });
     if (pathname.endsWith("/")) path = join(path, "index.html");
     path = await realpath(path);
-    if (!inside(root, path)) return new Response("Forbidden", { status: 403 });
+    if (!inside(root, path) || generated(root, path))
+      return new Response("Forbidden", { status: 403 });
     return new Response(Bun.file(path));
   } catch {
     // Chromium requests this icon even when the page does not declare one.
@@ -188,9 +189,7 @@ async function serveFile(root: string, request: Request): Promise<Response> {
 }
 /** The checker's own outputs are never scenario inputs. */
 function generated(root: string, path: string): boolean {
-  return (
-    path === join(root, reportFile) || inside(join(root, renderDirectory), path)
-  );
+  return generatedPath(relative(root, path).split(sep).join("/"));
 }
 function external(url: string, origin: string): boolean {
   return (

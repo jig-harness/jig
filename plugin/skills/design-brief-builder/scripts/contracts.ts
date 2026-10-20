@@ -49,16 +49,27 @@ export function screenshotPath(path: string): string | null {
     ? null
     : stripped;
 }
-function reserved(path: string): boolean {
+/**
+ * The identity two bundle paths share on a filesystem that ignores case or
+ * Unicode normalization (Windows and macOS by default): `HOME.png` and
+ * `home.png` name one file there, so every uniqueness and reserved-path check
+ * compares this key rather than the raw string.
+ */
+export function pathKey(path: string): string {
+  return path.normalize("NFC").toLowerCase();
+}
+/** Whether a bundle-relative `/`-separated path is the checker's own output. */
+export function generatedPath(path: string): boolean {
+  const key = pathKey(path);
   return (
-    path === reportFile ||
-    path === renderDirectory ||
-    path.startsWith(`${renderDirectory}/`)
+    key === reportFile ||
+    key === renderDirectory ||
+    key.startsWith(`${renderDirectory}/`)
   );
 }
 function canonical(path: string): boolean {
   const normalized = screenshotPath(path);
-  return normalized !== null && !reserved(normalized);
+  return normalized !== null && !generatedPath(normalized);
 }
 function scenario(v: unknown): v is Scenario {
   return (
@@ -71,8 +82,8 @@ function scenario(v: unknown): v is Scenario {
     canonical(v.screenshot)
   );
 }
-function distinct(values: unknown[]): boolean {
-  return new Set(values).size === values.length;
+function distinct(values: string[]): boolean {
+  return new Set(values.map(pathKey)).size === values.length;
 }
 function manifest(v: unknown): v is Manifest {
   return (
@@ -83,7 +94,7 @@ function manifest(v: unknown): v is Manifest {
     v.scenarios.every(scenario) &&
     distinct(v.scenarios.map((s) => s.name)) &&
     distinct(v.scenarios.map((s) => renderName(s.name))) &&
-    distinct(v.scenarios.map((s) => screenshotPath(s.screenshot)))
+    distinct(v.scenarios.map((s) => screenshotPath(s.screenshot) ?? ""))
   );
 }
 function regression(v: unknown): boolean {

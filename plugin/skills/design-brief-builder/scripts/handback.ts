@@ -16,10 +16,11 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
 import { isRecord, decodeJson, isStringArray } from "../../../shared/guards.ts";
 import {
+  generatedPath,
   parseManifest,
+  pathKey,
   screenshotPath,
   parseReport,
-  renderDirectory,
   reportFile,
   settingsRequirement,
   validSettings,
@@ -418,7 +419,7 @@ export function mergeBundle(
     ...oursFiles.keys(),
     ...returned.keys(),
   ])) {
-    if (path === reportFile) continue;
+    if (generatedPath(path)) continue;
     const b = baseFiles.get(path),
       o = oursFiles.get(path),
       t = returned.get(path);
@@ -477,11 +478,12 @@ function screenshotChecks(
   evidence: string[],
   previous: Map<string, Buffer>,
 ): { fresh: boolean; changed: boolean; failures: string[] } {
+  const evidenceKeys = new Set(evidence.map(pathKey));
   const inputs = files.filter(
     (p) =>
       !p.endsWith("/") &&
-      !evidence.includes(p) &&
-      !generated(p) &&
+      !evidenceKeys.has(pathKey(p)) &&
+      !generatedPath(p) &&
       p !== "README.md",
   );
   const newestInput = Math.max(
@@ -512,14 +514,11 @@ function screenshotChecks(
   }
   return { fresh, changed, failures };
 }
-function generated(path: string): boolean {
-  return path === reportFile || path.startsWith(`${renderDirectory}/`);
-}
 /** The final bundle's files, as the merge would compare them. */
 function currentFiles(dir: string, files: string[]): Map<string, Buffer> {
   return new Map(
     files
-      .filter((p) => !p.endsWith("/") && !generated(p))
+      .filter((p) => !p.endsWith("/") && !generatedPath(p))
       .map((p) => [p, readFileSync(safe(dir, p))] as const),
   );
 }
@@ -535,7 +534,7 @@ function currentRegressions(
   const base = tree(report.previousExportBase, bundle);
   const ours = tree(report.ours, bundle);
   return [...new Set([...base.keys(), ...ours.keys(), ...current.keys()])]
-    .filter((path) => !generated(path))
+    .filter((path) => !generatedPath(path))
     .flatMap((path) =>
       lostHunks(
         path,
@@ -636,7 +635,10 @@ export function landingFailures(requested: string): {
   const files = list(dir);
   const current = currentFiles(dir, files);
   const evidence = screenshots(manifest, config.widths);
-  const collision = evidence.find((path, i) => evidence.indexOf(path) !== i);
+  const keys = evidence.map(pathKey);
+  const collision = evidence.find(
+    (path, i) => keys.indexOf(pathKey(path)) !== i,
+  );
   if (collision !== undefined)
     throw new ExitError(
       2,
