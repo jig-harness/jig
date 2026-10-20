@@ -1,17 +1,20 @@
 /**
  * The freshness guard for a decision source: every claim's citation, checked
- * against `verifiedAt.commit` by the sheet kit (`../sheet-kit/freshness.ts`).
+ * against `verifiedAt.commit` (and, for a citation qualified with another
+ * repository's name, that repository's commit in `verifiedAt.repositories`)
+ * by the sheet kit (`../sheet-kit/freshness.ts`).
  */
 import {
   checkFreshness as checkCitations,
   citedPaths as citedPathsOf,
   type Freshness,
+  type OtherRepositories,
 } from "../sheet-kit/freshness.ts";
 import type { DecisionSource } from "./source.ts";
 
 export type { Freshness };
 
-function claimSources(source: DecisionSource): string[] {
+export function claimSources(source: DecisionSource): string[] {
   return [
     ...source.currentBehaviour,
     ...(source.settled ?? []),
@@ -30,10 +33,12 @@ export const checkFreshness = (
   source: DecisionSource,
   repoRoot: string,
   adrDirectory?: string,
+  others?: OtherRepositories,
 ): Freshness =>
   checkCitations(
     claimSources(source),
     source.verifiedAt.commit,
     repoRoot,
     adrDirectory,
+    others,
   );

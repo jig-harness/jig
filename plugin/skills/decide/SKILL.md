@@ -60,6 +60,7 @@ time. Every one is optional.
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
 | `adr.directory` | The directory holding the ADRs, named `ADR-NNNN-<slug>.md` (Jig module M5, ADR practice); shared with `/jig:adr` | Detected as `/jig:adr` does (`docs/adr`, `doc/adr`, `docs/decisions`, …), else `docs/adr` |
+| `sheets.repositories` | Clones of the other repositories a sheet cites (`beta:ADR-0002`): a map from repository name to a path, relative to the repository root or absolute | None: a qualified citation is refused |
 | `decide.policy_files` | Instruction files whose `##` sections are standing policy | `[AGENTS.md]` |
 | `decide.rules_directory` | A directory of conditional rule files, one rule per `.md` file | `.claude/rules`, Claude Code's rules folder; a repository using another agent tool sets its own |
 | `decide.glossary_file` | The canonical vocabulary, as `**Term**:` lines each followed by an `_Avoid_:` line of aliases | `CONTEXT.md` |

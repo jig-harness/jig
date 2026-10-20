@@ -13,7 +13,10 @@
  * or a malformed one, is an error.
  */
 
-import { citedPaths } from "../../../decide/scripts/sheet-kit/freshness.ts";
+import {
+  citedPaths,
+  LEADING_QUALIFIER,
+} from "../../../decide/scripts/sheet-kit/freshness.ts";
 import type { GlossaryEntry } from "../../../decide/scripts/sheet-kit/inline.ts";
 import {
   Checker,
@@ -59,7 +62,12 @@ export interface ExplainerSource {
   title: string;
   /** The issue the explainer serves. Issue ids in the text link to its tracker. */
   url?: string;
-  verifiedAt: { date: string; commit: string };
+  /** `repositories` holds the commit for each other repository a citation names (`other:ADR-0002`). */
+  verifiedAt: {
+    date: string;
+    commit: string;
+    repositories?: Record<string, string>;
+  };
   summary: string;
   scope: { covers: string[]; excludes?: string[] };
   flow?: FlowStep[];
@@ -124,8 +132,14 @@ const referenceOf = (segment: string): string => segment.replace(NOTE, "");
  * here instead of passing as a sheet with no checkable citation.
  */
 function segmentProblem(segment: string): string | undefined {
-  const reference = referenceOf(segment);
-  if (CITATION_ID.test(reference)) return undefined;
+  // `other:` names another repository; what follows is checked as in this
+  // one, except that only a path or an ADR is qualified, never an issue key.
+  const unqualified = referenceOf(segment);
+  const reference = unqualified.replace(LEADING_QUALIFIER, "$1");
+  if (CITATION_ID.test(reference))
+    return reference === unqualified || reference.startsWith("ADR-")
+      ? undefined
+      : `${JSON.stringify(segment)} qualifies an issue key; a repository qualifier names a path or an ADR`;
   const quoted = /^`([^`\n]+)`$/.exec(reference);
   const ref = quoted ? (quoted[1] as string).trim() : reference;
   const at = ref.search(/[#:]/);
@@ -348,8 +362,13 @@ export function parseSource(value: unknown): ExplainerSource {
     });
 
   // Tokens name flow steps, so they are checked once the structure holds.
-  if (c.problems.length === 0)
+  if (c.problems.length === 0) {
     checkTokens(c, value as unknown as ExplainerSource);
+    c.qualifiedCitations(
+      citations(value as unknown as ExplainerSource),
+      value.verifiedAt,
+    );
+  }
 
   if (c.problems.length > 0) throw new SourceError(c.problems);
   return value as unknown as ExplainerSource;
