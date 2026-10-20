@@ -567,6 +567,22 @@ other_tool:
     expect(refused(entry("badge", "{ Sev1: high, Sev2: medium }"))).toBe(false);
   });
 
+  test("the handback landing check's own validation refuses what it would refuse", () => {
+    const refused = (handback: string) =>
+      ids(
+        fit({
+          ".config/jig.yaml": `design_brief:\n  handback:\n${handback}`,
+        }).report,
+      ).includes("rejected:design-brief-builder (handback)");
+    const rest =
+      "    rubric: rubric.md\n    scorecard: scorecard.md\n    browser_executable: /usr/bin/chromium\n";
+    expect(refused(`    widths: [0]\n${rest}`)).toBe(true);
+    expect(refused(`    widths: [-1]\n${rest}`)).toBe(true);
+    expect(refused(`    widths: [390, 390]\n${rest}`)).toBe(true);
+    expect(refused("    widths: [390]\n")).toBe(true);
+    expect(refused(`    widths: [390, 1280]\n${rest}`)).toBe(false);
+  });
+
   test("the code-stats skill's own validation refuses what it would refuse", () => {
     const refused = (codeStats: string) =>
       ids(

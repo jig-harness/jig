@@ -648,6 +648,13 @@ make, use the entry's term instead.
   ([scar classes](plugin/skills/descar/references/scar-classes.md)).
 - **Design brief bundle** — the numbered set of Markdown files and images
   handed to an external design session as its only input.
+- **Design handback** — bringing an external design session's returned bundle
+  into the repository, preserving accepted repository fixes and checking the
+  result before it becomes the design to implement
+  ([design-brief-builder](plugin/skills/design-brief-builder/SKILL.md)).
+- **Export base** — the commit holding a design bundle's raw delivery, before
+  repository fixes. The next handback compares that delivery, the repository's
+  accepted version and the newly returned version in a three-way merge.
 - **Claude Design** — a hosted design tool, and the one external design
   session a *design brief bundle* is prepared for so far. The design work
   happens there, not in the repository; Jig's
