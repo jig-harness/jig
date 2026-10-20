@@ -1,6 +1,6 @@
 ---
 name: design-brief-builder
-description: "Assemble the numbered brief bundle for an external design session (Claude Design) and run the anti-prescription audit that decides whether it is ready; use once a user-interface flow is confirmed to need external design work."
+description: "Prepare a numbered brief for an external design session, derive its facts, and merge the returned bundle against repository fixes before a mechanical browser landing check. Use for external design preparation and handback."
 user-invocable: true
 allowed-tools:
   - Read
@@ -12,7 +12,7 @@ allowed-tools:
 
 # Design brief builder
 
-Carries out the **front half** of the Claude Design workflow: turning a
+Carries out the preparation and handback of the Claude Design workflow: turning a
 user-interface request into the numbered `uploads/` bundle you hand to an
 external Claude Design session. The design work itself happens in that
 session; this skill produces the *inputs* and runs the audit gate that decides
@@ -123,8 +123,11 @@ Steps:
    language. List only *already-canonical* primitives (from the kit and the
    earlier bundles in the prototypes directory) so reuse is the default. Never
    invent primitive names here.
-3. **Reality-ground** (audit first, or defer to Phase 2). Two tables with
-   `file:line` citations, one for the entity's content and one for AI and
+3. **Reality-ground** (audit first, or defer to Phase 2). Generate data-facts tables from source commands before writing counts:
+   `bun "${CLAUDE_SKILL_DIR}/scripts/handback.ts" facts '["bun","scripts/export-design-facts.ts"]' "/tmp/design-brief-<flow-slug>/uploads/reference-specs/data-facts.md"`.
+   The consumer command returns a nonempty JSON object; the output records its
+   argument array, UTC timestamp and source-output digest. Do not hand-count
+   entity cardinalities. Two reality-grounding tables with `file:line` citations, one for the entity's content and one for AI and
    automation, each row
    `prototype expectation | backend reality | congruent? | gap`. Procedure and
    grep recipes: **`${CLAUDE_SKILL_DIR}/references/reality-grounding.md`**.
@@ -169,18 +172,34 @@ Read it before your first brief.
 
 ## After the session: handoff back
 
-The Claude Design output lands as a bundle in
-`<prototypes>/<flow-slug>/`. That is the **back half**, out of scope here.
-Verify it for the common failure modes (missing files, a stale README, orphan
-files), rename invented names to the canonical entity names (a component the
-design called `Parcel*` for an entity the code calls `Shipment` becomes
-`Shipment*`), then continue:
+Follow the canonical handback procedure in
+`${CLAUDE_SKILL_DIR}/README.md`. Save the landed commit, commit the untouched
+raw returned bundle at its canonical path, then run:
 
-- Plan and file the implementation with the repository's own design-import
-  process, if it has one, or transliterate a single page directly.
-- Score the bundle against the kit's rubric, if it has one. Anything below the
-  rubric's pass bar gets a retrospective line wherever the repository records
-  them (Jig module M8, learning loop).
+```sh
+bun "${CLAUDE_SKILL_DIR}/scripts/handback.ts" merge "<bundle>" HEAD "<scratch-output>" --ours "<saved-landed-commit>"
+```
+
+This merges the recorded raw export base, saved repository version and returned
+export into a new scratch directory. Exit 1 means conflicts or lost repository
+hunks need review. Copy the staged bundle to its canonical path and run the landing check below
+immediately, before manual review, to list mechanical findings. Resolve
+conflicts, clear each resolved conflict entry in
+`handback-report.json`, and explicitly acknowledge each reported regression
+only after deciding whether the repository fix should be restored. Retain the raw export commit in history,
+and run the sole landing check:
+
+```sh
+bun "${CLAUDE_SKILL_DIR}/scripts/handback.ts" check "<bundle>"
+```
+
+Configure `design_brief.handback` through the shared configuration reader:
+`forbidden_terms` (default empty), and required `widths`, `rubric`, `scorecard`,
+`browser_executable`. Scenario names and URLs come from the bundle's
+`design-handback.json`, never a built-in scenario list. Both its README and
+consumer scorecard must state `Bar outcome: pass`. Missing evidence, browser
+availability or unresolved review fails closed. A passed landing check allows
+planning production implementation with the repository's own process.
 
 ## References
 

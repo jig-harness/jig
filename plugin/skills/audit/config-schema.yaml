@@ -443,6 +443,32 @@ fields:
   design_brief.prototypes:
     type: path
     read_by: [design-brief-builder]
+  design_brief.handback.forbidden_terms:
+    type: list
+    items: string
+    read_by: [design-brief-builder]
+    since: next
+  design_brief.handback.widths:
+    type: list
+    items: integer
+    nonempty: true
+    read_by: [design-brief-builder]
+    since: next
+  design_brief.handback.rubric:
+    type: path
+    exists: required
+    read_by: [design-brief-builder]
+    since: next
+  design_brief.handback.scorecard:
+    type: path
+    exists: required
+    read_by: [design-brief-builder]
+    since: next
+  design_brief.handback.browser_executable:
+    type: path
+    exists: required
+    read_by: [design-brief-builder]
+    since: next
   decide.policy_files:
     type: list
     items: path
