@@ -16,7 +16,8 @@ keeps every owner it names real.
 - **A lifecycle map gate** in M6, `reference/lifecycle-map/`, with a
   self-test: it fails a map whose owner is a skill, script, file or link that
   does not exist, a numbered, unowned or placeholder stage, an instruction file
-  that does not link the map, and, with `--cover`, a skill on no stage. With
+  that does not link the map, and, with `--cover`, a skill that owns no stage
+  and is not in the map's table of skills outside the loop. With
   `--scan` it fails any document that names a plugin skill that does not exist.
 - **Audit criteria** for M6 (`lifecycle-map-published`,
   `lifecycle-owners-resolve-gated`, `lifecycle-skills-on-the-map`), scored

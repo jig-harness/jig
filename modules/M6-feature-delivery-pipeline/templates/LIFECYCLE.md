@@ -8,7 +8,8 @@
 > has no skill for a stage yet, link the document that says what happens
 > instead, so the cell still names something that exists. Run the
 > [lifecycle map gate](https://github.com/jig-harness/jig/blob/main/modules/M6-feature-delivery-pipeline/reference/lifecycle-map/README.md)
-> in CI so every owner named below stays something that exists.
+> in CI so every owner named below stays something that exists. Delete this
+> block once the page is yours.
 
 Work moves through this loop, and each stage names who runs it and what it
 hands on. Ask "what comes next?" of this page, not of memory: a stage that
@@ -28,7 +29,7 @@ added. The loop closes: the last stage feeds the first.
 | implement | `/jig:do-item`, through the agent it routes the issue to | a validated change on the branch | |
 | pre-PR gates | `/jig:review`, `/jig:change-areas` | a green gate run and a reviewed diff | [M1](https://github.com/jig-harness/jig/blob/main/modules/M1-gates-enforcement-ladder/README.md), [M3](https://github.com/jig-harness/jig/blob/main/modules/M3-change-area-catalog/README.md) |
 | draft and drive | `/jig:do-item` opens the pull request, `/jig:drive-pr` drives it | a draft pull request with its review loop armed | [M7](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md) |
-| review rounds | `/jig:resolve-review-comments`, `/jig:resolve-conflicts` and `/jig:fix-ci`, run by the drive | every thread resolved with a declared outcome and green required checks | [M7](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md) |
+| review rounds | `/jig:resolve-review-comments` and `/jig:resolve-conflicts`, run by the drive; `/jig:fix-ci` when a person repairs a red run by hand | every thread resolved with a declared outcome and green required checks | [M7](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md) |
 | merge | a person: `<link to the decision record that says so>` | the merged commit | [M7](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md) |
 | post-merge | `/<post-merge-skill>` | a settled tracker, deferred findings filed, scaffolding removed | [M7](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md) |
 | ops drain | `<the skill or document that clears out-of-tree work>` | out-of-tree actions done and recorded | [M10](https://github.com/jig-harness/jig/blob/main/modules/M10-environments-deploy/README.md) |

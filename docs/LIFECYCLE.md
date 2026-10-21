@@ -22,10 +22,10 @@ owner's own document, not here. The last stage feeds the first.
 | implement | `/jig:do-item`, through the agent its routing names | a validated change on the branch | [plugin/AGENTS.md](../plugin/AGENTS.md), [modules/AGENTS.md](../modules/AGENTS.md) |
 | pre-PR gates | `bun run gates`, `/jig:review`, `/jig:change-areas`, `/jig:github-actions` and `/jig:changelog` | a green gate run, a reviewed diff and a change note | [CONTRIBUTING.md](../CONTRIBUTING.md#quality-gates) |
 | draft and drive | `/jig:do-item` opens the pull request, `/jig:drive-pr` drives it | a draft pull request with its review loop armed | [CONTRIBUTING.md](../CONTRIBUTING.md#pull-request-lifecycle) |
-| review rounds | `/jig:resolve-review-comments`, `/jig:resolve-conflicts` and `/jig:fix-ci`, run by the drive | every thread resolved with a declared outcome, and green required checks | [drive-pr](../plugin/skills/drive-pr/README.md) |
+| review rounds | `/jig:resolve-review-comments` and `/jig:resolve-conflicts`, run by the drive; `/jig:fix-ci` when a person repairs a red run by hand | every thread resolved with a declared outcome, and green required checks | [drive-pr](../plugin/skills/drive-pr/README.md) |
 | merge | a person; an agent never merges ([ADR-0003](adr/ADR-0003-a-person-merges.md)) | the merged commit | [M7](../modules/M7-pr-lifecycle-review/README.md) |
 | post-merge | `/followup` | a settled tracker item, filed deferred findings, the release tag and a cleaned-up workspace | [followup](../.claude/skills/followup/SKILL.md) |
-| ops drain | `/followup`, which also brings the website, the status pages and the consumer repositories up to date; Jig keeps no separate ledger of out-of-tree work | every out-of-tree action the merge owed, done | [followup](../.claude/skills/followup/SKILL.md) |
+| ops drain | `/followup`, which also brings the website and the status pages up to date and files the consumer repositories' work in their trackers; Jig keeps no separate ledger of out-of-tree work | every out-of-tree action the merge owed, done or filed with its owner | [followup](../.claude/skills/followup/SKILL.md) |
 | epic close | `/jig:do-item` on the epic, once its sub-issues are settled | an epic closed on an accepted verdict, its tails handed off | [M9](../modules/M9-tasks-memory/README.md#an-epic-closes-on-an-accepted-verdict) |
 
 Skills outside the loop: they serve any stage, or keep the scaffolding true

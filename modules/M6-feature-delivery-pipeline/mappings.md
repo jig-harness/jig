@@ -203,7 +203,7 @@ a code span, so the gate can read it.
 
 | Owner is | Written as | Resolved against |
 |----------|------------|------------------|
-| A skill in a plugin | `/<plugin>:<skill>` | `--skills <plugin>=<dir>`: `<dir>/<skill>/SKILL.md`, the plugin's `skills/` directory |
+| A skill in a plugin | `/<plugin>:<skill>`, such as the Jig plugin's `/jig:file-issue` | `--skills <plugin>=<dir>`: `<dir>/<skill>/SKILL.md`, the plugin's `skills/` directory |
 | A repository's own skill or command | `/<name>` | `--skills <dir>`, one entry per directory: `.claude/skills/<name>/SKILL.md` and `.claude/commands/<name>.md`; the [skills mirror](../M0-instruction-architecture/mappings.md#cross-runtime-skill-discovery-the-symlink-mirror) makes the same directory serve Codex, so one entry covers both runtimes |
 | A package script | `bun run <script>`, `npm run <script>`, `pnpm run <script>`, `yarn run <script>` | `scripts` in `package.json` (`--package-json`) |
 | A script in the repository | `bun <path>` or `<path>` | the file, under `--root` |
@@ -217,15 +217,17 @@ says how the stage is run, and links it.
 ```yaml
 # .github/workflows/gates.yml — a step beside the other documentation checks
 - name: The lifecycle map names only owners that exist
+  working-directory: pr   # the change's tree, read as data
   run: >-
-    bun "$M6"/reference/lifecycle-map/check-lifecycle-map.ts docs/LIFECYCLE.md
+    bun "$GITHUB_WORKSPACE/$M6"/reference/lifecycle-map/check-lifecycle-map.ts docs/LIFECYCLE.md
     --skills <plugin>=<plugin-dir>/skills --skills .claude/skills
     --skills .claude/commands --cover <plugin-dir>/skills --linked-from AGENTS.md
 ```
 
 As with the other gates, run the script from the base the change targets
-(the `M6` variable above), never from the change's own tree, and read the map
-and the skill directories as data; a change that rewrites the gate cannot then
+(the `M6` variable above, under `base/`), never from the change's own tree,
+and read the map and the skill directories as data from `pr/`, the step's
+working directory and so the gate's `--root`; a change that rewrites the gate cannot then
 report itself clean. `--cover` is for a repository that ships skills and
 wants none left off the map; a repository that only uses a plugin leaves it
 out.

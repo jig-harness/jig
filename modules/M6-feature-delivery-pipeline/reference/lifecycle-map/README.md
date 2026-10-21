@@ -22,32 +22,39 @@ names has to exist.
 | `stage-table` | the file has no table with the columns `Stage`, `Owner` and `Hands on` |
 | `stage-name` | a stage has no name, is numbered (`1. steer`, `Stage 2`), or repeats another stage's name |
 | `owner-missing`, `handoff-missing` | a stage has no owner, or names it in words only, or has no handoff |
-| `placeholder` | an owner or a handoff is still a `<placeholder>` from the template |
+| `placeholder` | a stage's name, owner or handoff, or a row of the table of skills outside the loop, is still a `<placeholder>` from the template |
 | `owner-unresolved` | a code span in an owner is not something that exists (below), or a relative link in it reaches no file |
-| `skill-not-in-map` | with `--cover`, a skill in that directory is named nowhere in the map |
+| `skill-not-in-map` | with `--cover`, a skill in that directory owns no stage and is not in the table of skills outside the loop |
 | `skill-unresolved` | with `--scan`, a document names a `/namespace:skill` that does not exist |
 | `map-not-linked` | with `--linked-from`, the always-loaded instruction file does not link the map |
 
-Stages are named, never numbered: a number is wrong the day a stage is added
-in the middle. Whether the stages are in the right order is not checked; it is
+The gate reads the map as a reader sees it: a table inside a fenced block or
+an HTML comment is not part of it. Stages are named, never numbered: a number
+is wrong the day a stage is added in the middle. Whether the stages are in the right order is not checked; it is
 a question for the reviewer of a change to the process.
 
 A code span in an owner resolves when it is:
 
 - **A skill or command**: `/name`, or `/namespace:name` for a plugin's
   skills. It resolves to `<dir>/<name>/SKILL.md` or `<dir>/<name>.md` under a
-  `--skills` directory. `--skills jig=plugin/skills` serves the `jig`
+  `--skills` directory, each a regular file; a linked skill directory is
+  followed. `--skills jig=plugin/skills` serves the `jig`
   namespace; `--skills .claude/skills` (no namespace) serves bare names; a
   second directory of command files is a second `--skills` entry. A
   bare name does not resolve in a namespaced directory, because that is not
   how the skill is invoked.
 - **A package script**: `bun run gates`, `npm run`, `pnpm run`, `yarn run`,
-  against the `scripts` of `package.json`.
+  against the `scripts` of `package.json` whose command is text. `bun run`
+  also runs a file, so `bun run scripts/check.ts` resolves to the file.
 - **A file**: `bun scripts/check.ts`, or a bare path, against `--root`.
 - **A declared external command**: anything else the repository trusts to
   exist outside it (`gh`, `bun test`), declared with `--external <command>`.
   A command the gate cannot resolve and nobody declared is a finding, not a
   pass, so it never reads as checked when it was not.
+
+A chain (`a && b`, `a || b`, `a; b`, `a | b`) is resolved command by
+command, an operator inside quotes staying part of its argument. A link may be
+inline or a reference link whose definition is in the map.
 
 Prose in an owner cell that names no span and no link (`whoever is free`) is
 a finding too: it cannot be resolved. A stage owned by a person says so with
@@ -77,7 +84,7 @@ options:
 | `--scan <file>` | require every `/namespace:skill` the file names, for a namespace given to `--skills`, to exist; repeatable |
 | `--linked-from <file>` | require the file to link the map |
 
-`--scan` reads inline code spans outside fenced blocks and only for a
+`--scan` reads inline code spans outside fenced blocks and comments, and only for a
 namespace the gate was given, so a bare `/tmp` or a command in another tool's
 namespace is never a finding. Leave out of the scan the documents that name
 skills that are not built yet (a plan) or no longer exist (a changelog); that

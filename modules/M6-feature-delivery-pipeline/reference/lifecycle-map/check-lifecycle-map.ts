@@ -13,16 +13,18 @@
 //   * the file holds a table with `Stage`, `Owner` and `Hands on` columns;
 //   * a stage has a name that is not a number (a number goes stale the day a
 //     stage is added), a name no other stage has, an owner and a handoff,
-//     and neither is an unfilled `<placeholder>`;
+//     and none of them is an unfilled `<placeholder>`;
 //   * every code span in an owner resolves: `/name` or `/namespace:name` to a
 //     skill directory (`<dir>/<name>/SKILL.md`) or a command file
 //     (`<dir>/<name>.md`) under a `--skills` directory; `<pm> run <script>` to a
-//     package.json script; a path, or `bun <path>`, to a file that exists;
+//     package.json script (or, for `bun run`, a file); a path, or `bun <path>`,
+//     to a file that exists;
 //     anything else to a tool declared with `--external`;
-//   * every relative link in an owner reaches a file that exists;
-//   * with `--cover <dir>`, every skill under the directory is named somewhere
-//     in the map (in a stage, or in the table of skills outside the loop), so
-//     a skill that exists but no stage reaches is found here;
+//   * every relative link in an owner, inline or by reference, reaches a file
+//     that exists;
+//   * with `--cover <dir>`, every skill under the directory owns a stage or is
+//     in the table of skills outside the loop, so a skill that exists but no
+//     stage reaches is found here;
 //   * with `--scan <file>`, every `/namespace:name` span of a namespace given
 //     to `--skills` in that file resolves, so process documents name only
 //     skills that exist;
@@ -40,14 +42,16 @@
 //     [--scan <file>]... [--linked-from <file>]
 // `--root` (default: the working directory) is where `bun <path>` and a bare
 // path are looked up; `--package-json` defaults to <root>/package.json.
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { cli, strictOptions } from "../../../../lib/cli.ts";
+import { fenceAfter, readRegularFile } from "../../../../lib/files.ts";
 import {
   type Finding,
   couldNotCheck,
   reportFindings,
 } from "../../../../lib/findings.ts";
+import { isRecord } from "../../../../lib/record.ts";
 
 const GATE = "check-lifecycle-map.ts";
 const usage = `usage: ${GATE} <map.md> [--root <dir>] [--skills [namespace=]<dir>]... [--package-json <file>] [--external <command>]... [--cover <dir>]... [--scan <file>]... [--linked-from <file>]`;
@@ -81,22 +85,40 @@ export interface Stage {
 /** Input the gate cannot read or does not understand; never a pass. */
 export class MapInputError extends Error {}
 
-/** Lines of `text` with the fenced code blocks blanked, so line numbers hold. */
-function outsideFences(text: string): string[] {
-  let fence: string | undefined;
-  return text.split("\n").map((line) => {
-    const marker = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1];
-    if (fence === undefined) {
-      if (marker !== undefined) fence = marker;
-      return marker !== undefined ? "" : line;
+/** The part of `line` a reader sees, given whether an HTML comment is open before it. */
+function outsideComments(
+  line: string,
+  open: boolean,
+): { text: string; open: boolean } {
+  let text = "";
+  let at = 0;
+  let inComment = open;
+  while (at <= line.length) {
+    const next = line.indexOf(inComment ? "-->" : "<!--", at);
+    if (next < 0) {
+      if (!inComment) text += line.slice(at);
+      break;
     }
-    if (
-      marker !== undefined &&
-      marker[0] === fence[0] &&
-      marker.length >= fence.length
-    )
-      fence = undefined;
-    return "";
+    if (!inComment) text += line.slice(at, next);
+    at = next + (inComment ? 3 : 4);
+    inComment = !inComment;
+  }
+  return { text, open: inComment };
+}
+
+/** Lines of `text` as a reader sees them: fenced blocks and HTML comments blanked, so line numbers hold. */
+export function visibleLines(text: string): string[] {
+  let fence: string | undefined;
+  let comment = false;
+  return text.split("\n").map((line) => {
+    if (!comment) {
+      const before = fence;
+      fence = fenceAfter(before, line);
+      if (before !== undefined || fence !== undefined) return "";
+    }
+    const seen = outsideComments(line, comment);
+    comment = seen.open;
+    return seen.text;
   });
 }
 
@@ -112,18 +134,55 @@ const isSeparator = (line: string): boolean =>
   /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/.test(line) &&
   line.includes("-");
 
+const CODE_SPAN = /(`+)(.+?)\1(?!`)/g;
+
 /** The inline code spans of `text`, without their backticks. */
 export function codeSpans(text: string): string[] {
-  return [...text.matchAll(/(`+)(.+?)\1(?!`)/g)].map((m) =>
-    (m[2] ?? "").trim(),
-  );
+  return [...text.matchAll(CODE_SPAN)].map((m) => (m[2] ?? "").trim());
 }
 
-/** The targets of the Markdown links in `text`. */
-export function linkTargets(text: string): string[] {
-  return [...text.matchAll(/\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)].map(
-    (m) => m[1] ?? "",
-  );
+/** A link reference definition, `[label]: target`, which renders as nothing. */
+const DEFINITION = /^ {0,3}\[([^\]]+)\]:[ \t]*<?([^\s>]+)>?/;
+
+const label = (text: string): string =>
+  text.trim().replaceAll(/\s+/g, " ").toLowerCase();
+
+/** The link reference definitions of `lines`, by their normalized label. */
+export function linkDefinitions(lines: string[]): Map<string, string> {
+  const found = new Map<string, string>();
+  for (const line of lines) {
+    const m = DEFINITION.exec(line);
+    if (m && !found.has(label(m[1] ?? "")))
+      found.set(label(m[1] ?? ""), m[2] ?? "");
+  }
+  return found;
+}
+
+/**
+ * The targets of the Markdown links in `text`: inline links, and reference
+ * links whose label `definitions` defines. A link written inside a code span
+ * renders as code, so it is not one.
+ */
+export function linkTargets(
+  text: string,
+  definitions: Map<string, string> = new Map(),
+): string[] {
+  const prose = text
+    .replaceAll(CODE_SPAN, " ")
+    .split("\n")
+    .filter((line) => !DEFINITION.test(line))
+    .join("\n");
+  const targets: string[] = [];
+  for (const m of prose.matchAll(
+    /\[([^\]]*)\](?:\(([^)\s]+)(?:\s+"[^"]*")?\)|\[([^\]]*)\])?/g,
+  )) {
+    if (m[2] !== undefined) targets.push(m[2]);
+    else {
+      const target = definitions.get(label(m[3] || (m[1] ?? "")));
+      if (target !== undefined) targets.push(target);
+    }
+  }
+  return targets;
 }
 
 /** A Markdown table: its header cells, and each body row's cells with the line it is on. */
@@ -132,9 +191,9 @@ interface Table {
   rows: { line: number; cells: string[] }[];
 }
 
-/** The tables of `text` outside fenced blocks. */
+/** The tables of `text` a reader sees: none inside a fenced block or an HTML comment. */
 function tables(text: string): Table[] {
-  const lines = outsideFences(text);
+  const lines = visibleLines(text);
   const isRow = (at: number) => (lines[at] ?? "").trim().startsWith("|");
   const found: Table[] = [];
   for (let i = 0; i < lines.length; i++) {
@@ -184,15 +243,22 @@ function skillTableSpans(text: string): { line: number; span: string }[] {
   });
 }
 
-/** The skills (directories with a SKILL.md, or command files) directly under `dir`. */
+const isFile = (path: string): boolean =>
+  statSync(path, { throwIfNoEntry: false })?.isFile() === true;
+
+/**
+ * The skills directly under `dir`: a directory holding a SKILL.md file, or a
+ * command file. A link is followed, so a linked skill directory counts.
+ */
 export function skillNames(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true })
-    .filter((e) =>
-      e.isDirectory()
-        ? existsSync(join(dir, e.name, "SKILL.md"))
-        : e.name.endsWith(".md"),
-    )
-    .map((e) => (e.isDirectory() ? e.name : e.name.slice(0, -3)))
+  return readdirSync(dir)
+    .flatMap((name) => {
+      const path = join(dir, name);
+      const entry = statSync(path, { throwIfNoEntry: false });
+      if (entry?.isDirectory())
+        return isFile(join(path, "SKILL.md")) ? [name] : [];
+      return entry?.isFile() && name.endsWith(".md") ? [name.slice(0, -3)] : [];
+    })
     .sort();
 }
 
@@ -220,11 +286,12 @@ function skillResolves(
   return skills.some(
     (s) =>
       s.namespace === namespace &&
-      (existsSync(join(s.dir, name, "SKILL.md")) ||
-        existsSync(join(s.dir, `${name}.md`))),
+      (isFile(join(s.dir, name, "SKILL.md")) ||
+        isFile(join(s.dir, `${name}.md`))),
   );
 }
 
+/** The package file's scripts that run something: a name with a command that is a string with text in it. */
 function readPackageScripts(
   path: string,
   required: boolean,
@@ -235,23 +302,25 @@ function readPackageScripts(
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(path, "utf8"));
+    parsed = JSON.parse(readText(path, "--package-json"));
   } catch (error) {
+    if (error instanceof MapInputError) throw error;
     throw new MapInputError(
       `${path} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  const scripts =
-    typeof parsed === "object" && parsed !== null && "scripts" in parsed
-      ? parsed.scripts
-      : undefined;
+  const scripts = isRecord(parsed) ? parsed.scripts : undefined;
+  if (scripts === undefined) return new Set();
+  if (!isRecord(scripts))
+    throw new MapInputError(`${path}: "scripts" is not an object`);
   return new Set(
-    typeof scripts === "object" && scripts !== null ? Object.keys(scripts) : [],
+    Object.entries(scripts)
+      .filter(
+        ([, command]) => typeof command === "string" && command.trim() !== "",
+      )
+      .map(([name]) => name),
   );
 }
-
-const isFile = (path: string): boolean =>
-  statSync(path, { throwIfNoEntry: false })?.isFile() === true;
 
 const invocation = (namespace: string, name: string): string =>
   namespace ? `/${namespace}:${name}` : `/${name}`;
@@ -279,7 +348,13 @@ function runProblem(
 ): string | undefined {
   const target = run[2] ?? "";
   if (scripts?.has(target)) return undefined;
-  if (FILE_WORD.test(target) && isFile(resolve(root, target))) return undefined;
+  // `bun run` also runs a file; the other package managers run only scripts.
+  if (
+    run[1] === "bun" &&
+    FILE_WORD.test(target) &&
+    isFile(resolve(root, target))
+  )
+    return undefined;
   return scripts
     ? `${run[1]} run ${target} is not a script in the package file`
     : `${run[1]} run ${target} needs a package.json, and none was read`;
@@ -312,14 +387,48 @@ function segmentProblem(
   return pathProblem(span, opts.root);
 }
 
+/**
+ * The commands of a chain: `a && b`, `a || b`, `a; b` and `a | b` split into
+ * their commands, an operator inside quotes staying part of its argument.
+ */
+export function commandSegments(span: string): string[] {
+  const segments: string[] = [];
+  let current = "";
+  let quote: string | undefined;
+  for (let at = 0; at < span.length; at++) {
+    const c = span[at] ?? "";
+    if (quote !== undefined || c === "'" || c === '"') {
+      if (quote === undefined) quote = c;
+      else if (c === quote) quote = undefined;
+      current += c;
+      continue;
+    }
+    const operator = /^(?:&&|\|\||;|\|)/.exec(span.slice(at))?.[0];
+    if (operator === undefined) {
+      current += c;
+      continue;
+    }
+    segments.push(current.trim());
+    current = "";
+    at += operator.length - 1;
+  }
+  segments.push(current.trim());
+  return segments;
+}
+
+/** The skills a span names, one per command of a chain. */
+function skillRefs(span: string): { namespace: string; name: string }[] {
+  return commandSegments(span).flatMap((segment) => skillRef(segment) ?? []);
+}
+
 /** Why `span` does not resolve, or undefined when it does; `a && b` and `a; b` are each resolved. */
 function unresolved(
   span: string,
   opts: MapOptions,
   scripts: Set<string> | undefined,
 ): string | undefined {
-  for (const segment of span.split(/\s*(?:&&|\|\||;|\|)\s*/)) {
-    const why = segmentProblem(segment.trim(), opts, scripts);
+  for (const segment of commandSegments(span)) {
+    const why = segmentProblem(segment, opts, scripts);
     if (why !== undefined) return why;
   }
   return undefined;
@@ -327,7 +436,7 @@ function unresolved(
 
 function readText(path: string, what: string): string {
   try {
-    return readFileSync(path, "utf8");
+    return readRegularFile(path);
   } catch (error) {
     throw new MapInputError(
       `cannot read ${what} ${path}: ${error instanceof Error ? error.message : String(error)}`,
@@ -353,8 +462,9 @@ function linkedFile(
 const isPlaceholder = (span: string): boolean =>
   /^<[^>]*>$/.test(span) || /^\/<[^>]*>/.test(span);
 
-/** Text in angle brackets that is neither an HTML tag nor an autolink. */
-const PLACEHOLDER_IN_PROSE = /<(?!\/|br\b|https?:|!--)[^>]*>/i;
+/** Text in angle brackets that is neither an HTML tag Markdown prose uses nor an autolink. */
+const PLACEHOLDER_IN_PROSE =
+  /<(?!\/|!--|https?:|(?:a|abbr|b|br|code|del|em|i|img|ins|kbd|mark|p|q|s|small|span|strong|sub|sup|u)\b)[^>]*>/i;
 
 /** The findings one check adds, each anchored to a file and, for a stage, its line. */
 type Add = (finding: Omit<Finding, "file">, file?: string) => void;
@@ -364,7 +474,7 @@ const posix = (path: string): string => path.replaceAll("\\", "/");
 /** Why a stage's name is wrong, or undefined when it is a name nobody else has. */
 function nameProblem(
   name: string,
-): { problem: string; remedy: string } | undefined {
+): { problem: string; remedy: string; rule?: string } | undefined {
   if (name === "")
     return {
       problem: "a stage has no name",
@@ -380,10 +490,16 @@ function nameProblem(
       remedy:
         "name stages, never number them: a number is wrong the day a stage is added",
     };
+  if (PLACEHOLDER_IN_PROSE.test(name.replaceAll("`", "")))
+    return {
+      rule: "placeholder",
+      problem: `stage "${name}" is still a placeholder`,
+      remedy: "name the stage, or drop it if the repository has none",
+    };
   return undefined;
 }
 
-/** A stage's name: present, not a number, and not another stage's. */
+/** A stage's name: present, not a number, not a placeholder, and not another stage's. */
 function checkName(s: Stage, seen: Map<string, number>, add: Add): void {
   const at = { line: s.line, rule: "stage-name" };
   const wrong = nameProblem(s.stage);
@@ -417,9 +533,15 @@ function checkCell(
           ? "name the skill, command or document that runs the stage"
           : "name the artifact the next stage picks up",
     });
-  const prose = value.replace(/(`+)(.+?)\1/g, (_w, _t, inner: string) =>
-    isPlaceholder(inner.trim()) ? "<>" : "",
-  );
+  // An owner's command may take an argument written as `<PR>`; a whole span
+  // that is a placeholder is still one. A handoff has no arguments, so a
+  // placeholder anywhere in it counts.
+  const prose =
+    column === "Owner"
+      ? value.replace(/(`+)(.+?)\1/g, (_w, _t, inner: string) =>
+          isPlaceholder(inner.trim()) ? "<>" : "",
+        )
+      : value.replaceAll("`", "");
   if (PLACEHOLDER_IN_PROSE.test(prose))
     add({
       ...at,
@@ -434,10 +556,11 @@ function checkOwner(
   s: Stage,
   opts: MapOptions,
   scripts: Set<string> | undefined,
+  definitions: Map<string, string>,
   add: Add,
 ): number {
   const spans = codeSpans(s.owner);
-  const files = linkTargets(s.owner)
+  const files = linkTargets(s.owner, definitions)
     .map((target) => ({
       target,
       file: linkedFile(target, opts.map, opts.root),
@@ -484,9 +607,16 @@ function checkSkillTable(
   add: Add,
 ): void {
   for (const { line, span } of skillTableSpans(mapText)) {
-    const why = isPlaceholder(span)
-      ? undefined
-      : unresolved(span, opts, scripts);
+    if (isPlaceholder(span)) {
+      add({
+        line,
+        rule: "placeholder",
+        problem: `skills outside the loop: \`${span}\` is still a placeholder`,
+        remedy: "name the skill, or drop the row",
+      });
+      continue;
+    }
+    const why = unresolved(span, opts, scripts);
     if (why !== undefined)
       add({
         line,
@@ -497,11 +627,12 @@ function checkSkillTable(
   }
 }
 
-/** With `--cover`: every skill under each directory is named somewhere in the map. */
+/** With `--cover`: every skill under each directory owns a stage or is in the table of skills outside the loop. */
 function checkCover(mapText: string, opts: MapOptions, add: Add): void {
-  const named = tables(mapText).flatMap((table) =>
-    table.rows.flatMap((row) => row.cells.flatMap((cell) => codeSpans(cell))),
-  );
+  const named = [
+    ...parseStages(mapText).flatMap((s) => codeSpans(s.owner)),
+    ...skillTableSpans(mapText).map((s) => s.span),
+  ].flatMap(skillRefs);
   for (const dir of opts.cover) {
     const namespace =
       opts.skills.find((s) => resolve(s.dir) === resolve(dir))?.namespace ?? "";
@@ -514,10 +645,9 @@ function checkCover(mapText: string, opts: MapOptions, add: Add): void {
       );
     }
     for (const name of names) {
-      const mentioned = named.some((span) => {
-        const ref = skillRef(span);
-        return ref?.name === name && ref.namespace === namespace;
-      });
+      const mentioned = named.some(
+        (ref) => ref.name === name && ref.namespace === namespace,
+      );
       if (!mentioned)
         add({
           rule: "skill-not-in-map",
@@ -534,11 +664,9 @@ function checkScan(opts: MapOptions, add: Add): void {
   const namespaces = new Set(opts.skills.map((s) => s.namespace));
   for (const file of opts.scan) {
     const rel = posix(relative(opts.root, file));
-    outsideFences(readText(file, "--scan file")).forEach((line, index) => {
-      for (const span of codeSpans(line)) {
-        const ref = skillRef(span);
-        if (!ref || ref.namespace === "" || !namespaces.has(ref.namespace))
-          continue;
+    visibleLines(readText(file, "--scan file")).forEach((line, index) => {
+      for (const ref of codeSpans(line).flatMap(skillRefs)) {
+        if (ref.namespace === "" || !namespaces.has(ref.namespace)) continue;
         if (!skillResolves(opts.skills, ref.namespace, ref.name))
           add(
             {
@@ -562,10 +690,8 @@ function checkLinked(
   opts: MapOptions,
   add: Add,
 ): void {
-  const visible = outsideFences(readText(linkedFrom, "--linked-from file"))
-    .join("\n")
-    .replaceAll(/<!--[\s\S]*?-->/g, "");
-  const linked = linkTargets(visible).some(
+  const visible = visibleLines(readText(linkedFrom, "--linked-from file"));
+  const linked = linkTargets(visible.join("\n"), linkDefinitions(visible)).some(
     (t) => linkedFile(t, linkedFrom, opts.root) === resolve(opts.map),
   );
   if (!linked)
@@ -603,13 +729,14 @@ export function checkMap(opts: MapOptions): {
     opts.packageJson ?? join(opts.root, "package.json"),
     opts.packageJson !== undefined,
   );
+  const definitions = linkDefinitions(visibleLines(mapText));
   const seen = new Map<string, number>();
   let resolved = 0;
   for (const s of stages) {
     checkName(s, seen, add);
     checkCell(s, "Owner", s.owner, add);
     checkCell(s, "Hands on", s.handsOn, add);
-    resolved += checkOwner(s, opts, scripts, add);
+    resolved += checkOwner(s, opts, scripts, definitions, add);
   }
   checkSkillTable(mapText, opts, scripts, add);
   checkCover(mapText, opts, add);

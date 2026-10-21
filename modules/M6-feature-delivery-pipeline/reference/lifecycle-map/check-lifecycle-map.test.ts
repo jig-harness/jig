@@ -1,10 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   checkMap,
   codeSpans,
+  commandSegments,
   type MapOptions,
   parseStages,
   skillNames,
@@ -126,13 +135,19 @@ describe("a map that is not one", () => {
     ]);
   });
 
-  test("a placeholder in the owner or the handoff fails; an argument placeholder in a command does not", () => {
+  test("a placeholder in a stage's name, its owner, its handoff (a code span included) or the skills table fails; an argument placeholder in a command does not", () => {
     const found = checkMap(options("maps/placeholder.md")).findings;
     expect(found.map((f) => [f.line, f.rule])).toEqual([
       [3, "placeholder"],
       [4, "placeholder"],
+      [6, "placeholder"],
+      [7, "placeholder"],
+      [11, "placeholder"],
     ]);
   });
+
+  test("a table inside an HTML comment is not a map", () =>
+    expect(rules("maps/commented.md")).toEqual(["stage-table"]));
 });
 
 describe("owners that do not resolve", () => {
@@ -190,17 +205,50 @@ describe("owners that cannot be resolved or are not owners", () => {
     ]);
   });
 
-  test("every command of a chain is resolved", () => {
+  test("every command of a chain is resolved, and an operator inside quotes is part of its argument", () => {
     const found = checkMap(options("maps/chained.md")).findings;
     expect(found.map((f) => f.line)).toEqual([4, 5]);
     expect(found[0]?.problem).toContain("bun run nope");
     expect(found[1]?.problem).toContain("/jig:gone");
   });
 
-  test("a skill written as a placeholder is a placeholder, HTML and autolinks are not", () => {
+  test("a skill written as a placeholder is a placeholder; HTML tags and autolinks are not", () => {
     const found = checkMap(options("maps/html-and-placeholders.md")).findings;
     expect(found.map((f) => [f.line, f.rule])).toEqual([[4, "placeholder"]]);
   });
+
+  test("a reference link resolves through its definition, and one to nothing fails", () => {
+    const found = checkMap(options("maps/reference-links.md")).findings;
+    expect(found.map((f) => [f.line, f.rule])).toEqual([
+      [4, "owner-unresolved"],
+    ]);
+    expect(found[0]?.problem).toContain("../docs/gone.md");
+  });
+
+  test("only `bun run` runs a file, and a skill is a SKILL.md file, not a directory of that name", () => {
+    const found = checkMap(options("maps/run-files.md")).findings;
+    expect(found.map((f) => f.line)).toEqual([4, 5]);
+    expect(found[0]?.problem).toContain("npm run docs/plan.md");
+    expect(found[1]?.problem).toContain("/jig:hollow");
+  });
+
+  test("a script whose command is empty or not a string is not a script", () => {
+    const found = checkMap(
+      options("maps/chained.md", {
+        packageJson: at("packages/empty-commands.json"),
+      }),
+    ).findings;
+    expect(found[0]?.problem).toContain("bun run gates is not a script");
+  });
+
+  test("a scripts field that is not an object is an input error", () =>
+    expect(() =>
+      checkMap(
+        options("LIFECYCLE.md", {
+          packageJson: at("packages/array-scripts.json"),
+        }),
+      ),
+    ).toThrow('"scripts" is not an object'));
 
   test("a package file that was asked for and is missing is an input error", () =>
     expect(() =>
@@ -222,6 +270,29 @@ describe("coverage", () => {
       "/jig:orphan",
     ]);
   });
+
+  test("only an owner or the skills table covers a skill, and every skill of a chained owner counts", () => {
+    const found = checkMap(
+      options("maps/cover-roles.md", { cover: [at("plugin/skills")] }),
+    ).findings;
+    expect(found.map((f) => f.problem.split(" ")[0])).toEqual(["/jig:orphan"]);
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "a linked skill directory is a skill",
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), "jig-lifecycle-"));
+      try {
+        mkdirSync(join(dir, "real", "linked"), { recursive: true });
+        writeFileSync(join(dir, "real", "linked", "SKILL.md"), "# linked\n");
+        mkdirSync(join(dir, "skills"));
+        symlinkSync(join(dir, "real", "linked"), join(dir, "skills", "linked"));
+        expect(skillNames(join(dir, "skills"))).toEqual(["linked"]);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe("the table of skills outside the loop", () => {
@@ -264,6 +335,23 @@ describe("process documents", () => {
     });
     expect(found[0]?.problem).toContain("/jig:gone");
   });
+
+  test("a fence opened and closed on one line is inline code, not a block that hides the rest", () => {
+    const found = checkMap(
+      options("LIFECYCLE.md", { scan: [at("docs/process-inline-fence.md")] }),
+    ).findings;
+    expect(found.map((f) => [f.line, f.rule])).toEqual([
+      [5, "skill-unresolved"],
+    ]);
+  });
+
+  test("every skill of a chained command is resolved", () => {
+    const found = checkMap(
+      options("LIFECYCLE.md", { scan: [at("docs/process-chained.md")] }),
+    ).findings;
+    expect(found).toHaveLength(1);
+    expect(found[0]?.problem).toContain("/jig:gone");
+  });
 });
 
 describe("reach", () => {
@@ -280,10 +368,15 @@ describe("reach", () => {
 });
 
 describe("reach, as a reader sees it", () => {
-  test("a link in a code block or a comment is not a link", () =>
+  test("a link in a code block, a code span or a comment, and an unused definition, are not a link", () =>
     expect(
       rules("LIFECYCLE.md", { linkedFrom: at("AGENTS-hidden.md") }),
     ).toEqual(["map-not-linked"]));
+
+  test("a reference link counts", () =>
+    expect(
+      rules("LIFECYCLE.md", { linkedFrom: at("AGENTS-reference.md") }),
+    ).toEqual([]));
 
   test("a link from the root counts", () =>
     expect(
@@ -317,6 +410,15 @@ describe("helpers", () => {
 
   test("codeSpans reads single and double backtick spans", () =>
     expect(codeSpans("`a` and ``b`c``")).toEqual(["a", "b`c"]));
+
+  test("commandSegments splits a chain on operators outside quotes", () =>
+    expect(commandSegments(`a --m 'x;y' && b "p | q" || c; d | e`)).toEqual([
+      `a --m 'x;y'`,
+      `b "p | q"`,
+      "c",
+      "d",
+      "e",
+    ]));
 });
 
 describe("the command", () => {

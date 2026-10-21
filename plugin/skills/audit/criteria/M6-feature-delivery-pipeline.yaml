@@ -147,10 +147,11 @@ criteria:
     since: next
     statement: >-
       A check fails when the lifecycle map names a skill, command, script or
-      document that does not resolve, and it runs in CI.
+      document that does not resolve, and it runs in CI with its self-test.
     observe:
       - "a check reads the map's owners and resolves each against the repository's skills, scripts and files"
       - "CI runs the check on every pull request"
+      - "CI runs the check's own self-test, so a broken check fails loudly"
 
   - id: lifecycle-skills-on-the-map
     level: strict

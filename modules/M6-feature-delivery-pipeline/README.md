@@ -91,7 +91,7 @@ The fix is one table, the copyable [`LIFECYCLE.md`](templates/LIFECYCLE.md):
 
 | Stage | Owner | Hands on |
 |-------|-------|----------|
-| file | `/jig:file-issue` | a labelled tracker issue |
+| file | `/file-issue` | a labelled tracker issue |
 
 - **One row per stage of the loop**, in the order work takes: steer, spec,
   file, plan the epic, pick up, implement, pre-PR gates, draft and drive,
@@ -134,16 +134,16 @@ reviewer's question; the template says what to ask.
   checks it mechanically on changed stage docs; per-stage adversarial review is
   a documented contract; de-scarring is applied (the finished artifact is clean
   — see [M4](../M4-docs-governance/)); and the
-  [lifecycle map gate](reference/lifecycle-map/) fails a map that names an
-  owner that does not exist.
+  [lifecycle map gate](reference/lifecycle-map/) runs in CI with its
+  self-test and fails a map that names an owner that does not exist.
 - **Strict** — the [required-sections](reference/required-sections/) and
   [stage-review-record](reference/stage-review-record/) gates run in
   [CI](../../GLOSSARY.md) with their self-tests (mechanical); epic decomposition
   sets flag labels that drive downstream gates (mechanical, via
   [M9](../M9-tasks-memory/) / [M3](../M3-change-area-catalog/)); and the
   design-prototype loop's feedback into requirements and architecture is a
-  written contract; the lifecycle map gate runs in CI with its self-test and,
-  for a repository that ships skills, requires every one of them on the map.
+  written contract; and, for a repository that ships skills, the lifecycle map
+  gate requires every one of them on the map.
 
 ## Adoption steps
 
