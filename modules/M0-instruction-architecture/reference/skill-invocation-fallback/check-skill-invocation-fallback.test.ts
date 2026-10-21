@@ -245,6 +245,44 @@ test("a finding's line comes from the whole file's render", () => {
   expect(result.output).toContain(":10:");
 });
 
+test("a finding's line is where the render shows the invocation", () => {
+  // The same text stands first in a destination and a definition, which
+  // show nothing.
+  for (const text of [
+    "[x](</release-notes>)\n\n/release-notes\n",
+    "[r]: /release-notes\n\n/release-notes\n",
+  ]) {
+    const result = check(doc(text));
+    expectSpawnExit(result, 1, text);
+    expect(result.output).toContain(":3:");
+  }
+  const split = check(doc("[x](/release)\n\nRun /release-**notes**.\n"));
+  expectSpawnExit(split, 1);
+  expect(split.output).toContain(":3:");
+  // A name written in pieces after a character reference has no place.
+  const unplaced = check(doc("Run &#47;release-**notes**.\n"));
+  expectSpawnExit(unplaced, 1);
+  expect(unplaced.output).toContain("could not be placed");
+});
+
+test("a long text node is read whole", () => {
+  const text = `\`\`\`\n${"a".repeat(1_000_000)} /release-notes\n\`\`\`\n`;
+  const result = check(doc(text));
+  expectSpawnExit(result, 1);
+  expect(result.output).toContain(":2:");
+});
+
+test("an HTML tag that is not inline formatting sets the text apart", () => {
+  for (const text of [
+    "<div>Run<br>/release-notes</div>\n",
+    "<div><p>Run</p><p>/release-notes</p></div>\n",
+    "Run<br>/release-notes.\n",
+  ]) {
+    expectSpawnExit(check(doc(text)), 1, text);
+  }
+  expectSpawnExit(check(doc("<div>Run<b>/release-notes</b></div>\n")), 0);
+});
+
 test("an invocation inside an HTML comment is not read", () => {
   const text =
     "<!-- Run /release-notes; [procedure](skills/release-notes/SKILL.md) -->\n";

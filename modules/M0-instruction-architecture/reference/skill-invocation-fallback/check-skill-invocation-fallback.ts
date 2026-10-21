@@ -16,8 +16,13 @@
 // in the rendered lines (a link reference definition or an HTML comment
 // shows none). The text is read as shown: inline formatting adds nothing to
 // it, table cells are set off by blanks, raw HTML shows only the text between
-// its tags, and an image only its description. A finding names the
-// invocation's line in the file, placed by that same render.
+// its tags (a tag that is not inline formatting, such as a block or a line
+// break, is a blank), and an image only its description. A finding names the
+// invocation's line in the file: the renderer reports no source position, so
+// the file is rendered again with a mark where the invocation may stand, and
+// the place whose mark shows at the invocation, the rest of the text as it
+// was, is its place. An invocation no mark lands on is reported without a
+// line.
 //
 // A bare invocation is `/<skill>` in the rendered text, preceded by the start
 // of a line, a blank, a quote, a delimiter the render kept as text, or an
@@ -272,11 +277,13 @@ function fallbackTarget(target: string, skill: string, dir: string): boolean {
 
 /**
  * The characters the reading writes into a render: around a text node's
- * number and around a link's number. The file's own are replaced before it
- * is rendered, so none is ever read as one of these.
+ * number and around a link's number, and the mark that places an invocation
+ * in the file. The file's own are replaced before it is rendered, so none is
+ * ever read as one of these.
  */
 const NODE_OPEN = "";
 const NODE_CLOSE = "";
+const MARK = "";
 const LINK_OPEN = "";
 const LINK_CLOSE = "";
 const RESERVED = /[-]/g;
@@ -287,94 +294,40 @@ const PIECE = /(\d+)|(\d+)|[^]+/g;
 const TAG =
   /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:[^<>"']|"[^"]*"|'[^']*')*)?\/?>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<![A-Za-z][^>]*>|<!\[CDATA\[[\s\S]*?\]\]>/g;
 const WHOLE_TAG = new RegExp(`^(?:${TAG.source})$`);
-/** A character reference, which the renderer shows as a text node of its own. */
-const REFERENCE =
-  /&(?:#[0-9]{1,7}|#[xX][0-9A-Fa-f]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});/g;
+/** A tag of inline formatting, which sets nothing off from the text beside it. */
+const INLINE_TAG =
+  /^<\/?(?:a|abbr|b|bdi|bdo|cite|code|data|del|dfn|em|i|ins|kbd|mark|q|s|samp|small|span|strong|sub|sup|time|u|var)(?=[\s/>])/i;
 
-/** Text with, for each of its characters, its offset in the file. */
-interface Placed {
-  text: string;
-  origin: number[];
-}
-
-/** `placed` with the characters `hidden` matches removed, line breaks kept. */
-function without(placed: Placed, hidden: RegExp): Placed {
-  const out: Placed = { text: "", origin: [] };
-  let at = 0;
-  const keep = (to: number, breaksOnly: boolean) => {
-    for (; at < to; at++) {
-      const char = placed.text[at] ?? "";
-      if (breaksOnly && char !== "\n") continue;
-      out.text += char;
-      out.origin.push(placed.origin[at] ?? 0);
-    }
-  };
-  for (const match of placed.text.matchAll(new RegExp(hidden.source, "g"))) {
-    keep(match.index, false);
-    keep(match.index + match[0].length, true);
-  }
-  keep(placed.text.length, false);
-  return out;
-}
+/**
+ * `html` as it shows: each tag, comment, processing instruction and
+ * declaration keeps only its line breaks, and a tag that is not inline
+ * formatting (a block, a line break) sets the text on either side off by a
+ * blank.
+ */
+const withoutTags = (html: string) =>
+  html.replace(
+    TAG,
+    (tag) =>
+      tag.replace(/[^\n]/g, "") ||
+      (tag.startsWith("<!") || tag.startsWith("<?") || INLINE_TAG.test(tag)
+        ? ""
+        : " "),
+  );
 
 /**
  * A file as its renderer shows it, line by line: `prose` is what invocations
- * are read from, `origin` gives each of its characters' offset in the file,
- * `shown` is what a marker is tested on (each link followed by its
- * destination in angle brackets), and `links` holds each line's link
+ * are read from, `shown` is what a marker is tested on (each link followed by
+ * its destination in angle brackets), and `links` holds each line's link
  * destinations.
  */
 interface Reading {
   prose: string[];
-  origin: number[][];
   shown: string[];
   links: string[][];
 }
 
-/**
- * Places text nodes in the file in the order the render walks them: each is
- * searched for from where the last one ended. A node of one or two characters
- * may be a character reference the renderer decoded, so the nearer of the
- * text and the next reference is taken.
- */
-class Locator {
-  private cursor = 0;
-  private readonly source: string;
-  constructor(source: string) {
-    this.source = source;
-  }
-
-  /** Each character's offset in the file, for `text`, the next text node. */
-  place(text: string): number[] {
-    const origin: number[] = [];
-    text.split("\n").forEach((part, line) => {
-      const start = this.find(part);
-      if (line) origin.push(start);
-      for (let i = 0; i < part.length; i++) origin.push(start + i);
-    });
-    return origin;
-  }
-
-  private find(part: string): number {
-    if (!part) return this.cursor;
-    const at = this.source.indexOf(part, this.cursor);
-    const reference = part.length <= 2 ? this.nextReference() : undefined;
-    if (reference && (at < 0 || reference.index < at)) {
-      this.cursor = reference.index + reference[0].length;
-      return reference.index;
-    }
-    if (at < 0) return this.cursor;
-    this.cursor = at + part.length;
-    return at;
-  }
-
-  private nextReference(): RegExpExecArray | null {
-    REFERENCE.lastIndex = this.cursor;
-    return REFERENCE.exec(this.source);
-  }
-}
-
-type Node = Placed & { shown: boolean };
+/** A text node: its text, and whether it shows as it stands (code, HTML). */
+type Node = { text: string; shown: boolean };
 
 /**
  * The render of `source`, each text node written as its number in `nodes`
@@ -387,39 +340,29 @@ function render(source: string): {
 } {
   const nodes: Node[] = [];
   const destinations: string[] = [];
-  const locator = new Locator(source);
-  const node = (placed: Placed, shown: boolean) => {
-    nodes.push({ ...placed, shown });
+  const node = (text: string, shown: boolean) => {
+    nodes.push({ text, shown });
     return `${NODE_OPEN}${nodes.length - 1}${NODE_CLOSE}`;
   };
   /** The text nodes in `children`, joined. */
-  const joined = (children: string | undefined): Placed => {
-    const out: Placed = { text: "", origin: [] };
-    for (const [, id] of (children ?? "").matchAll(NODE)) {
-      const found = nodes[Number(id)];
-      if (!found) continue;
-      out.text += found.text;
-      out.origin.push(...found.origin);
-    }
-    return out;
-  };
+  const joined = (children: string | undefined): string =>
+    [...(children ?? "").matchAll(NODE)]
+      .map(([, id]) => nodes[Number(id)]?.text ?? "")
+      .join("");
   const block = (children: string | undefined) => `${children ?? ""}\n\n`;
   const own = (children: string | undefined) => children ?? "";
   const cell = (children: string | undefined) => ` ${children ?? ""} `;
   const callbacks = {
-    text: (children: string | undefined) => {
-      const text = children ?? "";
-      return node({ text, origin: locator.place(text) }, false);
-    },
+    text: (children: string | undefined) => node(children ?? "", false),
     paragraph: block,
     heading: block,
     hr: () => "\n\n",
     code: (children: string | undefined) => {
       const code = joined(children);
-      return `${node(code, true)}${code.text.endsWith("\n") ? "" : "\n"}\n`;
+      return `${node(code, true)}${code.endsWith("\n") ? "" : "\n"}\n`;
     },
     html: (children: string | undefined) =>
-      `${node(without(joined(children), TAG), true)}\n`,
+      `${node(withoutTags(joined(children)), true)}\n`,
     codespan: (children: string | undefined) => node(joined(children), true),
     strong: own,
     emphasis: own,
@@ -450,48 +393,9 @@ function render(source: string): {
   return { rendered, nodes, destinations };
 }
 
-/** What a text node shows: raw inline HTML shows only its line breaks. */
-const visible = (node: Node): Placed =>
-  node.shown || !WHOLE_TAG.test(node.text) ? node : without(node, /[\s\S]+/);
-
-/** A reading built a character at a time. */
-class Lines {
-  readonly reading: Reading = {
-    prose: [""],
-    origin: [[]],
-    shown: [""],
-    links: [[]],
-  };
-  private last = 0;
-
-  /** `char`, from `at` in the file (default: where the last one was). */
-  add(char: string, at = this.last): void {
-    const { prose, origin, shown, links } = this.reading;
-    if (char === "\n") {
-      prose.push("");
-      origin.push([]);
-      shown.push("");
-      links.push([]);
-      return;
-    }
-    const line = prose.length - 1;
-    prose[line] += char;
-    origin[line]?.push(at);
-    shown[line] += char;
-    this.last = at;
-  }
-
-  addPlaced(placed: Placed): void {
-    for (let i = 0; i < placed.text.length; i++)
-      this.add(placed.text[i] ?? "", placed.origin[i]);
-  }
-
-  addLink(target: string): void {
-    const line = this.reading.shown.length - 1;
-    this.reading.shown[line] += ` <${target}>`;
-    this.reading.links[line]?.push(target);
-  }
-}
+/** What a text node shows: raw inline HTML shows as `withoutTags` reads it. */
+const visible = (node: Node): string =>
+  node.shown || !WHOLE_TAG.test(node.text) ? node.text : withoutTags(node.text);
 
 /** The rendered text split into the reading's lines. */
 function assemble(
@@ -499,15 +403,32 @@ function assemble(
   nodes: Node[],
   destinations: string[],
 ): Reading {
-  const lines = new Lines();
+  const reading: Reading = { prose: [""], shown: [""], links: [[]] };
+  const add = (text: string) =>
+    text.split("\n").forEach((part, i) => {
+      if (i) {
+        reading.prose.push("");
+        reading.shown.push("");
+        reading.links.push([]);
+      }
+      reading.prose[reading.prose.length - 1] += part;
+      reading.shown[reading.shown.length - 1] += part;
+    });
   for (const [piece, id, link] of rendered.matchAll(PIECE)) {
-    const found = id === undefined ? undefined : nodes[Number(id)];
-    if (link !== undefined) lines.addLink(destinations[Number(link)] ?? "");
-    else if (found) lines.addPlaced(visible(found));
-    else if (id === undefined) for (const char of piece) lines.add(char);
+    if (link !== undefined) {
+      const target = destinations[Number(link)] ?? "";
+      reading.shown[reading.shown.length - 1] += ` <${target}>`;
+      reading.links[reading.links.length - 1]?.push(target);
+    } else if (id !== undefined)
+      add(visible(nodes[Number(id)] ?? { text: "", shown: true }));
+    else add(piece);
   }
-  return lines.reading;
+  return reading;
 }
+
+/** `markdown` as it is rendered: LF line ends, the reserved characters replaced. */
+const normalized = (markdown: string) =>
+  markdown.replace(/\r\n?/g, "\n").replace(RESERVED, "�");
 
 /**
  * The file rendered once (`Bun.markdown`), so code, containers, reference
@@ -515,13 +436,11 @@ function assemble(
  * them. Every block ends its own line, so the lines are the rendered text's.
  * What the reader sees is contiguous: inline formatting adds nothing to the
  * text, a table cell is set off by blanks, raw HTML shows only the text
- * between its tags (no tag, attribute or comment), and an image shows its
- * description as plain text, links inside it included. Code shows as it
- * stands. Each text node is placed in the file as the render walks it, so a
- * character's line in the file comes from this same render.
+ * between its tags (no tag, attribute or comment; a tag that is not inline
+ * formatting is a blank), and an image shows its description as plain text,
+ * links inside it included. Code shows as it stands.
  */
-function read(markdown: string): Reading {
-  const source = markdown.replace(/\r\n?/g, "\n").replace(RESERVED, "�");
+function read(source: string): Reading {
   const { rendered, nodes, destinations } = render(source);
   return assemble(rendered, nodes, destinations);
 }
@@ -555,6 +474,87 @@ function lineAt(source: string): (offset: number) => number {
     }
     return low + 1;
   };
+}
+
+/** A place in a reading: a 0-based rendered line and column. */
+type Place = { line: number; column: number };
+
+/**
+ * Where the text at `offset` in `source` stands in `reading`, the source's
+ * own: the source read again with a mark written at `offset`. Undefined
+ * unless the mark shows exactly once and every other character of the
+ * reading is as it was.
+ */
+function placeOf(
+  source: string,
+  reading: Reading,
+  offset: number,
+): Place | undefined {
+  const marked = read(
+    `${source.slice(0, offset)}${MARK}${source.slice(offset)}`,
+  ).prose;
+  if (marked.length !== reading.prose.length) return undefined;
+  let place: Place | undefined;
+  for (const [line, text] of marked.entries()) {
+    const column = text.indexOf(MARK);
+    if (column >= 0) {
+      if (place) return undefined;
+      place = { line, column };
+    }
+    if (text.replace(MARK, "") !== reading.prose[line]) return undefined;
+  }
+  return place;
+}
+
+/**
+ * Places invocations in the file. The renderer reports no source position,
+ * so the file is marked where an invocation's name may start and read again:
+ * after a slash written before the name, then before the name wherever it is
+ * written, then after any slash. A mark that shows at the invocation, the
+ * rest of the reading unchanged, places it, so text the render does not show
+ * (a link's destination, a definition, a comment) never does. Each place is
+ * tried once, and only for a finding.
+ */
+class Placer {
+  private readonly source: string;
+  private readonly reading: Reading;
+  private readonly lineOf: (offset: number) => number;
+  /** The offset placed at each rendered `line:column`. */
+  private readonly placed = new Map<string, number>();
+  private readonly tried = new Set<number>();
+  constructor(source: string, reading: Reading) {
+    this.source = source;
+    this.reading = reading;
+    this.lineOf = lineAt(source);
+  }
+
+  /**
+   * The 1-based line in the file of the invocation of `skill` at `at`;
+   * undefined when no mark lands on it (its name is not written whole, and
+   * its slash not as a slash).
+   */
+  line(skill: string, at: Place): number | undefined {
+    const key = `${at.line}:${at.column + 1}`;
+    for (const offset of this.candidates(skill)) {
+      if (this.placed.has(key)) break;
+      if (this.tried.has(offset)) continue;
+      this.tried.add(offset);
+      const place = placeOf(this.source, this.reading, offset);
+      if (place) this.placed.set(`${place.line}:${place.column}`, offset);
+    }
+    const offset = this.placed.get(key);
+    return offset === undefined ? undefined : this.lineOf(offset);
+  }
+
+  private *candidates(skill: string): Generator<number> {
+    const after = (text: string, shift: number) =>
+      [...this.source.matchAll(new RegExp(escapeRegex(text), "g"))].map(
+        (match) => match.index + shift,
+      );
+    yield* after(`/${skill}`, 1);
+    yield* after(skill, 0);
+    yield* after("/", 1);
+  }
 }
 
 /**
@@ -625,17 +625,19 @@ function checkFile(file: string, options: Options): Finding[] {
     });
   }
   const pattern = invocationPattern(options.skills);
-  const reading = read(text);
-  const lineOf = lineAt(text.replace(/\r\n?/g, "\n"));
+  const source = normalized(text);
+  const reading = read(source);
+  const placer = new Placer(source, reading);
   for (const { skill, line, column } of invocations(reading.prose, pattern)) {
     const from = Math.max(0, line - options.window);
     const to = line + options.window;
     if (namesFallback(reading, from, to, skill, dir, options)) continue;
+    const at = placer.line(skill, { line, column });
     findings.push({
       rule: RULE,
       file: shown,
-      line: lineOf(reading.origin[line]?.[column] ?? 0),
-      problem: `/${skill} names no fallback within ${options.window} lines`,
+      line: at,
+      problem: `/${skill} names no fallback within ${options.window} lines${at === undefined ? ` (rendered line ${line + 1}; its line in the file could not be placed)` : ""}`,
       remedy: `beside the slash command, link ${skill}/SKILL.md (or name .agents/skills/${skill}/, or link the interop document), so a runtime without /${skill} can still run it`,
     });
   }
