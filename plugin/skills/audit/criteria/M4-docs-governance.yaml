@@ -128,7 +128,7 @@ criteria:
     probe:
       mechanical:
         files: *ci-config
-    since: next
+    since: 0.76.0
 
   - id: authority-hierarchy-written
     level: standard
@@ -234,4 +234,4 @@ criteria:
     probe:
       mechanical:
         files: *ci-config
-    since: next
+    since: 0.76.0
