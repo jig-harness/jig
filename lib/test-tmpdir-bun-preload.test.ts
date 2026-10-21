@@ -20,6 +20,7 @@
 import { afterAll, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
+import type { ReadableStreamReadResult } from "node:stream/web";
 import { scopeTestTmpdir } from "./test-tmpdir.ts";
 
 const PRELOAD_PATH = join(import.meta.dir, "test-tmpdir-bun-preload.ts");
@@ -56,7 +57,7 @@ function isContainedIn(parent: string, child: string): boolean {
  * whether that count is enough.
  */
 async function readMarkersUntil(
-  reader: { read(): Promise<{ value?: Uint8Array; done: boolean }> },
+  reader: { read(): Promise<ReadableStreamReadResult<Uint8Array>> },
   decoder: TextDecoder,
   state: { output: string },
   count: number,

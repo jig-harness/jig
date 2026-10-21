@@ -192,6 +192,8 @@ describe("summary-findings parsing", () => {
     expect(entries[0]?.reason).toBe("winddown-deferred");
     expect(entries[0]?.firstRound).toBe(6);
     expect(entries[1]?.reason).toBeUndefined();
+    expect(entries[1]).not.toHaveProperty("reason");
+    expect(entries[1]).not.toHaveProperty("firstRound");
   });
 
   it("returns no entries when the blob is absent", () => {

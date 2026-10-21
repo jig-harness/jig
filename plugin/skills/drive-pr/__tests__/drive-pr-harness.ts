@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 /**
  * Shared harness for the drive-pr-*.test.ts files: the stubbed `gh`, the
  * fixture writers, the scratch repositories and the probes. It was one
@@ -2648,6 +2649,7 @@ export async function hold(
     },
   );
   if (kind === "finding") {
+    assert(proc.stdin, "finding child must expose its piped stdin");
     proc.stdin.write("fixed already; posting once pushed.");
     proc.stdin.end();
   }

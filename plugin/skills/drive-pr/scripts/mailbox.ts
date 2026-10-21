@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { definedFields } from "../../../shared/defined-fields.ts";
 import { fail, isDigits, runMain } from "./lib/cli.ts";
 import { resolvePr } from "./lib/proc.ts";
 import {
@@ -123,7 +124,9 @@ async function cmdSend(argv: string[]): Promise<number> {
     return 0;
   }
   if (command === "") fail(2, "send --kind directive: --command is required");
-  const msg = await appendDirective(dir, pr, from, command, { target, body });
+  const msg = await appendDirective(dir, pr, from, command, {
+    ...definedFields({ target, body }),
+  });
   process.stdout.write(`${JSON.stringify(msg)}\n`);
   return 0;
 }

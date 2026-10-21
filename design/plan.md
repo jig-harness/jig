@@ -58,21 +58,6 @@ rollout:
 [adoption/greenfield.md](../adoption/greenfield.md) then points at
 `/jig:kickoff` instead of the seed.
 
-### 5. A shared runtime kernel and diagnostics
-
-The plugin's scripts each solve the same problems by hand: decoding JSON
-from `gh` and configuration files, retrying, releasing locks on a signal,
-reading the clock. When one fails, the cause is often lost (an error turned
-into a default answer, a child's error output discarded), and nothing
-records how long anything took. The ratchet counts those patterns, and
-`plugin/shared/` holds the guards, error helpers, clock and
-logger that replace them; what is left moves the code onto them.
-
-- **Burn-downs**, as code is touched: the 91 `exactOptionalPropertyTypes`
-  errors; drive-pr's own copies of `proc.ts`, `cli.ts` and
-  `gh-conditional.ts` beside the shared ones; the duplicated block in
-  `fleet-health.ts`; fallow's complexity hotspots.
-
 ### 7. The Notion store, run against Notion
 
 The [Notion store](../plugin/skills/reflect/README.md#notion-store) is built and
@@ -334,17 +319,15 @@ audit scores M12's new criterion from the report.
 - **CI logs from other providers.** `fix-ci` finds and downloads a failed run
   through GitHub Actions only (any CI's saved log already works with
   `--log`); a provider interface for those two steps.
-- **Windows for `drive-pr` and `do-item`.** The remaining acceptance work:
-  1. **Authenticated workflow** (`git-bash`): run a real pickup, draft pull
-     request, driven round and stop on Windows under Claude Code and under
-     Codex with PowerShell. The deterministic smoke uses local fake services;
-     it does not certify the agent and credential integration. Fix what the
-     authenticated run finds, and remove the corresponding validation limits
-     from the skills' READMEs.
-  2. **Job Objects** (optional): each pass in a
-     Windows [Job Object](../GLOSSARY.md), for a kill no directly started
-     descendant escapes and a sound check that the tree is gone; or a
-     recorded decision that captured process identities are enough.
+- **Windows for `drive-pr` and `do-item`.** The remaining acceptance work is
+  an **authenticated workflow** (`git-bash`): run a real pickup, draft pull
+  request, driven round and stop on Windows under Claude Code and under
+  Codex with PowerShell. The deterministic smoke uses local fake services;
+  it does not certify the agent and credential integration. Fix what the
+  authenticated run finds, and remove the corresponding validation limits
+  from the skills' READMEs. Cancellation uses captured process identities
+  within the cooperative scope recorded in
+  [ADR-0008](../docs/adr/ADR-0008-windows-cancellation-uses-captured-process-identities.md).
 - **Gates and workspace infrastructure.** Cross-worktree locks and
   test infrastructure, remote gates, and a runnable form of
   [M12](../modules/M12-parallel-agent-ergonomics/README.md)'s workspace lifecycle.

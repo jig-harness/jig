@@ -152,6 +152,7 @@ changes are marked **Breaking** and say what a consumer changes.
   has how it will work, starting from a replay of Jig's own history. The
   glossary gains *conflict hotspot*.
 - [M16](modules/M16-releases-versions/mappings.md)'s mappings cover a released package's path to its registry: checks of what the package holds before it publishes (publint, Are the Types Wrong?, `twine check`, check-wheel-contents, `cargo publish --dry-run`), publishing without a stored token through npm's, PyPI's and crates.io's trusted publishing, and preview packages a consumer can install from a pull request before it merges. The glossary defines trusted publishing, provenance and preview package.
+- [M16](modules/M16-releases-versions/mappings.md#listing-what-the-release-contains)'s mappings cover listing what a release contains: generating a software bill of materials from the tag's commit for npm, Python, Rust and container images, including bundled artifacts and builds with their own target or features; exporting a GitHub repository's dependency graph as an inventory of the repository, not a release; and attesting the bill of materials to a file or a container image with `actions/attest`, and verifying it. The module lists a bill of materials for each release as future work, and the glossary defines it.
 
 ### Changed
 
@@ -316,6 +317,12 @@ changes are marked **Breaking** and say what a consumer changes.
 - A link to a section of the getting-started, plugin, features or
   principles page no longer stops well below the header: it lands just
   under it.
+
+## [0.70.2] - 2026-10-21
+
+### Changed
+
+- Consolidate shared command-line and GitHub helpers and fleet-health reporting internals; plugin commands keep their existing paths and behavior.
 
 ## [0.70.1] - 2026-10-20
 
@@ -3258,7 +3265,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.70.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.70.2...HEAD
+[0.70.2]: https://github.com/jig-harness/jig/compare/v0.70.1...v0.70.2
 [0.70.1]: https://github.com/jig-harness/jig/compare/v0.70.0...v0.70.1
 [0.70.0]: https://github.com/jig-harness/jig/compare/v0.69.0...v0.70.0
 [0.69.0]: https://github.com/jig-harness/jig/compare/v0.68.0...v0.69.0

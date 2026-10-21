@@ -22,12 +22,6 @@ several hostile points of view in a fresh session; plan review inside
 documentation checks; and `upgrade-deps`, which makes grouped dependency
 upgrades an update bot cannot make alone and drives them to merge.
 
-### 5. A shared runtime kernel and diagnostics
-
-The skills' scripts each solve the same problems by hand: retrying, clean-up
-on exit, decoding what `gh` returns, and errors that keep their cause. This
-item moves what is left onto one shared runtime.
-
 ### 7. The Notion store, verified against Notion
 
 The [Notion store](plugin/skills/reflect/README.md#notion-store) for

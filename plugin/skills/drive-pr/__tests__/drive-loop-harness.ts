@@ -125,7 +125,7 @@ export async function runDrive(
 /** Read one field back out of the durable state a drive just wrote. */
 export async function state(stateDir: string, args: string[], cwd?: string) {
   const proc = Bun.spawn(scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args), {
-    cwd,
+    ...(cwd === undefined ? {} : { cwd }),
     env: {
       // gitCleanEnv(), not process.env: this suite runs inside a live
       // drive-pr pass as often as not (`runDriveIn`'s doc comment
