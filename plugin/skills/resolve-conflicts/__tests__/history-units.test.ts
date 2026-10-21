@@ -230,6 +230,8 @@ describe("the Conflicts resolved: section", () => {
       "- bun.lock: regenerated (bun install --frozen-lockfile)",
       "- odd: name.txt: rewritten — new code (both intents). Dropped on purpose: the old helper",
       "- docs/x.md: combined",
+      "- CHANGELOG.md: combined [cause: append] — kept both entries.",
+      "- pnpm-lock.yaml: regenerated [cause: derived] (pnpm install)",
       "",
       "Signed-off-by: someone",
       "- not: part of the section",
@@ -241,6 +243,8 @@ describe("the Conflicts resolved: section", () => {
       "bun.lock",
       "odd: name.txt",
       "docs/x.md",
+      "CHANGELOG.md",
+      "pnpm-lock.yaml",
     ]);
     expect(found.get("src/b.ts")).toEqual({
       decision: "theirs",
@@ -261,6 +265,18 @@ describe("the Conflicts resolved: section", () => {
       dropped: "the old helper",
     });
     expect(found.get("docs/x.md")?.reason).toBeNull();
+    expect(found.get("CHANGELOG.md")).toEqual({
+      decision: "combined",
+      reason: "kept both entries.",
+      command: null,
+      dropped: null,
+    });
+    expect(found.get("pnpm-lock.yaml")).toEqual({
+      decision: "regenerated",
+      reason: null,
+      command: "pnpm install",
+      dropped: null,
+    });
   });
 
   it("finds nothing in a message without one", () => {

@@ -153,6 +153,7 @@ changes are marked **Breaking** and say what a consumer changes.
   glossary gains *conflict hotspot*.
 - [M16](modules/M16-releases-versions/mappings.md)'s mappings cover a released package's path to its registry: checks of what the package holds before it publishes (publint, Are the Types Wrong?, `twine check`, check-wheel-contents, `cargo publish --dry-run`), publishing without a stored token through npm's, PyPI's and crates.io's trusted publishing, and preview packages a consumer can install from a pull request before it merges. The glossary defines trusted publishing, provenance and preview package.
 - [M16](modules/M16-releases-versions/mappings.md#listing-what-the-release-contains)'s mappings cover listing what a release contains: generating a software bill of materials from the tag's commit for npm, Python, Rust and container images, including bundled artifacts and builds with their own target or features; exporting a GitHub repository's dependency graph as an inventory of the repository, not a release; and attesting the bill of materials to a file or a container image with `actions/attest`, and verifying it. The module lists a bill of materials for each release as future work, and the glossary defines it.
+- [GLOSSARY.md](GLOSSARY.md) defines a *seed lens*: a review lens Jig ships, the review form of one rule a Jig module states, for the part of the rule no gate can check. Seed lenses are planned for the `review` skill ([ROADMAP.md](ROADMAP.md), item 23).
 
 ### Changed
 
@@ -317,6 +318,68 @@ changes are marked **Breaking** and say what a consumer changes.
 - A link to a section of the getting-started, plugin, features or
   principles page no longer stops well below the header: it lands just
   under it.
+
+## [0.73.0] - 2026-10-21
+
+The delivery loop can now be published as one stage map, with a gate that
+keeps every owner it names real.
+
+### Added
+
+- **A lifecycle map template** in M6, `templates/LIFECYCLE.md`: one table of
+  the delivery loop's named stages (steer, spec, file, plan the epic, pick up,
+  implement, pre-PR gates, draft and drive, review rounds, merge, post-merge,
+  ops drain, epic close), each with the skill, command or document that owns
+  it and the artifact it hands on. M0's `AGENTS.md` skeleton links it, so the
+  stage that comes next is one hop from the instructions every session loads.
+- **A lifecycle map gate** in M6, `reference/lifecycle-map/`, with a
+  self-test: it fails a map whose owner is a skill, script, file or link that
+  does not exist, a numbered, unowned or placeholder stage, an instruction file
+  that does not link the map, and, with `--cover`, a skill that owns no stage
+  and is not in the map's table of skills outside the loop. With
+  `--scan` it fails any document that names a plugin skill that does not exist.
+- **Audit criteria** for M6 (`lifecycle-map-published`,
+  `lifecycle-owners-resolve-gated`, `lifecycle-skills-on-the-map`), scored
+  in Jig's record and the calibration record.
+- The skills table in the plugin README points to the lifecycle map for the
+  order in which the skills are used.
+
+## [0.72.0] - 2026-10-21
+
+`resolve-conflicts` now keeps a record of the conflicts it resolves.
+
+### Added
+
+- `events.ts` in `resolve-conflicts` appends one `merge_conflict` event for
+  each conflicted path to `$(git rev-parse --git-common-dir)/jig/conflict-events.jsonl`
+  when a merge, rebase, cherry-pick or revert concludes: the path, why it
+  conflicted, the decision and reason, how long the resolution took, and
+  whether a `drive-pr` conflict-resolve round started it. It covers the
+  rebases, cherry-picks and reverts that the merge-history report cannot
+  replay, and the file is shared by every worktree of the clone and never
+  committed. The skill's conclude step runs it, and mapping the next stop of a
+  rebase records the earlier stop first; when that record cannot be written,
+  the earlier stop's snapshot is kept and the next `events.ts` records it.
+- The `Conflicts resolved:` section of a commit message names each path's
+  cause (`[cause: append]`) after its decision.
+
+## [0.71.0] - 2026-10-21
+
+### Added
+
+- M10 external-precondition registry, pluggable reference checks bounded by a deadline and a branch-protection checker with expiring waivers and bot-write checks. M11 defines one current issue per registry with automatic closure after recovery; the audit includes criteria for live checks and reconciliation.
+- `resolve-review-comments` works the review threads GitHub opens for code
+  scanning alerts, from CodeQL, SonarQube Cloud or any other tool that reports
+  to GitHub code scanning. The thread listing attaches each thread's alert,
+  whose severity and security category feed the decline ladder, and the new
+  `dismiss-alert.ts` dismisses the alert when the finding is rejected,
+  declined or deferred, so a resolved thread no longer leaves an open alert
+  failing the tool's check
+  ([code scanning alerts](plugin/skills/resolve-review-comments/README.md#code-scanning-alerts)).
+
+### Fixed
+
+- The changelog skill's release-access check no longer counts a `pull_request`-mode bypass of a `non_fast_forward` or `deletion` rule as freeing the release App: such a bypass admits merges only, so force pushes and deletion stay blocked for it.
 
 ## [0.70.2] - 2026-10-21
 
@@ -3265,7 +3328,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.70.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.73.0...HEAD
+[0.73.0]: https://github.com/jig-harness/jig/compare/v0.72.0...v0.73.0
+[0.72.0]: https://github.com/jig-harness/jig/compare/v0.71.0...v0.72.0
+[0.71.0]: https://github.com/jig-harness/jig/compare/v0.70.2...v0.71.0
 [0.70.2]: https://github.com/jig-harness/jig/compare/v0.70.1...v0.70.2
 [0.70.1]: https://github.com/jig-harness/jig/compare/v0.70.0...v0.70.1
 [0.70.0]: https://github.com/jig-harness/jig/compare/v0.69.0...v0.70.0

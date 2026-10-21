@@ -200,7 +200,6 @@ Practices a working repository validated, for modules that exist today:
   - the execution-plan format the pickup skill reads;
   - a skill that runs the post-merge stage M7 states, for any repository (the
     stage and its criterion are in [M7](../modules/M7-pr-lifecycle-review/README.md));
-  - a lifecycle map with a check that every named skill exists.
 - **M0, M4 and M5**:
   - a reference generator for the model roster, when the working tool moves
     here;
@@ -280,19 +279,18 @@ repository with one released artifact. What is left:
 Parallel pull requests put each other in conflict, and each conflict costs a
 resolution and a CI run; nobody can say how many there are, in which files,
 or why. [design/merge-conflicts.md](merge-conflicts.md) has how it works and
-the [conflict hotspots](../GLOSSARY.md) the report finds. What is left:
+the [conflict hotspots](../GLOSSARY.md) the report finds. The replay and the
+live record (`resolve-conflicts` keeps one event per resolved path, which
+covers the rebases, cherry-picks and reverts the replay cannot see) are
+built. What is left:
 
-- **A live record**: `resolve-conflicts` keeps one event per resolved path
-  instead of overwriting its snapshot, which covers the rebases,
-  cherry-picks and reverts the replay cannot see.
 - **The practice**: M11's `merge_conflict` event and metric, the figure on
   `drive-pr`'s cross-PR scoreboard, M12's practice and audit criterion, and
   hotspots as findings in the reflection store.
 - **One file per roadmap item** follows only if the report shows the plan
   or the roadmap conflicting where items are added or removed side by side.
 
-Done when a resolution by `resolve-conflicts` leaves its events, and an
-audit scores M12's new criterion from the report.
+Done when an audit scores M12's new criterion from the report.
 
 ### 23. Seed review lenses
 

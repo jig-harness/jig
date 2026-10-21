@@ -1,6 +1,6 @@
 Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.
 
-### What changed (122)
+### What changed (125)
 
 | Module | Criterion | Before → after | Change |
 |--------|-----------|----------------|--------|
@@ -33,6 +33,9 @@ Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/
 | M4 Docs governance | `path-rules-enforce-subtree-vocabulary` | not scored → expected absent | Added by Jig |
 | M4 Docs governance | `deferral-liveness-scheduled` | not scored → absent | Added by Jig |
 | M5 ADR practice | `skeleton-changes-need-recorded-authority` | not scored → absent | Added by Jig |
+| M6 Feature delivery pipeline | `lifecycle-map-published` | not scored → absent | Added by Jig |
+| M6 Feature delivery pipeline | `lifecycle-owners-resolve-gated` | not scored → absent | Added by Jig |
+| M6 Feature delivery pipeline | `lifecycle-skills-on-the-map` | not scored → expected absent | Added by Jig |
 | M7 PR lifecycle review | `post-merge-obligations-settled` | not scored → absent | Added by Jig |
 | M8 Learning loop | `audit-catalog-maintained` | not scored → absent | Added by Jig |
 | M9 Tasks memory | `gate-flags-scoped-to-shipping-item` | not scored → absent | Added by Jig |

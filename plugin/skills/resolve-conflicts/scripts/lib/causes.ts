@@ -696,3 +696,25 @@ export function ordered(causes: Iterable<Cause>): Cause[] {
   const set = new Set(causes);
   return CAUSES.filter((cause) => set.has(cause));
 }
+
+/**
+ * The one cause that stands for a path: `structural` or `overlap` when the
+ * path has one (nothing but a decision removes them, so they decide how the
+ * path counts), else the cause of most of its regions, ties in `CAUSES` order.
+ */
+export function primaryCause(
+  causes: readonly Cause[],
+  regions: readonly { cause: Cause }[],
+): Cause {
+  if (causes.includes("structural")) return "structural";
+  if (causes.includes("overlap")) return "overlap";
+  const counts = new Map<Cause, number>();
+  for (const { cause } of regions)
+    counts.set(cause, (counts.get(cause) ?? 0) + 1);
+  let best: Cause | undefined;
+  for (const cause of CAUSES) {
+    const n = counts.get(cause) ?? 0;
+    if (n > 0 && n > (counts.get(best as Cause) ?? 0)) best = cause;
+  }
+  return best ?? causes[0] ?? "overlap";
+}

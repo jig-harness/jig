@@ -52,7 +52,13 @@ it("maps, records and checks from a copy outside this repository", () => {
     "Keep shared validation in all changed callers.",
   );
   expect(check.stderr).toContain("passed");
-  expect(check.stdout).toBe("Conflicts resolved:\n- src/config.ts: combined\n");
+  expect(check.stdout).toBe(
+    "Conflicts resolved:\n- src/config.ts: combined [cause: adjacent]\n",
+  );
+  s.git("commit", "-q", "--no-edit");
+  const events = s.script(join(scripts, "events.ts"));
+  expectSpawnExit({ ...events, exitCode: events.code }, 0);
+  expect(events.stdout).toContain("recorded 1 merge_conflict event");
 });
 
 it("replays the history from a copy outside this repository", () => {

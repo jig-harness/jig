@@ -63,6 +63,7 @@ import {
   recordAt,
   recordText,
   reportInput,
+  ruledOutRecord,
   SOURCE_PATH,
   withScores,
 } from "./report-fixtures.ts";
@@ -462,12 +463,16 @@ describe("when a recommendation is due", () => {
 
 describe("the map", () => {
   test("lists every module in adoption order, the n/a ones with their reason", () => {
-    const input = reportInput();
+    const input = reportInput({ record: ruledOutRecord() });
     const rows = mapRows(input, targetsOf(input));
     expect(rows.map((r) => r.module.module)).toEqual([...input.profiles.order]);
     expect(rows.filter((r) => r.naReason).map((r) => r.module.module)).toEqual([
       "M6",
     ]);
+    const scored = reportInput();
+    expect(
+      mapRows(scored, targetsOf(scored)).filter((r) => r.naReason),
+    ).toEqual([]);
   });
 
   test("marks a gap only within the target, and none without a profile", () => {
@@ -851,7 +856,7 @@ describe("the sheet", () => {
     // One row per criterion: the module's chip, the criterion linked to its
     // detail, both scores as chips, and the change as a badge.
     expect(again).toMatch(
-      /What changed \(122\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
+      /What changed \(125\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
     );
     // A criterion Jig added after the prior audit's plugin was not assessed then.
     const added = addedAfter("0.14.0");
@@ -997,7 +1002,7 @@ describe("the sheet", () => {
   });
 
   test("greys the modules that do not apply and says why", () => {
-    expect(html).toMatch(
+    expect(renderReportHtml(reportInput({ record: ruledOutRecord() }))).toMatch(
       /<li class="mrow na" id="map-M6">.*?Does not apply to this repository&#39;s shape: A mature utility library/,
     );
   });
@@ -1116,7 +1121,7 @@ describe("the sheet", () => {
       renderReportHtml(reportInput({ prior: priorRecord() })),
     );
     expect(suggested).toContain(
-      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>121</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
+      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>124</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
     );
     expect(suggested).toMatch(
       /<details class="later sm" id="since-within" open data-fold><summary><span class="later-h">Still open within the target<\/span> <span class="later-n">\(4\)<\/span><\/summary><table class="chgt chg-t">.*?<tbody><tr><td><span class="pw mw"><a class="mchip" href="#d-M0".*?<code>universal-instruction-file<\/code>.*?<td><span class="bd bd-open">Still open<\/span><\/td><\/tr>/,
@@ -2268,17 +2273,17 @@ describe("another profile", () => {
         : null,
     };
     const alt = alternativeOf(withAlt, targetsOf(withAlt));
-    expect(alt).toMatchObject({ id: "team-standard", withTarget: 10 });
+    expect(alt).toMatchObject({ id: "team-standard", withTarget: 11 });
     const page = renderReportHtml(withAlt);
     const summary = page.slice(
       page.indexOf('id="summary"'),
       page.indexOf('id="map"'),
     );
     expect(summary).toContain(
-      `<div class="alt" id="alternative"><h3>Another profile to consider: Team/Standard</h3><ul><li>Two people committed in the last year.</li></ul><p>Under Team/Standard, ${alt?.atTarget} of 10 modules would be at their target.</p></div>`,
+      `<div class="alt" id="alternative"><h3>Another profile to consider: Team/Standard</h3><ul><li>Two people committed in the last year.</li></ul><p>Under Team/Standard, ${alt?.atTarget} of 11 modules would be at their target.</p></div>`,
     );
     expect(renderReportMarkdown(withAlt)).toContain(
-      `**Another profile to consider: Team/Standard.** Under Team/Standard, ${alt?.atTarget} of 10 modules would be at their target.\n\n- Two people committed in the last year.`,
+      `**Another profile to consider: Team/Standard.** Under Team/Standard, ${alt?.atTarget} of 11 modules would be at their target.\n\n- Two people committed in the last year.`,
     );
     // Naming the profile already measured against adds nothing.
     const same = {
@@ -2331,7 +2336,7 @@ describe("another profile", () => {
     const input = withAlt(unexamined(standardM5));
     const alt = alternativeOf(input, targetsOf(input));
     expect(alt?.untold).toBe(1);
-    const sentence = `Under Team/Standard, ${alt?.atTarget} of 10 modules would be at their target; for 1 it cannot be told, because criteria it needs were not examined.`;
+    const sentence = `Under Team/Standard, ${alt?.atTarget} of 11 modules would be at their target; for 1 it cannot be told, because criteria it needs were not examined.`;
     expect(renderReportHtml(input)).toContain(`<p>${sentence}</p>`);
     expect(renderReportMarkdown(input)).toContain(sentence);
     // A module short on a criterion that was examined is not at its target, whatever the rest would show.
