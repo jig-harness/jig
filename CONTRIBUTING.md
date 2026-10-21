@@ -55,6 +55,17 @@ so moves that are harmless alone collide here.
 - **Install only with `bun install`**: another package manager writes its own
   lockfile beside `bun.lock` and installs versions the gates and CI do not
   test.
+- **One suite run per machine**: `bun run test`, and so `bun run gates`, runs
+  the suite under the machine-wide resource lock
+  ([M12](modules/M12-parallel-agent-ergonomics/README.md)'s
+  `with-resource-lock.ts`), because the suite spawns process trees by the
+  hundred and two runs at once make both slower than the two in sequence. A
+  run that finds the lock held says whose it is and waits, up to an hour by
+  default (`LOCK_TIMEOUT`); CI and `RESOURCE_LOCK_BYPASS=1` skip the lock. A
+  single file run with `bun test <file>` takes no lock. After the last test,
+  a test process kills every descendant a test left running and reports it
+  on stderr (`lib/test-reap-children-bun-preload.ts`): a reported leak is a
+  fixture that did not clean up, not noise.
 
 ## Pull-request lifecycle
 
