@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { alertNumberOf, summarizeAlert } from "../scripts/lib/code-scanning.ts";
 import {
@@ -160,23 +160,54 @@ function codeScanningThread(id: string, body = BODY) {
   };
 }
 
+/** The fixture pull request's head and test merge commits. */
+const HEAD = "a".repeat(40);
+const MERGE = "b".repeat(40);
+
+/**
+ * The fixture pull request as the REST API returns it: a branch of this
+ * repository unless `forkOf` names another, at HEAD with test merge MERGE
+ * unless `merge` overrides it.
+ */
+const writePull = (
+  fix: Fixture,
+  { merge = MERGE as string | null, forkOf = "acme/widgets" } = {},
+) =>
+  writeFileSync(
+    join(fix.dir, "pull.json"),
+    JSON.stringify({
+      merge_commit_sha: merge,
+      head: { sha: HEAD, ref: "feature/x", repo: { full_name: forkOf } },
+    }),
+  );
+
+/** Alert 7's instances on `ref`, as pages of `{ state, commit_sha }`. */
+const writeInstances = (
+  fix: Fixture,
+  ref: string,
+  pages: { state: string; commit_sha?: string }[][],
+) =>
+  writeFileSync(
+    join(fix.dir, `instances-7-${ref.replaceAll("/", "_")}.json`),
+    JSON.stringify(pages.map((page) => page.map((i) => ({ ref, ...i })))),
+  );
+
 /**
  * Alert 7, its own `state` as GitHub reports it (on the default branch), and
- * its instance on the fixture pull request's merge ref with `prState`, which
- * defaults to the alert's own (`open` when that is null); `null` writes no
- * instance.
+ * its instance on the fixture pull request's merge ref at the current test
+ * merge with `prState`, which defaults to the alert's own (`open` when that
+ * is null); `null` writes no instance.
  */
 const writeAlert = (
   fix: Fixture,
   state: string | null,
   prState: string | null = state ?? "open",
 ) => {
-  const ref = `refs/pull/${fix.pr}/merge`;
+  writePull(fix);
   if (prState !== null) {
-    writeFileSync(
-      join(fix.dir, `instances-7-${ref.replaceAll("/", "_")}.json`),
-      JSON.stringify([{ ref, state: prState }]),
-    );
+    writeInstances(fix, `refs/pull/${fix.pr}/merge`, [
+      [{ state: prState, commit_sha: MERGE }],
+    ]);
   }
   writeFileSync(
     join(fix.dir, "alert-7.json"),
@@ -255,6 +286,74 @@ describe.skipIf(process.platform === "win32")(
       const alert = listed(fix).records[0].codeScanning;
       expect(alert.state).toBeNull();
       expect(alert.stateUnknown).toContain("HTTP 403");
+    });
+
+    it("reads open when any configuration is still open at the revision", () => {
+      const fix = writeFixture({ threads: [codeScanningThread("PRRT_cs")] });
+      writeAlert(fix, "open", "fixed");
+      writeInstances(fix, `refs/pull/${fix.pr}/head`, [
+        [{ state: "open", commit_sha: HEAD }],
+      ]);
+      expect(listed(fix).records[0].codeScanning.state).toBe("open");
+    });
+
+    it("reads every page of instances", () => {
+      const fix = writeFixture({ threads: [codeScanningThread("PRRT_cs")] });
+      writeAlert(fix, "open", null);
+      writeInstances(fix, `refs/pull/${fix.pr}/merge`, [
+        [{ state: "fixed", commit_sha: MERGE }],
+        [{ state: "open", commit_sha: MERGE }],
+      ]);
+      expect(listed(fix).records[0].codeScanning.state).toBe("open");
+    });
+
+    it("reads the source branch a push-triggered scan uploads to", () => {
+      const fix = writeFixture({ threads: [codeScanningThread("PRRT_cs")] });
+      writeAlert(fix, "fixed", null);
+      writeInstances(fix, "refs/heads/feature/x", [
+        [{ state: "open", commit_sha: HEAD }],
+      ]);
+      expect(listed(fix).records[0].codeScanning.state).toBe("open");
+    });
+
+    it("reads no source branch of a fork", () => {
+      const fix = writeFixture({ threads: [codeScanningThread("PRRT_cs")] });
+      writeAlert(fix, "open");
+      writePull(fix, { forkOf: "someone/widgets" });
+      listed(fix);
+      const calls = readFileSync(join(fix.dir, "alert-calls.log"), "utf8");
+      expect(calls).toContain(`refs/pull/${fix.pr}/head`);
+      expect(calls).not.toContain("refs/heads/");
+    });
+
+    it("leaves the state unknown when the instances predate the revision", () => {
+      const fix = writeFixture({ threads: [codeScanningThread("PRRT_cs")] });
+      writeAlert(fix, "open", null);
+      writeInstances(fix, `refs/pull/${fix.pr}/merge`, [
+        [{ state: "fixed", commit_sha: "c".repeat(40) }],
+      ]);
+      writeInstances(fix, `refs/pull/${fix.pr}/head`, [[{ state: "fixed" }]]);
+      const alert = listed(fix).records[0].codeScanning;
+      expect(alert.state).toBeNull();
+      expect(alert.stateUnknown).toContain("predate its current revision");
+    });
+
+    it("trusts no merge-ref instance before GitHub computes the test merge", () => {
+      const fix = writeFixture({ threads: [codeScanningThread("PRRT_cs")] });
+      writeAlert(fix, "open", "fixed");
+      writePull(fix, { merge: null });
+      expect(listed(fix).records[0].codeScanning.state).toBeNull();
+    });
+
+    it("leaves the state unknown when the pull request cannot be read", () => {
+      const fix = writeFixture({ threads: [codeScanningThread("PRRT_cs")] });
+      writeAlert(fix, "open");
+      rmSync(join(fix.dir, "pull.json"));
+      const alert = listed(fix).records[0].codeScanning;
+      expect(alert.state).toBeNull();
+      expect(alert.stateUnknown).toContain(
+        `pull request #${fix.pr} could not be read`,
+      );
     });
 
     it("still lists the thread when the alert cannot be read", () => {

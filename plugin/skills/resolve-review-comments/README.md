@@ -241,8 +241,10 @@ left open, and the alert is reported for a person to dismiss; under
 `drive-pr`, whose replied-thread sweep does not read alerts, the next sweep
 resolves that thread, so the report is the alert's only trace. Without the
 second, the thread still lists, with an unknown severity. The alert's state is
-read on the pull request, since an alert fixed on the default branch can still
-be open there. A summary comment a
+read on the pull request, from every analysis of its current revision, since an
+alert fixed on the default branch, or in one of several analysis
+configurations, can still be open there; until the tool has analysed the
+latest push, the state is unknown and nothing is dismissed. A summary comment a
 tool posts beside its alerts (SonarQube Cloud's quality gate, for one) is not
 a thread, and the loop does not read it; a quality gate that fails on
 something other than its alerts, such as coverage, is a failing check for

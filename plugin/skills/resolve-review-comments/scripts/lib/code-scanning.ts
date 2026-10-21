@@ -93,9 +93,10 @@ export interface AlertSummary {
   number: number;
   /**
    * The alert's state on the pull request: `dismissed` when the alert is
-   * dismissed (a dismissal holds on every branch), else its instance's state
-   * on the pull request's ref, `open`, `fixed` or `closed`. `null` when that
-   * could not be established; `stateUnknown` then says why.
+   * dismissed (a dismissal holds on every branch), else what its instances
+   * at the pull request's current revision say, `open`, `fixed` or `closed`
+   * (`prInstanceState`). `null` when that could not be established;
+   * `stateUnknown` then says why.
    */
   state: string | null;
   stateUnknown?: string;
@@ -165,40 +166,178 @@ export function ghFailure(r: RunResult): string {
   return last === "" ? `gh exited ${r.code}` : last;
 }
 
+/** The revision pull request `pr` is at, and the refs its analyses land on. */
+interface PrRevision {
+  /** Each ref an analysis of the pull request is uploaded against, with the commit a current one analysed there. */
+  refs: { ref: string; sha: string | null }[];
+  head: string;
+}
+
+/** Why something could not be read. */
+type Unreadable = { unreadable: string };
+
+/** `r`'s standard output as JSON, or why it is not. */
+function ghJson(r: RunResult): { json: unknown } | Unreadable {
+  if (r.code !== 0 || r.timedOut) return { unreadable: ghFailure(r) };
+  try {
+    return { json: JSON.parse(r.stdout) };
+  } catch {
+    return { unreadable: "gh returned unparsable JSON" };
+  }
+}
+
 /**
- * The state of the alert's instance on pull request `pr`: GitHub analyses a
- * pull request on its merge ref, and some tools on its head ref. An alert can
- * be fixed on the default branch and still open on the pull request, so the
- * alert's own state does not answer for it. `null` when the alert has no
- * instance on either ref.
+ * The pull request's current revision, from its REST document: its merge ref
+ * analysed at the test merge commit, and its head analysed at the head
+ * commit, both on `refs/pull/<pr>/head` and, for a branch of this
+ * repository, on the source branch a push-triggered scan uploads to. The
+ * merge commit is `null` while GitHub has not computed one; no merge-ref
+ * instance is current then.
+ */
+function revisionOf(
+  raw: unknown,
+  owner: string,
+  repo: string,
+  pr: string,
+): PrRevision | Unreadable {
+  const head = isRecord(raw) && isRecord(raw.head) ? raw.head : {};
+  const headSha = str(head.sha);
+  if (!isRecord(raw) || headSha === null) {
+    return { unreadable: "the pull request carries no head commit" };
+  }
+  const refs = [
+    { ref: `refs/pull/${pr}/merge`, sha: str(raw.merge_commit_sha) },
+    { ref: `refs/pull/${pr}/head`, sha: headSha },
+  ];
+  const branch = str(head.ref);
+  const headRepo = isRecord(head.repo) ? str(head.repo.full_name) : null;
+  if (
+    branch !== null &&
+    headRepo?.toLowerCase() === `${owner}/${repo}`.toLowerCase()
+  ) {
+    refs.push({ ref: `refs/heads/${branch}`, sha: headSha });
+  }
+  return { refs, head: headSha };
+}
+
+/** Every instance of the alert on `ref`, all pages of them. */
+async function instancesOn(
+  owner: string,
+  repo: string,
+  number: number,
+  ref: string,
+): Promise<unknown[] | Unreadable> {
+  const read = ghJson(
+    await ghCall([
+      "api",
+      "--paginate",
+      "--slurp",
+      `repos/${owner}/${repo}/code-scanning/alerts/${number}/instances?per_page=100&ref=${encodeURIComponent(ref)}`,
+    ]),
+  );
+  if ("unreadable" in read) return read;
+  const pages = read.json;
+  if (!Array.isArray(pages) || !pages.every(Array.isArray)) {
+    return { unreadable: "the instances are not JSON arrays" };
+  }
+  return (pages as unknown[][]).flat();
+}
+
+/** The states an instance settles: anything else leaves the alert unknown. */
+const INSTANCE_STATES = new Set(["open", "fixed", "closed"]);
+
+/** What the instances on the pull request's refs say about its revision. */
+interface Witnesses {
+  /** The states of the instances analysed at the current revision. */
+  current: string[];
+  /** How many instances were analysed at an earlier one. */
+  stale: number;
+}
+
+/**
+ * Add `ref`'s instances to `w`: an instance analysed at `sha` is current, any
+ * other is stale. A current instance in a state that settles nothing makes
+ * the whole answer unknown.
+ */
+function witness(
+  w: Witnesses,
+  instances: unknown[],
+  ref: string,
+  sha: string | null,
+): string | null {
+  for (const i of instances) {
+    if (!isRecord(i) || i.ref !== ref) continue;
+    if (sha === null || str(i.commit_sha) !== sha) {
+      w.stale += 1;
+      continue;
+    }
+    const state = str(i.state);
+    if (state === null || !INSTANCE_STATES.has(state)) {
+      return `an instance on ${ref} has state ${state ?? "none"}`;
+    }
+    w.current.push(state);
+  }
+  return null;
+}
+
+/**
+ * The alert's state from its witnesses: `open` when any current instance is
+ * open, `fixed` or `closed` only when all of them are; unknown when none is
+ * current.
+ */
+function settle(
+  w: Witnesses,
+  pr: string,
+  head: string,
+): { state: string } | { unknown: string } {
+  if (w.current.includes("open")) return { state: "open" };
+  if (w.current.length > 0) {
+    return { state: w.current.includes("fixed") ? "fixed" : "closed" };
+  }
+  return {
+    unknown:
+      w.stale > 0
+        ? `its instances on pull request #${pr} predate its current revision ${head.slice(0, 12)}`
+        : `it has no instance on pull request #${pr}`,
+  };
+}
+
+/**
+ * The alert's state on pull request `pr` at its current revision. An alert
+ * can be fixed on the default branch and still open on the pull request, and
+ * fixed in one analysis configuration while open in another, so the state is
+ * read from every instance on every ref the pull request is analysed on,
+ * keeping only those analysed at the current revision (`settle`). An
+ * instance of an earlier revision proves nothing about this one.
  */
 async function prInstanceState(
   owner: string,
   repo: string,
   number: number,
   pr: string,
-): Promise<{ state: string | null } | { unreadable: string }> {
-  for (const ref of [`refs/pull/${pr}/merge`, `refs/pull/${pr}/head`]) {
-    const r = await ghCall([
-      "api",
-      `repos/${owner}/${repo}/code-scanning/alerts/${number}/instances?ref=${ref}`,
-    ]);
-    if (r.code !== 0 || r.timedOut) return { unreadable: ghFailure(r) };
-    let instances: unknown;
-    try {
-      instances = JSON.parse(r.stdout);
-    } catch {
-      return { unreadable: "gh returned unparsable JSON" };
-    }
-    if (!Array.isArray(instances)) {
-      return { unreadable: "the instances are not a JSON array" };
-    }
-    const instance: unknown = instances.find(
-      (i) => isRecord(i) && i.ref === ref,
-    );
-    if (isRecord(instance)) return { state: str(instance.state) };
+): Promise<{ state: string } | { unknown: string }> {
+  const read = ghJson(
+    await ghCall(["api", `repos/${owner}/${repo}/pulls/${pr}`]),
+  );
+  const revision =
+    "unreadable" in read ? read : revisionOf(read.json, owner, repo, pr);
+  if ("unreadable" in revision) {
+    return {
+      unknown: `pull request #${pr} could not be read (${revision.unreadable})`,
+    };
   }
-  return { state: null };
+  const w: Witnesses = { current: [], stale: 0 };
+  for (const { ref, sha } of revision.refs) {
+    const instances = await instancesOn(owner, repo, number, ref);
+    if ("unreadable" in instances) {
+      return {
+        unknown: `its instances could not be read (${instances.unreadable})`,
+      };
+    }
+    const odd = witness(w, instances, ref, sha);
+    if (odd !== null) return { unknown: odd };
+  }
+  return settle(w, pr, revision.head);
 }
 
 /**
@@ -227,19 +366,8 @@ export async function readAlert(
     return alert;
   }
   const scoped = await prInstanceState(owner, repo, number, pr);
-  if ("unreadable" in scoped) {
-    return {
-      ...alert,
-      state: null,
-      stateUnknown: `its instances could not be read (${scoped.unreadable})`,
-    };
-  }
-  return scoped.state === null
-    ? {
-        ...alert,
-        state: null,
-        stateUnknown: `it has no instance on pull request #${pr}`,
-      }
+  return "unknown" in scoped
+    ? { ...alert, state: null, stateUnknown: scoped.unknown }
     : { ...alert, state: scoped.state };
 }
 

@@ -19,8 +19,10 @@
  * The thread names the alert: its opening comment must be GitHub's code
  * scanning account's and carry one details link, to an alert of the pull
  * request's own repository, or the script refuses. The alert's state is read
- * on that pull request, so an alert with no instance there is refused too. Neither the thread nor the alert is taken from the
- * caller, so a reply cannot dismiss an alert some other thread raised.
+ * from its instances at the pull request's current revision, so an alert
+ * with no current instance there is refused too. Neither the thread nor the
+ * alert is taken from the caller, so a reply cannot dismiss an alert some
+ * other thread raised.
  *
  * Exit codes: 0 dismissed, or already dismissed; 1 a read or the dismissal
  * failed (GitHub answers 403 to a token that may not write security events),

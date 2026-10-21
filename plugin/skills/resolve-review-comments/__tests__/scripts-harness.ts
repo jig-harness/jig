@@ -267,14 +267,12 @@ case "$1 $2" in
     printf '%s\n' "$@" > "$FIX/dismiss-args.log"
     [ -f "$FIX/dismiss-forbidden" ] && { echo 'gh: Resource not accessible by integration (HTTP 403)' >&2; exit 1; }
     echo dismissed ;;
-  'api repos/'*'/code-scanning/alerts/'*'/instances?ref='*)
-    # An alert's instances on one ref, from instances-<n>-<ref, / as _>.json
-    # in the fixture; absent, none.
-    n="\${2%/instances*}"; n="\${n##*/}"; ref="\${2##*ref=}"
-    echo "instances $n $ref" >> "$FIX/alert-calls.log"
-    [ -f "$FIX/instances-forbidden" ] && { echo 'gh: Resource not accessible by integration (HTTP 403)' >&2; exit 1; }
-    f="$FIX/instances-$n-$(printf '%s' "$ref" | tr / _).json"
-    if [ -f "$f" ]; then cat "$f"; else echo '[]'; fi ;;
+  'api repos/'*'/pulls/'*)
+    # The pull request code-scanning.ts reads its revision from, pull.json in
+    # the fixture; absent, a 403.
+    echo "pull" >> "$FIX/alert-calls.log"
+    [ -f "$FIX/pull.json" ] || { echo 'gh: Resource not accessible by integration (HTTP 403)' >&2; exit 1; }
+    cat "$FIX/pull.json" ;;
   'api repos/'*'/code-scanning/alerts/'*)
     # A code scanning alert, from alert-<n>.json in the fixture; absent, a 403.
     n="\${2##*/}"
@@ -287,6 +285,16 @@ case "$1 $2" in
     # fixture: none, so no reviewer summary and nothing outstanding) and, once
     # a summary exists, its inline review comments (always none here).
     case "$*" in
+      *"/code-scanning/alerts/"*"/instances?"*)
+        # An alert's instances on one ref, as --slurp hands them over: the
+        # pages in instances-<n>-<ref, / as _>.json; absent, one empty page.
+        path="\${4:-$3}"
+        n="\${path%/instances*}"; n="\${n##*/}"
+        ref=$(printf '%s' "\${path##*ref=}" | sed 's#%2F#/#g')
+        echo "instances $n $ref" >> "$FIX/alert-calls.log"
+        [ -f "$FIX/instances-forbidden" ] && { echo 'gh: Resource not accessible by integration (HTTP 403)' >&2; exit 1; }
+        f="$FIX/instances-$n-$(printf '%s' "$ref" | tr / _).json"
+        if [ -f "$f" ]; then cat "$f"; else echo '[[]]'; fi ;;
       *"/issues/"*"/comments"*)
         if [ -f "$FIX/issue-comments.json" ]; then cat "$FIX/issue-comments.json"
         else echo '[[]]'; fi ;;
