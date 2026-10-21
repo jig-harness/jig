@@ -985,6 +985,12 @@ make, use the entry's term instead.
   **deferred** (with a filed follow-up), or *moot* — each leaving an audit
   trail. Scope expansion and overruling a human thread stay *HITL*.
   Jig ships it as the `resolve-review-comments` skill.
+- **Code scanning alert** — a finding a static-analysis tool (CodeQL,
+  SonarQube Cloud, Semgrep, …) reports to GitHub's code scanning, which keeps
+  it open until a later analysis no longer finds it or someone dismisses it
+  with a reason. On a pull request GitHub also opens a review thread for it, a
+  **code-scanning thread**; resolving that thread leaves the alert open, so the
+  comment-resolution loop settles both.
 - **PR drive loop** — the procedure that wraps the *comment-resolution loop*
   for unattended work on one pull request. The comment-resolution loop already
   repeats *review rounds* until the reviewers settle; the drive loop runs each
