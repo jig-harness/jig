@@ -47,6 +47,10 @@ function inside(root: string, path: string): boolean {
     (part !== ".." && !part.startsWith(`..${sep}`) && !isAbsolute(part))
   );
 }
+/** Code-unit order: the same on every host, whatever its locale. */
+function byCodeUnit(a: string, b: string): number {
+  return Number(a > b) - Number(a < b);
+}
 function hostEnvironment(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const name of [
@@ -61,7 +65,7 @@ function hostEnvironment(): Record<string, string> {
     "USERPROFILE",
   ]) {
     const key = Object.keys(process.env)
-      .sort()
+      .sort(byCodeUnit)
       .find((key) => key.toUpperCase() === name);
     const value = key === undefined ? undefined : process.env[key];
     if (value !== undefined) env[name] = value;
@@ -360,7 +364,7 @@ async function collectFiles(
     ),
   ];
   for (const path of selected) validatePath(root, path);
-  return [...new Set(selected)].sort();
+  return [...new Set(selected)].sort(byCodeUnit);
 }
 function saveSession(
   root: string,

@@ -434,7 +434,7 @@ intended tree; an inherited value overrides the current directory.
 `/absolute/shared-state/<clone-key>/`. The default is
 `~/.local/state/jig/drive-pr/<clone-key>/`. The key is the first 16 hexadecimal
 characters of SHA-256 over a [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID) persisted as `drive-pr-clone-id` in Git's
-common directory (`git rev-parse --git-common-dir`). It survives a clone move,
+common directory (the path `git rev-parse` prints for `--git-common-dir`). It survives a clone move,
 is shared by linked worktrees, and differs between separate clones, including
 clones of the same remote repository. Remote owner/name is not the key. Commands that resolve state, including the
 reaper, need the owning clone as their Git context; an override path alone
