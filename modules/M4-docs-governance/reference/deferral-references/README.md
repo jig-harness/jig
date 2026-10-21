@@ -50,7 +50,11 @@ it is refused unread. With `--staged` or a range, the configuration is named
 by the path the repository tracks it at: a path that reaches it through a link
 (the file, or a directory on the way) is refused. `--staged` reads the index's
 copy, so it accepts a working-tree link where the index tracks that path itself
-as a regular file; a range reads the working tree's copy and accepts none.
+as a regular file, and refuses a configuration the index does not hold (never
+added, or its removal staged) rather than reading a working-tree copy; a range
+reads the working tree's copy and accepts no link. Both diff modes read each
+document's change as a plain text patch, whatever the repository's attributes
+say about diffing it (`-diff`, a text conversion).
 
 It reads each document as blocks of prose: a paragraph, a list item with its
 continuation lines (and, in a loose list, its indented later paragraphs, which
@@ -258,7 +262,7 @@ would turn the check off) is exit 2, never a pass.
 | --- | --- |
 | `check-deferrals.ts` | the gate: both halves, one reader |
 | `blocks.ts` | the reader: a document's blocks of prose and the waivers in each |
-| `check-deferrals.test.ts` | paired self-test: block boundaries (paragraph, list item, loose and nested lists, table rows with and without outer pipes, heading, quote boundaries, fences and their closing lines, frontmatter, comments across blocks), marker matching, item patterns and groups, waivers, the added-line reader, the live decision (all closed, one open, not found, unanswered, bad state file), the diff modes in throwaway repositories (staged, `A...B`, `A..B`, single ref, `DIFF_RANGE`, malformed and unresolvable ranges, `--ci`, a deletion that exposes a deferral, the staged blob and staged configuration against later edits), configuration and usage errors, and the entry point's exit codes |
+| `check-deferrals.test.ts` | paired self-test: block boundaries (paragraph, list item, loose and nested lists, table rows with and without outer pipes, heading, quote boundaries, fences and their closing lines, frontmatter, comments across blocks), marker matching, item patterns and groups, waivers, the added-line reader, the live decision (all closed, one open, not found, unanswered, bad state file), the diff modes in throwaway repositories (staged, `A...B`, `A..B`, single ref, `DIFF_RANGE`, malformed and unresolvable ranges, `--ci`, a deletion that exposes a deferral, the staged blob and staged configuration against later edits, a staged removal of the configuration, documents whose attributes mark them binary or convert them), configuration and usage errors, and the entry point's exit codes |
 
 The scripts import the shared reader [`../docs.ts`](../docs.ts) and use Bun's
 built-in YAML reader; copy `blocks.ts` beside the gate and keep the helper

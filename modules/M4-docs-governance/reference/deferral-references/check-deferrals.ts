@@ -474,18 +474,14 @@ function changedSources(
 ): Source[] {
   const staged = mode === "staged";
   const base = staged ? ["--cached"] : [oldSide(root, mode.range)];
-  const changed = git(root, [
-    "diff",
-    "-z",
-    "--name-only",
-    "--diff-filter=ACMR",
-    ...base,
-  ]);
-  const paths = changed.split("\0");
+  const names = (...filter: string[]) =>
+    git(root, ["diff", "-z", "--name-only", ...filter, ...base]).split("\0");
   // A new `items` pattern or marker changes what every document must satisfy,
-  // so a change to the configuration judges them all.
-  if (paths.includes(configRelative))
+  // so any change to the configuration (a removal or a change of type
+  // included) judges them all.
+  if (names().includes(configRelative))
     return staged ? indexedSources(root, config) : trackedSources(root, config);
+  const paths = names("--diff-filter=ACMR");
   const out: Source[] = [];
   for (const path of paths) {
     if (!path || !inScope(config, path)) continue;
@@ -495,6 +491,11 @@ function changedSources(
       "diff",
       "-U0",
       "--no-color",
+      // The raw text, whatever the repository's attributes say: a document
+      // marked binary or given a text conversion still gets a line patch
+      // whose numbers address the content being judged.
+      "--text",
+      "--no-textconv",
       "--no-ext-diff",
       ...base,
       "--",
@@ -521,7 +522,7 @@ function indexedConfig(
     : undefined;
 }
 
-/** The configuration a run judges by: for a staged change, the index's copy when it has one. */
+/** The configuration a run judges by: for a staged change, the index's copy. */
 function configText(root: string, configPath: string, mode: Mode): string {
   const indexed = indexedConfig(root, configPath, mode);
   return indexed === undefined
@@ -657,10 +658,16 @@ function plan(
   const mode = modeOf(flags, flags.range ?? (env.DIFF_RANGE || undefined));
   if (mode !== undefined && mode !== "all")
     refuseAlias(root, configPath, flags.config ?? DEFAULT_CONFIG, mode);
-  if (
-    !existsSync(configPath) &&
-    indexedConfig(root, configPath, mode) === undefined
-  )
+  // A staged change is judged by the configuration the commit holds, never
+  // by a working-tree copy beside it: one the index lacks (never added, or
+  // its removal staged) is refused.
+  if (mode === "staged" && indexedConfig(root, configPath, mode) === undefined)
+    throw new DeferralsError(
+      existsSync(configPath)
+        ? `configuration ${configPath} is not in the index; --staged judges by the configuration the commit holds, so stage it`
+        : `configuration ${configPath} does not exist (see templates/deferral-references.yaml)`,
+    );
+  if (mode !== "staged" && !existsSync(configPath))
     throw new DeferralsError(
       `configuration ${configPath} does not exist (see templates/deferral-references.yaml)`,
     );

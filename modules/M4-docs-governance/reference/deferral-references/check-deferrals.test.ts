@@ -667,6 +667,28 @@ describe("--staged", () => {
     expectSpawnExit(r.run(["--staged"]), 1);
   });
 
+  test("a staged removal of the configuration is refused, not read from a working-tree copy", () => {
+    const r = repo({ "a.md": "Fine.\n" }, "items: ['\\bENG-\\d+\\b']\n");
+    r.git("rm", "-q", "--cached", ".config/deferral-references.yaml");
+    r.write(".config/deferral-references.yaml", "items: ['\\bTASK-\\d+\\b']\n");
+    r.write("a.md", "Tracked to closure under TASK-1.\n");
+    r.git("add", "a.md");
+    const result = r.run(["--staged"]);
+    expectSpawnExit(result, 2);
+    expect(result.stderr).toContain("is not in the index");
+  });
+
+  test("a configuration only in the working tree is refused", () => {
+    const r = repo({ "a.md": "Fine.\n" });
+    const other = join(r.dir, "untracked.yaml");
+    writeFileSync(other, "items: ['\\bTASK-\\d+\\b']\n");
+    r.write("a.md", "Tracked to closure under TASK-1.\n");
+    r.git("add", "a.md");
+    const result = r.run(["--staged", "--config", "untracked.yaml"]);
+    expectSpawnExit(result, 2);
+    expect(result.stderr).toContain("is not in the index");
+  });
+
   test("a working-tree link in place of a staged --config does not change which configuration is read", () => {
     const r = repo({ "a.md": "Fine.\n" }, "items: ['\\bENG-\\d+\\b']\n");
     r.write("alternate.yaml", "items: ['\\bTASK-\\d+\\b']\n");
@@ -736,6 +758,24 @@ describe("--staged", () => {
       0,
     );
   });
+
+  test.each([["-diff"], ["diff=upper"]])(
+    "a document whose attributes say %s still gets a line patch",
+    (attribute) => {
+      const r = repo({ "a.md": "Fine.\n" });
+      r.git("config", "diff.upper.textconv", "sed 1d");
+      r.write(".gitattributes", `a.md ${attribute}\n`);
+      r.git("add", ".");
+      r.git("commit", "-qm", "attributes");
+      r.write("a.md", "Fine.\n\nTracked to closure.\n");
+      r.git("add", ".");
+      const staged = r.run(["--staged"]);
+      expectSpawnExit(staged, 1);
+      expect(staged.stdout).toContain("a.md:3:");
+      r.git("commit", "-qm", "deferral");
+      expectSpawnExit(r.run(["--range=HEAD~1...HEAD"]), 1);
+    },
+  );
 
   test("is the default with no mode given", () => {
     const r = repo({ "a.md": "Fine.\n" });
