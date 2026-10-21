@@ -542,11 +542,11 @@ file and need it written into their own configuration as an absolute path.
    files. Then re-arm the stopped drives, and update and re-enable any
    scheduled reaper so it picks up the new path.
 
-A machine-wide export reaches every clone on that machine equally, and state
-files and locks key only by PR number, never by clone or fork — so one shared
-export is safe only on a machine with a **single** clone. A machine running
-several independent clones, where the same PR number could name unrelated work
-in each, needs distinct, clone-specific values.
+A machine-wide export reaches every clone on that machine equally, and that is
+safe however many clones the machine runs: each clone resolves its own
+`<root>/<clone-key>/` leaf, so the same PR number in two independent clones
+names two separate state files, locks and logs. Export the root, not one
+clone's leaf, when several clones share it.
 
 ## Stopping and resuming safely
 
