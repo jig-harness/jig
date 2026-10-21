@@ -29,11 +29,14 @@ among the files checked, or no skill to check. Its self-test sits beside it.
 - **The file is read as a renderer shows it.** It is rendered once with a
   CommonMark renderer (Bun's `Bun.markdown`), and invocations and links are
   both read from that render, so code, containers, reference definitions and
-  escapes are what the renderer makes of them. The window is counted in the
-  rendered lines; a finding names the invocation's line in the file.
+  escapes are what the renderer makes of them. The text is read as shown:
+  inline formatting adds nothing to it, table cells are set off by blanks,
+  raw HTML shows only the text between its tags, and an image only its
+  description. The window is counted in the rendered lines; a finding names
+  the invocation's line in the file, placed by that same render.
 - **An invocation** is `/<skill>` in the rendered text, after the start of a
-  line, a blank, a quote, the edge of code, emphasis, strikethrough, a link's
-  text or a table cell, or an opening parenthesis or bracket, and not
+  line, a blank, a quote, a delimiter the render kept as text, or an opening
+  parenthesis or bracket, and not
   continued by another name character. A path (`skills/<skill>/`,
   `/<skill>/SKILL.md`, `/<skill>.md`) and a link's destination are not one.
   Code is read like prose, since a command in an example is still an
@@ -50,8 +53,9 @@ among the files checked, or no skill to check. Its self-test sits beside it.
   (a link whose target holds `interop`), the one marker shared by every
   skill. A link is one the render holds, counted on the line where it is
   used: an inline link, or a reference link whose definition may stand
-  anywhere in the file, inside a container or not. An image, and link syntax
-  inside code or an HTML comment, is not a link. `--marker` replaces the
+  anywhere in the file, inside a container or not. An image, a link inside
+  an image's description, and link syntax inside code, an HTML comment or
+  an HTML tag, is not a link. `--marker` replaces the
   default with the repository's own, such as the path of the document that
   says how each runtime runs a skill; it is tested on the window's rendered
   text, each link followed by its destination in angle brackets, and

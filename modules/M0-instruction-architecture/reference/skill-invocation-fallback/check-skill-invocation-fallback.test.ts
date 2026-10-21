@@ -215,6 +215,36 @@ test("a finding names the invocation's own line in the file", () => {
   expect(result.output).toContain(":7:");
 });
 
+test("the name is read from the text as shown, formatting removed", () => {
+  // Emphasis inside the name still shows the whole name.
+  expectSpawnExit(check(doc("Run /release-**notes**.\n")), 1);
+  // Emphasis after it shows a longer name.
+  expectSpawnExit(check(doc("Run /release-notes*draft*.\n")), 0);
+  expectSpawnExit(check(doc("Run /release-notes<b>-draft</b>.\n")), 0);
+});
+
+test("HTML tags and an image's description name no fallback", () => {
+  for (const text of [
+    'Run /release-notes. <span data-path=".agents/skills/release-notes">details</span>\n',
+    '<div title="skills/release-notes/SKILL.md .agents/skills/release-notes">\nRun /release-notes.\n</div>\n',
+    "Run /release-notes. ![see [procedure](skills/release-notes/SKILL.md)](image.png)\n",
+  ]) {
+    expectSpawnExit(check(doc(text)), 1, text);
+  }
+  const shown =
+    "<div>\nRun /release-notes from .agents/skills/release-notes/.\n</div>\n";
+  expectSpawnExit(check(doc(shown)), 0);
+});
+
+test("a finding's line comes from the whole file's render", () => {
+  // The first six lines alone render an invocation the whole file does not
+  // hold: line 7 closes the link it stands in.
+  const text = `${"\n".repeat(5)}[x](/release-notes\n)\n${"\n".repeat(2)}Run /release-notes.\n`;
+  const result = check(doc(text));
+  expectSpawnExit(result, 1);
+  expect(result.output).toContain(":10:");
+});
+
 test("an invocation inside an HTML comment is not read", () => {
   const text =
     "<!-- Run /release-notes; [procedure](skills/release-notes/SKILL.md) -->\n";

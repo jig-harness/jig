@@ -14,26 +14,30 @@
 // by line, so code, containers, reference definitions, escapes and character
 // references are what the renderer makes of them, and the window is counted
 // in the rendered lines (a link reference definition or an HTML comment
-// shows none). A finding names the invocation's line in the file.
+// shows none). The text is read as shown: inline formatting adds nothing to
+// it, table cells are set off by blanks, raw HTML shows only the text between
+// its tags, and an image only its description. A finding names the
+// invocation's line in the file, placed by that same render.
 //
 // A bare invocation is `/<skill>` in the rendered text, preceded by the start
-// of a line, a blank, a quote, the edge of code, emphasis, strikethrough, a
-// link's text or a table cell, or an opening parenthesis or bracket, and
-// followed by a character that cannot continue a skill name, or by the end of
-// the line. Not an invocation: a path (`skills/<skill>/SKILL.md`, `/<skill>/`,
-// `/<skill>.md`), a link's destination, and a plugin-namespaced command
-// (`/<plugin>:<skill>`), whose fallback, the installed skill's SKILL.md, lies
-// outside the files this check reads. Code is checked like prose: a command
-// in an example is still an instruction, and comment delimiters inside code
-// are code. An HTML comment is not read at all.
+// of a line, a blank, a quote, a delimiter the render kept as text, or an
+// opening parenthesis or bracket, and followed by a character that cannot
+// continue a skill name, or by the end of the line. Not an invocation: a path
+// (`skills/<skill>/SKILL.md`, `/<skill>/`, `/<skill>.md`), a link's
+// destination, and a plugin-namespaced command (`/<plugin>:<skill>`), whose
+// fallback, the installed skill's SKILL.md, lies outside the files this check
+// reads. Code is checked like prose: a command in an example is still an
+// instruction, and comment delimiters inside code are code. An HTML comment
+// is not read at all.
 //
 // A fallback names the skill it falls back to: a link whose target, resolved
 // from the file's directory, is `<skill>/SKILL.md`; the discovery path
 // `.agents/skills/<skill>`; or a link to an interop document (a target
 // holding `interop`), the one shared marker, since such a document covers
 // every skill. A link is one the render holds, counted on the line where it
-// is used, wherever its definition stands; an image is not one, nor link
-// syntax inside code or an HTML comment.
+// is used, wherever its definition stands; an image is not one, nor a link
+// inside an image's description, nor link syntax inside code, an HTML
+// comment or an HTML tag.
 //
 // A file is exempted as a whole only when all three hold: it is named with
 // --exempt, it opens with a generated-file banner (an HTML comment starting
@@ -122,6 +126,26 @@ function skillsIn(dir: string): string[] {
     .sort();
 }
 
+/** The skills named with --skill and found under each --skills directory. */
+function skillNames(named: string[], dirs: string[]): string[] {
+  for (const name of named)
+    if (!NAME.test(name))
+      throw new UsageError(`--skill: not a skill name: ${name}\n${USAGE}`);
+  const skills = [...new Set([...named, ...dirs.flatMap(skillsIn)])];
+  if (!skills.length) throw new UsageError(`no skill to check\n${USAGE}`);
+  return skills;
+}
+
+/** The --window value: a whole number of lines. */
+function windowOf(value: string | undefined): number {
+  const window = Number(value ?? DEFAULT_WINDOW);
+  if (value?.trim() === "" || !Number.isInteger(window) || window < 0)
+    throw new UsageError(
+      `--window: not a whole number of lines: ${value}\n${USAGE}`,
+    );
+  return window;
+}
+
 function parse(argv: string[]): Options {
   const { values, positionals } = strictOptions(
     {
@@ -139,20 +163,9 @@ function parse(argv: string[]): Options {
     },
     USAGE,
   );
-  const named = values.skill ?? [];
-  for (const name of named)
-    if (!NAME.test(name))
-      throw new UsageError(`--skill: not a skill name: ${name}\n${USAGE}`);
-  const skills = [
-    ...new Set([...named, ...(values.skills ?? []).flatMap(skillsIn)]),
-  ];
-  if (!skills.length) throw new UsageError(`no skill to check\n${USAGE}`);
+  const skills = skillNames(values.skill ?? [], values.skills ?? []);
   if (!positionals.length) throw new UsageError(`no path to scan\n${USAGE}`);
-  const window = Number(values.window ?? DEFAULT_WINDOW);
-  if (values.window?.trim() === "" || !Number.isInteger(window) || window < 0)
-    throw new UsageError(
-      `--window: not a whole number of lines: ${values.window}\n${USAGE}`,
-    );
+  const window = windowOf(values.window);
   const fileMarker = values["file-marker"] ?? DEFAULT_FILE_MARKER;
   if (!fileMarker.trim())
     throw new UsageError(`--file-marker: empty\n${USAGE}`);
@@ -226,15 +239,15 @@ const escapeRegex = (text: string) =>
 
 /**
  * A bare `/<skill>` in rendered text: after the line start, a blank, a quote,
- * an inline element's edge, a delimiter the render kept as text, or an opening
- * parenthesis or bracket; not continued by a name character, a slash, underscores that
- * run on into a name (ones that do not close emphasis, `_` or `__`), or a
- * colon or dot that runs on into a name (a namespace or a file name).
+ * a delimiter the render kept as text, or an opening parenthesis or bracket;
+ * not continued by a name character, a slash, underscores that run on into a
+ * name (ones that do not close emphasis, `_` or `__`), or a colon or dot that
+ * runs on into a name (a namespace or a file name).
  */
 function invocationPattern(skills: string[]): RegExp {
   const names = skills.map(escapeRegex).join("|");
   return new RegExp(
-    `(?<=^|[\\s\`"'*_~|(\\[${EDGE}])/(${names})(?![A-Za-z0-9/-]|_+[A-Za-z0-9-]|[:.][A-Za-z0-9_-])`,
+    `(?<=^|[\\s\`"'*_~|(\\[])/(${names})(?![A-Za-z0-9/-]|_+[A-Za-z0-9-]|[:.][A-Za-z0-9_-])`,
     "g",
   );
 }
@@ -258,74 +271,161 @@ function fallbackTarget(target: string, skill: string, dir: string): boolean {
 }
 
 /**
- * The characters the reading writes into a render: around a text node, at an
- * inline element's edge, and around a link's number. The file's own are
- * replaced before it is rendered, so none is ever read as one of these.
+ * The characters the reading writes into a render: around a text node's
+ * number and around a link's number. The file's own are replaced before it
+ * is rendered, so none is ever read as one of these.
  */
-const TEXT_OPEN = "\uE000";
-const TEXT_CLOSE = "\uE001";
-const EDGE = "\uE002";
-const LINK_OPEN = "\uE003";
-const LINK_CLOSE = "\uE004";
-const RESERVED = /[\uE000-\uE004]/g;
-const TEXT = /\uE000([^\uE001]*)\uE001/g;
-const LINK = /\uE003(\d+)\uE004/g;
-const COMMENT = /<!--[\s\S]*?-->/g;
+const NODE_OPEN = "";
+const NODE_CLOSE = "";
+const LINK_OPEN = "";
+const LINK_CLOSE = "";
+const RESERVED = /[-]/g;
+const NODE = /(\d+)/g;
+const LINK = /(\d+)/g;
+const PIECE = /(\d+)|(\d+)|[^]+/g;
+/** Raw HTML: a tag, a comment, a processing instruction or a declaration. */
+const TAG =
+  /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:[^<>"']|"[^"]*"|'[^']*')*)?\/?>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<![A-Za-z][^>]*>|<!\[CDATA\[[\s\S]*?\]\]>/g;
+const WHOLE_TAG = new RegExp(`^(?:${TAG.source})$`);
+/** A character reference, which the renderer shows as a text node of its own. */
+const REFERENCE =
+  /&(?:#[0-9]{1,7}|#[xX][0-9A-Fa-f]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});/g;
 
-/** The text with each HTML comment blanked out, its line breaks kept. */
-const uncommented = (text: string) =>
-  text.replace(COMMENT, (comment) => comment.replace(/[^\n]/g, ""));
+/** Text with, for each of its characters, its offset in the file. */
+interface Placed {
+  text: string;
+  origin: number[];
+}
 
-/** Each text node's own text, `keep` applied to it. */
-const unwrap = (
-  text: string,
-  keep: (node: string) => string = (node) => node,
-) => text.replace(TEXT, (_, node: string) => keep(node));
+/** `placed` with the characters `hidden` matches removed, line breaks kept. */
+function without(placed: Placed, hidden: RegExp): Placed {
+  const out: Placed = { text: "", origin: [] };
+  let at = 0;
+  const keep = (to: number, breaksOnly: boolean) => {
+    for (; at < to; at++) {
+      const char = placed.text[at] ?? "";
+      if (breaksOnly && char !== "\n") continue;
+      out.text += char;
+      out.origin.push(placed.origin[at] ?? 0);
+    }
+  };
+  for (const match of placed.text.matchAll(new RegExp(hidden.source, "g"))) {
+    keep(match.index, false);
+    keep(match.index + match[0].length, true);
+  }
+  keep(placed.text.length, false);
+  return out;
+}
 
 /**
  * A file as its renderer shows it, line by line: `prose` is what invocations
- * are read from, `shown` is what a marker is tested on (each link followed by
- * its destination in angle brackets), and `links` holds each line's link
+ * are read from, `origin` gives each of its characters' offset in the file,
+ * `shown` is what a marker is tested on (each link followed by its
+ * destination in angle brackets), and `links` holds each line's link
  * destinations.
  */
 interface Reading {
   prose: string[];
+  origin: number[][];
   shown: string[];
   links: string[][];
 }
 
 /**
- * The file rendered once (`Bun.markdown`), so code, containers, reference
- * definitions, escapes and character references are read as a renderer reads
- * them. Every block ends its own line, so the lines are the rendered text's.
- * An HTML comment shows nothing: an HTML block has its comments removed, and
- * inline HTML that is a whole comment is dropped; the same text inside code
- * stays, since there it is shown.
+ * Places text nodes in the file in the order the render walks them: each is
+ * searched for from where the last one ended. A node of one or two characters
+ * may be a character reference the renderer decoded, so the nearer of the
+ * text and the next reference is taken.
  */
-function read(markdown: string): Reading {
+class Locator {
+  private cursor = 0;
+  private readonly source: string;
+  constructor(source: string) {
+    this.source = source;
+  }
+
+  /** Each character's offset in the file, for `text`, the next text node. */
+  place(text: string): number[] {
+    const origin: number[] = [];
+    text.split("\n").forEach((part, line) => {
+      const start = this.find(part);
+      if (line) origin.push(start);
+      for (let i = 0; i < part.length; i++) origin.push(start + i);
+    });
+    return origin;
+  }
+
+  private find(part: string): number {
+    if (!part) return this.cursor;
+    const at = this.source.indexOf(part, this.cursor);
+    const reference = part.length <= 2 ? this.nextReference() : undefined;
+    if (reference && (at < 0 || reference.index < at)) {
+      this.cursor = reference.index + reference[0].length;
+      return reference.index;
+    }
+    if (at < 0) return this.cursor;
+    this.cursor = at + part.length;
+    return at;
+  }
+
+  private nextReference(): RegExpExecArray | null {
+    REFERENCE.lastIndex = this.cursor;
+    return REFERENCE.exec(this.source);
+  }
+}
+
+type Node = Placed & { shown: boolean };
+
+/**
+ * The render of `source`, each text node written as its number in `nodes`
+ * and each link's destination as its number in `destinations`.
+ */
+function render(source: string): {
+  rendered: string;
+  nodes: Node[];
+  destinations: string[];
+} {
+  const nodes: Node[] = [];
   const destinations: string[] = [];
-  const edged = (children: string | undefined) =>
-    `${EDGE}${children ?? ""}${EDGE}`;
+  const locator = new Locator(source);
+  const node = (placed: Placed, shown: boolean) => {
+    nodes.push({ ...placed, shown });
+    return `${NODE_OPEN}${nodes.length - 1}${NODE_CLOSE}`;
+  };
+  /** The text nodes in `children`, joined. */
+  const joined = (children: string | undefined): Placed => {
+    const out: Placed = { text: "", origin: [] };
+    for (const [, id] of (children ?? "").matchAll(NODE)) {
+      const found = nodes[Number(id)];
+      if (!found) continue;
+      out.text += found.text;
+      out.origin.push(...found.origin);
+    }
+    return out;
+  };
   const block = (children: string | undefined) => `${children ?? ""}\n\n`;
   const own = (children: string | undefined) => children ?? "";
+  const cell = (children: string | undefined) => ` ${children ?? ""} `;
   const callbacks = {
-    text: (children: string | undefined) =>
-      `${TEXT_OPEN}${children ?? ""}${TEXT_CLOSE}`,
+    text: (children: string | undefined) => {
+      const text = children ?? "";
+      return node({ text, origin: locator.place(text) }, false);
+    },
     paragraph: block,
     heading: block,
     hr: () => "\n\n",
     code: (children: string | undefined) => {
-      const code = unwrap(children ?? "");
-      return `${code}${code.endsWith("\n") ? "" : "\n"}\n`;
+      const code = joined(children);
+      return `${node(code, true)}${code.text.endsWith("\n") ? "" : "\n"}\n`;
     },
     html: (children: string | undefined) =>
-      `${uncommented(unwrap(children ?? ""))}\n`,
-    codespan: (children: string | undefined) => edged(unwrap(children ?? "")),
-    strong: edged,
-    emphasis: edged,
-    strikethrough: edged,
-    th: edged,
-    td: edged,
+      `${node(without(joined(children), TAG), true)}\n`,
+    codespan: (children: string | undefined) => node(joined(children), true),
+    strong: own,
+    emphasis: own,
+    strikethrough: own,
+    th: cell,
+    td: cell,
     tr: (children: string | undefined) => `${children ?? ""}\n`,
     table: block,
     listItem: (children: string | undefined) => {
@@ -337,71 +437,124 @@ function read(markdown: string): Reading {
     thead: own,
     tbody: own,
     link: (children: string | undefined, meta: { href?: unknown }) => {
-      if (typeof meta?.href !== "string") return edged(children);
+      if (typeof meta?.href !== "string") return own(children);
       destinations.push(unescapeDestination(meta.href));
-      return `${edged(children)}${LINK_OPEN}${destinations.length - 1}${LINK_CLOSE}`;
+      return `${children ?? ""}${LINK_OPEN}${destinations.length - 1}${LINK_CLOSE}`;
     },
-    image: own,
+    image: (children: string | undefined) => (children ?? "").replace(LINK, ""),
   };
-  const rendered = unwrap(
-    Bun.markdown.render(
-      markdown.replace(/\r\n?/g, "\n").replace(RESERVED, "\uFFFD"),
-      callbacks as unknown as Parameters<typeof Bun.markdown.render>[1],
-    ),
-    (node) =>
-      /^<!--[\s\S]*-->$/.test(node) ? node.replace(/[^\n]/g, "") : node,
+  const rendered = Bun.markdown.render(
+    source,
+    callbacks as unknown as Parameters<typeof Bun.markdown.render>[1],
   );
-  const lines = rendered.split("\n");
-  return {
-    prose: lines.map((line) => line.replace(LINK, "")),
-    shown: lines.map((line) =>
-      line
-        .replace(LINK, (_, id: string) => ` <${destinations[Number(id)]}>`)
-        .replaceAll(EDGE, ""),
-    ),
-    links: lines.map((line) =>
-      [...line.matchAll(LINK)].map(([, id]) => destinations[Number(id)] ?? ""),
-    ),
-  };
+  return { rendered, nodes, destinations };
 }
 
-/** The skill of each invocation in `prose`, with its 0-based line. */
+/** What a text node shows: raw inline HTML shows only its line breaks. */
+const visible = (node: Node): Placed =>
+  node.shown || !WHOLE_TAG.test(node.text) ? node : without(node, /[\s\S]+/);
+
+/** A reading built a character at a time. */
+class Lines {
+  readonly reading: Reading = {
+    prose: [""],
+    origin: [[]],
+    shown: [""],
+    links: [[]],
+  };
+  private last = 0;
+
+  /** `char`, from `at` in the file (default: where the last one was). */
+  add(char: string, at = this.last): void {
+    const { prose, origin, shown, links } = this.reading;
+    if (char === "\n") {
+      prose.push("");
+      origin.push([]);
+      shown.push("");
+      links.push([]);
+      return;
+    }
+    const line = prose.length - 1;
+    prose[line] += char;
+    origin[line]?.push(at);
+    shown[line] += char;
+    this.last = at;
+  }
+
+  addPlaced(placed: Placed): void {
+    for (let i = 0; i < placed.text.length; i++)
+      this.add(placed.text[i] ?? "", placed.origin[i]);
+  }
+
+  addLink(target: string): void {
+    const line = this.reading.shown.length - 1;
+    this.reading.shown[line] += ` <${target}>`;
+    this.reading.links[line]?.push(target);
+  }
+}
+
+/** The rendered text split into the reading's lines. */
+function assemble(
+  rendered: string,
+  nodes: Node[],
+  destinations: string[],
+): Reading {
+  const lines = new Lines();
+  for (const [piece, id, link] of rendered.matchAll(PIECE)) {
+    const found = id === undefined ? undefined : nodes[Number(id)];
+    if (link !== undefined) lines.addLink(destinations[Number(link)] ?? "");
+    else if (found) lines.addPlaced(visible(found));
+    else if (id === undefined) for (const char of piece) lines.add(char);
+  }
+  return lines.reading;
+}
+
+/**
+ * The file rendered once (`Bun.markdown`), so code, containers, reference
+ * definitions, escapes and character references are read as a renderer reads
+ * them. Every block ends its own line, so the lines are the rendered text's.
+ * What the reader sees is contiguous: inline formatting adds nothing to the
+ * text, a table cell is set off by blanks, raw HTML shows only the text
+ * between its tags (no tag, attribute or comment), and an image shows its
+ * description as plain text, links inside it included. Code shows as it
+ * stands. Each text node is placed in the file as the render walks it, so a
+ * character's line in the file comes from this same render.
+ */
+function read(markdown: string): Reading {
+  const source = markdown.replace(/\r\n?/g, "\n").replace(RESERVED, "�");
+  const { rendered, nodes, destinations } = render(source);
+  return assemble(rendered, nodes, destinations);
+}
+
+/** The skill of each invocation in `prose`, with its 0-based line and column. */
 function invocations(
   prose: string[],
   pattern: RegExp,
-): { skill: string; line: number }[] {
+): { skill: string; line: number; column: number }[] {
   return prose.flatMap((text, line) =>
     [...text.matchAll(pattern)].map((match) => ({
       skill: match[1] ?? "",
       line,
+      column: match.index,
     })),
   );
 }
 
-/**
- * The 1-based source line of the `nth` invocation of `skill` (0-based): the
- * shortest leading part of the file whose render already holds it. Used for
- * the report only; the window is measured in the rendered lines.
- */
-function sourceLine(
-  lines: string[],
-  pattern: RegExp,
-  skill: string,
-  nth: number,
-): number {
-  const holds = (count: number) =>
-    invocations(read(lines.slice(0, count).join("\n")).prose, pattern).filter(
-      (found) => found.skill === skill,
-    ).length > nth;
-  let low = 1;
-  let high = lines.length;
-  if (!holds(high)) return 1;
-  while (low < high) {
-    const middle = Math.floor((low + high) / 2);
-    if (holds(middle)) high = middle;
-    else low = middle + 1;
-  }
-  return low;
+/** The 1-based line of the file at each offset, from its line starts. */
+function lineAt(source: string): (offset: number) => number {
+  const starts = [0];
+  for (let i = source.indexOf("\n"); i >= 0; i = source.indexOf("\n", i + 1))
+    starts.push(i + 1);
+  return (offset) => {
+    let low = 0;
+    let high = starts.length - 1;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if ((starts[middle] ?? 0) <= offset) low = middle;
+      else high = middle - 1;
+    }
+    return low + 1;
+  };
 }
 
 /**
@@ -473,17 +626,15 @@ function checkFile(file: string, options: Options): Finding[] {
   }
   const pattern = invocationPattern(options.skills);
   const reading = read(text);
-  const seen = new Map<string, number>();
-  for (const { skill, line } of invocations(reading.prose, pattern)) {
-    const nth = seen.get(skill) ?? 0;
-    seen.set(skill, nth + 1);
+  const lineOf = lineAt(text.replace(/\r\n?/g, "\n"));
+  for (const { skill, line, column } of invocations(reading.prose, pattern)) {
     const from = Math.max(0, line - options.window);
     const to = line + options.window;
     if (namesFallback(reading, from, to, skill, dir, options)) continue;
     findings.push({
       rule: RULE,
       file: shown,
-      line: sourceLine(lines, pattern, skill, nth),
+      line: lineOf(reading.origin[line]?.[column] ?? 0),
       problem: `/${skill} names no fallback within ${options.window} lines`,
       remedy: `beside the slash command, link ${skill}/SKILL.md (or name .agents/skills/${skill}/, or link the interop document), so a runtime without /${skill} can still run it`,
     });
