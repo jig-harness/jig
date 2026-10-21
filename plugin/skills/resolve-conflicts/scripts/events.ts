@@ -88,11 +88,14 @@ function recordPending(
       console.error(
         `events: the pending snapshot ${file} is still not recorded: ${result.error}`,
       );
-    } else
+    } else if ("waiting" in result || result.commit === null)
       say(
-        result.commit === null
-          ? `pending snapshot ${file}: its operation did not conclude; nothing recorded`
-          : `pending snapshot ${file}: recorded ${result.written} merge_conflict event${result.written === 1 ? "" : "s"} for ${result.commit.slice(0, 12)}`,
+        `pending snapshot ${file}: the commit its operation concluded with is not found above HEAD; kept pending`,
+        result,
+      );
+    else
+      say(
+        `pending snapshot ${file}: recorded ${result.written} merge_conflict event${result.written === 1 ? "" : "s"} for ${result.commit.slice(0, 12)}`,
         result,
       );
   }

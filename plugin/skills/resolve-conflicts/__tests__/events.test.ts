@@ -6,14 +6,17 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   appendFileSync,
   existsSync,
+  mkdirSync,
   readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { type CAUSES, primaryCause } from "../scripts/lib/causes.ts";
 import {
+  appendEvents,
   concludedCommit,
   type MergeConflictEvent,
 } from "../scripts/lib/events.ts";
@@ -309,6 +312,56 @@ describe("a record that cannot be written when the next map replaces the snapsho
     expect(events().map((e) => e.path)).toEqual(["one.md", "two.md"]);
     expect(readdirSync(pending)).toEqual([]);
   });
+
+  it("records it from a checkout where its conclusion is not above HEAD", () => {
+    twoStops();
+    expect(s.gitTry("rebase", "main").code).not.toBe(0);
+    resolve("one.md", BOTH);
+    expect(s.gitTry("rebase", "--continue").code).not.toBe(0);
+    const file = eventsFile();
+    symlinkSync(`${s.home}/nowhere`, file);
+    ok(s.script("conflict-map.ts"));
+    const pending = `${s.git("rev-parse", "--path-format=absolute", "--git-path", "jig").trim()}/pending`;
+    expect(readdirSync(pending)).toHaveLength(1);
+    rmSync(file);
+    s.write("two.md", BOTH);
+    s.git("add", "two.md");
+    ok(s.script("record.ts", ["two.md", "combined", "--reason", "both"]));
+    ok(s.script("check-resolution.ts"));
+    s.git("rebase", "--continue");
+    const [first] = s
+      .git("rev-list", "--reverse", "main..feature")
+      .trim()
+      .split("\n");
+    s.git("checkout", "-q", "main");
+    ok(s.script("events.ts"));
+    expect(events()).toMatchObject([{ path: "one.md", commit: first }]);
+    expect(events()).toHaveLength(1);
+    expect(readdirSync(pending)).toEqual([]);
+  });
+
+  it("stays pending while its conclusion is neither kept nor found", () => {
+    twoStops();
+    expect(s.gitTry("rebase", "main").code).not.toBe(0);
+    ok(s.script("conflict-map.ts"));
+    const jig = s
+      .git("rev-parse", "--path-format=absolute", "--git-path", "jig")
+      .trim();
+    const snapshot: unknown = JSON.parse(
+      readFileSync(`${jig}/conflicts.json`, "utf8"),
+    );
+    s.git("rebase", "--abort");
+    mkdirSync(`${jig}/pending`);
+    writeFileSync(
+      `${jig}/pending/kept.json`,
+      JSON.stringify({ commit: null, snapshot }),
+    );
+    const run = s.script("events.ts");
+    ok(run);
+    expect(run.stdout).toContain("kept pending");
+    expect(readdirSync(`${jig}/pending`)).toEqual(["kept.json"]);
+    expect(events()).toEqual([]);
+  });
 });
 
 describe("a path that merged cleanly", () => {
@@ -331,6 +384,10 @@ describe("a path that merged cleanly", () => {
     s.git("add", "clean.md");
     ok(s.script("record.ts", ["clean.md", "combined", "--reason", "adjusted"]));
     ok(s.script("check-resolution.ts"));
+    const message = s.script("check-resolution.ts", ["--message"]);
+    ok(message);
+    expect(message.stdout).toContain("- clean.md: combined — adjusted");
+    expect(message.stdout).toContain("- list.md: combined [cause: ");
     s.git("commit", "-q", "--no-edit");
     ok(s.script("events.ts"));
     expect(events().map((e) => e.path)).toEqual(["list.md"]);
@@ -380,8 +437,50 @@ describe("a cherry-pick and a revert", () => {
     s.git("commit", "-q", "--no-edit");
     ok(s.script("events.ts"));
     expect(events()).toMatchObject([
-      { operation: "revert", path: "list.md", decision: "rewritten" },
+      {
+        operation: "revert",
+        path: "list.md",
+        decision: "rewritten",
+        incoming_commit: added,
+      },
     ]);
+  });
+});
+
+describe("the identity of a conflict", () => {
+  it("tells apart reverts of sibling commits from the same HEAD", () => {
+    s.commit("Start", { "a.md": "a\n" });
+    const event = (commit: string, incoming: string): MergeConflictEvent => ({
+      type: "merge_conflict",
+      ts: "2026-01-01T00:00:00.000Z",
+      operation: "revert",
+      path: "list.md",
+      cause: "overlap",
+      causes: ["overlap"],
+      regions: 1,
+      decision: "rewritten",
+      reason: null,
+      resolution_ms: null,
+      source: "session",
+      commit,
+      pr: null,
+      branch: "main",
+      ours_commit: "1".repeat(40),
+      ours_ref: "main",
+      theirs_commit: "2".repeat(40),
+      theirs_ref: null,
+      incoming_commit: incoming,
+    });
+    const first = appendEvents(s.root, [event("3".repeat(40), "4".repeat(40))]);
+    expect(first.written).toBe(1);
+    const sibling = appendEvents(s.root, [
+      event("5".repeat(40), "6".repeat(40)),
+    ]);
+    expect(sibling.written).toBe(1);
+    const amended = appendEvents(s.root, [
+      event("7".repeat(40), "6".repeat(40)),
+    ]);
+    expect(amended).toMatchObject({ written: 0, skipped: 1 });
   });
 });
 

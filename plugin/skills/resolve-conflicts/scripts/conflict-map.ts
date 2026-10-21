@@ -45,7 +45,12 @@ import {
 } from "./lib/classify.ts";
 import { indexAttributesGit } from "./lib/attributes.ts";
 import { git, isBinaryBlob, splitNul, topLevel } from "./lib/git.ts";
-import { attributionOf, keepPending, recordConcluded } from "./lib/events.ts";
+import {
+  attributionOf,
+  concludedCommit,
+  keepPending,
+  recordConcluded,
+} from "./lib/events.ts";
 import { parseHunks, writtenMarkerSize } from "./lib/markers.ts";
 import {
   detectOperation,
@@ -571,18 +576,21 @@ function recordedSizes(
  * An earlier operation's snapshot is about to be overwritten: keep its events
  * if it concluded and nobody recorded them (each stop of a rebase is a new
  * operation, and `events.ts` runs once, after the last). When the record
- * cannot be written, the snapshot is kept as pending for `events.ts` to
- * record later. Never stops the map.
+ * cannot be written, the snapshot is kept as pending, with the commit it
+ * concluded with, for `events.ts` to record later. Never stops the map.
  */
 function recordBeforeReplacing(root: string, previous: Snapshot): void {
+  let commit: string | null = null;
   try {
-    const done = recordConcluded(root, previous);
+    commit = concludedCommit(root, previous);
+    if (commit === null) return;
+    const done = recordConcluded(root, previous, process.env, commit);
     if (done.written > 0)
       console.error(
         `conflict-map: recorded ${done.written} merge_conflict event${done.written === 1 ? "" : "s"} of the ${describeOperation(previous.operation)} before replacing its snapshot`,
       );
   } catch (err) {
-    const kept = keepPending(root, previous);
+    const kept = keepPending(root, previous, commit);
     console.error(
       `conflict-map: could not record the events of the ${describeOperation(previous.operation)}: ${err instanceof Error ? err.message : err}. ${kept === null ? "Its snapshot could not be kept either; its events are lost." : `Its snapshot is kept in ${kept}; events.ts records it once the record can be written.`}`,
     );

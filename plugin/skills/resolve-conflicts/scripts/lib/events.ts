@@ -7,8 +7,9 @@
  * leave nothing else a replay could read.
  *
  * One conflict is one record, identified by the commit the operation
- * concluded with and its path, so recording twice (the script after the
- * conclusion, and the next map flushing what an earlier one left) counts once.
+ * concluded with and its path, or by the operation and its path (`keysOf`), so
+ * recording twice (the script after the conclusion, and the next map flushing
+ * what an earlier one left) counts once.
  */
 import {
   appendFileSync,
@@ -69,6 +70,8 @@ export interface MergeConflictEvent {
   ours_ref: string | null;
   theirs_commit: string;
   theirs_ref: string | null;
+  /** The commit the operation applied: the one merged, picked, replayed or reverted. */
+  incoming_commit: string;
 }
 
 /**
@@ -210,6 +213,7 @@ export function buildEvents(
     ours_ref: ours.ref,
     theirs_commit: theirs.commit,
     theirs_ref: theirs.ref,
+    incoming_commit: snapshot.operation.incoming,
   } as const;
   return Object.entries(snapshot.paths)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -251,18 +255,26 @@ export function eventsPath(root: string): string {
 
 /**
  * What identifies one conflict: the commit the operation concluded with and
- * the path, and the operation itself (its kind and two sides) and the path,
- * so a concluding commit rewritten in place, or a rebase stop run again
- * after an abort, is the same conflict and counts once.
+ * the path, and the operation itself (its kind, its two sides and the commit
+ * it applied) and the path, so a concluding commit rewritten in place, or a
+ * rebase stop run again after an abort, is the same conflict and counts once.
+ * The applied commit is part of the operation: a revert's `theirs` is the
+ * reverted commit's parent, which reverts of sibling commits share.
  */
 function keysOf(event: Partial<Record<string, unknown>>): string[] {
   const { path, commit, operation, ours_commit, theirs_commit } = event;
+  const incoming = event.incoming_commit;
   const text = (v: unknown): v is string => typeof v === "string";
   if (!text(path)) return [];
   return [
     ...(text(commit) ? [`commit\0${commit}\0${path}`] : []),
-    ...(text(operation) && text(ours_commit) && text(theirs_commit)
-      ? [`operation\0${operation}\0${ours_commit}\0${theirs_commit}\0${path}`]
+    ...(text(operation) &&
+    text(ours_commit) &&
+    text(theirs_commit) &&
+    text(incoming)
+      ? [
+          `operation\0${operation}\0${ours_commit}\0${theirs_commit}\0${incoming}\0${path}`,
+        ]
       : []),
   ];
 }
@@ -329,13 +341,16 @@ export interface Recorded {
   file: string | null;
 }
 
-/** Record the events of the operation `snapshot` describes, if it has concluded. */
+/**
+ * Record the events of the operation `snapshot` describes, if it has
+ * concluded: with `commit`, or with the commit found above its `HEAD`.
+ */
 export function recordConcluded(
   root: string,
   snapshot: Snapshot,
   env: NodeJS.ProcessEnv = process.env,
+  commit: string | null = concludedCommit(root, snapshot),
 ): Recorded {
-  const commit = concludedCommit(root, snapshot);
   if (commit === null) return { commit, written: 0, skipped: 0, file: null };
   const done = appendEvents(root, buildEvents(root, snapshot, commit, env));
   return { commit, ...done };
@@ -346,18 +361,46 @@ export function pendingDir(root: string): string {
   return join(dirname(snapshotPath(root)), "pending");
 }
 
+/** A snapshot whose events could not be recorded, with the commit its operation concluded with when that was found. */
+export interface Pending {
+  commit: string | null;
+  snapshot: Snapshot;
+}
+
+const COMMIT_ID = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+
+/** The pending item a kept file holds, or why it holds none. */
+function pendingOf(parsed: unknown): Pending | { problem: string } {
+  if (!isRecord(parsed)) return { problem: "not an object" };
+  const { commit, snapshot } = parsed;
+  if (
+    commit !== null &&
+    !(typeof commit === "string" && COMMIT_ID.test(commit))
+  )
+    return { problem: "its commit is not a commit id" };
+  const problem = snapshotProblem(snapshot);
+  return problem === null
+    ? { commit, snapshot: snapshot as Snapshot }
+    : { problem: `not a snapshot: ${problem}` };
+}
+
 /**
- * Keep the snapshot of an operation whose events could not be recorded, so
- * that a later `events.ts` records them. Returns the file, or null when it
- * could not be kept either.
+ * Keep the snapshot of an operation whose events could not be recorded, with
+ * the commit it concluded with, so that a later `events.ts` records them from
+ * any checkout. Returns the file, or null when it could not be kept either.
  */
-export function keepPending(root: string, snapshot: Snapshot): string | null {
+export function keepPending(
+  root: string,
+  snapshot: Snapshot,
+  commit: string | null,
+): string | null {
   const { kind, head, incoming } = snapshot.operation;
   const file = join(pendingDir(root), `${kind}-${head}-${incoming}.json`);
+  const pending: Pending = { commit, snapshot };
   try {
     mkdirSync(dirname(file), { recursive: true });
     const temporary = `${file}.${process.pid}.tmp`;
-    writeFileSync(temporary, `${JSON.stringify(snapshot, null, 2)}\n`);
+    writeFileSync(temporary, `${JSON.stringify(pending, null, 2)}\n`);
     renameSync(temporary, file);
     return file;
   } catch (err) {
@@ -368,14 +411,18 @@ export function keepPending(root: string, snapshot: Snapshot): string | null {
 
 export interface PendingOutcome {
   file: string;
-  /** What was recorded, or why the snapshot is still pending. */
-  result: Recorded | { error: string };
+  /**
+   * What was recorded; that its conclusion is not found from this checkout
+   * (`waiting`); or why it still cannot be recorded.
+   */
+  result: Recorded | { waiting: true } | { error: string };
 }
 
 /**
- * Record every kept snapshot. One that is recorded, or whose operation did
- * not conclude, is removed; one that is unreadable or still cannot be
- * recorded stays.
+ * Record every kept snapshot. One is removed only once its events are
+ * recorded or already were; one that is unreadable, still cannot be
+ * recorded, or whose conclusion is not known and not found above `HEAD`
+ * stays.
  */
 export function flushPending(
   root: string,
@@ -388,16 +435,18 @@ export function flushPending(
     if (!name.endsWith(".json")) continue;
     const file = join(dir, name);
     try {
-      const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
-      const problem = snapshotProblem(parsed);
-      if (problem !== null) {
-        outcomes.push({
-          file,
-          result: { error: `not a snapshot: ${problem}` },
-        });
+      const pending = pendingOf(JSON.parse(readFileSync(file, "utf8")));
+      if ("problem" in pending) {
+        outcomes.push({ file, result: { error: pending.problem } });
         continue;
       }
-      const result = recordConcluded(root, parsed as Snapshot, env);
+      const { snapshot } = pending;
+      const commit = pending.commit ?? concludedCommit(root, snapshot);
+      if (commit === null) {
+        outcomes.push({ file, result: { waiting: true } });
+        continue;
+      }
+      const result = recordConcluded(root, snapshot, env, commit);
       rmSync(file, { force: true });
       outcomes.push({ file, result });
     } catch (err) {

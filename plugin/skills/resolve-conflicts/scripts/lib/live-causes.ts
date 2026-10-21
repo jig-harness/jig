@@ -148,7 +148,11 @@ export function pathCauses(
   };
 }
 
-/** The causes of every path in `paths`; a path whose causes cannot be told is left out, and its caller records it without one. */
+/**
+ * The causes of every conflicted path in `paths`. A path that merged cleanly
+ * (recorded for an adjustment) had no conflict and is left out, as is a path
+ * whose causes cannot be told; its caller records it without one.
+ */
 export function snapshotCauses(
   root: string,
   paths: Readonly<Record<string, PathEntry>>,
@@ -157,6 +161,7 @@ export function snapshotCauses(
   const git = new Git(root);
   const setup = liveSetup(root);
   for (const [path, entry] of Object.entries(paths)) {
+    if (entry.clean === true) continue;
     try {
       found.set(path, pathCauses(git, path, entry, setup));
     } catch (err) {

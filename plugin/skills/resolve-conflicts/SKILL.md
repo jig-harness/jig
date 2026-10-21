@@ -464,16 +464,19 @@ parent), the revert with its `This reverts commit` line. A `fixup!` or
 conclusion stands beside the stopped commit instead of above it, and counts
 too, also when the rebase replayed further commits after it. An aborted operation leaves its snapshot behind, and the next ordinary
 commit is not taken for its conclusion. One conflict is one record,
-identified by that commit and the path, or by the operation (its kind and two
-sides) and the path, so a commit amended afterwards, or a rebase stop run
+identified by that commit and the path, or by the operation (its kind, its two
+sides and the commit it applied) and the path, so a commit amended afterwards, or a rebase stop run
 again after an abort, counts once. A path the operation merged cleanly, mapped
 only because `record.ts` recorded a decision for an adjustment to it, has no
-event.
+event and no cause in the `Conflicts resolved:` section.
 
 When `conflict-map.ts` replaces the snapshot of an operation whose events
 cannot be written, it keeps that snapshot as pending in
-`$(git rev-parse --git-path jig)/pending/`; the next `events.ts` records it
-and removes it, and exits 1 while one still cannot be recorded.
+`$(git rev-parse --git-path jig)/pending/`, with the commit the operation
+concluded with, so the next `events.ts` records it from any checkout. It
+removes a pending snapshot only once its events are recorded, and exits 1
+while one still cannot be recorded. A pending snapshot without its commit
+stays until that commit is found above `HEAD`.
 
 Each line is an event of type `merge_conflict`:
 
@@ -489,6 +492,7 @@ Each line is an event of type `merge_conflict`:
 | `pr` | the pull request being driven (`$DRIVE_PR_TARGET`) when `source` is `drive-pr`, else null |
 | `commit`, `branch` | the concluding commit, and the branch the operation ran on |
 | `ours_commit`, `ours_ref`, `theirs_commit`, `theirs_ref` | the two sides as git names them for the operation (in a rebase, `ours` is the upstream) |
+| `incoming_commit` | the commit the operation applied: the one merged, picked, replayed or reverted (a revert's `theirs_commit` is its parent) |
 
 The regions are found again from the path's three versions with
 `git merge-file` and the histogram diff `git merge` uses (Git before 2.44
