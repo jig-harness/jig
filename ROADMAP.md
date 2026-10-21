@@ -132,8 +132,7 @@ gains the practice of measuring and removing
   GitHub Actions only (any CI's saved log already works with `--log`).
 - **Windows for `drive-pr` and `do-item`.** Complete the authenticated
   pickup, draft pull request, drive round and stop acceptance run under
-  Claude Code and Codex with PowerShell, and settle the process-containment
-  decision.
+  Claude Code and Codex with PowerShell.
 - **Drive loop follow-ups.** A drive's CI-repair round running `fix-ci`,
   through a `fix-ci` mode that stops before pushing so the drive does the
   push itself.

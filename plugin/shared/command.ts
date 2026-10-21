@@ -142,7 +142,12 @@ export async function main(argv: string[]): Promise<number> {
     ? withoutTracePropagation(execute)
     : execute());
   if (output === undefined) process.stdout.write(result.stdout);
-  else if (options.outputExitCodes.has(result.code))
+  else if (
+    !result.timedOut &&
+    !result.bufferExceeded &&
+    !result.spawnFailed &&
+    options.outputExitCodes.has(result.code)
+  )
     writeFileSync(output, result.stdout);
   process.stderr.write(result.stderr);
   return result.code;
