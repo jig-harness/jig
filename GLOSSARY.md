@@ -551,6 +551,13 @@ make, use the entry's term instead.
   as bringing every document's frontmatter into line before a validator is
   tightened. Run as survey, plan, then apply, one commit per kind of change
   ([M4 adoption](modules/M4-docs-governance/README.md#adoption-steps)).
+- **Deferral** — a sentence in a document that hands work to the tracker:
+  "tracked to closure", "a follow-up will be filed". It is a promise that
+  an item exists, so it must name one, and the item must stay open. A
+  **deferral marker** is a configured phrase that makes a block of prose a
+  deferral. The static gate checks that a deferral names an item; a scheduled
+  check asks the tracker whether the item has closed since
+  ([M4](modules/M4-docs-governance/reference/deferral-references/README.md)).
 - **PRD (product requirements document)** — the document defining *what* a
   feature does for users and why — deliberately separate from *how* (the
   architecture doc).
@@ -1193,6 +1200,20 @@ make, use the entry's term instead.
   checklist, a migration workflow). The unit of codified "how we do this
   here." *Avoid*: command, slash command: `/jig:<name>` is how a skill is
   invoked, not what it is.
+- **Reference (skill reference)** — a file a *skill* keeps beside its
+  `SKILL.md` (by convention under `references/`) that the agent reads only
+  when `SKILL.md` sends it there, so detail costs context only in the
+  invocations that need it.
+- **Negative trigger** — the part of a *skill*'s description that says when
+  not to use it ("not for X; use Y instead"). Only the description is read
+  before a skill is chosen, so a negative trigger elsewhere cannot prevent a
+  wrong choice.
+- **Exact / judgment section label** — a bold label opening a section of a
+  *skill*: **exact** means run the named command as written, **judgment**
+  means reach the stated outcome by the means that fit. Not yet a rule
+  ([M0](modules/M0-instruction-architecture/README.md#status)). *Avoid*:
+  confusing **judgment** here with the *Judgment tier*, which is a *model
+  tier*.
 - **Rule (conditional rule)** — an instruction file that loads into agent
   context only when files matching its path patterns are being edited — the
   scoped counterpart of an always-loaded instruction file.
@@ -1607,6 +1628,11 @@ make, use the entry's term instead.
 - **JSX** — an HTML-like markup syntax that some JavaScript and TypeScript
   files embed, compiled to ordinary function calls. A tool that reads source
   as text must handle it or say that it does not.
+- **UUID (universally unique identifier)** — an identifier designed so independent
+  callers are extremely unlikely to choose the same value. A version 4 UUID uses
+  random bits. Jig persists one per Git clone and hashes it to keep that clone's
+  drive state under a stable key when the checkout moves.
+
 - **ASCII (American Standard Code for Information Interchange)** — the basic
   character set containing English letters, digits and common punctuation.
 - **SHA (Secure Hash Algorithm)** — a family of content fingerprints; Git uses

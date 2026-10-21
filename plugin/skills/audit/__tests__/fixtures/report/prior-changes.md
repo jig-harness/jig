@@ -1,6 +1,6 @@
 Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.
 
-### What changed (128)
+### What changed (132)
 
 | Module | Criterion | Before → after | Change |
 |--------|-----------|----------------|--------|
@@ -12,8 +12,10 @@ Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/
 | M0 Instruction architecture | `deny-lists-per-runtime` | not scored → absent | Added by Jig |
 | M0 Instruction architecture | `standards-declare-scope` | not scored → absent | Added by Jig |
 | M0 Instruction architecture | `review-stances-are-pointers` | not scored → absent | Added by Jig |
+| M0 Instruction architecture | `skill-authoring-rules` | not scored → expected absent | Added by Jig |
 | M0 Instruction architecture | `context-budget-gated` | not scored → absent | Added by Jig |
 | M0 Instruction architecture | `skill-invocation-fallback-gated` | not scored → absent | Added by Jig |
+| M0 Instruction architecture | `skill-authoring-ratcheted` | not scored → expected absent | Added by Jig |
 | M1 Gates enforcement ladder | `dependency-release-cooldown` | not scored → absent | Added by Jig |
 | M1 Gates enforcement ladder | `install-scripts-allowlisted` | not scored → absent | Added by Jig |
 | M1 Gates enforcement ladder | `supply-chain-policy-lockstep` | not scored → absent | Added by Jig |
@@ -32,9 +34,11 @@ Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/
 | M2 Generated artifact freshness | `derivation-one-way-compared-as-data` | not scored → expected absent | Added by Jig |
 | M3 Change area catalog | `area-class-resolved` | not scored → expected absent | Added by Jig |
 | M4 Docs governance | `frontmatter-subset-declared` | not scored → absent | Added by Jig |
+| M4 Docs governance | `deferrals-name-items` | not scored → absent | Added by Jig |
 | M4 Docs governance | `generators-stamp-sticky-utc` | not scored → expected absent | Added by Jig |
 | M4 Docs governance | `orphan-report-generated` | not scored → absent | Added by Jig |
 | M4 Docs governance | `path-rules-enforce-subtree-vocabulary` | not scored → expected absent | Added by Jig |
+| M4 Docs governance | `deferral-liveness-scheduled` | not scored → absent | Added by Jig |
 | M5 ADR practice | `skeleton-changes-need-recorded-authority` | not scored → absent | Added by Jig |
 | M6 Feature delivery pipeline | `lifecycle-map-published` | not scored → absent | Added by Jig |
 | M6 Feature delivery pipeline | `lifecycle-owners-resolve-gated` | not scored → absent | Added by Jig |

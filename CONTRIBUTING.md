@@ -347,8 +347,10 @@ setting): adding those layers to Jig is future work.
 
 `bun run quality` (M1's [ratchet gate](modules/M1-gates-enforcement-ladder/reference/ratchet/README.md))
 fails a change that adds a finding to a rule at `warn` in `biome.json`, to a
-flag in `tsconfig.ratchet.json`, a suppression comment, or the total source
-lines above the 1000-line limit per file, measured against the merge base.
+flag in `tsconfig.ratchet.json`, a suppression comment, the total source
+lines above the 1000-line limit per file, or any plugin skill file's count of
+a skill-authoring rule (M0's check, compared per file), measured against the
+merge base.
 The size counter covers source and test code, including website
 styles and templates; it excludes fixtures, seeds, vendored code and build
 outputs. Split by responsibility at the source. Do not pad the exclusion
@@ -538,6 +540,10 @@ work as part of the plugin:
   [scripts/check-context-budget.ts](scripts/check-context-budget.ts) fails
   `bun run gates` and CI past 512, and checks the plugin's whole skill listing
   against its budget ([M0](modules/M0-instruction-architecture/reference/context-budget/README.md)).
+- **Authoring:** write the description, references and discovery controls as
+  [plugin/AGENTS.md § Authoring a skill](plugin/AGENTS.md#authoring-a-skill)
+  says; `bun run quality` fails a change that adds to any skill file's count
+  of the rules a script can see.
 - **Harness frontmatter:** fields only one tool reads (Claude Code's
   `allowed-tools`, `argument-hint`) are ignored by the other.
 - **Tests:** keep the skill's tests in `plugin/skills/<name>/__tests__/`; extend

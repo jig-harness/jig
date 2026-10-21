@@ -1,3 +1,4 @@
+import { scopedStateDir, linkedScratchTree } from "./scoped-state-dir.ts";
 /**
  * drive-pr suite: answer-summary-finding.ts, assert-post-allowed.ts, resolve-held-thread.ts, finish-round.ts and list-unresolved-threads.ts.
  * Shared fixtures and probes live in drive-pr-harness.ts.
@@ -14,8 +15,7 @@ import { join } from "node:path";
 import {
   PREV,
   scratchClean,
-  scratchOther,
-  makeScratchRepo,
+  scratchSibling,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
 import { createFindingsResolveHeldFixtures } from "./drive-pr-findings-resolve-held-fixtures.ts";
@@ -33,8 +33,9 @@ describe("resolve-held-thread.ts", () => {
   } = findingsResolveHeldFixtures;
 
   it("restores a claimed item to `held` when the resolve mutation itself fails", async () => {
-    const stateDir = mkdtempSync(
-      join(tmpdir(), "resolve-held-thread-mutation-fails-"),
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-mutation-fails-")),
+      scratchClean.dir,
     );
     // Seeded from ANOTHER tree, on purpose: `restore-held` takes the actor as
     // an ARGUMENT rather than re-deriving it, precisely so a restore cannot
@@ -47,7 +48,7 @@ describe("resolve-held-thread.ts", () => {
     // BECAUSE A's lease is no longer live — then B works the batch. Seeded
     // sessionless for exactly that reason; a LIVE foreign lease would be
     // refused at the PR-wide gate, correctly, and would not be a takeover.
-    const seedTree = scratchOther.dir;
+    const seedTree = scratchSibling.dir;
     await seed(
       stateDir,
       ["bump-round", "999", "--head", PREV],
@@ -160,7 +161,10 @@ describe("resolve-held-thread.ts", () => {
   // perfectly valid, clean, current PR head). Only the round comparison
   // catches the cross-push resolve.
   it("refuses to resolve against a push from a LATER round than the hold (cross-push resolve)", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "resolve-held-thread-stale-"));
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-stale-")),
+      scratchClean.dir,
+    );
     // Round 1: the thread is triaged and held against the head under review.
     await seed(stateDir, ["bump-round", "999", "--head", PREV]);
     await seed(stateDir, [
@@ -196,8 +200,9 @@ describe("resolve-held-thread.ts", () => {
   });
 
   it("refuses when no held item carries the key", async () => {
-    const stateDir = mkdtempSync(
-      join(tmpdir(), "resolve-held-thread-missing-"),
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-missing-")),
+      scratchClean.dir,
     );
     const r = await resolveHeld(stateDir, [
       "--key",
@@ -215,7 +220,10 @@ describe("resolve-held-thread.ts", () => {
   });
 
   it("refuses a held FINDING — the wrong kind for this script", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "resolve-held-thread-kind-"));
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-kind-")),
+      scratchClean.dir,
+    );
     await seed(
       stateDir,
       [
@@ -241,8 +249,9 @@ describe("resolve-held-thread.ts", () => {
   });
 
   it("refuses when --pushed-sha is not the PR head", async () => {
-    const stateDir = mkdtempSync(
-      join(tmpdir(), "resolve-held-thread-apihead-"),
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-apihead-")),
+      scratchClean.dir,
     );
     await seed(stateDir, [
       "hold",
@@ -267,8 +276,9 @@ describe("resolve-held-thread.ts", () => {
   });
 
   it("refuses when --pushed-sha is not THIS worktree HEAD", async () => {
-    const stateDir = mkdtempSync(
-      join(tmpdir(), "resolve-held-thread-localhead-"),
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-localhead-")),
+      scratchClean.dir,
     );
     await seed(stateDir, [
       "hold",
@@ -285,14 +295,17 @@ describe("resolve-held-thread.ts", () => {
     const r = await resolveHeld(
       stateDir,
       ["--key", "PRRT_a", "--pushed-sha", scratchClean.head],
-      { head: scratchClean.head, cwd: scratchOther.dir },
+      { head: scratchClean.head, cwd: scratchSibling.dir },
     );
     expect(r.exitCode).toBe(2);
     expect(r.stderr).toContain("worktree's HEAD");
   });
 
   it("refuses while the working tree is dirty", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "resolve-held-thread-dirty-"));
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-dirty-")),
+      scratchClean.dir,
+    );
     await seed(stateDir, [
       "hold",
       "999",
@@ -305,7 +318,10 @@ describe("resolve-held-thread.ts", () => {
       "--comment-url",
       "https://example.invalid/seed-comment-9",
     ]);
-    const dirty = makeScratchRepo("scratch-held-thread-dirty");
+    const dirty = linkedScratchTree(
+      scratchClean.dir,
+      join(scratchClean.dir, "..", "scratch-held-thread-dirty"),
+    );
     writeFileSync(join(dirty.dir, "seed.txt"), "an uncommitted fix\n");
     const r = await resolveHeld(
       stateDir,
@@ -317,14 +333,20 @@ describe("resolve-held-thread.ts", () => {
   });
 
   it("requires --key", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "resolve-held-thread-nokey-"));
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-nokey-")),
+      scratchClean.dir,
+    );
     const r = await resolveHeld(stateDir, ["--pushed-sha", scratchClean.head]);
     expect(r.exitCode).toBe(2);
     expect(r.stderr).toContain("--key is required");
   });
 
   it("requires --pushed-sha", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "resolve-held-thread-nosha-"));
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-nosha-")),
+      scratchClean.dir,
+    );
     const r = await resolveHeld(stateDir, ["--key", "PRRT_a"]);
     expect(r.exitCode).toBe(2);
     expect(r.stderr).toContain("--pushed-sha is required");

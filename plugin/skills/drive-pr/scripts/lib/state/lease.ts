@@ -27,6 +27,7 @@ export {
 } from "./lease-records.ts";
 export {
   stateDirIdentityToken,
+  captureStateDirIdentityToken,
   parseDirIdentityToken,
   leaseFilesFor,
   leaseFilesForActor,

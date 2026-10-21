@@ -26,6 +26,7 @@ import {
   parseLease,
   readLease,
   stateDirIdentityToken,
+  captureStateDirIdentityToken,
 } from "../scripts/lib/state/lease";
 
 import { SCRIPTS, useDrivePrSuite } from "./drive-pr-harness.ts";
@@ -353,7 +354,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
       ).toBe("tok");
     });
 
-    it("stateDirIdentityToken reports UNREADABLE as empty, and drive.ts refuses on it rather than omitting the baseline", () => {
+    it("identity capture reports UNREADABLE as empty, and drive.ts refuses rather than omitting the baseline", async () => {
       // Two halves of the same guard.
       //
       // The contract: '' means "could not establish", never "there is none".
@@ -361,6 +362,11 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
         stateDirIdentityToken(join(tmpdir(), "definitely-not-here-4107")),
       ).toBe("");
       expect(stateDirIdentityToken(tmpdir())).not.toBe("");
+      expect(
+        await captureStateDirIdentityToken(
+          join(tmpdir(), "definitely-not-here-4107"),
+        ),
+      ).toBe("");
 
       // And the consumer fails closed on it. PINNED from source rather than
       // executed, deliberately: `drive.ts` resolves its state directory and
@@ -377,7 +383,7 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
         "utf8",
       );
       expect(src).toMatch(
-        /\n( +)const stateDirIdentity = stateDirIdentityToken\(stateDir\);\n\1if \(stateDirIdentity === ""\) \{\n\1 {2}fail\(\n\1 {4}1,\n\1 {4}`drive\.ts: could not establish the identity of the drive state directory:`,\n(?:\1 {4}[^\n]*\n)*\1 {2}\);\n\1\}\n\1process\.env\.DRIVE_PR_STATE_DIR_IDENTITY = stateDirIdentity;\n/,
+        /\n( +)const stateDirIdentity = await captureStateDirIdentityToken\(stateDir\);\n\1if \(stateDirIdentity === ""\) \{\n\1 {2}fail\(\n\1 {4}1,\n\1 {4}`drive\.ts: could not establish the identity of the drive state directory:`,\n(?:\1 {4}[^\n]*\n)*\1 {2}\);\n\1\}\n\1process\.env\.DRIVE_PR_STATE_DIR_IDENTITY = stateDirIdentity;\n/,
       );
       expect(src.match(/DRIVE_PR_STATE_DIR_IDENTITY\s*=/g)).toHaveLength(1);
     });
@@ -405,9 +411,9 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
       // producer computed, so the grammar above is the one actually used.
       const d = stateDirFor("identity-roundtrip");
       const st = statSync(d, { bigint: true });
-      expect(parseDirIdentityToken(stateDirIdentityToken(d))).toEqual({
+      expect(parseDirIdentityToken(stateDirIdentityToken(d))).toMatchObject({
         kind: "ok",
-        id: { dev: st.dev, ino: st.ino },
+        id: { dev: st.dev, ino: st.ino, birthtimeNs: st.birthtimeNs },
       });
     });
 

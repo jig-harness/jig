@@ -111,15 +111,18 @@ A project-specific rule (a pattern the repository has decided against) is
 written in the linter's own extension mechanism where it has one, so it runs
 with the linter's other rules and its severity decides whether the ratchet
 holds it. The [ratchet gate](reference/ratchet/README.md) reads Biome's JSON
-report, compiler output and plain-text patterns; a tool outside them is counted through a `grep` counter or a new
-format added to the gate.
+report, compiler output, plain-text patterns and any command that prints
+its counts as JSON (`json`); a tool outside them is counted through a `grep`
+counter, a small wrapper that prints its findings in the `json` shape, or a
+new format added to the gate.
 
 | Ecosystem | Custom rule mechanism | Ratchet counter |
 |-----------|-----------------------|-----------------|
 | Biome (Jig's own wiring) | GritQL plugins listed under `plugins` in `biome.json`, each with its own `includes` | `biome-json`: `biome lint --reporter=json`; a plugin's findings are named by the `<scope>/<name>:` prefix of its message |
 | TypeScript compiler | Compiler flags in a separate project file (Jig's `tsconfig.ratchet.json`) | `tsc`: `--pretty false` output, or `bun check --no-pretty` |
-| ESLint | A local plugin of custom rules | Not read directly: a `grep` counter, or a new format for `--format json` |
-| Any language | Structural search rules (ast-grep, Semgrep) | Not read directly: a `grep` counter, or a new format for the tool's JSON output |
+| ESLint | A local plugin of custom rules | Not read directly: a `grep` counter, or a wrapper turning `--format json` into the `json` shape |
+| Any language | Structural search rules (ast-grep, Semgrep) | Not read directly: a `grep` counter, or a wrapper turning the tool's JSON output into the `json` shape |
+| Skill files (Jig's own wiring) | [M0's skill-authoring check](../M0-instruction-architecture/reference/skill-authoring/README.md) | `json` with `per: "file"`: `check-skill-authoring.ts --json <skills-dir>` |
 | Suppression comments | — | `grep`: one pattern per suppression marker |
 
 Unused code and duplication are measured by tools that read the import graph

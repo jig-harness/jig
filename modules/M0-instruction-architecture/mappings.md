@@ -390,6 +390,24 @@ repository already does is the trap: a workspace-diff view lists the
 changed files, but the repository's change-impact command is what decides
 which checks a change must run.
 
+## Skill discovery controls
+
+The [authoring rules](README.md#skills) say what each control is for; this
+is what each runtime offers. Checked against each runtime's documentation in
+2026-10.
+
+| Control | Claude Code | Codex |
+|---------|-------------|-------|
+| List a skill only once a file it is tied to is read | `paths:` in `SKILL.md` frontmatter, globs as for path-scoped rules | none documented: a skill under `.agents/skills` is discovered from the working directory up to the repository root, not scoped to files |
+| Started only by the user | `disable-model-invocation: true`: the description leaves the listing, and `/<name>` still runs it | `policy.allow_implicit_invocation: false` in the skill's `agents/openai.yaml`: Codex does not pick it from a prompt, and `$<name>` still runs it. Whether its description leaves the listing is not documented |
+| Hidden from the user's menu | `user-invocable: false`: hidden from the `/` menu, while the description stays listed and the model can still invoke it, so it saves no discovery budget | none |
+
+[Claude Code's skills reference](https://code.claude.com/docs/en/skills) and
+[Codex's skills guide](https://developers.openai.com/codex/skills) are the
+sources. The [discovery-budget check](reference/context-budget/README.md)
+counts a `paths:` skill as listed, since it joins the listing mid-session,
+and leaves an explicit-only skill out of the listing.
+
 ## Model tiers per vendor
 
 The tiers of the [model routing policy](reference/model-routing-policy.md)

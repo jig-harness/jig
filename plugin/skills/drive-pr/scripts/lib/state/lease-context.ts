@@ -1,5 +1,5 @@
 /** Resolve mutation-fence context and verify the state directory before trusting its contents. */
-import { resolve, join, dirname, isAbsolute } from "node:path";
+import { resolve, join, dirname, isAbsolute, basename } from "node:path";
 
 import { lstatSync, readdirSync, existsSync, mkdirSync } from "node:fs";
 
@@ -7,19 +7,25 @@ import { type Session, resolveSession } from "./lease-model.ts";
 
 import {
   type DirIdentity,
+  assertStateDirIdentityUnchanged,
   statDirIdentity,
   sameDirIdentity2,
   parseDirIdentityToken,
   sameDirIdentity,
 } from "./lease-files.ts";
 
+import {
+  readVolumeIdentity,
+  type VolumeIdentityReader,
+} from "./volume-identity.ts";
 import { fail } from "../cli.ts";
 
 import { resolveActor } from "./actor.ts";
 
 import { git, gitCallTimeoutSeconds } from "../proc.ts";
 
-import { peekDefaultStateDirFor } from "./store.ts";
+import { peekDefaultStateDirFor, resolveLegacyStateDir } from "./store.ts";
+import { scopedOverrideDir } from "./override-dir.ts";
 
 import { migratedMarkerPath, legacyFootprint } from "./legacy-state.ts";
 
@@ -129,15 +135,19 @@ function repositoryIsInPlay(): boolean {
  * harnesses that cannot be told apart from a second session in the same
  * tree.
  *
- * `$DRIVE_PR_STATE_DIR` short-circuits the repository probe entirely, matching
- * `resolveStateDir`: a caller that named the directory has asserted it exists,
- * and unlike `resolveStateDir` this fence VERIFIES that assertion — the fence
+ * A driver exports a resolved clone leaf and a directory baseline; that pair
+ * lets its pass fence even after the checkout loses its Git metadata. A raw
+ * override root first resolves this clone, matching `resolveStateDir`. Every
+ * override asserts a directory exists, and this fence verifies it — the fence
  * has no later write to fail loudly against if it was wrong, so an unverified
  * override is a silent fail-open the moment the asserted directory is gone.
  * `resolveActor` still has to answer, and still refuses outside a worktree —
  * a fence that cannot say WHICH tree it is in cannot read the right lease.
  */
-export async function resolveFenceContext(label: string): Promise<
+export async function resolveFenceContext(
+  label: string,
+  readVolume: VolumeIdentityReader = readVolumeIdentity,
+): Promise<
   | {
       stateDir: string;
       actor: string;
@@ -181,8 +191,24 @@ export async function resolveFenceContext(label: string): Promise<
     );
   }
   const stateDir = override;
-  if (stateDir !== "")
-    return await resolveOverrideContext(label, stateDir, session);
+  if (stateDir !== "") {
+    // A driver exports its resolved leaf and its directory baseline. Preserve
+    // that memory even when the checkout's .git has since disappeared. Every
+    // state writer still derives the clone key independently in openStore.
+    if (
+      /^[0-9a-f]{16}$/.test(basename(stateDir)) &&
+      parseDirIdentityToken(process.env.DRIVE_PR_STATE_DIR_IDENTITY ?? "")
+        .kind === "ok"
+    ) {
+      return await resolveOverrideContext(label, stateDir, session, readVolume);
+    }
+    return await resolveOverrideContext(
+      label,
+      scopedOverrideDir(stateDir, await resolveLegacyStateDir(), true),
+      session,
+      readVolume,
+    );
+  }
   return await resolveGitFenceContext(label, session);
 }
 
@@ -392,6 +418,7 @@ async function resolveOverrideContext(
   label: string,
   stateDir: string,
   session: Session,
+  readVolume: VolumeIdentityReader,
 ): Promise<Exclude<Awaited<ReturnType<typeof resolveFenceContext>>, null>> {
   // Resolved BEFORE the enumeration below, not after: an `await` here — and
   // everything `worktreeKey()` does under it — sitting BETWEEN a check and a
@@ -533,7 +560,7 @@ async function resolveOverrideContext(
   if (inherited.kind === "bad") {
     fail(
       1,
-      `${label}: $DRIVE_PR_STATE_DIR_IDENTITY is set but not a '<dev>:<ino>' pair:`,
+      `${label}: $DRIVE_PR_STATE_DIR_IDENTITY is set but not a '<dev>:<ino>' pair or an extended directory identity token:`,
       `  ${process.env.DRIVE_PR_STATE_DIR_IDENTITY}`,
       "",
       "Refusing to post. This variable is the driver-established baseline that",
@@ -541,9 +568,25 @@ async function resolveOverrideContext(
       "started; an unreadable one is that proof going missing, not an all-clear.",
     );
   }
+  let comparisonIdentity = stateDirIdentity;
   if (
     inherited.kind === "ok" &&
-    !sameDirIdentity(inherited.id, stateDirIdentity)
+    inherited.id.dev !== stateDirIdentity.dev &&
+    inherited.id.volumeUUID !== undefined
+  ) {
+    const volume = await readVolume(stateDir);
+    assertStateDirIdentityUnchanged(
+      label,
+      stateDir,
+      stateDirIdentity,
+      "while checking the volume identity",
+    );
+    if (volume !== null)
+      comparisonIdentity = { ...stateDirIdentity, volumeUUID: volume };
+  }
+  if (
+    inherited.kind === "ok" &&
+    !sameDirIdentity(inherited.id, comparisonIdentity)
     // `kind === 'absent'` and `'bad'` are already refused above, so this is
     // the only case left to compare — kept as an explicit narrowing rather
     // than an assertion, so a future third kind fails the type-check here
@@ -554,10 +597,10 @@ async function resolveOverrideContext(
       `${label}: the inherited drive state directory is not the one this drive resolved:`,
       `  ${stateDir}`,
       "",
-      "Refusing to post. Its on-disk identity differs from the baseline the driver",
-      "exported, so the directory at this path was replaced at some point before",
-      "this check ran — the leases this pass would read are not the leases the",
-      "drive wrote, and a live one may still sit in the directory that moved.",
+      "Refusing to post. The directory could not be matched to the driver baseline.",
+      "A device change needs the same inode, birth time, canonical target and a",
+      "freshly confirmed volume UUID. Missing proof is not evidence of a benign",
+      "change: a live lease may still sit in the directory that moved.",
     );
   }
   return {

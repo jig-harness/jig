@@ -203,7 +203,6 @@ Practices a working repository validated, for modules that exist today:
 - **M0, M4 and M5**:
   - a reference generator for the model roster, when the working tool moves
     here;
-  - deferred promises in documents that point at live tracker items;
   - files that change only with an approved decision record.
 
 Done when each module states the practice with its mappings and criteria, and
