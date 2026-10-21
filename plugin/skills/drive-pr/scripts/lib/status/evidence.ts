@@ -701,7 +701,9 @@ export async function unresolvedThreads(
   botsOnly: boolean,
   timeoutSec: number,
 ): Promise<UnresolvedThread[] | null> {
-  const args = botsOnly ? [pr, "--bots-only"] : [pr];
+  // `--no-alerts`: the status reads threads, never their code scanning
+  // alerts, so it spends no alert read per poll.
+  const args = [pr, "--no-alerts", ...(botsOnly ? ["--bots-only"] : [])];
   const r = await run(tsArgv(listScript, args), {
     timeoutSec,
     stderr: "ignore",

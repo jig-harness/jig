@@ -218,6 +218,13 @@ paginated:
   reply you are answering may not be the last one and an outcome may already
   have been posted.
 - `url` deep-links to the comment; it is what a deferred follow-up records.
+- `codeScanning` — present only on a **code-scanning thread**, one GitHub
+  opened for a code scanning alert: `{ number, state, tool, rule, severity,
+  category }`, read from the alert, which also supplies the thread's
+  `severity` and `category` (a security rule's category is `security`).
+  `unreadable` names why the alert could not be read; the severity is then
+  `unknown`. Such a thread follows
+  [Code-scanning threads](#code-scanning-threads) as well as this step.
 - `--include-resolved` widens the stream to resolved threads as well, each line
   carrying `isResolved`. Use it only for the reversal check in the
   [triage rubric](references/triage-rubric.md) § Contradictory findings — once
@@ -664,7 +671,7 @@ outcome can still be invalidated by something downstream:
 
 | Outcome | Reply | Resolve |
 |---------|-------|---------|
-| `rejected`, `wont-fix`, `deferred` | now | **now** — no code changed, so nothing can invalidate it |
+| `rejected`, `wont-fix`, `deferred` | now | **now** — no code changed, so nothing can invalidate it; a code-scanning thread once its alert is dismissed |
 | `moot` — superseded by an already-pushed commit | now | **now** — nothing left downstream can invalidate it |
 | `moot` — superseded by an `accepted` fix from this same, unpushed round | now | **not here** — step 5, alongside that fix |
 | `accepted` | now | **not here** — step 5, after the gates pass |
@@ -686,6 +693,46 @@ If a thread was resolved prematurely — before its reply posted, or before its
 fix's push landed — reverse it with
 `bun "${CLAUDE_SKILL_DIR}/scripts/unresolve-thread.ts" "$THREAD_ID"` and let the normal order finish,
 rather than leaving the audit trail out of sequence.
+
+#### Code-scanning threads
+
+A thread whose record carries `codeScanning` is GitHub's view of a code
+scanning alert raised by the tool it names (CodeQL, SonarQube Cloud, or any
+other that uploads to GitHub code scanning). The alert, not the thread, keeps
+that tool's check failing and reopens on the default branch after the merge,
+so an outcome that leaves the code as it is must reach the alert as well.
+Triage it like any other thread, then:
+
+| Outcome | The alert |
+|---------|-----------|
+| `accepted` | Nothing: the tool closes it when it next analyses the pushed fix. Resolve in step 5 as usual |
+| `rejected` | Dismiss it as a false positive, or `--used-in-tests` when only tests run the code |
+| `wont-fix` | Dismiss it as won't fix |
+| `deferred` | Dismiss it as won't fix, with the follow-up issue's link in the comment |
+| `moot` | Nothing: the record's `state` must already be `fixed` or `closed`; while it is `open`, the finding still stands and is not moot |
+
+Dismiss after the reply is posted and before the thread is resolved, with
+a comment of at most 280 characters on stdin:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/dismiss-alert.ts" "$THREAD_ID" --outcome rejected <<'COMMENT_EOF'
+The path comes from the repository's own registry file, not from the agent.
+COMMENT_EOF
+```
+
+It finds the alert from the thread itself and refuses a thread GitHub's code
+scanning account did not open (exit `2`). Exit `3` means the alert is
+already fixed, so the outcome is `accepted` or `moot`, not a dismissal; exit
+`5` means the pull request closed, as for the other thread helpers. Exit `1`
+is a failed read or a refused dismissal: GitHub refuses a token that may not
+write security events. Then leave the thread **open**, and report the alert
+for a person to dismiss: a resolved thread over an open alert hides a finding
+nobody answered.
+
+A dismissal reaches the tool: SonarQube Cloud, for one, records a false
+positive as False Positive and the other reasons as Accept. A security
+finding's severity comes from the alert, so the decline ladder treats it like
+any other finding of that severity.
 
 ### 4. Verify and push
 

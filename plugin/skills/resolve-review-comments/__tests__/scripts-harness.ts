@@ -167,6 +167,8 @@ function setUpStubForge(): void {
     'repo view') allowed=' --json -q --jq ' ;;
     'api graphql') allowed=' --input -f -F -q --jq --paginate --slurp ' ;;
     'api --paginate') allowed=' --slurp ' ;;
+    'api -X') allowed=' -f -q ' ;;
+    'api repos/'*) allowed=' -q ' ;;
     *) echo "gh-stub: unhandled command: $*" >&2; exit 2 ;;
   esac
   shift 2
@@ -258,6 +260,19 @@ case "$1 $2" in
     printf '%s' "$body" ;;
   "repo view")
     echo "acme widgets" ;;
+  "api -X")
+    # dismiss-alert.ts's PATCH of a code scanning alert: every argument is
+    # logged, one per line, so a probe reads off exactly what was sent.
+    echo dismissal >> "$FIX/thread-events.log"
+    printf '%s\n' "$@" > "$FIX/dismiss-args.log"
+    [ -f "$FIX/dismiss-forbidden" ] && { echo 'gh: Resource not accessible by integration (HTTP 403)' >&2; exit 1; }
+    echo dismissed ;;
+  'api repos/'*'/code-scanning/alerts/'*)
+    # A code scanning alert, from alert-<n>.json in the fixture; absent, a 403.
+    n="\${2##*/}"
+    echo "alert $n" >> "$FIX/alert-calls.log"
+    [ -f "$FIX/alert-$n.json" ] || { echo 'gh: Resource not accessible by integration (HTTP 403)' >&2; exit 1; }
+    cat "$FIX/alert-$n.json" ;;
   "api --paginate")
     # /drive-pr's summary-findings.ts, which await-round.ts spawns before
     # reporting convergence, reads the PR's issue comments (absent
@@ -283,6 +298,9 @@ case "$1 $2" in
           for arg in "$@"; do case "$arg" in threadId=*) tid="\${arg#threadId=}" ;; esac; done
           printf '{"data":{"node":{"__typename":"PullRequestReviewThread","id":"%s","pullRequest":{"number":%s,"state":"%s"}}}}' "$tid" "$(cat "$FIX/number")" "$(cat "$FIX/state")"
         fi ;;
+      *'query=query($id:ID!)'*)
+        # dismiss-alert.ts reading the thread's repository and opening comment.
+        cat "$FIX/thread-node.json" ;;
       *"--input -"*)
         echo reply >> "$FIX/thread-events.log"
         n=0
