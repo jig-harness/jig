@@ -45,7 +45,14 @@ import { main as journalMain } from "../../plugin/skills/reflect/scripts/journal
 import { withGitDeadline } from "../../plugin/skills/reflect/scripts/lib/context.ts";
 import { assertLinkedWorktree, findGitWorktree, samePath } from "./git.ts";
 import { findHerdrWorktree, herdrCall, herdrJson } from "./herdr.ts";
-import { localOwner, ownerLine, processAlive } from "./owner.ts";
+import {
+  localOwner,
+  type Owner,
+  ownerAlive,
+  ownerLine,
+  processAlive,
+  processStart,
+} from "./owner.ts";
 import { budget, type Context, HerdrError, output } from "./runner.ts";
 
 export const HOOKS_DIR = ".config/worktree-hooks";
@@ -108,8 +115,26 @@ for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(signal, () => e
 const failed = (error) => end(1, "the supervisor of " + hook + " failed (" + (error?.message ?? error) + "); ended the hook");
 process.on("uncaughtException", failed);
 process.on("unhandledRejection", failed);
+// The same start as processStart in owner.ts reads, which this script
+// cannot import; empty when it cannot be read, and the id alone is recorded.
+const startOf = (pid) => {
+  try {
+    if (process.platform === "linux") {
+      const stat = fs.readFileSync("/proc/" + pid + "/stat", "utf8");
+      const ticks = stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19];
+      const boot = fs.readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
+      return /^[0-9]+$/.test(ticks ?? "") ? boot + ":" + ticks : "";
+    }
+    const ps = Bun.spawnSync(["ps", "-o", "lstart=", "-p", String(pid)], { env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, timeout: 10000 });
+    const text = ps.stdout.toString().trim();
+    return ps.exitCode === 0 ? text.replace(/\\s+/g, "_") : "";
+  } catch {
+    return "";
+  }
+};
+const named = (role, pid) => { const start = startOf(pid); return role + " " + pid + (start ? " " + start : ""); };
 if (file !== "-") fs.writeFileSync(file, "");
-record("wrapper " + process.pid);
+record(named("wrapper", process.pid));
 try {
   child = Bun.spawn([hook], { detached: true, stdin: "ignore", stdout: "inherit", stderr: "inherit" });
 } catch (error) {
@@ -117,7 +142,7 @@ try {
   process.exit(127);
 }
 try {
-  record("group " + child.pid);
+  record(named("group", child.pid));
 } catch (error) {
   end(1, "could not record the process group of " + hook + " (" + error.message + "); ended it");
 }
@@ -181,8 +206,19 @@ export function runHook(
   }
 }
 
-/** The process ids a hook run recorded, by role; empty when none were. */
-function recordedRun(groupFile: string): { wrapper?: number; group?: number } {
+/**
+ * The processes a hook run recorded, by role; empty when none were. A start
+ * the supervisor could not read is null, and the id alone is checked then.
+ */
+interface Recorded {
+  pid: number;
+  start: string | null;
+}
+
+function recordedRun(groupFile: string): {
+  wrapper?: Recorded;
+  group?: Recorded;
+} {
   let text: string;
   try {
     text = readFileSync(groupFile, "utf8");
@@ -190,16 +226,16 @@ function recordedRun(groupFile: string): { wrapper?: number; group?: number } {
     if (errnoCode(error) === "ENOENT") return {};
     throw error;
   }
-  const run: { wrapper?: number; group?: number } = {};
+  const run: { wrapper?: Recorded; group?: Recorded } = {};
   for (const line of text.split("\n")) {
-    const [role, pidText] = line.split(" ");
+    const [role, pidText, start] = line.split(" ");
     const pid = Number(pidText);
     if (
       (role === "wrapper" || role === "group") &&
       Number.isInteger(pid) &&
       pid > 0
     )
-      run[role] = pid;
+      run[role] = { pid, start: start || null };
   }
   return run;
 }
@@ -213,7 +249,7 @@ function endGroup(groupFile: string): void {
   const { group } = recordedRun(groupFile);
   if (group === undefined) return;
   try {
-    process.kill(-group, "SIGKILL");
+    process.kill(-group.pid, "SIGKILL");
   } catch (error) {
     const code = errnoCode(error);
     if (code !== "ESRCH" && code !== "EPERM") throw error;
@@ -266,19 +302,19 @@ function ownerPath(state: CreateState): string {
   return join(state.claim, "owner");
 }
 
-function recordOwner(state: CreateState): void {
-  writeWhole(ownerPath(state), ownerLine());
+function recordOwner(ctx: Context, state: CreateState): void {
+  writeWhole(ownerPath(state), ownerLine(ctx));
 }
 
 /** Take the create hook's claim; false when another process holds it. */
-function claim(state: CreateState): boolean {
+function claim(ctx: Context, state: CreateState): boolean {
   try {
     mkdirSync(state.claim);
   } catch (error) {
     if (errnoCode(error) === "EEXIST") return false;
     throw error;
   }
-  recordOwner(state);
+  recordOwner(ctx, state);
   return true;
 }
 
@@ -291,13 +327,33 @@ function groupPath(state: CreateState): string {
  * the tool, the wrapper that started the hook, or any process in the hook's
  * group. The owner can end while its hook goes on, so it alone is not enough.
  */
-function runAlive(state: CreateState, owner: number): boolean {
-  if (processAlive(owner)) return true;
+function runAlive(ctx: Context, state: CreateState, owner: Owner): boolean {
+  if (ownerAlive(ctx, owner)) return true;
   const { wrapper, group } = recordedRun(groupPath(state));
   return (
-    (wrapper !== undefined && processAlive(wrapper)) ||
-    (group !== undefined && processAlive(-group))
+    (wrapper !== undefined && recordedAlive(ctx, wrapper)) ||
+    (group !== undefined && groupAlive(ctx, group))
   );
+}
+
+function recordedAlive(ctx: Context, run: Recorded): boolean {
+  return run.start === null
+    ? processAlive(run.pid)
+    : ownerAlive(ctx, { pid: run.pid, start: run.start });
+}
+
+/**
+ * Whether the hook's process group still has a process in it. A group's id
+ * is its first process's id, which the system does not give to another
+ * process while the group has one left; so when that id now names a process
+ * with another start, the group that has it is a new one, and the hook's has
+ * ended.
+ */
+function groupAlive(ctx: Context, group: Recorded): boolean {
+  if (!processAlive(-group.pid)) return false;
+  if (group.start === null) return true;
+  const start = processStart(ctx, group.pid);
+  return start === null || start === group.start;
 }
 
 /**
@@ -315,18 +371,18 @@ function takeOverAbandoned(ctx: Context, state: CreateState): boolean {
     if (errnoCode(error) === "ENOENT") return false;
     throw error;
   }
-  const pid = localOwner(owner);
-  if (pid === null || runAlive(state, pid)) return false;
+  const holder = localOwner(owner);
+  if (holder === null || runAlive(ctx, state, holder)) return false;
   try {
-    mkdirSync(join(state.claim, `taken-over-${pid}`));
+    mkdirSync(join(state.claim, `taken-over-${holder.pid}-${holder.start}`));
   } catch (error) {
     if (errnoCode(error) === "EEXIST" || errnoCode(error) === "ENOENT")
       return false;
     throw error;
   }
-  recordOwner(state);
+  recordOwner(ctx, state);
   ctx.log(
-    `⚠ the create hook's earlier run (process ${pid}) ended without a result; running it again`,
+    `⚠ the create hook's earlier run (process ${holder.pid}) ended without a result; running it again`,
   );
   return true;
 }
@@ -369,7 +425,7 @@ export function runCreateHook(ctx: Context, worktree: string): void {
   const path = hookPath(worktree, "create");
   if (path === null) return;
   const state = createState(ctx, worktree);
-  if (claim(state)) runClaimed(ctx, worktree, path, state);
+  if (claim(ctx, state)) runClaimed(ctx, worktree, path, state);
 }
 
 /**
@@ -389,7 +445,7 @@ export function awaitCreateHook(
   if (readResult(state) === "ok") return;
   const graceEnds = Date.now() + graceMs;
   while (!existsSync(state.claim) && Date.now() < graceEnds) ctx.sleep(POLL_MS);
-  if (claim(state)) {
+  if (claim(ctx, state)) {
     ctx.log(`… running ${HOOKS_DIR}/create`);
     runClaimed(ctx, worktree, path, state);
     return;

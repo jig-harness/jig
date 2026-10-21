@@ -21,6 +21,7 @@ import {
   runHook,
   SUPERVISOR,
 } from "../lifecycle.ts";
+import { processStart } from "../owner.ts";
 import { type Context, localContext, withLimit } from "../runner.ts";
 
 const TOOL = join(import.meta.dir, "..", "workspace.ts");
@@ -45,7 +46,7 @@ function recordedGroup(file: string): number {
   const deadline = Date.now() + 10_000;
   for (;;) {
     const match = existsSync(file)
-      ? /^group (\d+)$/m.exec(readFileSync(file, "utf8"))
+      ? /^group (\d+)(?: \S+)?$/m.exec(readFileSync(file, "utf8"))
       : null;
     if (match?.[1] !== undefined) return Number(match[1]);
     if (Date.now() >= deadline) throw new Error(`no group recorded in ${file}`);
@@ -143,22 +144,91 @@ describe("the create hook", () => {
     const claim = join(gitDir, "jig", "worktree-create.claim");
     mkdirSync(claim, { recursive: true });
     // A process id above every system's maximum is never running.
-    writeFileSync(join(claim, "owner"), `${hostname()} 99999999\n`);
+    writeFileSync(
+      join(claim, "owner"),
+      `${hostname()} 99999999 not-its-start\n`,
+    );
     const ctx = quiet();
     awaitCreateHook(ctx, worktree, 0);
     expect(readFileSync(join(worktree, ".hook-runs"), "utf8")).toBe("ran\n");
     expect(ctx.lines.join("\n")).toContain("ended without a result");
   });
 
+  test("a claim whose owner's process id now names another process is taken over", () => {
+    // The owner ended and its id went to a process that runs on.
+    const { worktree } = fixture({ create: 'echo ran >> "$PWD/.hook-runs"' });
+    const claim = join(gitDirOf(worktree), "jig", "worktree-create.claim");
+    mkdirSync(claim, { recursive: true });
+    writeFileSync(
+      join(claim, "owner"),
+      `${hostname()} ${process.pid} not-its-start\n`,
+    );
+    const ctx = quiet();
+    awaitCreateHook(ctx, worktree, 0);
+    expect(readFileSync(join(worktree, ".hook-runs"), "utf8")).toBe("ran\n");
+  });
+
+  test("a hook group whose id now names another process has ended", () => {
+    // The system keeps a group's id while the group has a process, so a
+    // running process with that id and another start leads a new group.
+    const { worktree } = fixture({ create: 'echo ran >> "$PWD/.hook-runs"' });
+    const claim = join(gitDirOf(worktree), "jig", "worktree-create.claim");
+    mkdirSync(claim, { recursive: true });
+    writeFileSync(join(claim, "owner"), `${hostname()} 99999999 x\n`);
+    const other = Bun.spawn(["sleep", "30"], { detached: true });
+    try {
+      writeFileSync(join(claim, "hook"), `group ${other.pid} not-its-start\n`);
+      awaitCreateHook(quiet(), worktree, 0);
+      expect(readFileSync(join(worktree, ".hook-runs"), "utf8")).toBe("ran\n");
+    } finally {
+      other.kill("SIGKILL");
+    }
+  });
+
+  test("the supervisor records the starts the tool reads", () => {
+    const { root, worktree } = fixture({});
+    const hook = join(worktree, "slow-hook");
+    writeFileSync(hook, "#!/bin/sh\nsleep 30\n", { mode: 0o755 });
+    const record = join(root, "record");
+    const run = Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        SUPERVISOR,
+        record,
+        hook,
+        "60000",
+        String(process.pid),
+      ],
+      { cwd: worktree, stdout: "ignore", stderr: "ignore" },
+    );
+    try {
+      recordedGroup(record);
+      const ctx = quiet();
+      for (const line of readFileSync(record, "utf8").trim().split("\n")) {
+        const [, pid, start] = line.split(" ");
+        expect(start).toBe(processStart(ctx, Number(pid)) ?? "missing");
+      }
+    } finally {
+      run.kill("SIGTERM");
+    }
+  });
+
   test("a claim whose owner ended while its hook still runs is not taken over", () => {
     const { worktree } = fixture({ create: 'echo ran >> "$PWD/.hook-runs"' });
     const claim = join(gitDirOf(worktree), "jig", "worktree-create.claim");
     mkdirSync(claim, { recursive: true });
-    writeFileSync(join(claim, "owner"), `${hostname()} 99999999\n`);
+    writeFileSync(
+      join(claim, "owner"),
+      `${hostname()} 99999999 not-its-start\n`,
+    );
     // The earlier run's hook, still in its own process group.
     const hook = Bun.spawn(["sleep", "30"], { detached: true });
     try {
-      writeFileSync(join(claim, "hook"), `group ${hook.pid}\n`);
+      writeFileSync(
+        join(claim, "hook"),
+        `group ${hook.pid} ${processStart(quiet(), hook.pid)}\n`,
+      );
       let polls = 0;
       const ctx = {
         ...quiet(),

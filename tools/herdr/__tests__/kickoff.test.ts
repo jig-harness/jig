@@ -21,6 +21,7 @@ import {
   releaseClaim,
   transcriptHasToken,
 } from "../kickoff.ts";
+import { processStart } from "../owner.ts";
 import type { Spawned } from "../spawn.ts";
 import {
   type Answer,
@@ -34,6 +35,8 @@ import {
 
 const A = "feat-x-12345678";
 const KEY = "ABC-1";
+/** A recorded start no running process has. */
+const START = "not-its-start";
 const PROMPT = "/jig:do-item ABC-1\nLauncher context: /c/ABC-1.json";
 const get = `herdr agent get ${A}`;
 const read = `herdr agent read ${A} --source recent --lines 4000`;
@@ -237,12 +240,35 @@ describe("claims", () => {
     const ctx = fakeContext({});
     expect(acquireClaim(ctx, KEY, 0)).toBe("1");
     const dir = join(ctx.stateDir, "kickoff", "claims", KEY);
-    writeFileSync(join(dir, "1", "owner"), `${hostname()} ${endedPid()}\n`);
+    writeFileSync(
+      join(dir, "1", "owner"),
+      `${hostname()} ${endedPid()} ${START}\n`,
+    );
     expect(acquireClaim(ctx, KEY, 0)).toBe("2");
     expect(readdirSync(dir)).toEqual(["2"]);
     expect(readFileSync(join(dir, "2", "owner"), "utf8")).toBe(
-      `${hostname()} ${process.pid}\n`,
+      `${hostname()} ${process.pid} ${processStart(ctx, process.pid)}\n`,
     );
+  });
+  test("a claim whose owner's process id now names another process is taken over", () => {
+    // The owner ended and the system gave its id to a process that runs on:
+    // the id is alive, the owner is not.
+    const ctx = fakeContext({});
+    expect(acquireClaim(ctx, KEY, 0)).toBe("1");
+    const dir = join(ctx.stateDir, "kickoff", "claims", KEY);
+    writeFileSync(
+      join(dir, "1", "owner"),
+      `${hostname()} ${process.pid} ${START}\n`,
+    );
+    expect(acquireClaim(ctx, KEY, 0)).toBe("2");
+  });
+  test("a claim removed by hand is followed by a number above every receipt", () => {
+    // Removing claim 5 must not restart the numbers at 1, below receipt 5,
+    // where the new launch would be refused as superseded.
+    const ctx = fakeContext({});
+    writeReceipt(ctx, A, "5", `${KEY}:${A}:s-1`);
+    writeReceipt(ctx, "other-agent", "3", `${KEY}:other-agent:s-1`);
+    expect(acquireClaim(ctx, KEY, 0)).toBe("6");
   });
   test("a claim whose owner still runs is never taken over, however old", () => {
     // A holder paused between its claim check and its send must not have a
@@ -259,14 +285,19 @@ describe("claims", () => {
     expect(readdirSync(dir)).toEqual(["1"]);
   });
   test("a claim owned on another host, or with no owner, is never taken over", () => {
-    for (const owner of [`elsewhere.invalid ${endedPid()}\n`, null, "\n"]) {
+    for (const owner of [
+      `elsewhere.invalid ${endedPid()} ${START}\n`,
+      `${hostname()} ${endedPid()}\n`,
+      null,
+      "\n",
+    ]) {
       const ctx = fakeContext({});
       expect(acquireClaim(ctx, KEY, 0)).toBe("1");
       const dir = join(ctx.stateDir, "kickoff", "claims", KEY);
       if (owner === null) rmSync(join(dir, "1", "owner"));
       else writeFileSync(join(dir, "1", "owner"), owner);
       expect(() => acquireClaim(ctx, KEY, 0)).toThrow(
-        `remove ${join(dir, "1")}`,
+        `touch ${join(dir, "1", "released")}`,
       );
       expect(readdirSync(dir)).toEqual(["1"]);
     }
@@ -543,8 +574,17 @@ describe("kickoff", () => {
   });
 
   test("a launch whose claim is older than another launch's receipt does not send", () => {
-    const ctx = fakeContext({ [get]: session("s-1"), [send]: ok() });
-    writeReceipt(ctx, A, "5", `${KEY}:${A}:s-1`);
+    // A launch that took over while this one was checking wrote its receipt
+    // under a later claim.
+    const fake = fakeContext({ [get]: session("s-1"), [send]: ok() });
+    const ctx: FakeContext = {
+      ...fake,
+      run: (argv, opts) => {
+        if (argv.join(" ") === get)
+          writeReceipt(fake, A, "5", `${KEY}:${A}:s-1`);
+        return fake.run(argv, opts);
+      },
+    };
     expect(() => kickoff(ctx, spawned(), options)).toThrow(
       "this launch was superseded",
     );

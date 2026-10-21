@@ -78,15 +78,18 @@ usage.
 The kickoff goes to the agent once per key, whatever happens around it:
 
 - **A claim** in `~/.jig/herdr/kickoff/claims/<key>/` marks a kickoff in
-  flight and names the process holding it. A second launch of the same key
-  waits for it (two minutes), and takes it over only once that process has
-  ended: a launch that is merely slow may still be about to send, so no age
-  makes a claim abandoned. A claim held on another host, or one whose owner
-  cannot be read, is never taken over; the refusal names its directory, for
-  a person to remove once no launch holds it. A claim is taken over
-  by creating the next numbered one, never by deleting the old one, and a
-  released claim stays on disk marked released, so numbers never repeat and
-  two launches cannot both take one.
+  flight and names the process holding it, by its id and when it started,
+  since the system gives an ended process's id to the next one. A second
+  launch of the same key waits for it (two minutes), and takes it over only
+  once that process has ended: a launch that is merely slow may still be
+  about to send, so no age makes a claim abandoned. A claim held on another
+  host, or one whose owner cannot be read, is never taken over; the refusal
+  names the `released` file a person creates in it to give it back once no
+  launch holds it. A claim is taken over by creating the next numbered one,
+  never by deleting the old one, and a released claim stays on disk marked
+  released, so numbers never repeat and two launches cannot both take one.
+  The next number is also above every receipt of the key, so a claim removed
+  by hand does not leave a new launch below the receipt it wrote.
 - **A receipt** in `~/.jig/herdr/kickoff/receipts/<key>/<agent>/` records a
   kickoff with the agent's name and, when Herdr reports one, its session id.
   Each agent a key was opened in (another clone's worktree has another
@@ -146,7 +149,7 @@ runs under a small `bun` supervisor that starts it in a session and process
 group of its own and ends that whole group when the hook fails, when it
 outlives its 15 minutes, or when the tool that started it has gone (killed by
 a launcher's or SSH session's deadline, say). The claim names both its owner's process and that
-group, so a waiter on the same machine runs the hook again only once the
+group, each by its id and when it started, so a waiter on the same machine runs the hook again only once the
 owner and every process of the earlier run have ended without a result. A
 failed run's leftover processes are ended before its claim is given back. Without the
 plugin, `open` runs the hook itself after a few seconds; a worktree made in

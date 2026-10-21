@@ -49,7 +49,7 @@ import { join } from "node:path";
 import { errnoCode, swallow } from "../../plugin/shared/errors.ts";
 import { AGENT_NAME } from "./agent.ts";
 import { parseEnvelope, probeAgentSession } from "./herdr.ts";
-import { localOwner, ownerLine, processAlive } from "./owner.ts";
+import { localOwner, ownerAlive, ownerLine } from "./owner.ts";
 import {
   budget,
   type Context,
@@ -168,11 +168,14 @@ export function transcriptHasToken(transcript: string, token: string): boolean {
  * releases only the generation it owns, by marking it released rather than
  * removing it: the highest number always stays on disk, so numbers never
  * repeat, and a launch that read an old generation and paused cannot later
- * create a number another launch holds.
+ * create a number another launch holds. The next number is above every
+ * receipt of the key as well, so a claim removed by hand never leaves a new
+ * launch below the receipt the removed one wrote.
  *
  * A claim is abandoned only once its owner, on this host, has ended. A claim
  * owned on another host, or with no owner to read, is waited for and then
- * refused, naming the directory a person removes once no launch holds it.
+ * refused, naming the file a person creates to give it back once no launch
+ * holds it. Giving a claim back, rather than removing it, keeps its number.
  */
 export function acquireClaim(
   ctx: Context,
@@ -184,12 +187,12 @@ export function acquireClaim(
   const deadline = Date.now() + waitMs;
   for (;;) {
     const generations = generationsIn(dir);
-    const step = nextStep(dir, generations);
-    if ("create" in step && take(dir, step.create, generations))
+    const step = nextStep(ctx, key, dir, generations);
+    if ("create" in step && take(ctx, dir, step.create, generations))
       return String(step.create);
     if ("held" in step && Date.now() >= deadline)
       throw new HerdrError(
-        `another launch is kicking off ${key} (claim ${step.held}) and did not finish within ${Math.round(waitMs / 1000)}s; let it finish and run again. Its claim is taken over once the launch holding it has ended; if no launch is running and it stays, remove ${join(dir, String(step.held))}`,
+        `another launch is kicking off ${key} (claim ${step.held}) and did not finish within ${Math.round(waitMs / 1000)}s; let it finish and run again. Its claim is taken over once the launch holding it has ended; if no launch is running and it stays, give it back with touch ${join(dir, String(step.held), RELEASED)}`,
       );
     if ("held" in step) ctx.sleep(1_000);
   }
@@ -208,13 +211,16 @@ function generationsIn(dir: string): number[] {
  * claim went away while it was being read.
  */
 function nextStep(
+  ctx: Context,
+  key: string,
   dir: string,
   generations: number[],
 ): { create: number } | { held: number } | { rescan: true } {
   const top = generations.at(-1);
-  if (top === undefined) return { create: 1 };
+  const next = Math.max(top ?? 0, highestReceipt(ctx, key)) + 1;
+  if (top === undefined) return { create: next };
   const claim = join(dir, String(top));
-  if (existsSync(join(claim, RELEASED))) return { create: top + 1 };
+  if (existsSync(join(claim, RELEASED))) return { create: next };
   let owner: string;
   try {
     owner = readFileSync(join(claim, OWNER), "utf8");
@@ -222,22 +228,52 @@ function nextStep(
     if (errnoCode(error) !== "ENOENT") throw error;
     return existsSync(claim) ? { held: top } : { rescan: true };
   }
-  const pid = localOwner(owner);
-  return pid === null || processAlive(pid)
+  const holder = localOwner(owner);
+  return holder === null || ownerAlive(ctx, holder)
     ? { held: top }
-    : { create: top + 1 };
+    : { create: next };
+}
+
+/**
+ * The highest claim generation any receipt of the key was written under; 0
+ * for none. A claim removed by hand takes its number with it, and the next
+ * one must still be above every receipt, or a new launch would be refused as
+ * superseded by the record of the claim it replaced.
+ */
+function highestReceipt(ctx: Context, key: string): number {
+  const dir = join(kickoffDir(ctx), "receipts", key);
+  let agents: string[];
+  try {
+    agents = readdirSync(dir);
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return 0;
+    throw error;
+  }
+  let highest = 0;
+  for (const agent of agents)
+    if (AGENT_NAME.test(agent))
+      highest = Math.max(
+        highest,
+        receiptGenerations(join(dir, agent)).at(-1) ?? 0,
+      );
+  return highest;
 }
 
 /**
  * Create the generation, its owner inside; false when another launch created
  * it first. The winner removes the generations it superseded.
  */
-function take(dir: string, next: number, generations: number[]): boolean {
+function take(
+  ctx: Context,
+  dir: string,
+  next: number,
+  generations: number[],
+): boolean {
   const temp = join(dir, `.${next}.${process.pid}.tmp`);
   try {
     rmSync(temp, { recursive: true, force: true });
     mkdirSync(temp, { mode: 0o700 });
-    writeFileSync(join(temp, OWNER), ownerLine(), { mode: 0o600 });
+    writeFileSync(join(temp, OWNER), ownerLine(ctx), { mode: 0o600 });
     renameSync(temp, join(dir, String(next)));
   } catch (error) {
     rmSync(temp, { recursive: true, force: true });
