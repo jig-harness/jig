@@ -471,6 +471,33 @@ describe("--staged", () => {
     expectSpawnExit(r.run(["--all"], relative, docs), 1);
   });
 
+  test.each([
+    "GIT_LITERAL_PATHSPECS",
+    "GIT_GLOB_PATHSPECS",
+    "GIT_NOGLOB_PATHSPECS",
+    "GIT_ICASE_PATHSPECS",
+  ])("a caller's %s does not change which documents are read", (name) => {
+    const r = repo({
+      "docs/a.md": "Tracked to closure.\n",
+      "docs/b.md": "Tracked to closure under ENG-1.\n",
+    });
+    const set = { [name]: "1" };
+    const all = r.run(["--all"], set);
+    expectSpawnExit(all, 1);
+    expect(all.stdout).toContain("docs/a.md:1: [deferral-names-no-item]");
+    const keys = r.run(["--all", "--list-keys"], set);
+    expectSpawnExit(keys, 0);
+    expect(keys.stdout).toContain("ENG-1");
+    r.write(
+      "docs/b.md",
+      "Tracked to closure under ENG-1.\n\nTracked to closure.\n",
+    );
+    r.git("add", ".");
+    const staged = r.run(["--staged"], set);
+    expectSpawnExit(staged, 1);
+    expect(staged.stdout).toContain("docs/b.md:3:");
+  });
+
   test("an edit inside an old deferral block brings that block under the gate", () => {
     const r = repo({ "a.md": "Tracked to closure under ENG-1\nand more.\n" });
     r.write("a.md", "Tracked to closure\nand more words.\n");

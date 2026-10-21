@@ -347,11 +347,30 @@ type Env = Record<string, string | undefined>;
  * and index git reads (`GIT_DIR`, `GIT_INDEX_FILE`, ...) are the ones the
  * caller named, a relative value included. Paths git prints or is given are
  * the repository root's: `--full-name`, `--no-relative`, `:(top)` pathspecs.
+ * The one part of that environment left out is what changes how git reads a
+ * pathspec (`PATHSPEC_CONTROLS`): the gate's own pathspecs carry their
+ * meaning in their magic, which a caller's literal or case-folding setting
+ * would turn into different paths.
  */
 interface Repo {
   root: string;
   cwd: string;
   env: Env;
+}
+
+/** Settings that change how git reads every pathspec it is given. */
+const PATHSPEC_CONTROLS = [
+  "GIT_LITERAL_PATHSPECS",
+  "GIT_GLOB_PATHSPECS",
+  "GIT_NOGLOB_PATHSPECS",
+  "GIT_ICASE_PATHSPECS",
+];
+
+/** The caller's environment, less the settings that reinterpret pathspecs. */
+function gitEnv(env: Env): Env {
+  const out = { ...env };
+  for (const key of PATHSPEC_CONTROLS) delete out[key];
+  return out;
 }
 
 function gitRaw(repo: Repo, args: string[], stdin?: Buffer): Buffer {
@@ -677,8 +696,12 @@ function plan(argv: string[], env: Env, cwd: string): Plan {
   refuseContradiction(flags);
   let repo: Repo;
   try {
-    const top = git({ root: cwd, cwd, env }, ["rev-parse", "--show-toplevel"]);
-    repo = { root: top.trim(), cwd, env };
+    const forGit = gitEnv(env);
+    const top = git({ root: cwd, cwd, env: forGit }, [
+      "rev-parse",
+      "--show-toplevel",
+    ]);
+    repo = { root: top.trim(), cwd, env: forGit };
   } catch {
     throw new DeferralsError("not inside a git repository");
   }
