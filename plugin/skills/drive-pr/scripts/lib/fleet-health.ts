@@ -229,7 +229,7 @@ export interface UnitsInput {
   acceptedEpics: ReadonlySet<string>;
 }
 
-function inWindow(iso: string | null, w: WindowSpec): boolean {
+export function inWindow(iso: string | null, w: WindowSpec): boolean {
   if (iso === null) return false;
   const ms = Date.parse(iso);
   return Number.isFinite(ms) && ms >= w.sinceMs && ms < w.untilMs;

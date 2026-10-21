@@ -315,7 +315,7 @@ function run(
   const result = Bun.spawnSync(
     scriptArgv(CI_HOLD, ...args, "999", "--expect-head", HEAD),
     {
-      cwd,
+      ...(cwd === undefined ? {} : { cwd }),
       env,
       stdout: "pipe",
       stderr: "pipe",

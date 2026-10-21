@@ -656,7 +656,7 @@ async function main(): Promise<number> {
         env: dryRun
           ? withoutHoldRecheckEnv(process.env)
           : holdRecheckDir === null
-            ? undefined
+            ? process.env
             : {
                 ...process.env,
                 DRIVE_PR_HOLD_RECHECK_PR: pr,

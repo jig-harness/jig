@@ -327,9 +327,9 @@ describe("reference tokens: plain words in every projection", () => {
     expect(plainText("Choose {opt:4}, not {call:a,opt:2}. See {call:b}.")).toBe(
       "Choose option 4, not (a) option 2. See (b).",
     );
-    expect(splitRefs("a {opt:1} b")).toEqual([
+    expect(splitRefs("a {opt:1} b")).toStrictEqual([
       { kind: "text", text: "a " },
-      { kind: "ref", call: undefined, opt: "1" },
+      { kind: "ref", opt: "1" },
       { kind: "text", text: " b" },
     ]);
   });

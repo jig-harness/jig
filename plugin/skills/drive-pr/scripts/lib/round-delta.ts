@@ -1,3 +1,4 @@
+import { definedFields } from "../../../../shared/defined-fields.ts";
 /**
  * Shared "round delta" resolution: which base a caller should diff this
  * round's local tree against, and the file list that diff produces.
@@ -68,7 +69,7 @@ export async function readVerifiedSha(
   const args = pr === "" ? ["verified"] : ["verified", pr];
   const r = await run(tsArgv(driveStatePath, args), {
     stderr: "ignore",
-    timeoutSec,
+    ...definedFields({ timeoutSec }),
   });
   if (r.code !== 0) return null;
   return r.stdout.trim();
@@ -116,12 +117,12 @@ export async function changedFilesSince(
   // path contains.
   const tracked = await git(
     ["-C", root, "diff", "--no-renames", "--name-only", "-z", since],
-    { stderr: "inherit", timeoutSec },
+    { stderr: "inherit", ...definedFields({ timeoutSec }) },
   );
   if (tracked.code !== 0) return null;
   const untracked = await git(
     ["-C", root, "ls-files", "--others", "--exclude-standard", "-z"],
-    { stderr: "inherit", timeoutSec },
+    { stderr: "inherit", ...definedFields({ timeoutSec }) },
   );
   if (untracked.code !== 0) return null;
   const all = `${tracked.stdout}\0${untracked.stdout}`
@@ -209,7 +210,7 @@ export async function changedFilesSinceExcludingMerges(
       `${since}..HEAD`,
       `^${ref}`,
     ],
-    { stderr: "inherit", timeoutSec },
+    { stderr: "inherit", ...definedFields({ timeoutSec }) },
   );
   if (own.code !== 0) return null;
   const untracked = await git(
@@ -223,7 +224,7 @@ export async function changedFilesSinceExcludingMerges(
       "--exclude-standard",
       "-z",
     ],
-    { stderr: "inherit", timeoutSec },
+    { stderr: "inherit", ...definedFields({ timeoutSec }) },
   );
   if (untracked.code !== 0) return null;
   const all = `${own.stdout}\0${untracked.stdout}`
@@ -313,7 +314,7 @@ export async function roundBase(
     const ref = resolved.ref;
     const mb = await git(["-C", root, "merge-base", ref, "HEAD"], {
       stderr: "inherit",
-      timeoutSec,
+      ...definedFields({ timeoutSec }),
     });
     if (mb.code !== 0) {
       return {
@@ -367,7 +368,7 @@ export async function roundBase(
 
   const exists = await git(
     ["-C", root, "cat-file", "-e", `${verifiedSha}^{commit}`],
-    { stderr: "ignore", timeoutSec },
+    { stderr: "ignore", ...definedFields({ timeoutSec }) },
   );
   if (exists.code !== 0) {
     return cumulativeBase(
@@ -377,7 +378,7 @@ export async function roundBase(
 
   const ancestor = await git(
     ["-C", root, "merge-base", "--is-ancestor", verifiedSha, "HEAD"],
-    { stderr: "ignore", timeoutSec },
+    { stderr: "ignore", ...definedFields({ timeoutSec }) },
   );
   if (ancestor.code !== 0) {
     return cumulativeBase(

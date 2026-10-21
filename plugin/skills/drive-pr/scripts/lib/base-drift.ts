@@ -1,3 +1,4 @@
+import { definedFields } from "../../../../shared/defined-fields.ts";
 /**
  * Has the PR's base branch moved under this drive, and does it matter?
  *
@@ -234,7 +235,7 @@ export async function verifyOriginIsPrRepo(
 ): Promise<{ ok: true } | { ok: false; why: string }> {
   const urlRes = await git(["-C", root, "remote", "get-url", "origin"], {
     timeoutSec: gitCallTimeoutSeconds(),
-    env,
+    ...definedFields({ env }),
   });
   if (urlRes.code !== 0 || urlRes.stdout.trim() === "") {
     return { ok: false, why: "no fetch URL for the remote 'origin'" };
@@ -284,7 +285,10 @@ export async function verifyCheckoutIsPrHead(
 ): Promise<{ ok: true } | { ok: false; why: string }> {
   const branchRes = await git(
     ["-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
-    { timeoutSec: gitCallTimeoutSeconds(), env },
+    {
+      timeoutSec: gitCallTimeoutSeconds(),
+      ...definedFields({ env }),
+    },
   );
   if (branchRes.code !== 0) {
     return {
@@ -301,7 +305,10 @@ export async function verifyCheckoutIsPrHead(
   }
   const ancestorRes = await git(
     ["-C", root, "merge-base", "--is-ancestor", apiHead, "HEAD"],
-    { timeoutSec: gitCallTimeoutSeconds(), env },
+    {
+      timeoutSec: gitCallTimeoutSeconds(),
+      ...definedFields({ env }),
+    },
   );
   if (ancestorRes.code !== 0) {
     return {
@@ -364,12 +371,15 @@ export async function probeBaseDrift(
       "origin",
       `+refs/heads/${baseBranch}:refs/remotes/origin/${baseBranch}`,
     ],
-    { timeoutSec: fetchSeconds, env },
+    {
+      timeoutSec: fetchSeconds,
+      ...definedFields({ env }),
+    },
   );
 
   const mb = await git(["-C", root, "merge-base", baseRef, "HEAD"], {
     timeoutSec: localTimeoutSec,
-    env,
+    ...definedFields({ env }),
   });
   if (mb.code !== 0 || mb.stdout.trim() === "") {
     return {
@@ -383,7 +393,10 @@ export async function probeBaseDrift(
 
   const behindRes = await git(
     ["-C", root, "rev-list", "--count", `${mergeBase}..${baseRef}`],
-    { timeoutSec: localTimeoutSec, env },
+    {
+      timeoutSec: localTimeoutSec,
+      ...definedFields({ env }),
+    },
   );
   if (behindRes.code !== 0)
     return { ok: false, why: `cannot count commits on ${baseRef}` };
@@ -405,20 +418,29 @@ export async function probeBaseDrift(
 
   const prTracked = await git(
     ["-C", root, "diff", "--no-renames", "--name-only", mergeBase],
-    { timeoutSec: localTimeoutSec, env },
+    {
+      timeoutSec: localTimeoutSec,
+      ...definedFields({ env }),
+    },
   );
   if (prTracked.code !== 0)
     return { ok: false, why: "cannot list this PR's changed files" };
   const prUntracked = await git(
     ["-C", root, "ls-files", "--others", "--exclude-standard"],
-    { timeoutSec: localTimeoutSec, env },
+    {
+      timeoutSec: localTimeoutSec,
+      ...definedFields({ env }),
+    },
   );
   if (prUntracked.code !== 0)
     return { ok: false, why: "cannot list untracked files" };
 
   const baseChanged = await git(
     ["-C", root, "diff", "--no-renames", "--name-only", mergeBase, baseRef],
-    { timeoutSec: localTimeoutSec, env },
+    {
+      timeoutSec: localTimeoutSec,
+      ...definedFields({ env }),
+    },
   );
   if (baseChanged.code !== 0) {
     return { ok: false, why: `cannot list the files ${baseRef} changed` };

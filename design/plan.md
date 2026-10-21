@@ -58,21 +58,6 @@ rollout:
 [adoption/greenfield.md](../adoption/greenfield.md) then points at
 `/jig:kickoff` instead of the seed.
 
-### 5. A shared runtime kernel and diagnostics
-
-The plugin's scripts each solve the same problems by hand: decoding JSON
-from `gh` and configuration files, retrying, releasing locks on a signal,
-reading the clock. When one fails, the cause is often lost (an error turned
-into a default answer, a child's error output discarded), and nothing
-records how long anything took. The ratchet counts those patterns, and
-`plugin/shared/` holds the guards, error helpers, clock and
-logger that replace them; what is left moves the code onto them.
-
-- **Burn-downs**, as code is touched: the 91 `exactOptionalPropertyTypes`
-  errors; drive-pr's own copies of `proc.ts`, `cli.ts` and
-  `gh-conditional.ts` beside the shared ones; the duplicated block in
-  `fleet-health.ts`; fallow's complexity hotspots.
-
 ### 7. The Notion store, run against Notion
 
 The [Notion store](../plugin/skills/reflect/README.md#notion-store) is built and
@@ -337,7 +322,9 @@ audit scores M12's new criterion from the report.
   they invoke, running on native Windows under Claude Code with Git for
   Windows' Bash first, and under PowerShell (Codex on Windows) later. Much
   of the code already handles Windows: a pass and its registered runners
-  are stopped by captured process identities, the clone key is not a path,
+  are stopped by captured process identities within the cooperative scope
+  recorded in [ADR-0008](../docs/adr/ADR-0008-windows-cancellation-uses-captured-process-identities.md),
+  the clone key is not a path,
   and the pass is
   spawned from an argument list. Both suites run on Windows every night; the tests
   that need a step below skip there, and each skip names the step that lifts
@@ -356,11 +343,7 @@ audit scores M12's new criterion from the report.
      quoted for `cmd.exe`'s own rules, tested with arguments holding
      spaces, quotes, `%` and `^`. Done when a pickup, a driven round and a
      stop work end to end on a Windows machine.
-  2. **Job Objects** (optional): each pass in a
-     Windows [Job Object](../GLOSSARY.md), for a kill no directly started
-     descendant escapes and a sound check that the tree is gone; or a
-     recorded decision that captured process identities are enough.
-  3. **PowerShell** (`powershell`, later): the shell constructs in the
+  2. **PowerShell** (`powershell`, later): the shell constructs in the
      skills' instructions (`$(…)`, heredocs, pipes into `grep` or `tail`,
      `test`, `mktemp`, and `review`'s file-set logic) moved into the scripts
      they feed, so the skills run under Codex on Windows without Git Bash.
