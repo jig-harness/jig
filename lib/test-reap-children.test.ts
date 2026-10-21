@@ -1,13 +1,19 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ProcessRow } from "../plugin/shared/process-table.ts";
 import {
-  processTable,
-  type ProcessRow,
-} from "../plugin/shared/process-table.ts";
-import { swallow } from "../plugin/shared/errors.ts";
+  identityTargetsGone,
+  signalIdentityTargets,
+} from "../plugin/shared/process-tree.ts";
 import { expectSpawnExit } from "./test-helpers/expect-spawn-exit.ts";
 import {
   captureDescendants,
@@ -218,6 +224,9 @@ const module = fileURLToPath(
 const treeModule = fileURLToPath(
   new URL("../plugin/shared/process-tree.ts", import.meta.url),
 );
+const tableModule = fileURLToPath(
+  new URL("../plugin/shared/process-table.ts", import.meta.url),
+);
 const idle = "setInterval(() => {}, 1000)";
 
 /**
@@ -237,7 +246,7 @@ async function reapRealTree(orphan: boolean) {
       "-e",
       `
       import { captureDescendants, reapSurvivingDescendants } from ${JSON.stringify(module)};
-      import { identityTargetsGone } from ${JSON.stringify(treeModule)};
+      import { identityTargetsGone, signalIdentityTargets } from ${JSON.stringify(treeModule)};
       const child = Bun.spawn(
         [process.execPath, "-e", ${JSON.stringify(childSource)}],
         { stdout: "ignore", stderr: "ignore" },
@@ -262,9 +271,7 @@ async function reapRealTree(orphan: boolean) {
         }
         console.log(JSON.stringify({ child: child.pid, tree, report, gone }));
       } finally {
-        for (const { pid } of tree) {
-          try { process.kill(pid, "SIGKILL"); } catch {}
-        }
+        await signalIdentityTargets(tree, "SIGKILL");
       }
     `,
     ],
@@ -298,24 +305,25 @@ test("a real grandchild init adopted after its leader died is reaped through the
   expect(gone).toBe(true);
 });
 
-// Through `bun test` and the repository's bunfig.toml, so the preload's
-// registration is what is tested, not the function it calls.
-test("a test process run with the repository's preloads reaps the child its test leaked", async () => {
+type Identity = { pid: number; start: string };
+
+/**
+ * Run `bun test` on one probe file with the repository's bunfig.toml, so the
+ * preload's registration is what is tested, not the function it calls. The
+ * probe writes the identity of the process it leaves behind to the file it is
+ * given, and that identity, never the bare pid, is what is killed afterwards,
+ * so a pid the system has since reused is left alone.
+ */
+async function withProbe(
+  source: (identityFile: string, dir: string) => string,
+  check: (stderr: string, identity: Identity) => Promise<void>,
+) {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const dir = mkdtempSync(join(tmpdir(), "jig-test-reap-"));
-  const pidFile = join(dir, "pid");
-  const probe = join(dir, "leak-probe.test.ts");
-  writeFileSync(
-    probe,
-    `import { test } from "bun:test";
-import { writeFileSync } from "node:fs";
-test("leaks an idle child", () => {
-  const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify(idle)}], { stdout: "ignore", stderr: "ignore" });
-  writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
-});
-`,
-  );
-  let pid = 0;
+  const identityFile = join(dir, "identity.json");
+  const probe = join(dir, "probe.test.ts");
+  writeFileSync(probe, source(identityFile, dir));
+  let identity: Identity | undefined;
   try {
     const result = Bun.spawnSync([process.execPath, "test", probe], {
       cwd: root,
@@ -324,76 +332,82 @@ test("leaks an idle child", () => {
       timeout: 60_000,
       killSignal: "SIGKILL",
     });
-    pid = Number(readFileSync(pidFile, "utf8"));
+    if (existsSync(identityFile))
+      identity = JSON.parse(readFileSync(identityFile, "utf8")) as Identity;
     expectSpawnExit(result, 0);
-    expect(result.stderr.toString()).toContain(
-      `test-reap: killed 1 process(es) a test left running (pid ${pid})`,
-    );
-    const deadline = Date.now() + 15_000;
-    let alive = true;
-    while (alive && Date.now() < deadline) {
-      const rows = await processTable();
-      alive =
-        rows === null ||
-        rows.some((r) => r.pid === pid && !r.stat.startsWith("Z"));
-      if (alive) await Bun.sleep(50);
-    }
-    expect(alive).toBe(false);
+    if (!identity) throw new Error("the probe recorded no identity");
+    await check(result.stderr.toString(), identity);
   } finally {
-    if (pid > 0)
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch (error) {
-        swallow(error, "the leaked probe child is already gone");
-      }
+    if (identity) await signalIdentityTargets([identity], "SIGKILL");
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}
+
+test("a test process run with the repository's preloads reaps the child its test leaked", async () => {
+  await withProbe(
+    (identityFile) => `import { test } from "bun:test";
+import { writeFileSync } from "node:fs";
+import { processTable } from ${JSON.stringify(tableModule)};
+test("leaks an idle child", async () => {
+  const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify(idle)}], { stdout: "ignore", stderr: "ignore" });
+  const deadline = Date.now() + 15_000;
+  let start = "";
+  while (start === "" && Date.now() < deadline) {
+    start = (await processTable())?.find((r) => r.pid === child.pid)?.start ?? "";
+    if (start === "") await Bun.sleep(50);
+  }
+  if (start === "") throw new Error("the leaked child's identity could not be read");
+  writeFileSync(${JSON.stringify(identityFile)}, JSON.stringify({ pid: child.pid, start }));
+}, 30_000);
+`,
+    async (stderr, identity) => {
+      expect(stderr).toContain(
+        `test-reap: killed 1 process(es) a test left running (pid ${identity.pid})`,
+      );
+      const deadline = Date.now() + 15_000;
+      let gone = await identityTargetsGone([identity]);
+      while (!gone && Date.now() < deadline) {
+        await Bun.sleep(50);
+        gone = await identityTargetsGone([identity]);
+      }
+      expect(gone).toBe(true);
+    },
+  );
+}, 90_000);
 
 // A tree that outlives the capture interval inside one test, whose leader the
 // test kills before returning: only a capture taken while the test ran still
-// names the grandchild init adopted.
+// names the grandchild init adopted. The probe kills the leader once the
+// preload's own record names the grandchild, which its interval capture does
+// while the test waits.
 test("a test process run with the repository's preloads reaps a grandchild orphaned before its test returned", async () => {
-  const root = fileURLToPath(new URL("..", import.meta.url));
-  const dir = mkdtempSync(join(tmpdir(), "jig-test-reap-"));
-  const pidFile = join(dir, "pid");
-  const probe = join(dir, "orphan-probe.test.ts");
-  const childSource = `const g = Bun.spawn([process.execPath, '-e', '${idle}'], { stdout: 'ignore', stderr: 'ignore' }); require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(g.pid)); ${idle}`;
-  writeFileSync(
-    probe,
-    `import { test } from "bun:test";
-import { existsSync } from "node:fs";
+  await withProbe(
+    (identityFile, dir) => {
+      const pidFile = join(dir, "grandchild");
+      const childSource = `const g = Bun.spawn([process.execPath, '-e', '${idle}'], { stdout: 'ignore', stderr: 'ignore' }); require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(g.pid)); ${idle}`;
+      return `import { test } from "bun:test";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 test("orphans a grandchild", async () => {
   const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify(childSource)}], { stdout: "ignore", stderr: "ignore" });
-  const deadline = Date.now() + 15_000;
-  while (!existsSync(${JSON.stringify(pidFile)}) && Date.now() < deadline) await Bun.sleep(50);
-  await Bun.sleep(3_000);
+  const captured = globalThis[Symbol.for("jig.test-reap.captured")];
+  const deadline = Date.now() + 20_000;
+  let identity;
+  while (!identity && Date.now() < deadline) {
+    const pid = existsSync(${JSON.stringify(pidFile)}) ? Number(readFileSync(${JSON.stringify(pidFile)}, "utf8")) : 0;
+    identity = captured().find((captured) => captured.pid === pid);
+    if (!identity) await Bun.sleep(50);
+  }
+  if (!identity) throw new Error("no capture named the grandchild");
+  writeFileSync(${JSON.stringify(identityFile)}, JSON.stringify(identity));
   child.kill("SIGKILL");
   await child.exited;
 }, 30_000);
-`,
+`;
+    },
+    async (stderr, identity) => {
+      expect(stderr).toContain(
+        `test-reap: killed 1 process(es) a test left running (pid ${identity.pid})`,
+      );
+    },
   );
-  let pid = 0;
-  try {
-    const result = Bun.spawnSync([process.execPath, "test", probe], {
-      cwd: root,
-      stdout: "pipe",
-      stderr: "pipe",
-      timeout: 60_000,
-      killSignal: "SIGKILL",
-    });
-    pid = Number(readFileSync(pidFile, "utf8"));
-    expectSpawnExit(result, 0);
-    expect(result.stderr.toString()).toContain(
-      `test-reap: killed 1 process(es) a test left running (pid ${pid})`,
-    );
-  } finally {
-    if (pid > 0)
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch (error) {
-        swallow(error, "the orphaned probe grandchild is already gone");
-      }
-    rmSync(dir, { recursive: true, force: true });
-  }
 }, 90_000);

@@ -41,6 +41,13 @@ function capture(): Promise<unknown> {
 const sampler = setInterval(() => void capture(), CAPTURE_INTERVAL_MS);
 sampler.unref();
 
+// What the captures have recorded so far, read-only: a test that orphans a
+// process on purpose waits until the record names it rather than for a
+// fixed time.
+Object.defineProperty(globalThis, Symbol.for("jig.test-reap.captured"), {
+  value: () => [...captured.values()],
+});
+
 afterEach(async () => {
   if (Date.now() - lastCapture >= CAPTURE_INTERVAL_MS) await capture();
 });
