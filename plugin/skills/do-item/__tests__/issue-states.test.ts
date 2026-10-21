@@ -93,6 +93,19 @@ describe("itemStates", () => {
     },
   );
 
+  it("orders the answer by code unit, whatever the machine's locale", async () => {
+    const states = await itemStates(
+      lookup({
+        "a-1": "started",
+        "B-1": "started",
+        "I-1": "started",
+        "i-1": "started",
+      }),
+      ["a-1", "i-1", "B-1", "I-1"],
+    );
+    expect(Object.keys(states)).toEqual(["B-1", "I-1", "a-1", "i-1"]);
+  });
+
   it("answers an empty list with an empty object without a lookup", async () => {
     expect(await itemStates(lookup({}), [])).toEqual({});
   });

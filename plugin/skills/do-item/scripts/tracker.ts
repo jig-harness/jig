@@ -231,7 +231,7 @@ export async function itemStates(
     Array.from({ length: Math.min(LOOKUPS_AT_ONCE, keys.length) }, worker),
   );
   return Object.fromEntries(
-    Object.entries(states).sort(([a], [b]) => a.localeCompare(b)),
+    Object.entries(states).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
   );
 }
 
