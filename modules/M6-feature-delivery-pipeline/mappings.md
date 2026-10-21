@@ -215,7 +215,9 @@ skills live in its service) names those stages' owners as a document that
 says how the stage is run, and links it.
 
 ```yaml
-# .github/workflows/gates.yml — a step beside the other documentation checks
+# .github/workflows/gates.yml — steps beside the other documentation checks
+- name: Lifecycle map gate self-test (blocking)
+  run: bun test "$GITHUB_WORKSPACE/$M6"/reference/lifecycle-map/check-lifecycle-map.test.ts
 - name: The lifecycle map names only owners that exist
   working-directory: pr   # the change's tree, read as data
   run: >-

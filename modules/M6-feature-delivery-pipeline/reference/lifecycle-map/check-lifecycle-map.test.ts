@@ -12,13 +12,13 @@ import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   checkMap,
-  codeSpans,
   commandSegments,
   type MapOptions,
   parseStages,
   skillNames,
   skillRef,
 } from "./check-lifecycle-map.ts";
+import { render } from "./markdown.ts";
 
 const script = join(import.meta.dir, "check-lifecycle-map.ts");
 const repo = join(import.meta.dir, "fixtures", "repo");
@@ -345,6 +345,19 @@ describe("process documents", () => {
     ]);
   });
 
+  test("a comment opener written as code or escaped hides nothing after it, and a quote or apostrophe after a backslash ends no argument", () => {
+    const found = checkMap(
+      options("LIFECYCLE.md", {
+        scan: [at("docs/process-literal-comment.md")],
+      }),
+    ).findings;
+    expect(found.map((f) => [f.line, f.problem.split(" ")[0]])).toEqual([
+      [5, "/jig:gone"],
+      [9, "/jig:missing"],
+      [10, "/jig:absent"],
+    ]);
+  });
+
   test("every skill of a chained command is resolved", () => {
     const found = checkMap(
       options("LIFECYCLE.md", { scan: [at("docs/process-chained.md")] }),
@@ -371,6 +384,13 @@ describe("reach, as a reader sees it", () => {
   test("a link in a code block, a code span or a comment, and an unused definition, are not a link", () =>
     expect(
       rules("LIFECYCLE.md", { linkedFrom: at("AGENTS-hidden.md") }),
+    ).toEqual(["map-not-linked"]));
+
+  test("a definition inside a code span, or inside a paragraph, defines no link", () =>
+    expect(
+      rules("LIFECYCLE.md", {
+        linkedFrom: at("AGENTS-definition-in-code.md"),
+      }),
     ).toEqual(["map-not-linked"]));
 
   test("a reference link counts", () =>
@@ -408,17 +428,21 @@ describe("helpers", () => {
     expect(skillRef("bun run gates")).toBeUndefined();
   });
 
-  test("codeSpans reads single and double backtick spans", () =>
-    expect(codeSpans("`a` and ``b`c``")).toEqual(["a", "b`c"]));
+  test("render reads single and double backtick spans", () =>
+    expect(render("`a` and ``b`c``").spans).toEqual(["a", "b`c"]));
 
-  test("commandSegments splits a chain on operators outside quotes", () =>
+  test("commandSegments splits a chain on operators outside quotes and escapes", () => {
     expect(commandSegments(`a --m 'x;y' && b "p | q" || c; d | e`)).toEqual([
       `a --m 'x;y'`,
       `b "p | q"`,
       "c",
       "d",
       "e",
-    ]));
+    ]);
+    expect(
+      commandSegments(`a --m "say \\"hi" && b it\\'s; c 'x\\' | d`),
+    ).toEqual([`a --m "say \\"hi"`, `b it\\'s`, `c 'x\\'`, "d"]);
+  });
 });
 
 describe("the command", () => {

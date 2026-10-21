@@ -30,8 +30,8 @@
 //     skills that exist;
 //   * with `--linked-from <file>`, that file (the always-loaded instructions)
 //     links to the map, so it is one hop away.
-// Whether the stages are in the right order is a reviewer's call, not this
-// gate's.
+// Every file is read as a reader sees it (markdown.ts). Whether the stages
+// are in the right order is a reviewer's call, not this gate's.
 //
 // Exit codes: 0 every check holds, 1 a violation, 2 usage or an input that
 // cannot be read.
@@ -45,13 +45,20 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { cli, strictOptions } from "../../../../lib/cli.ts";
-import { fenceAfter, readRegularFile } from "../../../../lib/files.ts";
+import { readRegularFile } from "../../../../lib/files.ts";
 import {
   type Finding,
   couldNotCheck,
   reportFindings,
 } from "../../../../lib/findings.ts";
 import { isRecord } from "../../../../lib/record.ts";
+import {
+  type Cell,
+  lineOf,
+  type Rendered,
+  render,
+  type Table,
+} from "./markdown.ts";
 
 const GATE = "check-lifecycle-map.ts";
 const usage = `usage: ${GATE} <map.md> [--root <dir>] [--skills [namespace=]<dir>]... [--package-json <file>] [--external <command>]... [--cover <dir>]... [--scan <file>]... [--linked-from <file>]`;
@@ -74,169 +81,62 @@ export interface MapOptions {
   linkedFrom?: string | undefined;
 }
 
-/** One stage of the map: the cells of a row, with the line it is on. */
+/** One stage of the map: the text of a row's cells, the cells as read, and the line the row is on. */
 export interface Stage {
   line: number;
   stage: string;
   owner: string;
   handsOn: string;
+  cells: { stage: Cell; owner: Cell; handsOn: Cell };
 }
+
+const EMPTY: Cell = { text: "", prose: "", spans: [], links: [] };
 
 /** Input the gate cannot read or does not understand; never a pass. */
 export class MapInputError extends Error {}
 
-/** The part of `line` a reader sees, given whether an HTML comment is open before it. */
-function outsideComments(
-  line: string,
-  open: boolean,
-): { text: string; open: boolean } {
-  let text = "";
-  let at = 0;
-  let inComment = open;
-  while (at <= line.length) {
-    const next = line.indexOf(inComment ? "-->" : "<!--", at);
-    if (next < 0) {
-      if (!inComment) text += line.slice(at);
-      break;
-    }
-    if (!inComment) text += line.slice(at, next);
-    at = next + (inComment ? 3 : 4);
-    inComment = !inComment;
-  }
-  return { text, open: inComment };
-}
-
-/** Lines of `text` as a reader sees them: fenced blocks and HTML comments blanked, so line numbers hold. */
-export function visibleLines(text: string): string[] {
-  let fence: string | undefined;
-  let comment = false;
-  return text.split("\n").map((line) => {
-    if (!comment) {
-      const before = fence;
-      fence = fenceAfter(before, line);
-      if (before !== undefined || fence !== undefined) return "";
-    }
-    const seen = outsideComments(line, comment);
-    comment = seen.open;
-    return seen.text;
-  });
-}
-
-/** The cells of a table row: split on unescaped pipes, outer pipes dropped. */
-function cells(line: string): string[] {
-  const parts = line.trim().split(/(?<!\\)\|/);
-  if (parts[0]?.trim() === "") parts.shift();
-  if (parts.length > 0 && parts[parts.length - 1]?.trim() === "") parts.pop();
-  return parts.map((c) => c.replaceAll("\\|", "|").trim());
-}
-
-const isSeparator = (line: string): boolean =>
-  /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/.test(line) &&
-  line.includes("-");
-
-const CODE_SPAN = /(`+)(.+?)\1(?!`)/g;
-
-/** The inline code spans of `text`, without their backticks. */
-export function codeSpans(text: string): string[] {
-  return [...text.matchAll(CODE_SPAN)].map((m) => (m[2] ?? "").trim());
-}
-
-/** A link reference definition, `[label]: target`, which renders as nothing. */
-const DEFINITION = /^ {0,3}\[([^\]]+)\]:[ \t]*<?([^\s>]+)>?/;
-
-const label = (text: string): string =>
-  text.trim().replaceAll(/\s+/g, " ").toLowerCase();
-
-/** The link reference definitions of `lines`, by their normalized label. */
-export function linkDefinitions(lines: string[]): Map<string, string> {
-  const found = new Map<string, string>();
-  for (const line of lines) {
-    const m = DEFINITION.exec(line);
-    if (m && !found.has(label(m[1] ?? "")))
-      found.set(label(m[1] ?? ""), m[2] ?? "");
-  }
-  return found;
-}
-
-/**
- * The targets of the Markdown links in `text`: inline links, and reference
- * links whose label `definitions` defines. A link written inside a code span
- * renders as code, so it is not one.
- */
-export function linkTargets(
-  text: string,
-  definitions: Map<string, string> = new Map(),
-): string[] {
-  const prose = text
-    .replaceAll(CODE_SPAN, " ")
-    .split("\n")
-    .filter((line) => !DEFINITION.test(line))
-    .join("\n");
-  const targets: string[] = [];
-  for (const m of prose.matchAll(
-    /\[([^\]]*)\](?:\(([^)\s]+)(?:\s+"[^"]*")?\)|\[([^\]]*)\])?/g,
-  )) {
-    if (m[2] !== undefined) targets.push(m[2]);
-    else {
-      const target = definitions.get(label(m[3] || (m[1] ?? "")));
-      if (target !== undefined) targets.push(target);
-    }
-  }
-  return targets;
-}
-
-/** A Markdown table: its header cells, and each body row's cells with the line it is on. */
-interface Table {
-  header: string[];
-  rows: { line: number; cells: string[] }[];
-}
-
-/** The tables of `text` a reader sees: none inside a fenced block or an HTML comment. */
-function tables(text: string): Table[] {
-  const lines = visibleLines(text);
-  const isRow = (at: number) => (lines[at] ?? "").trim().startsWith("|");
-  const found: Table[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (!isRow(i) || !isSeparator(lines[i + 1] ?? "")) continue;
-    const table: Table = { header: cells(lines[i] ?? ""), rows: [] };
-    let j = i + 2;
-    for (; isRow(j); j++)
-      table.rows.push({ line: j + 1, cells: cells(lines[j] ?? "") });
-    found.push(table);
-    i = j - 1;
-  }
-  return found;
-}
-
 const columnOf = (table: Table, name: string): number =>
   table.header.findIndex((c) => c.toLowerCase() === name);
 
+/** How many table body rows a rendering holds, to find a row's line. */
+const bodyRows = (r: Rendered): number =>
+  r.tables.reduce((n, t) => n + t.rows.length, 0);
+
 /** The stages of every table whose header has `Stage`, `Owner` and `Hands on` columns. */
 export function parseStages(text: string): Stage[] {
-  return tables(text).flatMap((table) => {
+  return render(text).tables.flatMap((table) => {
     const [stage, owner, handsOn] = ["stage", "owner", "hands on"].map((n) =>
       columnOf(table, n),
     );
     if (stage === undefined || owner === undefined || handsOn === undefined)
       return [];
     if (stage < 0 || owner < 0 || handsOn < 0) return [];
-    return table.rows.map((row) => ({
-      line: row.line,
-      stage: row.cells[stage] ?? "",
-      owner: row.cells[owner] ?? "",
-      handsOn: row.cells[handsOn] ?? "",
-    }));
+    return table.rows.map((row) => {
+      const cell = (at: number): Cell => row.cells[at] ?? EMPTY;
+      const cells = {
+        stage: cell(stage),
+        owner: cell(owner),
+        handsOn: cell(handsOn),
+      };
+      return {
+        line: lineOf(text, bodyRows, row.index),
+        stage: cells.stage.text,
+        owner: cells.owner.text,
+        handsOn: cells.handsOn.text,
+        cells,
+      };
+    });
   });
 }
 
-/** The code spans in the `Skill` column of every table that has one (the skills outside the loop). */
-function skillTableSpans(text: string): { line: number; span: string }[] {
-  return tables(text).flatMap((table) => {
+/** The code spans in the `Skill` column of every table that has one (the skills outside the loop), each with the body row it is in. */
+function skillTableSpans(text: string): { row: number; span: string }[] {
+  return render(text).tables.flatMap((table) => {
     const skill = columnOf(table, "skill");
     if (skill < 0) return [];
     return table.rows.flatMap((row) =>
-      codeSpans(row.cells[skill] ?? "").map((span) => ({
-        line: row.line,
+      (row.cells[skill]?.spans ?? []).map((span) => ({
+        row: row.index,
         span,
       })),
     );
@@ -389,7 +289,9 @@ function segmentProblem(
 
 /**
  * The commands of a chain: `a && b`, `a || b`, `a; b` and `a | b` split into
- * their commands, an operator inside quotes staying part of its argument.
+ * their commands, as a POSIX shell quotes them: an operator inside quotes, or
+ * after a backslash, stays part of its argument, and a backslash keeps the
+ * next character literal everywhere but inside single quotes.
  */
 export function commandSegments(span: string): string[] {
   const segments: string[] = [];
@@ -397,6 +299,11 @@ export function commandSegments(span: string): string[] {
   let quote: string | undefined;
   for (let at = 0; at < span.length; at++) {
     const c = span[at] ?? "";
+    if (c === "\\" && quote !== "'") {
+      current += c + (span[at + 1] ?? "");
+      at++;
+      continue;
+    }
     if (quote !== undefined || c === "'" || c === '"') {
       if (quote === undefined) quote = c;
       else if (c === quote) quote = undefined;
@@ -474,27 +381,26 @@ const posix = (path: string): string => path.replaceAll("\\", "/");
 /** Why a stage's name is wrong, or undefined when it is a name nobody else has. */
 function nameProblem(
   name: string,
+  cell: Cell,
 ): { problem: string; remedy: string; rule?: string } | undefined {
+  // An unfilled `<placeholder>` renders as an HTML tag, so its cell has no
+  // text but still holds the tag.
+  if (PLACEHOLDER_IN_PROSE.test([cell.prose, ...cell.spans].join(" ")))
+    return {
+      rule: "placeholder",
+      problem: `stage "${name || cell.prose}" is still a placeholder`,
+      remedy: "name the stage, or drop it if the repository has none",
+    };
   if (name === "")
     return {
       problem: "a stage has no name",
       remedy: "name the stage in the first column",
     };
-  if (
-    /^(stage|step|phase)?\s*#?\d+\s*([.):-]|\s|$)/i.test(
-      name.replaceAll(/[*_`]/g, ""),
-    )
-  )
+  if (/^(stage|step|phase)?\s*#?\d+\s*([.):-]|\s|$)/i.test(name))
     return {
       problem: `stage "${name}" is numbered`,
       remedy:
         "name stages, never number them: a number is wrong the day a stage is added",
-    };
-  if (PLACEHOLDER_IN_PROSE.test(name.replaceAll("`", "")))
-    return {
-      rule: "placeholder",
-      problem: `stage "${name}" is still a placeholder`,
-      remedy: "name the stage, or drop it if the repository has none",
     };
   return undefined;
 }
@@ -502,7 +408,7 @@ function nameProblem(
 /** A stage's name: present, not a number, not a placeholder, and not another stage's. */
 function checkName(s: Stage, seen: Map<string, number>, add: Add): void {
   const at = { line: s.line, rule: "stage-name" };
-  const wrong = nameProblem(s.stage);
+  const wrong = nameProblem(s.stage, s.cells.stage);
   if (wrong) return void add({ ...at, ...wrong });
   const key = s.stage.toLowerCase();
   const first = seen.get(key);
@@ -519,11 +425,11 @@ function checkName(s: Stage, seen: Map<string, number>, add: Add): void {
 function checkCell(
   s: Stage,
   column: "Owner" | "Hands on",
-  value: string,
+  cell: Cell,
   add: Add,
 ): void {
   const at = { line: s.line };
-  if (value === "")
+  if (cell.text === "" && cell.prose === "")
     return void add({
       ...at,
       rule: column === "Owner" ? "owner-missing" : "handoff-missing",
@@ -536,12 +442,11 @@ function checkCell(
   // An owner's command may take an argument written as `<PR>`; a whole span
   // that is a placeholder is still one. A handoff has no arguments, so a
   // placeholder anywhere in it counts.
-  const prose =
+  const spans =
     column === "Owner"
-      ? value.replace(/(`+)(.+?)\1/g, (_w, _t, inner: string) =>
-          isPlaceholder(inner.trim()) ? "<>" : "",
-        )
-      : value.replaceAll("`", "");
+      ? cell.spans.filter(isPlaceholder).map(() => "<>")
+      : cell.spans;
+  const prose = [cell.prose, ...spans].join(" ");
   if (PLACEHOLDER_IN_PROSE.test(prose))
     add({
       ...at,
@@ -556,11 +461,10 @@ function checkOwner(
   s: Stage,
   opts: MapOptions,
   scripts: Set<string> | undefined,
-  definitions: Map<string, string>,
   add: Add,
 ): number {
-  const spans = codeSpans(s.owner);
-  const files = linkTargets(s.owner, definitions)
+  const spans = s.cells.owner.spans;
+  const files = s.cells.owner.links
     .map((target) => ({
       target,
       file: linkedFile(target, opts.map, opts.root),
@@ -606,7 +510,8 @@ function checkSkillTable(
   scripts: Set<string> | undefined,
   add: Add,
 ): void {
-  for (const { line, span } of skillTableSpans(mapText)) {
+  for (const { row, span } of skillTableSpans(mapText)) {
+    const line = lineOf(mapText, bodyRows, row);
     if (isPlaceholder(span)) {
       add({
         line,
@@ -630,7 +535,7 @@ function checkSkillTable(
 /** With `--cover`: every skill under each directory owns a stage or is in the table of skills outside the loop. */
 function checkCover(mapText: string, opts: MapOptions, add: Add): void {
   const named = [
-    ...parseStages(mapText).flatMap((s) => codeSpans(s.owner)),
+    ...parseStages(mapText).flatMap((s) => s.cells.owner.spans),
     ...skillTableSpans(mapText).map((s) => s.span),
   ].flatMap(skillRefs);
   for (const dir of opts.cover) {
@@ -664,13 +569,14 @@ function checkScan(opts: MapOptions, add: Add): void {
   const namespaces = new Set(opts.skills.map((s) => s.namespace));
   for (const file of opts.scan) {
     const rel = posix(relative(opts.root, file));
-    visibleLines(readText(file, "--scan file")).forEach((line, index) => {
-      for (const ref of codeSpans(line).flatMap(skillRefs)) {
+    const text = readText(file, "--scan file");
+    render(text).spans.forEach((span, index) => {
+      for (const ref of skillRefs(span)) {
         if (ref.namespace === "" || !namespaces.has(ref.namespace)) continue;
         if (!skillResolves(opts.skills, ref.namespace, ref.name))
           add(
             {
-              line: index + 1,
+              line: lineOf(text, (r) => r.spans.length, index),
               rule: "skill-unresolved",
               problem: `${invocation(ref.namespace, ref.name)} is not a skill under the --skills directories`,
               remedy:
@@ -690,8 +596,8 @@ function checkLinked(
   opts: MapOptions,
   add: Add,
 ): void {
-  const visible = visibleLines(readText(linkedFrom, "--linked-from file"));
-  const linked = linkTargets(visible.join("\n"), linkDefinitions(visible)).some(
+  const links = render(readText(linkedFrom, "--linked-from file")).links;
+  const linked = links.some(
     (t) => linkedFile(t, linkedFrom, opts.root) === resolve(opts.map),
   );
   if (!linked)
@@ -729,14 +635,13 @@ export function checkMap(opts: MapOptions): {
     opts.packageJson ?? join(opts.root, "package.json"),
     opts.packageJson !== undefined,
   );
-  const definitions = linkDefinitions(visibleLines(mapText));
   const seen = new Map<string, number>();
   let resolved = 0;
   for (const s of stages) {
     checkName(s, seen, add);
-    checkCell(s, "Owner", s.owner, add);
-    checkCell(s, "Hands on", s.handsOn, add);
-    resolved += checkOwner(s, opts, scripts, definitions, add);
+    checkCell(s, "Owner", s.cells.owner, add);
+    checkCell(s, "Hands on", s.cells.handsOn, add);
+    resolved += checkOwner(s, opts, scripts, add);
   }
   checkSkillTable(mapText, opts, scripts, add);
   checkCover(mapText, opts, add);

@@ -354,12 +354,12 @@ criteria:
     evidence: "No epic decomposition and no label-driven gating. main.yml has no label or paths conditions."
   M6/lifecycle-map-published:   # lite, requires convention
     # The delivery loop is published as one stage map, linked from the instruction file every session loads; each stage is named, not numbered, and names its owner and the artifact it hands on.
-    score: expected-absent
-    evidence: "A mature utility library whose shape rules out a staged delivery loop, as for every M6 criterion here: a change is one PR that a maintainer reviews and merges, with no steering, spec, epic or post-merge stage for a map to order or name an owner for."
+    score: absent
+    evidence: "No stage map: no tracked document lists the loop the library does run (a pull request, maintainer review, merge, release) with an owner and a handoff per stage, and there is no instruction file to link one. The artifact pipeline above is expected-absent, but a map keeps only the stages a repository runs, so this loop could be mapped and the gap is real."
   M6/lifecycle-owners-resolve-gated:   # standard, requires mechanical
     # A check fails when the lifecycle map names a skill, command, script or document that does not resolve, and it runs in CI with its self-test.
-    score: expected-absent
-    evidence: "The library's shape rules out a staged delivery loop (see lifecycle-map-published), so there are no stage owners for a check to resolve."
+    score: absent
+    evidence: "No lifecycle map exists (see lifecycle-map-published), and main.yml runs no check that resolves a map's owners."
   M6/lifecycle-skills-on-the-map:   # strict, requires mechanical
     # Every skill the repository ships appears on the lifecycle map, as a stage's owner or in its table of skills outside the loop, and the check fails when one is missing (expected-absent for a repository that ships no skill).
     score: expected-absent

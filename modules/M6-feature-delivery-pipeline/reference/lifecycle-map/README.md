@@ -28,8 +28,10 @@ names has to exist.
 | `skill-unresolved` | with `--scan`, a document names a `/namespace:skill` that does not exist |
 | `map-not-linked` | with `--linked-from`, the always-loaded instruction file does not link the map |
 
-The gate reads the map as a reader sees it: a table inside a fenced block or
-an HTML comment is not part of it. Stages are named, never numbered: a number
+The gate reads every file as a reader sees it, through Bun's built-in
+[CommonMark](https://commonmark.org) parser with GitHub's tables: a table, code span or link inside a
+fenced block or an HTML comment is not part of it, and neither is one written
+as an example inside a code span or after a backslash. Stages are named, never numbered: a number
 is wrong the day a stage is added in the middle. Whether the stages are in the right order is not checked; it is
 a question for the reviewer of a change to the process.
 
@@ -53,8 +55,9 @@ A code span in an owner resolves when it is:
   pass, so it never reads as checked when it was not.
 
 A chain (`a && b`, `a || b`, `a; b`, `a | b`) is resolved command by
-command, an operator inside quotes staying part of its argument. A link may be
-inline or a reference link whose definition is in the map.
+command, quoted as a POSIX shell quotes it: an operator inside quotes or after
+a backslash stays part of its argument. A link may be inline or a reference
+link whose definition is in the map.
 
 Prose in an owner cell that names no span and no link (`whoever is free`) is
 a finding too: it cannot be resolved. A stage owned by a person says so with
@@ -84,7 +87,7 @@ options:
 | `--scan <file>` | require every `/namespace:skill` the file names, for a namespace given to `--skills`, to exist; repeatable |
 | `--linked-from <file>` | require the file to link the map |
 
-`--scan` reads inline code spans outside fenced blocks and comments, and only for a
+`--scan` reads inline code spans outside code blocks and comments, and only for a
 namespace the gate was given, so a bare `/tmp` or a command in another tool's
 namespace is never a finding. Leave out of the scan the documents that name
 skills that are not built yet (a plan) or no longer exist (a changelog); that
@@ -103,6 +106,7 @@ other documentation checks, locally and in CI; CI is the authority
 | File | Role |
 |------|------|
 | `check-lifecycle-map.ts` | the gate |
+| `markdown.ts` | what a reader sees of a document: its tables, code spans and links, and the line each is on |
 | `check-lifecycle-map.test.ts` | paired self-test: every rule, the options and the exit codes |
 | `fixtures/repo/` | a small repository: skills, a command, a package, a good map, the instruction file that links it and one that does not |
 | `fixtures/repo/maps/` | maps that each break one rule |
