@@ -161,7 +161,7 @@ criteria:
       - "the rules are written where skill authors read them (the skills folder's README or the nested instruction file for skills), covering the description, references, history and time-sensitive phrasing, and discovery controls"
       - "the rules say negative triggers belong in the description, since only the description is read before a skill is chosen"
       - "a repository with no skill folder (Claude Code: .claude/skills; Codex: .agents/skills; a plugin's skills/) is expected-absent"
-    since: next
+    since: 0.75.0
 
   - id: instruction-freshness-checked
     level: strict
@@ -266,4 +266,4 @@ criteria:
     probe:
       mechanical:
         files: *ci-config
-    since: next
+    since: 0.75.0
