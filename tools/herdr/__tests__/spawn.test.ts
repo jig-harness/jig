@@ -99,7 +99,9 @@ describe("a branch no checkout holds", () => {
       agentStatus: "idle",
       agentStarted: true,
       agentExisted: false,
+      agentResumed: false,
       agentSessionId: "s-1",
+      agentSessionError: null,
     });
   });
 
@@ -220,6 +222,19 @@ describe("reattaching", () => {
       workspaceId: "w4",
       agentStarted: true,
     });
+  });
+
+  test("a reattach never reads origin/HEAD, which only a new branch needs", () => {
+    const ctx = fakeContext({
+      ...known,
+      [get]: result({
+        agent: { agent_status: "idle", agent_session: { value: "s-9" } },
+      }),
+      [wait]: result({ agent: { agent_status: "idle" } }),
+    });
+    const { base: _unused, ...withoutBase } = options;
+    expect(spawnWorkspace(ctx, withoutBase).reattached).toBe(true);
+    expect(ctx.calls.some((c) => c.includes("symbolic-ref"))).toBe(false);
   });
 
   test("a Herdr row git does not confirm is refused", () => {

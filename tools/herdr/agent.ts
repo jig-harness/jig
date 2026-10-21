@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { errnoCode, swallow } from "../../plugin/shared/errors.ts";
 import {
   herdrCall,
-  readAgentSessionId,
+  probeAgentSession,
   reportAgentStatus,
   waitForAgentSettle,
 } from "./herdr.ts";
@@ -99,6 +99,10 @@ const RESUMABLE_KINDS = new Set(["claude"]);
 export interface StartedAgent {
   status: string;
   sessionId: string | null;
+  /** Why the session could not be read; null when it was (or there is none). */
+  sessionError: string | null;
+  /** The start resumed an earlier session, which may hold earlier prompts. */
+  resumed: boolean;
 }
 
 /**
@@ -109,7 +113,8 @@ export interface StartedAgent {
  * to a plain start rather than failing. `agent_not_ready` is the expected
  * answer for an agent stopped at a startup dialog, and the wait then reports
  * it blocked. After the agent settles its current session is read back and
- * kept, so the receipt follows a session that rotates.
+ * kept, so the receipt follows a session that rotates; a read that fails is
+ * reported, not taken as "no session".
  */
 export function startAgent(
   ctx: Context,
@@ -152,6 +157,7 @@ export function startAgent(
   } else if (resumeId !== null) {
     ctx.log(`↩ resuming session ${resumeId} of ${agentName}`);
   }
+  const resumed = started !== null;
   started ??= herdrCall<unknown>(ctx, base, "herdr agent start");
   if (started.error) {
     if (started.error.code === "agent_pane_busy")
@@ -162,8 +168,14 @@ export function startAgent(
       throw new HerdrError(`herdr agent start: ${started.error.message}`);
   }
   const status = waitForAgentSettle(ctx, agentName, waitTimeoutMs);
-  const sessionId = readAgentSessionId(ctx, agentName);
-  if (sessionId !== null) writeSessionReceipt(ctx, agentName, sessionId);
+  const probe = probeAgentSession(ctx, agentName);
+  if (probe.ok && probe.sessionId !== null)
+    writeSessionReceipt(ctx, agentName, probe.sessionId);
   reportAgentStatus(ctx, agentName, status);
-  return { status, sessionId };
+  return {
+    status,
+    sessionId: probe.ok ? probe.sessionId : null,
+    sessionError: probe.ok ? null : probe.message,
+    resumed,
+  };
 }

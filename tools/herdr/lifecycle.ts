@@ -15,7 +15,12 @@
  * still running, so the hook runs under a claim in the worktree's git
  * directory: whoever takes the claim first runs it (the plugin event, or the
  * workspace tool when no plugin is installed), and the other waits for its
- * result.
+ * result. The claim names its owner's host and process, so a waiter on the
+ * same host takes over a claim whose owner ended without a result.
+ *
+ * Opening a branch runs that branch's hook, as it runs the branch's code
+ * anyway: the hook's dependency install runs the branch's own scripts, and
+ * the agent then works in it. Open only branches whose code you would run.
  */
 import {
   accessSync,
@@ -23,10 +28,11 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
-  rmdirSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import { errnoCode } from "../../plugin/shared/errors.ts";
 import {
@@ -34,7 +40,7 @@ import {
   withoutLeakyGitEnv,
 } from "../../plugin/shared/guarded-git-spawn.ts";
 import { main as journalMain } from "../../plugin/skills/reflect/scripts/journal.ts";
-import { assertLinkedWorktree, findGitWorktree } from "./git.ts";
+import { assertLinkedWorktree, findGitWorktree, samePath } from "./git.ts";
 import { findHerdrWorktree, herdrCall, herdrJson } from "./herdr.ts";
 import { type Context, HerdrError, output } from "./runner.ts";
 
@@ -105,15 +111,78 @@ function createState(ctx: Context, worktree: string): CreateState {
   };
 }
 
+/** Written whole under a temporary name, so a reader sees all of it or none. */
+function writeWhole(path: string, text: string): void {
+  const temp = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(temp, text);
+    renameSync(temp, path);
+  } catch (error) {
+    rmSync(temp, { force: true });
+    throw error;
+  }
+}
+
+function ownerPath(state: CreateState): string {
+  return join(state.claim, "owner");
+}
+
+function recordOwner(state: CreateState): void {
+  writeWhole(ownerPath(state), `${hostname()} ${process.pid}\n`);
+}
+
 /** Take the create hook's claim; false when another process holds it. */
 function claim(state: CreateState): boolean {
   try {
     mkdirSync(state.claim);
-    return true;
   } catch (error) {
     if (errnoCode(error) === "EEXIST") return false;
     throw error;
   }
+  recordOwner(state);
+  return true;
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return errnoCode(error) !== "ESRCH";
+  }
+}
+
+/**
+ * Take over a claim whose owner, on this host, is no longer running. Exactly
+ * one waiter wins: the takeover is a directory named after the dead owner,
+ * which `mkdir` creates once. A claim with no readable owner, or one owned on
+ * another host, is never taken over.
+ */
+function takeOverAbandoned(ctx: Context, state: CreateState): boolean {
+  let owner: string;
+  try {
+    owner = readFileSync(ownerPath(state), "utf8").trim();
+  } catch (error) {
+    // Not written yet, or the claim went away: nothing to take over.
+    if (errnoCode(error) === "ENOENT") return false;
+    throw error;
+  }
+  const [host, pidText] = owner.split(" ");
+  const pid = Number(pidText);
+  if (host !== hostname() || !Number.isInteger(pid) || pid <= 0) return false;
+  if (processAlive(pid)) return false;
+  try {
+    mkdirSync(join(state.claim, `taken-over-${pid}`));
+  } catch (error) {
+    if (errnoCode(error) === "EEXIST" || errnoCode(error) === "ENOENT")
+      return false;
+    throw error;
+  }
+  recordOwner(state);
+  ctx.log(
+    `⚠ the create hook's earlier run (process ${pid}) ended without a result; running it again`,
+  );
+  return true;
 }
 
 function readResult(state: CreateState): string | null {
@@ -139,11 +208,11 @@ function runClaimed(
   try {
     runHook(ctx, worktree, path);
   } catch (error) {
-    writeFileSync(state.result, `failed: ${(error as Error).message}\n`);
-    rmdirSync(state.claim);
+    writeWhole(state.result, `failed: ${(error as Error).message}\n`);
+    rmSync(state.claim, { recursive: true, force: true });
     throw error;
   }
-  writeFileSync(state.result, "ok\n");
+  writeWhole(state.result, "ok\n");
 }
 
 /**
@@ -188,9 +257,13 @@ export function awaitCreateHook(
       throw new HerdrError(
         `the worktree's create hook ${result}; fix ${path} and open the workspace again, which runs it again`,
       );
+    if (takeOverAbandoned(ctx, state)) {
+      runClaimed(ctx, worktree, path, state);
+      return;
+    }
     if (Date.now() >= deadline)
       throw new HerdrError(
-        `the worktree's create hook did not finish within ${HOOK_TIMEOUT_MS / 60_000} minutes`,
+        `the worktree's create hook did not finish within ${HOOK_TIMEOUT_MS / 60_000} minutes; if no process is still running it, remove ${state.claim} and open the workspace again, which runs it again`,
       );
     ctx.sleep(POLL_MS);
   }
@@ -219,15 +292,29 @@ export function createdWorktreePath(eventJson: string | undefined): string {
  * Park the worktree's unsent reflection findings where the next reflection
  * in any worktree of the repository adopts them, through the reflect skill's
  * own `journal.ts park`, run as if from inside the worktree.
+ *
+ * It runs in this process, since a `--host` run has only this bundle on the
+ * host, so the worktree is named the ways the journal reads it: the working
+ * directory, `JIG_CONSUMER_ROOT` (which the journal prefers to it), and an
+ * environment without the git variables that would route its git calls to
+ * another repository. All three are restored afterwards.
  */
 export async function parkJournal(worktree: string): Promise<void> {
-  const previous = process.cwd();
+  const previousCwd = process.cwd();
+  const previousEnv = { ...process.env };
+  const clean = withoutLeakyGitEnv();
+  for (const key of Object.keys(process.env))
+    if (!(key in clean)) delete process.env[key];
+  process.env.JIG_CONSUMER_ROOT = worktree;
   process.chdir(worktree);
   let status: number;
   try {
     status = await journalMain(["park"]);
   } finally {
-    process.chdir(previous);
+    process.chdir(previousCwd);
+    for (const key of Object.keys(process.env))
+      if (!(key in previousEnv)) delete process.env[key];
+    Object.assign(process.env, previousEnv);
   }
   if (status !== 0)
     throw new HerdrError(
@@ -258,17 +345,20 @@ export async function removeWorkspace(
       `no worktree of ${options.repo} has ${options.branch} checked out`,
     );
   assertLinkedWorktree(ctx, path, `remove the worktree of ${options.branch}`);
+  // Herdr's registry is checked against git before anything runs, as opening
+  // does: a stale row may name another worktree, which removing would discard.
+  const row = findHerdrWorktree(ctx, options.repo, options.branch);
+  if (row !== null && !samePath(row.path, path))
+    throw new HerdrError(
+      `Herdr has ${options.branch} at ${row.path}, but the clone's git worktree list has it at ${path}; not removing either`,
+    );
   const hook = hookPath(path, "remove");
   if (hook !== null) {
     ctx.log(`… running ${HOOKS_DIR}/remove`);
     runHook(ctx, path, hook);
   }
   await parkJournal(path);
-  let workspace = findHerdrWorktree(
-    ctx,
-    options.repo,
-    options.branch,
-  )?.open_workspace_id;
+  let workspace = row?.open_workspace_id;
   workspace ??= herdrJson<{ workspace: { workspace_id: string } }>(
     ctx,
     [

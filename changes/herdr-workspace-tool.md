@@ -18,3 +18,9 @@ release: minor
   lifecycle runs in Herdr: a repository's `.config/worktree-hooks/create` runs
   in each new worktree, through a Herdr plugin, before an agent starts there,
   and `.config/worktree-hooks/remove` runs before a worktree is removed.
+
+### Changed
+
+- The launcher takes the branch the tracker suggests, read with the issue,
+  when the launch itself names none; the prompt's branch hint and the
+  provider both use it.

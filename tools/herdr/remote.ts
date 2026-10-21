@@ -14,6 +14,12 @@ import { HerdrError } from "./runner.ts";
 
 const ENTRY = join(import.meta.dir, "workspace.ts");
 
+/**
+ * The longest a `--host` command may run: a create or remove hook (up to 15
+ * minutes), the agent's start and the kickoff all fit in it.
+ */
+export const REMOTE_TIMEOUT_MS = 30 * 60_000;
+
 /** Options every SSH call takes: no prompt for a password, and a bounded connect. */
 export const SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15"];
 
@@ -48,15 +54,17 @@ export interface Completed {
 }
 
 /**
- * Run an SSH command with `input` on its standard input. `signal` stops it;
- * a stopped SSH ends the session, and the tool on the host bounds each of
- * its own steps.
+ * Run an SSH command with `input` on its standard input. `signal` is the
+ * session's deadline, and required: `ConnectTimeout` bounds only the
+ * connection, not a session whose transport or remote process stalls. A
+ * stopped SSH ends the session, and the tool on the host bounds each of its
+ * own steps.
  */
 export async function ssh(
   host: string,
   command: string,
   input: string,
-  signal?: AbortSignal,
+  signal: AbortSignal,
   onStderr?: (chunk: string) => void,
 ): Promise<Completed> {
   assertHost(host);
@@ -64,7 +72,7 @@ export async function ssh(
     stdin: new Blob([input]),
     stdout: "pipe",
     stderr: "pipe",
-    ...(signal === undefined ? {} : { signal }),
+    signal,
   });
   const decoder = new TextDecoder();
   let stderr = "";
@@ -80,7 +88,7 @@ export async function ssh(
     new Response(proc.stdout).text(),
     readErr,
   ]);
-  if (signal?.aborted)
+  if (signal.aborted)
     throw new HerdrError(`ssh ${host} did not finish before the deadline`);
   return { status, stdout, stderr };
 }
@@ -89,7 +97,7 @@ export async function ssh(
 export async function runToolOnHost(
   host: string,
   args: string[],
-  signal?: AbortSignal,
+  signal: AbortSignal,
   onStderr?: (chunk: string) => void,
 ): Promise<Completed> {
   const script = await bundleTool();

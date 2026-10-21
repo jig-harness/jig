@@ -9,7 +9,9 @@
  *   of deciding while the first has started an agent but not yet prompted it.
  * - A **receipt** records a kickoff Herdr accepted, under a correlation id
  *   `<key>:<agent>[:<session>]`. The session id tells a restarted agent with
- *   the same name apart from the process that received the prompt.
+ *   the same name apart from the process that received the prompt. An older
+ *   receipt is removed before the prompt is sent, so a receipt that fails to
+ *   be written leaves none rather than a stale one.
  * - The agent's **transcript** answers when there is no receipt (the prompt
  *   was accepted but the receipt never written).
  *
@@ -18,6 +20,7 @@
  * an unstarted piece of work are both worse than asking a person.
  */
 import {
+  existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -26,7 +29,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { errnoCode } from "../../plugin/shared/errors.ts";
 import { parseEnvelope, probeAgentSession } from "./herdr.ts";
 import { type Context, HerdrError, output, type RunResult } from "./runner.ts";
@@ -38,6 +41,8 @@ export const KICKOFF_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 export const PROMPT_TIMEOUT_MS = 45_000;
 /** Lines of the agent's output searched for an earlier kickoff. */
 const TRANSCRIPT_LINES = 4_000;
+/** Marks a claim generation given back; a superseded one is already gone. */
+const RELEASED = "released";
 
 export interface KickoffOptions {
   /** Names the work, e.g. the tracker issue key; one kickoff per key. */
@@ -55,10 +60,16 @@ function kickoffDir(ctx: Context): string {
   return join(ctx.stateDir, "kickoff");
 }
 
+/** Receipts and claims live in separate directories, so no key names the other's. */
 export function receiptPath(ctx: Context, key: string): string {
   if (!KICKOFF_KEY.test(key))
     throw new HerdrError(`"${key}" cannot be a kickoff key`);
-  return join(kickoffDir(ctx), key);
+  return join(kickoffDir(ctx), "receipts", key);
+}
+
+function claimDir(ctx: Context, key: string): string {
+  receiptPath(ctx, key);
+  return join(kickoffDir(ctx), "claims", key);
 }
 
 /** The prompt's first line: what an earlier kickoff shows in the transcript. */
@@ -73,9 +84,10 @@ function escapeRegExp(text: string): string {
 /**
  * Whether the transcript holds the token as itself, not as the start of a
  * longer one: `/do ABC-1` must not match a transcript that only ever had
- * `/do ABC-10`.
+ * `/do ABC-10`. An empty token matches nothing.
  */
 export function transcriptHasToken(transcript: string, token: string): boolean {
+  if (token === "") return false;
   return new RegExp(`${escapeRegExp(token)}(?![\\w-])`).test(transcript);
 }
 
@@ -89,7 +101,10 @@ export function transcriptHasToken(transcript: string, token: string): boolean {
  * that both find the same claim abandoned race for the same next number and
  * only one wins. Removing a claim to take it over would let both win: each
  * could remove what the other had just created. Superseded generations are
- * removed by the winner, and a holder releases only the generation it owns.
+ * removed by the winner, and a holder releases only the generation it owns,
+ * by marking it released rather than removing it: the highest number always
+ * stays on disk, so numbers never repeat, and a launch that read an old
+ * generation and paused cannot later create a number another launch holds.
  */
 export function acquireClaim(
   ctx: Context,
@@ -97,8 +112,7 @@ export function acquireClaim(
   waitMs: number,
   staleMs: number,
 ): string {
-  receiptPath(ctx, key);
-  const dir = join(kickoffDir(ctx), "claims", key);
+  const dir = claimDir(ctx, key);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const deadline = Date.now() + waitMs;
   for (;;) {
@@ -133,6 +147,7 @@ function nextStep(
 ): { create: number } | { held: number } | { rescan: true } {
   const top = generations.at(-1);
   if (top === undefined) return { create: 1 };
+  if (existsSync(join(dir, String(top), RELEASED))) return { create: top + 1 };
   let heldSince: number;
   try {
     heldSince = statSync(join(dir, String(top))).mtimeMs;
@@ -167,10 +182,24 @@ export function releaseClaim(
   key: string,
   generation: string,
 ): void {
-  rmSync(join(kickoffDir(ctx), "claims", key, generation), {
-    recursive: true,
-    force: true,
-  });
+  try {
+    writeFileSync(join(claimDir(ctx, key), generation, RELEASED), "");
+  } catch (error) {
+    if (errnoCode(error) !== "ENOENT") throw error;
+  }
+}
+
+/**
+ * Throw unless the generation is still the live claim: an abandoned claim is
+ * taken over by age, and a holder that was slow past that age must not send.
+ */
+function assertClaimHeld(ctx: Context, key: string, generation: string): void {
+  const dir = claimDir(ctx, key);
+  const top = generationsIn(dir).at(-1);
+  if (String(top) !== generation || existsSync(join(dir, generation, RELEASED)))
+    throw new HerdrError(
+      `another launch took over the kickoff claim on ${key} (now ${top ?? "none"}); check with herdr agent read before running this again`,
+    );
 }
 
 /**
@@ -280,12 +309,28 @@ function correlation(
   return session === null ? `${key}:${agent}` : `${key}:${agent}:${session}`;
 }
 
+/**
+ * Remove an earlier receipt before a send. Throws when it cannot: a send whose
+ * own receipt then failed to be written would leave the old one standing, and
+ * it would answer "undelivered" for the agent that did get the prompt.
+ */
+function clearReceipt(ctx: Context, key: string): void {
+  const path = receiptPath(ctx, key);
+  try {
+    rmSync(path, { force: true });
+  } catch (error) {
+    throw new HerdrError(
+      `could not remove the earlier kickoff receipt ${path} (${(error as Error).message}); remove it, then run this again`,
+    );
+  }
+}
+
 /** Written whole under a temporary name, so a reader sees a receipt or none. */
 function writeReceipt(ctx: Context, key: string, line: string): void {
   const path = receiptPath(ctx, key);
   const temp = `${path}.${process.pid}.tmp`;
   try {
-    mkdirSync(kickoffDir(ctx), { recursive: true, mode: 0o700 });
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     writeFileSync(temp, `${line}\n`, { mode: 0o600 });
     renameSync(temp, path);
   } catch (error) {
@@ -306,6 +351,10 @@ export function kickoff(
   options: KickoffOptions,
 ): KickoffOutcome {
   const { agentName } = spawned;
+  if (promptToken(options.prompt) === "")
+    throw new HerdrError(
+      "the kickoff prompt's first line is empty; it is what a later launch looks for in the transcript",
+    );
   if (spawned.agentStatus === null)
     throw new HerdrError(
       `no agent is running in ${spawned.path}; nothing to kick off`,
@@ -313,6 +362,10 @@ export function kickoff(
   if (spawned.agentStatus === "blocked")
     throw new HerdrError(
       `agent ${agentName} is waiting at a dialog; answer it (herdr agent attach ${agentName}), then run this again to send the kickoff`,
+    );
+  if (spawned.agentSessionError !== null)
+    throw new HerdrError(
+      `could not read the session of ${agentName} (${spawned.agentSessionError}); a kickoff recorded without it could be sent again later, so run this again`,
     );
   if (spawned.agentSessionId === null)
     ctx.log(
@@ -326,7 +379,8 @@ export function kickoff(
   );
   let release = true;
   try {
-    if (spawned.agentExisted) {
+    // A resumed conversation may already hold the kickoff, like a running agent.
+    if (spawned.agentExisted || spawned.agentResumed) {
       const verdict = reconcileKickoff(
         ctx,
         agentName,
@@ -339,6 +393,8 @@ export function kickoff(
       }
       ctx.log(`⚠ ${agentName} has no record of the kickoff; sending it`);
     }
+    clearReceipt(ctx, options.key);
+    assertClaimHeld(ctx, options.key, generation);
     // Without `--wait` Herdr acknowledges the writes, which is what a
     // kickoff needs; the process deadline bounds the call.
     const sent = ctx.run(

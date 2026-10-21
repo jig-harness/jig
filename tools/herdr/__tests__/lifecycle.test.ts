@@ -7,7 +7,7 @@ import {
   realpathSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
@@ -96,6 +96,27 @@ describe("the create hook", () => {
     );
   });
 
+  test("a claim whose owner ended without a result is taken over and the hook run", () => {
+    const { worktree } = fixture({ create: 'echo ran >> "$PWD/.hook-runs"' });
+    const gitDir = Bun.spawnSync([
+      "git",
+      "-C",
+      worktree,
+      "rev-parse",
+      "--absolute-git-dir",
+    ])
+      .stdout.toString()
+      .trim();
+    const claim = join(gitDir, "jig", "worktree-create.claim");
+    mkdirSync(claim, { recursive: true });
+    // A process id above every system's maximum is never running.
+    writeFileSync(join(claim, "owner"), `${hostname()} 99999999\n`);
+    const ctx = quiet();
+    awaitCreateHook(ctx, worktree, 0);
+    expect(readFileSync(join(worktree, ".hook-runs"), "utf8")).toBe("ran\n");
+    expect(ctx.lines.join("\n")).toContain("ended without a result");
+  });
+
   test("a hook that is not executable is an error, a missing one nothing", () => {
     const { worktree } = fixture({});
     expect(hookPath(worktree, "create")).toBeNull();
@@ -121,7 +142,10 @@ test("the event's worktree path is read from Herdr's event", () => {
 });
 
 /** A fake `herdr` that logs each call and answers like Herdr does. */
-function fakeHerdr(root: string): { bin: string; log: string } {
+function fakeHerdr(
+  root: string,
+  worktrees: unknown[] = [],
+): { bin: string; log: string } {
   const bin = join(root, "bin");
   mkdirSync(bin);
   const log = join(root, "herdr.log");
@@ -130,7 +154,7 @@ function fakeHerdr(root: string): { bin: string; log: string } {
     `#!/bin/sh
 echo "$*" >> "${log}"
 case "$1 $2" in
-  "worktree list") echo '{"result":{"worktrees":[]}}' ;;
+  "worktree list") echo '${JSON.stringify({ result: { worktrees } })}' ;;
   "worktree open") echo '{"result":{"workspace":{"workspace_id":"w9"}}}' ;;
   "worktree remove") echo '{"result":{}}' ;;
   *) echo '{"error":{"code":"unexpected","message":"unexpected"}}' >&2; exit 1 ;;
@@ -144,7 +168,7 @@ function runTool(
   root: string,
   bin: string,
   args: string[],
-  env: Record<string, string> = {},
+  env: Record<string, string | undefined> = {},
 ) {
   return Bun.spawnSync([process.execPath, TOOL, ...args], {
     env: {
@@ -153,6 +177,7 @@ function runTool(
       HOME: root,
       JIG_HOME: join(root, ".jig"),
       JIG_USER_LAYER: "off",
+      JIG_OVERLAY: undefined,
       ...env,
     },
     stdout: "pipe",
@@ -181,6 +206,82 @@ describe("remove", () => {
     expect(readFileSync(log, "utf8")).toContain(
       "worktree remove --workspace w9",
     );
+  });
+
+  test("parks the worktree's own findings, whatever the caller's environment names", () => {
+    const { root, clone, worktree } = fixture({});
+    mkdirSync(join(worktree, ".config"), { recursive: true });
+    writeFileSync(
+      join(worktree, ".config", "jig.yaml"),
+      "reflection:\n  enabled: true\n",
+    );
+    const env = {
+      ...process.env,
+      HOME: root,
+      JIG_HOME: join(root, ".jig"),
+      JIG_USER_LAYER: "off",
+      JIG_OVERLAY: undefined,
+    };
+    const noted = Bun.spawnSync(
+      [
+        process.execPath,
+        join(
+          import.meta.dir,
+          "../../../plugin/skills/reflect/scripts/journal.ts",
+        ),
+        "note",
+      ],
+      {
+        cwd: worktree,
+        env,
+        stdin: new Blob([
+          JSON.stringify({
+            kind: "error",
+            severity: "low",
+            class: "instruction-missing-precondition",
+            target: { scope: "repository", name: "AGENTS.md" },
+            title: "t",
+            description: "d",
+            suggested_fix: "f",
+          }),
+        ]),
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expectSpawnExit(noted, 0, "journal note");
+    const { bin } = fakeHerdr(root);
+    const run = runTool(
+      root,
+      bin,
+      ["remove", "--repo", clone, "--branch", "feat/y"],
+      // The caller's own checkout, as a hook or a parent session leaves them.
+      { JIG_CONSUMER_ROOT: clone, GIT_DIR: join(clone, ".git") },
+    );
+    expectSpawnExit(run, 0, "remove");
+    expect(run.stdout.toString()).toContain('"parked":1');
+  });
+
+  test("a Herdr row naming another path is refused before anything runs", () => {
+    const { root, clone } = fixture({ remove: 'touch "$HOME/remove-ran"' });
+    const { bin, log } = fakeHerdr(root, [
+      {
+        branch: "feat/y",
+        path: join(root, "elsewhere"),
+        open_workspace_id: "w2",
+      },
+    ]);
+    const run = runTool(root, bin, [
+      "remove",
+      "--repo",
+      clone,
+      "--branch",
+      "feat/y",
+    ]);
+    expectSpawnExit(run, 1, "remove");
+    expect(run.stderr.toString()).toContain("not removing either");
+    expect(existsSync(join(root, "remove-ran"))).toBe(false);
+    expect(readFileSync(log, "utf8")).not.toContain("worktree remove");
   });
 
   test("a failing remove hook keeps the worktree", () => {

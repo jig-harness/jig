@@ -196,8 +196,37 @@ describe("startAgent", () => {
     expect(startAgent(ctx, A, "w1:p1", "claude", 1000)).toEqual({
       status: "idle",
       sessionId: "s-2",
+      sessionError: null,
+      resumed: false,
     });
     expect(readFileSync(sessionReceiptPath(ctx, A), "utf8")).toBe("s-2\n");
+  });
+
+  test("a resumed start says so", () => {
+    const ctx = fakeContext({
+      [`${start} -- --resume s-old`]: result({}),
+      ...settled,
+      [get]: agent({ agent_session: { value: "s-old" } }),
+    });
+    const receipt = sessionReceiptPath(ctx, A);
+    mkdirSync(dirname(receipt), { recursive: true });
+    writeFileSync(receipt, "s-old\n");
+    expect(startAgent(ctx, A, "w1:p1", "claude", 1000)).toMatchObject({
+      sessionId: "s-old",
+      resumed: true,
+    });
+  });
+
+  test("a session that cannot be read is reported, not taken as none", () => {
+    const ctx = fakeContext({
+      [start]: result({}),
+      ...settled,
+      [get]: herdrError("server_error", "socket closed"),
+    });
+    expect(startAgent(ctx, A, "w1:p1", "claude", 1000)).toMatchObject({
+      sessionId: null,
+      sessionError: "socket closed",
+    });
   });
 
   test("a resume Herdr refuses falls back to a plain start", () => {

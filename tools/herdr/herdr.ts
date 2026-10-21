@@ -191,12 +191,6 @@ export function probeAgentSession(ctx: Context, name: string): SessionProbe {
   return { ok: true, sessionId: value };
 }
 
-/** The agent's session id, or null for every uncertainty: a resume hint only. */
-export function readAgentSessionId(ctx: Context, name: string): string | null {
-  const probe = probeAgentSession(ctx, name);
-  return probe.ok ? probe.sessionId : null;
-}
-
 /** Show a Herdr notification; throws when it was not delivered. */
 export function notify(ctx: Context, title: string, body: string): void {
   const shown = ctx.run([

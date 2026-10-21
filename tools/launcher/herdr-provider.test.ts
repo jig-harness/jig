@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { OpenRequest } from "./provider.ts";
 import { openRequest } from "./test-request.ts";
-import { branchFor, herdrProvider, parseRepo } from "./providers/herdr.ts";
+import {
+  branchFor,
+  herdrProvider,
+  loginShellPath,
+  parseRepo,
+} from "./providers/herdr.ts";
 
 const cacheFile = join(
   mkdtempSync(join(tmpdir(), "herdr-cache-")),
@@ -112,6 +117,26 @@ describe("open", () => {
     expect(seen[0]).toEqual(expect.arrayContaining(["--base", "origin/dev"]));
   });
 
+  test("on a host, a cache file that was not written is refused before anything runs", async () => {
+    let ran = false;
+    const provider = herdrProvider({
+      copyCache: async () => {
+        ran = true;
+        return "/nowhere";
+      },
+      runTool: async () => {
+        ran = true;
+        return { status: 0, stderr: "" };
+      },
+    });
+    const missing = {
+      ...request({ path: "~/dev/app", host: "builder" }),
+      cacheFile: join(tmpdir(), "no-such-dir-herdr", "ENG-1.json"),
+    };
+    await expect(provider.open(missing)).rejects.toThrow("was not written");
+    expect(ran).toBe(false);
+  });
+
   test("an issue with no repository is refused, and a failed tool run is an error", async () => {
     const provider = herdrProvider({
       runTool: async () => ({ status: 1, stderr: "ERROR: x" }),
@@ -121,6 +146,22 @@ describe("open", () => {
     );
     await expect(provider.open(request("/srv/app"))).rejects.toThrow(
       "workspace tool failed (exit 1)",
+    );
+  });
+
+  test("the local tool gets the login shell's PATH, else the inherited one", () => {
+    const answer = (exitCode: number, stdout: string) =>
+      (() => ({
+        exitCode,
+        stdout: Buffer.from(stdout),
+      })) as unknown as typeof Bun.spawnSync;
+    const env = { SHELL: "/bin/zsh", PATH: "/usr/bin" };
+    expect(loginShellPath(env, answer(0, "/opt/homebrew/bin:/usr/bin"))).toBe(
+      "/opt/homebrew/bin:/usr/bin",
+    );
+    expect(loginShellPath(env, answer(1, ""))).toBe("/usr/bin");
+    expect(loginShellPath({ PATH: "/usr/bin" }, answer(0, "/x"))).toBe(
+      "/usr/bin",
     );
   });
 

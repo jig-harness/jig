@@ -18,7 +18,9 @@
  *   base   what a new branch is cut from; the clone's `origin/HEAD` when absent
  *
  * An issue that is not routed to a repository is refused: unlike Conductor,
- * Herdr has no repository list to choose from.
+ * Herdr has no repository list to choose from. On this machine the tool runs
+ * with the login shell's `PATH`, which finds a `git` or `herdr` the tracker's
+ * own environment does not.
  */
 import { join, relative } from "node:path";
 import { isRecord } from "../../../lib/record.ts";
@@ -152,11 +154,40 @@ async function copyCacheOverSsh(
   return done.stdout.trim();
 }
 
+/**
+ * The `PATH` of the user's login shell, else this process's own. The tracker
+ * starts the launcher without the shell profile, so `git` and `herdr`
+ * installed in a user or package-manager directory are on the login shell's
+ * `PATH` and not on the inherited one.
+ */
+export function loginShellPath(
+  env: NodeJS.ProcessEnv = process.env,
+  spawn: typeof Bun.spawnSync = Bun.spawnSync,
+): string | undefined {
+  const shell = env.SHELL;
+  if (shell === undefined || !shell.startsWith("/")) return env.PATH;
+  try {
+    const read = spawn([shell, "-l", "-c", 'printf %s "$PATH"'], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 10_000,
+      env,
+    });
+    const path = read.stdout.toString().trim();
+    return read.exitCode === 0 && path !== "" ? path : env.PATH;
+  } catch {
+    return env.PATH;
+  }
+}
+
 async function runToolHere(
   args: string[],
   signal: AbortSignal,
 ): Promise<{ status: number; stderr: string }> {
+  const path = loginShellPath();
   const proc = Bun.spawn([process.execPath, TOOL, ...args], {
+    env: { ...process.env, ...(path === undefined ? {} : { PATH: path }) },
     stdin: "ignore",
     stdout: "ignore",
     stderr: "pipe",
@@ -197,13 +228,17 @@ export function herdrProvider(deps: Partial<HerdrDeps> = {}): Provider {
         );
       const repo = parseRepo(request.repo, "<label>");
       let prompt = request.prompt;
-      if (
-        repo.host !== undefined &&
-        (await Bun.file(request.cacheFile).exists())
-      )
+      if (repo.host !== undefined) {
+        // The prompt names the cache file, which the agent on the host must
+        // be able to read; a path on this machine would name nothing there.
+        if (!(await Bun.file(request.cacheFile).exists()))
+          throw new HerdrError(
+            `${request.issue}'s context cache ${request.cacheFile} was not written (see the warning above), so there is nothing to copy to ${repo.host}; fix that and open the issue again`,
+          );
         prompt = request.promptFor(
           await copyCache(repo.host, request.cacheFile, request.signal),
         );
+      }
       const done = await runTool(
         repo.host,
         openArgs(repo, request, prompt),

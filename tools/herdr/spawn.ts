@@ -12,24 +12,25 @@
  * earlier run left undone (the upstream, the agent) instead of only reporting
  * the path.
  */
-import { realpathSync } from "node:fs";
 import { normalizeAgentName, startAgent } from "./agent.ts";
 import {
   assertBranchName,
   assertLinkedWorktree,
   decideBranchAction,
+  defaultBase,
   ensureUpstreamTracking,
   findGitWorktree,
   probeBranch,
   refreshBaseRef,
   repoIdentity,
+  samePath,
 } from "./git.ts";
 import {
   agentExists,
   createAgentPane,
   findHerdrWorktree,
   herdrJson,
-  readAgentSessionId,
+  probeAgentSession,
   reportAgentStatus,
   waitForAgentSettle,
 } from "./herdr.ts";
@@ -43,8 +44,11 @@ export interface SpawnOptions {
   /** The clone the worktree is created in. */
   repo: string;
   branch: string;
-  /** What a new branch is cut from, e.g. `origin/main`. */
-  base: string;
+  /**
+   * What a new branch is cut from, e.g. `origin/main`; the clone's
+   * `origin/HEAD` when absent, read only when a new branch is created.
+   */
+  base?: string;
   /** The workspace's label in Herdr; the branch when absent. */
   label?: string;
   /** The Herdr agent kind, e.g. `claude` or `codex`. */
@@ -66,19 +70,12 @@ export interface Spawned {
   agentStarted: boolean;
   /** A live agent was already running when this run reattached. */
   agentExisted: boolean;
+  /** This run started the agent by resuming an earlier session. */
+  agentResumed: boolean;
   /** The live agent's session id, when Herdr reports one. */
   agentSessionId: string | null;
-}
-
-function samePath(a: string, b: string): boolean {
-  const real = (path: string): string => {
-    try {
-      return realpathSync(path);
-    } catch {
-      return path;
-    }
-  };
-  return real(a) === real(b);
+  /** Why the session could not be read; null when it was (or there is none). */
+  agentSessionError: string | null;
 }
 
 type Opened = {
@@ -143,7 +140,7 @@ function createWorktree(ctx: Context, options: SpawnOptions): Opened {
   }
   const base =
     action.kind === "create-from-base"
-      ? options.base
+      ? (options.base ?? defaultBase(ctx, repo))
       : action.kind === "create-from-origin"
         ? `origin/${branch}`
         : branch;
@@ -225,7 +222,9 @@ export function spawnWorkspace(ctx: Context, options: SpawnOptions): Spawned {
     agentStatus: null,
     agentStarted: false,
     agentExisted: false,
+    agentResumed: false,
     agentSessionId: null,
+    agentSessionError: null,
   };
   if (options.noAgent) return spawned;
 
@@ -238,7 +237,9 @@ export function spawnWorkspace(ctx: Context, options: SpawnOptions): Spawned {
     );
     // Read after the wait: a person may restart the agent under the same name
     // while it runs, and the session read before would name the old process.
-    spawned.agentSessionId = readAgentSessionId(ctx, agentName);
+    const probe = probeAgentSession(ctx, agentName);
+    spawned.agentSessionId = probe.ok ? probe.sessionId : null;
+    spawned.agentSessionError = probe.ok ? null : probe.message;
     reportAgentStatus(ctx, agentName, spawned.agentStatus);
     return spawned;
   }
@@ -258,6 +259,8 @@ export function spawnWorkspace(ctx: Context, options: SpawnOptions): Spawned {
   );
   spawned.agentStarted = true;
   spawned.agentStatus = started.status;
+  spawned.agentResumed = started.resumed;
   spawned.agentSessionId = started.sessionId;
+  spawned.agentSessionError = started.sessionError;
   return spawned;
 }

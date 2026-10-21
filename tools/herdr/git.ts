@@ -9,6 +9,7 @@
  * failed `worktree list` as "not checked out" would create a duplicate
  * checkout.
  */
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { type Context, HerdrError, output } from "./runner.ts";
 
@@ -30,6 +31,35 @@ export interface BranchProbe {
   localExists: boolean;
   /** Commits on the local branch that origin's lacks; empty unless both exist. */
   localAhead: string[];
+}
+
+/** Whether two paths name the same directory, symbolic links resolved. */
+export function samePath(a: string, b: string): boolean {
+  const real = (path: string): string => {
+    try {
+      return realpathSync(path);
+    } catch {
+      return path;
+    }
+  };
+  return real(a) === real(b);
+}
+
+/** The clone's default branch on origin, for a new branch with no base given. */
+export function defaultBase(ctx: Context, repo: string): string {
+  const head = ctx.run([
+    "git",
+    "-C",
+    repo,
+    "symbolic-ref",
+    "--short",
+    "refs/remotes/origin/HEAD",
+  ]);
+  if (head.status !== 0 || head.stdout.trim() === "")
+    throw new HerdrError(
+      `${repo} has no origin/HEAD to cut new branches from (${output(head) || "unset"}); pass --base, or run git remote set-head origin --auto in it`,
+    );
+  return head.stdout.trim();
 }
 
 export function decideBranchAction(probe: BranchProbe): BranchAction {

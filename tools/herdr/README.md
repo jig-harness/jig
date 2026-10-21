@@ -73,18 +73,22 @@ The kickoff goes to the agent once per key, whatever happens around it:
 - **A claim** in `~/.jig/herdr/kickoff/claims/<key>/` marks a kickoff in
   flight. A second launch of the same key waits for it (two minutes), and a
   claim older than fifteen minutes counts as abandoned. A claim is taken over
-  by creating the next numbered one, never by deleting the old one, so two
-  launches cannot both take it.
-- **A receipt** at `~/.jig/herdr/kickoff/<key>` records a kickoff Herdr
-  accepted, with the agent's name and, when Herdr reports one, its session
-  id. The session id tells a restarted agent with the same name apart from
-  the one that received the prompt.
+  by creating the next numbered one, never by deleting the old one, and a
+  released claim stays on disk marked released, so numbers never repeat and
+  two launches cannot both take one.
+- **A receipt** at `~/.jig/herdr/kickoff/receipts/<key>` records a kickoff
+  Herdr accepted, with the agent's name and, when Herdr reports one, its
+  session id. The session id tells a restarted agent with the same name
+  apart from the one that received the prompt. An earlier receipt is removed
+  before a send, so one that fails to be written leaves the transcript to
+  decide rather than a stale receipt.
 - **The transcript** decides when there is no receipt: the prompt's first
   line in the agent's recent output means it was delivered.
 
-When a reattach finds the agent running, these decide whether to send. When
-they cannot (the session changed during the check, a file cannot be read, a
-send whose outcome is unknown), the tool stops and says what to check rather
+When a reattach finds the agent running, or starts it by resuming its earlier
+session, these decide whether to send. When they cannot (the session could
+not be read, it changed during the check, a file cannot be read, a send
+whose outcome is unknown), the tool stops and says what to check rather
 than guess; after a send whose outcome is unknown it keeps the claim, so an
 immediate retry cannot send twice.
 
@@ -98,7 +102,9 @@ that a restarted agent cannot be told apart from the original.
 [M12](../../modules/M12-parallel-agent-ergonomics/README.md) brackets each
 worktree with a create hook (set it up: ports, dependencies) and a remove
 hook (nudge reflection). A repository supplies them as executables at fixed
-paths, read from the worktree, so each branch runs its own version:
+paths, read from the worktree, so each branch runs its own version. Opening
+a branch therefore runs its code, as the hook's dependency install and the
+agent working in it do anyway: open only branches whose code you would run.
 
 | Path | Runs | Working directory |
 |------|------|-------------------|
@@ -112,7 +118,9 @@ Herdr announces each new worktree with its `worktree.created` event, which
 the plugin in [`plugin/`](plugin/herdr-plugin.toml) answers by running the
 create hook. The event runs in the background, so `open` waits for the hook
 to finish before it starts the agent: the hook runs under a claim in the
-worktree's git directory, and whoever takes it first runs it. Without the
+worktree's git directory, and whoever takes it first runs it. The claim
+names its owner's process, so when that process ended without a result a
+waiter on the same machine runs the hook again. Without the
 plugin, `open` runs the hook itself after a few seconds; a worktree made in
 Herdr's interface then gets its create hook only when the plugin is
 installed. A failed create hook stops `open` and runs again on the next one.
@@ -134,8 +142,8 @@ installed per repository: a repository opts in by adding its hooks.
 
 Under `~/.jig/herdr/` (`JIG_HOME` moves `~/.jig`), outside every worktree so
 removing one never takes them: `sessions/<agent>` (the session a later start
-resumes, for agent kinds that take `--resume`), `kickoff/<key>` (receipts)
-and `kickoff/claims/`. Inside each worktree's git directory, `jig/worktree-create.*`
+resumes, for agent kinds that take `--resume`), `kickoff/receipts/<key>`
+and `kickoff/claims/<key>/`. Inside each worktree's git directory, `jig/worktree-create.*`
 records the create hook's claim and result.
 
 ## The Herdr interface it relies on

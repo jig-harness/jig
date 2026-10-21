@@ -165,9 +165,13 @@ repos:
       base: origin/main        # base of a new branch; the clone's origin/HEAD when absent
 ```
 
-The branch is the one the tracker suggests, else the issue key in lower
-case. On a host, the issue's cache file is copied first to the same path
-under the host user's home, and the prompt names that copy. Herdr has no
+The branch is the one the launch names, else the one the tracker suggests
+(read with the issue), else the issue key in lower case. On a host, the
+issue's cache file is copied first to the same path under the host user's
+home, and the prompt names that copy; when the cache file could not be
+written there is nothing to copy, and the launch is refused. On this
+machine, the tool runs with the login shell's `PATH`, so a `git` or `herdr`
+installed where only the shell profile adds it is found. Herdr has no
 repository list to detect one from, so an issue that is not routed is
 refused with what to add. The provider's budget is 20 minutes rather than
 30 seconds: it covers the repository's create hook and the agent's start.

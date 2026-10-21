@@ -151,6 +151,14 @@ function persistCache(
   }
 }
 
+/** The branch the launch named, else the tracker's suggestion read with the issue. */
+export function chooseBranch(
+  named: string,
+  fresh: Pick<ContextCache, "branch_name"> | null,
+): string {
+  return named || fresh?.branch_name || "";
+}
+
 export async function launch(
   issue: string,
   branchArg: string | undefined,
@@ -168,8 +176,8 @@ export async function launch(
     if (settings[provider.name] !== undefined)
       provider.validateRepo(settings[provider.name], label);
 
-  const branch = branchArg || tracker.launchEnvironment.branch || "";
-  const fallback = { prompt: tracker.launchEnvironment.prompt, branch };
+  const named = branchArg || tracker.launchEnvironment.branch || "";
+  const fallback = { prompt: tracker.launchEnvironment.prompt, branch: named };
   const file = cachePath(home, issue);
   const { fresh, repoLabel } = await readAndAssign(
     tracker,
@@ -184,6 +192,7 @@ export async function launch(
     warn,
   );
   persistCache(home, issue, file, fresh, fallback, nowSeconds(), warn);
+  const branch = chooseBranch(named, fresh);
 
   const title = fresh?.title ?? titleOf(file, warn);
   const promptFor = (cacheFile: string): string =>

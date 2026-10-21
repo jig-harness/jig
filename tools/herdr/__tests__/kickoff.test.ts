@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -45,7 +46,9 @@ const spawned = (fields: Partial<Spawned> = {}): Spawned => ({
   agentStatus: "idle",
   agentStarted: true,
   agentExisted: false,
+  agentResumed: false,
   agentSessionId: "s-1",
+  agentSessionError: null,
   ...fields,
 });
 
@@ -77,6 +80,7 @@ describe("the transcript token", () => {
     expect(
       transcriptHasToken("> /jig:do-item ABC-1-x\n", "/jig:do-item ABC-1"),
     ).toBe(false);
+    expect(transcriptHasToken("", "")).toBe(false);
   });
   test("a key that cannot name a file is refused", () => {
     expect(() => receiptPath(fakeContext({}), "../x")).toThrow(
@@ -164,7 +168,19 @@ describe("claims", () => {
       true,
     );
     releaseClaim(ctx, KEY, "1");
+    expect(acquireClaim(ctx, KEY, 0, 60_000)).toBe("2");
+  });
+  test("a released number is never taken again", () => {
+    // A launch that read generation 1 as abandoned and paused must not be
+    // able to create a number another launch holds after 1 was released.
+    const ctx = fakeContext({});
+    const dir = join(ctx.stateDir, "kickoff", "claims", KEY);
     expect(acquireClaim(ctx, KEY, 0, 60_000)).toBe("1");
+    releaseClaim(ctx, KEY, "1");
+    expect(acquireClaim(ctx, KEY, 0, 60_000)).toBe("2");
+    releaseClaim(ctx, KEY, "2");
+    expect(acquireClaim(ctx, KEY, 0, 60_000)).toBe("3");
+    expect(readdirSync(dir)).toEqual(["3"]);
   });
 });
 
@@ -180,7 +196,7 @@ describe("kickoff", () => {
     expect(readFileSync(receiptPath(ctx, KEY), "utf8")).toBe(
       `${KEY}:${A}:s-1\n`,
     );
-    expect(claims(ctx)).toEqual([]);
+    expect(claims(ctx)).toEqual(["1"]);
   });
 
   test("a reattached agent that has it is not sent it again", () => {
@@ -203,6 +219,82 @@ describe("kickoff", () => {
     expect(ctx.calls).toEqual([]);
   });
 
+  test("an agent that resumed its session is checked like a running one", () => {
+    const ctx = withReceipt({ [get]: session("s-1") }, `${KEY}:${A}:s-1`);
+    expect(kickoff(ctx, spawned({ agentResumed: true }), options)).toBe(
+      "already-delivered",
+    );
+    expect(ctx.calls).not.toContain(send);
+  });
+
+  test("a session that could not be read refuses the kickoff", () => {
+    const ctx = fakeContext({});
+    expect(() =>
+      kickoff(
+        ctx,
+        spawned({ agentSessionId: null, agentSessionError: "socket closed" }),
+        options,
+      ),
+    ).toThrow("could not read the session");
+    expect(ctx.calls).toEqual([]);
+  });
+
+  test("a prompt whose first line is empty is refused", () => {
+    const ctx = fakeContext({});
+    expect(() =>
+      kickoff(ctx, spawned(), { ...options, prompt: "\n/jig:do-item ABC-1" }),
+    ).toThrow("first line is empty");
+  });
+
+  test("a key named like the claims directory works", () => {
+    const sendTo = `herdr agent prompt ${A} ${PROMPT}`;
+    const ctx = fakeContext({ [sendTo]: ok() });
+    expect(kickoff(ctx, spawned(), { ...options, key: "claims" })).toBe("sent");
+    expect(readFileSync(receiptPath(ctx, "claims"), "utf8")).toBe(
+      `claims:${A}:s-1\n`,
+    );
+  });
+
+  test("an earlier receipt is removed before the send, so a failed write leaves none", () => {
+    const ctx = withReceipt(
+      {
+        // The receipt directory turns read-only once the prompt is sent.
+        [send]: () => {
+          chmodSync(dirname(receiptPath(ctx, KEY)), 0o500);
+          return ok();
+        },
+      },
+      `${KEY}:${A}:s-0`,
+    );
+    try {
+      expect(kickoff(ctx, spawned(), options)).toBe("sent");
+    } finally {
+      chmodSync(dirname(receiptPath(ctx, KEY)), 0o700);
+    }
+    expect(existsSync(receiptPath(ctx, KEY))).toBe(false);
+    expect(ctx.lines.join("\n")).toContain("receipt was not written");
+  });
+
+  test("a claim another launch took over before the send is not sent on", () => {
+    const ctx = withReceipt(
+      {
+        // While this launch checks, another takes the claim over by age.
+        [get]: () => {
+          mkdirSync(join(ctx.stateDir, "kickoff", "claims", KEY, "2"), {
+            recursive: true,
+          });
+          return session("s-1");
+        },
+        [read]: ok("❯ hello\n"),
+      },
+      null,
+    );
+    expect(() =>
+      kickoff(ctx, spawned({ agentExisted: true }), options),
+    ).toThrow("another launch took over the kickoff claim");
+    expect(ctx.calls).not.toContain(send);
+  });
+
   test("a prompt Herdr refuses releases the claim", () => {
     for (const answer of [
       herdrError("agent_blocked", "agent is blocked"),
@@ -212,7 +304,12 @@ describe("kickoff", () => {
       expect(() => kickoff(ctx, spawned(), options)).toThrow(
         "did not take the kickoff",
       );
-      expect(claims(ctx)).toEqual([]);
+      expect(claims(ctx)).toEqual(["1"]);
+      expect(
+        existsSync(
+          join(ctx.stateDir, "kickoff", "claims", KEY, "1", "released"),
+        ),
+      ).toBe(true);
     }
   });
 

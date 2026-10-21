@@ -24,7 +24,8 @@
  * repository's create hook in the worktree the event names.
  *
  * `--host` runs the command on that host instead; the host needs `bun`,
- * `git` and `herdr`, nothing from Jig. A path starting `~/` is resolved on
+ * `git` and `herdr`, nothing from Jig. The whole SSH session is bounded by
+ * `REMOTE_TIMEOUT_MS`. A path starting `~/` is resolved on
  * the machine the command runs on.
  *
  * Exit codes: 0 done; 1 the step failed (the message says what to do);
@@ -33,14 +34,19 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { cli, strictOptions } from "../../lib/cli.ts";
-import { KICKOFF_KEY, type KickoffOutcome, kickoff } from "./kickoff.ts";
+import {
+  KICKOFF_KEY,
+  type KickoffOutcome,
+  kickoff,
+  promptToken,
+} from "./kickoff.ts";
 import {
   createdWorktreePath,
   removeWorkspace,
   runCreateHook,
 } from "./lifecycle.ts";
-import { runToolOnHost } from "./remote.ts";
-import { type Context, HerdrError, localContext, output } from "./runner.ts";
+import { REMOTE_TIMEOUT_MS, runToolOnHost } from "./remote.ts";
+import { type Context, HerdrError, localContext } from "./runner.ts";
 import {
   DEFAULT_WAIT_TIMEOUT_MS,
   type Spawned,
@@ -69,23 +75,6 @@ export function expandHome(path: string): string {
     : path;
 }
 
-/** The clone's default branch on origin, for a new branch with no `--base`. */
-function defaultBase(ctx: Context, repo: string): string {
-  const head = ctx.run([
-    "git",
-    "-C",
-    repo,
-    "symbolic-ref",
-    "--short",
-    "refs/remotes/origin/HEAD",
-  ]);
-  if (head.status !== 0 || head.stdout.trim() === "")
-    throw new HerdrError(
-      `${repo} has no origin/HEAD to cut new branches from (${output(head) || "unset"}); pass --base, or run git remote set-head origin --auto in it`,
-    );
-  return head.stdout.trim();
-}
-
 function parseWaitTimeout(raw: string | undefined): number {
   if (raw === undefined) return DEFAULT_WAIT_TIMEOUT_MS;
   const ms = Number(raw);
@@ -99,6 +88,22 @@ function parseWaitTimeout(raw: string | undefined): number {
 export interface OpenReport {
   spawned: Spawned;
   kickoff: KickoffOutcome | null;
+}
+
+/** The kickoff's arguments, given `--prompt`: a key, a first line, an agent. */
+function assertKickoffArgs(
+  prompt: string,
+  key: string | undefined,
+  noAgent: boolean | undefined,
+): void {
+  if (promptToken(prompt) === "")
+    throw new UsageError(
+      `--prompt must start with a non-empty line, which is what a later open looks for in the agent's transcript\n${USAGE}`,
+    );
+  if (key !== undefined && !KICKOFF_KEY.test(key))
+    throw new UsageError(`--key must match ${KICKOFF_KEY}\n${USAGE}`);
+  if (noAgent)
+    throw new UsageError(`--prompt needs an agent; drop --no-agent\n${USAGE}`);
 }
 
 async function open(ctx: Context, args: string[]): Promise<number> {
@@ -124,15 +129,13 @@ async function open(ctx: Context, args: string[]): Promise<number> {
     throw new UsageError(`open needs --repo and --branch\n${USAGE}`);
   if ((values.prompt === undefined) !== (values.key === undefined))
     throw new UsageError(`--prompt and --key go together\n${USAGE}`);
-  if (values.key !== undefined && !KICKOFF_KEY.test(values.key))
-    throw new UsageError(`--key must match ${KICKOFF_KEY}\n${USAGE}`);
-  if (values.prompt !== undefined && values["no-agent"])
-    throw new UsageError(`--prompt needs an agent; drop --no-agent\n${USAGE}`);
+  if (values.prompt !== undefined)
+    assertKickoffArgs(values.prompt, values.key, values["no-agent"]);
   const repo = expandHome(values.repo);
   const spawned = spawnWorkspace(ctx, {
     repo,
     branch: values.branch,
-    base: values.base ?? defaultBase(ctx, repo),
+    ...(values.base === undefined ? {} : { base: values.base }),
     ...(values.label === undefined ? {} : { label: values.label }),
     kind: values.agent ?? "claude",
     noAgent: values["no-agent"] ?? false,
@@ -187,27 +190,27 @@ function created(ctx: Context, args: string[]): number {
   return 0;
 }
 
+/** Run the command on the host named first, the whole session bounded. */
+async function onHost([host, ...args]: string[]): Promise<number> {
+  if (host === undefined)
+    throw new UsageError(`--host needs a value\n${USAGE}`);
+  const remote = await runToolOnHost(
+    host,
+    args,
+    AbortSignal.timeout(REMOTE_TIMEOUT_MS),
+    (chunk) => process.stderr.write(chunk),
+  );
+  process.stdout.write(remote.stdout);
+  return remote.status;
+}
+
 export async function main(
   argv: string[],
   ctx = localContext(),
 ): Promise<number> {
-  let args = argv;
-  if (args[0] === "--host") {
-    const host = args[1];
-    if (host === undefined)
-      throw new UsageError(`--host needs a value\n${USAGE}`);
-    const remote = await runToolOnHost(
-      host,
-      args.slice(2),
-      undefined,
-      (chunk) => process.stderr.write(chunk),
-    );
-    process.stdout.write(remote.stdout);
-    return remote.status;
-  }
-  const [command, ...rest] = args;
-  args = rest;
+  const [command, ...args] = argv;
   try {
+    if (command === "--host") return await onHost(args);
     if (command === "open") return await open(ctx, args);
     if (command === "remove") return await remove(ctx, args);
     if (command === "created") return created(ctx, args);
