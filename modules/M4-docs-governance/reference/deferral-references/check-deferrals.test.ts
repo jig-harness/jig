@@ -446,6 +446,31 @@ describe("--staged", () => {
     expect(result.stdout).toContain("a.md:3:");
   });
 
+  test("relative repository, work-tree and index paths are the caller's directory's", () => {
+    const r = repo({ "a.md": "Clean.\n", "docs/b.md": "Clean.\n" });
+    copyFileSync(join(r.dir, ".git", "index"), join(r.dir, "other-index"));
+    r.write("a.md", "Clean.\n\nTracked to closure.\n");
+    const add = Bun.spawnSync(["git", "add", "a.md"], {
+      cwd: r.dir,
+      env: { ...env, GIT_INDEX_FILE: "other-index" },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(add, 0, "git add into the other index");
+    const docs = join(r.dir, "docs");
+    // Git reads a relative index path from the work tree's root, the others
+    // from the directory it runs in: the gate's git calls read them as git does.
+    const relative = {
+      GIT_DIR: "../.git",
+      GIT_WORK_TREE: "..",
+      GIT_INDEX_FILE: "other-index",
+    };
+    const result = r.run(["--staged"], relative, docs);
+    expectSpawnExit(result, 1);
+    expect(result.stdout).toContain("a.md:3:");
+    expectSpawnExit(r.run(["--all"], relative, docs), 1);
+  });
+
   test("an edit inside an old deferral block brings that block under the gate", () => {
     const r = repo({ "a.md": "Tracked to closure under ENG-1\nand more.\n" });
     r.write("a.md", "Tracked to closure\nand more words.\n");
@@ -778,6 +803,16 @@ describe("the entry point", () => {
     const unusable = r.spawn(["--all", "--staged"]);
     expectSpawnExit(unusable, 2);
     expect(unusable.stderr).toContain("ERROR:");
+  });
+
+  test("from a nested directory, judges the whole repository whatever diff.relative says", () => {
+    const r = repo({ "a.md": "Clean.\n", "docs/b.md": "Clean.\n" });
+    r.git("config", "diff.relative", "true");
+    r.write("a.md", "Clean.\n\nTracked to closure.\n");
+    r.git("commit", "-qam", "defer");
+    const result = r.run(["--range=HEAD~1"], {}, join(r.dir, "docs"));
+    expectSpawnExit(result, 1);
+    expect(result.stdout).toContain("a.md:3:");
   });
 
   test("DIFF_RANGE in the environment names the diff", () => {

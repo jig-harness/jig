@@ -342,18 +342,21 @@ export function liveFindings(
 type Env = Record<string, string | undefined>;
 
 /**
- * The repository a run judges, and the environment every git call in it runs
- * with: the caller's, so the repository and index git reads (`GIT_DIR`,
- * `GIT_INDEX_FILE`, ...) are the ones the caller named.
+ * The repository a run judges, and where and how every git call in it runs:
+ * in the caller's directory with the caller's environment, so the repository
+ * and index git reads (`GIT_DIR`, `GIT_INDEX_FILE`, ...) are the ones the
+ * caller named, a relative value included. Paths git prints or is given are
+ * the repository root's: `--full-name`, `--no-relative`, `:(top)` pathspecs.
  */
 interface Repo {
   root: string;
+  cwd: string;
   env: Env;
 }
 
 function gitRaw(repo: Repo, args: string[], stdin?: Buffer): Buffer {
   const result = Bun.spawnSync(["git", ...args], {
-    cwd: repo.root,
+    cwd: repo.cwd,
     env: repo.env,
     ...(stdin === undefined ? {} : { stdin }),
     stdout: "pipe",
@@ -428,7 +431,13 @@ export type Mode = "all" | "staged" | { range: string };
 /** Every tracked document in scope, whole, from the working tree. */
 function trackedSources(repo: Repo, config: Config): Source[] {
   const out: Source[] = [];
-  for (const path of git(repo, ["ls-files", "-z"]).split("\0")) {
+  for (const path of git(repo, [
+    "ls-files",
+    "-z",
+    "--full-name",
+    "--",
+    ":/",
+  ]).split("\0")) {
     const full = join(repo.root, path);
     if (!path || !inScope(config, path) || !existsSync(full)) continue;
     if (!lstatSync(full).isFile()) continue;
@@ -440,7 +449,14 @@ function trackedSources(repo: Repo, config: Config): Source[] {
 /** Every document in scope as the index holds it, for a staged change. */
 function indexedSources(repo: Repo, config: Config): Source[] {
   const blobs: Array<{ path: string; sha: string }> = [];
-  for (const entry of git(repo, ["ls-files", "-s", "-z"]).split("\0")) {
+  for (const entry of git(repo, [
+    "ls-files",
+    "-s",
+    "-z",
+    "--full-name",
+    "--",
+    ":/",
+  ]).split("\0")) {
     const match = /^(\d+) ([0-9a-f]+) \d+\t(.*)$/s.exec(entry);
     // Regular files only (100644, 100755): not links, not submodules.
     if (match === null || !match[1]?.startsWith("100")) continue;
@@ -485,7 +501,14 @@ function changedSources(
   const staged = mode === "staged";
   const base = staged ? ["--cached"] : [oldSide(repo, mode.range)];
   const names = (...filter: string[]) =>
-    git(repo, ["diff", "-z", "--name-only", ...filter, ...base]).split("\0");
+    git(repo, [
+      "diff",
+      "-z",
+      "--name-only",
+      "--no-relative",
+      ...filter,
+      ...base,
+    ]).split("\0");
   // A new `items` pattern or marker changes what every document must satisfy,
   // so any change to the configuration (a removal or a change of type
   // included) judges them all.
@@ -507,9 +530,10 @@ function changedSources(
       "--text",
       "--no-textconv",
       "--no-ext-diff",
+      "--no-relative",
       ...base,
       "--",
-      `:(literal)${path}`,
+      `:(top,literal)${path}`,
     ]);
     const content = staged
       ? git(repo, ["show", `:${path}`])
@@ -527,7 +551,7 @@ function indexedConfig(
 ): string | undefined {
   const path = relativePath(repo.root, configPath);
   return mode === "staged" &&
-    git(repo, ["ls-files", "-z", "--", `:(literal)${path}`]) !== ""
+    git(repo, ["ls-files", "-z", "--", `:(top,literal)${path}`]) !== ""
     ? path
     : undefined;
 }
@@ -653,8 +677,8 @@ function plan(argv: string[], env: Env, cwd: string): Plan {
   refuseContradiction(flags);
   let repo: Repo;
   try {
-    const top = git({ root: cwd, env }, ["rev-parse", "--show-toplevel"]);
-    repo = { root: top.trim(), env };
+    const top = git({ root: cwd, cwd, env }, ["rev-parse", "--show-toplevel"]);
+    repo = { root: top.trim(), cwd, env };
   } catch {
     throw new DeferralsError("not inside a git repository");
   }
@@ -741,7 +765,13 @@ function refuseAlias(
   const path = relativePath(repo.root, configPath);
   const real = relativePath(realpathSync(repo.root), realpathSync(configPath));
   if (path === real) return;
-  const entry = git(repo, ["ls-files", "-s", "-z", "--", `:(literal)${path}`]);
+  const entry = git(repo, [
+    "ls-files",
+    "-s",
+    "-z",
+    "--",
+    `:(top,literal)${path}`,
+  ]);
   if (mode === "staged" && entry.startsWith("100")) return;
   throw new DeferralsError(
     `configuration ${named} is reached through a link; name it by the path the repository tracks it at (${real})`,
