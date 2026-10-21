@@ -15,13 +15,15 @@ import { swallow } from "../../../plugin/shared/errors.ts";
 import {
   awaitCreateHook,
   createdWorktreePath,
+  createState,
   HOOKS_DIR,
   hookPath,
   runCreateHook,
   runHook,
   SUPERVISOR,
+  takeOverFrom,
 } from "../lifecycle.ts";
-import { processStart } from "../owner.ts";
+import { ownerLine, processStart } from "../owner.ts";
 import { type Context, localContext, withLimit } from "../runner.ts";
 
 const TOOL = join(import.meta.dir, "..", "workspace.ts");
@@ -180,6 +182,47 @@ describe("the create hook", () => {
       writeFileSync(join(claim, "hook"), `group ${other.pid} not-its-start\n`);
       awaitCreateHook(quiet(), worktree, 0);
       expect(readFileSync(join(worktree, ".hook-runs"), "utf8")).toBe("ran\n");
+    } finally {
+      other.kill("SIGKILL");
+    }
+  });
+
+  test("a takeover of an ended owner does not take the claim that replaced it", () => {
+    // A waiter found owner O ended; before it took over, O's claim was
+    // given back and taken anew by a launch that runs on.
+    const { worktree } = fixture({});
+    const ctx = quiet();
+    const state = createState(ctx, worktree);
+    mkdirSync(state.claim);
+    const fresh = ownerLine(ctx);
+    writeFileSync(join(state.claim, "owner"), fresh);
+    const ended = `${hostname()} 99999999 not-its-start\n`;
+    expect(takeOverFrom(ctx, state, ended)).toBe(false);
+    expect(readFileSync(join(state.claim, "owner"), "utf8")).toBe(fresh);
+  });
+
+  test("a failed run does not kill a group its record's id now names", async () => {
+    // The hook's group has ended and its id leads another group.
+    const { root, worktree } = fixture({});
+    const other = Bun.spawn(["sleep", "30"], { detached: true });
+    try {
+      const record = join(root, "record");
+      const hook = join(worktree, "failing-hook");
+      writeFileSync(
+        hook,
+        `#!/bin/sh\necho "group ${other.pid} not-its-start" >> "${record}"\nexit 5\n`,
+        { mode: 0o755 },
+      );
+      expect(() => runHook(quiet(), worktree, hook, record)).toThrow(
+        "failed (exit 5)",
+      );
+      // A killed process is a zombie until it is reaped, and still answers
+      // a signal 0, so its exit is waited for, to a bound.
+      const outcome = await Promise.race([
+        other.exited.then(() => "ended"),
+        Bun.sleep(1_000).then(() => "running"),
+      ]);
+      expect(outcome).toBe("running");
     } finally {
       other.kill("SIGKILL");
     }

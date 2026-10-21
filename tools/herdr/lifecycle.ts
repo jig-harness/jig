@@ -197,7 +197,7 @@ export function runHook(
     for (const line of (stream ?? "").split("\n"))
       if (line !== "") ctx.log(line);
   if (result.status !== 0 || result.error !== undefined) {
-    if (groupFile !== undefined) endGroup(groupFile);
+    if (groupFile !== undefined) endGroup(ctx, groupFile);
     throw new HerdrError(
       result.error === undefined
         ? `${path} failed (exit ${result.status ?? "none: killed"})`
@@ -241,13 +241,15 @@ function recordedRun(groupFile: string): {
 }
 
 /**
- * Kill what is left of a failed run's process group. A group that is gone
+ * Kill what is left of a failed run's process group, only while the id still
+ * names that group (`groupAlive`): once it names another, the hook's group
+ * has ended and the other is not this run's to kill. A group that is gone
  * answers ESRCH; on macOS one whose processes have all exited but are not yet
  * reaped answers EPERM, and has nothing left to kill either.
  */
-function endGroup(groupFile: string): void {
+function endGroup(ctx: Context, groupFile: string): void {
   const { group } = recordedRun(groupFile);
-  if (group === undefined) return;
+  if (group === undefined || !groupAlive(ctx, group)) return;
   try {
     process.kill(-group.pid, "SIGKILL");
   } catch (error) {
@@ -272,12 +274,12 @@ function gitDir(ctx: Context, worktree: string): string {
   return result.stdout.trim();
 }
 
-interface CreateState {
+export interface CreateState {
   claim: string;
   result: string;
 }
 
-function createState(ctx: Context, worktree: string): CreateState {
+export function createState(ctx: Context, worktree: string): CreateState {
   const dir = join(gitDir(ctx, worktree), "jig");
   mkdirSync(dir, { recursive: true });
   return {
@@ -357,10 +359,8 @@ function groupAlive(ctx: Context, group: Recorded): boolean {
 }
 
 /**
- * Take over a claim whose owner, on this host, is no longer running. Exactly
- * one waiter wins: the takeover is a directory named after the dead owner,
- * which `mkdir` creates once. A claim with no readable owner, or one owned on
- * another host, is never taken over.
+ * Take over a claim whose owner, on this host, is no longer running. A claim
+ * with no readable owner, or one owned on another host, is never taken over.
  */
 function takeOverAbandoned(ctx: Context, state: CreateState): boolean {
   let owner: string;
@@ -373,6 +373,30 @@ function takeOverAbandoned(ctx: Context, state: CreateState): boolean {
   }
   const holder = localOwner(owner);
   if (holder === null || runAlive(ctx, state, holder)) return false;
+  if (!takeOverFrom(ctx, state, owner)) return false;
+  ctx.log(
+    `⚠ the create hook's earlier run (process ${holder.pid}) ended without a result; running it again`,
+  );
+  return true;
+}
+
+/**
+ * Take the claim over from `seen`, the owner line a waiter found ended.
+ * Exactly one waiter wins: the takeover is a directory named after that
+ * owner, which `mkdir` creates once. The claim may have been given back and
+ * taken anew since `seen` was read, and the marker then lands in the new
+ * claim, so the takeover holds only while the claim's owner is still `seen`:
+ * an owner line names one process, which never owns a claim again once it
+ * has ended, so any other line is a newer claim, not this one's to take. The
+ * marker left there names an ended owner and stops nothing.
+ */
+export function takeOverFrom(
+  ctx: Context,
+  state: CreateState,
+  seen: string,
+): boolean {
+  const holder = localOwner(seen);
+  if (holder === null) return false;
   try {
     mkdirSync(join(state.claim, `taken-over-${holder.pid}-${holder.start}`));
   } catch (error) {
@@ -380,10 +404,15 @@ function takeOverAbandoned(ctx: Context, state: CreateState): boolean {
       return false;
     throw error;
   }
+  let owner: string;
+  try {
+    owner = readFileSync(ownerPath(state), "utf8").trim();
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return false;
+    throw error;
+  }
+  if (owner !== seen.trim()) return false;
   recordOwner(ctx, state);
-  ctx.log(
-    `⚠ the create hook's earlier run (process ${holder.pid}) ended without a result; running it again`,
-  );
   return true;
 }
 
