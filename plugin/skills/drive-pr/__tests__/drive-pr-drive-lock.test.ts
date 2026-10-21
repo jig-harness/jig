@@ -1520,12 +1520,15 @@ describe("drive.ts loop control", () => {
       // SYNCHRONOUSLY before the caller ever re-gates and dispatches a second
       // pass, so the second pass's own marker appearing is proof the refresh
       // already landed — no polling race against process teardown required.
-      const { dir, stateDir } = writeFixture({
-        threads: [],
-        head: scratchClean.head,
-        reviewedSha: scratchClean.head,
-        checkRuns: [REVIEWER_RUN, DORMANT_ARM, FAILING_RUN],
-      });
+      const { dir, stateDir } = writeFixture(
+        {
+          threads: [],
+          head: scratchClean.head,
+          reviewedSha: scratchClean.head,
+          checkRuns: [REVIEWER_RUN, DORMANT_ARM, FAILING_RUN],
+        },
+        scratchClean.dir,
+      );
       // NOT `lockDirs(dir, stateDir).worktree`: the driver below runs with
       // `cwd: scratchClean.dir`, so its own worktree-lock name is keyed off
       // THAT tree, not the suite's own cwd `WORKTREE_LOCK` was memoised

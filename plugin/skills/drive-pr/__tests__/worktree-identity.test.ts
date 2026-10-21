@@ -70,12 +70,16 @@ test("runtime directory identities survive transport and distinguish replacement
   mkdirSync(directory);
   const before = statSync(directory, { bigint: true });
   expect(before.ino).not.toBe(0n);
-  expect(stateDirIdentityToken(directory)).toBe(`${before.dev}:${before.ino}`);
+  expect(stateDirIdentityToken(directory)).toStartWith(
+    `${before.dev}:${before.ino}:`,
+  );
   renameSync(directory, `${directory}-old`);
   mkdirSync(directory);
   const after = statSync(directory, { bigint: true });
   expect(`${after.dev}:${after.ino}`).not.toBe(`${before.dev}:${before.ino}`);
-  expect(stateDirIdentityToken(directory)).toBe(`${after.dev}:${after.ino}`);
+  expect(stateDirIdentityToken(directory)).toStartWith(
+    `${after.dev}:${after.ino}:`,
+  );
 });
 
 test("zero inode tokens cannot certify a directory identity", () => {
