@@ -584,3 +584,17 @@ preloads); they never run from the plugin cache.
 The `__tests__/terminal-states*.test.ts` suites check that every terminal
 state's exit code agrees across `scripts/`, `SKILL.md`, this page and
 `references/terminal-states.md`.
+
+The cross-PR scoreboard (`scripts/fractal-metrics.ts`) also measures the share
+of merged pull requests that met a conflict. It combines the sibling
+`resolve-conflicts` history report with this clone’s live events and prints
+conflicted, observed-clean and unknown counts over the forge’s merged PR
+cohort. A clean observation requires replayed PR ancestry and no forge-recorded
+force-push. The replay covers merges committed since the cohort's earliest
+sampled commit, pull-request opening or merge; a pull request whose ancestry
+holds an older merge stays unknown. A partial clone with git
+before 2.45 leaves ancestry unknown rather than risk a fetch. The fleet-health file’s `merge_conflicts.coverage_floor` (default
+`0.9`) and `baselines.merge_conflict_share.value` govern its verdict; the
+whole-cohort bounds must agree too. Missing heads, rewritten branches and
+resolutions in other clones limit coverage. A capped forge cohort has no
+verdict. The report includes coverage and bounds in JSON and terminal output.
