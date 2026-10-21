@@ -132,7 +132,7 @@ criteria:
   - id: lifecycle-map-published
     level: lite
     requires: convention
-    since: next
+    since: 0.73.0
     statement: >-
       The delivery loop is published as one stage map, linked from the
       instruction file every session loads; each stage is named, not numbered,
@@ -144,7 +144,7 @@ criteria:
   - id: lifecycle-owners-resolve-gated
     level: standard
     requires: mechanical
-    since: next
+    since: 0.73.0
     statement: >-
       A check fails when the lifecycle map names a skill, command, script or
       document that does not resolve, and it runs in CI with its self-test.
@@ -156,7 +156,7 @@ criteria:
   - id: lifecycle-skills-on-the-map
     level: strict
     requires: mechanical
-    since: next
+    since: 0.73.0
     statement: >-
       Every skill the repository ships appears on the lifecycle map, as a
       stage's owner or in its table of skills outside the loop, and the check
