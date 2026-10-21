@@ -1,3 +1,4 @@
+import { definedFields } from "../../../../shared/defined-fields.ts";
 /**
  * Explicit cross-references inside decision-source text.
  *
@@ -47,10 +48,11 @@ export function splitRefs(text: string): RefPart[] {
   for (const m of text.matchAll(wellFormed())) {
     if (m.index > last)
       parts.push({ kind: "text", text: text.slice(last, m.index) });
+    const call = m[1];
+    const opt = m[2] ?? m[3];
     parts.push({
       kind: "ref",
-      call: m[1],
-      opt: m[2] ?? m[3],
+      ...definedFields({ call, opt }),
     });
     last = m.index + m[0].length;
   }
