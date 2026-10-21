@@ -1,7 +1,13 @@
 // The units, the configuration and the live decision are tested directly; the
 // diff modes and exit codes run the gate in throwaway git repositories.
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -661,6 +667,25 @@ describe("--staged", () => {
     expectSpawnExit(r.run(["--staged"]), 1);
   });
 
+  test("a working-tree link in place of a staged --config does not change which configuration is read", () => {
+    const r = repo({ "a.md": "Fine.\n" }, "items: ['\\bENG-\\d+\\b']\n");
+    r.write("alternate.yaml", "items: ['\\bTASK-\\d+\\b']\n");
+    r.git("add", ".");
+    r.git("commit", "-qm", "alternate");
+    r.write("a.md", "Tracked to closure under TASK-1.\n");
+    r.git("add", ".");
+    const config = join(r.dir, ".config/deferral-references.yaml");
+    rmSync(config);
+    symlinkSync(join(r.dir, "alternate.yaml"), config);
+    const result = r.run([
+      "--staged",
+      "--config",
+      ".config/deferral-references.yaml",
+    ]);
+    expectSpawnExit(result, 1);
+    expect(result.stdout).toContain("a.md:1:");
+  });
+
   test("is the default with no mode given", () => {
     const r = repo({ "a.md": "Fine.\n" });
     r.write("a.md", "Tracked to closure.\n");
@@ -883,6 +908,15 @@ describe("the live half through the command", () => {
       expect(result.stderr).toContain("lies outside the repository");
     },
   );
+
+  test("a link inside the repository to a file outside it is refused, unread", () => {
+    const r = repo(docs);
+    r.write("../linked.json", "{}");
+    symlinkSync(join(r.dir, "../linked.json"), join(r.dir, "linked.json"));
+    const result = r.run(["--all", "--states", "linked.json"]);
+    expectSpawnExit(result, 2);
+    expect(result.stderr).toContain("lies outside the repository");
+  });
 
   test("--states with an unreadable file is could-not-check", () => {
     const r = repo(docs);

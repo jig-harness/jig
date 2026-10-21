@@ -955,9 +955,11 @@ function plan(
 /**
  * `path` (relative to `cwd`) resolved, refused unless it lies inside the
  * repository at `root`: a file the command line names is read from the
- * repository the check judges, never from elsewhere on the machine. Links are
- * followed first, so neither an alias of the working directory nor a link out
- * of the repository decides the answer.
+ * repository the check judges, never from elsewhere on the machine. Both the
+ * path as named and the file its links lead to must lie inside, so neither an
+ * alias of the working directory nor a link out of the repository decides the
+ * answer. The path as named is what is returned: it is the file's identity in
+ * the index, which a link in the working tree must not replace.
  */
 function inRepository(
   root: string,
@@ -965,13 +967,14 @@ function inRepository(
   path: string,
   flag: string,
 ): string {
+  const inside = realpathSync(root) + sep;
   const named = resolve(realpathSync(cwd), path);
-  const resolved = existsSync(named) ? realpathSync(named) : named;
-  if (!resolved.startsWith(realpathSync(root) + sep))
+  const linked = existsSync(named) ? realpathSync(named) : named;
+  if (!named.startsWith(inside) || !linked.startsWith(inside))
     throw new DeferralsError(
       `${flag} ${path} lies outside the repository ${root}`,
     );
-  return resolved;
+  return named;
 }
 
 interface Judged {

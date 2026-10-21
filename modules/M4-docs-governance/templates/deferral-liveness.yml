@@ -90,6 +90,10 @@ jobs:
       - name: Ask the tracker for their states
         # The only step with the credential. The provider reads the keys on
         # standard input and prints {"<key>": "open" | "closed" | "not_found"}.
+        # The states go into the checkout, not the runner's temporary
+        # directory: the verdict step reads --states only from inside the
+        # repository it judges. The file is untracked, so no document scan
+        # reads it.
         # Replace the command with the provider for your tracker (mappings);
         # Jig's own, for Linear, is the line below, and reads issue_tracker in
         # .config/jig.yaml.
@@ -102,7 +106,7 @@ jobs:
             exit 1
           fi
           bun jig/plugin/skills/do-item/scripts/tracker.ts issue-states \
-            < "$RUNNER_TEMP/keys.txt" > "$RUNNER_TEMP/states.json"
+            < "$RUNNER_TEMP/keys.txt" > deferral-states.json
       - name: Fail a deferral with no open item left
         # No credential, no network. Exit 0 clean, 1 findings, 2 nothing
         # verified; the workflow fails on every nonzero code, and a signal
@@ -113,7 +117,7 @@ jobs:
           set -u
           code=0
           bun jig/modules/M4-docs-governance/reference/deferral-references/check-deferrals.ts \
-            --all --states "$RUNNER_TEMP/states.json" > "$RUNNER_TEMP/verdict.txt" 2>&1 || code=$?
+            --all --states deferral-states.json > "$RUNNER_TEMP/verdict.txt" 2>&1 || code=$?
           cat "$RUNNER_TEMP/verdict.txt"
           { echo '```'; cat "$RUNNER_TEMP/verdict.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           exit "$code"
