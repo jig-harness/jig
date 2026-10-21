@@ -505,6 +505,12 @@ make, use the entry's term instead.
   failure signature. It excludes changing details such as run IDs and times,
   so repeated failures find one issue. See
   [M11](modules/M11-process-observability/README.md#scheduled-failures-one-issue-per-cause).
+- **Fencing** — protection against a worker that still believes it holds an
+  expired lock. Each lock acquisition gets a number larger than every earlier
+  one, and every write carries it; the store refuses a write whose number is
+  older than the newest it has seen, so the replaced worker cannot overwrite
+  its successor's work. See the
+  [scheduled-failure reconciliation design](design/scheduled-failure-reconciliation.md#tracker-interface-and-retry-safety).
 - **Flood breaker** — a per-cause limit on repeated failure notifications.
   After a declared number of consecutive failures it announces suppression,
   keeps the cause open and continues collecting evidence. Confirmed recovery
