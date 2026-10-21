@@ -24,6 +24,7 @@ modules/M1-gates-enforcement-ladder/templates/lefthook.yml
 modules/M1-gates-enforcement-ladder/templates/secret-scan.yml
 modules/M1-gates-enforcement-ladder/templates/supply-chain-policy.yaml
 modules/M1-gates-enforcement-ladder/templates/suppression-registry.md
+modules/M10-environments-deploy/templates/external-preconditions.yaml
 modules/M10-environments-deploy/templates/CI-ARCHITECTURE.md
 modules/M10-environments-deploy/templates/pipeline.example.yaml
 modules/M11-process-observability/templates/TELEMETRY.md

@@ -1,0 +1,14 @@
+{
+  "verified-branch": {
+    "classic": null,
+    "rules": [
+      {"ruleset_id": 1, "type": "pull_request", "parameters": {"required_approving_review_count": 0}},
+      {"ruleset_id": 2, "type": "non_fast_forward"},
+      {"ruleset_id": 2, "type": "deletion"}
+    ],
+    "rulesets": [
+      {"id": 1, "enforcement": "active", "bypass_actors": [{"actor_type": "Integration", "actor_id": 42, "bypass_mode": "always"}]},
+      {"id": 2, "enforcement": "active", "bypass_actors": []}
+    ]
+  }
+}
