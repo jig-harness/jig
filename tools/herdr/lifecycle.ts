@@ -125,7 +125,7 @@ const startOf = (pid) => {
       const boot = fs.readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
       return /^[0-9]+$/.test(ticks ?? "") ? boot + ":" + ticks : "";
     }
-    const ps = Bun.spawnSync(["ps", "-o", "lstart=", "-p", String(pid)], { env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, timeout: 10000 });
+    const ps = Bun.spawnSync(["/bin/ps", "-o", "lstart=", "-p", String(pid)], { env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, timeout: 10000 });
     const text = ps.stdout.toString().trim();
     return ps.exitCode === 0 ? text.replace(/\\s+/g, "_") : "";
   } catch {

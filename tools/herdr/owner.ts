@@ -26,7 +26,8 @@ const START_TIMEOUT_MS = 10_000;
  */
 export function processStart(ctx: Context, pid: number): string | null {
   if (process.platform === "linux") return linuxStart(pid);
-  const result = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+  // By its fixed path, not PATH: macOS and the BSDs keep ps in /bin.
+  const result = spawnSync("/bin/ps", ["-o", "lstart=", "-p", String(pid)], {
     encoding: "utf8",
     timeout: budget(ctx, START_TIMEOUT_MS),
     env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
