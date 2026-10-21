@@ -319,6 +319,25 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.72.0] - 2026-10-21
+
+`resolve-conflicts` now keeps a record of the conflicts it resolves.
+
+### Added
+
+- `events.ts` in `resolve-conflicts` appends one `merge_conflict` event for
+  each conflicted path to `$(git rev-parse --git-common-dir)/jig/conflict-events.jsonl`
+  when a merge, rebase, cherry-pick or revert concludes: the path, why it
+  conflicted, the decision and reason, how long the resolution took, and
+  whether a `drive-pr` conflict-resolve round started it. It covers the
+  rebases, cherry-picks and reverts that the merge-history report cannot
+  replay, and the file is shared by every worktree of the clone and never
+  committed. The skill's conclude step runs it, and mapping the next stop of a
+  rebase records the earlier stop first; when that record cannot be written,
+  the earlier stop's snapshot is kept and the next `events.ts` records it.
+- The `Conflicts resolved:` section of a commit message names each path's
+  cause (`[cause: append]`) after its decision.
+
 ## [0.71.0] - 2026-10-21
 
 ### Added
@@ -3284,7 +3303,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.71.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.72.0...HEAD
+[0.72.0]: https://github.com/jig-harness/jig/compare/v0.71.0...v0.72.0
 [0.71.0]: https://github.com/jig-harness/jig/compare/v0.70.2...v0.71.0
 [0.70.2]: https://github.com/jig-harness/jig/compare/v0.70.1...v0.70.2
 [0.70.1]: https://github.com/jig-harness/jig/compare/v0.70.0...v0.70.1
