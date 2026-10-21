@@ -316,6 +316,33 @@ skipped the others, each seed lens's eval fixtures have passed live, and the
 tallying script turns a fixture set of threads into one parity row per lens
 version.
 
+### 24. Resource garbage collection for a developer machine
+
+A machine that runs many worktrees fills with what their sessions leave
+behind (fixture processes, scratch directories, container volumes and images,
+merged branches, tool state), each kind cleaned by its own script on its own
+schedule or by nobody.
+[design/resource-gc.md](resource-gc.md) has how it works: one runner, one
+contract (a lifecycle predicate decides, age only guards, report first, fail
+closed, a receipt per run), kinds a repository enables with its own facts,
+and a machine layer for the schedule. What is built:
+
+- **The runner and the kinds that exist**: `jig gc` with report, collect,
+  receipts and install; the worktrees kind moved in from a working
+  repository with its scheduler installers; `drive-pr`'s state reaper and the
+  test scratch scope as kinds; the `gc` sections of both configuration
+  layers; M12's practice, scheduler rows and audit criterion.
+- **Containers, volumes and images**, keyed to the compose projects the
+  worktrees derive, and the machine-level dangling images and build cache.
+- **Branches** merged into the base and gone from the forge.
+- **Processes**: the process registry as a shared module, the test runner
+  registering its fixtures, and the kind reaping registered trees whose
+  owner is gone.
+
+Done when a working repository's weekly sweep is the installed `jig gc`
+job, its own reapers and installers are gone, and the report names each
+resource's proof before anything is collected.
+
 ## Later
 
 - **Jira store for reflections.** One issue per finding, of a custom issue

@@ -126,6 +126,16 @@ and types that admit no invalid value (M15). Each runs only when the diff
 gives it something to check, comments until measurement shows it may block,
 and can be loaded by a repository's own automated reviewer.
 
+### 24. Resource garbage collection for a developer machine
+
+One command, `jig gc`, that reports and then reclaims what parallel agent
+worktrees leave on a machine: fixture processes, scratch directories,
+container volumes and images, merged branches and tool state. Every kind
+follows one contract (something must prove the resource dead, age only
+guards, report first, fail closed, a receipt per run); a repository enables
+the kinds it mints with its own facts, a machine sets the schedule, and
+[M12](modules/M12-parallel-agent-ergonomics/README.md) gains the practice.
+
 ## Later
 
 - **Jira store for reflections.** Reflections kept as Jira issues, for a team
