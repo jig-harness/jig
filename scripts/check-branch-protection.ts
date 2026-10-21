@@ -4,13 +4,11 @@
 // needs an administrator's `gh` login, which CI's token lacks, so this runs by
 // hand rather than in the gates.
 //
-// The policy: the `gates` check is required, every review thread is resolved
-// before merging, and `main` cannot be force-pushed or deleted. Deliberately
-// not required: an approving review (a person merges, and is the reviewer who
-// approves; docs/adr/ADR-0003-a-person-merges.md), administrator enforcement,
-// and an up-to-date branch ("strict" checks), which turns every merge into a
-// pull, a push and another full CI run on each open pull request. Those
-// settings are reported, never failed, and remediation keeps them as they are.
+// Policy values come from main-protection in .config/external-preconditions.yaml.
+// This compatibility command reports the original branch controls and proposes
+// remediation. The scheduled registry check also verifies PR and writer access.
+// Approving review count, administrator enforcement and strict checks remain
+// unchanged in its remediation payload.
 //
 // The policy may live in branch protection, in repository rulesets, or in
 // both: GitHub applies them together and the most restrictive setting wins,
@@ -28,10 +26,14 @@
 //
 // Reading and combining classic protection and rulesets is the changelog
 // skill's (plugin/skills/changelog/scripts/github-rules.ts), which its
-// release-access check reads the same way; this file holds Jig's policy, its
-// report and its remediation.
+// release-access check reads the same way; this file adds its compatibility
+// report and remediation to the registry policy.
 import { readFileSync } from "node:fs";
 import { cli } from "../lib/cli.ts";
+import {
+  parseRegistry,
+  PreconditionError,
+} from "../modules/M10-environments-deploy/reference/external-preconditions/registry.ts";
 import {
   checkTypes,
   combine,
@@ -50,24 +52,40 @@ import {
 function object(value: unknown): value is Json {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
+/** Resolve from this checkout even when --input is run outside its directory. */
+const registryPolicy = parseRegistry(
+  readFileSync(
+    new URL("../.config/external-preconditions.yaml", import.meta.url),
+    "utf8",
+  ),
+).preconditions.find((entry) => entry.id === "main-protection")?.expected;
+if (
+  !registryPolicy ||
+  !Array.isArray(registryPolicy.required_checks) ||
+  !registryPolicy.required_checks.every((check) => typeof check === "string")
+)
+  throw new PreconditionError("main-protection policy needs required_checks");
+const policy: Json = registryPolicy;
+const requiredChecks = policy.required_checks as string[];
 /** The settings Jig's policy requires, each with whether it holds. */
 function controls(value: Json): [string, boolean][] {
   return [
     [
       "required CI status check(s) configured",
-      contexts(value).includes("gates"),
+      requiredChecks.every((check) => contexts(value).includes(check)),
     ],
     [
       "required conversation resolution",
-      field(value, "required_conversation_resolution.enabled") === true,
+      field(value, "required_conversation_resolution.enabled") ===
+        policy.conversation_resolution,
     ],
     [
       "force-push disallowed",
-      field(value, "allow_force_pushes.enabled") === false,
+      field(value, "allow_force_pushes.enabled") === policy.force_pushes,
     ],
     [
       "branch deletion disallowed",
-      field(value, "allow_deletions.enabled") === false,
+      field(value, "allow_deletions.enabled") === policy.deletions,
     ],
   ];
 }
@@ -180,11 +198,19 @@ export function remediation(value: Json): Json {
     required_status_checks: {
       strict: checks.strict ?? false,
       contexts: [
-        ...new Set([...((checks.contexts ?? []) as string[]), "gates"]),
+        ...new Set([
+          ...((checks.contexts ?? []) as string[]),
+          ...requiredChecks,
+        ]),
       ].sort(),
-      checks: existing.some((check) => check.context === "gates")
-        ? existing
-        : [...existing, { context: "gates", app_id: null }],
+      checks: [
+        ...existing,
+        ...requiredChecks
+          .filter(
+            (context) => !existing.some((check) => check.context === context),
+          )
+          .map((context) => ({ context, app_id: null })),
+      ],
     },
     enforce_admins: field(value, "enforce_admins.enabled") ?? false,
     // `null` keeps pull-request review protection off; an object turns it on.
@@ -205,10 +231,10 @@ export function remediation(value: Json): Json {
         ? { dismissal_restrictions: actors(reviews.dismissal_restrictions) }
         : {}),
     },
-    required_conversation_resolution: true,
+    required_conversation_resolution: policy.conversation_resolution,
     restrictions: actors(value.restrictions),
-    allow_force_pushes: false,
-    allow_deletions: false,
+    allow_force_pushes: policy.force_pushes,
+    allow_deletions: policy.deletions,
     ...Object.fromEntries(
       [
         "required_linear_history",
@@ -312,7 +338,7 @@ export function checkProtection(args: string[]): number {
   );
   if (result.status && rulesets)
     console.log(
-      "Recommended remediation — a human adds to the branch's ruleset the rules marked FAIL above: required status check `gates`, required review thread resolution (pull_request rule), block force pushes (non_fast_forward), restrict deletions (deletion).",
+      `Recommended remediation — a human adds to the branch's ruleset the rules marked FAIL above: required status checks ${requiredChecks.join(", ")}, required review thread resolution (pull_request rule), block force pushes (non_fast_forward), restrict deletions (deletion).`,
     );
   else if (result.status && !input)
     printRemediation(repo, branch, source.classic ?? {});

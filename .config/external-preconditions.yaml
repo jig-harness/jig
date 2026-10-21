@@ -1,0 +1,21 @@
+# Intended host state, re-established live by the scheduled check.
+version: 1
+preconditions:
+  - id: main-protection
+    kind: branch-protection
+    state: active
+    owner: maintainers
+    description: Main admits reviewed changes and release commits while preserving history.
+    target:
+      repository: jig-harness/jig
+      branch: main
+    expected:
+      required_checks: [gates]
+      conversation_resolution: true
+      force_pushes: false
+      deletions: false
+      pull_requests: true
+      writer:
+        app_id: 5372389
+        slug: jig-release
+    remediation: Review main's classic protection and every applicable ruleset; require gates and resolved threads, admit jig-release direct commits, and keep force pushes and deletion blocked for the App too.

@@ -280,6 +280,27 @@ describe("direct mode", () => {
     expect(report.status).toBe("fail");
   });
 
+  test("a pull_request-mode bypass of the force-push and deletion rules still binds the App", () => {
+    const source: Source = {
+      classic: null,
+      rules: [
+        rule("pull_request", 7),
+        rule("non_fast_forward", 8),
+        rule("deletion", 8),
+      ],
+      rulesets: [
+        ruleset(7, [app("always")]),
+        ruleset(8, [app("pull_request")]),
+      ],
+    };
+    const report = judge(source);
+    expect(requirement(report, "push").status).toBe("pass");
+    const force = requirement(report, "force-push-blocked");
+    expect(force.status).toBe("pass");
+    expect(force.reasons.join("\n")).toContain("does not cover a direct push");
+    expect(requirement(report, "deletion-blocked").status).toBe("pass");
+  });
+
   test("a ruleset in evaluate mode neither stops the App nor blocks force pushes", () => {
     const source = twoRulesets();
     source.rulesets = [
