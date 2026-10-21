@@ -16,7 +16,8 @@ the report (step 1 of the build order) are built: `history.ts` in the
 [`resolve-conflicts` skill](../plugin/skills/resolve-conflicts/SKILL.md#where-past-merges-conflicted-the-history-report).
 So is the live record (step 2): `events.ts` in the same skill, which keeps
 the map's decision and reason for each path instead of letting the next
-operation overwrite them. The practice and the learning loop are not.
+operation overwrite them. M11’s metric, the cross-PR scoreboard and M12’s audited practice are built
+too (step 3). Hotspots entering the learning loop remain open.
 
 ## What a replay of Jig's own history shows
 

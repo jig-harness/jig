@@ -48,6 +48,7 @@ of the machinery that already runs the process.
 | `review_completed` | the review harness ([M7](../M7-pr-lifecycle-review/)) emits outcome + cost per review; a merged-PR hook records whether any review happened (adoption) |
 | `cycle_time` | forge webhooks / a scheduled query over PR timestamps (opened, ready, merged, deployed) |
 | `deploy_result` | the deploy + promotion workflows ([M10](../M10-environments-deploy/)) emit environment + result + duration |
+| `merge_conflict` | `resolve-conflicts` appends one event per concluded conflicted path to git’s common-directory `jig/conflict-events.jsonl`; the repository’s emitter forwards it to its event pipeline |
 | `heartbeat` | a scheduled emitter proves a pipeline is still alive; its silence is itself the signal an instrument went dark. For the heartbeat watcher, the repository's adapter emits one per watcher run from the classifier's `--json` report (the counts of red and stale jobs); see [Heartbeat monitoring](#heartbeat-monitoring) |
 
 ### GitHub Actions
@@ -288,3 +289,25 @@ Grant its token Issues write only on the repository that owns the registry.
 Serialize all runs that use the same marker. A complete healthy report closes
 the issue; pending or unknown observations keep it open. Failed tracker reads
 or writes fail the observation run. Other tracker adapters are future work.
+
+## Conflict share from git and the forge
+
+The [`resolve-conflicts` history report](../../plugin/skills/resolve-conflicts/SKILL.md#where-past-merges-conflicted-the-history-report)
+produces `merge-conflicts/v1` JSON without fetching or changing repository
+objects, refs, index or working tree. It lists the replayed merges, conflicts,
+causes, hotspots and coverage limits. The local JSON Lines events add
+rebase, cherry-pick and revert resolutions that merge replay cannot see;
+forward them through the repository's own emitter when it has an event
+pipeline. The schema lint takes a flattened `key=value` export: retain a
+null live cause as `cause=unknown`, and encode whitespace in paths and
+optional prose before exporting.
+
+| Implementation | Joined evidence | Coverage |
+| --- | --- | --- |
+| Jig `drive-pr/scripts/fractal-metrics.ts` (GitHub) | Replay and clone-local events, joined to the scoreboard's merged-PR cohort; each PR counts once | The report states conflicted, observed-clean and unknown PRs; a recorded force-push prevents a clean classification |
+| Another forge or event backend | The repository's adapter joins the same records to its forge's merged-PR list | Preserve the same unknown classification, coverage floor and whole-cohort bounds; backend adapters beyond the shipped scoreboard are future work |
+
+The metric's query name in the registry is a wiring example; register it
+only after the adapter actually runs. A local file is not a cross-clone
+collection service. See the [metric definition](README.md#merge-conflicts-share-and-coverage)
+for the denominator and verdict rule.
