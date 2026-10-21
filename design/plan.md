@@ -193,7 +193,6 @@ Practices a working repository validated, for modules that exist today:
 
 - **M10 and M11**:
   - a ledger of out-of-tree work that blocks promotion;
-  - a registry of external preconditions;
   - one self-closing issue per cause of a scheduled failure.
 - **M6 and M7**:
   - an acceptance stage;

@@ -992,6 +992,12 @@ make, use the entry's term instead.
   **deferred** (with a filed follow-up), or *moot* — each leaving an audit
   trail. Scope expansion and overruling a human thread stay *HITL*.
   Jig ships it as the `resolve-review-comments` skill.
+- **Code scanning alert** — a finding a static-analysis tool (CodeQL,
+  SonarQube Cloud, Semgrep, …) reports to GitHub's code scanning, which keeps
+  it open until a later analysis no longer finds it or someone dismisses it
+  with a reason. On a pull request GitHub also opens a review thread for it, a
+  **code-scanning thread**; resolving that thread leaves the alert open, so the
+  comment-resolution loop settles both.
 - **PR drive loop** — the procedure that wraps the *comment-resolution loop*
   for unattended work on one pull request. The comment-resolution loop already
   repeats *review rounds* until the reviewers settle; the drive loop runs each
@@ -1622,3 +1628,17 @@ make, use the entry's term instead.
   skill (`code_stats.classify_command`) when globs cannot describe its
   layout: it reads the tracked paths and prints, per file, the area, kind,
   language or module that overrides the skill's own classification.
+
+## External precondition
+
+A fact outside the repository that delivery depends on, such as branch
+protection or a workflow identity's permission to read a secret. Its registry
+declares intended state; a scheduled read proves it under the consuming
+identity. See [M10](modules/M10-environments-deploy/README.md#external-preconditions).
+
+## Reconciler
+
+A process that compares intended and observed state and maintains the
+corresponding record. For external preconditions, it maintains one current
+tracker issue while anything fails and closes it after recovery. See
+[M11](modules/M11-process-observability/README.md#one-current-issue-for-external-preconditions).

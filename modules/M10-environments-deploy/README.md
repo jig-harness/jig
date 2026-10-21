@@ -35,7 +35,11 @@ preview environments and a seeded, isolated, resettable test-data factory.
 > the environment's currency first**, dropping its cell rather than reporting
 > a false red or a false green.
 
-Everything below is that one tool-independent statement made mechanical;
+> External preconditions are declared as intended state and checked read-only
+> on a schedule under their consuming identity. Unreadable, pending and expired
+> exceptions never pass; findings keep one current issue until recovery.
+
+Everything below is that tool-independent statement made mechanical;
 concrete per-provider wiring lives in [mappings.md](mappings.md).
 
 ## Core pieces
@@ -96,6 +100,43 @@ concrete per-provider wiring lives in [mappings.md](mappings.md).
    against a deliberately-behind environment confirms its
    [currency](../../GLOSSARY.md) first: see
    [Environment hygiene](#environment-hygiene).
+
+## External preconditions
+
+A green build cannot establish that a service identity can read its secrets,
+that a certificate still matches its pin, or that a bot can write a protected
+branch. Those are [external preconditions](../../GLOSSARY.md): facts the
+pipeline depends on but does not contain.
+
+Declare **what must be true**, with an owner and a recovery action, in a
+repository registry. Never record a dated inventory of what was true. Check
+it on a schedule against the live system, read-only, under the identity the
+real consumer uses. An administrator's successful read does not prove that
+a workflow's identity has access. Check an identity end to end: a user that
+exists but cannot authenticate, or a secret that exists but cannot be read,
+does not satisfy the precondition.
+
+A checker that cannot read the live state fails. Report **absent** separately
+from **denied**; where a provider hides existence from an unauthorized caller,
+report the uncertainty instead of claiming absence. A kind whose checker has
+not landed is **pending**, never green. A deliberate exception names its
+reason, approver and expiry; an expired waiver fails even if the underlying
+condition now holds, so the stale exception must leave the registry. A valid
+waiver remains visibly waived and cannot hide an unreadable or pending check.
+
+The [registry template](templates/external-preconditions.yaml) and
+[reference runner](reference/external-preconditions/) provide this contract.
+The first kind checks branch protection, including classic rules and
+rulesets together. Expected protection for a bot-written branch must permit
+the named bot to bypass a pull-request requirement; every applicable live
+rule must admit its write. A bypass in one ruleset cannot cancel a blocker
+in another. A bypass that also lets the bot force-push or delete a branch
+fails when the expected state forbids those operations for it.
+
+The report maintains one current tracker issue for the registry through
+[M11's reconciliation rule](../M11-process-observability/README.md#one-current-issue-for-external-preconditions).
+Live checks never repair host settings. A person reviews and applies the
+recovery action; the next observation proves whether it worked.
 
 ## The watchdog decides by cause
 
@@ -395,7 +436,8 @@ the currency step's matrix.
   resource the pipeline creates has a scheduled, owner-keyed reaper that
   reports by default; the promotion gap is computed from ancestry on a
   schedule; and a page that lists the pipelines, where one is kept, is
-  generated or checked, never hand-kept.
+  generated or checked, never hand-kept; external preconditions are declared
+  and checked live under their consuming identities, with expiring waivers.
 - **Strict** — the verified-pointer watchdog and the promote-safety lint
   both run in [CI](../../GLOSSARY.md) with their self-tests; the watchdog
   decides by cause, heals only a dropped trigger and within a budget of

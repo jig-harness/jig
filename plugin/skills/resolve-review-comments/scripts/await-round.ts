@@ -815,7 +815,7 @@ async function main(): Promise<number> {
   };
 
   const unresolvedCount = async (): Promise<number> => {
-    const args = botsOnly ? [pr, "--bots-only"] : [pr];
+    const args = [pr, "--no-alerts", ...(botsOnly ? ["--bots-only"] : [])];
     const r = await run(tsArgv(listUnresolved, args), { stderr: "inherit" });
     // A failed enumeration aborts the script rather than reading as a zero
     // count — a zero it did not measure must never converge the loop.

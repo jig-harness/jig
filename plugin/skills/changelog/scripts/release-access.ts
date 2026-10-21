@@ -18,9 +18,11 @@
 // - both: force pushes and deletion of the integration branch stay blocked
 //   for the App: by classic protection, or by a `non_fast_forward` or
 //   `deletion` rule in an active ruleset that does not list the App as a
-//   bypass actor. Only an `Integration` entry with the App's id names the App:
-//   repository roles, teams, organization administrators and deploy keys name
-//   people and keys, and GitHub gives an App's token none of them.
+//   bypass actor in mode `always` or `exempt` (a `pull_request` bypass admits
+//   merges only, never a direct force push or deletion). Only an
+//   `Integration` entry with the App's id names the App: repository roles,
+//   teams, organization administrators and deploy keys name people and keys,
+//   and GitHub gives an App's token none of them.
 //
 // The rules that do not stop the release's push to the integration branch,
 // one fast-forward commit onto a branch that exists: `non_fast_forward`,
@@ -169,6 +171,21 @@ const label = (r: RulesetView): string =>
 const appName = (app: Identity): string =>
   `app ${app.id}${app.slug ? ` (${app.slug})` : ""}`;
 
+/**
+ * Whether a bypass list lets the App push directly, and otherwise the entries
+ * that name it only in a mode that needs a pull request ("" when none do).
+ */
+function appBypass(
+  bypass: BypassActor[],
+  app: Identity,
+): { direct: boolean; only: string } {
+  const entries = bypass.filter((a) => namesApp(a, app));
+  return {
+    direct: entries.some((a) => PUSH_MODES.has(a.bypass_mode ?? "")),
+    only: entries.map(describeActor).join(", "),
+  };
+}
+
 /** Whether the App passes `ruleset`'s rules `blocking` with a push, and why. */
 function passes(
   ruleset: RulesetView,
@@ -185,13 +202,12 @@ function passes(
       "unknown",
       `${what}, and GitHub withheld its bypass list from this reader (it shows it to those who may edit the ruleset)`,
     ];
-  const entries = ruleset.bypass.filter((a) => namesApp(a, app));
-  if (entries.some((a) => PUSH_MODES.has(a.bypass_mode ?? "")))
-    return ["pass", `${what}; ${appName(app)} bypasses it always`];
-  if (entries.length)
+  const { direct, only } = appBypass(ruleset.bypass, app);
+  if (direct) return ["pass", `${what}; ${appName(app)} bypasses it always`];
+  if (only)
     return [
       "fail",
-      `${what}; ${appName(app)} bypasses it only as ${entries.map(describeActor).join(", ")}, which needs a pull request: set its bypass mode to always${owner}`,
+      `${what}; ${appName(app)} bypasses it only as ${only}, which needs a pull request: set its bypass mode to always${owner}`,
     ];
   return [
     "fail",
@@ -357,10 +373,18 @@ function rulesetReason(
       "maybe",
       `${label(ruleset)} has ${rule}, but GitHub withheld its bypass list, so whether it lists the App is unknown`,
     ];
-  if (ruleset.bypass.some((a) => namesApp(a, app)))
+  const { direct, only } = appBypass(ruleset.bypass, app);
+  if (direct)
     return [
       "passedBy",
       `${label(ruleset)} has ${rule}, but lists ${appName(app)} as a bypass actor, so it does not bind the App`,
+    ];
+  // A pull_request-mode bypass admits only pull request merges, never a
+  // direct force push or deletion.
+  if (only)
+    return [
+      "blocks",
+      `${label(ruleset)} has ${rule}; ${appName(app)} bypasses it only as ${only}, which does not cover a direct push`,
     ];
   return ["blocks", `${label(ruleset)} has ${rule} and does not list the App`];
 }
