@@ -299,9 +299,9 @@ A step that needs a person's answer asks in the first way that applies:
 2. **Claude Code, in an interactive session that may use it**, uses its
    built-in `AskUserQuestion`; where the session cannot use it, the next
    branch that applies.
-3. **Another interactive runtime** uses its own question tool where it has
-   one and its permissions allow it; otherwise it asks a plain-text numbered
-   question and ends its turn.
+3. **Any remaining interactive session** uses its own question tool where it
+   has one and its permissions allow it; otherwise it asks a plain-text
+   numbered question and ends its turn.
 4. **A run with nobody to answer and no control plane** stops and states the
    question, rather than picking for the user.
 
