@@ -43,7 +43,9 @@ function probe(cwd: string, code: string, extra: Record<string, string> = {}) {
     [
       process.execPath,
       "-e",
-      `const {openStore, resolveStateDir, worktreeLockName} = await import(${JSON.stringify(store)}); const {runMain} = await import(${JSON.stringify(join(import.meta.dir, "../scripts/lib/cli.ts"))}); await runMain("probe", async () => { ${code}; return 0; });`,
+      `const {openStore, resolveStateDir, worktreeLockName} = await import(process.argv[1]); const {runMain} = await import(process.argv[2]); await runMain("probe", async () => { ${code}; return 0; });`,
+      store,
+      join(import.meta.dir, "../scripts/lib/cli.ts"),
     ],
     { cwd, env: { ...env, ...extra }, stdout: "pipe", stderr: "pipe" },
   );
@@ -142,21 +144,20 @@ test("the inherited mutation fence accepts proven device drift and refuses repla
   const extra = {
     DRIVE_PR_STATE_DIR: dir,
     DRIVE_PR_STATE_DIR_IDENTITY: parts.join(":"),
-  };
-  const code = `const {resolveFenceContext} = await import(${JSON.stringify(join(import.meta.dir, "../scripts/lib/state/lease-context.ts"))}); await resolveFenceContext("guard-probe", async()=>${JSON.stringify(VOLUME)});`;
-  expectSpawnExit(probe(cwd, code.replace(VOLUME, OTHER_VOLUME), extra), 1);
-  expectSpawnExit(
-    probe(
-      cwd,
-      code.replace(`async()=>${JSON.stringify(VOLUME)}`, "async()=>null"),
-      extra,
+    FENCE_MODULE: join(
+      import.meta.dir,
+      "../scripts/lib/state/lease-context.ts",
     ),
-    1,
-  );
+    TEST_VOLUME: VOLUME,
+  };
+  const code =
+    'const {resolveFenceContext} = await import(process.env.FENCE_MODULE); await resolveFenceContext("guard-probe", async()=>process.env.TEST_VOLUME || null);';
+  expectSpawnExit(probe(cwd, code, { ...extra, TEST_VOLUME: OTHER_VOLUME }), 1);
+  expectSpawnExit(probe(cwd, code, { ...extra, TEST_VOLUME: "" }), 1);
   expectSpawnExit(probe(cwd, code, extra), 0);
   const racingCode = code.replace(
-    `async()=>${JSON.stringify(VOLUME)}`,
-    `async()=>{ const fs=await import("node:fs"); fs.renameSync(${JSON.stringify(dir)},${JSON.stringify(`${dir}-during-probe`)}); fs.mkdirSync(${JSON.stringify(dir)}); return ${JSON.stringify(VOLUME)}; }`,
+    "async()=>process.env.TEST_VOLUME || null",
+    'async()=>{ const fs=await import("node:fs"); const dir=process.env.DRIVE_PR_STATE_DIR; fs.renameSync(dir,dir+"-during-probe"); fs.mkdirSync(dir); return process.env.TEST_VOLUME; }',
   );
   const raced = probe(cwd, racingCode, extra);
   expectSpawnExit(raced, 1);

@@ -2623,7 +2623,11 @@ export async function park(
     ),
     {
       cwd: fixtureStateTree(stateDir),
-      env: { ...gitCleanEnv(), DRIVE_PR_STATE_DIR: stateDir },
+      env: {
+        ...gitCleanEnv(),
+        DRIVE_PR_STATE_DIR: stateDir,
+        DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
+      },
       stdout: "pipe",
       stderr: "pipe",
     },
@@ -2658,7 +2662,11 @@ export async function hold(
     ),
     {
       cwd: fixtureStateTree(stateDir),
-      env: { ...gitCleanEnv(), DRIVE_PR_STATE_DIR: stateDir },
+      env: {
+        ...gitCleanEnv(),
+        DRIVE_PR_STATE_DIR: stateDir,
+        DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
+      },
       stdin: kind === "finding" ? "pipe" : undefined,
       stdout: "pipe",
       stderr: "pipe",
