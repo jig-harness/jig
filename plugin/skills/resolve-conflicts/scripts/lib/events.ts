@@ -390,7 +390,13 @@ export function flushPending(
     try {
       const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
       const problem = snapshotProblem(parsed);
-      if (problem !== null) throw new Error(`not a snapshot: ${problem}`);
+      if (problem !== null) {
+        outcomes.push({
+          file,
+          result: { error: `not a snapshot: ${problem}` },
+        });
+        continue;
+      }
       const result = recordConcluded(root, parsed as Snapshot, env);
       rmSync(file, { force: true });
       outcomes.push({ file, result });
