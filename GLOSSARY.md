@@ -1379,8 +1379,8 @@ make, use the entry's term instead.
 - **Software bill of materials (SBOM)** — a machine-readable list of the
   components a released artifact contains, each with its name and version,
   so a vulnerability scanner can tell whether the artifact holds an
-  affected version without rebuilding it. CycloneDX and SPDX are its two
-  common formats; a tool generates it from the lockfile or the built
+  affected version without rebuilding it. CycloneDX and SPDX are common
+  formats; a tool generates it from the lockfile or the built
   artifact.
 - **Preview package** — a package built from a pull request's commit, so a
   consumer can install and try the change before it merges. It is not a

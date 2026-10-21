@@ -165,27 +165,54 @@ the tool knows them. A consumer's vulnerability scanner reads it to answer
 artifact, and some buyers and regulations ask for one: the European Union's
 Cyber Resilience Act requires it of manufacturers whose products are sold
 there from 11 December 2027. Generate it in the job that builds the release,
-from the tag's commit, never by hand; list what the artifact ships, so
-leave out development-only dependencies; and publish it beside the
-artifact. CycloneDX and SPDX are the two formats; scanners and the
-attestation below read either as JSON.
+from the tag's commit and with the build's own settings, never by hand; list
+what the artifact ships, so leave out development-only dependencies; and
+publish it beside the artifact. CycloneDX and SPDX are the common formats;
+scanners and the attestation below read either as JSON.
+
+A generator reads a dependency manifest, which is not always the artifact.
+Where a build step bundles dependencies into the artifact (a JavaScript
+bundler such as esbuild, for one), the bundle contains what its imports
+reached, whatever the manifest calls them: a development dependency that is
+imported ships inside it, and a production dependency nothing imports does
+not. List such an artifact from what the bundler embedded, for example from
+its metafile, or run a scanner over the built artifact, rather than from the
+dependency tree alone.
 
 | Ecosystem | Generator | What it reads |
 |-----------|-----------|---------------|
-| npm | [`npm sbom --sbom-format cyclonedx --omit dev`](https://docs.npmjs.com/cli/v11/commands/npm-sbom) (or `spdx`) | the installed dependency tree; `--package-lock-only` reads the lockfile alone, which leaves out details only the installed packages hold |
+| npm | [`npm sbom --sbom-format cyclonedx --omit dev`](https://docs.npmjs.com/cli/v11/commands/npm-sbom) (or `spdx`) | the installed dependency tree, classified by `package.json`; `--package-lock-only` reads the lockfile alone, which leaves out details only the installed packages hold. It describes an artifact that ships that tree as installed, not a bundle |
 | Python | [`cyclonedx-py poetry --no-dev -o <file>`](https://github.com/CycloneDX/cyclonedx-python); `pipenv` and `requirements` for those files | the Poetry or Pipenv manifest and lockfile, or a requirements file; `cyclonedx-py environment` reads an installed environment instead |
-| Rust | [`cargo cyclonedx --format json`](https://github.com/CycloneDX/cyclonedx-rust-cargo) | the workspace's dependency graph; it writes one SBOM beside each `Cargo.toml` |
+| Rust | [`cargo cyclonedx --format json`](https://github.com/CycloneDX/cyclonedx-rust-cargo), with the release build's target and features (`--target`, `--features`, `--all-features`, `--no-default-features`) | the workspace's dependency graph, for the host target and default features unless told otherwise, so a cross-compiled or feature-enabled release needs the same flags as its build; it writes one SBOM beside each `Cargo.toml` |
 | Any, including a container image | [`syft <directory-or-image> -o cyclonedx-json=<file>`](https://github.com/anchore/syft) (or `spdx-json=`) | the packages it finds in a directory or an image, across ecosystems, so it also lists what an image's base layers add |
-| A GitHub repository | the dependency graph's [SBOM export](https://docs.github.com/en/rest/dependency-graph/sboms), SPDX, through the `generate-report` and `fetch-report` endpoints | the repository's dependency graph, not one built artifact; it suits a repository that releases no package |
+| A GitHub repository | the dependency graph's [SBOM export](https://docs.github.com/en/rest/dependency-graph/sboms), SPDX, through the `generate-report` and `fetch-report` endpoints | the repository's current dependency graph, not a tag's commit and not one built artifact: the endpoints take no tag or ref, so this is an inventory of the repository, not a release's SBOM. It suits a repository that releases no package |
 
 On GitHub Actions, [`actions/attest`](https://github.com/actions/attest)
-signs the SBOM as an attestation bound to the artifact's digest:
-`subject-path` names the artifact and `sbom-path` the SBOM (JSON, at most
-16 megabytes), with `permissions: id-token: write, attestations: write,
-artifact-metadata: write`. A consumer checks it with
-`gh attestation verify`. The attestation proves which workflow produced the
-SBOM for which artifact; publishing the SBOM file with the release as well
-lets a scanner without GitHub's tooling read it.
+signs the SBOM as an attestation bound to the artifact's digest, with
+`sbom-path` naming the SBOM (JSON, at most 16 megabytes) and
+`permissions: id-token: write, attestations: write,
+artifact-metadata: write`. The artifact is named by kind:
+
+- **A file** (a package archive, a binary): `subject-path` is its path.
+- **A container image**: `subject-name` is the image's name in its registry
+  and `subject-digest` its manifest digest (`sha256:…`), the one a consumer
+  pulls; `push-to-registry: true` stores the attestation in the registry
+  beside the image as well. An image saved to a tarball and given as
+  `subject-path` attests the archive's digest, which is not the digest a
+  consumer verifies.
+
+The action runs on public repositories; a private or internal repository
+needs GitHub Enterprise Cloud, and GitHub Enterprise Server does not support
+it. A repository outside those uses another attestation tool, such as
+Sigstore's `cosign attest`.
+
+A consumer checks the attestation with `gh attestation verify`, naming the
+SBOM's predicate type, since without one the command checks for build
+provenance instead: `--predicate-type https://cyclonedx.org/bom` for
+CycloneDX, `--predicate-type https://spdx.dev/Document/v2.3` for SPDX 2.3.
+The attestation proves which workflow produced the SBOM for which artifact;
+publishing the SBOM file with the release as well lets a scanner without
+GitHub's tooling read it.
 
 ## Release channels
 
