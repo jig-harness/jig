@@ -929,6 +929,8 @@ function plan(
       ? join(root, DEFAULT_CONFIG)
       : inRepository(root, cwd, flags.config, "--config");
   const mode = modeOf(flags, flags.range ?? (env.DIFF_RANGE || undefined));
+  if (mode !== undefined && mode !== "all")
+    refuseAlias(root, configPath, flags.config ?? DEFAULT_CONFIG);
   if (
     !existsSync(configPath) &&
     indexedConfig(root, configPath, mode) === undefined
@@ -975,6 +977,27 @@ function inRepository(
       `${flag} ${path} lies outside the repository ${root}`,
     );
   return named;
+}
+
+/**
+ * A diff mode knows the configuration by its path in the index: the staged
+ * mode reads its copy there, and both diff modes judge every document when
+ * that path changes. A path reaching the file through a link (the file
+ * itself, or a directory on the way) names nothing the index holds, so the
+ * run would read the working tree's copy and miss a change to the real one.
+ * Refused, unless the index tracks the path as named as a regular file: then
+ * that entry is the configuration, whatever the working tree links there.
+ */
+function refuseAlias(root: string, configPath: string, named: string): void {
+  if (!existsSync(configPath)) return;
+  const path = relativePath(root, configPath);
+  const real = relativePath(realpathSync(root), realpathSync(configPath));
+  if (path === real) return;
+  const entry = git(root, ["ls-files", "-s", "-z", "--", `:(literal)${path}`]);
+  if (entry.startsWith("100")) return;
+  throw new DeferralsError(
+    `configuration ${named} is reached through a link; name it by the path the repository tracks it at (${real})`,
+  );
 }
 
 interface Judged {

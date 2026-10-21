@@ -686,6 +686,37 @@ describe("--staged", () => {
     expect(result.stdout).toContain("a.md:1:");
   });
 
+  test.each([["--staged"], ["--range=HEAD"]])(
+    "%s with a --config reached through a directory link is refused, unread",
+    (mode) => {
+      const r = repo({ "a.md": "Fine.\n" }, "items: ['\\bENG-\\d+\\b']\n");
+      symlinkSync(join(r.dir, ".config"), join(r.dir, "settings"));
+      r.write("a.md", "Tracked to closure under TASK-1.\n");
+      r.git("add", "a.md");
+      r.write(
+        ".config/deferral-references.yaml",
+        "items: ['\\bTASK-\\d+\\b']\n",
+      );
+      const result = r.run([
+        mode,
+        "--config",
+        "settings/deferral-references.yaml",
+      ]);
+      expectSpawnExit(result, 2);
+      expect(result.stderr).toContain("reached through a link");
+      expect(result.stderr).toContain(".config/deferral-references.yaml");
+    },
+  );
+
+  test("--all reads a --config reached through a directory link", () => {
+    const r = repo({ "a.md": "Tracked to closure under ENG-1.\n" });
+    symlinkSync(join(r.dir, ".config"), join(r.dir, "settings"));
+    expectSpawnExit(
+      r.run(["--all", "--config", "settings/deferral-references.yaml"]),
+      0,
+    );
+  });
+
   test("is the default with no mode given", () => {
     const r = repo({ "a.md": "Fine.\n" });
     r.write("a.md", "Tracked to closure.\n");
