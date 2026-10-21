@@ -212,7 +212,8 @@ it. A repository outside those uses another attestation tool, such as
 Sigstore's `cosign attest`.
 
 A consumer checks the attestation with `gh attestation verify`, naming the
-SBOM's predicate type, since without one the command checks for build
+SBOM's predicate type (the address naming what an attestation asserts, here
+the SBOM's format), since without one the command checks for build
 provenance instead: `--predicate-type https://cyclonedx.org/bom` for
 CycloneDX, `--predicate-type https://spdx.dev/Document/v2.3` for SPDX 2.3.
 The attestation proves which workflow produced the SBOM for which artifact;
