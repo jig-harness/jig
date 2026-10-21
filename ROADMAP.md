@@ -107,13 +107,10 @@ GitHub.
 
 ### 22. Merge conflicts, measured
 
-A report of where a repository's merges conflict, from its git history and
-from each resolution [`resolve-conflicts`](plugin/skills/resolve-conflicts/SKILL.md)
-makes: which files, how often, why (a count, a list or a version every
-change edits in one place, or two changes to the same lines), and the change
-that removes each cause. [M12](modules/M12-parallel-agent-ergonomics/README.md)
-gains the practice of measuring and removing
-[conflict hotspots](GLOSSARY.md), and the audit scores it.
+Measured [conflict hotspots](GLOSSARY.md) become findings in the
+[reflection store](plugin/skills/reflect/README.md), grouped by their cause,
+so the existing review and escalation loop turns recurring conflicts into
+changes to the repository.
 
 ### 23. Seed review lenses
 

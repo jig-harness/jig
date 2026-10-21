@@ -63,6 +63,17 @@ export type Verdict =
 export const METRICS: readonly MetricSpec[] = [
   // ── PR side — measured over merged PRs in the window ────────────────────
   {
+    id: "merge_conflict_share",
+    label: "Merged PRs that met a merge conflict",
+    side: "pr",
+    unit: "share",
+    direction: "lower",
+    toleranceKind: "absolute",
+    tolerance: 0.03,
+    baseline: null,
+    source: null,
+  },
+  {
     id: "rounds_median",
     label: "Bot-reviewed heads per PR — median",
     side: "pr",

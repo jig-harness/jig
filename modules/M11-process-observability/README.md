@@ -124,6 +124,41 @@ inspect; tracker reconciliation is the explicit write boundary. The
 
 The model as a copyable narrative is [`templates/TELEMETRY.md`](templates/TELEMETRY.md).
 
+## Merge conflicts: share and coverage
+
+Parallel work's conflict rate measures pull requests, rather than how many
+paths or repeated resolutions one pull request produced. The
+[`merge_conflict` event](templates/event-schema.yaml) names the operation,
+path and cause; when available it also carries the concluding commit, pull
+request, decision, reason, regions, elapsed time and source. Replay and live
+evidence of the same concluding commit and path are one conflict.
+[`resolve-conflicts`](../../plugin/skills/resolve-conflicts/SKILL.md) keeps
+the local live record; a repository's emitter can send those events to its
+own event pipeline. The local record is only this clone's evidence, and a
+cause that could not be derived stays unknown.
+
+The [metric registry](templates/metrics-registry.yaml)'s
+`merge-conflict-share` uses the forge's merged pull requests over the
+scoreboard's window as its cohort. A pull request is conflicted when a
+replayed or live record names it. It is observed clean only when replay
+reaches its head without a conflict and the forge records no force-push;
+a force-push can hide a rebase's conflicts. All others are unknown. Silence
+in the live record never proves a clean pull request. Cherry-picks and
+reverts resolved in other clones can remain invisible to both sources.
+
+Report conflicted over conflicted plus observed-clean pull requests, with
+coverage as that measured population over the whole cohort. Also bound the
+whole-cohort share by counting unknown pull requests first clean, then
+conflicted. Withhold the verdict below the configured coverage floor or
+when those bounds reach different verdicts against the baseline. A small
+unobserved part of the cohort must not decide whether a change helped.
+The same bound rule applies to late-round and self-inflicted shares on
+incomplete populations.
+
+The [`drive-pr` scoreboard](../../plugin/skills/drive-pr/README.md) is the
+runnable form; [M12](../M12-parallel-agent-ergonomics/README.md) owns the
+practice of acting on recurring conflict paths.
+
 ## Heartbeat: a stopped schedule is stale, never green
 
 A disabled workflow keeps its last green run. So "how did it last finish?" is
@@ -329,7 +364,7 @@ the review process it runs, as scripts a repository can call on its own:
 |--------|------------------|
 | `loop-metrics.ts` | One pull request's review-loop cost: rounds, threads, the outcome mix, and how much of the final change landed after review began. A drive prints it when it stops |
 | `defect-escape.ts` | Whether findings the loop declined to fix (`wont-fix`, `deferred`) came back as defects |
-| `fractal-metrics.ts` | The cross-PR scoreboard: those figures over a window, each judged against a recorded baseline whose source document must still contain it, so a stale baseline is caught |
+| `fractal-metrics.ts` | The cross-PR scoreboard: review figures and merged-PR conflict share with coverage over a window, each judged against a recorded baseline whose source document must still contain it, so a stale baseline is caught |
 | `fleet-health.ts` | Ceremony against progress: review rounds and follow-ups weighed against merged product work, with the thresholds in the repository's own fleet-health file. Beside the stalled-epic signal it keeps an [epic census](../../GLOSSARY.md): started epics that are finished but still open, blocked on a last child or two, or owned by nobody. The census is read-only, feeds the closure step, and repeats that closing needs an acceptance verdict |
 
 Their configuration is `fleet_health` and `drive.escape_baseline_doc` in the
