@@ -24,8 +24,9 @@
  * repository's create hook in the worktree the event names.
  *
  * `--host` runs the command on that host instead; the host needs `bun`,
- * `git` and `herdr`, nothing from Jig. The whole SSH session is bounded by
- * the command's own limit (`toolLimitMs`). A path starting `~/` is resolved on
+ * `git` and `herdr`, nothing from Jig. Each command ends itself at its own
+ * limit (tools/herdr/limits.ts), and the whole SSH session is bounded by
+ * that limit plus the connection around it. A path starting `~/` is resolved on
  * the machine the command runs on.
  *
  * Exit codes: 0 done; 1 the step failed (the message says what to do);
@@ -33,7 +34,7 @@
  */
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { cli, strictOptions } from "../../lib/cli.ts";
+import { cli } from "../../lib/cli.ts";
 import {
   CLAIM_WAIT_MS,
   KICKOFF_KEY,
@@ -46,43 +47,31 @@ import {
   removeWorkspace,
   runCreateHook,
 } from "./lifecycle.ts";
-import { toolLimitMs } from "./limits.ts";
-import { runToolOnHost } from "./remote.ts";
-import { type Context, HerdrError, localContext } from "./runner.ts";
 import {
-  DEFAULT_WAIT_TIMEOUT_MS,
-  type Spawned,
-  spawnWorkspace,
-} from "./spawn.ts";
-
-const USAGE = `usage:
-  workspace.ts [--host <ssh-target>] open --repo <clone> --branch <name> [--base <ref>] [--label <text>]
-      [--agent <kind>] [--no-agent] [--prompt <text> --key <key>] [--wait-timeout-ms <ms>] [--json]
-  workspace.ts [--host <ssh-target>] remove --repo <clone> --branch <name> [--force]
-  workspace.ts created`;
+  openLimitMs,
+  removeLimitMs,
+  TRANSPORT_MS,
+  toolLimitMs,
+} from "./limits.ts";
+import {
+  type OpenOptions,
+  parseOpen,
+  parseRemove,
+  type RemoveOptions,
+  USAGE,
+  UsageError,
+} from "./options.ts";
+import { runToolOnHost } from "./remote.ts";
+import { type Context, HerdrError, localContext, withLimit } from "./runner.ts";
+import { type Spawned, spawnWorkspace } from "./spawn.ts";
 
 /** Age after which a kickoff claim is taken as abandoned. */
 const CLAIM_STALE_MS = 15 * 60_000;
-const MAX_WAIT_TIMEOUT_MS = 60 * 60_000;
-
-class UsageError extends HerdrError {
-  override name = "UsageError";
-}
 
 export function expandHome(path: string): string {
   return path === "~" || path.startsWith("~/")
     ? join(homedir(), path.slice(1))
     : path;
-}
-
-function parseWaitTimeout(raw: string | undefined): number {
-  if (raw === undefined) return DEFAULT_WAIT_TIMEOUT_MS;
-  const ms = Number(raw);
-  if (!Number.isInteger(ms) || ms <= 0 || ms > MAX_WAIT_TIMEOUT_MS)
-    throw new UsageError(
-      `--wait-timeout-ms must be a whole number of milliseconds from 1 to ${MAX_WAIT_TIMEOUT_MS}\n${USAGE}`,
-    );
-  return ms;
 }
 
 export interface OpenReport {
@@ -94,7 +83,7 @@ export interface OpenReport {
 function assertKickoffArgs(
   prompt: string,
   key: string | undefined,
-  noAgent: boolean | undefined,
+  noAgent: boolean,
 ): void {
   if (promptToken(prompt) === "")
     throw new UsageError(
@@ -106,31 +95,9 @@ function assertKickoffArgs(
     throw new UsageError(`--prompt needs an agent; drop --no-agent\n${USAGE}`);
 }
 
-async function open(ctx: Context, args: string[]): Promise<number> {
-  const { values } = strictOptions(
-    {
-      args,
-      options: {
-        repo: { type: "string" },
-        branch: { type: "string" },
-        base: { type: "string" },
-        label: { type: "string" },
-        agent: { type: "string" },
-        "no-agent": { type: "boolean" },
-        prompt: { type: "string" },
-        key: { type: "string" },
-        "wait-timeout-ms": { type: "string" },
-        json: { type: "boolean" },
-      },
-    },
-    USAGE,
-  );
-  if (values.repo === undefined || values.branch === undefined)
-    throw new UsageError(`open needs --repo and --branch\n${USAGE}`);
-  if ((values.prompt === undefined) !== (values.key === undefined))
-    throw new UsageError(`--prompt and --key go together\n${USAGE}`);
+async function open(ctx: Context, values: OpenOptions): Promise<number> {
   if (values.prompt !== undefined)
-    assertKickoffArgs(values.prompt, values.key, values["no-agent"]);
+    assertKickoffArgs(values.prompt, values.key, values.noAgent);
   const repo = expandHome(values.repo);
   const spawned = spawnWorkspace(ctx, {
     repo,
@@ -138,8 +105,8 @@ async function open(ctx: Context, args: string[]): Promise<number> {
     ...(values.base === undefined ? {} : { base: values.base }),
     ...(values.label === undefined ? {} : { label: values.label }),
     kind: values.agent ?? "claude",
-    noAgent: values["no-agent"] ?? false,
-    waitTimeoutMs: parseWaitTimeout(values["wait-timeout-ms"]),
+    noAgent: values.noAgent,
+    waitTimeoutMs: values.waitTimeoutMs,
   });
   const report: OpenReport = {
     spawned,
@@ -161,25 +128,8 @@ async function open(ctx: Context, args: string[]): Promise<number> {
   return 0;
 }
 
-async function remove(ctx: Context, args: string[]): Promise<number> {
-  const { values } = strictOptions(
-    {
-      args,
-      options: {
-        repo: { type: "string" },
-        branch: { type: "string" },
-        force: { type: "boolean" },
-      },
-    },
-    USAGE,
-  );
-  if (values.repo === undefined || values.branch === undefined)
-    throw new UsageError(`remove needs --repo and --branch\n${USAGE}`);
-  await removeWorkspace(ctx, {
-    repo: expandHome(values.repo),
-    branch: values.branch,
-    force: values.force ?? false,
-  });
+async function remove(ctx: Context, values: RemoveOptions): Promise<number> {
+  await removeWorkspace(ctx, { ...values, repo: expandHome(values.repo) });
   return 0;
 }
 
@@ -197,7 +147,7 @@ async function onHost([host, ...args]: string[]): Promise<number> {
   const remote = await runToolOnHost(
     host,
     args,
-    AbortSignal.timeout(toolLimitMs(args)),
+    AbortSignal.timeout(toolLimitMs(args) + TRANSPORT_MS),
     (chunk) => process.stderr.write(chunk),
   );
   process.stdout.write(remote.stdout);
@@ -211,8 +161,17 @@ export async function main(
   const [command, ...args] = argv;
   try {
     if (command === "--host") return await onHost(args);
-    if (command === "open") return await open(ctx, args);
-    if (command === "remove") return await remove(ctx, args);
+    // Each command ends itself at its limit, so a session bounded from
+    // outside by the same limit never cuts a run the tool allows.
+    if (command === "open") {
+      const values = parseOpen(args);
+      return await open(
+        withLimit(ctx, openLimitMs(values.waitTimeoutMs)),
+        values,
+      );
+    }
+    if (command === "remove")
+      return await remove(withLimit(ctx, removeLimitMs()), parseRemove(args));
     if (command === "created") return created(ctx, args);
   } catch (error) {
     if (error instanceof HerdrError && !(error instanceof UsageError)) {

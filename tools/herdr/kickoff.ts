@@ -7,8 +7,8 @@
  *
  * - A **claim** marks a kickoff in flight, so a second launch waits instead
  *   of deciding while the first has started an agent but not yet prompted it.
- * - A **receipt** records a kickoff under a correlation id
- *   `<key>:<agent>[:<session>]`. The session id tells a restarted agent with
+ * - A **receipt**, one per key and agent, records a kickoff under a
+ *   correlation id `<key>:<agent>[:<session>]`. The session id tells a restarted agent with
  *   the same name apart from the process that received the prompt. Before
  *   the prompt is sent the receipt is written as **pending**
  *   (`pending <correlation>`), and only a send Herdr accepted turns it into
@@ -40,8 +40,15 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { errnoCode, swallow } from "../../plugin/shared/errors.ts";
+import { AGENT_NAME } from "./agent.ts";
 import { parseEnvelope, probeAgentSession } from "./herdr.ts";
-import { type Context, HerdrError, output, type RunResult } from "./runner.ts";
+import {
+  budget,
+  type Context,
+  HerdrError,
+  output,
+  type RunResult,
+} from "./runner.ts";
 import type { Spawned } from "./spawn.ts";
 
 /** What a kickoff key may look like: it names files. */
@@ -79,15 +86,30 @@ function kickoffDir(ctx: Context): string {
   return join(ctx.stateDir, "kickoff");
 }
 
-/** Receipts and claims live in separate directories, so no key names the other's. */
-export function receiptPath(ctx: Context, key: string): string {
+function assertKey(key: string): void {
   if (!KICKOFF_KEY.test(key))
     throw new HerdrError(`"${key}" cannot be a kickoff key`);
-  return join(kickoffDir(ctx), "receipts", key);
+}
+
+/**
+ * A key's receipt for one agent. Each agent the key's work was opened in
+ * (another clone's worktree has another agent) keeps its own, so opening the
+ * key in one never overwrites the record of another. Receipts and claims
+ * live in separate directories, so no key names the other's.
+ */
+export function receiptPath(
+  ctx: Context,
+  key: string,
+  agentName: string,
+): string {
+  assertKey(key);
+  if (!AGENT_NAME.test(agentName))
+    throw new HerdrError(`"${agentName}" is not a Herdr agent name`);
+  return join(kickoffDir(ctx), "receipts", key, agentName);
 }
 
 function claimDir(ctx: Context, key: string): string {
-  receiptPath(ctx, key);
+  assertKey(key);
   return join(kickoffDir(ctx), "claims", key);
 }
 
@@ -285,10 +307,14 @@ function assertSameSession(
 }
 
 /** The receipt's first line; null when there is no receipt file. */
-function readReceipt(ctx: Context, key: string): string | null {
+function readReceipt(
+  ctx: Context,
+  key: string,
+  agentName: string,
+): string | null {
   try {
     return (
-      readFileSync(receiptPath(ctx, key), "utf8")
+      readFileSync(receiptPath(ctx, key, agentName), "utf8")
         .split("\n")
         .find((line) => line !== "") ?? ""
     );
@@ -300,7 +326,7 @@ function readReceipt(ctx: Context, key: string): string | null {
   }
 }
 
-/** What the receipt says, or null when there is none for this agent to go by. */
+/** What the agent's receipt says, or null when it has none to go by. */
 function receiptVerdict(
   ctx: Context,
   key: string,
@@ -308,14 +334,14 @@ function receiptVerdict(
   sessionId: string | null,
   prompt: string,
 ): "delivered" | "undelivered" | null {
-  const receipt = readReceipt(ctx, key);
+  const receipt = readReceipt(ctx, key, agentName);
   if (receipt === null) return null;
   const current = correlation(key, agentName, sessionId);
   if (receipt === current) return "delivered";
   if (receipt === `${PENDING} ${current}`) {
     if (transcriptHasPrompt(ctx, agentName, prompt)) return "delivered";
     throw new HerdrError(
-      `an earlier kickoff of ${key} to ${agentName} may have landed, and its prompt is not in the agent's recent output; check with herdr agent read ${agentName} --source recent, and if the agent never got it remove ${receiptPath(ctx, key)} and run this again`,
+      `an earlier kickoff of ${key} to ${agentName} may have landed, and its prompt is not in the agent's recent output; check with herdr agent read ${agentName} --source recent, and if the agent never got it remove ${receiptPath(ctx, key, agentName)} and run this again`,
     );
   }
   const forAgent = escapeRegExp(`${key}:${agentName}`);
@@ -371,8 +397,13 @@ function correlation(
  * Write the receipt whole under a temporary name, so a reader sees a receipt
  * or none; `null` removes it. Throws when it cannot.
  */
-function setReceipt(ctx: Context, key: string, line: string | null): void {
-  const path = receiptPath(ctx, key);
+function setReceipt(
+  ctx: Context,
+  key: string,
+  agentName: string,
+  line: string | null,
+): void {
+  const path = receiptPath(ctx, key, agentName);
   const temp = `${path}.${process.pid}.tmp`;
   try {
     if (line === null) {
@@ -466,8 +497,14 @@ function sendUnderReceipt(
   options: KickoffOptions,
   sent: string,
 ): void {
-  const earlier = readReceipt(ctx, options.key);
-  setReceipt(ctx, options.key, `${PENDING} ${sent}`);
+  // A send cut short by the run's limit would leave its outcome unknown;
+  // refuse it before anything is recorded instead.
+  if (budget(ctx, PROMPT_TIMEOUT_MS) < PROMPT_TIMEOUT_MS)
+    throw new HerdrError(
+      `too little of the run's time limit is left to send the kickoff to ${agentName}; run this again`,
+    );
+  const earlier = readReceipt(ctx, options.key, agentName);
+  setReceipt(ctx, options.key, agentName, `${PENDING} ${sent}`);
   // Without `--wait` Herdr acknowledges the writes, which is what a
   // kickoff needs; the process deadline bounds the call.
   const answer = ctx.run(
@@ -477,7 +514,7 @@ function sendUnderReceipt(
   const error = parseError(answer);
   if (answer.status === 2 || (error !== null && REFUSED.has(error.code))) {
     // Herdr refused before writing anything: the earlier record stands.
-    setReceipt(ctx, options.key, earlier);
+    setReceipt(ctx, options.key, agentName, earlier);
     throw new HerdrError(
       `${agentName} did not take the kickoff (${error?.message ?? output(answer)}); run this again once it is ready`,
     );
@@ -487,7 +524,7 @@ function sendUnderReceipt(
       `could not tell whether ${agentName} received the kickoff (${error === null ? `exit ${answer.status}: ${output(answer)}` : `${error.code}: ${error.message}`}); check with herdr agent read ${agentName} --source recent before running this again`,
     );
   try {
-    setReceipt(ctx, options.key, sent);
+    setReceipt(ctx, options.key, agentName, sent);
   } catch (failure) {
     ctx.log(
       `⚠ the kickoff was sent but its receipt stays pending (${(failure as Error).message}); a later launch confirms it from the transcript or refuses`,

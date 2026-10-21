@@ -24,8 +24,34 @@ import {
   type Session,
 } from "./events.ts";
 
+/**
+ * The longest one git call may take. A call stalled on the repository's
+ * storage throws rather than reading as "no answer", which could name
+ * another repository or journal.
+ */
+const GIT_TIMEOUT_MS = 60_000;
+
+/** A git call that did not finish within `GIT_TIMEOUT_MS`. */
+export class GitTimeoutError extends Error {
+  override name = "GitTimeoutError";
+  readonly code = "git-timeout";
+}
+
+function runGit(args: string[], cwd: string) {
+  const r = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    timeout: GIT_TIMEOUT_MS,
+  });
+  if ((r.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT")
+    throw new GitTimeoutError(
+      `git ${args.join(" ")} did not finish within ${GIT_TIMEOUT_MS / 1000} seconds`,
+    );
+  return r;
+}
+
 function git(args: string[], cwd = consumerRoot()): string | null {
-  const r = spawnSync("git", args, { cwd, encoding: "utf8" });
+  const r = runGit(args, cwd);
   if (r.status !== 0) return null;
   return r.stdout.trim();
 }
@@ -123,22 +149,15 @@ export function journalPath(
     const segments = inside.split(/[\\/]/);
     const within = inside !== "" && segments[0] !== ".." && !isAbsolute(inside);
     if (within && !segments.includes(".git")) {
-      const ignored = spawnSync(
-        "git",
-        ["check-ignore", "-q", "--no-index", inside],
-        {
-          cwd: top,
-        },
-      );
+      const ignored = runGit(["check-ignore", "-q", "--no-index", inside], top);
       if (ignored.status !== 0)
         throw new Error(
           `reflection.journal (${configured}) is a path git would track; choose a path the repository ignores`,
         );
       // An ignore rule does not untrack a file already committed.
-      const tracked = spawnSync(
-        "git",
+      const tracked = runGit(
         ["ls-files", "--error-unmatch", "--", inside],
-        { cwd: top },
+        top,
       );
       if (tracked.status === 0)
         throw new Error(

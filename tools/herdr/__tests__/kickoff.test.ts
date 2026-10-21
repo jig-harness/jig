@@ -62,8 +62,8 @@ const options: KickoffOptions = {
 function withReceipt(table: Record<string, Answer>, line: string | null) {
   const ctx = fakeContext(table);
   if (line !== null) {
-    mkdirSync(dirname(receiptPath(ctx, KEY)), { recursive: true });
-    writeFileSync(receiptPath(ctx, KEY), `${line}\n`);
+    mkdirSync(dirname(receiptPath(ctx, KEY, A)), { recursive: true });
+    writeFileSync(receiptPath(ctx, KEY, A), `${line}\n`);
   }
   return ctx;
 }
@@ -89,7 +89,7 @@ describe("the transcript token", () => {
     expect(transcriptHasToken("", "")).toBe(false);
   });
   test("a key that cannot name a file is refused", () => {
-    expect(() => receiptPath(fakeContext({}), "../x")).toThrow(
+    expect(() => receiptPath(fakeContext({}), "../x", A)).toThrow(
       "cannot be a kickoff key",
     );
   });
@@ -218,8 +218,8 @@ describe("kickoff", () => {
       ? readdirSync(join(ctx.stateDir, "kickoff", "claims", KEY))
       : [];
   const receipt = (ctx: FakeContext) =>
-    existsSync(receiptPath(ctx, KEY))
-      ? readFileSync(receiptPath(ctx, KEY), "utf8")
+    existsSync(receiptPath(ctx, KEY, A))
+      ? readFileSync(receiptPath(ctx, KEY, A), "utf8")
       : null;
 
   test("a new agent is sent the prompt and the receipt written", () => {
@@ -294,6 +294,43 @@ describe("kickoff", () => {
     }
   });
 
+  test("the same key opened in another agent keeps each agent's receipt", () => {
+    const B = "feat-x-87654321";
+    const ctx = fakeContext({
+      [get]: session("s-1"),
+      [send]: ok(),
+      [`herdr agent get ${B}`]: session("s-9"),
+      [`herdr agent prompt ${B} ${PROMPT}`]: ok(),
+    });
+    expect(kickoff(ctx, spawned(), options)).toBe("sent");
+    expect(
+      kickoff(ctx, spawned({ agentName: B, agentSessionId: "s-9" }), options),
+    ).toBe("sent");
+    // Back in the first agent, its own receipt answers, without the
+    // transcript, whose earlier rows may be gone.
+    expect(
+      kickoff(
+        ctx,
+        spawned({ agentExisted: true, agentStarted: false }),
+        options,
+      ),
+    ).toBe("already-delivered");
+    expect(ctx.calls.some((call) => call.startsWith("herdr agent read"))).toBe(
+      false,
+    );
+    expect(readFileSync(receiptPath(ctx, KEY, B), "utf8")).toBe(
+      `${KEY}:${B}:s-9\n`,
+    );
+  });
+
+  test("a send the run's time limit would cut short is refused before any record", () => {
+    const ctx = { ...fakeContext({ [get]: session("s-1") }), budget: () => 1 };
+    expect(() => kickoff(ctx, spawned(), options)).toThrow(
+      "too little of the run's time limit",
+    );
+    expect(existsSync(receiptPath(ctx, KEY, A))).toBe(false);
+  });
+
   test("a prompt whose first line is empty is refused", () => {
     const ctx = fakeContext({});
     expect(() =>
@@ -304,7 +341,7 @@ describe("kickoff", () => {
   test("a key named like the claims directory works", () => {
     const ctx = fakeContext({ [get]: session("s-1"), [send]: ok() });
     expect(kickoff(ctx, spawned(), { ...options, key: "claims" })).toBe("sent");
-    expect(readFileSync(receiptPath(ctx, "claims"), "utf8")).toBe(
+    expect(readFileSync(receiptPath(ctx, "claims", A), "utf8")).toBe(
       `claims:${A}:s-1\n`,
     );
   });
@@ -316,9 +353,12 @@ describe("kickoff", () => {
         // A directory takes the final receipt's temporary name once the
         // prompt is sent, which fails the write even for root.
         [send]: () => {
-          mkdirSync(join(`${receiptPath(ctx, KEY)}.${process.pid}.tmp`, "x"), {
-            recursive: true,
-          });
+          mkdirSync(
+            join(`${receiptPath(ctx, KEY, A)}.${process.pid}.tmp`, "x"),
+            {
+              recursive: true,
+            },
+          );
           return ok();
         },
         [read]: ok("❯ more output than the rows read\n"),

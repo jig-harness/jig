@@ -81,6 +81,48 @@ export interface Context {
    * worktree, so removing one never takes them with it.
    */
   stateDir: string;
+  /**
+   * The time a step may take: `ms`, cut to what is left of the run's limit
+   * (`withLimit`); throws once nothing is left. Unlimited when absent.
+   */
+  budget?: (ms: number) => number;
+}
+
+/** The time a step of this run may take, at most `ms` (`Context.budget`). */
+export function budget(ctx: Context, ms: number): number {
+  return ctx.budget === undefined ? ms : ctx.budget(ms);
+}
+
+/**
+ * The context for a run that must end within `limitMs`: every call and pause
+ * is cut to the time left, and the first one asked for once none is left
+ * throws. Whatever its steps add up to, the run ends at the limit, so a
+ * deadline set around it at that limit plus a margin never cuts it short.
+ */
+export function withLimit(
+  ctx: Context,
+  limitMs: number,
+  now: () => number = Date.now,
+): Context {
+  const deadline = now() + limitMs;
+  const left = (ms: number): number => {
+    const remaining = deadline - now();
+    if (remaining <= 0)
+      throw new HerdrError(
+        `the run reached its limit of ${Math.round(limitMs / 60_000)} minutes and stopped; run it again`,
+      );
+    return Math.min(budget(ctx, ms), remaining);
+  };
+  return {
+    ...ctx,
+    budget: left,
+    run: (argv, options) =>
+      ctx.run(argv, {
+        ...options,
+        timeoutMs: left(options?.timeoutMs ?? COMMAND_TIMEOUT_MS),
+      }),
+    sleep: (ms) => ctx.sleep(left(ms)),
+  };
 }
 
 export function localContext(log: Log = stderrLog): Context {

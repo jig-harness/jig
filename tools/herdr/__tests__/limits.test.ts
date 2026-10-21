@@ -10,7 +10,8 @@ describe("the tool's limits", () => {
     for (const wait of [DEFAULT_WAIT_TIMEOUT_MS, 30 * 60_000])
       expect(openLimitMs(wait)).toBeGreaterThan(
         PLUGIN_GRACE_MS +
-          HOOK_TIMEOUT_MS +
+          // Waiting out another run of the hook, then running it.
+          2 * HOOK_TIMEOUT_MS +
           settleLimitMs(wait) +
           CLAIM_WAIT_MS +
           PROMPT_TIMEOUT_MS,
@@ -22,15 +23,43 @@ describe("the tool's limits", () => {
       4 * DEFAULT_WAIT_TIMEOUT_MS,
     );
   });
-  test("a command line is bounded by its own command and wait timeout", () => {
-    expect(toolLimitMs(["open", "--repo", "r"])).toBe(openLimitMs());
-    expect(toolLimitMs(["open", "--wait-timeout-ms", "600000"])).toBe(
+  test("a command line is bounded by its own command and wait timeout, read as the tool reads it", () => {
+    const open = ["open", "--repo", "r", "--branch", "b"];
+    expect(toolLimitMs(open)).toBe(openLimitMs());
+    expect(toolLimitMs([...open, "--wait-timeout-ms", "600000"])).toBe(
       openLimitMs(600_000),
     );
-    expect(toolLimitMs(["open", "--wait-timeout-ms", "soon"])).toBe(
-      openLimitMs(),
+    expect(toolLimitMs([...open, "--wait-timeout-ms=600000"])).toBe(
+      openLimitMs(600_000),
     );
-    expect(toolLimitMs(["remove", "--repo", "r"])).toBe(removeLimitMs());
+    // A repeated option: the last value, as the tool takes it.
+    expect(
+      toolLimitMs([
+        ...open,
+        "--wait-timeout-ms",
+        "1000",
+        "--wait-timeout-ms",
+        "600000",
+      ]),
+    ).toBe(openLimitMs(600_000));
+    expect(toolLimitMs(["remove", "--repo", "r", "--branch", "b"])).toBe(
+      removeLimitMs(),
+    );
     expect(removeLimitMs()).toBeGreaterThan(HOOK_TIMEOUT_MS);
+  });
+  test("a command line the tool would refuse is refused", () => {
+    expect(() =>
+      toolLimitMs([
+        "open",
+        "--repo",
+        "r",
+        "--branch",
+        "b",
+        "--wait-timeout-ms",
+        "soon",
+      ]),
+    ).toThrow("--wait-timeout-ms");
+    expect(() => toolLimitMs(["open", "--repo", "r"])).toThrow("--branch");
+    expect(() => toolLimitMs(["list"])).toThrow("usage");
   });
 });

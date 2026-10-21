@@ -7,7 +7,11 @@ import type { OpenRequest } from "./provider.ts";
 export function openRequest(
   repo: unknown,
   head: string,
-  options: { branch?: string; cacheFile?: string } = {},
+  options: {
+    branch?: string;
+    cacheFile?: string;
+    cacheWriteFailed?: boolean;
+  } = {},
 ): OpenRequest {
   const cacheFile =
     options.cacheFile ?? "/home/me/.cache/conductor-linear/ENG-1.json";
@@ -17,6 +21,7 @@ export function openRequest(
     issue: "ENG-1",
     prompt: options.cacheFile === undefined ? head : promptFor(cacheFile),
     cacheFile,
+    cacheWriteFailed: options.cacheWriteFailed ?? false,
     promptFor,
     branch: options.branch ?? "",
     repo,

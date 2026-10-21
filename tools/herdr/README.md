@@ -63,6 +63,13 @@ and an SSH key the caller can use without a prompt, and nothing from Jig: no
 checkout to install or keep at the caller's version. A path starting `~/` is
 resolved on the host.
 
+Each command holds itself to a time limit
+([`limits.ts`](limits.ts)): every git and Herdr call, hook run and pause is
+cut to the time left, so a run ends at its limit, saying so, however many
+steps it took. The SSH session of a `--host` run, and the launcher's budget,
+are that limit plus two minutes for the connection, so neither ends a run
+the tool allows.
+
 Exit codes: 0 done; 1 a step failed, and the message says what to do; 2
 usage.
 
@@ -76,8 +83,10 @@ The kickoff goes to the agent once per key, whatever happens around it:
   by creating the next numbered one, never by deleting the old one, and a
   released claim stays on disk marked released, so numbers never repeat and
   two launches cannot both take one.
-- **A receipt** at `~/.jig/herdr/kickoff/receipts/<key>` records a kickoff
-  with the agent's name and, when Herdr reports one, its session id. The
+- **A receipt** at `~/.jig/herdr/kickoff/receipts/<key>/<agent>` records a
+  kickoff with the agent's name and, when Herdr reports one, its session id.
+  Each agent a key was opened in (another clone's worktree has another
+  agent) keeps its own, so opening the key in one never overwrites another's. The
   session id tells a restarted agent with the same name apart from the one
   that received the prompt. It is written as pending before the prompt is
   sent and completed once Herdr accepts it, so every send the tool attempted
@@ -123,12 +132,14 @@ Herdr announces each new worktree with its `worktree.created` event, which
 the plugin in [`plugin/`](plugin/herdr-plugin.toml) answers by running the
 create hook. The event runs in the background, so `open` waits for the hook
 to finish before it starts the agent: the hook runs under a claim in the
-worktree's git directory, and whoever takes it first runs it. The hook runs
-in a process group of its own, and the claim names both its owner's process
-and that group, so a waiter on the same machine runs the hook again only
-once the owner and every process of the earlier run have ended without a
-result. A failed run's leftover processes are ended before its claim is
-given back. Without the
+worktree's git directory, and whoever takes it first runs it. Each hook
+runs under a small `bun` supervisor that starts it in a session and process
+group of its own and ends that whole group when the hook outlives its 15
+minutes or the tool that started it has gone (killed by a launcher's or SSH
+session's deadline, say). The claim names both its owner's process and that
+group, so a waiter on the same machine runs the hook again only once the
+owner and every process of the earlier run have ended without a result. A
+failed run's leftover processes are ended before its claim is given back. Without the
 plugin, `open` runs the hook itself after a few seconds; a worktree made in
 Herdr's interface then gets its create hook only when the plugin is
 installed. A failed create hook stops `open` and runs again on the next one.
@@ -150,7 +161,7 @@ installed per repository: a repository opts in by adding its hooks.
 
 Under `~/.jig/herdr/` (`JIG_HOME` moves `~/.jig`), outside every worktree so
 removing one never takes them: `sessions/<agent>` (the session a later start
-resumes, for agent kinds that take `--resume`), `kickoff/receipts/<key>`
+resumes, for agent kinds that take `--resume`), `kickoff/receipts/<key>/<agent>`
 and `kickoff/claims/<key>/`. Inside each worktree's git directory, `jig/worktree-create.*`
 records the create hook's claim and result.
 

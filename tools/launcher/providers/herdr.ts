@@ -30,16 +30,13 @@ import {
   shellQuote,
   ssh,
 } from "../../herdr/remote.ts";
-import { openLimitMs } from "../../herdr/limits.ts";
+import { openLimitMs, TRANSPORT_MS } from "../../herdr/limits.ts";
 import { HerdrError } from "../../herdr/runner.ts";
 import type { OpenRequest, Provider } from "../provider.ts";
 
-/** Copying the cache file and starting the SSH session, around the tool's run. */
-const TRANSPORT_MS = 2 * 60_000;
-
 /**
- * The tool's own limit for `open` (tools/herdr/limits.ts), so every run it
- * allows fits, plus the copy and the connection around it.
+ * The tool's own limit for `open` (tools/herdr/limits.ts), which it holds
+ * itself to, plus the copy and the connection around it.
  */
 export const HERDR_OPEN_BUDGET_MS = openLimitMs() + TRANSPORT_MS;
 
@@ -239,9 +236,14 @@ export function herdrProvider(deps: Partial<HerdrDeps> = {}): Provider {
       if (repo.host !== undefined) {
         // The prompt names the cache file, which the agent on the host must
         // be able to read; a path on this machine would name nothing there.
-        if (!(await Bun.file(request.cacheFile).exists()))
+        // Only this launch's file is copied: after a failed write, what is on
+        // disk is missing or an earlier launch's, and may be out of date.
+        if (
+          request.cacheWriteFailed ||
+          !(await Bun.file(request.cacheFile).exists())
+        )
           throw new HerdrError(
-            `${request.issue}'s context cache ${request.cacheFile} was not written (see the warning above), so there is nothing to copy to ${repo.host}; fix that and open the issue again`,
+            `${request.issue}'s context cache ${request.cacheFile} was not written by this launch (see the warning above), so there is nothing current to copy to ${repo.host}; fix that and open the issue again`,
           );
         prompt = request.promptFor(
           await copyCache(repo.host, request.cacheFile, request.signal),

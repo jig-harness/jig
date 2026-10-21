@@ -135,6 +135,12 @@ describe("open", () => {
       cacheFile: join(tmpdir(), "no-such-dir-herdr", "ENG-1.json"),
     };
     await expect(provider.open(missing)).rejects.toThrow("was not written");
+    // An earlier launch's file is on disk, but this launch's write failed.
+    const stale = {
+      ...request({ path: "~/dev/app", host: "builder" }),
+      cacheWriteFailed: true,
+    };
+    await expect(provider.open(stale)).rejects.toThrow("nothing current");
     expect(ran).toBe(false);
   });
 

@@ -16,9 +16,10 @@
  * directory: whoever takes the claim first runs it (the plugin event, or the
  * workspace tool when no plugin is installed), and the other waits for its
  * result. The claim names its owner's host and process, and the hook runs in
- * a process group of its own that the claim records, so a waiter on the same
- * host takes over a claim only once its owner and every process of its hook
- * run have ended without a result.
+ * a process group of its own that the claim records, under a supervisor that
+ * ends the group when the hook outlives its limit or the tool has gone, so a
+ * waiter on the same host takes over a claim only once its owner and every
+ * process of its hook run have ended without a result.
  *
  * Opening a branch runs that branch's hook, as it runs the branch's code
  * anyway: the hook's dependency install runs the branch's own scripts, and
@@ -44,7 +45,7 @@ import {
 import { main as journalMain } from "../../plugin/skills/reflect/scripts/journal.ts";
 import { assertLinkedWorktree, findGitWorktree, samePath } from "./git.ts";
 import { findHerdrWorktree, herdrCall, herdrJson } from "./herdr.ts";
-import { type Context, HerdrError, output } from "./runner.ts";
+import { budget, type Context, HerdrError, output } from "./runner.ts";
 
 export const HOOKS_DIR = ".config/worktree-hooks";
 /** The longest a create or remove hook may run; a dependency install is slow. */
@@ -69,24 +70,64 @@ export function hookPath(worktree: string, hook: Hook): string | null {
   return path;
 }
 
-/**
- * Runs the hook as the leader of a process group of its own, after writing
- * this wrapper's process id and then the group's to the file named first, so
- * a waiter can tell while any part of the run, the hook's own children
- * included, is still alive.
- */
-const GROUP_WRAPPER = `printf 'wrapper %s\\n' "$$" > "$1"
-set -m
-"$2" &
-printf 'group %s\\n' "$!" >> "$1"
-set +m
-wait "$!"`;
+/** How long past a hook's limit its supervisor may take to end it. */
+const SUPERVISOR_SLACK_MS = 10_000;
 
 /**
- * Run a hook in its worktree; throws when it fails. Its output goes to the
- * log. With `groupFile`, the hook runs in a process group of its own,
+ * Runs a hook under a supervisor: a `bun -e` script, since `bun` is on every
+ * machine the tool runs on, including a `--host` that has only its bundle.
+ * The supervisor starts the hook as the leader of a session and process group
+ * of its own (`setsid`, which needs no terminal, where a shell's `set -m`
+ * turns job control off without one), and writes its own process id and then
+ * the group's to the file it is given, so a waiter can tell while any part of
+ * the run, the hook's own children included, is still alive. It ends the
+ * whole group when the hook outlives its limit, when the supervisor is
+ * signalled, and when the tool that started it has gone: a run whose tool was
+ * killed (by a launcher's or SSH session's deadline) leaves nothing running.
+ * Arguments: the record file (`-` for none), the hook, its limit in
+ * milliseconds and the tool's process id.
+ */
+const SUPERVISOR = `
+const fs = require("node:fs");
+const [file, hook, limitText, ownerText] = process.argv.slice(1);
+const owner = Number(ownerText);
+const record = (line) => file !== "-" && fs.appendFileSync(file, line + "\\n");
+if (file !== "-") fs.writeFileSync(file, "");
+record("wrapper " + process.pid);
+let child;
+try {
+  child = Bun.spawn([hook], { detached: true, stdin: "ignore", stdout: "inherit", stderr: "inherit" });
+} catch (error) {
+  console.error("could not start " + hook + ": " + error.message);
+  process.exit(127);
+}
+record("group " + child.pid);
+const end = (code, why) => {
+  if (why) console.error(why);
+  try { process.kill(-child.pid, "SIGKILL"); } catch {}
+  process.exit(code);
+};
+for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(signal, () => end(143));
+const deadline = Date.now() + Number(limitText);
+const ownerGone = () => {
+  if (process.ppid !== owner) return true;
+  try { process.kill(owner, 0); return false; } catch (error) { return error.code === "ESRCH"; }
+};
+const watch = setInterval(() => {
+  if (ownerGone()) end(143, "the workspace tool that ran " + hook + " has ended; ending the hook");
+  if (Date.now() >= deadline) end(124, hook + " did not finish within its limit of " + Math.round(Number(limitText) / 1000) + " seconds; ended it");
+}, 500);
+await child.exited;
+clearInterval(watch);
+process.exit(child.exitCode ?? 1);
+`;
+
+/**
+ * Run a hook in its worktree under the supervisor; throws when it fails. Its
+ * output goes to the log. With `groupFile`, the hook's process group is
  * recorded there, and a failed run's group is ended before this returns, so
- * nothing of it is still running when the hook is run again.
+ * nothing of it is still running when the hook is run again. The hook gets
+ * `HOOK_TIMEOUT_MS`, or what is left of the run's limit when that is less.
  */
 export function runHook(
   ctx: Context,
@@ -94,16 +135,24 @@ export function runHook(
   path: string,
   groupFile?: string,
 ): void {
-  const [command, args] =
-    groupFile === undefined
-      ? [path, []]
-      : ["/bin/sh", ["-c", GROUP_WRAPPER, "sh", groupFile, path]];
-  const result = guardedSpawnSync(command, args, {
-    cwd: worktree,
-    env: withoutLeakyGitEnv(),
-    timeout: HOOK_TIMEOUT_MS,
-    maxBuffer: HOOK_OUTPUT_BYTES,
-  });
+  const limitMs = budget(ctx, HOOK_TIMEOUT_MS);
+  const result = guardedSpawnSync(
+    process.execPath,
+    [
+      "-e",
+      SUPERVISOR,
+      groupFile ?? "-",
+      path,
+      String(limitMs),
+      String(process.pid),
+    ],
+    {
+      cwd: worktree,
+      env: withoutLeakyGitEnv(),
+      timeout: limitMs + SUPERVISOR_SLACK_MS,
+      maxBuffer: HOOK_OUTPUT_BYTES,
+    },
+  );
   for (const stream of [result.stdout, result.stderr])
     for (const line of (stream ?? "").split("\n"))
       if (line !== "") ctx.log(line);
@@ -140,14 +189,19 @@ function recordedRun(groupFile: string): { wrapper?: number; group?: number } {
   return run;
 }
 
-/** Kill what is left of a failed run's process group. */
+/**
+ * Kill what is left of a failed run's process group. A group that is gone
+ * answers ESRCH; on macOS one whose processes have all exited but are not yet
+ * reaped answers EPERM, and has nothing left to kill either.
+ */
 function endGroup(groupFile: string): void {
   const { group } = recordedRun(groupFile);
   if (group === undefined) return;
   try {
     process.kill(-group, "SIGKILL");
   } catch (error) {
-    if (errnoCode(error) !== "ESRCH") throw error;
+    const code = errnoCode(error);
+    if (code !== "ESRCH" && code !== "EPERM") throw error;
   }
 }
 
@@ -386,7 +440,8 @@ export function createdWorktreePath(eventJson: string | undefined): string {
  * host, so the worktree is named the ways the journal reads it: the working
  * directory, `JIG_CONSUMER_ROOT` (which the journal prefers to it), and an
  * environment without the git variables that would route its git calls to
- * another repository. All three are restored afterwards.
+ * another repository. All three are restored afterwards. The journal bounds
+ * each of its git calls, so parking cannot hang a removal.
  */
 export async function parkJournal(worktree: string): Promise<void> {
   const previousCwd = process.cwd();

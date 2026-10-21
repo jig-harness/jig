@@ -129,6 +129,7 @@ async function readAndAssign(
   return { fresh: read.cache, repoLabel: read.repoLabel };
 }
 
+/** Write the context cache; false, after a warning, when the write failed. */
 function persistCache(
   home: string,
   issue: string,
@@ -137,17 +138,19 @@ function persistCache(
   fallback: FallbackEnvironment,
   nowSeconds: number,
   warn: Warn,
-): void {
+): boolean {
   try {
     if (fresh !== null) writeCache(home, issue, fresh);
     // Seed at least the description when the tracker could not be read, but
     // never replace an existing cache with a thinner one.
     else if (!existsSync(file) && fallback.prompt)
       writeCache(home, issue, fallbackCache(issue, fallback, nowSeconds));
+    return true;
   } catch (error) {
     warn(
       `Could not write the context cache: ${error instanceof Error ? error.message : String(error)}`,
     );
+    return false;
   }
 }
 
@@ -191,7 +194,15 @@ export async function launch(
     deps.assignBudgetMs ?? ASSIGN_BUDGET_MS,
     warn,
   );
-  persistCache(home, issue, file, fresh, fallback, nowSeconds(), warn);
+  const cacheWritten = persistCache(
+    home,
+    issue,
+    file,
+    fresh,
+    fallback,
+    nowSeconds(),
+    warn,
+  );
   const branch = chooseBranch(named, fresh);
 
   const title = fresh?.title ?? titleOf(file, warn);
@@ -205,6 +216,7 @@ export async function launch(
     issue,
     prompt: promptFor(file),
     cacheFile: file,
+    cacheWriteFailed: !cacheWritten,
     promptFor,
     branch,
     repo,

@@ -11,6 +11,7 @@ import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
+import { swallow } from "../../../plugin/shared/errors.ts";
 import {
   awaitCreateHook,
   createdWorktreePath,
@@ -19,9 +20,37 @@ import {
   runCreateHook,
   runHook,
 } from "../lifecycle.ts";
-import { type Context, localContext } from "../runner.ts";
+import { type Context, localContext, withLimit } from "../runner.ts";
 
 const TOOL = join(import.meta.dir, "..", "workspace.ts");
+const LIFECYCLE = join(import.meta.dir, "..", "lifecycle.ts");
+
+/** Whether any process of the group is alive, polled until it is not or 5 seconds pass. */
+function groupOutlives(group: number): boolean {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    try {
+      process.kill(-group, 0);
+    } catch {
+      return false;
+    }
+    if (Date.now() >= deadline) return true;
+    Bun.sleepSync(50);
+  }
+}
+
+/** The group a hook run recorded in `file`, polled for until 10 seconds pass. */
+function recordedGroup(file: string): number {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const match = existsSync(file)
+      ? /^group (\d+)$/m.exec(readFileSync(file, "utf8"))
+      : null;
+    if (match?.[1] !== undefined) return Number(match[1]);
+    if (Date.now() >= deadline) throw new Error(`no group recorded in ${file}`);
+    Bun.sleepSync(50);
+  }
+}
 
 function git(cwd: string, ...args: string[]): void {
   const run = Bun.spawnSync(
@@ -171,11 +200,77 @@ describe("the create hook", () => {
     expect(alive).toBe(false);
   });
 
+  test("the hook leads a process group of its own, the one recorded", () => {
+    const { root, worktree } = fixture({});
+    const hook = join(worktree, "group-hook");
+    writeFileSync(
+      hook,
+      '#!/bin/sh\nps -o pgid= -p $$ | tr -d " " > "$PWD/.pgid"\n',
+      { mode: 0o755 },
+    );
+    const record = join(root, "record");
+    runHook(quiet(), worktree, hook, record);
+    const pgid = Number(readFileSync(join(worktree, ".pgid"), "utf8"));
+    expect(pgid).toBe(recordedGroup(record));
+    expect(pgid).not.toBe(process.pid);
+  });
+
+  test("a hook past the run's limit is ended with its whole group", () => {
+    const { root, worktree } = fixture({});
+    const hook = join(worktree, "slow-hook");
+    writeFileSync(hook, "#!/bin/sh\nsleep 30 &\nsleep 30\n", {
+      mode: 0o755,
+    });
+    const record = join(root, "record");
+    const ctx = quiet();
+    expect(() =>
+      runHook(withLimit(ctx, 1_000), worktree, hook, record),
+    ).toThrow("failed (exit 124)");
+    expect(ctx.lines.join("\n")).toContain("did not finish within its limit");
+    expect(groupOutlives(recordedGroup(record))).toBe(false);
+  });
+
+  test("a hook whose tool is killed is ended with its whole group", () => {
+    const { root, worktree } = fixture({});
+    const hook = join(worktree, "slow-hook");
+    writeFileSync(hook, "#!/bin/sh\nsleep 30 &\nsleep 30\n", {
+      mode: 0o755,
+    });
+    const record = join(root, "record");
+    const script = join(root, "tool.ts");
+    writeFileSync(
+      script,
+      `import { runHook } from ${JSON.stringify(LIFECYCLE)};
+import { localContext } from ${JSON.stringify(join(import.meta.dir, "..", "runner.ts"))};
+runHook(localContext(() => {}), ${JSON.stringify(worktree)}, ${JSON.stringify(hook)}, ${JSON.stringify(record)});
+`,
+    );
+    const tool = Bun.spawn([process.execPath, script], {
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    const group = recordedGroup(record);
+    try {
+      process.kill(group, 0);
+      tool.kill("SIGKILL");
+      expect(groupOutlives(group)).toBe(false);
+    } finally {
+      tool.kill("SIGKILL");
+      try {
+        process.kill(-group, "SIGKILL");
+      } catch (error) {
+        swallow(error, "the hook's group has already ended");
+      }
+    }
+  });
+
   test("a hook that cannot be started says so", () => {
     const { worktree } = fixture({});
     const hook = join(worktree, "broken-hook");
     writeFileSync(hook, "#!/nonexistent/interpreter\n", { mode: 0o755 });
-    expect(() => runHook(quiet(), worktree, hook)).toThrow("did not complete");
+    const ctx = quiet();
+    expect(() => runHook(ctx, worktree, hook)).toThrow("failed (exit 127)");
+    expect(ctx.lines.join("\n")).toContain(`could not start ${hook}`);
   });
 
   test("a hook that is not executable is an error, a missing one nothing", () => {

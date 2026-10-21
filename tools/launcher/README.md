@@ -168,15 +168,17 @@ repos:
 The branch is the one the launch names, else the one the tracker suggests
 (read with the issue), else the issue key in lower case. On a host, the
 issue's cache file is copied first to the same path under the host user's
-home, and the prompt names that copy; when the cache file could not be
-written there is nothing to copy, and the launch is refused. On this
+home, and the prompt names that copy; when this launch could not write the
+cache file, the launch is refused rather than copying a missing file or an
+earlier launch's. On this
 machine, the tool runs with the login shell's `PATH`, so a `git` or `herdr`
 installed where only the shell profile adds it is found. Herdr has no
 repository list to detect one from, so an issue that is not routed is
 refused with what to add. The provider's budget is not 30 seconds but the
-Herdr tool's own limit for `open`, the sum of its phases' limits (the
-create hook, the agent's start, the kickoff) plus the cache copy and the
-SSH connection, so the launcher never ends a run the tool allows. A setup
+Herdr tool's own limit for `open`, which the tool holds itself to (sized
+from the create hook, the agent's start and the kickoff), plus the cache
+copy and the SSH connection, so the launcher never ends a run the tool
+allows. A setup
 that outlasts the cache file's 30 minutes still starts the work: the skill
 then reads the issue from the tracker instead.
 The host's requirements and what the tool keeps are in its

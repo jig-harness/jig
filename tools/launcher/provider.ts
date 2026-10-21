@@ -20,6 +20,11 @@ export interface OpenRequest {
   /** The launcher's cache file for the issue, on this machine. */
   cacheFile: string;
   /**
+   * True when this launch could not write the cache file (it warned): the
+   * file is then missing, or an earlier launch's.
+   */
+  cacheWriteFailed: boolean;
+  /**
    * The same prompt naming the cache file at another path: a provider that
    * copies the file to the machine the agent runs on names that copy.
    */

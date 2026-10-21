@@ -24,3 +24,9 @@ release: minor
 - The launcher takes the branch the tracker suggests, read with the issue,
   when the launch itself names none; the prompt's branch hint and the
   provider both use it.
+
+### Fixed
+
+- `/jig:reflect`'s journal gives each git call a minute and fails when one
+  takes longer, instead of waiting on a stalled repository for ever or reading
+  a stalled call as "no answer".
