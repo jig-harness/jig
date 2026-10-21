@@ -20,7 +20,7 @@ import {
   SCRIPTS,
   binDir,
   scratchClean,
-  writeFixture,
+  writeFixture as rawFixture,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
 import {
@@ -32,6 +32,9 @@ import {
 } from "./drive-loop-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
+
+const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
+  rawFixture(f, scratchClean.dir);
 
 useDrivePrSuite();
 
@@ -52,11 +55,13 @@ describe("mark-ready.ts", () => {
     const proc = Bun.spawn(
       scriptArgv(join(SCRIPTS, "mark-ready.ts"), "999", ...args),
       {
+        cwd: scratchClean.dir,
         env: {
           ...process.env,
           PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
+          DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
           ...env,
         },
         stdout: "pipe",
@@ -76,7 +81,12 @@ describe("mark-ready.ts", () => {
     const proc = Bun.spawn(
       scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
       {
-        env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
+        cwd: scratchClean.dir,
+        env: {
+          ...process.env,
+          DRIVE_PR_STATE_DIR: stateDir,
+          DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
+        },
         stdout: "pipe",
         stderr: "pipe",
       },
@@ -93,7 +103,12 @@ describe("mark-ready.ts", () => {
     const proc = Bun.spawn(
       scriptArgv(join(SCRIPTS, "drive-state.ts"), "ready-marked", "999"),
       {
-        env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
+        cwd: scratchClean.dir,
+        env: {
+          ...process.env,
+          DRIVE_PR_STATE_DIR: stateDir,
+          DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
+        },
         stdout: "pipe",
         stderr: "pipe",
       },

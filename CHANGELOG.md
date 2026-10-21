@@ -319,6 +319,22 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.75.0] - 2026-10-21
+
+### Added
+
+- Skill-authoring rules in [M0 § Skills](modules/M0-instruction-architecture/README.md#skills): a description leads with the trigger that sets the skill apart and carries its negative triggers, `SKILL.md` names every reference, a reference over 100 lines opens with a table of contents, instruction bodies carry no incident history or time-sensitive phrasing, and discovery controls do what they are for. [What each runtime offers](modules/M0-instruction-architecture/mappings.md#skill-discovery-controls) is in M0's mappings.
+- M0's [skill-authoring check](modules/M0-instruction-architecture/reference/skill-authoring/README.md) counts the rules a script can see, per rule and per skill file, and prints them as a counter for the ratchet.
+- The [ratchet gate](modules/M1-gates-enforcement-ladder/reference/ratchet/README.md) reads any counting command's JSON (`format: "json"`). With `per: "file"`, each file's count is its own ceiling. It runs the command with `RATCHET_HISTORICAL=1` when it measures the merge base, so a repository can add a counter and the files it counts in one change.
+- Two M0 criteria for the audit: `skill-authoring-rules` (Standard) and `skill-authoring-ratcheted` (Strict). Both are expected-absent in a repository with no skills.
+
+## [0.74.0] - 2026-10-21
+
+### Fixed
+
+- **Breaking:** `drive-pr` now preserves clone isolation under `DRIVE_PR_STATE_DIR`: the override names a root with one `<clone-key>/` subdirectory per clone. Same-numbered PRs in different repositories no longer share state, logs, leases or driver locks. Stop all participants before upgrading an existing flat override, establish each artifact's owner and explicitly relocate complete state into the appropriate clone directory as described in the skill's README. Unscoped legacy artifacts cause a refusal and remain untouched. Run state-using commands, including the reaper, in the owning Git clone; an override alone outside Git no longer identifies state.
+- Directory identity checks tolerate device-number changes only with matching inode, nonzero directory birth time, canonical target path and a freshly confirmed macOS volume UUID. Snapshot and non-writable views supply no drift proof. Without volume proof, device comparison stays strict. Replaced directories and redirected targets still refuse. Older inherited identity tokens remain strict; re-arm an older driver to establish the stronger baseline.
+
 ## [0.73.0] - 2026-10-21
 
 The delivery loop can now be published as one stage map, with a gate that
@@ -3328,7 +3344,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.73.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.75.0...HEAD
+[0.75.0]: https://github.com/jig-harness/jig/compare/v0.74.0...v0.75.0
+[0.74.0]: https://github.com/jig-harness/jig/compare/v0.73.0...v0.74.0
 [0.73.0]: https://github.com/jig-harness/jig/compare/v0.72.0...v0.73.0
 [0.72.0]: https://github.com/jig-harness/jig/compare/v0.71.0...v0.72.0
 [0.71.0]: https://github.com/jig-harness/jig/compare/v0.70.2...v0.71.0

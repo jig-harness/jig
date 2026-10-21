@@ -9,9 +9,22 @@ export interface FileLinesCounter {
   exclude?: string;
 }
 
+/**
+ * A command printing `{"counts": {"<rule>": {"<file>": n}}}`. With
+ * `per: "file"` each file's count is its own ceiling, so moving findings
+ * from one file to another fails too.
+ */
+export interface JsonCounter {
+  name: string;
+  format: "json";
+  command: string[];
+  per?: "file";
+}
+
 /** A command, pattern set or source-file size to measure. */
 export type Counter =
   | FileLinesCounter
+  | JsonCounter
   | { name: string; format: "biome-json" | "tsc"; command: string[] }
   | {
       name: string;

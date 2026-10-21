@@ -43,6 +43,7 @@ import { cli } from "../../../../lib/cli.ts";
 import { couldNotCheck } from "../../../../lib/findings.ts";
 import { LEAKY_GIT_ENV } from "../../../../plugin/shared/guarded-git-spawn.ts";
 
+export { parseCountsJson } from "./ratchet-json.ts";
 export {
   parseJsonc,
   strictness,
@@ -205,7 +206,21 @@ function measureOne(tree: string, c: Counter, historical: boolean): Measured {
     const counts = grepCounts(tree, c.patterns, c.files);
     return { ratcheted: counts, all: counts };
   }
-  const r = run(c.command, tree);
+  // A json command is told it measures a merge base, which may predate the
+  // files it reads; the other formats read no such inputs.
+  const r = run(
+    c.command,
+    tree,
+    c.format === "json" && historical ? { RATCHET_HISTORICAL: "1" } : {},
+  );
+  if (c.format === "json") {
+    if (r.code !== 0)
+      throw new CountsError(
+        `${c.name}: ${c.command.join(" ")} exited ${r.code}:\n${r.stdout}${r.stderr}`,
+      );
+    const counts = parseCountsJson(r.stdout);
+    return { ratcheted: counts, all: counts };
+  }
   if (c.format === "biome-json") {
     if (!r.stdout.trim())
       throw new Error(`${c.name}: no output from ${c.command.join(" ")}`);
@@ -236,6 +251,7 @@ export function measure(
 }
 
 import { fileLineCounts } from "./ratchet-file-lines.ts";
+import { CountsError, lostCounts, parseCountsJson } from "./ratchet-json.ts";
 import { readable, record } from "./ratchet-common.ts";
 import {
   loosened,
@@ -287,30 +303,38 @@ function shortName(rule: string): string {
 const strings = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((x) => typeof x === "string");
 
-function validCounter(v: unknown): v is Counter {
-  const c = record(v);
-  if (typeof c.name !== "string" || !c.name) return false;
-  if (c.format === "file-lines")
-    return (
+const optionalString = (v: unknown) => v === undefined || typeof v === "string";
+const hasCommand = (c: Record<string, unknown>) =>
+  strings(c.command) && c.command.length > 0;
+
+/** Each format's own fields, checked once its name is known. */
+const COUNTER_SHAPES: Record<string, (c: Record<string, unknown>) => boolean> =
+  {
+    "file-lines": (c) =>
       typeof c.limit === "number" &&
       Number.isSafeInteger(c.limit) &&
       c.limit > 0 &&
       typeof c.files === "string" &&
-      (c.exclude === undefined || typeof c.exclude === "string")
-    );
-  if (c.format === "grep")
-    return (
+      optionalString(c.exclude),
+    json: (c) => hasCommand(c) && (c.per === undefined || c.per === "file"),
+    grep: (c) =>
       typeof c.patterns === "object" &&
       c.patterns !== null &&
       !Array.isArray(c.patterns) &&
       Object.values(c.patterns).every((x) => typeof x === "string") &&
-      (c.files === undefined || typeof c.files === "string")
-    );
-  return (
-    (c.format === "biome-json" || c.format === "tsc") &&
-    strings(c.command) &&
-    c.command.length > 0
-  );
+      optionalString(c.files),
+    "biome-json": hasCommand,
+    tsc: hasCommand,
+  };
+
+function validCounter(v: unknown): v is Counter {
+  const c = record(v);
+  if (typeof c.name !== "string" || !c.name) return false;
+  const shape =
+    typeof c.format === "string" && Object.hasOwn(COUNTER_SHAPES, c.format)
+      ? COUNTER_SHAPES[c.format]
+      : undefined;
+  return shape?.(c) ?? false;
 }
 
 function validConfigFile(v: unknown): v is ConfigFile {
@@ -381,8 +405,12 @@ function growth(
   rule: string,
   before: Map<string, number> | undefined,
   after: Map<string, number>,
+  perFile = false,
 ): string | undefined {
-  if (total(after) <= total(before)) return undefined;
+  const grew = perFile
+    ? [...after].some(([f, n]) => n > (before?.get(f) ?? 0))
+    : total(after) > total(before);
+  if (!grew) return undefined;
   const worse = [...after]
     .filter(([f, n]) => n > (before?.get(f) ?? 0))
     .map(([f, n]) => `${f} (${before?.get(f) ?? 0} → ${n})`);
@@ -408,24 +436,35 @@ function promotions(
  * Compare two trees' counts. A rule this change brings to zero is reported
  * for promotion to an enforced error. For compiler output, whose rules are
  * error codes rather than settings, the whole counter is the unit: it is
- * reported once every code is at zero.
+ * reported once every code is at zero. A `perFile` counter's rule grows when
+ * any one file's count does, whatever its total. A `noPromotion` counter has
+ * no rule to promote: its findings stay ratcheted at zero.
  */
 export function compare(
   base: Map<string, Counts>,
   head: Map<string, Counts>,
   wholeCounter: ReadonlySet<string> = new Set(),
+  perFile: ReadonlySet<string> = new Set(),
+  noPromotion: ReadonlySet<string> = new Set(),
 ): { grew: string[]; promote: string[] } {
   const grew: string[] = [];
   const promote: string[] = [];
   for (const [name, headRules] of head) {
     const baseRules: Counts = base.get(name) ?? new Map();
     for (const [rule, files] of headRules) {
-      const line = growth(name, rule, baseRules.get(rule), files);
+      const line = growth(
+        name,
+        rule,
+        baseRules.get(rule),
+        files,
+        perFile.has(name),
+      );
       if (line) grew.push(line);
     }
-    promote.push(
-      ...promotions(name, baseRules, headRules, wholeCounter.has(name)),
-    );
+    if (!noPromotion.has(name))
+      promote.push(
+        ...promotions(name, baseRules, headRules, wholeCounter.has(name)),
+      );
   }
   return { grew, promote };
 }
@@ -688,6 +727,15 @@ function counterLoosenings(
   own: Measured,
   underHead: Measured,
 ): Loosening[] {
+  // A counting command's rules are its own names, not settings: its trailer
+  // names the counter.
+  if (c.format === "json")
+    return lostCounts(own.all, underHead.all, c.per === "file").map(
+      ({ what, before, after }) => ({
+        name: c.name,
+        line: `${c.name} ${what}: ${before} → ${after} in the base under this change's configuration`,
+      }),
+    );
   return measuredLoosening(own.all, underHead.all).map(
     ({ rule, before, after }) => ({
       // A compiler counter's findings are error codes, not settings, so its
@@ -726,6 +774,12 @@ function counterChanged(before: Counter, now: Counter): boolean {
       now.limit > before.limit ||
       before.files !== now.files ||
       (now.exclude !== undefined && before.exclude !== now.exclude)
+    );
+  if (before.format === "json")
+    return (
+      now.format !== "json" ||
+      JSON.stringify(before.command) !== JSON.stringify(now.command) ||
+      (before.per === "file" && now.per !== "file")
     );
   if (before.format === "grep")
     return (
@@ -874,10 +928,19 @@ function main(args: string[]): number {
   const tsc = config.counters
     .filter((c) => c.format === "tsc")
     .map((c) => c.name);
+  const perFile = config.counters
+    .filter((c) => c.format === "json" && c.per === "file")
+    .map((c) => c.name);
+  // File-size limits and counting commands have no linter rule to promote.
+  const noPromotion = config.counters
+    .filter((c) => c.format === "file-lines" || c.format === "json")
+    .map((c) => c.name);
   const { grew, promote } = compare(
     ratcheted(base.counts),
     ratcheted(head),
     new Set(tsc),
+    new Set(perFile),
+    new Set(noPromotion),
   );
 
   const values =
@@ -911,14 +974,7 @@ function main(args: string[]): number {
   const waived = all.filter(accepted);
   const loose = all.filter((l) => !accepted(l));
 
-  // File-size limits remain ratcheted at zero; there is no linter rule to promote.
-  const promotable = promote.filter(
-    (line) =>
-      !config.counters.some(
-        (c) => c.format === "file-lines" && line === `${c.name} excess-lines`,
-      ),
-  );
-  report({ promote: promotable, waived, grew, loose });
+  report({ promote, waived, grew, loose });
   if (grew.length || loose.length) return 1;
   console.log(
     `ratchet: no count grew and no rule loosened without a Ratchet-Loosen trailer against ${mergeBase.slice(0, 12)} (${config.counters.length} counters: ${config.counters.map((c) => c.name).join(", ")})`,

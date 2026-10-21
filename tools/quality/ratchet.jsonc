@@ -6,6 +6,9 @@
 // Generated output is fixed through its generator, never split by hand, so
 // both of its path forms (a generated directory, a `.generated.` name) and the
 // vendored copies Jig's derived files live in stay outside the scope.
+// The skill-authoring counter holds each of the plugin's skill files to its
+// own count per rule (M0's skill-authoring check); its script is a support
+// path, so the base is measured with the head's version of it.
 {
   "counters": [
     {
@@ -32,6 +35,17 @@
       "command": ["bun", "check", "--no-pretty", "--all", "-p", "tsconfig.ratchet.json"]
     },
     {
+      "name": "skill-authoring",
+      "format": "json",
+      "per": "file",
+      "command": [
+        "bun",
+        "modules/M0-instruction-architecture/reference/skill-authoring/check-skill-authoring.ts",
+        "--json",
+        "plugin/skills"
+      ]
+    },
+    {
       "name": "suppressions",
       "format": "grep",
       "files": "\\.(ts|tsx|js|mjs|cjs)$",
@@ -50,6 +64,7 @@
   ],
   "support": [
     "tools/quality/grit",
-    "modules/M15-contracts-errors/reference/lint-rules"
+    "modules/M15-contracts-errors/reference/lint-rules",
+    "modules/M0-instruction-architecture/reference/skill-authoring/check-skill-authoring.ts"
   ]
 }
