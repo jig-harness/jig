@@ -131,12 +131,19 @@ const NOT_THIS_SKILL =
 // comma-separated part of one) excludes only when it opens with one of these
 // forms. A scope ("not for", "not suitable for", "except when", "unless"), a
 // prohibition on the skill itself ("do not use it for", "never use this
-// skill"), or a redirect under a scope ("for X, use Y instead"). Negative or
-// contrastive wording inside a clause ("do not use deprecated APIs", "rather
-// than writing them by hand", "instead of", "not to use") states the work, not
-// when to pick the skill, so it never counts; an author who means it as an
-// exclusion writes it in one of the forms.
+// skill"), or a redirect under a scope to another skill or tool ("for X, use
+// the notes skill instead", "for X, use `notes` instead", optionally followed
+// by ", which ..."). A redirect names its target as a skill, tool, command,
+// agent or plugin, a code span, or a slash command, and its scope holds no
+// negation: "for deprecated calls, use replacement APIs instead" is procedure,
+// not a choice between skills. Negative or contrastive wording inside a clause
+// ("do not use deprecated APIs", "rather than writing them by hand", "instead
+// of", "not to use") states the work, not when to pick the skill, so it never
+// counts; an author who means it as an exclusion writes it in one of the
+// forms. Code spans are masked first, so punctuation inside one splits nothing.
 const CLAUSE = /[.;:!?()\u2014\u2013]+/;
+const CODE_SPAN = /`[^`\n]*`/g;
+const REDIRECT_TARGET = String.raw`(?:the )?(?:\`code\`|\/[\w-]+|(?:[\w-]+ ){0,2}(?:skill|tool|command|agent|plugin))`;
 const EXCLUSION = new RegExp(
   String.raw`(?:^|,\s*)(?:` +
     [
@@ -144,7 +151,7 @@ const EXCLUSION = new RegExp(
       String.raw`except (?:for|when|if|on|in)\b`,
       String.raw`unless\b`,
       String.raw`(?:do not|don['\u2019]t|never) use (?:(?:this skill|the skill|this|it)(?: (?:for|when|if|on|in|to)\b|\s*$)|(?:for|when|if|on|in)\b)`,
-      String.raw`(?:for|when|if|on)\b[^,]*,?\s*use\b[^,]*\binstead\s*$`,
+      String.raw`(?:for|when|if|on)\b(?:(?!\b(?:not|never|don['\u2019]t)\b)[^,])*,?\s*use ${REDIRECT_TARGET} instead\s*(?:,|$)`,
     ].join("|") +
     ")",
   "i",
@@ -152,6 +159,7 @@ const EXCLUSION = new RegExp(
 
 function excludes(description: string): boolean {
   return description
+    .replace(CODE_SPAN, "`code`")
     .split(CLAUSE)
     .some((clause) => EXCLUSION.test(clause.trim()));
 }
