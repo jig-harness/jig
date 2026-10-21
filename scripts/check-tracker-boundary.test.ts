@@ -13,6 +13,13 @@ import {
 } from "./check-tracker-boundary.ts";
 
 const root = join(import.meta.dir, "..");
+/**
+ * Wall-clock bound on matching one pathological input. Each input takes
+ * well under half a second on an idle machine; a matcher that backtracks
+ * catastrophically on it runs for minutes. The gap absorbs a CI runner
+ * slowed by the rest of the suite running beside it.
+ */
+const MATCH_BUDGET_MS = 10_000;
 const temporary: string[] = [];
 afterAll(() => {
   for (const path of temporary) rmSync(path, { recursive: true, force: true });
@@ -231,7 +238,7 @@ describe("tokens", () => {
     const text = `(/*${"*//*".repeat(50_000)}`;
     const started = performance.now();
     expect(violations("plugin/x.ts", text)).toEqual([]);
-    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(performance.now() - started).toBeLessThan(MATCH_BUDGET_MS);
   });
   test.each([
     [`const run = ${" ".repeat(2_000)}value;\n`.repeat(10)],
@@ -249,7 +256,7 @@ describe("tokens", () => {
     (text) => {
       const started = performance.now();
       expect(violations("plugin/x.ts", text)).toEqual([]);
-      expect(performance.now() - started).toBeLessThan(2_000);
+      expect(performance.now() - started).toBeLessThan(MATCH_BUDGET_MS);
     },
   );
   test("a command line does not run on across a line break", () => {

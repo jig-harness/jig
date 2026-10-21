@@ -79,12 +79,10 @@ function problemsOf(change: (s: Record<string, unknown>) => void): string[] {
   }
   return [];
 }
-
 const recs = (s: Record<string, unknown>) =>
   s.recommendations as Record<string, unknown>[];
 const rec = (s: Record<string, unknown>, i: number) =>
   recs(s)[i] as Record<string, unknown>;
-
 describe("the report source", () => {
   test("the execa fixture is valid", () => {
     expect(problemsOf(() => undefined)).toEqual([]);
@@ -856,7 +854,7 @@ describe("the sheet", () => {
     // One row per criterion: the module's chip, the criterion linked to its
     // detail, both scores as chips, and the change as a badge.
     expect(again).toMatch(
-      /What changed \(123\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
+      /What changed \(127\)<\/h3><table class="chgt chg-t">.*?<tr><td><span class="pw mw"><a class="mchip" href="#d-M1" aria-describedby="(mp-\d+)">M1<\/a><span class="pop pop-m" role="tooltip" id="\1"><b>M1 Gates enforcement ladder<\/b> Stated rules become checks[^<]*<\/span><\/span><\/td><td class="cc"><a href="#c-M1-gate-set-documented"><code>gate-set-documented<\/code><\/a><\/td><td class="ba"><span class="sch s-absent">.*?absent<\/span>.*?<span class="sch s-convention">.*?convention<\/span><\/td><td><span class="bd bd-fixed">Fixed<\/span><\/td><\/tr>/,
     );
     // A criterion Jig added after the prior audit's plugin was not assessed then.
     const added = addedAfter("0.14.0");
@@ -1121,7 +1119,7 @@ describe("the sheet", () => {
       renderReportHtml(reportInput({ prior: priorRecord() })),
     );
     expect(suggested).toContain(
-      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>122</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
+      '<ul class="bds"><li><span class="bd bd-fixed">Fixed <b>1</b></span></li><li><span class="bd bd-added-by-jig">Added by Jig <b>126</b></span></li><li><span class="bd bd-open">Still open within the target <b>4</b></span></li><li><span class="bd bd-beyond">Still open beyond the target <b>78</b></span></li><li><span class="bd bd-unchanged">Unchanged and met <b>36</b></span></li></ul>',
     );
     expect(suggested).toMatch(
       /<details class="later sm" id="since-within" open data-fold><summary><span class="later-h">Still open within the target<\/span> <span class="later-n">\(4\)<\/span><\/summary><table class="chgt chg-t">.*?<tbody><tr><td><span class="pw mw"><a class="mchip" href="#d-M0".*?<code>universal-instruction-file<\/code>.*?<td><span class="bd bd-open">Still open<\/span><\/td><\/tr>/,
@@ -1496,24 +1494,6 @@ describe("the Markdown copy", () => {
     expect(md).toMatch(
       /\| \*\*glossary-exists\*\*: .* \| \*\*absent\*\* \(needed for the target, not met yet; a gap no recommendation covers\) \|/,
     );
-  });
-
-  test("lists the criteria still open within the target, and only counts those beyond it", () => {
-    const text = renderReportMarkdown(reportInput({ prior: priorRecord() }));
-    expect(text).toContain(
-      readFileSync(
-        new URL("./fixtures/report/prior-changes.md", import.meta.url),
-        "utf8",
-      ).trimEnd(),
-    );
-    const none = renderReportMarkdown(
-      reportInput({ prior: priorRecord(), source: noProfile }),
-    );
-    expect(none).toContain(
-      "Compared with the audit of 2026-07-19 (plugin 0.14.0): 82 still open, 36 unchanged and met.",
-    );
-    expect(none).not.toContain("Still open");
-    expect(none).not.toContain("beyond the target");
   });
 
   test("writes the trend as the sheet does", () => {

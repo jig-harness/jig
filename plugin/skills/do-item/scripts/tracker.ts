@@ -8,6 +8,7 @@
  *     bun tracker.ts transition <issue-key> <canonical-state>
  *     bun tracker.ts comment <issue-key> --body-file body.md
  *     bun tracker.ts states                       # canonical → tracker names
+ *     bun tracker.ts issue-states                 # item keys on stdin → open/closed
  *     bun tracker.ts labels                       # label role → tracker labels
  *     bun tracker.ts create --input issue.json
  *     bun tracker.ts update <issue-key> --input patch.json
@@ -15,6 +16,12 @@
  *     bun tracker.ts relations <issue-key>
  *     bun tracker.ts relate <issue-key> <blocks|related|duplicate> <target-key>
  *     bun tracker.ts available-labels             # every label issues can carry
+ *
+ * `issue-states` reads item keys, one per line, and prints each key's
+ * current state as `open`, `closed` (completed, canceled or duplicate) or
+ * `not_found`: the live half of M4's deferral check reads it. A key the
+ * tracker answers without a state category, or with one that is neither open
+ * (triage, backlog, unstarted, started) nor closed, is an error, never `open`.
  *
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
  * and where the consumer uses them triage, ops_pending, duplicate.
@@ -44,10 +51,13 @@ import {
   openTracker,
 } from "./lib/tracker/index.ts";
 import {
+  CLOSED_STATE_TYPES,
   type IssuePatch,
   type NewIssue,
+  OPEN_STATE_TYPES,
   RELATION_TYPES,
   type RelationType,
+  type Tracker,
   TrackerRequestError,
 } from "./lib/tracker/port.ts";
 import { labelsAsConfig } from "../../../shared/tracker-labels.ts";
@@ -57,6 +67,7 @@ const USAGE = `usage:
   tracker.ts transition <issue-key> <canonical-state>
   tracker.ts comment <issue-key>   (body on stdin)
   tracker.ts states
+  tracker.ts issue-states          (item keys on stdin, one per line)
   tracker.ts labels
   tracker.ts create                (new issue as JSON on stdin)
   tracker.ts update <issue-key>    (patch as JSON on stdin)
@@ -162,6 +173,69 @@ export function parsePatch(key: string, text: string): IssuePatch {
   return patch as IssuePatch;
 }
 
+/** A lookup that cannot be answered; the operation fails rather than guess. */
+class ItemStateError extends Error {}
+
+/** The shape of an item key: letters and digits, a hyphen, a number. */
+const ITEM_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
+
+/** How many keys are looked up at once. */
+const LOOKUPS_AT_ONCE = 4;
+
+/** The item keys on `text`, one per line; blank lines are skipped, repeats once. */
+export function parseItemKeys(text: string): string[] {
+  const keys = new Set<string>();
+  for (const line of text.split(/\r\n|\r|\n/)) {
+    const key = line.trim();
+    if (key === "") continue;
+    if (!ITEM_KEY.test(key))
+      throw new UsageError(`'${key}' is not an item key like ENG-123`);
+    keys.add(key);
+  }
+  return [...keys].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/**
+ * Each key's state as `open`, `closed` or `not_found`. A lookup that fails,
+ * or an issue the tracker reports with no state category or one it does not
+ * know, fails the whole answer: a partial map would read an unanswered key as
+ * a pass, and an unknown category read as open would do the same.
+ */
+export async function itemStates(
+  tracker: Pick<Tracker, "poolIssue">,
+  keys: readonly string[],
+): Promise<Record<string, "open" | "closed" | "not_found">> {
+  const states: Record<string, "open" | "closed" | "not_found"> = {};
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < keys.length) {
+      const key = keys[next++] as string;
+      const issue = await tracker.poolIssue(key);
+      if (issue === null) {
+        states[key] = "not_found";
+        continue;
+      }
+      const type = issue.state.type;
+      if ((CLOSED_STATE_TYPES as readonly string[]).includes(type))
+        states[key] = "closed";
+      else if ((OPEN_STATE_TYPES as readonly string[]).includes(type))
+        states[key] = "open";
+      else
+        throw new ItemStateError(
+          type === ""
+            ? `${key}: the tracker reported no state category`
+            : `${key}: the tracker reported the state category ${JSON.stringify(type)}, which is neither open nor closed`,
+        );
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(LOOKUPS_AT_ONCE, keys.length) }, worker),
+  );
+  return Object.fromEntries(
+    Object.entries(states).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
+}
+
 /** One operation: its positional arguments, its options, what it prints. */
 interface Operation {
   /** How many positional arguments it takes, and how usage names them. */
@@ -180,6 +254,15 @@ const OPERATIONS: Record<string, Operation> = {
     takes: "no argument",
     indent: true,
     run: async () => ownTrackerConfig().states,
+  },
+  "issue-states": {
+    arity: 0,
+    takes: "no argument; the item keys come on stdin, one per line",
+    indent: true,
+    run: async () => {
+      const keys = parseItemKeys(await readStdin());
+      return itemStates(openTracker(), keys);
+    },
   },
   labels: {
     arity: 0,

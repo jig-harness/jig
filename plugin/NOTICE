@@ -47,6 +47,8 @@ modules/M2-generated-artifact-freshness/templates/generated-files.yaml
 modules/M2-generated-artifact-freshness/templates/regenerate-after-merge.yml
 modules/M3-change-area-catalog/templates/catalog.yaml
 modules/M4-docs-governance/templates/WIKI-SCHEMA.md
+modules/M4-docs-governance/templates/deferral-liveness.yml
+modules/M4-docs-governance/templates/deferral-references.yaml
 modules/M4-docs-governance/templates/frontmatter-schema.yaml
 modules/M5-adr-practice/templates/ADR-template.md
 modules/M5-adr-practice/templates/adr-rules.yaml
