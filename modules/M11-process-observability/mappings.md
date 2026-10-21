@@ -282,7 +282,8 @@ contract and the two gates, not a particular board.
 The [M10 reference reconciler](../M10-environments-deploy/reference/external-preconditions/)
 takes a tracker port with complete open-issue listing, create, update and
 close operations. Its GitHub Issues implementation uses a stable body marker,
-pages through the open issues, excludes pull requests and refuses duplicates.
+pages through the open issues the reconciling login opened, excludes pull
+requests and refuses duplicates.
 Grant its token Issues write only on the repository that owns the registry.
 Serialize all runs that use the same marker. A complete healthy report closes
 the issue; pending or unknown observations keep it open. Failed tracker reads

@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { verifyPreconditions } from "./check-external-preconditions.ts";
 import type { TrackerPort } from "../modules/M10-environments-deploy/reference/external-preconditions/reconcile.ts";
+import { branchProtection } from "../modules/M10-environments-deploy/reference/external-preconditions/branch-protection.ts";
+import type { GhApi } from "../plugin/skills/changelog/scripts/github-rules.ts";
 
 function tracker() {
   const calls: string[] = [];
@@ -76,4 +78,37 @@ test("tracker failures propagate even after a healthy observation", async () => 
       "branch-protection": () => ({ status: "pass", reasons: [] }),
     }),
   ).rejects.toThrow("tracker denied");
+});
+test("handed-over observations are judged offline; a missing one stays red", async () => {
+  const observations = JSON.parse(
+    readFileSync(
+      join(
+        import.meta.dir,
+        "../modules/M10-environments-deploy/reference/external-preconditions/fixtures/protection.json",
+      ),
+      "utf8",
+    ),
+  ) as Record<string, unknown>;
+  const live: GhApi = () => {
+    throw new Error("live access during an offline judgement");
+  };
+  const healthy = tracker();
+  const passed = await verifyPreconditions(
+    fixture,
+    healthy.port,
+    { "branch-protection": branchProtection(live) },
+    observations,
+  );
+  expect(passed.status).toBe("pass");
+  expect(healthy.calls).toEqual(["list", "close"]);
+  const missing = tracker();
+  const failed = await verifyPreconditions(
+    fixture,
+    missing.port,
+    { "branch-protection": branchProtection(live) },
+    {},
+  );
+  expect(failed.status).toBe("fail");
+  expect(failed.entries[0]?.reasons.join()).toContain("missing fixture");
+  expect(missing.calls).toEqual(["list", "update"]);
 });

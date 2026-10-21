@@ -166,7 +166,7 @@ criteria:
       issue while anything is unresolved, updates it after each observation,
       and closes it automatically only after a complete healthy observation.
     observe:
-      - "a stable registry marker identifies the issue; every page of open issues is read and failed or malformed listings fail without writing"
+      - "a stable registry marker identifies the issue, among only the issues the reconciling identity opened; every page of open issues is read and failed or malformed listings fail without writing"
       - "runs that reconcile the same marker are serialized; duplicate open markers fail for manual reconciliation"
       - "failed, unknown and pending entries keep the issue open with owners and recovery actions; a fully healthy report or valid visible waivers closes it"
       - "invalid registries and unavailable reader credentials are red observations, never an empty green report; tracker failures fail the run"

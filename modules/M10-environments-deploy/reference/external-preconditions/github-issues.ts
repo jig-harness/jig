@@ -27,9 +27,34 @@ function readIssue(value: unknown): TrackerIssue {
   };
 }
 
-/** Inject `api` in tests; live operations use the shared bounded gh process. */
+/** One listed issue by `creator`, or undefined for a pull request; repeats and other creators throw. */
+function listedIssue(
+  item: unknown,
+  creator: string,
+  seen: Set<string>,
+): TrackerIssue | undefined {
+  const issue = readIssue(item);
+  if (seen.has(issue.id))
+    throw new PreconditionIssueError(
+      "GitHub issue listing repeated an issue across pages",
+    );
+  seen.add(issue.id);
+  if (!isRecord(item) || !isRecord(item.user) || item.user.login !== creator)
+    throw new PreconditionIssueError(
+      "GitHub issue listing returned an issue by another creator",
+    );
+  return "pull_request" in item ? undefined : issue;
+}
+
+/**
+ * `creator` is the login that reconciles (for a workflow token,
+ * `github-actions[bot]`): only its issues are listed, so an issue anyone else
+ * opens with the public marker is never adopted, updated or closed.
+ * Inject `api` in tests; live operations use the shared bounded gh process.
+ */
 export function githubIssues(
   repository: string,
+  creator: string,
   api: GhApi = ghApi(),
 ): TrackerPort {
   if (
@@ -37,6 +62,8 @@ export function githubIssues(
     repository.split("/").some((part) => part === "." || part === "..")
   )
     throw new PreconditionIssueError("GitHub repository must be owner/name");
+  if (!/^[A-Za-z0-9-]+(\[bot\])?$/.test(creator))
+    throw new PreconditionIssueError("GitHub issue creator must be a login");
   const endpoint = `repos/${repository}/issues`;
   function request(args: string[]): unknown {
     const result = api(args);
@@ -70,21 +97,15 @@ export function githubIssues(
       // A bound also makes a non-progressing API fail instead of looping forever.
       for (let page = 1; page <= 1000; page++) {
         const value = request([
-          `${endpoint}?state=open&per_page=100&page=${page}`,
+          `${endpoint}?state=open&creator=${encodeURIComponent(creator)}&per_page=100&page=${page}`,
         ]);
         if (!Array.isArray(value) || value.length > 100)
           throw new PreconditionIssueError(
             "GitHub issue listing must be an array of at most 100 issues",
           );
         for (const item of value) {
-          const issue = readIssue(item);
-          if (seen.has(issue.id))
-            throw new PreconditionIssueError(
-              "GitHub issue listing repeated an issue across pages",
-            );
-          seen.add(issue.id);
-          if (isRecord(item) && "pull_request" in item) continue;
-          issues.push(issue);
+          const issue = listedIssue(item, creator, seen);
+          if (issue) issues.push(issue);
         }
         if (value.length < 100) return issues;
       }

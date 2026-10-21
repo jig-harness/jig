@@ -8,9 +8,10 @@ inspects. The doctrine is [M10](../../README.md#external-preconditions);
 defines how its findings maintain one current issue.
 
 Run from a pinned Jig checkout with Bun installed. To vendor the reference,
-include `lib/`, `plugin/shared/` and `plugin/skills/changelog/` alongside this
-directory: the YAML reader, bounded GitHub reader and bot-access evaluator
-are shared implementations, not independent copies here. No package install
+include `lib/`, `plugin/shared/`, `plugin/skills/changelog/` and
+`plugin/skills/drive-pr/scripts/lib/` alongside this directory: the YAML
+reader, bounded GitHub reader, bot-access evaluator and the required-check
+policy it reads are shared implementations, not independent copies here. No package install
 is needed at runtime.
 
 ## Registry and checks
@@ -21,8 +22,11 @@ and `remediation`; `description` is optional. An empty, malformed or duplicate
 registry fails. `state: pending` always fails, even with a checker or waiver.
 An unknown kind is unknown and fails. Check kinds are passed to `runRegistry`
 as a map from kind name to a function taking an entry and optional fixture
-input, returning `{status: pass|fail|unknown, reasons: string[]}`. The runner
-catches a failed check and continues with the remaining entries. A check must
+input, returning `{status: pass|fail|unknown, reasons: string[]}`, with an
+optional `validate(entry)` that throws for a malformed declaration; the runner
+validates every entry before observing any, so invalid input never reads as
+unknown state. The runner catches a failed check and continues with the
+remaining entries, and judges waiver expiry once the last check has finished. A check must
 bound its external calls and return diagnostic facts without secret values.
 
 The `branch-protection` kind reads classic protection and every applicable
@@ -86,15 +90,19 @@ rendered title/body, and `healthy`, set only from a complete runner report.
 It finds an exact marker line, creates or updates on failure, and closes on
 recovery. Duplicate markers or incomplete listings fail without writing.
 Callers must serialize writers for the key. The GitHub adapter uses bounded
-API calls and reads every page of open issues before deciding.
+API calls and reads every page of open issues before deciding. It lists only
+issues opened by the reconciling login it is given, because the marker is
+public: an issue anyone else opens with it is never adopted or closed.
 
-Jig's wrapper is `scripts/check-external-preconditions.ts`; its scheduled
-workflow uses the release App's read token for observations and the workflow
-token for issue writes. Invalid registries and unavailable reader tokens
-maintain a red issue. The existing `release` environment restricts credentials
-to main; manual dispatches from other refs fail. Minting a reader token that
-fails does not bypass reconciliation: the final step records unavailable
-access and fails the run. The scheduled workflow must be merged before its
+Jig's wrapper is `scripts/check-external-preconditions.ts`. Its scheduled
+workflow reads with the release App's read token in a job that runs nothing
+from the repository, so the App key never shares a runner with repository
+code; a keyless job judges those observations with `--observed FILE` and
+writes the issue with the workflow token. Invalid registries and missing
+observations maintain a red issue. The existing `release` environment
+restricts credentials to main; manual dispatches from other refs fail. A
+failed read does not bypass reconciliation: the judging job still runs,
+records the missing observations and fails the run. The scheduled workflow must be merged before its
 App identity and issue permissions can be exercised end to end.
 
 Provider-specific identity, secret, storage and certificate checkers remain

@@ -195,7 +195,7 @@ function writerObservations(
 }
 /** Inject gh for tests or another GitHub transport; fixture documents use github-rules' shape. */
 export function branchProtection(gh: GhApi = ghApi()): Check {
-  return (entry, input) => {
+  const check: Check = (entry, input) => {
     const expected = expectedOf(entry);
     const target = targetOf(entry);
     if (input !== undefined && !isRecord(input))
@@ -210,6 +210,11 @@ export function branchProtection(gh: GhApi = ghApi()): Check {
     validateBypassActors(normalized);
     return evaluate(entry, normalized, expected);
   };
+  check.validate = (entry) => {
+    expectedOf(entry);
+    targetOf(entry);
+  };
+  return check;
 }
 
 /** A successful classic endpoint must be an object; malformed is never absent. */

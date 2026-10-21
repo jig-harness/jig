@@ -24,10 +24,13 @@ export interface Registry {
   version: 1;
   preconditions: Precondition[];
 }
-export type Check = (
+/** `validate` throws PreconditionError for a malformed declaration, before anything is observed. */
+export type Check = ((
   entry: Precondition,
   input: unknown,
-) => Observation | Promise<Observation>;
+) => Observation | Promise<Observation>) & {
+  validate?: (entry: Precondition) => void;
+};
 export interface EntryReport extends Observation {
   id: string;
   kind: string;
@@ -178,18 +181,27 @@ function outcomeOf(
   if (entry.waiver && observation.status === "fail") return "waived";
   return observation.status;
 }
-/** A pending item is always non-green, even if a waiver was attached. */
+/**
+ * A pending item is always non-green, even if a waiver was attached. Invalid
+ * declarations throw before any check runs; waivers are judged when the last
+ * check has finished, so a run that crosses an expiry does not honour it.
+ */
 export async function runRegistry(
   registry: Registry,
   options: RunOptions,
 ): Promise<Report> {
-  const now = options.now ?? Date.now();
-  if (!Number.isFinite(now))
+  if (options.now !== undefined && !Number.isFinite(options.now))
     throw new PreconditionError("invalid observation time");
-  const entries: EntryReport[] = [];
-  for (const entry of registry.preconditions) {
-    const observation = await observe(entry, options);
-    entries.push({
+  for (const entry of registry.preconditions)
+    if (Object.hasOwn(options.checks, entry.kind))
+      options.checks[entry.kind]?.validate?.(entry);
+  const observations: Observation[] = [];
+  for (const entry of registry.preconditions)
+    observations.push(await observe(entry, options));
+  const now = options.now ?? Date.now();
+  const entries = registry.preconditions.map((entry, index): EntryReport => {
+    const observation = observations[index] as Observation;
+    return {
       ...observation,
       id: entry.id,
       kind: entry.kind,
@@ -197,8 +209,8 @@ export async function runRegistry(
       remediation: entry.remediation,
       outcome: outcomeOf(entry, observation, now),
       ...(entry.waiver ? { waiver: entry.waiver } : {}),
-    });
-  }
+    };
+  });
   return {
     status: entries.every((e) => e.outcome === "pass" || e.outcome === "waived")
       ? "pass"

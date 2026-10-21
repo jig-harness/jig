@@ -248,13 +248,15 @@ and repository administrators may bypass it.
 The intended policy lives in `.config/external-preconditions.yaml`.
 `.github/workflows/external-preconditions.yml` checks it daily under the
 release App identity with a token limited to Contents read and Administration
-read. This scope can inspect classic protection; GitHub withholds ruleset
+read, minted in a job that runs nothing from the repository and hands what it
+read to a keyless job that judges it. This scope can inspect classic protection; GitHub withholds ruleset
 bypass actors unless the caller has write access to the ruleset. A complete
 bot-bypass observation therefore needs an explicitly approved Administration-
 write observer token, still used only for read requests. Until then the
 read-scoped observation reports bypass as unknown. A separate workflow token
 maintains one GitHub issue while the registry
-is unresolved and closes it after recovery. The App installation must grant
+is unresolved and closes it after recovery; only an issue that token's
+identity opened is ever adopted. The App installation must grant
 Administration read before the observation can inspect protection; unavailable
 credentials and withheld bypass lists fail closed. The registry also checks
 that the App can push release commits while history remains protected for it.

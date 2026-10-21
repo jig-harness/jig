@@ -2,11 +2,17 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-const script = new URL("check-external-preconditions.ts", import.meta.url)
-  .pathname;
-const registry = new URL("fixtures/registry.yaml", import.meta.url).pathname;
-const input = new URL("fixtures/protection.json", import.meta.url).pathname;
+const script = fileURLToPath(
+  new URL("check-external-preconditions.ts", import.meta.url),
+);
+const registry = fileURLToPath(
+  new URL("fixtures/registry.yaml", import.meta.url),
+);
+const input = fileURLToPath(
+  new URL("fixtures/protection.json", import.meta.url),
+);
 const spawn = (...args: string[]) =>
   Bun.spawnSync([process.execPath, script, ...args], {
     stdout: "pipe",
@@ -53,4 +59,20 @@ test("CLI rejects clock override in live mode and invalid calendar timestamps", 
     2,
   );
   expectSpawnExit(spawn("--registry", registry, "--unknown"), 2);
+});
+test("a malformed branch declaration is invalid input, exit 2", () => {
+  const dir = mkdtempSync(join(tmpdir(), "external-preconditions-"));
+  try {
+    const broken = join(dir, "registry.yaml");
+    writeFileSync(
+      broken,
+      readFileSync(registry, "utf8").replace(
+        "pull_requests: true",
+        "pull_requests: yes-please",
+      ),
+    );
+    expectSpawnExit(spawn("--registry", broken, "--input", input), 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

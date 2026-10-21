@@ -62,7 +62,9 @@ waiver. Pending checks and failed reads keep it open. Each entry names its
 owner and recovery action; the report does not contain secret values.
 
 Use a stable machine marker rather than a title search, read every page of
-open issues, and serialize observations that write the same marker. If a
+open issues, and serialize observations that write the same marker. A marker
+anyone can type is an identifier, not ownership: consider only issues the
+reconciling identity opened. If a
 lookup fails or duplicate open issues carry the marker, fail without writing
 or closing anything. An invalid registry is an observation failure, never an
 empty green report. Tracker failures fail the run as well: checking without
@@ -196,7 +198,9 @@ that never fired.
   validated by the [event-schema lint](reference/event-schema-lint/);
   **every scheduled job is in the [cadence registry](templates/scheduled-jobs.yaml)
   and a scheduled watcher classifies its runs**, failing for a job that is
-  stale or red (mechanical).
+  stale or red (mechanical); and **each external-precondition registry
+  [reconciles one current issue](#one-current-issue-for-external-preconditions)**
+  that closes only after a complete healthy observation (mechanical).
 - **Strict** — both gates run in [CI](../../GLOSSARY.md) with their self-tests
   (mechanical); **the watcher reports to an external monitor on success and
   on failure**, so a watcher that stops is itself an incident;

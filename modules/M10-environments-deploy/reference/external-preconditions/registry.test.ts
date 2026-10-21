@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { parseRegistry, runRegistry, PreconditionError } from "./registry.ts";
 const raw = `version: 1
 preconditions:
@@ -41,6 +41,46 @@ describe("registry", () => {
         )
       ).status,
     ).toBe("fail");
+  });
+  test("a live run that crosses a waiver's expiry does not honour it", async () => {
+    setSystemTime(new Date("2026-10-20T23:59:59.000Z"));
+    try {
+      const result = await runRegistry(
+        parseRegistry(
+          `${raw}    waiver: {reason: Migration, approved_by: owner, expires: '2026-10-21'}\n`,
+        ),
+        {
+          checks: {
+            fixture: () => {
+              setSystemTime(new Date("2026-10-21T00:00:01.000Z"));
+              return { status: "fail", reasons: ["fixture observation"] };
+            },
+          },
+        },
+      );
+      expect(result.status).toBe("fail");
+      expect(result.entries[0]?.reasons.join()).toContain("waiver expired");
+    } finally {
+      setSystemTime();
+    }
+  });
+  test("an invalid declaration throws before any check runs", async () => {
+    let ran = false;
+    const check = Object.assign(
+      () => {
+        ran = true;
+        return { status: "pass" as const, reasons: [] };
+      },
+      {
+        validate: () => {
+          throw new PreconditionError("bad expected");
+        },
+      },
+    );
+    await expect(
+      runRegistry(parseRegistry(raw), { checks: { fixture: check } }),
+    ).rejects.toThrow("bad expected");
+    expect(ran).toBe(false);
   });
   test("malformed and incomplete waivers reject", () => {
     for (const expires of [

@@ -1,6 +1,9 @@
 # Daily live observation of the intended host state in the external registry.
-# Uses the release App to read its branch and the workflow token only to
-# reconcile one GitHub issue. Neither identity changes host settings.
+# The release App reads its branch in a job that runs nothing from the
+# repository, as the release workflow's key-holding jobs do (ADR-0004): the
+# key never shares a runner with repository code. A second job, which holds no
+# key, judges those observations and uses the workflow token only to reconcile
+# one GitHub issue. Neither identity changes host settings.
 name: external-preconditions
 on:
   schedule:
@@ -24,12 +27,79 @@ jobs:
       - run: |
           echo 'Dispatch external-preconditions from main.' >&2
           exit 1
-  observe:
+  read:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     # The existing release environment admits main only and holds the App key.
     environment: release
+    permissions: {}
+    steps:
+      # Data only: the registry is read with yq, and nothing it holds is run.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: main
+          persist-credentials: false
+          sparse-checkout: .config/external-preconditions.yaml
+          sparse-checkout-cone-mode: false
+      - name: Mint a read-only token for the consuming identity
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-administration: read
+      # The same requests as github-rules.ts's readBranch, as data in the
+      # {classic, rules, rulesets} document the checker's offline input reads.
+      # An entry whose reads fail is left out, which the checker reports as
+      # unknown; a classic read that fails otherwise than "not protected" is
+      # "unreadable", never absent.
+      - name: Read each branch-protection target
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/observed/observed.json"
+          mkdir -p "$(dirname "$out")"
+          echo '{}' > "$out"
+          yq -o=json -I=0 '.preconditions[] | select(.kind == "branch-protection")
+            | {"id": .id, "repo": .target.repository, "branch": .target.branch}' \
+            .config/external-preconditions.yaml > "$RUNNER_TEMP/targets.jsonl"
+          while IFS= read -r target; do
+            id=$(jq -r .id <<< "$target")
+            repo=$(jq -r .repo <<< "$target")
+            branch=$(jq -r .branch <<< "$target")
+            [[ "$repo" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || continue
+            enc=$(jq -rn --arg b "$branch" '$b | @uri')
+            rules=$(gh api --paginate --slurp "repos/$repo/rules/branches/$enc?per_page=100" | jq -c 'add // []') ||
+              { echo "::warning::$id: rules unreadable"; continue; }
+            rulesets='[]'
+            for rid in $(jq -r '[.[].ruleset_id] | unique | .[]' <<< "$rules"); do
+              [[ "$rid" =~ ^[0-9]+$ ]] || continue
+              ruleset=$(gh api "repos/$repo/rulesets/$rid") || ruleset=$(jq -cn --argjson id "$rid" '{id: $id}')
+              rulesets=$(jq -c --argjson r "$ruleset" '. + [$r]' <<< "$rulesets")
+            done
+            if classic=$(gh api "repos/$repo/branches/$enc/protection" 2> "$RUNNER_TEMP/classic.err"); then :
+            elif grep -q 'Branch not protected' "$RUNNER_TEMP/classic.err"; then classic=null
+            else classic='"unreadable"'
+            fi
+            jq --arg id "$id" --argjson c "$classic" --argjson r "$rules" --argjson s "$rulesets" \
+              '.[$id] = {classic: $c, rules: $r, rulesets: $s}' "$out" > "$out.next"
+            mv "$out.next" "$out"
+          done < "$RUNNER_TEMP/targets.jsonl"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: external-preconditions-observed
+          path: ${{ runner.temp }}/observed/observed.json
+          if-no-files-found: error
+          retention-days: 1
+  observe:
+    needs: read
+    # A failed read still reconciles: missing observations keep the issue red.
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write
@@ -41,18 +111,12 @@ jobs:
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
       - name: Test the observer before it maintains an issue
         run: bun test modules/M10-environments-deploy/reference/external-preconditions/ scripts/check-external-preconditions.test.ts
-      - name: Mint a read-only token for the consuming identity
-        id: app
-        # The final step records an unavailable reader identity as red.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         continue-on-error: true
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: read
-          permission-administration: read
-      - name: Observe and reconcile the registry issue
+          name: external-preconditions-observed
+          path: ${{ runner.temp }}/observed
+      - name: Judge the observations and reconcile the registry issue
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
           PRECONDITIONS_ISSUE_TOKEN: ${{ github.token }}
-        run: bun scripts/check-external-preconditions.ts
+        run: bun scripts/check-external-preconditions.ts --observed "$RUNNER_TEMP/observed/observed.json"
