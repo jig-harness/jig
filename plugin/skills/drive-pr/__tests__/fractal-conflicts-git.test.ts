@@ -1,9 +1,16 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 
 const collector = pathToFileURL(
   join(import.meta.dir, "../scripts/lib/fractal-conflicts.ts"),
@@ -90,3 +97,93 @@ console.log(JSON.stringify({ commits: [...found.commits], merges: [...found.merg
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test.skipIf(
+  skipsOnWindows("git-bash", "the git shim on PATH is a POSIX shell script"),
+)(
+  "ancestry is unknown in a partial clone whose git cannot stop a lazy fetch",
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "jig-conflict-partial-"));
+    const home = join(dir, "home");
+    const bin = join(dir, "bin");
+    const repo = join(dir, "repo");
+    mkdirSync(home);
+    mkdirSync(bin);
+    mkdirSync(repo);
+    const realGit = Bun.which("git") as string;
+    // Reports an older git and runs the real one for everything else.
+    writeFileSync(
+      join(bin, "git"),
+      `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "git version 2.44.0"; exit 0; fi\nexec ${JSON.stringify(realGit)} "$@"\n`,
+    );
+    chmodSync(join(bin, "git"), 0o755);
+    const env = {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH ?? ""}`,
+      HOME: home,
+      XDG_CONFIG_HOME: home,
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: join(home, "absent-config"),
+      GIT_AUTHOR_NAME: "Fixture",
+      GIT_AUTHOR_EMAIL: "fixture@example.invalid",
+      GIT_COMMITTER_NAME: "Fixture",
+      GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+    };
+    function git(...args: string[]) {
+      const child = Bun.spawnSync([realGit, ...args], {
+        cwd: repo,
+        env,
+        stdin: new Uint8Array(),
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expectSpawnExit(child, 0, `git ${args[0]}`);
+      return child.stdout.toString().trim();
+    }
+    function ancestry() {
+      const probe = `import { realConflictDeps } from ${JSON.stringify(collector)};
+const notes = [];
+const deps = realConflictDeps(${JSON.stringify(repo)}, { owner: "fixture", name: "repository" }, (m) => notes.push(m));
+const sample = ${JSON.stringify(sample)};
+const first = await deps.ancestry(sample);
+await deps.ancestry(sample);
+console.log(JSON.stringify({ found: first !== null, notes }));`;
+      const child = Bun.spawnSync([process.execPath, "-e", probe], {
+        cwd: repo,
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expectSpawnExit(child, 0, "real ancestry collector");
+      return JSON.parse(child.stdout.toString()) as {
+        found: boolean;
+        notes: string[];
+      };
+    }
+    let sample = { pr: 1, headRefOid: "", mergeCommitOid: "" };
+    try {
+      git("init", "-q");
+      const tree = git("mktree");
+      const base = git("commit-tree", tree, "-m", "base");
+      const work = git("commit-tree", tree, "-p", base, "-m", "work");
+      const final = git(
+        "commit-tree",
+        tree,
+        "-p",
+        base,
+        "-p",
+        work,
+        "-m",
+        "final",
+      );
+      sample = { pr: 1, headRefOid: work, mergeCommitOid: final };
+      expect(ancestry()).toEqual({ found: true, notes: [] });
+      git("config", "remote.origin.promisor", "true");
+      const refused = ancestry();
+      expect(refused.found).toBe(false);
+      expect(refused.notes).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

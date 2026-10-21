@@ -7,11 +7,17 @@ import type { PrSample, Repo } from "./sample.ts";
 import type { MetricSpec } from "./fractal-baseline.ts";
 import { verdictOf } from "./fractal-baseline.ts";
 import {
+  gitIsRecentEnough,
+  NO_LAZY_FETCH_GIT,
+  parseGitVersion,
+} from "../../../resolve-conflicts/scripts/lib/replay.ts";
+import {
   ghCall,
   git,
   gitCallTimeoutSeconds,
   gitIdentityEnv,
   run,
+  type RunOptions,
   tsArgv,
 } from "./proc.ts";
 
@@ -141,7 +147,10 @@ export interface ConflictEvidence {
 
 /** The collector is injectable so a failed forge/git probe can never certify clean. */
 export interface ConflictDeps {
-  evidence(): Promise<ConflictEvidence>;
+  evidence(
+    samples: readonly PrSample[],
+    cohort: readonly CohortPr[],
+  ): Promise<ConflictEvidence>;
   ancestry(
     sample: PrSample,
   ): Promise<{ commits: Set<string>; merges: Set<string> } | null>;
@@ -227,7 +236,7 @@ export async function observeConflicts(
     .map((s) => ({ number: s.pr, mergedAt: s.mergedAt as string })),
 ): Promise<Map<number, ConflictObservation>> {
   const out = new Map<number, ConflictObservation>();
-  const evidence = await deps.evidence();
+  const evidence = await deps.evidence(samples, cohort);
   const replayed = new Set(
     (evidence.report?.merges ?? []).map((m) => m.commit),
   );
@@ -270,6 +279,45 @@ export function forgeProvesNoForcePush(body: unknown, head: string): boolean {
   );
 }
 
+/**
+ * The earliest commit time the cohort's evidence can need: a merge committed
+ * before every sampled commit, PR opening and merge is no cohort PR's ancestry.
+ * A merge this bound misses leaves its PR unknown, never clean.
+ */
+export function replaySince(
+  samples: readonly PrSample[],
+  cohort: readonly CohortPr[],
+): string | null {
+  const times = [
+    ...samples.flatMap((s) => [
+      s.createdAt,
+      ...s.commits.map((c) => c.committedDate),
+    ]),
+    ...cohort.map((pr) => pr.mergedAt),
+  ]
+    .map((t) => Date.parse(t))
+    .filter(Number.isFinite);
+  return times.length === 0 ? null : new Date(Math.min(...times)).toISOString();
+}
+
+/** Before git 2.45 nothing stops a partial clone's `rev-list` from fetching the objects it lacks. */
+async function ancestryWillNotFetch(opts: RunOptions): Promise<boolean> {
+  const version = await git(["--version"], opts);
+  const parsed = version.code === 0 ? parseGitVersion(version.stdout) : null;
+  if (parsed !== null && gitIsRecentEnough(parsed, NO_LAZY_FETCH_GIT))
+    return true;
+  // Any promisor or filter key counts, whatever its value: 1 is "no such key".
+  const partial = await git(
+    [
+      "config",
+      "--get-regexp",
+      "^(extensions\\.partialclone|remote\\..*\\.(promisor|partialclonefilter))$",
+    ],
+    opts,
+  );
+  return partial.code === 1;
+}
+
 export function realConflictDeps(
   root: string,
   repo: Repo,
@@ -280,15 +328,17 @@ export function realConflictDeps(
     env: { ...gitIdentityEnv(), GIT_NO_LAZY_FETCH: "1" },
     timeoutSec: gitCallTimeoutSeconds(),
   };
+  let fetchSafe: Promise<boolean> | null = null;
   return {
-    async evidence() {
+    async evidence(samples, cohort) {
+      const since = replaySince(samples, cohort);
       const result = await run(
         tsArgv(
           join(
             import.meta.dir,
             "../../../resolve-conflicts/scripts/history.ts",
           ),
-          ["--all", "--json"],
+          since === null ? ["--all", "--json"] : ["--since", since, "--json"],
         ),
         { cwd: root, timeoutSec: 600 },
       );
@@ -346,6 +396,14 @@ export function realConflictDeps(
         !/^[0-9a-f]{40,64}$/.test(sample.mergeCommitOid)
       )
         return null;
+      fetchSafe ??= ancestryWillNotFetch(gitOpts).then((safe) => {
+        if (!safe)
+          note(
+            "merge-conflict ancestry unavailable: git before 2.45 could fetch in this partial clone",
+          );
+        return safe;
+      });
+      if (!(await fetchSafe)) return null;
       const landed = await git(
         ["rev-list", "--parents", "-n", "1", sample.mergeCommitOid],
         gitOpts,

@@ -2374,7 +2374,10 @@ deliberately does not set it.
 The same PR window includes `merge_conflict_share`: the share of observed
 merged PRs that met a conflict. It reads the sibling conflict-history report
 and this clone’s live events. A PR is observed clean only when its own merge
-ancestry is fully replayed and the forge reports no force-push. Unknown PRs
+ancestry is fully replayed and the forge reports no force-push. The replay
+covers merges committed since the cohort's earliest sampled commit, PR opening
+or merge; in a partial clone with git before 2.45, which could fetch, every
+PR's ancestry is unknown. Unknown PRs
 stay in the cohort: the report prints coverage and whole-cohort bounds, and
 withholds a verdict below `merge_conflicts.coverage_floor` in the fleet-health
 file (default `0.9`), or when those bounds reach different verdicts. Record its

@@ -5,6 +5,7 @@ import {
   judgedConflictShare,
   observeConflicts,
   renderConflictCoverage,
+  replaySince,
   type ConflictDeps,
   type ConflictEvidence,
   type ConflictObservation,
@@ -384,5 +385,47 @@ describe("merge-conflict scoreboard coverage", () => {
         >,
       ),
     ).toContain("full cohort bounds unavailable");
+  });
+});
+
+describe("the replay's window", () => {
+  const withCommits = (createdAt: string, ...dates: string[]) =>
+    ({
+      ...sample,
+      createdAt,
+      commits: dates.map((committedDate) => ({ committedDate })),
+    }) as PrSample;
+  it("starts at the earliest sampled commit, PR opening or cohort merge", () => {
+    expect(
+      replaySince(
+        [
+          withCommits("2026-10-10T00:00:00Z", "2026-10-08T12:00:00Z"),
+          withCommits("2026-10-12T00:00:00Z", "2026-10-13T00:00:00Z"),
+        ],
+        [{ number: 9, mergedAt: "2026-10-15T00:00:00Z" }],
+      ),
+    ).toBe("2026-10-08T12:00:00.000Z");
+    expect(
+      replaySince([], [{ number: 9, mergedAt: "2026-10-15T00:00:00Z" }]),
+    ).toBe("2026-10-15T00:00:00.000Z");
+  });
+  it("replays the whole history when nothing dates the cohort", () => {
+    expect(replaySince([], [])).toBeNull();
+    expect(replaySince([withCommits("not a date")], [])).toBeNull();
+  });
+  it("hands the collector the samples and cohort it bounds", async () => {
+    const seen: unknown[] = [];
+    const cohortPrs = [{ number: 1, mergedAt: "2026-10-20T00:00:00Z" }];
+    await observeConflicts(
+      [sample],
+      deps({
+        evidence: async (samples, listed) => {
+          seen.push(samples, listed);
+          return { report, events: [] };
+        },
+      }),
+      cohortPrs,
+    );
+    expect(seen).toEqual([[sample], cohortPrs]);
   });
 });
