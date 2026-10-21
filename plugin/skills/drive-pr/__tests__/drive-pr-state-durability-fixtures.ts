@@ -1,3 +1,4 @@
+import { scopedStateDir } from "./scoped-state-dir.ts";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, realpathSync } from "node:fs";
 
@@ -18,7 +19,7 @@ import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 export function createStateDurabilityFixtures() {
   function stateDirFor(name: string): string {
     const d = mkdtempSync(join(tmpdir(), `drive-state-${name}-`));
-    return d;
+    return scopedStateDir(d);
   }
 
   async function state(

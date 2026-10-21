@@ -1,6 +1,12 @@
 /** Enumerate lease files, track directory identity and build the mutexes protecting lease mutations. */
-import { statSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { statSync, readdirSync, realpathSync } from "node:fs";
 
+import {
+  readVolumeIdentity,
+  VOLUME_UUID_RE,
+  type VolumeIdentityReader,
+} from "./volume-identity.ts";
 import { fail, isDigits } from "../cli.ts";
 
 import { createLock } from "./lock.ts";
@@ -14,20 +20,18 @@ import {
 import { join } from "node:path";
 
 /**
- * A directory's on-disk identity — device + inode — captured once so a LATER
- * read against the same PATH can be told apart from a read against a
- * DIFFERENT directory that has since been swapped in at that path.
+ * The directory actually read through a path: inode, device, creation time and
+ * canonical target path. Rename-and-recreate preserves the pathname but changes
+ * the inode; redirecting a symlink changes its target. Capture before reading
+ * leases and compare again before trusting an absent read or remote mutation.
  *
- * Identity rather than the path string, because the path is exactly what a
- * rename-and-recreate leaves UNCHANGED: renaming the state directory away and
- * creating an EMPTY one at the same pathname raises no `ENOENT` anywhere a
- * later, per-file `lstatSync` could see — the enumerated name simply is not
- * there anymore, and `readLeaseForFence` reports `absent` for a lease that is
- * still live in the directory that moved (and freezing the NAME LIST does not
- * free the per-candidate CONTENT read from being a second, genuine filesystem
- * touch). Device+inode is what actually changes when the directory is
- * swapped, so it is what `assertStateDirIdentityUnchanged` below re-confirms
- * before trusting a read taken through it.
+ * Device numbers can change after a volume remount. A device change is benign
+ * only with an unchanged inode, nonzero birth time, canonical target path and
+ * independently confirmed volume UUID. Copied directory metadata on another
+ * volume must not pass.
+ * Old tokens without those extra fields keep strict device/inode comparison.
+ * This guards directory replacement, not an attacker who can forge all of the
+ * directory's metadata and lease contents.
  */
 /**
  * `bigint`, not `number`. Node's numeric `stat` fields round 64-bit device and
@@ -42,6 +46,9 @@ import { join } from "node:path";
 export interface DirIdentity {
   readonly dev: bigint;
   readonly ino: bigint;
+  readonly birthtimeNs?: bigint;
+  readonly pathHash?: string;
+  readonly volumeUUID?: string;
 }
 
 /**
@@ -66,7 +73,14 @@ export function statDirIdentity(dir: string): DirIdentity | null {
   try {
     const st = statSync(dir, { bigint: true });
     if (!st.isDirectory()) return null;
-    return { dev: st.dev, ino: st.ino };
+    return {
+      dev: st.dev,
+      ino: st.ino,
+      birthtimeNs: st.birthtimeNs,
+      pathHash: createHash("sha256")
+        .update(realpathSync.native(dir))
+        .digest("hex"),
+    };
   } catch {
     return null;
   }
@@ -80,7 +94,21 @@ export function sameDirIdentity(
   // into proof that an enumeration still names the same directory. Keep the
   // zero identity distinct from null: null can mean a legitimately absent
   // directory in sameDirIdentity2.
-  return b !== null && a.ino !== 0n && a.dev === b.dev && a.ino === b.ino;
+  if (b === null || a.ino === 0n || a.ino !== b.ino) return false;
+  // Preserve the original sufficient proof, including on filesystems without
+  // a reliable birth time. Extra metadata is needed only to relax a device
+  // mismatch, never to replace an already-matching device/inode pair.
+  if (a.dev === b.dev) return true;
+  return (
+    a.birthtimeNs !== undefined &&
+    a.birthtimeNs > 0n &&
+    a.birthtimeNs === b.birthtimeNs &&
+    a.pathHash !== undefined &&
+    a.pathHash === b.pathHash &&
+    a.volumeUUID !== undefined &&
+    VOLUME_UUID_RE.test(a.volumeUUID) &&
+    a.volumeUUID === b.volumeUUID
+  );
 }
 
 /**
@@ -108,20 +136,42 @@ export function sameDirIdentity2(
  * `$DRIVE_PR_STATE_DIR_IDENTITY` beside `$DRIVE_PR_STATE_DIR`; the fence
  * parses it back with `parseDirIdentityToken`.
  *
- * Exported so the driver and the fence share ONE rendering — a second
- * hand-rolled `${dev}:${ino}` on the producing side is a format the consumer
- * can silently stop agreeing with.
+ * New tokens append birth time in nanoseconds and a SHA-256 hash of the
+ * canonical target path. The arm-time token also carries a stable volume UUID
+ * when available. Tokens without volume proof retain strict device comparison.
+ * The driver and fence share this rendering so transport cannot discard the extra proof.
  */
 export function stateDirIdentityToken(dir: string): string {
   const id = statDirIdentity(dir);
-  return id === null || id.ino === 0n ? "" : `${id.dev}:${id.ino}`;
+  return identityToken(id);
+}
+
+function identityToken(id: DirIdentity | null): string {
+  if (id === null || id.ino === 0n) return "";
+  return `${id.dev}:${id.ino}:${id.birthtimeNs}:${id.pathHash}${id.volumeUUID === undefined ? "" : `:${id.volumeUUID}`}`;
+}
+
+/** Arm-time baseline with stable volume proof when the platform can supply it. */
+export async function captureStateDirIdentityToken(
+  dir: string,
+  readVolume: VolumeIdentityReader = readVolumeIdentity,
+): Promise<string> {
+  const before = statDirIdentity(dir);
+  if (before === null) return "";
+  const volume = await readVolume(dir);
+  if (!sameDirIdentity(before, statDirIdentity(dir))) return "";
+  return identityToken(
+    volume !== null && VOLUME_UUID_RE.test(volume)
+      ? { ...before, volumeUUID: volume }
+      : before,
+  );
 }
 
 /**
  * The inverse, and deliberately strict about SHAPE while lenient about
- * ABSENCE: `''`/unset means "no baseline was inherited", which is the
- * ordinary case for an interactive session and for any older driver,
- * and must not refuse. A value that is PRESENT but unparseable is a different
+ * ABSENCE: `''`/unset means "no baseline was inherited". The override fence
+ * refuses that absence; non-override interactive paths establish their own
+ * baseline. A value that is PRESENT but unparseable is a different
  * thing entirely — something set this variable and this process cannot tell
  * what it meant — so it returns `null` and the caller fails closed.
  */
@@ -129,8 +179,12 @@ export function parseDirIdentityToken(
   token: string,
 ): { kind: "absent" } | { kind: "ok"; id: DirIdentity } | { kind: "bad" } {
   if (token === "") return { kind: "absent" };
-  const m = /^(\d+):(\d+)$/.exec(token);
-  if (m === null) return { kind: "bad" };
+  const m =
+    /^(\d+):(\d+)(?::(\d+):([0-9a-f]{64})(?::([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}))?)?$/.exec(
+      token,
+    );
+  if (m === null || (m[5] !== undefined && !VOLUME_UUID_RE.test(m[5])))
+    return { kind: "bad" };
   if (BigInt(m[2] as string) === 0n) return { kind: "bad" };
   // `BigInt`, with no safe-integer ceiling: a 64-bit device or inode above
   // `Number.MAX_SAFE_INTEGER` is a legitimate value on some filesystems, and
@@ -139,7 +193,14 @@ export function parseDirIdentityToken(
   // both groups are digits, so this cannot throw.
   return {
     kind: "ok",
-    id: { dev: BigInt(m[1] as string), ino: BigInt(m[2] as string) },
+    id: {
+      dev: BigInt(m[1] as string),
+      ino: BigInt(m[2] as string),
+      ...(m[3] === undefined
+        ? {}
+        : { birthtimeNs: BigInt(m[3]), pathHash: m[4] as string }),
+      ...(m[5] === undefined ? {} : { volumeUUID: m[5] }),
+    },
   };
 }
 

@@ -16,7 +16,7 @@ import {
   makeScratchRepo,
   makeUnresolvedMergeRepo,
   makeRebasePausedRepo,
-  writeFixture,
+  writeFixture as rawFixture,
   useDrivePrSuite,
   binDir,
 } from "./drive-pr-harness.ts";
@@ -28,6 +28,9 @@ import {
   state,
 } from "./drive-loop-harness.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+
+const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
+  rawFixture(f, scratchClean.dir);
 
 useDrivePrSuite();
 

@@ -13,10 +13,13 @@ import {
   REVIEWER_RUN,
   DORMANT_ARM,
   scratchClean,
-  writeFixture,
+  writeFixture as rawFixture,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
 import { PASS_LOUD, runDriveIn, state } from "./drive-loop-harness.ts";
+
+const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
+  rawFixture(f, scratchClean.dir);
 
 useDrivePrSuite();
 
