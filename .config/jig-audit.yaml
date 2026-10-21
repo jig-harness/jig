@@ -59,19 +59,19 @@ criteria:
   M0/runtime-capabilities-name-fallbacks:   # standard, requires convention
     # Every instruction and skill step that relies on a runtime-specific capability (a slash command for a skill outside a plugin, a built-in tool such as a question tool, a tool the host injects) names its portable fallback or the equivalent in each runtime the team uses, and no gate, hook, script or skill step depends on a host-injected tool.
     score: absent
-    evidence: "At f230603 no rule asked for fallbacks. plugin/skills/do-item/SKILL.md § Asking the user named AskUserQuestion with a plain-text fallback, and plugin/skills/resolve-review-comments/SKILL.md enumerated threads through its GraphQL scripts, not the workspace app's diff-comment tool; but do-item Step 4a delegated with 'the Task tool' and no fallback for another harness, and the question fallback had no branch for a run with nobody to answer"
+    evidence: "Scored by hand at a504398, main's last commit dated 2026-10-13, this record's date, because the criterion postdates the audit and neither this checkout nor origin serves a66ee22. No rule asked for fallbacks. plugin/skills/do-item/SKILL.md § Asking the user named AskUserQuestion with a plain-text fallback, and plugin/skills/resolve-review-comments/SKILL.md enumerated threads through its GraphQL scripts, not the workspace app's diff-comment tool; but do-item Step 4a delegated with 'the Task tool' and no fallback for another harness, and the question fallback had no branch for a run with nobody to answer"
   M0/deny-lists-per-runtime:   # standard, requires convention
     # Where the team forbids agents commands through a runtime's permission rules, each runtime it uses has its own deny list in that runtime's format, and each file's header names the written policy it mirrors and the command forms it cannot match.
     score: expected-absent
-    evidence: "At f230603 git ls-files had no .claude/settings.json and no .codex/rules/ file: Jig keeps no deny list for any runtime, so there is none to keep in step"
+    evidence: "At a504398 (see M0/runtime-capabilities-name-fallbacks) git ls-files had no .claude/settings.json and no .codex/rules/ file: Jig keeps no deny list for any runtime, so there is none to keep in step"
   M0/standards-declare-scope:   # standard, requires convention
     # Each written standard (a coding rule, a lint policy, a review lens) states the classes of artifact it governs: runtime code, one-shot command-line tools, tests, prose instruction files.
     score: absent
-    evidence: "At f230603 AGENTS.md, CONTRIBUTING.md and .config/ai-review.yaml scoped their rules by path (each check's header comment, the reviewer rules' paths:) but no standard named the artifact classes it governs, and nothing mapped standards to runtime code, one-shot tools, tests and instruction files"
+    evidence: "At a504398 (see M0/runtime-capabilities-name-fallbacks) AGENTS.md, CONTRIBUTING.md and .config/ai-review.yaml scoped their rules by path (each check's header comment, the reviewer rules' paths:) but no standard named the artifact classes it governs, and nothing mapped standards to runtime code, one-shot tools, tests and instruction files"
   M0/review-stances-are-pointers:   # standard, requires convention
     # Every stance reviewers must treat as settled policy is written in one place, and the instructions and reviewer configuration that mention it point to that source rather than restate it.
     score: absent
-    evidence: "At f230603 .config/ai-review.yaml architecture_invariants restated AGENTS.md's rules in its own words (origin references, the module contract, de-scarring, plugin versioning) rather than pointing to them; plugin/skills/resolve-review-comments/references/triage-rubric.md § Standing rejections closes a contradicting finding as rejected with a link to the canonical rule"
+    evidence: "At a504398 (see M0/runtime-capabilities-name-fallbacks) .config/ai-review.yaml architecture_invariants restated AGENTS.md's rules in its own words (origin references, the module contract, de-scarring, plugin versioning) rather than pointing to them; plugin/skills/resolve-review-comments/references/triage-rubric.md § Standing rejections closes a contradicting finding as rejected with a link to the canonical rule"
   M0/skill-authoring-rules:   # standard, requires convention
     # Where the repository maintains agent skills, written authoring rules say how a skill is put together for the moment each part is read: a description that leads with the distinguishing trigger and carries its negative triggers, references named directly by the skill's entry file, contents sections in long references, no incident history or time-sensitive phrasing in instruction bodies, and discovery controls used for what they do (expected-absent where the repository keeps no skills).
     score: absent
@@ -94,7 +94,7 @@ criteria:
   M0/skill-invocation-fallback-gated:   # strict, requires mechanical
     # A CI check fails every slash command for one of the repository's own skills that names no fallback for that skill beside it (expected-absent for a repository with no skill of its own).
     score: absent
-    evidence: "At f230603 Jig had skills of its own under .claude/skills, but scripts/gates.ts ran no check that reads slash commands for a fallback beside them"
+    evidence: "At a504398 (see M0/runtime-capabilities-name-fallbacks) Jig had skills of its own under plugin/skills, but scripts/gates.ts ran no check that reads slash commands for a fallback beside them"
   M0/skill-authoring-ratcheted:   # strict, requires mechanical
     # A structural check counts the skill-authoring rules a script can see (references the entry file does not name, long references without a table of contents, issue-id density, time-sensitive phrasing, negative triggers only in the body) per rule and per skill file, and CI fails a change that adds to any file's count, compared against the merge base or a baseline that may only fall (expected-absent where the repository keeps no skills).
     score: absent

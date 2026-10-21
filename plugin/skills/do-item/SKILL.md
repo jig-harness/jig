@@ -183,9 +183,10 @@ Issue keys in this document look like `ENG-123`.
 
 ### Asking the user
 
-Where this skill says "ask the user", use `AskUserQuestion` under Claude Code;
-in any other interactive harness, ask a plain-text numbered question and end
-the turn; under a [headless runner](#headless-runners), raise it through the
+Where this skill says "ask the user", use `AskUserQuestion` under Claude Code
+where the session can use it; in any interactive harness where it cannot
+(another harness, or a permission mode that denies the tool), ask a
+plain-text numbered question and end the turn; under a [headless runner](#headless-runners), raise it through the
 runner. With nobody to answer and no runner, stop and state the question.
 Never pick on the user's behalf.
 

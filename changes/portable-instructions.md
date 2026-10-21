@@ -12,4 +12,4 @@ release: minor
 
 ### Changed
 
-- `do-item`, `file-issue` and `work-batch` say what to do when nobody is there to answer a question: stop and state it. `do-item` names a fallback for delegating where the harness has no Task tool, and `fix-ci` for tracking errors where it has no task list.
+- `do-item`, `file-issue` and `work-batch` ask in plain text wherever `AskUserQuestion` cannot be used, a Claude Code permission mode that denies it included, and say what to do when nobody is there to answer a question: stop and state it. `do-item` names a fallback for delegating where the harness has no Task tool, and `fix-ci` for tracking errors where it has no task list.

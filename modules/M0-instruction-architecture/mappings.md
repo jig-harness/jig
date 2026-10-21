@@ -294,7 +294,7 @@ bun jig/modules/M0-instruction-architecture/reference/skill-invocation-fallback/
 
 A step that needs a person's answer asks in the first way that applies:
 
-1. **A runner with a control plane** (a service that tracks the job and can
+1. **A runner with a [control plane](../../GLOSSARY.md)** (a service that tracks the job and can
    reach a person) parks the job and raises the question there.
 2. **Claude Code, in an interactive session that may use it**, uses its
    built-in `AskUserQuestion`; where the session cannot use it, the next

@@ -174,7 +174,8 @@ criteria:
       - "each runtime the team uses (from its instruction files, configuration and the load model) that has a permission format carries a deny list: Claude Code permissions.deny in .claude/settings.json, Codex prefix_rule entries in .codex/rules/*.rules"
       - "each deny-list file's header, or a comment beside it, names the written policy it mirrors"
       - "each file lists the forms it cannot match (for Codex: a flag after a variable argument, `run` scripts, a global flag before the verb, part of one word), or links where they are listed"
-      - "a runtime the team uses that has no deny list while another does is a gap, unless the gap is written down"
+      - "a runtime the team uses that has a permission format but no deny list while another does is a gap, and writing the gap down does not close it"
+      - "a runtime the team uses that has no permission format meets it when the file of a runtime that has one says so"
       - "a repository that keeps no deny list for any runtime meets it (expected-absent)"
     since: next
 

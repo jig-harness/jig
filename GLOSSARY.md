@@ -100,6 +100,12 @@ make, use the entry's term instead.
   lacks the capability it relies on: read the skill's `SKILL.md` where there
   is no slash command, ask in plain text where there is no question tool.
   See [M0](modules/M0-instruction-architecture/README.md#invariant).
+- **Control plane** — a service that tracks an agent's job and can reach a
+  person on its behalf: a job runner or orchestrator that can park a job and
+  raise a question there. A run that has one parks the job for an answer;
+  a run with neither a control plane nor a person to answer stops and states
+  the question.
+  See [M0](modules/M0-instruction-architecture/README.md#invariant).
 - **Host-injected tool** — a tool a launcher or workspace app adds to an
   agent session without any file in the repository registering it (often an
   *MCP* server). Searching the repository does not find it and its

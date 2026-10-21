@@ -63,7 +63,7 @@ where it lands, and what it applies to:
     `SKILL.md` as its fallback. A
     [lint](reference/skill-invocation-fallback/README.md) enforces it for
     the repository's own skills.
-  - *Asking the user.* A runner with a control plane (a service that
+  - *Asking the user.* A runner with a [control plane](../../GLOSSARY.md) (a service that
     tracks the job and can reach a person) parks the job and raises the
     question there; an interactive session uses the runtime's own question
     tool where it has one and may use it, and otherwise asks in plain text
@@ -207,8 +207,8 @@ counted by the [skill-authoring check](reference/skill-authoring/README.md).
   the instruction set has a named owner and review cadence. CI fails a change
   that puts the always-loaded context over its smallest consumer's budget,
   before dependencies are installed, and one that adds to any skill file's
-  count of a skill-authoring rule. CI also fails a slash command that names
-  no fallback.
+  count of a skill-authoring rule. CI also fails a slash command for one of
+  the repository's own skills that names no fallback.
 
 ## Adoption steps
 

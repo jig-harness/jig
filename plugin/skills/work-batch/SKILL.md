@@ -51,9 +51,10 @@ read one value yourself, run
 ### Asking the user
 
 Where a step needs a person's answer (a verdict in step 2, an issue left
-for a person to settle), use `AskUserQuestion` under Claude Code; in any
-other interactive harness, ask a plain-text numbered question and end the
-turn. With nobody to answer, stop and state the question. Never pick on the
+for a person to settle), use `AskUserQuestion` under Claude Code where the
+session can use it; in any interactive harness where it cannot (another
+harness, or a permission mode that denies the tool), ask a plain-text
+numbered question and end the turn. With nobody to answer, stop and state the question. Never pick on the
 user's behalf.
 
 ## When not to batch
