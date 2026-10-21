@@ -1,3 +1,4 @@
+import { armProcessDeadline } from "./process-deadline.ts";
 import { spawnCommand } from "./windows-command.ts";
 export {
   lastBytes,
@@ -603,31 +604,17 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     const signalTree = (sig: NodeJS.Signals) =>
       windows.signal(child, detached, sig);
 
-    if (opts.timeoutSec !== undefined) {
-      timers.kill = setTimeout(() => {
+    armProcessDeadline(
+      child,
+      timers,
+      opts.timeoutSec,
+      deadlineGraceMs,
+      () => {
         timedOut = true;
-        signalTree("SIGTERM");
-        timers.escalate = setTimeout(() => {
-          signalTree("SIGKILL");
-          // Settle on the DEADLINE's terms, not on 'close'.
-          //
-          // 'close' waits for the stdio streams as well as the exit, and every
-          // descendant inherited those streams — so it does not fire while any
-          // of them lives, and the deadline that just fired would go on
-          // waiting for a grandchild. That is the very hang this timer exists
-          // to bound, so it must not be reachable through it. Measured in the
-          // drive-pr copy.
-          //
-          // Destroying our ends of the pipes is what lets the runtime exit
-          // afterwards — an orphaned grandchild holding a live handle would
-          // otherwise keep the event loop alive past the resolved promise.
-          child.stdout?.destroy();
-          child.stderr?.destroy();
-          child.unref();
-          settle(124);
-        }, deadlineGraceMs());
-      }, opts.timeoutSec * 1000);
-    }
+      },
+      signalTree,
+      settle,
+    );
 
     // Set BEFORE `settle`, exactly as `timedOut` and `output.bufferExceeded` are, so
     // the flag is on the result this handler produces.

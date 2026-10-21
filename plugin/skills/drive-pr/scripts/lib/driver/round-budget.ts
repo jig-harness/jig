@@ -310,8 +310,12 @@ export async function prepareRoundPass(
   const depth = reflectDepthPastLast({
     rounds: counted,
     attempts: peekedAttempts,
-    lastReflectedRound: peekedLastReflectedRound,
-    lastReflectedAttempts: peekedLastReflectedAttempts,
+    ...(peekedLastReflectedRound === undefined
+      ? {}
+      : { lastReflectedRound: peekedLastReflectedRound }),
+    ...(peekedLastReflectedAttempts === undefined
+      ? {}
+      : { lastReflectedAttempts: peekedLastReflectedAttempts }),
   });
   if (reflectDutyArmed(depth, reflectAfter)) {
     process.env.DRIVE_PR_REFLECT_DUE = String(round);
