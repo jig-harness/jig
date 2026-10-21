@@ -41,6 +41,7 @@ test("the gate set runs its cheap stages first and --fast runs only those", asyn
     "bun scripts/check-workflow-safety.ts",
     "bun scripts/check-workflow-conventions.ts",
     "bun scripts/check-schedules-declared.ts",
+    "bun scripts/check-lifecycle-map.ts",
     "bun scripts/check-changelog.ts",
     "bun scripts/check-audit-fit.ts",
     "bun scripts/change-areas.ts --check",
