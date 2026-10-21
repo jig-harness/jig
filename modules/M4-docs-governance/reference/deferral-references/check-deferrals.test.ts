@@ -468,7 +468,10 @@ describe("--staged", () => {
   });
 
   test("a change to the configuration judges every document, not only the changed ones", () => {
-    const r = repo({ "a.md": "Tracked to closure under TASK-1.\n" });
+    const r = repo(
+      { "a.md": "Tracked to closure under TASK-1.\n" },
+      "items: ['\\bENG-\\d+\\b']\n",
+    );
     expectSpawnExit(r.run(["--all"]), 1);
     r.write(".config/deferral-references.yaml", "items: ['\\bTASK-\\d+\\b']\n");
     r.git("add", ".");
