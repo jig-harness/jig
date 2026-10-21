@@ -14,7 +14,11 @@ step at all. Each repository keeps only its own values (its gate command,
 reviewer names, issue team) in one configuration file, which the skills read
 when they run.
 
-The skills come in groups, each in the order its skills are used. The
+The skills come in groups, each in the order its skills are used. The groups
+say what a skill is; for the order work takes through them, from steering to a
+closed epic, with the skill that owns each stage and the artifact it hands on,
+see the [lifecycle map](https://github.com/jig-harness/jig/blob/main/modules/M6-feature-delivery-pipeline/README.md#the-lifecycle-map),
+whose template a repository fills with its own owners. The
 last column says how a skill connects to the others: what starts it, what it
 runs, what it hands over to.
 

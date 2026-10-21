@@ -45,6 +45,12 @@ import {
 } from "./lib/classify.ts";
 import { indexAttributesGit } from "./lib/attributes.ts";
 import { git, isBinaryBlob, splitNul, topLevel } from "./lib/git.ts";
+import {
+  attributionOf,
+  concludedCommit,
+  keepPending,
+  recordConcluded,
+} from "./lib/events.ts";
 import { parseHunks, writtenMarkerSize } from "./lib/markers.ts";
 import {
   detectOperation,
@@ -53,6 +59,7 @@ import {
   type SideName,
 } from "./lib/operation.ts";
 import {
+  describeOperation,
   emptyResolution,
   type Intent,
   type IntentCommit,
@@ -442,13 +449,28 @@ export function mergeSnapshot(
   }
   for (const [path, entry] of Object.entries(fresh.paths))
     if (!Object.hasOwn(paths, path)) paths[path] = entry;
+  const attribution = previous.attribution ?? fresh.attribution;
+  return {
+    snapshot: {
+      ...fresh,
+      ...(attribution === undefined ? {} : { attribution }),
+      paths,
+    },
+    note: updateNote(paths, cleared),
+  };
+}
+
+/** How many recorded decisions an update kept, and which it cleared. */
+function updateNote(
+  paths: Record<string, PathEntry>,
+  cleared: string[],
+): string {
   const kept = Object.values(paths).filter(
     (entry) => entry.resolution.decision,
   ).length;
-  return {
-    snapshot: { ...fresh, paths },
-    note: `updated: kept ${kept} recorded decision${kept === 1 ? "" : "s"}${cleared.length === 0 ? "" : `; cleared the decision for ${cleared.sort().join(", ")}, whose class or regeneration command changed: record it again`}`,
-  };
+  const keptPart = `updated: kept ${kept} recorded decision${kept === 1 ? "" : "s"}`;
+  if (cleared.length === 0) return keptPart;
+  return `${keptPart}; cleared the decision for ${cleared.sort().join(", ")}, whose class or regeneration command changed: record it again`;
 }
 
 function shortSha(sha: string): string {
@@ -560,12 +582,39 @@ function recordedSizes(
   return sizes;
 }
 
+/**
+ * An earlier operation's snapshot is about to be overwritten: keep its events
+ * if it concluded and nobody recorded them (each stop of a rebase is a new
+ * operation, and `events.ts` runs once, after the last). When the record
+ * cannot be written, the snapshot is kept as pending, with the commit it
+ * concluded with, for `events.ts` to record later. Never stops the map.
+ */
+function recordBeforeReplacing(root: string, previous: Snapshot): void {
+  let commit: string | null = null;
+  try {
+    commit = concludedCommit(root, previous);
+    if (commit === null) return;
+    const done = recordConcluded(root, previous, process.env, commit);
+    if (done.written > 0)
+      console.error(
+        `conflict-map: recorded ${done.written} merge_conflict event${done.written === 1 ? "" : "s"} of the ${describeOperation(previous.operation)} before replacing its snapshot`,
+      );
+  } catch (err) {
+    const kept = keepPending(root, previous, commit);
+    console.error(
+      `conflict-map: could not record the events of the ${describeOperation(previous.operation)}: ${err instanceof Error ? err.message : err}. ${kept === null ? "Its snapshot could not be kept either; its events are lost." : `Its snapshot is kept in ${kept}; events.ts records it once the record can be written.`}`,
+    );
+  }
+}
+
 function usage(): never {
   fail(2, "usage: conflict-map.ts [--json] [--integration ours|theirs]");
 }
 
-async function main(): Promise<number> {
-  const args = process.argv.slice(2);
+function parseArgs(args: readonly string[]): {
+  json: boolean;
+  integration: SideName | undefined;
+} {
   let json = false;
   let integration: SideName | undefined;
   for (let i = 0; i < args.length; i++) {
@@ -577,16 +626,28 @@ async function main(): Promise<number> {
       integration = value;
     } else usage();
   }
-  const root = topLevel();
-  if (root === null) fail(2, "conflict-map: not inside a git work tree.");
-  let op: Operation;
+  return { json, integration };
+}
+
+/** The operation in progress at `root`; exit 3 when there is none. */
+function operationOrExit(
+  root: string,
+  integration: SideName | undefined,
+): Operation {
   try {
-    op = detectOperation(root, integration);
+    return detectOperation(root, integration);
   } catch (err) {
     if (err instanceof NoOperation)
       fail(3, `conflict-map: ${err.message} Nothing to map.`);
     throw err;
   }
+}
+
+async function main(): Promise<number> {
+  const { json, integration } = parseArgs(process.argv.slice(2));
+  const root = topLevel();
+  if (root === null) fail(2, "conflict-map: not inside a git work tree.");
+  const op = operationOrExit(root, integration);
   const previous = storedSnapshot(root);
   const catalog = catalogGeneratedEntries();
   const paths = mapConflicts(root, op, catalog, recordedSizes(previous, op));
@@ -607,6 +668,7 @@ async function main(): Promise<number> {
     warning: warningOf(op.warning, catalog),
     catalogIncomplete: catalog.incomplete,
     mappedAt: new Date().toISOString(),
+    attribution: attributionOf(process.env),
     paths,
   };
   const { snapshot, note } = mergeSnapshot(
@@ -614,12 +676,15 @@ async function main(): Promise<number> {
     fresh,
     classifyPaths(root, stagedSince(previous, fresh), derivedEntries(catalog)),
   );
+  if (previous !== null && !sameOperation(previous, op))
+    recordBeforeReplacing(root, previous);
   const file = saveSnapshot(root, snapshot);
-  if (json) console.log(JSON.stringify(snapshot, null, 2));
-  else {
+  if (!json) {
     console.log(summary(snapshot, Object.keys(paths), file, note));
+    return 0;
   }
-  if (json && snapshot.warning) console.error(`WARNING: ${snapshot.warning}`);
+  console.log(JSON.stringify(snapshot, null, 2));
+  if (snapshot.warning) console.error(`WARNING: ${snapshot.warning}`);
   return 0;
 }
 
