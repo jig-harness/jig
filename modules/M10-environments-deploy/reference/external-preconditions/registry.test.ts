@@ -116,4 +116,20 @@ describe("registry", () => {
     });
     expect(result.entries[0]?.reasons.join()).toContain("missing fixture");
   });
+  test("a stalled check is unknown at its deadline and aborted", async () => {
+    let aborted = false;
+    const result = await runRegistry(parseRegistry(raw), {
+      checks: {
+        fixture: (_entry, _input, signal) =>
+          new Promise(() => {
+            signal?.addEventListener("abort", () => (aborted = true));
+          }),
+      },
+      deadlineMs: 20,
+    });
+    expect(result.status).toBe("fail");
+    expect(result.entries[0]?.outcome).toBe("unknown");
+    expect(result.entries[0]?.reasons.join()).toContain("did not finish");
+    expect(aborted).toBe(true);
+  });
 });

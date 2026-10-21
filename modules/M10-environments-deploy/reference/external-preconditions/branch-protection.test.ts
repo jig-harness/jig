@@ -209,4 +209,27 @@ describe("branch protection", () => {
       ).toThrow();
     }
   });
+  test("offline observations meet the live response checks", () => {
+    const variants: ((input: typeof fixture) => void)[] = [
+      (input) => delete input.rulesets[1].enforcement,
+      (input) => (input.rulesets[1].enforcement = "malformed"),
+      (input) =>
+        (input.rulesets[1].bypass_actors = [
+          { actor_type: "Robot", actor_id: 7, bypass_mode: "pull_request" },
+        ]),
+      (input) =>
+        (input.rulesets[1].bypass_actors = [
+          { actor_type: "Integration", actor_id: 42, bypass_mode: ["always"] },
+        ]),
+      (input) =>
+        (input.rulesets[1].bypass_actors = [
+          { actor_type: "Integration", actor_id: [42], bypass_mode: "always" },
+        ]),
+    ];
+    for (const mutate of variants) {
+      const input = structuredClone(fixture);
+      mutate(input);
+      expect(() => observe(input)).toThrow();
+    }
+  });
 });

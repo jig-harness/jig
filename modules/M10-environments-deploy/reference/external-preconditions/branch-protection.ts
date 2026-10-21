@@ -174,7 +174,15 @@ function writerObservations(
     (requirement) => requirement.id === "push",
   );
   if (!push) throw new PreconditionError("writer push requirement missing");
-  results.push({ status: push.status, reasons: push.reasons });
+  // Branch controls only: the installation's Contents write permission is not
+  // observable read-only, and the writer's own token minting checks it.
+  results.push({
+    status: push.status,
+    reasons: [
+      ...push.reasons,
+      "writer: judged on branch controls only; the installation's Contents write permission is not observed",
+    ],
+  });
   // Required safety controls must bind this writer as well as ordinary actors.
   for (const id of ["force-push-blocked", "deletion-blocked"] as const) {
     if (
@@ -207,7 +215,7 @@ export function branchProtection(gh: GhApi = ghApi()): Check {
           })
         : sourceOf(input as Record<string, unknown>, true);
     const normalized = sourceOf(documentOf(source), true);
-    validateBypassActors(normalized);
+    validateSource(normalized);
     return evaluate(entry, normalized, expected);
   };
   check.validate = (entry) => {
@@ -247,9 +255,30 @@ function validateRulesetResponse(value: unknown, id: string): void {
     throw new PreconditionError("ruleset response has invalid enforcement");
 }
 
-/** Do not coerce malformed identities or modes into an apparently empty bypass. */
-function validateBypassActors(source: Source): void {
+/** The actor types GitHub's ruleset API names; any other is an unknown bypass. */
+const ACTOR_TYPES = [
+  "Integration",
+  "OrganizationAdmin",
+  "RepositoryRole",
+  "Team",
+  "DeployKey",
+];
+/**
+ * Validated on every source, live or offline, so an observation handed over as
+ * data meets the checks a live read does. A ruleset GitHub described (more
+ * than its id) states its enforcement; a malformed identity or mode is never
+ * coerced into an apparently empty bypass.
+ */
+function validateSource(source: Source): void {
   for (const ruleset of source.rulesets) {
+    const described = Object.keys(ruleset).some((key) => key !== "id");
+    if (
+      described &&
+      !["active", "evaluate", "disabled"].includes(String(ruleset.enforcement))
+    )
+      throw new PreconditionError(
+        `ruleset ${String(ruleset.id)} has no valid enforcement`,
+      );
     const actors = ruleset.bypass_actors;
     if (actors === undefined || actors === null) continue;
     if (!Array.isArray(actors))
@@ -260,15 +289,22 @@ function validateBypassActors(source: Source): void {
 function validateBypassActor(actor: unknown): void {
   if (!isRecord(actor))
     throw new PreconditionError("bypass actor must be an object");
-  if (typeof actor.actor_type !== "string" || !actor.actor_type.trim())
-    throw new PreconditionError("bypass actor needs actor_type");
-  if (!["always", "pull_request", "exempt"].includes(String(actor.bypass_mode)))
+  if (
+    typeof actor.actor_type !== "string" ||
+    !ACTOR_TYPES.includes(actor.actor_type)
+  )
+    throw new PreconditionError("bypass actor has an unknown actor_type");
+  if (
+    typeof actor.bypass_mode !== "string" ||
+    !["always", "pull_request", "exempt"].includes(actor.bypass_mode)
+  )
     throw new PreconditionError("bypass actor has invalid bypass_mode");
   if (
-    actor.actor_type === "DeployKey" ||
-    actor.actor_type === "OrganizationAdmin"
+    (actor.actor_type === "DeployKey" ||
+      actor.actor_type === "OrganizationAdmin") &&
+    (actor.actor_id === null || actor.actor_id === undefined)
   )
     return;
-  if (!/^[1-9][0-9]*$/.test(String(actor.actor_id)))
+  if (!Number.isSafeInteger(actor.actor_id) || Number(actor.actor_id) <= 0)
     throw new PreconditionError("bypass actor needs a positive actor_id");
 }

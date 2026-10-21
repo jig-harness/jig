@@ -1,6 +1,7 @@
 /** Declarative external requirements; checks only observe, never repair settings. */
 import { load } from "../../../../lib/vendor/js-yaml.mjs";
 import { isRecord } from "../../../../plugin/shared/guards.ts";
+import { withDeadline } from "./deadline.ts";
 
 export class PreconditionError extends Error {}
 
@@ -24,10 +25,15 @@ export interface Registry {
   version: 1;
   preconditions: Precondition[];
 }
-/** `validate` throws PreconditionError for a malformed declaration, before anything is observed. */
+/**
+ * `validate` throws PreconditionError for a malformed declaration, before
+ * anything is observed. `signal` aborts at the run's per-check deadline; a
+ * check that ignores it is abandoned then and reported unknown.
+ */
 export type Check = ((
   entry: Precondition,
   input: unknown,
+  signal?: AbortSignal,
 ) => Observation | Promise<Observation>) & {
   validate?: (entry: Precondition) => void;
 };
@@ -132,10 +138,14 @@ function validateWaiver(value: unknown): void {
   text(value.approved_by, "waiver approved_by");
   expiry(value.expires);
 }
+/** The default bound on one check, well past the bundled checks' 30 s request timeouts. */
+export const CHECK_DEADLINE_MS = 120_000;
 interface RunOptions {
   checks: Record<string, Check>;
   input?: Record<string, unknown>;
   now?: number;
+  /** Per-check deadline; a check still running then is unknown. */
+  deadlineMs?: number;
 }
 function validateObservation(observation: Observation): void {
   if (
@@ -159,7 +169,12 @@ async function observe(
       throw new PreconditionError(
         `missing fixture for ${entry.id}; live access is disabled in fixture mode`,
       );
-    const observation = await check(entry, options.input?.[entry.id]);
+    const observation = await withDeadline(
+      options.deadlineMs ?? CHECK_DEADLINE_MS,
+      `check ${entry.id}`,
+      (signal) => check(entry, options.input?.[entry.id], signal),
+      (message) => new PreconditionError(message),
+    );
     validateObservation(observation);
     return observation;
   } catch (error) {
@@ -183,8 +198,10 @@ function outcomeOf(
 }
 /**
  * A pending item is always non-green, even if a waiver was attached. Invalid
- * declarations throw before any check runs; waivers are judged when the last
- * check has finished, so a run that crosses an expiry does not honour it.
+ * declarations throw before any check runs; each check is bounded by the
+ * deadline, so a stalled one cannot keep the report from being written; waivers
+ * are judged when the last check has finished, so a run that crosses an expiry
+ * does not honour it.
  */
 export async function runRegistry(
   registry: Registry,
@@ -192,6 +209,11 @@ export async function runRegistry(
 ): Promise<Report> {
   if (options.now !== undefined && !Number.isFinite(options.now))
     throw new PreconditionError("invalid observation time");
+  if (
+    options.deadlineMs !== undefined &&
+    !(Number.isFinite(options.deadlineMs) && options.deadlineMs > 0)
+  )
+    throw new PreconditionError("invalid check deadline");
   for (const entry of registry.preconditions)
     if (Object.hasOwn(options.checks, entry.kind))
       options.checks[entry.kind]?.validate?.(entry);

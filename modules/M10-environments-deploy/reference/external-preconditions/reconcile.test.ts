@@ -104,4 +104,13 @@ describe("external precondition issue reconciliation", () => {
     ).rejects.toThrow("key");
     expect(calls).toEqual([]);
   });
+  test("a stalled tracker operation fails instead of hanging", async () => {
+    const { port, calls } = fixture();
+    // Never settles: the deadline must end the wait.
+    port.listOpen = () => new Promise(() => undefined);
+    await expect(reconcilePreconditions(port, input, 20)).rejects.toThrow(
+      "did not finish",
+    );
+    expect(calls).toEqual([]);
+  });
 });
