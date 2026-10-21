@@ -332,7 +332,8 @@ per step:
   layers; M12's practice, scheduler rows and audit criterion.
 - **Containers, volumes and images**, keyed to the compose projects the
   worktrees derive, and the machine-level dangling images and build cache.
-- **Branches** merged into the base and gone from the forge.
+- **Branches** merged as the forge records it (squash merges included) or
+  into the base by ancestry, and gone from the forge.
 - **Processes**: the process registry as a shared module, the test runner
   registering its fixtures, and the kind reaping registered trees whose
   owner is gone.
