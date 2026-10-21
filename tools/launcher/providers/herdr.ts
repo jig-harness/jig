@@ -30,11 +30,18 @@ import {
   shellQuote,
   ssh,
 } from "../../herdr/remote.ts";
+import { openLimitMs } from "../../herdr/limits.ts";
 import { HerdrError } from "../../herdr/runner.ts";
 import type { OpenRequest, Provider } from "../provider.ts";
 
-/** Setup hooks, the agent's start and the kickoff all fit in it. */
-export const HERDR_OPEN_BUDGET_MS = 20 * 60_000;
+/** Copying the cache file and starting the SSH session, around the tool's run. */
+const TRANSPORT_MS = 2 * 60_000;
+
+/**
+ * The tool's own limit for `open` (tools/herdr/limits.ts), so every run it
+ * allows fits, plus the copy and the connection around it.
+ */
+export const HERDR_OPEN_BUDGET_MS = openLimitMs() + TRANSPORT_MS;
 
 const TOOL = join(import.meta.dir, "..", "..", "herdr", "workspace.ts");
 const KEYS = new Set(["path", "host", "agent", "base"]);

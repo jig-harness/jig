@@ -7,17 +7,26 @@
  *
  * - A **claim** marks a kickoff in flight, so a second launch waits instead
  *   of deciding while the first has started an agent but not yet prompted it.
- * - A **receipt** records a kickoff Herdr accepted, under a correlation id
+ * - A **receipt** records a kickoff under a correlation id
  *   `<key>:<agent>[:<session>]`. The session id tells a restarted agent with
- *   the same name apart from the process that received the prompt. An older
- *   receipt is removed before the prompt is sent, so a receipt that fails to
- *   be written leaves none rather than a stale one.
- * - The agent's **transcript** answers when there is no receipt (the prompt
- *   was accepted but the receipt never written).
+ *   the same name apart from the process that received the prompt. Before
+ *   the prompt is sent the receipt is written as **pending**
+ *   (`pending <correlation>`), and only a send Herdr accepted turns it into
+ *   the plain correlation id. So every send this tool ever attempted leaves
+ *   a record, and a send whose outcome is unknown, or whose final receipt
+ *   failed to be written, stays pending.
+ * - The agent's **transcript** is positive evidence only: a pending receipt
+ *   whose prompt shows in it counts as delivered. Its absence proves nothing,
+ *   since the read covers recent rows only, so a pending receipt the
+ *   transcript does not confirm is refused. With no receipt at all this tool
+ *   never sent the kickoff, and the transcript only spots one sent otherwise.
  *
- * Whenever the records cannot settle it, the kickoff is refused, saying what
- * to check, rather than guessed: an extra prompt to a working agent and
- * an unstarted piece of work are both worse than asking a person.
+ * Every change to these records moves toward "unknown", never toward "not
+ * delivered": a launch that lost its claim and overwrites another's receipt
+ * leaves a pending one, which is refused or confirmed, not resent. Whenever
+ * the records cannot settle it, the kickoff is refused, saying what to
+ * check, rather than guessed: an extra prompt to a working agent and an
+ * unstarted piece of work are both worse than asking a person.
  */
 import {
   existsSync,
@@ -37,12 +46,22 @@ import type { Spawned } from "./spawn.ts";
 
 /** What a kickoff key may look like: it names files. */
 export const KICKOFF_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+/** How long a kickoff waits for another launch of the same key. */
+export const CLAIM_WAIT_MS = 120_000;
 /** The bound on submitting the prompt. */
 export const PROMPT_TIMEOUT_MS = 45_000;
 /** Lines of the agent's output searched for an earlier kickoff. */
 const TRANSCRIPT_LINES = 4_000;
 /** Marks a claim generation given back; a superseded one is already gone. */
 const RELEASED = "released";
+/** Marks a receipt written before the send it records. */
+const PENDING = "pending";
+/**
+ * Herdr's errors that answer a prompt without writing it: the agent is at a
+ * dialog, or there is no such agent. Any other error, a timeout above all,
+ * does not establish that the prompt was not delivered.
+ */
+const REFUSED = new Set(["agent_blocked", "agent_not_found", "not_found"]);
 
 export interface KickoffOptions {
   /** Names the work, e.g. the tracker issue key; one kickoff per key. */
@@ -84,11 +103,13 @@ function escapeRegExp(text: string): string {
 /**
  * Whether the transcript holds the token as itself, not as the start of a
  * longer one: `/do ABC-1` must not match a transcript that only ever had
- * `/do ABC-10`. An empty token matches nothing.
+ * `/do ABC-10`, `/do ABC-1-x` or `/do ABC-1.2`. Anything a kickoff key may
+ * continue with (`KICKOFF_KEY`) ends the match, dots included; trailing dots
+ * alone, as at the end of a sentence, do not. An empty token matches nothing.
  */
 export function transcriptHasToken(transcript: string, token: string): boolean {
   if (token === "") return false;
-  return new RegExp(`${escapeRegExp(token)}(?![\\w-])`).test(transcript);
+  return new RegExp(`${escapeRegExp(token)}(?!\\.*[\\w-])`).test(transcript);
 }
 
 /**
@@ -203,41 +224,80 @@ function assertClaimHeld(ctx: Context, key: string, generation: string): void {
 }
 
 /**
- * Whether a live agent already received this kickoff.
+ * Whether a live agent already received this kickoff, and the session the
+ * answer is for.
  *
- * A receipt equal to the current correlation id says yes. A well-formed
- * receipt for this agent that names another session says no without reading
- * the transcript: the transcript is the pane's output, which outlives a
- * restart, so it would show the old process's prompt as if the new one had
- * it. Without a receipt the transcript decides. The session is read again
- * last and must not have changed, so an agent replaced during the check
- * cannot be answered for. Anything that cannot be read is an error, never
- * "no": only a missing receipt file counts as "no receipt".
+ * A receipt equal to the current correlation id says yes. A pending one says
+ * yes only when the transcript shows the prompt, and is refused otherwise. A
+ * well-formed receipt, sent or pending, for this agent that names another
+ * session says no without reading the transcript: the transcript is the
+ * pane's output, which outlives a restart, so it would show the old process's
+ * prompt as if the new one had it. Without a receipt the transcript decides.
+ * The session is read again last and must not have changed, so an agent
+ * replaced during the check cannot be answered for. Anything that cannot be
+ * read is an error, never "no": only a missing receipt file counts as "no
+ * receipt".
  */
 export function reconcileKickoff(
   ctx: Context,
   agentName: string,
   key: string,
   prompt: string,
-): "delivered" | "undelivered" {
+): Reconciled {
+  const sessionId = readSession(ctx, agentName);
+  const verdict =
+    receiptVerdict(ctx, key, agentName, sessionId, prompt) ??
+    (transcriptHasPrompt(ctx, agentName, prompt) ? "delivered" : "undelivered");
+  assertSameSession(ctx, agentName, sessionId, "during the check");
+  return { verdict, sessionId };
+}
+
+export interface Reconciled {
+  verdict: "delivered" | "undelivered";
+  sessionId: string | null;
+}
+
+function readSession(ctx: Context, agentName: string): string | null {
   const probe = probeAgentSession(ctx, agentName);
   if (!probe.ok)
     throw new HerdrError(
       `could not read the session of ${agentName}: ${probe.message}`,
     );
-  const verdict =
-    receiptVerdict(ctx, key, agentName, probe.sessionId) ??
-    transcriptVerdict(ctx, agentName, prompt);
+  return probe.sessionId;
+}
+
+/** Throw unless the agent still runs the session `expected`. */
+function assertSameSession(
+  ctx: Context,
+  agentName: string,
+  expected: string | null,
+  when: string,
+): void {
   const recheck = probeAgentSession(ctx, agentName);
   if (!recheck.ok)
     throw new HerdrError(
       `could not read the session of ${agentName} again: ${recheck.message}`,
     );
-  if (recheck.sessionId !== probe.sessionId)
+  if (recheck.sessionId !== expected)
     throw new HerdrError(
-      `the session of ${agentName} changed from ${probe.sessionId ?? "none"} to ${recheck.sessionId ?? "none"} during the check; it was restarted, so the check cannot answer`,
+      `the session of ${agentName} changed from ${expected ?? "none"} to ${recheck.sessionId ?? "none"} ${when}; it was restarted, so the kickoff cannot be answered for. Run this again`,
     );
-  return verdict;
+}
+
+/** The receipt's first line; null when there is no receipt file. */
+function readReceipt(ctx: Context, key: string): string | null {
+  try {
+    return (
+      readFileSync(receiptPath(ctx, key), "utf8")
+        .split("\n")
+        .find((line) => line !== "") ?? ""
+    );
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return null;
+    throw new HerdrError(
+      `could not read the kickoff receipt of ${key}: ${(error as Error).message}`,
+    );
+  }
 }
 
 /** What the receipt says, or null when there is none for this agent to go by. */
@@ -246,33 +306,30 @@ function receiptVerdict(
   key: string,
   agentName: string,
   sessionId: string | null,
+  prompt: string,
 ): "delivered" | "undelivered" | null {
-  let receipt: string | undefined;
-  try {
-    receipt = readFileSync(receiptPath(ctx, key), "utf8")
-      .split("\n")
-      .find((line) => line !== "");
-  } catch (error) {
-    if (errnoCode(error) === "ENOENT") return null;
+  const receipt = readReceipt(ctx, key);
+  if (receipt === null) return null;
+  const current = correlation(key, agentName, sessionId);
+  if (receipt === current) return "delivered";
+  if (receipt === `${PENDING} ${current}`) {
+    if (transcriptHasPrompt(ctx, agentName, prompt)) return "delivered";
     throw new HerdrError(
-      `could not read the kickoff receipt of ${key}: ${(error as Error).message}`,
+      `an earlier kickoff of ${key} to ${agentName} may have landed, and its prompt is not in the agent's recent output; check with herdr agent read ${agentName} --source recent, and if the agent never got it remove ${receiptPath(ctx, key)} and run this again`,
     );
   }
-  if (receipt === correlation(key, agentName, sessionId)) return "delivered";
-  const forAgent = `${key}:${agentName}`;
-  const wellFormed =
-    receipt === forAgent ||
-    (receipt !== undefined &&
-      new RegExp(`^${escapeRegExp(forAgent)}:\\S+$`).test(receipt));
-  return wellFormed ? "undelivered" : null;
+  const forAgent = escapeRegExp(`${key}:${agentName}`);
+  return new RegExp(`^(?:${PENDING} )?${forAgent}(?::\\S+)?$`).test(receipt)
+    ? "undelivered"
+    : null;
 }
 
 /** Whether the prompt's first line is in the agent's recent output. */
-function transcriptVerdict(
+function transcriptHasPrompt(
   ctx: Context,
   agentName: string,
   prompt: string,
-): "delivered" | "undelivered" {
+): boolean {
   const read = ctx.run([
     "herdr",
     "agent",
@@ -287,16 +344,17 @@ function transcriptVerdict(
     throw new HerdrError(
       `herdr agent read failed (exit ${read.status}): ${output(read)}`,
     );
-  return transcriptHasToken(read.stdout, promptToken(prompt))
-    ? "delivered"
-    : "undelivered";
+  return transcriptHasToken(read.stdout, promptToken(prompt));
 }
 
-/** The message of a structured error Herdr answered with, or null. */
-function parseError(result: RunResult): string | null {
+/** The structured error Herdr answered with, or null. */
+function parseError(
+  result: RunResult,
+): { code: string; message: string } | null {
   for (const text of [result.stdout, result.stderr]) {
-    const message = parseEnvelope<unknown>(text)?.error?.message;
-    if (typeof message === "string") return message;
+    const error = parseEnvelope<unknown>(text)?.error;
+    if (typeof error?.message === "string")
+      return { code: String(error.code), message: error.message };
   }
   return null;
 }
@@ -310,48 +368,36 @@ function correlation(
 }
 
 /**
- * Remove an earlier receipt before a send. Throws when it cannot: a send whose
- * own receipt then failed to be written would leave the old one standing, and
- * it would answer "undelivered" for the agent that did get the prompt.
+ * Write the receipt whole under a temporary name, so a reader sees a receipt
+ * or none; `null` removes it. Throws when it cannot.
  */
-function clearReceipt(ctx: Context, key: string): void {
-  const path = receiptPath(ctx, key);
-  try {
-    rmSync(path, { force: true });
-  } catch (error) {
-    throw new HerdrError(
-      `could not remove the earlier kickoff receipt ${path} (${(error as Error).message}); remove it, then run this again`,
-    );
-  }
-}
-
-/** Written whole under a temporary name, so a reader sees a receipt or none. */
-function writeReceipt(ctx: Context, key: string, line: string): void {
+function setReceipt(ctx: Context, key: string, line: string | null): void {
   const path = receiptPath(ctx, key);
   const temp = `${path}.${process.pid}.tmp`;
   try {
+    if (line === null) {
+      rmSync(path, { force: true });
+      return;
+    }
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     writeFileSync(temp, `${line}\n`, { mode: 0o600 });
     renameSync(temp, path);
   } catch (error) {
     rmSync(temp, { force: true });
-    ctx.log(
-      `⚠ the kickoff was sent but its receipt was not written (${(error as Error).message}); a later launch reads the transcript instead`,
+    throw new HerdrError(
+      `could not write the kickoff receipt ${path} (${(error as Error).message})`,
     );
   }
 }
 
-/**
- * Send the kickoff to the workspace's agent unless it already has it.
- * Throws, saying what to check, whenever that cannot be settled.
- */
-export function kickoff(
+/** Refuse, before anything is claimed, a kickoff that cannot be answered for. */
+function assertKickoffable(
   ctx: Context,
   spawned: Spawned,
-  options: KickoffOptions,
-): KickoffOutcome {
+  prompt: string,
+): void {
   const { agentName } = spawned;
-  if (promptToken(options.prompt) === "")
+  if (promptToken(prompt) === "")
     throw new HerdrError(
       "the kickoff prompt's first line is empty; it is what a later launch looks for in the transcript",
     );
@@ -371,6 +417,94 @@ export function kickoff(
     ctx.log(
       `⚠ Herdr reports no session id for ${agentName}; a restart under the same name cannot be told apart from it`,
     );
+}
+
+/**
+ * The session to send to, read again under the claim, which may have taken
+ * minutes to get; null as the answer when the agent already has the
+ * kickoff. An agent restarted since it started is not answered for.
+ */
+function sessionToSend(
+  ctx: Context,
+  spawned: Spawned,
+  options: KickoffOptions,
+): { sessionId: string | null } | null {
+  const { agentName } = spawned;
+  let sessionId: string | null;
+  // A resumed conversation may already hold the kickoff, like a running agent.
+  if (spawned.agentExisted || spawned.agentResumed) {
+    const reconciled = reconcileKickoff(
+      ctx,
+      agentName,
+      options.key,
+      options.prompt,
+    );
+    if (reconciled.verdict === "delivered") return null;
+    sessionId = reconciled.sessionId;
+    ctx.log(`⚠ ${agentName} has no record of the kickoff; sending it`);
+  } else sessionId = readSession(ctx, agentName);
+  if (sessionId !== spawned.agentSessionId)
+    throw new HerdrError(
+      `the session of ${agentName} changed from ${spawned.agentSessionId ?? "none"} to ${sessionId ?? "none"} since it started; it was restarted, so the kickoff cannot be answered for. Run this again`,
+    );
+  return { sessionId };
+}
+
+/**
+ * Send the prompt under a pending receipt `sent`, and complete the receipt
+ * once Herdr accepts it. Throws `UnknownDelivery`, with the pending receipt
+ * kept, when whether Herdr took it is unknown, and a plain error when it
+ * refused, with the earlier receipt restored.
+ */
+function sendUnderReceipt(
+  ctx: Context,
+  agentName: string,
+  options: KickoffOptions,
+  sent: string,
+): void {
+  const earlier = readReceipt(ctx, options.key);
+  setReceipt(ctx, options.key, `${PENDING} ${sent}`);
+  // Without `--wait` Herdr acknowledges the writes, which is what a
+  // kickoff needs; the process deadline bounds the call.
+  const answer = ctx.run(
+    ["herdr", "agent", "prompt", agentName, options.prompt],
+    { timeoutMs: PROMPT_TIMEOUT_MS },
+  );
+  const error = parseError(answer);
+  if (answer.status === 2 || (error !== null && REFUSED.has(error.code))) {
+    // Herdr refused before writing anything: the earlier record stands.
+    setReceipt(ctx, options.key, earlier);
+    throw new HerdrError(
+      `${agentName} did not take the kickoff (${error?.message ?? output(answer)}); run this again once it is ready`,
+    );
+  }
+  if (error !== null || answer.status !== 0)
+    throw new UnknownDelivery(
+      `could not tell whether ${agentName} received the kickoff (${error === null ? `exit ${answer.status}: ${output(answer)}` : `${error.code}: ${error.message}`}); check with herdr agent read ${agentName} --source recent before running this again`,
+    );
+  try {
+    setReceipt(ctx, options.key, sent);
+  } catch (failure) {
+    ctx.log(
+      `⚠ the kickoff was sent but its receipt stays pending (${(failure as Error).message}); a later launch confirms it from the transcript or refuses`,
+    );
+  }
+}
+
+/** Herdr may or may not have taken the prompt. */
+class UnknownDelivery extends HerdrError {}
+
+/**
+ * Send the kickoff to the workspace's agent unless it already has it.
+ * Throws, saying what to check, whenever that cannot be settled.
+ */
+export function kickoff(
+  ctx: Context,
+  spawned: Spawned,
+  options: KickoffOptions,
+): KickoffOutcome {
+  const { agentName } = spawned;
+  assertKickoffable(ctx, spawned, options.prompt);
   const generation = acquireClaim(
     ctx,
     options.key,
@@ -379,48 +513,28 @@ export function kickoff(
   );
   let release = true;
   try {
-    // A resumed conversation may already hold the kickoff, like a running agent.
-    if (spawned.agentExisted || spawned.agentResumed) {
-      const verdict = reconcileKickoff(
-        ctx,
-        agentName,
-        options.key,
-        options.prompt,
-      );
-      if (verdict === "delivered") {
-        ctx.log(`↺ ${agentName} already has the kickoff; not sending it again`);
-        return "already-delivered";
-      }
-      ctx.log(`⚠ ${agentName} has no record of the kickoff; sending it`);
+    const target = sessionToSend(ctx, spawned, options);
+    if (target === null) {
+      ctx.log(`↺ ${agentName} already has the kickoff; not sending it again`);
+      return "already-delivered";
     }
-    clearReceipt(ctx, options.key);
+    // Ownership is checked before any record is touched. A launch that loses
+    // the claim after this check can still overwrite a receipt, but only
+    // with a pending one, which a later launch confirms or refuses.
     assertClaimHeld(ctx, options.key, generation);
-    // Without `--wait` Herdr acknowledges the writes, which is what a
-    // kickoff needs; the process deadline bounds the call.
-    const sent = ctx.run(
-      ["herdr", "agent", "prompt", agentName, options.prompt],
-      { timeoutMs: PROMPT_TIMEOUT_MS },
-    );
-    const answer = parseError(sent);
-    if (answer !== null || sent.status === 2)
-      throw new HerdrError(
-        `${agentName} did not take the kickoff (${answer ?? output(sent)}); run this again once it is ready`,
-      );
-    if (sent.status !== 0) {
-      // Herdr may or may not have taken the prompt. Keeping the claim stops
-      // an immediate retry from sending it again; it lapses on its own.
-      release = false;
-      throw new HerdrError(
-        `could not tell whether ${agentName} received the kickoff (exit ${sent.status}: ${output(sent)}); check with herdr agent read ${agentName} --source recent before running this again`,
-      );
-    }
-    writeReceipt(
+    sendUnderReceipt(
       ctx,
-      options.key,
-      correlation(options.key, agentName, spawned.agentSessionId),
+      agentName,
+      options,
+      correlation(options.key, agentName, target.sessionId),
     );
     ctx.log(`✓ kickoff sent to ${agentName}`);
     return "sent";
+  } catch (error) {
+    // The pending receipt stops a later launch from sending it again without
+    // confirming it; keeping the claim stops an immediate retry from asking.
+    if (error instanceof UnknownDelivery) release = false;
+    throw error;
   } finally {
     if (release) releaseClaim(ctx, options.key, generation);
   }

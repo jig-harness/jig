@@ -25,7 +25,7 @@
  *
  * `--host` runs the command on that host instead; the host needs `bun`,
  * `git` and `herdr`, nothing from Jig. The whole SSH session is bounded by
- * `REMOTE_TIMEOUT_MS`. A path starting `~/` is resolved on
+ * the command's own limit (`toolLimitMs`). A path starting `~/` is resolved on
  * the machine the command runs on.
  *
  * Exit codes: 0 done; 1 the step failed (the message says what to do);
@@ -35,6 +35,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { cli, strictOptions } from "../../lib/cli.ts";
 import {
+  CLAIM_WAIT_MS,
   KICKOFF_KEY,
   type KickoffOutcome,
   kickoff,
@@ -45,7 +46,8 @@ import {
   removeWorkspace,
   runCreateHook,
 } from "./lifecycle.ts";
-import { REMOTE_TIMEOUT_MS, runToolOnHost } from "./remote.ts";
+import { toolLimitMs } from "./limits.ts";
+import { runToolOnHost } from "./remote.ts";
 import { type Context, HerdrError, localContext } from "./runner.ts";
 import {
   DEFAULT_WAIT_TIMEOUT_MS,
@@ -59,8 +61,6 @@ const USAGE = `usage:
   workspace.ts [--host <ssh-target>] remove --repo <clone> --branch <name> [--force]
   workspace.ts created`;
 
-/** How long a kickoff waits for another launch of the same key. */
-const CLAIM_WAIT_MS = 120_000;
 /** Age after which a kickoff claim is taken as abandoned. */
 const CLAIM_STALE_MS = 15 * 60_000;
 const MAX_WAIT_TIMEOUT_MS = 60 * 60_000;
@@ -197,7 +197,7 @@ async function onHost([host, ...args]: string[]): Promise<number> {
   const remote = await runToolOnHost(
     host,
     args,
-    AbortSignal.timeout(REMOTE_TIMEOUT_MS),
+    AbortSignal.timeout(toolLimitMs(args)),
     (chunk) => process.stderr.write(chunk),
   );
   process.stdout.write(remote.stdout);

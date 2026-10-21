@@ -60,6 +60,18 @@ function fixture(hooks: { create?: string; remove?: string }) {
   return { root, clone, worktree };
 }
 
+function gitDirOf(worktree: string): string {
+  return Bun.spawnSync([
+    "git",
+    "-C",
+    worktree,
+    "rev-parse",
+    "--absolute-git-dir",
+  ])
+    .stdout.toString()
+    .trim();
+}
+
 const quiet = (): Context & { lines: string[] } => {
   const lines: string[] = [];
   return { ...localContext((line) => lines.push(line)), lines };
@@ -115,6 +127,57 @@ describe("the create hook", () => {
     awaitCreateHook(ctx, worktree, 0);
     expect(readFileSync(join(worktree, ".hook-runs"), "utf8")).toBe("ran\n");
     expect(ctx.lines.join("\n")).toContain("ended without a result");
+  });
+
+  test("a claim whose owner ended while its hook still runs is not taken over", () => {
+    const { worktree } = fixture({ create: 'echo ran >> "$PWD/.hook-runs"' });
+    const claim = join(gitDirOf(worktree), "jig", "worktree-create.claim");
+    mkdirSync(claim, { recursive: true });
+    writeFileSync(join(claim, "owner"), `${hostname()} 99999999\n`);
+    // The earlier run's hook, still in its own process group.
+    const hook = Bun.spawn(["sleep", "30"], { detached: true });
+    try {
+      writeFileSync(join(claim, "hook"), `group ${hook.pid}\n`);
+      let polls = 0;
+      const ctx = {
+        ...quiet(),
+        sleep: () => {
+          polls++;
+          // The earlier run finishes after a few polls.
+          if (polls === 5)
+            writeFileSync(
+              join(gitDirOf(worktree), "jig", "worktree-create.result"),
+              "ok\n",
+            );
+        },
+      };
+      awaitCreateHook(ctx, worktree, 0);
+      expect(polls).toBe(5);
+      expect(existsSync(join(worktree, ".hook-runs"))).toBe(false);
+    } finally {
+      hook.kill("SIGKILL");
+    }
+  });
+
+  test("a failed hook's children are ended before it can run again", () => {
+    const { worktree } = fixture({
+      create: 'sleep 30 >/dev/null 2>&1 & echo $! > "$PWD/.child"; exit 3',
+    });
+    expect(() => awaitCreateHook(quiet(), worktree, 0)).toThrow(
+      "failed (exit 3)",
+    );
+    const child = Number(readFileSync(join(worktree, ".child"), "utf8"));
+    const deadline = Date.now() + 5_000;
+    let alive = true;
+    while (alive && Date.now() < deadline) {
+      try {
+        process.kill(child, 0);
+        Bun.sleepSync(50);
+      } catch {
+        alive = false;
+      }
+    }
+    expect(alive).toBe(false);
   });
 
   test("a hook that is not executable is an error, a missing one nothing", () => {

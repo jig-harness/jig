@@ -77,20 +77,25 @@ The kickoff goes to the agent once per key, whatever happens around it:
   released claim stays on disk marked released, so numbers never repeat and
   two launches cannot both take one.
 - **A receipt** at `~/.jig/herdr/kickoff/receipts/<key>` records a kickoff
-  Herdr accepted, with the agent's name and, when Herdr reports one, its
-  session id. The session id tells a restarted agent with the same name
-  apart from the one that received the prompt. An earlier receipt is removed
-  before a send, so one that fails to be written leaves the transcript to
-  decide rather than a stale receipt.
-- **The transcript** decides when there is no receipt: the prompt's first
-  line in the agent's recent output means it was delivered.
+  with the agent's name and, when Herdr reports one, its session id. The
+  session id tells a restarted agent with the same name apart from the one
+  that received the prompt. It is written as pending before the prompt is
+  sent and completed once Herdr accepts it, so every send the tool attempted
+  leaves a record, and one whose outcome is unknown stays pending.
+- **The transcript** confirms a pending receipt: the prompt's first line in
+  the agent's recent output means it was delivered. Its absence proves
+  nothing, since only recent output is read, so a pending receipt it does not
+  confirm stops the tool. With no receipt at all, the transcript only spots a
+  kickoff sent some other way.
 
 When a reattach finds the agent running, or starts it by resuming its earlier
 session, these decide whether to send. When they cannot (the session could
-not be read, it changed during the check, a file cannot be read, a send
-whose outcome is unknown), the tool stops and says what to check rather
-than guess; after a send whose outcome is unknown it keeps the claim, so an
-immediate retry cannot send twice.
+not be read, it changed since the agent started, a file cannot be read, a
+pending receipt the transcript does not confirm, a send whose outcome is
+unknown), the tool stops and says what to check rather than guess. Only an
+answer from Herdr that it wrote nothing (the agent is at a dialog, there is
+no such agent, a usage error) counts as not sent; a timeout or any other
+error keeps the claim and the pending receipt, so no retry can send twice.
 
 Herdr reports a session id only for an agent whose
 [integration](https://herdr.dev/docs/) is installed (`herdr integration
@@ -118,9 +123,12 @@ Herdr announces each new worktree with its `worktree.created` event, which
 the plugin in [`plugin/`](plugin/herdr-plugin.toml) answers by running the
 create hook. The event runs in the background, so `open` waits for the hook
 to finish before it starts the agent: the hook runs under a claim in the
-worktree's git directory, and whoever takes it first runs it. The claim
-names its owner's process, so when that process ended without a result a
-waiter on the same machine runs the hook again. Without the
+worktree's git directory, and whoever takes it first runs it. The hook runs
+in a process group of its own, and the claim names both its owner's process
+and that group, so a waiter on the same machine runs the hook again only
+once the owner and every process of the earlier run have ended without a
+result. A failed run's leftover processes are ended before its claim is
+given back. Without the
 plugin, `open` runs the hook itself after a few seconds; a worktree made in
 Herdr's interface then gets its create hook only when the plugin is
 installed. A failed create hook stops `open` and runs again on the next one.
@@ -161,7 +169,9 @@ names this as a dependency), checked against Herdr 0.8:
 - an error is a JSON envelope `{"error":{"code","message"}}` on stderr with
   exit 1; a usage error exits 2;
 - `agent prompt` takes `--timeout` only with `--wait`, so the kickoff is sent
-  without either and bounded by its process deadline;
+  without either and bounded by its process deadline; it answers
+  `agent_blocked` without writing anything, while a timeout does not show
+  that nothing was delivered;
 - the `worktree.created` plugin event's `HERDR_PLUGIN_EVENT_JSON` names the
   worktree at `data.worktree.path`, and the event's command runs in the
   plugin's directory.

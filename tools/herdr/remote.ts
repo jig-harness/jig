@@ -14,12 +14,6 @@ import { HerdrError } from "./runner.ts";
 
 const ENTRY = join(import.meta.dir, "workspace.ts");
 
-/**
- * The longest a `--host` command may run: a create or remove hook (up to 15
- * minutes), the agent's start and the kickoff all fit in it.
- */
-export const REMOTE_TIMEOUT_MS = 30 * 60_000;
-
 /** Options every SSH call takes: no prompt for a password, and a bounded connect. */
 export const SSH_OPTIONS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15"];
 

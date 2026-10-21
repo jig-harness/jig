@@ -15,8 +15,10 @@
  * still running, so the hook runs under a claim in the worktree's git
  * directory: whoever takes the claim first runs it (the plugin event, or the
  * workspace tool when no plugin is installed), and the other waits for its
- * result. The claim names its owner's host and process, so a waiter on the
- * same host takes over a claim whose owner ended without a result.
+ * result. The claim names its owner's host and process, and the hook runs in
+ * a process group of its own that the claim records, so a waiter on the same
+ * host takes over a claim only once its owner and every process of its hook
+ * run have ended without a result.
  *
  * Opening a branch runs that branch's hook, as it runs the branch's code
  * anyway: the hook's dependency install runs the branch's own scripts, and
@@ -65,9 +67,36 @@ export function hookPath(worktree: string, hook: Hook): string | null {
   return path;
 }
 
-/** Run a hook in its worktree; throws when it fails. Its output goes to the log. */
-export function runHook(ctx: Context, worktree: string, path: string): void {
-  const result = guardedSpawnSync(path, [], {
+/**
+ * Runs the hook as the leader of a process group of its own, after writing
+ * this wrapper's process id and then the group's to the file named first, so
+ * a waiter can tell while any part of the run, the hook's own children
+ * included, is still alive.
+ */
+const GROUP_WRAPPER = `printf 'wrapper %s\\n' "$$" > "$1"
+set -m
+"$2" &
+printf 'group %s\\n' "$!" >> "$1"
+set +m
+wait "$!"`;
+
+/**
+ * Run a hook in its worktree; throws when it fails. Its output goes to the
+ * log. With `groupFile`, the hook runs in a process group of its own,
+ * recorded there, and a failed run's group is ended before this returns, so
+ * nothing of it is still running when the hook is run again.
+ */
+export function runHook(
+  ctx: Context,
+  worktree: string,
+  path: string,
+  groupFile?: string,
+): void {
+  const [command, args] =
+    groupFile === undefined
+      ? [path, []]
+      : ["/bin/sh", ["-c", GROUP_WRAPPER, "sh", groupFile, path]];
+  const result = guardedSpawnSync(command, args, {
     cwd: worktree,
     env: withoutLeakyGitEnv(),
     timeout: HOOK_TIMEOUT_MS,
@@ -75,10 +104,46 @@ export function runHook(ctx: Context, worktree: string, path: string): void {
   for (const stream of [result.stdout, result.stderr])
     for (const line of (stream ?? "").split("\n"))
       if (line !== "") ctx.log(line);
-  if (result.status !== 0)
+  if (result.status !== 0) {
+    if (groupFile !== undefined) endGroup(groupFile);
     throw new HerdrError(
       `${path} failed (exit ${result.status ?? "none: killed or timed out"})`,
     );
+  }
+}
+
+/** The process ids a hook run recorded, by role; empty when none were. */
+function recordedRun(groupFile: string): { wrapper?: number; group?: number } {
+  let text: string;
+  try {
+    text = readFileSync(groupFile, "utf8");
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return {};
+    throw error;
+  }
+  const run: { wrapper?: number; group?: number } = {};
+  for (const line of text.split("\n")) {
+    const [role, pidText] = line.split(" ");
+    const pid = Number(pidText);
+    if (
+      (role === "wrapper" || role === "group") &&
+      Number.isInteger(pid) &&
+      pid > 0
+    )
+      run[role] = pid;
+  }
+  return run;
+}
+
+/** Kill what is left of a failed run's process group. */
+function endGroup(groupFile: string): void {
+  const { group } = recordedRun(groupFile);
+  if (group === undefined) return;
+  try {
+    process.kill(-group, "SIGKILL");
+  } catch (error) {
+    if (errnoCode(error) !== "ESRCH") throw error;
+  }
 }
 
 /** The worktree's own git directory, where the create hook's claim is kept. */
@@ -143,6 +208,7 @@ function claim(state: CreateState): boolean {
   return true;
 }
 
+/** Whether the process, or with a negative id the process group, exists. */
 function processAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -150,6 +216,24 @@ function processAlive(pid: number): boolean {
   } catch (error) {
     return errnoCode(error) !== "ESRCH";
   }
+}
+
+function groupPath(state: CreateState): string {
+  return join(state.claim, "hook");
+}
+
+/**
+ * Whether any part of the claimed hook run is alive: the owner that runs
+ * the tool, the wrapper that started the hook, or any process in the hook's
+ * group. The owner can end while its hook goes on, so it alone is not enough.
+ */
+function runAlive(state: CreateState, owner: number): boolean {
+  if (processAlive(owner)) return true;
+  const { wrapper, group } = recordedRun(groupPath(state));
+  return (
+    (wrapper !== undefined && processAlive(wrapper)) ||
+    (group !== undefined && processAlive(-group))
+  );
 }
 
 /**
@@ -170,7 +254,7 @@ function takeOverAbandoned(ctx: Context, state: CreateState): boolean {
   const [host, pidText] = owner.split(" ");
   const pid = Number(pidText);
   if (host !== hostname() || !Number.isInteger(pid) || pid <= 0) return false;
-  if (processAlive(pid)) return false;
+  if (runAlive(state, pid)) return false;
   try {
     mkdirSync(join(state.claim, `taken-over-${pid}`));
   } catch (error) {
@@ -206,7 +290,7 @@ function runClaimed(
 ): void {
   rmSync(state.result, { force: true });
   try {
-    runHook(ctx, worktree, path);
+    runHook(ctx, worktree, path, groupPath(state));
   } catch (error) {
     writeWhole(state.result, `failed: ${(error as Error).message}\n`);
     rmSync(state.claim, { recursive: true, force: true });

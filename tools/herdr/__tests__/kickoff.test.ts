@@ -22,6 +22,7 @@ import {
 import type { Spawned } from "../spawn.ts";
 import {
   type Answer,
+  type FakeContext,
   fail,
   fakeContext,
   herdrError,
@@ -80,6 +81,12 @@ describe("the transcript token", () => {
     expect(
       transcriptHasToken("> /jig:do-item ABC-1-x\n", "/jig:do-item ABC-1"),
     ).toBe(false);
+    expect(
+      transcriptHasToken("> /jig:do-item ABC-1.2\n", "/jig:do-item ABC-1"),
+    ).toBe(false);
+    expect(
+      transcriptHasToken("ran /jig:do-item ABC-1.\n", "/jig:do-item ABC-1"),
+    ).toBe(true);
     expect(transcriptHasToken("", "")).toBe(false);
   });
   test("a key that cannot name a file is refused", () => {
@@ -92,13 +99,17 @@ describe("the transcript token", () => {
 describe("reconcileKickoff", () => {
   test("a receipt for this session: delivered, without reading the transcript", () => {
     const ctx = withReceipt({ [get]: session("s-1") }, `${KEY}:${A}:s-1`);
-    expect(reconcileKickoff(ctx, A, KEY, PROMPT)).toBe("delivered");
+    expect(reconcileKickoff(ctx, A, KEY, PROMPT).verdict).toBe("delivered");
     expect(ctx.calls).not.toContain(read);
   });
   test("a receipt for another session of this agent: undelivered, without the transcript", () => {
-    for (const line of [`${KEY}:${A}:s-0`, `${KEY}:${A}`]) {
+    for (const line of [
+      `${KEY}:${A}:s-0`,
+      `${KEY}:${A}`,
+      `pending ${KEY}:${A}:s-0`,
+    ]) {
       const ctx = withReceipt({ [get]: session("s-1") }, line);
-      expect(reconcileKickoff(ctx, A, KEY, PROMPT)).toBe("undelivered");
+      expect(reconcileKickoff(ctx, A, KEY, PROMPT).verdict).toBe("undelivered");
       expect(ctx.calls).not.toContain(read);
     }
   });
@@ -107,12 +118,30 @@ describe("reconcileKickoff", () => {
       { [get]: session(null), [read]: ok("❯ /jig:do-item ABC-1\n") },
       null,
     );
-    expect(reconcileKickoff(seen, A, KEY, PROMPT)).toBe("delivered");
+    expect(reconcileKickoff(seen, A, KEY, PROMPT).verdict).toBe("delivered");
     const unseen = withReceipt(
       { [get]: session(null), [read]: ok("❯ hello\n") },
       null,
     );
-    expect(reconcileKickoff(unseen, A, KEY, PROMPT)).toBe("undelivered");
+    expect(reconcileKickoff(unseen, A, KEY, PROMPT).verdict).toBe(
+      "undelivered",
+    );
+  });
+  test("a pending receipt for this session: delivered only when the transcript shows it", () => {
+    const pending = `pending ${KEY}:${A}:s-1`;
+    const seen = withReceipt(
+      { [get]: session("s-1"), [read]: ok("❯ /jig:do-item ABC-1\n") },
+      pending,
+    );
+    expect(reconcileKickoff(seen, A, KEY, PROMPT).verdict).toBe("delivered");
+    // Past the rows read, a delivered prompt is not shown: no answer either way.
+    const unseen = withReceipt(
+      { [get]: session("s-1"), [read]: ok("❯ later output\n") },
+      pending,
+    );
+    expect(() => reconcileKickoff(unseen, A, KEY, PROMPT)).toThrow(
+      "may have landed",
+    );
   });
   test("a session that changes during the check is an error", () => {
     const ctx = withReceipt(
@@ -189,14 +218,27 @@ describe("kickoff", () => {
     existsSync(join(ctx.stateDir, "kickoff", "claims", KEY))
       ? readdirSync(join(ctx.stateDir, "kickoff", "claims", KEY))
       : [];
+  const receipt = (ctx: FakeContext) =>
+    existsSync(receiptPath(ctx, KEY))
+      ? readFileSync(receiptPath(ctx, KEY), "utf8")
+      : null;
 
   test("a new agent is sent the prompt and the receipt written", () => {
-    const ctx = fakeContext({ [send]: ok() });
+    const ctx = fakeContext({ [get]: session("s-1"), [send]: ok() });
     expect(kickoff(ctx, spawned(), options)).toBe("sent");
-    expect(readFileSync(receiptPath(ctx, KEY), "utf8")).toBe(
-      `${KEY}:${A}:s-1\n`,
-    );
+    expect(receipt(ctx)).toBe(`${KEY}:${A}:s-1\n`);
     expect(claims(ctx)).toEqual(["1"]);
+  });
+
+  test("the receipt is pending while the prompt is sent", () => {
+    const ctx = fakeContext({
+      [get]: session("s-1"),
+      [send]: () => {
+        expect(receipt(ctx)).toBe(`pending ${KEY}:${A}:s-1\n`);
+        return ok();
+      },
+    });
+    expect(kickoff(ctx, spawned(), options)).toBe("sent");
   });
 
   test("a reattached agent that has it is not sent it again", () => {
@@ -239,6 +281,20 @@ describe("kickoff", () => {
     expect(ctx.calls).toEqual([]);
   });
 
+  test("an agent restarted while the claim was awaited is not sent to", () => {
+    for (const fields of [{}, { agentExisted: true }]) {
+      const ctx = withReceipt(
+        { [get]: session("s-2"), [read]: ok("❯ hello\n") },
+        `${KEY}:${A}:s-0`,
+      );
+      expect(() => kickoff(ctx, spawned(fields), options)).toThrow(
+        "changed from s-1 to s-2",
+      );
+      expect(ctx.calls).not.toContain(send);
+      expect(receipt(ctx)).toBe(`${KEY}:${A}:s-0\n`);
+    }
+  });
+
   test("a prompt whose first line is empty is refused", () => {
     const ctx = fakeContext({});
     expect(() =>
@@ -247,22 +303,23 @@ describe("kickoff", () => {
   });
 
   test("a key named like the claims directory works", () => {
-    const sendTo = `herdr agent prompt ${A} ${PROMPT}`;
-    const ctx = fakeContext({ [sendTo]: ok() });
+    const ctx = fakeContext({ [get]: session("s-1"), [send]: ok() });
     expect(kickoff(ctx, spawned(), { ...options, key: "claims" })).toBe("sent");
     expect(readFileSync(receiptPath(ctx, "claims"), "utf8")).toBe(
       `claims:${A}:s-1\n`,
     );
   });
 
-  test("an earlier receipt is removed before the send, so a failed write leaves none", () => {
+  test("a receipt that fails to be written after the send stays pending, and a later launch does not resend", () => {
     const ctx = withReceipt(
       {
+        [get]: session("s-1"),
         // The receipt directory turns read-only once the prompt is sent.
         [send]: () => {
           chmodSync(dirname(receiptPath(ctx, KEY)), 0o500);
           return ok();
         },
+        [read]: ok("❯ more output than the rows read\n"),
       },
       `${KEY}:${A}:s-0`,
     );
@@ -271,11 +328,16 @@ describe("kickoff", () => {
     } finally {
       chmodSync(dirname(receiptPath(ctx, KEY)), 0o700);
     }
-    expect(existsSync(receiptPath(ctx, KEY))).toBe(false);
-    expect(ctx.lines.join("\n")).toContain("receipt was not written");
+    expect(receipt(ctx)).toBe(`pending ${KEY}:${A}:s-1\n`);
+    expect(ctx.lines.join("\n")).toContain("receipt stays pending");
+    const sends = ctx.calls.filter((call) => call === send).length;
+    expect(() =>
+      kickoff(ctx, spawned({ agentExisted: true }), options),
+    ).toThrow("may have landed");
+    expect(ctx.calls.filter((call) => call === send).length).toBe(sends);
   });
 
-  test("a claim another launch took over before the send is not sent on", () => {
+  test("a claim another launch took over is found before any record is touched", () => {
     const ctx = withReceipt(
       {
         // While this launch checks, another takes the claim over by age.
@@ -287,20 +349,25 @@ describe("kickoff", () => {
         },
         [read]: ok("❯ hello\n"),
       },
-      null,
+      `${KEY}:${A}:s-0`,
     );
     expect(() =>
       kickoff(ctx, spawned({ agentExisted: true }), options),
     ).toThrow("another launch took over the kickoff claim");
     expect(ctx.calls).not.toContain(send);
+    expect(receipt(ctx)).toBe(`${KEY}:${A}:s-0\n`);
   });
 
-  test("a prompt Herdr refuses releases the claim", () => {
+  test("a prompt Herdr refuses releases the claim and restores the earlier receipt", () => {
     for (const answer of [
       herdrError("agent_blocked", "agent is blocked"),
+      herdrError("agent_not_found", "no such agent"),
       fail(2, "usage"),
     ]) {
-      const ctx = fakeContext({ [send]: answer });
+      const ctx = withReceipt(
+        { [get]: session("s-1"), [send]: answer },
+        `${KEY}:${A}:s-0`,
+      );
       expect(() => kickoff(ctx, spawned(), options)).toThrow(
         "did not take the kickoff",
       );
@@ -310,15 +377,27 @@ describe("kickoff", () => {
           join(ctx.stateDir, "kickoff", "claims", KEY, "1", "released"),
         ),
       ).toBe(true);
+      expect(receipt(ctx)).toBe(`${KEY}:${A}:s-0\n`);
     }
   });
 
-  test("a prompt that may or may not have landed keeps the claim and writes no receipt", () => {
-    const ctx = fakeContext({ [send]: fail(-1, "spawn error: timed out") });
-    expect(() => kickoff(ctx, spawned(), options)).toThrow(
-      "could not tell whether",
-    );
-    expect(claims(ctx)).toEqual(["1"]);
-    expect(existsSync(receiptPath(ctx, KEY))).toBe(false);
+  test("a prompt that may or may not have landed keeps the claim and the pending receipt", () => {
+    for (const answer of [
+      fail(-1, "spawn error: timed out"),
+      herdrError("timeout", "timed out"),
+      herdrError("agent_prompt_stalled", "no activity"),
+    ]) {
+      const ctx = fakeContext({ [get]: session("s-1"), [send]: answer });
+      expect(() => kickoff(ctx, spawned(), options)).toThrow(
+        "could not tell whether",
+      );
+      expect(claims(ctx)).toEqual(["1"]);
+      expect(
+        existsSync(
+          join(ctx.stateDir, "kickoff", "claims", KEY, "1", "released"),
+        ),
+      ).toBe(false);
+      expect(receipt(ctx)).toBe(`pending ${KEY}:${A}:s-1\n`);
+    }
   });
 });

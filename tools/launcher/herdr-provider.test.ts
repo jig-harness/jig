@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { openLimitMs } from "../herdr/limits.ts";
 import type { OpenRequest } from "./provider.ts";
 import { openRequest } from "./test-request.ts";
 import {
@@ -165,7 +166,7 @@ describe("open", () => {
     );
   });
 
-  test("the provider allows setup and the agent more time than an app hand-over", () => {
-    expect(herdrProvider().openBudgetMs).toBeGreaterThan(30_000);
+  test("the provider's budget covers every open the tool allows", () => {
+    expect(herdrProvider().openBudgetMs).toBeGreaterThan(openLimitMs());
   });
 });

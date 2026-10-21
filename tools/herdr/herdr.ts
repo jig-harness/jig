@@ -10,13 +10,29 @@
  * envelope at all is a failure here.
  */
 import { swallow } from "../../plugin/shared/errors.ts";
-import { type Context, HerdrError, output, type RunResult } from "./runner.ts";
+import {
+  COMMAND_TIMEOUT_MS,
+  type Context,
+  HerdrError,
+  output,
+  type RunResult,
+} from "./runner.ts";
 
 /** How long past a `herdr agent wait`'s own timeout its process may run. */
 const WAIT_SLACK_MS = 30_000;
 /** Attempts to wait out an agent that is still working before reporting it. */
 const WORKING_RETRIES = 3;
 const WORKING_RETRY_DELAY_MS = 2_000;
+
+/**
+ * The longest `waitForAgentSettle` runs with this wait timeout: every wait,
+ * the state read and pause after each, and the notification at the end.
+ */
+export function settleLimitMs(waitTimeoutMs: number): number {
+  const attempt =
+    waitTimeoutMs + WAIT_SLACK_MS + COMMAND_TIMEOUT_MS + WORKING_RETRY_DELAY_MS;
+  return (WORKING_RETRIES + 1) * attempt + COMMAND_TIMEOUT_MS;
+}
 
 export interface HerdrEnvelope<T> {
   result?: T;
