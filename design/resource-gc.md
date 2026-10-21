@@ -90,7 +90,16 @@ receipts and the second decision come from the runner, not from the helper.
   (`git worktree remove` without `--force` refuses a dirty worktree,
   `git branch -d` an unmerged branch, the engine's volume removal a volume a
   container references) and treats its refusal as the resource being live.
-  A kind with neither only reports.
+  A refusing operation covers only the conditions it checks itself: every
+  other veto in the kind's live predicate needs the lock, and where a veto
+  has neither, the cases it decides are reported, not collected. The
+  worktrees kind is the case in point: `git worktree remove` checks only
+  that the checkout is clean, so a session that resumes, or a clean new
+  commit on no remote, slips past it. Worktrees are therefore collected
+  only where the tool that creates and opens them takes the kind's lock
+  shared for as long as a session uses the worktree, and the collector
+  takes it exclusive across the final proof and the removal; a worktree that
+  tool did not open is reported only.
 - **Refuse what is not registered.** A resource the repository did not
   declare, or that carries no owner record where one is required, is a
   finding, not a candidate: the missing registration is the defect to report.
