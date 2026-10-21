@@ -43,7 +43,7 @@ applies the rule, so do not judge it by eye. `<skill-dir>` is the directory of
 the `decide` skill (`${CLAUDE_SKILL_DIR}` in `SKILL.md`):
 
 ```bash
-bun <skill-dir>/scripts/decision-sheet/decision-sheet.ts trigger --facets technical,product --options 4
+bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" trigger --facets technical,product --options 4
 # {"sheet":true,"reasons":["2 stakeholder facets","a call with 4 options"]}
 ```
 
@@ -164,8 +164,8 @@ pick for a ruled call.
 ## Render and check
 
 ```bash
-bun <skill-dir>/scripts/decision-sheet/decision-sheet.ts render .context/decide/ENG-123/decision.json --require-fresh
-bun <skill-dir>/scripts/ste-lint/ste-lint.ts .context/decide/ENG-123/ENG-123-comment.md .context/decide/ENG-123/ENG-123-elaboration.md
+bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" render .context/decide/ENG-123/decision.json --require-fresh
+bun "<skill-dir>/scripts/ste-lint/ste-lint.ts" .context/decide/ENG-123/ENG-123-comment.md .context/decide/ENG-123/ENG-123-elaboration.md
 ```
 
 `render` takes `--template compact|document` and defaults to `document`.
@@ -277,7 +277,7 @@ order and the checks and use its equivalent calls.
    `assetUrl`: a retry with the same `assetUrl` has succeeded after a 502.
 4. Call `mcp__linear__get_issue` for the issue. Write its result to a file
    and pass it to
-   `bun "<skill-dir>/../../shared/command.ts" --stdin-file issue.json -- bun <skill-dir>/scripts/decision-sheet/decision-sheet.ts stale-attachments --keep <new-id>`.
+   `bun "<skill-dir>/../../shared/command.ts" --stdin-file issue.json -- bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" stale-attachments --keep <new-id>`.
    Delete each id that it prints with `mcp__linear__delete_attachment`. The
    script refuses if the new attachment is not on the issue.
 5. Post `<id>-comment.md` as a comment on the issue (`SKILL.md` § Tracker
@@ -299,9 +299,9 @@ example, as above):
    once with the harness's download tool, saving it as `current.html`.
 2. Recover its source and its layout. Create `.context/decide/<issue-key>/`
    with the file-writing tool first, then save the extracted source:
-   `bun "<skill-dir>/../../shared/command.ts" --stdout-file .context/decide/ENG-123/decision.json -- bun <skill-dir>/scripts/decision-sheet/decision-sheet.ts extract current.html`.
+   `bun "<skill-dir>/../../shared/command.ts" --stdout-file .context/decide/ENG-123/decision.json -- bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" extract current.html`.
    Then read the layout of the posted sheet:
-   `bun <skill-dir>/scripts/decision-sheet/decision-sheet.ts template current.html`.
+   `bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" template current.html`.
    It prints `compact` or `document`.
 3. Add `ruling` to the call that was decided:
    `{ "option": "<id>", "recordUrl": "<link to the human-decided comment>", "ruledAt": "YYYY-MM-DD" }`.

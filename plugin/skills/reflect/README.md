@@ -310,7 +310,7 @@ business.
 **The conformance suite** checks a store command against all of this:
 
 ```sh
-bun <skill-dir>/scripts/store-contract.ts --command "<command> <its options>" [--bulk <events>]
+bun "<skill-dir>/scripts/store-contract.ts" --command "<command> <its options>" [--bulk <events>]
 ```
 
 Point the command at a fresh, empty store. The suite appends findings and
@@ -377,7 +377,7 @@ integration's secret as `NOTION_TOKEN`, then create the database under that
 page:
 
 ```sh
-bun <skill-dir>/scripts/notion-store.ts init --parent <page id or link>
+bun "<skill-dir>/scripts/notion-store.ts" init --parent <page id or link>
 ```
 
 It creates the database with its properties and views (*All changes*,

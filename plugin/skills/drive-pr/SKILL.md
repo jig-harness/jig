@@ -1219,12 +1219,10 @@ Write `.context/thread-reply.md` with the file editor:
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/thread-reply.md -- bun "${CLAUDE_SKILL_DIR}/scripts/triage-thread.ts" <threadId> [PR]
 ```
 
-The reply templates in this section close their heredocs on different
-delimiters (`EOF`, `REPLY_EOF`, `REASON_EOF`) on purpose. When several of
-these calls share one shell command, close each heredoc on the delimiter its
-own opener names. A terminator that does not match leaves the heredoc open, so
-the next command in the line becomes part of the body, and the body is posted
-to the PR verbatim.
+Reply files contain only the text to post. Write each body with the file
+editor, then pass that file through `--stdin-file` as shown above. Its full
+contents become the reply body, so keep commands and other instructions out
+of the file.
 
 `triage-thread.ts` posts the reply via `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/reply-to-thread.ts"` and records
 its disposition — `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" hold` for accepted/moot, `resolve-thread.ts` for
@@ -1959,9 +1957,9 @@ ended (`wait` exit `21`, or an interrupted pass): it is idempotent, so that
 is never a reason to stop.
 
 Only an `--interactive` session, whose process outlives the command, may
-background either one through the harness. When doing so, never
-pair it with an inline heredoc — write the message to a file and pass it with
-`-F` or `<`.
+background either one through the harness. Write any message text to a file:
+use Git's `-F` option for a commit message, or the shared command helper's
+`--stdin-file` option for a command that reads stdin.
 
 Pass `--bots-only` when this round itself is being driven `--bots-only` — it
 forwards to the untriaged-thread refusal's own `list-unresolved-threads.ts` call, scoping it
@@ -2783,9 +2781,10 @@ so `bun "${CLAUDE_SKILL_DIR}/scripts/mailbox.ts" send` never blocks on a running
 git's own gap between the hook exiting and the transfer starting. The second
 check exists only where the repository wires it in: its hook manager runs
 `bun "<skill-dir>/scripts/push-hold-recheck.ts"` after every other `pre-push`
-command, skipping it when `$DRIVE_PR_HOLD_RECHECK_PR` is unset (a push nobody
-wrapped), and the hooks are installed in the clone. It is unarmed for a push
-not made through `guarded-push.ts`. A hold stays in force until a matching
+command, and the hooks are installed in the clone. The script exits before
+reading the mailbox when `$DRIVE_PR_HOLD_RECHECK_PR` is unset (a push nobody
+wrapped). It is unarmed for a push not made through `guarded-push.ts`.
+A hold stays in force until a matching
 `resume --target hold-push` clears it:
 
 **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.

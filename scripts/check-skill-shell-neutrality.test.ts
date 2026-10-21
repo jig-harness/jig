@@ -116,3 +116,51 @@ test("checks script recipes and multiline inline spans at their starting line", 
     ),
   ).toEqual([]);
 });
+
+test("rejects unquoted skill-cache paths including nested wrapper programs", () => {
+  for (const command of [
+    "bun <skill-dir>/scripts/decision-sheet.ts template current.html",
+    `bun \${CLAUDE_SKILL_DIR}/scripts/decision-sheet.ts template current.html`,
+    'bun "<skill-dir>/../../shared/command.ts" -- bun <skill-dir>/scripts/decision-sheet.ts extract current.html',
+    `bun "\${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- bun \${CLAUDE_SKILL_DIR}/scripts/decision-sheet.ts extract current.html`,
+    "bun --config=<skill-dir>/scripts/bunfig.toml script.ts",
+  ]) {
+    const findings = shellFindings(
+      "fixture.md",
+      `\x60\x60\x60sh\n${command}\n\x60\x60\x60`,
+    );
+    expect(findings).toMatchObject([
+      { problem: "skill-cache paths must be quoted" },
+    ]);
+  }
+});
+
+test("accepts quoted skill paths and placeholders inside literal JavaScript arguments", () => {
+  for (const command of [
+    'bun "<skill-dir>/scripts/decision-sheet.ts" template current.html',
+    `bun "\${CLAUDE_SKILL_DIR}/scripts/decision-sheet.ts" template current.html`,
+    'bun "<skill-dir>/../../shared/command.ts" -- bun "<skill-dir>/scripts/decision-sheet.ts" extract current.html',
+    `bun --config="\${CLAUDE_SKILL_DIR}/scripts/bunfig.toml" "\${CLAUDE_SKILL_DIR}/scripts/review.ts" setup`,
+    `bun --eval 'const file = "<skill-dir>/scripts/example.ts"; console.log(file);'`,
+    `bun --eval 'const file = "\${CLAUDE_SKILL_DIR}/scripts/example.ts"; console.log(file);'`,
+  ])
+    expect(
+      shellFindings("fixture.md", `\x60\x60\x60sh\n${command}\n\x60\x60\x60`),
+    ).toEqual([]);
+  expect(
+    shellFindings(
+      "fixture.md",
+      '```ts\nconst path = "<skill-dir>/scripts/example.ts";\n```',
+    ),
+  ).toEqual([]);
+});
+
+test("double-backtick examples cannot hide later unquoted inline skill paths", () => {
+  const source = [
+    "A ``literal ` backtick`` is explanatory.",
+    'Run `bun "<skill-dir>/../../shared/command.ts" -- bun <skill-dir>/scripts/example.ts`.',
+  ].join("\n");
+  expect(shellFindings("fixture.md", source)).toMatchObject([
+    { line: 2, problem: "skill-cache paths must be quoted" },
+  ]);
+});

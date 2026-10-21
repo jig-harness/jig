@@ -227,7 +227,7 @@ recommendations, each saying why it is not for now.
 Run from the repository under audit:
 
 ```bash
-bun "<skill-dir>/../../shared/command.ts" --stdout-file <scratch>/fit.json -- bun "<skill-dir>/scripts/config-fit.ts" --json
+bun "<skill-dir>/../../shared/command.ts" --stdout-file <scratch>/fit.json --stdout-exit-code 1 -- bun "<skill-dir>/scripts/config-fit.ts" --json
 bun "<skill-dir>/scripts/report.ts" validate <scratch>/jig-audit.json --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json [--profile <id> [--conditions M3,M12]]
 bun "<skill-dir>/scripts/report.ts" render <scratch>/jig-audit.json --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json [--profile <id> [--conditions M3,M12]] [--prior .config/jig-audit.yaml [--history <record>]…] [--out <dir>]
 ```

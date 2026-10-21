@@ -53,10 +53,10 @@ Run from the repository's root. `<skill-dir>` is this skill's folder in the
 plugin.
 
 ```sh
-bun <skill-dir>/scripts/code-stats.ts                    # terminal summary
-bun <skill-dir>/scripts/code-stats.ts --json             # aggregates as JSON
-bun <skill-dir>/scripts/code-stats.ts --html [out.html]  # interactive report
-bun <skill-dir>/scripts/code-stats.ts --explain <path>   # why one file counts where it does
+bun "<skill-dir>/scripts/code-stats.ts"                    # terminal summary
+bun "<skill-dir>/scripts/code-stats.ts" --json             # aggregates as JSON
+bun "<skill-dir>/scripts/code-stats.ts" --html [out.html]  # interactive report
+bun "<skill-dir>/scripts/code-stats.ts" --explain <path>   # why one file counts where it does
 ```
 
 `--top N` sets the number of modules in the terminal summary (15), and

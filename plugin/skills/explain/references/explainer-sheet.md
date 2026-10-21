@@ -127,7 +127,7 @@ sheet. Link the full viewer page in `related` where it adds value.
 ## Render and check
 
 ```bash
-bun <skill-dir>/scripts/explainer-sheet/explainer-sheet.ts render .context/explain/<id>/explainer.json --require-fresh
+bun "<skill-dir>/scripts/explainer-sheet/explainer-sheet.ts" render .context/explain/<id>/explainer.json --require-fresh
 ```
 
 It writes `<id>-explainer.html` and `<id>.md` to `.context/explain/<id>/`, or

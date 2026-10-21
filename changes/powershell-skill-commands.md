@@ -14,6 +14,9 @@ release: minor
 - Recovery commands preserve paths containing shell punctuation without
   requiring a Bash shell. A repository gate checks skill instructions for
   shell-dependent commands.
+- File-output commands can explicitly save diagnostic reports from a
+  finding exit status, and explicit trace environment edits survive child
+  execution.
 
 ### Changed
 

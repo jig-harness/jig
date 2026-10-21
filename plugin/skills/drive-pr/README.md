@@ -213,7 +213,8 @@ behind; see [§ The exit states](#the-exit-states--what-you-do-now) for the reco
 pre-push hooks are already running lands after that check, so a repository
 that wants those holds honoured too runs `push-hold-recheck.ts` as its last
 pre-push hook command. `guarded-push.ts` arms it by exporting
-`DRIVE_PR_HOLD_RECHECK_PR`; an ordinary push skips it before `bun` starts:
+`DRIVE_PR_HOLD_RECHECK_PR`. This hook starts Bun on every push; when that
+variable is unset, the script exits successfully before reading the mailbox:
 
 ```sh
 bun "<skill-dir>/scripts/push-hold-recheck.ts"

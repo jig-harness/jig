@@ -11,6 +11,8 @@ import {
 } from "../lib/findings.ts";
 
 const RULE = "skill-shell-neutrality";
+// Preserve cache-directory identity until the quote-aware scan.
+const SKILL_PATH = "\uE000";
 const SHELL_LANGUAGES = new Set([
   "bash",
   "sh",
@@ -23,8 +25,9 @@ const SHELL_LANGUAGES = new Set([
 /** Template fields are filled by the agent before execution, never shell redirections. */
 function withoutPlaceholders(command: string): string {
   return command
-    .replace(/<[A-Za-z][^<>\n]*>/g, "ARG")
-    .replaceAll(/\$\{CLAUDE_SKILL_DIR\}/g, "SKILL_DIR");
+    .replaceAll(`\${CLAUDE_SKILL_DIR}`, SKILL_PATH)
+    .replaceAll("<skill-dir>", SKILL_PATH)
+    .replace(/<[A-Za-z][^<>\n]*>/g, "ARG");
 }
 
 type Quote = "'" | '"';
@@ -34,6 +37,7 @@ interface ScanState {
 const COMMENT = Symbol("comment");
 const INTERPOLATION = new Set(["$", "`"]);
 const UNQUOTED_PROBLEMS: Record<string, string> = {
+  [SKILL_PATH]: "skill-cache paths must be quoted",
   "|": "shell operators must move into the script they feed",
   "&": "shell operators must move into the script they feed",
   ";": "shell operators must move into the script they feed",
@@ -110,9 +114,10 @@ function inlineCommands(source: string): { command: string; line: number }[] {
     /^(?:bun|git|gh|echo|cat|test|mktemp|set|export|eval|ln|rm|touch|tail|grep|mkdir|command|printf|curl|pwd|cp|mv|sed|sort|env|head|xargs|find|jq|read)\s/;
   const scripts = /^(?:[\w./<>-]+\/)?[\w-]+\.ts\s/;
   const substitution = /\$\((?:bun|git|gh)\b/;
-  return [...source.matchAll(/`([^`]+)`/g)]
+  // A code span closes only on a delimiter run of the same length.
+  return [...source.matchAll(/(?<!`)(`+)(?!`)([\s\S]*?)(?<!`)\1(?!`)/g)]
     .map((match) => ({
-      command: (match[1] as string).replace(/\s+/g, " ").trim(),
+      command: (match[2] as string).replace(/\s+/g, " ").trim(),
       line: source.slice(0, match.index).split("\n").length,
     }))
     .filter(

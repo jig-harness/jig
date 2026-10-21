@@ -132,8 +132,10 @@ compliance regime; and the `suggested_profile` they support, with an
 another, regulated-strict when compliance documents sit beside
 team-standard; also as `profile_facts` in the `--json` output) are what step 3 suggests a
 profile from. Save its `--json` output to
-the scratch folder as well (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file <scratch>/fit.json -- bun "${CLAUDE_SKILL_DIR}/scripts/config-fit.ts" --json`): the
-audit sheet shows it. When the repository has no configuration file, or the
+the scratch folder as well (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file <scratch>/fit.json --stdout-exit-code 1 -- bun "${CLAUDE_SKILL_DIR}/scripts/config-fit.ts" --json`): the
+audit sheet shows it. `--stdout-exit-code 1` also saves the complete report
+when configuration findings produce exit 1; the command still returns that
+status. When the repository has no configuration file, or the
 check suggests settings, the report includes a starter configuration
 (the `--draft` mode of `config-fit.ts` prints it alone). Render the sheet from an online
 fit report where the forge can be read: an `--offline` one makes the sheet
@@ -278,7 +280,7 @@ declined recommendation as **held** (do not recommend it again; check its
 `revisit_after` to today in the draft record and say why in the summary: that
 makes it due, and the sheet accepts the recommendation; when the entry
 names a `config/` finding, also save the fit report again against the draft,
-`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file <scratch>/fit.json -- bun "${CLAUDE_SKILL_DIR}/scripts/config-fit.ts" --json --record <scratch>/jig-audit.next.yaml`
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file <scratch>/fit.json --stdout-exit-code 1 -- bun "${CLAUDE_SKILL_DIR}/scripts/config-fit.ts" --json --record <scratch>/jig-audit.next.yaml`
 (with `--offline` if step 1 used it), since step 1's report still holds that finding back), **due** (its revisit date has passed: recommend it again), **resolved**
 (every criterion it names now passes, and it names no configuration finding:
 drop the entry) or **stale** (a criterion it names no longer exists: ask the

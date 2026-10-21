@@ -2,9 +2,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { fail, runMain } from "./cli.ts";
 import { run } from "./proc.ts";
+import { withoutTracePropagation } from "./trace.ts";
 
 const USAGE =
-  "Usage: command.ts [--stdin-file <file>] [--stdout-file <file>] [--cwd <dir>] [--timeout-seconds <seconds>] [--env <name> <value>] [--unset-prefix <prefix>] -- <program> <argument>...";
+  "Usage: command.ts [--stdin-file <file>] [--stdout-file <file>] [--stdout-exit-code <0-255>] [--cwd <dir>] [--timeout-seconds <seconds>] [--env <name> <value>] [--unset-prefix <prefix>] -- <program> <argument>...";
+
+const TRACE_KEYS = ["JIG_TRACE", "JIG_TRACE_FILE", "TRACEPARENT"];
 
 interface Options {
   input?: string;
@@ -12,6 +15,19 @@ interface Options {
   cwd?: string;
   timeoutSec: number;
   env: Record<string, string | undefined>;
+  outputExitCodes: Set<number>;
+  traceEdited: boolean;
+}
+
+function comparable(value: string): string {
+  return process.platform === "win32" ? value.toUpperCase() : value;
+}
+
+function outputExitCode(value: string): number {
+  const code = Number(value);
+  if (!/^\d+$/.test(value) || !Number.isInteger(code) || code > 255)
+    fail(2, "--stdout-exit-code needs a whole exit code from 0 to 255", USAGE);
+  return code;
 }
 
 function deadline(value: string): number {
@@ -27,12 +43,15 @@ function deadline(value: string): number {
 }
 
 function setEnvironment(
-  env: Options["env"],
+  options: Options,
   name: string,
   setting: string | undefined,
 ): void {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || setting === undefined)
     fail(2, "--env needs a name and value", USAGE);
+  const { env } = options;
+  if (TRACE_KEYS.some((key) => comparable(key) === comparable(name)))
+    options.traceEdited = true;
   if (process.platform === "win32") {
     for (const key of Object.keys(env))
       if (key.toUpperCase() === name.toUpperCase()) delete env[key];
@@ -40,10 +59,11 @@ function setEnvironment(
   env[name] = setting;
 }
 
-function unsetPrefix(env: Options["env"], prefix: string): void {
+function unsetPrefix(options: Options, prefix: string): void {
   if (!prefix) fail(2, "--unset-prefix needs a nonempty prefix", USAGE);
-  const comparable = (value: string) =>
-    process.platform === "win32" ? value.toUpperCase() : value;
+  const { env } = options;
+  if (TRACE_KEYS.some((key) => comparable(key).startsWith(comparable(prefix))))
+    options.traceEdited = true;
   for (const key of Object.keys(env))
     if (comparable(key).startsWith(comparable(prefix))) delete env[key];
 }
@@ -58,6 +78,9 @@ function applyOption(option: string, value: string, options: Options): void {
     case "--stdout-file":
       options.output = value;
       break;
+    case "--stdout-exit-code":
+      options.outputExitCodes.add(outputExitCode(value));
+      break;
     case "--cwd":
       options.cwd = value;
       break;
@@ -65,7 +88,7 @@ function applyOption(option: string, value: string, options: Options): void {
       options.timeoutSec = deadline(value);
       break;
     case "--unset-prefix":
-      unsetPrefix(options.env, value);
+      unsetPrefix(options, value);
       break;
     default:
       fail(2, `Unknown option ${option}`, USAGE);
@@ -73,13 +96,18 @@ function applyOption(option: string, value: string, options: Options): void {
 }
 
 function invocation(argv: string[]): { options: Options; command: string[] } {
-  const options: Options = { timeoutSec: 120, env: { ...process.env } };
+  const options: Options = {
+    timeoutSec: 120,
+    env: { ...process.env },
+    outputExitCodes: new Set([0]),
+    traceEdited: false,
+  };
   let index = 0;
   while (argv[index]?.startsWith("--") && argv[index] !== "--") {
     const option = argv[index++] as string;
     const value = argv[index++];
     if (value === undefined) fail(2, `Missing value for ${option}`, USAGE);
-    if (option === "--env") setEnvironment(options.env, value, argv[index++]);
+    if (option === "--env") setEnvironment(options, value, argv[index++]);
     else applyOption(option, value, options);
   }
   // Bun consumes a separator immediately after the script path. With wrapper
@@ -103,14 +131,19 @@ export async function main(argv: string[]): Promise<number> {
   }
   const { options, command } = invocation(argv);
   const { input, output, cwd, timeoutSec, env } = options;
-  const result = await run(command, {
-    timeoutSec,
-    env,
-    ...(cwd === undefined ? {} : { cwd }),
-    ...(input === undefined ? {} : { stdin: readFileSync(input, "utf8") }),
-  });
+  const execute = () =>
+    run(command, {
+      timeoutSec,
+      env,
+      ...(cwd === undefined ? {} : { cwd }),
+      ...(input === undefined ? {} : { stdin: readFileSync(input, "utf8") }),
+    });
+  const result = await (options.traceEdited
+    ? withoutTracePropagation(execute)
+    : execute());
   if (output === undefined) process.stdout.write(result.stdout);
-  else if (result.code === 0) writeFileSync(output, result.stdout);
+  else if (options.outputExitCodes.has(result.code))
+    writeFileSync(output, result.stdout);
   process.stderr.write(result.stderr);
   return result.code;
 }

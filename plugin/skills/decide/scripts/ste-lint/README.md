@@ -7,8 +7,8 @@ rules it checks, and how to use it, live in one place:
 [`human-call-elaboration.md` § Writing rules](../../references/human-call-elaboration.md#writing-rules-for-text-that-asks-a-human-to-decide).
 
 ```bash
-bun <skill-dir>/scripts/ste-lint/ste-lint.ts draft.md
-bun <skill-dir>/scripts/ste-lint/ste-lint.ts draft.md --json
+bun "<skill-dir>/scripts/ste-lint/ste-lint.ts" draft.md
+bun "<skill-dir>/scripts/ste-lint/ste-lint.ts" draft.md --json
 ```
 
 Flags: `--json` prints the report as JSON, `--baseline N` passes the run
