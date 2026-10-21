@@ -251,6 +251,9 @@ describe("negative-trigger", () => {
       "Use when cutting releases. For single-pull-request notes, use the changelog skill instead, which handles that workflow.",
       "Use when cutting releases. For single-pull-request notes, use `jig:changelog` instead.",
       "Use when cutting releases. For a single note use /changelog instead.",
+      "Use when cutting releases. For single-pull-request notes, use ``jig:changelog`` instead.",
+      "Use when cutting releases. For single-pull-request notes, use /jig:changelog instead.",
+      "Use when cutting releases. For single-pull-request notes, use `/jig:changelog` instead.",
     ])
       expect(
         counts(skills({ "SKILL.md": skillFile(body, description) })),
@@ -276,6 +279,10 @@ describe("negative-trigger", () => {
       "Use when reviewing code. For deprecated calls never use the lint tool instead.",
       "Use when reviewing code. For deprecated calls, use replacements instead, which are faster.",
       "Use when reviewing code. For deprecated calls, use `newApi()` in tests instead.",
+      "Use when reviewing code. For deprecated calls, use `newApi()` instead.",
+      "Use when reviewing code. For deprecated calls, use ``newApi()`` instead.",
+      "Use when reviewing code. For deprecated calls, use `client.fetch` instead.",
+      "Use when reviewing code. For local builds, use /usr/bin/make instead.",
     ])
       expect(
         counts(skills({ "SKILL.md": skillFile(body, description) })),

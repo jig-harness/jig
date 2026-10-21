@@ -132,34 +132,48 @@ const NOT_THIS_SKILL =
 // forms. A scope ("not for", "not suitable for", "except when", "unless"), a
 // prohibition on the skill itself ("do not use it for", "never use this
 // skill"), or a redirect under a scope to another skill or tool ("for X, use
-// the notes skill instead", "for X, use `notes` instead", optionally followed
-// by ", which ..."). A redirect names its target as a skill, tool, command,
-// agent or plugin, a code span, or a slash command, and its scope holds no
-// negation: "for deprecated calls, use replacement APIs instead" is procedure,
-// not a choice between skills. Negative or contrastive wording inside a clause
-// ("do not use deprecated APIs", "rather than writing them by hand", "instead
-// of", "not to use") states the work, not when to pick the skill, so it never
-// counts; an author who means it as an exclusion writes it in one of the
-// forms. Code spans are masked first, so punctuation inside one splits nothing.
-const CLAUSE = /[.;:!?()\u2014\u2013]+/;
-const CODE_SPAN = /`[^`\n]*`/g;
-const REDIRECT_TARGET = String.raw`(?:the )?(?:\`code\`|\/[\w-]+|(?:[\w-]+ ){0,2}(?:skill|tool|command|agent|plugin))`;
+// the notes skill instead", "for X, use `jig:notes` instead", optionally
+// followed by ", which ..."). A redirect names its target as a skill, tool,
+// command, agent or plugin, or by a skill's own name: a code span or a slash
+// command whose text is a skill name (lowercase letters, digits and hyphens,
+// optionally after a `plugin:` namespace), such as `notes`, /notes or
+// /jig:notes. A code span holding anything else (`newApi()`) names code, not a
+// skill. The scope holds no negation: "for deprecated calls, use replacement
+// APIs instead" is procedure, not a choice between skills. Negative or
+// contrastive wording inside a clause ("do not use deprecated APIs", "rather
+// than writing them by hand", "instead of", "not to use") states the work, not
+// when to pick the skill, so it never counts; an author who means it as an
+// exclusion writes it in one of the forms. Code spans, of any backtick run
+// length, and slash commands are replaced by placeholders before the
+// description is cut, so punctuation inside one (a namespace's colon) splits
+// nothing.
+const CLAUSE = /[.;:!?()—–]+/;
+// A skill's name, as a code span or slash command may carry it.
+const SKILL_NAME = /^\/?(?:[a-z0-9][a-z0-9-]*:)?[a-z0-9][a-z0-9-]*$/;
+const SLASH_COMMAND =
+  /(?<![\w/.:`])\/[a-z0-9][a-z0-9-]*(?::[a-z0-9][a-z0-9-]*)?(?![\w/:-]|\.\w)/g;
+// Placeholders: a named skill, and code that names none.
+const NAMED = "";
+const CODE = "";
+const REDIRECT_TARGET = String.raw`(?:the )?(?:${NAMED}|(?:[\w-]+ ){0,2}(?:skill|tool|command|agent|plugin))`;
 const EXCLUSION = new RegExp(
   String.raw`(?:^|,\s*)(?:` +
     [
       String.raw`not (?:(?:suitable|meant|intended|designed|appropriate) )?(?:for|when|if|on)\b`,
       String.raw`except (?:for|when|if|on|in)\b`,
       String.raw`unless\b`,
-      String.raw`(?:do not|don['\u2019]t|never) use (?:(?:this skill|the skill|this|it)(?: (?:for|when|if|on|in|to)\b|\s*$)|(?:for|when|if|on|in)\b)`,
-      String.raw`(?:for|when|if|on)\b(?:(?!\b(?:not|never|don['\u2019]t)\b)[^,])*,?\s*use ${REDIRECT_TARGET} instead\s*(?:,|$)`,
+      String.raw`(?:do not|don['’]t|never) use (?:(?:this skill|the skill|this|it)(?: (?:for|when|if|on|in|to)\b|\s*$)|(?:for|when|if|on|in)\b)`,
+      String.raw`(?:for|when|if|on)\b(?:(?!\b(?:not|never|don['’]t)\b)[^,])*,?\s*use ${REDIRECT_TARGET} instead\s*(?:,|$)`,
     ].join("|") +
     ")",
   "i",
 );
 
 function excludes(description: string): boolean {
-  return description
-    .replace(CODE_SPAN, "`code`")
+  return replaceInlineCode(description, (text) =>
+    SKILL_NAME.test(text) ? NAMED : CODE,
+  )
+    .replace(SLASH_COMMAND, NAMED)
     .split(CLAUSE)
     .some((clause) => EXCLUSION.test(clause.trim()));
 }
@@ -250,6 +264,11 @@ function closingRun(line: string, from: number, run: number): number {
 
 /** The line without its code spans: a backtick run up to the next as long. */
 function withoutInlineCode(line: string): string {
+  return replaceInlineCode(line, () => "");
+}
+
+/** Each code span replaced by what `by` makes of its trimmed text. */
+function replaceInlineCode(line: string, by: (text: string) => string): string {
   let out = "";
   for (let i = 0; i < line.length; ) {
     const run = backticks(line, i);
@@ -259,6 +278,7 @@ function withoutInlineCode(line: string): string {
     }
     const end = closingRun(line, i + run, run);
     if (end < 0) out += line.slice(i, i + run);
+    else out += by(line.slice(i + run, end - run).trim());
     i = end < 0 ? i + run : end;
   }
   return out;
