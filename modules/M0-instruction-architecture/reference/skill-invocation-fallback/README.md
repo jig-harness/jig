@@ -26,14 +26,15 @@ check. Its self-test sits beside it.
 ## What it decides
 
 - **An invocation** is `/<skill>` after the start of a line, a blank, a
-  backtick, or an opening parenthesis or bracket, and not continued by
-  another name character. A path (`skills/<skill>/`, `/<skill>/SKILL.md`,
+  quote, a backtick, an asterisk, a table bar, or an opening parenthesis or
+  bracket, and not continued by another name character. A path (`skills/<skill>/`, `/<skill>/SKILL.md`,
   `/<skill>.md`) is not one.
 - **A plugin's skills are not checked.** A plugin-namespaced command
   (`/<plugin>:<skill>`) resolves only through the installed plugin, so there
   is no directory to fall back to; the plugin's own installation notes cover
   the runtimes it supports.
-- **A marker** is, by default, a link to a `SKILL.md`, a mention of
+- **A marker** is, by default, a link to a `SKILL.md` (a mention of the
+  name that is no link does not count), a mention of
   `.agents/skills`, or a link to an interop document (a link whose target
   holds `interop`). `--marker` replaces it with the repository's own, such as
   the path of the document that says how each runtime runs a skill. The

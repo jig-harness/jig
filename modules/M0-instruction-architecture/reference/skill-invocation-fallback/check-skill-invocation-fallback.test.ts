@@ -74,6 +74,11 @@ test("each opening a slash command may follow is an invocation", () => {
     "run /release-notes: it writes them",
     "run /release-notes.",
     "\t/release-notes <tag>",
+    'run "/release-notes" now',
+    "run '/release-notes' now",
+    "run **/release-notes** now",
+    "| /release-notes | writes them |",
+    "|/release-notes|",
   ]) {
     const result = check(doc(`${line}\n`));
     expectSpawnExit(result, 1, line);
@@ -104,6 +109,11 @@ test("a fallback link split across lines still counts", () => {
     check(doc("Run /release-notes ([other runtimes](docs/interop.md)).\n")),
     0,
   );
+});
+
+test("a mention of SKILL.md that is no link is not a fallback", () => {
+  const text = "See the other SKILL.md; run /release-notes.\n";
+  expectSpawnExit(check(doc(text)), 1);
 });
 
 test("--marker replaces the default marker", () => {

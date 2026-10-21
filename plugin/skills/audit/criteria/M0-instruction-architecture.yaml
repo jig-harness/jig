@@ -159,7 +159,8 @@ criteria:
       - "each step that names one runtime's question tool also says what to do elsewhere: a plain-text question in another interactive runtime, and stop and state the question when nobody is there to answer"
       - "each other built-in tool a step names has its fallback beside it"
       - "no gate, hook, script or skill step needs a tool that a launcher or workspace app injects and no repository file registers; where a step mentions one, it is optional"
-      - "mechanical when a CI check fails a slash command with no fallback (M0's skill-invocation-fallback lint, or equivalent) and the rest is stated as a rule; a repository with no instruction that relies on a runtime-specific capability meets it"
+      - "a CI check that fails a slash command with no fallback beside it (M0's skill-invocation-fallback lint, or an equivalent) enforces the first of these"
+      - "a repository with no instruction that relies on a runtime-specific capability meets it"
     since: next
 
   - id: deny-lists-per-runtime
@@ -187,7 +188,7 @@ criteria:
       command-line tools, tests, prose instruction files.
     observe:
       - "the universal instruction file or a document it links maps each standard to the artifact classes it governs, or each standard states its own"
-      - "a file's class is decided by what it does: a script that starts a long-lived server or listener counts as runtime code wherever it lives"
+      - "the mapping lists a script that starts a long-lived server or listener as runtime code, wherever the script lives"
       - "a rule about runtime behaviour (an injected clock, structured logging) names the classes it leaves out, such as one-shot tools and tests"
     since: next
 

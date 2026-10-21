@@ -39,8 +39,8 @@ Further invariants decide whether those instructions reach the agent at all:
   consumer's budget counts as not delivered to that consumer, however
   complete the file looks.
 
-Two more decide whether a delivered instruction can be followed where it
-lands, and what it applies to:
+Further invariants decide whether a delivered instruction can be followed
+where it lands, and what it applies to:
 
 - **Instructions are portable.** An instruction that relies on a capability
   only some runtimes have (a slash command, a built-in tool, a tool the host
@@ -67,9 +67,9 @@ lands, and what it applies to:
     each runtime's own permission format, and each file says, in its header,
     the written policy it mirrors and the forms it cannot match. The formats
     differ, so the files are kept in step by hand, each pointing at the same
-    policy. A deny list is a backstop with known gaps, not a sandbox: no
-    format catches an alias, a command behind an environment-variable
-    prefix, or one wrapped in a subshell.
+    policy. A deny list is a backstop with known gaps, not a sandbox: every
+    format misses some spellings of a command
+    ([mappings.md](mappings.md#deny-lists-per-runtime) lists them).
   - *Tools the host injects.* A [host-injected tool](../../GLOSSARY.md),
     which a launcher or workspace app adds to the session without any file
     in the repository registering it, is a convenience only, never a
@@ -153,8 +153,8 @@ lands, and what it applies to:
   are CI-verified against reality, referenced paths are checked to exist, and
   the instruction set has a named owner and review cadence. CI fails a change
   that puts the always-loaded context over its smallest consumer's budget,
-  before dependencies are installed, and a slash command that names no
-  fallback.
+  before dependencies are installed. CI also fails a slash command that
+  names no fallback.
 
 ## Adoption steps
 

@@ -4,8 +4,9 @@
 // skill-invocation-fallback reference gate: each invocation names its
 // fallback within 10 lines. The plugin's skills are left out: they are
 // invoked as /jig:<name> and resolve only through the installed plugin, so
-// they have no directory fallback. Fixtures, templates and the frozen seeds
-// are left out as the Markdown gates leave them out. No .claude/skills
+// they have no directory fallback. Among the instruction files, fixtures,
+// templates and the frozen seeds are left out as the Markdown gates leave
+// them out; the skills directory is read whole. No .claude/skills
 // folder means no skill to check, which passes.
 import { lstatSync } from "node:fs";
 import { join } from "node:path";

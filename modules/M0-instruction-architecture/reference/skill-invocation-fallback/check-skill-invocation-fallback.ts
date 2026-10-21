@@ -35,7 +35,7 @@
 //          [--window <lines>] [--exempt <file>]... [--banner <regex>]
 //          [--file-marker <text>] <path>...
 //   --marker       a fallback marker, a regular expression tested on the
-//                  window; default: a link to `SKILL.md`, `.agents/skills`,
+//                  window; default: a link to a `SKILL.md`, `.agents/skills`,
 //                  or a link to an interop document
 //   --window       lines on either side of the invocation searched for a
 //                  marker; default 10
@@ -57,7 +57,7 @@ class UsageError extends Error {}
 const RULE = "skill-invocation-fallback";
 const NAME = /^[A-Za-z0-9_-]+$/;
 const DEFAULT_MARKER =
-  "SKILL\\.md|\\.agents/skills|\\]\\([^)\\s]*interop[^)\\s]*\\)";
+  "\\]\\(\\s*[^)\\s]*SKILL\\.md|\\.agents/skills|\\]\\([^)\\s]*interop[^)\\s]*\\)";
 const DEFAULT_WINDOW = 10;
 const DEFAULT_BANNER = "generated|do not edit";
 const DEFAULT_FILE_MARKER = "skill-invocation-fallback: exempt-file";
@@ -125,7 +125,7 @@ function parse(argv: string[]): Options {
   if (!skills.length) throw new UsageError(`no skill to check\n${USAGE}`);
   if (!positionals.length) throw new UsageError(`no path to scan\n${USAGE}`);
   const window = Number(values.window ?? DEFAULT_WINDOW);
-  if (!Number.isInteger(window) || window < 0)
+  if (values.window?.trim() === "" || !Number.isInteger(window) || window < 0)
     throw new UsageError(
       `--window: not a whole number of lines: ${values.window}\n${USAGE}`,
     );
@@ -164,14 +164,15 @@ const escapeRegex = (text: string) =>
   text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
- * A bare `/<skill>`: after the line start, a blank, a backtick or an opening
- * parenthesis or bracket; not continued by a name character, a slash, or a
- * colon or dot that runs on into a name (a namespace or a file name).
+ * A bare `/<skill>`: after the line start, a blank, a quote, a backtick, an
+ * asterisk, a table bar or an opening parenthesis or bracket; not continued
+ * by a name character, a slash, or a colon or dot that runs on into a name
+ * (a namespace or a file name).
  */
 function invocationPattern(skills: string[]): RegExp {
   const names = skills.map(escapeRegex).join("|");
   return new RegExp(
-    `(?<=^|[\\s\`(\\[])/(${names})(?![A-Za-z0-9_/-]|[:.][A-Za-z0-9_-])`,
+    `(?<=^|[\\s\`"'*|(\\[])/(${names})(?![A-Za-z0-9_/-]|[:.][A-Za-z0-9_-])`,
     "g",
   );
 }

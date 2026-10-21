@@ -320,9 +320,13 @@ format. Both formats below were observed in 2026-10.
 
   A `*` matches any text, spaces included, but the spaces around it are
   literal: `Bash(git push * --force)` does not match `git push --force`,
-  which needs the first pattern. Everything before the first `*` is matched
-  as written, so a command spelled another way (`git -C . push --force`) is
-  not matched by either.
+  which needs the first pattern. Claude Code splits a compound command
+  (`&&`, `;`, `|`, a subshell, a command substitution) and applies a deny
+  rule to each part, and matches past a leading environment-variable
+  assignment and a fixed set of wrappers such as `timeout` and `nohup`.
+  It does not match the same program written another way: an absolute path
+  (`/usr/bin/git push`), a command passed to `sh -c`, or a flag before the
+  subcommand (`git -C . push`).
 
 - **OpenAI Codex**: `prefix_rule` entries in `.codex/rules/*.rules`, written
   in Starlark (a small Python-like configuration language). Each rule
@@ -351,8 +355,8 @@ What Codex's literal prefix cannot match:
   needs its own literal rule for each form, since there are no wildcards;
 - part of a single word, such as the type in `<type>/<name>`.
 
-Neither format catches an alias, a command behind an environment-variable
-prefix, or one wrapped in a subshell. A deny list is a backstop worth having
+Neither format follows the command into another program that runs it (a
+string passed to `sh -c`, a script, an alias). A deny list is a backstop worth having
 for the commands that do the most harm, not a sandbox.
 
 The two formats differ, so each runtime's file is written by hand and kept
