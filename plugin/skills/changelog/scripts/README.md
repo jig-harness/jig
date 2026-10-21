@@ -372,8 +372,11 @@ answer.
 ## The release-access check
 
 ```sh
-bun release-access.ts <app-selector> [--root <dir>] [--repo <owner/repo>] [--input <file>] [--json]
+bun release-access.ts --app <slug> [--root <dir>] [--repo <owner/repo>] [--input <file>] [--json]
 ```
+
+`--app-id <id>` names the App by its numeric id instead of `--app`;
+`--input -` reads the input from standard input.
 
 Whether the release's GitHub App can reach the integration branch in the
 configured mode, read from GitHub's rulesets (every page of the branch's rules)

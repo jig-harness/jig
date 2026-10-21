@@ -66,11 +66,10 @@ The record names one commit, so settle what the audit should describe first:
 3. Install the repository's dependencies, so the hooks the audit finds
    configured can run. On macOS `/tmp` is a symlink to `/private/tmp` and
    some install scripts refuse a symlinked path, so make any worktree under
-   its resolved filesystem path. The temporary worktree `--at` makes already is.
-
-the `--draft` mode of `score.ts` refuses a checkout whose tracked files differ from the
-commit; `--at HEAD` scores the commit from a temporary worktree instead,
-which stays for the whole audit (§ Score).
+   its resolved filesystem path; the temporary worktree that `--at` makes
+   already uses one. `score.ts` in `--draft` mode refuses a checkout whose
+   tracked files differ from the commit; `--at HEAD` scores the commit from
+   a temporary worktree instead, which stays for the whole audit (§ Score).
 
 ### Unattended runs
 

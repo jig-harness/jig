@@ -393,11 +393,13 @@ nothing unless it passes:
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file conflict-message.txt -- bun "${CLAUDE_SKILL_DIR}/scripts/check-resolution.ts" --commit-message
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git commit -F conflict-message.txt
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- conflict-message.txt
 bun "${CLAUDE_SKILL_DIR}/scripts/events.ts"
 ```
 
 Run these commands in order, starting the next only after the preceding
-command exits `0`. The message file is written only on success; record the
+command exits `0`. The message file is written only on success and removed
+once the commit has used it, so the worktree is left clean; record the
 events only after the commit succeeds. If event recording fails, the committed
 resolution stands: report the failure and retry recording. The section reads:
 
@@ -419,7 +421,8 @@ After that command succeeds, run `bun "${CLAUDE_SKILL_DIR}/../../shared/command.
 which keeps the replayed commit's own message. Every
 further stop is a new operation: map, resolve, record and check it again.
 When the rebase is done, post the saved sections on the pull request, or
-report them to the user when there is none.
+report them to the user when there is none, then remove the file with
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- conflict-section.txt`.
 
 The concluding sequence above records merges, cherry-picks and reverts.
 For a rebase, run the recorder once its last stop has been continued:

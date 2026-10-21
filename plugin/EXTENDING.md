@@ -414,8 +414,9 @@ The supervision code finds and stops Windows processes from native snapshots
 and a polled stop request. Batch command shims run through `cmd.exe`; skill
 instructions use Bun commands with plain arguments. The `fix-ci` setup command
 runs through Bun's native shell; its external tools belong to the consumer.
-The complete authenticated Claude Code pickup, draft pull request, drive round and stop smoke test on
-Windows remains pending. See the [requirements](README.md#requirements) for
+The complete authenticated pickup, draft pull request, drive round and stop
+smoke test on Windows, under Claude Code and under Codex with PowerShell,
+remains pending. See the [requirements](README.md#requirements) for
 the current platform boundary. On every system, Jig keeps its
 state under `~/.local/state/jig` and `~/.cache/jig` in the home folder,
 rather than in each system's own application-data folder.

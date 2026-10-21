@@ -8,12 +8,13 @@ export async function readJsonInput(
   path: string | undefined,
   readStdin: () => Promise<string>,
 ): Promise<unknown> {
+  const source = path ?? "stdin";
   let raw: string;
   try {
     raw = path === undefined ? await readStdin() : await readFile(path, "utf8");
   } catch (error) {
     console.error(
-      `failed to read stdin: ${error instanceof Error ? error.message : String(error)}`,
+      `failed to read ${source}: ${error instanceof Error ? error.message : String(error)}`,
     );
     return INVALID_JSON_INPUT;
   }
@@ -21,7 +22,7 @@ export async function readJsonInput(
     return JSON.parse(raw);
   } catch (error) {
     console.error(
-      `stdin is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `${source} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
     return INVALID_JSON_INPUT;
   }

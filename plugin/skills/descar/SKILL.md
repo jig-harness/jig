@@ -112,7 +112,10 @@ S1, S2 and S3 shapes it does not detect. Do not write a second copy of the
 lint's patterns**: a second recognizer drifts from the first, and the gate
 stops meaning anything.
 
-Run the repository’s lint on the named documents, or without arguments for every promoted document. For a branch review, pass the changed Markdown paths from the review file set as separate arguments; do not splice a generated list into shell source.
+Run the repository’s lint on the named documents, or without arguments for every promoted document. For a branch review, list the changed paths with
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git diff --name-only "<base>...HEAD"`
+and pass the Markdown ones to the lint as separate arguments; do not splice a
+generated list into shell source.
 
 `<base>` is `repository.base_branch` from the overlay, or the repository's
 default branch (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh repo view --json defaultBranchRef -q .defaultBranchRef.name`).

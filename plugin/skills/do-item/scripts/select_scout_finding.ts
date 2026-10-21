@@ -257,7 +257,7 @@ async function main(): Promise<number> {
   if (comments === INVALID_JSON_INPUT) return 1;
 
   if (!Array.isArray(comments)) {
-    console.error("stdin must be a JSON array of comments");
+    console.error("input must be a JSON array of comments");
     return 1;
   }
   const badIndex = comments.findIndex((c) => !isScoutFindingsCommentShape(c));

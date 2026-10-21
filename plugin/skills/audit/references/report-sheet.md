@@ -149,7 +149,7 @@ by a recommendation's `refs` or left on purpose. A gap that no recommendation
 names and no held decline covers is an **uncovered gap**: the sheet marks it
 in the map and the module detail, lists it under the recommendations as *Not
 covered by a recommendation* with the criterion's statement, and counts it in
-the summary. the `validate` operation of `report.ts` with `--record` prints each one as a warning,
+the summary. The `validate` operation of `report.ts` with `--record` prints each one as a warning,
 without changing the exit code. Answer each with a recommendation, or leave
 it on purpose in `left_on_purpose`.
 

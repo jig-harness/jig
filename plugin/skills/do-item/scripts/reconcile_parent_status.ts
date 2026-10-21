@@ -541,7 +541,7 @@ async function main(): Promise<number> {
 
   if (!isReconcileInputShape(input)) {
     console.error(
-      "stdin is not a valid ReconcileInput: expected { found?, truncated?, parentLabels: [], children: [{ state?, labels? }] }",
+      "input is not a valid ReconcileInput: expected { found?, truncated?, parentLabels: [], children: [{ state?, labels? }] }",
     );
     return 1;
   }

@@ -246,7 +246,7 @@ For an accepted finding whose fix would widen the PR's scope. Both inputs are
 mechanical:
 
 - **Size**: derive the PR base branch with
-  `bun "<skill-dir>/../../shared/command.ts" -- gh pr view --json baseRefName`
+  `bun "<skill-dir>/../../shared/command.ts" -- gh pr view --json baseRefName -q .baseRefName`
   and use per-file counts from
   `bun "<skill-dir>/../../shared/command.ts" -- git diff --numstat "<base>...HEAD"`, comparing with that base's merge base.
   Exclude generated paths using the consumer's authoritative generated-artifact

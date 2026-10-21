@@ -339,7 +339,7 @@ version.
   through GitHub Actions only (any CI's saved log already works with
   `--log`); a provider interface for those two steps.
 - **Windows for `drive-pr` and `do-item`.** The remaining acceptance work is
-  an **authenticated workflow** (`git-bash`): run a real pickup, draft pull
+  an **authenticated workflow**: run a real pickup, draft pull
   request, driven round and stop on Windows under Claude Code and under
   Codex with PowerShell. The deterministic smoke uses local fake services;
   it does not certify the agent and credential integration. Fix what the

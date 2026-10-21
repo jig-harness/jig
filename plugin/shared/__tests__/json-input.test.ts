@@ -44,3 +44,24 @@ test("valid JSON null differs from malformed input or a failed read", async () =
     print.mockRestore();
   }
 });
+
+test("a failure reading an input file names the file, not stdin", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "jig-json-input-"));
+  const errors: string[] = [];
+  const print = spyOn(console, "error").mockImplementation((message) =>
+    errors.push(String(message)),
+  );
+  try {
+    const malformed = join(dir, "malformed.json");
+    writeFileSync(malformed, "not JSON");
+    const missing = join(dir, "missing.json");
+    const unused = async () => "null";
+    expect(await readJsonInput(malformed, unused)).toBe(INVALID_JSON_INPUT);
+    expect(await readJsonInput(missing, unused)).toBe(INVALID_JSON_INPUT);
+    expect(errors[0]).toStartWith(`${malformed} is not valid JSON: `);
+    expect(errors[1]).toStartWith(`failed to read ${missing}: `);
+  } finally {
+    print.mockRestore();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

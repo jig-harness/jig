@@ -121,10 +121,42 @@ async function call(argv: string[], options: RunOptions): Promise<string> {
   if (child.stderr) process.stderr.write(child.stderr);
   return child.stdout;
 }
+/**
+ * What git and gh need to reach a remote: the SSH agent, proxies, certificate
+ * bundles, gh's own configuration and tokens. Policy commands never get these.
+ */
+const TOOL_TRANSPORT_VARIABLES = new Set([
+  "SSH_AUTH_SOCK",
+  "GIT_SSH",
+  "GIT_SSH_COMMAND",
+  "GIT_SSH_VARIANT",
+  "HTTPS_PROXY",
+  "HTTP_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "CURL_CA_BUNDLE",
+  "GH_CONFIG_DIR",
+  "XDG_CONFIG_HOME",
+  "GH_HOST",
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
+  "GH_ENTERPRISE_TOKEN",
+  "APPDATA",
+  "LOCALAPPDATA",
+]);
+function toolEnvironment(root: string): Record<string, string> {
+  const env = checkedHostEnvironment(root);
+  for (const [name, value] of Object.entries(process.env))
+    if (value !== undefined && TOOL_TRANSPORT_VARIABLES.has(name.toUpperCase()))
+      env[name] = value;
+  return env;
+}
 async function git(root: string, ...args: string[]): Promise<string> {
   return call(["git", ...args], {
     cwd: root,
-    env: checkedHostEnvironment(root),
+    env: toolEnvironment(root),
   });
 }
 /** Locate the checkout without executing a program from an unchecked PATH. */
@@ -267,11 +299,7 @@ function createSessionFiles(root: string): SessionFiles {
 async function gh(root: string, ...args: string[]): Promise<string> {
   return call(["gh", ...args], {
     cwd: root,
-    env: {
-      ...checkedHostEnvironment(root),
-      GH_TOKEN: process.env.GH_TOKEN,
-      GITHUB_TOKEN: process.env.GITHUB_TOKEN,
-    },
+    env: toolEnvironment(root),
   });
 }
 async function defaultBranch(root: string): Promise<string> {

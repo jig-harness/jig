@@ -336,6 +336,40 @@ test("GitHub default-branch fallback also excludes reviewed-tree executables", (
   expect(existsSync(marker)).toBe(false);
 });
 
+test("git and gh keep their transport settings, and nothing else of the caller's environment", () => {
+  const root = fixture();
+  git(root, "symbolic-ref", "--delete", "refs/remotes/origin/HEAD");
+  const trustedBin = mkdtempSync(join(tmpdir(), "review-trusted-tools-"));
+  roots.push(trustedBin);
+  const seen = join(trustedBin, "gh-env.json");
+  writeFakeProgram(
+    join(trustedBin, "gh"),
+    `#!/usr/bin/env bun\nimport {writeFileSync} from "node:fs";writeFileSync(${JSON.stringify(seen)}, JSON.stringify(process.env));console.log("main");\n`,
+  );
+  const result = run(
+    root,
+    process.execPath,
+    [...launch, "setup", "--files", "kept.ts"],
+    {
+      ...process.env,
+      PATH: [trustedBin, process.env.PATH ?? ""].join(delimiter),
+      SSH_AUTH_SOCK: "/agent.sock",
+      HTTPS_PROXY: "http://proxy.invalid:3128",
+      APPDATA: "C:\\Users\\someone\\AppData\\Roaming",
+      GH_CONFIG_DIR: "/gh-config",
+      REVIEW_TEST_UNLISTED: "kept out",
+    },
+  );
+  expectSpawnExit(result, 0);
+  sessions.push(JSON.parse(result.stdout).session);
+  const env = JSON.parse(readFileSync(seen, "utf8"));
+  expect(env.SSH_AUTH_SOCK).toBe("/agent.sock");
+  expect(env.HTTPS_PROXY).toBe("http://proxy.invalid:3128");
+  expect(env.APPDATA).toBe("C:\\Users\\someone\\AppData\\Roaming");
+  expect(env.GH_CONFIG_DIR).toBe("/gh-config");
+  expect(env.REVIEW_TEST_UNLISTED).toBeUndefined();
+});
+
 test("catalog membership matches literal whole records instead of prefixes or globs", () => {
   const root = fixture(true);
   const catalog = "catalog[1].yaml";

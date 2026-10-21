@@ -163,8 +163,8 @@ partial clone on a git that cannot be kept from fetching.
   Git Bash is optional for the skills' own commands. A consumer's configured
   setup or check command still needs its own runtime and tools. Native Windows
   tests run in CI, but the complete authenticated
-  Claude Code pickup → draft pull request → drive round → stop smoke test
-  is still pending. See [drive-pr](skills/drive-pr/README.md) and
+  pickup → draft pull request → drive round → stop smoke test, under Claude
+  Code and under Codex with PowerShell, is still pending. See [drive-pr](skills/drive-pr/README.md) and
   [do-item](skills/do-item/README.md) for the current validation limits.
 
 ## Install the plugin

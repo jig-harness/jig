@@ -469,8 +469,12 @@ checkout. Check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git add -- <each file this repair changed or regenerated>
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git commit -F ci-fix-message.txt
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- ci-fix-message.txt
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push
 ```
+
+Remove the message file only after the commit succeeds, so a refused commit
+can be retried with it; left behind, it makes the worktree dirty.
 
 Add the co-author trailer your repository uses for agent commits, if any.
 

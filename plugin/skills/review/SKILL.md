@@ -103,6 +103,9 @@ environment assignments:
   The helper derives `PATH` from absolute directories outside the reviewed
   tree, dropping relative and reviewed-tree entries before its first Git or
   GitHub CLI invocation. It stops if no trusted directory remains.
+  Its own Git and GitHub CLI calls add only the variables they need to reach
+  a remote (SSH agent, proxies, certificate bundles, GitHub CLI configuration
+  and tokens, `APPDATA`, `LOCALAPPDATA`); policy commands never receive them.
   The rule check additionally receives `RULES=<base-tree>/<rulesFile>`.
   `WINDOW` and `STRICT` stay unset; where the base branch requires other
   values, run its trusted gate wrapper with the `run` operation below.
