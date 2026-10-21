@@ -253,11 +253,18 @@ const SPLIT_TRIES = 4;
  * parts.
  *
  * A larger part is cut at a blank line near its middle when its two halves,
- * rendered apart, list exactly the items the part lists, in order; each half
- * is then a part of its own. Where no tried cut agrees (a fenced block or a
- * list running across them), the part is read line by line. An item names
- * what it is, never where: a row's index restarts in a half, so a row is
- * listed as the same value every time.
+ * rendered apart as HTML, are together exactly the part's own HTML, and list
+ * exactly the items the part lists, in order; each half is then a part of its
+ * own. Equal items alone would not do: a fence opened above a cut can hide one
+ * line in the part and a different line with the same text in a half. Equal
+ * HTML means every block of the part is a block of one half, since the HTML
+ * escapes the text inside a block and no text can close one. A link's
+ * definition holds for the whole document, so each of the three is rendered
+ * with the document's definitions after it: its lines that the parser, given
+ * one alone, renders as nothing. Where no tried
+ * cut agrees (a fenced block or a list running across them), the part is read
+ * line by line. An item names what it is, never where: a row's index restarts
+ * in a half, so a row is listed as the same value every time.
  */
 export function linesOf<T>(
   markdown: string,
@@ -268,11 +275,18 @@ export function linesOf<T>(
     items(render(lines.slice(from, to).join("\n"))).map((item) =>
       JSON.stringify(item),
     );
+  const definitions = lines
+    .filter((line) => line.trim() !== "" && Bun.markdown.html(line) === "")
+    .join("\n");
+  const html = (from: number, to: number): string =>
+    Bun.markdown.html(`${lines.slice(from, to).join("\n")}\n\n${definitions}`);
   const found: number[] = [];
   const locate = (from: number, to: number, whole: string[]): void => {
     if (whole.length === 0) return;
-    if (to - from > LEAF_LINES)
+    if (to - from > LEAF_LINES) {
+      const part = html(from, to);
       for (const blank of blanks(lines, from, to)) {
+        if (html(from, blank) + html(blank + 1, to) !== part) continue;
         const before = keys(from, blank);
         const after = keys(blank + 1, to);
         const halves = [...before, ...after];
@@ -285,6 +299,7 @@ export function linesOf<T>(
           return;
         }
       }
+    }
     found.push(...scan(keys, from, to, whole));
   };
   locate(0, lines.length, keys(0, lines.length));

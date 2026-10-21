@@ -495,22 +495,43 @@ describe("helpers", () => {
     expect(linesOf(text, (r) => r.spans)).toEqual([1, 407]);
   });
 
+  test("a cut whose halves list the same items but render a different document is not taken", () => {
+    const text = Array.from({ length: 80 }, (_, i) => {
+      const line = i + 1;
+      if (line === 1 || line === 79) return "```";
+      if (line === 40) return "";
+      if (line === 41 || line === 80) return "`/jig:gone`";
+      return `prose ${line}`;
+    }).join("\n");
+    expect(render(text).spans).toEqual(["/jig:gone"]);
+    expect(linesOf(text, (r) => r.spans)).toEqual([80]);
+  });
+
   test("finding the lines renders a bounded multiple of the document, not a beginning per line", () => {
-    const many = Array.from({ length: 5000 }, (_, i) =>
-      i % 2 === 0 ? `\`s${i}\`` : "",
-    ).join("\n");
+    const many = [
+      ...Array.from({ length: 5000 }, (_, i) =>
+        i % 2 === 0 ? `\`s${i}\` [see][map]` : "",
+      ),
+      "[map]: docs/LIFECYCLE.md",
+    ].join("\n");
     const markdown = Bun.markdown;
     const parse = markdown.render;
+    const toHtml = markdown.html;
     let rendered = 0;
     markdown.render = ((text: string, ...rest: unknown[]) => {
       rendered += text.length;
       return (parse as (...args: unknown[]) => string)(text, ...rest);
     }) as typeof parse;
+    markdown.html = ((text: string, ...rest: unknown[]) => {
+      rendered += text.length;
+      return (toHtml as (...args: unknown[]) => string)(text, ...rest);
+    }) as typeof toHtml;
     let lines: number[];
     try {
       lines = linesOf(many, (r) => r.spans);
     } finally {
       markdown.render = parse;
+      markdown.html = toHtml;
     }
     expect(lines).toEqual(Array.from({ length: 2500 }, (_, i) => 2 * i + 1));
     expect(rendered).toBeLessThan(100 * many.length);
