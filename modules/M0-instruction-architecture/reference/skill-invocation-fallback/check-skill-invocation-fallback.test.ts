@@ -298,6 +298,26 @@ test("placing a file's findings spends at most 100 renders", () => {
   expect(result.output).toContain("rendered line 201");
 });
 
+test("the render budget is shared by every skill a file invokes", () => {
+  const skills = Array.from(
+    { length: 150 },
+    (_, k) => `tool-${String(k).padStart(3, "0")}`,
+  );
+  const text = skills.map((skill) => `Run /${skill}.\n\n`).join("");
+  const result = run([
+    ...skills.flatMap((skill) => ["--skill", skill]),
+    doc(text),
+  ]);
+  expectSpawnExit(result, 1);
+  expect(result.output).toContain(":1: [skill-invocation-fallback] /tool-000");
+  expect(result.output).toContain(
+    ":199: [skill-invocation-fallback] /tool-099",
+  );
+  expect(result.output).not.toContain(":201:");
+  expect(result.output).toContain("/tool-149 names no fallback");
+  expect(result.output).toContain("rendered line 299");
+});
+
 test("an invocation inside an HTML comment is not read", () => {
   const text =
     "<!-- Run /release-notes; [procedure](skills/release-notes/SKILL.md) -->\n";

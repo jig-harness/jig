@@ -540,8 +540,12 @@ class Placer {
   /** The offset placed at each rendered `line:column`. */
   private readonly placed = new Map<string, number>();
   private readonly tried = new Set<number>();
-  /** The places to try for each skill, found once. */
-  private readonly offsets = new Map<string, number[]>();
+  /**
+   * The places still to try for each skill, read from the file as they are
+   * needed and never held as a list, so many skills keep no more than one
+   * cursor each.
+   */
+  private readonly cursors = new Map<string, Iterator<number>>();
   constructor(source: string, reading: Reading) {
     this.source = source;
     this.reading = reading;
@@ -555,8 +559,10 @@ class Placer {
    */
   line(skill: string, at: Place): number | undefined {
     const key = `${at.line}:${at.column + 1}`;
-    for (const offset of this.candidates(skill)) {
-      if (this.placed.has(key) || this.tried.size >= PLACEMENT_RENDERS) break;
+    while (!this.placed.has(key) && this.tried.size < PLACEMENT_RENDERS) {
+      const next = this.cursor(skill).next();
+      if (next.done) break;
+      const offset = next.value;
       if (this.tried.has(offset)) continue;
       this.tried.add(offset);
       const place = placeOf(this.source, this.reading, offset);
@@ -566,23 +572,34 @@ class Placer {
     return offset === undefined ? undefined : this.lineOf(offset);
   }
 
-  private candidates(skill: string): number[] {
-    const found = this.offsets.get(skill);
-    if (found) return found;
-    const after = (text: string, shift: number) =>
-      [...this.source.matchAll(new RegExp(escapeRegex(text), "g"))].map(
-        (match) => match.index + shift,
-      );
-    const offsets = [
-      ...new Set([
-        ...after(`/${skill}`, 1),
-        ...after(skill, 0),
-        ...after("/", 1),
-      ]),
-    ];
-    this.offsets.set(skill, offsets);
-    return offsets;
+  /**
+   * Where `skill` is tried, resumed where its last finding left it: a place
+   * already tried showed what it shows whichever skill asked, so no skill
+   * goes back over one.
+   */
+  private cursor(skill: string): Iterator<number> {
+    let cursor = this.cursors.get(skill);
+    if (!cursor) {
+      cursor = placesToTry(this.source, skill);
+      this.cursors.set(skill, cursor);
+    }
+    return cursor;
   }
+}
+
+/**
+ * The offsets in `source` where the name of an invocation of `skill` may
+ * start, in the order they are tried: after a slash written before the name,
+ * before the name, then after any slash. An offset may come more than once.
+ */
+function* placesToTry(source: string, skill: string): Generator<number> {
+  const after = function* (text: string, shift: number) {
+    for (const match of source.matchAll(new RegExp(escapeRegex(text), "g")))
+      yield match.index + shift;
+  };
+  yield* after(`/${skill}`, 1);
+  yield* after(skill, 0);
+  yield* after("/", 1);
 }
 
 /**
