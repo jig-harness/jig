@@ -412,6 +412,18 @@ criteria:
     # prior: absent: .config/jig.yaml issue_tracker.labels has only followup/epic; no flag labels and no catalog choosing gates from labels; gates.yml runs one fixed set
     score: absent
     evidence: ".config/jig.yaml issue_tracker.labels has only followup/epic; CI job selection (.config/change-areas.yaml, scripts/change-areas.ts) is driven by paths, not issue labels"
+  M6/lifecycle-map-published:   # lite, requires convention
+    # The delivery loop is published as one stage map, linked from the instruction file every session loads; each stage is named, not numbered, and names its owner and the artifact it hands on.
+    score: absent
+    evidence: "No stage map at the audited commit: the loop is described in pieces (design/README.md, CONTRIBUTING.md, the plugin README's skill list grouped by kind), and AGENTS.md links no lifecycle page"
+  M6/lifecycle-owners-resolve-gated:   # standard, requires mechanical
+    # A check fails when the lifecycle map names a skill, command, script or document that does not resolve, and it runs in CI with its self-test.
+    score: absent
+    evidence: "No stage map at the audited commit, so nothing resolves its owners; scripts/gates.ts runs no lifecycle check"
+  M6/lifecycle-skills-on-the-map:   # strict, requires mechanical
+    # Every skill the repository ships appears on the lifecycle map, as a stage's owner or in its table of skills outside the loop, and the check fails when one is missing (expected-absent for a repository that ships no skill).
+    score: absent
+    evidence: "Jig ships plugin skills, and at the audited commit no map lists them and no check fails a skill left off one"
   M6/design-loop-feedback-contract:   # strict, requires convention
     # The design-prototype loop's feedback into requirements and architecture is a written contract — the prototype may reopen the PRD and the architecture rather than being a rendering step at the end.
     # prior: expected-absent: Jig has no user-interface product (CLI skills, gates and Markdown), so the design-prototype loop does not apply
@@ -1092,6 +1104,13 @@ criteria:
     # The identity that writes the release to the integration branch passes its rules only as far as the release needs (contents only, never workflows; its key held by an environment only the integration branch may use; force pushes and deletion still blocked for it), or the release arrives as a pull request a person merges (expected-absent where the repository releases no versioned artifact).
     score: mechanical
     evidence: "No automation writes a release to main: the version moves in the pull request that changes plugin/, and a person merges it under main's branch protection, which requires the gates check (.github/workflows/gates.yml)."
+  M10/external-preconditions-live-checked:   # standard, requires mechanical
+    score: absent
+    evidence: "At audited commit a66ee2269e50bdb33434f8c3f741ac337ec86a65, no external-precondition registry or scheduled runner is declared."
+  M11/external-preconditions-issue-reconciled:   # standard, requires mechanical
+    score: absent
+    evidence: "At audited commit a66ee2269e50bdb33434f8c3f741ac337ec86a65, no external-registry issue reconciler runs on a schedule."
+
 declined:
   - refs: ["M9/taxonomy-documented", "M9/memory-location-designated"]
     reason: "Deferred."

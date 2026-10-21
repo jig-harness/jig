@@ -4,7 +4,7 @@
 gates:
   command: bun run gates
 review:
-  bots: ["docomply-review[bot]", "coderabbitai[bot]"]
+  bots: ["docomply-review[bot]", "coderabbitai[bot]", "github-advanced-security[bot]"]
   # Naming the reviewer's app is what makes drive-pr wait for its review.
   reviewer_app: docomply-review
   deferral_team: DOC

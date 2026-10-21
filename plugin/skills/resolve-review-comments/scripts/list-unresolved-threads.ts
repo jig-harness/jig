@@ -52,6 +52,18 @@
  *     posted. `commentsTruncated` is true exactly then; do not act automatically
  *     on a truncated thread, because the reply you would be responding to may
  *     not be the last one.
+ *   - codeScanning → present only on a CODE-SCANNING thread: one GitHub
+ *     opened for a code scanning alert (CodeQL, SonarQube Cloud, any tool that
+ *     uploads to GitHub code scanning), recognised by its opening comment's
+ *     author and its details link to an alert of this repository
+ *     (`lib/code-scanning.ts`). Carries the alert's `number`, `state` (on
+ *     this pull request; `null`, with `stateUnknown` saying why, when that
+ *     cannot be established), `tool`, `rule`, `severity` and `category`, read
+ *     from the alert itself because the comment states neither. An alert that could not be read (a token
+ *     without access to code scanning, say) carries `unreadable` with the
+ *     reason and `unknown` severity, and still lists: the thread is open work
+ *     either way. Only an unresolved thread is looked up, and none under
+ *     `--no-alerts`.
  *   - authorAssociation → GitHub's own "who is this relative to the repo"
  *     verdict (OWNER/MEMBER/COLLABORATOR/…), computed server-side and not
  *     spoofable by comment content. A thread is world-commentable, so a
@@ -60,7 +72,7 @@
  *     comment — mirrors `summary-findings.ts`'s `TRUSTED_ASSOCIATIONS` gate on
  *     the same class of world-writable marker.
  *
- * Usage: bun list-unresolved-threads.ts [PR_NUMBER] [--bots-only] [--include-resolved]
+ * Usage: bun list-unresolved-threads.ts [PR_NUMBER] [--bots-only] [--include-resolved] [--no-alerts]
  *   PR_NUMBER   defaults to the PR for the current branch.
  *   --bots-only keeps only threads STARTED by a bot (any GitHub App — CodeRabbit,
  *               Codex, Greptile, a github-actions[bot] shadow reviewer all have
@@ -85,6 +97,9 @@
  *               NEVER pass it on a counting path — `await-round.ts` /
  *               `converge.ts` measure open work by line count, and a resolved
  *               thread in that stream reads as work that never clears.
+ *   --no-alerts leaves out `codeScanning`, sparing one alert read per
+ *               code-scanning thread. For the counting paths, which poll this
+ *               script and read only its line count.
  *
  * Environment (set by converge.ts; both narrow, never widen):
  *   RRC_TARGET_PR  the PR the run is about. Refuses (exit 2) when the PR
@@ -100,6 +115,7 @@
  */
 
 import { runMain } from "../../../shared/cli.ts";
+import { codeScanningOf } from "./lib/code-scanning.ts";
 import { ghOrExit, repoViewOrExit } from "./lib/gh.ts";
 
 interface ThreadCommentNode {
@@ -156,18 +172,29 @@ const gh = (
 // other script in this family: importing this module used to spawn `gh` and
 // print a PR's threads as a side effect of the import alone (first seen in
 // unresolve-thread.ts, true of all three).
-async function main(): Promise<number> {
+const FLAGS = ["--bots-only", "--include-resolved", "--no-alerts"] as const;
+
+/** The PR argument and the flags given, or `null` after an unknown flag. */
+function parseArgs(args: string[]): { pr: string; flags: Set<string> } | null {
   let pr = "";
-  let botsOnly = false;
-  let includeResolved = false;
-  for (const a of process.argv.slice(2)) {
-    if (a === "--bots-only") botsOnly = true;
-    else if (a === "--include-resolved") includeResolved = true;
+  const flags = new Set<string>();
+  for (const a of args) {
+    if ((FLAGS as readonly string[]).includes(a)) flags.add(a);
     else if (a.startsWith("--")) {
       console.error(`unknown flag: ${a}`);
-      return 2;
+      return null;
     } else pr = a;
   }
+  return { pr, flags };
+}
+
+async function main(): Promise<number> {
+  const parsed = parseArgs(process.argv.slice(2));
+  if (parsed === null) return 2;
+  let { pr } = parsed;
+  let botsOnly = parsed.flags.has("--bots-only");
+  const includeResolved = parsed.flags.has("--include-resolved");
+  const readAlerts = !parsed.flags.has("--no-alerts");
   if (pr === "")
     pr = (await gh(["pr", "view", "--json", "number", "-q", ".number"])).trim();
 
@@ -217,7 +244,7 @@ async function main(): Promise<number> {
       '.owner.login + " " + .name',
     ])
   ).trim();
-  const [owner, repo] = repoLine.split(" ");
+  const [owner = "", repo = ""] = repoLine.split(" ");
 
   // gh auto-paginates a GraphQL query that declares $endCursor + returns pageInfo;
   // `--slurp` collects the per-page documents into one JSON array, so no manual
@@ -348,6 +375,7 @@ async function main(): Promise<number> {
       // nothing about it is actionable either way.
       const historyOnly = botsOnly && !startedByBot;
       if (historyOnly && !includeResolved) continue;
+      const codeScanning = await codeScanningOf(t, owner, repo, pr, readAlerts);
       process.stdout.write(
         `${JSON.stringify({
           threadId: historyOnly ? null : t.id,
@@ -372,6 +400,7 @@ async function main(): Promise<number> {
           isOutdated: t.isOutdated,
           url: historyOnly ? null : (t.comments.nodes[0]?.url ?? null),
           commentsTruncated: t.comments.pageInfo.hasNextPage,
+          codeScanning,
           comments: t.comments.nodes.map((c) => ({
             author: c.author?.login ?? null,
             authorAssociation: c.authorAssociation ?? null,

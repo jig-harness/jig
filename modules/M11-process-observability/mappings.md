@@ -276,3 +276,15 @@ one-off charts that drift from it.
 The specific charts, thresholds, and alert values are **yours** and stay with
 your repo (see the [README](README.md#left-out-by-design)); Jig ships the registry
 contract and the two gates, not a particular board.
+
+## External-precondition issue reconciliation
+
+The [M10 reference reconciler](../M10-environments-deploy/reference/external-preconditions/)
+takes a tracker port with complete open-issue listing, create, update and
+close operations. Its GitHub Issues implementation uses a stable body marker,
+pages through the open issues the reconciling login opened, excludes pull
+requests and refuses duplicates.
+Grant its token Issues write only on the repository that owns the registry.
+Serialize all runs that use the same marker. A complete healthy report closes
+the issue; pending or unknown observations keep it open. Failed tracker reads
+or writes fail the observation run. Other tracker adapters are future work.

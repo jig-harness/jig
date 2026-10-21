@@ -156,3 +156,17 @@ criteria:
     observe:
       - "the watcher's workflow sends a report to an external monitor after the verdict, with a success form and a failure form"
       - "the monitor's expected period matches the watcher's cadence and it alerts on a missing report"
+
+  - id: external-preconditions-issue-reconciled
+    level: standard
+    requires: mechanical
+    since: 0.71.0
+    statement: >-
+      Each external-precondition registry maintains exactly one current tracker
+      issue while anything is unresolved, updates it after each observation,
+      and closes it automatically only after a complete healthy observation.
+    observe:
+      - "a stable registry marker identifies the issue, among only the issues the reconciling identity opened; every page of open issues is read and failed or malformed listings fail without writing"
+      - "runs that reconcile the same marker are serialized; duplicate open markers fail for manual reconciliation"
+      - "failed, unknown and pending entries keep the issue open with owners and recovery actions; a fully healthy report or valid visible waivers closes it"
+      - "invalid registries and unavailable reader credentials are red observations, never an empty green report; tracker failures fail the run"

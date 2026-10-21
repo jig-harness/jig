@@ -310,3 +310,20 @@ criteria:
     observe:
       - "a generator writes the page from the pipeline files (header comments, names) with a drift gate in CI, or a CI check compares the page's entries with the pipeline files in both directions"
       - "expected-absent when no such page exists: the provider's list is the index"
+
+  - id: external-preconditions-live-checked
+    level: standard
+    requires: mechanical
+    since: 0.71.0
+    statement: >-
+      External state delivery depends on is declared as intended state in a
+      repository registry and checked read-only on a schedule under the real
+      consuming identity; unreadable state, pending checkers and expired
+      waivers fail rather than reporting green.
+    observe:
+      - "the registry names each precondition's kind, intended state, owner and recovery action, without dated verification snapshots"
+      - "a scheduled runner checks live state using the consuming identity; secret checks exercise read access and identity checks exercise authentication and authorization"
+      - "missing and denied are distinct diagnostics; unavailable or ambiguous reads fail closed"
+      - "unimplemented checkers remain pending and non-green; deliberate exceptions name a reason, approver and an enforced expiry"
+      - "a branch written directly by a bot cannot require pull requests without admitting that bot through every applicable blocker"
+      - "the runner has paired self-tests with pass, denied, pending and expired-waiver cases, run in CI"

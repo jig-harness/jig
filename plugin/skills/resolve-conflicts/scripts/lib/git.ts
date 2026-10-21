@@ -95,6 +95,15 @@ export function gitPath(root: string, name: string): string {
   ]).trim();
 }
 
+/** The repository's common git directory, which all of its worktrees share. */
+export function commonDir(root: string): string {
+  return git(root, [
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-common-dir",
+  ]).trim();
+}
+
 /** The commit a revision names, or null when it names none. */
 export function resolveCommit(root: string, rev: string): string | null {
   const r = gitRaw(root, [
