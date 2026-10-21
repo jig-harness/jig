@@ -318,6 +318,12 @@ format. Both formats below were observed in 2026-10.
   }
   ```
 
+  A `*` matches any text, spaces included, but the spaces around it are
+  literal: `Bash(git push * --force)` does not match `git push --force`,
+  which needs the first pattern. Everything before the first `*` is matched
+  as written, so a command spelled another way (`git -C . push --force`) is
+  not matched by either.
+
 - **OpenAI Codex**: `prefix_rule` entries in `.codex/rules/*.rules`, written
   in Starlark (a small Python-like configuration language). Each rule
   matches the command's argument list, split into words, as a literal prefix
