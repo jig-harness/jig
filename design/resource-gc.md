@@ -88,8 +88,9 @@ receipts and the second decision come from the runner, not from the helper.
   branches, the container engine for volumes), no lock can be imposed on the
   creator, so the kind removes through the tool's own refusing operation
   (`git worktree remove` without `--force` refuses a dirty worktree,
-  `git branch -d` an unmerged branch, the engine's volume removal a volume a
-  container references) and treats its refusal as the resource being live.
+  `git branch -d` an unmerged branch or one checked out in a worktree, the
+  engine's volume removal a volume a container references) and treats its
+  refusal as the resource being live.
   A refusing operation covers only the conditions it checks itself: every
   other veto in the kind's live predicate needs the lock, and where a veto
   has neither, the cases it decides are reported, not collected. The
@@ -132,7 +133,7 @@ the facts the kind's predicates need.
 | Tool state | nothing: `drive-pr` registers its own state directory | a live lease, a pull request still open or closed-but-unmerged | the predicate `reap-state.ts` already applies, per clone on the machine rather than the current clone only |
 | Scratch directories | the prefixes its tools use (`lib/test-tmpdir.ts`'s, a gate workspace prefix, a `.context/` path) | an owner recorded anywhere in its subtree, by captured identity, is alive: the directory's own owner, the owner of a child scope created inside it, or a process the owner registered (build step 4), so a root is never judged while a scope or fixture inside it may still be using it | no live owner and idle past the guard; a directory under no registered prefix is never a candidate, and one under a registered prefix with no owner record is a finding |
 | Containers, volumes and images | the compose project names its worktrees derive, as the namespace reaper derives a schema name | a container of the project exists, running or stopped, or the project's worktree exists, or any container of any project references the volume | the project's worktree is gone and the engine's inventory shows no container, running or stopped and of any project, referencing the volume, checked again at the drop; dangling images and build cache are a machine-level kind, since they belong to no repository, collected when the engine reports that no image or container references them and through the engine's own prune, which refuses cache an active build holds; that refusal is recorded as live in the report and the receipt, with age as the guard |
-| Branches | the base branch, the forge | checked out in a worktree, or its pull request is open, or closed without merging | its pull request merged as the forge records it (so a squash merge counts, as in the worktrees kind), or with no pull request merged into the base by ancestry, and its remote branch gone; a closed-but-unmerged pull request is kept, since the forge lets it reopen |
+| Branches | the base branch, the forge | checked out in a worktree, or its pull request is open, or closed without merging | its pull request merged as the forge records it (so a squash merge counts, as in the worktrees kind), or with no pull request merged into the base by ancestry, and its remote branch gone; a closed-but-unmerged pull request is kept, since the forge lets it reopen. The removal is `git branch -d` either way. For a forge-recorded merge it runs from a temporary detached worktree at the merged pull request's head, fetched from the forge: with the remote branch gone git judges the branch against that worktree's HEAD, so it deletes a branch whose tip is in the merged head's history and refuses one carrying a commit the forge never merged, or one checked out in any worktree, reading the tip and deleting it in one operation, so a commit landing in between is refused too. The temporary worktree is removed afterwards |
 | Processes | nothing: a tool registers the trees it starts | the registered owner is alive | the owner is gone and the tree still runs |
 
 The processes kind deserves a word, because the obvious design is wrong. An
