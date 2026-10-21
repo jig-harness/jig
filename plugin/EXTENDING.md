@@ -62,7 +62,7 @@ hook or the interface instead.
 | Review skills, implementing agents, scouts | The repository's own | [Configuration](#the-repositorys-own-skills-and-agents) | — |
 | Issue tracker | Linear | [A tracker adapter](#issue-tracker) in Jig | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12 |
 | Reflection store | A folder of files, a Notion database, or any command | [A store command](#reflection-stores), no change to Jig | Jira: roadmap, later |
-| AI reviewer | Any bot, by login, app and check name; finding severities from CodeRabbit, Greptile, the Codex connector, Jig's own finding format, or any reviewer [configured](#severity-formats) | [Configuration](#ai-reviewers) | — |
+| AI reviewer | Any bot, by login, app and check name; finding severities from CodeRabbit, Greptile, the Codex connector, Jig's own finding format, or any reviewer [configured](#severity-formats); GitHub code scanning alerts from any tool, SonarQube Cloud's included | [Configuration](#ai-reviewers) | — |
 | Forge (where pull requests live) | GitHub, through the `gh` command | — | [No forge interface yet](#forge-github): roadmap, later |
 | CI system | Any CI that reports checks to GitHub | `ci.required_checks`; `fix-ci --log` | [Log download and workflow review](#ci-system) are GitHub Actions only |
 | Git remote | `origin` | — | Roadmap item 10 |
@@ -223,6 +223,15 @@ comment are the reviewer's evidence ([fields](CONFIGURATION.md#review)). The
 drive expects a reviewer only where `review.reviewer_app` or
 `review.reviewer_check_pattern` is set; a repository with neither converges on
 threads and CI alone.
+
+Static-analysis tools that report to GitHub code scanning (CodeQL,
+SonarQube Cloud, Semgrep, any tool that uploads results) need no
+configuration: the review loop recognises a thread GitHub opened for a
+code scanning alert, reads the finding's severity from the alert, and
+dismisses the alert when it declines the finding
+([code scanning alerts](skills/resolve-review-comments/README.md#code-scanning-alerts)).
+A tool that reports only through a check's annotations, or only in a summary
+comment, raises no thread, so the loop does not see its findings.
 
 ### Severity formats
 

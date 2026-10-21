@@ -161,10 +161,11 @@ import {
   resolvePr,
 } from "./lib/proc.ts";
 import {
-  categoryOf,
-  MARKER_SAFE_FINGERPRINT,
-  severityOf,
-} from "./summary-findings.ts";
+  categoryOfRecord,
+  type LabelledRecord,
+  severityOfRecord,
+} from "./lib/record-labels.ts";
+import { MARKER_SAFE_FINGERPRINT } from "./summary-findings.ts";
 
 /**
  * The aggregate wall-clock budget for ONE record's range scan (`labelRecord`'s
@@ -222,50 +223,6 @@ export interface AnchoredRecord {
   startDiffSide?: unknown;
   /** The thread's replies (finding + any back-and-forth) — see the header. */
   comments?: unknown;
-}
-
-/**
- * The finding's own severity, mechanized at enumeration rather than left to the
- * triaging agent to read `severityOf`'s recognized shapes off the raw comment
- * text by hand — a step that silently reads `unknown` for a reviewer whose
- * format `severityOf` doesn't recognize, sending every one of that reviewer's
- * findings through the ladder's `inert_when_unknown` fail-open path (see
- * `severityOf`'s own doc comment for the badge-format fallback this closes).
- *
- * Read from the THREAD'S FIRST comment — the reviewer's original finding —
- * never a later reply: a human or bot reply in the same thread carries no
- * severity token of its own, and `severityOf` would read whatever happens to
- * be in that later text instead of the finding it was never about.
- */
-function severityOfRecord(rec: AnchoredRecord): string {
-  const comments = rec.comments;
-  if (!Array.isArray(comments) || comments.length === 0) return "unknown";
-  const first = comments[0];
-  if (typeof first !== "object" || first === null) return "unknown";
-  const body = (first as { body?: unknown }).body;
-  if (typeof body !== "string") return "unknown";
-  // `list-unresolved-threads.ts` emits this as the plain GraphQL login (or
-  // `null`) — see its own `comments[].author` doc — so it lines up with
-  // `severityOf`'s `CODERABBIT_LOGIN` with no reshaping. Threaded through so
-  // the CodeRabbit-shaped path only fires on a comment CodeRabbit actually
-  // posted, not merely one shaped like it.
-  const author = (first as { author?: unknown }).author;
-  return severityOf(body, typeof author === "string" ? author : null);
-}
-
-/**
- * The finding's own category, mechanized the same way and for the same reason
- * as `severityOfRecord` — read from the THREAD'S FIRST comment only, never a
- * later reply, so a human/bot back-and-forth in the thread cannot be misread
- * as the reviewer's own tag.
- */
-function categoryOfRecord(rec: AnchoredRecord): string {
-  const comments = rec.comments;
-  if (!Array.isArray(comments) || comments.length === 0) return "unknown";
-  const first = comments[0];
-  if (typeof first !== "object" || first === null) return "unknown";
-  const body = (first as { body?: unknown }).body;
-  return typeof body === "string" ? categoryOf(body) : "unknown";
 }
 
 export interface SelfInflictedLabel {
@@ -1071,8 +1028,8 @@ async function main(): Promise<number> {
       deps.blame,
       Date.now() + rangeScanDeadlineMs(),
     );
-    const severity = severityOfRecord(rec as AnchoredRecord);
-    const category = categoryOfRecord(rec as AnchoredRecord);
+    const severity = severityOfRecord(rec as LabelledRecord);
+    const category = categoryOfRecord(rec as LabelledRecord);
     out += `${JSON.stringify({ ...(rec as object), ...label, severity, category })}\n`;
   };
 

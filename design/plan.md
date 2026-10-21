@@ -193,7 +193,6 @@ Practices a working repository validated, for modules that exist today:
 
 - **M10 and M11**:
   - a ledger of out-of-tree work that blocks promotion;
-  - a registry of external preconditions;
   - one self-closing issue per cause of a scheduled failure.
 - **M6 and M7**:
   - an acceptance stage;
@@ -282,19 +281,41 @@ repository with one released artifact. What is left:
 Parallel pull requests put each other in conflict, and each conflict costs a
 resolution and a CI run; nobody can say how many there are, in which files,
 or why. [design/merge-conflicts.md](merge-conflicts.md) has how it works and
-the [conflict hotspots](../GLOSSARY.md) the report finds. What is left:
+the [conflict hotspots](../GLOSSARY.md) the report finds. The replay and the
+live record (`resolve-conflicts` keeps one event per resolved path, which
+covers the rebases, cherry-picks and reverts the replay cannot see) are
+built. What is left:
 
-- **A live record**: `resolve-conflicts` keeps one event per resolved path
-  instead of overwriting its snapshot, which covers the rebases,
-  cherry-picks and reverts the replay cannot see.
 - **The practice**: M11's `merge_conflict` event and metric, the figure on
   `drive-pr`'s cross-PR scoreboard, M12's practice and audit criterion, and
   hotspots as findings in the reflection store.
 - **One file per roadmap item** follows only if the report shows the plan
   or the roadmap conflicting where items are added or removed side by side.
 
-Done when a resolution by `resolve-conflicts` leaves its events, and an
-audit scores M12's new criterion from the report.
+Done when an audit scores M12's new criterion from the report.
+
+### 23. Seed review lenses
+
+M7 says how [review lenses](../GLOSSARY.md) are held but ships none, so
+nothing in `review` checks a change against the rules Jig's own modules
+state. [design/review-lenses.md](review-lenses.md) has how it works:
+
+- **The lens contract and the first lens**: one file per lens, selected by
+  what the diff adds or removes, run by `review`'s semantic tier with fresh
+  context, each finding carrying the evidence its lens asks for, and capped
+  at a warning; `review.lenses` configuration; `jig.swallowed-failure` for
+  M15.
+- **`jig.test-gap`** for M14.
+- **`jig.stale-comment`**, after M4 gains its rule for comments in code.
+- **`jig.type-invariants`**, after M15 gains its rule for types.
+- **Measurement and promotion**: a lens's findings on pull request threads
+  counted into M8's parity report, one row per lens version, and a lens
+  promoted to blocking only with the measurement that cleared the bar.
+
+Done when `review` runs every seed lens a diff triggers and says why it
+skipped the others, each seed lens's eval fixtures have passed live, and the
+tallying script turns a fixture set of threads into one parity row per lens
+version.
 
 ## Later
 
