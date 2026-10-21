@@ -1092,6 +1092,13 @@ criteria:
     # The identity that writes the release to the integration branch passes its rules only as far as the release needs (contents only, never workflows; its key held by an environment only the integration branch may use; force pushes and deletion still blocked for it), or the release arrives as a pull request a person merges (expected-absent where the repository releases no versioned artifact).
     score: mechanical
     evidence: "No automation writes a release to main: the version moves in the pull request that changes plugin/, and a person merges it under main's branch protection, which requires the gates check (.github/workflows/gates.yml)."
+  M10/external-preconditions-live-checked:   # standard, requires mechanical
+    score: absent
+    evidence: "At audited commit a66ee2269e50bdb33434f8c3f741ac337ec86a65, no external-precondition registry or scheduled runner is declared."
+  M11/external-preconditions-issue-reconciled:   # standard, requires mechanical
+    score: absent
+    evidence: "At audited commit a66ee2269e50bdb33434f8c3f741ac337ec86a65, no external-registry issue reconciler runs on a schedule."
+
 declined:
   - refs: ["M9/taxonomy-documented", "M9/memory-location-designated"]
     reason: "Deferred."

@@ -21,3 +21,9 @@ jobs:
     grace: 3h
     max_run: 1h
     red_after: 2
+  # Daily live external-state observation: the release App reads, a keyless job judges.
+  - id: external-preconditions
+    cadence: 24h
+    grace: 6h
+    max_run: 15m
+    red_after: 1

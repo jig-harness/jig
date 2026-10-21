@@ -1,0 +1,18 @@
+version: 1
+preconditions:
+  - id: verified-branch
+    kind: branch-protection
+    owner: repository-administrators
+    description: Verification automation can advance the protected pointer
+    state: active
+    target:
+      repository: example/project
+      branch: verified
+    expected:
+      pull_requests: true
+      force_pushes: false
+      deletions: false
+      writer:
+        app_id: 42
+        slug: verification-bot
+    remediation: An administrator grants the App direct bypass on PR rules and keeps separate force-push and deletion rules without bypass
