@@ -70,18 +70,26 @@ const point = (id: string) =>
   writeFileSync(join(chainDir(), INTENT_CHAIN_POINTER), id);
 const pinPath = (pr = "42") => join(chainDir(), prCaptureFileName(pr));
 
-const base = (over: Partial<CaptureInput> = {}): CaptureInput => ({
-  pr: "42",
-  state: "OPEN",
-  headRefName: "feature/ENG-7-thing",
-  title: "fix(x): a thing",
-  body: "",
-  checkedOutBranch: "feature/ENG-7-thing",
-  contextDir: ctx,
-  refresh: false,
-  pickupId: pickups.get("ENG-7"),
-  ...over,
-});
+const base = (
+  over: Omit<Partial<CaptureInput>, "pickupId"> & {
+    pickupId?: string | undefined;
+  } = {},
+): CaptureInput => {
+  const { pickupId = pickups.get("ENG-7"), ...rest } = over;
+  const selectedPickup = "pickupId" in over ? over.pickupId : pickupId;
+  return {
+    pr: "42",
+    state: "OPEN",
+    headRefName: "feature/ENG-7-thing",
+    title: "fix(x): a thing",
+    body: "",
+    checkedOutBranch: "feature/ENG-7-thing",
+    contextDir: ctx,
+    refresh: false,
+    ...(selectedPickup === undefined ? {} : { pickupId: selectedPickup }),
+    ...rest,
+  };
+};
 
 describe("prClaimsIdentifier", () => {
   it("a CRLF trailer line is a claim", () => {
