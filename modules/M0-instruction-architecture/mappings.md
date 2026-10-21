@@ -282,8 +282,8 @@ commands out, because the installed `SKILL.md` lies outside the repository
 it scans.
 
 Run the lint beside the context-budget checks; it uses only Bun's
-built-ins, and needs `lib/cli.ts`, `lib/files.ts` and `lib/findings.ts`
-when vendored:
+built-ins, and needs `lib/cli.ts`, `lib/files.ts`, `lib/findings.ts` and
+`lib/markdown-links.ts` when vendored:
 
 ```sh
 bun jig/modules/M0-instruction-architecture/reference/skill-invocation-fallback/check-skill-invocation-fallback.ts \
