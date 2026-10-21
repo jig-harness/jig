@@ -319,6 +319,19 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.77.0] - 2026-10-21
+
+### Added
+
+- [M11](modules/M11-process-observability/README.md) registers conflict
+  events and merged-pull-request conflict share. The `drive-pr` scoreboard
+  combines replay and clone-local resolutions, states its coverage and
+  withholds a verdict when unknown pull requests could change it.
+- [M12](modules/M12-parallel-agent-ergonomics/README.md) asks repositories
+  to measure conflict hotspots and remove their causes or record a decision
+  to keep them. The audit runs the replay as read-only evidence and scores
+  whether the repository follows the practice.
+
 ## [0.76.0] - 2026-10-21
 
 Documents that defer work to the tracker can no longer rot silently: M4 gains a static gate for deferrals that name no item and a scheduled check for deferrals whose items have closed.
@@ -3355,7 +3368,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.76.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.77.0...HEAD
+[0.77.0]: https://github.com/jig-harness/jig/compare/v0.76.0...v0.77.0
 [0.76.0]: https://github.com/jig-harness/jig/compare/v0.75.0...v0.76.0
 [0.75.0]: https://github.com/jig-harness/jig/compare/v0.74.0...v0.75.0
 [0.74.0]: https://github.com/jig-harness/jig/compare/v0.73.0...v0.74.0

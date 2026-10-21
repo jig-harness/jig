@@ -4,7 +4,7 @@ The module [invariant](README.md) — deterministic per-worktree ports, a
 cross-worktree heavy-run mutex with a CI bypass, branch reuse-before-create,
 change records of their own assembled after the merge, banned shared-state
 footguns, gate output shaped for an agent, and a control channel into an
-unattended agent — is tool-independent. This file maps its mechanisms
+unattended agent, and measuring merge-conflict hotspots — is tool-independent. This file maps its mechanisms
 onto concrete worktree managers / agent runners, package managers, and
 [CI](../../GLOSSARY.md) providers. Replace `<placeholders>` with your values.
 
@@ -230,3 +230,33 @@ failure:
 - the shell the wrapper hands the command to fails an argument that matches
   nothing (`failglob`), so a mistyped test path cannot pass as "no tests
   ran".
+
+## Measuring merge conflicts
+
+The invariant: a repository working in parallel measures where its merges
+conflict, and each hotspot is removed at its cause or kept by a recorded
+decision. This works across ecosystems because the evidence is in git.
+
+Run the plugin command from its installed cache, with the repository as the
+working directory (`<skill-dir>` is the installed `resolve-conflicts` skill):
+
+```sh
+bun <skill-dir>/scripts/history.ts --days 30 --json > <scratch>/merge-conflicts.json
+```
+
+| Source | What it observes | Limit to retain with the report |
+|--------|------------------|---------------------------------|
+| git replay (`history.ts`) | reachable merge commits, their conflicted paths and region causes; the `Conflicts resolved:` commit section adds decisions and reasons | requires git 2.43 or later (2.45 in a partial clone); never fetches; shallow boundaries can hide merges; squashed branches and rebase stops may leave no replayable merge |
+| clone-local live record (`resolve-conflicts`) | resolutions of merges, rebases, cherry-picks and reverts, including time and whether `drive-pr` started them | events live in git's common directory and cover this clone only; no event does not mean no conflict |
+| the repository's M11 event pipeline | the same conflict events sent through its own emitter | coverage depends on where that emitter runs; see [M11](../M11-process-observability/README.md) |
+
+The replay does not read the live record. The replay JSON schema is
+`merge-conflicts/v1`. Keep the window, scope, skipped
+merges and cause-accuracy statement with the path rankings. The threshold
+is `resolve_conflicts.hotspot_min_merges` (default 3). Choose a remedy from
+the reported cause: derive counts, move release versions after the merge,
+or keep entries in separate files; an overlapping change still needs a
+decision about the work itself. Record the hotspot's cause, remedy or keep
+decision, reason and revisit condition in the repository's learning loop.
+Compare like windows after the change rather than treating an empty or
+partial report as proof that the cause is gone.

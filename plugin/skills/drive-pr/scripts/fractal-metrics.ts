@@ -63,6 +63,15 @@
  * refs). Record a run's figures where the consumer keeps its baselines.
  */
 
+import {
+  conflictCoverage,
+  CONFLICT_LIMITS,
+  judgedConflictShare,
+  observeConflicts,
+  realConflictDeps,
+  type ConflictObservation,
+} from "./lib/fractal-conflicts.ts";
+import { Defect } from "../../../shared/errors.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { calendarDate, type MergedPr, mergedPrs } from "./defect-escape.ts";
@@ -100,7 +109,12 @@ import {
 import { fetchLinearSide, type LinearWindow } from "./lib/fractal-linear.ts";
 import { initiatingBotReviews } from "./lib/metrics.ts";
 import { git, gitCallTimeoutSeconds, gitIdentityEnv } from "./lib/proc.ts";
-import { type PrSample, resolveRepo, samplePr } from "./lib/sample.ts";
+import {
+  type PrSample,
+  type Repo,
+  resolveRepo,
+  samplePr,
+} from "./lib/sample.ts";
 import { gitDeps, labelRecord } from "./self-inflicted.ts";
 
 const DAY_MS = 86_400_000;
@@ -161,6 +175,11 @@ export interface RunDeps {
   note(msg: string): void;
   /** The metric catalogue to judge against; defaults to `METRICS`. */
   specs?: ReadonlyArray<MetricSpec>;
+  conflictCoverageFloor?: number;
+  observeConflicts?: (
+    samples: readonly PrSample[],
+    cohort: readonly MergedPr[],
+  ) => Promise<Map<number, ConflictObservation>>;
 }
 
 export interface RunResult {
@@ -194,6 +213,51 @@ async function mapLimit<T, R>(
   return results;
 }
 
+/** Conflict collection is independent of review sampling coverage. */
+async function measureConflicts(
+  samples: readonly PrSample[],
+  prs: readonly MergedPr[],
+  deps: RunDeps,
+  capped: boolean,
+  gaps: string[],
+  caveats: string[],
+): Promise<Exclude<Scoreboard["mergeConflicts"], undefined>> {
+  if (deps.observeConflicts === undefined) return null;
+  let observations = new Map<number, ConflictObservation>();
+  try {
+    observations = await deps.observeConflicts(samples, prs);
+  } catch (err) {
+    gaps.push(
+      `merge-conflict evidence unavailable: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const coverage = conflictCoverage(
+    prs.map((p) => p.number),
+    observations,
+    deps.conflictCoverageFloor ?? 0.9,
+  );
+  coverage.cohortCapped = capped;
+  if (capped) coverage.bounds = null;
+  caveats.push(CONFLICT_LIMITS);
+  if (judgedConflictShare(coverage, deps.specs ?? METRICS) === null)
+    gaps.push(
+      "merge-conflict verdict withheld: coverage is absent, below its floor, or unknown PRs could change the verdict",
+    );
+  return coverage;
+}
+
+/** Coverage bounds govern this row even when review figures are withheld. */
+function publishConflictShare(
+  coverage: Scoreboard["mergeConflicts"],
+  specs: readonly MetricSpec[],
+  values: Record<string, number | null>,
+  bounded: Set<string>,
+): void {
+  if (!coverage) return;
+  values.merge_conflict_share = judgedConflictShare(coverage, specs);
+  if (coverage.unknown > 0) bounded.add("merge_conflict_share");
+}
+
 /**
  * Everything `main()` does after argv parsing — its own injectable function so
  * a test pins the REAL composition (window arithmetic → sampling → aggregation
@@ -215,6 +279,8 @@ export async function runScoreboard(
 
   let pr: Scoreboard["pr"] = null;
   let prsUnsampled = false;
+  let prsCapped = false;
+  let mergeConflicts: Scoreboard["mergeConflicts"] = null;
   if (!opts.skipPrs) {
     const ladder = await deps.loadLadder();
     // One more than asked for, so "the cap bound" is witnessed by an extra
@@ -227,6 +293,7 @@ export async function runScoreboard(
     const capped = listed.length > opts.limit;
     const prs = listed.slice(0, opts.limit);
     if (capped) {
+      prsCapped = true;
       // The newest `--limit` PRs are a different population than the window.
       prsUnsampled = true;
       gaps.push(
@@ -237,6 +304,7 @@ export async function runScoreboard(
     // a reply added after the window cannot rewrite a recorded window's mix.
     const asOf = untilMs <= nowMs ? new Date(untilMs).toISOString() : undefined;
     const failed: number[] = [];
+    const samples: PrSample[] = [];
     const records = (
       await mapLimit(
         prs,
@@ -245,6 +313,7 @@ export async function runScoreboard(
           deps.note(`prs: [${i + 1}/${prs.length}] #${p.number}`);
           try {
             const sample = await deps.samplePr(p.number, asOf);
+            samples.push(sample);
             const labels =
               deps.labelSelfInflicted === null
                 ? new Map<string, boolean | null>()
@@ -263,7 +332,7 @@ export async function runScoreboard(
     if (failed.length > 0) {
       prsUnsampled = true;
       gaps.push(
-        `${failed.length} PR(s) could not be sampled and are absent from every PR-side figure, so PR-side verdicts are withheld: ${failed
+        `${failed.length} PR(s) could not be sampled and are absent from the review figures, so review verdicts are withheld; conflict records can still cover them: ${failed
           .sort((a, b) => a - b)
           .map((n) => `#${n}`)
           .join(", ")}`,
@@ -273,6 +342,14 @@ export async function runScoreboard(
       sinceMs: prSinceMs,
       untilMs,
     });
+    mergeConflicts = await measureConflicts(
+      samples,
+      prs,
+      deps,
+      prsCapped,
+      gaps,
+      caveats,
+    );
     // An empty population is a wrong window, not a quiet week: every PR-side
     // row would read `not-measured` under an exit code that claims a full run.
     if (pr.prs === 0) gaps.push("no merged PRs in the PR window");
@@ -358,7 +435,9 @@ export async function runScoreboard(
       `--days ${opts.days} differs from the ${DEFAULT_DAYS}-day window the Linear baselines were recorded over, so window-bound Linear verdicts are withheld.`,
     );
   }
-  const metrics = metricRows(sides, values, specs, boundedMetricIds(pr, specs));
+  const bounded = boundedMetricIds(pr, specs);
+  publishConflictShare(mergeConflicts, specs, values, bounded);
+  const metrics = metricRows(sides, values, specs, bounded);
   for (const m of metrics) {
     if (m.verdict === "no-baseline") {
       caveats.push(
@@ -383,6 +462,7 @@ export async function runScoreboard(
         linear: { since: new Date(sinceMs).toISOString(), days: opts.days },
       },
       pr,
+      mergeConflicts,
       linear,
       metrics,
       escapeAnchor: renderEscapeAnchor(null).trim(),
@@ -661,6 +741,25 @@ export function parseArgs(
   return args;
 }
 
+/** Real conflict probes share the resolved repository and configured floor. */
+function conflictInputs(
+  root: string,
+  repo: Repo | null,
+  cfg: FleetHealthConfig | null,
+): Pick<RunDeps, "conflictCoverageFloor" | "observeConflicts"> {
+  return {
+    conflictCoverageFloor: cfg?.mergeConflicts.coverageFloor ?? 0.9,
+    observeConflicts: async (samples, cohort) => {
+      if (repo === null) throw new Defect("no repository resolved");
+      return observeConflicts(
+        samples,
+        realConflictDeps(root, repo, (message) => console.error(message)),
+        cohort,
+      );
+    },
+  };
+}
+
 async function main(): Promise<number> {
   // One read feeds both the default window end and every `nowMs` below, so a
   // UTC-midnight crossing mid-run cannot make them disagree.
@@ -700,6 +799,7 @@ async function main(): Promise<number> {
 
   const { scoreboard, gaps } = await runScoreboard(args, {
     specs,
+    ...conflictInputs(root, repo, cfg),
     nowMs: () => startMs,
     listMergedPrs: (since, untilInclusive, limit) =>
       mergedPrs(since, untilInclusive, limit),
