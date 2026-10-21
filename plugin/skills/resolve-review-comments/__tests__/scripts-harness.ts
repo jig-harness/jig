@@ -267,6 +267,14 @@ case "$1 $2" in
     printf '%s\n' "$@" > "$FIX/dismiss-args.log"
     [ -f "$FIX/dismiss-forbidden" ] && { echo 'gh: Resource not accessible by integration (HTTP 403)' >&2; exit 1; }
     echo dismissed ;;
+  'api repos/'*'/code-scanning/alerts/'*'/instances?ref='*)
+    # An alert's instances on one ref, from instances-<n>-<ref, / as _>.json
+    # in the fixture; absent, none.
+    n="\${2%/instances*}"; n="\${n##*/}"; ref="\${2##*ref=}"
+    echo "instances $n $ref" >> "$FIX/alert-calls.log"
+    [ -f "$FIX/instances-forbidden" ] && { echo 'gh: Resource not accessible by integration (HTTP 403)' >&2; exit 1; }
+    f="$FIX/instances-$n-$(printf '%s' "$ref" | tr / _).json"
+    if [ -f "$f" ]; then cat "$f"; else echo '[]'; fi ;;
   'api repos/'*'/code-scanning/alerts/'*)
     # A code scanning alert, from alert-<n>.json in the fixture; absent, a 403.
     n="\${2##*/}"

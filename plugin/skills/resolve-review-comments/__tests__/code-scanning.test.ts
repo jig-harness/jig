@@ -53,6 +53,24 @@ describe("alertNumberOf", () => {
     ).toBeNull();
   });
 
+  it("reads the details link, not an alert URL the message quotes", () => {
+    const quoted = `See https://github.com/acme/widgets/security/code-scanning/8 and [this one](https://github.com/acme/widgets/security/code-scanning/9)\n\n${BODY}`;
+    expect(
+      alertNumberOf(quoted, "github-advanced-security", "acme", "widgets"),
+    ).toBe(7);
+    const foreign = `See https://github.com/other/repo/security/code-scanning/9\n\n${BODY}`;
+    expect(
+      alertNumberOf(foreign, "github-advanced-security", "acme", "widgets"),
+    ).toBe(7);
+  });
+
+  it("refuses two details links as ambiguous", () => {
+    const twice = `[Show more details](https://github.com/acme/widgets/security/code-scanning/8)\n\n${BODY}`;
+    expect(
+      alertNumberOf(twice, "github-advanced-security", "acme", "widgets"),
+    ).toBeNull();
+  });
+
   it("refuses a comment with no alert link", () => {
     expect(
       alertNumberOf("a finding", "github-advanced-security", "acme", "widgets"),
@@ -87,6 +105,12 @@ describe("summarizeAlert", () => {
     ["warning", { severity: "warning" }, "medium", "unknown"],
     ["note", { severity: "note" }, "low", "unknown"],
     ["an unknown level", { severity: "loud" }, "unknown", "unknown"],
+    [
+      "an inherited property name",
+      { security_severity_level: "constructor", severity: "toString" },
+      "unknown",
+      "unknown",
+    ],
   ];
   for (const [label, rule, severity, category] of cases) {
     it(`maps ${label}`, () => {
@@ -95,7 +119,7 @@ describe("summarizeAlert", () => {
     });
   }
 
-  it("takes the instance's state for an alert raised only on a pull request", () => {
+  it("takes the most recent instance's state for an alert with none of its own", () => {
     expect(summarizeAlert(7, alert({}, null)).state).toBe("open");
   });
 
@@ -136,7 +160,24 @@ function codeScanningThread(id: string, body = BODY) {
   };
 }
 
-const writeAlert = (fix: Fixture, state: string | null) =>
+/**
+ * Alert 7, its own `state` as GitHub reports it (on the default branch), and
+ * its instance on the fixture pull request's merge ref with `prState`, which
+ * defaults to the alert's own (`open` when that is null); `null` writes no
+ * instance.
+ */
+const writeAlert = (
+  fix: Fixture,
+  state: string | null,
+  prState: string | null = state ?? "open",
+) => {
+  const ref = `refs/pull/${fix.pr}/merge`;
+  if (prState !== null) {
+    writeFileSync(
+      join(fix.dir, `instances-7-${ref.replaceAll("/", "_")}.json`),
+      JSON.stringify([{ ref, state: prState }]),
+    );
+  }
   writeFileSync(
     join(fix.dir, "alert-7.json"),
     JSON.stringify({
@@ -151,12 +192,13 @@ const writeAlert = (fix: Fixture, state: string | null) =>
       most_recent_instance: { state: state ?? "open" },
     }),
   );
+};
 
-/** The thread read as `gh -q` hands it over: repository, author, body. */
+/** The thread read as `gh -q` hands it over: repository, pull request, author, body. */
 const writeThreadNode = (fix: Fixture, author: string, body = BODY) =>
   writeFileSync(
     join(fix.dir, "thread-node.json"),
-    JSON.stringify(["acme", "widgets", author, body]),
+    JSON.stringify(["acme", "widgets", fix.pr, author, body]),
   );
 
 describe.skipIf(process.platform === "win32")(
@@ -188,6 +230,31 @@ describe.skipIf(process.platform === "win32")(
         severity: "high",
         category: "security",
       });
+    });
+
+    it("reads the alert's state on the pull request, not the default branch", () => {
+      const fix = writeFixture({ threads: [codeScanningThread("PRRT_cs")] });
+      writeAlert(fix, "fixed", "open");
+      expect(listed(fix).records[0].codeScanning.state).toBe("open");
+    });
+
+    it("leaves the state unknown when the pull request has no instance", () => {
+      const fix = writeFixture({ threads: [codeScanningThread("PRRT_cs")] });
+      writeAlert(fix, "open", null);
+      const alert = listed(fix).records[0].codeScanning;
+      expect([alert.state, alert.severity]).toEqual([null, "high"]);
+      expect(alert.stateUnknown).toContain(
+        `no instance on pull request #${fix.pr}`,
+      );
+    });
+
+    it("leaves the state unknown when the instances cannot be read", () => {
+      const fix = writeFixture({ threads: [codeScanningThread("PRRT_cs")] });
+      writeAlert(fix, "open");
+      writeFileSync(join(fix.dir, "instances-forbidden"), "");
+      const alert = listed(fix).records[0].codeScanning;
+      expect(alert.state).toBeNull();
+      expect(alert.stateUnknown).toContain("HTTP 403");
     });
 
     it("still lists the thread when the alert cannot be read", () => {
@@ -302,6 +369,44 @@ describe.skipIf(process.platform === "win32")("dismiss-alert.ts", () => {
     const r = dismiss(fix, ["--outcome", "rejected"]);
     expect(r.code).toBe(3);
     expect(r.stderr).toContain("alert 7 is fixed");
+    expect(existsSync(join(fix.dir, "dismiss-args.log"))).toBe(false);
+  });
+
+  it("dismisses an alert fixed on the default branch but open on the pull request", () => {
+    const fix = writeFixture({});
+    writeThreadNode(fix, "github-advanced-security");
+    writeAlert(fix, "fixed", "open");
+    expect(dismiss(fix, ["--outcome", "rejected"]).code).toBe(0);
+    expect(existsSync(join(fix.dir, "dismiss-args.log"))).toBe(true);
+  });
+
+  it("refuses an alert fixed on the pull request though open elsewhere", () => {
+    const fix = writeFixture({});
+    writeThreadNode(fix, "github-advanced-security");
+    writeAlert(fix, "open", "fixed");
+    expect(dismiss(fix, ["--outcome", "rejected"]).code).toBe(3);
+    expect(existsSync(join(fix.dir, "dismiss-args.log"))).toBe(false);
+  });
+
+  it("refuses an alert with no instance on the pull request", () => {
+    const fix = writeFixture({});
+    writeThreadNode(fix, "github-advanced-security");
+    writeAlert(fix, "open", null);
+    const r = dismiss(fix, ["--outcome", "rejected"]);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain(`no instance on pull request #${fix.pr}`);
+    expect(existsSync(join(fix.dir, "dismiss-args.log"))).toBe(false);
+  });
+
+  it("refuses a thread whose message quotes a second details link", () => {
+    const fix = writeFixture({});
+    writeThreadNode(
+      fix,
+      "github-advanced-security",
+      `[Show more details](https://github.com/acme/widgets/security/code-scanning/8)\n\n${BODY}`,
+    );
+    writeAlert(fix, "open");
+    expect(dismiss(fix, ["--outcome", "rejected"]).code).toBe(2);
     expect(existsSync(join(fix.dir, "dismiss-args.log"))).toBe(false);
   });
 

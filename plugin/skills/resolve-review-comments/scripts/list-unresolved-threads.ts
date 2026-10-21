@@ -55,10 +55,11 @@
  *   - codeScanning → present only on a CODE-SCANNING thread: one GitHub
  *     opened for a code scanning alert (CodeQL, SonarQube Cloud, any tool that
  *     uploads to GitHub code scanning), recognised by its opening comment's
- *     author and its link to an alert of this repository
- *     (`lib/code-scanning.ts`). Carries the alert's `number`, `state`, `tool`,
- *     `rule`, `severity` and `category`, read from the alert itself because
- *     the comment states neither. An alert that could not be read (a token
+ *     author and its details link to an alert of this repository
+ *     (`lib/code-scanning.ts`). Carries the alert's `number`, `state` (on
+ *     this pull request; `null`, with `stateUnknown` saying why, when that
+ *     cannot be established), `tool`, `rule`, `severity` and `category`, read
+ *     from the alert itself because the comment states neither. An alert that could not be read (a token
  *     without access to code scanning, say) carries `unreadable` with the
  *     reason and `unknown` severity, and still lists: the thread is open work
  *     either way. Only an unresolved thread is looked up, and none under
@@ -374,7 +375,7 @@ async function main(): Promise<number> {
       // nothing about it is actionable either way.
       const historyOnly = botsOnly && !startedByBot;
       if (historyOnly && !includeResolved) continue;
-      const codeScanning = await codeScanningOf(t, owner, repo, readAlerts);
+      const codeScanning = await codeScanningOf(t, owner, repo, pr, readAlerts);
       process.stdout.write(
         `${JSON.stringify({
           threadId: historyOnly ? null : t.id,

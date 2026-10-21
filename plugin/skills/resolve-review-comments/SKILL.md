@@ -210,7 +210,10 @@ paginated:
   field at all, not `unknown`. `--severity` and `--category` are both
   required flags that refuse an omission outright, so pass `unknown`
   explicitly for whichever one is absent — the same supported degrade
-  `selfInflicted` already gets above, extended to these two.
+  `selfInflicted` already gets above, extended to these two. A
+  code-scanning thread (`codeScanning`, below) is the exception: pass its
+  `codeScanning.severity` and `codeScanning.category`, which the listing
+  reads from the alert on that path too.
 - `comments` is the thread's replies — the finding plus any back-and-forth —
   which is what you need to make the call. It is capped at 100 and **not**
   paginated: `commentsTruncated` is `true` when replies were omitted. Treat a
@@ -222,8 +225,11 @@ paginated:
   opened for a code scanning alert: `{ number, state, tool, rule, severity,
   category }`, read from the alert, which also supplies the thread's
   `severity` and `category` (a security rule's category is `security`).
-  `unreadable` names why the alert could not be read; the severity is then
-  `unknown`. Such a thread follows
+  `state` is the alert's state on this pull request: `dismissed` once anyone
+  dismissed it, else its instance's on the pull request's ref (an alert can be
+  fixed on the default branch and still open here); `null`, with
+  `stateUnknown` saying why, when that cannot be established. `unreadable`
+  names why the alert could not be read; the severity is then `unknown`. Such a thread follows
   [Code-scanning threads](#code-scanning-threads) as well as this step.
 - `--include-resolved` widens the stream to resolved threads as well, each line
   carrying `isResolved`. Use it only for the reversal check in the
@@ -709,7 +715,7 @@ Triage it like any other thread, then:
 | `rejected` | Dismiss it as a false positive, or `--used-in-tests` when only tests run the code |
 | `wont-fix` | Dismiss it as won't fix |
 | `deferred` | Dismiss it as won't fix, with the follow-up issue's link in the comment |
-| `moot` | Nothing: the record's `state` must already be `fixed` or `closed`; while it is `open`, the finding still stands and is not moot |
+| `moot` | Nothing: the record's `state` must already be `fixed`, `closed` or `dismissed`; while it is `open`, the finding still stands and is not moot. `dismissed` is a person, or an earlier interrupted pass, having settled the alert already: reply `moot`, naming the dismissal, and resolve |
 
 Dismiss after the reply is posted and before the thread is resolved, with
 a comment of at most 280 characters on stdin:
@@ -720,14 +726,23 @@ The path comes from the repository's own registry file, not from the agent.
 COMMENT_EOF
 ```
 
-It finds the alert from the thread itself and refuses a thread GitHub's code
-scanning account did not open (exit `2`). Exit `3` means the alert is
-already fixed, so the outcome is `accepted` or `moot`, not a dismissal; exit
-`5` means the pull request closed, as for the other thread helpers. Exit `1`
-is a failed read or a refused dismissal: GitHub refuses a token that may not
-write security events. Then leave the thread **open**, and report the alert
-for a person to dismiss: a resolved thread over an open alert hides a finding
-nobody answered.
+It finds the alert from the thread itself, by the comment's one details link,
+and refuses a thread GitHub's code scanning account did not open, or whose
+comment carries no single details link (exit `2`). It reads the alert's state
+on the pull request: exit `3` means the alert is already fixed there, so the
+outcome is `accepted` or `moot`, not a dismissal; exit `5` means the pull
+request closed, as for the other thread helpers. Exit `1` is a failed read, an
+alert with no instance on the pull request, or a refused dismissal: GitHub
+refuses a token that may not write security events. Then leave the thread
+**open**, and report the alert for a person to dismiss: a resolved thread over
+an open alert hides a finding nobody answered.
+
+Under `/jig:drive-pr`, `triage-thread.ts` resolves a merit outcome in the
+same call that posts it, which leaves no point to dismiss in between. Post the
+reply with `reply-to-thread.ts`, dismiss, then dispatch with `triage-thread.ts`,
+which finds the posted reply and resolves. The drive's replied-thread sweep
+does not read alerts, so a thread left open after a refused dismissal is
+resolved by the next sweep: report that alert in the round's summary.
 
 A dismissal reaches the tool: SonarQube Cloud, for one, records a false
 positive as False Positive and the other reasons as Accept. A security

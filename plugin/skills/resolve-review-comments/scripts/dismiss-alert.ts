@@ -17,12 +17,14 @@
  *   reply-to-thread.ts gives. GitHub stores it with the dismissal.
  *
  * The thread names the alert: its opening comment must be GitHub's code
- * scanning account's and link an alert of the pull request's own repository,
- * or the script refuses. Neither the thread nor the alert is taken from the
+ * scanning account's and carry one details link, to an alert of the pull
+ * request's own repository, or the script refuses. The alert's state is read
+ * on that pull request, so an alert with no instance there is refused too. Neither the thread nor the alert is taken from the
  * caller, so a reply cannot dismiss an alert some other thread raised.
  *
  * Exit codes: 0 dismissed, or already dismissed; 1 a read or the dismissal
- * failed (GitHub answers 403 to a token that may not write security events);
+ * failed (GitHub answers 403 to a token that may not write security events),
+ * or the alert's state on the pull request could not be established;
  * 2 usage, or not a code-scanning thread; 3 the alert is fixed or closed, so
  * the outcome is `accepted` or `moot`, not a dismissal; 5 the pull request is
  * no longer open.
@@ -59,21 +61,22 @@ const USAGE =
 interface ThreadRead {
   owner: string;
   repo: string;
+  pr: string;
   author: string;
   body: string;
 }
 
-/** The thread's repository and opening comment, as four strings. */
+/** The thread's repository, pull request and opening comment, as five strings. */
 async function readThread(threadId: string): Promise<ThreadRead> {
   const raw = await ghOrExit(LABEL, [
     "api",
     "graphql",
     "-f",
-    "query=query($id:ID!){ node(id:$id){ ... on PullRequestReviewThread { pullRequest { repository { owner { login } name } } comments(first:1){ nodes{ author{ login } body } } } } }",
+    "query=query($id:ID!){ node(id:$id){ ... on PullRequestReviewThread { pullRequest { number repository { owner { login } name } } comments(first:1){ nodes{ author{ login } body } } } } }",
     "-f",
     `id=${threadId}`,
     "-q",
-    '.data.node | [.pullRequest.repository.owner.login, .pullRequest.repository.name, .comments.nodes[0].author.login // "", .comments.nodes[0].body // ""] | @json',
+    '.data.node | [.pullRequest.repository.owner.login, .pullRequest.repository.name, (.pullRequest.number | tostring), .comments.nodes[0].author.login // "", .comments.nodes[0].body // ""] | @json',
   ]);
   let fields: string[] = [];
   try {
@@ -81,11 +84,11 @@ async function readThread(threadId: string): Promise<ThreadRead> {
   } catch {
     // Left empty: refused below.
   }
-  const [owner = "", repo = "", author = "", body = ""] = fields;
-  if (owner === "" || repo === "") {
+  const [owner = "", repo = "", pr = "", author = "", body = ""] = fields;
+  if (owner === "" || repo === "" || !/^[0-9]+$/.test(pr)) {
     fail(1, `${LABEL}: ${threadId} is not a readable pull request thread`);
   }
-  return { owner, repo, author, body };
+  return { owner, repo, pr, author, body };
 }
 
 /** The thread id and outcome, or a usage refusal (exit 2). */
@@ -139,11 +142,17 @@ async function alertOf(threadId: string, thread: ThreadRead) {
       `${LABEL}: ${threadId} is not a code-scanning thread (its opening comment is not a code scanning alert of ${thread.owner}/${thread.repo})`,
     );
   }
-  const alert = await readAlert(thread.owner, thread.repo, number);
+  const alert = await readAlert(thread.owner, thread.repo, number, thread.pr);
   if (alert.unreadable !== undefined) {
     fail(
       1,
       `${LABEL}: code scanning alert ${number} could not be read (${alert.unreadable})`,
+    );
+  }
+  if (alert.state === null) {
+    fail(
+      1,
+      `${LABEL}: code scanning alert ${number}'s state on pull request #${thread.pr} is unknown: ${alert.stateUnknown ?? "no state"}`,
     );
   }
   return alert;
@@ -161,7 +170,7 @@ async function main(): Promise<number> {
   if (alert.state !== "open") {
     fail(
       3,
-      `${LABEL}: code scanning alert ${alert.number} is ${alert.state ?? "in no known state"}; a fixed alert's thread is accepted or moot, not dismissed`,
+      `${LABEL}: code scanning alert ${alert.number} is ${alert.state} on this pull request; a fixed alert's thread is accepted or moot, not dismissed`,
     );
   }
 
