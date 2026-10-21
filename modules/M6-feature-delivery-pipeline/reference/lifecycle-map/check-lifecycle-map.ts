@@ -54,7 +54,7 @@ import {
 import { isRecord } from "../../../../lib/record.ts";
 import {
   type Cell,
-  lineOf,
+  linesOf,
   type Rendered,
   render,
   type Table,
@@ -98,13 +98,20 @@ export class MapInputError extends Error {}
 const columnOf = (table: Table, name: string): number =>
   table.header.findIndex((c) => c.toLowerCase() === name);
 
-/** How many table body rows a rendering holds, to find a row's line. */
-const bodyRows = (r: Rendered): number =>
-  r.tables.reduce((n, t) => n + t.rows.length, 0);
+/**
+ * The table body rows a rendering holds, to find a row's line. A row is known
+ * by its place alone: a reference definition further down changes what a
+ * row's cells say in a beginning of the document, not where the row is.
+ */
+const bodyRows = (r: Rendered): number[] =>
+  r.tables.flatMap((t) => t.rows.map((row) => row.index));
 
 /** The stages of every table whose header has `Stage`, `Owner` and `Hands on` columns. */
 export function parseStages(text: string): Stage[] {
-  return render(text).tables.flatMap((table) => {
+  const tables = render(text).tables;
+  if (tables.length === 0) return [];
+  const lines = linesOf(text, bodyRows);
+  return tables.flatMap((table) => {
     const [stage, owner, handsOn] = ["stage", "owner", "hands on"].map((n) =>
       columnOf(table, n),
     );
@@ -119,7 +126,7 @@ export function parseStages(text: string): Stage[] {
         handsOn: cell(handsOn),
       };
       return {
-        line: lineOf(text, bodyRows, row.index),
+        line: lines[row.index] ?? 1,
         stage: cells.stage.text,
         owner: cells.owner.text,
         handsOn: cells.handsOn.text,
@@ -165,7 +172,7 @@ export function skillNames(dir: string): string[] {
 const SKILL_SPAN =
   /^\/([a-z0-9][a-z0-9_-]*)(?::([a-z0-9][a-z0-9_-]*))?(?=\s|$)/;
 const RUN_SPAN = /^(bun|npm|pnpm|yarn)\s+run\s+(\S+)/;
-const FILE_WORD = /\/|\.[a-z0-9]+$/i;
+const FILE_WORD = /(?:\/)|(?:\.[a-z0-9]+$)/i;
 
 /** A skill reference in a span: the namespace ("" for none) and the name. */
 export function skillRef(
@@ -510,8 +517,10 @@ function checkSkillTable(
   scripts: Set<string> | undefined,
   add: Add,
 ): void {
-  for (const { row, span } of skillTableSpans(mapText)) {
-    const line = lineOf(mapText, bodyRows, row);
+  const spans = skillTableSpans(mapText);
+  const lines = spans.length > 0 ? linesOf(mapText, bodyRows) : [];
+  for (const { row, span } of spans) {
+    const line = lines[row] ?? 1;
     if (isPlaceholder(span)) {
       add({
         line,
@@ -570,13 +579,18 @@ function checkScan(opts: MapOptions, add: Add): void {
   for (const file of opts.scan) {
     const rel = posix(relative(opts.root, file));
     const text = readText(file, "--scan file");
+    let lines: number[] | undefined;
+    const lineOf = (index: number): number => {
+      lines ??= linesOf(text, (r) => r.spans);
+      return lines[index] ?? 1;
+    };
     render(text).spans.forEach((span, index) => {
       for (const ref of skillRefs(span)) {
         if (ref.namespace === "" || !namespaces.has(ref.namespace)) continue;
         if (!skillResolves(opts.skills, ref.namespace, ref.name))
           add(
             {
-              line: lineOf(text, (r) => r.spans.length, index),
+              line: lineOf(index),
               rule: "skill-unresolved",
               problem: `${invocation(ref.namespace, ref.name)} is not a skill under the --skills directories`,
               remedy:

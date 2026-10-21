@@ -31,7 +31,10 @@ names has to exist.
 The gate reads every file as a reader sees it, through Bun's built-in
 [CommonMark](https://commonmark.org) parser with GitHub's tables: a table, code span or link inside a
 fenced block or an HTML comment is not part of it, and neither is one written
-as an example inside a code span or after a backslash. Stages are named, never numbered: a number
+as an example inside a code span or after a backslash. The document's own
+HTML is text to the gate: an `<a>`, `<table>` or `<code>` written as HTML is
+not a link, a table or a code span, so the map and the link to it are written
+in Markdown. Stages are named, never numbered: a number
 is wrong the day a stage is added in the middle. Whether the stages are in the right order is not checked; it is
 a question for the reviewer of a change to the process.
 

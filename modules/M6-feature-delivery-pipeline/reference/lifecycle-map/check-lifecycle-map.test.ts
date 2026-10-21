@@ -18,7 +18,7 @@ import {
   skillNames,
   skillRef,
 } from "./check-lifecycle-map.ts";
-import { render } from "./markdown.ts";
+import { linesOf, render } from "./markdown.ts";
 
 const script = join(import.meta.dir, "check-lifecycle-map.ts");
 const repo = join(import.meta.dir, "fixtures", "repo");
@@ -402,6 +402,26 @@ describe("reach, as a reader sees it", () => {
     expect(
       rules("LIFECYCLE.md", { linkedFrom: at("AGENTS-rooted.md") }),
     ).toEqual([]));
+
+  test("the document's own HTML is text: no anchor, quoted any way, and nothing inside a script is a link or a span", () => {
+    const html = [
+      `<a title=' href="docs/LIFECYCLE.md"'>map</a>`,
+      `<a href='docs/LIFECYCLE.md'>map</a> <a href=docs/LIFECYCLE.md>map</a>`,
+      "",
+      `<script>const e = '<a href="docs/LIFECYCLE.md">m</a> <code>/jig:x</code>';</script>`,
+      "",
+      "<code>/jig:y</code>",
+    ].join("\n");
+    expect(render(html).links).toEqual([]);
+    expect(render(html).spans).toEqual([]);
+  });
+
+  test("a link's target is read with its escapes and character references", () =>
+    expect(
+      render(
+        "[a](docs\\_x.md) [b](x&amp;y.md) [c](<My File.md>) [d](caf%C3%A9.md)",
+      ).links,
+    ).toEqual(["docs_x.md", "x&y.md", "My File.md", "café.md"]));
 });
 
 describe("helpers", () => {
@@ -430,6 +450,17 @@ describe("helpers", () => {
 
   test("render reads single and double backtick spans", () =>
     expect(render("`a` and ``b`c``").spans).toEqual(["a", "b`c"]));
+
+  test("an item's line is where it appears for good, though a later line merges what came before it", () => {
+    const text = ["``example", "`a` and `b`", "end``", "`/jig:gone`"].join(
+      "\n",
+    );
+    expect(render(text).spans).toEqual([
+      "example `a` and `b` end",
+      "/jig:gone",
+    ]);
+    expect(linesOf(text, (r) => r.spans)).toEqual([3, 4]);
+  });
 
   test("commandSegments splits a chain on operators outside quotes and escapes", () => {
     expect(commandSegments(`a --m 'x;y' && b "p | q" || c; d | e`)).toEqual([
