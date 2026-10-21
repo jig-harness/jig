@@ -352,7 +352,8 @@ you look:
   `OPENAI_API_KEY` (same fingerprint treatment) / `$CODEX_HOME/auth.json` for
   a Codex one, `null` with a stated reason when neither resolves); `--json`
   for machines. Each row's `repository` names the origin's owner/repository,
-  falling back to the clone's Git common directory when origin is unavailable.
+  falling back to the clone's Git common directory when origin is unavailable
+  or yields no plain owner/repository pair; the origin URL is never printed.
   `--stop <PR>` requests that a live driver stop its pass
   tree and then release its locks. Process identity is verified through the
   platform process table (`ps` on POSIX, PowerShell on Windows), and a
