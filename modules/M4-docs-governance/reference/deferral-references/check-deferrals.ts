@@ -477,6 +477,9 @@ const finding = (
   excerpt: excerptOf(unit),
 });
 
+/** Item keys in code-unit order, the same on every machine and locale. */
+const byCodeUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
 /** The deferral a block makes, or undefined when it holds no marker phrase. */
 function deferralOf(unit: Unit, config: Config): Deferral | undefined {
   const bare = unit.text.replace(/\s+/g, " ");
@@ -498,7 +501,7 @@ function deferralOf(unit: Unit, config: Config): Deferral | undefined {
   return {
     unit,
     marker,
-    keys: [...new Set([...keysIn(bare), ...keysIn(text)])].sort(),
+    keys: [...new Set([...keysIn(bare), ...keysIn(text)])].sort(byCodeUnit),
   };
 }
 
@@ -990,7 +993,7 @@ export function run(
     const keys = judged.flatMap(({ reading }) =>
       reading.deferrals.flatMap((d) => d.keys),
     );
-    for (const key of [...new Set(keys)].sort()) console.log(key);
+    for (const key of [...new Set(keys)].sort(byCodeUnit)) console.log(key);
     return 0;
   }
   const states =

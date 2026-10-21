@@ -191,7 +191,7 @@ export function parseItemKeys(text: string): string[] {
       throw new UsageError(`'${key}' is not an item key like ENG-123`);
     keys.add(key);
   }
-  return [...keys].sort();
+  return [...keys].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 /**
