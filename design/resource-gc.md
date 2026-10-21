@@ -293,10 +293,12 @@ until the one before it has run for real in a working repository (Jig's
    collection reclaims every one of them, checked against the engine's own
    inventory afterwards.
 3. **Branches.** Merged as the forge records it, squash merges included, or
-   into the base by ancestry, and gone from the forge, never checked out,
-   closed-but-unmerged kept, removed by an expected-old-value reference
-   deletion under the worktrees kind's lock. Done when the local branch count of a clone
-   tracks its open pull requests.
+   into the base by ancestry, with the remote branch gone, never checked
+   out, closed-but-unmerged and unmerged branches without a pull request
+   kept, removed by an expected-old-value reference deletion under the
+   worktrees kind's lock. Done when, after a collecting run, the report of
+   a clone names no branch the forge, ancestry, remote-branch and worktree
+   checks would still make eligible.
 4. **Processes.** The registry generalised from `drive-pr` to a shared
    module any tool can record into, the test runner registering its
    fixtures, the kind reaping registered trees whose owner is gone, and the
