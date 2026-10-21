@@ -39,7 +39,8 @@ here reaches every repository at once.
   release commit is tagged `v<version>` once its gates pass ([CONTRIBUTING.md § Releasing the plugin](../CONTRIBUTING.md#releasing-the-plugin)).
   A `since:` it adds names `next`.
 - **A new skill** gets a row in the skills table in [README.md](README.md),
-  its name in both manifests' descriptions, its configuration in
+  a place in [Jig's lifecycle map](../docs/LIFECYCLE.md) (the gates fail a
+  skill no stage names), its name in both manifests' descriptions, its configuration in
   [CONFIGURATION.md](CONFIGURATION.md), and its tests in
   `skills/<name>/__tests__/`. A suite that needs POSIX or runs long is listed in
   [scripts/gates.ts](../scripts/gates.ts) with the reason.

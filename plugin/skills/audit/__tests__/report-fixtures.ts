@@ -148,6 +148,18 @@ export function addedAfter(version: string): string[] {
     .map((c) => c.key);
 }
 
+/**
+ * The record with every M6 criterion `expected-absent`, so a whole module does
+ * not apply: the calibration audit scores the lifecycle map `absent`, since a
+ * library's loop can still be mapped, which leaves the record with no such
+ * module of its own.
+ */
+export const ruledOutRecord = (): string =>
+  withScores(recordText(), {
+    "M6/lifecycle-map-published": "expected-absent",
+    "M6/lifecycle-owners-resolve-gated": "expected-absent",
+  });
+
 /** An older record of the same repository: CI was not running the gates then. */
 export const priorRecord = (): string =>
   recordAt("2026-07-19", { "M1/gate-set-documented": "absent" });

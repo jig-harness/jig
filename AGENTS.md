@@ -32,10 +32,13 @@ Read in this order when starting a session here:
    [design/](design/README.md) for the items that have a design. Finished work is in [CHANGELOG.md](CHANGELOG.md).
 2. [CONTRIBUTING.md](CONTRIBUTING.md) before your first change: pull
    requests, the gates, hooks, derived files, keeping the auditor current.
-3. The instructions closest to what you change: [plugin/AGENTS.md](plugin/AGENTS.md)
+3. [docs/LIFECYCLE.md](docs/LIFECYCLE.md) when deciding what happens next
+   to a piece of work: each stage of the delivery loop, the skill that owns
+   it and what it hands on.
+4. The instructions closest to what you change: [plugin/AGENTS.md](plugin/AGENTS.md)
    for skills and the plugin, [modules/AGENTS.md](modules/AGENTS.md) for the
    practice modules. They add to this file; they do not repeat it.
-4. The module(s) or skill(s) you are working on.
+5. The module(s) or skill(s) you are working on.
 
 ## Writing conventions (MANDATORY)
 

@@ -30,6 +30,7 @@ import { checkGeneratedFiles } from "./check-generated-files.ts";
 import { checkWorkflowSafety } from "./check-workflow-safety.ts";
 import { checkWorkflowConventions } from "./check-workflow-conventions.ts";
 import { checkSchedulesDeclared } from "./check-schedules-declared.ts";
+import { checkLifecycleMap } from "./check-lifecycle-map.ts";
 import { checkReviewRisk } from "./review-risk.ts";
 import { checkRoadmap } from "./check-roadmap.ts";
 import { checkContextBudget } from "./check-context-budget.ts";
@@ -139,6 +140,7 @@ export const CHECKS: Stage[] = [
   check("check-workflow-safety.ts", checkWorkflowSafety),
   check("check-workflow-conventions.ts", checkWorkflowConventions),
   check("check-schedules-declared.ts", checkSchedulesDeclared),
+  check("check-lifecycle-map.ts", checkLifecycleMap),
   check("check-changelog.ts", checkChangelog),
   check("check-audit-fit.ts", checkAuditFit),
   check("change-areas.ts --check", checkChangeAreas),

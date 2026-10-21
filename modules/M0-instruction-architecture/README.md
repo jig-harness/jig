@@ -202,6 +202,9 @@ What this module provides:
 - [`templates/AGENTS-skeleton.md`](templates/AGENTS-skeleton.md) — the
   universal instruction file's structure: overview, guardrails, gates, git
   workflow, per-directory table.
+  Its key references link the delivery lifecycle map
+  ([M6](../M6-feature-delivery-pipeline/README.md#the-lifecycle-map)), so the
+  stage that comes next is one hop from the instructions every session loads.
 - [`templates/GLOSSARY-skeleton.md`](templates/GLOSSARY-skeleton.md) — a
   one-page domain glossary with _Avoid_ aliases; authoring notes in its header
   comment.

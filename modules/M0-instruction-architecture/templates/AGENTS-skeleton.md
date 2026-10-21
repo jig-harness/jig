@@ -152,5 +152,9 @@ one is closed as rejected with a link to that source.
   anything it lists. Those files hold the architecture's contracts and are
   read-only for agents: stop and ask a person, who updates the inventory or
   names an approved decision record. Everything else is yours to change.
+- **Delivery lifecycle**: [`docs/LIFECYCLE.md`](docs/LIFECYCLE.md) — the
+  stages work moves through, who owns each and what it hands on; read it to
+  see what comes next (template: M6's `LIFECYCLE.md`). Link it as Markdown, so
+  the lifecycle map gate can see it.
 - **Glossary**: `/GLOSSARY.md`
 - <Other single-source-of-truth files agents must consult, one line each.>

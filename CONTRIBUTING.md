@@ -214,7 +214,11 @@ design. Run all with one command: `bun run gates`. The set, cheapest first:
    `.config/workflow-conventions.yaml` and its reasoned exceptions in
    `.config/workflow-conventions-exceptions.txt`); every scheduled workflow
    declared with its cadence in `.config/scheduled-jobs.yaml` (M11's
-   heartbeat coverage check); a changelog section for
+   heartbeat coverage check); the delivery lifecycle map
+   (`scripts/check-lifecycle-map.ts`, M6's lifecycle map gate over
+   `docs/LIFECYCLE.md`: every owner it names exists, every plugin skill is on
+   it, `AGENTS.md` links it, and no document names a `/jig:` skill that does
+   not exist); a changelog section for
    the current plugin version, change notes the release step can read, and a
    branch that leaves the changelog's open sections and the version to that
    step (with a note asking for a release when it changes `plugin/`); Jig's
