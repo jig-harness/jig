@@ -1,3 +1,4 @@
+import { definedFields } from "../../../../shared/defined-fields.ts";
 /**
  * The consumer repository's drive-loop values, read from its Jig
  * configuration (every layer, `.config/jig.yaml` among them) through the
@@ -303,7 +304,11 @@ export async function baseBranch(
         "-q",
         ".defaultBranchRef.name",
       ],
-      { cwd: root, stderr: "ignore", timeoutSec },
+      {
+        cwd: root,
+        stderr: "ignore",
+        ...definedFields({ timeoutSec }),
+      },
     );
     const name = view.stdout.trim();
     if (view.code === 0 && /^[^\s~^:?*[\\]+$/.test(name)) derived = name;
@@ -332,7 +337,11 @@ export async function pullRequestBaseBranch(
   const selector = pr === "" ? [] : [pr];
   const view = await ghCall(
     ["pr", "view", ...selector, "--json", "baseRefName", "-q", ".baseRefName"],
-    { cwd: root, stderr: "ignore", timeoutSec },
+    {
+      cwd: root,
+      stderr: "ignore",
+      ...definedFields({ timeoutSec }),
+    },
   );
   const name = view.stdout.trim();
   return view.code === 0 && /^[^\s~^:?*[\\]+$/.test(name) ? name : null;
@@ -366,7 +375,11 @@ async function currentBranchHasPullRequest(
       "-q",
       "length",
     ],
-    { cwd: root, stderr: "ignore", timeoutSec },
+    {
+      cwd: root,
+      stderr: "ignore",
+      ...definedFields({ timeoutSec }),
+    },
   );
   const count = list.stdout.trim();
   if (list.code !== 0 || !/^\d+$/.test(count)) return null;
@@ -388,7 +401,11 @@ async function pullRequestBase(
   const selector = pr === "" ? [] : [pr];
   const view = await ghCall(
     ["pr", "view", ...selector, "--json", "baseRefName,url"],
-    { cwd: root, stderr: "ignore", timeoutSec },
+    {
+      cwd: root,
+      stderr: "ignore",
+      ...definedFields({ timeoutSec }),
+    },
   );
   if (view.code !== 0) return null;
   let meta: { baseRefName?: unknown; url?: unknown };
@@ -506,14 +523,16 @@ async function trackingRef(
 
 /** A git runner whose every call is held to the caller's smaller timeout. */
 function boundedGit(timeoutSec?: number): typeof git {
-  return (args, opts) =>
-    git(args, {
+  return (args, opts) => {
+    const deadline =
+      timeoutSec === undefined
+        ? opts?.timeoutSec
+        : Math.min(timeoutSec, opts?.timeoutSec ?? gitCallTimeoutSeconds());
+    return git(args, {
       ...opts,
-      timeoutSec:
-        timeoutSec === undefined
-          ? opts?.timeoutSec
-          : Math.min(timeoutSec, opts?.timeoutSec ?? gitCallTimeoutSeconds()),
+      ...definedFields({ timeoutSec: deadline }),
     });
+  };
 }
 
 /** The git deadline, tightened to a caller's smaller timeout when it has one. */

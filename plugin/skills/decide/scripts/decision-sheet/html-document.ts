@@ -412,7 +412,7 @@ export function renderDocumentHtml(source: DecisionSource): string {
       id: source.id,
       navLabel: D.navContents,
       nav,
-      cls: source.calls.length > MANY_CALLS ? "bar-many" : undefined,
+      ...(source.calls.length > MANY_CALLS ? { cls: "bar-many" } : {}),
       end: `<button type="button" class="bar-picks" aria-expanded="false" aria-controls="tray" hidden>${esc(multi ? D.myPicks : D.myPick)}<b></b></button>`,
     });
 
@@ -504,7 +504,7 @@ export function renderDocumentHtml(source: DecisionSource): string {
   // Evidence follows the calls, behind the one heavy rule of a several-call sheet.
   let heavy = multi;
   const after = (label: string, body: string, id: string) => {
-    parts.push(sec(label, body, { id, cls: heavy ? "heavy" : undefined }));
+    parts.push(sec(label, body, { id, ...(heavy ? { cls: "heavy" } : {}) }));
     heavy = false;
   };
   if (source.currentBehaviour.length) {

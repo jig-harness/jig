@@ -462,7 +462,7 @@ async function capturePickup(
     const cap = await run(tsArgv(captureIntentChain, [pr]), {
       stderr: "pipe",
       timeoutSec: helperTimeoutSeconds(),
-      cwd: diag.worktree === "" ? undefined : diag.worktree,
+      ...(diag.worktree === "" ? {} : { cwd: diag.worktree }),
       // `cwd` alone does not bind git to this worktree: an inherited GIT_DIR
       // (a hook-launched driver) outranks it, and the capture CLI's branch
       // check and chain-root lookup both go through git. The child inherits

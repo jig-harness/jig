@@ -123,8 +123,21 @@ export function envOrDefault(name: string, def: string): string {
   return raw === undefined || raw === "" ? def : raw;
 }
 
-export async function sleep(seconds: number): Promise<void> {
-  await sleepMs(seconds * 1000);
+/** Wait for the delay, or return normally when the caller aborts it. */
+export async function sleep(
+  seconds: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  try {
+    await sleepMs(
+      seconds * 1000,
+      undefined,
+      signal === undefined ? {} : { signal },
+    );
+  } catch (error) {
+    if (signal?.aborted) return;
+    throw error;
+  }
 }
 
 /**

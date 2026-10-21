@@ -238,7 +238,7 @@ describe("announce-merge-ready.ts", () => {
   // passing the fail-closed assertion for entirely the wrong reason. That
   // tree is the clean scratch repo every spawn above defaults to, so its HEAD
   // is the fixture head.
-  let CONVERGED: Fixture;
+  let CONVERGED: Fixture & { head: string };
   beforeAll(() => {
     CONVERGED = {
       threads: [],
