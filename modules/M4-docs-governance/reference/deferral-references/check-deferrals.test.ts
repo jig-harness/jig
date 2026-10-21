@@ -20,8 +20,8 @@ import {
   parseStates,
   readDocument,
   run as check,
-  units,
 } from "./check-deferrals";
+import { units } from "./blocks";
 
 const script = join(import.meta.dir, "check-deferrals.ts");
 const scratch = mkdtempSync(join(tmpdir(), "jig-deferrals-"));

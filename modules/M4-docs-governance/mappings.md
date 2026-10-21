@@ -230,7 +230,7 @@ it could not classify. Per tracker:
 |---------|----------|
 | Linear, through Jig's tracker interface (the adapter `issue_tracker.adapter` names) | `bun <jig>/plugin/skills/do-item/scripts/tracker.ts issue-states` with `issue_tracker` in `.config/jig.yaml` and the adapter's credential in the environment (`LINEAR_API_KEY` for Linear). It reads the state category of each item through the tracker interface: `completed`, `canceled` and `duplicate` are `closed`, a missing item is `not_found`, and an issue the tracker reports without a category fails the run |
 | GitHub Issues | One `gh issue view <number> --repo <owner/name> --json state` per key, mapping `OPEN` to `open` and `CLOSED` to `closed`; an `items` pattern whose capture group is the issue number; `gh` exits non-zero for a missing issue, which the wrapper maps to `not_found` only on that error, never on a network failure |
-| Jira | `GET /rest/api/3/issue/<key>?fields=status`, mapping `status.statusCategory.key` of `done` to `closed` and any other to `open`, a 404 to `not_found`; every other status code fails the provider |
+| Jira | `GET /rest/api/3/issue/<key>?fields=status`, mapping `status.statusCategory.key` of `done` to `closed` and of `new` or `indeterminate` to `open`, and failing on any other category (an `undefined` one included); a 404 to `not_found`; every other status code fails the provider |
 | A plan file in the repository | A script that reads the item's status from the file; no credential, so it can run in the pull-request check beside the static half |
 
 A provider that maps a failed request to `not_found` turns an outage into a

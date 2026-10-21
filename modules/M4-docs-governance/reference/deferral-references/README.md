@@ -257,10 +257,12 @@ would turn the check off) is exit 2, never a pass.
 | File | Role |
 | --- | --- |
 | `check-deferrals.ts` | the gate: both halves, one reader |
+| `blocks.ts` | the reader: a document's blocks of prose and the waivers in each |
 | `check-deferrals.test.ts` | paired self-test: block boundaries (paragraph, list item, loose and nested lists, table rows with and without outer pipes, heading, quote boundaries, fences and their closing lines, frontmatter, comments across blocks), marker matching, item patterns and groups, waivers, the added-line reader, the live decision (all closed, one open, not found, unanswered, bad state file), the diff modes in throwaway repositories (staged, `A...B`, `A..B`, single ref, `DIFF_RANGE`, malformed and unresolvable ranges, `--ci`, a deletion that exposes a deferral, the staged blob and staged configuration against later edits), configuration and usage errors, and the entry point's exit codes |
 
-The script imports the shared reader [`../docs.ts`](../docs.ts) and uses Bun's
-built-in YAML reader; keep the helper in the parent directory when adopting,
+The scripts import the shared reader [`../docs.ts`](../docs.ts) and use Bun's
+built-in YAML reader; copy `blocks.ts` beside the gate and keep the helper
+in the parent directory when adopting,
 and run with Bun. The configuration and the workflow are templates:
 [`deferral-references.yaml`](../../templates/deferral-references.yaml) and
 [`deferral-liveness.yml`](../../templates/deferral-liveness.yml).
