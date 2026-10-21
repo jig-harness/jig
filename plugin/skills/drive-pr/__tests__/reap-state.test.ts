@@ -1,3 +1,4 @@
+import { scopedStateDir } from "./scoped-state-dir.ts";
 /**
  * reap-state.test.ts — the sweep of drive-pr's artifacts in its per-clone
  * state directory (by default `~/.local/state/jig/drive-pr/<cloneKey>/`).
@@ -39,7 +40,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
-import { join, delimiter } from "node:path";
+import { join, delimiter, basename } from "node:path";
 import {
   anchorOf,
   classify,
@@ -88,7 +89,10 @@ function shimDir(name: string, tools: Record<string, string>): string {
   mkdirSync(dir, { recursive: true });
   for (const [tool, body] of Object.entries(tools)) {
     const p = join(dir, tool);
-    writeFakeProgram(p, `#!/bin/sh\n${body}\n`);
+    writeFakeProgram(
+      p,
+      `#!/bin/sh\n${tool === "git" ? `if [ "$1" = rev-parse ]; then exec ${JSON.stringify(Bun.which("git"))} "$@"; fi\n` : ""}${body}\n`,
+    );
   }
   return dir;
 }
@@ -237,7 +241,7 @@ let n = 0;
 function freshStateDir(): string {
   const dir = join(root, `state-${n++}`);
   mkdirSync(dir, { recursive: true });
-  return dir;
+  return scopedStateDir(dir, repo);
 }
 
 beforeAll(async () => {
@@ -1153,7 +1157,7 @@ describe("the worktree predicate", () => {
     backdate(d, 30);
     const r = await reapJson(["--delete"], {
       stateDir: d,
-      cwd: root, // not a git repository
+      ghDir: shimDir("worktree-list-fails", { git: "exit 1" }),
     });
     expect(r.retire).toEqual([]);
     expect(r.keep[0]?.reason).toContain("failing closed");
@@ -1552,6 +1556,7 @@ describe("entry-count warning — the count compaction cannot reduce", () => {
     expect(r.entryCountWarning).toBeNull();
   });
 
+  // Real entry creation and retirement can take a minute on watched volumes.
   it("is based on what THIS run leaves behind, not the pre-cleanup census — a retire crossing the threshold must not still warn", async () => {
     const d = freshStateDir();
     const pr = "9001";
@@ -1581,30 +1586,15 @@ describe("entry-count warning — the count compaction cannot reduce", () => {
     // warning must be silent — before this fix it was computed from the
     // pre-cleanup census above and would have fired here regardless.
     expect(r.entryCountWarning).toBeNull();
-  }, 30_000);
+  }, 60_000);
 
-  it("classifies a not-a-git-repo run with an explicit override as already relocated, not unrelocated", async () => {
-    // Run from `root` (a plain tmpdir, not a git repo at all) with an
-    // explicit `$DRIVE_PR_STATE_DIR` override — `resolveLegacyStateDir()`
-    // fails with its "not a git repo" exit 2 here, which used to be
-    // swallowed by a blanket catch and misread as "not relocated",
-    // recommending the override an operator had already set.
+  it("refuses to infer an override namespace outside a Git clone", async () => {
     const d = freshStateDir();
-    const OVER_THRESHOLD = 50_010;
-    for (let i = 0; i < OVER_THRESHOLD; i++) {
-      writeFileSync(join(d, `unrecognised-junk-${i}`), "");
-    }
-
-    const r = await reapJson(["--delete"], {
-      stateDir: d,
-      ghDir: GH_OPEN(),
-      cwd: root,
-    });
-
-    expect(r.entryCountWarning).not.toBeNull();
-    expect(r.entryCountWarning).toContain("already");
-    expect(r.entryCountWarning).not.toContain("Relocate further");
-  }, 30_000);
+    const r = await runReap(["--delete"], { stateDir: d, cwd: root });
+    expectSpawnExit(r, 2);
+    expect(r.stderr).toContain("no state dir");
+    expect(entriesOf(d)).toEqual([]);
+  });
 
   it("does not read a git TIMEOUT as proof the state dir is not a git repo", async () => {
     // `resolveLegacyStateDir()` collapses EVERY nonzero git result into the
@@ -1615,10 +1605,6 @@ describe("entry-count warning — the count compaction cannot reduce", () => {
     // never an actual missing repository) with a `git` that sleeps well
     // past a 1s `$GIT_CALL_TIMEOUT`.
     const d = freshStateDir();
-    const OVER_THRESHOLD = 50_010;
-    for (let i = 0; i < OVER_THRESHOLD; i++) {
-      writeFileSync(join(d, `unrecognised-junk-${i}`), "");
-    }
     // Only the identity probe stalls; every other git call (the worktree
     // listing) reaches the real git, so the run spends its one deadline on
     // the call under test.
@@ -1629,6 +1615,7 @@ describe("entry-count warning — the count compaction cannot reduce", () => {
       gh: 'echo \'{"state":"OPEN"}\'',
     });
 
+    writeFakeProgram(join(slowGitDir, "git"), `#!/bin/sh\nsleep 30\n`);
     const proc = Bun.spawn([process.execPath, REAP, "--json", "--delete"], {
       cwd: repo,
       env: cleanEnv({
@@ -1639,17 +1626,14 @@ describe("entry-count warning — the count compaction cannot reduce", () => {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const [stdout, exitCode] = await Promise.all([
+    const [stdout, stderr, exitCode] = await Promise.all([
       new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
       proc.exited,
     ]);
-    expect(exitCode).toBe(0);
-    const r = JSON.parse(stdout) as { entryCountWarning: string | null };
-
-    expect(r.entryCountWarning).not.toBeNull();
-    // Must NOT read the timeout as proof of relocation — "already" would be
-    // a guess here, not a positively established fact.
-    expect(r.entryCountWarning).toContain("Relocate further");
+    expectSpawnExit({ stdout, stderr, exitCode }, 2);
+    expect(stdout).toBe("");
+    expect(entriesOf(d)).toEqual([]);
   }, 30_000);
 });
 
@@ -1933,7 +1917,10 @@ describe("an absent state directory ($DRIVE_PR_STATE_DIR pointed at a location n
     });
     expect(r.exitCode).toBe(0);
     expect(JSON.parse(r.stdout)).toEqual({
-      stateDir: d,
+      stateDir: join(
+        d,
+        basename(scopedStateDir(join(root, "key-probe"), repo)),
+      ),
       exists: false,
       entries: 0,
     });

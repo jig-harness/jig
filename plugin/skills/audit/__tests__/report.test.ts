@@ -79,12 +79,10 @@ function problemsOf(change: (s: Record<string, unknown>) => void): string[] {
   }
   return [];
 }
-
 const recs = (s: Record<string, unknown>) =>
   s.recommendations as Record<string, unknown>[];
 const rec = (s: Record<string, unknown>, i: number) =>
   recs(s)[i] as Record<string, unknown>;
-
 describe("the report source", () => {
   test("the execa fixture is valid", () => {
     expect(problemsOf(() => undefined)).toEqual([]);

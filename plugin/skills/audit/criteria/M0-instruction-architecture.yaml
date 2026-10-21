@@ -145,6 +145,24 @@ criteria:
       - "a repository whose agents and skills pin no model, in metadata or at invocation, meets it"
     since: 0.40.0
 
+  - id: skill-authoring-rules
+    level: standard
+    requires: convention
+    statement: >-
+      Where the repository maintains agent skills, written authoring rules
+      say how a skill is put together for the moment each part is read: a
+      description that leads with the distinguishing trigger and carries its
+      negative triggers, references named directly by the skill's entry file,
+      contents sections in long references, no incident history or
+      time-sensitive phrasing in instruction bodies, and discovery controls
+      used for what they do (expected-absent where the repository keeps no
+      skills).
+    observe:
+      - "the rules are written where skill authors read them (the skills folder's README or the nested instruction file for skills), covering the description, references, history and time-sensitive phrasing, and discovery controls"
+      - "the rules say negative triggers belong in the description, since only the description is read before a skill is chosen"
+      - "a repository with no skill folder (Claude Code: .claude/skills; Codex: .agents/skills; a plugin's skills/) is expected-absent"
+    since: 0.75.0
+
   - id: instruction-freshness-checked
     level: strict
     requires: mechanical
@@ -229,3 +247,23 @@ criteria:
       mechanical:
         files: *ci-config
     since: 0.22.0
+
+  - id: skill-authoring-ratcheted
+    level: strict
+    requires: mechanical
+    statement: >-
+      A structural check counts the skill-authoring rules a script can see
+      (references the entry file does not name, long references without a
+      table of contents, issue-id density, time-sensitive phrasing, negative
+      triggers only in the body) per rule
+      and per skill file, and CI fails a change that adds to any file's count,
+      compared against the merge base or a baseline that may only fall
+      (expected-absent where the repository keeps no skills).
+    observe:
+      - "a check measures the skills' files per rule and per file (Jig's reference: M0's check-skill-authoring.ts as a json counter of M1's ratchet with per: file)"
+      - "CI runs it on pull requests and fails when any file's count for any rule grows; a committed baseline, where one is used, is itself refused when it grows"
+      - "a repository with no skill folder is expected-absent"
+    probe:
+      mechanical:
+        files: *ci-config
+    since: 0.75.0

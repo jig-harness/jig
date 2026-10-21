@@ -637,7 +637,7 @@ These are set per machine or per run, not committed:
 | `JIG__<SECTION>__<FIELD>` | Sets one field for this run, over every file (see [configuration layers](#configuration-layers)) |
 | `LINEAR_API_KEY`, `LINEAR_API_TOKEN` | Credentials for the Linear adapter |
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
-| `DRIVE_PR_STATE_DIR` | Where a drive keeps its rounds, locks and leases |
+| `DRIVE_PR_STATE_DIR` | State root; rounds, locks and leases live in its `<clone-key>/` subdirectory. An inherited resolved leaf is also accepted. Flat legacy state refuses until explicitly relocated. |
 | `JIG_VERIFICATION_FIT_LOG` | Where verification-fit verdicts are logged |
 | `DEV_DASHBOARD_DIR` | Overrides `fleet_health.snapshot_dir` |
 | `JIG_REVIEW_TRIAGE_CONFIG` | The [review-triage file](#the-review-triage-file) to read instead of `.config/review-triage.yaml` |
