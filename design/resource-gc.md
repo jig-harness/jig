@@ -80,9 +80,9 @@ receipts and the second decision come from the runner, not from the helper.
   finding, not a candidate: the missing registration is the defect to report.
   A production target is never a candidate in any kind.
 - **Leave a receipt.** Every run writes one
-  [collection receipt](../GLOSSARY.md) under `~/.local/state/jig/gc/<date>/`: the kinds swept, each resource collected
-  with its proof and size, each one refused with its reason, and the exit
-  status. A person who finds something gone can read why; a sweep that
+  [collection receipt](../GLOSSARY.md) under `~/.local/state/jig/gc/<date>/`:
+  the kinds swept, each resource collected with its proof and size, each one
+  refused with its reason, and the exit status. A person who finds something gone can read why; a sweep that
   collected far more than usual is visible in the record before anyone
   notices on disk. Receipts are themselves a machine-level kind and the one
   exception to the first rule: a receipt is the runner's own output, nothing
