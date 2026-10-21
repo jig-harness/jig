@@ -52,9 +52,11 @@ where it lands, and what it applies to:
     gives the fallback: the runtime's own skill directory, then a direct read
     of the skill's `SKILL.md`, with its `references/` and `scripts/`
     resolved from the skill's directory (the symlink's target, where the
-    directory is a mirror). A skill shipped in a plugin resolves only
-    through the installed plugin, so it has no directory fallback. A
-    [lint](reference/skill-invocation-fallback/README.md) enforces it.
+    directory is a mirror). A skill shipped in a plugin runs the way each
+    runtime runs an installed plugin's skill, with a read of the installed
+    `SKILL.md` as its fallback. A
+    [lint](reference/skill-invocation-fallback/README.md) enforces it for
+    the repository's own skills.
   - *Asking the user.* A runner with a control plane (a service that
     tracks the job and can reach a person) parks the job and raises the
     question there; an interactive session uses the runtime's own question
@@ -228,9 +230,10 @@ What this module provides:
   descriptions against their per-item caps and the aggregate skill listing.
   Built-ins only, with self-tests and fixtures beside them.
 - [`reference/skill-invocation-fallback/`](reference/skill-invocation-fallback/README.md)
-  — a lint that fails a bare `/<skill>` with no fallback marker (a
-  `SKILL.md` link, the runtime's skill directory, an interop document)
-  within a window of lines; plugin-namespaced commands are not checked, and
+  — a lint that fails a bare `/<skill>` with no fallback for that skill (a
+  link to its `SKILL.md`, its path under the runtime's skill directory, an
+  interop document) within a window of lines; plugin-namespaced commands are
+  not checked, and
   a whole file is exempt only when it is on the exemption list and opens
   with a generated-file banner that carries the exemption marker. Built-ins
   only, with its self-test and fixtures.

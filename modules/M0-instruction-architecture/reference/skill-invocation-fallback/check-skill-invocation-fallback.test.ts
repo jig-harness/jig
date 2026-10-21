@@ -1,5 +1,11 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -77,6 +83,9 @@ test("each opening a slash command may follow is an invocation", () => {
     'run "/release-notes" now',
     "run '/release-notes' now",
     "run **/release-notes** now",
+    "run _/release-notes_.",
+    "run _/release-notes_ now",
+    "run ~~/release-notes~~ now",
     "| /release-notes | writes them |",
     "|/release-notes|",
   ]) {
@@ -102,13 +111,48 @@ test("paths, namespaced commands and longer names are not invocations", () => {
 });
 
 test("a fallback link split across lines still counts", () => {
-  const text = "Run /release-notes, or read [its\nprocedure](\nSKILL.md).\n";
+  const text =
+    "Run /release-notes, or read [its\nprocedure](\nskills/release-notes/SKILL.md).\n";
   expectSpawnExit(check(doc(text)), 0);
-  expectSpawnExit(check(doc("Run /release-notes from .agents/skills.\n")), 0);
+  expectSpawnExit(
+    check(doc("Run /release-notes from .agents/skills/release-notes/.\n")),
+    0,
+  );
   expectSpawnExit(
     check(doc("Run /release-notes ([other runtimes](docs/interop.md)).\n")),
     0,
   );
+});
+
+test("a fallback counts only for the skill it names", () => {
+  const text =
+    "Run /release-notes. See [summarize](skills/summarize-changes/SKILL.md).\n";
+  const result = run(["--skills", skillsDir, doc(text)]);
+  expectSpawnExit(result, 1);
+  expect(result.output).toContain("/release-notes names no fallback");
+  const both = `${text}Run /summarize-changes too.\n`;
+  expectSpawnExit(run(["--skills", skillsDir, doc(both)]), 1);
+});
+
+test("a link resolves from its file, so a skill's own SKILL.md link counts", () => {
+  const dir = join(scratch, "skills", "release-notes");
+  mkdirSync(dir, { recursive: true });
+  const own = join(dir, "notes.md");
+  writeFileSync(own, "Run /release-notes ([it](SKILL.md)).\n");
+  expectSpawnExit(check(own), 0);
+  expectSpawnExit(check(doc("Run /release-notes ([it](SKILL.md)).\n")), 1);
+});
+
+test("hidden, mistargeted and unbounded markers are not fallbacks", () => {
+  for (const text of [
+    "Run /release-notes. <!-- [procedure](skills/release-notes/SKILL.md) -->\n",
+    "Run /release-notes. [broken](skills/release-notes/SKILL.md.bak)\n",
+    "Run /release-notes from .agents/skills-does-not-exist/release-notes.\n",
+    "Run /release-notes from .agents/skills/release-notes-draft.\n",
+    "Run /release-notes from .agents/skills/.\n",
+  ]) {
+    expectSpawnExit(check(doc(text)), 1, text);
+  }
 });
 
 test("a mention of SKILL.md that is no link is not a fallback", () => {
@@ -122,6 +166,10 @@ test("--marker replaces the default marker", () => {
   expectSpawnExit(check(doc(text), "--marker", "runbook"), 0);
   const linked = doc("Run /release-notes ([it](SKILL.md)).\n");
   expectSpawnExit(check(linked, "--marker", "runbook"), 1);
+  const named = doc("Run /release-notes (runbook: release-notes).\n");
+  expectSpawnExit(check(named, "--marker", "runbook: {skill}"), 0);
+  const other = doc("Run /release-notes (runbook: deploy).\n");
+  expectSpawnExit(check(other, "--marker", "runbook: {skill}"), 1);
 });
 
 test("a directory is scanned for Markdown files only", () => {
@@ -136,6 +184,19 @@ test("a directory is scanned for Markdown files only", () => {
   const named = check(join(dir, "notes.txt"));
   expectSpawnExit(named, 1);
   expect(named.output).toContain("notes.txt:1:");
+});
+
+test("a linked skill directory is scanned, each real directory once", () => {
+  const real = join(scratch, "real-skill");
+  mkdirSync(real, { recursive: true });
+  writeFileSync(join(real, "SKILL.md"), "Run /release-notes.\n");
+  const mirror = join(scratch, "mirror");
+  mkdirSync(mirror, { recursive: true });
+  symlinkSync(real, join(mirror, "linked"), "dir");
+  symlinkSync(mirror, join(mirror, "loop"), "dir");
+  const result = check(mirror);
+  expectSpawnExit(result, 1);
+  expect(result.output).toContain("SKILL.md:1:");
 });
 
 test("a generated file on the list, with the marker in its banner, is exempt", () => {
@@ -178,12 +239,28 @@ test("the exemption needs the list, the banner and the marker together", () => {
 
 test("usage errors and missing inputs exit 2, never pass", () => {
   const file = doc("nothing here\n");
+  const emptyDir = join(scratch, "empty");
+  mkdirSync(emptyDir, { recursive: true });
+  writeFileSync(join(emptyDir, "notes.txt"), "Run /x.\n");
   for (const [label, args] of [
     ["no skill", [file]],
     ["no path", ["--skill", "release-notes"]],
     ["a missing path", ["--skill", "release-notes", join(scratch, "gone.md")]],
     ["a missing skills directory", ["--skills", join(scratch, "gone"), file]],
     ["a skills directory with no skill", ["--skills", docs, file]],
+    ["a directory with no Markdown", ["--skill", "x", emptyDir]],
+    [
+      "an exempt file that does not exist",
+      ["--skill", "x", "--exempt", join(scratch, "gone.md"), file],
+    ],
+    [
+      "an exempt file outside the scan",
+      ["--skill", "x", "--exempt", join(docs, "generated.md"), file],
+    ],
+    [
+      "an invalid templated marker",
+      ["--skill", "x", "--marker", "{skill}(", file],
+    ],
     ["a name that is not a skill name", ["--skill", "a b", file]],
     ["a negative window", ["--skill", "x", "--window", "-1", file]],
     [

@@ -159,7 +159,6 @@ criteria:
       - "each step that names one runtime's question tool also says what to do elsewhere: a plain-text question in another interactive runtime, and stop and state the question when nobody is there to answer"
       - "each other built-in tool a step names has its fallback beside it"
       - "no gate, hook, script or skill step needs a tool that a launcher or workspace app injects and no repository file registers; where a step mentions one, it is optional"
-      - "a CI check that fails a slash command with no fallback beside it (M0's skill-invocation-fallback lint, or an equivalent) enforces the first of these"
       - "a repository with no instruction that relies on a runtime-specific capability meets it"
     since: next
 
@@ -290,3 +289,20 @@ criteria:
       mechanical:
         files: *ci-config
     since: 0.22.0
+
+  - id: skill-invocation-fallback-gated
+    level: strict
+    requires: mechanical
+    statement: >-
+      A CI check fails every slash command for one of the repository's own
+      skills that names no fallback for that skill beside it (expected-absent
+      for a repository with no skill of its own).
+    observe:
+      - "a CI step runs M0's skill-invocation-fallback lint, or an equivalent, over the instruction files and skills that invoke the repository's own skills"
+      - "the check takes its skill names from the skill directory, so a new skill is checked without a change to the command"
+      - "a fallback counts only for the skill it names: a link to that skill's SKILL.md, its path under the runtime's skill directory, or an interop document"
+      - "a repository with no skill of its own meets it (expected-absent)"
+    probe:
+      mechanical:
+        files: *ci-config
+    since: next

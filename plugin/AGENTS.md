@@ -63,8 +63,10 @@ here reaches every repository at once.
   runtime, and, with nobody there to answer, stop and state the question
   rather than pick. A tool the host injects (a workspace app's MCP server) is
   optional, never a dependency of a step. A slash command for a sibling skill
-  (`/jig:<name>`) needs none: plugin skills resolve through the installed
-  plugin. Any other capability names its fallback beside it.
+  (`/jig:<name>`) needs none beside it: [README.md](README.md) says how each
+  runtime runs an installed skill, and reading the sibling's `SKILL.md`
+  (`../<name>/SKILL.md`) works in any of them. Any other capability names
+  its fallback beside it.
 - **A hook** lives in `hooks/<name>.ts`, is registered in `hooks/hooks.json`
   through `${CLAUDE_PLUGIN_ROOT}` (the one file both tools read), holds to
   the rules of M1's rung

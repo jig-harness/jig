@@ -3,8 +3,8 @@
 // CONTRIBUTING.md) and in the skills themselves, checked with M0's
 // skill-invocation-fallback reference gate: each invocation names its
 // fallback within 10 lines. The plugin's skills are left out: they are
-// invoked as /jig:<name> and resolve only through the installed plugin, so
-// they have no directory fallback. Among the instruction files, fixtures,
+// invoked as /jig:<name>, and their fallback, the installed SKILL.md, lies
+// outside this repository's scan. Among the instruction files, fixtures,
 // templates and the frozen seeds are left out as the Markdown gates leave
 // them out; the skills directory is read whole. No .claude/skills
 // folder means no skill to check, which passes.

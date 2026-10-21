@@ -14,7 +14,7 @@ describe("the Markdown copy, since the last audit", () => {
       [
         "Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.",
         "",
-        "### What changed (122)",
+        "### What changed (123)",
         "",
         "| Module | Criterion | Before → after | Change |",
         "|--------|-----------|----------------|--------|",
@@ -27,6 +27,7 @@ describe("the Markdown copy, since the last audit", () => {
         "| M0 Instruction architecture | `standards-declare-scope` | not scored → absent | Added by Jig |",
         "| M0 Instruction architecture | `review-stances-are-pointers` | not scored → absent | Added by Jig |",
         "| M0 Instruction architecture | `context-budget-gated` | not scored → absent | Added by Jig |",
+        "| M0 Instruction architecture | `skill-invocation-fallback-gated` | not scored → absent | Added by Jig |",
         "| M1 Gates enforcement ladder | `dependency-release-cooldown` | not scored → absent | Added by Jig |",
         "| M1 Gates enforcement ladder | `install-scripts-allowlisted` | not scored → absent | Added by Jig |",
         "| M1 Gates enforcement ladder | `supply-chain-policy-lockstep` | not scored → absent | Added by Jig |",
