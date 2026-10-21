@@ -542,8 +542,8 @@ of merged pull requests that met a conflict. It combines the sibling
 conflicted, observed-clean and unknown counts over the forge’s merged PR
 cohort. A clean observation requires replayed PR ancestry and no forge-recorded
 force-push. The replay covers merges committed since the cohort's earliest
-sampled commit, pull-request opening or merge, or all of history when a
-cohort pull request has no sampled opening date; a partial clone with git
+sampled commit, pull-request opening or merge; a pull request whose ancestry
+holds an older merge stays unknown. A partial clone with git
 before 2.45 leaves ancestry unknown rather than risk a fetch. The fleet-health file’s `merge_conflicts.coverage_floor` (default
 `0.9`) and `baselines.merge_conflict_share.value` govern its verdict; the
 whole-cohort bounds must agree too. Missing heads, rewritten branches and

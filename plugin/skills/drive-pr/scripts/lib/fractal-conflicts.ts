@@ -281,18 +281,15 @@ export function forgeProvesNoForcePush(body: unknown, head: string): boolean {
 
 /**
  * The earliest commit time the cohort's evidence can need: a merge committed
- * before every sampled commit, PR opening and merge is no cohort PR's ancestry.
- * The bound holds only while every cohort PR is dated by its own sample: a PR
- * whose sample is missing or has no opening date may have conflicted in a sync
- * merge older than every other date, so the whole history is replayed instead.
+ * before every sampled commit, PR opening and merge is no dated PR's ancestry.
+ * An undated or unsampled PR does not widen it: a merge older than the bound is
+ * absent from the report, so a PR whose ancestry holds one stays unknown
+ * (replayComplete) and only a conflict replayed or recorded live marks one.
  */
 export function replaySince(
   samples: readonly PrSample[],
   cohort: readonly CohortPr[],
 ): string | null {
-  const opened = new Map(samples.map((s) => [s.pr, Date.parse(s.createdAt)]));
-  if (cohort.some((pr) => !Number.isFinite(opened.get(pr.number) ?? NaN)))
-    return null;
   let earliest = Infinity;
   for (const t of [
     ...samples.flatMap((s) => [

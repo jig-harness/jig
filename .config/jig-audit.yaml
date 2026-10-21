@@ -835,7 +835,7 @@ criteria:
   M12/merge-conflict-hotspots-measured:   # standard, requires convention
     # A repository working in parallel measures where its merges conflict, and each conflict hotspot is removed at its cause or kept by a recorded decision with a reason and a condition for revisiting it.
     score: absent
-    evidence: "Scored by hand for a66ee22, this record's commit, because the criterion postdates the audit; that commit is unavailable in this checkout, so the score rests on main's history: its first conflict measurement is design/merge-conflicts.md, added 2026-10-18, and the replay that reports conflicted paths, resolve-conflicts' history.ts, was added 2026-10-19, both after the record's 2026-10-13 date, so the audited commit measured no merge conflicts and recorded no hotspot decisions"
+    evidence: "Scored by hand at a504398, main's last commit dated 2026-10-13, this record's date, because the criterion postdates the audit and neither this checkout nor origin serves a66ee22: resolve-conflicts records the decisions of the one operation in progress (conflict-map.ts, record.ts) and reports nothing across merges, no file lists conflicted paths over a window, and the one hotspot mention, in ROADMAP.md, is about code complexity; no hotspot carries a removal or a keep decision"
   # M13 pipeline-economy
   M13/superseded-pr-runs-cancelled:   # lite, requires mechanical
     # A new push to a pull request cancels that pull request's runs for the older head, so CI is not spent on a head no one will merge.

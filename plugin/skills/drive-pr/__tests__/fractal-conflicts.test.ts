@@ -411,16 +411,36 @@ describe("the replay's window", () => {
       ),
     ).toBe("2026-10-08T12:00:00.000Z");
   });
-  it("replays the whole history when a cohort PR has no dated sample", () => {
+  it("bounds the replay by the dated PRs when another PR has no dated sample", () => {
     const dated = withCommits(1, "2026-10-10T00:00:00Z");
-    expect(replaySince([dated], [merged(1), merged(2)])).toBeNull();
+    expect(replaySince([dated], [merged(1), merged(2)])).toBe(
+      "2026-10-10T00:00:00.000Z",
+    );
     expect(
       replaySince(
         [dated, withCommits(2, "not a date")],
         [merged(1), merged(2)],
       ),
-    ).toBeNull();
-    expect(replaySince([], [merged(9)])).toBeNull();
+    ).toBe("2026-10-10T00:00:00.000Z");
+    expect(replaySince([], [merged(9)])).toBe("2026-10-15T00:00:00.000Z");
+  });
+  it("leaves a PR unknown when its ancestry holds a merge older than the bound", async () => {
+    const undated = { ...sample, pr: 2, createdAt: "not a date" } as PrSample;
+    const seen = await observeConflicts(
+      [undated],
+      deps({
+        ancestry: async () => ({
+          commits: new Set(["head", "old-sync"]),
+          merges: new Set(["old-sync"]),
+        }),
+      }),
+      [
+        { number: 2, mergedAt: "2026-10-20T00:00:00Z" },
+        { number: 3, mergedAt: "2026-10-20T00:00:00Z" },
+      ],
+    );
+    expect(seen.get(2)).toBe("unknown");
+    expect(seen.has(3)).toBe(false);
   });
   it("replays the whole history when nothing dates the cohort", () => {
     expect(replaySince([], [])).toBeNull();
