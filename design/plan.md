@@ -264,21 +264,18 @@ repository with one released artifact. What is left:
 
 ### 22. Merge conflicts, measured
 
-Parallel pull requests put each other in conflict, and each conflict costs a
-resolution and a CI run; nobody can say how many there are, in which files,
-or why. [design/merge-conflicts.md](merge-conflicts.md) has how it works and
-the [conflict hotspots](../GLOSSARY.md) the report finds. The replay and the
-live record (`resolve-conflicts` keeps one event per resolved path, which
-covers the rebases, cherry-picks and reverts the replay cannot see) are
-built. What is left:
+The replay, live record and [M11/M12 practice](merge-conflicts.md) measure
+where parallel work conflicts and expose the result in the audit and
+cross-PR scoreboard. What is left:
 
-- **The practice**: M11's `merge_conflict` event and metric, the figure on
-  `drive-pr`'s cross-PR scoreboard, M12's practice and audit criterion, and
-  hotspots as findings in the reflection store.
+- **Into the learning loop**: turn conflict hotspots into findings in the
+  reflection store, with each cause as the finding's class, so the existing
+  review and escalation loop turns a recurring cause into a change.
 - **One file per roadmap item** follows only if the report shows the plan
   or the roadmap conflicting where items are added or removed side by side.
 
-Done when an audit scores M12's new criterion from the report.
+Done when measured hotspots enter the existing reflection loop without a
+second escalation path.
 
 ### 23. Seed review lenses
 

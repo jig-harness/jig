@@ -41,6 +41,7 @@ Process events are a **closed set** declared in
 | `gate_result` | a quality gate runs | gate, result (pass/fail), duration |
 | `cycle_time` | a PR crosses a lifecycle stage | stage, elapsed time |
 | `deploy_result` | a deploy/promotion runs | environment, result, duration |
+| `merge_conflict` | a conflicted path is resolved in a merge, rebase, cherry-pick or revert | operation, path, cause |
 | `heartbeat` | an emitter proves it is still alive | emitter id (its silence is a signal) |
 
 A `heartbeat` does two jobs. It lets any emitter prove it is not silently dark.
@@ -68,7 +69,15 @@ hand-built charts.
 | reviewer-cost-vs-catches | `review_completed` cost vs confirmed findings | is a reviewer worth its cost |
 | gate-pass-rate | `gate_result` | a gate that always fails (noise) or never fails (theater) |
 | ci-duration-trend | `gate_result` duration | CI slowdown before it taxes every PR |
+| merge-conflict-share | replay and live conflicts joined to the forge’s merged-PR cohort | recurring conflict cost, with coverage and unknown-cohort bounds |
 | cycle-time (per stage) | `cycle_time` | where the delivery loop stalls |
+
+For conflicts, deduplicate concluding commit plus path, and count each pull
+request once. A live record's silence never proves a clean pull request.
+A clean classification needs replay reaching the head and no recorded
+force-push. State coverage, name other clones' invisible resolutions, and
+withhold a baseline verdict below the configured coverage floor or when
+counting every unknown pull request clean versus conflicted changes it.
 
 A dashboard's job is to make **drift visible** — an adoption rate sliding, a
 gate’s pass-rate collapsing, cycle time creeping up — early enough to act. The

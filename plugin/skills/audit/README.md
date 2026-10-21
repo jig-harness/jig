@@ -40,7 +40,14 @@ added since, and it does not repeat a recommendation the team declined.
    automation and enforcement, review and learning loop. Each survey also
    scores its own modules' criteria, in a form the record tools write into
    the draft (`record.ts fill`, `record.ts merge`); a small repository is
-   surveyed by the agent itself.
+   surveyed by the agent itself. Where work runs in parallel, the audit also
+   runs the sibling `resolve-conflicts` skill's read-only history report for
+   the last 30 days as M12 evidence. It preserves the window and coverage
+   limits; retained reports and hotspot decisions show whether the target
+   already practices measurement. The audit's own run does not confer that
+   score. Unsupported git or a failed replay is unchecked evidence. A
+   historical snapshot is scored from its recorded evidence, since current
+   refs and clone-local events cover a different population.
 3. **Maturity scoring.** Every criterion of every module
    ([criteria](criteria/README.md)) is scored on the enforcement ladder with
    file-path evidence. A criterion that names a fact a file search can rule

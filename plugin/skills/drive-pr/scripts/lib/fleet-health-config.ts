@@ -216,6 +216,7 @@ export interface FleetHealthConfig {
     project: string | null;
     closedStateTypes: string[];
   };
+  mergeConflicts: { coverageFloor: number };
   baselines: Record<string, MetricBaseline>;
   /** The consumer repository this configuration belongs to, when known. */
   root: string | null;
@@ -406,9 +407,15 @@ export function parseConfig(
     labels: rawLabels,
     ledger: rawLedger,
     baselines: rawBaselines,
+    merge_conflicts: rawMergeConflicts,
     ...root
   } = whole;
   const labels = parseLabels(rawLabels, ctx);
+  const conflicts =
+    rawMergeConflicts === undefined
+      ? { coverage_floor: 0.9 }
+      : record(rawMergeConflicts, "merge_conflicts");
+  exactKeys(conflicts, "merge_conflicts", ["coverage_floor"]);
   exactKeys(root, "config", [
     "version",
     "window",
@@ -620,6 +627,12 @@ export function parseConfig(
     teamKey: ctx.teamKey,
     labels,
     ledger: parseLedger(rawLedger, labels),
+    mergeConflicts: {
+      coverageFloor: num(conflicts, "coverage_floor", "merge_conflicts", {
+        min: 0,
+        max: 1,
+      }),
+    },
     baselines: parseBaselines(rawBaselines),
     root: ctx.root,
     catalogPath: ctx.catalogPath,
