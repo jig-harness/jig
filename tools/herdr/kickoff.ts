@@ -14,7 +14,11 @@
  *   (`pending <correlation>`), and only a send Herdr accepted turns it into
  *   the plain correlation id. So every send this tool ever attempted leaves
  *   a record, and a send whose outcome is unknown, or whose final receipt
- *   failed to be written, stays pending.
+ *   failed to be written, stays pending. Each launch writes only a file of
+ *   its own, named by its claim generation, and the highest-numbered file is
+ *   the receipt: a launch that lost its claim and resumes late writes below
+ *   the launch that took over, so no check-then-write race lets it replace
+ *   that launch's record.
  * - The agent's **transcript** is positive evidence only: a pending receipt
  *   whose prompt shows in it counts as delivered. Its absence proves nothing,
  *   since the read covers recent rows only, so a pending receipt the
@@ -22,11 +26,11 @@
  *   never sent the kickoff, and the transcript only spots one sent otherwise.
  *
  * Every change to these records moves toward "unknown", never toward "not
- * delivered": a launch that lost its claim and overwrites another's receipt
- * leaves a pending one, which is refused or confirmed, not resent. Whenever
- * the records cannot settle it, the kickoff is refused, saying what to
- * check, rather than guessed: an extra prompt to a working agent and an
- * unstarted piece of work are both worse than asking a person.
+ * delivered": a launch that lost its claim writes under the record of the
+ * launch that took over, never over it. Whenever the records cannot settle
+ * it, the kickoff is refused, saying what to check, rather than guessed: an
+ * extra prompt to a working agent and an unstarted piece of work are both
+ * worse than asking a person.
  */
 import {
   existsSync,
@@ -38,7 +42,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { errnoCode, swallow } from "../../plugin/shared/errors.ts";
 import { AGENT_NAME } from "./agent.ts";
 import { parseEnvelope, probeAgentSession } from "./herdr.ts";
@@ -92,12 +96,13 @@ function assertKey(key: string): void {
 }
 
 /**
- * A key's receipt for one agent. Each agent the key's work was opened in
- * (another clone's worktree has another agent) keeps its own, so opening the
- * key in one never overwrites the record of another. Receipts and claims
- * live in separate directories, so no key names the other's.
+ * The directory of a key's receipts for one agent: one file per launch, named
+ * by its claim generation. Each agent the key's work was opened in (another
+ * clone's worktree has another agent) keeps its own, so opening the key in
+ * one never overwrites the record of another. Receipts and claims live in
+ * separate directories, so no key names the other's.
  */
-export function receiptPath(
+export function receiptDir(
   ctx: Context,
   key: string,
   agentName: string,
@@ -106,6 +111,16 @@ export function receiptPath(
   if (!AGENT_NAME.test(agentName))
     throw new HerdrError(`"${agentName}" is not a Herdr agent name`);
   return join(kickoffDir(ctx), "receipts", key, agentName);
+}
+
+/** The generations a receipt directory holds, lowest first; [] for none. */
+function receiptGenerations(dir: string): number[] {
+  try {
+    return generationsIn(dir);
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return [];
+    throw error;
+  }
 }
 
 function claimDir(ctx: Context, key: string): string {
@@ -315,20 +330,32 @@ function assertSameSession(
     );
 }
 
-/** The receipt's first line; null when there is no receipt file. */
+/**
+ * The receipt's first line, from its highest-numbered file; null when there
+ * is none. A file removed while it is read was superseded, so the files are
+ * listed again.
+ */
 function readReceipt(
   ctx: Context,
   key: string,
   agentName: string,
 ): string | null {
+  const dir = receiptDir(ctx, key, agentName);
   try {
-    return (
-      readFileSync(receiptPath(ctx, key, agentName), "utf8")
-        .split("\n")
-        .find((line) => line !== "") ?? ""
-    );
+    for (;;) {
+      const top = receiptGenerations(dir).at(-1);
+      if (top === undefined) return null;
+      try {
+        return (
+          readFileSync(join(dir, String(top)), "utf8")
+            .split("\n")
+            .find((line) => line !== "") ?? ""
+        );
+      } catch (error) {
+        if (errnoCode(error) !== "ENOENT") throw error;
+      }
+    }
   } catch (error) {
-    if (errnoCode(error) === "ENOENT") return null;
     throw new HerdrError(
       `could not read the kickoff receipt of ${key}: ${(error as Error).message}`,
     );
@@ -350,7 +377,7 @@ function receiptVerdict(
   if (receipt === `${PENDING} ${current}`) {
     if (transcriptHasPrompt(ctx, agentName, prompt)) return "delivered";
     throw new HerdrError(
-      `an earlier kickoff of ${key} to ${agentName} may have landed, and its prompt is not in the agent's recent output; check with herdr agent read ${agentName} --source recent, and if the agent never got it remove ${receiptPath(ctx, key, agentName)} and run this again`,
+      `an earlier kickoff of ${key} to ${agentName} may have landed, and its prompt is not in the agent's recent output; check with herdr agent read ${agentName} --source recent, and if the agent never got it remove the directory ${receiptDir(ctx, key, agentName)} and run this again`,
     );
   }
   const forAgent = escapeRegExp(`${key}:${agentName}`);
@@ -403,23 +430,25 @@ function correlation(
 }
 
 /**
- * Write the receipt whole under a temporary name, so a reader sees a receipt
- * or none; `null` removes it. Throws when it cannot.
+ * Write this launch's receipt file whole under a temporary name, so a reader
+ * sees it or none; `null` removes it. Throws when it cannot.
  */
 function setReceipt(
   ctx: Context,
   key: string,
   agentName: string,
+  generation: string,
   line: string | null,
 ): void {
-  const path = receiptPath(ctx, key, agentName);
-  const temp = `${path}.${process.pid}.tmp`;
+  const dir = receiptDir(ctx, key, agentName);
+  const path = join(dir, generation);
+  const temp = join(dir, `.${generation}.${process.pid}.tmp`);
   try {
     if (line === null) {
       rmSync(path, { force: true });
       return;
     }
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
     writeFileSync(temp, `${line}\n`, { mode: 0o600 });
     renameSync(temp, path);
   } catch (error) {
@@ -495,10 +524,11 @@ function sessionToSend(
 }
 
 /**
- * Send the prompt under a pending receipt `sent`, and complete the receipt
- * once Herdr accepts it. Throws `UnknownDelivery`, with the pending receipt
- * kept, when whether Herdr took it is unknown, and a plain error when it
- * refused, with the earlier receipt restored.
+ * Send the prompt under a pending receipt `sent` in this launch's own file,
+ * and complete it once Herdr accepts it. Throws `UnknownDelivery`, with the
+ * pending receipt kept, when whether Herdr took it is unknown, and a plain
+ * error when it refused, with this launch's file removed so the earlier
+ * receipt stands again.
  */
 function sendUnderReceipt(
   ctx: Context,
@@ -513,8 +543,13 @@ function sendUnderReceipt(
     throw new HerdrError(
       `too little of the run's time limit is left to send the kickoff to ${agentName}; run this again`,
     );
-  const earlier = readReceipt(ctx, options.key, agentName);
-  setReceipt(ctx, options.key, agentName, `${PENDING} ${sent}`);
+  const dir = receiptDir(ctx, options.key, agentName);
+  const later = receiptGenerations(dir).at(-1);
+  if (later !== undefined && later > Number(generation))
+    throw new HerdrError(
+      `a launch with a later kickoff claim on ${options.key} (${later}) has a receipt for ${agentName}; this launch was superseded, so check with herdr agent read ${agentName} --source recent before running this again`,
+    );
+  setReceipt(ctx, options.key, agentName, generation, `${PENDING} ${sent}`);
   // Without `--wait` Herdr acknowledges the writes, which is what a
   // kickoff needs; the process deadline bounds the call.
   const answer = ctx.run(
@@ -523,17 +558,10 @@ function sendUnderReceipt(
   );
   const error = parseError(answer);
   if (answer.status === 2 || (error !== null && REFUSED.has(error.code))) {
-    // Herdr refused before writing anything: the earlier record stands,
-    // but only while this launch still owns the claim and its pending line
-    // is still the receipt. A launch that stalled past the claim's age may
-    // have been taken over by one that has since sent and recorded the
-    // kickoff, and restoring an earlier record over that would move it
-    // toward "not delivered".
-    if (
-      claimHeld(ctx, options.key, generation) &&
-      readReceipt(ctx, options.key, agentName) === `${PENDING} ${sent}`
-    )
-      setReceipt(ctx, options.key, agentName, earlier);
+    // Herdr refused before writing anything: removing this launch's own
+    // file lets the earlier record stand. It touches no other launch's
+    // file, so a launch that took over meanwhile keeps its record.
+    setReceipt(ctx, options.key, agentName, generation, null);
     throw new HerdrError(
       `${agentName} did not take the kickoff (${error?.message ?? output(answer)}); run this again once it is ready`,
     );
@@ -543,12 +571,29 @@ function sendUnderReceipt(
       `could not tell whether ${agentName} received the kickoff (${error === null ? `exit ${answer.status}: ${output(answer)}` : `${error.code}: ${error.message}`}); check with herdr agent read ${agentName} --source recent before running this again`,
     );
   try {
-    setReceipt(ctx, options.key, agentName, sent);
+    setReceipt(ctx, options.key, agentName, generation, sent);
   } catch (failure) {
     ctx.log(
       `⚠ the kickoff was sent but its receipt stays pending (${(failure as Error).message}); a later launch confirms it from the transcript or refuses`,
     );
+    return;
   }
+  pruneReceipts(dir, Number(generation));
+}
+
+/**
+ * Remove the files of launches before `generation`, which its completed
+ * receipt supersedes. A superseded launch that writes afterwards writes
+ * below it, so a file left or rewritten here is never read.
+ */
+function pruneReceipts(dir: string, generation: number): void {
+  for (const old of receiptGenerations(dir))
+    if (old < generation)
+      try {
+        rmSync(join(dir, String(old)), { force: true });
+      } catch (error) {
+        swallow(error, "a superseded kickoff receipt could not be removed");
+      }
 }
 
 /** Herdr may or may not have taken the prompt. */
@@ -579,8 +624,8 @@ export function kickoff(
       return "already-delivered";
     }
     // Ownership is checked before any record is touched. A launch that loses
-    // the claim after this check can still overwrite a receipt, but only
-    // with a pending one, which a later launch confirms or refuses.
+    // the claim after this check writes only its own receipt file, below
+    // the one of the launch that took over.
     assertClaimHeld(ctx, options.key, generation);
     sendUnderReceipt(
       ctx,

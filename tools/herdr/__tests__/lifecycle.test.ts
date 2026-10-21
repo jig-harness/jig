@@ -200,6 +200,29 @@ describe("the create hook", () => {
     expect(alive).toBe(false);
   });
 
+  test("a failed hook run without a group record leaves no child running", () => {
+    const { worktree } = fixture({});
+    const hook = join(worktree, "failing-hook");
+    writeFileSync(
+      hook,
+      '#!/bin/sh\nsleep 30 >/dev/null 2>&1 &\necho $! > "$PWD/.child"\nexit 4\n',
+      { mode: 0o755 },
+    );
+    expect(() => runHook(quiet(), worktree, hook)).toThrow("failed (exit 4)");
+    const child = Number(readFileSync(join(worktree, ".child"), "utf8"));
+    const deadline = Date.now() + 5_000;
+    let alive = true;
+    while (alive && Date.now() < deadline) {
+      try {
+        process.kill(child, 0);
+        Bun.sleepSync(50);
+      } catch {
+        alive = false;
+      }
+    }
+    expect(alive).toBe(false);
+  });
+
   test("the hook leads a process group of its own, the one recorded", () => {
     const { root, worktree } = fixture({});
     const hook = join(worktree, "group-hook");
@@ -342,6 +365,41 @@ function runTool(
 }
 
 describe("remove", () => {
+  test("parking is held to what is left of the run's limit, its git calls included", () => {
+    const { root, worktree } = fixture({});
+    mkdirSync(join(worktree, ".config"), { recursive: true });
+    writeFileSync(
+      join(worktree, ".config", "jig.yaml"),
+      "reflection:\n  enabled: true\n",
+    );
+    const script = join(root, "park.ts");
+    writeFileSync(
+      script,
+      `import { parkJournal } from ${JSON.stringify(LIFECYCLE)};
+import { localContext } from ${JSON.stringify(join(import.meta.dir, "..", "runner.ts"))};
+try {
+  await parkJournal({ ...localContext(() => {}), budget: () => 0 }, ${JSON.stringify(worktree)});
+} catch (error) {
+  console.error((error as Error).message);
+  process.exit(3);
+}
+`,
+    );
+    const run = Bun.spawnSync([process.execPath, script], {
+      env: {
+        ...process.env,
+        HOME: root,
+        JIG_HOME: join(root, ".jig"),
+        JIG_USER_LAYER: "off",
+        JIG_OVERLAY: undefined,
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expectSpawnExit(run, 3, "park with no time left");
+    expect(run.stderr.toString()).toContain("time limit has passed");
+  });
+
   test("runs the remove hook in the worktree, parks, then removes", () => {
     const { root, clone, worktree } = fixture({
       remove: 'pwd > "$HOME/remove-ran-in"',

@@ -7,13 +7,13 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
   acquireClaim,
   type KickoffOptions,
   kickoff,
   promptToken,
-  receiptPath,
+  receiptDir,
   reconcileKickoff,
   releaseClaim,
   transcriptHasToken,
@@ -59,12 +59,40 @@ const options: KickoffOptions = {
   claimStaleMs: 60_000,
 };
 
+/** Write a receipt file as the launch of claim generation `generation`. */
+function writeReceipt(
+  ctx: FakeContext,
+  agent: string,
+  generation: string,
+  line: string,
+): void {
+  const dir = receiptDir(ctx, KEY, agent);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, generation), `${line}\n`);
+}
+
+/** The receipt in force for an agent: its highest-numbered file. */
+function receiptOf(
+  ctx: FakeContext,
+  key: string,
+  agent: string,
+): string | null {
+  const dir = receiptDir(ctx, key, agent);
+  if (!existsSync(dir)) return null;
+  const top = readdirSync(dir)
+    .filter((name) => /^[0-9]+$/.test(name))
+    .map(Number)
+    .sort((a, b) => a - b)
+    .at(-1);
+  return top === undefined
+    ? null
+    : readFileSync(join(dir, String(top)), "utf8");
+}
+
+/** A context with a receipt from an earlier launch (generation 0). */
 function withReceipt(table: Record<string, Answer>, line: string | null) {
   const ctx = fakeContext(table);
-  if (line !== null) {
-    mkdirSync(dirname(receiptPath(ctx, KEY, A)), { recursive: true });
-    writeFileSync(receiptPath(ctx, KEY, A), `${line}\n`);
-  }
+  if (line !== null) writeReceipt(ctx, A, "0", line);
   return ctx;
 }
 
@@ -89,7 +117,7 @@ describe("the transcript token", () => {
     expect(transcriptHasToken("", "")).toBe(false);
   });
   test("a key that cannot name a file is refused", () => {
-    expect(() => receiptPath(fakeContext({}), "../x", A)).toThrow(
+    expect(() => receiptDir(fakeContext({}), "../x", A)).toThrow(
       "cannot be a kickoff key",
     );
   });
@@ -217,10 +245,7 @@ describe("kickoff", () => {
     existsSync(join(ctx.stateDir, "kickoff", "claims", KEY))
       ? readdirSync(join(ctx.stateDir, "kickoff", "claims", KEY))
       : [];
-  const receipt = (ctx: FakeContext) =>
-    existsSync(receiptPath(ctx, KEY, A))
-      ? readFileSync(receiptPath(ctx, KEY, A), "utf8")
-      : null;
+  const receipt = (ctx: FakeContext) => receiptOf(ctx, KEY, A);
 
   test("a new agent is sent the prompt and the receipt written", () => {
     const ctx = fakeContext({ [get]: session("s-1"), [send]: ok() });
@@ -318,9 +343,7 @@ describe("kickoff", () => {
     expect(ctx.calls.some((call) => call.startsWith("herdr agent read"))).toBe(
       false,
     );
-    expect(readFileSync(receiptPath(ctx, KEY, B), "utf8")).toBe(
-      `${KEY}:${B}:s-9\n`,
-    );
+    expect(receiptOf(ctx, KEY, B)).toBe(`${KEY}:${B}:s-9\n`);
   });
 
   test("a send the run's time limit would cut short is refused before any record", () => {
@@ -328,7 +351,7 @@ describe("kickoff", () => {
     expect(() => kickoff(ctx, spawned(), options)).toThrow(
       "too little of the run's time limit",
     );
-    expect(existsSync(receiptPath(ctx, KEY, A))).toBe(false);
+    expect(receipt(ctx)).toBe(null);
   });
 
   test("a prompt whose first line is empty is refused", () => {
@@ -341,9 +364,7 @@ describe("kickoff", () => {
   test("a key named like the claims directory works", () => {
     const ctx = fakeContext({ [get]: session("s-1"), [send]: ok() });
     expect(kickoff(ctx, spawned(), { ...options, key: "claims" })).toBe("sent");
-    expect(readFileSync(receiptPath(ctx, "claims", A), "utf8")).toBe(
-      `claims:${A}:s-1\n`,
-    );
+    expect(receiptOf(ctx, "claims", A)).toBe(`claims:${A}:s-1\n`);
   });
 
   test("a receipt that fails to be written after the send stays pending, and a later launch does not resend", () => {
@@ -354,7 +375,7 @@ describe("kickoff", () => {
         // prompt is sent, which fails the write even for root.
         [send]: () => {
           mkdirSync(
-            join(`${receiptPath(ctx, KEY, A)}.${process.pid}.tmp`, "x"),
+            join(receiptDir(ctx, KEY, A), `.1.${process.pid}.tmp`, "x"),
             {
               recursive: true,
             },
@@ -425,7 +446,7 @@ describe("kickoff", () => {
     // this launch's prompt.
     const takeOver = (ctx: FakeContext, line: string) => {
       mkdirSync(join(ctx.stateDir, "kickoff", "claims", KEY, "2"));
-      writeFileSync(receiptPath(ctx, KEY, A), `${line}\n`);
+      writeReceipt(ctx, A, "2", line);
     };
     for (const line of [`${KEY}:${A}:s-1`, `pending ${KEY}:${A}:s-1`]) {
       const ctx: FakeContext = withReceipt(
@@ -443,6 +464,44 @@ describe("kickoff", () => {
       );
       expect(receipt(ctx)).toBe(`${line}\n`);
     }
+  });
+
+  test("a send that completes after another launch took over never replaces that launch's receipt", () => {
+    // This launch records pending s-1 and stalls past the claim's age; the
+    // agent restarts as s-2 and another launch takes the claim over, sends
+    // to s-2 and completes its receipt; then this launch's send succeeds.
+    const ctx: FakeContext = fakeContext({
+      [get]: [session("s-1"), session("s-2"), session("s-2")],
+      [send]: () => {
+        mkdirSync(join(ctx.stateDir, "kickoff", "claims", KEY, "2"));
+        writeReceipt(ctx, A, "2", `${KEY}:${A}:s-2`);
+        return ok();
+      },
+      [read]: ok("❯ hello\n"),
+    });
+    expect(kickoff(ctx, spawned(), options)).toBe("sent");
+    expect(receipt(ctx)).toBe(`${KEY}:${A}:s-2\n`);
+    // So the next open finds s-2 delivered instead of prompting it again.
+    expect(reconcileKickoff(ctx, A, KEY, PROMPT).verdict).toBe("delivered");
+  });
+
+  test("a launch whose claim is older than another launch's receipt does not send", () => {
+    const ctx = fakeContext({ [get]: session("s-1"), [send]: ok() });
+    writeReceipt(ctx, A, "5", `${KEY}:${A}:s-1`);
+    expect(() => kickoff(ctx, spawned(), options)).toThrow(
+      "this launch was superseded",
+    );
+    expect(ctx.calls).not.toContain(send);
+    expect(receipt(ctx)).toBe(`${KEY}:${A}:s-1\n`);
+  });
+
+  test("a completed receipt removes the files of the launches it supersedes", () => {
+    const ctx = withReceipt(
+      { [get]: session("s-1"), [send]: ok() },
+      `pending ${KEY}:${A}:s-0`,
+    );
+    expect(kickoff(ctx, spawned(), options)).toBe("sent");
+    expect(readdirSync(receiptDir(ctx, KEY, A))).toEqual(["1"]);
   });
 
   test("a prompt that may or may not have landed keeps the claim and the pending receipt", () => {

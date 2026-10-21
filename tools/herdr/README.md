@@ -83,14 +83,17 @@ The kickoff goes to the agent once per key, whatever happens around it:
   by creating the next numbered one, never by deleting the old one, and a
   released claim stays on disk marked released, so numbers never repeat and
   two launches cannot both take one.
-- **A receipt** at `~/.jig/herdr/kickoff/receipts/<key>/<agent>` records a
+- **A receipt** in `~/.jig/herdr/kickoff/receipts/<key>/<agent>/` records a
   kickoff with the agent's name and, when Herdr reports one, its session id.
   Each agent a key was opened in (another clone's worktree has another
   agent) keeps its own, so opening the key in one never overwrites another's. The
   session id tells a restarted agent with the same name apart from the one
   that received the prompt. It is written as pending before the prompt is
   sent and completed once Herdr accepts it, so every send the tool attempted
-  leaves a record, and one whose outcome is unknown stays pending.
+  leaves a record, and one whose outcome is unknown stays pending. Each
+  launch writes a file of its own, named by its claim's number, and the
+  highest number is the receipt, so a launch that lost its claim and finishes
+  late never replaces the record of the launch that took over.
 - **The transcript** confirms a pending receipt: the prompt's first line in
   the agent's recent output means it was delivered. Its absence proves
   nothing, since only recent output is read, so a pending receipt it does not
@@ -134,9 +137,9 @@ create hook. The event runs in the background, so `open` waits for the hook
 to finish before it starts the agent: the hook runs under a claim in the
 worktree's git directory, and whoever takes it first runs it. Each hook
 runs under a small `bun` supervisor that starts it in a session and process
-group of its own and ends that whole group when the hook outlives its 15
-minutes or the tool that started it has gone (killed by a launcher's or SSH
-session's deadline, say). The claim names both its owner's process and that
+group of its own and ends that whole group when the hook fails, when it
+outlives its 15 minutes, or when the tool that started it has gone (killed by
+a launcher's or SSH session's deadline, say). The claim names both its owner's process and that
 group, so a waiter on the same machine runs the hook again only once the
 owner and every process of the earlier run have ended without a result. A
 failed run's leftover processes are ended before its claim is given back. Without the
@@ -161,7 +164,7 @@ installed per repository: a repository opts in by adding its hooks.
 
 Under `~/.jig/herdr/` (`JIG_HOME` moves `~/.jig`), outside every worktree so
 removing one never takes them: `sessions/<agent>` (the session a later start
-resumes, for agent kinds that take `--resume`), `kickoff/receipts/<key>/<agent>`
+resumes, for agent kinds that take `--resume`), `kickoff/receipts/<key>/<agent>/`
 and `kickoff/claims/<key>/`. Inside each worktree's git directory, `jig/worktree-create.*`
 records the create hook's claim and result.
 

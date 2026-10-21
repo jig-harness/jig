@@ -43,6 +43,7 @@ import {
   withoutLeakyGitEnv,
 } from "../../plugin/shared/guarded-git-spawn.ts";
 import { main as journalMain } from "../../plugin/skills/reflect/scripts/journal.ts";
+import { withGitDeadline } from "../../plugin/skills/reflect/scripts/lib/context.ts";
 import { assertLinkedWorktree, findGitWorktree, samePath } from "./git.ts";
 import { findHerdrWorktree, herdrCall, herdrJson } from "./herdr.ts";
 import { budget, type Context, HerdrError, output } from "./runner.ts";
@@ -52,6 +53,8 @@ export const HOOKS_DIR = ".config/worktree-hooks";
 export const HOOK_TIMEOUT_MS = 15 * 60_000;
 /** How long the tool waits for the plugin event to take the claim before running the hook itself. */
 export const PLUGIN_GRACE_MS = 5_000;
+/** The longest parking a worktree's reflection findings may take: a few git calls. */
+export const PARK_TIMEOUT_MS = 3 * 60_000;
 /** The hook output kept for the log; a dependency install is verbose. */
 const HOOK_OUTPUT_BYTES = 256 * 1024 * 1024;
 const POLL_MS = 500;
@@ -81,9 +84,10 @@ const SUPERVISOR_SLACK_MS = 10_000;
  * turns job control off without one), and writes its own process id and then
  * the group's to the file it is given, so a waiter can tell while any part of
  * the run, the hook's own children included, is still alive. It ends the
- * whole group when the hook outlives its limit, when the supervisor is
- * signalled, and when the tool that started it has gone: a run whose tool was
- * killed (by a launcher's or SSH session's deadline) leaves nothing running.
+ * whole group when the hook fails, when it outlives its limit, when the
+ * supervisor is signalled, and when the tool that started it has gone: a
+ * failed run, or one whose tool was killed (by a launcher's or SSH session's
+ * deadline), leaves nothing running, with a group record or without one.
  * Arguments: the record file (`-` for none), the hook, its limit in
  * milliseconds and the tool's process id.
  */
@@ -119,7 +123,9 @@ const watch = setInterval(() => {
 }, 500);
 await child.exited;
 clearInterval(watch);
-process.exit(child.exitCode ?? 1);
+const code = child.exitCode ?? 1;
+if (code !== 0) end(code);
+process.exit(0);
 `;
 
 /**
@@ -440,10 +446,15 @@ export function createdWorktreePath(eventJson: string | undefined): string {
  * host, so the worktree is named the ways the journal reads it: the working
  * directory, `JIG_CONSUMER_ROOT` (which the journal prefers to it), and an
  * environment without the git variables that would route its git calls to
- * another repository. All three are restored afterwards. The journal bounds
- * each of its git calls, so parking cannot hang a removal.
+ * another repository. All three are restored afterwards. Parking gets
+ * `PARK_TIMEOUT_MS`, or what is left of the run's limit when that is less,
+ * and every git call the journal makes is cut to the time left of it.
  */
-export async function parkJournal(worktree: string): Promise<void> {
+export async function parkJournal(
+  ctx: Context,
+  worktree: string,
+): Promise<void> {
+  const deadline = Date.now() + budget(ctx, PARK_TIMEOUT_MS);
   const previousCwd = process.cwd();
   const previousEnv = { ...process.env };
   const clean = withoutLeakyGitEnv();
@@ -453,7 +464,7 @@ export async function parkJournal(worktree: string): Promise<void> {
   process.chdir(worktree);
   let status: number;
   try {
-    status = await journalMain(["park"]);
+    status = await withGitDeadline(deadline, () => journalMain(["park"]));
   } finally {
     process.chdir(previousCwd);
     for (const key of Object.keys(process.env))
@@ -501,7 +512,7 @@ export async function removeWorkspace(
     ctx.log(`… running ${HOOKS_DIR}/remove`);
     runHook(ctx, path, hook);
   }
-  await parkJournal(path);
+  await parkJournal(ctx, path);
   let workspace = row?.open_workspace_id;
   workspace ??= herdrJson<{ workspace: { workspace_id: string } }>(
     ctx,

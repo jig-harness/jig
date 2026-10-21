@@ -1,7 +1,8 @@
 /**
  * How long each command of the workspace tool may run. The tool holds itself
  * to these limits (`withLimit` in runner.ts): every git and Herdr call, hook
- * run and pause is cut to the time left, so a run ends at its limit whatever
+ * run, pause and parking of the reflection journal (each of its git calls
+ * included) is cut to the time left, so a run ends at its limit whatever
  * its steps add up to. A deadline set around the tool (an SSH session, the
  * launcher's budget) is the limit plus `TRANSPORT_MS`, and so never ends a
  * run the tool itself allows.
@@ -16,7 +17,11 @@
  */
 import { CLAIM_WAIT_MS, PROMPT_TIMEOUT_MS } from "./kickoff.ts";
 import { settleLimitMs } from "./herdr.ts";
-import { HOOK_TIMEOUT_MS, PLUGIN_GRACE_MS } from "./lifecycle.ts";
+import {
+  HOOK_TIMEOUT_MS,
+  PARK_TIMEOUT_MS,
+  PLUGIN_GRACE_MS,
+} from "./lifecycle.ts";
 import { parseOpen, parseRemove, USAGE, UsageError } from "./options.ts";
 import { COMMAND_TIMEOUT_MS } from "./runner.ts";
 import { DEFAULT_WAIT_TIMEOUT_MS } from "./spawn.ts";
@@ -38,7 +43,9 @@ export function openLimitMs(waitTimeoutMs = DEFAULT_WAIT_TIMEOUT_MS): number {
 }
 
 export function removeLimitMs(): number {
-  return HOOK_TIMEOUT_MS + COMMAND_ALLOWANCE * COMMAND_TIMEOUT_MS;
+  return (
+    HOOK_TIMEOUT_MS + PARK_TIMEOUT_MS + COMMAND_ALLOWANCE * COMMAND_TIMEOUT_MS
+  );
 }
 
 /**
