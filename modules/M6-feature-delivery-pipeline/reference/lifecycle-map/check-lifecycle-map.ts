@@ -126,45 +126,62 @@ export function linkTargets(text: string): string[] {
   );
 }
 
-interface Columns {
-  stage: number;
-  owner: number;
-  handsOn: number;
+/** A Markdown table: its header cells, and each body row's cells with the line it is on. */
+interface Table {
+  header: string[];
+  rows: { line: number; cells: string[] }[];
 }
 
-/** The index of each stage-map column in a table header, or undefined when one is missing. */
-function stageColumns(header: string): Columns | undefined {
-  const names = cells(header).map((c) => c.toLowerCase());
-  const columns = {
-    stage: names.indexOf("stage"),
-    owner: names.indexOf("owner"),
-    handsOn: names.indexOf("hands on"),
-  };
-  return Object.values(columns).every((i) => i >= 0) ? columns : undefined;
+/** The tables of `text` outside fenced blocks. */
+function tables(text: string): Table[] {
+  const lines = outsideFences(text);
+  const isRow = (at: number) => (lines[at] ?? "").trim().startsWith("|");
+  const found: Table[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!isRow(i) || !isSeparator(lines[i + 1] ?? "")) continue;
+    const table: Table = { header: cells(lines[i] ?? ""), rows: [] };
+    let j = i + 2;
+    for (; isRow(j); j++)
+      table.rows.push({ line: j + 1, cells: cells(lines[j] ?? "") });
+    found.push(table);
+    i = j - 1;
+  }
+  return found;
 }
+
+const columnOf = (table: Table, name: string): number =>
+  table.header.findIndex((c) => c.toLowerCase() === name);
 
 /** The stages of every table whose header has `Stage`, `Owner` and `Hands on` columns. */
 export function parseStages(text: string): Stage[] {
-  const lines = outsideFences(text);
-  const isRow = (at: number) => (lines[at] ?? "").trim().startsWith("|");
-  const stages: Stage[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (!isRow(i) || !isSeparator(lines[i + 1] ?? "")) continue;
-    const columns = stageColumns(lines[i] ?? "");
-    let j = i + 2;
-    for (; isRow(j); j++) {
-      if (!columns) continue;
-      const row = cells(lines[j] ?? "");
-      stages.push({
-        line: j + 1,
-        stage: row[columns.stage] ?? "",
-        owner: row[columns.owner] ?? "",
-        handsOn: row[columns.handsOn] ?? "",
-      });
-    }
-    i = j - 1;
-  }
-  return stages;
+  return tables(text).flatMap((table) => {
+    const [stage, owner, handsOn] = ["stage", "owner", "hands on"].map((n) =>
+      columnOf(table, n),
+    );
+    if (stage === undefined || owner === undefined || handsOn === undefined)
+      return [];
+    if (stage < 0 || owner < 0 || handsOn < 0) return [];
+    return table.rows.map((row) => ({
+      line: row.line,
+      stage: row.cells[stage] ?? "",
+      owner: row.cells[owner] ?? "",
+      handsOn: row.cells[handsOn] ?? "",
+    }));
+  });
+}
+
+/** The code spans in the `Skill` column of every table that has one (the skills outside the loop). */
+function skillTableSpans(text: string): { line: number; span: string }[] {
+  return tables(text).flatMap((table) => {
+    const skill = columnOf(table, "skill");
+    if (skill < 0) return [];
+    return table.rows.flatMap((row) =>
+      codeSpans(row.cells[skill] ?? "").map((span) => ({
+        line: row.line,
+        span,
+      })),
+    );
+  });
 }
 
 /** The skills (directories with a SKILL.md, or command files) directly under `dir`. */
@@ -208,8 +225,14 @@ function skillResolves(
   );
 }
 
-function readPackageScripts(path: string): Set<string> | undefined {
-  if (!existsSync(path)) return undefined;
+function readPackageScripts(
+  path: string,
+  required: boolean,
+): Set<string> | undefined {
+  if (!existsSync(path)) {
+    if (required) throw new MapInputError(`cannot read --package-json ${path}`);
+    return undefined;
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(path, "utf8"));
@@ -274,8 +297,8 @@ function pathProblem(span: string, root: string): string | undefined {
     : `${path} is not a file under the root`;
 }
 
-/** Why `span` does not resolve, or undefined when it does. */
-function unresolved(
+/** Why one command or skill reference does not resolve, or undefined when it does. */
+function segmentProblem(
   span: string,
   opts: MapOptions,
   scripts: Set<string> | undefined,
@@ -289,6 +312,19 @@ function unresolved(
   return pathProblem(span, opts.root);
 }
 
+/** Why `span` does not resolve, or undefined when it does; `a && b` and `a; b` are each resolved. */
+function unresolved(
+  span: string,
+  opts: MapOptions,
+  scripts: Set<string> | undefined,
+): string | undefined {
+  for (const segment of span.split(/\s*(?:&&|\|\||;|\|)\s*/)) {
+    const why = segmentProblem(segment.trim(), opts, scripts);
+    if (why !== undefined) return why;
+  }
+  return undefined;
+}
+
 function readText(path: string, what: string): string {
   try {
     return readFileSync(path, "utf8");
@@ -299,11 +335,26 @@ function readText(path: string, what: string): string {
   }
 }
 
-function isRelativeTarget(target: string): boolean {
-  return !/^([a-z][a-z0-9+.-]*:|#|\/)/i.test(target);
+/** The file a link target names, or undefined for a web address or an anchor in the same page. */
+function linkedFile(
+  target: string,
+  from: string,
+  root: string,
+): string | undefined {
+  if (/^([a-z][a-z0-9+.-]*:|#)/i.test(target)) return undefined;
+  const path = target.split("#")[0] ?? "";
+  if (path === "") return undefined;
+  return path.startsWith("/")
+    ? resolve(root, `.${path}`)
+    : resolve(dirname(from), path);
 }
 
-const isPlaceholder = (span: string): boolean => /^<[^>]*>$/.test(span);
+/** A template placeholder: a whole `<...>`, or a skill name written as `/<...>`. */
+const isPlaceholder = (span: string): boolean =>
+  /^<[^>]*>$/.test(span) || /^\/<[^>]*>/.test(span);
+
+/** Text in angle brackets that is neither an HTML tag nor an autolink. */
+const PLACEHOLDER_IN_PROSE = /<(?!\/|br\b|https?:|!--)[^>]*>/i;
 
 /** The findings one check adds, each anchored to a file and, for a stage, its line. */
 type Add = (finding: Omit<Finding, "file">, file?: string) => void;
@@ -319,7 +370,11 @@ function nameProblem(
       problem: "a stage has no name",
       remedy: "name the stage in the first column",
     };
-  if (/^(stage\s*)?\d+\s*[.):-]?(\s|$)/i.test(name))
+  if (
+    /^(stage|step|phase)?\s*#?\d+\s*([.):-]|\s|$)/i.test(
+      name.replaceAll(/[*_`]/g, ""),
+    )
+  )
     return {
       problem: `stage "${name}" is numbered`,
       remedy:
@@ -365,7 +420,7 @@ function checkCell(
   const prose = value.replace(/(`+)(.+?)\1/g, (_w, _t, inner: string) =>
     isPlaceholder(inner.trim()) ? "<>" : "",
   );
-  if (/<[^>]*>/.test(prose))
+  if (PLACEHOLDER_IN_PROSE.test(prose))
     add({
       ...at,
       rule: "placeholder",
@@ -374,26 +429,31 @@ function checkCell(
     });
 }
 
-/** What an owner names: each code span must resolve, each relative link must reach a file. */
+/** What an owner names: each code span must resolve, each link to a file must reach it, and something must be named. */
 function checkOwner(
   s: Stage,
   opts: MapOptions,
   scripts: Set<string> | undefined,
   add: Add,
 ): number {
-  const spans = codeSpans(s.owner).filter((span) => !isPlaceholder(span));
-  const links = linkTargets(s.owner);
+  const spans = codeSpans(s.owner);
+  const files = linkTargets(s.owner)
+    .map((target) => ({
+      target,
+      file: linkedFile(target, opts.map, opts.root),
+    }))
+    .filter((link) => link.file !== undefined);
   const at = { line: s.line, rule: "owner-unresolved" };
-  if (s.owner !== "" && codeSpans(s.owner).length + links.length === 0)
+  if (s.owner !== "" && spans.length + files.length === 0)
     add({
       line: s.line,
       rule: "owner-missing",
-      problem: `stage "${s.stage}" names its owner in words only`,
+      problem: `stage "${s.stage}" names its owner in words only, or by a web address no check can resolve`,
       remedy:
-        "put the skill or command in a code span, or link the document that owns the stage, so it can be resolved",
+        "put the skill or command in a code span, or link the document in the repository that owns the stage, so it can be resolved",
     });
   let resolved = 0;
-  for (const span of spans) {
+  for (const span of spans.filter((span) => !isPlaceholder(span))) {
     const why = unresolved(span, opts, scripts);
     if (why === undefined) resolved++;
     else
@@ -404,10 +464,8 @@ function checkOwner(
           "fix the name, add the missing skill or script, or remove the stage's claim on it",
       });
   }
-  for (const target of links.filter(isRelativeTarget)) {
-    const path = target.split("#")[0] ?? "";
-    if (path === "") continue;
-    if (existsSync(resolve(dirname(opts.map), path))) resolved++;
+  for (const { target, file } of files) {
+    if (file !== undefined && existsSync(file)) resolved++;
     else
       add({
         ...at,
@@ -418,9 +476,32 @@ function checkOwner(
   return resolved;
 }
 
+/** The skills named in the `Skill` column of the table of skills outside the loop must exist too. */
+function checkSkillTable(
+  mapText: string,
+  opts: MapOptions,
+  scripts: Set<string> | undefined,
+  add: Add,
+): void {
+  for (const { line, span } of skillTableSpans(mapText)) {
+    const why = isPlaceholder(span)
+      ? undefined
+      : unresolved(span, opts, scripts);
+    if (why !== undefined)
+      add({
+        line,
+        rule: "owner-unresolved",
+        problem: `skills outside the loop: ${why}`,
+        remedy: "fix the name, or drop the row if the skill is gone",
+      });
+  }
+}
+
 /** With `--cover`: every skill under each directory is named somewhere in the map. */
 function checkCover(mapText: string, opts: MapOptions, add: Add): void {
-  const named = outsideFences(mapText).flatMap((l) => codeSpans(l));
+  const named = tables(mapText).flatMap((table) =>
+    table.rows.flatMap((row) => row.cells.flatMap((cell) => codeSpans(cell))),
+  );
   for (const dir of opts.cover) {
     const namespace =
       opts.skills.find((s) => resolve(s.dir) === resolve(dir))?.namespace ?? "";
@@ -481,18 +562,18 @@ function checkLinked(
   opts: MapOptions,
   add: Add,
 ): void {
-  const from = readText(linkedFrom, "--linked-from file");
-  const linked = linkTargets(from).some(
-    (t) =>
-      isRelativeTarget(t) &&
-      resolve(dirname(linkedFrom), t.split("#")[0] ?? "") === resolve(opts.map),
+  const visible = outsideFences(readText(linkedFrom, "--linked-from file"))
+    .join("\n")
+    .replaceAll(/<!--[\s\S]*?-->/g, "");
+  const linked = linkTargets(visible).some(
+    (t) => linkedFile(t, linkedFrom, opts.root) === resolve(opts.map),
   );
   if (!linked)
     add(
       {
         rule: "map-not-linked",
         problem: `${mapFile} is not linked from this always-loaded file, so a session does not find the map in one hop`,
-        remedy: `link ${mapFile} where the file says what to read next`,
+        remedy: `link ${mapFile} with a Markdown link where the file says what to read next`,
       },
       posix(relative(opts.root, linkedFrom)),
     );
@@ -520,6 +601,7 @@ export function checkMap(opts: MapOptions): {
 
   const scripts = readPackageScripts(
     opts.packageJson ?? join(opts.root, "package.json"),
+    opts.packageJson !== undefined,
   );
   const seen = new Map<string, number>();
   let resolved = 0;
@@ -529,6 +611,7 @@ export function checkMap(opts: MapOptions): {
     checkCell(s, "Hands on", s.handsOn, add);
     resolved += checkOwner(s, opts, scripts, add);
   }
+  checkSkillTable(mapText, opts, scripts, add);
   checkCover(mapText, opts, add);
   checkScan(opts, add);
   if (opts.linkedFrom !== undefined)

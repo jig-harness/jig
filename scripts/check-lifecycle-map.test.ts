@@ -23,11 +23,12 @@ function scratch(files: Record<string, string>): string {
 
 const skill = "---\nname: x\ndescription: x\n---\n";
 const map = (owner: string) =>
-  `| Stage | Owner | Hands on |\n|---|---|---|\n| file | ${owner} | an issue |\n`;
+  `| Stage | Owner | Hands on |\n|---|---|---|\n| file | ${owner} | an issue |\n\n| Skill | Used when |\n|---|---|\n| \`/own\` | always |\n`;
 const repo = (owner: string, agents = "[map](docs/LIFECYCLE.md)\n") => ({
   "docs/LIFECYCLE.md": map(owner),
   "AGENTS.md": agents,
   "plugin/skills/file-issue/SKILL.md": skill,
+  ".claude/skills/own/SKILL.md": skill,
 });
 
 test("Jig's own lifecycle map resolves", () =>

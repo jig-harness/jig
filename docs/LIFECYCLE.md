@@ -2,8 +2,8 @@
 
 Where a piece of work goes next, and who takes it there. Without one page that
 says so, a session designing the process finds the skills it already knows and
-misses the ones it does not: the post-merge pass and the epic close both exist
-and were both missed for want of a place that answered "what comes next?".
+misses the ones it does not; this page answers "what comes next?" for every
+stage, the post-merge pass and the epic close included.
 This is Jig's own form of the
 [lifecycle map](../modules/M6-feature-delivery-pipeline/README.md#the-lifecycle-map)
 of M6, over the plugin's skills.
@@ -38,11 +38,12 @@ between loops.
 | `/jig:descar` | a document is about to be promoted, or its history has piled up |
 | `/jig:code-stats` | the repository's size and makeup is needed as evidence |
 | `/jig:programmatic-execution` | an analysis reads ten or more files, to run as one script |
+| `/website-update` | the site's sources changed since its last check |
 
 ## Keeping it true
 
-`bun run gates` resolves every owner named above and every Jig skill the
-plugin ships against this page
+`bun run gates` resolves every owner named above and every skill Jig ships,
+the plugin's and its own in `.claude/skills`, against this page
 ([M6's lifecycle map gate](../modules/M6-feature-delivery-pipeline/reference/lifecycle-map/README.md)):
 a skill that no stage and no row of the second table names, a skill, script
 or link that does not exist, and a page this one stops being linked from

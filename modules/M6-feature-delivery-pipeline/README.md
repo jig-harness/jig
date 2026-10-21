@@ -204,7 +204,7 @@ fixes and runs its mechanical landing checks before acceptance.
 Deliberately left out: tiered time estimates, named critique personas, a
 model-routing table and specific tool picks (a named tracker, named
 scaffolding commands). They are one team's tuned choices, not a portable
-mechanism; the module keeps the stage contract and the three gates, and leaves
+mechanism; the module keeps the stage contract and its gates, and leaves
 tool selection to [mappings.md](mappings.md). The lifecycle map gate checks that
 the names in the map resolve; it does not check that the stages are in the
 right order, which a reviewer of a change to the process asks of the table.

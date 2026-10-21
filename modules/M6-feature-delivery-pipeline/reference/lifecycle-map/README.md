@@ -37,7 +37,8 @@ A code span in an owner resolves when it is:
 - **A skill or command**: `/name`, or `/namespace:name` for a plugin's
   skills. It resolves to `<dir>/<name>/SKILL.md` or `<dir>/<name>.md` under a
   `--skills` directory. `--skills jig=plugin/skills` serves the `jig`
-  namespace; `--skills .claude/skills` (no namespace) serves bare names. A
+  namespace; `--skills .claude/skills` (no namespace) serves bare names; a
+  second directory of command files is a second `--skills` entry. A
   bare name does not resolve in a namespaced directory, because that is not
   how the skill is invoked.
 - **A package script**: `bun run gates`, `npm run`, `pnpm run`, `yarn run`,
@@ -88,7 +89,7 @@ is a choice for the wiring, like the one in Jig's own
 It reads files only, so it runs in the repository's fast gate set beside the
 other documentation checks, locally and in CI; CI is the authority
 ([M1](../../../M1-gates-enforcement-ladder/README.md)). The recipe is in
-[`mappings.md`](../../mappings.md#lifecycle-map-gate).
+[`mappings.md`](../../mappings.md#the-lifecycle-map).
 
 ## Files
 

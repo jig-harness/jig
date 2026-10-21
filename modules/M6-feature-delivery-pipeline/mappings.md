@@ -204,7 +204,7 @@ a code span, so the gate can read it.
 | Owner is | Written as | Resolved against |
 |----------|------------|------------------|
 | A skill in a plugin | `/<plugin>:<skill>` | `--skills <plugin>=<dir>`: `<dir>/<skill>/SKILL.md`, the plugin's `skills/` directory |
-| A repository's own skill or command | `/<name>` | `--skills <dir>`: `.claude/skills/<name>/SKILL.md` or `.claude/commands/<name>.md`; the [skills mirror](../M0-instruction-architecture/mappings.md#cross-runtime-skill-discovery-the-symlink-mirror) makes the same directory serve Codex, so one entry covers both runtimes |
+| A repository's own skill or command | `/<name>` | `--skills <dir>`, one entry per directory: `.claude/skills/<name>/SKILL.md` and `.claude/commands/<name>.md`; the [skills mirror](../M0-instruction-architecture/mappings.md#cross-runtime-skill-discovery-the-symlink-mirror) makes the same directory serve Codex, so one entry covers both runtimes |
 | A package script | `bun run <script>`, `npm run <script>`, `pnpm run <script>`, `yarn run <script>` | `scripts` in `package.json` (`--package-json`) |
 | A script in the repository | `bun <path>` or `<path>` | the file, under `--root` |
 | A tool outside the repository | `gh`, `make deploy` | only when declared: `--external gh` |
@@ -220,10 +220,10 @@ says how the stage is run, and links it.
   run: >-
     bun "$M6"/reference/lifecycle-map/check-lifecycle-map.ts docs/LIFECYCLE.md
     --skills <plugin>=<plugin-dir>/skills --skills .claude/skills
-    --cover <plugin-dir>/skills --linked-from AGENTS.md
+    --skills .claude/commands --cover <plugin-dir>/skills --linked-from AGENTS.md
 ```
 
-As with the other two gates, run the script from the base the change targets
+As with the other gates, run the script from the base the change targets
 (the `M6` variable above), never from the change's own tree, and read the map
 and the skill directories as data; a change that rewrites the gate cannot then
 report itself clean. `--cover` is for a repository that ships skills and
@@ -232,7 +232,7 @@ out.
 
 ## CI providers
 
-Any provider works — the three gates use Bun and TypeScript with self-tests. The only
+Any provider works — the gates use Bun and TypeScript with self-tests. The only
 provider-specific piece is the changed-files query (`git diff --name-only`
 against the merge base), shown above for GitHub Actions and GitLab CI. Run the
 required-sections gate on **changed stage docs** and the stage-review-record

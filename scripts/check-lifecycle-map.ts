@@ -38,7 +38,7 @@ export function checkLifecycleMap(root = "."): number {
         { namespace: "", dir: join(root, ".claude/skills") },
       ],
       external: [],
-      cover: [join(root, "plugin/skills")],
+      cover: [join(root, "plugin/skills"), join(root, ".claude/skills")],
       scan,
       linkedFrom: join(root, "AGENTS.md"),
     },

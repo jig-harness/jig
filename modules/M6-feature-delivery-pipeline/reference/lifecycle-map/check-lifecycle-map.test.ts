@@ -104,6 +104,12 @@ describe("a map that is not one", () => {
     expect(found[0]?.problem).toContain("numbered");
   });
 
+  test("a number is a number however it is written, and a name that starts with digits is not", () => {
+    const found = checkMap(options("maps/numbered-variants.md")).findings;
+    expect(found.map((f) => f.line)).toEqual([3, 4, 5, 6, 7]);
+    expect(found.every((f) => f.problem.includes("numbered"))).toBe(true);
+  });
+
   test("a repeated stage name fails, whatever its case", () => {
     const found = checkMap(options("maps/duplicate.md")).findings;
     expect(found).toHaveLength(1);
@@ -160,10 +166,11 @@ describe("owners that do not resolve", () => {
     expect(declared.map((f) => f.line)).toEqual([3, 4, 5, 6, 7, 9]);
   });
 
-  test("a project with no package.json cannot resolve a script", () => {
-    const found = checkMap(
-      options("maps/unresolved.md", { packageJson: at("no-package.json") }),
-    ).findings;
+  test("a root with no package.json cannot resolve a script", () => {
+    const found = checkMap({
+      ...options("maps/unresolved.md"),
+      root: at("docs"),
+    }).findings;
     expect(found.find((f) => f.line === 6)?.problem).toContain(
       "needs a package.json",
     );
@@ -171,6 +178,34 @@ describe("owners that do not resolve", () => {
       "bun run lint needs a package.json",
     );
   });
+});
+
+describe("owners that cannot be resolved or are not owners", () => {
+  test("a web address, an anchor and a root link to nothing are not owners; a root link that exists is", () => {
+    const found = checkMap(options("maps/unverifiable-owners.md")).findings;
+    expect(found.map((f) => [f.line, f.rule])).toEqual([
+      [3, "owner-missing"],
+      [4, "owner-missing"],
+      [5, "owner-unresolved"],
+    ]);
+  });
+
+  test("every command of a chain is resolved", () => {
+    const found = checkMap(options("maps/chained.md")).findings;
+    expect(found.map((f) => f.line)).toEqual([4, 5]);
+    expect(found[0]?.problem).toContain("bun run nope");
+    expect(found[1]?.problem).toContain("/jig:gone");
+  });
+
+  test("a skill written as a placeholder is a placeholder, HTML and autolinks are not", () => {
+    const found = checkMap(options("maps/html-and-placeholders.md")).findings;
+    expect(found.map((f) => [f.line, f.rule])).toEqual([[4, "placeholder"]]);
+  });
+
+  test("a package file that was asked for and is missing is an input error", () =>
+    expect(() =>
+      checkMap(options("LIFECYCLE.md", { packageJson: at("absent.json") })),
+    ).toThrow("--package-json"));
 });
 
 describe("coverage", () => {
@@ -187,6 +222,28 @@ describe("coverage", () => {
       "/jig:orphan",
     ]);
   });
+});
+
+describe("the table of skills outside the loop", () => {
+  test("is resolved like an owner, and a mention in prose is not coverage", () => {
+    const found = checkMap(
+      options("maps/skill-table.md", { cover: [at("plugin/skills")] }),
+    ).findings;
+    expect(found.map((f) => [f.line, f.rule])).toEqual([
+      [10, "owner-unresolved"],
+      [undefined, "skill-not-in-map"],
+    ]);
+    expect(found[1]?.problem).toContain("/jig:drive-pr");
+  });
+
+  test("a bare name does not resolve in a namespaced directory", () =>
+    expect(
+      checkMap(
+        options("maps/chained.md", {
+          skills: [{ namespace: "jig", dir: at("plugin/skills") }],
+        }),
+      ).findings.length,
+    ).toBeGreaterThan(0));
 });
 
 describe("process documents", () => {
@@ -220,6 +277,18 @@ describe("reach", () => {
       file: "AGENTS-unlinked.md",
     });
   });
+});
+
+describe("reach, as a reader sees it", () => {
+  test("a link in a code block or a comment is not a link", () =>
+    expect(
+      rules("LIFECYCLE.md", { linkedFrom: at("AGENTS-hidden.md") }),
+    ).toEqual(["map-not-linked"]));
+
+  test("a link from the root counts", () =>
+    expect(
+      rules("LIFECYCLE.md", { linkedFrom: at("AGENTS-rooted.md") }),
+    ).toEqual([]));
 });
 
 describe("helpers", () => {
@@ -279,6 +348,20 @@ describe("the command", () => {
     expectSpawnExit(run([...flags]), 2);
     expectSpawnExit(run([map, map, ...flags]), 2);
     expectSpawnExit(run([map, "--nonsense"]), 2);
+  });
+
+  test("--scan and --linked-from report through the command", () => {
+    const r = run([
+      map,
+      ...flags,
+      "--scan",
+      at("docs/process-stale.md"),
+      "--linked-from",
+      at("AGENTS-unlinked.md"),
+    ]);
+    expectSpawnExit(r, 1);
+    expect(r.stderr).toContain("docs/process-stale.md:3: [skill-unresolved]");
+    expect(r.stderr).toContain("AGENTS-unlinked.md: [map-not-linked]");
   });
 
   test("a package.json that is not JSON exits 2", () =>

@@ -18,7 +18,7 @@ keeps every owner it names real.
   does not exist, a numbered, unowned or placeholder stage, an instruction file
   that does not link the map, and, with `--cover`, a skill on no stage. With
   `--scan` it fails any document that names a plugin skill that does not exist.
-- **Three audit criteria** for M6 (`lifecycle-map-published`,
+- **Audit criteria** for M6 (`lifecycle-map-published`,
   `lifecycle-owners-resolve-gated`, `lifecycle-skills-on-the-map`), scored
   in Jig's record and the calibration record.
 - The skills table in the plugin README points to the lifecycle map for the
