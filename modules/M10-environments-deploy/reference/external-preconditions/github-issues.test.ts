@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { GhApi } from "../../../../plugin/skills/changelog/scripts/github-rules.ts";
 import { githubIssues } from "./github-issues.ts";
+import { reconcilePreconditions } from "./reconcile.ts";
 
 const BOT = "github-actions[bot]";
 const issue = (number: number, login = BOT) => ({
@@ -124,5 +125,26 @@ describe("GitHub external preconditions tracker adapter", () => {
     await expect(
       githubIssues("team/project", BOT, api).close("4"),
     ).rejects.toThrow("write denied");
+  });
+  test("a synchronous listing stops at its deadline between pages", async () => {
+    const calls: string[][] = [];
+    const api: GhApi = (args) => {
+      calls.push(args);
+      Bun.sleepSync(15);
+      const page = calls.length;
+      const items = Array.from({ length: 100 }, (_, i) =>
+        issue((page - 1) * 100 + i + 1),
+      );
+      return { ok: true, stdout: JSON.stringify(items), stderr: "" };
+    };
+    await expect(
+      reconcilePreconditions(
+        githubIssues("team/project", BOT, api),
+        { key: "registry", healthy: false, title: "t", body: "b" },
+        40,
+      ),
+    ).rejects.toThrow("did not finish");
+    expect(calls.length).toBeLessThan(10);
+    expect(calls.every((call) => !call.includes("POST"))).toBe(true);
   });
 });

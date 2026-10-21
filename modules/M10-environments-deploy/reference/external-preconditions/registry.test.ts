@@ -132,4 +132,17 @@ describe("registry", () => {
     expect(result.entries[0]?.reasons.join()).toContain("did not finish");
     expect(aborted).toBe(true);
   });
+  test("a synchronous check that overruns its deadline is unknown", async () => {
+    const result = await runRegistry(parseRegistry(raw), {
+      checks: {
+        fixture: () => {
+          Bun.sleepSync(40);
+          return { status: "pass", reasons: [] };
+        },
+      },
+      deadlineMs: 20,
+    });
+    expect(result.entries[0]?.outcome).toBe("unknown");
+    expect(result.entries[0]?.reasons.join()).toContain("did not finish");
+  });
 });

@@ -29,9 +29,10 @@ unknown state. The runner catches a failed check and continues with the
 remaining entries, and judges waiver expiry once the last check has finished.
 Each check has a deadline (`deadlineMs`, two minutes by default): the signal
 aborts then, and a check still running is abandoned and reported unknown, so
-a stalled adapter cannot keep the report and the issue from being written. A
-check should still bound its own external calls, and returns diagnostic facts
-without secret values.
+a stalled adapter cannot keep the report and the issue from being written.
+Synchronous work holds the timer back, so a result that arrives after the
+deadline is reported unknown rather than counted. A check should still bound
+its own external calls, and returns diagnostic facts without secret values.
 
 The `branch-protection` kind reads classic protection and every applicable
 ruleset with the same GitHub identity as the consumer. Its token needs
@@ -102,8 +103,9 @@ It finds an exact marker line, creates or updates on failure, and closes on
 recovery. Duplicate markers or incomplete listings fail without writing.
 Callers must serialize writers for the key. Each tracker operation has a
 deadline (two minutes by default) and receives an abort signal; one that does
-not finish fails the reconciliation without a further write. The GitHub adapter uses bounded
-API calls and reads every page of open issues before deciding. It lists only
+not finish, or finishes late, fails the reconciliation without a further
+write. The GitHub adapter uses bounded API calls, reads every page of open
+issues before deciding, and stops between pages once the deadline has passed. It lists only
 issues opened by the reconciling login it is given, because the marker is
 public: an issue anyone else opens with it is never adopted or closed.
 

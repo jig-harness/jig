@@ -262,6 +262,7 @@ const ACTOR_TYPES = [
   "RepositoryRole",
   "Team",
   "DeployKey",
+  "User",
 ];
 /**
  * Validated on every source, live or offline, so an observation handed over as

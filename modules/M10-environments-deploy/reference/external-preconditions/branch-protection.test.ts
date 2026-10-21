@@ -22,6 +22,15 @@ const observe = (input = fixture, expected = entry.expected) =>
 describe("branch protection", () => {
   test("separate PR bypass and safety rules permit bot writes", async () =>
     expect((await observe()).status).toBe("pass"));
+  test("an unrelated user's bypass leaves the observation valid", async () => {
+    const input = structuredClone(fixture);
+    for (const ruleset of input.rulesets)
+      ruleset.bypass_actors = [
+        ...(ruleset.bypass_actors ?? []),
+        { actor_type: "User", actor_id: 123, bypass_mode: "always" },
+      ];
+    expect((await observe(input)).status).toBe("pass");
+  });
   test("PR-only bypass cannot advance a bot-written pointer", async () => {
     const input = structuredClone(fixture);
     input.rulesets[0].bypass_actors[0].bypass_mode = "pull_request";

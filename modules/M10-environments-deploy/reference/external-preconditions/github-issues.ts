@@ -4,6 +4,7 @@ import {
   ghApi,
 } from "../../../../plugin/skills/changelog/scripts/github-rules.ts";
 import { isRecord } from "../../../../lib/record.ts";
+import { checkpoint } from "./deadline.ts";
 import {
   PreconditionIssueError,
   type IssueContent,
@@ -90,12 +91,13 @@ export function githubIssues(
     return ["-f", `title=${content.title}`, "-f", `body=${content.body}`];
   }
   return {
-    async listOpen() {
+    async listOpen(signal) {
       const issues: TrackerIssue[] = [];
       const seen = new Set<string>();
       // Explicit pages avoid silently consuming only gh's first response page.
       // A bound also makes a non-progressing API fail instead of looping forever.
       for (let page = 1; page <= 1000; page++) {
+        await checkpoint(signal);
         const value = request([
           `${endpoint}?state=open&creator=${encodeURIComponent(creator)}&per_page=100&page=${page}`,
         ]);
