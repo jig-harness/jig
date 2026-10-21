@@ -8,10 +8,10 @@ import {
   type ProcessRow,
 } from "../plugin/shared/process-table.ts";
 import { swallow } from "../plugin/shared/errors.ts";
-import { identityTargetsGone } from "../plugin/shared/process-tree.ts";
 import { expectSpawnExit } from "./test-helpers/expect-spawn-exit.ts";
 import {
   captureDescendants,
+  recordDescendants,
   reapSurvivingDescendants,
 } from "./test-reap-children.ts";
 
@@ -108,6 +108,78 @@ test("a captured descendant init adopted is killed with its own descendants; a r
   expect(killed.map(([pid]) => pid)).toEqual([301, 300]);
 });
 
+test("a captured identity whose row has become unreadable is reported, not dropped, and not signalled", async () => {
+  const { killed, deps } = killable([
+    row(1, 0),
+    row(100, 1),
+    row(300, 1, ""),
+    row(301, 300),
+  ]);
+  const report = await reapSurvivingDescendants(100, deps, [
+    { pid: 300, start: "start-300" },
+  ]);
+  expect(report).toEqual({
+    signalled: [],
+    unreadable: [300, 301],
+    survived: [],
+  });
+  expect(killed).toEqual([]);
+});
+
+test("every process-table read is bounded by what is left of the deadline, and none starts after it", async () => {
+  let clock = 0;
+  const realNow = Date.now;
+  const timeouts: (number | undefined)[] = [];
+  const rows = [row(100, 1), row(101, 100)];
+  Date.now = () => clock;
+  try {
+    const report = await reapSurvivingDescendants(100, {
+      table: async (timeoutSec) => {
+        timeouts.push(timeoutSec);
+        clock += 1_500;
+        return rows;
+      },
+      kill: () => undefined,
+      timeoutMs: 4_000,
+      pause: async () => undefined,
+    });
+    expect(report?.survived).toEqual([101]);
+  } finally {
+    Date.now = realNow;
+  }
+  expect(clock).toBeLessThanOrEqual(4_000 + 1_500);
+  expect(timeouts[0]).toBe(4);
+  for (const [i, timeout] of timeouts.entries())
+    expect(timeout).toBeLessThanOrEqual(Math.max(0, 4 - i * 1.5));
+  for (const timeout of timeouts) expect(timeout).toBeGreaterThan(0);
+});
+
+test("a record drops the identities a table shows gone and keeps unreadable ones", async () => {
+  const captured = new Map([
+    ["200:start-200", { pid: 200, start: "start-200" }],
+    ["201:start-201", { pid: 201, start: "start-201" }],
+    ["202:start-202", { pid: 202, start: "start-202" }],
+    ["203:start-203", { pid: 203, start: "start-203" }],
+    ["204:start-204", { pid: 204, start: "start-204" }],
+  ]);
+  const rows = [
+    row(100, 1),
+    row(101, 100),
+    row(200, 1),
+    row(201, 1, "start-reused"),
+    { ...row(202, 1), stat: "Z" },
+    row(203, 1, ""),
+  ];
+  expect(await recordDescendants(100, captured, async () => rows)).toBe(true);
+  expect([...captured.keys()].sort()).toEqual([
+    "101:start-101",
+    "200:start-200",
+    "203:start-203",
+  ]);
+  expect(await recordDescendants(100, captured, async () => null)).toBe(false);
+  expect(captured.size).toBe(3);
+});
+
 test("a target still alive at the deadline is reported, not passed over", async () => {
   const rows = [row(100, 1), row(101, 100)];
   const report = await reapSurvivingDescendants(100, {
@@ -143,8 +215,8 @@ test("the capture names readable descendants only, not the process itself", asyn
 const module = fileURLToPath(
   new URL("./test-reap-children.ts", import.meta.url),
 );
-const tableModule = fileURLToPath(
-  new URL("../plugin/shared/process-table.ts", import.meta.url),
+const treeModule = fileURLToPath(
+  new URL("../plugin/shared/process-tree.ts", import.meta.url),
 );
 const idle = "setInterval(() => {}, 1000)";
 
@@ -153,9 +225,9 @@ const idle = "setInterval(() => {}, 1000)";
  * without touching anything else this test process has running: a fixture
  * child that starts a grandchild, both idling. With `orphan`, the fixture
  * child is killed first, so init adopts the grandchild and only the capture
- * taken while the tree was whole still names it. The fixture's own cleanup
- * runs after the report is printed, so a broken reap fails the assertions
- * rather than leaving the tree behind.
+ * taken while the tree was whole still names it. Whether the tree is gone is
+ * observed right after the reap, before the fixture's own cleanup runs, so
+ * the cleanup can neither stand in for the reap nor leave the tree behind.
  */
 async function reapRealTree(orphan: boolean) {
   const childSource = `Bun.spawn([process.execPath, '-e', '${idle}'], { stdout: 'ignore', stderr: 'ignore' }); ${idle}`;
@@ -165,7 +237,7 @@ async function reapRealTree(orphan: boolean) {
       "-e",
       `
       import { captureDescendants, reapSurvivingDescendants } from ${JSON.stringify(module)};
-      import { processTable } from ${JSON.stringify(tableModule)};
+      import { identityTargetsGone } from ${JSON.stringify(treeModule)};
       const child = Bun.spawn(
         [process.execPath, "-e", ${JSON.stringify(childSource)}],
         { stdout: "ignore", stderr: "ignore" },
@@ -182,7 +254,13 @@ async function reapRealTree(orphan: boolean) {
           await child.exited;
         }
         const report = await reapSurvivingDescendants(process.pid, {}, tree);
-        console.log(JSON.stringify({ child: child.pid, tree, report }));
+        const goneBy = Date.now() + 5_000;
+        let gone = await identityTargetsGone(tree);
+        while (!gone && Date.now() < goneBy) {
+          await Bun.sleep(50);
+          gone = await identityTargetsGone(tree);
+        }
+        console.log(JSON.stringify({ child: child.pid, tree, report, gone }));
       } finally {
         for (const { pid } of tree) {
           try { process.kill(pid, "SIGKILL"); } catch {}
@@ -198,35 +276,26 @@ async function reapRealTree(orphan: boolean) {
     child: number;
     tree: { pid: number; start: string }[];
     report: { signalled: number[]; unreadable: number[]; survived: number[] };
+    gone: boolean;
   };
 }
 
-async function expectGone(tree: { pid: number; start: string }[]) {
-  const deadline = Date.now() + 15_000;
-  let gone = false;
-  while (!gone && Date.now() < deadline) {
-    gone = await identityTargetsGone(tree);
-    if (!gone) await Bun.sleep(50);
-  }
-  expect(gone).toBe(true);
-}
-
 test("a real tree a test left behind is gone after the reap", async () => {
-  const { child, tree, report } = await reapRealTree(false);
+  const { child, tree, report, gone } = await reapRealTree(false);
   expect(tree.length).toBe(2);
   expect(report.signalled).toContain(child);
   expect(report.signalled.length).toBe(2);
   expect(report.survived).toEqual([]);
-  await expectGone(tree);
+  expect(gone).toBe(true);
 });
 
 test("a real grandchild init adopted after its leader died is reaped through the capture", async () => {
-  const { child, tree, report } = await reapRealTree(true);
+  const { child, tree, report, gone } = await reapRealTree(true);
   expect(tree.length).toBe(2);
   const grandchild = tree.find((identity) => identity.pid !== child);
   expect(report.signalled).toEqual([grandchild?.pid ?? -1]);
   expect(report.survived).toEqual([]);
-  await expectGone(tree);
+  expect(gone).toBe(true);
 });
 
 // Through `bun test` and the repository's bunfig.toml, so the preload's
@@ -280,3 +349,51 @@ test("leaks an idle child", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// A tree that outlives the capture interval inside one test, whose leader the
+// test kills before returning: only a capture taken while the test ran still
+// names the grandchild init adopted.
+test("a test process run with the repository's preloads reaps a grandchild orphaned before its test returned", async () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const dir = mkdtempSync(join(tmpdir(), "jig-test-reap-"));
+  const pidFile = join(dir, "pid");
+  const probe = join(dir, "orphan-probe.test.ts");
+  const childSource = `const g = Bun.spawn([process.execPath, '-e', '${idle}'], { stdout: 'ignore', stderr: 'ignore' }); require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(g.pid)); ${idle}`;
+  writeFileSync(
+    probe,
+    `import { test } from "bun:test";
+import { existsSync } from "node:fs";
+test("orphans a grandchild", async () => {
+  const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify(childSource)}], { stdout: "ignore", stderr: "ignore" });
+  const deadline = Date.now() + 15_000;
+  while (!existsSync(${JSON.stringify(pidFile)}) && Date.now() < deadline) await Bun.sleep(50);
+  await Bun.sleep(3_000);
+  child.kill("SIGKILL");
+  await child.exited;
+}, 30_000);
+`,
+  );
+  let pid = 0;
+  try {
+    const result = Bun.spawnSync([process.execPath, "test", probe], {
+      cwd: root,
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 60_000,
+      killSignal: "SIGKILL",
+    });
+    pid = Number(readFileSync(pidFile, "utf8"));
+    expectSpawnExit(result, 0);
+    expect(result.stderr.toString()).toContain(
+      `test-reap: killed 1 process(es) a test left running (pid ${pid})`,
+    );
+  } finally {
+    if (pid > 0)
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch (error) {
+        swallow(error, "the orphaned probe grandchild is already gone");
+      }
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 90_000);

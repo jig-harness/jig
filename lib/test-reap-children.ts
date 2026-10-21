@@ -22,7 +22,10 @@
 // it. The identity rules are process-tree.ts's: a row whose creation
 // identity cannot be read is never signalled, so a reused pid is never
 // somebody else's process, and a process counts as gone once it is absent,
-// a zombie, or a different process under the same pid.
+// a zombie, or a different process under the same pid. Every process the
+// reap has seen is accounted for — signalled, left alone as unreadable, or
+// reported as surviving — and one deadline bounds every process-table read
+// it makes.
 import {
   processTable,
   type ProcessRow,
@@ -31,9 +34,10 @@ import { signalIdentityTargets } from "../plugin/shared/process-tree.ts";
 import { partitionProcessTree } from "../plugin/shared/process-uncertainty.ts";
 
 type Identity = Pick<ProcessRow, "pid" | "start">;
+type Table = (timeoutSec?: number) => Promise<ProcessRow[] | null>;
 
 export interface ReapDeps {
-  table?: () => Promise<ProcessRow[] | null>;
+  table?: Table;
   kill?: (pid: number, signal: NodeJS.Signals) => unknown;
   /** How long the kill and its witness may take together, in ms. */
   timeoutMs?: number;
@@ -55,35 +59,60 @@ export interface ReapReport {
  */
 export async function captureDescendants(
   pid: number,
-  table: () => Promise<ProcessRow[] | null> = () => processTable(),
+  table: Table = processTable,
 ): Promise<Identity[] | null> {
   const rows = await table();
   if (rows === null) return null;
+  return descendantsIn(pid, rows);
+}
+
+function descendantsIn(pid: number, rows: readonly ProcessRow[]): Identity[] {
   return partitionProcessTree(pid, rows)
     .targets.filter((row) => row.pid !== pid)
     .map(({ pid, start }) => ({ pid, start }));
 }
 
-/** The row that is still this identity's process, and not yet a zombie. */
-function liveRow(
+/**
+ * Add `pid`'s readable descendants to `captured`, keyed by identity, and drop
+ * the captured identities one process table shows gone: absent, a zombie, or
+ * a different readable process under the same pid. An identity whose row
+ * cannot be read stays, since it may still be the captured process. False
+ * when the process table could not be read, which changes nothing.
+ */
+export async function recordDescendants(
+  pid: number,
+  captured: Map<string, Identity>,
+  table: Table = processTable,
+): Promise<boolean> {
+  const rows = await table();
+  if (rows === null) return false;
+  for (const [key, identity] of captured)
+    if (!liveOrUnreadable(rows, identity)) captured.delete(key);
+  for (const identity of descendantsIn(pid, rows))
+    captured.set(`${identity.pid}:${identity.start}`, identity);
+  return true;
+}
+
+/** The row that may still be this identity's process: its own, or unreadable. */
+function liveOrUnreadable(
   rows: readonly ProcessRow[],
   target: Identity,
 ): ProcessRow | undefined {
   return rows.find(
     (row) =>
       row.pid === target.pid &&
-      row.start !== "" &&
-      row.start === target.start &&
-      !row.stat.startsWith("Z"),
+      !row.stat.startsWith("Z") &&
+      (row.start === "" || row.start === target.start),
   );
 }
 
 /**
  * Kill every surviving descendant of `pid`, and every identity in `captured`
  * that is still alive wherever it was adopted, with its own descendants.
- * Reports the pids signalled, the descendants left alone because their
- * identity could not be read, and the targets not witnessed gone; null when
- * the process table itself could not be read, in which case nothing was
+ * Reports the pids signalled, the processes left alone because their
+ * identity could not be read (a captured identity whose row has become
+ * unreadable included), and the targets not witnessed gone; null when the
+ * process table itself could not be read, in which case nothing was
  * signalled.
  */
 export async function reapSurvivingDescendants(
@@ -91,12 +120,41 @@ export async function reapSurvivingDescendants(
   deps: ReapDeps = {},
   captured: readonly Identity[] = [],
 ): Promise<ReapReport | null> {
-  const table = deps.table ?? (() => processTable());
-  const pause =
-    deps.pause ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   const deadline = Date.now() + (deps.timeoutMs ?? 10_000);
+  const remaining = () => Math.max(0, deadline - Date.now());
+  const read = deps.table ?? processTable;
+  // Each read gets what is left of the deadline, and none starts after it.
+  const table: Table = async () => {
+    const left = remaining();
+    return left === 0 ? null : read(Math.min(5, left / 1000));
+  };
   const rows = await table();
   if (rows === null) return null;
+  const { targets, unreadable } = collectTargets(pid, rows, captured);
+  const signalled: number[] = [];
+  await signalIdentityTargets(targets, "SIGKILL", {
+    table: read,
+    deadline,
+    ...(deps.kill ? { kill: deps.kill } : {}),
+    onKilled: (target) => {
+      signalled.push(target.pid);
+    },
+  });
+  const pause =
+    deps.pause ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  const survived = await witnessGone(targets, table, remaining, pause);
+  return { signalled, unreadable, survived };
+}
+
+/**
+ * `pid`'s descendants and every captured identity's live process with its
+ * descendants, split into the readable targets and the unreadable pids.
+ */
+function collectTargets(
+  pid: number,
+  rows: readonly ProcessRow[],
+  captured: readonly Identity[],
+): { targets: ProcessRow[]; unreadable: number[] } {
   const targets: ProcessRow[] = [];
   const unreadable: number[] = [];
   const seen = new Set<number>([pid]);
@@ -110,32 +168,31 @@ export async function reapSurvivingDescendants(
     }
   };
   take(pid);
+  // A captured identity whose row is now unreadable is taken too: its
+  // partition reports it, and what it started, as unreadable.
   for (const identity of captured) {
-    const row = liveRow(rows, identity);
+    const row = liveOrUnreadable(rows, identity);
     if (row && !seen.has(row.pid)) take(row.pid);
   }
-  const signalled: number[] = [];
-  await signalIdentityTargets(targets, "SIGKILL", {
-    table,
-    deadline,
-    ...(deps.kill ? { kill: deps.kill } : {}),
-    onKilled: (target) => {
-      signalled.push(target.pid);
-    },
-  });
+  return { targets, unreadable };
+}
+
+/** The targets not witnessed gone by the time `remaining` runs out. */
+async function witnessGone(
+  targets: readonly ProcessRow[],
+  table: Table,
+  remaining: () => number,
+  pause: (ms: number) => Promise<void>,
+): Promise<number[]> {
   let survived = targets.map((row) => row.pid);
-  while (survived.length > 0) {
+  while (survived.length > 0 && remaining() > 0) {
     const now = await table();
     if (now !== null)
       survived = targets
-        .filter(
-          (target) =>
-            now.some((row) => row.pid === target.pid && row.start === "") ||
-            liveRow(now, target) !== undefined,
-        )
+        .filter((target) => liveOrUnreadable(now, target) !== undefined)
         .map((row) => row.pid);
-    if (survived.length === 0 || Date.now() >= deadline) break;
-    await pause(Math.min(100, Math.max(0, deadline - Date.now())));
+    if (survived.length === 0 || remaining() === 0) break;
+    await pause(Math.min(100, remaining()));
   }
-  return { signalled, unreadable, survived };
+  return survived;
 }
