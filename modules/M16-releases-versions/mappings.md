@@ -155,6 +155,38 @@ The other CI providers request the identity token their own way (GitLab
 CI/CD's `id_tokens` with the registry as its audience, for one); the
 registry's page linked in the first column gives the steps for each.
 
+## Listing what the release contains
+
+A [software bill of materials (SBOM)](../../GLOSSARY.md) lists, in a
+machine-readable file, the components a released artifact contains: each
+dependency's name and version, and its licence and package address where
+the tool knows them. A consumer's vulnerability scanner reads it to answer
+"does this release contain the affected version?" without rebuilding the
+artifact, and some buyers and regulations ask for one: the European Union's
+Cyber Resilience Act requires it of manufacturers whose products are sold
+there from 11 December 2027. Generate it in the job that builds the release,
+from the tag's commit, never by hand; list what the artifact ships, so
+leave out development-only dependencies; and publish it beside the
+artifact. CycloneDX and SPDX are the two formats; scanners and the
+attestation below read either as JSON.
+
+| Ecosystem | Generator | What it reads |
+|-----------|-----------|---------------|
+| npm | [`npm sbom --sbom-format cyclonedx --omit dev`](https://docs.npmjs.com/cli/v11/commands/npm-sbom) (or `spdx`) | the installed dependency tree; `--package-lock-only` reads the lockfile alone, which leaves out details only the installed packages hold |
+| Python | [`cyclonedx-py poetry --no-dev -o <file>`](https://github.com/CycloneDX/cyclonedx-python); `pipenv` and `requirements` for those files | the Poetry or Pipenv manifest and lockfile, or a requirements file; `cyclonedx-py environment` reads an installed environment instead |
+| Rust | [`cargo cyclonedx --format json`](https://github.com/CycloneDX/cyclonedx-rust-cargo) | the workspace's dependency graph; it writes one SBOM beside each `Cargo.toml` |
+| Any, including a container image | [`syft <directory-or-image> -o cyclonedx-json=<file>`](https://github.com/anchore/syft) (or `spdx-json=`) | the packages it finds in a directory or an image, across ecosystems, so it also lists what an image's base layers add |
+| A GitHub repository | the dependency graph's [SBOM export](https://docs.github.com/en/rest/dependency-graph/sboms), SPDX, through the `generate-report` and `fetch-report` endpoints | the repository's dependency graph, not one built artifact; it suits a repository that releases no package |
+
+On GitHub Actions, [`actions/attest`](https://github.com/actions/attest)
+signs the SBOM as an attestation bound to the artifact's digest:
+`subject-path` names the artifact and `sbom-path` the SBOM (JSON, at most
+16 megabytes), with `permissions: id-token: write, attestations: write,
+artifact-metadata: write`. A consumer checks it with
+`gh attestation verify`. The attestation proves which workflow produced the
+SBOM for which artifact; publishing the SBOM file with the release as well
+lets a scanner without GitHub's tooling read it.
+
 ## Release channels
 
 A channel is a name a consumer installs from that the release tooling moves
