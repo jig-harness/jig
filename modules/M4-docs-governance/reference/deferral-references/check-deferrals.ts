@@ -339,9 +339,23 @@ export function liveFindings(
 
 // ── Which documents and lines ──────────────────────────────────────────────
 
-function git(root: string, args: string[]): string {
+type Env = Record<string, string | undefined>;
+
+/**
+ * The repository a run judges, and the environment every git call in it runs
+ * with: the caller's, so the repository and index git reads (`GIT_DIR`,
+ * `GIT_INDEX_FILE`, ...) are the ones the caller named.
+ */
+interface Repo {
+  root: string;
+  env: Env;
+}
+
+function gitRaw(repo: Repo, args: string[], stdin?: Buffer): Buffer {
   const result = Bun.spawnSync(["git", ...args], {
-    cwd: root,
+    cwd: repo.root,
+    env: repo.env,
+    ...(stdin === undefined ? {} : { stdin }),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -349,13 +363,15 @@ function git(root: string, args: string[]): string {
     throw new DeferralsError(
       `git ${args.join(" ")}: ${result.stderr.toString().trim()}`,
     );
-  return result.stdout.toString();
+  return result.stdout;
 }
 
+const git = (repo: Repo, args: string[]) => gitRaw(repo, args).toString();
+
 /** The commit the new side is compared with. Both sides of a range are required. */
-export function oldSide(root: string, range: string): string {
+export function oldSide(repo: Repo, range: string): string {
   const resolveCommit = (ref: string) =>
-    git(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]).trim();
+    git(repo, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]).trim();
   const triple = range.split("...");
   const double = triple.length === 1 ? range.split("..") : [];
   const sides =
@@ -369,7 +385,7 @@ export function oldSide(root: string, range: string): string {
   // The new side is the working tree, but a named right side must still exist.
   const newCommit = right === undefined ? undefined : resolveCommit(right);
   if (triple.length > 1 && newCommit !== undefined)
-    return git(root, ["merge-base", oldCommit, newCommit]).trim();
+    return git(repo, ["merge-base", oldCommit, newCommit]).trim();
   return oldCommit;
 }
 
@@ -410,10 +426,10 @@ interface Source {
 export type Mode = "all" | "staged" | { range: string };
 
 /** Every tracked document in scope, whole, from the working tree. */
-function trackedSources(root: string, config: Config): Source[] {
+function trackedSources(repo: Repo, config: Config): Source[] {
   const out: Source[] = [];
-  for (const path of git(root, ["ls-files", "-z"]).split("\0")) {
-    const full = join(root, path);
+  for (const path of git(repo, ["ls-files", "-z"]).split("\0")) {
+    const full = join(repo.root, path);
     if (!path || !inScope(config, path) || !existsSync(full)) continue;
     if (!lstatSync(full).isFile()) continue;
     out.push({ path, content: readFileSync(full, "utf8") });
@@ -422,9 +438,9 @@ function trackedSources(root: string, config: Config): Source[] {
 }
 
 /** Every document in scope as the index holds it, for a staged change. */
-function indexedSources(root: string, config: Config): Source[] {
+function indexedSources(repo: Repo, config: Config): Source[] {
   const blobs: Array<{ path: string; sha: string }> = [];
-  for (const entry of git(root, ["ls-files", "-s", "-z"]).split("\0")) {
+  for (const entry of git(repo, ["ls-files", "-s", "-z"]).split("\0")) {
     const match = /^(\d+) ([0-9a-f]+) \d+\t(.*)$/s.exec(entry);
     // Regular files only (100644, 100755): not links, not submodules.
     if (match === null || !match[1]?.startsWith("100")) continue;
@@ -437,17 +453,11 @@ function indexedSources(root: string, config: Config): Source[] {
     if (inScope(config, path)) blobs.push({ path, sha });
   }
   if (blobs.length === 0) return [];
-  const result = Bun.spawnSync(["git", "cat-file", "--batch"], {
-    cwd: root,
-    stdin: Buffer.from(blobs.map((b) => `${b.sha}\n`).join("")),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if (result.exitCode !== 0)
-    throw new DeferralsError(
-      `git cat-file --batch: ${result.stderr.toString().trim()}`,
-    );
-  const output = result.stdout;
+  const output = gitRaw(
+    repo,
+    ["cat-file", "--batch"],
+    Buffer.from(blobs.map((b) => `${b.sha}\n`).join("")),
+  );
   const out: Source[] = [];
   let at = 0;
   for (const { path, sha } of blobs) {
@@ -467,27 +477,27 @@ function indexedSources(root: string, config: Config): Source[] {
 
 /** The documents in scope that a staged change or a range changes, with the lines it adds. */
 function changedSources(
-  root: string,
+  repo: Repo,
   config: Config,
   mode: "staged" | { range: string },
   configRelative: string,
 ): Source[] {
   const staged = mode === "staged";
-  const base = staged ? ["--cached"] : [oldSide(root, mode.range)];
+  const base = staged ? ["--cached"] : [oldSide(repo, mode.range)];
   const names = (...filter: string[]) =>
-    git(root, ["diff", "-z", "--name-only", ...filter, ...base]).split("\0");
+    git(repo, ["diff", "-z", "--name-only", ...filter, ...base]).split("\0");
   // A new `items` pattern or marker changes what every document must satisfy,
   // so any change to the configuration (a removal or a change of type
   // included) judges them all.
   if (names().includes(configRelative))
-    return staged ? indexedSources(root, config) : trackedSources(root, config);
+    return staged ? indexedSources(repo, config) : trackedSources(repo, config);
   const paths = names("--diff-filter=ACMR");
   const out: Source[] = [];
   for (const path of paths) {
     if (!path || !inScope(config, path)) continue;
-    const full = join(root, path);
+    const full = join(repo.root, path);
     if (!staged && !lstatSync(full).isFile()) continue;
-    const diff = git(root, [
+    const diff = git(repo, [
       "diff",
       "-U0",
       "--no-color",
@@ -502,7 +512,7 @@ function changedSources(
       `:(literal)${path}`,
     ]);
     const content = staged
-      ? git(root, ["show", `:${path}`])
+      ? git(repo, ["show", `:${path}`])
       : readFileSync(full, "utf8");
     out.push({ path, content, added: addedLines(diff, content) });
   }
@@ -511,37 +521,37 @@ function changedSources(
 
 /** For a staged change, the configuration's path in the index when the index has it. */
 function indexedConfig(
-  root: string,
+  repo: Repo,
   configPath: string,
   mode: Mode | undefined,
 ): string | undefined {
-  const path = relativePath(root, configPath);
+  const path = relativePath(repo.root, configPath);
   return mode === "staged" &&
-    git(root, ["ls-files", "-z", "--", `:(literal)${path}`]) !== ""
+    git(repo, ["ls-files", "-z", "--", `:(literal)${path}`]) !== ""
     ? path
     : undefined;
 }
 
 /** The configuration a run judges by: for a staged change, the index's copy. */
-function configText(root: string, configPath: string, mode: Mode): string {
-  const indexed = indexedConfig(root, configPath, mode);
+function configText(repo: Repo, configPath: string, mode: Mode): string {
+  const indexed = indexedConfig(repo, configPath, mode);
   return indexed === undefined
     ? readFileSync(configPath, "utf8")
-    : git(root, ["show", `:${indexed}`]);
+    : git(repo, ["show", `:${indexed}`]);
 }
 
 const relativePath = (root: string, path: string) =>
   relative(root, path).split(sep).join("/");
 
 function sources(
-  root: string,
+  repo: Repo,
   config: Config,
   mode: Mode,
   configPath: string,
 ): Source[] {
   return mode === "all"
-    ? trackedSources(root, config)
-    : changedSources(root, config, mode, relativePath(root, configPath));
+    ? trackedSources(repo, config)
+    : changedSources(repo, config, mode, relativePath(repo.root, configPath));
 }
 
 // ── Command line ───────────────────────────────────────────────────────────
@@ -555,7 +565,7 @@ export function format(path: string, finding: Finding): string {
 
 /** What a command line asks for, checked as a whole. */
 interface Plan {
-  root: string;
+  repo: Repo;
   configPath: string;
   /** Absent: `--ci` with no range, which compares nothing. */
   mode?: Mode;
@@ -638,30 +648,28 @@ function modeOf(flags: Flags, range: string | undefined): Mode | undefined {
   return flags.ci ? undefined : "staged";
 }
 
-function plan(
-  argv: string[],
-  env: Record<string, string | undefined>,
-  cwd: string,
-): Plan {
+function plan(argv: string[], env: Env, cwd: string): Plan {
   const flags = readFlags(argv);
   refuseContradiction(flags);
-  let root: string;
+  let repo: Repo;
   try {
-    root = git(cwd, ["rev-parse", "--show-toplevel"]).trim();
+    const top = git({ root: cwd, env }, ["rev-parse", "--show-toplevel"]);
+    repo = { root: top.trim(), env };
   } catch {
     throw new DeferralsError("not inside a git repository");
   }
+  const { root } = repo;
   const configPath =
     flags.config === undefined
       ? join(root, DEFAULT_CONFIG)
       : inRepository(root, cwd, flags.config, "--config");
   const mode = modeOf(flags, flags.range ?? (env.DIFF_RANGE || undefined));
   if (mode !== undefined && mode !== "all")
-    refuseAlias(root, configPath, flags.config ?? DEFAULT_CONFIG, mode);
+    refuseAlias(repo, configPath, flags.config ?? DEFAULT_CONFIG, mode);
   // A staged change is judged by the configuration the commit holds, never
   // by a working-tree copy beside it: one the index lacks (never added, or
   // its removal staged) is refused.
-  if (mode === "staged" && indexedConfig(root, configPath, mode) === undefined)
+  if (mode === "staged" && indexedConfig(repo, configPath, mode) === undefined)
     throw new DeferralsError(
       existsSync(configPath)
         ? `configuration ${configPath} is not in the index; --staged judges by the configuration the commit holds, so stage it`
@@ -672,7 +680,7 @@ function plan(
       `configuration ${configPath} does not exist (see templates/deferral-references.yaml)`,
     );
   return {
-    root,
+    repo,
     configPath,
     listKeys: flags.listKeys,
     ...(mode === undefined ? {} : { mode }),
@@ -724,16 +732,16 @@ function inRepository(
  * working tree's copy, so a link there is refused whatever the index holds.
  */
 function refuseAlias(
-  root: string,
+  repo: Repo,
   configPath: string,
   named: string,
   mode: Mode,
 ): void {
   if (!existsSync(configPath)) return;
-  const path = relativePath(root, configPath);
-  const real = relativePath(realpathSync(root), realpathSync(configPath));
+  const path = relativePath(repo.root, configPath);
+  const real = relativePath(realpathSync(repo.root), realpathSync(configPath));
   if (path === real) return;
-  const entry = git(root, ["ls-files", "-s", "-z", "--", `:(literal)${path}`]);
+  const entry = git(repo, ["ls-files", "-s", "-z", "--", `:(literal)${path}`]);
   if (mode === "staged" && entry.startsWith("100")) return;
   throw new DeferralsError(
     `configuration ${named} is reached through a link; name it by the path the repository tracks it at (${real})`,
@@ -764,7 +772,7 @@ function report(judged: Judged[], states: Map<string, ItemState> | undefined) {
 
 export function run(
   argv: string[],
-  env: Record<string, string | undefined> = process.env,
+  env: Env = process.env,
   cwd = process.cwd(),
 ): number {
   const asked = plan(argv, env, cwd);
@@ -775,10 +783,10 @@ export function run(
     return 0;
   }
   const config = parseConfig(
-    configText(asked.root, asked.configPath, asked.mode),
+    configText(asked.repo, asked.configPath, asked.mode),
     asked.configPath,
   );
-  const judged = sources(asked.root, config, asked.mode, asked.configPath).map(
+  const judged = sources(asked.repo, config, asked.mode, asked.configPath).map(
     (source) => ({
       source,
       reading: readDocument(source.content, config),
