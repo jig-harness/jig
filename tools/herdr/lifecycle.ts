@@ -51,6 +51,8 @@ export const HOOKS_DIR = ".config/worktree-hooks";
 export const HOOK_TIMEOUT_MS = 15 * 60_000;
 /** How long the tool waits for the plugin event to take the claim before running the hook itself. */
 export const PLUGIN_GRACE_MS = 5_000;
+/** The hook output kept for the log; a dependency install is verbose. */
+const HOOK_OUTPUT_BYTES = 256 * 1024 * 1024;
 const POLL_MS = 500;
 
 export type Hook = "create" | "remove";
@@ -100,14 +102,17 @@ export function runHook(
     cwd: worktree,
     env: withoutLeakyGitEnv(),
     timeout: HOOK_TIMEOUT_MS,
+    maxBuffer: HOOK_OUTPUT_BYTES,
   });
   for (const stream of [result.stdout, result.stderr])
     for (const line of (stream ?? "").split("\n"))
       if (line !== "") ctx.log(line);
-  if (result.status !== 0) {
+  if (result.status !== 0 || result.error !== undefined) {
     if (groupFile !== undefined) endGroup(groupFile);
     throw new HerdrError(
-      `${path} failed (exit ${result.status ?? "none: killed or timed out"})`,
+      result.error === undefined
+        ? `${path} failed (exit ${result.status ?? "none: killed"})`
+        : `${path} did not complete: ${result.error.message}`,
     );
   }
 }

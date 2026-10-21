@@ -39,7 +39,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
-import { errnoCode } from "../../plugin/shared/errors.ts";
+import { errnoCode, swallow } from "../../plugin/shared/errors.ts";
 import { parseEnvelope, probeAgentSession } from "./herdr.ts";
 import { type Context, HerdrError, output, type RunResult } from "./runner.ts";
 import type { Spawned } from "./spawn.ts";
@@ -383,7 +383,11 @@ function setReceipt(ctx: Context, key: string, line: string | null): void {
     writeFileSync(temp, `${line}\n`, { mode: 0o600 });
     renameSync(temp, path);
   } catch (error) {
-    rmSync(temp, { force: true });
+    try {
+      rmSync(temp, { force: true });
+    } catch (cleanup) {
+      swallow(cleanup, "the receipt's temporary file could not be removed");
+    }
     throw new HerdrError(
       `could not write the kickoff receipt ${path} (${(error as Error).message})`,
     );

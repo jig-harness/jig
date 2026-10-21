@@ -48,13 +48,15 @@ export const stderrLog: Log = (line) => console.error(line);
  * Run on this machine. The environment is the caller's without the variables
  * that would point git at another repository (a hook exports them), so a
  * herdr or git call keeps `HERDR_SOCKET_PATH`, the SSH agent and the user's
- * git configuration.
+ * git configuration. Messages are kept untranslated (`LC_ALL=C`), since
+ * some of git's are matched as text: a translated "couldn't find remote ref"
+ * would read as a transport failure.
  */
 export const localRunner: Runner = (argv, options) => {
   const [command, ...args] = argv;
   if (command === undefined) throw new HerdrError("empty command");
   const result = spawnSync(command, args, {
-    env: withoutLeakyGitEnv(),
+    env: { ...withoutLeakyGitEnv(), LC_ALL: "C", LANGUAGE: "" },
     timeout: options?.timeoutMs ?? COMMAND_TIMEOUT_MS,
     ...(options?.cwd === undefined ? {} : { cwd: options.cwd }),
   });

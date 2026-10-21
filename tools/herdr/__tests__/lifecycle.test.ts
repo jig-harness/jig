@@ -17,6 +17,7 @@ import {
   HOOKS_DIR,
   hookPath,
   runCreateHook,
+  runHook,
 } from "../lifecycle.ts";
 import { type Context, localContext } from "../runner.ts";
 
@@ -60,16 +61,14 @@ function fixture(hooks: { create?: string; remove?: string }) {
   return { root, clone, worktree };
 }
 
+/** The worktree's git directory, read without a caller's `GIT_DIR`. */
 function gitDirOf(worktree: string): string {
-  return Bun.spawnSync([
-    "git",
-    "-C",
-    worktree,
-    "rev-parse",
-    "--absolute-git-dir",
-  ])
-    .stdout.toString()
-    .trim();
+  const revParse = Bun.spawnSync(
+    ["git", "-C", worktree, "rev-parse", "--absolute-git-dir"],
+    { env: { ...process.env, GIT_DIR: undefined, GIT_WORK_TREE: undefined } },
+  );
+  expectSpawnExit(revParse, 0, "git rev-parse --absolute-git-dir");
+  return revParse.stdout.toString().trim();
 }
 
 const quiet = (): Context & { lines: string[] } => {
@@ -110,15 +109,7 @@ describe("the create hook", () => {
 
   test("a claim whose owner ended without a result is taken over and the hook run", () => {
     const { worktree } = fixture({ create: 'echo ran >> "$PWD/.hook-runs"' });
-    const gitDir = Bun.spawnSync([
-      "git",
-      "-C",
-      worktree,
-      "rev-parse",
-      "--absolute-git-dir",
-    ])
-      .stdout.toString()
-      .trim();
+    const gitDir = gitDirOf(worktree);
     const claim = join(gitDir, "jig", "worktree-create.claim");
     mkdirSync(claim, { recursive: true });
     // A process id above every system's maximum is never running.
@@ -178,6 +169,13 @@ describe("the create hook", () => {
       }
     }
     expect(alive).toBe(false);
+  });
+
+  test("a hook that cannot be started says so", () => {
+    const { worktree } = fixture({});
+    const hook = join(worktree, "broken-hook");
+    writeFileSync(hook, "#!/nonexistent/interpreter\n", { mode: 0o755 });
+    expect(() => runHook(quiet(), worktree, hook)).toThrow("did not complete");
   });
 
   test("a hook that is not executable is an error, a missing one nothing", () => {

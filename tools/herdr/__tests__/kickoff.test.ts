@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -314,20 +313,19 @@ describe("kickoff", () => {
     const ctx = withReceipt(
       {
         [get]: session("s-1"),
-        // The receipt directory turns read-only once the prompt is sent.
+        // A directory takes the final receipt's temporary name once the
+        // prompt is sent, which fails the write even for root.
         [send]: () => {
-          chmodSync(dirname(receiptPath(ctx, KEY)), 0o500);
+          mkdirSync(join(`${receiptPath(ctx, KEY)}.${process.pid}.tmp`, "x"), {
+            recursive: true,
+          });
           return ok();
         },
         [read]: ok("❯ more output than the rows read\n"),
       },
       `${KEY}:${A}:s-0`,
     );
-    try {
-      expect(kickoff(ctx, spawned(), options)).toBe("sent");
-    } finally {
-      chmodSync(dirname(receiptPath(ctx, KEY)), 0o700);
-    }
+    expect(kickoff(ctx, spawned(), options)).toBe("sent");
     expect(receipt(ctx)).toBe(`pending ${KEY}:${A}:s-1\n`);
     expect(ctx.lines.join("\n")).toContain("receipt stays pending");
     const sends = ctx.calls.filter((call) => call === send).length;

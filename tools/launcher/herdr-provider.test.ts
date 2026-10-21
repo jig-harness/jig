@@ -160,6 +160,13 @@ describe("open", () => {
     expect(loginShellPath(env, answer(0, "/opt/homebrew/bin:/usr/bin"))).toBe(
       "/opt/homebrew/bin:/usr/bin",
     );
+    // A profile's banner comes first; the PATH is the last line.
+    expect(
+      loginShellPath(
+        env,
+        answer(0, "Welcome\nnvm: using 22\n/opt/bin:/usr/bin"),
+      ),
+    ).toBe("/opt/bin:/usr/bin");
     expect(loginShellPath(env, answer(1, ""))).toBe("/usr/bin");
     expect(loginShellPath({ PATH: "/usr/bin" }, answer(0, "/x"))).toBe(
       "/usr/bin",

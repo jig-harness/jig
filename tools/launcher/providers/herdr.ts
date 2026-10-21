@@ -174,14 +174,15 @@ export function loginShellPath(
   const shell = env.SHELL;
   if (shell === undefined || !shell.startsWith("/")) return env.PATH;
   try {
-    const read = spawn([shell, "-l", "-c", 'printf %s "$PATH"'], {
+    const read = spawn([shell, "-l", "-c", 'printf "\\n%s" "$PATH"'], {
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
       timeout: 10_000,
       env,
     });
-    const path = read.stdout.toString().trim();
+    // A profile may print to stdout first; the PATH is the last line.
+    const path = read.stdout.toString().split("\n").at(-1)?.trim() ?? "";
     return read.exitCode === 0 && path !== "" ? path : env.PATH;
   } catch {
     return env.PATH;
