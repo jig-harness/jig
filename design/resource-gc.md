@@ -100,9 +100,9 @@ the facts the kind's predicates need.
 
 | Kind | The repository declares | Live when | Collected when |
 |------|------------------------|-----------|----------------|
-| Worktrees | the worktree roots, the base branch | the branch has an open pull request, or uncommitted or untracked changes, or commits on no remote branch, or an operation in progress (merge, rebase, cherry-pick, bisect) | no live condition holds (each one vetoes collection on its own), and its pull request merged, or closed with every commit on a remote branch (the branches kind keeps a closed-but-unmerged branch), or it has no pull request, is 0 commits ahead of the base and idle past the guard |
+| Worktrees | the worktree roots, the base branch | the branch has an open pull request, or uncommitted or untracked changes, or commits that are on no remote branch and not in the history of its merged pull request's head as the forge records it (a squash merge leaves the topic commits outside the base's history, so ancestry alone cannot clear them), or an operation in progress (merge, rebase, cherry-pick, bisect) | no live condition holds (each one vetoes collection on its own), and its pull request merged, or closed with every commit on a remote branch (the branches kind keeps a closed-but-unmerged branch), or it has no pull request, is 0 commits ahead of the base and idle past the guard |
 | Tool state | nothing: `drive-pr` registers its own state directory | a live lease, a pull request still open or closed-but-unmerged | the predicate `reap-state.ts` already applies, per clone on the machine rather than the current clone only |
-| Scratch directories | the prefixes its tools use (`lib/test-tmpdir.ts`'s, a gate workspace prefix, a `.context/` path) | the owner process recorded beside the directory, by its captured identity, is alive | no live owner and idle past the guard; a directory under no registered prefix is never a candidate, and one under a registered prefix with no owner record is a finding |
+| Scratch directories | the prefixes its tools use (`lib/test-tmpdir.ts`'s, a gate workspace prefix, a `.context/` path) | an owner recorded anywhere in its subtree, by captured identity, is alive: the directory's own owner, the owner of a child scope created inside it, or a process the owner registered (build step 4), so a root is never judged while a scope or fixture inside it may still be using it | no live owner and idle past the guard; a directory under no registered prefix is never a candidate, and one under a registered prefix with no owner record is a finding |
 | Containers, volumes and images | the compose project names its worktrees derive, as the namespace reaper derives a schema name | a container of the project runs, or the project's worktree exists | the project's worktree is gone and no container runs; dangling images and build cache are a machine-level kind, since they belong to no repository, collected when the engine reports that no image or container references them, with age as the guard |
 | Branches | the base branch, the forge | checked out in a worktree, or its pull request is open, or closed without merging | merged into the base and its remote branch gone; a closed-but-unmerged pull request is kept, since the forge lets it reopen |
 | Processes | nothing: a tool registers the trees it starts | the registered owner is alive | the owner is gone and the tree still runs |
@@ -152,8 +152,13 @@ A declaration is deletion authority, so where it is read from matters. A
 scheduled run never reads it from a worktree's checkout, where any branch
 can widen it: it reads the declaration committed on the base branch's
 remote tip, and collects only within the bounds `jig gc install` recorded in
-the machine entry when a person confirmed it (the kinds, roots, prefixes and
-projects shown at install). A base-branch declaration wider than the
+the machine entry when a person confirmed it (the remote and the base branch
+the declaration is read from, and the kinds, roots, prefixes and projects
+shown at install). The remote and base branch are recorded, never re-derived
+at run time: the derivation above runs once, at install, where a person sees
+its answer, so a branch that changes `repository.base_branch` cannot redirect
+a scheduled run to its own declaration. Changing either takes install again,
+with confirmation. A base-branch declaration wider than the
 recorded bounds is reported as a finding, and the widened part is not
 collected until install is run again and confirmed.
 
@@ -235,8 +240,11 @@ until the one before it has run for real in a working repository (Jig's
    tool-state kind wrapping `reap-state.ts` across every clone on the
    machine; the scratch kind over `lib/test-tmpdir.ts`'s prefix, with the
    helper writing an owner record (the creating process's captured
-   identity) beside each directory it creates, under the lock the collector
-   takes to decide at the drop. Directories leaked before that record
+   identity) beside each directory it creates, child scopes included, under
+   the lock the collector takes to decide at the drop. The scratch kind only
+   reports until step 4: a dead owner may have started a fixture that still
+   uses the directory, and until the test runner registers its fixtures no
+   record proves it did not; age would be deciding, not guarding. Directories leaked before that record
    existed are reported as findings, not collected. The
    `gc` sections in both configuration layers, documented in
    `CONFIGURATION.md`. M12's README and `mappings.md` gain the practice and
@@ -256,7 +264,8 @@ until the one before it has run for real in a working repository (Jig's
    clone tracks its open pull requests.
 4. **Processes.** The registry generalised from `drive-pr` to a shared
    module any tool can record into, the test runner registering its
-   fixtures, and the kind reaping registered trees whose owner is gone. Done
+   fixtures, the kind reaping registered trees whose owner is gone, and the
+   scratch kind collecting as well as reporting. Done
    when the orphan count on a machine running the suite in several
    worktrees stays at zero without a hand-written sweep.
 
