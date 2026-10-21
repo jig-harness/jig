@@ -595,6 +595,11 @@ make, use the entry's term instead.
   why. Jig's conflict report replays every merge in a range of time and gives
   each conflicting region a *cause*: a fact every change edits in one place
   (a count, a list, a version), or two changes to the same lines.
+- **Live conflict record** — the line of JSON Jig's conflict tooling appends,
+  for each conflicted file, when a merge, rebase, cherry-pick or revert
+  concludes: which file, why it conflicted, what was decided, and whether a
+  review-loop round started the resolution. It keeps the conflicts a merge replay cannot see, because a
+  rebase leaves no merge commit to merge again.
 - **Changelog** — a file listing each release's notable changes, newest
   first, written for the people who use the *released artifact* it belongs
   to. Jig's follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
@@ -959,6 +964,9 @@ make, use the entry's term instead.
   against them before it's ever allowed to block anything.
 - **Review lens** — one additive, numbered check taught to a reviewer (a
   prompt module or checklist bullet), typically born from a documented miss.
+- **Seed lens** — a *review lens* Jig ships rather than one a repository grew
+  from its own misses: the review form of one rule a Jig module states, for
+  the part of the rule no gate can check.
 - **Tiered review** — a review that runs cheap pattern checks first, contract
   checks second, and an expensive semantic review last; each tier can block
   or warn, and a change only pays for the tiers its file types need.

@@ -102,8 +102,9 @@ function mappedEntry(
     new Map([[path, stages]]),
   )[path];
   if (entry === undefined) fail(2, `record: cannot map ${given}`);
-  snapshot.paths[path] = entry;
-  return entry;
+  const clean: PathEntry = { ...entry, clean: true };
+  snapshot.paths[path] = clean;
+  return clean;
 }
 
 async function main(): Promise<number> {

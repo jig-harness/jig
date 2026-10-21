@@ -160,7 +160,7 @@ criteria:
   - id: external-preconditions-issue-reconciled
     level: standard
     requires: mechanical
-    since: next
+    since: 0.71.0
     statement: >-
       Each external-precondition registry maintains exactly one current tracker
       issue while anything is unresolved, updates it after each observation,
