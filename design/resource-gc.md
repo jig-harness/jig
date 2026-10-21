@@ -87,10 +87,10 @@ receipts and the second decision come from the runner, not from the helper.
   the removal. Where a tool outside Jig creates it (git for worktrees and
   branches, the container engine for volumes), no lock can be imposed on the
   creator, so the kind removes through the tool's own refusing operation
-  (`git worktree remove` without `--force` refuses a dirty worktree,
-  `git branch -d` an unmerged branch or one checked out in a worktree, the
-  engine's volume removal a volume a container references) and treats its
-  refusal as the resource being live.
+  (`git worktree remove` without `--force` refuses a dirty worktree, git's
+  reference deletion given an expected old value refuses a branch whose tip
+  moved, the engine's volume removal a volume a container references) and
+  treats its refusal as the resource being live.
   A refusing operation covers only the conditions it checks itself: every
   other veto in the kind's live predicate needs the lock, and where a veto
   has neither, the cases it decides are reported, not collected. The
@@ -133,7 +133,7 @@ the facts the kind's predicates need.
 | Tool state | nothing: `drive-pr` registers its own state directory | a live lease, a pull request still open or closed-but-unmerged | the predicate `reap-state.ts` already applies, per clone on the machine rather than the current clone only |
 | Scratch directories | the prefixes its tools use (`lib/test-tmpdir.ts`'s, a gate workspace prefix, a `.context/` path) | an owner recorded anywhere in its subtree, by captured identity, is alive: the directory's own owner, the owner of a child scope created inside it, or a process the owner registered (build step 4), so a root is never judged while a scope or fixture inside it may still be using it | no live owner and idle past the guard; a directory under no registered prefix is never a candidate, and one under a registered prefix with no owner record is a finding |
 | Containers, volumes and images | the compose project names its worktrees derive, as the namespace reaper derives a schema name | the project's worktree exists; for a container, it is running; for a volume, any container, running or stopped and of any project, references it | the project's worktree is gone, proven under the worktrees kind's lock held exclusive across the final proof and every removal for the project, so the tool that opens worktrees cannot recreate it in between; the kind collects only where that tool opens the repository's worktrees, as the worktrees kind does, and reports elsewhere. A stopped container of the project is then removed through the engine's container removal without force, which refuses a running one, and a volume, once the engine's inventory shows no container of any project referencing it, through the engine's volume removal, which refuses one a container references; either refusal is recorded as live in the report and the receipt. Dangling images and build cache are a machine-level kind, since they belong to no repository, collected when the engine reports that no image or container references them and through the engine's own prune, which refuses cache an active build holds; that refusal is recorded as live in the report and the receipt, with age as the guard |
-| Branches | the base branch, the forge | checked out in a worktree, or its pull request is open, or closed without merging | its pull request merged as the forge records it (so a squash merge counts, as in the worktrees kind), or with no pull request merged into the base by ancestry, and its remote branch gone; a closed-but-unmerged pull request is kept, since the forge lets it reopen. The removal is `git branch -d` either way. For a forge-recorded merge it runs from a temporary detached worktree at the merged pull request's head, fetched from the forge: with the remote branch gone git judges the branch against that worktree's HEAD, so it deletes a branch whose tip is in the merged head's history and refuses one carrying a commit the forge never merged, or one checked out in any worktree, reading the tip and deleting it in one operation, so a commit landing in between is refused too. The temporary worktree is removed afterwards |
+| Branches | the base branch, the forge | checked out in a worktree, or its pull request is open, or closed without merging | its pull request merged as the forge records it (so a squash merge counts, as in the worktrees kind), or with no pull request merged into the base by ancestry, and its remote branch gone; a closed-but-unmerged pull request is kept, since the forge lets it reopen. Ancestry is tested explicitly against the merged pull request's head fetched from the forge, or the install-recorded base: the branch's tip must be in that commit's history, and no upstream or remote-tracking ref the branch is configured with takes part. The removal is git's reference deletion given that same tip as the expected old value (`git update-ref -d refs/heads/<branch> <tip>`), which locks the reference and refuses if the tip moved, so a commit landing after the ancestry test is refused rather than deleted; that refusal is recorded as live. The deletion does not check worktrees, so the final read that no worktree has the branch checked out and the deletion run under the worktrees kind's lock held exclusive, and branches are collected only where the tool that opens the repository's worktrees takes that lock, as for containers, and reported elsewhere. The primary checkout takes no lock, so after the deletion the run reads every worktree's HEAD once more, the primary's included, and recreates the reference at the same tip only if it is still absent (`git update-ref refs/heads/<branch> <tip> ''`) when one names it; the tip was proven merged, so nothing is lost either way |
 | Processes | nothing: a tool registers the trees it starts | the registered owner is alive | the owner is gone and the tree still runs |
 
 The processes kind deserves a word, because the obvious design is wrong. An
@@ -294,7 +294,8 @@ until the one before it has run for real in a working repository (Jig's
    inventory afterwards.
 3. **Branches.** Merged as the forge records it, squash merges included, or
    into the base by ancestry, and gone from the forge, never checked out,
-   closed-but-unmerged kept. Done when the local branch count of a clone
+   closed-but-unmerged kept, removed by an expected-old-value reference
+   deletion under the worktrees kind's lock. Done when the local branch count of a clone
    tracks its open pull requests.
 4. **Processes.** The registry generalised from `drive-pr` to a shared
    module any tool can record into, the test runner registering its
