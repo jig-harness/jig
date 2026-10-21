@@ -206,7 +206,7 @@ or as a release pull request) and the tag after verification.
 | Piece | What it is |
 |-------|------------|
 | [`changelog` skill](../../plugin/skills/changelog/README.md) | The runnable form: the change note's procedure, `check.ts`, `release.ts`, `status.ts`, `tag.ts`, `convert.ts`, `release-access.ts`, the GitHub Action and the workflow template, and `/jig:changelog setup` |
-| [`mappings.md`](mappings.md) | Release tools per ecosystem, tools for several artifacts in one repository, tagging after verification, checks of what a package holds, the release identity per CI provider, publishing without a stored token, release channels and packages to try before the merge |
+| [`mappings.md`](mappings.md) | Release tools per ecosystem, tools for several artifacts in one repository, tagging after verification, checks of what a package holds, the release identity per CI provider, publishing without a stored token, listing what a release contains, release channels and packages to try before the merge |
 | [maturity criteria](../../plugin/skills/audit/criteria/M16-releases-versions.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
 ### Left out by design
@@ -253,6 +253,13 @@ or as a release pull request) and the tag after verification.
   ecosystems carry it is in [mappings.md](mappings.md#release-channels). It
   becomes a core piece, with an audit criterion, once a second repository
   has run it.
+- **A bill of materials for each release.** A released artifact can carry
+  a [software bill of materials](../../GLOSSARY.md) generated from the
+  tag's commit, which a consumer's scanner reads and some regulations
+  require; [mappings.md](mappings.md#listing-what-the-release-contains)
+  names the generators per ecosystem and how to attest one. It becomes a
+  core piece, with an audit criterion, once a repository has run it in its
+  release.
 - **Other CI providers.** The skill's check and release step run on any
   provider; its workflow template, its tag job and its access check are
   GitHub's until a repository needs another.
