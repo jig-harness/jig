@@ -17,7 +17,7 @@ tags: [adr, windows, process-control]
 
 # ADR-0008: Windows cancellation uses captured process identities
 
-**Status:** Approved · **Date:** 2026-10-20 · **Deciders:** Jig's maintainers, through pull-request review
+**Status:** Approved · **Date:** 2026-10-20 · **Deciders:** Jig's maintainers
 
 ## Context
 
