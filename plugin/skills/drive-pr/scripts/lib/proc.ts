@@ -1,3 +1,4 @@
+import { armProcessDeadline } from "../../../../shared/process-deadline.ts";
 import { spawnCommand } from "../../../../shared/windows-command.ts";
 import { shutdownRequested } from "../../../../shared/cleanup.ts";
 import {
@@ -8,7 +9,7 @@ import { windowsProcessLifecycle } from "../../../../shared/windows-process.ts";
 import { processTable } from "../../../../shared/process-table.ts";
 /**
  * Process spawning with deadlines — the TypeScript successor to
- * `lib/gh-deadline.sh`, and the ONE place `gh` is ever spawned from.
+ * `lib/gh-deadline.sh`, and drive-pr's bounded transport for `gh`.
  *
  * Bound every outbound `gh` call. `gh` has no timeout of its own, and none of
  * this skill's scripts can supply one from their poll loops: a deadline is only
@@ -44,6 +45,7 @@ import {
 import { readdirSync, readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import {
+  ghCallTimeoutSeconds,
   lastBytes,
   readTimeoutEnv,
   registerRunCancellation,
@@ -51,36 +53,14 @@ import {
 } from "../../../../shared/proc.ts";
 import { fail, testPacing } from "./cli.ts";
 
-// The review skill's process layer is the shared base: its timeout reader,
-// and its process-wide cancellation registry and signal forwarder, which
-// importing it installs once for every helper loaded in this process. This
-// module adds the drive loop's richer `run` (stop handles, group witnesses,
-// output caps) and its own deadlines on top. Each skill keeps its own
-// `fail`/`ExitError`, so the accessors that refuse stay here.
-export { readTimeoutEnv };
-
-/**
- * GH_CALL_TIMEOUT with `gh-deadline.sh`'s own refusal semantics (exit 1).
- * Evaluated per call so an entry script that validates the variable itself
- * with a different exit code (resolve-held-thread, exit 2) can run its check
- * first.
- */
-export function ghCallTimeoutSeconds(): number {
-  const read = readTimeoutEnv("GH_CALL_TIMEOUT", 30);
-  if (read.ok) return read.seconds;
-  if (/^0+$/.test(read.raw)) {
-    fail(
-      1,
-      "gh-deadline: GH_CALL_TIMEOUT=0 disables the deadline instead of firing immediately — refusing",
-    );
-  }
-  fail(
-    1,
-    `gh-deadline: GH_CALL_TIMEOUT must be a positive whole number of seconds no`,
-    `greater than 2147483 (got '${read.raw}') — beyond that the millisecond delay`,
-    "overflows a 32-bit timer and fires immediately, inverting the deadline.",
-  );
-}
+// Shared timeout readers and the process-wide cancellation registry serve
+// every helper loaded in this process. The drive transport adds stop handles,
+// group termination witnesses and deadlines for its orchestration steps.
+export {
+  ghCallTimeoutSeconds,
+  readTimeoutEnv,
+  tsArgv,
+} from "../../../../shared/proc.ts";
 
 /**
  * GIT_CALL_TIMEOUT, the same convention as `ghCallTimeoutSeconds()` above but
@@ -306,14 +286,9 @@ export interface RunResult {
    * opposite facts about whether anything happened, and a caller that has to
    * know cannot recover the difference downstream.
    *
-   * Added for the SIBLING skill's `converge.ts`, which releases this skill's
-   * tier-3 lease only when a pass ACTUALLY RAN and could therefore hold a
-   * claim; keyed on `code !== 0` instead, a `codex` binary missing from `PATH`
-   * released a record that invocation never took. Carried here because
-   * `/resolve-review-comments`' `proc.ts` is a hand-ported PARITY COPY of this
-   * file (see the header) and a field on one side only is exactly the drift
-   * that contract exists to prevent. Reported as a separate field rather than
-   * folded into `code` so no existing caller's exit-status reading changes.
+   * A caller releasing a claim must distinguish a process that ran and
+   * failed from a binary that never started. The separate field preserves
+   * that distinction without changing existing exit-status checks.
    */
   spawnFailed: boolean;
   /**
@@ -328,8 +303,7 @@ export interface RunResult {
  * default, which is 1 MiB), kept as this port's default too: a bound of some
  * size is what stands between a runaway `gh`/`git` response and this process's
  * heap — `run()`'s `data` handlers accumulate into JS strings with no bound of
- * their own otherwise (ported from the sibling `/resolve-review-comments` copy,
- * which documents the parity-copy maintenance contract this follows).
+ * their own otherwise.
  */
 export const MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 
@@ -910,39 +884,17 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
       });
     }
 
-    if (opts.timeoutSec !== undefined) {
-      timers.kill = setTimeout(() => {
+    armProcessDeadline(
+      child,
+      timers,
+      opts.timeoutSec,
+      () => KILL_ESCALATE_MS,
+      () => {
         timedOut = true;
-        signalTree("SIGTERM");
-        timers.escalate = setTimeout(() => {
-          signalTree("SIGKILL");
-          // Settle on the DEADLINE's terms, not on 'close'.
-          //
-          // 'close' waits for the stdio streams as well as the exit, and every
-          // descendant inherited those streams — so it does not fire while any
-          // of them lives, and the deadline that just fired would go on waiting
-          // for a grandchild. That is the very hang this timer exists to bound,
-          // so it must not be reachable through it. Measured, not theorised: a
-          // stubbed `git push` whose bash wrapper ran `sleep 10` under a 1s
-          // deadline settled after ten seconds until this line existed.
-          //
-          // The group kill above makes that case rare, not impossible, which is
-          // why this stays rather than being replaced by it: a descendant that
-          // called setpgid has left the group, a non-detached fallback reaches
-          // only the child, and Windows `taskkill` is spawned fire-and-forget.
-          // Each leaves a live handle on the pipes. The kill is the remedy; this
-          // is the guarantee.
-          //
-          // Destroying our ends of the pipes is what lets the runtime exit
-          // afterwards — an orphaned grandchild holding a live handle would
-          // otherwise keep the event loop alive past the resolved promise.
-          child.stdout?.destroy();
-          child.stderr?.destroy();
-          child.unref();
-          settle(124);
-        }, KILL_ESCALATE_MS);
-      }, opts.timeoutSec * 1000);
-    }
+      },
+      signalTree,
+      settle,
+    );
 
     // Set BEFORE `settle`, exactly as `timedOut` and `output.bufferExceeded` are, so
     // the flag is on the result this handler produces.
@@ -1114,8 +1066,7 @@ export async function unconcludedGitOpMarker(
   const dirRes = await git(["rev-parse", "--git-dir"], {
     stderr: "ignore",
     timeoutSec,
-    cwd: opts?.cwd,
-    env: opts?.env,
+    ...opts,
   });
   if (dirRes.code !== 0) return { ok: false };
   const gitDir = dirRes.stdout.trim();
@@ -1129,20 +1080,15 @@ export async function unconcludedGitOpMarker(
       gitDir,
       ...UNCONCLUDED_GIT_OP_MARKERS,
     ],
-    { stderr: "ignore", timeoutSec, cwd: opts?.cwd },
+    {
+      stderr: "ignore",
+      timeoutSec,
+      ...(opts?.cwd === undefined ? {} : { cwd: opts.cwd }),
+    },
   );
   if (probe.code !== 0) return { ok: false };
   const marker = probe.stdout.trim();
   return { ok: true, marker: marker === "" ? null : marker };
-}
-
-/**
- * Argv for a sibling `.ts` script, run under the SAME Bun binary executing
- * this one (`process.execPath`) — the cross-platform replacement for relying
- * on a `#!/usr/bin/env bun` shebang, which Windows cannot honour.
- */
-export function tsArgv(scriptPath: string, args: string[] = []): string[] {
-  return [process.execPath, scriptPath, ...args];
 }
 
 /**
