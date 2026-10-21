@@ -321,9 +321,10 @@ schedule or by nobody.
 [design/resource-gc.md](resource-gc.md) has how it works: one runner, one
 contract (a lifecycle predicate decides, age only guards, report first, fail
 closed, a receipt per run), kinds a repository enables with its own facts,
-and a machine layer for the schedule. What is built:
+and a machine layer for the schedule. What it will build, one pull request
+per step:
 
-- **The runner and the kinds that exist**: `jig gc` with report, collect,
+- **The runner and the first kinds**: `jig gc` with report, collect,
   receipts and install; the worktrees kind moved in from a working
   repository with its scheduler installers; `drive-pr`'s state reaper and the
   test scratch scope as kinds, the scratch scope writing an owner record

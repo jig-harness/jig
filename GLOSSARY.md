@@ -802,9 +802,10 @@ make, use the entry's term instead.
   use, from a fact about its life rather than its age: its pull request
   merged, its worktree is gone, its owner process exited. Age is only an
   extra guard on top of it.
-- **Collection receipt** — the record a garbage-collection run leaves of what
-  it swept: each resource collected with its proof and size, each one
-  refused with its reason, and the exit status.
+- **Collection receipt** — the record every garbage-collection run leaves,
+  a report-only run included: the kinds it evaluated, each resource with its
+  outcome (collected with its proof and size, would be collected, refused
+  with its reason, unverified) and the exit status.
 - **Machine-local store** — a folder outside every *worktree*, one per clone
   and at a path the user can move, where tools keep what the worktrees of one
   machine share: locks, *leases*, a review loop's records, a working copy of

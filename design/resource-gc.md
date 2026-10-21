@@ -57,6 +57,10 @@ receipts and the second decision come from the runner, not from the helper.
   resource is collected because something proves it is dead: its pull
   request merged, its worktree is gone, its owner process exited, its
   container project has no container.
+  The proof covers every holder the resource can have, not the one that is
+  easiest to check: a volume no running container uses may still belong to a
+  stopped one, and a branch with no pull request may still be someone's
+  checkout. A predicate that cannot enumerate a holder treats it as live.
   Wall-clock age is an extra bound on top of that proof, never a substitute
   for it: an age-based sweep cannot prove that no observer still holds a
   reference, and `reap-state.ts` records why it rules one out.
@@ -72,17 +76,32 @@ receipts and the second decision come from the runner, not from the helper.
   a run that collected nothing because nothing qualified exits 0.
 - **Decide again at the drop.** A resource can come back between the report
   and the collection: a worktree reopens on the same branch, a process is
-  respawned. The collecting run re-reads each resource's proof under a lock
-  its creator also takes, the way the namespace reaper
-  [decides at the drop](../modules/M12-parallel-agent-ergonomics/reference/worktree-namespace/README.md#from-decision-to-drop).
+  respawned. The collecting run re-reads each resource's proof immediately
+  before removing it, the way the namespace reaper
+  [decides at the drop](../modules/M12-parallel-agent-ergonomics/reference/worktree-namespace/README.md#from-decision-to-drop),
+  and each kind names what keeps the resource from coming back between that
+  read and the removal. Where Jig's own tooling creates the resource (scratch
+  scopes, `drive-pr` state, registered process trees), that is a per-kind
+  lock file in the machine-local store: the creator takes it shared to create
+  or revive a resource, the collector takes it exclusive for the re-read and
+  the removal. Where a tool outside Jig creates it (git for worktrees and
+  branches, the container engine for volumes), no lock can be imposed on the
+  creator, so the kind removes through the tool's own refusing operation
+  (`git worktree remove` without `--force` refuses a dirty worktree,
+  `git branch -d` an unmerged branch, the engine's volume removal a volume a
+  container references) and treats its refusal as the resource being live.
+  A kind with neither only reports.
 - **Refuse what is not registered.** A resource the repository did not
   declare, or that carries no owner record where one is required, is a
   finding, not a candidate: the missing registration is the defect to report.
   A production target is never a candidate in any kind.
-- **Leave a receipt.** Every run writes one
-  [collection receipt](../GLOSSARY.md) under `~/.local/state/jig/gc/<date>/`:
-  the kinds swept, each resource collected with its proof and size, each one
-  refused with its reason, and the exit status. A person who finds something gone can read why; a sweep that
+- **Leave a receipt.** Every run, report-only included, writes one
+  [collection receipt](../GLOSSARY.md) of its own,
+  `~/.local/state/jig/gc/<date>/<run-id>.json`, where the run id is the
+  run's start time and process id, so two runs on one day never share a
+  file: the kinds evaluated, each resource with its outcome (collected with
+  its proof and size, would be collected, refused with its reason,
+  unverified), and the exit status. A person who finds something gone can read why; a sweep that
   collected far more than usual is visible in the record before anyone
   notices on disk. Receipts are themselves a machine-level kind and the one
   exception to the first rule: a receipt is the runner's own output, nothing
@@ -100,10 +119,10 @@ the facts the kind's predicates need.
 
 | Kind | The repository declares | Live when | Collected when |
 |------|------------------------|-----------|----------------|
-| Worktrees | the worktree roots, the base branch | the branch has an open pull request, or uncommitted or untracked changes, or commits that are on no remote branch and not in the history of its merged pull request's head as the forge records it (a squash merge leaves the topic commits outside the base's history, so ancestry alone cannot clear them), or an operation in progress (merge, rebase, cherry-pick, bisect) | no live condition holds (each one vetoes collection on its own), and its pull request merged, or closed with every commit on a remote branch (the branches kind keeps a closed-but-unmerged branch), or it has no pull request, is 0 commits ahead of the base and idle past the guard |
+| Worktrees | the worktree roots its tooling creates worktrees under, the base branch | the branch has an open pull request, or uncommitted or untracked changes, or commits that are on no remote branch and not in the history of its merged pull request's head as the forge records it (a squash merge leaves the topic commits outside the base's history, so ancestry alone cannot clear them), or an operation in progress (merge, rebase, cherry-pick, bisect) | no live condition holds (each one vetoes collection on its own), and its pull request merged, or closed with every commit on a remote branch (the branches kind keeps a closed-but-unmerged branch), or it has no pull request, is 0 commits ahead of the base, and the session owner the creating tool recorded in it is gone (one with no owner record is a finding), with idleness past the guard on top; the primary checkout and any worktree outside a declared root are never candidates |
 | Tool state | nothing: `drive-pr` registers its own state directory | a live lease, a pull request still open or closed-but-unmerged | the predicate `reap-state.ts` already applies, per clone on the machine rather than the current clone only |
 | Scratch directories | the prefixes its tools use (`lib/test-tmpdir.ts`'s, a gate workspace prefix, a `.context/` path) | an owner recorded anywhere in its subtree, by captured identity, is alive: the directory's own owner, the owner of a child scope created inside it, or a process the owner registered (build step 4), so a root is never judged while a scope or fixture inside it may still be using it | no live owner and idle past the guard; a directory under no registered prefix is never a candidate, and one under a registered prefix with no owner record is a finding |
-| Containers, volumes and images | the compose project names its worktrees derive, as the namespace reaper derives a schema name | a container of the project runs, or the project's worktree exists | the project's worktree is gone and no container runs; dangling images and build cache are a machine-level kind, since they belong to no repository, collected when the engine reports that no image or container references them, with age as the guard |
+| Containers, volumes and images | the compose project names its worktrees derive, as the namespace reaper derives a schema name | a container of the project exists, running or stopped, or the project's worktree exists, or any container of any project references the volume | the project's worktree is gone and the engine's inventory shows no container, running or stopped and of any project, referencing the volume, checked again at the drop; dangling images and build cache are a machine-level kind, since they belong to no repository, collected when the engine reports that no image or container references them, with age as the guard |
 | Branches | the base branch, the forge | checked out in a worktree, or its pull request is open, or closed without merging | merged into the base and its remote branch gone; a closed-but-unmerged pull request is kept, since the forge lets it reopen |
 | Processes | nothing: a tool registers the trees it starts | the registered owner is alive | the owner is gone and the tree still runs |
 
@@ -142,22 +161,26 @@ project name is derived). These are facts about the repository's own
 tooling, so they travel with it and every clone on every machine reads the
 same declaration. Where a fact can be derived it is not asked for: the base
 branch from `repository.base_branch` where the repository sets it and the
-forge's default otherwise, the worktree roots from `git worktree list`,
+forge's default otherwise, the worktrees from `git worktree list` (the roots
+they sit under are declared, since only those hold worktrees the tooling made),
 the compose project from the compose file, the scratch prefix from the test
 preload that sets it ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions-mandatory),
 derive before declaring). The declaration lists what the derivation could not
 settle.
 
 A declaration is deletion authority, so where it is read from matters. A
-scheduled run never reads it from a worktree's checkout, where any branch
-can widen it: it reads the declaration committed on the base branch's
+collecting run, scheduled or started by hand, never reads it from a
+worktree's checkout, where any branch can widen it: it reads the declaration committed on the base branch's
 remote tip, and collects only within the bounds `jig gc install` recorded in
 the machine entry when a person confirmed it (the remote and the base branch
 the declaration is read from, and the kinds, roots, prefixes and projects
 shown at install). The remote and base branch are recorded, never re-derived
 at run time: the derivation above runs once, at install, where a person sees
 its answer, so a branch that changes `repository.base_branch` cannot redirect
-a scheduled run to its own declaration. Changing either takes install again,
+a run to its own declaration. `jig gc --collect --repo <path>` on a
+repository with no machine entry reports and refuses to collect; a report-only
+run may read the checkout's declaration, since it deletes nothing, and says
+which declaration it read. Changing either takes install again,
 with confirmation. A base-branch declaration wider than the
 recorded bounds is reported as a finding, and the widened part is not
 collected until install is run again and confirmed.
@@ -191,8 +214,8 @@ job (below) and prints what it did.
   in the receipt's own schema.
 - `jig gc --collect` collects after the second decision, writes the
   receipt, and prints the same report with each line's outcome.
-- `jig gc receipts` lists the receipts, and `jig gc receipts <date>` prints
-  one.
+- `jig gc receipts` lists the receipts, `jig gc receipts <date>` lists that
+  day's runs, and `jig gc receipts <run-id>` prints one.
 - `jig gc install` is the installer above; `--uninstall` removes this
   repository's machine entry, and the shared job only once no repository
   entry and no machine-level kind is left; `--uninstall --machine` removes
