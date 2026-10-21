@@ -314,7 +314,7 @@ criteria:
   - id: external-preconditions-live-checked
     level: standard
     requires: mechanical
-    since: next
+    since: 0.71.0
     statement: >-
       External state delivery depends on is declared as intended state in a
       repository registry and checked read-only on a schedule under the real
