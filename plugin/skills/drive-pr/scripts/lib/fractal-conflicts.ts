@@ -282,22 +282,29 @@ export function forgeProvesNoForcePush(body: unknown, head: string): boolean {
 /**
  * The earliest commit time the cohort's evidence can need: a merge committed
  * before every sampled commit, PR opening and merge is no cohort PR's ancestry.
- * A merge this bound misses leaves its PR unknown, never clean.
+ * The bound holds only while every cohort PR is dated by its own sample: a PR
+ * whose sample is missing or has no opening date may have conflicted in a sync
+ * merge older than every other date, so the whole history is replayed instead.
  */
 export function replaySince(
   samples: readonly PrSample[],
   cohort: readonly CohortPr[],
 ): string | null {
-  const times = [
+  const opened = new Map(samples.map((s) => [s.pr, Date.parse(s.createdAt)]));
+  if (cohort.some((pr) => !Number.isFinite(opened.get(pr.number) ?? NaN)))
+    return null;
+  let earliest = Infinity;
+  for (const t of [
     ...samples.flatMap((s) => [
       s.createdAt,
       ...s.commits.map((c) => c.committedDate),
     ]),
     ...cohort.map((pr) => pr.mergedAt),
-  ]
-    .map((t) => Date.parse(t))
-    .filter(Number.isFinite);
-  return times.length === 0 ? null : new Date(Math.min(...times)).toISOString();
+  ]) {
+    const ms = Date.parse(t);
+    if (ms < earliest) earliest = ms;
+  }
+  return earliest === Infinity ? null : new Date(earliest).toISOString();
 }
 
 /** Before git 2.45 nothing stops a partial clone's `rev-list` from fetching the objects it lacks. */

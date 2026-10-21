@@ -389,29 +389,56 @@ describe("merge-conflict scoreboard coverage", () => {
 });
 
 describe("the replay's window", () => {
-  const withCommits = (createdAt: string, ...dates: string[]) =>
+  const withCommits = (pr: number, createdAt: string, ...dates: string[]) =>
     ({
       ...sample,
+      pr,
       createdAt,
       commits: dates.map((committedDate) => ({ committedDate })),
     }) as PrSample;
-  it("starts at the earliest sampled commit, PR opening or cohort merge", () => {
+  const merged = (number: number) => ({
+    number,
+    mergedAt: "2026-10-15T00:00:00Z",
+  });
+  it("starts at the earliest sampled commit or PR opening", () => {
     expect(
       replaySince(
         [
-          withCommits("2026-10-10T00:00:00Z", "2026-10-08T12:00:00Z"),
-          withCommits("2026-10-12T00:00:00Z", "2026-10-13T00:00:00Z"),
+          withCommits(1, "2026-10-10T00:00:00Z", "2026-10-08T12:00:00Z"),
+          withCommits(2, "2026-10-12T00:00:00Z", "2026-10-13T00:00:00Z"),
         ],
-        [{ number: 9, mergedAt: "2026-10-15T00:00:00Z" }],
+        [merged(1), merged(2)],
       ),
     ).toBe("2026-10-08T12:00:00.000Z");
+  });
+  it("replays the whole history when a cohort PR has no dated sample", () => {
+    const dated = withCommits(1, "2026-10-10T00:00:00Z");
+    expect(replaySince([dated], [merged(1), merged(2)])).toBeNull();
     expect(
-      replaySince([], [{ number: 9, mergedAt: "2026-10-15T00:00:00Z" }]),
-    ).toBe("2026-10-15T00:00:00.000Z");
+      replaySince(
+        [dated, withCommits(2, "not a date")],
+        [merged(1), merged(2)],
+      ),
+    ).toBeNull();
+    expect(replaySince([], [merged(9)])).toBeNull();
   });
   it("replays the whole history when nothing dates the cohort", () => {
     expect(replaySince([], [])).toBeNull();
-    expect(replaySince([withCommits("not a date")], [])).toBeNull();
+    expect(replaySince([withCommits(1, "not a date")], [])).toBeNull();
+  });
+  it("bounds a cohort with more commits than a call may take arguments", () => {
+    const many = withCommits(1, "2026-10-10T00:00:00Z");
+    many.commits = Array.from(
+      { length: 1_000_000 },
+      () =>
+        ({
+          committedDate: "2026-10-12T00:00:00Z",
+        }) as PrSample["commits"][number],
+    );
+    many.commits.push({
+      committedDate: "2026-10-01T00:00:00Z",
+    } as PrSample["commits"][number]);
+    expect(replaySince([many], [merged(1)])).toBe("2026-10-01T00:00:00.000Z");
   });
   it("hands the collector the samples and cohort it bounds", async () => {
     const seen: unknown[] = [];
