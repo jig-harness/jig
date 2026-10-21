@@ -51,6 +51,7 @@ modules/M4-docs-governance/templates/frontmatter-schema.yaml
 modules/M5-adr-practice/templates/ADR-template.md
 modules/M5-adr-practice/templates/adr-rules.yaml
 modules/M5-adr-practice/templates/skeleton.yaml
+modules/M6-feature-delivery-pipeline/templates/LIFECYCLE.md
 modules/M6-feature-delivery-pipeline/templates/PIPELINE.md
 modules/M6-feature-delivery-pipeline/templates/architecture-template.md
 modules/M6-feature-delivery-pipeline/templates/prd-template.md
