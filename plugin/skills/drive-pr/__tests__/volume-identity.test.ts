@@ -7,7 +7,7 @@ import { gitIdentityEnv } from "../scripts/lib/proc.ts";
 const uuid = "12345678-1234-5678-9ABC-123456789ABC";
 const df =
   "Filesystem 512-blocks Used Available Capacity Mounted on\n/dev/disk10s3 100 10 90 10% /Volumes/With Spaces\n";
-const plist = `<plist><dict><key>VolumeUUID</key><string>${uuid}</string></dict></plist>`;
+const plist = `<plist><dict><key>WritableVolume</key><true/><key>APFSSnapshot</key><false/><key>VolumeUUID</key><string>${uuid}</string></dict></plist>`;
 function probe(answers: { code: number; stdout: string }[]) {
   const child = Bun.spawnSync(
     [
@@ -66,7 +66,49 @@ for (const [name, answers] of [
     "missing UUID",
     [
       { code: 0, stdout: df },
-      { code: 0, stdout: "<plist><dict/></plist>" },
+      {
+        code: 0,
+        stdout: plist.replace(
+          `<key>VolumeUUID</key><string>${uuid}</string>`,
+          "",
+        ),
+      },
+    ],
+  ],
+  [
+    "read-only view",
+    [
+      { code: 0, stdout: df },
+      {
+        code: 0,
+        stdout: plist.replace(
+          "<key>WritableVolume</key><true/>",
+          "<key>WritableVolume</key><false/>",
+        ),
+      },
+    ],
+  ],
+  [
+    "unknown writability",
+    [
+      { code: 0, stdout: df },
+      {
+        code: 0,
+        stdout: plist.replace("<key>WritableVolume</key><true/>", ""),
+      },
+    ],
+  ],
+  [
+    "snapshot view",
+    [
+      { code: 0, stdout: df },
+      {
+        code: 0,
+        stdout: plist.replace(
+          "<key>APFSSnapshot</key><false/>",
+          "<key>APFSSnapshot</key><true/>",
+        ),
+      },
     ],
   ],
   [

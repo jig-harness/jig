@@ -436,7 +436,9 @@ intended tree; an inherited value overrides the current directory.
 characters of SHA-256 over a [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID) persisted as `drive-pr-clone-id` in Git's
 common directory (`git rev-parse --git-common-dir`). It survives a clone move,
 is shared by linked worktrees, and differs between separate clones, including
-clones of the same remote repository. Remote owner/name is not the key.
+clones of the same remote repository. Remote owner/name is not the key. Commands that resolve state, including the
+reaper, need the owning clone as their Git context; an override path alone
+outside Git no longer identifies a state directory.
 
 Within that clone directory, `drive-pr-<N>.json`, its `.lock` mutex family,
 `pr-drive-<N>.lock` (the driver lock), `drive-pr-<N>.log`, held claims, and
@@ -450,14 +452,17 @@ file stay in that worktree's Git directory. Neither uses the override.
 The driver exports its resolved clone directory to its passes. A path whose
 last component equals this clone's key is already resolved and is not nested
 again. A pass must keep that inherited path. The mutation fence checks the
-inherited directory identity before trusting leases: inode, directory birth
-time and canonical target path must agree. On macOS the arm also captures the
+inherited directory identity before trusting leases. An unchanged device/inode
+pair retains its original meaning; birth time is not assumed reliable on every
+filesystem. Only a device mismatch requires the extra drift proof: matching
+inode, nonzero directory birth time and canonical target path. On macOS the arm also captures the
 stable volume UUID with deadlined `df` and `diskutil` reads. A changed device number is allowed
 only when those stronger fields agree, birth time is nonzero, and a fresh
-volume lookup confirms the same UUID. Another volume refuses even if it copied
+volume lookup confirms the same UUID on the live writable volume. Snapshot
+views supply no proof, even when they share a UUID with that volume. Another volume refuses even if it copied
 the directory's inode and birth time. If volume proof is unavailable, device
-comparison stays strict. Older baselines without a volume UUID remain strict. A new inode, a
-changed birth time, a redirected target or an unreadable directory refuses.
+comparison stays strict. Older baselines without a volume UUID remain strict. A new inode or an unreadable directory always refuses. A device mismatch also
+refuses if birth time, canonical target or volume proof does not agree.
 No pass changes the baseline; each check can recognize the same benign device
 drift independently. A driver armed before this upgrade needs a fresh arm to
 export the stronger baseline.

@@ -95,7 +95,11 @@ export function sameDirIdentity(
   // zero identity distinct from null: null can mean a legitimately absent
   // directory in sameDirIdentity2.
   if (b === null || a.ino === 0n || a.ino !== b.ino) return false;
-  const strong =
+  // Preserve the original sufficient proof, including on filesystems without
+  // a reliable birth time. Extra metadata is needed only to relax a device
+  // mismatch, never to replace an already-matching device/inode pair.
+  if (a.dev === b.dev) return true;
+  return (
     a.birthtimeNs !== undefined &&
     a.birthtimeNs > 0n &&
     a.birthtimeNs === b.birthtimeNs &&
@@ -103,17 +107,8 @@ export function sameDirIdentity(
     a.pathHash === b.pathHash &&
     a.volumeUUID !== undefined &&
     VOLUME_UUID_RE.test(a.volumeUUID) &&
-    a.volumeUUID === b.volumeUUID;
-  // Legacy tokens retain strict device comparison. Device drift is accepted
-  // only with the new baseline's independent creation-time and target-path proof.
-  if (a.birthtimeNs !== undefined || b.birthtimeNs !== undefined) {
-    if (a.birthtimeNs !== undefined && b.birthtimeNs !== undefined) {
-      if (a.pathHash !== b.pathHash || a.birthtimeNs !== b.birthtimeNs)
-        return false;
-      return a.dev === b.dev || strong;
-    }
-  }
-  return a.dev === b.dev;
+    a.volumeUUID === b.volumeUUID
+  );
 }
 
 /**

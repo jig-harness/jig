@@ -18,6 +18,14 @@ export const readVolumeIdentity: VolumeIdentityReader = async (dir) => {
     timeoutSec: 2,
   });
   if (info.code !== 0) return null;
+  // A snapshot can share a volume UUID and old directory metadata while
+  // missing leases created since the snapshot. Only the live writable view
+  // may vouch for a device-number change.
+  if (
+    !/<key>WritableVolume<\/key>\s*<true\s*\/>/.test(info.stdout) ||
+    /<key>APFSSnapshot<\/key>\s*<true\s*\/>/.test(info.stdout)
+  )
+    return null;
   const uuid = /<key>VolumeUUID<\/key>\s*<string>([^<]+)<\/string>/
     .exec(info.stdout)?.[1]
     ?.toLowerCase();

@@ -103,6 +103,9 @@ test("device drift needs matching inode, birth time, canonical path and volume U
     sameDirIdentity(token.id, { ...original, dev: original.dev + 1n }),
   ).toBe(false);
   expect(sameDirIdentity(token.id, drift)).toBe(true);
+  expect(sameDirIdentity(token.id, { ...original, birthtimeNs: 0n })).toBe(
+    true,
+  );
   expect(
     sameDirIdentity(
       { ...token.id, volumeUUID: "" },
