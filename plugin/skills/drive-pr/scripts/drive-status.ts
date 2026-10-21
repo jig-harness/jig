@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Decide, mechanically, which state a PR-review drive is in — and in particular
  * refuse to say "converged" on any evidence weaker than "the finding-posting
@@ -315,7 +316,7 @@ async function boundedRealpath(
   if (p === "") return null;
   const probe = await run([process.execPath, "-e", REALPATH_PROBE_SCRIPT, p], {
     stderr: "ignore",
-    timeoutSec,
+    ...definedFields({ timeoutSec }),
   });
   if (probe.code !== 0) return null;
   const resolved = probe.stdout.trim();
@@ -581,7 +582,7 @@ async function main(): Promise<number> {
     }
   }
   const ctx = {
-    waitingCache,
+    ...definedFields({ waitingCache }),
     pr,
     owner,
     repo,
