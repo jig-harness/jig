@@ -1393,6 +1393,12 @@ make, use the entry's term instead.
   publish attestation, such as PyPI's, is narrower: it names the workflow
   that uploaded the file, which proves where it was published from, not
   where it was built.
+- **Software bill of materials (SBOM)** — a machine-readable list of the
+  components a released artifact contains, each with its name and version,
+  so a vulnerability scanner can tell whether the artifact holds an
+  affected version without rebuilding it. CycloneDX and SPDX are common
+  formats; a tool generates it from the lockfile or the built
+  artifact.
 - **Preview package** — a package built from a pull request's commit, so a
   consumer can install and try the change before it merges. It is not a
   release: no changelog entry, no version the release step chose, no tag,
