@@ -1,6 +1,6 @@
 Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.
 
-### What changed (125)
+### What changed (127)
 
 | Module | Criterion | Before → after | Change |
 |--------|-----------|----------------|--------|
