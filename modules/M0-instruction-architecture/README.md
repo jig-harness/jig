@@ -238,9 +238,9 @@ instead. Whether a runtime received a rule at all is the observation in
 [mappings.md](mappings.md#what-each-runtime-loads); the checks measure what
 the repository asks each runtime to load, not what arrived.
 
-Future: labels that mark each section of a skill as **exact** (run the named
-command as written) or **judgment** (reach the stated outcome by the means
-that fit), with a check that a prescribed command sits under an **exact**
+Future: [section labels](../../GLOSSARY.md) that mark each section of a skill
+as **exact** (run the named command as written) or **judgment** (reach the
+stated outcome by the means that fit), with a check that a prescribed command sits under an **exact**
 label. Some of Jig's skills already use the labels; they become a rule once
 their effect is measured with more than one review per skill, since a single
 review gives no estimate of how much reviewers vary. Also future: a reference generator for the model roster, which arrives when the
