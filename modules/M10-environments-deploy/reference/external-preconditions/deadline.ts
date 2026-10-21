@@ -53,13 +53,20 @@ export async function withDeadline<T>(
   }
 }
 
-/** Milliseconds left on `signal`'s operation deadline; unbounded for any other signal. */
+/**
+ * Whole milliseconds left on `signal`'s operation deadline; unbounded for any
+ * other signal. Rounded down, because a child-process timeout must be a whole
+ * number and a sub-millisecond remainder is already spent: rounding it up would
+ * overrun the deadline, and a zero timeout means none at all.
+ */
 export function remainingMs(signal: AbortSignal | undefined): number {
   const due = signal && dues.get(signal);
-  return due === undefined ? Infinity : Math.max(0, due - performance.now());
+  return due === undefined
+    ? Infinity
+    : Math.max(0, Math.floor(due - performance.now()));
 }
 
-/** One `gh api` request bounded to `timeoutMs`; tests inject a fake. */
+/** One `gh api` request bounded to `timeoutMs`, a positive whole number; tests inject a fake. */
 export type GhTransport = (args: string[], timeoutMs: number) => GhResult;
 
 /** The ceiling on one request, whatever budget its operation has left. */
@@ -96,7 +103,7 @@ export function withinDeadline(
 ): GhApi {
   return (args) => {
     const left = remainingMs(signal);
-    if (signal?.aborted || left <= 0)
+    if (signal?.aborted || left < 1)
       throw timeoutError(
         `operation did not finish within its deadline; ${args[0] ?? "gh api"} not requested`,
       );
