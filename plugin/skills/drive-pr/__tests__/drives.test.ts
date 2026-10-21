@@ -1,18 +1,7 @@
-/**
- * drives.test.ts — the operator surface over the single-instance locks:
- * `lib/claim.ts`'s claim format + liveness rule, and `drives.ts`'s
- * listing / `--here` banner / `--stop`.
- *
- * The format tests write claim files as LITERAL bytes rather than through
- * `formatClaim`, deliberately: the wire format is the contract an older
- * driver's claims already sit on disk in, and a round-trip through the
- * serializer would keep passing if both sides drifted together.
- *
- * Every subprocess env is built from a `GIT_*`-scrubbed copy of the suite's —
- * a suite invoked from a git hook inherits `GIT_DIR`/`GIT_INDEX_FILE`, and a
- * `git init`/`rev-parse` in a temp directory then operates on the REAL
- * repository (same hazard drive-pr.test.ts documents on its own scratch
- * repos).
+import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { scopedStateDir } from "./scoped-state-dir.ts";
+/** Operator listing, SessionStart banner and stop behavior over driver locks.
+ * Fixtures scrub inherited Git pointers before operating on scratch clones.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
@@ -138,10 +127,10 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true });
 });
 let n = 0;
-function freshStateDir(): string {
+function freshStateDir(cwd = process.cwd()): string {
   const dir = join(root, `state-${n++}`);
   mkdirSync(dir, { recursive: true });
-  return dir;
+  return scopedStateDir(dir, cwd);
 }
 
 describe("lib/claim.ts — the claim wire format", () => {
@@ -788,14 +777,14 @@ describe("drives.ts --here (the SessionStart banner)", () => {
   });
 
   it("prints nothing when no driver holds this worktree — silence means checked-and-clear", async () => {
-    const stateDir = freshStateDir();
+    const stateDir = freshStateDir(scratch);
     const r = await runDrives(["--here"], { stateDir, cwd: scratch });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toBe("");
   });
 
   it("banners a live driver with PR, log and stop command — PR verified against the held per-PR lock", async () => {
-    const stateDir = freshStateDir();
+    const stateDir = freshStateDir(scratch);
     const claim = formatClaim(process.pid, hostname(), DIAG);
     plantLock(stateDir, lockName, { "claim.aaaa": claim });
     plantLock(stateDir, "pr-drive-4242.lock", { "claim.bbbb": claim });
@@ -814,7 +803,7 @@ describe("drives.ts --here (the SessionStart banner)", () => {
     // warning ("interactive edits here will race it", the stop command) is
     // advice for a bystander and is exactly wrong for the pass this tree is
     // being driven for, so the self path must not print them.
-    const stateDir = freshStateDir();
+    const stateDir = freshStateDir(scratch);
     const claim = formatClaim(process.pid, hostname(), DIAG);
     plantLock(stateDir, lockName, { "claim.aaaa": claim });
     plantLock(stateDir, "pr-drive-4242.lock", { "claim.bbbb": claim });
@@ -858,7 +847,7 @@ describe("drives.ts --here (the SessionStart banner)", () => {
     // would stop a different PR's driver. And no raw `kill <pid>` either: a
     // fresh claim proves liveness, not identity, so a recycled pid would send
     // the operator at a stranger, bypassing --stop's process-table check.
-    const stateDir = freshStateDir();
+    const stateDir = freshStateDir(scratch);
     plantLock(stateDir, lockName, {
       "claim.aaaa": formatClaim(process.pid, hostname(), DIAG),
     });
@@ -877,7 +866,7 @@ describe("drives.ts --here (the SessionStart banner)", () => {
     // that driver's PR lock just because host/pid match. `diag.started` is
     // the per-acquisition token: one acquisition writes one diag to both
     // locks.
-    const stateDir = freshStateDir();
+    const stateDir = freshStateDir(scratch);
     plantLock(stateDir, lockName, {
       "claim.aaaa": formatClaim(process.pid, hostname(), DIAG),
     });
@@ -899,7 +888,7 @@ describe("drives.ts --here (the SessionStart banner)", () => {
     // Directory order must not decide which PR the stop command targets
     // when lock debris or a corrupt claim leaves two live PR locks naming
     // the same owner.
-    const stateDir = freshStateDir();
+    const stateDir = freshStateDir(scratch);
     const claim = formatClaim(process.pid, hostname(), DIAG);
     plantLock(stateDir, lockName, { "claim.aaaa": claim });
     plantLock(stateDir, "pr-drive-4242.lock", { "claim.bbbb": claim });
@@ -913,7 +902,7 @@ describe("drives.ts --here (the SessionStart banner)", () => {
   });
 
   it("a stale lock prints nothing; an unreadable one prints a warning, never silence", async () => {
-    const staleState = freshStateDir();
+    const staleState = freshStateDir(scratch);
     const dir = plantLock(staleState, lockName, {
       "claim.aaaa": `${await deadPid()} ${hostname()} ${process.platform}\n`,
     });
@@ -925,7 +914,7 @@ describe("drives.ts --here (the SessionStart banner)", () => {
     expect(stale.stdout).toBe("");
     rmSync(dir, { recursive: true, force: true });
 
-    const brokenState = freshStateDir();
+    const brokenState = freshStateDir(scratch);
     mkdirSync(join(brokenState, lockName, "claim.gggg"), { recursive: true });
     const broken = await runDrives(["--here"], {
       stateDir: brokenState,
@@ -936,7 +925,7 @@ describe("drives.ts --here (the SessionStart banner)", () => {
   });
 
   it("outside a git repository it warns rather than pretending to have checked", async () => {
-    const stateDir = freshStateDir();
+    const stateDir = freshStateDir(scratch);
     const nowhere = mkdtempSync(join(tmpdir(), "drives-norepo-"));
     try {
       const r = await runDrives(["--here"], { stateDir, cwd: nowhere });
@@ -969,21 +958,31 @@ describe("drives.ts --here (the SessionStart banner)", () => {
     // drive-pr-clone-id, created the new state directory, and could write
     // the migration marker — real, permanent side effects from a banner
     // check that fires on every SessionStart, never told to.
+    const unusedClone = mkdtempSync(join(tmpdir(), "drives-unused-clone-"));
+    expectSpawnExit(
+      Bun.spawnSync(["git", "init", "-q", unusedClone], {
+        env: cleanEnv({}),
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+      0,
+    );
     const fakeHome = mkdtempSync(join(tmpdir(), "drives-here-home-"));
     try {
       const r = await runDrives(["--here"], {
         stateDir: null,
-        cwd: scratch,
+        cwd: unusedClone,
         env: { HOME: fakeHome },
       });
       expect(r.exitCode).toBe(0);
       expect(r.stdout).toBe("");
       expect(existsSync(join(fakeHome, ".local"))).toBe(false);
-      expect(existsSync(join(scratch, ".git", "drive-pr-clone-id"))).toBe(
+      expect(existsSync(join(unusedClone, ".git", "drive-pr-clone-id"))).toBe(
         false,
       );
     } finally {
       rmSync(fakeHome, { recursive: true, force: true });
+      rmSync(unusedClone, { recursive: true, force: true });
     }
   });
 });
@@ -1157,6 +1156,10 @@ describe("drives.ts --stop", () => {
     const stateDir = freshStateDir();
     const child = markerDriver();
     const empty = mkdtempSync(join(tmpdir(), "drives-nops-"));
+    writeFakeProgram(
+      join(empty, "git"),
+      `#!/bin/sh\nexec ${JSON.stringify(Bun.which("git"))} "$@"\n`,
+    );
     try {
       plantLock(stateDir, "pr-drive-553.lock", {
         "claim.aaaa": formatClaim(child.pid, hostname(), {
@@ -1187,6 +1190,10 @@ describe("drives.ts --stop", () => {
     const stateDir = freshStateDir();
     const child = markerDriver();
     const shim = mkdtempSync(join(tmpdir(), "drives-hungps-"));
+    writeFakeProgram(
+      join(shim, "git"),
+      `#!/bin/sh\nexec ${JSON.stringify(Bun.which("git"))} "$@"\n`,
+    );
     try {
       const executable = join(
         shim,

@@ -1,0 +1,40 @@
+# Deferral references (Jig module M4): copy to .config/deferral-references.yaml.
+#
+# A document that defers work to the tracker ("tracked to closure", "a
+# follow-up will be filed") must name the item that carries it, and the item
+# must still be open. The static gate checks the first, the scheduled live
+# check the second.
+#   https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/reference/deferral-references/README.md
+version: 1
+
+# The documents in scope, as globs from the repository root. Default: every
+# Markdown file. Leave out archives and generated documents.
+include:
+  - "docs/**/*.md"
+  - "*.md"
+exclude:
+  - "docs/archive/**"
+
+# What names an item. Required: no pattern fits every tracker, and a loose one
+# reads ADR-12 or CVE-2024-1 as an item. Use the tracker team's key, or a link
+# shape whose capture group is the key. Only keys the provider can look up
+# belong here.
+items:
+  - '\bENG-\d+\b'
+  # - 'https://tracker\.example/issue/(\d+)'
+
+# Phrases that promise tracked work, matched without regard to case and across
+# emphasis marks and line breaks. Delete this key to use the defaults:
+# tracked to closure, tracked separately, will be tracked, to be tracked,
+# will be filed, to be filed, follow-up will, follow-up to be, deferred to a
+# future. Add the phrases your documents use.
+markers:
+  - tracked to closure
+  - tracked separately
+  - will be tracked
+  - to be tracked
+  - will be filed
+  - to be filed
+  - follow-up will
+  - follow-up to be
+  - deferred to a future

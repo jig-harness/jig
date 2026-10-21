@@ -478,9 +478,16 @@ you look:
   a previous `$DRIVE_PR_STATE_DIR`) moves with `bun "${CLAUDE_SKILL_DIR}/scripts/migrate-state-dir.ts" --from <old
   dir>` instead: [README.md § Relocating the state
   dir](README.md#relocating-the-state-dir).
-- **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` overrides the default
-  above (the test suite sets it; `drive.ts` forwards it to what it spawns, and
-  a workspace manager that launches sessions must forward it too). **Every
+- **Relocating the state dir** — `$DRIVE_PR_STATE_DIR` relocates the state root,
+  preserving one `<clone-key>/` directory per clone (the hash of its persisted
+  [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID); linked worktrees share it). The driver exports its resolved leaf;
+  a pass must not change it. Unscoped flat artifacts cause a refusal: their old
+  schema has no repository binding, so never adopt or relocate them by guessing.
+  Stop all participants and have a human establish ownership first. The inherited
+  identity guard tolerates device-number drift only with matching inode,
+  nonzero birth time, canonical target path and the same macOS volume UUID;
+  unavailable volume proof keeps device comparison strict. Replacement still refuses.
+  A workspace manager that launches sessions must forward the setting too. **Every
   participant in one clone must resolve the same directory**: two drivers that
   disagree do not share the lease mutex, and each silently restarts the drive
   at round 0. So if you find it set and did not set it yourself, leave it
@@ -2370,6 +2377,21 @@ non-default `--days`). The metric catalogue, directions and tolerances are
 means the scoreboard is **partial** and is still printed. Who runs it, when,
 and where the result is recorded is the repository's decision; this section
 deliberately does not set it.
+
+The same PR window includes `merge_conflict_share`: the share of observed
+merged PRs that met a conflict. It reads the sibling conflict-history report
+and this clone’s live events. A PR is observed clean only when its own merge
+ancestry is fully replayed and the forge reports no force-push. The replay
+covers merges committed since the cohort's earliest sampled commit, PR opening
+or merge, and a PR whose ancestry holds an older merge stays unknown; in a
+partial clone with git before 2.45, which could fetch, every
+PR's ancestry is unknown. Unknown PRs
+stay in the cohort: the report prints coverage and whole-cohort bounds, and
+withholds a verdict below `merge_conflicts.coverage_floor` in the fleet-health
+file (default `0.9`), or when those bounds reach different verdicts. Record its
+baseline as `baselines.merge_conflict_share.value` in that file. A capped forge
+list withholds the verdict. Missing heads and invisible resolutions in other
+clones are coverage limits, never evidence that a PR was clean.
 
 ### Ceremony versus progress — is the loop still producing product?
 

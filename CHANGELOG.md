@@ -319,6 +319,46 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.77.0] - 2026-10-21
+
+### Added
+
+- [M11](modules/M11-process-observability/README.md) registers conflict
+  events and merged-pull-request conflict share. The `drive-pr` scoreboard
+  combines replay and clone-local resolutions, states its coverage and
+  withholds a verdict when unknown pull requests could change it.
+- [M12](modules/M12-parallel-agent-ergonomics/README.md) asks repositories
+  to measure conflict hotspots and remove their causes or record a decision
+  to keep them. The audit runs the replay as read-only evidence and scores
+  whether the repository follows the practice.
+
+## [0.76.0] - 2026-10-21
+
+Documents that defer work to the tracker can no longer rot silently: M4 gains a static gate for deferrals that name no item and a scheduled check for deferrals whose items have closed.
+
+### Added
+
+- [M4](modules/M4-docs-governance/README.md) states a new practice, deferrals name live items: a document that defers work to the tracker ("tracked to closure", "a follow-up will be filed") names the item that carries it, and the item stays open. [`reference/deferral-references/`](modules/M4-docs-governance/reference/deferral-references/README.md) is the gate. Its static half is offline and judges the lines a change adds (`--staged` for a hook, `--range` for a pull request), or every document with `--all`. A block of prose with a configured marker phrase and no item reference is a finding, a waiver needs a stated reason, and a configuration or range it cannot read is exit 2. Its live half (`--all --list-keys`, then `--all --states <file>`) takes the tracker's answers as a file, so the check never holds a credential: a deferral fails when none of the items it names is open, and an item with no recorded state fails the run instead of passing.
+- [`templates/deferral-references.yaml`](modules/M4-docs-governance/templates/deferral-references.yaml) (item patterns, marker phrases, scope) and [`templates/deferral-liveness.yml`](modules/M4-docs-governance/templates/deferral-liveness.yml), a scheduled workflow that holds the tracker credential in one step, on the default branch only. The [mappings](modules/M4-docs-governance/mappings.md#deferral-references) give the hook, CI and per-tracker provider recipes.
+- `tracker.ts issue-states` in the `do-item` skill reads item keys on standard input and prints each one's state as `open`, `closed` or `not_found` through the tracker interface; it is the provider the liveness check uses for Linear. A lookup that fails, or an issue the tracker reports without a state category or with one that is neither open nor closed, fails the command.
+- The audit scores new M4 criteria: `deferrals-name-items` (Standard, mechanical) and `deferral-liveness-scheduled` (Strict, mechanical). Each is `expected-absent` for a repository whose documents defer no work to a tracker. A re-audit reports them as added since the prior audit, not as regressions.
+
+## [0.75.0] - 2026-10-21
+
+### Added
+
+- Skill-authoring rules in [M0 § Skills](modules/M0-instruction-architecture/README.md#skills): a description leads with the trigger that sets the skill apart and carries its negative triggers, `SKILL.md` names every reference, a reference over 100 lines opens with a table of contents, instruction bodies carry no incident history or time-sensitive phrasing, and discovery controls do what they are for. [What each runtime offers](modules/M0-instruction-architecture/mappings.md#skill-discovery-controls) is in M0's mappings.
+- M0's [skill-authoring check](modules/M0-instruction-architecture/reference/skill-authoring/README.md) counts the rules a script can see, per rule and per skill file, and prints them as a counter for the ratchet.
+- The [ratchet gate](modules/M1-gates-enforcement-ladder/reference/ratchet/README.md) reads any counting command's JSON (`format: "json"`). With `per: "file"`, each file's count is its own ceiling. It runs the command with `RATCHET_HISTORICAL=1` when it measures the merge base, so a repository can add a counter and the files it counts in one change.
+- Two M0 criteria for the audit: `skill-authoring-rules` (Standard) and `skill-authoring-ratcheted` (Strict). Both are expected-absent in a repository with no skills.
+
+## [0.74.0] - 2026-10-21
+
+### Fixed
+
+- **Breaking:** `drive-pr` now preserves clone isolation under `DRIVE_PR_STATE_DIR`: the override names a root with one `<clone-key>/` subdirectory per clone. Same-numbered PRs in different repositories no longer share state, logs, leases or driver locks. Stop all participants before upgrading an existing flat override, establish each artifact's owner and explicitly relocate complete state into the appropriate clone directory as described in the skill's README. Unscoped legacy artifacts cause a refusal and remain untouched. Run state-using commands, including the reaper, in the owning Git clone; an override alone outside Git no longer identifies state.
+- Directory identity checks tolerate device-number changes only with matching inode, nonzero directory birth time, canonical target path and a freshly confirmed macOS volume UUID. Snapshot and non-writable views supply no drift proof. Without volume proof, device comparison stays strict. Replaced directories and redirected targets still refuse. Older inherited identity tokens remain strict; re-arm an older driver to establish the stronger baseline.
+
 ## [0.73.0] - 2026-10-21
 
 The delivery loop can now be published as one stage map, with a gate that
@@ -3328,7 +3368,11 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.73.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.77.0...HEAD
+[0.77.0]: https://github.com/jig-harness/jig/compare/v0.76.0...v0.77.0
+[0.76.0]: https://github.com/jig-harness/jig/compare/v0.75.0...v0.76.0
+[0.75.0]: https://github.com/jig-harness/jig/compare/v0.74.0...v0.75.0
+[0.74.0]: https://github.com/jig-harness/jig/compare/v0.73.0...v0.74.0
 [0.73.0]: https://github.com/jig-harness/jig/compare/v0.72.0...v0.73.0
 [0.72.0]: https://github.com/jig-harness/jig/compare/v0.71.0...v0.72.0
 [0.71.0]: https://github.com/jig-harness/jig/compare/v0.70.2...v0.71.0

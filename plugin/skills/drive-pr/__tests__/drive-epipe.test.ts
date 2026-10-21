@@ -45,11 +45,14 @@ async function closedConsole(
 
 describe("a closed console", () => {
   it("does not stop the drive, and the driver log records how it ended", async () => {
-    const { dir, stateDir } = writeFixture({
-      threads: [],
-      reviewedSha: scratchClean.head,
-      head: scratchClean.head,
-    });
+    const { dir, stateDir } = writeFixture(
+      {
+        threads: [],
+        reviewedSha: scratchClean.head,
+        head: scratchClean.head,
+      },
+      scratchClean.dir,
+    );
     const result = await closedConsole(
       [join(SCRIPTS, "drive.ts"), "999", "--no-head-sync", "--", ...PASS_NOOP],
       {
@@ -70,11 +73,14 @@ describe("a closed console", () => {
   }, 60_000);
 
   it("does not stop the drive when the driver log could not start either", async () => {
-    const { dir, stateDir } = writeFixture({
-      threads: [],
-      reviewedSha: scratchClean.head,
-      head: scratchClean.head,
-    });
+    const { dir, stateDir } = writeFixture(
+      {
+        threads: [],
+        reviewedSha: scratchClean.head,
+        head: scratchClean.head,
+      },
+      scratchClean.dir,
+    );
     // A directory squatting on the log's path: the log is unavailable.
     mkdirSync(join(stateDir, "drive-pr-999.log"), { recursive: true });
     const result = await closedConsole(

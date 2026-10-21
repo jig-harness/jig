@@ -29,6 +29,7 @@ import { renderReportHtml } from "../scripts/report/html.ts";
 import { reportFingerprint } from "../scripts/report/source.ts";
 import {
   COMMIT,
+  addedAfter,
   historyRecord,
   noProfile,
   priorRecord,
@@ -626,7 +627,7 @@ describe("since the last audit", () => {
       ),
     ).toEqual([
       "Fixed 1",
-      "Added by Jig 122",
+      `Added by Jig ${addedAfter(input.prior?.plugin_version ?? "0.14.0").length}`,
       "Still open within the target 4",
       "Still open beyond the target 78",
       "Unchanged and met 36",

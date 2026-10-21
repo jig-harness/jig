@@ -1,3 +1,4 @@
+import { scopedStateDir } from "./scoped-state-dir.ts";
 /**
  * progress.test.ts — `DriveState.lastProgressAt`/`quotaPark`,
  * `withProgress`, and the `drive-state.ts` verbs that stamp (or deliberately
@@ -54,7 +55,7 @@ function cleanEnv(extra: Record<string, string>): Record<string, string> {
 }
 
 function freshStateDir(): string {
-  return mkdtempSync(join(tmpdir(), "progress-test-"));
+  return scopedStateDir(mkdtempSync(join(tmpdir(), "progress-test-")));
 }
 
 function seedState(dir: string, overrides: Partial<DriveState> = {}): void {
