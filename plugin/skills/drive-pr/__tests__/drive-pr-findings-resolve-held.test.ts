@@ -1,3 +1,4 @@
+import { scopedStateDir } from "./scoped-state-dir.ts";
 /**
  * drive-pr suite: answer-summary-finding.ts, assert-post-allowed.ts, resolve-held-thread.ts, finish-round.ts and list-unresolved-threads.ts.
  * Shared fixtures and probes live in drive-pr-harness.ts.
@@ -38,7 +39,10 @@ describe("resolve-held-thread.ts", () => {
   } = findingsResolveHeldFixtures;
 
   it("resolves a thread held and pushed within the SAME round", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "resolve-held-thread-happy-"));
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-happy-")),
+      scratchClean.dir,
+    );
     // Mirror the real sequence: step 1's gate counts the round for the head
     // under review BEFORE triage, then hold records that round. Nothing bumps
     // `.rounds` again until the NEXT round's own gate — SKILL.md § 6's own
@@ -88,7 +92,10 @@ describe("resolve-held-thread.ts", () => {
   // as potentially taking tens of minutes. A reply landing on the thread during
   // that window must not be silently resolved by the drain that follows.
   it("restores (never resolves) when a NEW comment landed on the thread after it was held", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "resolve-held-thread-stale2-"));
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-stale2-")),
+      scratchClean.dir,
+    );
     await seed(stateDir, ["bump-round", "999", "--head", PREV]);
     await seed(stateDir, [
       "hold",
@@ -139,7 +146,10 @@ describe("resolve-held-thread.ts", () => {
   // changed after it was held. The url still matches; only the body no longer
   // does.
   it("restores (never resolves) when the held reply was EDITED after being held (same URL, different outcome)", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "resolve-held-thread-edited-"));
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-edited-")),
+      scratchClean.dir,
+    );
     await seed(stateDir, ["bump-round", "999", "--head", PREV]);
     await seed(stateDir, [
       "hold",
@@ -214,8 +224,9 @@ describe("resolve-held-thread.ts", () => {
       label: string,
       thread: NonNullable<Fixture["threads"]>[number],
     ) {
-      const stateDir = mkdtempSync(
-        join(tmpdir(), `resolve-held-bot-${label}-`),
+      const stateDir = scopedStateDir(
+        mkdtempSync(join(tmpdir(), `resolve-held-bot-${label}-`)),
+        scratchClean.dir,
       );
       await seed(stateDir, ["bump-round", "999", "--head", PREV]);
       await seed(stateDir, [
@@ -384,7 +395,10 @@ describe("resolve-held-thread.ts", () => {
   // trusting the earlier read.
   describe("dropReheldKey's re-verification before deleting a REAPPEARED hold", () => {
     it("does NOT delete a re-appeared hold when the live re-check finds the thread REOPENED", async () => {
-      const stateDir = mkdtempSync(join(tmpdir(), "resolve-held-reopen-"));
+      const stateDir = scopedStateDir(
+        mkdtempSync(join(tmpdir(), "resolve-held-reopen-")),
+        scratchClean.dir,
+      );
       await seed(stateDir, ["bump-round", "999", "--head", PREV]);
       await seed(stateDir, [
         "hold",
@@ -421,7 +435,10 @@ describe("resolve-held-thread.ts", () => {
     });
 
     it("STILL deletes a re-appeared hold when the live re-check confirms the thread is STILL resolved", async () => {
-      const stateDir = mkdtempSync(join(tmpdir(), "resolve-held-reappear-"));
+      const stateDir = scopedStateDir(
+        mkdtempSync(join(tmpdir(), "resolve-held-reappear-")),
+        scratchClean.dir,
+      );
       await seed(stateDir, ["bump-round", "999", "--head", PREV]);
       await seed(stateDir, [
         "hold",
@@ -462,7 +479,10 @@ describe("resolve-held-thread.ts", () => {
   // between hold and resolve must also refuse — the visible tail can no
   // longer be confirmed to be the real latest comment at all.
   it("restores (never resolves) when the thread became comment-TRUNCATED after it was held", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "resolve-held-thread-trunc-"));
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-trunc-")),
+      scratchClean.dir,
+    );
     await seed(stateDir, ["bump-round", "999", "--head", PREV]);
     await seed(stateDir, [
       "hold",
@@ -528,7 +548,10 @@ describe("resolve-held-thread.ts", () => {
   // `commentUrl` — resolving a thread whose real latest comment could not
   // actually be confirmed.
   it("restores (never resolves) when the latest comment node has no readable URL", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "resolve-held-thread-badurl-"));
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-badurl-")),
+      scratchClean.dir,
+    );
     await seed(stateDir, ["bump-round", "999", "--head", PREV]);
     await seed(stateDir, [
       "hold",
@@ -605,7 +628,10 @@ describe("resolve-held-thread.ts", () => {
   // supposed to turn a round mismatch back into a match, not just what
   // produces one in the first place.
   it("a re-hold after a genuine round advance clears the mismatch it would otherwise flag", async () => {
-    const stateDir = mkdtempSync(join(tmpdir(), "resolve-held-thread-rehold-"));
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-rehold-")),
+      scratchClean.dir,
+    );
     await seed(stateDir, ["bump-round", "999", "--head", PREV]);
     await seed(stateDir, [
       "hold",
@@ -658,8 +684,9 @@ describe("resolve-held-thread.ts", () => {
   // though this SHA never went through the validate → push → set-verified
   // sequence the hold's reply was actually waiting on.
   it("refuses a push that never went through set-verified, even though the round never advanced", async () => {
-    const stateDir = mkdtempSync(
-      join(tmpdir(), "resolve-held-thread-unverified-"),
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-unverified-")),
+      scratchClean.dir,
     );
     await seed(stateDir, ["bump-round", "999", "--head", PREV]);
     await seed(stateDir, [

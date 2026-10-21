@@ -43,7 +43,11 @@ function renameLock(
   deadlineMs?: number,
 ): void {
   try {
-    renameWithRetry(source, destination, { deadlineMs });
+    renameWithRetry(
+      source,
+      destination,
+      deadlineMs === undefined ? {} : { deadlineMs },
+    );
   } catch (error) {
     console.error(
       `lock: rename ${source} -> ${destination} failed (${errnoCode(error) ?? "unknown"}).`,
@@ -887,7 +891,7 @@ export function createLock(
     deadlineMs?: number,
   ): "occupied" | "recovering" | "held" {
     try {
-      mkdirWithRetry(lock, { deadlineMs });
+      mkdirWithRetry(lock, deadlineMs === undefined ? {} : { deadlineMs });
     } catch {
       return "occupied";
     }

@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 /**
  * drive-pr suite: answer-summary-finding.ts, assert-post-allowed.ts, resolve-held-thread.ts, finish-round.ts and list-unresolved-threads.ts.
  * Shared fixtures and probes live in drive-pr-harness.ts.
@@ -151,7 +152,7 @@ export function createFindingsFinishRoundFixtures() {
     const proc = Bun.spawn(
       scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
       {
-        cwd,
+        ...(cwd === undefined ? {} : { cwd }),
         env: {
           ...stateEnv(stateDir, fixtureDir),
           PATH: process.env.PATH ?? "",
@@ -162,6 +163,7 @@ export function createFindingsFinishRoundFixtures() {
       },
     );
     if (stdin !== undefined) {
+      assert(proc.stdin, "spawned child must expose its piped stdin");
       proc.stdin.write(stdin);
       proc.stdin.end();
     }
@@ -201,11 +203,14 @@ export function createFindingsFinishRoundFixtures() {
     const repo = opts.repo ?? scratchWithOrigin();
     const { dir, stateDir: fresh } =
       opts.fixtureDir === undefined
-        ? writeFixture({
-            threads: [{ id: "PRRT_live", path: "a.ts", bot: true }],
-            ...(opts.fixture ?? {}),
-            head: repo.head,
-          })
+        ? writeFixture(
+            {
+              threads: [{ id: "PRRT_live", path: "a.ts", bot: true }],
+              ...(opts.fixture ?? {}),
+              head: repo.head,
+            },
+            repo.dir,
+          )
         : { dir: opts.fixtureDir, stateDir: undefined };
     const stateDir = opts.stateDir ?? fresh;
     if (stateDir === undefined)

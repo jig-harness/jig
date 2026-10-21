@@ -22,12 +22,6 @@ several hostile points of view in a fresh session; plan review inside
 documentation checks; and `upgrade-deps`, which makes grouped dependency
 upgrades an update bot cannot make alone and drives them to merge.
 
-### 5. A shared runtime kernel and diagnostics
-
-The skills' scripts each solve the same problems by hand: retrying, clean-up
-on exit, decoding what `gh` returns, and errors that keep their cause. This
-item moves what is left onto one shared runtime.
-
 ### 7. The Notion store, verified against Notion
 
 The [Notion store](plugin/skills/reflect/README.md#notion-store) for
@@ -120,6 +114,17 @@ change edits in one place, or two changes to the same lines), and the change
 that removes each cause. [M12](modules/M12-parallel-agent-ergonomics/README.md)
 gains the practice of measuring and removing
 [conflict hotspots](GLOSSARY.md), and the audit scores it.
+
+### 23. Seed review lenses
+
+[`review`](plugin/skills/review/SKILL.md) gains a set of
+[review lenses](GLOSSARY.md), each the review form of one rule a module
+states: no swallowed failure ([M15](modules/M15-contracts-errors/README.md)),
+a test for each changed behaviour ([M14](modules/M14-testing-strategy/README.md)),
+comments that say what the code does now ([M4](modules/M4-docs-governance/README.md)),
+and types that admit no invalid value (M15). Each runs only when the diff
+gives it something to check, comments until measurement shows it may block,
+and can be loaded by a repository's own automated reviewer.
 
 ## Later
 

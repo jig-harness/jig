@@ -1,3 +1,9 @@
+import {
+  scopedStateDir,
+  linkedScratchTree,
+  fixtureStateTree,
+} from "./scoped-state-dir.ts";
+import assert from "node:assert/strict";
 /**
  * Shared harness for the drive-pr-*.test.ts files: the stubbed `gh`, the
  * fixture writers, the scratch repositories and the probes. It was one
@@ -25,6 +31,7 @@ import { worktreeLockName } from "../scripts/lib/state/store";
 // underneath it and passing vacuously.
 import { STALLED_MIN_AGE_SEC } from "../scripts/lib/status/evaluate";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { expectSpawnExited } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 export const SCRIPTS = join(import.meta.dir, "..", "scripts");
@@ -575,6 +582,7 @@ let priorSuiteEnv: Map<string, string | undefined>;
 let suitePacing: Record<string, string> = {};
 /** Scratch repos for the probes that read local HEAD and the working tree. */
 export let scratchClean: { dir: string; head: string };
+export let scratchSibling: { dir: string; head: string };
 export let scratchOther: { dir: string; head: string };
 
 /**
@@ -1025,6 +1033,10 @@ export function useDrivePrSuite(): void {
     suiteHome = mkdtempSync(join(tmpdir(), "drive-pr-test-home-"));
     scratchClean = makeScratchRepo("scratch-clean");
     scratchOther = makeScratchRepo("scratch-other");
+    scratchSibling = linkedScratchTree(
+      scratchClean.dir,
+      join(tmpRoot, "scratch-sibling"),
+    );
 
     // A `gh` that serves fixture files from $DRIVE_PR_FIXTURES. It honours the
     // flags the scripts actually use — `-q`/`--jq` filters, `--slurp` page
@@ -2139,9 +2151,12 @@ const DEFAULT_STICKY_UPDATED_AT = new Date(
   Date.now() - STALLED_MIN_AGE_SEC * 2 * 1000,
 ).toISOString();
 
-export function writeFixture(f: Fixture): { dir: string; stateDir: string } {
+export function writeFixture(
+  f: Fixture,
+  cwd = process.cwd(),
+): { dir: string; stateDir: string } {
   const dir = join(tmpRoot, `fx-${++fixtureSeq}`);
-  const stateDir = join(dir, "state");
+  const stateDir = scopedStateDir(join(dir, "state"), cwd);
   mkdirSync(dir, { recursive: true });
   mkdirSync(stateDir, { recursive: true });
   const head = f.head ?? HEAD;
@@ -2607,12 +2622,17 @@ export async function park(
       "arbiter escalated",
     ),
     {
-      env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
+      cwd: fixtureStateTree(stateDir),
+      env: {
+        ...gitCleanEnv(),
+        DRIVE_PR_STATE_DIR: stateDir,
+        DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
+      },
       stdout: "pipe",
       stderr: "pipe",
     },
   );
-  await proc.exited;
+  await expectSpawnExited(proc, 0);
 }
 
 /**
@@ -2641,15 +2661,21 @@ export async function hold(
       ...(kind === "thread" ? ["--comment-url", commentUrl] : []),
     ),
     {
-      env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
+      cwd: fixtureStateTree(stateDir),
+      env: {
+        ...gitCleanEnv(),
+        DRIVE_PR_STATE_DIR: stateDir,
+        DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
+      },
       stdin: kind === "finding" ? "pipe" : undefined,
       stdout: "pipe",
       stderr: "pipe",
     },
   );
   if (kind === "finding") {
+    assert(proc.stdin, "finding child must expose its piped stdin");
     proc.stdin.write("fixed already; posting once pushed.");
     proc.stdin.end();
   }
-  await proc.exited;
+  await expectSpawnExited(proc, 0);
 }

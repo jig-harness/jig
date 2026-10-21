@@ -674,3 +674,29 @@ and `github-token` (another run's artifacts need a token, and the job needs
 `permissions: actions: read`),
 checks the triggering run's branch and event, and acts only on the parts that
 deployed, validating any commit it reads before checking it out.
+
+## External preconditions
+
+The [registry contract](README.md#external-preconditions) separates an
+intended-state assertion from the provider-specific read. Only branch
+protection ships as a check kind; the other rows describe integration points
+for a repository's operated checks, not implemented kinds.
+
+| State | Provider mapping | What the consuming identity must establish |
+|-------|------------------|--------------------------------------------|
+| Branch protection | GitHub classic protection plus every applicable repository and organization ruleset, through the [reference runner](reference/external-preconditions/) | Required checks, pull-request and history controls hold together; the named writer can push through every blocker without bypassing required history protection |
+| Identity-provider realm | [Keycloak OpenID Connect discovery and signing keys](https://www.keycloak.org/securing-apps/oidc-layers) | Authenticate as the consuming service identity, verify the token signature against discovered keys, and assert the claims the consumer authorizes; merely finding a user is insufficient |
+| Cloud secrets | [Google Cloud Secret Manager version access](https://docs.cloud.google.com/secret-manager/docs/reference/rest/v1/projects.secrets.versions/access) | Read a version under the consuming workload identity without printing its value; distinguish an authorized absence from denied or ambiguous access |
+| Certificate pins | The consumer's configured trust bundle and its deployed peer's certificate | Validate the certificate chain and hostname, then compare the live certificate or key fingerprint to the intended pin; a stored fingerprint alone is no live observation |
+| Storage lifecycle | The provider's bucket lifecycle API | Compare live lifecycle rules with declared retention intent under the consuming identity; never change rules in the checker |
+
+The GitHub reader needs Administration read to inspect classic branch
+protection. GitHub reveals [ruleset bypass actors](https://docs.github.com/en/rest/repos/rules#get-a-repository-ruleset)
+only to callers with write access to the ruleset; an App therefore needs
+Administration write to establish its bypass access. The checker still sends
+only read requests. A read-scoped token leaves withheld bypass lists unknown
+and non-green. The App installation must approve any added permission. Use a separate issue
+identity for [M11 reconciliation](../M11-process-observability/README.md#one-current-issue-for-external-preconditions),
+so the reader needs no issue-write permission and the checker performs no
+host writes. Jira, Linear and
+other trackers can implement the same port; only GitHub Issues ships here.

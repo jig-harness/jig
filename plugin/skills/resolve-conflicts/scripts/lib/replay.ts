@@ -671,7 +671,8 @@ export interface Resolution {
 /**
  * The `Conflicts resolved:` section of a commit message, by path: the lines
  * `check-resolution.ts --message` writes,
- * `- <path>: <decision>[ (<command>)][ — <reason>][ Dropped on purpose: <why>]`.
+ * `- <path>: <decision>[ [cause: <cause>]][ (<command>)][ — <reason>][ Dropped on purpose: <why>]`.
+ * The cause is read past: a replay finds its own.
  */
 export function parseResolutionSection(
   message: string,
@@ -691,9 +692,11 @@ export function parseResolutionSection(
 }
 
 const RESOLUTION_LINE = new RegExp(
-  `^- (.+?): (${DECISIONS.join("|")})(?=$| \\(| — | Dropped on purpose: )(.*)$`,
+  `^- (.+?): (${DECISIONS.join("|")})(?=$| \\[cause: | \\(| — | Dropped on purpose: )(.*)$`,
 );
 const DROPPED = " Dropped on purpose: ";
+/** The cause the live record writes after the decision. */
+const CAUSE = /^ \[cause: [a-z-]+\]/;
 
 /** Split `rest` at the first `marker`: what precedes it, and what follows it or null. */
 function cut(rest: string, marker: string): [string, string | null] {
@@ -711,7 +714,7 @@ function resolutionLine(
   if (!match) return null;
   const [, path = "", decision = ""] = match;
   const [beforeDropped, dropped] = cut(match[3] ?? "", DROPPED);
-  let rest = beforeDropped;
+  let rest = beforeDropped.replace(CAUSE, "");
   let command: string | null = null;
   if (rest.startsWith(" (")) {
     const close = rest.includes(") — ")

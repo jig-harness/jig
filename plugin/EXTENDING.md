@@ -62,7 +62,7 @@ hook or the interface instead.
 | Review skills, implementing agents, scouts | The repository's own | [Configuration](#the-repositorys-own-skills-and-agents) | — |
 | Issue tracker | Linear | [A tracker adapter](#issue-tracker) in Jig | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12 |
 | Reflection store | A folder of files, a Notion database, or any command | [A store command](#reflection-stores), no change to Jig | Jira: roadmap, later |
-| AI reviewer | Any bot, by login, app and check name; finding severities from CodeRabbit, Greptile, the Codex connector, Jig's own finding format, or any reviewer [configured](#severity-formats) | [Configuration](#ai-reviewers) | — |
+| AI reviewer | Any bot, by login, app and check name; finding severities from CodeRabbit, Greptile, the Codex connector, Jig's own finding format, or any reviewer [configured](#severity-formats); GitHub code scanning alerts from any tool, SonarQube Cloud's included | [Configuration](#ai-reviewers) | — |
 | Forge (where pull requests live) | GitHub, through the `gh` command | — | [No forge interface yet](#forge-github): roadmap, later |
 | CI system | Any CI that reports checks to GitHub | `ci.required_checks`; `fix-ci --log` | [Log download and workflow review](#ci-system) are GitHub Actions only |
 | Git remote | `origin` | — | Roadmap item 10 |
@@ -125,7 +125,9 @@ named in configuration:
 read an issue with its comments and children, move it to a workflow state,
 comment, file an issue, change its fields and labels, search this team's
 issues, read and add relations between issues, list the labels an issue can
-carry, and the reads that delivery metrics and batch proposals need. Labels
+carry, read whether an item is open (`tracker.ts issue-states`, which M4's
+scheduled [deferral check](https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/reference/deferral-references/README.md)
+uses), and the reads that delivery metrics and batch proposals need. Labels
 and projects are given by name and a parent by its key; the adapter resolves
 each to exactly one tracker resource or refuses before writing. A skill's
 procedure runs the issue operations as commands of
@@ -224,6 +226,15 @@ drive expects a reviewer only where `review.reviewer_app` or
 `review.reviewer_check_pattern` is set; a repository with neither converges on
 threads and CI alone.
 
+Static-analysis tools that report to GitHub code scanning (CodeQL,
+SonarQube Cloud, Semgrep, any tool that uploads results) need no
+configuration: the review loop recognises a thread GitHub opened for a
+code scanning alert, reads the finding's severity from the alert, and
+dismisses the alert when it declines the finding
+([code scanning alerts](skills/resolve-review-comments/README.md#code-scanning-alerts)).
+A tool that reports only through a check's annotations, or only in a summary
+comment, raises no thread, so the loop does not see its findings.
+
 ### Severity formats
 
 In late rounds the review loop can decline a finding it would otherwise fix
@@ -316,9 +327,9 @@ its `glab` command, is the nearest). In `drive-pr`,
 two helpers that add timeouts and caching, which is where the interface
 starts; `fix-ci`, the audit and `descar` start `gh` through runners of their
 own, and some skills tell the agent to run `gh` itself. The shared runtime
-kernel (roadmap item 5) gathers the calls further. It is
-listed under the roadmap's later work, to be built when a team on another
-forge needs it.
+kernel gathers common timeout and cancellation behavior in `shared/`. A forge
+interface is listed under the roadmap's later work, to be built when a team
+on another forge needs it.
 
 ## CI system
 

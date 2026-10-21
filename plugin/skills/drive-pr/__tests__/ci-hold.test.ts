@@ -1,3 +1,4 @@
+import { scopedStateDir } from "./scoped-state-dir.ts";
 import { describe, expect, it } from "bun:test";
 import {
   existsSync,
@@ -846,7 +847,7 @@ describe("drive-state final verification", () => {
   } {
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-"));
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     writeGhStub(
@@ -952,7 +953,7 @@ esac
     // check does.
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-race-write-"));
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     const counter = join(root, "pr-view-calls");
@@ -1008,7 +1009,7 @@ esac
     // onward.
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-race-timeline-"));
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     const counter = join(root, "timeline-calls");
@@ -1065,7 +1066,7 @@ esac
     // re-checks).
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-race-ci-"));
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     const counter = join(root, "check-runs-calls");
@@ -1126,7 +1127,7 @@ esac
     // re-check too, not just the aggregate one.
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-race-skip-"));
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     const counter = join(root, "check-runs-calls");
@@ -1394,7 +1395,7 @@ esac
     // "the field was lost/never written".
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-reset-nokey-"));
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     writeGhStub(
@@ -1425,7 +1426,7 @@ esac
       join(tmpdir(), "drive-pr-ci-hold-reset-badshape-"),
     );
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     writeGhStub(
@@ -1462,7 +1463,7 @@ esac
       join(tmpdir(), "drive-pr-ci-hold-reset-explicit-null-"),
     );
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     writeGhStub(
@@ -1485,7 +1486,7 @@ esac
     // see past that: only checking the actual timeline closes it.
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-reset-live-"));
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     writeGhStub(
@@ -1522,7 +1523,7 @@ esac
       join(tmpdir(), "drive-pr-ci-hold-reset-live-fail-"),
     );
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     writeGhStub(
@@ -1553,7 +1554,7 @@ describe("ci-hold.ts final-ready", () => {
   function fakeGh(checkRunsJson: string): { bin: string; stateDir: string } {
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-final-ready-"));
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     writeGhStub(
@@ -1693,7 +1694,7 @@ esac
     // shape with no `statuses` key parses to `[]`, i.e. clean).
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-status-"));
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     writeGhStub(
@@ -1727,7 +1728,7 @@ esac
     // re-check), modeling exactly that window.
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-status-race-"));
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     const counter = join(root, "status-calls");
@@ -1775,7 +1776,7 @@ esac
     // after that (the re-check's own finalCiProofGreen call).
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-skip-race-"));
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     const counter = join(root, "check-runs-calls");
@@ -1871,7 +1872,7 @@ esac
     // original head.
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-order-race-"));
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     const RACED_HEAD = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -1916,7 +1917,7 @@ esac
     // label timeline.
     const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-hold-race-"));
     const bin = join(root, "bin");
-    const stateDir = join(root, "state");
+    const stateDir = scopedStateDir(join(root, "state"));
     Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
     const gh = join(bin, "gh");
     const counter = join(root, "pr-view-calls");

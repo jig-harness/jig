@@ -152,6 +152,8 @@ changes are marked **Breaking** and say what a consumer changes.
   has how it will work, starting from a replay of Jig's own history. The
   glossary gains *conflict hotspot*.
 - [M16](modules/M16-releases-versions/mappings.md)'s mappings cover a released package's path to its registry: checks of what the package holds before it publishes (publint, Are the Types Wrong?, `twine check`, check-wheel-contents, `cargo publish --dry-run`), publishing without a stored token through npm's, PyPI's and crates.io's trusted publishing, and preview packages a consumer can install from a pull request before it merges. The glossary defines trusted publishing, provenance and preview package.
+- [M16](modules/M16-releases-versions/mappings.md#listing-what-the-release-contains)'s mappings cover listing what a release contains: generating a software bill of materials from the tag's commit for npm, Python, Rust and container images, including bundled artifacts and builds with their own target or features; exporting a GitHub repository's dependency graph as an inventory of the repository, not a release; and attesting the bill of materials to a file or a container image with `actions/attest`, and verifying it. The module lists a bill of materials for each release as future work, and the glossary defines it.
+- [GLOSSARY.md](GLOSSARY.md) defines a *seed lens*: a review lens Jig ships, the review form of one rule a Jig module states, for the part of the rule no gate can check. Seed lenses are planned for the `review` skill ([ROADMAP.md](ROADMAP.md), item 23).
 
 ### Changed
 
@@ -316,6 +318,101 @@ changes are marked **Breaking** and say what a consumer changes.
 - A link to a section of the getting-started, plugin, features or
   principles page no longer stops well below the header: it lands just
   under it.
+
+## [0.76.0] - 2026-10-21
+
+Documents that defer work to the tracker can no longer rot silently: M4 gains a static gate for deferrals that name no item and a scheduled check for deferrals whose items have closed.
+
+### Added
+
+- [M4](modules/M4-docs-governance/README.md) states a new practice, deferrals name live items: a document that defers work to the tracker ("tracked to closure", "a follow-up will be filed") names the item that carries it, and the item stays open. [`reference/deferral-references/`](modules/M4-docs-governance/reference/deferral-references/README.md) is the gate. Its static half is offline and judges the lines a change adds (`--staged` for a hook, `--range` for a pull request), or every document with `--all`. A block of prose with a configured marker phrase and no item reference is a finding, a waiver needs a stated reason, and a configuration or range it cannot read is exit 2. Its live half (`--all --list-keys`, then `--all --states <file>`) takes the tracker's answers as a file, so the check never holds a credential: a deferral fails when none of the items it names is open, and an item with no recorded state fails the run instead of passing.
+- [`templates/deferral-references.yaml`](modules/M4-docs-governance/templates/deferral-references.yaml) (item patterns, marker phrases, scope) and [`templates/deferral-liveness.yml`](modules/M4-docs-governance/templates/deferral-liveness.yml), a scheduled workflow that holds the tracker credential in one step, on the default branch only. The [mappings](modules/M4-docs-governance/mappings.md#deferral-references) give the hook, CI and per-tracker provider recipes.
+- `tracker.ts issue-states` in the `do-item` skill reads item keys on standard input and prints each one's state as `open`, `closed` or `not_found` through the tracker interface; it is the provider the liveness check uses for Linear. A lookup that fails, or an issue the tracker reports without a state category or with one that is neither open nor closed, fails the command.
+- The audit scores new M4 criteria: `deferrals-name-items` (Standard, mechanical) and `deferral-liveness-scheduled` (Strict, mechanical). Each is `expected-absent` for a repository whose documents defer no work to a tracker. A re-audit reports them as added since the prior audit, not as regressions.
+
+## [0.75.0] - 2026-10-21
+
+### Added
+
+- Skill-authoring rules in [M0 § Skills](modules/M0-instruction-architecture/README.md#skills): a description leads with the trigger that sets the skill apart and carries its negative triggers, `SKILL.md` names every reference, a reference over 100 lines opens with a table of contents, instruction bodies carry no incident history or time-sensitive phrasing, and discovery controls do what they are for. [What each runtime offers](modules/M0-instruction-architecture/mappings.md#skill-discovery-controls) is in M0's mappings.
+- M0's [skill-authoring check](modules/M0-instruction-architecture/reference/skill-authoring/README.md) counts the rules a script can see, per rule and per skill file, and prints them as a counter for the ratchet.
+- The [ratchet gate](modules/M1-gates-enforcement-ladder/reference/ratchet/README.md) reads any counting command's JSON (`format: "json"`). With `per: "file"`, each file's count is its own ceiling. It runs the command with `RATCHET_HISTORICAL=1` when it measures the merge base, so a repository can add a counter and the files it counts in one change.
+- Two M0 criteria for the audit: `skill-authoring-rules` (Standard) and `skill-authoring-ratcheted` (Strict). Both are expected-absent in a repository with no skills.
+
+## [0.74.0] - 2026-10-21
+
+### Fixed
+
+- **Breaking:** `drive-pr` now preserves clone isolation under `DRIVE_PR_STATE_DIR`: the override names a root with one `<clone-key>/` subdirectory per clone. Same-numbered PRs in different repositories no longer share state, logs, leases or driver locks. Stop all participants before upgrading an existing flat override, establish each artifact's owner and explicitly relocate complete state into the appropriate clone directory as described in the skill's README. Unscoped legacy artifacts cause a refusal and remain untouched. Run state-using commands, including the reaper, in the owning Git clone; an override alone outside Git no longer identifies state.
+- Directory identity checks tolerate device-number changes only with matching inode, nonzero directory birth time, canonical target path and a freshly confirmed macOS volume UUID. Snapshot and non-writable views supply no drift proof. Without volume proof, device comparison stays strict. Replaced directories and redirected targets still refuse. Older inherited identity tokens remain strict; re-arm an older driver to establish the stronger baseline.
+
+## [0.73.0] - 2026-10-21
+
+The delivery loop can now be published as one stage map, with a gate that
+keeps every owner it names real.
+
+### Added
+
+- **A lifecycle map template** in M6, `templates/LIFECYCLE.md`: one table of
+  the delivery loop's named stages (steer, spec, file, plan the epic, pick up,
+  implement, pre-PR gates, draft and drive, review rounds, merge, post-merge,
+  ops drain, epic close), each with the skill, command or document that owns
+  it and the artifact it hands on. M0's `AGENTS.md` skeleton links it, so the
+  stage that comes next is one hop from the instructions every session loads.
+- **A lifecycle map gate** in M6, `reference/lifecycle-map/`, with a
+  self-test: it fails a map whose owner is a skill, script, file or link that
+  does not exist, a numbered, unowned or placeholder stage, an instruction file
+  that does not link the map, and, with `--cover`, a skill that owns no stage
+  and is not in the map's table of skills outside the loop. With
+  `--scan` it fails any document that names a plugin skill that does not exist.
+- **Audit criteria** for M6 (`lifecycle-map-published`,
+  `lifecycle-owners-resolve-gated`, `lifecycle-skills-on-the-map`), scored
+  in Jig's record and the calibration record.
+- The skills table in the plugin README points to the lifecycle map for the
+  order in which the skills are used.
+
+## [0.72.0] - 2026-10-21
+
+`resolve-conflicts` now keeps a record of the conflicts it resolves.
+
+### Added
+
+- `events.ts` in `resolve-conflicts` appends one `merge_conflict` event for
+  each conflicted path to `$(git rev-parse --git-common-dir)/jig/conflict-events.jsonl`
+  when a merge, rebase, cherry-pick or revert concludes: the path, why it
+  conflicted, the decision and reason, how long the resolution took, and
+  whether a `drive-pr` conflict-resolve round started it. It covers the
+  rebases, cherry-picks and reverts that the merge-history report cannot
+  replay, and the file is shared by every worktree of the clone and never
+  committed. The skill's conclude step runs it, and mapping the next stop of a
+  rebase records the earlier stop first; when that record cannot be written,
+  the earlier stop's snapshot is kept and the next `events.ts` records it.
+- The `Conflicts resolved:` section of a commit message names each path's
+  cause (`[cause: append]`) after its decision.
+
+## [0.71.0] - 2026-10-21
+
+### Added
+
+- M10 external-precondition registry, pluggable reference checks bounded by a deadline and a branch-protection checker with expiring waivers and bot-write checks. M11 defines one current issue per registry with automatic closure after recovery; the audit includes criteria for live checks and reconciliation.
+- `resolve-review-comments` works the review threads GitHub opens for code
+  scanning alerts, from CodeQL, SonarQube Cloud or any other tool that reports
+  to GitHub code scanning. The thread listing attaches each thread's alert,
+  whose severity and security category feed the decline ladder, and the new
+  `dismiss-alert.ts` dismisses the alert when the finding is rejected,
+  declined or deferred, so a resolved thread no longer leaves an open alert
+  failing the tool's check
+  ([code scanning alerts](plugin/skills/resolve-review-comments/README.md#code-scanning-alerts)).
+
+### Fixed
+
+- The changelog skill's release-access check no longer counts a `pull_request`-mode bypass of a `non_fast_forward` or `deletion` rule as freeing the release App: such a bypass admits merges only, so force pushes and deletion stay blocked for it.
+
+## [0.70.2] - 2026-10-21
+
+### Changed
+
+- Consolidate shared command-line and GitHub helpers and fleet-health reporting internals; plugin commands keep their existing paths and behavior.
 
 ## [0.70.1] - 2026-10-20
 
@@ -3258,7 +3355,14 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.70.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.76.0...HEAD
+[0.76.0]: https://github.com/jig-harness/jig/compare/v0.75.0...v0.76.0
+[0.75.0]: https://github.com/jig-harness/jig/compare/v0.74.0...v0.75.0
+[0.74.0]: https://github.com/jig-harness/jig/compare/v0.73.0...v0.74.0
+[0.73.0]: https://github.com/jig-harness/jig/compare/v0.72.0...v0.73.0
+[0.72.0]: https://github.com/jig-harness/jig/compare/v0.71.0...v0.72.0
+[0.71.0]: https://github.com/jig-harness/jig/compare/v0.70.2...v0.71.0
+[0.70.2]: https://github.com/jig-harness/jig/compare/v0.70.1...v0.70.2
 [0.70.1]: https://github.com/jig-harness/jig/compare/v0.70.0...v0.70.1
 [0.70.0]: https://github.com/jig-harness/jig/compare/v0.69.0...v0.70.0
 [0.69.0]: https://github.com/jig-harness/jig/compare/v0.68.0...v0.69.0

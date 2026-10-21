@@ -27,6 +27,15 @@ make, use the entry's term instead.
   runs a feature through a pipeline of stations (research, PRD, architecture,
   …); execution runs one work item through a line of them, from pick-up to a
   merged pull request and its follow-ups. See [FACTORY.md](FACTORY.md).
+- **Lifecycle map** (stage map) — the one table that publishes a repository's
+  delivery loop, from steering to a closed epic and back: a row per named
+  stage, the skill, command or document that owns it, and the artifact it
+  hands on. It answers "what comes next?" from one page that the
+  instruction file links, and a check keeps every owner it names resolvable.
+  Stages are named, never numbered. See
+  [M6](modules/M6-feature-delivery-pipeline/README.md#the-lifecycle-map).
+  *Avoid*: a skills list grouped by category as the answer to "what comes
+  next".
 - **SSoT (single source of truth)** — the one authoritative place a fact or
   rule is defined. Everything else *points* to it or is *generated* from it,
   so copies can't quietly disagree.
@@ -501,10 +510,6 @@ make, use the entry's term instead.
   keeps the cause open and continues collecting evidence. Confirmed recovery
   closes the issue and re-arms reporting; silence does not. See
   [M11](modules/M11-process-observability/README.md#scheduled-failures-one-issue-per-cause).
-- **Reconciler** — a process that compares observed facts with recorded state
-  and applies the changes needed to make them agree. For scheduled failures,
-  it opens, updates or closes the issue for each cause from complete evidence,
-  while retaining progress so retries do not repeat changes.
 
 - **ADR (architecture decision record)** — a short numbered document capturing
   one significant decision, its context, and its consequences. Append-only
@@ -545,6 +550,13 @@ make, use the entry's term instead.
   as bringing every document's frontmatter into line before a validator is
   tightened. Run as survey, plan, then apply, one commit per kind of change
   ([M4 adoption](modules/M4-docs-governance/README.md#adoption-steps)).
+- **Deferral** — a sentence in a document that hands work to the tracker:
+  "tracked to closure", "a follow-up will be filed". It is a promise that
+  an item exists, so it must name one, and the item must stay open. A
+  **deferral marker** is a configured phrase that makes a block of prose a
+  deferral. The static gate checks that a deferral names an item; a scheduled
+  check asks the tracker whether the item has closed since
+  ([M4](modules/M4-docs-governance/reference/deferral-references/README.md)).
 - **PRD (product requirements document)** — the document defining *what* a
   feature does for users and why — deliberately separate from *how* (the
   architecture doc).
@@ -598,6 +610,11 @@ make, use the entry's term instead.
   why. Jig's conflict report replays every merge in a range of time and gives
   each conflicting region a *cause*: a fact every change edits in one place
   (a count, a list, a version), or two changes to the same lines.
+- **Live conflict record** — the line of JSON Jig's conflict tooling appends,
+  for each conflicted file, when a merge, rebase, cherry-pick or revert
+  concludes: which file, why it conflicted, what was decided, and whether a
+  review-loop round started the resolution. It keeps the conflicts a merge replay cannot see, because a
+  rebase leaves no merge commit to merge again.
 - **Changelog** — a file listing each release's notable changes, newest
   first, written for the people who use the *released artifact* it belongs
   to. Jig's follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
@@ -962,6 +979,9 @@ make, use the entry's term instead.
   against them before it's ever allowed to block anything.
 - **Review lens** — one additive, numbered check taught to a reviewer (a
   prompt module or checklist bullet), typically born from a documented miss.
+- **Seed lens** — a *review lens* Jig ships rather than one a repository grew
+  from its own misses: the review form of one rule a Jig module states, for
+  the part of the rule no gate can check.
 - **Tiered review** — a review that runs cheap pattern checks first, contract
   checks second, and an expensive semantic review last; each tier can block
   or warn, and a change only pays for the tiers its file types need.
@@ -1000,6 +1020,12 @@ make, use the entry's term instead.
   **deferred** (with a filed follow-up), or *moot* — each leaving an audit
   trail. Scope expansion and overruling a human thread stay *HITL*.
   Jig ships it as the `resolve-review-comments` skill.
+- **Code scanning alert** — a finding a static-analysis tool (CodeQL,
+  SonarQube Cloud, Semgrep, …) reports to GitHub's code scanning, which keeps
+  it open until a later analysis no longer finds it or someone dismisses it
+  with a reason. On a pull request GitHub also opens a review thread for it, a
+  **code-scanning thread**; resolving that thread leaves the alert open, so the
+  comment-resolution loop settles both.
 - **PR drive loop** — the procedure that wraps the *comment-resolution loop*
   for unattended work on one pull request. The comment-resolution loop already
   repeats *review rounds* until the reviewers settle; the drive loop runs each
@@ -1168,6 +1194,20 @@ make, use the entry's term instead.
   checklist, a migration workflow). The unit of codified "how we do this
   here." *Avoid*: command, slash command: `/jig:<name>` is how a skill is
   invoked, not what it is.
+- **Reference (skill reference)** — a file a *skill* keeps beside its
+  `SKILL.md` (by convention under `references/`) that the agent reads only
+  when `SKILL.md` sends it there, so detail costs context only in the
+  invocations that need it.
+- **Negative trigger** — the part of a *skill*'s description that says when
+  not to use it ("not for X; use Y instead"). Only the description is read
+  before a skill is chosen, so a negative trigger elsewhere cannot prevent a
+  wrong choice.
+- **Exact / judgment section label** — a bold label opening a section of a
+  *skill*: **exact** means run the named command as written, **judgment**
+  means reach the stated outcome by the means that fit. Not yet a rule
+  ([M0](modules/M0-instruction-architecture/README.md#status)). *Avoid*:
+  confusing **judgment** here with the *Judgment tier*, which is a *model
+  tier*.
 - **Rule (conditional rule)** — an instruction file that loads into agent
   context only when files matching its path patterns are being edited — the
   scoped counterpart of an always-loaded instruction file.
@@ -1391,6 +1431,12 @@ make, use the entry's term instead.
   publish attestation, such as PyPI's, is narrower: it names the workflow
   that uploaded the file, which proves where it was published from, not
   where it was built.
+- **Software bill of materials (SBOM)** — a machine-readable list of the
+  components a released artifact contains, each with its name and version,
+  so a vulnerability scanner can tell whether the artifact holds an
+  affected version without rebuilding it. CycloneDX and SPDX are common
+  formats; a tool generates it from the lockfile or the built
+  artifact.
 - **Preview package** — a package built from a pull request's commit, so a
   consumer can install and try the change before it merges. It is not a
   release: no changelog entry, no version the release step chose, no tag,
@@ -1576,6 +1622,11 @@ make, use the entry's term instead.
 - **JSX** — an HTML-like markup syntax that some JavaScript and TypeScript
   files embed, compiled to ordinary function calls. A tool that reads source
   as text must handle it or say that it does not.
+- **UUID (universally unique identifier)** — an identifier designed so independent
+  callers are extremely unlikely to choose the same value. A version 4 UUID uses
+  random bits. Jig persists one per Git clone and hashes it to keep that clone's
+  drive state under a stable key when the checkout moves.
+
 - **ASCII (American Standard Code for Information Interchange)** — the basic
   character set containing English letters, digits and common punctuation.
 - **SHA (Secure Hash Algorithm)** — a family of content fingerprints; Git uses
@@ -1624,3 +1675,20 @@ make, use the entry's term instead.
   skill (`code_stats.classify_command`) when globs cannot describe its
   layout: it reads the tracked paths and prints, per file, the area, kind,
   language or module that overrides the skill's own classification.
+
+## External precondition
+
+A fact outside the repository that delivery depends on, such as branch
+protection or a workflow identity's permission to read a secret. Its registry
+declares intended state; a scheduled read proves it under the consuming
+identity. See [M10](modules/M10-environments-deploy/README.md#external-preconditions).
+
+## Reconciler
+
+A process that compares intended and observed state and maintains the
+corresponding record. For external preconditions, it maintains one current
+tracker issue while anything fails and closes it after recovery. For
+scheduled failures, it opens, updates or closes the issue for each cause from
+complete evidence, retaining progress so retries do not repeat changes. See
+[M11](modules/M11-process-observability/README.md#one-current-issue-for-external-preconditions)
+and [scheduled failures](modules/M11-process-observability/README.md#scheduled-failures-one-issue-per-cause).

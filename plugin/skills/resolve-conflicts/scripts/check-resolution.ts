@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Verify a conflict resolution before the operation is concluded: after every
  * path is resolved, recorded and staged, before `git commit`,
@@ -46,6 +47,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fail, runMain } from "../../../shared/cli.ts";
+import { type PathCauses, snapshotCauses } from "./lib/live-causes.ts";
 import {
   type Classification,
   classifyPaths,
@@ -179,9 +181,17 @@ function checkPath(
   result: CheckResult,
 ): void {
   const problem = (message: string, line?: number) =>
-    result.problems.push({ path, line, message });
+    result.problems.push({
+      path,
+      ...definedFields({ line }),
+      message,
+    });
   const note = (message: string, line?: number) =>
-    result.notes.push({ path, line, message });
+    result.notes.push({
+      path,
+      ...definedFields({ line }),
+      message,
+    });
   const { decision, reason, command, dropped } = entry.resolution;
 
   if (decision === null || decision === undefined) {
@@ -408,14 +418,23 @@ export function checkResolution(
   return result;
 }
 
-/** The "Conflicts resolved:" section for the commit message. */
-export function messageSection(snapshot: Snapshot): string {
+/**
+ * The "Conflicts resolved:" section for the commit message: each path's
+ * decision, then its cause when `causes` has one, then the command and the
+ * reason.
+ */
+export function messageSection(
+  snapshot: Snapshot,
+  causes: ReadonlyMap<string, PathCauses> = new Map(),
+): string {
   const lines = ["Conflicts resolved:"];
   for (const path of Object.keys(snapshot.paths).sort()) {
     const { decision, reason, command, dropped } = (
       snapshot.paths[path] as PathEntry
     ).resolution;
     let line = `- ${path}: ${decision}`;
+    const cause = causes.get(path)?.cause;
+    if (cause) line += ` [cause: ${cause}]`;
     if (decision === "regenerated" && command) line += ` (${command})`;
     if (reason) line += ` — ${reason}`;
     if (dropped) line += ` Dropped on purpose: ${dropped.why}`;
@@ -624,15 +643,41 @@ function reportObligations(
   }
 }
 
-async function main(): Promise<number> {
-  const args = process.argv.slice(2);
+/** The one output mode the command line names, or "" for the plain report. */
+function parseMode(args: readonly string[]): string {
   const known = ["--json", "--message", "--commit-message"];
   if (args.length > 1 || args.some((a) => !known.includes(a)))
     fail(
       2,
       "usage: check-resolution.ts [--json | --message | --commit-message]",
     );
-  const mode = args[0] ?? "";
+  return args[0] ?? "";
+}
+
+/** Every problem, escalation, note and obligation, one line each. */
+function reportResult(
+  result: CheckResult,
+  obligations: readonly ObligationResult[],
+  write: (line: string) => void,
+): void {
+  for (const f of result.problems) write(`PROBLEM ${render(f)}`);
+  for (const e of result.escalations)
+    write(`NEEDS A HUMAN ${e.path}: ${e.question}`);
+  for (const f of result.notes) write(`note ${render(f)}`);
+  reportObligations(obligations, write);
+}
+
+/** The closing line of the plain report: what to do next. */
+function verdictLine(result: CheckResult): string {
+  if (result.exit === 0)
+    return "check-resolution: the resolution passes. Validate it, then conclude the operation.";
+  if (result.exit === 4)
+    return `check-resolution: ${result.escalations.length} path(s) need a human; do not conclude the operation.`;
+  return `check-resolution: ${result.problems.length} problem(s); fix them and run this again.`;
+}
+
+async function main(): Promise<number> {
+  const mode = parseMode(process.argv.slice(2));
   const root = topLevel();
   if (root === null) fail(2, "check-resolution: not inside a git work tree.");
   const { operation, snapshot } = currentSnapshot("check-resolution", root);
@@ -647,6 +692,10 @@ async function main(): Promise<number> {
     catalogGeneratedEntries(),
   );
 
+  const causes =
+    mode !== "" && result.exit === 0
+      ? snapshotCauses(root, snapshot.paths)
+      : new Map<string, PathCauses>();
   if (mode === "--json") {
     console.log(
       JSON.stringify(
@@ -654,7 +703,7 @@ async function main(): Promise<number> {
           ...result,
           operation: snapshot.operation,
           obligations,
-          message: result.exit === 0 ? messageSection(snapshot) : null,
+          message: result.exit === 0 ? messageSection(snapshot, causes) : null,
         },
         null,
         2,
@@ -662,31 +711,20 @@ async function main(): Promise<number> {
     );
     return result.exit;
   }
-  const report = (write: (line: string) => void) => {
-    for (const f of result.problems) write(`PROBLEM ${render(f)}`);
-    for (const e of result.escalations)
-      write(`NEEDS A HUMAN ${e.path}: ${e.question}`);
-    for (const f of result.notes) write(`note ${render(f)}`);
-    reportObligations(obligations, write);
-  };
+  const report = (write: (line: string) => void) =>
+    reportResult(result, obligations, write);
   if (mode === "--message" || mode === "--commit-message") {
     report((line) => console.error(line));
     if (result.exit !== 0) return result.exit;
     console.log(
       mode === "--message"
-        ? messageSection(snapshot)
-        : `${preparedMessage(root)}\n\n${messageSection(snapshot)}`,
+        ? messageSection(snapshot, causes)
+        : `${preparedMessage(root)}\n\n${messageSection(snapshot, causes)}`,
     );
     return 0;
   }
   report((line) => console.log(line));
-  console.log(
-    result.exit === 0
-      ? "check-resolution: the resolution passes. Validate it, then conclude the operation."
-      : result.exit === 4
-        ? `check-resolution: ${result.escalations.length} path(s) need a human; do not conclude the operation.`
-        : `check-resolution: ${result.problems.length} problem(s); fix them and run this again.`,
-  );
+  console.log(verdictLine(result));
   return result.exit;
 }
 

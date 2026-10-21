@@ -58,21 +58,6 @@ rollout:
 [adoption/greenfield.md](../adoption/greenfield.md) then points at
 `/jig:kickoff` instead of the seed.
 
-### 5. A shared runtime kernel and diagnostics
-
-The plugin's scripts each solve the same problems by hand: decoding JSON
-from `gh` and configuration files, retrying, releasing locks on a signal,
-reading the clock. When one fails, the cause is often lost (an error turned
-into a default answer, a child's error output discarded), and nothing
-records how long anything took. The ratchet counts those patterns, and
-`plugin/shared/` holds the guards, error helpers, clock and
-logger that replace them; what is left moves the code onto them.
-
-- **Burn-downs**, as code is touched: the 91 `exactOptionalPropertyTypes`
-  errors; drive-pr's own copies of `proc.ts`, `cli.ts` and
-  `gh-conditional.ts` beside the shared ones; the duplicated block in
-  `fleet-health.ts`; fallow's complexity hotspots.
-
 ### 7. The Notion store, run against Notion
 
 The [Notion store](../plugin/skills/reflect/README.md#notion-store) is built and
@@ -207,20 +192,17 @@ Done when both gates are in M14's reference with their criteria.
 Practices a working repository validated, for modules that exist today:
 
 - **M10 and M11**:
-  - a ledger of out-of-tree work that blocks promotion;
-  - a registry of external preconditions.
+  - a ledger of out-of-tree work that blocks promotion.
 - **M6 and M7**:
   - an acceptance stage;
   - plan claims checked against the code before building;
   - the execution-plan format the pickup skill reads;
   - a skill that runs the post-merge stage M7 states, for any repository (the
     stage and its criterion are in [M7](../modules/M7-pr-lifecycle-review/README.md));
-  - a lifecycle map with a check that every named skill exists.
 - **M0, M4 and M5**:
   - a reference generator for the model roster, when the working tool moves
     here;
   - instructions that keep working in every runtime;
-  - deferred promises in documents that point at live tracker items;
   - files that change only with an approved decision record.
 
 Done when each module states the practice with its mappings and criteria, and
@@ -296,19 +278,41 @@ repository with one released artifact. What is left:
 Parallel pull requests put each other in conflict, and each conflict costs a
 resolution and a CI run; nobody can say how many there are, in which files,
 or why. [design/merge-conflicts.md](merge-conflicts.md) has how it works and
-the [conflict hotspots](../GLOSSARY.md) the report finds. What is left:
+the [conflict hotspots](../GLOSSARY.md) the report finds. The replay and the
+live record (`resolve-conflicts` keeps one event per resolved path, which
+covers the rebases, cherry-picks and reverts the replay cannot see) are
+built. What is left:
 
-- **A live record**: `resolve-conflicts` keeps one event per resolved path
-  instead of overwriting its snapshot, which covers the rebases,
-  cherry-picks and reverts the replay cannot see.
 - **The practice**: M11's `merge_conflict` event and metric, the figure on
   `drive-pr`'s cross-PR scoreboard, M12's practice and audit criterion, and
   hotspots as findings in the reflection store.
 - **One file per roadmap item** follows only if the report shows the plan
   or the roadmap conflicting where items are added or removed side by side.
 
-Done when a resolution by `resolve-conflicts` leaves its events, and an
-audit scores M12's new criterion from the report.
+Done when an audit scores M12's new criterion from the report.
+
+### 23. Seed review lenses
+
+M7 says how [review lenses](../GLOSSARY.md) are held but ships none, so
+nothing in `review` checks a change against the rules Jig's own modules
+state. [design/review-lenses.md](review-lenses.md) has how it works:
+
+- **The lens contract and the first lens**: one file per lens, selected by
+  what the diff adds or removes, run by `review`'s semantic tier with fresh
+  context, each finding carrying the evidence its lens asks for, and capped
+  at a warning; `review.lenses` configuration; `jig.swallowed-failure` for
+  M15.
+- **`jig.test-gap`** for M14.
+- **`jig.stale-comment`**, after M4 gains its rule for comments in code.
+- **`jig.type-invariants`**, after M15 gains its rule for types.
+- **Measurement and promotion**: a lens's findings on pull request threads
+  counted into M8's parity report, one row per lens version, and a lens
+  promoted to blocking only with the measurement that cleared the bar.
+
+Done when `review` runs every seed lens a diff triggers and says why it
+skipped the others, each seed lens's eval fixtures have passed live, and the
+tallying script turns a fixture set of threads into one parity row per lens
+version.
 
 ## Later
 
@@ -345,7 +349,9 @@ audit scores M12's new criterion from the report.
   they invoke, running on native Windows under Claude Code with Git for
   Windows' Bash first, and under PowerShell (Codex on Windows) later. Much
   of the code already handles Windows: a pass and its registered runners
-  are stopped by captured process identities, the clone key is not a path,
+  are stopped by captured process identities within the cooperative scope
+  recorded in [ADR-0008](../docs/adr/ADR-0008-windows-cancellation-uses-captured-process-identities.md),
+  the clone key is not a path,
   and the pass is
   spawned from an argument list. Both suites run on Windows every night; the tests
   that need a step below skip there, and each skip names the step that lifts
@@ -364,11 +370,7 @@ audit scores M12's new criterion from the report.
      quoted for `cmd.exe`'s own rules, tested with arguments holding
      spaces, quotes, `%` and `^`. Done when a pickup, a driven round and a
      stop work end to end on a Windows machine.
-  2. **Job Objects** (optional): each pass in a
-     Windows [Job Object](../GLOSSARY.md), for a kill no directly started
-     descendant escapes and a sound check that the tree is gone; or a
-     recorded decision that captured process identities are enough.
-  3. **PowerShell** (`powershell`, later): the shell constructs in the
+  2. **PowerShell** (`powershell`, later): the shell constructs in the
      skills' instructions (`$(…)`, heredocs, pipes into `grep` or `tail`,
      `test`, `mktemp`, and `review`'s file-set logic) moved into the scripts
      they feed, so the skills run under Codex on Windows without Git Bash.

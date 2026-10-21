@@ -997,9 +997,10 @@ describe("cancellation reaches a deadlined child", () => {
   const PROC = join(SCRIPTS, "lib", "proc.ts");
   const pause = (ms: number) =>
     new Promise((resolve) => setTimeout(resolve, ms));
-  async function until(check: () => boolean | Promise<boolean>): Promise<void> {
+  async function until<T>(check: () => T | Promise<T>): Promise<T & {}> {
     const deadline = Date.now() + 30_000;
-    while (!(await check())) {
+    for (let value = await check(); ; value = await check()) {
+      if (value) return value;
       if (Date.now() >= deadline)
         throw new Error(
           "cancellation fixture did not reach its expected state",
@@ -1081,9 +1082,8 @@ describe("cancellation reaches a deadlined child", () => {
     try {
       await until(() => existsSync(live));
       const pid = Number(readFileSync(live, "utf8"));
-      const targets = await captureProcessTree(pid);
-      if (targets === null)
-        throw new Error("child identity unavailable before cancellation");
+      // One process-table read can be uncertain; a later one settles it.
+      const targets = await until(() => captureProcessTree(pid));
       cancel(child, request, mode);
       const exit = await ended;
       writeFileSync(finish, "finish");

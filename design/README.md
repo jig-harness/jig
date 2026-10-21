@@ -58,6 +58,7 @@ with the review.
 | [The audit experience](audit-experience.md) | 8 |
 | [The jig-harness.dev website](website.md) | 18 |
 | [Merge conflicts, measured](merge-conflicts.md) | 22 |
+| [Review lenses](review-lenses.md) | 23 |
 
 ## Starting a design
 

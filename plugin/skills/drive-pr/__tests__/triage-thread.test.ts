@@ -1,3 +1,4 @@
+import { scopedStateDir } from "./scoped-state-dir.ts";
 /**
  * triage-thread.test.ts
  *
@@ -205,7 +206,7 @@ function nodePayload(opts: {
 
 function writeFixtureDir(): { dir: string; stateDir: string } {
   const dir = join(tmpRoot, `fx-${++fixtureSeq}`);
-  const stateDir = join(dir, "state");
+  const stateDir = scopedStateDir(join(dir, "state"), scratchWorktree);
   mkdirSync(dir, { recursive: true });
   mkdirSync(stateDir, { recursive: true });
   return { dir, stateDir };

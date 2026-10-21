@@ -45,6 +45,9 @@ only how they last finished.
 > incident (a **dead-man's switch**). How many failures in a row make a job
 > red is configured per job.
 
+> External-precondition failures reconcile one current issue per registry;
+> a complete healthy observation closes it automatically.
+
 > A scheduled check reports each distinct cause as **one issue**, identified by
 > a stable [cause fingerprint](../../GLOSSARY.md). Recurrences update that issue;
 > confirmed recovery closes it. A [flood breaker](../../GLOSSARY.md) for each
@@ -54,6 +57,31 @@ only how they last finished.
 
 Everything below applies these tool-independent statements;
 concrete per-backend wiring lives in [mappings.md](mappings.md).
+
+## One current issue for external preconditions
+
+An external precondition that fails every day needs one current issue, not
+one issue per run. A [reconciler](../../GLOSSARY.md) compares a complete
+observation with the tracker's current state: it opens the registry's issue
+when anything fails, updates it with the current failing entries, and closes
+it automatically only after every entry passes or has a valid, visible
+waiver. Pending checks and failed reads keep it open. Each entry names its
+owner and recovery action; the report does not contain secret values.
+
+Use a stable machine marker rather than a title search, read every page of
+open issues, and serialize observations that write the same marker. A marker
+anyone can type is an identifier, not ownership: consider only issues the
+reconciling identity opened. If a
+lookup fails or duplicate open issues carry the marker, fail without writing
+or closing anything. An invalid registry is an observation failure, never an
+empty green report. Tracker failures fail the run as well: checking without
+maintaining the issue leaves the operational work invisible.
+
+The [M10 reference](../M10-environments-deploy/reference/external-preconditions/)
+provides the external-registry reconciler behind a tracker interface, with a
+GitHub Issues adapter. The checks remain read-only against the systems they
+inspect; tracker reconciliation is the explicit write boundary. The
+[heartbeat](#invariant) still watches whether the scheduled observation ran.
 
 ## Core pieces
 
@@ -243,9 +271,12 @@ repository can implement this practice today. Jig's reusable [reconciler](../../
   validated by the [event-schema lint](reference/event-schema-lint/);
   **every scheduled job is in the [cadence registry](templates/scheduled-jobs.yaml)
   and a scheduled watcher classifies its runs**, failing for a job that is
-  stale or red (mechanical); scheduled failures have evidence-only test jobs
-  and separate triage that maintains one issue per cause, with confirmed
-  recovery and an announced per-cause flood breaker (mechanical).
+  stale or red (mechanical); **each external-precondition registry
+  [reconciles one current issue](#one-current-issue-for-external-preconditions)**
+  that closes only after a complete healthy observation (mechanical); and
+  scheduled failures have evidence-only test jobs and separate triage that
+  maintains one issue per cause, with confirmed recovery and an announced
+  per-cause flood breaker (mechanical).
 - **Strict** — both gates run in [CI](../../GLOSSARY.md) with their self-tests
   (mechanical); **the watcher reports to an external monitor on success and
   on failure**, so a watcher that stops is itself an incident;
@@ -341,10 +372,10 @@ and M11 owns the emission, registry and dashboard side.
   [mappings.md](mappings.md#heartbeat-monitoring) lists the products that
   support the pattern; the module requires only a monitor that raises an
   incident when an expected report does not arrive.
-- **Automatic repair.** The heartbeat says a job is stale or red; it does not
-  restart or repair it. Scheduled-failure triage maintains issues for people
-  to act on; classification does not authorize a repair or approve a changed
-  expectation.
+- **Automatic repair.** The heartbeat says a job is stale or red and does not
+  restart or repair it. External-precondition findings and scheduled-failure
+  triage maintain tracker issues for people to act on, but never repair the
+  inspected system; classification does not approve a changed expectation.
 - **A required backend.** Telemetry backends (product-analytics tools, data
   warehouses, CI-native metrics) appear only as options in
   [mappings.md](mappings.md).

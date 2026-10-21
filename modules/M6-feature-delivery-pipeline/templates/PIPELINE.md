@@ -159,6 +159,11 @@ fill the `<...>` placeholders with your project's concrete tools:
 | Design-prototype loop | accepted prototype | `<design-brief>` (e.g. the Jig `/jig:design-brief-builder` skill) + your `<design-prototype>` skill/tool | back into PRD / architecture; then epic |
 | Epic decomposition | epic + flag-labelled sub-issues | M9 `ISSUE-TEMPLATES.md` (epic + sub-issue skeletons), filed via `<tracker>` | the PR loop (M7), via labels (M9 / M3) |
 
+The pipeline ends at the handoff to delivery. The whole loop, from steering
+through post-merge and epic close, is one table, the
+[lifecycle map](https://github.com/jig-harness/jig/blob/main/modules/M6-feature-delivery-pipeline/templates/LIFECYCLE.md),
+which names each stage's owner and what it hands on.
+
 ## Where this is not a straight line
 
 The pipeline is a default order, not a one-way street. Two feedbacks are

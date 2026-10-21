@@ -56,6 +56,10 @@ criteria:
     # Every model tier an agent or skill declares lives in its metadata (or, for a judgment pass inside a skill, in that skill's configuration) as a family alias, never a versioned model id (where the runtime has no family aliases, the vendor's most general model name, or one central name mapped to a release in a single place), a CI check over that metadata enforces it, and any committed roster of the assignments is generated from the metadata and drift-checked (expected-absent for a repository whose agents and skills pin no model, in metadata or at invocation).
     score: expected-absent
     evidence: "No agent or skill pins a model: at a66ee22 git grep for model: front matter in plugin/ and .claude/ finds none, plugin/agents/review-arbiter.md states that none is pinned and a consumer pins it in its own definition, no skill configuration carries a model setting, no skill or script passes a model at invocation (no --model flag or subagent model parameter in plugin/skills or plugin/agents), so there is no Judgment-tier assignment needing a baseline, and no roster file is tracked"
+  M0/skill-authoring-rules:   # standard, requires convention
+    # Where the repository maintains agent skills, written authoring rules say how a skill is put together for the moment each part is read: a description that leads with the distinguishing trigger and carries its negative triggers, references named directly by the skill's entry file, contents sections in long references, no incident history or time-sensitive phrasing in instruction bodies, and discovery controls used for what they do (expected-absent where the repository keeps no skills).
+    score: absent
+    evidence: "At a66ee22 plugin/skills holds the plugin's skills, and plugin/AGENTS.md states how a skill is packaged and versioned but no authoring rules for descriptions, references, history or discovery controls; tools/plugin/plugin.test.ts checks only that a description exists"
   M0/instruction-freshness-checked:   # strict, requires mechanical
     # Countable facts and referenced paths in instruction files are verified against reality by a CI check that fails on drift.
     # prior: convention: scripts/check-md-links.ts in `bun run gates` (required check 'gates') fails on broken Markdown links, but nothing re-derives countable facts such as AGENTS.md's ordered gate list against scripts/gates.ts, so the mechanical bar is not met
@@ -71,6 +75,10 @@ criteria:
     # probe found: .github/workflows/gates.yml
     score: absent
     evidence: "At a66ee22 .github/workflows/gates.yml has no step measuring an always-loaded budget, and scripts/gates.ts runs no such check"
+  M0/skill-authoring-ratcheted:   # strict, requires mechanical
+    # A structural check counts the skill-authoring rules a script can see (references the entry file does not name, long references without a table of contents, issue-id density, time-sensitive phrasing, negative triggers only in the body) per rule and per skill file, and CI fails a change that adds to any file's count, compared against the merge base or a baseline that may only fall (expected-absent where the repository keeps no skills).
+    score: absent
+    evidence: "At a66ee22 no check counts structural rules over plugin/skills; tools/quality/ratchet.jsonc has no counter for skill files and tools/plugin/plugin.test.ts checks only that a description exists"
   # M1 gates-enforcement-ladder
   M1/gate-set-documented:   # lite, requires convention
     # An ordered gate set (format, lint, types, tests, build) is stated in one canonical place and runnable with a single command.
@@ -299,6 +307,10 @@ criteria:
     # The frontmatter check either reads documents with a full YAML parser, or states the subset of YAML it reads and rejects every construct outside it with an error instead of guessing at a value.
     score: absent
     evidence: "No frontmatter check runs on Jig's own docs (see M4/frontmatter-machine-validated): scripts/gates.ts calls none, and Jig's docs outside fixtures, templates and seeds carry no frontmatter; the subset reader exists only as modules/M4-docs-governance/reference, an example for adopters"
+  M4/deferrals-name-items:   # standard, requires mechanical
+    # A document that defers work to the tracker names the item that carries it, in the same block of prose as the deferral, and a check enforces this on the lines each change adds, in the pre-commit hook and in CI (expected-absent where no document defers work to a tracker).
+    score: expected-absent
+    evidence: "No Jig document promises tracked work: git grep -Ei 'tracked to closure|will be filed|to be filed|tracked separately|follow-up will' -- '*.md' hits only documents that describe the practice (GLOSSARY.md, the M4 module, change notes), and Jig's open work is stated against the plan and roadmap (design/plan.md, ROADMAP.md); scripts/check-no-tracker-refs.ts fails Jig's own tracker keys in any document, so none can name one"
   M4/authority-hierarchy-written:   # standard, requires convention
     # A single-valued authority hierarchy is written down so contradictions between docs resolve without a judgment call.
     # prior: absent: grep authority|precedence|source of truth in own docs: only CLAUDE.md 'AGENTS.md the single source of truth' and PLAYBOOK.md 'map vs territory'; no ordered precedence for conflicting docs
@@ -331,6 +343,10 @@ criteria:
     # prior: absent: .github/workflows/ holds only gates.yml (pull_request, push to main); no scheduled job; no retrospective or raw-notes backlog file in the tree
     score: absent
     evidence: ".github/workflows/gates.yml triggers on pull_request and push only, no schedule; no retrospective or raw-notes backlog (the reflection store is ROADMAP item 6, unbuilt)"
+  M4/deferral-liveness-scheduled:   # strict, requires mechanical
+    # A scheduled job on the default branch asks the tracker whether the items the documents' deferrals name are still open, fails a deferral that has no open item left (an item closed, or one that does not exist), and fails rather than passes when it could not look an item up; the tracker credential is available to that job's tracker step only and never to code from a pull request (expected-absent where no document defers work to a tracker).
+    score: expected-absent
+    evidence: "No Jig document defers work to a tracker (see M4/deferrals-name-items); the plan and roadmap items its documents point at are checked by scripts/check-roadmap.ts, which needs no credential"
   # M5 adr-practice
   M5/adrs-exist-numbered-from-template:   # lite, requires convention
     # Decisions are captured as numbered ADR files from a shared template with consistent frontmatter (a decision date and a status).
@@ -412,6 +428,18 @@ criteria:
     # prior: absent: .config/jig.yaml issue_tracker.labels has only followup/epic; no flag labels and no catalog choosing gates from labels; gates.yml runs one fixed set
     score: absent
     evidence: ".config/jig.yaml issue_tracker.labels has only followup/epic; CI job selection (.config/change-areas.yaml, scripts/change-areas.ts) is driven by paths, not issue labels"
+  M6/lifecycle-map-published:   # lite, requires convention
+    # The delivery loop is published as one stage map, linked from the instruction file every session loads; each stage is named, not numbered, and names its owner and the artifact it hands on.
+    score: absent
+    evidence: "No stage map at the audited commit: the loop is described in pieces (design/README.md, CONTRIBUTING.md, the plugin README's skill list grouped by kind), and AGENTS.md links no lifecycle page"
+  M6/lifecycle-owners-resolve-gated:   # standard, requires mechanical
+    # A check fails when the lifecycle map names a skill, command, script or document that does not resolve, and it runs in CI with its self-test.
+    score: absent
+    evidence: "No stage map at the audited commit, so nothing resolves its owners; scripts/gates.ts runs no lifecycle check"
+  M6/lifecycle-skills-on-the-map:   # strict, requires mechanical
+    # Every skill the repository ships appears on the lifecycle map, as a stage's owner or in its table of skills outside the loop, and the check fails when one is missing (expected-absent for a repository that ships no skill).
+    score: absent
+    evidence: "Jig ships plugin skills, and at the audited commit no map lists them and no check fails a skill left off one"
   M6/design-loop-feedback-contract:   # strict, requires convention
     # The design-prototype loop's feedback into requirements and architecture is a written contract — the prototype may reopen the PRD and the architecture rather than being a rendering step at the end.
     # prior: expected-absent: Jig has no user-interface product (CLI skills, gates and Markdown), so the design-prototype loop does not apply
@@ -1100,6 +1128,13 @@ criteria:
     # The identity that writes the release to the integration branch passes its rules only as far as the release needs (contents only, never workflows; its key held by an environment only the integration branch may use; force pushes and deletion still blocked for it), or the release arrives as a pull request a person merges (expected-absent where the repository releases no versioned artifact).
     score: mechanical
     evidence: "No automation writes a release to main: the version moves in the pull request that changes plugin/, and a person merges it under main's branch protection, which requires the gates check (.github/workflows/gates.yml)."
+  M10/external-preconditions-live-checked:   # standard, requires mechanical
+    score: absent
+    evidence: "At audited commit a66ee2269e50bdb33434f8c3f741ac337ec86a65, no external-precondition registry or scheduled runner is declared."
+  M11/external-preconditions-issue-reconciled:   # standard, requires mechanical
+    score: absent
+    evidence: "At audited commit a66ee2269e50bdb33434f8c3f741ac337ec86a65, no external-registry issue reconciler runs on a schedule."
+
 declined:
   - refs: ["M9/taxonomy-documented", "M9/memory-location-designated"]
     reason: "Deferred."
