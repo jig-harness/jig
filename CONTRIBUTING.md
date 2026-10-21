@@ -262,10 +262,30 @@ every open pull request at each merge. Only the `jig-release` GitHub App,
 which pushes the release commit after a merge
 ([ADR-0004](docs/adr/ADR-0004-change-notes-released-after-the-merge.md)),
 and repository administrators may bypass it.
-`bun scripts/check-branch-protection.ts` checks the setting against that
-policy; it needs an administrator's `gh` login, so it runs by hand, not in
-CI. This repository's ruleset also requires the AI reviewer's check, beyond
-that policy.
+The intended policy lives in `.config/external-preconditions.yaml`.
+`.github/workflows/external-preconditions.yml` checks it daily under the
+release App identity with a token limited to Contents read and Administration
+read, minted in a job that runs nothing from the repository and hands what it
+read to a keyless job that judges it. This scope can inspect classic protection; GitHub withholds ruleset
+bypass actors unless the caller has write access to the ruleset. A complete
+bot-bypass observation therefore needs an explicitly approved Administration-
+write observer token, still used only for read requests. Until then the
+read-scoped observation reports bypass as unknown. A separate workflow token
+maintains one GitHub issue while the registry
+is unresolved and closes it after recovery; only an issue that token's
+identity opened is ever adopted. The App installation must grant
+Administration read before the observation can inspect protection; unavailable
+credentials and withheld bypass lists fail closed. The registry also checks
+that the App can push release commits while history remains protected for it.
+`bun scripts/check-branch-protection.ts` remains a manual compatibility report
+of the branch controls, using the same registry policy; it requires a `gh`
+login permitted to inspect protection. This repository's ruleset also requires
+the AI reviewer's check, beyond that policy.
+
+After the observer workflow merges, dispatch its current main version with
+`gh workflow run external-preconditions.yml --ref main` and inspect the run
+under the release App identity. A local administrator's green result does not
+establish the App's access. The workflow never repairs host settings.
 
 Locally, `JIG_GATES_SKIP_SEPARATE_SUITES=1 bun run gates` leaves out the long
 drive-pr suite and the website's tests, which CI runs in the drive-pr job and
@@ -627,8 +647,10 @@ App, the one actor `main`'s ruleset lets past its pull-request and check
 rules, and the one the channels' ruleset lets create or update `latest` and
 `stable`; its client ID
 (`RELEASE_APP_CLIENT_ID`) and private key (`RELEASE_APP_PRIVATE_KEY`) live in
-the `release` environment, which only `main` may use, and only the jobs that
-push and tag, which run nothing from the repository, name it. When the
+the `release` environment, which only `main` may use. The jobs that push and
+tag run nothing from the repository. The external-precondition observer also
+uses that environment, loads its code from current main and mints a separate
+read-only token of the same App; it changes no host settings. When the
 workflow cannot push (the App was uninstalled, its key revoked, or the ruleset
 no longer names it), the notes wait on `main` and nothing is lost: restore it,
 then run the workflow by hand (`gh workflow run release.yml`, or Run

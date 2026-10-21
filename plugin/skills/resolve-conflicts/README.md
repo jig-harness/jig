@@ -77,6 +77,19 @@ cause was right when a sample was checked by hand. The
 [agent procedure](SKILL.md#where-past-merges-conflicted-the-history-report)
 has the flags and the causes.
 
+## What each resolution leaves
+
+The snapshot of an operation is overwritten by the next one, so a rebase that
+stops five times kept only its last stop. `scripts/events.ts` runs after an
+operation concludes (the skill's Step 7 does it) and appends one line per
+conflicted path to `conflict-events.jsonl` in git's common directory: the
+operation, the path, why it conflicted, the decision and reason, how long
+the resolution took, and whether a `drive-pr` conflict-resolve round started
+it. Every worktree of the clone shares the file and nothing commits it. It
+covers the rebases, cherry-picks and reverts that
+`history.ts` cannot replay. The
+[agent procedure](SKILL.md#the-live-record) has the fields.
+
 ## Verification
 
 The skill's scratch-repository tests exercise unrelated staging during merges

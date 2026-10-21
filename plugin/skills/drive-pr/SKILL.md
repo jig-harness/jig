@@ -784,8 +784,10 @@ Then:
   both sides and why each changed, regenerates derived files rather than
   hand-merging them, checks that no change was silently dropped, records
   every decision in the merge commit message, and validates with this round's
-  plan (§ 5) before concluding the merge. Then the rest of § 5 and § 6 as
-  normal. A conflict it records as `escalate` is the human hand-off below: it
+  plan (§ 5) before concluding the merge, and records the conflicts it
+  resolved in the clone's live record, marked as this drive's
+  (`$DRIVE_PR_ROUND_TASK` and `$DRIVE_PR_TARGET` are how it knows). Then the
+  rest of § 5 and § 6 as normal. A conflict it records as `escalate` is the human hand-off below: it
   aborts the merge, verifies the tree is clean, and exits non-zero.
 
 Either way **push, or the round achieved nothing the driver can observe** —
