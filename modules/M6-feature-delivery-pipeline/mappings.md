@@ -231,7 +231,9 @@ As with the other gates, run the script from the base the change targets
 and read the map and the skill directories as data from `pr/`, the step's
 working directory and so the gate's `--root`; a change that rewrites the gate cannot then
 report itself clean. `--cover` is for a repository that ships skills and
-wants none left off the map; a repository that only uses a plugin leaves it
+wants none left off the map: one entry per directory it ships from, so a
+repository whose own skills under `.claude/skills` belong on the map adds
+`--cover .claude/skills` too. A repository that only uses a plugin leaves it
 out.
 
 ## CI providers

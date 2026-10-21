@@ -286,21 +286,23 @@ describe("coverage", () => {
     expect(found.map((f) => f.problem.split(" ")[0])).toEqual(["/jig:orphan"]);
   });
 
-  test.skipIf(process.platform === "win32")(
-    "a linked skill directory is a skill",
-    () => {
-      const dir = mkdtempSync(join(tmpdir(), "jig-lifecycle-"));
-      try {
-        mkdirSync(join(dir, "real", "linked"), { recursive: true });
-        writeFileSync(join(dir, "real", "linked", "SKILL.md"), "# linked\n");
-        mkdirSync(join(dir, "skills"));
-        symlinkSync(join(dir, "real", "linked"), join(dir, "skills", "linked"));
-        expect(skillNames(join(dir, "skills"))).toEqual(["linked"]);
-      } finally {
-        rmSync(dir, { recursive: true, force: true });
-      }
-    },
-  );
+  test("a linked skill directory is a skill", () => {
+    const dir = mkdtempSync(join(tmpdir(), "jig-lifecycle-"));
+    try {
+      mkdirSync(join(dir, "real", "linked"), { recursive: true });
+      writeFileSync(join(dir, "real", "linked", "SKILL.md"), "# linked\n");
+      mkdirSync(join(dir, "skills"));
+      // A junction on Windows, which needs no privilege; POSIX ignores the type.
+      symlinkSync(
+        join(dir, "real", "linked"),
+        join(dir, "skills", "linked"),
+        "junction",
+      );
+      expect(skillNames(join(dir, "skills"))).toEqual(["linked"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("the table of skills outside the loop", () => {
