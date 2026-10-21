@@ -243,9 +243,11 @@ resolves that thread, so the report is the alert's only trace. Without the
 second, the thread still lists, with an unknown severity. The alert's state is
 read on the pull request, from every analysis of its current revision, since an
 alert fixed on the default branch, or in one of several analysis
-configurations, can still be open there; until the tool has analysed the
-latest push in every configuration, the state is unknown and nothing is
-dismissed. A summary comment a
+configurations, can still be open there. One configuration's analysis of the
+latest push that still finds the alert is enough to read it as open and
+dismiss it; reading it as fixed or closed takes an analysis of the latest
+push from every configuration, and until there is one of either, the state is
+unknown and nothing is dismissed. A summary comment a
 tool posts beside its alerts (SonarQube Cloud's quality gate, for one) is not
 a thread, and the loop does not read it; a quality gate that fails on
 something other than its alerts, such as coverage, is a failing check for
