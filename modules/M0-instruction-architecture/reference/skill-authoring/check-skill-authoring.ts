@@ -30,8 +30,9 @@
 //                     counted.
 //   negative-trigger  a SKILL.md whose body says when not to use the skill
 //                     ("When not to use", "Not this skill") while its
-//                     description carries no exclusion ("not for", "do not
-//                     use", "use X instead", "unless"). Only the
+//                     description carries no exclusion ("not for", "except
+//                     when", "do not use it for", "use X instead", "unless",
+//                     a contrast set off by a comma). Only the
 //                     description is read before invocation, so a negative
 //                     trigger in the body alone cannot stop a wrong pick.
 //
@@ -124,10 +125,26 @@ const TIME_SENSITIVE = [
 ];
 const NOT_THIS_SKILL =
   /^(?:when not to\b|not this skill\b|do not use\b|don['’]t use\b|when to use something else\b)/i;
-// An exclusion, not any negative word: "instead of writing them by hand"
-// describes the work and stops no wrong pick.
-const NEGATIVE_CUE =
-  /\b(?:not (?:for|when|if|on|to use)|(?:do not|don['’]t|never) use|unless|instead(?! of\b))\b/i;
+// An exclusion bounds when this skill is picked, so each form ties its
+// negative word to the skill's trigger: a scope (not for, except when,
+// unless), a prohibition on using the skill itself, a redirect to another
+// tool, or a contrast set off as its own clause. Negative wording about the
+// work ("ensure developers do not use deprecated APIs", "instead of writing
+// them by hand") stops no wrong pick and is not an exclusion.
+const NEGATIVE_CUE = new RegExp(
+  [
+    String.raw`\bnot (?:(?:suitable|meant|intended|designed|appropriate) )?(?:for|when|if|on)\b`,
+    String.raw`\bnot to use\b`,
+    String.raw`\bexcept (?:for|when|if|on|in)\b`,
+    String.raw`\bunless\b`,
+    String.raw`\b(?:do not|don['’]t|never) use (?:(?:this skill|the skill|this|it) )?(?:for|when|if|on|in|to)\b`,
+    String.raw`\b(?:do not|don['’]t|never) use (?:this skill|the skill|this|it)\s*(?:[.,;:)]|$)`,
+    String.raw`(?<!\b(?:not|never|n['’]t) )\buse\b[^.;]{1,60}?\binstead\b(?! of\b)`,
+    String.raw`\binstead,? use\b`,
+    String.raw`(?:^|[,;:(—–]\s*)(?:rather than|instead of)\b`,
+  ].join("|"),
+  "i",
+);
 const CONTENTS = /^(?:table of contents|contents|toc)$/i;
 
 interface Document {

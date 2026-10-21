@@ -243,6 +243,10 @@ describe("negative-trigger", () => {
       "Do the thing; for other things use the other skill instead.",
       "Do the thing, unless it is another thing.",
       "Do the thing. Do not use it for other things.",
+      "Use when cutting releases, except for single-pull-request notes.",
+      "Use when cutting releases, rather than documenting a single pull request.",
+      "Use when cutting releases; not suitable for single-pull-request notes.",
+      "Use when cutting releases. Never use this skill.",
     ])
       expect(
         counts(skills({ "SKILL.md": skillFile(body, description) })),
@@ -250,11 +254,15 @@ describe("negative-trigger", () => {
   });
 
   test("a negative word that excludes nothing still counts", () => {
-    const description =
-      "Use when drafting release notes instead of writing them manually.";
-    expect(
-      counts(skills({ "SKILL.md": skillFile(body, description) })),
-    ).toEqual({ "negative-trigger": { "SKILL.md": 1 } });
+    for (const description of [
+      "Use when drafting release notes instead of writing them manually.",
+      "Use when reviewing code to ensure developers do not use deprecated APIs.",
+      "Use when refactoring; never use globals and prefer composition instead.",
+      "Use when writing prose rather than code.",
+    ])
+      expect(
+        counts(skills({ "SKILL.md": skillFile(body, description) })),
+      ).toEqual({ "negative-trigger": { "SKILL.md": 1 } });
   });
 });
 
