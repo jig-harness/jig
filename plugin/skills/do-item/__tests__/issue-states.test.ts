@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import type { PoolIssue } from "../scripts/lib/tracker/port.ts";
 import { itemStates, parseItemKeys, UsageError } from "../scripts/tracker.ts";
@@ -80,6 +81,18 @@ describe("itemStates", () => {
     ).rejects.toThrow("no state category");
   });
 
+  it.each([" ", "unknown", "complete", "Started"])(
+    "fails the whole answer on the state category %p, which is neither open nor closed",
+    async (type) => {
+      await expect(
+        itemStates(lookup({ "ENG-1": "started", "ENG-2": type }), [
+          "ENG-1",
+          "ENG-2",
+        ]),
+      ).rejects.toThrow("neither open nor closed");
+    },
+  );
+
   it("answers an empty list with an empty object without a lookup", async () => {
     expect(await itemStates(lookup({}), [])).toEqual({});
   });
@@ -142,11 +155,12 @@ fi`,
         env[k] = v;
     env.JIG_OVERLAY = OVERLAY;
     env.PATH = `${bin}${delimiter}${process.env.PATH}`;
-    return spawnSync(process.execPath, [SCRIPT, ...args], {
+    const r = spawnSync(process.execPath, [SCRIPT, ...args], {
       encoding: "utf8",
       input,
       env,
     });
+    return { exitCode: r.status, stdout: r.stdout, stderr: r.stderr };
   };
 
   it("prints the state of each item key read from stdin", () => {
@@ -154,8 +168,8 @@ fi`,
       "ENG-1": "completed",
       "ENG-2": "started",
     });
+    expectSpawnExit(r, 0);
     expect(r.stderr).toBe("");
-    expect(r.status).toBe(0);
     expect(JSON.parse(r.stdout)).toEqual({
       "ENG-1": "closed",
       "ENG-2": "open",
@@ -166,15 +180,15 @@ fi`,
     const r = run(["issue-states"], "ENG-1\nENG-9\n", {
       "ENG-1": "completed",
     });
-    expect(r.status).toBe(1);
+    expectSpawnExit(r, 1);
     expect(r.stdout).toBe("");
   });
 
   it("prints an empty object for no keys and refuses a malformed key or an argument", () => {
     const none = run(["issue-states"], "\n");
-    expect(none.status).toBe(0);
+    expectSpawnExit(none, 0);
     expect(JSON.parse(none.stdout)).toEqual({});
-    expect(run(["issue-states"], "not a key\n").status).toBe(2);
-    expect(run(["issue-states", "ENG-1"], "").status).toBe(2);
+    expectSpawnExit(run(["issue-states"], "not a key\n"), 2);
+    expectSpawnExit(run(["issue-states", "ENG-1"], ""), 2);
   });
 });

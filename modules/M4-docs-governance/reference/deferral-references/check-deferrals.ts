@@ -116,6 +116,16 @@ export function parseConfig(text: string, source: string): Config {
     fields[field] === undefined
       ? fallback
       : textList(fields[field], `${source}: ${field}`);
+  // An empty `include` judges no document and empty `markers` find no
+  // deferral: either turns the gate off while it still passes.
+  const required = (field: string, fallback: string[]) => {
+    const value = list(field, fallback);
+    if (value.length === 0)
+      throw new DeferralsError(
+        `${source}: ${field} must list at least one entry; an empty list turns the check off`,
+      );
+    return value;
+  };
   const itemPatterns = list("items", []);
   if (itemPatterns.length === 0)
     throw new DeferralsError(
@@ -138,10 +148,10 @@ export function parseConfig(text: string, source: string): Config {
     return regex;
   });
   return {
-    include: list("include", ["**/*.md"]),
+    include: required("include", ["**/*.md"]),
     exclude: list("exclude", []),
     items,
-    markers: list("markers", DEFAULT_MARKERS).map(markerPattern),
+    markers: required("markers", DEFAULT_MARKERS).map(markerPattern),
   };
 }
 
@@ -154,16 +164,28 @@ export function inScope(config: Config, path: string): boolean {
 export interface Unit {
   start: number;
   end: number;
+  /** The block's lines with HTML comments blanked out. */
   text: string;
+  /** The text of each `deferral-ok` comment that starts inside the block. */
+  waivers: string[];
 }
 
 // Any indent: a fence inside a nested list item is indented four or more.
 const FENCE = /^\s*(`{3,}|~{3,})/;
+// A closing fence is the fence run alone: `​```still-code` is content.
+const CLOSING_FENCE = /^\s*(`{3,}|~{3,})\s*$/;
 const HEADING = /^\s{0,3}#{1,6}\s/;
 const RULE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
 const TABLE_ROW = /^\s*\|/;
+// A table's delimiter row: dash cells split by pipes, outer pipes optional.
+const TABLE_DELIMITER = /^\s*\|?(\s*:?-+:?\s*\|)+(\s*:?-+:?\s*)?$/;
 const LIST_ITEM = /^(\s*)([-*+]|\d{1,9}[.)])\s+/;
 const QUOTE = /^(\s{0,3}>\s?)+/;
+const WAIVER = /^<!--\s*deferral-ok(?=\s*(?::|-->))\s*:?([\s\S]*?)-->$/i;
+
+// Where a comment started stands one visible character, so a line holding
+// only a comment still continues the block around it.
+const COMMENT_START = "\u0000";
 
 type LineKind = "blank" | "heading" | "table" | "rule" | "item" | "text";
 
@@ -175,24 +197,25 @@ function kindOf(line: string): LineKind {
   return LIST_ITEM.test(line) ? "item" : "text";
 }
 
-/** A block still taking lines, and the indent of its first line. */
+/** A block still taking lines: its bullet's indent and where its content starts. */
 interface Open {
   unit: Unit;
   indent: number;
+  content: number;
 }
 
 interface Builder {
   out: Unit[];
   /** The paragraph or list item the next line continues. */
   open?: Open | undefined;
-  /** The last list item, which an indented paragraph after a blank line joins. */
-  item?: Open | undefined;
+  /** The list items enclosing the current line, outermost first. */
+  items: Open[];
   /** The previous line was blank. */
   gap: boolean;
 }
 
 const startUnit = (b: Builder, at: number, text: string): Unit => {
-  const unit = { start: at, end: at, text };
+  const unit = { start: at, end: at, text, waivers: [] };
   b.out.push(unit);
   return unit;
 };
@@ -201,6 +224,21 @@ const extendUnit = (unit: Unit, at: number, text: string) => {
   unit.end = at;
   unit.text += `\n${text}`;
 };
+
+const closeBlocks = (b: Builder) => {
+  b.open = undefined;
+  b.items = [];
+};
+
+/** The list item an indented paragraph after a blank line belongs to, if any. */
+function enclosingItem(b: Builder, indent: number): number {
+  for (let i = b.items.length - 1; i >= 0; i--)
+    if (indent >= (b.items[i] as Open).content) return i;
+  // Indented less than the content but more than the bullet still joins it.
+  for (let i = b.items.length - 1; i >= 0; i--)
+    if (indent > (b.items[i] as Open).indent) return i;
+  return -1;
+}
 
 /** Add one line of prose to the block it belongs to. */
 function place(b: Builder, kind: LineKind, line: string, at: number): void {
@@ -211,32 +249,84 @@ function place(b: Builder, kind: LineKind, line: string, at: number): void {
     return;
   }
   if (kind !== "text" && kind !== "item") {
-    b.open = b.item = undefined;
+    closeBlocks(b);
     if (kind !== "rule") startUnit(b, at, line);
     return;
   }
   const indent = line.length - line.trimStart().length;
   if (kind === "item") {
-    b.open = b.item = {
+    const marker = LIST_ITEM.exec(line) as RegExpExecArray;
+    while ((b.items.at(-1)?.indent ?? -1) >= indent) b.items.pop();
+    b.open = {
       unit: startUnit(b, at, line),
-      indent: LIST_INDENT(line),
+      indent,
+      content: marker[0].length,
     };
-  } else if (wasGap && b.item !== undefined && indent > b.item.indent) {
-    extendUnit(b.item.unit, at, line);
-    b.open = b.item;
+    b.items.push(b.open);
+    return;
+  }
+  const owner = wasGap ? enclosingItem(b, indent) : -1;
+  if (owner >= 0) {
+    b.items.length = owner + 1;
+    b.open = b.items[owner] as Open;
+    extendUnit(b.open.unit, at, line);
   } else if (b.open !== undefined && !wasGap) {
     extendUnit(b.open.unit, at, line);
   } else {
-    b.item = undefined;
-    b.open = { unit: startUnit(b, at, line), indent };
+    b.items = [];
+    b.open = { unit: startUnit(b, at, line), indent, content: indent };
   }
 }
 
-const LIST_INDENT = (line: string) => (LIST_ITEM.exec(line)?.[1] ?? "").length;
+/** An HTML comment being read, which may span lines. */
+interface Comment {
+  line: number;
+  text: string;
+}
+
+/**
+ * Blank out the HTML comments on one line, keeping its length so indents hold.
+ * A comment left open continues into the next line; finished comments are
+ * passed to `done` with the line they started on.
+ */
+function maskComments(
+  line: string,
+  at: number,
+  state: { open?: Comment | undefined },
+  done: (comment: Comment) => void,
+): string {
+  let out = "";
+  let i = 0;
+  while (i < line.length) {
+    if (state.open !== undefined) {
+      const close = line.indexOf("-->", i);
+      const end = close < 0 ? line.length : close + 3;
+      state.open.text += line.slice(i, end);
+      out += " ".repeat(end - i);
+      i = end;
+      if (close < 0) {
+        state.open.text += "\n";
+        break;
+      }
+      done(state.open);
+      state.open = undefined;
+      continue;
+    }
+    const start = line.indexOf("<!--", i);
+    if (start < 0) {
+      out += line.slice(i);
+      break;
+    }
+    out += `${line.slice(i, start)}${COMMENT_START}   `;
+    state.open = { line: at, text: "<!--" };
+    i = start + 4;
+  }
+  return out;
+}
 
 /** Whether `line` closes a fence opened with `fence`. */
 function closesFence(line: string, fence: string): boolean {
-  const closing = FENCE.exec(line)?.[1];
+  const closing = CLOSING_FENCE.exec(line)?.[1];
   return (
     closing !== undefined &&
     closing[0] === fence[0] &&
@@ -244,31 +334,97 @@ function closesFence(line: string, fence: string): boolean {
   );
 }
 
+const quoteDepth = (line: string) =>
+  (QUOTE.exec(line)?.[0].match(/>/g) ?? []).length;
+
+/** Where the reader stands between lines. */
+interface Reader {
+  builder: Builder;
+  comments: Comment[];
+  comment: { open?: Comment | undefined };
+  /** The open fence's run, while inside fenced code. */
+  fence?: string | undefined;
+  /** How many block quotes the current line sits in. */
+  depth: number;
+  /** Inside a table, whose rows continue to the next blank line. */
+  table: boolean;
+}
+
+/** Whether `line` heads a table: it holds a pipe and the next line is a delimiter row. */
+const startsTable = (kind: LineKind, line: string, next: string | undefined) =>
+  (kind === "text" || kind === "table") &&
+  line.includes("|") &&
+  TABLE_DELIMITER.test((next ?? "").replace(QUOTE, ""));
+
+/** The kind a line is read as, a table's rows included. */
+function lineKind(r: Reader, line: string, next: string | undefined): LineKind {
+  const kind = kindOf(line);
+  if (kind === "blank") {
+    r.table = false;
+    return kind;
+  }
+  r.table ||= startsTable(kind, line, next);
+  return r.table ? "table" : kind;
+}
+
+function readLine(r: Reader, lines: string[], i: number): void {
+  const raw = lines[i] ?? "";
+  const unquoted = raw.replace(QUOTE, "");
+  if (r.fence !== undefined) {
+    if (closesFence(unquoted, r.fence)) r.fence = undefined;
+    return;
+  }
+  const line = maskComments(unquoted, i + 1, r.comment, (c) =>
+    r.comments.push(c),
+  );
+  const depth = quoteDepth(raw);
+  r.fence = FENCE.exec(line)?.[1];
+  if (depth !== r.depth || r.fence !== undefined) {
+    closeBlocks(r.builder);
+    r.table = false;
+    r.depth = depth;
+  }
+  if (r.fence === undefined)
+    place(r.builder, lineKind(r, line, lines[i + 1]), line, i + 1);
+}
+
+/** Give each waiver comment to the block it starts in. */
+function attachWaivers(blocks: Unit[], comments: Comment[]): void {
+  for (const comment of comments) {
+    const waiver = WAIVER.exec(comment.text.trim());
+    const unit = blocks.find(
+      (u) => u.start <= comment.line && comment.line <= u.end,
+    );
+    if (waiver !== null && unit !== undefined)
+      unit.waivers.push(waiver[1] ?? "");
+  }
+}
+
 /**
  * The document's blocks: each paragraph, list item (with its continuation
- * lines and, in a loose list, its indented following paragraphs), table row and
- * heading. Frontmatter and fenced code are not prose and are left out.
+ * lines and, in a loose list, its indented following paragraphs, nested items
+ * apart), table row and heading. Frontmatter, fenced code and HTML comments
+ * are not prose and are left out; a comment may span lines and blocks. Entering
+ * or leaving a block quote ends a block.
  */
 export function units(content: string): Unit[] {
   const lines = splitLines(content);
   const frontmatter = readFrontmatter(content);
-  const builder: Builder = { out: [], gap: false };
-  let fence: string | undefined;
-  for (
-    let i = frontmatter.present ? frontmatter.end + 1 : 0;
-    i < lines.length;
-    i++
-  ) {
-    const line = (lines[i] ?? "").replace(QUOTE, "");
-    if (fence !== undefined) {
-      if (closesFence(line, fence)) fence = undefined;
-      continue;
-    }
-    fence = FENCE.exec(line)?.[1];
-    if (fence !== undefined) builder.open = builder.item = undefined;
-    else place(builder, kindOf(line), line, i + 1);
-  }
-  return builder.out;
+  const r: Reader = {
+    builder: { out: [], items: [], gap: false },
+    comments: [],
+    comment: {},
+    depth: 0,
+    table: false,
+  };
+  const first = frontmatter.present ? frontmatter.end + 1 : 0;
+  for (let i = first; i < lines.length; i++) readLine(r, lines, i);
+  if (r.comment.open !== undefined) r.comments.push(r.comment.open);
+  const blocks = r.builder.out;
+  for (const unit of blocks)
+    unit.text = unit.text.replaceAll(COMMENT_START, " ");
+  attachWaivers(blocks, r.comments);
+  return blocks;
 }
 
 export interface Deferral {
@@ -294,9 +450,6 @@ export interface Reading {
   findings: Finding[];
 }
 
-const WAIVER = /<!--\s*deferral-ok\b([\s\S]*?)-->/i;
-const COMMENT = /<!--[\s\S]*?-->/g;
-
 const excerptOf = (unit: Unit) => {
   const first = flatten(unit.text.split("\n")[0] ?? "");
   return first.length > 100 ? `${first.slice(0, 97)}...` : first;
@@ -318,7 +471,7 @@ const finding = (
 
 /** The deferral a block makes, or undefined when it holds no marker phrase. */
 function deferralOf(unit: Unit, config: Config): Deferral | undefined {
-  const bare = unit.text.replace(COMMENT, " ").replace(/\s+/g, " ");
+  const bare = unit.text.replace(/\s+/g, " ");
   const text = flatten(bare);
   const marker = config.markers.map((m) => m.exec(text)?.[0]).find(Boolean);
   if (marker === undefined) return undefined;
@@ -326,7 +479,11 @@ function deferralOf(unit: Unit, config: Config): Deferral | undefined {
   // without emphasis marks, which finds `_ENG-5_` beside a plain `ENG-6`.
   const keysIn = (from: string) =>
     config.items.flatMap((pattern) =>
-      [...from.matchAll(pattern)].map((m) => m[1] ?? m[0]),
+      [...from.matchAll(pattern)]
+        .map((m) => m[1] ?? m[0])
+        // A pattern can match nothing in real text (a lookahead, an empty
+        // group); an empty key names no item.
+        .filter((key) => key !== ""),
     );
   return {
     unit,
@@ -338,15 +495,14 @@ function deferralOf(unit: Unit, config: Config): Deferral | undefined {
 /**
  * Every deferral in a document and the static half's findings. A block with a
  * `<!-- deferral-ok: reason -->` comment is set aside, in both halves; a
- * waiver without a reason is itself a finding. Comments are stripped before
+ * waiver without a reason is itself a finding. Comments are blanked before
  * the block is read, so an item or phrase hidden in one counts for nothing.
  */
 export function readDocument(content: string, config: Config): Reading {
   const reading: Reading = { deferrals: [], findings: [] };
   for (const unit of units(content)) {
-    const waiver = WAIVER.exec(unit.text);
-    if (waiver !== null) {
-      if (!/[^\s:]/.test(waiver[1] ?? ""))
+    if (unit.waivers.length > 0) {
+      if (!unit.waivers.some((reason) => /[^\s:]/.test(reason)))
         reading.findings.push(
           finding(
             unit,
@@ -470,24 +626,34 @@ export function oldSide(root: string, range: string): string {
       `range ${JSON.stringify(range)} is not A, A..B or A...B with both sides named (an unset base variable gives ...HEAD)`,
     );
   const [left, right] = sides as [string, string | undefined];
-  if (triple.length > 1 && right !== undefined)
-    return git(root, [
-      "merge-base",
-      resolveCommit(left),
-      resolveCommit(right),
-    ]).trim();
-  return resolveCommit(left);
+  const oldCommit = resolveCommit(left);
+  // The new side is the working tree, but a named right side must still exist.
+  const newCommit = right === undefined ? undefined : resolveCommit(right);
+  if (triple.length > 1 && newCommit !== undefined)
+    return git(root, ["merge-base", oldCommit, newCommit]).trim();
+  return oldCommit;
 }
 
-/** The lines a unified-zero diff adds. A pure deletion marks the lines either side of it. */
-export function addedLines(diff: string): Set<number> {
+/**
+ * The lines a unified-zero diff adds. A pure deletion marks the lines either
+ * side of it and, given the new content, the nearest non-blank line either
+ * side, so a block the deletion shortened is judged across blank lines too.
+ */
+export function addedLines(diff: string, content?: string): Set<number> {
   const lines = new Set<number>();
+  const text = content === undefined ? undefined : splitLines(content);
+  const blank = (n: number) =>
+    text !== undefined && n >= 1 && n <= text.length && !text[n - 1]?.trim();
   for (const m of diff.matchAll(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm)) {
     const start = Number(m[1]);
     const count = m[2] === undefined ? 1 : Number(m[2]);
     if (count === 0) {
-      lines.add(start);
-      lines.add(start + 1);
+      let before = start;
+      while (blank(before)) lines.add(before--);
+      lines.add(before);
+      let after = start + 1;
+      while (blank(after)) lines.add(after++);
+      lines.add(after);
     }
     for (let n = start; n < start + count; n++) lines.add(n);
   }
@@ -504,7 +670,7 @@ interface Source {
 /** Which documents and lines are judged. */
 export type Mode = "all" | "staged" | { range: string };
 
-/** Every tracked document in scope, whole. */
+/** Every tracked document in scope, whole, from the working tree. */
 function trackedSources(root: string, config: Config): Source[] {
   const out: Source[] = [];
   for (const path of git(root, ["ls-files", "-z"]).split("\0")) {
@@ -512,6 +678,50 @@ function trackedSources(root: string, config: Config): Source[] {
     if (!path || !inScope(config, path) || !existsSync(full)) continue;
     if (!lstatSync(full).isFile()) continue;
     out.push({ path, content: readFileSync(full, "utf8") });
+  }
+  return out;
+}
+
+/** Every document in scope as the index holds it, for a staged change. */
+function indexedSources(root: string, config: Config): Source[] {
+  const blobs: Array<{ path: string; sha: string }> = [];
+  for (const entry of git(root, ["ls-files", "-s", "-z"]).split("\0")) {
+    const match = /^(\d+) ([0-9a-f]+) \d+\t(.*)$/s.exec(entry);
+    // Regular files only (100644, 100755): not links, not submodules.
+    if (match === null || !match[1]?.startsWith("100")) continue;
+    const [, , sha, path] = match as unknown as [
+      string,
+      string,
+      string,
+      string,
+    ];
+    if (inScope(config, path)) blobs.push({ path, sha });
+  }
+  if (blobs.length === 0) return [];
+  const result = Bun.spawnSync(["git", "cat-file", "--batch"], {
+    cwd: root,
+    stdin: Buffer.from(blobs.map((b) => `${b.sha}\n`).join("")),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (result.exitCode !== 0)
+    throw new DeferralsError(
+      `git cat-file --batch: ${result.stderr.toString().trim()}`,
+    );
+  const output = result.stdout;
+  const out: Source[] = [];
+  let at = 0;
+  for (const { path, sha } of blobs) {
+    const eol = output.indexOf(10, at);
+    const header = output.subarray(at, eol).toString();
+    const size = Number(/^[0-9a-f]+ blob (\d+)$/.exec(header)?.[1] ?? NaN);
+    if (eol < 0 || !header.startsWith(sha) || !Number.isInteger(size))
+      throw new DeferralsError(`git cat-file: cannot read ${path} (${header})`);
+    out.push({
+      path,
+      content: output.subarray(eol + 1, eol + 1 + size).toString("utf8"),
+    });
+    at = eol + 1 + size + 1;
   }
   return out;
 }
@@ -535,7 +745,8 @@ function changedSources(
   const paths = changed.split("\0");
   // A new `items` pattern or marker changes what every document must satisfy,
   // so a change to the configuration judges them all.
-  if (paths.includes(configRelative)) return trackedSources(root, config);
+  if (paths.includes(configRelative))
+    return staged ? indexedSources(root, config) : trackedSources(root, config);
   const out: Source[] = [];
   for (const path of paths) {
     if (!path || !inScope(config, path)) continue;
@@ -550,16 +761,28 @@ function changedSources(
       "--",
       `:(literal)${path}`,
     ]);
-    out.push({
-      path,
-      content: staged
-        ? git(root, ["show", `:${path}`])
-        : readFileSync(full, "utf8"),
-      added: addedLines(diff),
-    });
+    const content = staged
+      ? git(root, ["show", `:${path}`])
+      : readFileSync(full, "utf8");
+    out.push({ path, content, added: addedLines(diff, content) });
   }
   return out;
 }
+
+/** The configuration a run judges by: for a staged change, the index's copy when it has one. */
+function configText(root: string, configPath: string, mode: Mode): string {
+  const path = relativePath(root, configPath);
+  if (
+    mode === "staged" &&
+    !path.startsWith("../") &&
+    git(root, ["ls-files", "-z", "--", `:(literal)${path}`]) !== ""
+  )
+    return git(root, ["show", `:${path}`]);
+  return readFileSync(configPath, "utf8");
+}
+
+const relativePath = (root: string, path: string) =>
+  relative(root, path).split(sep).join("/");
 
 function sources(
   root: string,
@@ -569,12 +792,7 @@ function sources(
 ): Source[] {
   return mode === "all"
     ? trackedSources(root, config)
-    : changedSources(
-        root,
-        config,
-        mode,
-        relative(root, configPath).split(sep).join("/"),
-      );
+    : changedSources(root, config, mode, relativePath(root, configPath));
 }
 
 // ── Command line ───────────────────────────────────────────────────────────
@@ -736,7 +954,7 @@ export function run(
     return 0;
   }
   const config = parseConfig(
-    readFileSync(asked.configPath, "utf8"),
+    configText(asked.root, asked.configPath, asked.mode),
     asked.configPath,
   );
   const judged = sources(asked.root, config, asked.mode, asked.configPath).map(

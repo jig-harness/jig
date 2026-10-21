@@ -71,6 +71,13 @@ Knowledge moves up three layers, each promoting into the next:
    The docs tree is one [drift-prone area](../../GLOSSARY.md) among others: list it, with its
    cadence, owner and last-audited date, in the repository's
    [audit catalog](../M8-learning-loop/README.md#the-audit-catalog-areas-no-gate-covers).
+7. **Deferral references** — a document that defers work to the tracker
+   ("tracked to closure", "a follow-up will be filed") names the item that
+   carries it, and that item is still open. A promise naming no item cannot be
+   looked up, and one naming a closed item reads as pending work nobody is
+   doing. An offline gate fails a deferral that names no item on the lines a
+   change adds; a scheduled check on the default branch, the only step holding
+   the tracker credential, fails a deferral whose items have all closed.
 
 ## Maturity levels
 
@@ -153,7 +160,7 @@ What this module provides:
   docs, with code masked first, and reports named files it did not scan.
 - [`reference/deferral-references/`](reference/deferral-references/) — fails a
   block of prose that holds a deferral marker phrase and names no item, over
-  the lines a diff adds or the whole tree; and, in three steps that keep the
+  the lines a diff adds or the whole tree; and, in separate steps that keep the
   credential out of the check, fails a deferral whose items have all closed
   or do not exist, from a tracker's answers it is given as a file.
 - [`templates/deferral-references.yaml`](templates/deferral-references.yaml)
@@ -180,7 +187,7 @@ values.
 
 The deferral check does not judge that the item named is the right one, and
 its static half reads blocks of prose, not sentences. Both are stated, with
-the reasons, in the reference's README. It ships one tracker provider, for the
+the reasons, in the reference's README. It ships a tracker provider for the
 tracker interface Jig's skills use; the
 [mappings](mappings.md#deferral-references) sketch the others.
 

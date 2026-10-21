@@ -20,7 +20,8 @@
  * `issue-states` reads item keys, one per line, and prints each key's
  * current state as `open`, `closed` (completed, canceled or duplicate) or
  * `not_found`: the live half of M4's deferral check reads it. A key the
- * tracker answers without a state category is an error, never `open`.
+ * tracker answers without a state category, or with one that is neither open
+ * (triage, backlog, unstarted, started) nor closed, is an error, never `open`.
  *
  * Canonical states: backlog, todo, in_progress, in_review, done, canceled,
  * and where the consumer uses them triage, ops_pending, duplicate.
@@ -52,6 +53,7 @@ import {
   CLOSED_STATE_TYPES,
   type IssuePatch,
   type NewIssue,
+  OPEN_STATE_TYPES,
   RELATION_TYPES,
   type RelationType,
   type Tracker,
@@ -194,8 +196,9 @@ export function parseItemKeys(text: string): string[] {
 
 /**
  * Each key's state as `open`, `closed` or `not_found`. A lookup that fails,
- * or an issue the tracker reports with no state category, fails the whole
- * answer: a partial map would read an unanswered key as a pass.
+ * or an issue the tracker reports with no state category or one it does not
+ * know, fails the whole answer: a partial map would read an unanswered key as
+ * a pass, and an unknown category read as open would do the same.
  */
 export async function itemStates(
   tracker: Pick<Tracker, "poolIssue">,
@@ -207,17 +210,21 @@ export async function itemStates(
     while (next < keys.length) {
       const key = keys[next++] as string;
       const issue = await tracker.poolIssue(key);
-      if (issue === null) states[key] = "not_found";
-      else if (issue.state.type === "")
-        throw new ItemStateError(
-          `${key}: the tracker reported no state category`,
-        );
+      if (issue === null) {
+        states[key] = "not_found";
+        continue;
+      }
+      const type = issue.state.type;
+      if ((CLOSED_STATE_TYPES as readonly string[]).includes(type))
+        states[key] = "closed";
+      else if ((OPEN_STATE_TYPES as readonly string[]).includes(type))
+        states[key] = "open";
       else
-        states[key] = (CLOSED_STATE_TYPES as readonly string[]).includes(
-          issue.state.type,
-        )
-          ? "closed"
-          : "open";
+        throw new ItemStateError(
+          type === ""
+            ? `${key}: the tracker reported no state category`
+            : `${key}: the tracker reported the state category ${JSON.stringify(type)}, which is neither open nor closed`,
+        );
     }
   }
   await Promise.all(

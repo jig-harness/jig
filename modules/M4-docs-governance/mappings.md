@@ -182,28 +182,35 @@ full history and the same `$BASE`:
 
 ```yaml
       - name: A deferral names an item (blocking)
-        if: steps.scope.outputs.docs
         run: bun "$M4/deferral-references/check-deferrals.ts" --ci --range="$BASE...HEAD"
 ```
+
+The step has no `if:`: the `docs/` selection above does not cover the
+documents the gate's own `include` globs reach (a root `README.md`, say) or
+its configuration file, and the gate selects its own documents from the range,
+quickly.
 
 On GitLab, in the `docs-governance` job's script:
 `bun "$M4/deferral-references/check-deferrals.ts" --ci --range="$CI_MERGE_REQUEST_DIFF_BASE_SHA...HEAD"`.
 With `--ci` and no range the gate prints `SKIP` and passes, so a job that lost
-its base says so; a malformed range is an error. Add the configuration file
-(`.config/deferral-references.yaml`) to the job's `changes:` list and to the
-set that selects the work, since a new `items` pattern changes what every
-document must satisfy.
+its base says so; a malformed range is an error. The job's `changes:` list
+must cover the configuration's `include` globs and the configuration file
+(`.config/deferral-references.yaml`) itself, since a new `items` pattern
+changes what every document must satisfy.
+
+The hooks run on a staged Markdown file or a staged configuration, so a commit
+that changes only the configuration still sweeps every document:
 
 | Hook manager | Wiring |
 |--------------|--------|
-| lefthook | pre-commit `deferrals`: `glob: "*.md"`, `run: bun <m4>/deferral-references/check-deferrals.ts --staged` |
-| husky | in `.husky/pre-commit`, after the `last_updated` check: `bun <m4>/deferral-references/check-deferrals.ts --staged` |
-| pre-commit framework | `repo: local` hook, `files: '\.md$'`, `pass_filenames: false`, `entry: bun <m4>/deferral-references/check-deferrals.ts --staged` |
+| lefthook | pre-commit `deferrals`: `glob: "{*.md,.config/deferral-references.yaml}"`, `run: bun <m4>/deferral-references/check-deferrals.ts --staged` |
+| husky | in `.husky/pre-commit`, after the `last_updated` check: `bun <m4>/deferral-references/check-deferrals.ts --staged` (it runs on every commit) |
+| pre-commit framework | `repo: local` hook, `files: '\.md$\|^\.config/deferral-references\.yaml$'`, `pass_filenames: false`, `entry: bun <m4>/deferral-references/check-deferrals.ts --staged` |
 
 The gate takes no file names: it judges the staged change, so `pass_filenames`
 and `{staged_files}` are unused.
 
-The live half has three steps and one credential (the
+The live half holds one credential, in one step (the
 [workflow template](templates/deferral-liveness.yml) is the GitHub Actions
 form). The scheduled trigger and the rule that a manual run is allowed only on
 the default branch are the provider specifics:

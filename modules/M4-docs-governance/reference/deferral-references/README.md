@@ -22,7 +22,7 @@ something checks.
 
 > A deferral names an existing item, and the item it names is still open.
 
-Two checks hold it, because they need different machinery:
+A static and a live check hold it, because they need different machinery:
 
 | Half | Question | Needs | Runs |
 | --- | --- | --- | --- |
@@ -47,8 +47,12 @@ Run it from inside the repository; it reads `.config/deferral-references.yaml`
 unless `--config <file>` names another.
 
 It reads each document as blocks of prose: a paragraph, a list item with its
-continuation lines (and, in a loose list, its indented later paragraphs), a
-table row, a heading. Frontmatter and fenced code are skipped. In each block:
+continuation lines (and, in a loose list, its indented later paragraphs, which
+belong to the item their indent reaches, not to a nested item before them), a
+table row (with or without outer pipes), a heading. Entering or leaving a block
+quote ends a block. Frontmatter, fenced code and HTML comments are skipped; a
+comment is blanked before the blocks are built, so one that spans lines or
+blank lines hides what is inside it and joins nothing across it. In each block:
 
 1. If the block holds none of the **marker phrases**, it is not a deferral.
 2. Otherwise the block must also hold an **item reference**: text one of the
@@ -71,17 +75,20 @@ worded as a deferral at all, only that wording the list knows is covered.
 
 | Mode | Judged | Why |
 | --- | --- | --- |
-| `--staged` | The blocks that hold a line the staged change adds, or lie beside a deletion | A hook should fail on what this commit made, not on the backlog |
+| `--staged` | The blocks that hold a line the staged change adds, or lie beside a deletion (across blank lines); documents and configuration as the index holds them | A hook should fail on what this commit made, not on the backlog or on unstaged edits |
 | `--range` / `DIFF_RANGE` | The same, for a pull request: the old side is the merge base for `A...B` and `A` for `A..B` or a single ref; the new side is the working tree | Same reasoning, and a pull request checkout is the merge commit |
 | `--all` | Every block of every document in scope | Adoption sweep, and the input of the live half |
 
 A change that edits a block brings the whole block under the check, so
 deleting the line that carried the item, or rewording around it, is caught.
-A renamed document is judged whole.
+A renamed document is judged whole. A change to the configuration judges every
+document in scope, since a new `items` pattern or marker changes what each one
+must satisfy.
 
 `--ci` with no range prints `SKIP` and exits 0: a check that compared nothing
 says so. A range that is given but malformed (an unset base variable makes
-`$BASE...HEAD` into `...HEAD`) is an error in every mode.
+`$BASE...HEAD` into `...HEAD`), or names a ref that does not resolve on either
+side, is an error in every mode.
 
 ### Waiving a block
 
@@ -92,14 +99,16 @@ guide on how to word a deferral. Put a comment in the block:
 Say "tracked to closure" only beside an item. <!-- deferral-ok: states the rule -->
 ```
 
-The reason is required; a `deferral-ok` comment with none is a finding. A waived
-block is set aside in both halves. Comments are stripped before a block is
-read, so an item or a phrase hidden in a comment counts for nothing.
+The comment is exactly `<!-- deferral-ok: reason -->`; another token, such as
+`deferral-ok-ignore`, waives nothing. The reason is required; a `deferral-ok`
+comment with none is a finding. A waived block is set aside in both halves.
+Comments are blanked before a block is read, so an item or a phrase hidden in a
+comment counts for nothing.
 
 ## The live half
 
-The live half is three steps, so that the step holding a credential is a few
-lines a person can read:
+The live half is split into steps, so that the step holding a credential is a
+few lines a person can read:
 
 ```bash
 # 1. The items the documents' deferrals rely on. No credential.
@@ -137,7 +146,7 @@ Nor does the check look for words like "(closed)" next to a key: people write
 that four ways, and a recogniser defeated by the fifth is worse than none. It
 asks only whether any named item remains open.
 
-When it fails, the fix is one of three, and the finding says so: the work was
+When it fails, the finding names the fixes: the work was
 done, so say that and drop the promise; the work was dropped, so say that;
 otherwise point the promise at an item that is open. Re-opening the item to
 silence the check is the one thing it cannot tell from keeping a promise.
@@ -149,7 +158,7 @@ silence the check is the one thing it cannot tell from keeping a promise.
 | Every deferral still has an open item | Exit 0 |
 | A deferral's items are all closed or missing | Exit 1, a finding per deferral |
 | The provider failed, or answered for fewer items than were asked | Exit 2: nothing was verified |
-| The states file is not JSON, holds a state other than the three, or lacks an item a deferral names | Exit 2 |
+| The states file is not JSON, holds a state other than `open`, `closed` or `not_found`, or lacks an item a deferral names | Exit 2 |
 
 A check that cannot reach the tracker must not read as "all items are open".
 The workflow that runs it must not translate exit 2 into success either:
@@ -194,7 +203,8 @@ markers:                            # default: the list below
   a loose one reads `ADR-12` or `CVE-2024-1` as an item. Use the tracker
   team's key (`\bENG-\d+\b`) or a link shape. If a pattern has a capture group,
   group 1 is the key (so the key is not the whole URL); without one, the whole
-  match. A pattern that matches the empty string is refused.
+  match. A pattern that matches the empty string is refused, and a match that
+  yields an empty key names no item.
 - **`markers`** are plain phrases, matched without regard to case, across
   emphasis marks and line breaks, and only on word edges (`will be filed` does
   not match `will be filedx`). The defaults are neutral: `tracked to closure`,
@@ -205,7 +215,8 @@ markers:                            # default: the list below
   and generated documents belong in `exclude`.
 
 A configuration the gate cannot read (unknown key, a pattern that does not
-compile, no `items`) is exit 2, never a pass.
+compile, no `items`, an empty `markers` or `include` list, either of which
+would turn the check off) is exit 2, never a pass.
 
 ## Adopting it
 
@@ -240,7 +251,7 @@ compile, no `items`) is exit 2, never a pass.
 | File | Role |
 | --- | --- |
 | `check-deferrals.ts` | the gate: both halves, one reader |
-| `check-deferrals.test.ts` | paired self-test: block boundaries (paragraph, list item, loose list, table row, heading, quote, fence, frontmatter), marker matching, item patterns and groups, waivers, the added-line reader, the live decision (all closed, one open, not found, unanswered, bad state file), the diff modes in throwaway repositories (staged, `A...B`, `A..B`, single ref, `DIFF_RANGE`, malformed ranges, `--ci`, a deletion that exposes a deferral, the staged blob against later edits), configuration and usage errors, and the entry point's exit codes |
+| `check-deferrals.test.ts` | paired self-test: block boundaries (paragraph, list item, loose and nested lists, table rows with and without outer pipes, heading, quote boundaries, fences and their closing lines, frontmatter, comments across blocks), marker matching, item patterns and groups, waivers, the added-line reader, the live decision (all closed, one open, not found, unanswered, bad state file), the diff modes in throwaway repositories (staged, `A...B`, `A..B`, single ref, `DIFF_RANGE`, malformed and unresolvable ranges, `--ci`, a deletion that exposes a deferral, the staged blob and staged configuration against later edits), configuration and usage errors, and the entry point's exit codes |
 
 The script imports the shared reader [`../docs.ts`](../docs.ts) and uses Bun's
 built-in YAML reader; keep the helper in the parent directory when adopting,

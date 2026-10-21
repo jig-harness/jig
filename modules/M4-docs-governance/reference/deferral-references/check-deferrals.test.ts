@@ -73,6 +73,16 @@ describe("configuration", () => {
       "non-empty strings",
     ],
     ["a scalar for a list", "items: 'X-\\d+'\n", "list of non-empty strings"],
+    [
+      "an empty marker list",
+      "items: ['X-\\d+']\nmarkers: []\n",
+      "markers must list at least one",
+    ],
+    [
+      "an empty include list",
+      "items: ['X-\\d+']\ninclude: []\n",
+      "include must list at least one",
+    ],
     ["a list at the top", "- a\n", "must be a mapping"],
     ["YAML that does not parse", "items: [\n", "not readable YAML"],
   ])("%s is refused", (_name, text, message) => {
@@ -167,6 +177,71 @@ describe("units", () => {
     ]);
   });
 
+  test("a closing fence is the fence run alone; a longer line is still code", () => {
+    const doc = [
+      "```",
+      "```still-code",
+      "will be filed",
+      "```",
+      "",
+      "after",
+    ].join("\n");
+    expect(units(doc).map((u) => u.text)).toEqual(["after"]);
+  });
+
+  test("a table without outer pipes keeps each row its own block", () => {
+    const doc = [
+      "Risk | Tracking",
+      "--- | ---",
+      "A | tracked to closure",
+      "B | ENG-1",
+    ].join("\n");
+    expect(units(doc).map((u) => [u.start, u.end])).toEqual([
+      [1, 1],
+      [2, 2],
+      [3, 3],
+      [4, 4],
+    ]);
+    expect(findingsOf(doc)).toEqual(["3:deferral-names-no-item"]);
+  });
+
+  test("entering or leaving a block quote ends the block", () => {
+    expect(findingsOf("Tracked to closure.\n> ENG-1\n")).toEqual([
+      "1:deferral-names-no-item",
+    ]);
+    expect(findingsOf("> Tracked to closure.\nENG-1\n")).toEqual([
+      "1:deferral-names-no-item",
+    ]);
+    expect(findingsOf("> Tracked to closure\n> under ENG-1.\n")).toEqual([]);
+  });
+
+  test("a paragraph after a nested item belongs to the item its indent reaches", () => {
+    const doc = ["- Tracked to closure.", "  - Context.", "", "  ENG-1"].join(
+      "\n",
+    );
+    expect(findingsOf(doc)).toEqual([]);
+    expect(keysOf(doc)).toEqual([["ENG-1"]]);
+    const deeper = [
+      "- Outer.",
+      "  - Tracked to closure.",
+      "",
+      "    ENG-2",
+    ].join("\n");
+    expect(keysOf(deeper)).toEqual([["ENG-2"]]);
+  });
+
+  test("an HTML comment is blanked across lines and blocks before blocks are built", () => {
+    expect(findingsOf("Tracked to closure.\n<!--\nENG-1\n\n-->\n")).toEqual([
+      "1:deferral-names-no-item",
+    ]);
+    expect(
+      findingsOf("Tracked to closure <!-- a\nnote --> under ENG-1.\n"),
+    ).toEqual([]);
+    expect(findingsOf("<!-- note -->\nTracked to closure.\n")).toEqual([
+      "1:deferral-names-no-item",
+    ]);
+  });
+
   test("an empty document and a document of only a rule have no blocks", () => {
     expect(units("")).toEqual([]);
     expect(units("---\n")).toEqual([]);
@@ -252,6 +327,18 @@ describe("the static half", () => {
     ]);
   });
 
+  test.each([
+    ["a lookahead", "items: ['(?=ENG)']\n", "Tracked to closure ENG\n"],
+    ["an empty group", "items: ['ENG-(\\d*)']\n", "Tracked to closure ENG-\n"],
+  ])(
+    "a pattern matching nothing in the text (%s) names no item",
+    (_n, c, doc) => {
+      expect(findingsOf(doc, parseConfig(c, "c.yaml"))).toEqual([
+        "1:deferral-names-no-item",
+      ]);
+    },
+  );
+
   test("an item hidden in an HTML comment names nothing", () => {
     expect(findingsOf("Tracked to closure <!-- ENG-12 -->\n")).toEqual([
       "1:deferral-names-no-item",
@@ -273,6 +360,26 @@ describe("the static half", () => {
     expect(findingsOf(`Tracked to closure. ${waiver}\n`)).toEqual([
       "1:deferral-waiver-without-reason",
     ]);
+  });
+
+  test.each(["<!-- deferral-ok-ignore -->", "<!-- deferral-okay: x -->"])(
+    "a comment that is not the waiver token waives nothing: %s",
+    (comment) => {
+      expect(findingsOf(`Tracked to closure. ${comment}\n`)).toEqual([
+        "1:deferral-names-no-item",
+      ]);
+    },
+  );
+
+  test("a waiver on its own line after the block, or spanning lines, still waives it", () => {
+    expect(
+      findingsOf("Tracked to closure.\n<!-- deferral-ok: example -->\n"),
+    ).toEqual([]);
+    expect(
+      findingsOf(
+        "Tracked to closure. <!-- deferral-ok:\nexplains the rule -->\n",
+      ),
+    ).toEqual([]);
   });
 
   test("a deferral beside a waived one is still judged", () => {
@@ -342,6 +449,13 @@ describe("added lines", () => {
     );
     expect([...addedLines(diff)].sort((a, b) => a - b)).toEqual([
       2, 6, 7, 8, 11, 12,
+    ]);
+  });
+
+  test("given the content, a deletion reaches the nearest non-blank line either side", () => {
+    const content = "- Tracked to closure.\n\n\nNext.\n";
+    expect([...addedLines("@@ -3 +2,0 @@", content)].sort()).toEqual([
+      1, 2, 3, 4,
     ]);
   });
 });
@@ -487,6 +601,34 @@ describe("--staged", () => {
     expectSpawnExit(r.run(["--range=HEAD~1...HEAD"]), 1);
   });
 
+  test("deleting the item's paragraph in a loose list item exposes the deferral", () => {
+    const r = repo({ "a.md": "- Tracked to closure.\n\n  ENG-1.\n" });
+    r.write("a.md", "- Tracked to closure.\n\n");
+    r.git("add", ".");
+    expectSpawnExit(r.run(["--staged"]), 1);
+  });
+
+  test("reads the configuration and every document from the index when the configuration is staged", () => {
+    const r = repo(
+      { "a.md": "Fine.\n", "b.md": "Fine.\n" },
+      "items: ['\\bENG-\\d+\\b']\n",
+    );
+    r.write("a.md", "Tracked to closure.\n");
+    r.write(".config/deferral-references.yaml", "items: ['\\bTASK-\\d+\\b']\n");
+    r.git("add", ".");
+    // The item arrives only in the working tree; the commit lacks it.
+    r.write("a.md", "Tracked to closure under TASK-1.\n");
+    expectSpawnExit(r.run(["--staged"]), 1);
+  });
+
+  test("an unstaged configuration does not judge the staged change", () => {
+    const r = repo({ "a.md": "Fine.\n" }, "items: ['\\bENG-\\d+\\b']\n");
+    r.write("a.md", "Tracked to closure under TASK-1.\n");
+    r.git("add", "a.md");
+    r.write(".config/deferral-references.yaml", "items: ['\\bTASK-\\d+\\b']\n");
+    expectSpawnExit(r.run(["--staged"]), 1);
+  });
+
   test("is the default with no mode given", () => {
     const r = repo({ "a.md": "Fine.\n" });
     r.write("a.md", "Tracked to closure.\n");
@@ -549,8 +691,15 @@ describe("--range and DIFF_RANGE", () => {
     expectSpawnExit(r.run(["--range=main"]), 1);
   });
 
-  test.each(["...HEAD", "..HEAD", "main...", "a...b...c"])(
-    "the malformed range %p is could-not-check, with and without --ci",
+  test.each([
+    "...HEAD",
+    "..HEAD",
+    "main...",
+    "a...b...c",
+    "HEAD..nope",
+    "main..nope",
+  ])(
+    "the malformed or unresolvable range %p is could-not-check, with and without --ci",
     (range) => {
       const r = branch();
       for (const extra of [[], ["--ci"]]) {
