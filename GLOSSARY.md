@@ -1176,6 +1176,20 @@ make, use the entry's term instead.
   checklist, a migration workflow). The unit of codified "how we do this
   here." *Avoid*: command, slash command: `/jig:<name>` is how a skill is
   invoked, not what it is.
+- **Reference (skill reference)** — a file a *skill* keeps beside its
+  `SKILL.md` (by convention under `references/`) that the agent reads only
+  when `SKILL.md` sends it there, so detail costs context only in the
+  invocations that need it.
+- **Negative trigger** — the part of a *skill*'s description that says when
+  not to use it ("not for X; use Y instead"). Only the description is read
+  before a skill is chosen, so a negative trigger elsewhere cannot prevent a
+  wrong choice.
+- **Exact / judgment section label** — a bold label opening a section of a
+  *skill*: **exact** means run the named command as written, **judgment**
+  means reach the stated outcome by the means that fit. Not yet a rule
+  ([M0](modules/M0-instruction-architecture/README.md#status)). *Avoid*:
+  confusing **judgment** here with the *Judgment tier*, which is a *model
+  tier*.
 - **Rule (conditional rule)** — an instruction file that loads into agent
   context only when files matching its path patterns are being edited — the
   scoped counterpart of an always-loaded instruction file.

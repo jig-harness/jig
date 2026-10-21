@@ -75,6 +75,34 @@ here reaches every repository at once.
   [NOTICE](NOTICE)), and name it in the skill's documentation, as `decide`'s
   `ste-lint` port does.
 
+## Authoring a skill
+
+A skill's description is read in every session, its `SKILL.md` when it
+runs, and each reference when `SKILL.md` sends the agent there. Write each
+part for that moment; the rules and their reasons are
+[M0 § Skills](../modules/M0-instruction-architecture/README.md#skills).
+
+- **The description leads with the trigger** that tells the skill apart from
+  its neighbours, and carries its negative triggers ("not for X; use Y
+  instead"): nothing else is read before the choice. Its length is held by
+  `scripts/check-context-budget.ts`.
+- **Every reference is named in `SKILL.md`**, with when to read it; a
+  reference over 100 lines opens with a contents section linking to its
+  headings.
+- **No incident history and no time-sensitive phrasing** in `SKILL.md` or a
+  reference: keep the rule, state the condition or the version.
+- **Discovery controls for what they do**: `paths:` for a skill tied to a
+  file area; `disable-model-invocation: true` only for a skill the user must
+  start (check first that no workflow calls it); `user-invocable: false`
+  hides a menu entry and saves no budget.
+
+`bun run quality` counts what a script can see of these rules for every
+skill file (M0's skill-authoring check, as a counter of the ratchet) and
+fails a change that adds to any file's count for any rule. Bring a count
+down when you edit the file; a renamed or split file carries its debt as new
+findings, so fix the debt in that change. See every finding with
+`bun modules/M0-instruction-architecture/reference/skill-authoring/check-skill-authoring.ts plugin/skills`.
+
 ## Verifying a change
 
 ```sh
