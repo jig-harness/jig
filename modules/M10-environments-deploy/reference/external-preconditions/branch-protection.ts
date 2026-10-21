@@ -5,13 +5,13 @@ import {
   contexts,
   documentOf,
   field,
-  ghApi,
   readBranch,
   sourceOf,
   type GhApi,
   type Source,
 } from "../../../../plugin/skills/changelog/scripts/github-rules.ts";
 import { evaluateAccess } from "../../../../plugin/skills/changelog/scripts/release-access.ts";
+import { ghProcess, withinDeadline, type GhTransport } from "./deadline.ts";
 import {
   PreconditionError,
   type Check,
@@ -201,18 +201,28 @@ function writerObservations(
   }
   return results;
 }
-/** Inject gh for tests or another GitHub transport; fixture documents use github-rules' shape. */
-export function branchProtection(gh: GhApi = ghApi()): Check {
-  const check: Check = (entry, input) => {
+/**
+ * Inject gh for tests or another GitHub transport; fixture documents use
+ * github-rules' shape. A live read stops requesting at the check's deadline.
+ */
+export function branchProtection(gh: GhTransport = ghProcess()): Check {
+  const check: Check = (entry, input, signal) => {
     const expected = expectedOf(entry);
     const target = targetOf(entry);
     if (input !== undefined && !isRecord(input))
       throw new PreconditionError("branch fixture must be an object");
     const source =
       input === undefined
-        ? readBranch(checkedGh(gh), target.repository, target.branch, {
-            classicUnreadable: "unknown",
-          })
+        ? readBranch(
+            checkedGh(
+              withinDeadline(gh, signal, (m) => new PreconditionError(m)),
+            ),
+            target.repository,
+            target.branch,
+            {
+              classicUnreadable: "unknown",
+            },
+          )
         : sourceOf(input as Record<string, unknown>, true);
     const normalized = sourceOf(documentOf(source), true);
     validateSource(normalized);

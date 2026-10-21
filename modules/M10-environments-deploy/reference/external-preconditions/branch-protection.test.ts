@@ -4,6 +4,7 @@ import { branchProtection } from "./branch-protection.ts";
 import {
   parseRegistry,
   PreconditionError,
+  runRegistry,
   type Precondition,
 } from "./registry.ts";
 const registry = parseRegistry(
@@ -122,6 +123,38 @@ describe("branch protection", () => {
       stderr: "",
     }));
     expect(() => malformed(entry, undefined)).toThrow("pages");
+  });
+  test("a slow live read stops requesting at the check's deadline", async () => {
+    const timeouts: number[] = [];
+    const slow = branchProtection((args, timeoutMs) => {
+      timeouts.push(timeoutMs);
+      Bun.sleepSync(15);
+      const path = args.find((arg) => arg.startsWith("repos/")) ?? "";
+      const rules = Array.from({ length: 20 }, (_, i) => ({
+        ruleset_id: i + 1,
+        type: "deletion",
+      }));
+      if (path.includes("/rules/branches/"))
+        return { ok: true, stdout: JSON.stringify([rules]), stderr: "" };
+      const id = Number(path.split("/").at(-1));
+      return {
+        ok: true,
+        stdout: JSON.stringify({
+          id,
+          enforcement: "active",
+          bypass_actors: [],
+        }),
+        stderr: "",
+      };
+    });
+    const report = await runRegistry(
+      { version: 1, preconditions: [entry] },
+      { checks: { [entry.kind]: slow }, deadlineMs: 50 },
+    );
+    expect(report.entries[0]?.outcome).toBe("unknown");
+    expect(report.entries[0]?.reasons.join()).toContain("deadline");
+    expect(timeouts.length).toBeLessThan(10);
+    expect(timeouts.every((ms) => ms > 0 && ms <= 50)).toBe(true);
   });
   test("malformed successful classic response is unknown, never absent", () => {
     const malformedClassic = branchProtection((args) => ({

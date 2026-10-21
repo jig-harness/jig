@@ -1,10 +1,6 @@
 /** GitHub issues implement the registry's tracker port; reads must be complete. */
-import {
-  type GhApi,
-  ghApi,
-} from "../../../../plugin/skills/changelog/scripts/github-rules.ts";
 import { isRecord } from "../../../../lib/record.ts";
-import { checkpoint } from "./deadline.ts";
+import { ghProcess, withinDeadline, type GhTransport } from "./deadline.ts";
 import {
   PreconditionIssueError,
   type IssueContent,
@@ -51,12 +47,12 @@ function listedIssue(
  * `creator` is the login that reconciles (for a workflow token,
  * `github-actions[bot]`): only its issues are listed, so an issue anyone else
  * opens with the public marker is never adopted, updated or closed.
- * Inject `api` in tests; live operations use the shared bounded gh process.
+ * Inject `api` in tests; every request is held to its operation's deadline.
  */
 export function githubIssues(
   repository: string,
   creator: string,
-  api: GhApi = ghApi(),
+  api: GhTransport = ghProcess(),
 ): TrackerPort {
   if (
     !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) ||
@@ -66,8 +62,12 @@ export function githubIssues(
   if (!/^[A-Za-z0-9-]+(\[bot\])?$/.test(creator))
     throw new PreconditionIssueError("GitHub issue creator must be a login");
   const endpoint = `repos/${repository}/issues`;
-  function request(args: string[]): unknown {
-    const result = api(args);
+  function request(args: string[], signal: AbortSignal | undefined): unknown {
+    const result = withinDeadline(
+      api,
+      signal,
+      (m) => new PreconditionIssueError(m),
+    )(args);
     if (!result.ok)
       throw new PreconditionIssueError(
         `GitHub issue request failed: ${result.stderr}`,
@@ -97,10 +97,12 @@ export function githubIssues(
       // Explicit pages avoid silently consuming only gh's first response page.
       // A bound also makes a non-progressing API fail instead of looping forever.
       for (let page = 1; page <= 1000; page++) {
-        await checkpoint(signal);
-        const value = request([
-          `${endpoint}?state=open&creator=${encodeURIComponent(creator)}&per_page=100&page=${page}`,
-        ]);
+        const value = request(
+          [
+            `${endpoint}?state=open&creator=${encodeURIComponent(creator)}&per_page=100&page=${page}`,
+          ],
+          signal,
+        );
         if (!Array.isArray(value) || value.length > 100)
           throw new PreconditionIssueError(
             "GitHub issue listing must be an array of at most 100 issues",
@@ -115,19 +117,25 @@ export function githubIssues(
         "GitHub issue listing exceeded its page limit; no complete listing available",
       );
     },
-    async create(content) {
+    async create(content, signal) {
       return readIssue(
-        request([endpoint, "--method", "POST", ...fields(content)]),
+        request([endpoint, "--method", "POST", ...fields(content)], signal),
       );
     },
-    async update(id, content) {
+    async update(id, content, signal) {
       return readIssue(
-        request([issueEndpoint(id), "--method", "PATCH", ...fields(content)]),
+        request(
+          [issueEndpoint(id), "--method", "PATCH", ...fields(content)],
+          signal,
+        ),
       );
     },
-    async close(id) {
+    async close(id, signal) {
       readIssue(
-        request([issueEndpoint(id), "--method", "PATCH", "-f", "state=closed"]),
+        request(
+          [issueEndpoint(id), "--method", "PATCH", "-f", "state=closed"],
+          signal,
+        ),
       );
     },
   };

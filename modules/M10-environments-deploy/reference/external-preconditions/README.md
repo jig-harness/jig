@@ -33,6 +33,9 @@ a stalled adapter cannot keep the report and the issue from being written.
 Synchronous work holds the timer back, so a result that arrives after the
 deadline is reported unknown rather than counted. A check should still bound
 its own external calls, and returns diagnostic facts without secret values.
+The bundled adapters reach GitHub through `withinDeadline` (`deadline.ts`): no
+request starts once the operation's deadline has passed, and each one runs at
+most until that deadline, so a slow multi-request read ends at its budget.
 
 The `branch-protection` kind reads classic protection and every applicable
 ruleset with the same GitHub identity as the consumer. Its token needs
@@ -104,8 +107,8 @@ recovery. Duplicate markers or incomplete listings fail without writing.
 Callers must serialize writers for the key. Each tracker operation has a
 deadline (two minutes by default) and receives an abort signal; one that does
 not finish, or finishes late, fails the reconciliation without a further
-write. The GitHub adapter uses bounded API calls, reads every page of open
-issues before deciding, and stops between pages once the deadline has passed. It lists only
+write. The GitHub adapter holds every request to the operation's deadline and
+reads every page of open issues before deciding. It lists only
 issues opened by the reconciling login it is given, because the marker is
 public: an issue anyone else opens with it is never adopted or closed.
 

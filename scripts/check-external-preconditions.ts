@@ -4,9 +4,7 @@ import { cli, strictOptions } from "../lib/cli.ts";
 import { isRecord } from "../plugin/shared/guards.ts";
 import { branchProtection } from "../modules/M10-environments-deploy/reference/external-preconditions/branch-protection.ts";
 import { githubIssues } from "../modules/M10-environments-deploy/reference/external-preconditions/github-issues.ts";
-import { spawnSync } from "../plugin/shared/guarded-git-spawn.ts";
-import { gitEnv } from "../plugin/skills/changelog/scripts/notes-dir.ts";
-import { ghApi } from "../plugin/skills/changelog/scripts/github-rules.ts";
+import { ghProcess } from "../modules/M10-environments-deploy/reference/external-preconditions/deadline.ts";
 import {
   reconcilePreconditions,
   type TrackerPort,
@@ -98,7 +96,7 @@ async function main(): Promise<number> {
   const observed =
     values.observed === undefined ? undefined : observedInput(values.observed);
   // Capture the reader before switching the tracker adapter to its own identity.
-  const readApi = ghApi();
+  const readApi = ghProcess();
   const check: Check =
     observed || process.env.GH_TOKEN
       ? branchProtection(readApi)
@@ -112,19 +110,9 @@ async function main(): Promise<number> {
     throw new PreconditionError(
       "PRECONDITIONS_ISSUE_TOKEN is required for issue reconciliation",
     );
-  // ghApi reads its environment on each call; use an explicit child environment
-  // for issue writes so the App never needs issue-write permission.
-  const issueApi: ReturnType<typeof ghApi> = (args) => {
-    const result = spawnSync("gh", ["api", ...args], {
-      env: { ...gitEnv(), GH_TOKEN: issueToken },
-      timeout: 30_000,
-    });
-    return {
-      ok: !result.error && result.status === 0,
-      stdout: result.stdout ?? "",
-      stderr: result.stderr || result.error?.message || "",
-    };
-  };
+  // Issue writes carry their own token so the App never needs issue-write
+  // permission.
+  const issueApi = ghProcess({ GH_TOKEN: issueToken });
   let raw: string;
   try {
     raw = readFileSync(".config/external-preconditions.yaml", "utf8");

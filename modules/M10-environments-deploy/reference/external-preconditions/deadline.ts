@@ -1,3 +1,13 @@
+import { spawnSync } from "../../../../plugin/shared/guarded-git-spawn.ts";
+import type {
+  GhApi,
+  GhResult,
+} from "../../../../plugin/skills/changelog/scripts/github-rules.ts";
+import { gitEnv } from "../../../../plugin/skills/changelog/scripts/notes-dir.ts";
+
+/** When each live operation signal's deadline falls, on `performance.now()`. */
+const dues = new WeakMap<AbortSignal, number>();
+
 /**
  * Bound one adapter operation. The work receives a signal that aborts at the
  * deadline; the caller stops waiting then even if the work ignores the signal,
@@ -18,6 +28,7 @@ export async function withDeadline<T>(
   const expiredError = () =>
     timeoutError(`${what} did not finish within ${ms} ms`);
   const due = performance.now() + ms;
+  dues.set(controller.signal, due);
   let timer: ReturnType<typeof setTimeout> | undefined;
   const expired = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
@@ -42,15 +53,53 @@ export async function withDeadline<T>(
   }
 }
 
+/** Milliseconds left on `signal`'s operation deadline; unbounded for any other signal. */
+export function remainingMs(signal: AbortSignal | undefined): number {
+  const due = signal && dues.get(signal);
+  return due === undefined ? Infinity : Math.max(0, due - performance.now());
+}
+
+/** One `gh api` request bounded to `timeoutMs`; tests inject a fake. */
+export type GhTransport = (args: string[], timeoutMs: number) => GhResult;
+
+/** The ceiling on one request, whatever budget its operation has left. */
+export const GH_REQUEST_MS = 30_000;
+
+/** `gh api` as a child process, with a clean environment plus `env`. */
+export function ghProcess(env: Record<string, string> = {}): GhTransport {
+  return (args, timeoutMs) => {
+    const result = spawnSync("gh", ["api", ...args], {
+      env: { ...gitEnv(), ...env },
+      timeout: timeoutMs,
+    });
+    return {
+      ok: !result.error && result.status === 0,
+      stdout: result.stdout ?? "",
+      stderr:
+        result.stderr ||
+        (result.error ? String(result.error.message) : "") ||
+        (result.status === null ? "gh api timed out" : ""),
+    };
+  };
+}
+
 /**
- * Let an overdue deadline's timer run, then stop if it fired. Multi-step
- * adapters call this between synchronous steps so a deadline ends the work at
- * the next step rather than after every remaining one.
+ * The transport as the shared synchronous reader expects it, held to the
+ * operation's deadline: no request starts once the deadline has passed, even
+ * while synchronous work keeps the timer from firing, and each request runs at
+ * most until the deadline.
  */
-export async function checkpoint(
+export function withinDeadline(
+  gh: GhTransport,
   signal: AbortSignal | undefined,
-): Promise<void> {
-  if (!signal) return;
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  signal.throwIfAborted();
+  timeoutError: (message: string) => Error,
+): GhApi {
+  return (args) => {
+    const left = remainingMs(signal);
+    if (signal?.aborted || left <= 0)
+      throw timeoutError(
+        `operation did not finish within its deadline; ${args[0] ?? "gh api"} not requested`,
+      );
+    return gh(args, Math.min(GH_REQUEST_MS, left));
+  };
 }
