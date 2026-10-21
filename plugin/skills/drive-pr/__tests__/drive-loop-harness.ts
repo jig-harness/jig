@@ -1,3 +1,4 @@
+import { fixtureStateTree } from "./scoped-state-dir.ts";
 /**
  * drive-pr suite: helpers shared by the drive.ts loop-control files
  * (drive-pr-drive-*.test.ts). Fixtures and probes they build on live in
@@ -118,14 +119,14 @@ export async function runDrive(
     extraBinDir?: string;
   } = {},
 ) {
-  const { dir, stateDir } = writeFixture(f);
+  const { dir, stateDir } = writeFixture(f, cwd ?? scratchClean.dir);
   return runDriveIn(dir, stateDir, args, cwd, opts);
 }
 
 /** Read one field back out of the durable state a drive just wrote. */
 export async function state(stateDir: string, args: string[], cwd?: string) {
   const proc = Bun.spawn(scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args), {
-    cwd,
+    cwd: cwd ?? fixtureStateTree(stateDir),
     env: {
       // gitCleanEnv(), not process.env: this suite runs inside a live
       // drive-pr pass as often as not (`runDriveIn`'s doc comment
@@ -141,6 +142,7 @@ export async function state(stateDir: string, args: string[], cwd?: string) {
       // set to begin with — i.e. every non-contaminated run, CI included.
       ...gitCleanEnv(),
       DRIVE_PR_STATE_DIR: stateDir,
+      DRIVE_PR_HANDOFF_DIR: join(stateDir, "handoff"),
       // set-ci-hold is test-only fixture seeding —
       // harmless to set unconditionally here since no other command
       // reads this variable.

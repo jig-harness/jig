@@ -164,7 +164,7 @@ configuration, because they describe one machine's layout:
 
 | Variable | What it does | Default |
 |----------|--------------|---------|
-| `DRIVE_PR_STATE_DIR` | The drive's state directory (see § Where its state lives) | `~/.local/state/jig/drive-pr/<clone-key>/` |
+| `DRIVE_PR_STATE_DIR` | State root; each clone uses `<root>/<clone-key>/` (an inherited resolved leaf is also accepted) | Root: `~/.local/state/jig/drive-pr/` |
 | `JIG_VERIFICATION_FIT_LOG` | Where `verification-fit.ts` appends its verdicts | `~/.local/state/jig/verification-fit.jsonl` |
 | `DRIVE_PR_REAPER_LAUNCHD_LABEL`, `DRIVE_PR_REAPER_CRONTAB_MARKER` | Name a scheduled `bun "<skill-dir>/scripts/reap-state.ts" --delete` job, so `migrate-state-dir.ts` refuses while it is enabled | Unset: no schedule is checked |
 
@@ -353,7 +353,7 @@ round. A repository that did not is never asked for one.
 
 ## Where its state lives
 
-- **The per-clone state dir** — `~/.local/state/jig/drive-pr/<clone-key>/` by default (`resolveStateDir()` in `<skill-dir>/scripts/lib/state/store.ts`; `$DRIVE_PR_STATE_DIR` overrides it — § Relocating the state dir) — the drive state (rounds, attempts, verified commit, parked/held items, Ready-mark round), the round counter, the locks, the leases. Clone-wide by design, *not* worktree-local: every linked worktree driving this PR shares one round budget, one parked set and one held batch, so a second worktree cannot silently re-arm an escalation the first one parked. The locks answer different questions, and only the PR-keyed one bears on "can this PR be driven twice":
+- **The per-clone state dir** — `~/.local/state/jig/drive-pr/<clone-key>/` by default (`resolveStateDir()` in `<skill-dir>/scripts/lib/state/store.ts`; `$DRIVE_PR_STATE_DIR` relocates its root — § Relocating the state dir) — the drive state (rounds, attempts, verified commit, parked/held items, Ready-mark round), the locks, the leases. Clone-wide by design, *not* worktree-local: every linked worktree driving this PR shares one round budget, one parked set and one held batch, so a second worktree cannot silently re-arm an escalation the first one parked. The locks answer different questions, and only the PR-keyed one bears on "can this PR be driven twice":
   - `pr-drive-<PR>.lock`, keyed by **PR** — refuses a second drive of *this PR* anywhere in the clone (exit `11`).
   - `pr-drive-worktree-<key>.lock`, keyed by **working tree** (the filesystem canonical path of `--show-toplevel`, including Windows path aliases) — stops two drivers colliding over one checkout's files even when they drive *different* PRs. Separate worktrees are meant to run concurrently, so this key deliberately does not gate them.
 
@@ -429,14 +429,56 @@ intended tree; an inherited value overrides the current directory.
 
 ## Relocating the state dir
 
-`$DRIVE_PR_STATE_DIR` overrides the default state directory
-(`~/.local/state/jig/drive-pr/<clone-key>/`) outright and skips the
-legacy-location migration guard. The override does not move existing state:
-migrate it using the procedure below **before** exporting the new path, or the
-drive can start with an empty round and lease history. The same procedure moves
-state left in an older default location into the current one. A legitimate
-use: a machine that cannot afford the default location — an IDE or backup
-tool watching the whole home directory, say.
+`$DRIVE_PR_STATE_DIR` relocates the state root. With an override of
+`/absolute/shared-state`, each clone uses
+`/absolute/shared-state/<clone-key>/`. The default is
+`~/.local/state/jig/drive-pr/<clone-key>/`. The key is the first 16 hexadecimal
+characters of SHA-256 over a [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID) persisted as `drive-pr-clone-id` in Git's
+common directory (`git rev-parse --git-common-dir`). It survives a clone move,
+is shared by linked worktrees, and differs between separate clones, including
+clones of the same remote repository. Remote owner/name is not the key.
+
+Within that clone directory, `drive-pr-<N>.json`, its `.lock` mutex family,
+`pr-drive-<N>.lock` (the driver lock), `drive-pr-<N>.log`, held claims, and
+remote-mutation locks are keyed by PR number. PR leases add the worktree key;
+worktree locks and tree leases use the canonical checkout path's key. The
+intent-chain pin stays at `.context/intent-chain/pr.<N>.md` in the worktree
+(unless the separate `DRIVE_PR_INTENT_CHAIN_DIR` override relocates it);
+`await-round.ts`'s separate `resolve-review-rounds-<N>` counter and `.head`
+file stay in that worktree's Git directory. Neither uses the override.
+
+The driver exports its resolved clone directory to its passes. A path whose
+last component equals this clone's key is already resolved and is not nested
+again. A pass must keep that inherited path. The mutation fence checks the
+inherited directory identity before trusting leases: inode, directory birth
+time and canonical target path must agree. On macOS the arm also captures the
+stable volume UUID with deadlined `df` and `diskutil` reads. A changed device number is allowed
+only when those stronger fields agree, birth time is nonzero, and a fresh
+volume lookup confirms the same UUID. Another volume refuses even if it copied
+the directory's inode and birth time. If volume proof is unavailable, device
+comparison stays strict. Older baselines without a volume UUID remain strict. A new inode, a
+changed birth time, a redirected target or an unreadable directory refuses.
+No pass changes the baseline; each check can recognize the same benign device
+drift independently. A driver armed before this upgrade needs a fresh arm to
+export the stronger baseline.
+
+**Upgrading a flat override:** any drive-shaped artifact directly in an
+unscoped override root causes a refusal naming the artifact and current clone.
+The old state format has no repository binding, so its owner is reported as
+unknown. The tool neither adopts it nor starts a fresh history beside it, and
+never automatically moves, quarantines or rewrites it. Stop all participants,
+identify which clone owns each artifact, and explicitly relocate each complete
+population into that clone's `<root>/<clone-key>/` using the procedure below.
+The refusal names this clone's expected leaf; use it as the destination only
+after confirming ownership. A file already mixed by multiple repositories needs human reconciliation
+against the PRs and their CI-hold events before relocation; a filename or a
+stored commit alone cannot establish ownership. Retain a backup. Relocation is
+reversible while participants remain stopped by moving the same population
+back with the migration command. Do not run old and new drivers together.
+
+The override skips the older Git-common-directory migration guard; it does
+not move existing default state either. Migrate before exporting the new root.
+A legitimate use is choosing a volume outside an IDE or backup tool's watch.
 
 **The invariant is that every participant in one clone resolves the same
 directory.** Two drivers that disagree do not share the lease mutex: each mints a
@@ -450,7 +492,9 @@ and need it in that tool's settings (Claude Code:
 file and need it written into their own configuration as an absolute path.
 
 1. **Quiesce every participant.** Stop every live `drive.ts`
-   (`bun "<skill-dir>/scripts/drives.ts" --stop <PR>` per PR, or wait
+   (`bun "<skill-dir>/scripts/drives.ts" --stop <PR>` per PR; for an old flat
+   override use the version that armed the driver, since the upgraded resolver
+   refuses that root; or wait
    for each to reach a terminal state) and disable any scheduled
    `bun "<skill-dir>/scripts/reap-state.ts" --delete` job (`launchctl unload`, or comment out the
    `crontab -e` entry) — nothing may read or write the state directory during
@@ -465,7 +509,7 @@ file and need it written into their own configuration as an absolute path.
    `--to` defaults to the current state root
    (`~/.local/state/jig/drive-pr`); `~` is expanded. To move one clone's
    directory to an exact destination instead, pass both absolute paths:
-   `bun "<skill-dir>/scripts/migrate-state-dir.ts" /absolute/current/state-dir /absolute/new/state-dir`.
+   `bun "<skill-dir>/scripts/migrate-state-dir.ts" /absolute/current/state-dir /absolute/new-root/<clone-key>`; replace `<clone-key>` with the key from this clone's current default directory. The exact destination must end with that key.
 
    It refuses unless every source-named driver lock is stale and, when
    `DRIVE_PR_REAPER_LAUNCHD_LABEL` or `DRIVE_PR_REAPER_CRONTAB_MARKER` names a
@@ -480,8 +524,8 @@ file and need it written into their own configuration as an absolute path.
    removes the sources. Success reports every moved name and family after
    verifying that the source has no classified artifacts left and the
    destination has the full population.
-3. **Only after that success, export** `$DRIVE_PR_STATE_DIR` at the new path
-   (when the destination is not the default) for every participant at once —
+3. **Only after that success, export** `$DRIVE_PR_STATE_DIR` at the new root
+   (or its resolved `<clone-key>` directory, when the destination is not the default) for every participant at once —
    the shell profile and the agent tool's settings. Exporting before the
    migration makes participants mint a fresh state universe at the destination
    while the real record remains at the source. Leave a scheduled job's own

@@ -1,3 +1,4 @@
+import { fixtureStateTree } from "./scoped-state-dir.ts";
 import { writeFileSync } from "node:fs";
 
 import { join, delimiter } from "node:path";
@@ -103,7 +104,8 @@ export function createFindingsResolveHeldFixtures() {
     const proc = Bun.spawn(
       scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
       {
-        env: { ...process.env, DRIVE_PR_STATE_DIR: stateDir },
+        cwd: scratchClean.dir,
+        env: { ...gitCleanEnv(), DRIVE_PR_STATE_DIR: stateDir },
         stdout: "pipe",
         stderr: "pipe",
       },
@@ -145,7 +147,7 @@ export function createFindingsResolveHeldFixtures() {
     const proc = Bun.spawn(
       scriptArgv(join(SCRIPTS, "resolve-held-thread.ts"), ...args, "999"),
       {
-        cwd: opts.cwd,
+        cwd: opts.cwd ?? fixtureStateTree(stateDir),
         env: {
           ...gitCleanEnv(),
           PATH: `${binDir}${delimiter}${process.env.PATH}`,

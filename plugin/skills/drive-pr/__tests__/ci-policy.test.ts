@@ -1,3 +1,4 @@
+import { scopedStateDir } from "./scoped-state-dir.ts";
 import { afterAll, describe, expect, it } from "bun:test";
 import {
   existsSync,
@@ -219,7 +220,7 @@ function noHoldRepo(opts: {
   const root = mkdtempSync(join(tmpdir(), "drive-pr-ci-policy-"));
   roots.push(root);
   const bin = join(root, "bin");
-  const stateDir = join(root, "state");
+  const stateDir = scopedStateDir(join(root, "state"));
   Bun.spawnSync(["mkdir", "-p", bin, stateDir]);
   const overlay = join(root, "overlay.yaml");
   writeFileSync(overlay, opts.overlay);

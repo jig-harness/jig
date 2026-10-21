@@ -87,8 +87,8 @@ function readCloneId(path: string): string | null {
       `${e instanceof Error ? e.message : String(e)}`,
       "Treating this as a fresh, unminted identity would silently resolve a",
       "DIFFERENT state directory and risk missing this clone's actual",
-      "in-progress state. Fix the underlying read failure, or set",
-      "$DRIVE_PR_STATE_DIR to bypass this resolution entirely.",
+      "in-progress state. Fix the underlying read failure; a relocated root",
+      "still needs this clone identity.",
     );
   }
   if (text === "") {
@@ -102,8 +102,8 @@ function readCloneId(path: string): string | null {
       "and round budget under the original key. If this file was",
       "truncated by something outside drive-pr, restore it from a backup, or",
       "remove it to mint a fresh identity — accepting that this clone's",
-      "prior state directory becomes unreachable through cloneKey() — or set",
-      "$DRIVE_PR_STATE_DIR to bypass this resolution entirely.",
+      "prior state directory becomes unreachable through cloneKey(). A relocated",
+      "root still needs this clone identity.",
     );
   }
   if (!CLONE_ID_RE.test(text)) {
@@ -117,7 +117,7 @@ function readCloneId(path: string): string | null {
       "truncated or corrupted by something outside drive-pr, restore it from",
       "a backup, or remove it to mint a fresh identity — accepting that this",
       "clone's prior state directory becomes unreachable through cloneKey() —",
-      "or set $DRIVE_PR_STATE_DIR to bypass this resolution entirely.",
+      "a relocated state root still needs this clone identity.",
     );
   }
   return text;
@@ -180,8 +180,7 @@ function persistedCloneId(commonDir: string): string {
         "afterward, so a crash right now could still lose it —",
         "trusting the value anyway risks silently abandoning state under",
         "this key later. Fix the permissions or free space on the git common",
-        "directory, or set $DRIVE_PR_STATE_DIR to bypass this resolution",
-        "entirely.",
+        "directory; a relocated state root still needs this clone identity.",
         `Underlying failure: ${e.message}`,
       );
     }
@@ -193,8 +192,7 @@ function persistedCloneId(commonDir: string): string {
       "This file is what keeps the state directory stable across a rename or",
       "relocation of this checkout — without it, resolveStateDir",
       "has no reliable key to form. Fix the permissions on the git common",
-      "directory, or set $DRIVE_PR_STATE_DIR to bypass this resolution",
-      "entirely.",
+      "directory; a relocated state root still needs this clone identity.",
       ...(e instanceof ExclusiveWriteOwnFailure
         ? [`Underlying failure: ${e.message}`]
         : []),

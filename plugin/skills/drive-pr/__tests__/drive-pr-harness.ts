@@ -1,3 +1,4 @@
+import { scopedStateDir, linkedScratchTree } from "./scoped-state-dir.ts";
 /**
  * Shared harness for the drive-pr-*.test.ts files: the stubbed `gh`, the
  * fixture writers, the scratch repositories and the probes. It was one
@@ -575,6 +576,7 @@ let priorSuiteEnv: Map<string, string | undefined>;
 let suitePacing: Record<string, string> = {};
 /** Scratch repos for the probes that read local HEAD and the working tree. */
 export let scratchClean: { dir: string; head: string };
+export let scratchSibling: { dir: string; head: string };
 export let scratchOther: { dir: string; head: string };
 
 /**
@@ -1025,6 +1027,10 @@ export function useDrivePrSuite(): void {
     suiteHome = mkdtempSync(join(tmpdir(), "drive-pr-test-home-"));
     scratchClean = makeScratchRepo("scratch-clean");
     scratchOther = makeScratchRepo("scratch-other");
+    scratchSibling = linkedScratchTree(
+      scratchClean.dir,
+      join(tmpRoot, "scratch-sibling"),
+    );
 
     // A `gh` that serves fixture files from $DRIVE_PR_FIXTURES. It honours the
     // flags the scripts actually use — `-q`/`--jq` filters, `--slurp` page
@@ -2139,9 +2145,12 @@ const DEFAULT_STICKY_UPDATED_AT = new Date(
   Date.now() - STALLED_MIN_AGE_SEC * 2 * 1000,
 ).toISOString();
 
-export function writeFixture(f: Fixture): { dir: string; stateDir: string } {
+export function writeFixture(
+  f: Fixture,
+  cwd = process.cwd(),
+): { dir: string; stateDir: string } {
   const dir = join(tmpRoot, `fx-${++fixtureSeq}`);
-  const stateDir = join(dir, "state");
+  const stateDir = scopedStateDir(join(dir, "state"), cwd);
   mkdirSync(dir, { recursive: true });
   mkdirSync(stateDir, { recursive: true });
   const head = f.head ?? HEAD;

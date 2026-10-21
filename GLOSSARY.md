@@ -1561,6 +1561,11 @@ make, use the entry's term instead.
 - **JSX** — an HTML-like markup syntax that some JavaScript and TypeScript
   files embed, compiled to ordinary function calls. A tool that reads source
   as text must handle it or say that it does not.
+- **UUID (universally unique identifier)** — an identifier designed so independent
+  callers are extremely unlikely to choose the same value. A version 4 UUID uses
+  random bits. Jig persists one per Git clone and hashes it to keep that clone's
+  drive state under a stable key when the checkout moves.
+
 - **ASCII (American Standard Code for Information Interchange)** — the basic
   character set containing English letters, digits and common punctuation.
 - **SHA (Secure Hash Algorithm)** — a family of content fingerprints; Git uses

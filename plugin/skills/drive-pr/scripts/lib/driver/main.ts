@@ -42,7 +42,7 @@ import { driverRuntime } from "./runtime.ts";
 
 import { startHeartbeat } from "./identity.ts";
 
-import { stateDirIdentityToken } from "./../state/lease.ts";
+import { captureStateDirIdentityToken } from "./../state/lease.ts";
 
 import { driveState, captureIntentChain } from "./paths.ts";
 
@@ -236,7 +236,7 @@ export async function main(): Promise<number> {
   process.env.DRIVE_PR_STATE_DIR = stateDir;
 
   // The directory's ON-DISK IDENTITY at the moment the driver resolved it —
-  // `<dev>:<ino>` — exported alongside the path because the PATH is exactly
+  // device/inode, birth time, canonical target path and volume UUID — exported because the PATH is exactly
   // what a rename-and-recreate leaves unchanged.
   //
   // Without this, the fence's identity baseline can only be captured by the
@@ -264,7 +264,7 @@ export async function main(): Promise<number> {
   // that cannot read its input has verified nothing, and must say so rather
   // than emit an empty answer. Refusing costs a drive that could not have
   // fenced its own passes anyway.
-  const stateDirIdentity = stateDirIdentityToken(stateDir);
+  const stateDirIdentity = await captureStateDirIdentityToken(stateDir);
   if (stateDirIdentity === "") {
     fail(
       1,

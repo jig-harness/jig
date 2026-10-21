@@ -15,7 +15,7 @@ import {
   scratchClean,
   gitCleanEnv,
   makeScratchRepo,
-  writeFixture,
+  writeFixture as rawFixture,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
 import {
@@ -27,6 +27,9 @@ import {
   scratchLockName,
   state,
 } from "./drive-loop-harness.ts";
+
+const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
+  rawFixture(f, scratchClean.dir);
 
 useDrivePrSuite();
 

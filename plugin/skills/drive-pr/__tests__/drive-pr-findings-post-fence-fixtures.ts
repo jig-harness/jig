@@ -1,3 +1,4 @@
+import { scopedStateDir } from "./scoped-state-dir.ts";
 /**
  * drive-pr suite: answer-summary-finding.ts, assert-post-allowed.ts, resolve-held-thread.ts, finish-round.ts and list-unresolved-threads.ts.
  * Shared fixtures and probes live in drive-pr-harness.ts.
@@ -27,7 +28,7 @@ export function createFindingsPostFenceFixtures() {
   // it SCOPES the question — which PR's lease it looks at, and what it does
   // with an argument it cannot use.
   function stateDirFor(name: string): string {
-    return mkdtempSync(join(tmpdir(), `fence-${name}-`));
+    return scopedStateDir(mkdtempSync(join(tmpdir(), `fence-${name}-`)));
   }
 
   // Writes ONLY the per-PR lease file, under this test's own (real) actor —

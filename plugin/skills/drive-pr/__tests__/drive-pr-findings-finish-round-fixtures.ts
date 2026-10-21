@@ -201,11 +201,14 @@ export function createFindingsFinishRoundFixtures() {
     const repo = opts.repo ?? scratchWithOrigin();
     const { dir, stateDir: fresh } =
       opts.fixtureDir === undefined
-        ? writeFixture({
-            threads: [{ id: "PRRT_live", path: "a.ts", bot: true }],
-            ...(opts.fixture ?? {}),
-            head: repo.head,
-          })
+        ? writeFixture(
+            {
+              threads: [{ id: "PRRT_live", path: "a.ts", bot: true }],
+              ...(opts.fixture ?? {}),
+              head: repo.head,
+            },
+            repo.dir,
+          )
         : { dir: opts.fixtureDir, stateDir: undefined };
     const stateDir = opts.stateDir ?? fresh;
     if (stateDir === undefined)

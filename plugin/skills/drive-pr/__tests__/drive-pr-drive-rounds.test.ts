@@ -38,7 +38,7 @@ import {
   scratchClean,
   gitCleanEnv,
   makeScratchRepo,
-  writeFixture,
+  writeFixture as rawFixture,
   park,
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
@@ -50,6 +50,9 @@ import {
   runDriveIn,
 } from "./drive-loop-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+
+const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
+  rawFixture(f, scratchClean.dir);
 
 useDrivePrSuite();
 
@@ -547,6 +550,7 @@ describe("drive.ts loop control", () => {
           ...PASS_ECHO_DIAL,
         ),
         {
+          cwd: scratchClean.dir,
           env: {
             ...process.env,
             PATH: `${binDir}${delimiter}${process.env.PATH}`,
