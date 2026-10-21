@@ -181,11 +181,11 @@ const writePull = (
     }),
   );
 
-/** Alert 7's instances on `ref`, as pages of `{ state, commit_sha }`. */
+/** Alert 7's instances on `ref`, as pages of `{ state, commit_sha, analysis_key }`. */
 const writeInstances = (
   fix: Fixture,
   ref: string,
-  pages: { state: string; commit_sha?: string }[][],
+  pages: { state: string; commit_sha?: string; analysis_key?: string }[][],
 ) =>
   writeFileSync(
     join(fix.dir, `instances-7-${ref.replaceAll("/", "_")}.json`),
@@ -336,6 +336,32 @@ describe.skipIf(process.platform === "win32")(
       const alert = listed(fix).records[0].codeScanning;
       expect(alert.state).toBeNull();
       expect(alert.stateUnknown).toContain("predate its current revision");
+    });
+
+    it("leaves the state unknown when one configuration predates the revision", () => {
+      const fix = writeFixture({ threads: [codeScanningThread("PRRT_cs")] });
+      writeAlert(fix, "open", null);
+      writeInstances(fix, `refs/pull/${fix.pr}/merge`, [
+        [
+          { state: "fixed", commit_sha: MERGE, analysis_key: "scan:a" },
+          { state: "open", commit_sha: "c".repeat(40), analysis_key: "scan:b" },
+        ],
+      ]);
+      const alert = listed(fix).records[0].codeScanning;
+      expect(alert.state).toBeNull();
+      expect(alert.stateUnknown).toContain("1 of its analysis configurations");
+    });
+
+    it("reads fixed when every configuration is fixed at the revision", () => {
+      const fix = writeFixture({ threads: [codeScanningThread("PRRT_cs")] });
+      writeAlert(fix, "open", null);
+      writeInstances(fix, `refs/pull/${fix.pr}/merge`, [
+        [
+          { state: "fixed", commit_sha: MERGE, analysis_key: "scan:a" },
+          { state: "fixed", commit_sha: MERGE, analysis_key: "scan:b" },
+        ],
+      ]);
+      expect(listed(fix).records[0].codeScanning.state).toBe("fixed");
     });
 
     it("trusts no merge-ref instance before GitHub computes the test merge", () => {

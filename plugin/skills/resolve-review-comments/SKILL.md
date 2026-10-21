@@ -230,9 +230,11 @@ paginated:
   current revision say, on the merge ref, the head ref and, for a branch of
   this repository, the source branch: `open` when any is open (an alert can
   be fixed on the default branch, or in one analysis configuration, and
-  still open here), `fixed` or `closed` only when all are; `null`, with
-  `stateUnknown` saying why, when that cannot be established, including when
-  every instance predates the current revision. `unreadable`
+  still open here), `fixed` or `closed` only when every analysis
+  configuration has an instance at the current revision and all of them are;
+  `null`, with `stateUnknown` saying why, when that cannot be established,
+  including when any configuration was analysed only at an earlier revision.
+  `unreadable`
   names why the alert could not be read; the severity is then `unknown`. Such a thread follows
   [Code-scanning threads](#code-scanning-threads) as well as this step.
 - `--include-resolved` widens the stream to resolved threads as well, each line
@@ -736,8 +738,8 @@ comment carries no single details link (exit `2`). It reads the alert's state
 on the pull request: exit `3` means the alert is already fixed there, so the
 outcome is `accepted` or `moot`, not a dismissal; exit `5` means the pull
 request closed, as for the other thread helpers. Exit `1` is a failed read, an
-alert with no instance at the pull request's current revision (a scan still
-running after a push, say), or a refused dismissal: GitHub
+alert whose state at the pull request's current revision is unknown (a scan
+still running after a push, say, in any of its analysis configurations), or a refused dismissal: GitHub
 refuses a token that may not write security events. Then leave the thread
 **open**, and report the alert for a person to dismiss: a resolved thread over
 an open alert hides a finding nobody answered.

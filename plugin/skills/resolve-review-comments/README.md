@@ -244,7 +244,8 @@ second, the thread still lists, with an unknown severity. The alert's state is
 read on the pull request, from every analysis of its current revision, since an
 alert fixed on the default branch, or in one of several analysis
 configurations, can still be open there; until the tool has analysed the
-latest push, the state is unknown and nothing is dismissed. A summary comment a
+latest push in every configuration, the state is unknown and nothing is
+dismissed. A summary comment a
 tool posts beside its alerts (SonarQube Cloud's quality gate, for one) is not
 a thread, and the loop does not read it; a quality gate that fails on
 something other than its alerts, such as coverage, is a failing check for

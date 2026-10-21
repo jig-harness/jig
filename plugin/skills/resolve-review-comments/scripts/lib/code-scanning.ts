@@ -246,18 +246,32 @@ async function instancesOn(
 /** The states an instance settles: anything else leaves the alert unknown. */
 const INSTANCE_STATES = new Set(["open", "fixed", "closed"]);
 
-/** What the instances on the pull request's refs say about its revision. */
-interface Witnesses {
-  /** The states of the instances analysed at the current revision. */
-  current: string[];
-  /** How many instances were analysed at an earlier one. */
-  stale: number;
+/**
+ * What the instances on the pull request's refs say about its revision, per
+ * analysis configuration: the states of the configuration's instances
+ * analysed at the current revision, empty when it has only earlier ones.
+ */
+type Witnesses = Map<string, string[]>;
+
+/**
+ * The analysis configuration an instance belongs to: the ref it was uploaded
+ * against, and its analysis key, environment and category. Configurations
+ * keep their own states until they are rerun, so each is settled on its own.
+ */
+function configurationOf(i: Record<string, unknown>, ref: string): string {
+  return JSON.stringify([
+    ref,
+    str(i.analysis_key) ?? "",
+    str(i.environment) ?? "",
+    str(i.category) ?? "",
+  ]);
 }
 
 /**
- * Add `ref`'s instances to `w`: an instance analysed at `sha` is current, any
- * other is stale. A current instance in a state that settles nothing makes
- * the whole answer unknown.
+ * Add `ref`'s instances to `w`: an instance analysed at `sha` is current
+ * evidence for its configuration, any other only records that the
+ * configuration exists. A current instance in a state that settles nothing
+ * makes the whole answer unknown.
  */
 function witness(
   w: Witnesses,
@@ -267,39 +281,42 @@ function witness(
 ): string | null {
   for (const i of instances) {
     if (!isRecord(i) || i.ref !== ref) continue;
-    if (sha === null || str(i.commit_sha) !== sha) {
-      w.stale += 1;
-      continue;
-    }
+    const key = configurationOf(i, ref);
+    const states = w.get(key) ?? [];
+    w.set(key, states);
+    if (sha === null || str(i.commit_sha) !== sha) continue;
     const state = str(i.state);
     if (state === null || !INSTANCE_STATES.has(state)) {
       return `an instance on ${ref} has state ${state ?? "none"}`;
     }
-    w.current.push(state);
+    states.push(state);
   }
   return null;
 }
 
 /**
  * The alert's state from its witnesses: `open` when any current instance is
- * open, `fixed` or `closed` only when all of them are; unknown when none is
- * current.
+ * open; `fixed` or `closed` only when every configuration has a current
+ * instance and all of them are; unknown otherwise, since a configuration
+ * analysed only at an earlier revision may still hold the alert open.
  */
 function settle(
   w: Witnesses,
   pr: string,
   head: string,
 ): { state: string } | { unknown: string } {
-  if (w.current.includes("open")) return { state: "open" };
-  if (w.current.length > 0) {
-    return { state: w.current.includes("fixed") ? "fixed" : "closed" };
+  const current = [...w.values()].flat();
+  if (current.includes("open")) return { state: "open" };
+  if (w.size === 0) {
+    return { unknown: `it has no instance on pull request #${pr}` };
   }
-  return {
-    unknown:
-      w.stale > 0
-        ? `its instances on pull request #${pr} predate its current revision ${head.slice(0, 12)}`
-        : `it has no instance on pull request #${pr}`,
-  };
+  const behind = [...w.values()].filter((states) => states.length === 0);
+  if (behind.length > 0) {
+    return {
+      unknown: `${behind.length} of its analysis configurations on pull request #${pr} predate its current revision ${head.slice(0, 12)}`,
+    };
+  }
+  return { state: current.includes("fixed") ? "fixed" : "closed" };
 }
 
 /**
@@ -307,8 +324,10 @@ function settle(
  * can be fixed on the default branch and still open on the pull request, and
  * fixed in one analysis configuration while open in another, so the state is
  * read from every instance on every ref the pull request is analysed on,
- * keeping only those analysed at the current revision (`settle`). An
- * instance of an earlier revision proves nothing about this one.
+ * per analysis configuration, keeping only those analysed at the current
+ * revision (`settle`). An instance of an earlier revision proves nothing
+ * about this one, and a configuration with only such instances leaves the
+ * alert unknown unless another holds it open.
  */
 async function prInstanceState(
   owner: string,
@@ -326,7 +345,7 @@ async function prInstanceState(
       unknown: `pull request #${pr} could not be read (${revision.unreadable})`,
     };
   }
-  const w: Witnesses = { current: [], stale: 0 };
+  const w: Witnesses = new Map();
   for (const { ref, sha } of revision.refs) {
     const instances = await instancesOn(owner, repo, number, ref);
     if ("unreadable" in instances) {
