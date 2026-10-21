@@ -125,26 +125,37 @@ const TIME_SENSITIVE = [
 ];
 const NOT_THIS_SKILL =
   /^(?:when not to\b|not this skill\b|do not use\b|don['’]t use\b|when to use something else\b)/i;
-// An exclusion bounds when this skill is picked, so each form ties its
-// negative word to the skill's trigger: a scope (not for, except when,
-// unless), a prohibition on using the skill itself, a redirect to another
-// tool, or a contrast set off as its own clause. Negative wording about the
-// work ("ensure developers do not use deprecated APIs", "instead of writing
-// them by hand") stops no wrong pick and is not an exclusion.
-const NEGATIVE_CUE = new RegExp(
-  [
-    String.raw`\bnot (?:(?:suitable|meant|intended|designed|appropriate) )?(?:for|when|if|on)\b`,
-    String.raw`\bnot to use\b`,
-    String.raw`\bexcept (?:for|when|if|on|in)\b`,
-    String.raw`\bunless\b`,
-    String.raw`\b(?:do not|don['’]t|never) use (?:(?:this skill|the skill|this|it) )?(?:for|when|if|on|in|to)\b`,
-    String.raw`\b(?:do not|don['’]t|never) use (?:this skill|the skill|this|it)\s*(?:[.,;:)]|$)`,
-    String.raw`(?<!\b(?:not|never|n['’]t) )\buse\b[^.;]{1,60}?\binstead\b(?! of\b)`,
-    String.raw`\binstead,? use\b`,
-    String.raw`(?:^|[,;:(—–]\s*)(?:rather than|instead of)\b`,
-  ].join("|"),
+// An exclusion bounds when this skill is picked. It is recognised by a closed
+// grammar rather than by negative words anywhere in the prose: the
+// description is cut into clauses at sentence punctuation, and a clause (or a
+// comma-separated part of one) excludes only when it opens with one of these
+// forms. A scope ("not for", "not suitable for", "except when", "unless"), a
+// prohibition on the skill itself ("do not use it for", "never use this
+// skill"), or a redirect under a scope ("for X, use Y instead"). Negative or
+// contrastive wording inside a clause ("do not use deprecated APIs", "rather
+// than writing them by hand", "instead of", "not to use") states the work, not
+// when to pick the skill, so it never counts; an author who means it as an
+// exclusion writes it in one of the forms.
+const CLAUSE = /[.;:!?()\u2014\u2013]+/;
+const EXCLUSION = new RegExp(
+  String.raw`(?:^|,\s*)(?:` +
+    [
+      String.raw`not (?:(?:suitable|meant|intended|designed|appropriate) )?(?:for|when|if|on)\b`,
+      String.raw`except (?:for|when|if|on|in)\b`,
+      String.raw`unless\b`,
+      String.raw`(?:do not|don['\u2019]t|never) use (?:(?:this skill|the skill|this|it)(?: (?:for|when|if|on|in|to)\b|\s*$)|(?:for|when|if|on|in)\b)`,
+      String.raw`(?:for|when|if|on)\b[^,]*,?\s*use\b[^,]*\binstead\s*$`,
+    ].join("|") +
+    ")",
   "i",
 );
+
+function excludes(description: string): boolean {
+  return description
+    .split(CLAUSE)
+    .some((clause) => EXCLUSION.test(clause.trim()));
+}
+
 const CONTENTS = /^(?:table of contents|contents|toc)$/i;
 
 interface Document {
@@ -446,7 +457,7 @@ function negativeTrigger(doc: Document): Finding[] {
       !doc.code[i] && text !== undefined && NOT_THIS_SKILL.test(plainText(text))
     );
   });
-  if (heading < 0 || NEGATIVE_CUE.test(doc.description ?? "")) return [];
+  if (heading < 0 || excludes(doc.description ?? "")) return [];
   return [
     {
       file: doc.file,
