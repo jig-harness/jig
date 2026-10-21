@@ -14,10 +14,9 @@ change that removes it, and can see whether a fix worked.
 This is the design of [plan.md](plan.md) item 22. The replay, its causes and
 the report (step 1 of the build order) are built: `history.ts` in the
 [`resolve-conflicts` skill](../plugin/skills/resolve-conflicts/SKILL.md#where-past-merges-conflicted-the-history-report).
-The live record, the practice and the learning loop are not. The skill
-also maps each conflict and records a decision and a reason for each path;
-that record is the richest source this design uses, and today it is
-overwritten by the next operation.
+So is the live record (step 2): `events.ts` in the same skill, which keeps
+the map's decision and reason for each path instead of letting the next
+operation overwrite them. The practice and the learning loop are not.
 
 ## What a replay of Jig's own history shows
 
