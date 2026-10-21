@@ -12,7 +12,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { gitIdentityEnv } from "../scripts/lib/proc.ts";
@@ -72,9 +72,17 @@ function expectRelativeRefused(result: ReturnType<typeof probe>): void {
 describe("resolveStateDir — relative $DRIVE_PR_STATE_DIR fails closed", () => {
   it("accepts an absolute override", () => {
     const dir = scratch();
+    expectSpawnExit(
+      Bun.spawnSync(["git", "init", "-q", dir], {
+        env: gitIdentityEnv(),
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+      0,
+    );
     const result = probe(STORE_TS, "mod.resolveStateDir()", dir, dir);
     expectSpawnExit(result, 0);
-    expect(result.stdout.toString().trim()).toBe(dir);
+    expect(dirname(result.stdout.toString().trim())).toBe(dir);
   });
 
   it("refuses a relative override rather than silently resolving it against cwd", () => {

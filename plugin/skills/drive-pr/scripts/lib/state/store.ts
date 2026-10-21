@@ -5,11 +5,11 @@
  *
  * State lives OUTSIDE the repository tree, under `~/.local/state/jig/drive-pr/`,
  * keyed per clone: it is per-clone, never committed, and
- * survives across separate invocations hours apart — the same placement
- * await-round.ts uses for its round counter, and for the same reason.
- * Override with $DRIVE_PR_STATE_DIR (the test suite does, and it also skips
- * the legacy-migration guard entirely — see below). Migrate existing
- * state before setting that override in a live clone.
+ * survives across separate invocations hours apart. await-round.ts keeps its
+ * separate review-round counter in the worktree's Git directory.
+ * $DRIVE_PR_STATE_DIR relocates the root while retaining the clone key.
+ * An inherited resolved clone leaf is idempotent. Unscoped legacy artifacts
+ * refuse until explicitly relocated; no runtime migration adopts unknown owners.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -17,6 +17,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { ExitError, fail, sleep, testDelaySeconds } from "../cli.ts";
 import { git, gitCallTimeoutSeconds, gitIdentityEnv } from "../proc.ts";
+import { scopedOverrideDir } from "./override-dir.ts";
 import { worktreeKey } from "./actor.ts";
 import { cloneKey, peekCloneKey } from "./clone-key.ts";
 import { atomicWrite } from "./fsutil.ts";
@@ -90,9 +91,9 @@ function resolvedOverride(): string | null {
       "it to two different state directories.",
     );
   }
-  // The caller named the directory explicitly, so automatic legacy checks
-  // cannot choose its migration source. Existing state may still live in the
-  // default or git-common-dir location; migrate it before setting the override.
+  // This validates the root; scopedOverrideDir preserves clone isolation and
+  // refuses unscoped history. Default/git-common-dir migration still needs an
+  // explicit source when an operator relocates the root.
   // Unlike the default below, never `mkdirSync`ed here: this path was `--git-common-dir`
   // older (always present, never created by this function), and a
   // caller relying on "an override that does not yet exist stays absent"
@@ -104,7 +105,8 @@ function resolvedOverride(): string | null {
 
 export async function resolveStateDir(): Promise<string> {
   const overridden = resolvedOverride();
-  if (overridden !== null) return overridden;
+  if (overridden !== null)
+    return scopedOverrideDir(overridden, await resolveLegacyStateDir());
   const legacyDir = await resolveLegacyStateDir();
   const newDir = defaultStateDirFor(legacyDir);
   ensureMigratedFromLegacy(legacyDir, newDir);
@@ -114,8 +116,8 @@ export async function resolveStateDir(): Promise<string> {
 /**
  * Read-only equivalent of `resolveStateDir()` — for a caller that only needs to
  * know where state currently lives, never to admit itself into it. Honors
- * `$DRIVE_PR_STATE_DIR` identically (that branch already has no side effects of
- * its own); on the default path, defers to `peekStateDir()` instead of minting
+ * `$DRIVE_PR_STATE_DIR` with a read-only clone-key lookup; on the default path,
+ * defers to `peekStateDir()` instead of minting
  * a clone identity, creating the directory, or writing the migration marker
  * (`drives.ts`'s fleet listing and `--here` SessionStart-banner path both
  * called the mutating `resolveStateDir()` despite describing themselves as
@@ -124,7 +126,8 @@ export async function resolveStateDir(): Promise<string> {
  */
 export async function peekResolvedStateDir(): Promise<string> {
   const overridden = resolvedOverride();
-  if (overridden !== null) return overridden;
+  if (overridden !== null)
+    return scopedOverrideDir(overridden, await resolveLegacyStateDir(), true);
   return peekStateDir(await resolveLegacyStateDir());
 }
 
@@ -143,16 +146,21 @@ export async function resolveLegacyStateDir(): Promise<string> {
   // for another checkout and they outrank the cwd, which would key the state
   // dir (and every lock under it) to THAT checkout while the worktree key
   // names the real one.
+  // A pass can change its shell cwd; its state still belongs to the tree
+  // the driver pinned, exactly as worktree/hold attribution does.
+  const cwd = process.env.DRIVE_PR_WORKTREE || process.cwd();
   const r = await git(["rev-parse", "--git-common-dir"], {
+    cwd,
     stderr: "ignore",
     timeoutSec: gitCallTimeoutSeconds(),
     env: gitIdentityEnv(),
   });
-  const legacyDir = r.code === 0 ? resolve(r.stdout.trim()) : "";
+  const legacyDir = r.code === 0 ? resolve(cwd, r.stdout.trim()) : "";
   if (legacyDir === "") {
     fail(
       2,
-      "drive-state.ts: no state dir (not a git repo; set $DRIVE_PR_STATE_DIR)",
+      "drive-state.ts: no state dir (cannot resolve this clone's Git common directory).",
+      "A state-root override still requires this clone identity.",
     );
   }
   return legacyDir;

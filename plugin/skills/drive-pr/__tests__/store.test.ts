@@ -19,7 +19,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 /**
  * `process.env` minus every `GIT_*` pointer — a git hook exports `GIT_DIR`/
@@ -184,7 +184,7 @@ describe("resolveStateDir", () => {
     expect(rA.stdout).not.toBe(rB.stdout);
   });
 
-  it("honours $DRIVE_PR_STATE_DIR verbatim and never runs the legacy guard", () => {
+  it("preserves the clone key under an override without running the Git legacy guard", () => {
     const override = mkdtempSync(join(tmpdir(), "store-test-override-"));
     // A fresh $HOME, never `homeA`: the tests above already ran a clean
     // `probeResolveStateDir(repoA, { HOME: homeA })` call, which writes
@@ -205,7 +205,7 @@ describe("resolveStateDir", () => {
         DRIVE_PR_STATE_DIR: override,
       });
       expect(r.code).toBe(0);
-      expect(r.stdout).toBe(`OK:${override}`);
+      expect(dirname(r.stdout.slice(3))).toBe(override);
     } finally {
       rmSync(join(repoA, ".git", "drive-pr-4172.json"), { force: true });
       rmSync(override, { recursive: true, force: true });

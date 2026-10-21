@@ -1,6 +1,6 @@
 Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.
 
-### What changed (123)
+### What changed (125)
 
 | Module | Criterion | Before → after | Change |
 |--------|-----------|----------------|--------|
@@ -8,7 +8,9 @@ Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/
 | M0 Instruction architecture | `instruction-file-stays-small` | not scored → absent | Added by Jig |
 | M0 Instruction architecture | `load-model-recorded` | not scored → absent | Added by Jig |
 | M0 Instruction architecture | `model-pins-are-family-aliases` | not scored → expected absent | Added by Jig |
+| M0 Instruction architecture | `skill-authoring-rules` | not scored → expected absent | Added by Jig |
 | M0 Instruction architecture | `context-budget-gated` | not scored → absent | Added by Jig |
+| M0 Instruction architecture | `skill-authoring-ratcheted` | not scored → expected absent | Added by Jig |
 | M1 Gates enforcement ladder | `dependency-release-cooldown` | not scored → absent | Added by Jig |
 | M1 Gates enforcement ladder | `install-scripts-allowlisted` | not scored → absent | Added by Jig |
 | M1 Gates enforcement ladder | `supply-chain-policy-lockstep` | not scored → absent | Added by Jig |
