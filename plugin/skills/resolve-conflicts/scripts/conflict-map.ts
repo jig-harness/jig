@@ -449,9 +449,6 @@ export function mergeSnapshot(
   }
   for (const [path, entry] of Object.entries(fresh.paths))
     if (!Object.hasOwn(paths, path)) paths[path] = entry;
-  const kept = Object.values(paths).filter(
-    (entry) => entry.resolution.decision,
-  ).length;
   const attribution = previous.attribution ?? fresh.attribution;
   return {
     snapshot: {
@@ -459,8 +456,21 @@ export function mergeSnapshot(
       ...(attribution === undefined ? {} : { attribution }),
       paths,
     },
-    note: `updated: kept ${kept} recorded decision${kept === 1 ? "" : "s"}${cleared.length === 0 ? "" : `; cleared the decision for ${cleared.sort().join(", ")}, whose class or regeneration command changed: record it again`}`,
+    note: updateNote(paths, cleared),
   };
+}
+
+/** How many recorded decisions an update kept, and which it cleared. */
+function updateNote(
+  paths: Record<string, PathEntry>,
+  cleared: string[],
+): string {
+  const kept = Object.values(paths).filter(
+    (entry) => entry.resolution.decision,
+  ).length;
+  const keptPart = `updated: kept ${kept} recorded decision${kept === 1 ? "" : "s"}`;
+  if (cleared.length === 0) return keptPart;
+  return `${keptPart}; cleared the decision for ${cleared.sort().join(", ")}, whose class or regeneration command changed: record it again`;
 }
 
 function shortSha(sha: string): string {
@@ -601,8 +611,10 @@ function usage(): never {
   fail(2, "usage: conflict-map.ts [--json] [--integration ours|theirs]");
 }
 
-async function main(): Promise<number> {
-  const args = process.argv.slice(2);
+function parseArgs(args: readonly string[]): {
+  json: boolean;
+  integration: SideName | undefined;
+} {
   let json = false;
   let integration: SideName | undefined;
   for (let i = 0; i < args.length; i++) {
@@ -614,16 +626,28 @@ async function main(): Promise<number> {
       integration = value;
     } else usage();
   }
-  const root = topLevel();
-  if (root === null) fail(2, "conflict-map: not inside a git work tree.");
-  let op: Operation;
+  return { json, integration };
+}
+
+/** The operation in progress at `root`; exit 3 when there is none. */
+function operationOrExit(
+  root: string,
+  integration: SideName | undefined,
+): Operation {
   try {
-    op = detectOperation(root, integration);
+    return detectOperation(root, integration);
   } catch (err) {
     if (err instanceof NoOperation)
       fail(3, `conflict-map: ${err.message} Nothing to map.`);
     throw err;
   }
+}
+
+async function main(): Promise<number> {
+  const { json, integration } = parseArgs(process.argv.slice(2));
+  const root = topLevel();
+  if (root === null) fail(2, "conflict-map: not inside a git work tree.");
+  const op = operationOrExit(root, integration);
   const previous = storedSnapshot(root);
   const catalog = catalogGeneratedEntries();
   const paths = mapConflicts(root, op, catalog, recordedSizes(previous, op));
@@ -655,11 +679,12 @@ async function main(): Promise<number> {
   if (previous !== null && !sameOperation(previous, op))
     recordBeforeReplacing(root, previous);
   const file = saveSnapshot(root, snapshot);
-  if (json) console.log(JSON.stringify(snapshot, null, 2));
-  else {
+  if (!json) {
     console.log(summary(snapshot, Object.keys(paths), file, note));
+    return 0;
   }
-  if (json && snapshot.warning) console.error(`WARNING: ${snapshot.warning}`);
+  console.log(JSON.stringify(snapshot, null, 2));
+  if (snapshot.warning) console.error(`WARNING: ${snapshot.warning}`);
   return 0;
 }
 

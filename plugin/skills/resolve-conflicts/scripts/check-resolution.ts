@@ -643,15 +643,41 @@ function reportObligations(
   }
 }
 
-async function main(): Promise<number> {
-  const args = process.argv.slice(2);
+/** The one output mode the command line names, or "" for the plain report. */
+function parseMode(args: readonly string[]): string {
   const known = ["--json", "--message", "--commit-message"];
   if (args.length > 1 || args.some((a) => !known.includes(a)))
     fail(
       2,
       "usage: check-resolution.ts [--json | --message | --commit-message]",
     );
-  const mode = args[0] ?? "";
+  return args[0] ?? "";
+}
+
+/** Every problem, escalation, note and obligation, one line each. */
+function reportResult(
+  result: CheckResult,
+  obligations: readonly ObligationResult[],
+  write: (line: string) => void,
+): void {
+  for (const f of result.problems) write(`PROBLEM ${render(f)}`);
+  for (const e of result.escalations)
+    write(`NEEDS A HUMAN ${e.path}: ${e.question}`);
+  for (const f of result.notes) write(`note ${render(f)}`);
+  reportObligations(obligations, write);
+}
+
+/** The closing line of the plain report: what to do next. */
+function verdictLine(result: CheckResult): string {
+  if (result.exit === 0)
+    return "check-resolution: the resolution passes. Validate it, then conclude the operation.";
+  if (result.exit === 4)
+    return `check-resolution: ${result.escalations.length} path(s) need a human; do not conclude the operation.`;
+  return `check-resolution: ${result.problems.length} problem(s); fix them and run this again.`;
+}
+
+async function main(): Promise<number> {
+  const mode = parseMode(process.argv.slice(2));
   const root = topLevel();
   if (root === null) fail(2, "check-resolution: not inside a git work tree.");
   const { operation, snapshot } = currentSnapshot("check-resolution", root);
@@ -685,13 +711,8 @@ async function main(): Promise<number> {
     );
     return result.exit;
   }
-  const report = (write: (line: string) => void) => {
-    for (const f of result.problems) write(`PROBLEM ${render(f)}`);
-    for (const e of result.escalations)
-      write(`NEEDS A HUMAN ${e.path}: ${e.question}`);
-    for (const f of result.notes) write(`note ${render(f)}`);
-    reportObligations(obligations, write);
-  };
+  const report = (write: (line: string) => void) =>
+    reportResult(result, obligations, write);
   if (mode === "--message" || mode === "--commit-message") {
     report((line) => console.error(line));
     if (result.exit !== 0) return result.exit;
@@ -703,13 +724,7 @@ async function main(): Promise<number> {
     return 0;
   }
   report((line) => console.log(line));
-  console.log(
-    result.exit === 0
-      ? "check-resolution: the resolution passes. Validate it, then conclude the operation."
-      : result.exit === 4
-        ? `check-resolution: ${result.escalations.length} path(s) need a human; do not conclude the operation.`
-        : `check-resolution: ${result.problems.length} problem(s); fix them and run this again.`,
-  );
+  console.log(verdictLine(result));
   return result.exit;
 }
 

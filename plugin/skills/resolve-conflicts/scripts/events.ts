@@ -25,9 +25,11 @@ import { fail, runMain } from "../../../shared/cli.ts";
 import { flushPending, recordConcluded } from "./lib/events.ts";
 import { topLevel } from "./lib/git.ts";
 import { NoOperation, detectOperation } from "./lib/operation.ts";
-import { loadSnapshot, sameOperation } from "./lib/snapshot.ts";
+import { type Snapshot, loadSnapshot, sameOperation } from "./lib/snapshot.ts";
 
 const USAGE = "usage: events.ts [--json]";
+
+type Say = (message: string, detail?: object) => void;
 
 async function main(): Promise<number> {
   const args = process.argv.slice(2);
@@ -35,54 +37,72 @@ async function main(): Promise<number> {
   const json = args.length > 0;
   const root = topLevel();
   if (root === null) fail(2, "events: not inside a git work tree.");
-  const say = (message: string, detail: object = {}) =>
+  const say: Say = (message, detail = {}) =>
     console.log(json ? JSON.stringify({ message, ...detail }) : message);
   const pending = recordPending(root, say);
-  let snapshot: ReturnType<typeof loadSnapshot>;
+  const snapshot = readSnapshot(root);
+  if (snapshot === null) {
+    say("no conflict snapshot: nothing to record");
+    return pending;
+  }
+  refuseInProgress(root, snapshot);
+  recordCurrent(root, snapshot, say);
+  return pending;
+}
+
+/** The current snapshot, or null; exit 1 when it is unreadable. */
+function readSnapshot(root: string): ReturnType<typeof loadSnapshot> {
   try {
-    snapshot = loadSnapshot(root);
+    return loadSnapshot(root);
   } catch (err) {
     return fail(
       1,
       `events: the conflict snapshot is unreadable: ${err instanceof Error ? err.message : err}. The conclusion stands; no events were recorded for its operation.`,
     );
   }
-  if (snapshot === null) {
-    say("no conflict snapshot: nothing to record");
-    return pending;
-  }
+}
+
+/** Exit 3 when the operation `snapshot` describes is still in progress. */
+function refuseInProgress(root: string, snapshot: Snapshot): void {
   try {
     if (sameOperation(snapshot, detectOperation(root)))
       fail(3, "events: the operation is still in progress; conclude it first.");
   } catch (err) {
     if (!(err instanceof NoOperation)) throw err;
   }
+}
+
+/** Record the concluded operation `snapshot` describes; exit 1 on a write failure. */
+function recordCurrent(root: string, snapshot: Snapshot, say: Say): void {
+  let done: ReturnType<typeof recordConcluded>;
   try {
-    const done = recordConcluded(root, snapshot);
-    if (done.commit === null)
-      say(
-        "the snapshot's operation did not conclude (aborted, skipped or not yet committed): nothing recorded",
-        done,
-      );
-    else
-      say(
-        `recorded ${done.written} merge_conflict event${done.written === 1 ? "" : "s"} for ${done.commit.slice(0, 12)}${done.skipped > 0 ? ` (${done.skipped} already recorded)` : ""} in ${done.file}`,
-        done,
-      );
-    return pending;
+    done = recordConcluded(root, snapshot);
   } catch (err) {
-    return fail(
+    fail(
       1,
       `events: the live record could not be written: ${err instanceof Error ? err.message : err}. The conclusion stands.`,
     );
   }
+  if (done.commit === null) {
+    say(
+      "the snapshot's operation did not conclude (aborted, skipped or not yet committed): nothing recorded",
+      done,
+    );
+    return;
+  }
+  const already = done.skipped > 0 ? ` (${done.skipped} already recorded)` : "";
+  say(
+    `recorded ${eventCount(done.written)} for ${done.commit.slice(0, 12)}${already} in ${done.file}`,
+    done,
+  );
+}
+
+function eventCount(written: number): string {
+  return `${written} merge_conflict event${written === 1 ? "" : "s"}`;
 }
 
 /** Record the pending snapshots; 1 when one still cannot be recorded. */
-function recordPending(
-  root: string,
-  say: (message: string, detail?: object) => void,
-): number {
+function recordPending(root: string, say: Say): number {
   let status = 0;
   for (const { file, result } of flushPending(root)) {
     if ("error" in result) {
@@ -97,7 +117,7 @@ function recordPending(
       );
     else
       say(
-        `pending snapshot ${file}: recorded ${result.written} merge_conflict event${result.written === 1 ? "" : "s"} for ${result.commit.slice(0, 12)}`,
+        `pending snapshot ${file}: recorded ${eventCount(result.written)} for ${result.commit.slice(0, 12)}`,
         result,
       );
   }

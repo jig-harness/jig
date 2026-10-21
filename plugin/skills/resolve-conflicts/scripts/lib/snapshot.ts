@@ -301,6 +301,36 @@ function intentProblem(value: unknown): string | null {
   return null;
 }
 
+/** The stages of a path entry, each well formed and together those of `kind`. */
+function stagesProblem(stages: unknown, kind: unknown): string | null {
+  if (!isRecord(stages)) return "has no stages";
+  for (const name of ["base", "ours", "theirs"]) {
+    const problem = stageProblem(stages[name]);
+    if (problem !== null) return `has a ${name} stage that ${problem}`;
+  }
+  if (stages.base === null && stages.ours === null && stages.theirs === null)
+    return "has no stage at all";
+  const implied = kindOf(stages as PathEntry["stages"]);
+  if (implied !== kind)
+    return `is recorded as ${kind}, but its stages are those of ${implied}`;
+  return null;
+}
+
+/** The hunks and the intent of both sides a path entry carries. */
+function evidenceProblem(value: Record<string, unknown>): string | null {
+  if (!Array.isArray(value.hunks)) return "has no hunk list";
+  for (const hunk of value.hunks) {
+    const problem = hunkProblem(hunk);
+    if (problem !== null) return `has a hunk that ${problem}`;
+  }
+  if (!isRecord(value.intent)) return "has no intent";
+  for (const name of ["ours", "theirs"]) {
+    const problem = intentProblem(value.intent[name]);
+    if (problem !== null) return `has an intent for ${name} that ${problem}`;
+  }
+  return null;
+}
+
 /**
  * Every field of a path entry, held to the values `conflict-map.ts` writes,
  * and the kind to the stages: the check compares the resolved file with the
@@ -316,27 +346,10 @@ function entryProblem(value: unknown): string | null {
     return "has a marker size that is not a positive integer";
   const regenerate = regenerateProblem(value.regenerate);
   if (regenerate !== null) return `has a regenerate that ${regenerate}`;
-  const stages = value.stages;
-  if (!isRecord(stages)) return "has no stages";
-  for (const name of ["base", "ours", "theirs"]) {
-    const problem = stageProblem(stages[name]);
-    if (problem !== null) return `has a ${name} stage that ${problem}`;
-  }
-  if (stages.base === null && stages.ours === null && stages.theirs === null)
-    return "has no stage at all";
-  const implied = kindOf(stages as PathEntry["stages"]);
-  if (implied !== value.kind)
-    return `is recorded as ${value.kind}, but its stages are those of ${implied}`;
-  if (!Array.isArray(value.hunks)) return "has no hunk list";
-  for (const hunk of value.hunks) {
-    const problem = hunkProblem(hunk);
-    if (problem !== null) return `has a hunk that ${problem}`;
-  }
-  if (!isRecord(value.intent)) return "has no intent";
-  for (const name of ["ours", "theirs"]) {
-    const problem = intentProblem(value.intent[name]);
-    if (problem !== null) return `has an intent for ${name} that ${problem}`;
-  }
+  const stages = stagesProblem(value.stages, value.kind);
+  if (stages !== null) return stages;
+  const evidence = evidenceProblem(value);
+  if (evidence !== null) return evidence;
   if (!isRecord(value.resolution)) return "has no resolution";
   if (value.clean !== undefined && value.clean !== true)
     return "has a clean flag that is not true";
