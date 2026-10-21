@@ -947,6 +947,9 @@ make, use the entry's term instead.
   against them before it's ever allowed to block anything.
 - **Review lens** — one additive, numbered check taught to a reviewer (a
   prompt module or checklist bullet), typically born from a documented miss.
+- **Seed lens** — a *review lens* Jig ships rather than one a repository grew
+  from its own misses: the review form of one rule a Jig module states, for
+  the part of the rule no gate can check.
 - **Tiered review** — a review that runs cheap pattern checks first, contract
   checks second, and an expensive semantic review last; each tier can block
   or warn, and a change only pays for the tiers its file types need.
