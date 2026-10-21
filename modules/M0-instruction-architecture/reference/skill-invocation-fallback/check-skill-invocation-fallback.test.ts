@@ -283,6 +283,21 @@ test("an HTML tag that is not inline formatting sets the text apart", () => {
   expectSpawnExit(check(doc("<div>Run<b>/release-notes</b></div>\n")), 0);
 });
 
+test("a word-break tag leaves the word whole", () => {
+  expectSpawnExit(check(doc("<div>Run /release-<wbr>notes.</div>\n")), 1);
+  expectSpawnExit(check(doc("<div>Run /release-notes<wbr>-draft.</div>\n")), 0);
+});
+
+test("placing a file's findings spends at most 100 renders", () => {
+  const text = "Run /release-notes.\n\n".repeat(150);
+  const result = check(doc(text));
+  expectSpawnExit(result, 1);
+  expect(result.output).toContain(":1:");
+  expect(result.output).toContain(":199:");
+  expect(result.output).not.toContain(":201:");
+  expect(result.output).toContain("rendered line 201");
+});
+
 test("an invocation inside an HTML comment is not read", () => {
   const text =
     "<!-- Run /release-notes; [procedure](skills/release-notes/SKILL.md) -->\n";

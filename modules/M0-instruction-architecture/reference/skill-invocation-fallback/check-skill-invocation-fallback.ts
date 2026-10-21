@@ -16,13 +16,13 @@
 // in the rendered lines (a link reference definition or an HTML comment
 // shows none). The text is read as shown: inline formatting adds nothing to
 // it, table cells are set off by blanks, raw HTML shows only the text between
-// its tags (a tag that is not inline formatting, such as a block or a line
-// break, is a blank), and an image only its description. A finding names the
+// its tags (a tag that is neither inline formatting nor `<wbr>`, such as a
+// block or a line break, is a blank), and an image only its description. A finding names the
 // invocation's line in the file: the renderer reports no source position, so
 // the file is rendered again with a mark where the invocation may stand, and
 // the place whose mark shows at the invocation, the rest of the text as it
 // was, is its place. An invocation no mark lands on is reported without a
-// line.
+// line, as is every one left once 100 renders have been spent on a file.
 //
 // A bare invocation is `/<skill>` in the rendered text, preceded by the start
 // of a line, a blank, a quote, a delimiter the render kept as text, or an
@@ -294,25 +294,35 @@ const PIECE = /(\d+)|(\d+)|[^]+/g;
 const TAG =
   /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s(?:[^<>"']|"[^"]*"|'[^']*')*)?\/?>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>|<![A-Za-z][^>]*>|<!\[CDATA\[[\s\S]*?\]\]>/g;
 const WHOLE_TAG = new RegExp(`^(?:${TAG.source})$`);
-/** A tag of inline formatting, which sets nothing off from the text beside it. */
+/**
+ * A tag that sets nothing off from the text beside it: inline formatting, and
+ * `<wbr>`, a place a word may break that leaves the word whole.
+ */
 const INLINE_TAG =
-  /^<\/?(?:a|abbr|b|bdi|bdo|cite|code|data|del|dfn|em|i|ins|kbd|mark|q|s|samp|small|span|strong|sub|sup|time|u|var)(?=[\s/>])/i;
+  /^<\/?(?:a|abbr|b|bdi|bdo|cite|code|data|del|dfn|em|i|ins|kbd|mark|q|s|samp|small|span|strong|sub|sup|time|u|var|wbr)(?=[\s/>])/i;
+
+/** What a tag shows: its line breaks, else a blank unless it sets nothing off. */
+const tagShows = (tag: string) =>
+  tag.replace(/[^\n]/g, "") ||
+  (tag.startsWith("<!") || tag.startsWith("<?") || INLINE_TAG.test(tag)
+    ? ""
+    : " ");
 
 /**
  * `html` as it shows: each tag, comment, processing instruction and
  * declaration keeps only its line breaks, and a tag that is not inline
  * formatting (a block, a line break) sets the text on either side off by a
- * blank.
+ * blank. The text is read in one pass and never written out as HTML.
  */
-const withoutTags = (html: string) =>
-  html.replace(
-    TAG,
-    (tag) =>
-      tag.replace(/[^\n]/g, "") ||
-      (tag.startsWith("<!") || tag.startsWith("<?") || INLINE_TAG.test(tag)
-        ? ""
-        : " "),
-  );
+function withoutTags(html: string): string {
+  let shown = "";
+  let at = 0;
+  for (const match of html.matchAll(TAG)) {
+    shown += html.slice(at, match.index) + tagShows(match[0]);
+    at = match.index + match[0].length;
+  }
+  return shown + html.slice(at);
+}
 
 /**
  * A file as its renderer shows it, line by line: `prose` is what invocations
@@ -436,8 +446,8 @@ const normalized = (markdown: string) =>
  * them. Every block ends its own line, so the lines are the rendered text's.
  * What the reader sees is contiguous: inline formatting adds nothing to the
  * text, a table cell is set off by blanks, raw HTML shows only the text
- * between its tags (no tag, attribute or comment; a tag that is not inline
- * formatting is a blank), and an image shows its description as plain text,
+ * between its tags (no tag, attribute or comment; a tag that is neither
+ * inline formatting nor `<wbr>` is a blank), and an image shows its description as plain text,
  * links inside it included. Code shows as it stands.
  */
 function read(source: string): Reading {
@@ -476,6 +486,14 @@ function lineAt(source: string): (offset: number) => number {
   };
 }
 
+/**
+ * The most renders spent placing a file's findings: each is a whole render of
+ * the file, so a file with many findings, or an invocation with many places
+ * to try, stays linear in the file's size. A finding left once it is spent is
+ * reported without a line.
+ */
+const PLACEMENT_RENDERS = 100;
+
 /** A place in a reading: a 0-based rendered line and column. */
 type Place = { line: number; column: number };
 
@@ -513,7 +531,7 @@ function placeOf(
  * written, then after any slash. A mark that shows at the invocation, the
  * rest of the reading unchanged, places it, so text the render does not show
  * (a link's destination, a definition, a comment) never does. Each place is
- * tried once, and only for a finding.
+ * tried once, only for a finding, and at most PLACEMENT_RENDERS places in all.
  */
 class Placer {
   private readonly source: string;
@@ -522,6 +540,8 @@ class Placer {
   /** The offset placed at each rendered `line:column`. */
   private readonly placed = new Map<string, number>();
   private readonly tried = new Set<number>();
+  /** The places to try for each skill, found once. */
+  private readonly offsets = new Map<string, number[]>();
   constructor(source: string, reading: Reading) {
     this.source = source;
     this.reading = reading;
@@ -531,12 +551,12 @@ class Placer {
   /**
    * The 1-based line in the file of the invocation of `skill` at `at`;
    * undefined when no mark lands on it (its name is not written whole, and
-   * its slash not as a slash).
+   * its slash not as a slash) or the renders are spent.
    */
   line(skill: string, at: Place): number | undefined {
     const key = `${at.line}:${at.column + 1}`;
     for (const offset of this.candidates(skill)) {
-      if (this.placed.has(key)) break;
+      if (this.placed.has(key) || this.tried.size >= PLACEMENT_RENDERS) break;
       if (this.tried.has(offset)) continue;
       this.tried.add(offset);
       const place = placeOf(this.source, this.reading, offset);
@@ -546,14 +566,22 @@ class Placer {
     return offset === undefined ? undefined : this.lineOf(offset);
   }
 
-  private *candidates(skill: string): Generator<number> {
+  private candidates(skill: string): number[] {
+    const found = this.offsets.get(skill);
+    if (found) return found;
     const after = (text: string, shift: number) =>
       [...this.source.matchAll(new RegExp(escapeRegex(text), "g"))].map(
         (match) => match.index + shift,
       );
-    yield* after(`/${skill}`, 1);
-    yield* after(skill, 0);
-    yield* after("/", 1);
+    const offsets = [
+      ...new Set([
+        ...after(`/${skill}`, 1),
+        ...after(skill, 0),
+        ...after("/", 1),
+      ]),
+    ];
+    this.offsets.set(skill, offsets);
+    return offsets;
   }
 }
 

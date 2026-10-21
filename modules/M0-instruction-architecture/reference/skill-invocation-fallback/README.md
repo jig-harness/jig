@@ -31,14 +31,15 @@ among the files checked, or no skill to check. Its self-test sits beside it.
   both read from that render, so code, containers, reference definitions and
   escapes are what the renderer makes of them. The text is read as shown:
   inline formatting adds nothing to it, table cells are set off by blanks,
-  raw HTML shows only the text between its tags (a tag that is not inline
-  formatting, such as a block or a line break, is a blank), and an image only
-  its description. The window is counted in the rendered lines. A finding
+  raw HTML shows only the text between its tags (a tag that is neither
+  inline formatting nor `<wbr>`, such as a block or a line break, is a blank),
+  and an image only its description. The window is counted in the rendered lines. A finding
   names the invocation's line in the file: the file is rendered again with a
   mark where the invocation may stand, and the place whose mark shows at the
   invocation, the rest of the text unchanged, is its line, so text the render
   does not show never places it. An invocation no mark lands on is reported
-  without a line.
+  without a line, as is every one left once 100 renders have been spent on
+  the file, so placing stays linear in the file's size.
 - **An invocation** is `/<skill>` in the rendered text, after the start of a
   line, a blank, a quote, a delimiter the render kept as text, or an opening
   parenthesis or bracket, and not
