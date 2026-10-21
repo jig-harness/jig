@@ -163,12 +163,13 @@ file can hide an edit:
   xargs -0 git --literal-pathspecs --attr-source="$VALIDATION_BASE" \
     -c core.quotePath=false \
     diff --no-color --no-ext-diff --no-textconv --text --no-renames \
+    --no-relative --ignore-submodules=none --submodule=short \
     --src-prefix=a/ --dst-prefix=b/ -U0 "$VALIDATION_BASE" --
   # then, for each untracked file and for every file under --files
   # (exit 1 means only that the file differs from nothing):
   git -c core.quotePath=false \
     diff --no-index --no-color --no-ext-diff --no-textconv --text \
-    --src-prefix=a/ --dst-prefix=b/ -U0 /dev/null "<file>"
+    --no-relative --src-prefix=a/ --dst-prefix=b/ -U0 /dev/null "<file>"
 } > "<effective-diff>"
 ```
 
@@ -176,6 +177,16 @@ Setup runs these commands one at a time and checks each one's exit status:
 the tracked diff must exit 0, each comparison with nothing 0 or 1. Any other
 status, from any of them, discards `<effective-diff>` and stops the review,
 so a partial diff never reaches selection.
+
+The effective file list is collected under the same rule: `review`'s setup
+command that lists the changed files gains `--no-relative` and
+`--ignore-submodules=none`, so the list and the diff agree on every path.
+`--ignore-submodules=none` keeps a submodule whose commit the change moves
+in both, where `diff.ignoreSubmodules` would drop it; `--submodule=short`
+writes that move as the usual one-line gitlink patch, where
+`diff.submodule=diff` would write the submodule's own files, whose paths are
+in no file list; `--no-relative` keeps every path relative to the tree's root
+whatever `diff.relative` says.
 
 `--attr-source` (git 2.41 or later; setup checks the version first and
 stops, naming the requirement, on an older git) reads attributes from the
@@ -350,8 +361,8 @@ review threads, where every finding reaches a terminal state through
   threads, resolved ones included, with `list-unresolved-threads.ts
   --include-resolved`, takes the lens from the first comment and the
   outcome from the last outcome-prefixed reply by a trusted author
-  (`OWNER`, `MEMBER` or `COLLABORATOR`, the rule M8's thread sample already
-  applies), and writes one `parity.tsv`
+  (`OWNER`, `MEMBER` or `COLLABORATOR`; the script itself applies this
+  rule, since M8 has no thread reader yet), and writes one `parity.tsv`
   row per lens version. A first comment counts only when its author is one
   of the reviewer identities the repository configures; a lens marker from
   anyone else is not a finding of that lens;
@@ -392,7 +403,11 @@ does not ship.
 ## Build order
 
 1. **The lens contract and the first lens.** The lens file format; the
-   effective diff in `review`'s setup; `select-lenses.ts` with its tests,
+   effective diff in `review`'s setup, with a test that sets each caller
+   setting the diff pins (`diff.ignoreSubmodules`, `diff.submodule`,
+   `diff.relative`, `diff.noprefix`, `diff.external`, a textconv driver, a
+   change-declared attribute) and finds the file list and the diff
+   unchanged; `select-lenses.ts` with its tests,
    configuration errors included; the Tier 3 runner, its states, the summary
    line and the exit criteria; `--lens` in the arguments; the lens step in
    `do-item`'s gate; `review.lenses` (`dir`, `off`, `triggers`) in
