@@ -178,9 +178,21 @@ the tracked diff must exit 0, each comparison with nothing 0 or 1. Any other
 status, from any of them, discards `<effective-diff>` and stops the review,
 so a partial diff never reaches selection.
 
-The effective file list is collected under the same rule: `review`'s setup
-command that lists the changed files gains `--no-relative` and
-`--ignore-submodules=none`, so the list and the diff agree on every path.
+The effective file list is collected under the same rule, because a file
+the list omits is never diffed: `review`'s setup command that lists the
+changed files takes the tracked diff's own options, with `--name-only -z`
+in place of the patch options,
+
+```bash
+git --literal-pathspecs --attr-source="$VALIDATION_BASE" \
+  diff --no-ext-diff --no-textconv --no-renames --no-relative \
+  --ignore-submodules=none --name-only -z "$VALIDATION_BASE"
+```
+
+so the list and the diff agree on every path and read attributes from the
+same commit: a clean filter the change assigns in its own attributes file
+cannot make an edited file compare equal to its base and drop out of the
+list.
 `--ignore-submodules=none` keeps a submodule whose commit the change moves
 in both, where `diff.ignoreSubmodules` would drop it; `--submodule=short`
 writes that move as the usual one-line gitlink patch, where
@@ -407,7 +419,8 @@ does not ship.
    setting the diff pins (`diff.ignoreSubmodules`, `diff.submodule`,
    `diff.relative`, `diff.noprefix`, `diff.external`, a textconv driver, a
    change-declared attribute) and finds the file list and the diff
-   unchanged; `select-lenses.ts` with its tests,
+   unchanged, including a change that assigns a configured clean filter
+   removing its own added line, whose file must stay in the list; `select-lenses.ts` with its tests,
    configuration errors included; the Tier 3 runner, its states, the summary
    line and the exit criteria; `--lens` in the arguments; the lens step in
    `do-item`'s gate; `review.lenses` (`dir`, `off`, `triggers`) in
