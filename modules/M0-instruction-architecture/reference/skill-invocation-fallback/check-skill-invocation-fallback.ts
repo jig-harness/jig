@@ -16,16 +16,20 @@
 // an invocation: a path (`skills/<skill>/SKILL.md`, `/<skill>/`,
 // `/<skill>.md`), and a plugin-namespaced command (`/<plugin>:<skill>`),
 // whose fallback, the installed skill's SKILL.md, lies outside the files
-// this check reads. Fenced code is checked like prose: a command in an
-// example is still an instruction.
+// this check reads. Code is checked like prose: a command in an example is
+// still an instruction. Text inside an HTML comment is not read at all.
 //
-// A fallback names the skill it falls back to: a visible Markdown link whose
-// target, resolved from the file's directory, is `<skill>/SKILL.md`; the
-// discovery path `.agents/skills/<skill>`; or a visible link to an interop
-// document (a target holding `interop`), the one shared marker, since such a
-// document covers every skill. A link inside an HTML comment is not visible
-// and does not count. The window is read as one text, so a link broken
-// across lines still counts.
+// A fallback names the skill it falls back to: a link whose target, resolved
+// from the file's directory, is `<skill>/SKILL.md`; the discovery path
+// `.agents/skills/<skill>`; or a link to an interop document (a target
+// holding `interop`), the one shared marker, since such a document covers
+// every skill. A link is what a CommonMark renderer (`Bun.markdown`) shows as
+// one: an inline or reference link, never an image, nor link syntax inside
+// code or an HTML comment. The window is rendered as one text, with the
+// file's link reference definitions, so a link broken across lines, or one
+// whose definition stands elsewhere in the file, still counts; and the link
+// must also be one in the whole file, so a window that cuts into a code block
+// cannot turn its code into a link.
 //
 // A file is exempted as a whole only when all three hold: it is named with
 // --exempt, it opens with a generated-file banner (an HTML comment starting
@@ -64,6 +68,10 @@ import { dirname, join, posix, relative, resolve } from "node:path";
 import { cli, strictOptions } from "../../../../lib/cli.ts";
 import { readRegularFile } from "../../../../lib/files.ts";
 import { type Finding, reportFindings } from "../../../../lib/findings.ts";
+import {
+  type MarkdownLink,
+  markdownLinks,
+} from "../../../../lib/markdown-links.ts";
 
 /** An input the check cannot run on; the `cli` boundary reports it as exit 2. */
 class UsageError extends Error {}
@@ -217,14 +225,14 @@ const escapeRegex = (text: string) =>
 /**
  * A bare `/<skill>`: after the line start, a blank, a quote, a backtick, an
  * emphasis or strikethrough delimiter, a table bar or an opening parenthesis
- * or bracket; not continued by a name character, a slash, an underscore that
- * runs on into a name (one that does not closes emphasis), or a colon or dot
- * that runs on into a name (a namespace or a file name).
+ * or bracket; not continued by a name character, a slash, underscores that
+ * run on into a name (ones that do not close emphasis, `_` or `__`), or a
+ * colon or dot that runs on into a name (a namespace or a file name).
  */
 function invocationPattern(skills: string[]): RegExp {
   const names = skills.map(escapeRegex).join("|");
   return new RegExp(
-    `(?<=^|[\\s\`"'*_~|(\\[])/(${names})(?![A-Za-z0-9/-]|_[A-Za-z0-9_-]|[:.][A-Za-z0-9_-])`,
+    `(?<=^|[\\s\`"'*_~|(\\[])/(${names})(?![A-Za-z0-9/-]|_+[A-Za-z0-9-]|[:.][A-Za-z0-9_-])`,
     "g",
   );
 }
@@ -233,8 +241,8 @@ function invocationPattern(skills: string[]): RegExp {
 const visible = (text: string) =>
   text.replace(/<!--[\s\S]*?-->/g, (comment) => comment.replace(/[^\n]/g, ""));
 
-/** A Markdown link's target: `](target)`, with an optional title. */
-const LINK = /\]\(\s*<?([^)\s>]+)>?(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g;
+/** The line a link reference definition opens on: `[label]:`. */
+const DEFINITION = /^ {0,3}\[(?:[^\]\\]|\\.)+\]:/;
 
 /** The path of a link target, without its fragment, query or origin. */
 function targetPath(target: string): string {
@@ -246,13 +254,75 @@ function targetPath(target: string): string {
   }
 }
 
-/** Whether `around`, already free of comments, names a fallback for `skill`. */
+/** Whether a link target is a fallback for `skill`, read from `dir`. */
+function fallbackTarget(target: string, skill: string, dir: string): boolean {
+  const path = targetPath(target);
+  if (path.includes("interop")) return true;
+  const full = path.startsWith("/") ? path : posix.join(dir, path);
+  return posix.normalize(full).endsWith(`/${skill}/SKILL.md`);
+}
+
+/** The link targets `markdown` renders, images left out. */
+function renderedLinks(markdown: string): string[] {
+  const targets: string[] = [];
+  const callbacks = {
+    link: (children: string | undefined, meta: { href?: unknown }) => {
+      if (typeof meta?.href === "string") targets.push(meta.href);
+      return children ?? "";
+    },
+    image: () => "",
+  };
+  Bun.markdown.render(
+    markdown,
+    callbacks as unknown as Parameters<typeof Bun.markdown.render>[1],
+  );
+  return targets;
+}
+
+/**
+ * A file's links as its renderer reads them, and its link reference
+ * definitions that some link uses: their 0-based lines and their text.
+ */
+interface FileLinks {
+  links: MarkdownLink[];
+  definitionLines: Set<number>;
+  definitions: string;
+}
+
+function fileLinks(shownText: string, shownLines: string[]): FileLinks {
+  const links = markdownLinks(shownText);
+  const linkLines = new Set(links.map((link) => link.line - 1));
+  const definitionLines = new Set<number>();
+  const kept: string[] = [];
+  shownLines.forEach((line, index) => {
+    if (!DEFINITION.test(line)) return;
+    // A definition's destination stands on its own line or the next.
+    const end = linkLines.has(index)
+      ? index
+      : linkLines.has(index + 1)
+        ? index + 1
+        : -1;
+    if (end < 0) return;
+    for (let at = index; at <= end; at++) definitionLines.add(at);
+    kept.push(shownLines.slice(index, end + 1).join("\n"));
+  });
+  return { links, definitionLines, definitions: kept.join("\n\n") };
+}
+
+/**
+ * Whether the window `from`..`to` (0-based lines, inclusive) names a
+ * fallback for `skill`. `lines` are free of comments.
+ */
 function namesFallback(
-  around: string,
+  lines: string[],
+  from: number,
+  to: number,
   skill: string,
   dir: string,
   options: Options,
+  file: () => FileLinks,
 ): boolean {
+  const around = lines.slice(from, to + 1).join("\n");
   if (options.marker !== undefined)
     return regex(
       options.marker.replaceAll("{skill}", escapeRegex(skill)),
@@ -265,13 +335,16 @@ function namesFallback(
     ).test(around)
   )
     return true;
-  for (const [, target] of around.matchAll(LINK)) {
-    const path = targetPath(target ?? "");
-    if (path.includes("interop")) return true;
-    const full = path.startsWith("/") ? path : posix.join(dir, path);
-    if (posix.normalize(full).endsWith(`/${skill}/SKILL.md`)) return true;
-  }
-  return false;
+  const { links, definitionLines, definitions } = file();
+  const inFile = links.some(
+    ({ target, line }) =>
+      (definitionLines.has(line - 1) || (line - 1 >= from && line - 1 <= to)) &&
+      fallbackTarget(target, skill, dir),
+  );
+  if (!inFile) return false;
+  return renderedLinks(`${around}\n\n${definitions}`).some((target) =>
+    fallbackTarget(target, skill, dir),
+  );
 }
 
 /** The banner: an HTML comment that opens in the file's first lines. */
@@ -290,7 +363,13 @@ function checkFile(file: string, options: Options): Finding[] {
   const shown = relative(process.cwd(), file).replaceAll("\\", "/") || file;
   const text = readRegularFile(file);
   const lines = text.split(/\r?\n/);
-  const shownLines = visible(text).split(/\r?\n/);
+  const shownText = visible(text);
+  const shownLines = shownText.split(/\r?\n/);
+  let links: FileLinks | undefined;
+  const linksOf = () => {
+    links ??= fileLinks(shownText, shownLines);
+    return links;
+  };
   const dir = resolve(dirname(file)).replaceAll("\\", "/");
   const findings: Finding[] = [];
   if (options.exempt.has(resolve(file))) {
@@ -311,13 +390,13 @@ function checkFile(file: string, options: Options): Finding[] {
     });
   }
   const pattern = invocationPattern(options.skills);
-  lines.forEach((line, index) => {
+  shownLines.forEach((line, index) => {
     for (const match of line.matchAll(pattern)) {
       const skill = match[1] ?? "";
-      const around = shownLines
-        .slice(Math.max(0, index - options.window), index + options.window + 1)
-        .join("\n");
-      if (namesFallback(around, skill, dir, options)) continue;
+      const from = Math.max(0, index - options.window);
+      const to = index + options.window;
+      if (namesFallback(shownLines, from, to, skill, dir, options, linksOf))
+        continue;
       findings.push({
         rule: RULE,
         file: shown,

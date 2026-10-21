@@ -30,18 +30,21 @@ among the files checked, or no skill to check. Its self-test sits beside it.
   quote, a backtick, an emphasis or strikethrough delimiter (`*`, `_`, `~`),
   a table bar, or an opening parenthesis or bracket, and not continued by
   another name character. A path (`skills/<skill>/`, `/<skill>/SKILL.md`,
-  `/<skill>.md`) is not one.
+  `/<skill>.md`) is not one. Code is read like prose, since a command in an
+  example is still an instruction; text inside an HTML comment is not read.
 - **A plugin's skills are not checked.** A plugin-namespaced command
   (`/<plugin>:<skill>`) falls back to the installed skill's `SKILL.md`,
   which lies outside the repository this check scans; the plugin's own
   installation notes say where each runtime installs it.
 - **A fallback names the skill it falls back to.** By default it is a
-  visible Markdown link whose target, resolved from the file's directory, is
+  link whose target, resolved from the file's directory, is
   `<skill>/SKILL.md` (a mention that is no link does not count), the
   discovery path `.agents/skills/<skill>`, or a link to an interop document
   (a link whose target holds `interop`), the one marker shared by every
-  skill. A link inside an HTML comment is not visible and does not count.
-  `--marker` replaces the default with the repository's own, such as the
+  skill. A link is what a CommonMark renderer (Bun's `Bun.markdown`) shows
+  as one: an inline link, or a reference link whose definition may stand
+  anywhere in the file. An image, and link syntax inside code or an HTML
+  comment, is not a link. `--marker` replaces the default with the repository's own, such as the
   path of the document that says how each runtime runs a skill; `{skill}` in
   it stands for the invoked skill's name. The default window is 10 lines on
   either side.
@@ -71,8 +74,8 @@ passes once named with `--exempt fixtures/docs/generated.md`.
 Name the skills a runtime scans by directory (`--skills .claude/skills`), so
 a new skill is checked without a change to the command, and name the
 instruction files and skill folders that invoke them. Run it from a pinned
-Jig checkout, or vendor the folder with `lib/cli.ts`, `lib/files.ts` and
-`lib/findings.ts`, keeping their paths relative to it. It uses only Bun's
+Jig checkout, or vendor the folder with `lib/cli.ts`, `lib/files.ts`,
+`lib/findings.ts` and `lib/markdown-links.ts`, keeping their paths relative to it. It uses only Bun's
 built-ins, so it can run in the same step as the
 [context-budget checks](../context-budget/README.md), before dependencies
 are installed. The recipe is in

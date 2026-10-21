@@ -89,8 +89,8 @@ criteria:
     evidence: "At a66ee22 .github/workflows/gates.yml has no step measuring an always-loaded budget, and scripts/gates.ts runs no such check"
   M0/skill-invocation-fallback-gated:   # strict, requires mechanical
     # A CI check fails every slash command for one of the repository's own skills that names no fallback for that skill beside it (expected-absent for a repository with no skill of its own).
-    score: mechanical
-    evidence: "scripts/check-skill-fallbacks.ts, in scripts/gates.ts (required check 'gates'), runs M0's skill-invocation-fallback lint with --skills .claude/skills over every AGENTS.md and CLAUDE.md, CONTRIBUTING.md and the skills themselves"
+    score: absent
+    evidence: "At a66ee22 Jig had skills of its own under .claude/skills, but scripts/gates.ts ran no check that reads slash commands for a fallback beside them"
   # M1 gates-enforcement-ladder
   M1/gate-set-documented:   # lite, requires convention
     # An ordered gate set (format, lint, types, tests, build) is stated in one canonical place and runnable with a single command.

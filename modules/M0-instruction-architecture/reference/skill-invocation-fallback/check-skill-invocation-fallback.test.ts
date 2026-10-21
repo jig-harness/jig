@@ -85,6 +85,8 @@ test("each opening a slash command may follow is an invocation", () => {
     "run **/release-notes** now",
     "run _/release-notes_.",
     "run _/release-notes_ now",
+    "run __/release-notes__.",
+    "run __/release-notes__ now",
     "run ~~/release-notes~~ now",
     "| /release-notes | writes them |",
     "|/release-notes|",
@@ -103,6 +105,7 @@ test("paths, namespaced commands and longer names are not invocations", () => {
     "https://example.com/release-notes",
     "run /release-notes-draft",
     "run /release-notes_v2",
+    "run /release-notes__v2",
     "a/release-notes b",
   ]) {
     const result = check(doc(`${line}\n`));
@@ -153,6 +156,39 @@ test("hidden, mistargeted and unbounded markers are not fallbacks", () => {
   ]) {
     expectSpawnExit(check(doc(text)), 1, text);
   }
+});
+
+test("link syntax the renderer shows as no link is not a fallback", () => {
+  for (const text of [
+    "Run /release-notes. `[procedure](skills/release-notes/SKILL.md)`\n",
+    "Run /release-notes. ![procedure](skills/release-notes/SKILL.md)\n",
+    "Run /release-notes.\n\n```\n[procedure](skills/release-notes/SKILL.md)\n```\n",
+    `\`\`\`\n${padding(20)}[procedure](skills/release-notes/SKILL.md)\n\`\`\`\nRun /release-notes.\n`,
+    "Run /release-notes; read [procedure][release].\n\n```\n[release]: skills/release-notes/SKILL.md\n```\n",
+  ]) {
+    expectSpawnExit(check(doc(text)), 1, text);
+  }
+});
+
+test("a reference link counts wherever its definition stands", () => {
+  const use = "Run /release-notes; read [procedure][release].\n";
+  const definition = "[release]: skills/release-notes/SKILL.md\n";
+  expectSpawnExit(check(doc(`${use}\n${definition}`)), 0);
+  expectSpawnExit(check(doc(`${use}${padding(30)}\n${definition}`)), 0);
+  expectSpawnExit(check(doc(`${definition}${padding(30)}${use}`)), 0);
+  const split = "[release]:\n  skills/release-notes/SKILL.md\n";
+  expectSpawnExit(check(doc(`${use}${padding(30)}\n${split}`)), 0);
+  // A definition cannot interrupt a paragraph: this one is prose.
+  expectSpawnExit(check(doc(`${use}${definition}`)), 1);
+  const unused = `Run /release-notes.\n\n${definition}`;
+  expectSpawnExit(check(doc(unused)), 1);
+});
+
+test("an invocation inside an HTML comment is not read", () => {
+  const text =
+    "<!-- Run /release-notes; [procedure](skills/release-notes/SKILL.md) -->\n";
+  expectSpawnExit(check(doc(text)), 0);
+  expectSpawnExit(check(doc("<!--\nRun /release-notes.\n-->\n")), 0);
 });
 
 test("a mention of SKILL.md that is no link is not a fallback", () => {
