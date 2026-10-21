@@ -13,6 +13,26 @@ import {
 } from "./check-tracker-boundary.ts";
 
 const root = join(import.meta.dir, "..");
+
+// Whether matching is linear is read from how its time grows, not from a
+// wall-clock budget, which a slow runner breaks: four times the input takes
+// about four times as long when linear and sixteen when quadratic. The best of
+// a few runs keeps a collection pause or a cold start out of either side.
+const LINEAR_TIMEOUT_MS = 60_000;
+function expectLinear(text: (n: number) => string, size: number): void {
+  const fastest = (input: string): number => {
+    let best = Number.POSITIVE_INFINITY;
+    for (let run = 0; run < 3; run++) {
+      const started = performance.now();
+      expect(violations("plugin/x.ts", input)).toEqual([]);
+      best = Math.min(best, performance.now() - started);
+    }
+    return best;
+  };
+  const small = fastest(text(size / 4));
+  const large = fastest(text(size));
+  expect(large).toBeLessThan(8 * Math.max(small, 5));
+}
 const temporary: string[] = [];
 afterAll(() => {
   for (const path of temporary) rmSync(path, { recursive: true, force: true });
@@ -227,30 +247,33 @@ describe("tokens", () => {
   ])("linear passed to another program is not a run: %s", (code) => {
     expect(violations("plugin/x.py", code)).toEqual([]);
   });
-  test("a long run of comment markers is matched in linear time", () => {
-    const text = `(/*${"*//*".repeat(50_000)}`;
-    const started = performance.now();
-    expect(violations("plugin/x.ts", text)).toEqual([]);
-    expect(performance.now() - started).toBeLessThan(2_000);
-  });
+  test(
+    "a long run of comment markers is matched in linear time",
+    () => {
+      expectLinear((n) => `(/*${"*//*".repeat(n)}`, 50_000);
+    },
+    LINEAR_TIMEOUT_MS,
+  );
   test.each([
-    [`const run = ${" ".repeat(2_000)}value;\n`.repeat(10)],
-    [`const run = ${" /* c */".repeat(500)}value;\n`.repeat(10)],
-    [`const run = ${"a.".repeat(20_000)}value;`],
-    [`from subprocess import (${" x,".repeat(20_000)}`],
-    [`spawnSync(${" a,".repeat(20_000)}`.repeat(5)],
-    [`os.spawnlp(${"(".repeat(20_000)}`.repeat(5)],
-    [`os.spawnlp(${"x ".repeat(20_000)}`.repeat(5)],
-    [`os.spawnlp(f(${" a #c\n".repeat(20_000)}`],
-    [`os.spawnlp("""${"x ".repeat(20_000)}`.repeat(5)],
-    [`os.spawnlp(${'"""a""'.repeat(20_000)}`],
+    [(n: number) => `const run = ${" ".repeat(n)}value;\n`.repeat(10), 2_000],
+    [
+      (n: number) => `const run = ${" /* c */".repeat(n)}value;\n`.repeat(10),
+      500,
+    ],
+    [(n: number) => `const run = ${"a.".repeat(n)}value;`, 20_000],
+    [(n: number) => `from subprocess import (${" x,".repeat(n)}`, 20_000],
+    [(n: number) => `spawnSync(${" a,".repeat(n)}`.repeat(5), 20_000],
+    [(n: number) => `os.spawnlp(${"(".repeat(n)}`.repeat(5), 20_000],
+    [(n: number) => `os.spawnlp(${"x ".repeat(n)}`.repeat(5), 20_000],
+    [(n: number) => `os.spawnlp(f(${" a #c\n".repeat(n)}`, 20_000],
+    [(n: number) => `os.spawnlp("""${"x ".repeat(n)}`.repeat(5), 20_000],
+    [(n: number) => `os.spawnlp(${'"""a""'.repeat(n)}`, 20_000],
   ])(
     "a binding that names no launcher is matched in linear time: %#",
-    (text) => {
-      const started = performance.now();
-      expect(violations("plugin/x.ts", text)).toEqual([]);
-      expect(performance.now() - started).toBeLessThan(2_000);
+    (text, size) => {
+      expectLinear(text, size);
     },
+    LINEAR_TIMEOUT_MS,
   );
   test("a command line does not run on across a line break", () => {
     expect(
