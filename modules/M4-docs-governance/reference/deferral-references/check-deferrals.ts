@@ -281,6 +281,8 @@ function place(b: Builder, kind: LineKind, line: string, at: number): void {
 /** An HTML comment being read, which may span lines. */
 interface Comment {
   line: number;
+  /** The line the comment ends on. */
+  end: number;
   text: string;
 }
 
@@ -308,6 +310,7 @@ function maskComments(
         state.open.text += "\n";
         break;
       }
+      state.open.end = at;
       done(state.open);
       state.open = undefined;
       continue;
@@ -318,7 +321,7 @@ function maskComments(
       break;
     }
     out += `${line.slice(i, start)}${COMMENT_START}   `;
-    state.open = { line: at, text: "<!--" };
+    state.open = { line: at, end: at, text: "<!--" };
     i = start + 4;
   }
   return out;
@@ -388,15 +391,19 @@ function readLine(r: Reader, lines: string[], i: number): void {
     place(r.builder, lineKind(r, line, lines[i + 1]), line, i + 1);
 }
 
-/** Give each waiver comment to the block it starts in. */
+/**
+ * Give each waiver comment to the block it starts in. The block then reaches
+ * the waiver's last line, so a change to any line of its reason judges it.
+ */
 function attachWaivers(blocks: Unit[], comments: Comment[]): void {
   for (const comment of comments) {
     const waiver = WAIVER.exec(comment.text.trim());
     const unit = blocks.find(
       (u) => u.start <= comment.line && comment.line <= u.end,
     );
-    if (waiver !== null && unit !== undefined)
-      unit.waivers.push(waiver[1] ?? "");
+    if (waiver === null || unit === undefined) continue;
+    unit.waivers.push(waiver[1] ?? "");
+    unit.end = Math.max(unit.end, comment.end);
   }
 }
 
@@ -419,7 +426,8 @@ export function units(content: string): Unit[] {
   };
   const first = frontmatter.present ? frontmatter.end + 1 : 0;
   for (let i = first; i < lines.length; i++) readLine(r, lines, i);
-  if (r.comment.open !== undefined) r.comments.push(r.comment.open);
+  if (r.comment.open !== undefined)
+    r.comments.push({ ...r.comment.open, end: lines.length });
   const blocks = r.builder.out;
   for (const unit of blocks)
     unit.text = unit.text.replaceAll(COMMENT_START, " ");
@@ -480,7 +488,9 @@ function deferralOf(unit: Unit, config: Config): Deferral | undefined {
   const keysIn = (from: string) =>
     config.items.flatMap((pattern) =>
       [...from.matchAll(pattern)]
-        .map((m) => m[1] ?? m[0])
+        // A pattern with a group names the key by it, and a group that took
+        // no part in the match names nothing; without a group, the match.
+        .map((m) => (m.length > 1 ? (m[1] ?? "") : m[0]))
         // A pattern can match nothing in real text (a lookahead, an empty
         // group); an empty key names no item.
         .filter((key) => key !== ""),
@@ -502,7 +512,7 @@ export function readDocument(content: string, config: Config): Reading {
   const reading: Reading = { deferrals: [], findings: [] };
   for (const unit of units(content)) {
     if (unit.waivers.length > 0) {
-      if (!unit.waivers.some((reason) => /[^\s:]/.test(reason)))
+      if (unit.waivers.some((reason) => !/[^\s:]/.test(reason)))
         reading.findings.push(
           finding(
             unit,
@@ -769,16 +779,26 @@ function changedSources(
   return out;
 }
 
-/** The configuration a run judges by: for a staged change, the index's copy when it has one. */
-function configText(root: string, configPath: string, mode: Mode): string {
+/** For a staged change, the configuration's path in the index when the index has it. */
+function indexedConfig(
+  root: string,
+  configPath: string,
+  mode: Mode | undefined,
+): string | undefined {
   const path = relativePath(root, configPath);
-  if (
-    mode === "staged" &&
+  return mode === "staged" &&
     !path.startsWith("../") &&
     git(root, ["ls-files", "-z", "--", `:(literal)${path}`]) !== ""
-  )
-    return git(root, ["show", `:${path}`]);
-  return readFileSync(configPath, "utf8");
+    ? path
+    : undefined;
+}
+
+/** The configuration a run judges by: for a staged change, the index's copy when it has one. */
+function configText(root: string, configPath: string, mode: Mode): string {
+  const indexed = indexedConfig(root, configPath, mode);
+  return indexed === undefined
+    ? readFileSync(configPath, "utf8")
+    : git(root, ["show", `:${indexed}`]);
 }
 
 const relativePath = (root: string, path: string) =>
@@ -905,11 +925,14 @@ function plan(
     flags.config === undefined
       ? join(root, DEFAULT_CONFIG)
       : resolve(cwd, flags.config);
-  if (!existsSync(configPath))
+  const mode = modeOf(flags, flags.range ?? (env.DIFF_RANGE || undefined));
+  if (
+    !existsSync(configPath) &&
+    indexedConfig(root, configPath, mode) === undefined
+  )
     throw new DeferralsError(
       `configuration ${configPath} does not exist (see templates/deferral-references.yaml)`,
     );
-  const mode = modeOf(flags, flags.range ?? (env.DIFF_RANGE || undefined));
   return {
     root,
     configPath,

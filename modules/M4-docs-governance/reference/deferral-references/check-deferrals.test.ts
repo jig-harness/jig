@@ -330,6 +330,11 @@ describe("the static half", () => {
   test.each([
     ["a lookahead", "items: ['(?=ENG)']\n", "Tracked to closure ENG\n"],
     ["an empty group", "items: ['ENG-(\\d*)']\n", "Tracked to closure ENG-\n"],
+    [
+      "an optional group that took no part",
+      "items: ['ENG-(\\d+)?']\n",
+      "Tracked to closure under ENG-\n",
+    ],
   ])(
     "a pattern matching nothing in the text (%s) names no item",
     (_n, c, doc) => {
@@ -360,6 +365,14 @@ describe("the static half", () => {
     expect(findingsOf(`Tracked to closure. ${waiver}\n`)).toEqual([
       "1:deferral-waiver-without-reason",
     ]);
+  });
+
+  test("every waiver in a block needs a reason, not only one of them", () => {
+    expect(
+      findingsOf(
+        "Tracked to closure. <!-- deferral-ok: x --> <!-- deferral-ok -->\n",
+      ),
+    ).toEqual(["1:deferral-waiver-without-reason"]);
   });
 
   test.each(["<!-- deferral-ok-ignore -->", "<!-- deferral-okay: x -->"])(
@@ -626,6 +639,25 @@ describe("--staged", () => {
     r.write("a.md", "Tracked to closure under TASK-1.\n");
     r.git("add", "a.md");
     r.write(".config/deferral-references.yaml", "items: ['\\bTASK-\\d+\\b']\n");
+    expectSpawnExit(r.run(["--staged"]), 1);
+  });
+
+  test("blanking the reason on a later line of a multi-line waiver brings the block under the gate", () => {
+    const r = repo({
+      "a.md": "Tracked to closure. <!-- deferral-ok:\nexplains the rule\n-->\n",
+    });
+    r.write("a.md", "Tracked to closure. <!-- deferral-ok:\n  \n-->\n");
+    r.git("add", ".");
+    const result = r.run(["--staged"]);
+    expectSpawnExit(result, 1);
+    expect(result.stdout).toContain("deferral-waiver-without-reason");
+  });
+
+  test("a staged configuration deleted from the working tree is read from the index", () => {
+    const r = repo({ "a.md": "Fine.\n" }, "items: ['\\bENG-\\d+\\b']\n");
+    r.write("a.md", "Tracked to closure.\n");
+    r.git("add", ".");
+    rmSync(join(r.dir, ".config/deferral-references.yaml"));
     expectSpawnExit(r.run(["--staged"]), 1);
   });
 
