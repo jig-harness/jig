@@ -330,7 +330,8 @@ and a machine layer for the schedule. What is built:
 - **The runner and the kinds that exist**: `jig gc` with report, collect,
   receipts and install; the worktrees kind moved in from a working
   repository with its scheduler installers; `drive-pr`'s state reaper and the
-  test scratch scope as kinds; the `gc` sections of both configuration
+  test scratch scope as kinds, the scratch scope writing an owner record
+  beside each directory; the `gc` sections of both configuration
   layers; M12's practice, scheduler rows and audit criterion.
 - **Containers, volumes and images**, keyed to the compose projects the
   worktrees derive, and the machine-level dangling images and build cache.

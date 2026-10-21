@@ -28,8 +28,9 @@ of what it did, and refuses whatever it cannot prove is dead. A repository
 declares what it mints and how to tell it is still in use; a machine declares
 when to sweep and how much to keep.
 
-This is the design of [plan.md](plan.md) item 24. Three collectors exist
-and set the contract: [`reap-state.ts`](../plugin/skills/drive-pr/scripts/reap-state.ts)
+This is the design of [plan.md](plan.md) item 24. Existing collectors
+each hold part of the contract below:
+[`reap-state.ts`](../plugin/skills/drive-pr/scripts/reap-state.ts)
 retires `drive-pr`'s own state on a lifecycle predicate, the
 [namespace reaper](../modules/M12-parallel-agent-ergonomics/reference/worktree-namespace/README.md)
 drops per-worktree data namespaces report-first, and
@@ -42,23 +43,32 @@ lists the whole as future work in its README.
 
 ### The contract every collector obeys
 
-The three existing collectors agree on a shape, and every kind added here
-keeps it. The shape is the design; the kinds are instances of it.
+Every [collection kind](../GLOSSARY.md) keeps one shape, and the shape is
+the design; the kinds are instances of it. It is the target, not a
+description of what exists: the collectors above each hold part of it, and
+each adapts as it moves in. `reap-state.ts` gains receipts. The namespace
+reaper keeps reaping on an expiry, because its expiry is a lease the owner
+recorded at creation rather than an age the sweep infers, and the contract
+counts a recorded lease as a lifecycle fact. `lib/test-tmpdir.ts` gains the
+owner record its kind's predicate needs (build step 1); report mode,
+receipts and the second decision come from the runner, not from the helper.
 
-- **A lifecycle predicate decides; age only guards.** A resource is collected
-  because something proves it is dead: its pull request merged, its worktree
-  is gone, its owner process exited, its container project has no container.
+- **A [lifecycle predicate](../GLOSSARY.md) decides; age only guards.** A
+  resource is collected because something proves it is dead: its pull
+  request merged, its worktree is gone, its owner process exited, its
+  container project has no container.
   Wall-clock age is an extra bound on top of that proof, never a substitute
   for it: an age-based sweep cannot prove that no observer still holds a
   reference, and `reap-state.ts` records why it rules one out.
-- **Report first.** A run without `--collect` changes nothing and says, per
-  resource, what it would do and on which proof. The report is the same text
+- **Report first.** A run without `--collect` touches no resource and says,
+  per resource, what it would do and on which proof; it still writes its
+  receipt. The report is the same text
   the collecting run prints, so what was reviewed is what happens.
 - **Fail closed.** A predicate that cannot be evaluated (a forge call that
   errors, an unreadable owner record, a process identity that cannot be read)
   leaves the resource alone and reports it as unverified, as the gates in
   [M1](../modules/M1-gates-enforcement-ladder/README.md) [fail closed](../GLOSSARY.md).
-  A whole kind whose inventory cannot be enumerated reports that and exits 2;
+  A whole kind whose inventory cannot be enumerated reports that and exits 1;
   a run that collected nothing because nothing qualified exits 0.
 - **Decide again at the drop.** A resource can come back between the report
   and the collection: a worktree reopens on the same branch, a process is
@@ -69,13 +79,16 @@ keeps it. The shape is the design; the kinds are instances of it.
   declare, or that carries no owner record where one is required, is a
   finding, not a candidate: the missing registration is the defect to report.
   A production target is never a candidate in any kind.
-- **Leave a receipt.** Every run writes one record under
-  `~/.local/state/jig/gc/<date>/`: the kinds swept, each resource collected
+- **Leave a receipt.** Every run writes one
+  [collection receipt](../GLOSSARY.md) under `~/.local/state/jig/gc/<date>/`: the kinds swept, each resource collected
   with its proof and size, each one refused with its reason, and the exit
   status. A person who finds something gone can read why; a sweep that
   collected far more than usual is visible in the record before anyone
-  notices on disk. Receipts are themselves a registered kind, kept for a
-  configured number of days.
+  notices on disk. Receipts are themselves a machine-level kind and the one
+  exception to the first rule: a receipt is the runner's own output, nothing
+  reads it but a person, and no resource depends on it, so there is no
+  liveness to prove. They are kept for a configured number of days, and the
+  receipt of the most recent run of each kind is never collected.
 
 ### Kinds, not commands
 
@@ -87,10 +100,10 @@ the facts the kind's predicates need.
 
 | Kind | The repository declares | Live when | Collected when |
 |------|------------------------|-----------|----------------|
-| Worktrees | the worktree roots, the base branch | the branch has an open pull request, or uncommitted changes, or unpushed commits, or an operation in progress (merge, rebase, cherry-pick, bisect) | its pull request merged or closed, or it has no pull request, is 0 commits ahead of the base and idle past the guard |
+| Worktrees | the worktree roots, the base branch | the branch has an open pull request, or uncommitted or untracked changes, or commits on no remote branch, or an operation in progress (merge, rebase, cherry-pick, bisect) | no live condition holds (each one vetoes collection on its own), and its pull request merged, or closed with every commit on a remote branch (the branches kind keeps a closed-but-unmerged branch), or it has no pull request, is 0 commits ahead of the base and idle past the guard |
 | Tool state | nothing: `drive-pr` registers its own state directory | a live lease, a pull request still open or closed-but-unmerged | the predicate `reap-state.ts` already applies, per clone on the machine rather than the current clone only |
-| Scratch directories | the prefixes its tools use (`lib/test-tmpdir.ts`'s, a gate workspace prefix, a `.context/` path) | the owner process recorded beside the directory is alive | no live owner and idle past the guard; a directory under no registered prefix is never a candidate |
-| Containers, volumes and images | the compose project names its worktrees derive, as the namespace reaper derives a schema name | a container of the project runs, or the project's worktree exists | the project's worktree is gone and no container runs; dangling images and build cache older than the guard are a machine-level kind, since they belong to no repository |
+| Scratch directories | the prefixes its tools use (`lib/test-tmpdir.ts`'s, a gate workspace prefix, a `.context/` path) | the owner process recorded beside the directory, by its captured identity, is alive | no live owner and idle past the guard; a directory under no registered prefix is never a candidate, and one under a registered prefix with no owner record is a finding |
+| Containers, volumes and images | the compose project names its worktrees derive, as the namespace reaper derives a schema name | a container of the project runs, or the project's worktree exists | the project's worktree is gone and no container runs; dangling images and build cache are a machine-level kind, since they belong to no repository, collected when the engine reports that no image or container references them, with age as the guard |
 | Branches | the base branch, the forge | checked out in a worktree, or its pull request is open, or closed without merging | merged into the base and its remote branch gone; a closed-but-unmerged pull request is kept, since the forge lets it reopen |
 | Processes | nothing: a tool registers the trees it starts | the registered owner is alive | the owner is gone and the tree still runs |
 
@@ -104,8 +117,9 @@ records the trees it starts, with captured identities so a reused pid is
 never mistaken for the original
 ([ADR-0008](../docs/adr/ADR-0008-windows-cancellation-uses-captured-process-identities.md)).
 The kind reaps registered trees whose owner is gone, and nothing else; a
-test runner that spawns fixtures registers them, as a test preload already
-reaps its own process's descendants at the end of a run.
+test runner that spawns fixtures registers them (build step 4). Today's test
+preload removes the run's scratch at the end of a run and reaps no
+processes.
 
 Each kind lives in its own module behind one interface: `inventory()`
 lists the resources with their facts, `prove(resource)` returns the proof it
@@ -127,11 +141,21 @@ each needs (worktree roots, the base branch, scratch prefixes, how a compose
 project name is derived). These are facts about the repository's own
 tooling, so they travel with it and every clone on every machine reads the
 same declaration. Where a fact can be derived it is not asked for: the base
-branch from the forge's default, the worktree roots from `git worktree list`,
+branch from `repository.base_branch` where the repository sets it and the
+forge's default otherwise, the worktree roots from `git worktree list`,
 the compose project from the compose file, the scratch prefix from the test
 preload that sets it ([AGENTS.md § Writing conventions](../AGENTS.md#writing-conventions-mandatory),
 derive before declaring). The declaration lists what the derivation could not
 settle.
+
+A declaration is deletion authority, so where it is read from matters. A
+scheduled run never reads it from a worktree's checkout, where any branch
+can widen it: it reads the declaration committed on the base branch's
+remote tip, and collects only within the bounds `jig gc install` recorded in
+the machine entry when a person confirmed it (the kinds, roots, prefixes and
+projects shown at install). A base-branch declaration wider than the
+recorded bounds is reported as a finding, and the widened part is not
+collected until install is run again and confirmed.
 
 **The machine** says when and how much, in the `gc` section of
 `$HOME/.jig/jig.yaml` (`$JIG_HOME/jig.yaml` when set), the same file the
@@ -164,13 +188,15 @@ job (below) and prints what it did.
   receipt, and prints the same report with each line's outcome.
 - `jig gc receipts` lists the receipts, and `jig gc receipts <date>` prints
   one.
-- `jig gc install` is the installer above; `--uninstall` removes the job and
-  the machine entry it wrote.
+- `jig gc install` is the installer above; `--uninstall` removes this
+  repository's machine entry, and the shared job only once no repository
+  entry and no machine-level kind is left; `--uninstall --machine` removes
+  the job and every entry.
 
 Exit status follows `reap-state.ts`: 0 when the run ran (whatever it found),
-1 when a collection failed part-way (the receipt names what was and was not
-done), 2 when a kind could not be enumerated, so a scheduler that pages on a
-non-zero status pages on the right thing.
+1 when a kind could not be enumerated or a collection failed part-way (the
+receipt names what was and was not done), 2 for bad arguments, so a
+scheduler that pages on a non-zero status pages on the right thing.
 
 The run holds the machine's heavy-run lock
 ([M12's resource lock](../modules/M12-parallel-agent-ergonomics/reference/resource-lock/README.md))
@@ -190,10 +216,11 @@ can be reaped out from under its own scheduled job; and the job's environment
 is written into the job file, since a scheduler starts no login shell and
 inherits nothing from the shell that installed it.
 
-The schedule is coarse by design: weekly for collection, with the report
-available any time by hand. A machine under disk pressure can set a
-threshold that collects sooner, but nothing in this design sweeps on every
-run of anything.
+The schedule is coarse by design: the job runs daily, collects weekly, and
+on the other days only reports, with the report available any time by hand.
+A machine under disk pressure can set a free-space threshold; a daily run
+that finds the disk below it collects instead of only reporting. Nothing in
+this design sweeps on every run of anything.
 
 ## Build order
 
@@ -206,7 +233,11 @@ until the one before it has run for real in a working repository (Jig's
    the working repository (its reaper and both scheduler installers, with
    their tests, deleted there in the same rollout: move, never copy); the
    tool-state kind wrapping `reap-state.ts` across every clone on the
-   machine; the scratch kind over `lib/test-tmpdir.ts`'s prefix. The
+   machine; the scratch kind over `lib/test-tmpdir.ts`'s prefix, with the
+   helper writing an owner record (the creating process's captured
+   identity) beside each directory it creates, under the lock the collector
+   takes to decide at the drop. Directories leaked before that record
+   existed are reported as findings, not collected. The
    `gc` sections in both configuration layers, documented in
    `CONFIGURATION.md`. M12's README and `mappings.md` gain the practice and
    the scheduler rows; the audit gains a criterion for a repository that
@@ -215,9 +246,11 @@ until the one before it has run for real in a working repository (Jig's
 2. **Containers, volumes and images.** The compose-project kind, bound to the
    container engine's command-line client behind the kind interface (one
    implementation; a second engine when a repository needs it), and the
-   machine-level dangling-images and build-cache kind. Done when the
-   measured 56 gigabytes are reclaimed by a report that names each volume's project
-   and the worktree it belonged to.
+   machine-level dangling-images and build-cache kind. Done when, on a
+   machine with volumes left by removed worktrees, the report names each
+   eligible volume's project and the worktree it belonged to, and the
+   collection reclaims every one of them, checked against the engine's own
+   inventory afterwards.
 3. **Branches.** Merged into the base and gone from the forge, never checked
    out, closed-but-unmerged kept. Done when the local branch count of a
    clone tracks its open pull requests.
@@ -229,7 +262,8 @@ until the one before it has run for real in a working repository (Jig's
 
 ## Left out
 
-- **Age-based sweeps.** No kind collects on age alone, for the reason
+- **Age-based sweeps.** No kind collects on age alone, receipts aside (the
+  exception the contract names), for the reason
   `reap-state.ts` gives: age cannot prove nobody holds a reference, and a
   sweep built on it trades a leak for a race.
 - **Repository-supplied collectors.** A `command:` field would make the
