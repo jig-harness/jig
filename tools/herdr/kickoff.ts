@@ -232,17 +232,26 @@ export function releaseClaim(
   }
 }
 
+/** Whether `generation` is still the claim's live generation. */
+function claimHeld(ctx: Context, key: string, generation: string): boolean {
+  const dir = claimDir(ctx, key);
+  return (
+    String(generationsIn(dir).at(-1)) === generation &&
+    !existsSync(join(dir, generation, RELEASED))
+  );
+}
+
 /**
  * Throw unless the generation is still the live claim: an abandoned claim is
  * taken over by age, and a holder that was slow past that age must not send.
  */
 function assertClaimHeld(ctx: Context, key: string, generation: string): void {
-  const dir = claimDir(ctx, key);
-  const top = generationsIn(dir).at(-1);
-  if (String(top) !== generation || existsSync(join(dir, generation, RELEASED)))
+  if (!claimHeld(ctx, key, generation)) {
+    const top = generationsIn(claimDir(ctx, key)).at(-1);
     throw new HerdrError(
       `another launch took over the kickoff claim on ${key} (now ${top ?? "none"}); check with herdr agent read before running this again`,
     );
+  }
 }
 
 /**
@@ -495,6 +504,7 @@ function sendUnderReceipt(
   ctx: Context,
   agentName: string,
   options: KickoffOptions,
+  generation: string,
   sent: string,
 ): void {
   // A send cut short by the run's limit would leave its outcome unknown;
@@ -513,8 +523,17 @@ function sendUnderReceipt(
   );
   const error = parseError(answer);
   if (answer.status === 2 || (error !== null && REFUSED.has(error.code))) {
-    // Herdr refused before writing anything: the earlier record stands.
-    setReceipt(ctx, options.key, agentName, earlier);
+    // Herdr refused before writing anything: the earlier record stands,
+    // but only while this launch still owns the claim and its pending line
+    // is still the receipt. A launch that stalled past the claim's age may
+    // have been taken over by one that has since sent and recorded the
+    // kickoff, and restoring an earlier record over that would move it
+    // toward "not delivered".
+    if (
+      claimHeld(ctx, options.key, generation) &&
+      readReceipt(ctx, options.key, agentName) === `${PENDING} ${sent}`
+    )
+      setReceipt(ctx, options.key, agentName, earlier);
     throw new HerdrError(
       `${agentName} did not take the kickoff (${error?.message ?? output(answer)}); run this again once it is ready`,
     );
@@ -567,6 +586,7 @@ export function kickoff(
       ctx,
       agentName,
       options,
+      generation,
       correlation(options.key, agentName, target.sessionId),
     );
     ctx.log(`✓ kickoff sent to ${agentName}`);

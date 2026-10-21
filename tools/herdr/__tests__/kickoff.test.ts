@@ -419,6 +419,32 @@ describe("kickoff", () => {
     }
   });
 
+  test("a refused prompt never restores the earlier receipt over another launch's", () => {
+    // While this launch's send stalls, its claim goes stale and another
+    // launch takes it over, sends and records the kickoff; then Herdr refuses
+    // this launch's prompt.
+    const takeOver = (ctx: FakeContext, line: string) => {
+      mkdirSync(join(ctx.stateDir, "kickoff", "claims", KEY, "2"));
+      writeFileSync(receiptPath(ctx, KEY, A), `${line}\n`);
+    };
+    for (const line of [`${KEY}:${A}:s-1`, `pending ${KEY}:${A}:s-1`]) {
+      const ctx: FakeContext = withReceipt(
+        {
+          [get]: session("s-1"),
+          [send]: () => {
+            takeOver(ctx, line);
+            return herdrError("agent_blocked", "agent is blocked");
+          },
+        },
+        null,
+      );
+      expect(() => kickoff(ctx, spawned(), options)).toThrow(
+        "did not take the kickoff",
+      );
+      expect(receipt(ctx)).toBe(`${line}\n`);
+    }
+  });
+
   test("a prompt that may or may not have landed keeps the claim and the pending receipt", () => {
     for (const answer of [
       fail(-1, "spawn error: timed out"),
