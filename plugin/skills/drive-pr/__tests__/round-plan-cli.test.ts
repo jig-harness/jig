@@ -21,6 +21,7 @@ import {
 } from "./drive-pr-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   byPlatform,
   skipsOnWindows,
@@ -86,11 +87,11 @@ describe("round-plan.ts", () => {
     writeVerifiedSha(stateDir, head);
 
     const dflt = await roundPlan([], stateDir, repo);
-    if (dflt.exitCode !== 0) throw new Error(dflt.stderr);
+    expectSpawnExit(dflt, 0);
     expect(dflt.stdout).toContain("round-plan (cumulative");
 
     const delta = await roundPlan(["--delta"], stateDir, repo);
-    if (delta.exitCode !== 0) throw new Error(delta.stderr);
+    expectSpawnExit(delta, 0);
     expect(delta.stdout).toContain("round-plan (delta");
     // And an opt-in delta says what it traded away, so the choice is visible in
     // the round's own transcript rather than only in this file. Asserted here
@@ -517,7 +518,7 @@ ${second}
           new Response(proc.stderr).text(),
           proc.exited,
         ]);
-        expect(exitCode).toBe(1);
+        expectSpawnExit({ stdout: null, stderr, exitCode }, 1);
         expect(stderr).toContain("drive.validation_plan_command failed");
       },
     );
@@ -544,7 +545,7 @@ process.exit(0);
 
       const { stdout, stderr, exitCode } = await planIn(stateDir, dir);
 
-      expect(exitCode).toBe(1);
+      expectSpawnExit({ stdout, stderr, exitCode }, 1);
       expect(stderr).toContain("boolean validation.testbox.required");
       // And emphatically NOT a plan that a caller could act on: a printed
       // "Testbox: not required" is the fail-open this pins shut.
@@ -579,11 +580,11 @@ process.exit(0);
         // the DELTA's merits rather than on the ancestry guard above.
         await setVerified(stateDir, c0);
 
-        const { stdout, exitCode } = await planIn(
+        const { stdout, stderr, exitCode } = await planIn(
           stateDir,
           resolverShim(probe.delta),
         );
-        expect(exitCode).toBe(0);
+        expectSpawnExit({ stdout, stderr, exitCode }, 0);
         const plan = JSON.parse(stdout);
 
         expect(plan.testboxDecision.planRequired).toBe(true);
@@ -666,7 +667,7 @@ exec "${real}" "$@"
         gitShimFailingDiffFor(c0),
       );
 
-      expect(exitCode).toBe(1);
+      expectSpawnExit({ stdout, stderr, exitCode }, 1);
       expect(stderr).toContain("cannot list the files changed since");
       // Never the empty-plan branch, whose wording an operator would read as
       // an all-clear.
@@ -683,12 +684,12 @@ exec "${real}" "$@"
       // succeeds and the failure lands squarely on the delta.
       await setVerified(stateDir, c1);
 
-      const { stdout, exitCode } = await planWithGitShim(
+      const { stdout, stderr, exitCode } = await planWithGitShim(
         stateDir,
         gitShimFailingDiffFor(c1),
       );
 
-      expect(exitCode).toBe(0);
+      expectSpawnExit({ stdout, stderr, exitCode }, 0);
       const plan = JSON.parse(stdout);
       // Without the check this is the worst case in the whole block: an empty
       // delta, `incrementalRequired: false`, and a decayed "do not warm one".
@@ -744,8 +745,8 @@ exec "${real}" "$@"
       new Response(proc.stderr).text(),
       proc.exited,
     ]);
+    expectSpawnExit({ stdout, stderr, exitCode }, 0);
     expect(stderr).toBe("");
-    expect(exitCode).toBe(0);
     const plan = JSON.parse(stdout);
 
     expect(plan.empty).toBe(true);
