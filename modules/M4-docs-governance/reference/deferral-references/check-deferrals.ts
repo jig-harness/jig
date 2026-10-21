@@ -930,7 +930,7 @@ function plan(
       : inRepository(root, cwd, flags.config, "--config");
   const mode = modeOf(flags, flags.range ?? (env.DIFF_RANGE || undefined));
   if (mode !== undefined && mode !== "all")
-    refuseAlias(root, configPath, flags.config ?? DEFAULT_CONFIG);
+    refuseAlias(root, configPath, flags.config ?? DEFAULT_CONFIG, mode);
   if (
     !existsSync(configPath) &&
     indexedConfig(root, configPath, mode) === undefined
@@ -985,16 +985,23 @@ function inRepository(
  * that path changes. A path reaching the file through a link (the file
  * itself, or a directory on the way) names nothing the index holds, so the
  * run would read the working tree's copy and miss a change to the real one.
- * Refused, unless the index tracks the path as named as a regular file: then
- * that entry is the configuration, whatever the working tree links there.
+ * Refused, with one exception for the staged mode, which reads the index:
+ * when the index tracks the path as named as a regular file, that entry is
+ * the configuration, whatever the working tree links there. A range reads the
+ * working tree's copy, so a link there is refused whatever the index holds.
  */
-function refuseAlias(root: string, configPath: string, named: string): void {
+function refuseAlias(
+  root: string,
+  configPath: string,
+  named: string,
+  mode: Mode,
+): void {
   if (!existsSync(configPath)) return;
   const path = relativePath(root, configPath);
   const real = relativePath(realpathSync(root), realpathSync(configPath));
   if (path === real) return;
   const entry = git(root, ["ls-files", "-s", "-z", "--", `:(literal)${path}`]);
-  if (entry.startsWith("100")) return;
+  if (mode === "staged" && entry.startsWith("100")) return;
   throw new DeferralsError(
     `configuration ${named} is reached through a link; name it by the path the repository tracks it at (${real})`,
   );

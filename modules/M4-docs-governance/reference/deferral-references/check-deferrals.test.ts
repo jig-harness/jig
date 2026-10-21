@@ -686,6 +686,26 @@ describe("--staged", () => {
     expect(result.stdout).toContain("a.md:1:");
   });
 
+  test("--range with a working-tree link in place of a tracked --config is refused, unread", () => {
+    const r = repo(
+      { "a.md": "Tracked to closure under ENG-1.\n" },
+      "items: ['\\bENG-\\d+\\b']\n",
+    );
+    r.write("alternate.yaml", "items: ['\\bTASK-\\d+\\b']\n");
+    r.git("add", ".");
+    r.git("commit", "-qm", "alternate");
+    const config = join(r.dir, ".config/deferral-references.yaml");
+    rmSync(config);
+    symlinkSync(join(r.dir, "alternate.yaml"), config);
+    const result = r.run([
+      "--range=HEAD",
+      "--config",
+      ".config/deferral-references.yaml",
+    ]);
+    expectSpawnExit(result, 2);
+    expect(result.stderr).toContain("reached through a link");
+  });
+
   test.each([["--staged"], ["--range=HEAD"]])(
     "%s with a --config reached through a directory link is refused, unread",
     (mode) => {
