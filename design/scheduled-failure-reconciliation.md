@@ -87,14 +87,16 @@ Adopting an issue found by search, when no binding survives, requires
 verifying that the reconciler's identity created it; the interface returns no
 creator today, so that is an extension to design (below) or the cause pauses
 for a visible repair. Another issue carrying the fingerprint is a conflict to
-repair, never one to write to. If the shared interface is chosen, its Linear
-adapter is the initial implementation. GitHub Issues and Jira remain mappings
-until an operated adapter is moved behind the same interface. The
+repair, never one to write to. The interface's Linear adapter is the
+initial implementation. GitHub Issues and Jira remain mappings until an operated
+adapter is moved behind the same interface. The
 [M10 external-preconditions reconciler](../modules/M10-environments-deploy/reference/external-preconditions/)
-keeps one issue per registry behind its own tracker port with a GitHub Issues
-adapter; before implementing, decide whether this reconciler reuses that port
-or the shared interface, so Jig does not keep two tracker abstractions for
-the same operations.
+keeps one issue per registry behind its own narrower tracker port with a
+GitHub Issues adapter. This reconciler does not take that port: it needs
+search over closed issues, comments and reopening, which the port lacks and
+the shared interface already carries. That GitHub Issues adapter is the candidate to move
+behind the shared interface, so Jig converges on one tracker abstraction
+rather than growing a second.
 
 The interface does not promise atomic creation, unique fingerprints or
 idempotent comments. A durable lock keyed by repository and fingerprint must
@@ -129,10 +131,9 @@ other causes progressing when their independent state can be handled safely.
 - Move a validated consumer implementation, its tests and durable-state
   contract here, retiring its consumer copy in the same rollout. Choose a
   plugin skill if skills run it, or an M11 reference if they do not.
-- Reuse the tracker abstraction the decision
-  [above](#tracker-interface-and-retry-safety) selects, the shared interface
-  with its Linear adapter or M10's port; add only the operation support
-  needed for verified retries and creator checks. Test duplicate
+- Reuse the shared tracker interface and its Linear adapter
+  ([above](#tracker-interface-and-retry-safety)); add only the operation
+  support needed for verified retries and creator checks. Test duplicate
   observations, concurrent first failures, a fingerprint copied onto an issue
   the reconciler did not create, a stale owner's tracker write landing after
   a replacement took the lock, ambiguous create/comment timeouts, crashes, out-of-order
