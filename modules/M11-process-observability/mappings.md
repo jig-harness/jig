@@ -302,9 +302,9 @@ provider operations for a consumer's integration.
 
 | Tracker | Locate and identify the cause | Create and update | Recovery and recurrence |
 | --- | --- | --- | --- |
-| GitHub Issues | List the repository's issues in all states under a configured finding label, follow every page, exclude pull requests, then compare the exact fingerprint in the body | Create an issue with the fingerprint and evidence in its body; create an issue comment for each permitted recurrence and the breaker announcement | Update the issue to `state: closed` on confirmed recovery, or `state: open` when the cause returns |
-| Linear | Filter the team's issues by a configured finding label, include closed issues, paginate and compare the exact fingerprint in the description | `issueCreate` creates the finding; `issueUpdate` maintains its description; `commentCreate` adds recurrence, suppression and recovery evidence | Resolve the team's workflow state IDs and use `issueUpdate` with `stateId` for recovery and reopening; never assume a state name is shared by teams |
-| Jira Cloud | List the project's findings using a configured label and paginated search, then compare an exact fingerprint stored in the description or an issue property | Create and edit the issue, and add comments; an issue property can hold machine-readable identity, but does not enforce uniqueness | Read the issue's available transitions and invoke the configured recovery or reopening transition; a generic field edit does not substitute for a workflow transition |
+| GitHub Issues | List the repository's issues in all states under a configured finding label and `creator` set to the reconciling login, follow every page, exclude pull requests, then compare the exact fingerprint in the body | Create an issue with the fingerprint, classification and evidence links in its body; create an issue comment for each permitted recurrence and the breaker announcement | Update the issue to `state: closed` on confirmed recovery, or `state: open` when the cause returns |
+| Linear | Filter the team's issues by a configured finding label and the reconciling user as `creator`, include closed issues, paginate and compare the exact fingerprint in the description | `issueCreate` creates the finding; `issueUpdate` maintains its description; `commentCreate` adds recurrence, suppression and recovery evidence | Resolve the team's workflow state IDs and use `issueUpdate` with `stateId` for recovery and reopening; never assume a state name is shared by teams |
+| Jira Cloud | List the project's findings using a configured label, `reporter = currentUser()` for the reconciling account and paginated search, then compare an exact fingerprint stored in the description or an issue property | Create and edit the issue, and add comments; an issue property can hold machine-readable identity, but does not enforce uniqueness | Read the issue's available transitions and invoke the configured recovery or reopening transition; a generic field edit does not substitute for a workflow transition |
 
 The provider primitives above are documented in GitHub's
 [issue API](https://docs.github.com/en/rest/issues/issues) and
@@ -314,6 +314,10 @@ The provider primitives above are documented in GitHub's
 [issue API](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/),
 [comment API](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-comments/)
 and [issue properties](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-properties/).
+Prefer the issue ID durable state bound at creation over any search: a
+fingerprint, label or editable reporter field anyone can set is not
+ownership. Issues and comments carry links to expiring evidence, never
+excerpts, so nothing outlives the evidence store's retention.
 These APIs provide storage and state changes; the consumer's [reconciler](../../GLOSSARY.md)
 supplies fingerprint normalization, exact matching, ordered observation
 processing, durable counters and the per-cause breaker. Labels, team/project,

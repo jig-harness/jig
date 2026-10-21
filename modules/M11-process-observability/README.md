@@ -258,7 +258,8 @@ other changing log details. Runs showing the same cause find the same issue;
 independent causes get separate issues. Several checks that establish the
 same failed prerequisite can share its cause, with their evidence attached.
 Keep the fingerprint on the issue and compare it exactly after searching;
-a similar title is not identity. A recurrence comments on the existing issue
+a similar title is not identity, and a fingerprint anyone can copy is not
+ownership: write only to an issue the triage identity created. A recurrence comments on the existing issue
 with its classification and evidence, rather than filing another. A cause
 that returns after recovery reopens that same issue.
 

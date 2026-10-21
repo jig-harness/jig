@@ -42,7 +42,10 @@ tracker, so the reconciler never holds unsanitized output. What the sanitizer
 removes is the consumer's, but a sanitizer is required: without one, triage
 fails visibly rather than storing raw output. Store bounded excerpts and links
 to the CI run's own logs, which keep that provider's access control and
-retention, rather than copies of whole logs. Each stored observation records
+retention, rather than copies of whole logs. Excerpts stay in that store:
+issues and comments carry the classification, the fingerprint and links to
+the stored evidence and the CI run, never excerpts, because a tracker copy
+outlives the evidence's expiry. Each stored observation records
 when it expires, and a scheduled pass deletes expired evidence from durable
 state while keeping the fingerprint, issue ID, streak and breaker state the
 lifecycle needs. The retention period is a consumer value.
@@ -77,9 +80,16 @@ Call the existing
 through its configured adapter. `searchIssues` with `includeClosed: true`,
 followed by `getIssue` and exact fingerprint comparison, locates identity;
 `createIssue`, `updateIssue`, `postComment`, `listComments` and `transition`
-provide writes and verification. The existing Linear adapter is the initial
-implementation. GitHub Issues and Jira remain mappings until an operated
-adapter is moved behind the same interface. The
+provide writes and verification. A fingerprint anyone can type is an
+identifier, not ownership: the reconciler updates, reopens or closes only an
+issue its durable state bound to the cause when its own identity created it.
+Adopting an issue found by search, when no binding survives, requires
+verifying that the reconciler's identity created it; the interface returns no
+creator today, so that is an extension to design (below) or the cause pauses
+for a visible repair. Another issue carrying the fingerprint is a conflict to
+repair, never one to write to. If the shared interface is chosen, its Linear
+adapter is the initial implementation. GitHub Issues and Jira remain mappings
+until an operated adapter is moved behind the same interface. The
 [M10 external-preconditions reconciler](../modules/M10-environments-deploy/reference/external-preconditions/)
 keeps one issue per registry behind its own tracker port with a GitHub Issues
 adapter; before implementing, decide whether this reconciler reuses that port
@@ -89,7 +99,12 @@ the same operations.
 The interface does not promise atomic creation, unique fingerprints or
 idempotent comments. A durable lock keyed by repository and fingerprint must
 coordinate all triage runners, with [fencing](../GLOSSARY.md) against an
-expired owner writing after a replacement acquired the lock. Serialize
+expired owner writing after a replacement acquired the lock. Tracker
+providers check no fencing token, so a stale tracker write already in flight
+can still land: a replacement owner treats each operation its predecessor
+reserved and did not complete as in flight, keeps the cause paused until each
+outcome is read back, then reads the issue's state and corrects it to match
+durable state before writing anything new. Serialize
 observations in source order;
 reject a stale recovery after a newer failure. Reserve an operation in durable
 state before writing, with an exact operation marker in the issue or comment.
@@ -114,12 +129,17 @@ other causes progressing when their independent state can be handled safely.
 - Move a validated consumer implementation, its tests and durable-state
   contract here, retiring its consumer copy in the same rollout. Choose a
   plugin skill if skills run it, or an M11 reference if they do not.
-- Reuse the tracker interface and Linear adapter; add only the operation
-  support needed for verified retries. Test duplicate observations, concurrent
-  first failures, ambiguous create/comment timeouts, crashes, out-of-order
+- Reuse the tracker abstraction the decision
+  [above](#tracker-interface-and-retry-safety) selects, the shared interface
+  with its Linear adapter or M10's port; add only the operation support
+  needed for verified retries and creator checks. Test duplicate
+  observations, concurrent first failures, a fingerprint copied onto an issue
+  the reconciler did not create, a stale owner's tracker write landing after
+  a replacement took the lock, ambiguous create/comment timeouts, crashes, out-of-order
   recovery, partial evidence, independent causes, N = 1, suppression,
   recovery followed by recurrence, a planted secret that reaches neither the
-  state, the model input nor the tracker, and expired evidence deleted. Prove
+  state, the model input nor the tracker, and expired evidence deleted with no
+  excerpt left in the tracker. Prove
   the tests fail before trusting them.
 - Wire evidence-only collection and separate triage in a consumer, with its
   labels, ownership and threshold policy. Observe a persistent failure and a
