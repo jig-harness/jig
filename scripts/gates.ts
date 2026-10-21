@@ -40,11 +40,12 @@ const root = join(import.meta.dir, "..");
 
 /**
  * Suites that need a POSIX system: the launcher's put a `/bin/sh` stub on
- * `PATH` and check file modes, so they cannot run on Windows. Windows runs
+ * `PATH` and check file modes, so they cannot run on Windows, and the Herdr
+ * workspace tool's serve a runtime that runs on macOS and Linux. Windows runs
  * every other suite; a test inside one that needs POSIX skips itself on win32
  * and names the work that lifts the skip.
  */
-export const POSIX_ONLY_SUITES = ["tools/launcher/**"];
+export const POSIX_ONLY_SUITES = ["tools/launcher/**", "tools/herdr/**"];
 
 /**
  * Suites that run in their own CI job (`.github/workflows/gates.yml` and `nightly.yml`), which

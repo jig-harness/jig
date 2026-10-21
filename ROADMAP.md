@@ -38,16 +38,13 @@ from them.
 
 ### 19. Herdr as the primary workspace runtime
 
-[Herdr](https://herdr.dev) becomes the [workspace runtime](GLOSSARY.md)
-Jig's tooling is built and tested for first
+[Herdr](https://herdr.dev) is the [workspace runtime](GLOSSARY.md) Jig's
+tooling is built and tested for first
 ([ADR-0005](docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
-The [launcher](tools/launcher/README.md) opens a tracker issue as a Herdr
-worktree workspace with the agent started and given its prompt, on the
-machine or on a remote host;
-[M12](modules/M12-parallel-agent-ergonomics/README.md)'s worktree lifecycle
-runs in Herdr workspaces, keeping a worktree's unsent reflection findings
-before it is removed; and the drive, pickup and review skills are
-checked inside Herdr on macOS and Linux.
+Opening a tracker issue as a Herdr workspace, on the machine or on a remote
+host, and M12's worktree lifecycle in Herdr are available
+([the Herdr workspace tool](tools/herdr/README.md)); what remains is checking
+the drive, pickup and review skills inside Herdr on macOS and Linux.
 
 ## Next
 
@@ -150,7 +147,7 @@ and can be loaded by a repository's own automated reviewer.
 - **Gates and workspace infrastructure.** Locks shared across
   worktrees, remote gates, and a runnable form of
   [M12](modules/M12-parallel-agent-ergonomics/README.md)'s workspace
-  lifecycle.
+  lifecycle for runtimes other than Herdr.
 - **Change-area consumer lint.** The
   [change-areas skill](plugin/skills/change-areas/README.md) checks the path
   lists in agent rules, hook configuration and CI workflow triggers against

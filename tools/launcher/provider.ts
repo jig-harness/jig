@@ -17,6 +17,13 @@ export interface OpenRequest {
   issue: string;
   /** The first prompt for the agent: the skill command, the key and a hint. */
   prompt: string;
+  /** The launcher's cache file for the issue, on this machine. */
+  cacheFile: string;
+  /**
+   * The same prompt naming the cache file at another path: a provider that
+   * copies the file to the machine the agent runs on names that copy.
+   */
+  promptFor: (cacheFile: string) => string;
   /** The tracker's suggested branch name; empty when it gave none. */
   branch: string;
   /**
@@ -36,6 +43,12 @@ export interface OpenRequest {
 export interface Provider {
   /** The name `provider:` and each repository entry use. */
   readonly name: string;
+  /**
+   * How long `open` may take; the launcher's `OPEN_BUDGET_MS` when absent.
+   * A provider that waits for setup and an agent needs longer than one that
+   * hands over to an app.
+   */
+  readonly openBudgetMs?: number;
   /** Throws, naming the problem, when a repository's settings are unusable. */
   validateRepo(settings: unknown, label: string): void;
   /** Start the workspace. Throws when it could not be started or `signal` aborted. */

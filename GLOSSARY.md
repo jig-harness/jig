@@ -1518,6 +1518,16 @@ make, use the entry's term instead.
   step, so adding one does not change the rest of the launcher; which exist
   and which are planned is in the
   [launcher's README](tools/launcher/README.md#providers).
+- **Kickoff** — the first prompt an agent is given in a new workspace,
+  usually the pickup skill and the issue key. The
+  [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of
+  work: a retried or repeated launch never sends it to an agent that already
+  has it.
+- **Worktree hooks** — the commands a repository runs when one of its
+  worktrees is created (set it up) and before one is removed (nudge a
+  reflection, keep unsent findings): *M12*'s lifecycle. In Herdr they are the
+  executables `.config/worktree-hooks/create` and `remove`
+  ([Herdr workspace tool](tools/herdr/README.md#the-worktree-hooks)).
 - **Deep link** — a web-style address (`<app>://…`) that opens a desktop
   app at a given place; the launcher's Conductor provider uses one to open a
   workspace with the prompt and the repository already filled in.

@@ -7,10 +7,12 @@ agent with a prompt too short to carry the issue, or does nothing about who is
 working on it. The launcher is that program: it assigns the issue to whoever
 opened it, writes the whole issue (description, comments, sub-issues, links) to
 a file the agent reads, picks the repository from the issue's label, and opens
-a workspace for the agent. With the Conductor provider a routed issue opens
-Conductor's new-workspace composer with the prompt filled in, and the agent
-starts when you click **Create**; an unrouted issue creates (or reopens) its
-workspace directly.
+a workspace for the agent. With the Herdr provider a routed issue opens as a
+Herdr worktree workspace, on this machine or on a remote host, with the
+agent started and given the prompt. With the Conductor provider a routed
+issue opens Conductor's new-workspace composer with the prompt filled in,
+and the agent starts when you click **Create**; an unrouted issue creates
+(or reopens) its workspace directly.
 
 It is machine tooling, not an agent skill. The tracker runs it, not a session,
 so it lives here and runs from a checkout of this repository rather than from
@@ -98,7 +100,8 @@ repository itself.
    second launcher and every launcher shares it so the issue-pickup skill needs
    no per-launcher branch.
 4. Choose the repository from the label, and hand the prompt to the provider,
-   which has 30 seconds to open the workspace.
+   which has 30 seconds to open the workspace unless it sets its own budget
+   (Herdr's is 20 minutes).
 
 The prompt is short on purpose (deep links cap its length). Its first line is
 the skill and the key; it also names the cache file, because the skill reads
@@ -142,11 +145,34 @@ A provider performs the last step and nothing else; see
 | Provider | How it opens the issue | Status |
 |----------|------------------------|--------|
 | `conductor` | A `conductor://` deep link. A routed issue uses `prompt=…&path=<repository root>`; an unrouted one uses `linear_id=<key>`, which makes Conductor guess the repository. The root comes from Conductor's own database, read-only. | shipped |
-| `herdr` | Opens the repository as a worktree workspace with `herdr worktree create`, starts the agent in it with `herdr agent start` and hands it the prompt, on this machine or a remote host. | next: Herdr is the primary target ([ADR-0005](../../docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md), [ROADMAP.md](../../ROADMAP.md) item 19) |
+| `herdr` | The [Herdr workspace tool](../herdr/README.md)'s `open`, on this machine or on the host the repository's settings name: the issue's branch as a worktree workspace (reattached when it exists), the agent started and the prompt sent once per issue. A routed issue only. | shipped |
 
 Conductor reads `repos.<label>.conductor` as a repository name. Its database is
 Conductor's private storage, not a documented interface; when it cannot be read
 the provider falls back to detection instead of failing the launch.
+
+Herdr reads `repos.<label>.herdr` as the clone's path on the machine Herdr
+runs on, or as a mapping:
+
+```yaml
+provider: herdr
+repos:
+  my-service:
+    herdr:
+      path: ~/dev/my-service   # the clone, on the host
+      host: build-box          # SSH destination; this machine when absent
+      agent: codex             # Herdr agent kind; claude when absent
+      base: origin/main        # base of a new branch; the clone's origin/HEAD when absent
+```
+
+The branch is the one the tracker suggests, else the issue key in lower
+case. On a host, the issue's cache file is copied first to the same path
+under the host user's home, and the prompt names that copy. Herdr has no
+repository list to detect one from, so an issue that is not routed is
+refused with what to add. The provider's budget is 20 minutes rather than
+30 seconds: it covers the repository's create hook and the agent's start.
+The host's requirements and what the tool keeps are in its
+[README](../herdr/README.md).
 
 To add a provider, add `providers/<name>.ts` exporting a `Provider`, register it
 in `providers/index.ts`, and document its `repos.<label>.<name>` settings here.

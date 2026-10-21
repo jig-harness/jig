@@ -48,7 +48,7 @@ import { getTracker } from "./trackers/index.ts";
 export const READ_BUDGET_MS = 40_000;
 /** Bounds the assignment, which comes after the read and has its own budget. */
 export const ASSIGN_BUDGET_MS = 15_000;
-/** Bounds the provider's last step; opening a workspace takes seconds. */
+/** Bounds the provider's last step unless the provider sets its own bound. */
 export const OPEN_BUDGET_MS = 30_000;
 
 export interface LaunchDeps {
@@ -185,23 +185,23 @@ export async function launch(
   );
   persistCache(home, issue, file, fresh, fallback, nowSeconds(), warn);
 
-  const prompt = buildPrompt({
-    skill: config.skill,
-    issue,
-    title: fresh?.title ?? titleOf(file, warn),
-    branch,
-    cacheFile: file,
-  });
+  const title = fresh?.title ?? titleOf(file, warn);
+  const promptFor = (cacheFile: string): string =>
+    buildPrompt({ skill: config.skill, issue, title, branch, cacheFile });
   const repo =
     repoLabel === null
       ? null
       : (config.repos[repoLabel]?.[provider.name] ?? null);
   await provider.open({
     issue,
-    prompt,
+    prompt: promptFor(file),
+    cacheFile: file,
+    promptFor,
     branch,
     repo,
-    signal: AbortSignal.timeout(deps.openBudgetMs ?? OPEN_BUDGET_MS),
+    signal: AbortSignal.timeout(
+      deps.openBudgetMs ?? provider.openBudgetMs ?? OPEN_BUDGET_MS,
+    ),
   });
 }
 

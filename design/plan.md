@@ -92,27 +92,15 @@ decision reaches the reflection store.
 
 [Herdr](https://herdr.dev) is the workspace runtime Jig's tooling targets
 first ([ADR-0005](../docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
-What is built so far was written for Conductor; this item makes Herdr the
-runtime it is built and tested for. Done when:
+The [Herdr workspace tool](../tools/herdr/README.md), the launcher's `herdr`
+provider and M12's worktree lifecycle in Herdr are in place. Done when:
 
-- the [launcher](../tools/launcher/README.md) has a `herdr` provider: it opens
-  the routed issue's repository as a worktree workspace
-  (`herdr worktree create`), starts the agent in it (`herdr agent start`)
-  and hands it the prompt (`herdr agent prompt`), on the machine or on a
-  remote host, with its own tests; the launcher's other parts do not change,
-  and any consumer repository's own Herdr launch commands are retired in the
-  same rollout;
-- [M12](../modules/M12-parallel-agent-ergonomics/mappings.md)'s worktree
-  lifecycle runs in Herdr: the create hook from the `worktree.created`
-  plugin event, in the created worktree; the remove hook from a wrapper
-  around `herdr worktree remove` that parks before removing (the
-  `worktree.removed` event fires once the checkout is gone, so it only
-  notifies); checked against the Herdr row of its mappings;
+- each consumer repository's own Herdr launch and worktree commands call the
+  workspace tool, and their copies of what it does are deleted, keeping only
+  the repository's own setup as its `.config/worktree-hooks/create`;
 - `drive-pr`, `do-item` and `review`'s reading of a delegated agent's output
   are run in a Herdr workspace on macOS and on Linux, and what differs is
-  fixed or written down;
-- [plugin/EXTENDING.md](../plugin/EXTENDING.md)'s support tables list Herdr
-  wherever they list a workspace runtime.
+  fixed or written down.
 
 ## Next
 
@@ -370,7 +358,8 @@ version.
      they feed, so the skills run under Codex on Windows without Git Bash.
 - **Gates and workspace infrastructure.** Cross-worktree locks and
   test infrastructure, remote gates, and a runnable form of
-  [M12](../modules/M12-parallel-agent-ergonomics/README.md)'s workspace lifecycle.
+  [M12](../modules/M12-parallel-agent-ergonomics/README.md)'s workspace lifecycle
+  for runtimes other than Herdr, which has [one](../tools/herdr/README.md#the-worktree-hooks).
 - **Change-area consumer lint.** The `lint-consumers` check moves into the
   [change-areas skill](../plugin/skills/change-areas/README.md): the path
   lists in agent rules, hook configuration and CI workflow triggers checked
