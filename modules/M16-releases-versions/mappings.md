@@ -194,10 +194,15 @@ signs the SBOM as an attestation bound to the artifact's digest, with
 artifact-metadata: write`. The artifact is named by kind:
 
 - **A file** (a package archive, a binary): `subject-path` is its path.
-- **A container image**: `subject-name` is the image's name in its registry
-  and `subject-digest` its manifest digest (`sha256:…`), the one a consumer
+- **A container image**: `subject-name` is the image's fully qualified name
+  without a tag (`ghcr.io/<owner>/<image>`), and `subject-digest` its
+  manifest digest (`sha256:…`), the one a consumer
   pulls; `push-to-registry: true` stores the attestation in the registry
-  beside the image as well. An image saved to a tarball and given as
+  beside the image as well. That push needs what pushing the image needs:
+  the job logs in to the registry (`docker/login-action`, for one) with an
+  identity allowed to push, and for GitHub Container Registry with
+  `GITHUB_TOKEN` that is `packages: write` beside the permissions above.
+  An image saved to a tarball and given as
   `subject-path` attests the archive's digest, which is not the digest a
   consumer verifies.
 
