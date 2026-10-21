@@ -6,7 +6,6 @@
  */
 
 import { fstatSync, statSync } from "node:fs";
-import { setTimeout as sleepMs } from "node:timers/promises";
 
 // The exit plumbing and the command-line boundary are the plugin's shared
 // ones, so a failure thrown by shared code (`proc.ts`'s refusals) exits with
@@ -14,12 +13,16 @@ import { setTimeout as sleepMs } from "node:timers/promises";
 // and causes the same way.
 import { fail } from "../../../../shared/cli.ts";
 
-export { ExitError, fail, failFrom, runMain } from "../../../../shared/cli.ts";
-
-/** Digits-only, per the bash `case` guards on PR numbers and counters. */
-export function isDigits(s: string): boolean {
-  return /^[0-9]+$/.test(s);
-}
+export {
+  isDigits,
+  sleep,
+  shellQuote,
+  readStdinAll,
+  ExitError,
+  fail,
+  failFrom,
+  runMain,
+} from "../../../../shared/cli.ts";
 
 /**
  * A full, lowercase, 40-character SHA-1 hex string — the exact grammar every
@@ -33,27 +36,6 @@ export function isDigits(s: string): boolean {
  */
 export function isGitSha(s: string): boolean {
   return /^[0-9a-f]{40}$/.test(s);
-}
-
-/**
- * `signal` lets a caller wake this early rather than waiting out the full
- * delay — `drive.ts`'s quota-wall sleep passes one so a lock takeover
- * observed mid-sleep interrupts it immediately instead of up to six hours
- * late. Resolves normally either way: an abort is a caller
- * asking to stop waiting, not a failure, so it is swallowed here rather
- * than surfaced as a rejection every one of this function's many other
- * (signal-less) callers would then have to guard against.
- */
-export async function sleep(
-  seconds: number,
-  signal?: AbortSignal,
-): Promise<void> {
-  try {
-    await sleepMs(seconds * 1000, undefined, { signal });
-  } catch (e) {
-    if (signal?.aborted) return;
-    throw e;
-  }
 }
 
 /**
@@ -141,25 +123,7 @@ export function stderrIsDevNull(): boolean {
   }
 }
 
-/**
- * Quote a string so POSIX `sh`/`bash` reads it back as this one literal —
- * the `printf %q` of the suggested-command rendering in the orphan warning. A
- * worktree path CAN contain an apostrophe; the `'\''` idiom survives it.
- */
-export function shellQuote(s: string): string {
-  if (s !== "" && /^[A-Za-z0-9_\-./:=+@%^]+$/.test(s)) return s;
-  return `'${s.replaceAll("'", `'\\''`)}'`;
-}
-
 /** First 12 characters, the SHA-abbreviation used across the skill's output. */
 export function short(sha: string): string {
   return sha.slice(0, 12);
-}
-
-/** Read all of stdin (the reply-body channel several scripts use). */
-export async function readStdinAll(): Promise<string> {
-  process.stdin.setEncoding("utf8");
-  let s = "";
-  for await (const chunk of process.stdin) s += chunk;
-  return s;
 }

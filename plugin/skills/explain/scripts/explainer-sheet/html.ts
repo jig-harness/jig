@@ -1,3 +1,4 @@
+import { definedFields } from "../../../../shared/defined-fields.ts";
 /**
  * The HTML projection of an explainer source, on the sheet kit.
  *
@@ -42,7 +43,7 @@ export function renderExplainerHtml(
 ): string {
   const inline = createInline({
     glossary: source.terms ?? [],
-    issueUrl: source.url,
+    ...definedFields({ issueUrl: source.url }),
     teamKey: (source.url && ISSUE_IN_URL.exec(source.url)?.[1]) || "",
   });
   const steps = new Set((source.flow ?? []).map((s) => s.id));
@@ -149,7 +150,7 @@ export function renderExplainerHtml(
     parts.push(
       section(LABEL.terms, termList(source.terms, inline.termIds), {
         id: "terms",
-        cls: source.openQuestions?.length ? undefined : "heavy",
+        ...(source.openQuestions?.length ? {} : { cls: "heavy" }),
       }),
     );
     nav.push(navItem("terms", LABEL.terms));

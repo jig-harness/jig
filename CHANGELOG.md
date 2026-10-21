@@ -317,6 +317,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.70.2] - 2026-10-21
+
+### Changed
+
+- Consolidate shared command-line and GitHub helpers and fleet-health reporting internals; plugin commands keep their existing paths and behavior.
+
 ## [0.70.1] - 2026-10-20
 
 ### Added
@@ -3258,7 +3264,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.70.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.70.2...HEAD
+[0.70.2]: https://github.com/jig-harness/jig/compare/v0.70.1...v0.70.2
 [0.70.1]: https://github.com/jig-harness/jig/compare/v0.70.0...v0.70.1
 [0.70.0]: https://github.com/jig-harness/jig/compare/v0.69.0...v0.70.0
 [0.69.0]: https://github.com/jig-harness/jig/compare/v0.68.0...v0.69.0

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Enumerate the review findings that exist ONLY in the reviewer's summary
  * comment — the ones that create no diff-anchorable thread — and say which of
@@ -378,9 +379,10 @@ export function decodeBacklog(body: string): BacklogEntry[] {
       // value on either degrades to absent rather than failing the blob, which
       // for `reason` means losing an exemption (the fail-closed direction,
       // costing a re-answer) rather than blocking the whole report.
-      firstRound:
-        typeof entry.firstRound === "number" ? entry.firstRound : undefined,
-      reason: typeof entry.reason === "string" ? entry.reason : undefined,
+      ...(typeof entry.firstRound === "number"
+        ? { firstRound: entry.firstRound }
+        : {}),
+      ...(typeof entry.reason === "string" ? { reason: entry.reason } : {}),
     };
   });
 }
@@ -1710,7 +1712,7 @@ async function main(): Promise<number> {
         stickyAuthor: sticky.user.login,
         anchoredKeys,
         addressedFingerprints: addressed,
-        reviewedSha,
+        ...definedFields({ reviewedSha }),
       }),
     ),
   );

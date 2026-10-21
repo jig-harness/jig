@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * resolve-precedent.ts — the mechanical first phase of `/decide`.
  *
@@ -448,8 +449,8 @@ export function parseFrontmatter(content: string): Frontmatter {
   }
 
   return {
-    title: typeof fm.title === "string" ? fm.title : undefined,
-    status: typeof fm.status === "string" ? fm.status : undefined,
+    ...(typeof fm.title === "string" ? { title: fm.title } : {}),
+    ...(typeof fm.status === "string" ? { status: fm.status } : {}),
     tags: Array.isArray(fm.tags) ? (fm.tags as string[]) : [],
   };
 }
@@ -582,6 +583,12 @@ function readIfPresent(path: string): string | undefined {
 /** Join repository-relative path parts with `/`, so a citation reads the same on every platform. */
 const repoPath = (...parts: string[]) => parts.join("/");
 
+function documentStatus(fm: Frontmatter): { status?: string } {
+  return definedFields({
+    status: fm.frontmatterError ? UNREADABLE_FRONTMATTER_STATUS : fm.status,
+  });
+}
+
 function loadAdrs(repoRoot: string, directory: string): CorpusDoc[] {
   const dir = join(repoRoot, directory);
   if (!existsSync(dir)) return [];
@@ -596,7 +603,7 @@ function loadAdrs(repoRoot: string, directory: string): CorpusDoc[] {
       file,
       startLine: 1,
       title: fm.title ?? firstHeading(content) ?? name,
-      status: fm.frontmatterError ? UNREADABLE_FRONTMATTER_STATUS : fm.status,
+      ...documentStatus(fm),
       tags: fm.tags ?? [],
       text: content,
     });
@@ -663,7 +670,7 @@ export function splitSections(
           : current.heading
             ? `${title} § ${current.heading}`
             : `${title} § (untitled)`,
-      status: frontmatterError ? UNREADABLE_FRONTMATTER_STATUS : undefined,
+      ...(frontmatterError ? { status: UNREADABLE_FRONTMATTER_STATUS } : {}),
       tags: [],
       text: current.body.join("\n"),
     });
@@ -706,7 +713,7 @@ function loadRules(repoRoot: string, directory: string): CorpusDoc[] {
       file: repoPath(directory, name),
       startLine: 1,
       title: fm.title ?? firstHeading(content) ?? name,
-      status: fm.frontmatterError ? UNREADABLE_FRONTMATTER_STATUS : fm.status,
+      ...documentStatus(fm),
       tags: fm.tags ?? [],
       text: content,
     });
@@ -996,7 +1003,7 @@ export function resolvePrecedent(opts: ResolveOptions): PrecedentReport {
         kind: doc.kind,
         file: doc.file,
         title: doc.title,
-        status: doc.status,
+        ...definedFields({ status: doc.status }),
         score: Math.round(score * 100) / 100,
         matchedTerms,
         excerpts: excerptsFor(doc, matchedTerms),

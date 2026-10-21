@@ -62,7 +62,7 @@ describe("answer-summary-finding.ts", () => {
     const proc = Bun.spawn(
       scriptArgv(join(SCRIPTS, "answer-summary-finding.ts"), ...args, "999"),
       {
-        cwd: opts.cwd,
+        ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }),
         env: {
           ...gitCleanEnv(),
           PATH: `${binDir}${delimiter}${process.env.PATH}`,
