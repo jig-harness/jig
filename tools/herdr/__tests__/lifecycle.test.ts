@@ -325,7 +325,14 @@ describe("the create hook", () => {
 const append = fs.appendFileSync;
 fs.appendFileSync = (file, line) => {
   if (String(line).startsWith("group ")) {
-    Bun.sleepSync(1_000);
+    // Wait for the hook to record its child, so the test has one to check.
+    const limit = Date.now() + 10_000;
+    while (Date.now() < limit) {
+      try {
+        if (fs.readFileSync(".child", "utf8").trim() !== "") break;
+      } catch {}
+      Bun.sleepSync(20);
+    }
     throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" });
   }
   return append(file, line);
