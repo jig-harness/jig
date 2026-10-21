@@ -340,6 +340,32 @@ describe("a record that cannot be written when the next map replaces the snapsho
     expect(readdirSync(pending)).toEqual([]);
   });
 
+  it("records it though the current snapshot is unreadable", () => {
+    twoStops();
+    expect(s.gitTry("rebase", "main").code).not.toBe(0);
+    resolve("one.md", BOTH);
+    expect(s.gitTry("rebase", "--continue").code).not.toBe(0);
+    const file = eventsFile();
+    symlinkSync(`${s.home}/nowhere`, file);
+    ok(s.script("conflict-map.ts"));
+    const jig = s
+      .git("rev-parse", "--path-format=absolute", "--git-path", "jig")
+      .trim();
+    expect(readdirSync(`${jig}/pending`)).toHaveLength(1);
+    rmSync(file);
+    s.write("two.md", BOTH);
+    s.git("add", "two.md");
+    ok(s.script("record.ts", ["two.md", "combined", "--reason", "both"]));
+    ok(s.script("check-resolution.ts"));
+    s.git("rebase", "--continue");
+    writeFileSync(`${jig}/conflicts.json`, "{ truncated");
+    const run = s.script("events.ts");
+    ok(run, 1);
+    expect(run.stderr).toContain("the conflict snapshot is unreadable");
+    expect(events().map((e) => e.path)).toEqual(["one.md"]);
+    expect(readdirSync(`${jig}/pending`)).toEqual([]);
+  });
+
   it("stays pending while its conclusion is neither kept nor found", () => {
     twoStops();
     expect(s.gitTry("rebase", "main").code).not.toBe(0);

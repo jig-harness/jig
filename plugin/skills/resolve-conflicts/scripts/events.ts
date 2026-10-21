@@ -8,14 +8,16 @@
  * same operation again adds nothing, and `conflict-map.ts` records an
  * operation a later map would otherwise overwrite. It also records the
  * snapshots `conflict-map.ts` kept as pending because the record could not be
- * written then; one that still cannot be recorded stays pending and makes the
- * exit 1.
+ * written then, before reading the current snapshot, so an unreadable one
+ * does not hold them back; one that still cannot be recorded stays pending
+ * and makes the exit 1.
  *
  * Usage: bun events.ts [--json]
  *
  * Exit codes: 0 recorded, already recorded, or nothing to record (no
  * snapshot, or an operation that did not conclude: aborted or skipped); 1 the
- * record could not be written (the conclusion stands); 2 usage error or not
+ * record could not be written or the current snapshot is unreadable (the
+ * conclusion stands); 2 usage error or not
  * inside a git work tree; 3 the operation the snapshot describes is still in
  * progress (conclude it first).
  */
@@ -33,18 +35,18 @@ async function main(): Promise<number> {
   const json = args.length > 0;
   const root = topLevel();
   if (root === null) fail(2, "events: not inside a git work tree.");
+  const say = (message: string, detail: object = {}) =>
+    console.log(json ? JSON.stringify({ message, ...detail }) : message);
+  const pending = recordPending(root, say);
   let snapshot: ReturnType<typeof loadSnapshot>;
   try {
     snapshot = loadSnapshot(root);
   } catch (err) {
     return fail(
       1,
-      `events: the conflict snapshot is unreadable: ${err instanceof Error ? err.message : err}. The conclusion stands; no events were recorded.`,
+      `events: the conflict snapshot is unreadable: ${err instanceof Error ? err.message : err}. The conclusion stands; no events were recorded for its operation.`,
     );
   }
-  const say = (message: string, detail: object = {}) =>
-    console.log(json ? JSON.stringify({ message, ...detail }) : message);
-  const pending = recordPending(root, say);
   if (snapshot === null) {
     say("no conflict snapshot: nothing to record");
     return pending;
