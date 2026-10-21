@@ -103,6 +103,7 @@ import {
 } from "./lib/stop-request.ts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { hostname } from "node:os";
+import { driveRepository } from "./lib/drive-repository.ts";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -158,7 +159,7 @@ const WORKTREE_LOCK = /^pr-drive-worktree-([0-9a-f]+)\.lock$/;
  * passes it. The authoritative identity check is the claim binding in `stop()`:
  * the pid's start time must not postdate the claim's acquisition timestamp.
  */
-const DRIVER_CMD = /(^|[\s/\\])drive\.ts(?:["\']?)(\s|$)/;
+const DRIVER_CMD = /(^|[\s/\\])drive\.ts(?:["']?)(\s|$)/;
 
 /**
  * Slack for the claim binding's start-time comparison. POSIX creation times
@@ -733,18 +734,16 @@ async function attachDoctorVerdicts(
   );
 }
 
-function printHuman(stateDir: string, rows: LockRow[]): void {
+function printHuman(
+  stateDir: string,
+  rows: LockRow[],
+  repository: string,
+): void {
   if (rows.length === 0) {
     console.log(`no drive locks under ${stateDir}`);
     return;
   }
-  // A live driver holds two locks (worktree first, then PR) with one pid —
-  // present each such pair as ONE drive, keyed by owner, with any unpaired or
-  // non-live rows listed individually after it. The key carries the acquisition
-  // timestamp too: one acquisition writes one diag to both locks, so `started`
-  // distinguishes two acquisitions that collide on host/pid via pid reuse —
-  // merging them would correlate an abandoned claim with another driver's PR
-  // lock.
+  // Group one acquisition's PR and worktree locks by owner and start time.
   const liveByOwner = new Map<string, LockRow[]>();
   const rest: LockRow[] = [];
   for (const row of rows) {
@@ -794,6 +793,7 @@ function printHuman(stateDir: string, rows: LockRow[]): void {
       // splitting it displayed "legacy" as a hostname.
       `● ${label} — LIVE, driver pid ${pid} (${group[0]?.host || "this host"}), claim refreshed ${age ?? "?"}s ago`,
     );
+    console.log(`    repository: ${repository}`);
     if (diag !== null) {
       console.log(`    worktree: ${diag.worktree}`);
       console.log(`    since:    ${diag.started}`);
@@ -875,14 +875,8 @@ function printHuman(stateDir: string, rows: LockRow[]): void {
         `⚠ ${row.lock} — ${row.state} claim; NOT counting it as free. Inspect by hand: ${row.dir}`,
       );
     }
-    // `attachDoctorVerdicts` already computed this for every `pr`-kind row —
-    // including `empty`/`stale` ones, which is exactly the shape
-    // `DEAD_WITH_LEFTOVERS` exists to name. Printing only WEDGED here (as
-    // this listing did before) meant the single MOST actionable verdict —
-    // stranded commits in a worktree nobody is driving — was computed and
-    // then discarded, invisible on the default surface, and the line above
-    // it read as "the next drive recovers it" with no hint that the tree
-    // still holds real work.
+    console.log(`    repository: ${repository}`);
+    // Report stranded work even for stale or empty locks.
     if (row.doctor?.verdict === "DEAD_WITH_LEFTOVERS") {
       console.log(`    ⚠ ${row.doctor.reason}`);
       if (row.doctor.recovery !== null) {
@@ -892,22 +886,12 @@ function printHuman(stateDir: string, rows: LockRow[]): void {
   }
 }
 
-/**
- * `--doctor`'s human rendering. One line per PR-kind row (the
- * classifier has nothing to say about a `worktree`-kind lock — see
- * `LockRow.doctor`'s own comment), naming the verdict, the reason
- * `classifyDrive` gave for it, and a recovery command where one exists.
- *
- * Every drive in the state universe is swept — `rows`, by the time it
- * reaches this function, is `main`'s MERGE of `listRows`' lock census and
- * `listStateOnlyRows`' extra rows for a `drive-pr-<PR>.json` with no
- * surviving lock directory (a drive that parked and then exited normally
- * has no lock left at all, and it is exactly that row this merge exists to
- * still report). An unreadable LOCK is still a
- * `contested`/`unreadable` `LockRow` here exactly as it is in the plain
- * listing, never silently dropped before it reaches this function.
- */
-function printDoctor(stateDir: string, rows: readonly LockRow[]): void {
+/** Classify PR lock and state-only rows, including unreadable claims. */
+function printDoctor(
+  stateDir: string,
+  rows: readonly LockRow[],
+  repository: string,
+): void {
   const prRows = rows.filter((r) => r.kind === "pr");
   if (prRows.length === 0) {
     // Deliberately NOT the plain listing's "no drive locks under X" string —
@@ -928,11 +912,13 @@ function printDoctor(stateDir: string, rows: readonly LockRow[]): void {
     const d = row.doctor;
     if (d === null) {
       console.log(`○ PR #${row.key} — UNKNOWN: not classified`);
+      console.log(`    repository: ${repository}`);
       continue;
     }
     const icon =
       d.verdict === "HEALTHY" ? "●" : d.verdict === "UNKNOWN" ? "○" : "⚠";
     console.log(`${icon} PR #${row.key} — ${d.verdict}: ${d.reason}`);
+    console.log(`    repository: ${repository}`);
     if (d.recovery !== null) console.log(`    recovery: ${d.recovery}`);
   }
 }
@@ -1433,20 +1419,23 @@ async function main(): Promise<number> {
   // off the same `.doctor` field `printHuman` expects to already be
   // populated — one classification pass feeds every rendering, rather than
   // three call sites each deciding independently whether to run it.
-  const doctored = await attachDoctorVerdicts(stateDir, rows, SELF);
+  const repository = await driveRepository();
+  const doctored = (await attachDoctorVerdicts(stateDir, rows, SELF)).map(
+    (row) => ({ ...row, repository }),
+  );
   if (doctorMode) {
     if (json) {
       console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
       return 0;
     }
-    printDoctor(stateDir, doctored);
+    printDoctor(stateDir, doctored, repository);
     return 0;
   }
   if (json) {
     console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
     return 0;
   }
-  printHuman(stateDir, doctored);
+  printHuman(stateDir, doctored, repository);
   return 0;
 }
 
