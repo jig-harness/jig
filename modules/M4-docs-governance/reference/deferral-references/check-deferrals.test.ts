@@ -836,10 +836,10 @@ describe("the live half through the command", () => {
   test("--states fails the deferral whose items are all closed and names the file", () => {
     const r = repo(docs);
     r.write(
-      "../states.json",
+      "states.json",
       JSON.stringify({ "ENG-1": "closed", "ENG-2": "open", "ENG-3": "closed" }),
     );
-    const result = r.run(["--all", "--states", "../states.json"]);
+    const result = r.run(["--all", "--states", "states.json"]);
     expectSpawnExit(result, 1);
     expect(result.stdout).toContain("a.md:1: [deferral-relies-on-closed-item]");
     expect(result.stdout).not.toContain("b.md");
@@ -848,16 +848,16 @@ describe("the live half through the command", () => {
   test("--states passes when every deferral still has an open item", () => {
     const r = repo(docs);
     r.write(
-      "../states.json",
+      "states.json",
       JSON.stringify({ "ENG-1": "open", "ENG-2": "open", "ENG-3": "closed" }),
     );
-    expectSpawnExit(r.run(["--all", "--states", "../states.json"]), 0);
+    expectSpawnExit(r.run(["--all", "--states", "states.json"]), 0);
   });
 
   test("--states with an item missing from the file is could-not-check", () => {
     const r = repo(docs);
-    r.write("../states.json", JSON.stringify({ "ENG-1": "open" }));
-    const result = r.run(["--all", "--states", "../states.json"]);
+    r.write("states.json", JSON.stringify({ "ENG-1": "open" }));
+    const result = r.run(["--all", "--states", "states.json"]);
     expectSpawnExit(result, 2);
     expect(result.stderr).toContain("ENG-2");
   });
@@ -865,13 +865,24 @@ describe("the live half through the command", () => {
   test("--states also reports a deferral that names no item, which has nothing to look up", () => {
     const r = repo({ ...docs, "d.md": "Tracked to closure.\n" });
     r.write(
-      "../states.json",
+      "states.json",
       JSON.stringify({ "ENG-1": "open", "ENG-2": "open", "ENG-3": "open" }),
     );
-    const result = r.run(["--all", "--states", "../states.json"]);
+    const result = r.run(["--all", "--states", "states.json"]);
     expectSpawnExit(result, 1);
     expect(result.stdout).toContain("d.md:1: [deferral-names-no-item]");
   });
+
+  test.each([["--states"], ["--config"]])(
+    "%s naming a file outside the repository is refused, unread",
+    (flag) => {
+      const r = repo(docs);
+      r.write("../outside.json", "{}");
+      const result = r.run(["--all", flag, "../outside.json"]);
+      expectSpawnExit(result, 2);
+      expect(result.stderr).toContain("lies outside the repository");
+    },
+  );
 
   test("--states with an unreadable file is could-not-check", () => {
     const r = repo(docs);

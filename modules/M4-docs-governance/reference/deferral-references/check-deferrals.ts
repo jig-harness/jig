@@ -37,7 +37,7 @@
 //   check-deferrals.ts [--config <file>] --all
 //   check-deferrals.ts [--config <file>] --all --list-keys
 //   check-deferrals.ts [--config <file>] --all --states <states.json>
-import { existsSync, lstatSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { cli, readFrontmatter, splitLines } from "../docs";
@@ -790,7 +790,6 @@ function indexedConfig(
 ): string | undefined {
   const path = relativePath(root, configPath);
   return mode === "staged" &&
-    !path.startsWith("../") &&
     git(root, ["ls-files", "-z", "--", `:(literal)${path}`]) !== ""
     ? path
     : undefined;
@@ -834,7 +833,8 @@ interface Plan {
   /** Absent: `--ci` with no range, which compares nothing. */
   mode?: Mode;
   listKeys: boolean;
-  states?: string;
+  /** As the command line named it, and resolved inside the repository. */
+  states?: { name: string; path: string };
 }
 
 interface Flags {
@@ -927,7 +927,7 @@ function plan(
   const configPath =
     flags.config === undefined
       ? join(root, DEFAULT_CONFIG)
-      : resolve(cwd, flags.config);
+      : inRepository(root, cwd, flags.config, "--config");
   const mode = modeOf(flags, flags.range ?? (env.DIFF_RANGE || undefined));
   if (
     !existsSync(configPath) &&
@@ -941,8 +941,37 @@ function plan(
     configPath,
     listKeys: flags.listKeys,
     ...(mode === undefined ? {} : { mode }),
-    ...(flags.states === undefined ? {} : { states: flags.states }),
+    ...(flags.states === undefined
+      ? {}
+      : {
+          states: {
+            name: flags.states,
+            path: inRepository(root, cwd, flags.states, "--states"),
+          },
+        }),
   };
+}
+
+/**
+ * `path` (relative to `cwd`) resolved, refused unless it lies inside the
+ * repository at `root`: a file the command line names is read from the
+ * repository the check judges, never from elsewhere on the machine. Links are
+ * followed first, so neither an alias of the working directory nor a link out
+ * of the repository decides the answer.
+ */
+function inRepository(
+  root: string,
+  cwd: string,
+  path: string,
+  flag: string,
+): string {
+  const named = resolve(realpathSync(cwd), path);
+  const resolved = existsSync(named) ? realpathSync(named) : named;
+  if (!resolved.startsWith(realpathSync(root) + sep))
+    throw new DeferralsError(
+      `${flag} ${path} lies outside the repository ${root}`,
+    );
+  return resolved;
 }
 
 interface Judged {
@@ -999,10 +1028,7 @@ export function run(
   const states =
     asked.states === undefined
       ? undefined
-      : parseStates(
-          readFileSync(resolve(cwd, asked.states), "utf8"),
-          asked.states,
-        );
+      : parseStates(readFileSync(asked.states.path, "utf8"), asked.states.name);
   const failures = report(judged, states);
   const total = judged.reduce(
     (n, { reading }) => n + reading.deferrals.length,

@@ -44,7 +44,9 @@ bun check-deferrals.ts --all                             # every document
 ```
 
 Run it from inside the repository; it reads `.config/deferral-references.yaml`
-unless `--config <file>` names another.
+unless `--config <file>` names another. A file named on the command line
+(`--config`, and `--states` below) must lie inside the repository; one outside
+it is refused unread.
 
 It reads each document as blocks of prose: a paragraph, a list item with its
 continuation lines (and, in a loose list, its indented later paragraphs, which
