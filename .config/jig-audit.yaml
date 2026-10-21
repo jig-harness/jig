@@ -307,6 +307,10 @@ criteria:
     # The frontmatter check either reads documents with a full YAML parser, or states the subset of YAML it reads and rejects every construct outside it with an error instead of guessing at a value.
     score: absent
     evidence: "No frontmatter check runs on Jig's own docs (see M4/frontmatter-machine-validated): scripts/gates.ts calls none, and Jig's docs outside fixtures, templates and seeds carry no frontmatter; the subset reader exists only as modules/M4-docs-governance/reference, an example for adopters"
+  M4/deferrals-name-items:   # standard, requires mechanical
+    # A document that defers work to the tracker names the item that carries it, in the same block of prose as the deferral, and a check enforces this on the lines each change adds, in the pre-commit hook and in CI (expected-absent where no document defers work to a tracker).
+    score: expected-absent
+    evidence: "No Jig document promises tracked work: git grep -Ei 'tracked to closure|will be filed|to be filed|tracked separately|follow-up will' -- '*.md' hits only documents that describe the practice (GLOSSARY.md, the M4 module, change notes), and Jig's open work is stated against the plan and roadmap (design/plan.md, ROADMAP.md); scripts/check-no-tracker-refs.ts fails Jig's own tracker keys in any document, so none can name one"
   M4/authority-hierarchy-written:   # standard, requires convention
     # A single-valued authority hierarchy is written down so contradictions between docs resolve without a judgment call.
     # prior: absent: grep authority|precedence|source of truth in own docs: only CLAUDE.md 'AGENTS.md the single source of truth' and PLAYBOOK.md 'map vs territory'; no ordered precedence for conflicting docs
@@ -339,6 +343,10 @@ criteria:
     # prior: absent: .github/workflows/ holds only gates.yml (pull_request, push to main); no scheduled job; no retrospective or raw-notes backlog file in the tree
     score: absent
     evidence: ".github/workflows/gates.yml triggers on pull_request and push only, no schedule; no retrospective or raw-notes backlog (the reflection store is ROADMAP item 6, unbuilt)"
+  M4/deferral-liveness-scheduled:   # strict, requires mechanical
+    # A scheduled job on the default branch asks the tracker whether the items the documents' deferrals name are still open, fails a deferral that has no open item left (an item closed, or one that does not exist), and fails rather than passes when it could not look an item up; the tracker credential is available to that job's tracker step only and never to code from a pull request (expected-absent where no document defers work to a tracker).
+    score: expected-absent
+    evidence: "No Jig document defers work to a tracker (see M4/deferrals-name-items); the plan and roadmap items its documents point at are checked by scripts/check-roadmap.ts, which needs no credential"
   # M5 adr-practice
   M5/adrs-exist-numbered-from-template:   # lite, requires convention
     # Decisions are captured as numbered ADR files from a shared template with consistent frontmatter (a decision date and a status).

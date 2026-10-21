@@ -14,8 +14,9 @@ a de-scarring rule that keeps approved documents clean.
 > Every doc carries machine-validated frontmatter (type, status, lifecycle,
 > owner, freshness); navigation is *generated*, never hand-curated; knowledge
 > flows raw → compiled → indexed; approved documents are scar-free (review
-> findings live in threads/issues, not the artifact); and conflicts resolve
-> along a written authority hierarchy.
+> findings live in threads/issues, not the artifact); conflicts resolve
+> along a written authority hierarchy; and a document that defers work to the
+> tracker names an item that is still open.
 
 ## The three-layer model
 
@@ -70,6 +71,13 @@ Knowledge moves up three layers, each promoting into the next:
    The docs tree is one [drift-prone area](../../GLOSSARY.md) among others: list it, with its
    cadence, owner and last-audited date, in the repository's
    [audit catalog](../M8-learning-loop/README.md#the-audit-catalog-areas-no-gate-covers).
+7. **Deferral references** — a document that defers work to the tracker
+   ("tracked to closure", "a follow-up will be filed") names the item that
+   carries it, and that item is still open. A promise naming no item cannot be
+   looked up, and one naming a closed item reads as pending work nobody is
+   doing. An offline gate fails a deferral that names no item on the lines a
+   change adds; a scheduled check on the default branch, the only step holding
+   the tracker credential, fails a deferral whose items have all closed.
 
 ## Maturity levels
 
@@ -80,13 +88,17 @@ Knowledge moves up three layers, each promoting into the next:
 - **Standard** — frontmatter is machine-validated in CI (required fields, enum
   membership, date format), by a check that states the YAML subset it reads;
   the index is generated with a freshness gate; the authority hierarchy is
-  written. De-scarring is at least an advisory lint.
+  written. De-scarring is at least an advisory lint. Where documents defer
+  work to a tracker, the static deferral gate blocks a deferral that names no
+  item, in the pre-commit hook and on the pull request.
 - **Strict** — de-scarring lint blocks promotion to `approved`; a stale-doc
   gate requires `last_updated` to advance when a doc's body changes, and
   generators stamp their dates sticky in UTC; the orphan report is generated
   with the index; the
   wiki-lint cadence runs on a schedule and posts to the log; raw → compiled
-  promotion (retrospection backlog) is tracked.
+  promotion (retrospection backlog) is tracked; where documents defer work to
+  a tracker, a scheduled check on the default branch fails a deferral whose
+  items have all closed.
 
 ## Adoption steps
 
@@ -114,6 +126,14 @@ Knowledge moves up three layers, each promoting into the next:
    [`reference/stamp/`](reference/stamp/), add path rules where a subtree
    needs them, schedule the wiki-lint table, and track the backlog of raw
    notes awaiting promotion. This is **Strict**.
+5. Where documents defer work to a tracker, copy
+   [`templates/deferral-references.yaml`](templates/deferral-references.yaml),
+   run [`reference/deferral-references/`](reference/deferral-references/) with
+   `--all` and fix what it reports (file the item and name it, or say what is
+   true today), then run it on the staged change and on the pull request's
+   range; that is the Standard rung. For Strict, add the scheduled liveness
+   check from [`templates/deferral-liveness.yml`](templates/deferral-liveness.yml)
+   with a provider for your tracker ([mappings](mappings.md#deferral-references)).
 
 ## Status
 
@@ -138,6 +158,15 @@ What this module provides:
   `last_updated` for generators.
 - [`reference/scar-lint/`](reference/scar-lint/) — finds scars in approved
   docs, with code masked first, and reports named files it did not scan.
+- [`reference/deferral-references/`](reference/deferral-references/) — fails a
+  block of prose that holds a deferral marker phrase and names no item, over
+  the lines a diff adds or the whole tree; and, in separate steps that keep the
+  credential out of the check, fails a deferral whose items have all closed
+  or do not exist, from a tracker's answers it is given as a file.
+- [`templates/deferral-references.yaml`](templates/deferral-references.yaml)
+  and [`templates/deferral-liveness.yml`](templates/deferral-liveness.yml) —
+  the configuration (item patterns, marker phrases, scope) and the scheduled
+  workflow, with the credential held by one step on the default branch.
 - [`reference/docs.ts`](reference/docs.ts) — the frontmatter reader the
   scripts share: the YAML subset, with an error for each construct outside it.
 - [`mappings.md`](mappings.md) (CI providers, hook managers, schema formats)
@@ -155,6 +184,12 @@ template shows the mechanism (a canonical list plus a merge map) with neutral
 tags. The frontmatter codemod is a procedure (adoption step 3), not a
 reference script, for the same reason: its mapping tables are a repository's
 values.
+
+The deferral check does not judge that the item named is the right one, and
+its static half reads blocks of prose, not sentences. Both are stated, with
+the reasons, in the reference's README. It ships a tracker provider for the
+tracker interface Jig's skills use; the
+[mappings](mappings.md#deferral-references) sketch the others.
 
 Future: a schema for `connections/` pages; a scheduled wiki-lint workflow
 (the lint table runs as a manual cadence until then); and a path rule that

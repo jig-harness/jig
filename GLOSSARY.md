@@ -539,6 +539,13 @@ make, use the entry's term instead.
   as bringing every document's frontmatter into line before a validator is
   tightened. Run as survey, plan, then apply, one commit per kind of change
   ([M4 adoption](modules/M4-docs-governance/README.md#adoption-steps)).
+- **Deferral** — a sentence in a document that hands work to the tracker:
+  "tracked to closure", "a follow-up will be filed". It is a promise that
+  an item exists, so it must name one, and the item must stay open. A
+  **deferral marker** is a configured phrase that makes a block of prose a
+  deferral. The static gate checks that a deferral names an item; a scheduled
+  check asks the tracker whether the item has closed since
+  ([M4](modules/M4-docs-governance/reference/deferral-references/README.md)).
 - **PRD (product requirements document)** — the document defining *what* a
   feature does for users and why — deliberately separate from *how* (the
   architecture doc).
