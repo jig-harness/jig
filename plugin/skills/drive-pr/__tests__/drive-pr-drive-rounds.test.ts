@@ -50,6 +50,7 @@ import {
   runDriveIn,
 } from "./drive-loop-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 
 const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
   rawFixture(f, scratchClean.dir);
@@ -602,8 +603,9 @@ describe("drive.ts loop control", () => {
         ...PASS_LOUD,
       ),
       {
+        cwd: scratchClean.dir,
         env: {
-          ...process.env,
+          ...gitCleanEnv(),
           PATH: `${binDir}${delimiter}${process.env.PATH}`,
           DRIVE_PR_FIXTURES: dir,
           DRIVE_PR_STATE_DIR: stateDir,
@@ -769,7 +771,7 @@ describe("drive.ts loop control", () => {
       threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
     });
     const env = {
-      ...process.env,
+      ...gitCleanEnv(),
       PATH: `${binDir}${delimiter}${process.env.PATH}`,
       DRIVE_PR_FIXTURES: dir,
       DRIVE_PR_STATE_DIR: stateDir,
@@ -791,7 +793,7 @@ describe("drive.ts loop control", () => {
           "--",
           ...PASS_LOUD,
         ),
-        { env, stdout: "pipe", stderr: "pipe" },
+        { cwd: scratchClean.dir, env, stdout: "pipe", stderr: "pipe" },
       );
       const [stderr, exitCode] = await Promise.all([
         new Response(p.stderr).text(),
@@ -931,7 +933,7 @@ describe("drive.ts loop control", () => {
     // it, exactly as it does at a real bound.
     seedRounds(stateDir, 3, PREV);
     const env = {
-      ...process.env,
+      ...gitCleanEnv(),
       PATH: `${binDir}${delimiter}${process.env.PATH}`,
       DRIVE_PR_FIXTURES: dir,
       DRIVE_PR_STATE_DIR: stateDir,
@@ -948,17 +950,18 @@ describe("drive.ts loop control", () => {
           "--",
           ...PASS_LOUD,
         ),
-        { env, stdout: "pipe", stderr: "pipe" },
+        { cwd: scratchClean.dir, env, stdout: "pipe", stderr: "pipe" },
       );
-      const [stderr, exitCode] = await Promise.all([
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(p.stdout).text(),
         new Response(p.stderr).text(),
         p.exited,
       ]);
-      return { stderr, exitCode };
+      return { stdout, stderr, exitCode };
     };
     // At the old bound the head is counted (3 → 4) and then rejected.
     const held = await at("3");
-    expect(held.exitCode).toBe(6);
+    expectSpawnExit(held, 6);
     expect(held.stderr).not.toContain("RAN_THE_PASS");
     // Resume with the limit raised by one — no re-seed, because the whole point
     // is that this head is ALREADY counted. It must now be worked.
