@@ -319,6 +319,31 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.73.0] - 2026-10-21
+
+The delivery loop can now be published as one stage map, with a gate that
+keeps every owner it names real.
+
+### Added
+
+- **A lifecycle map template** in M6, `templates/LIFECYCLE.md`: one table of
+  the delivery loop's named stages (steer, spec, file, plan the epic, pick up,
+  implement, pre-PR gates, draft and drive, review rounds, merge, post-merge,
+  ops drain, epic close), each with the skill, command or document that owns
+  it and the artifact it hands on. M0's `AGENTS.md` skeleton links it, so the
+  stage that comes next is one hop from the instructions every session loads.
+- **A lifecycle map gate** in M6, `reference/lifecycle-map/`, with a
+  self-test: it fails a map whose owner is a skill, script, file or link that
+  does not exist, a numbered, unowned or placeholder stage, an instruction file
+  that does not link the map, and, with `--cover`, a skill that owns no stage
+  and is not in the map's table of skills outside the loop. With
+  `--scan` it fails any document that names a plugin skill that does not exist.
+- **Audit criteria** for M6 (`lifecycle-map-published`,
+  `lifecycle-owners-resolve-gated`, `lifecycle-skills-on-the-map`), scored
+  in Jig's record and the calibration record.
+- The skills table in the plugin README points to the lifecycle map for the
+  order in which the skills are used.
+
 ## [0.72.0] - 2026-10-21
 
 `resolve-conflicts` now keeps a record of the conflicts it resolves.
@@ -3303,7 +3328,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.72.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.73.0...HEAD
+[0.73.0]: https://github.com/jig-harness/jig/compare/v0.72.0...v0.73.0
 [0.72.0]: https://github.com/jig-harness/jig/compare/v0.71.0...v0.72.0
 [0.71.0]: https://github.com/jig-harness/jig/compare/v0.70.2...v0.71.0
 [0.70.2]: https://github.com/jig-harness/jig/compare/v0.70.1...v0.70.2

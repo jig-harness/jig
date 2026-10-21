@@ -27,6 +27,15 @@ make, use the entry's term instead.
   runs a feature through a pipeline of stations (research, PRD, architecture,
   …); execution runs one work item through a line of them, from pick-up to a
   merged pull request and its follow-ups. See [FACTORY.md](FACTORY.md).
+- **Lifecycle map** (stage map) — the one table that publishes a repository's
+  delivery loop, from steering to a closed epic and back: a row per named
+  stage, the skill, command or document that owns it, and the artifact it
+  hands on. It answers "what comes next?" from one page that the
+  instruction file links, and a check keeps every owner it names resolvable.
+  Stages are named, never numbered. See
+  [M6](modules/M6-feature-delivery-pipeline/README.md#the-lifecycle-map).
+  *Avoid*: a skills list grouped by category as the answer to "what comes
+  next".
 - **SSoT (single source of truth)** — the one authoritative place a fact or
   rule is defined. Everything else *points* to it or is *generated* from it,
   so copies can't quietly disagree.
