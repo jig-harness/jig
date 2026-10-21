@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Pin the Refocus intent chain to a PR — once per PR, at drive arm.
  *
@@ -85,7 +86,7 @@ async function main(): Promise<number> {
   const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"], {
     stderr: "ignore",
     timeoutSec: 10,
-    cwd,
+    ...definedFields({ cwd }),
     env: gitIdentityEnv(),
   });
   if (branch.code !== 0) fail(1, "cannot read the checked-out branch");
@@ -99,7 +100,7 @@ async function main(): Promise<number> {
     checkedOutBranch: branch.stdout.trim(),
     contextDir: await intentChainRoot(),
     refresh,
-    pickupId,
+    ...definedFields({ pickupId }),
   });
   console.log(JSON.stringify({ pr, ...result }));
   if (result.kind === "skipped") {

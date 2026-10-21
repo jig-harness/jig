@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Merge the PR's base branch into this round — when, and only when, doing so
  * costs no round the drive would not otherwise have spent.
@@ -239,7 +240,7 @@ export async function verifyStillCurrent(
   const branchRes = await git(
     ["-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
     {
-      env,
+      ...definedFields({ env }),
     },
   );
   if (branchRes.code !== 0) {
@@ -259,7 +260,7 @@ export async function verifyStillCurrent(
 
   const ancestorRes = await git(
     ["-C", root, "merge-base", "--is-ancestor", headOid, "HEAD"],
-    { env },
+    env === undefined ? {} : { env },
   );
   if (ancestorRes.code !== 0) {
     return {
@@ -343,8 +344,7 @@ export async function alreadyPushing(
       "--ignore-submodules=none",
     ],
     {
-      timeoutSec,
-      env,
+      ...definedFields({ timeoutSec, env }),
     },
   );
   if (status.code !== 0) {
@@ -362,8 +362,7 @@ export async function alreadyPushing(
     };
   }
   const head = await git(["-C", root, "rev-parse", "HEAD"], {
-    timeoutSec,
-    env,
+    ...definedFields({ timeoutSec, env }),
   });
   if (head.code !== 0) {
     return {
@@ -405,7 +404,7 @@ export async function worktreeClean(
     ],
     {
       timeoutSec: gitCallTimeoutSeconds(),
-      env,
+      ...definedFields({ env }),
     },
   );
   return status.code === 0 && status.stdout.trim() === "";

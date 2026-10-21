@@ -35,7 +35,10 @@ function child(
   name: string,
   opts: { type?: string; labels?: ReconcileChildInput["labels"] } = {},
 ): ReconcileChildInput {
-  return { state: { name, type: opts.type }, labels: opts.labels ?? [] };
+  return {
+    state: { name, ...(opts.type === undefined ? {} : { type: opts.type }) },
+    labels: opts.labels ?? [],
+  };
 }
 
 describe("reconcileParentStatus", () => {
