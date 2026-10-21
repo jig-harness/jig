@@ -217,6 +217,14 @@ describe("owners that cannot be resolved or are not owners", () => {
     expect(found.map((f) => [f.line, f.rule])).toEqual([[4, "placeholder"]]);
   });
 
+  test("a percent-escaped name is decoded once its query and fragment are off", () => {
+    const found = checkMap(options("maps/encoded-links.md")).findings;
+    expect(found.map((f) => [f.line, f.rule])).toEqual([
+      [5, "owner-unresolved"],
+    ]);
+    expect(found[0]?.problem).toContain("plan%23gone.md");
+  });
+
   test("a reference link resolves through its definition, and one to nothing fails", () => {
     const found = checkMap(options("maps/reference-links.md")).findings;
     expect(found.map((f) => [f.line, f.rule])).toEqual([
@@ -416,12 +424,22 @@ describe("reach, as a reader sees it", () => {
     expect(render(html).spans).toEqual([]);
   });
 
-  test("a link's target is read with its escapes and character references", () =>
+  test("a link's target is read with its escapes and character references, its percent-escapes kept", () =>
     expect(
       render(
         "[a](docs\\_x.md) [b](x&amp;y.md) [c](<My File.md>) [d](caf%C3%A9.md)",
       ).links,
-    ).toEqual(["docs_x.md", "x&y.md", "My File.md", "café.md"]));
+    ).toEqual(["docs_x.md", "x&y.md", "My File.md", "caf%C3%A9.md"]));
+
+  test("an image is no link, and nothing in its description is a link or a span", () => {
+    expect(
+      rules("LIFECYCLE.md", { linkedFrom: at("AGENTS-image.md") }),
+    ).toEqual(["map-not-linked"]);
+    const image = render("| a |\n|---|\n| ![`/jig:x` [m](d.md)](l.png) |");
+    expect(image.links).toEqual([]);
+    expect(image.spans).toEqual([]);
+    expect(image.tables[0]?.rows[0]?.cells[0]?.links).toEqual([]);
+  });
 });
 
 describe("helpers", () => {
@@ -460,6 +478,42 @@ describe("helpers", () => {
       "/jig:gone",
     ]);
     expect(linesOf(text, (r) => r.spans)).toEqual([3, 4]);
+  });
+
+  test("a long document is cut where its halves agree, and read line by line where a fence runs across the cut", () => {
+    const prose = (n: number): string[] =>
+      Array.from({ length: n }, (_, i) => (i % 3 === 2 ? "" : `prose ${i}`));
+    const fence = ["```", "`not a span`", "", "`nor this`", "```"];
+    const text = [
+      "`first`",
+      ...prose(200),
+      ...fence,
+      ...prose(200),
+      "`last`",
+    ].join("\n");
+    expect(render(text).spans).toEqual(["first", "last"]);
+    expect(linesOf(text, (r) => r.spans)).toEqual([1, 407]);
+  });
+
+  test("finding the lines renders a bounded multiple of the document, not a beginning per line", () => {
+    const many = Array.from({ length: 5000 }, (_, i) =>
+      i % 2 === 0 ? `\`s${i}\`` : "",
+    ).join("\n");
+    const markdown = Bun.markdown;
+    const parse = markdown.render;
+    let rendered = 0;
+    markdown.render = ((text: string, ...rest: unknown[]) => {
+      rendered += text.length;
+      return (parse as (...args: unknown[]) => string)(text, ...rest);
+    }) as typeof parse;
+    let lines: number[];
+    try {
+      lines = linesOf(many, (r) => r.spans);
+    } finally {
+      markdown.render = parse;
+    }
+    expect(lines).toEqual(Array.from({ length: 2500 }, (_, i) => 2 * i + 1));
+    expect(rendered).toBeLessThan(100 * many.length);
   });
 
   test("commandSegments splits a chain on operators outside quotes and escapes", () => {

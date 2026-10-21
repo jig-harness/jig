@@ -101,10 +101,11 @@ const columnOf = (table: Table, name: string): number =>
 /**
  * The table body rows a rendering holds, to find a row's line. A row is known
  * by its place alone: a reference definition further down changes what a
- * row's cells say in a beginning of the document, not where the row is.
+ * row's cells say in a beginning of the document, not where the row is. Each
+ * is listed as the same value, so its place is its position in the list.
  */
-const bodyRows = (r: Rendered): number[] =>
-  r.tables.flatMap((t) => t.rows.map((row) => row.index));
+const bodyRows = (r: Rendered): string[] =>
+  r.tables.flatMap((t) => t.rows.map(() => "row"));
 
 /** The stages of every table whose header has `Stage`, `Owner` and `Hands on` columns. */
 export function parseStages(text: string): Stage[] {
@@ -365,8 +366,17 @@ function linkedFile(
   root: string,
 ): string | undefined {
   if (/^([a-z][a-z0-9+.-]*:|#)/i.test(target)) return undefined;
-  const path = target.split("#")[0] ?? "";
-  if (path === "") return undefined;
+  // The query and fragment come off while their delimiters are still
+  // delimiters; only then is the file's name percent-decoded, so `%23` is a
+  // `#` in the name.
+  const encoded = target.split(/[?#]/)[0] ?? "";
+  if (encoded === "") return undefined;
+  let path: string;
+  try {
+    path = decodeURIComponent(encoded);
+  } catch {
+    path = encoded;
+  }
   return path.startsWith("/")
     ? resolve(root, `.${path}`)
     : resolve(dirname(from), path);

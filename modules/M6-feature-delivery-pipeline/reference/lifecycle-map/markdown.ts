@@ -15,8 +15,8 @@
 // not; an HTML comment is dropped.
 //
 // The parser reports no source positions. A finding's line is found instead by
-// rendering ever shorter beginnings of the document (`linesOf`): the line
-// locates a finding and never decides one.
+// rendering parts of the document (`linesOf`): the line locates a finding and
+// never decides one.
 
 /** A table cell as a reader sees it. */
 export interface Cell {
@@ -111,18 +111,16 @@ const reference = (entity: string): string =>
     paragraph: (c: string) => c,
   });
 
-/** A link's target as the document means it. */
-function target(destination: string): string {
-  const unescaped = destination.replaceAll(
+/**
+ * A link's target as CommonMark reads it. Percent-escapes are left as written:
+ * they belong to the address, and which of them are delimiters is known only
+ * once its path, query and fragment are told apart.
+ */
+const target = (destination: string): string =>
+  destination.replaceAll(
     DESTINATION_ESCAPE,
     (m: string, escaped: string | undefined) => escaped ?? reference(m),
   );
-  try {
-    return decodeURI(unescaped);
-  } catch {
-    return unescaped;
-  }
-}
 
 /** Reads the parse into what a reader sees. */
 class Reader {
@@ -236,25 +234,85 @@ export function render(markdown: string): Rendered {
   return reader.out;
 }
 
+/** A part of the document no larger than this is searched line by line. */
+const LEAF_LINES = 64;
+
+/** How many blank lines a part tries before it is searched line by line. */
+const SPLIT_TRIES = 4;
+
 /**
  * The 1-based line of `markdown` on which each item that `items` lists
- * appears: the item at index `i` is on the line where the beginnings of the
- * document start holding the same first `i + 1` items as the whole of it, and
- * every longer beginning does too. A beginning can hold an item the whole
- * document does not (a line that closes a code span merges what were spans
- * before it), so the beginnings are read from the longest down, not searched.
+ * appears.
+ *
+ * Within a part of the document, the item at index `i` is on the line where
+ * the part's beginnings start holding the same first `i + 1` items as the
+ * whole part, and every longer beginning does too. A beginning can hold an
+ * item the whole does not (a line that closes a code span merges what were
+ * spans before it), so the beginnings are read from the longest down, not
+ * searched; that costs a rendering per line, so it is done only on small
+ * parts.
+ *
+ * A larger part is cut at a blank line near its middle when its two halves,
+ * rendered apart, list exactly the items the part lists, in order; each half
+ * is then a part of its own. Where no tried cut agrees (a fenced block or a
+ * list running across them), the part is read line by line. An item names
+ * what it is, never where: a row's index restarts in a half, so a row is
+ * listed as the same value every time.
  */
 export function linesOf<T>(
   markdown: string,
   items: (rendered: Rendered) => T[],
 ): number[] {
   const lines = markdown.split("\n");
-  const key = (item: T): string => JSON.stringify(item);
-  const whole = items(render(markdown)).map(key);
-  const found = whole.map(() => lines.length);
+  const keys = (from: number, to: number): string[] =>
+    items(render(lines.slice(from, to).join("\n"))).map((item) =>
+      JSON.stringify(item),
+    );
+  const found: number[] = [];
+  const locate = (from: number, to: number, whole: string[]): void => {
+    if (whole.length === 0) return;
+    if (to - from > LEAF_LINES)
+      for (const blank of blanks(lines, from, to)) {
+        const before = keys(from, blank);
+        const after = keys(blank + 1, to);
+        const halves = [...before, ...after];
+        if (
+          halves.length === whole.length &&
+          halves.every((key, i) => key === whole[i])
+        ) {
+          locate(from, blank, before);
+          locate(blank + 1, to, after);
+          return;
+        }
+      }
+    found.push(...scan(keys, from, to, whole));
+  };
+  locate(0, lines.length, keys(0, lines.length));
+  return found;
+}
+
+/** The blank lines strictly inside `[from, to)`, nearest its middle first, at most `SPLIT_TRIES`. */
+function blanks(lines: string[], from: number, to: number): number[] {
+  const middle = (from + to) / 2;
+  const found: number[] = [];
+  for (let at = from + 1; at < to - 1; at++)
+    if (lines[at]?.trim() === "") found.push(at);
+  return found
+    .sort((a, b) => Math.abs(a - middle) - Math.abs(b - middle))
+    .slice(0, SPLIT_TRIES);
+}
+
+/** The line of each of a part's items, reading its beginnings from the longest down. */
+function scan(
+  keys: (from: number, to: number) => string[],
+  from: number,
+  to: number,
+  whole: string[],
+): number[] {
+  const found = whole.map(() => to);
   let open = whole.length;
-  for (let end = lines.length - 1; end >= 1 && open > 0; end--) {
-    const part = items(render(lines.slice(0, end).join("\n"))).map(key);
+  for (let end = to - 1; end > from && open > 0; end--) {
+    const part = keys(from, end);
     let same = 0;
     while (same < open && part[same] === whole[same]) same++;
     for (let i = 0; i < same; i++) found[i] = end;
