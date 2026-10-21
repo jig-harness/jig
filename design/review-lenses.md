@@ -118,12 +118,12 @@ What each looks for:
   gate already reported at the same line in this run, a fallback the code
   states as intended while still reporting the failure with its cause, a
   test that asserts the failure.
-- **Test gap.** A new branch, failure path or boundary that no test
-  exercises; a test that would still pass if the change were reverted; a
+- **Test gap.** A new branch, failure path or boundary, or a changed
+  result, that no test exercises; a test that would still pass if the change were reverted; a
   test that asserts on how the code works (calls to its internals) rather
   than what it does; a double that behaves unlike the real thing; a fixed
-  sleep. Not a finding: code with no branch of its own, a gap an existing
-  test covers (the lens searches before reporting), a coverage percentage.
+  sleep. Not a finding: a change no test could observe (a rename, a moved
+  line, formatting), a gap an existing test covers (the lens searches before reporting), a coverage percentage.
 - **Stale comment.** A comment whose claim the code contradicts after this
   change (a parameter, a return value, a behaviour, a named symbol, a
   number); wording that tells how the code got its shape ("now", "changed
@@ -166,16 +166,27 @@ file can hide an edit:
     --src-prefix=a/ --dst-prefix=b/ -U0 "$VALIDATION_BASE" --
   # then, for each untracked file and for every file under --files
   # (exit 1 means only that the file differs from nothing):
-  git diff --no-index --no-color --text -U0 /dev/null "<file>"
+  git -c core.quotePath=false \
+    diff --no-index --no-color --no-ext-diff --no-textconv --text \
+    --src-prefix=a/ --dst-prefix=b/ -U0 /dev/null "<file>"
 } > "<effective-diff>"
 ```
 
-`--attr-source` (git 2.40 or later) reads attributes from the base commit, so a clean filter or
-an encoding the change declares does not apply. `--literal-pathspecs` keeps
+Setup runs these commands one at a time and checks each one's exit status:
+the tracked diff must exit 0, each comparison with nothing 0 or 1. Any other
+status, from any of them, discards `<effective-diff>` and stops the review,
+so a partial diff never reaches selection.
+
+`--attr-source` (git 2.41 or later; setup checks the version first and
+stops, naming the requirement, on an older git) reads attributes from the
+base commit, so a clean filter or an encoding the change declares does not
+apply. `--literal-pathspecs` keeps
 a file named like a pathspec a path. Under `--files`, which has no merge
 base, every named file is diffed against nothing, so each of its lines counts
-as added, since the request is to review those files as they are; a deleted
-file counts as wholly removed. The parser reads paths from the `+++ b/` and
+as added, since the request is to review those files as they are; a named
+path that does not exist in the reviewed tree stops the review as a usage
+error. A file a change deletes is reviewed through the base comparison,
+where it counts as wholly removed. The parser reads paths from the `+++ b/` and
 `--- a/` lines, which git writes quoted, with C escapes, when a path holds a
 special character; it unquotes them, and a path that matches no entry of
 the effective file list stops the review.
@@ -186,8 +197,11 @@ with the enumerated environment, like every policy command in `review`
 ([Policy comes from the base branch](../plugin/skills/review/SKILL.md#policy-comes-from-the-base-branch-not-the-change-under-review)).
 It reads the seed lenses from the plugin, and the configuration and the
 repository's lens directory (`review.lenses.dir`, resolved inside the base
-snapshot) from the base snapshot. A lens file the change adds or edits is a
-proposed policy change: `review` reviews its diff and does not run it.
+snapshot) from the base snapshot. A lens file the change adds, edits or deletes is a
+proposed policy change: `review` reviews its diff and never runs the
+proposed version. A lens the base snapshot holds runs in its base version as
+usual, whatever the change does to its file; a lens the change adds has no
+base version and is reported as `proposed`.
 
 A lens runs when at least one changed file matches its `paths` and none of
 its `exclude` globs, and, if it gives `added_lines` or `removed_lines`, when
@@ -335,8 +349,12 @@ review threads, where every finding reaches a terminal state through
   repository's pull requests merged in a date range, reads each one's
   threads, resolved ones included, with `list-unresolved-threads.ts
   --include-resolved`, takes the lens from the first comment and the
-  outcome from the last outcome-prefixed reply, and writes one `parity.tsv`
-  row per lens version;
+  outcome from the last outcome-prefixed reply by a trusted author
+  (`OWNER`, `MEMBER` or `COLLABORATOR`, the rule M8's thread sample already
+  applies), and writes one `parity.tsv`
+  row per lens version. A first comment counts only when its author is one
+  of the reviewer identities the repository configures; a lens marker from
+  anyone else is not a finding of that lens;
 - `accepted`, `wont-fix` and `deferred` count as true positives (the finding
   was right), `rejected` as a false positive, and `moot`, unresolved threads
   and threads whose replies were cut off by the listing's limit not at all;
@@ -421,5 +439,4 @@ shipped by then be promoted.
 ## Review
 
 Critiqued on 2026-10-21 in two rounds by reviewers with fresh context
-(subagents that did not write it), the second against commit `695e68b`;
-every point is settled in the text above.
+(subagents that did not write it), the second against commit `695e68b`.
