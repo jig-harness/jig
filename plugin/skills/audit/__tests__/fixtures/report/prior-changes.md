@@ -1,6 +1,6 @@
 Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.
 
-### What changed (132)
+### What changed (133)
 
 | Module | Criterion | Before → after | Change |
 |--------|-----------|----------------|--------|
@@ -69,6 +69,7 @@ Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/
 | M12 Parallel agent ergonomics | `gate-output-quiet-on-green` | not scored → absent | Added by Jig |
 | M12 Parallel agent ergonomics | `quiet-wrapper-self-tested` | not scored → absent | Added by Jig |
 | M12 Parallel agent ergonomics | `verdict-line-per-part` | not scored → absent | Added by Jig |
+| M12 Parallel agent ergonomics | `merge-conflict-hotspots-measured` | not scored → absent | Added by Jig |
 | M13 Pipeline economy | `superseded-pr-runs-cancelled` | not scored → absent | Added by Jig |
 | M13 Pipeline economy | `every-job-has-timeout` | not scored → absent | Added by Jig |
 | M13 Pipeline economy | `no-required-pipeline-path-filtered` | not scored → convention | Added by Jig |
