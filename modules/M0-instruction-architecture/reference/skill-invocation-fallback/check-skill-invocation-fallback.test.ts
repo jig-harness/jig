@@ -184,6 +184,37 @@ test("a reference link counts wherever its definition stands", () => {
   expectSpawnExit(check(doc(unused)), 1);
 });
 
+test("a fallback is a link where it is used, read from the one render", () => {
+  const link = "[procedure](skills/release-notes/SKILL.md)";
+  // A definition inside a container is a definition.
+  const quoted = `> Run /release-notes; read [procedure][release].\n>\n${"> filler\n".repeat(30)}>\n> [release]: skills/release-notes/SKILL.md\n`;
+  expectSpawnExit(check(doc(quoted)), 0);
+  // A destination's character references are decoded.
+  const encoded =
+    "Run /release-notes; read [procedure](skills/release&#45;notes/SKILL.md).\n";
+  expectSpawnExit(check(doc(encoded)), 0);
+  // Link syntax in code stays code, even when a real reference link and its
+  // definition stand elsewhere and the fence lies beyond the window.
+  const fenced = `[guide][release]\n\n[release]: skills/release-notes/SKILL.md\n\n\`\`\`\n${padding(15)}Run /release-notes ${link}\n${padding(15)}\`\`\`\n`;
+  expectSpawnExit(check(doc(fenced)), 1);
+});
+
+test("comment delimiters inside code are code, and the command is read", () => {
+  const text = "```\n<!--\nRun /release-notes\n-->\n```\n";
+  const result = check(doc(text));
+  expectSpawnExit(result, 1);
+  expect(result.output).toContain(":3:");
+  const span = "Run `<!-- /release-notes -->` now.\n";
+  expectSpawnExit(check(doc(span)), 1);
+});
+
+test("a finding names the invocation's own line in the file", () => {
+  const text = "<!--\nhidden\n-->\n\n[r]: elsewhere\n\nRun /release-notes.\n";
+  const result = check(doc(text));
+  expectSpawnExit(result, 1);
+  expect(result.output).toContain(":7:");
+});
+
 test("an invocation inside an HTML comment is not read", () => {
   const text =
     "<!-- Run /release-notes; [procedure](skills/release-notes/SKILL.md) -->\n";

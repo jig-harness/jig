@@ -26,12 +26,19 @@ among the files checked, or no skill to check. Its self-test sits beside it.
 
 ## What it decides
 
-- **An invocation** is `/<skill>` after the start of a line, a blank, a
-  quote, a backtick, an emphasis or strikethrough delimiter (`*`, `_`, `~`),
-  a table bar, or an opening parenthesis or bracket, and not continued by
-  another name character. A path (`skills/<skill>/`, `/<skill>/SKILL.md`,
-  `/<skill>.md`) is not one. Code is read like prose, since a command in an
-  example is still an instruction; text inside an HTML comment is not read.
+- **The file is read as a renderer shows it.** It is rendered once with a
+  CommonMark renderer (Bun's `Bun.markdown`), and invocations and links are
+  both read from that render, so code, containers, reference definitions and
+  escapes are what the renderer makes of them. The window is counted in the
+  rendered lines; a finding names the invocation's line in the file.
+- **An invocation** is `/<skill>` in the rendered text, after the start of a
+  line, a blank, a quote, the edge of code, emphasis, strikethrough, a link's
+  text or a table cell, or an opening parenthesis or bracket, and not
+  continued by another name character. A path (`skills/<skill>/`,
+  `/<skill>/SKILL.md`, `/<skill>.md`) and a link's destination are not one.
+  Code is read like prose, since a command in an example is still an
+  instruction, and comment delimiters inside code are code; text inside an
+  HTML comment is not read.
 - **A plugin's skills are not checked.** A plugin-namespaced command
   (`/<plugin>:<skill>`) falls back to the installed skill's `SKILL.md`,
   which lies outside the repository this check scans; the plugin's own
@@ -41,13 +48,15 @@ among the files checked, or no skill to check. Its self-test sits beside it.
   `<skill>/SKILL.md` (a mention that is no link does not count), the
   discovery path `.agents/skills/<skill>`, or a link to an interop document
   (a link whose target holds `interop`), the one marker shared by every
-  skill. A link is what a CommonMark renderer (Bun's `Bun.markdown`) shows
-  as one: an inline link, or a reference link whose definition may stand
-  anywhere in the file. An image, and link syntax inside code or an HTML
-  comment, is not a link. `--marker` replaces the default with the repository's own, such as the
-  path of the document that says how each runtime runs a skill; `{skill}` in
-  it stands for the invoked skill's name. The default window is 10 lines on
-  either side.
+  skill. A link is one the render holds, counted on the line where it is
+  used: an inline link, or a reference link whose definition may stand
+  anywhere in the file, inside a container or not. An image, and link syntax
+  inside code or an HTML comment, is not a link. `--marker` replaces the
+  default with the repository's own, such as the path of the document that
+  says how each runtime runs a skill; it is tested on the window's rendered
+  text, each link followed by its destination in angle brackets, and
+  `{skill}` in it stands for the invoked skill's name. The default window is
+  10 rendered lines on either side.
 - **A linked directory is scanned.** A symbolic link to a directory, such
   as a skill mirror's one link per skill, is followed, and each real
   directory is read once.

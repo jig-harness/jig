@@ -9,27 +9,31 @@
 // invocation of a named skill and fails the ones with no fallback for that
 // skill within --window lines on either side.
 //
-// A bare invocation is `/<skill>` preceded by the start of a line, a blank, a
-// quote, a backtick, an emphasis or strikethrough delimiter (`*`, `_`, `~`),
-// a table bar, or an opening parenthesis or bracket, and followed by a
-// character that cannot continue a skill name, or by the end of the line. Not
-// an invocation: a path (`skills/<skill>/SKILL.md`, `/<skill>/`,
-// `/<skill>.md`), and a plugin-namespaced command (`/<plugin>:<skill>`),
-// whose fallback, the installed skill's SKILL.md, lies outside the files
-// this check reads. Code is checked like prose: a command in an example is
-// still an instruction. Text inside an HTML comment is not read at all.
+// The file is read as a CommonMark renderer (`Bun.markdown`) shows it,
+// rendered once: invocations and links are both read from that render, line
+// by line, so code, containers, reference definitions, escapes and character
+// references are what the renderer makes of them, and the window is counted
+// in the rendered lines (a link reference definition or an HTML comment
+// shows none). A finding names the invocation's line in the file.
+//
+// A bare invocation is `/<skill>` in the rendered text, preceded by the start
+// of a line, a blank, a quote, the edge of code, emphasis, strikethrough, a
+// link's text or a table cell, or an opening parenthesis or bracket, and
+// followed by a character that cannot continue a skill name, or by the end of
+// the line. Not an invocation: a path (`skills/<skill>/SKILL.md`, `/<skill>/`,
+// `/<skill>.md`), a link's destination, and a plugin-namespaced command
+// (`/<plugin>:<skill>`), whose fallback, the installed skill's SKILL.md, lies
+// outside the files this check reads. Code is checked like prose: a command
+// in an example is still an instruction, and comment delimiters inside code
+// are code. An HTML comment is not read at all.
 //
 // A fallback names the skill it falls back to: a link whose target, resolved
 // from the file's directory, is `<skill>/SKILL.md`; the discovery path
 // `.agents/skills/<skill>`; or a link to an interop document (a target
 // holding `interop`), the one shared marker, since such a document covers
-// every skill. A link is what a CommonMark renderer (`Bun.markdown`) shows as
-// one: an inline or reference link, never an image, nor link syntax inside
-// code or an HTML comment. The window is rendered as one text, with the
-// file's link reference definitions, so a link broken across lines, or one
-// whose definition stands elsewhere in the file, still counts; and the link
-// must also be one in the whole file, so a window that cuts into a code block
-// cannot turn its code into a link.
+// every skill. A link is one the render holds, counted on the line where it
+// is used, wherever its definition stands; an image is not one, nor link
+// syntax inside code or an HTML comment.
 //
 // A file is exempted as a whole only when all three hold: it is named with
 // --exempt, it opens with a generated-file banner (an HTML comment starting
@@ -52,10 +56,11 @@
 //          [--window <lines>] [--exempt <file>]... [--banner <regex>]
 //          [--file-marker <text>] <path>...
 //   --marker       a fallback marker, a regular expression tested on the
-//                  window with HTML comments removed; `{skill}` in it stands
-//                  for the invoked skill's name; default: the fallbacks above
-//   --window       lines on either side of the invocation searched for a
-//                  marker; default 10
+//                  window's rendered text, each link followed by its
+//                  destination in angle brackets; `{skill}` in it stands for
+//                  the invoked skill's name; default: the fallbacks above
+//   --window       rendered lines on either side of the invocation searched
+//                  for a marker; default 10
 //   --banner       a generated-file banner, matched without case; default
 //                  `generated|do not edit`
 //   --file-marker  the text that, inside the banner, asks for the file-level
@@ -68,10 +73,7 @@ import { dirname, join, posix, relative, resolve } from "node:path";
 import { cli, strictOptions } from "../../../../lib/cli.ts";
 import { readRegularFile } from "../../../../lib/files.ts";
 import { type Finding, reportFindings } from "../../../../lib/findings.ts";
-import {
-  type MarkdownLink,
-  markdownLinks,
-} from "../../../../lib/markdown-links.ts";
+import { unescapeDestination } from "../../../../lib/markdown-links.ts";
 
 /** An input the check cannot run on; the `cli` boundary reports it as exit 2. */
 class UsageError extends Error {}
@@ -223,26 +225,19 @@ const escapeRegex = (text: string) =>
   text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
- * A bare `/<skill>`: after the line start, a blank, a quote, a backtick, an
- * emphasis or strikethrough delimiter, a table bar or an opening parenthesis
- * or bracket; not continued by a name character, a slash, underscores that
+ * A bare `/<skill>` in rendered text: after the line start, a blank, a quote,
+ * an inline element's edge, a delimiter the render kept as text, or an opening
+ * parenthesis or bracket; not continued by a name character, a slash, underscores that
  * run on into a name (ones that do not close emphasis, `_` or `__`), or a
  * colon or dot that runs on into a name (a namespace or a file name).
  */
 function invocationPattern(skills: string[]): RegExp {
   const names = skills.map(escapeRegex).join("|");
   return new RegExp(
-    `(?<=^|[\\s\`"'*_~|(\\[])/(${names})(?![A-Za-z0-9/-]|_+[A-Za-z0-9-]|[:.][A-Za-z0-9_-])`,
+    `(?<=^|[\\s\`"'*_~|(\\[${EDGE}])/(${names})(?![A-Za-z0-9/-]|_+[A-Za-z0-9-]|[:.][A-Za-z0-9_-])`,
     "g",
   );
 }
-
-/** The text with each HTML comment blanked out, its line breaks kept. */
-const visible = (text: string) =>
-  text.replace(/<!--[\s\S]*?-->/g, (comment) => comment.replace(/[^\n]/g, ""));
-
-/** The line a link reference definition opens on: `[label]:`. */
-const DEFINITION = /^ {0,3}\[(?:[^\]\\]|\\.)+\]:/;
 
 /** The path of a link target, without its fragment, query or origin. */
 function targetPath(target: string): string {
@@ -262,67 +257,166 @@ function fallbackTarget(target: string, skill: string, dir: string): boolean {
   return posix.normalize(full).endsWith(`/${skill}/SKILL.md`);
 }
 
-/** The link targets `markdown` renders, images left out. */
-function renderedLinks(markdown: string): string[] {
-  const targets: string[] = [];
-  const callbacks = {
-    link: (children: string | undefined, meta: { href?: unknown }) => {
-      if (typeof meta?.href === "string") targets.push(meta.href);
-      return children ?? "";
-    },
-    image: () => "",
-  };
-  Bun.markdown.render(
-    markdown,
-    callbacks as unknown as Parameters<typeof Bun.markdown.render>[1],
-  );
-  return targets;
-}
-
 /**
- * A file's links as its renderer reads them, and its link reference
- * definitions that some link uses: their 0-based lines and their text.
+ * The characters the reading writes into a render: around a text node, at an
+ * inline element's edge, and around a link's number. The file's own are
+ * replaced before it is rendered, so none is ever read as one of these.
  */
-interface FileLinks {
-  links: MarkdownLink[];
-  definitionLines: Set<number>;
-  definitions: string;
-}
+const TEXT_OPEN = "\uE000";
+const TEXT_CLOSE = "\uE001";
+const EDGE = "\uE002";
+const LINK_OPEN = "\uE003";
+const LINK_CLOSE = "\uE004";
+const RESERVED = /[\uE000-\uE004]/g;
+const TEXT = /\uE000([^\uE001]*)\uE001/g;
+const LINK = /\uE003(\d+)\uE004/g;
+const COMMENT = /<!--[\s\S]*?-->/g;
 
-function fileLinks(shownText: string, shownLines: string[]): FileLinks {
-  const links = markdownLinks(shownText);
-  const linkLines = new Set(links.map((link) => link.line - 1));
-  const definitionLines = new Set<number>();
-  const kept: string[] = [];
-  shownLines.forEach((line, index) => {
-    if (!DEFINITION.test(line)) return;
-    // A definition's destination stands on its own line or the next.
-    const end = linkLines.has(index)
-      ? index
-      : linkLines.has(index + 1)
-        ? index + 1
-        : -1;
-    if (end < 0) return;
-    for (let at = index; at <= end; at++) definitionLines.add(at);
-    kept.push(shownLines.slice(index, end + 1).join("\n"));
-  });
-  return { links, definitionLines, definitions: kept.join("\n\n") };
+/** The text with each HTML comment blanked out, its line breaks kept. */
+const uncommented = (text: string) =>
+  text.replace(COMMENT, (comment) => comment.replace(/[^\n]/g, ""));
+
+/** Each text node's own text, `keep` applied to it. */
+const unwrap = (
+  text: string,
+  keep: (node: string) => string = (node) => node,
+) => text.replace(TEXT, (_, node: string) => keep(node));
+
+/**
+ * A file as its renderer shows it, line by line: `prose` is what invocations
+ * are read from, `shown` is what a marker is tested on (each link followed by
+ * its destination in angle brackets), and `links` holds each line's link
+ * destinations.
+ */
+interface Reading {
+  prose: string[];
+  shown: string[];
+  links: string[][];
 }
 
 /**
- * Whether the window `from`..`to` (0-based lines, inclusive) names a
- * fallback for `skill`. `lines` are free of comments.
+ * The file rendered once (`Bun.markdown`), so code, containers, reference
+ * definitions, escapes and character references are read as a renderer reads
+ * them. Every block ends its own line, so the lines are the rendered text's.
+ * An HTML comment shows nothing: an HTML block has its comments removed, and
+ * inline HTML that is a whole comment is dropped; the same text inside code
+ * stays, since there it is shown.
+ */
+function read(markdown: string): Reading {
+  const destinations: string[] = [];
+  const edged = (children: string | undefined) =>
+    `${EDGE}${children ?? ""}${EDGE}`;
+  const block = (children: string | undefined) => `${children ?? ""}\n\n`;
+  const own = (children: string | undefined) => children ?? "";
+  const callbacks = {
+    text: (children: string | undefined) =>
+      `${TEXT_OPEN}${children ?? ""}${TEXT_CLOSE}`,
+    paragraph: block,
+    heading: block,
+    hr: () => "\n\n",
+    code: (children: string | undefined) => {
+      const code = unwrap(children ?? "");
+      return `${code}${code.endsWith("\n") ? "" : "\n"}\n`;
+    },
+    html: (children: string | undefined) =>
+      `${uncommented(unwrap(children ?? ""))}\n`,
+    codespan: (children: string | undefined) => edged(unwrap(children ?? "")),
+    strong: edged,
+    emphasis: edged,
+    strikethrough: edged,
+    th: edged,
+    td: edged,
+    tr: (children: string | undefined) => `${children ?? ""}\n`,
+    table: block,
+    listItem: (children: string | undefined) => {
+      const item = children ?? "";
+      return item.endsWith("\n") ? item : `${item}\n`;
+    },
+    list: own,
+    blockquote: own,
+    thead: own,
+    tbody: own,
+    link: (children: string | undefined, meta: { href?: unknown }) => {
+      if (typeof meta?.href !== "string") return edged(children);
+      destinations.push(unescapeDestination(meta.href));
+      return `${edged(children)}${LINK_OPEN}${destinations.length - 1}${LINK_CLOSE}`;
+    },
+    image: own,
+  };
+  const rendered = unwrap(
+    Bun.markdown.render(
+      markdown.replace(/\r\n?/g, "\n").replace(RESERVED, "\uFFFD"),
+      callbacks as unknown as Parameters<typeof Bun.markdown.render>[1],
+    ),
+    (node) =>
+      /^<!--[\s\S]*-->$/.test(node) ? node.replace(/[^\n]/g, "") : node,
+  );
+  const lines = rendered.split("\n");
+  return {
+    prose: lines.map((line) => line.replace(LINK, "")),
+    shown: lines.map((line) =>
+      line
+        .replace(LINK, (_, id: string) => ` <${destinations[Number(id)]}>`)
+        .replaceAll(EDGE, ""),
+    ),
+    links: lines.map((line) =>
+      [...line.matchAll(LINK)].map(([, id]) => destinations[Number(id)] ?? ""),
+    ),
+  };
+}
+
+/** The skill of each invocation in `prose`, with its 0-based line. */
+function invocations(
+  prose: string[],
+  pattern: RegExp,
+): { skill: string; line: number }[] {
+  return prose.flatMap((text, line) =>
+    [...text.matchAll(pattern)].map((match) => ({
+      skill: match[1] ?? "",
+      line,
+    })),
+  );
+}
+
+/**
+ * The 1-based source line of the `nth` invocation of `skill` (0-based): the
+ * shortest leading part of the file whose render already holds it. Used for
+ * the report only; the window is measured in the rendered lines.
+ */
+function sourceLine(
+  lines: string[],
+  pattern: RegExp,
+  skill: string,
+  nth: number,
+): number {
+  const holds = (count: number) =>
+    invocations(read(lines.slice(0, count).join("\n")).prose, pattern).filter(
+      (found) => found.skill === skill,
+    ).length > nth;
+  let low = 1;
+  let high = lines.length;
+  if (!holds(high)) return 1;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (holds(middle)) high = middle;
+    else low = middle + 1;
+  }
+  return low;
+}
+
+/**
+ * Whether the rendered lines `from`..`to` (0-based, inclusive) name a
+ * fallback for `skill`.
  */
 function namesFallback(
-  lines: string[],
+  reading: Reading,
   from: number,
   to: number,
   skill: string,
   dir: string,
   options: Options,
-  file: () => FileLinks,
 ): boolean {
-  const around = lines.slice(from, to + 1).join("\n");
+  const around = reading.shown.slice(from, to + 1).join("\n");
   if (options.marker !== undefined)
     return regex(
       options.marker.replaceAll("{skill}", escapeRegex(skill)),
@@ -335,16 +429,11 @@ function namesFallback(
     ).test(around)
   )
     return true;
-  const { links, definitionLines, definitions } = file();
-  const inFile = links.some(
-    ({ target, line }) =>
-      (definitionLines.has(line - 1) || (line - 1 >= from && line - 1 <= to)) &&
-      fallbackTarget(target, skill, dir),
-  );
-  if (!inFile) return false;
-  return renderedLinks(`${around}\n\n${definitions}`).some((target) =>
-    fallbackTarget(target, skill, dir),
-  );
+  return reading.links
+    .slice(from, to + 1)
+    .some((targets) =>
+      targets.some((target) => fallbackTarget(target, skill, dir)),
+    );
 }
 
 /** The banner: an HTML comment that opens in the file's first lines. */
@@ -363,13 +452,6 @@ function checkFile(file: string, options: Options): Finding[] {
   const shown = relative(process.cwd(), file).replaceAll("\\", "/") || file;
   const text = readRegularFile(file);
   const lines = text.split(/\r?\n/);
-  const shownText = visible(text);
-  const shownLines = shownText.split(/\r?\n/);
-  let links: FileLinks | undefined;
-  const linksOf = () => {
-    links ??= fileLinks(shownText, shownLines);
-    return links;
-  };
   const dir = resolve(dirname(file)).replaceAll("\\", "/");
   const findings: Finding[] = [];
   if (options.exempt.has(resolve(file))) {
@@ -390,22 +472,22 @@ function checkFile(file: string, options: Options): Finding[] {
     });
   }
   const pattern = invocationPattern(options.skills);
-  shownLines.forEach((line, index) => {
-    for (const match of line.matchAll(pattern)) {
-      const skill = match[1] ?? "";
-      const from = Math.max(0, index - options.window);
-      const to = index + options.window;
-      if (namesFallback(shownLines, from, to, skill, dir, options, linksOf))
-        continue;
-      findings.push({
-        rule: RULE,
-        file: shown,
-        line: index + 1,
-        problem: `/${skill} names no fallback within ${options.window} lines`,
-        remedy: `beside the slash command, link ${skill}/SKILL.md (or name .agents/skills/${skill}/, or link the interop document), so a runtime without /${skill} can still run it`,
-      });
-    }
-  });
+  const reading = read(text);
+  const seen = new Map<string, number>();
+  for (const { skill, line } of invocations(reading.prose, pattern)) {
+    const nth = seen.get(skill) ?? 0;
+    seen.set(skill, nth + 1);
+    const from = Math.max(0, line - options.window);
+    const to = line + options.window;
+    if (namesFallback(reading, from, to, skill, dir, options)) continue;
+    findings.push({
+      rule: RULE,
+      file: shown,
+      line: sourceLine(lines, pattern, skill, nth),
+      problem: `/${skill} names no fallback within ${options.window} lines`,
+      remedy: `beside the slash command, link ${skill}/SKILL.md (or name .agents/skills/${skill}/, or link the interop document), so a runtime without /${skill} can still run it`,
+    });
+  }
   return findings;
 }
 
