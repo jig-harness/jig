@@ -9,8 +9,18 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
+import { run } from "../proc.ts";
 
 const entry = resolve(import.meta.dir, "../command.ts");
+const killedProducer =
+  "require('node:fs').writeFileSync(1, '{\"partial\":');process.kill(process.pid,'SIGKILL')";
+const signalTest = test.skipIf(
+  skipsOnWindows(
+    "process-lifecycle",
+    "POSIX reports self-SIGKILL as a signal; Windows termination reports numeric statuses",
+  ),
+);
 
 test("an explicit diagnostic status saves output without accepting operational failures", () => {
   const dir = mkdtempSync(join(tmpdir(), "jig-command-diagnostics-"));
@@ -62,6 +72,60 @@ test("invalid diagnostic statuses refuse before the producer runs", () => {
     expect(result.stdout.toString()).not.toContain("ran");
   }
 });
+
+signalTest(
+  "the runner preserves signal termination separately from exit status",
+  async () => {
+    const result = await run([process.execPath, "-e", killedProducer], {
+      timeoutSec: 5,
+    });
+    expectSpawnExit(
+      { exitCode: result.code, stdout: result.stdout, stderr: result.stderr },
+      1,
+    );
+    expect(result).toMatchObject({
+      signal: "SIGKILL",
+      stdout: '{"partial":',
+      timedOut: false,
+      bufferExceeded: false,
+      spawnFailed: false,
+    });
+  },
+);
+
+signalTest(
+  "preserves the destination on signal termination despite accepted status 1",
+  () => {
+    const dir = mkdtempSync(join(tmpdir(), "jig-command-signal-"));
+    const output = join(dir, "report.json");
+    const sentinel = "previous report";
+    try {
+      writeFileSync(output, sentinel);
+      const result = Bun.spawnSync(
+        [
+          process.execPath,
+          entry,
+          "--stdout-file",
+          output,
+          "--stdout-exit-code",
+          "1",
+          "--timeout-seconds",
+          "5",
+          "--",
+          "bun",
+          "-e",
+          killedProducer,
+        ],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+      expectSpawnExit(result, 1);
+      expect(statSync(output).size).toBe(Buffer.byteLength(sentinel));
+      expect(readFileSync(output, "utf8")).toBe(sentinel);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
 test.each([
   {

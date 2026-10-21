@@ -15,9 +15,9 @@ release: minor
   requiring a Bash shell. A repository gate checks skill instructions for
   shell-dependent commands.
 - File-output commands can explicitly save complete diagnostic reports from
-  a finding exit status while preserving existing reports on runner failures
-  or truncated output. Explicit trace environment edits survive child
-  execution.
+  a finding exit status while preserving existing reports on runner failures,
+  reported signal termination or truncated output. Explicit trace environment
+  edits survive child execution.
 
 ### Changed
 

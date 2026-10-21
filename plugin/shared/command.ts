@@ -146,6 +146,7 @@ export async function main(argv: string[]): Promise<number> {
     !result.timedOut &&
     !result.bufferExceeded &&
     !result.spawnFailed &&
+    !result.signal &&
     options.outputExitCodes.has(result.code)
   )
     writeFileSync(output, result.stdout);
