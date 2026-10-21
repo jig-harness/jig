@@ -70,6 +70,7 @@ import type {
 
 /** A consumer's recorded baselines, with the citation each states. */
 const PINNED: Record<string, { value: number; cites: string }> = {
+  merge_conflict_share: { value: 0, cites: "| conflict share | 0 |" },
   rounds_median: { value: 10, cites: "| median heads | 10 |" },
   rounds_p90: { value: 25, cites: "| p90 heads | 25 |" },
   late_round_thread_share: { value: 1226 / 1756, cites: "1226/1756" },
@@ -379,6 +380,7 @@ describe("the baseline table", () => {
     };
     // Measured 2 of 2 eligible (rounds >= 2): 1 of 2 self-inflicted.
     expect(currentValues(pr, linear)).toEqual({
+      merge_conflict_share: null,
       rounds_median: 3,
       rounds_p90: 4,
       late_round_thread_share: 1 / 3,
@@ -1299,7 +1301,7 @@ describe("runScoreboard", () => {
     const { scoreboard, gaps } = await runScoreboard(OPTS, d);
     expect(scoreboard.pr?.prs).toBe(1);
     expect(gaps).toEqual([
-      "1 PR(s) could not be sampled and are absent from every PR-side figure, so PR-side verdicts are withheld: #11",
+      "1 PR(s) could not be sampled and are absent from the review figures, so review verdicts are withheld; conflict records can still cover them: #11",
       // Its one sampled PR carries no post-first-round thread, so the
       // self-inflicted population is absent, not merely thin.
       "no thread was raised after the first reviewed head, so self-inflicted has no population and reads not-measured",

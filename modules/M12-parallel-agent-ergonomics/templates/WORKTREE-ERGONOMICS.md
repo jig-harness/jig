@@ -169,6 +169,19 @@ drive mailbox of
 its layout and the alternatives per agent runner are in the module's
 **[mappings](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md#control-channels)**.
 
+### 10. Measure merge conflicts
+
+Where work runs in parallel, retain dated reports of where merges conflict,
+with their causes, time window, recurrence threshold and coverage limits.
+Remove each recurring path's cause or record why it stays and when to
+revisit that choice. Compare windows of the same length and scope before
+and after a remedy. Feed recurring causes into the existing learning loop.
+The read-only replay in
+[Jig's resolve-conflicts skill](https://github.com/jig-harness/jig/blob/main/plugin/skills/resolve-conflicts/SKILL.md#where-past-merges-conflicted-the-history-report)
+provides the report; the skill's separate live record covers resolutions in
+this clone that replay cannot see. Neither an empty replay nor silence
+from the live record proves that no conflict occurred.
+
 ## Adopt it
 
 1. Vendor `reference/port-allocator/` and `reference/resource-lock/` (or copy the
@@ -192,3 +205,6 @@ its layout and the alternatives per agent runner are in the module's
    drive mailbox for review loops, with its push-hold recheck as the last
    pre-push hook command, or the same closed set of directives built into
    your own loop.
+9. Where work runs in parallel, retain merge-conflict reports and link every
+   hotspot to a remedy or a keep decision (rule 10); compare equivalent
+   windows after remedies land.

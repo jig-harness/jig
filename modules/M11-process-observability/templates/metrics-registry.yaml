@@ -102,6 +102,14 @@ metrics:
     source: event:heartbeat.red_or_stale_jobs
     owner: <platform-team>
 
+  # --- parallel work (M12) ---
+  - id: merge-conflict-share
+    description: share of observed merged PRs that met at least one conflict,
+      with measured PRs over the forge's full merged-PR cohort as coverage;
+      unknown PRs bound the whole-cohort share and can withhold the verdict
+    source: query:merge_conflicts_replay_and_live_over_merged_pr_cohort
+    owner: <delivery-lead>
+
   # --- flow (cycle time) ---
   - id: open-to-ready-cycle-time
     description: median elapsed_ms for cycle_time events at stage=open-to-ready

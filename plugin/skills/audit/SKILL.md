@@ -154,6 +154,29 @@ survey it yourself, prompt by prompt. Parallel surveys of a mature
 repository take a few hundred thousand tokens in all; say so before
 starting when the user may not expect it.
 
+For M12's merge-conflict evidence where work runs in parallel, run the
+sibling skill's read-only replay once from the target repository:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../resolve-conflicts/scripts/history.ts" --days 30 --json > <scratch>/merge-conflicts.json
+```
+
+Give survey 3 this report with the draft. Keep the window, recurrence
+threshold, reachable-ref scope, skipped merges and cause-accuracy statement in the synthesis. The replay never
+fetches and writes its temporary objects outside the repository; do not
+fetch pull-request heads just for the audit. If git is unsupported or the
+report fails, record the command and error as unchecked evidence; never
+turn a failed or empty report into a clean history. The audit's run shows
+current conflicts, not that the repository already practices measurement:
+score `M12/merge-conflict-hotspots-measured` from its retained reports and
+hotspot remedies or keep decisions. The history report does not read live
+events: if retained live-event evidence is supplied separately, state its
+clone-local coverage; its silence never proves a clean branch. Do not write conflict events, reflection
+findings or tracker issues during the read-only audit. For a historical
+snapshot, current refs and this clone's live events describe a different
+population: mark the replay inapplicable to that snapshot and score from
+its recorded evidence instead.
+
 Then run the drift pass yourself, once, as `references/methodology.md` says:
 drift crosses modules, and surveys that each look for it report the same
 contradiction several times. Detect the stack and the repository host's

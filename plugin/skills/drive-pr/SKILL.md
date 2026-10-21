@@ -2371,6 +2371,17 @@ means the scoreboard is **partial** and is still printed. Who runs it, when,
 and where the result is recorded is the repository's decision; this section
 deliberately does not set it.
 
+The same PR window includes `merge_conflict_share`: the share of observed
+merged PRs that met a conflict. It reads the sibling conflict-history report
+and this clone’s live events. A PR is observed clean only when its own merge
+ancestry is fully replayed and the forge reports no force-push. Unknown PRs
+stay in the cohort: the report prints coverage and whole-cohort bounds, and
+withholds a verdict below `merge_conflicts.coverage_floor` in the fleet-health
+file (default `0.9`), or when those bounds reach different verdicts. Record its
+baseline as `baselines.merge_conflict_share.value` in that file. A capped forge
+list withholds the verdict. Missing heads and invisible resolutions in other
+clones are coverage limits, never evidence that a PR was clean.
+
 ### Ceremony versus progress — is the loop still producing product?
 
 **judgment** — Assess the sensor evidence under its signal lifecycle; use the exact sampler below.

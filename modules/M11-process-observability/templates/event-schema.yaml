@@ -46,6 +46,15 @@ event_types:
   - type: deploy_result
     required: [environment, result, duration_ms]
 
+  # One conflicted path when a merge, rebase, cherry-pick or revert concludes.
+  # Deduplicate replay and live evidence by concluding commit + path.
+  # Optional: commit, pr, decision, reason, causes, regions, resolution_ms,
+  # source (drive-pr or session), ours_commit, theirs_commit and incoming_commit.
+  # The local live record can have cause=null when attribution failed; an
+  # exporter must retain that gap as cause=unknown, never guess a known cause.
+  - type: merge_conflict
+    required: [operation, path, cause]
+
   # A liveness ping proving an emitter is not silently dark. It names the
   # emitter, so its ABSENCE is a signal about that one (it stopped emitting).
   # The heartbeat watcher (reference/heartbeat/) has one emitted per run, from

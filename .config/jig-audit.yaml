@@ -832,6 +832,10 @@ criteria:
     # A gate run with several parts ends each part with one named verdict line, and its reader treats a part without one as not run, never as passed.
     score: absent
     evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: scripts/gates.ts prints no line per step, stops at the first failing step and prints all gates passed only when every step passed; no rule in AGENTS.md or CONTRIBUTING.md reads a missing verdict as not run"
+  M12/merge-conflict-hotspots-measured:   # standard, requires convention
+    # A repository working in parallel measures where its merges conflict, and each conflict hotspot is removed at its cause or kept by a recorded decision with a reason and a condition for revisiting it.
+    score: not-examined
+    evidence: "The recorded commit a66ee2269e50bdb33434f8c3f741ac337ec86a65 is unavailable in this checkout and origin does not serve that object; existing record evidence establishes parallel work but supplies no retained conflict reports or hotspot decisions. Left not-examined because the snapshot cannot be inspected; the next audit must inspect an available snapshot rather than treating this as a verified search of the old tree."
   # M13 pipeline-economy
   M13/superseded-pr-runs-cancelled:   # lite, requires mechanical
     # A new push to a pull request cancels that pull request's runs for the older head, so CI is not spent on a head no one will merge.

@@ -433,8 +433,11 @@ below marked required must be present, and an unknown key is an error.
 | `ledger.label` | label, or `null` | no; default `labels.followup` | Label of the debt ledger `fractal-metrics.ts` reports |
 | `ledger.project` | tracker project, or `null` | no | A project whose issues also belong to the ledger |
 | `ledger.closed_state_types` | non-empty list of state types | no; default `[completed, canceled, duplicate]` | Tracker state types that close a ledger issue |
+| `merge_conflicts.coverage_floor` | number 0–1 | no; default `0.9` | Minimum observed share of the scoreboard’s forge-listed merged PR cohort before `drive-pr` judges `merge_conflict_share`; unknown PRs must also leave both whole-cohort bounds at the same verdict |
 | `baselines.<metric>.value` | number | per baseline | A recorded baseline for one scoreboard metric |
 | `baselines.<metric>.source` | `{file, needle}` | no | The document recording that number and a substring that must still appear in it, so a stale baseline is caught |
+
+`baselines.merge_conflict_share.value` records the share of observed merged pull requests that met a conflict, using the scoreboard’s PR window. Replay of the PR’s own merge ancestry and this clone’s live events establish conflicts. A clean observation additionally needs complete replay coverage and a forge timeline without force-pushes; silence in the live record does not establish it. The report states the unknown share and whole-cohort bounds, and withholds a verdict when their endpoints disagree. The default coverage floor keeps older fleet-health files readable.
 
 Beside `stuck-epic` the sensor reports an **epic census** of the started epics,
 read-only and never commented on an epic: `finished-but-open` (every child
