@@ -28,6 +28,14 @@ export const CANONICAL_STATES = [
   "duplicate",
 ] as const;
 
+/** The state categories of an issue that is not finished: triaged, waiting or in progress. */
+export const OPEN_STATE_TYPES = [
+  "triage",
+  "backlog",
+  "unstarted",
+  "started",
+] as const;
+
 export type CanonicalState = (typeof CANONICAL_STATES)[number];
 
 /**
