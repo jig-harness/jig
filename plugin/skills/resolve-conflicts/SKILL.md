@@ -462,11 +462,18 @@ the picked or replayed commit with its author and date (the merge a
 parent), the revert with its `This reverts commit` line. A `fixup!` or
 `squash!` commit that conflicted is folded into the commit before it, so its
 conclusion stands beside the stopped commit instead of above it, and counts
-too. An aborted operation leaves its snapshot behind, and the next ordinary
+too, also when the rebase replayed further commits after it. An aborted operation leaves its snapshot behind, and the next ordinary
 commit is not taken for its conclusion. One conflict is one record,
 identified by that commit and the path, or by the operation (its kind and two
 sides) and the path, so a commit amended afterwards, or a rebase stop run
-again after an abort, counts once.
+again after an abort, counts once. A path the operation merged cleanly, mapped
+only because `record.ts` recorded a decision for an adjustment to it, has no
+event.
+
+When `conflict-map.ts` replaces the snapshot of an operation whose events
+cannot be written, it keeps that snapshot as pending in
+`$(git rev-parse --git-path jig)/pending/`; the next `events.ts` records it
+and removes it, and exits 1 while one still cannot be recorded.
 
 Each line is an event of type `merge_conflict`:
 
@@ -475,17 +482,19 @@ Each line is an event of type `merge_conflict`:
 | `type`, `ts` | `merge_conflict`; when the operation concluded (the committer date) |
 | `operation` | `merge`, `rebase`, `cherry-pick` or `revert` |
 | `path` | the conflicted path |
-| `cause`, `causes`, `regions` | the cause that stands for the path (`overlap` or `structural` when it has one, else the cause of most regions), all its causes, and how many conflicting regions it had |
+| `cause`, `causes`, `regions` | the cause that stands for the path (`overlap` or `structural` when it has one, else the cause of most regions), all its causes, and how many conflicting regions it had; `null`, empty and `null` when the cause could not be derived |
 | `decision`, `reason` | what `record.ts` stored for the path |
 | `resolution_ms` | from the last `conflict-map.ts` run to the conclusion |
-| `source` | `drive-pr` when `$DRIVE_PR_ROUND_TASK` is `conflict-resolve` (the resolution a drive's conflict-resolve round started), else `session` |
+| `source` | `drive-pr` when `$DRIVE_PR_ROUND_TASK` was `conflict-resolve` (a drive's conflict-resolve round) when `conflict-map.ts` first mapped the operation, else `session` |
 | `pr` | the pull request being driven (`$DRIVE_PR_TARGET`) when `source` is `drive-pr`, else null |
 | `commit`, `branch` | the concluding commit, and the branch the operation ran on |
 | `ours_commit`, `ours_ref`, `theirs_commit`, `theirs_ref` | the two sides as git names them for the operation (in a rebase, `ours` is the upstream) |
 
 The regions are found again from the path's three versions with
-`git merge-file` and the histogram diff `git merge` uses, not read from the
-snapshot's hunks, and run through the replay's cause rules. A repository's
+`git merge-file` and the histogram diff `git merge` uses (Git before 2.44
+cannot choose the diff, so there the default diff is used and region
+boundaries can differ), not read from the snapshot's hunks, and run through
+the replay's cause rules. A repository's
 merge drivers and renormalization do not apply to that second merge, so a
 cause is derived from the three versions, not read from git's own run.
 

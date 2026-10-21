@@ -45,7 +45,7 @@ import {
 } from "./lib/classify.ts";
 import { indexAttributesGit } from "./lib/attributes.ts";
 import { git, isBinaryBlob, splitNul, topLevel } from "./lib/git.ts";
-import { recordConcluded } from "./lib/events.ts";
+import { attributionOf, keepPending, recordConcluded } from "./lib/events.ts";
 import { parseHunks, writtenMarkerSize } from "./lib/markers.ts";
 import {
   detectOperation,
@@ -447,8 +447,13 @@ export function mergeSnapshot(
   const kept = Object.values(paths).filter(
     (entry) => entry.resolution.decision,
   ).length;
+  const attribution = previous.attribution ?? fresh.attribution;
   return {
-    snapshot: { ...fresh, paths },
+    snapshot: {
+      ...fresh,
+      ...(attribution === undefined ? {} : { attribution }),
+      paths,
+    },
     note: `updated: kept ${kept} recorded decision${kept === 1 ? "" : "s"}${cleared.length === 0 ? "" : `; cleared the decision for ${cleared.sort().join(", ")}, whose class or regeneration command changed: record it again`}`,
   };
 }
@@ -565,7 +570,9 @@ function recordedSizes(
 /**
  * An earlier operation's snapshot is about to be overwritten: keep its events
  * if it concluded and nobody recorded them (each stop of a rebase is a new
- * operation, and `events.ts` runs once, after the last). Never stops the map.
+ * operation, and `events.ts` runs once, after the last). When the record
+ * cannot be written, the snapshot is kept as pending for `events.ts` to
+ * record later. Never stops the map.
  */
 function recordBeforeReplacing(root: string, previous: Snapshot): void {
   try {
@@ -575,8 +582,9 @@ function recordBeforeReplacing(root: string, previous: Snapshot): void {
         `conflict-map: recorded ${done.written} merge_conflict event${done.written === 1 ? "" : "s"} of the ${describeOperation(previous.operation)} before replacing its snapshot`,
       );
   } catch (err) {
+    const kept = keepPending(root, previous);
     console.error(
-      `conflict-map: could not record the events of the ${describeOperation(previous.operation)}: ${err instanceof Error ? err.message : err}`,
+      `conflict-map: could not record the events of the ${describeOperation(previous.operation)}: ${err instanceof Error ? err.message : err}. ${kept === null ? "Its snapshot could not be kept either; its events are lost." : `Its snapshot is kept in ${kept}; events.ts records it once the record can be written.`}`,
     );
   }
 }
@@ -628,6 +636,7 @@ async function main(): Promise<number> {
     warning: warningOf(op.warning, catalog),
     catalogIncomplete: catalog.incomplete,
     mappedAt: new Date().toISOString(),
+    attribution: attributionOf(process.env),
     paths,
   };
   const { snapshot, note } = mergeSnapshot(

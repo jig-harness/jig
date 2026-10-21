@@ -6,7 +6,10 @@
  * worktree of the clone shares and nothing commits. Run it after the commit
  * (merge, cherry-pick, revert) or after `git rebase --continue`; recording the
  * same operation again adds nothing, and `conflict-map.ts` records an
- * operation a later map would otherwise overwrite.
+ * operation a later map would otherwise overwrite. It also records the
+ * snapshots `conflict-map.ts` kept as pending because the record could not be
+ * written then; one that still cannot be recorded stays pending and makes the
+ * exit 1.
  *
  * Usage: bun events.ts [--json]
  *
@@ -17,7 +20,7 @@
  * progress (conclude it first).
  */
 import { fail, runMain } from "../../../shared/cli.ts";
-import { recordConcluded } from "./lib/events.ts";
+import { flushPending, recordConcluded } from "./lib/events.ts";
 import { topLevel } from "./lib/git.ts";
 import { NoOperation, detectOperation } from "./lib/operation.ts";
 import { loadSnapshot, sameOperation } from "./lib/snapshot.ts";
@@ -41,9 +44,10 @@ async function main(): Promise<number> {
   }
   const say = (message: string, detail: object = {}) =>
     console.log(json ? JSON.stringify({ message, ...detail }) : message);
+  const pending = recordPending(root, say);
   if (snapshot === null) {
     say("no conflict snapshot: nothing to record");
-    return 0;
+    return pending;
   }
   try {
     if (sameOperation(snapshot, detectOperation(root)))
@@ -63,13 +67,36 @@ async function main(): Promise<number> {
         `recorded ${done.written} merge_conflict event${done.written === 1 ? "" : "s"} for ${done.commit.slice(0, 12)}${done.skipped > 0 ? ` (${done.skipped} already recorded)` : ""} in ${done.file}`,
         done,
       );
-    return 0;
+    return pending;
   } catch (err) {
     return fail(
       1,
       `events: the live record could not be written: ${err instanceof Error ? err.message : err}. The conclusion stands.`,
     );
   }
+}
+
+/** Record the pending snapshots; 1 when one still cannot be recorded. */
+function recordPending(
+  root: string,
+  say: (message: string, detail?: object) => void,
+): number {
+  let status = 0;
+  for (const { file, result } of flushPending(root)) {
+    if ("error" in result) {
+      status = 1;
+      console.error(
+        `events: the pending snapshot ${file} is still not recorded: ${result.error}`,
+      );
+    } else
+      say(
+        result.commit === null
+          ? `pending snapshot ${file}: its operation did not conclude; nothing recorded`
+          : `pending snapshot ${file}: recorded ${result.written} merge_conflict event${result.written === 1 ? "" : "s"} for ${result.commit.slice(0, 12)}`,
+        result,
+      );
+  }
+  return status;
 }
 
 if (import.meta.main) runMain("events", main);

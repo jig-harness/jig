@@ -105,6 +105,19 @@ export interface PathEntry {
   hunks: Hunk[];
   intent: { ours: Intent; theirs: Intent };
   resolution: Resolution;
+  /**
+   * `true` for a path the operation merged cleanly, mapped only because a
+   * manual adjustment to it needed a decision. Absent for a path that
+   * conflicted.
+   */
+  clean?: true;
+}
+
+/** What started the resolution: a drive's conflict-resolve round, or a session. */
+export interface Attribution {
+  source: "drive-pr" | "session";
+  /** The pull request being driven, when `source` is `drive-pr`. */
+  pr: number | null;
 }
 
 export interface Snapshot {
@@ -132,6 +145,11 @@ export interface Snapshot {
    */
   catalogIncomplete?: string | null;
   mappedAt: string;
+  /**
+   * What started the resolution, taken when the operation was first mapped.
+   * Absent in a snapshot an earlier version wrote.
+   */
+  attribution?: Attribution;
   paths: Record<string, PathEntry>;
 }
 
@@ -320,6 +338,18 @@ function entryProblem(value: unknown): string | null {
     if (problem !== null) return `has an intent for ${name} that ${problem}`;
   }
   if (!isRecord(value.resolution)) return "has no resolution";
+  if (value.clean !== undefined && value.clean !== true)
+    return "has a clean flag that is not true";
+  return null;
+}
+
+function attributionProblem(value: unknown): string | null {
+  if (value === undefined) return null;
+  if (!isRecord(value)) return "is not an object";
+  if (value.source !== "drive-pr" && value.source !== "session")
+    return "has an unknown source";
+  if (value.pr !== null && !isPositiveInteger(value.pr))
+    return "has a pull request that is not a positive integer";
   return null;
 }
 
@@ -352,6 +382,8 @@ function mapProblem(value: Record<string, unknown>): string | null {
   if (!isStringOrNull(value.catalogIncomplete ?? null))
     return "catalogIncomplete is not a string";
   if (typeof value.mappedAt !== "string") return "no mapping time";
+  const attribution = attributionProblem(value.attribution);
+  if (attribution !== null) return `attribution ${attribution}`;
   if (!isRecord(value.paths)) return "the path map is not an object";
   for (const [path, entry] of Object.entries(value.paths)) {
     const problem = entryProblem(entry);

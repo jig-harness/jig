@@ -14,6 +14,7 @@ release: minor
   rebases, cherry-picks and reverts that the merge-history report cannot
   replay, and the file is shared by every worktree of the clone and never
   committed. The skill's conclude step runs it, and mapping the next stop of a
-  rebase records the earlier stop first.
+  rebase records the earlier stop first; when that record cannot be written,
+  the earlier stop's snapshot is kept and the next `events.ts` records it.
 - The `Conflicts resolved:` section of a commit message names each path's
   cause (`[cause: append]`) after its decision.

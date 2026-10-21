@@ -4,7 +4,9 @@
  * versions of each text file with `git merge-file` and the histogram diff
  * that `git merge` uses, not read from the snapshot's hunks, which lose an
  * empty side and, in git's default conflict style, carry no merge base. The
- * cause rules are the replay's own (`path-record.ts`). A repository's merge
+ * cause rules are the replay's own (`path-record.ts`). Git before 2.44 has no
+ * `--diff-algorithm` for `merge-file`; there the merge runs with its default
+ * diff, which can place region boundaries differently. A repository's merge
  * drivers and renormalization do not apply to this second merge.
  */
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -84,22 +86,27 @@ function markedTree(
       writeFileSync(file, bytes);
       return file;
     });
-    const r = git.raw([
-      "merge-file",
-      "-p",
-      "--diff-algorithm=histogram",
-      ...(objects.base === null ? [] : ["--diff3"]),
-      `--marker-size=${markerSize}`,
-      "-L",
-      "ours",
-      "-L",
-      "base",
-      "-L",
-      "theirs",
-      ...files,
-    ]);
+    const merge = (algorithm: string[]) =>
+      git.raw([
+        "merge-file",
+        "-p",
+        ...algorithm,
+        ...(objects.base === null ? [] : ["--diff3"]),
+        `--marker-size=${markerSize}`,
+        "-L",
+        "ours",
+        "-L",
+        "base",
+        "-L",
+        "theirs",
+        ...files,
+      ]);
     // The exit status counts the conflicts, capped at 127; more is a failure.
-    return r.code >= 0 && r.code < 128 ? r.stdout : null;
+    const done = (r: ReturnType<typeof merge>) => r.code >= 0 && r.code < 128;
+    const histogram = merge(["--diff-algorithm=histogram"]);
+    if (done(histogram)) return histogram.stdout;
+    const fallback = merge([]);
+    return done(fallback) ? fallback.stdout : null;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -112,8 +119,6 @@ export function pathCauses(
   entry: PathEntry,
   setup: PathSetup,
 ): PathCauses {
-  if (entry.class === "lockfile" || entry.class === "generated")
-    return { causes: ["derived"], cause: "derived", regions: 0 };
   const objects = {
     base: blobOf(git, entry.stages.base),
     ours: blobOf(git, entry.stages.ours),
@@ -133,14 +138,17 @@ export function pathCauses(
     { tree: markedTree(git, objects, entry.markerSize), ...objects },
     setup,
   );
+  const regions = record.regions.length;
+  if (entry.class === "lockfile" || entry.class === "generated")
+    return { causes: ["derived"], cause: "derived", regions };
   return {
     causes: record.causes,
     cause: primaryCause(record.causes, record.regions),
-    regions: record.regions.length,
+    regions,
   };
 }
 
-/** The causes of every path in `paths`; a path whose causes cannot be told is left out. */
+/** The causes of every path in `paths`; a path whose causes cannot be told is left out, and its caller records it without one. */
 export function snapshotCauses(
   root: string,
   paths: Readonly<Record<string, PathEntry>>,

@@ -3,7 +3,14 @@
  * section, against real scratch repositories for each kind of operation.
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { type CAUSES, primaryCause } from "../scripts/lib/causes.ts";
 import {
@@ -38,11 +45,15 @@ function resolve(
   ok(s.script("check-resolution.ts"));
 }
 
-function events(): MergeConflictEvent[] {
-  const file = s
+function eventsFile(): string {
+  const common = s
     .git("rev-parse", "--path-format=absolute", "--git-common-dir")
     .trim();
-  const path = `${file}/jig/conflict-events.jsonl`;
+  return `${common}/jig/conflict-events.jsonl`;
+}
+
+function events(): MergeConflictEvent[] {
+  const path = eventsFile();
   if (!existsSync(path)) return [];
   return readFileSync(path, "utf8")
     .split("\n")
@@ -110,12 +121,36 @@ describe("a merge", () => {
   });
 
   it("marks a resolution a drive's conflict-resolve round started", () => {
-    resolve("list.md", BOTH);
-    s.git("commit", "-q", "--no-edit");
     s.env.DRIVE_PR_ROUND_TASK = "conflict-resolve";
     s.env.DRIVE_PR_TARGET = "42";
+    resolve("list.md", BOTH);
+    s.git("commit", "-q", "--no-edit");
     ok(s.script("events.ts"));
     expect(events()).toMatchObject([{ source: "drive-pr", pr: 42 }]);
+  });
+
+  it("keeps the attribution the operation was mapped under, not the one it is recorded under", () => {
+    s.env.DRIVE_PR_ROUND_TASK = "conflict-resolve";
+    s.env.DRIVE_PR_TARGET = "42";
+    resolve("list.md", BOTH);
+    s.git("commit", "-q", "--no-edit");
+    delete s.env.DRIVE_PR_ROUND_TASK;
+    delete s.env.DRIVE_PR_TARGET;
+    ok(s.script("events.ts"));
+    expect(events()).toMatchObject([{ source: "drive-pr", pr: 42 }]);
+  });
+
+  it("appends after a line an interrupted write left unterminated", () => {
+    resolve("list.md", BOTH);
+    s.git("commit", "-q", "--no-edit");
+    ok(s.script("events.ts", ["--json"]));
+    const file = eventsFile();
+    rmSync(file);
+    appendFileSync(file, '{"type":"merge_con');
+    ok(s.script("events.ts"));
+    const lines = readFileSync(file, "utf8").split("\n");
+    expect(lines[0]).toBe('{"type":"merge_con');
+    expect(JSON.parse(lines[1] as string)).toMatchObject({ path: "list.md" });
   });
 
   it("takes no pull request from a pass that is not a conflict round", () => {
@@ -248,6 +283,78 @@ describe("a rebase", () => {
   });
 });
 
+describe("a record that cannot be written when the next map replaces the snapshot", () => {
+  it("keeps the snapshot pending, and events.ts records it once it can", () => {
+    twoStops();
+    expect(s.gitTry("rebase", "main").code).not.toBe(0);
+    resolve("one.md", BOTH);
+    expect(s.gitTry("rebase", "--continue").code).not.toBe(0);
+    const file = eventsFile();
+    symlinkSync(`${s.home}/nowhere`, file);
+    const map = s.script("conflict-map.ts");
+    ok(map);
+    expect(map.stderr).toContain("is kept in");
+    const pending = `${s.git("rev-parse", "--path-format=absolute", "--git-path", "jig").trim()}/pending`;
+    expect(readdirSync(pending)).toHaveLength(1);
+
+    const blocked = s.script("events.ts");
+    ok(blocked, 3);
+    rmSync(file);
+    s.write("two.md", BOTH);
+    s.git("add", "two.md");
+    ok(s.script("record.ts", ["two.md", "combined", "--reason", "both"]));
+    ok(s.script("check-resolution.ts"));
+    s.git("rebase", "--continue");
+    ok(s.script("events.ts"));
+    expect(events().map((e) => e.path)).toEqual(["one.md", "two.md"]);
+    expect(readdirSync(pending)).toEqual([]);
+  });
+});
+
+describe("a path that merged cleanly", () => {
+  it("has no event, though a decision was recorded for an adjustment to it", () => {
+    s.commit("Add the lists", { "list.md": LIST, "clean.md": "x\n" });
+    s.git("checkout", "-q", "-b", "feature");
+    s.commit("Add b1", { "list.md": withItem("b1") });
+    s.git("checkout", "-q", "main");
+    s.commit("Add b2 and touch clean", {
+      "list.md": withItem("b2"),
+      "clean.md": "x\ny\n",
+    });
+    s.git("checkout", "-q", "feature");
+    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    ok(s.script("conflict-map.ts"));
+    s.write("list.md", BOTH);
+    s.git("add", "list.md");
+    ok(s.script("record.ts", ["list.md", "combined", "--reason", "both"]));
+    s.write("clean.md", "x\ny\nadjusted\n");
+    s.git("add", "clean.md");
+    ok(s.script("record.ts", ["clean.md", "combined", "--reason", "adjusted"]));
+    ok(s.script("check-resolution.ts"));
+    s.git("commit", "-q", "--no-edit");
+    ok(s.script("events.ts"));
+    expect(events().map((e) => e.path)).toEqual(["list.md"]);
+  });
+});
+
+describe("a lockfile", () => {
+  it("is derived, with its regions counted", () => {
+    s.commit("Add the lock", { "yarn.lock": LIST });
+    s.git("checkout", "-q", "-b", "feature");
+    s.commit("Lock b1", { "yarn.lock": withItem("b1") });
+    s.git("checkout", "-q", "main");
+    s.commit("Lock b2", { "yarn.lock": withItem("b2") });
+    s.git("checkout", "-q", "feature");
+    expect(s.gitTry("merge", "main").code).not.toBe(0);
+    resolve("yarn.lock", BOTH, "regenerated", "regenerated");
+    s.git("commit", "-q", "--no-edit");
+    ok(s.script("events.ts"));
+    expect(events()).toMatchObject([
+      { path: "yarn.lock", cause: "derived", causes: ["derived"], regions: 1 },
+    ]);
+  });
+});
+
 describe("a cherry-pick and a revert", () => {
   it("records a cherry-pick", () => {
     s.commit("Add the list", { "list.md": LIST });
@@ -357,6 +464,29 @@ describe("the commit an operation concluded with", () => {
     expect(concludedCommit(s.root, operation("rebase", one, fixup))).toBe(
       amended,
     );
+  });
+
+  it("is that commit also when the rebase replayed more commits after it", () => {
+    const root = s.commit("Base", { "a.md": "a\n" });
+    s.git("checkout", "-q", "-b", "fixups");
+    const fixup = s.commit("fixup! one", { "a.md": "a\nfix\n" });
+    s.git("checkout", "-q", "main");
+    const one = s.commit("one", { "a.md": "a\none\n" });
+    s.git("commit", "-q", "--amend", "-m", "one, with the fixup folded in");
+    const amended = s.git("rev-parse", "HEAD").trim();
+    s.commit("two", { "b.md": "b\n" });
+    expect(s.git("rev-parse", "HEAD~2").trim()).toBe(root);
+    expect(concludedCommit(s.root, operation("rebase", one, fixup))).toBe(
+      amended,
+    );
+  });
+
+  it("is not the incoming commit itself, left above the stopped one by an aborted rebase", () => {
+    s.commit("Base", { "a.md": "a\n" });
+    const one = s.commit("one", { "a.md": "a\none\n" });
+    const fixup = s.commit("fixup! one", { "a.md": "a\none\nfix\n" });
+    expect(s.git("rev-parse", "HEAD^").trim()).toBe(one);
+    expect(concludedCommit(s.root, operation("rebase", one, fixup))).toBeNull();
   });
 
   it("is not an ordinary commit that replaced the stopped one", () => {

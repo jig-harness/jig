@@ -15,7 +15,11 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { isRecord } from "../../../../shared/guards.ts";
@@ -24,13 +28,18 @@ import type { Cause } from "./causes.ts";
 import { commonDir, git, gitRaw } from "./git.ts";
 import { type PathCauses, snapshotCauses } from "./live-causes.ts";
 import type { OperationKind } from "./operation.ts";
-import type { Snapshot } from "./snapshot.ts";
+import {
+  type Attribution,
+  type Snapshot,
+  snapshotPath,
+  snapshotProblem,
+} from "./snapshot.ts";
 
 export const EVENT_TYPE = "merge_conflict";
 export const EVENTS_FILE = "conflict-events.jsonl";
 
 /** What started the resolution, when the environment says. */
-export type EventSource = "drive-pr" | "session";
+export type EventSource = Attribution["source"];
 
 export interface MergeConflictEvent {
   type: typeof EVENT_TYPE;
@@ -38,12 +47,12 @@ export interface MergeConflictEvent {
   ts: string;
   operation: OperationKind;
   path: string;
-  /** The cause that stands for the path (`primaryCause`). */
-  cause: Cause;
-  /** The causes of its regions, or its one path-level cause. */
+  /** The cause that stands for the path (`primaryCause`); null when it could not be derived. */
+  cause: Cause | null;
+  /** The causes of its regions, or its one path-level cause; empty when not derived. */
   causes: Cause[];
-  /** How many conflicting regions the path had; 0 without text regions. */
-  regions: number;
+  /** How many conflicting regions the path had; 0 without text regions, null when not derived. */
+  regions: number | null;
   decision: string | null;
   reason: string | null;
   /** Milliseconds from the last map to the conclusion. */
@@ -80,6 +89,9 @@ export function concludedCommit(
     `${head}..HEAD`,
   ]);
   const commit = first.code === 0 ? first.stdout.split("\n")[0]?.trim() : "";
+  // A conflicting replay always makes a new commit; `incoming` itself above
+  // `head` is the original history an aborted rebase went back to.
+  if (commit === incoming) return null;
   if (commit) {
     const parents = parentsOf(root, commit);
     if (
@@ -88,7 +100,9 @@ export function concludedCommit(
     )
       return commit;
   }
-  return kind === "rebase" ? amendedCommit(root, head, incoming) : null;
+  return kind === "rebase" && commit
+    ? amendedCommit(root, head, incoming, commit)
+    : null;
 }
 
 /** The parents of `commit`, or null when git cannot say. */
@@ -100,21 +114,22 @@ function parentsOf(root: string, commit: string): string[] | null {
 /**
  * A `fixup!` or `squash!` commit that conflicted is folded into the commit
  * before it: the rebase continues by amending `head`, so the concluding
- * commit stands beside `head` (same parent) instead of above it.
+ * commit stands beside `head` (same parent) instead of above it. `first` is
+ * the first commit above `head`'s parent on the way to `HEAD`, so commits the
+ * rebase replayed after the amendment do not hide it.
  */
 function amendedCommit(
   root: string,
   head: string,
   incoming: string,
+  first: string,
 ): string | null {
   const subject = gitRaw(root, ["log", "-1", "--format=%s", incoming]);
   if (subject.code !== 0 || !/^(fixup|squash|amend)! /.test(subject.stdout))
     return null;
-  const current = gitRaw(root, ["rev-parse", "HEAD"]).stdout.trim();
-  if (current === "" || current === head) return null;
-  const sibling = parentsOf(root, current)?.[0];
+  const sibling = parentsOf(root, first)?.[0];
   return sibling !== undefined && sibling === parentsOf(root, head)?.[0]
-    ? current
+    ? first
     : null;
 }
 
@@ -155,7 +170,19 @@ function drivenPullRequest(env: NodeJS.ProcessEnv): number | null {
   return /^[1-9][0-9]{0,14}$/.test(value) ? Number(value) : null;
 }
 
-/** One event for each path of the snapshot, for the operation that concluded with `commit`. */
+/** What started a resolution, from the environment of the process that maps it. */
+export function attributionOf(env: NodeJS.ProcessEnv): Attribution {
+  return env.DRIVE_PR_ROUND_TASK === "conflict-resolve"
+    ? { source: "drive-pr", pr: drivenPullRequest(env) }
+    : { source: "session", pr: null };
+}
+
+/**
+ * One event for each conflicted path of the snapshot, for the operation that
+ * concluded with `commit`. The attribution is the one taken when the
+ * operation was mapped; a snapshot without one is attributed from `env`. A
+ * path whose cause cannot be derived keeps its event, with no cause.
+ */
 export function buildEvents(
   root: string,
   snapshot: Snapshot,
@@ -166,7 +193,7 @@ export function buildEvents(
   const concluded =
     Number(git(root, ["log", "-1", "--format=%ct", commit]).trim()) * 1000;
   const mapped = Date.parse(snapshot.mappedAt);
-  const driven = env.DRIVE_PR_ROUND_TASK === "conflict-resolve";
+  const { source, pr } = snapshot.attribution ?? attributionOf(env);
   const { ours, theirs } = snapshot.sides;
   const common = {
     type: EVENT_TYPE,
@@ -175,9 +202,9 @@ export function buildEvents(
     resolution_ms: Number.isFinite(mapped)
       ? Math.max(0, concluded - mapped)
       : null,
-    source: driven ? "drive-pr" : "session",
+    source,
     commit,
-    pr: driven ? drivenPullRequest(env) : null,
+    pr,
     branch: branchOf(snapshot),
     ours_commit: ours.commit,
     ours_ref: ours.ref,
@@ -187,15 +214,15 @@ export function buildEvents(
   return Object.entries(snapshot.paths)
     .sort(([a], [b]) => a.localeCompare(b))
     .flatMap(([path, entry]) => {
+      if (entry.clean === true) return [];
       const found: PathCauses | undefined = causes.get(path);
-      if (found === undefined) return [];
       return [
         {
           ...common,
           path,
-          cause: found.cause,
-          causes: found.causes,
-          regions: found.regions,
+          cause: found?.cause ?? null,
+          causes: found?.causes ?? [],
+          regions: found?.regions ?? null,
           decision: entry.resolution.decision,
           reason: entry.resolution.reason,
         },
@@ -240,6 +267,13 @@ function keysOf(event: Partial<Record<string, unknown>>): string[] {
   ];
 }
 
+/** Whether the file ends in a line an interrupted write left without its newline. */
+function unterminated(file: string): boolean {
+  if (!existsSync(file)) return false;
+  const text = readFileSync(file);
+  return text.length > 0 && text[text.length - 1] !== 0x0a;
+}
+
 /** The commit and path of each event already in the file; a line that is not an event is skipped. */
 function recorded(file: string): Set<string> {
   const keys = new Set<string>();
@@ -282,7 +316,7 @@ export function appendEvents(
   if (fresh.length > 0)
     appendFileSync(
       file,
-      `${fresh.map((event) => JSON.stringify(event)).join("\n")}\n`,
+      `${unterminated(file) ? "\n" : ""}${fresh.map((event) => JSON.stringify(event)).join("\n")}\n`,
     );
   return { written: fresh.length, skipped: events.length - fresh.length, file };
 }
@@ -305,4 +339,67 @@ export function recordConcluded(
   if (commit === null) return { commit, written: 0, skipped: 0, file: null };
   const done = appendEvents(root, buildEvents(root, snapshot, commit, env));
   return { commit, ...done };
+}
+
+/** Where the snapshots of operations whose record could not be written wait. */
+export function pendingDir(root: string): string {
+  return join(dirname(snapshotPath(root)), "pending");
+}
+
+/**
+ * Keep the snapshot of an operation whose events could not be recorded, so
+ * that a later `events.ts` records them. Returns the file, or null when it
+ * could not be kept either.
+ */
+export function keepPending(root: string, snapshot: Snapshot): string | null {
+  const { kind, head, incoming } = snapshot.operation;
+  const file = join(pendingDir(root), `${kind}-${head}-${incoming}.json`);
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    const temporary = `${file}.${process.pid}.tmp`;
+    writeFileSync(temporary, `${JSON.stringify(snapshot, null, 2)}\n`);
+    renameSync(temporary, file);
+    return file;
+  } catch (err) {
+    swallow(err, "the caller reports that the snapshot is lost");
+    return null;
+  }
+}
+
+export interface PendingOutcome {
+  file: string;
+  /** What was recorded, or why the snapshot is still pending. */
+  result: Recorded | { error: string };
+}
+
+/**
+ * Record every kept snapshot. One that is recorded, or whose operation did
+ * not conclude, is removed; one that is unreadable or still cannot be
+ * recorded stays.
+ */
+export function flushPending(
+  root: string,
+  env: NodeJS.ProcessEnv = process.env,
+): PendingOutcome[] {
+  const dir = pendingDir(root);
+  if (!existsSync(dir)) return [];
+  const outcomes: PendingOutcome[] = [];
+  for (const name of readdirSync(dir).sort()) {
+    if (!name.endsWith(".json")) continue;
+    const file = join(dir, name);
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+      const problem = snapshotProblem(parsed);
+      if (problem !== null) throw new Error(`not a snapshot: ${problem}`);
+      const result = recordConcluded(root, parsed as Snapshot, env);
+      rmSync(file, { force: true });
+      outcomes.push({ file, result });
+    } catch (err) {
+      outcomes.push({
+        file,
+        result: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+  }
+  return outcomes;
 }
