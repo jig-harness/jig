@@ -254,7 +254,8 @@ retain an owner and evidence; none turns the test job's failure into a pass.
 **Stable identity.** A cause fingerprint uses the repository, relevant check
 or shared prerequisite, affected scope (such as an environment), and a
 normalized failure signature. It excludes run identifiers, timestamps and
-other changing log details. Runs showing the same cause find the same issue;
+transient log values that do not identify a distinct cause; a value naming
+an affected resource or endpoint stays in. Runs showing the same cause find the same issue;
 independent causes get separate issues. Several checks that establish the
 same failed prerequisite can share its cause, with their evidence attached.
 Keep the fingerprint on the issue and compare it exactly after searching;
