@@ -10,9 +10,16 @@
 #     item closed since, so this half needs the tracker.
 #   - It holds the tracker credential, so it never runs on code from a pull
 #     request: it is scheduled, and a manual run is limited to the default
-#     branch. A manual run uses the workflow and every file it checks out as
-#     they are on the chosen branch; without the limit anyone able to push a
-#     branch could run a modified script with the credential in scope.
+#     branch.
+#   - The `if:` on the job is only a guard against a slip. A manual run uses
+#     the workflow file of the branch chosen, so anyone able to push a branch
+#     can delete the guard in their copy, and a repository secret is readable
+#     by a workflow on any branch. What keeps the credential away from other
+#     branches is a GitHub environment, below: its secret is released only to
+#     a job that names it, and only when the run's branch is one the
+#     environment's deployment-branch rule allows (the default branch alone).
+#     Create the environment, add the secret to it, never to the repository,
+#     and restrict its deployment branches before the first run.
 #   - The credential is scoped to the one step that asks the tracker, not to
 #     the job, so the checkout actions and the verdict step never see it.
 #   - It fails closed: no credential, a tracker that cannot be reached, a
@@ -20,8 +27,9 @@
 #     Nothing here turns exit 2 into a pass.
 #   - It reports in the run summary, where a red run is read, and files and
 #     closes nothing.
-#   - The Jig scripts it runs come from a pinned commit, the one third-party
-#     code that runs with the credential: pin a commit you have read.
+#   - Third-party code that runs in the credentialed step is pinned: the Jig
+#     scripts to a commit and the Bun runtime to a version. Pin a commit you
+#     have read.
 #
 # Register the schedule in the repository's cadence list and heartbeat
 # (module M11), so a schedule that stops running turns red.
@@ -55,6 +63,9 @@ jobs:
     if: ${{ github.event_name == 'schedule' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The environment holds the tracker secret and releases it only on the
+    # default branch (see the header).
+    environment: <environment name>
     steps:
       - uses: actions/checkout@<pinned-sha>
         with:
@@ -69,6 +80,8 @@ jobs:
           persist-credentials: false
           path: jig
       - uses: oven-sh/setup-bun@<pinned-sha>
+        with:
+          bun-version: <pinned Bun version>
       - name: List the items the deferrals rely on
         # No credential. A document with no deferral gives an empty list.
         run: >-

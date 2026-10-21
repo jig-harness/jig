@@ -302,7 +302,7 @@ criteria:
   M4/deferrals-name-items:   # standard, requires mechanical
     # A document that defers work to the tracker names the item that carries it, in the same block of prose as the deferral, and a check enforces this on the lines each change adds, in the pre-commit hook and in CI (expected-absent where no document defers work to a tracker).
     score: expected-absent
-    evidence: "No Jig document defers work to a tracker: git grep -Ei 'tracked to closure|will be filed|to be filed|tracked separately|follow-up will' -- '*.md' finds only a PRD template placeholder ('deferred to a future phase'), and scripts/check-no-tracker-refs.ts fails any document that names a tracker item, so open work is stated against the plan and roadmap (design/plan.md, ROADMAP.md) instead"
+    evidence: "No Jig document promises tracked work: git grep -Ei 'tracked to closure|will be filed|to be filed|tracked separately|follow-up will' -- '*.md' hits only documents that describe the practice (GLOSSARY.md, the M4 module, change notes), and Jig's open work is stated against the plan and roadmap (design/plan.md, ROADMAP.md); scripts/check-no-tracker-refs.ts fails Jig's own tracker keys in any document, so none can name one"
   M4/authority-hierarchy-written:   # standard, requires convention
     # A single-valued authority hierarchy is written down so contradictions between docs resolve without a judgment call.
     # prior: absent: grep authority|precedence|source of truth in own docs: only CLAUDE.md 'AGENTS.md the single source of truth' and PLAYBOOK.md 'map vs territory'; no ordered precedence for conflicting docs

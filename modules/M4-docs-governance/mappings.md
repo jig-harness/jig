@@ -210,7 +210,7 @@ the default branch are the provider specifics:
 
 | CI | Scheduled run | Credential |
 |----|---------------|------------|
-| GitHub Actions | `on: schedule`; `workflow_dispatch` with the job `if:` limited to the default branch | A repository secret, in the `env:` of the one step that calls the tracker; not a job-level or workflow-level `env:` |
+| GitHub Actions | `on: schedule`; `workflow_dispatch` with the job `if:` limited to the default branch (a guard against a slip, not a control: a manual run uses the chosen branch's workflow file) | A secret of an environment whose deployment branches are the default branch alone, named by the job's `environment:`, and read in the `env:` of the one step that calls the tracker. A repository secret is readable by a workflow on any branch and does not keep it from pull-request code |
 | GitLab CI | A pipeline schedule on the default branch; `rules: - if: $CI_PIPELINE_SOURCE == "schedule"` | A CI/CD variable marked masked and protected, so only protected branches' pipelines receive it |
 | Other | A scheduler that runs the default branch's pipeline | A secret that merge-request or pull-request pipelines cannot read |
 

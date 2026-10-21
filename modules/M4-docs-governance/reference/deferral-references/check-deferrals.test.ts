@@ -130,6 +130,22 @@ describe("units", () => {
     expect(findingsOf(doc)).toEqual([]);
   });
 
+  test("a fence inside a nested list item is code, however deep it is indented", () => {
+    const doc = [
+      "- a",
+      "  - b",
+      "",
+      "        ```",
+      "        will be filed",
+      "        ENG-5",
+      "        ```",
+      "",
+      "  - c, tracked to closure.",
+    ].join("\n");
+    expect(findingsOf(doc)).toEqual(["9:deferral-names-no-item"]);
+    expect(keysOf(doc)).toEqual([[]]);
+  });
+
   test("a loose list item keeps its indented later paragraph, a flush paragraph is its own block", () => {
     const doc = [
       "- Audit the log.",
@@ -220,6 +236,19 @@ describe("the static half", () => {
     const c = parseConfig("items: ['\\bENG-\\d+\\b']\n", "c.yaml");
     expect(findingsOf("Tracked to closure under ADR-0036.\n", c)).toEqual([
       "1:deferral-names-no-item",
+    ]);
+  });
+
+  test("an item pattern is matched against the text as written, then without emphasis marks", () => {
+    const c = parseConfig(
+      "items: ['https://t\\.example/my_team/(\\d+)', '\\bENG-\\d+\\b']\n",
+      "c.yaml",
+    );
+    expect(
+      keysOf("Will be filed at https://t.example/my_team/42\n", c),
+    ).toEqual([["42"]]);
+    expect(keysOf("Will be filed: _ENG-5_ and **ENG-6**\n", c)).toEqual([
+      ["ENG-5", "ENG-6"],
     ]);
   });
 
@@ -438,6 +467,23 @@ describe("--staged", () => {
     expectSpawnExit(r.run(["--staged"]), 1);
   });
 
+  test("a change to the configuration judges every document, not only the changed ones", () => {
+    const r = repo({ "a.md": "Tracked to closure under TASK-1.\n" });
+    expectSpawnExit(r.run(["--all"]), 1);
+    r.write(".config/deferral-references.yaml", "items: ['\\bTASK-\\d+\\b']\n");
+    r.git("add", ".");
+    expectSpawnExit(r.run(["--staged"]), 0);
+    r.git("commit", "-qm", "narrow items");
+    r.write(
+      ".config/deferral-references.yaml",
+      "items: ['\\bOTHER-\\d+\\b']\n",
+    );
+    r.git("add", ".");
+    expectSpawnExit(r.run(["--staged"]), 1);
+    r.git("commit", "-qm", "change items");
+    expectSpawnExit(r.run(["--range=HEAD~1...HEAD"]), 1);
+  });
+
   test("is the default with no mode given", () => {
     const r = repo({ "a.md": "Fine.\n" });
     r.write("a.md", "Tracked to closure.\n");
@@ -630,6 +676,17 @@ describe("the live half through the command", () => {
     const result = r.run(["--all", "--states", "../states.json"]);
     expectSpawnExit(result, 2);
     expect(result.stderr).toContain("ENG-2");
+  });
+
+  test("--states also reports a deferral that names no item, which has nothing to look up", () => {
+    const r = repo({ ...docs, "d.md": "Tracked to closure.\n" });
+    r.write(
+      "../states.json",
+      JSON.stringify({ "ENG-1": "open", "ENG-2": "open", "ENG-3": "open" }),
+    );
+    const result = r.run(["--all", "--states", "../states.json"]);
+    expectSpawnExit(result, 1);
+    expect(result.stdout).toContain("d.md:1: [deferral-names-no-item]");
   });
 
   test("--states with an unreadable file is could-not-check", () => {

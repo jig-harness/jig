@@ -162,8 +162,13 @@ anyone able to open one could otherwise read it. So the live half is not a pull
 request check. It runs on a schedule, from the default branch's own copy of the
 workflow and the documents; a manual run is limited to the default branch for
 the same reason (a manual run executes the workflow and every file it checks
-out as they exist on the branch chosen). The credential is scoped to step 2
-alone, so neither the checkout action nor the verdict step sees it. The
+out as they exist on the branch chosen). That limit only stops a slip, because
+the branch chosen supplies the workflow file and can delete it. What keeps the
+credential from other branches is where it is stored: on GitHub, a secret of an
+environment whose deployment branches are the default branch alone, not a
+repository secret, which any workflow on any branch can read; on GitLab, a
+protected variable. The credential is scoped to step 2 alone, so neither the
+checkout action nor the verdict step sees it. The
 [workflow template](../../templates/deferral-liveness.yml) is that shape.
 
 A scheduled check can itself stop running without anyone noticing. Register it

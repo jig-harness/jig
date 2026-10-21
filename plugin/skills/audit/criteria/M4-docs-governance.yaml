@@ -228,7 +228,7 @@ criteria:
       to a tracker).
     observe:
       - "a workflow triggered by a schedule, with any manual trigger limited to the default branch, lists the items the deferrals name and reads their current state from the tracker"
-      - "the tracker credential is scoped to the step that calls the tracker, in a workflow no pull request triggers"
+      - "the tracker credential is stored where only the default branch's runs can read it (an environment restricted to that branch, a protected variable) and is used only by the step that calls the tracker; a repository-wide secret is not credited, since a workflow on any branch can read it"
       - "the job fails on a deferral whose items are all closed or missing, and on a tracker that could not be reached or an item it did not answer for"
       - "a deferral that cites a closed item beside an open one passes: the verdict is per deferral, not per citation"
     probe:

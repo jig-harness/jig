@@ -38,7 +38,7 @@
 //   check-deferrals.ts [--config <file>] --all --list-keys
 //   check-deferrals.ts [--config <file>] --all --states <states.json>
 import { existsSync, lstatSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { cli, readFrontmatter, splitLines } from "../docs";
 
@@ -157,7 +157,8 @@ export interface Unit {
   text: string;
 }
 
-const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
+// Any indent: a fence inside a nested list item is indented four or more.
+const FENCE = /^\s*(`{3,}|~{3,})/;
 const HEADING = /^\s{0,3}#{1,6}\s/;
 const RULE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
 const TABLE_ROW = /^\s*\|/;
@@ -273,7 +274,7 @@ export function units(content: string): Unit[] {
 export interface Deferral {
   unit: Unit;
   marker: string;
-  /** Distinct item keys the block names, in order of appearance. */
+  /** Distinct item keys the block names, sorted. */
   keys: string[];
 }
 
@@ -317,13 +318,21 @@ const finding = (
 
 /** The deferral a block makes, or undefined when it holds no marker phrase. */
 function deferralOf(unit: Unit, config: Config): Deferral | undefined {
-  const text = flatten(unit.text.replace(COMMENT, " "));
+  const bare = unit.text.replace(COMMENT, " ").replace(/\s+/g, " ");
+  const text = flatten(bare);
   const marker = config.markers.map((m) => m.exec(text)?.[0]).find(Boolean);
   if (marker === undefined) return undefined;
-  const keys = new Set<string>();
-  for (const pattern of config.items)
-    for (const match of text.matchAll(pattern)) keys.add(match[1] ?? match[0]);
-  return { unit, marker, keys: [...keys] };
+  // Items are read as written, so a pattern may hold `_` or `*`, and also
+  // without emphasis marks, which finds `_ENG-5_` beside a plain `ENG-6`.
+  const keysIn = (from: string) =>
+    config.items.flatMap((pattern) =>
+      [...from.matchAll(pattern)].map((m) => m[1] ?? m[0]),
+    );
+  return {
+    unit,
+    marker,
+    keys: [...new Set([...keysIn(bare), ...keysIn(text)])].sort(),
+  };
 }
 
 /**
@@ -512,6 +521,7 @@ function changedSources(
   root: string,
   config: Config,
   mode: "staged" | { range: string },
+  configRelative: string,
 ): Source[] {
   const staged = mode === "staged";
   const base = staged ? ["--cached"] : [oldSide(root, mode.range)];
@@ -522,8 +532,12 @@ function changedSources(
     "--diff-filter=ACMR",
     ...base,
   ]);
+  const paths = changed.split("\0");
+  // A new `items` pattern or marker changes what every document must satisfy,
+  // so a change to the configuration judges them all.
+  if (paths.includes(configRelative)) return trackedSources(root, config);
   const out: Source[] = [];
-  for (const path of changed.split("\0")) {
+  for (const path of paths) {
     if (!path || !inScope(config, path)) continue;
     const full = join(root, path);
     if (!staged && !lstatSync(full).isFile()) continue;
@@ -547,10 +561,20 @@ function changedSources(
   return out;
 }
 
-function sources(root: string, config: Config, mode: Mode): Source[] {
+function sources(
+  root: string,
+  config: Config,
+  mode: Mode,
+  configPath: string,
+): Source[] {
   return mode === "all"
     ? trackedSources(root, config)
-    : changedSources(root, config, mode);
+    : changedSources(
+        root,
+        config,
+        mode,
+        relative(root, configPath).split(sep).join("/"),
+      );
 }
 
 // ── Command line ───────────────────────────────────────────────────────────
@@ -689,7 +713,7 @@ function report(judged: Judged[], states: Map<string, ItemState> | undefined) {
     const { added } = source;
     const findings =
       states !== undefined
-        ? liveFindings(reading.deferrals, states)
+        ? [...reading.findings, ...liveFindings(reading.deferrals, states)]
         : reading.findings.filter(
             (f) => added === undefined || touchedBy(f, added),
           );
@@ -715,10 +739,12 @@ export function run(
     readFileSync(asked.configPath, "utf8"),
     asked.configPath,
   );
-  const judged = sources(asked.root, config, asked.mode).map((source) => ({
-    source,
-    reading: readDocument(source.content, config),
-  }));
+  const judged = sources(asked.root, config, asked.mode, asked.configPath).map(
+    (source) => ({
+      source,
+      reading: readDocument(source.content, config),
+    }),
+  );
   if (asked.listKeys) {
     const keys = judged.flatMap(({ reading }) =>
       reading.deferrals.flatMap((d) => d.keys),
