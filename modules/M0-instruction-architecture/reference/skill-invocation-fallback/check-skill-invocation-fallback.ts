@@ -494,6 +494,18 @@ function lineAt(source: string): (offset: number) => number {
  */
 const PLACEMENT_RENDERS = 100;
 
+/**
+ * The characters of the file the search for places to try may read, in all,
+ * per character of the file: as many passes as there are renders, shared by
+ * every skill, so a file with many invocations whose names are written in no
+ * findable way still costs no more than its renders. A finding left once it
+ * is spent is reported without a line.
+ */
+const SEARCH_PASSES = PLACEMENT_RENDERS;
+
+/** What is left of a file's search budget, in characters. */
+type Budget = { left: number };
+
 /** A place in a reading: a 0-based rendered line and column. */
 type Place = { line: number; column: number };
 
@@ -546,10 +558,12 @@ class Placer {
    * cursor each.
    */
   private readonly cursors = new Map<string, Iterator<number>>();
+  private readonly search: Budget;
   constructor(source: string, reading: Reading) {
     this.source = source;
     this.reading = reading;
     this.lineOf = lineAt(source);
+    this.search = { left: SEARCH_PASSES * (source.length + 1) };
   }
 
   /**
@@ -580,7 +594,7 @@ class Placer {
   private cursor(skill: string): Iterator<number> {
     let cursor = this.cursors.get(skill);
     if (!cursor) {
-      cursor = placesToTry(this.source, skill);
+      cursor = placesToTry(this.source, skill, this.search);
       this.cursors.set(skill, cursor);
     }
     return cursor;
@@ -591,11 +605,24 @@ class Placer {
  * The offsets in `source` where the name of an invocation of `skill` may
  * start, in the order they are tried: after a slash written before the name,
  * before the name, then after any slash. An offset may come more than once.
+ * Every character read is taken from `budget`, and the search stops once it
+ * is spent.
  */
-function* placesToTry(source: string, skill: string): Generator<number> {
+function* placesToTry(
+  source: string,
+  skill: string,
+  budget: Budget,
+): Generator<number> {
   const after = function* (text: string, shift: number) {
-    for (const match of source.matchAll(new RegExp(escapeRegex(text), "g")))
-      yield match.index + shift;
+    let from = 0;
+    while (budget.left > 0 && from < source.length) {
+      const at = source.indexOf(text, from);
+      const end = at < 0 ? source.length : at + text.length;
+      budget.left -= end - from;
+      if (at < 0) return;
+      yield at + shift;
+      from = end;
+    }
   };
   yield* after(`/${skill}`, 1);
   yield* after(skill, 0);

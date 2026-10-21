@@ -318,6 +318,33 @@ test("the render budget is shared by every skill a file invokes", () => {
   expect(result.output).toContain("rendered line 299");
 });
 
+test("searching for places to try is bounded like the renders", () => {
+  // Written as character references, a name and its slash are found nowhere
+  // in the file, so each such skill reads the whole file in vain.
+  const encode = (text: string) =>
+    [...text].map((char) => `&#${char.charCodeAt(0)};`).join("");
+  const skills = Array.from(
+    { length: 50 },
+    (_, k) => `hidden-${String(k).padStart(2, "0")}`,
+  );
+  const text = `${skills.map((skill) => `Run ${encode(`/${skill}`)}.\n\n`).join("")}Run &#47;release-notes.\n`;
+  const result = run([
+    ...skills.flatMap((skill) => ["--skill", skill]),
+    "--skill",
+    "release-notes",
+    doc(text),
+  ]);
+  expectSpawnExit(result, 1);
+  expect(result.output).toContain(
+    "/release-notes names no fallback within 10 lines (rendered line 101;",
+  );
+  const alone = check(doc("Run &#47;release-notes.\n"));
+  expectSpawnExit(alone, 1);
+  expect(alone.output).toContain(
+    ":1: [skill-invocation-fallback] /release-notes",
+  );
+});
+
 test("an invocation inside an HTML comment is not read", () => {
   const text =
     "<!-- Run /release-notes; [procedure](skills/release-notes/SKILL.md) -->\n";
