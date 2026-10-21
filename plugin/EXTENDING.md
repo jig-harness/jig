@@ -316,9 +316,9 @@ its `glab` command, is the nearest). In `drive-pr`,
 two helpers that add timeouts and caching, which is where the interface
 starts; `fix-ci`, the audit and `descar` start `gh` through runners of their
 own, and some skills tell the agent to run `gh` itself. The shared runtime
-kernel (roadmap item 5) gathers the calls further. It is
-listed under the roadmap's later work, to be built when a team on another
-forge needs it.
+kernel gathers common timeout and cancellation behavior in `shared/`. A forge
+interface is listed under the roadmap's later work, to be built when a team
+on another forge needs it.
 
 ## CI system
 

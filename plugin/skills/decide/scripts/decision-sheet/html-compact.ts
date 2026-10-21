@@ -156,7 +156,12 @@ function followOnPanel(call: Call, span: 1 | 2 | 3): PanelSpec | undefined {
     note: call.subQuestions?.length ? LABEL.followOnNote : "",
     body: followOnBody(
       single?.title
-        ? { ...call, subQuestions: [{ ...single, title: undefined }] }
+        ? {
+            ...call,
+            subQuestions: [
+              { question: single.question, byOption: single.byOption },
+            ],
+          }
         : call,
     ),
     span,

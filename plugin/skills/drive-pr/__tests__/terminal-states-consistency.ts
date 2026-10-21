@@ -651,10 +651,12 @@ function corpusFiles(): readonly { unit: CorpusFile; path: string }[] {
           unit: {
             path,
             role,
-            minPairs: minPairs === undefined ? undefined : Number(minPairs),
-            heading,
+            ...(minPairs === undefined ? {} : { minPairs: Number(minPairs) }),
+            ...(heading === undefined ? {} : { heading }),
             documentsDriveTsRemap,
-            requiredIdentifiers,
+            ...(requiredIdentifiers === undefined
+              ? {}
+              : { requiredIdentifiers }),
           },
           path,
         };

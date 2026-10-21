@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * verification-fit.ts — record a verdict on whether the round's demanded
  * validation was worth what it cost.
@@ -113,7 +114,7 @@ function logPath(): string {
  */
 async function capture(cmd: string[], cwd?: string): Promise<string | null> {
   const r = await run(cmd, {
-    cwd,
+    ...definedFields({ cwd }),
     env: gitIdentityEnv(),
     stderr: "ignore",
   });

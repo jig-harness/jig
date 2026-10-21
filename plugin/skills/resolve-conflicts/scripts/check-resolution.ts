@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Verify a conflict resolution before the operation is concluded: after every
  * path is resolved, recorded and staged, before `git commit`,
@@ -180,9 +181,17 @@ function checkPath(
   result: CheckResult,
 ): void {
   const problem = (message: string, line?: number) =>
-    result.problems.push({ path, line, message });
+    result.problems.push({
+      path,
+      ...definedFields({ line }),
+      message,
+    });
   const note = (message: string, line?: number) =>
-    result.notes.push({ path, line, message });
+    result.notes.push({
+      path,
+      ...definedFields({ line }),
+      message,
+    });
   const { decision, reason, command, dropped } = entry.resolution;
 
   if (decision === null || decision === undefined) {
