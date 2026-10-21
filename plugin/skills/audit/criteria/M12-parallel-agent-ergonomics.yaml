@@ -254,7 +254,7 @@ criteria:
   - id: merge-conflict-hotspots-measured
     level: standard
     requires: convention
-    since: next
+    since: 0.77.0
     statement: >-
       A repository working in parallel measures where its merges conflict,
       and each conflict hotspot is removed at its cause or kept by a recorded
