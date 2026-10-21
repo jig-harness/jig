@@ -19,6 +19,7 @@ import {
   hookPath,
   runCreateHook,
   runHook,
+  SUPERVISOR,
 } from "../lifecycle.ts";
 import { type Context, localContext, withLimit } from "../runner.ts";
 
@@ -236,6 +237,62 @@ describe("the create hook", () => {
     const pgid = Number(readFileSync(join(worktree, ".pgid"), "utf8"));
     expect(pgid).toBe(recordedGroup(record));
     expect(pgid).not.toBe(process.pid);
+  });
+
+  test("a group record that cannot be written ends the hook it started", () => {
+    const { root, worktree } = fixture({});
+    const hook = join(worktree, "slow-hook");
+    writeFileSync(
+      hook,
+      '#!/bin/sh\nsleep 30 >/dev/null 2>&1 &\necho $! > "$PWD/.child"\nsleep 30\n',
+      { mode: 0o755 },
+    );
+    // The disk fills up just as the supervisor records the hook's group.
+    const preload = join(root, "full-disk.ts");
+    writeFileSync(
+      preload,
+      `import fs from "node:fs";
+const append = fs.appendFileSync;
+fs.appendFileSync = (file, line) => {
+  if (String(line).startsWith("group ")) {
+    Bun.sleepSync(1_000);
+    throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" });
+  }
+  return append(file, line);
+};
+`,
+    );
+    const record = join(root, "record");
+    const run = Bun.spawnSync(
+      [
+        process.execPath,
+        "--preload",
+        preload,
+        "-e",
+        SUPERVISOR,
+        record,
+        hook,
+        "60000",
+        String(process.pid),
+      ],
+      { cwd: worktree, stdout: "pipe", stderr: "pipe" },
+    );
+    expectSpawnExit(run, 1, "the supervisor");
+    expect(run.stderr.toString()).toContain(
+      "could not record the process group",
+    );
+    const child = Number(readFileSync(join(worktree, ".child"), "utf8"));
+    const deadline = Date.now() + 5_000;
+    let alive = true;
+    while (alive && Date.now() < deadline) {
+      try {
+        process.kill(child, 0);
+        Bun.sleepSync(50);
+      } catch {
+        alive = false;
+      }
+    }
+    expect(alive).toBe(false);
   });
 
   test("a hook past the run's limit is ended with its whole group", () => {

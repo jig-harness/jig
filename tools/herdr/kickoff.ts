@@ -7,6 +7,9 @@
  *
  * - A **claim** marks a kickoff in flight, so a second launch waits instead
  *   of deciding while the first has started an agent but not yet prompted it.
+ *   It names the process that holds it, and is taken over only once that
+ *   process has ended: a holder that is merely slow may still be about to
+ *   send, so no age makes its claim abandoned.
  * - A **receipt**, one per key and agent, records a kickoff under a
  *   correlation id `<key>:<agent>[:<session>]`. The session id tells a restarted agent with
  *   the same name apart from the process that received the prompt. Before
@@ -26,8 +29,9 @@
  *   never sent the kickoff, and the transcript only spots one sent otherwise.
  *
  * Every change to these records moves toward "unknown", never toward "not
- * delivered": a launch that lost its claim writes under the record of the
- * launch that took over, never over it. Whenever the records cannot settle
+ * delivered": a launch whose claim was removed by hand writes under the
+ * record of the launch that took over, never over it, and a receipt this
+ * tool cannot read as one of its own is refused rather than taken as none. Whenever the records cannot settle
  * it, the kickoff is refused, saying what to check, rather than guessed: an
  * extra prompt to a working agent and an unstarted piece of work are both
  * worse than asking a person.
@@ -39,13 +43,13 @@ import {
   readFileSync,
   renameSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { errnoCode, swallow } from "../../plugin/shared/errors.ts";
 import { AGENT_NAME } from "./agent.ts";
 import { parseEnvelope, probeAgentSession } from "./herdr.ts";
+import { localOwner, ownerLine, processAlive } from "./owner.ts";
 import {
   budget,
   type Context,
@@ -65,6 +69,8 @@ export const PROMPT_TIMEOUT_MS = 45_000;
 const TRANSCRIPT_LINES = 4_000;
 /** Marks a claim generation given back; a superseded one is already gone. */
 const RELEASED = "released";
+/** Names the host and process holding a claim generation. */
+const OWNER = "owner";
 /** Marks a receipt written before the send it records. */
 const PENDING = "pending";
 /**
@@ -80,8 +86,6 @@ export interface KickoffOptions {
   prompt: string;
   /** How long to wait for another launch's claim on this key. */
   claimWaitMs: number;
-  /** Age after which a claim is taken as abandoned. */
-  claimStaleMs: number;
 }
 
 export type KickoffOutcome = "sent" | "already-delivered";
@@ -153,34 +157,39 @@ export function transcriptHasToken(transcript: string, token: string): boolean {
  * Take the claim for a key, waiting for a live one, and return the
  * generation taken.
  *
- * A claim is the highest-numbered directory under `claims/<key>/`; taking one
- * over means creating the next number, never removing the old one first.
- * `mkdir` of a given name succeeds for exactly one process, so two launches
- * that both find the same claim abandoned race for the same next number and
- * only one wins. Removing a claim to take it over would let both win: each
- * could remove what the other had just created. Superseded generations are
- * removed by the winner, and a holder releases only the generation it owns,
- * by marking it released rather than removing it: the highest number always
- * stays on disk, so numbers never repeat, and a launch that read an old
- * generation and paused cannot later create a number another launch holds.
+ * A claim is the highest-numbered directory under `claims/<key>/`, holding
+ * its owner's host and process; taking one over means creating the next
+ * number, never removing the old one first. Each number is created whole, its
+ * owner inside, by renaming a directory into place, which succeeds for exactly
+ * one process, so two launches that both find the same claim abandoned race
+ * for the same next number and only one wins. Removing a claim to take it
+ * over would let both win: each could remove what the other had just
+ * created. Superseded generations are removed by the winner, and a holder
+ * releases only the generation it owns, by marking it released rather than
+ * removing it: the highest number always stays on disk, so numbers never
+ * repeat, and a launch that read an old generation and paused cannot later
+ * create a number another launch holds.
+ *
+ * A claim is abandoned only once its owner, on this host, has ended. A claim
+ * owned on another host, or with no owner to read, is waited for and then
+ * refused, naming the directory a person removes once no launch holds it.
  */
 export function acquireClaim(
   ctx: Context,
   key: string,
   waitMs: number,
-  staleMs: number,
 ): string {
   const dir = claimDir(ctx, key);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const deadline = Date.now() + waitMs;
   for (;;) {
     const generations = generationsIn(dir);
-    const step = nextStep(dir, generations, staleMs);
+    const step = nextStep(dir, generations);
     if ("create" in step && take(dir, step.create, generations))
       return String(step.create);
     if ("held" in step && Date.now() >= deadline)
       throw new HerdrError(
-        `another launch is kicking off ${key} (claim ${step.held}) and did not finish within ${Math.round(waitMs / 1000)}s; let it finish and run again. An abandoned claim is taken over after ${Math.round(staleMs / 1000)}s`,
+        `another launch is kicking off ${key} (claim ${step.held}) and did not finish within ${Math.round(waitMs / 1000)}s; let it finish and run again. Its claim is taken over once the launch holding it has ended; if no launch is running and it stays, remove ${join(dir, String(step.held))}`,
       );
     if ("held" in step) ctx.sleep(1_000);
   }
@@ -194,40 +203,47 @@ function generationsIn(dir: string): number[] {
 }
 
 /**
- * What to do next: create the first generation, create the one after an
- * abandoned claim, wait for a live one, or look again when the claim went
- * away while it was being read.
+ * What to do next: create the first generation, create the one after a
+ * released or abandoned claim, wait for a held one, or look again when the
+ * claim went away while it was being read.
  */
 function nextStep(
   dir: string,
   generations: number[],
-  staleMs: number,
 ): { create: number } | { held: number } | { rescan: true } {
   const top = generations.at(-1);
   if (top === undefined) return { create: 1 };
-  if (existsSync(join(dir, String(top), RELEASED))) return { create: top + 1 };
-  let heldSince: number;
+  const claim = join(dir, String(top));
+  if (existsSync(join(claim, RELEASED))) return { create: top + 1 };
+  let owner: string;
   try {
-    heldSince = statSync(join(dir, String(top))).mtimeMs;
+    owner = readFileSync(join(claim, OWNER), "utf8");
   } catch (error) {
     if (errnoCode(error) !== "ENOENT") throw error;
-    return { rescan: true };
+    return existsSync(claim) ? { held: top } : { rescan: true };
   }
-  return Date.now() - heldSince >= staleMs
-    ? { create: top + 1 }
-    : { held: top };
+  const pid = localOwner(owner);
+  return pid === null || processAlive(pid)
+    ? { held: top }
+    : { create: top + 1 };
 }
 
 /**
- * Create the generation; false when another launch created it first. The
- * winner removes the generations it superseded.
+ * Create the generation, its owner inside; false when another launch created
+ * it first. The winner removes the generations it superseded.
  */
 function take(dir: string, next: number, generations: number[]): boolean {
+  const temp = join(dir, `.${next}.${process.pid}.tmp`);
   try {
-    mkdirSync(join(dir, String(next)), { mode: 0o700 });
+    rmSync(temp, { recursive: true, force: true });
+    mkdirSync(temp, { mode: 0o700 });
+    writeFileSync(join(temp, OWNER), ownerLine(), { mode: 0o600 });
+    renameSync(temp, join(dir, String(next)));
   } catch (error) {
-    if (errnoCode(error) !== "EEXIST") throw error;
-    return false;
+    rmSync(temp, { recursive: true, force: true });
+    const code = errnoCode(error);
+    if (code === "EEXIST" || code === "ENOTEMPTY") return false;
+    throw error;
   }
   for (const old of generations)
     if (old < next)
@@ -257,8 +273,8 @@ function claimHeld(ctx: Context, key: string, generation: string): boolean {
 }
 
 /**
- * Throw unless the generation is still the live claim: an abandoned claim is
- * taken over by age, and a holder that was slow past that age must not send.
+ * Throw unless the generation is still the live claim: one removed by hand
+ * may have been taken by another launch, and this one must not send then.
  */
 function assertClaimHeld(ctx: Context, key: string, generation: string): void {
   if (!claimHeld(ctx, key, generation)) {
@@ -362,7 +378,11 @@ function readReceipt(
   }
 }
 
-/** What the agent's receipt says, or null when it has none to go by. */
+/**
+ * What the agent's receipt says, or null when it has none. A receipt that is
+ * not one this tool writes (empty, cut short, or anything else) is refused:
+ * damaged evidence of a send is not evidence of none.
+ */
 function receiptVerdict(
   ctx: Context,
   key: string,
@@ -381,9 +401,11 @@ function receiptVerdict(
     );
   }
   const forAgent = escapeRegExp(`${key}:${agentName}`);
-  return new RegExp(`^(?:${PENDING} )?${forAgent}(?::\\S+)?$`).test(receipt)
-    ? "undelivered"
-    : null;
+  if (new RegExp(`^(?:${PENDING} )?${forAgent}(?::\\S+)?$`).test(receipt))
+    return "undelivered";
+  throw new HerdrError(
+    `the kickoff receipt of ${key} for ${agentName} is not one this tool writes (${JSON.stringify(receipt)}), so it cannot show that the kickoff was never sent; check with herdr agent read ${agentName} --source recent, and if the agent never got it remove the directory ${receiptDir(ctx, key, agentName)} and run this again`,
+  );
 }
 
 /** Whether the prompt's first line is in the agent's recent output. */
@@ -610,12 +632,7 @@ export function kickoff(
 ): KickoffOutcome {
   const { agentName } = spawned;
   assertKickoffable(ctx, spawned, options.prompt);
-  const generation = acquireClaim(
-    ctx,
-    options.key,
-    options.claimWaitMs,
-    options.claimStaleMs,
-  );
+  const generation = acquireClaim(ctx, options.key, options.claimWaitMs);
   let release = true;
   try {
     const target = sessionToSend(ctx, spawned, options);
@@ -623,9 +640,10 @@ export function kickoff(
       ctx.log(`↺ ${agentName} already has the kickoff; not sending it again`);
       return "already-delivered";
     }
-    // Ownership is checked before any record is touched. A launch that loses
-    // the claim after this check writes only its own receipt file, below
-    // the one of the launch that took over.
+    // Ownership is checked before any record is touched. The claim is not
+    // taken over while this process runs; one removed by hand after this
+    // check leaves this launch writing only its own receipt file, below the
+    // one of the launch that took it.
     assertClaimHeld(ctx, options.key, generation);
     sendUnderReceipt(
       ctx,
@@ -638,7 +656,8 @@ export function kickoff(
     return "sent";
   } catch (error) {
     // The pending receipt stops a later launch from sending it again without
-    // confirming it; keeping the claim stops an immediate retry from asking.
+    // confirming it from the transcript, once this launch has ended and its
+    // claim can be taken over.
     if (error instanceof UnknownDelivery) release = false;
     throw error;
   } finally {

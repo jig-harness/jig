@@ -65,9 +65,6 @@ import { runToolOnHost } from "./remote.ts";
 import { type Context, HerdrError, localContext, withLimit } from "./runner.ts";
 import { type Spawned, spawnWorkspace } from "./spawn.ts";
 
-/** Age after which a kickoff claim is taken as abandoned. */
-const CLAIM_STALE_MS = 15 * 60_000;
-
 export function expandHome(path: string): string {
   return path === "~" || path.startsWith("~/")
     ? join(homedir(), path.slice(1))
@@ -117,7 +114,6 @@ async function open(ctx: Context, values: OpenOptions): Promise<number> {
             key: values.key,
             prompt: values.prompt,
             claimWaitMs: CLAIM_WAIT_MS,
-            claimStaleMs: CLAIM_STALE_MS,
           }),
   };
   if (values.json) console.log(JSON.stringify(report));

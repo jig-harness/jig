@@ -78,8 +78,12 @@ usage.
 The kickoff goes to the agent once per key, whatever happens around it:
 
 - **A claim** in `~/.jig/herdr/kickoff/claims/<key>/` marks a kickoff in
-  flight. A second launch of the same key waits for it (two minutes), and a
-  claim older than fifteen minutes counts as abandoned. A claim is taken over
+  flight and names the process holding it. A second launch of the same key
+  waits for it (two minutes), and takes it over only once that process has
+  ended: a launch that is merely slow may still be about to send, so no age
+  makes a claim abandoned. A claim held on another host, or one whose owner
+  cannot be read, is never taken over; the refusal names its directory, for
+  a person to remove once no launch holds it. A claim is taken over
   by creating the next numbered one, never by deleting the old one, and a
   released claim stays on disk marked released, so numbers never repeat and
   two launches cannot both take one.
@@ -92,8 +96,10 @@ The kickoff goes to the agent once per key, whatever happens around it:
   sent and completed once Herdr accepts it, so every send the tool attempted
   leaves a record, and one whose outcome is unknown stays pending. Each
   launch writes a file of its own, named by its claim's number, and the
-  highest number is the receipt, so a launch that lost its claim and finishes
-  late never replaces the record of the launch that took over.
+  highest number is the receipt, so a launch whose claim was removed by hand
+  and finishes late never replaces the record of the launch that took over.
+  A receipt the tool cannot read as one of its own (empty or cut short) stops
+  the tool rather than counting as none.
 - **The transcript** confirms a pending receipt: the prompt's first line in
   the agent's recent output means it was delivered. Its absence proves
   nothing, since only recent output is read, so a pending receipt it does not
@@ -107,7 +113,7 @@ pending receipt the transcript does not confirm, a send whose outcome is
 unknown), the tool stops and says what to check rather than guess. Only an
 answer from Herdr that it wrote nothing (the agent is at a dialog, there is
 no such agent, a usage error) counts as not sent; a timeout or any other
-error keeps the claim and the pending receipt, so no retry can send twice.
+error keeps the pending receipt, so no retry can send twice.
 
 Herdr reports a session id only for an agent whose
 [integration](https://herdr.dev/docs/) is installed (`herdr integration

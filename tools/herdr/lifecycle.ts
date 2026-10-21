@@ -35,7 +35,6 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { hostname } from "node:os";
 import { join } from "node:path";
 import { errnoCode } from "../../plugin/shared/errors.ts";
 import {
@@ -46,6 +45,7 @@ import { main as journalMain } from "../../plugin/skills/reflect/scripts/journal
 import { withGitDeadline } from "../../plugin/skills/reflect/scripts/lib/context.ts";
 import { assertLinkedWorktree, findGitWorktree, samePath } from "./git.ts";
 import { findHerdrWorktree, herdrCall, herdrJson } from "./herdr.ts";
+import { localOwner, ownerLine, processAlive } from "./owner.ts";
 import { budget, type Context, HerdrError, output } from "./runner.ts";
 
 export const HOOKS_DIR = ".config/worktree-hooks";
@@ -85,33 +85,42 @@ const SUPERVISOR_SLACK_MS = 10_000;
  * the group's to the file it is given, so a waiter can tell while any part of
  * the run, the hook's own children included, is still alive. It ends the
  * whole group when the hook fails, when it outlives its limit, when the
- * supervisor is signalled, and when the tool that started it has gone: a
- * failed run, or one whose tool was killed (by a launcher's or SSH session's
- * deadline), leaves nothing running, with a group record or without one.
+ * supervisor is signalled or fails (a record it cannot write included: its
+ * cleanup is in place before the hook starts), and when the tool that started
+ * it has gone: a failed run, or one whose tool was killed (by a launcher's or
+ * SSH session's deadline), leaves nothing running, with a group record or
+ * without one.
  * Arguments: the record file (`-` for none), the hook, its limit in
  * milliseconds and the tool's process id.
  */
-const SUPERVISOR = `
+export const SUPERVISOR = `
 const fs = require("node:fs");
 const [file, hook, limitText, ownerText] = process.argv.slice(1);
 const owner = Number(ownerText);
 const record = (line) => file !== "-" && fs.appendFileSync(file, line + "\\n");
+let child;
+const end = (code, why) => {
+  if (why) console.error(why);
+  if (child) try { process.kill(-child.pid, "SIGKILL"); } catch {}
+  process.exit(code);
+};
+for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(signal, () => end(143));
+const failed = (error) => end(1, "the supervisor of " + hook + " failed (" + (error?.message ?? error) + "); ended the hook");
+process.on("uncaughtException", failed);
+process.on("unhandledRejection", failed);
 if (file !== "-") fs.writeFileSync(file, "");
 record("wrapper " + process.pid);
-let child;
 try {
   child = Bun.spawn([hook], { detached: true, stdin: "ignore", stdout: "inherit", stderr: "inherit" });
 } catch (error) {
   console.error("could not start " + hook + ": " + error.message);
   process.exit(127);
 }
-record("group " + child.pid);
-const end = (code, why) => {
-  if (why) console.error(why);
-  try { process.kill(-child.pid, "SIGKILL"); } catch {}
-  process.exit(code);
-};
-for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(signal, () => end(143));
+try {
+  record("group " + child.pid);
+} catch (error) {
+  end(1, "could not record the process group of " + hook + " (" + error.message + "); ended it");
+}
 const deadline = Date.now() + Number(limitText);
 const ownerGone = () => {
   if (process.ppid !== owner) return true;
@@ -258,7 +267,7 @@ function ownerPath(state: CreateState): string {
 }
 
 function recordOwner(state: CreateState): void {
-  writeWhole(ownerPath(state), `${hostname()} ${process.pid}\n`);
+  writeWhole(ownerPath(state), ownerLine());
 }
 
 /** Take the create hook's claim; false when another process holds it. */
@@ -271,16 +280,6 @@ function claim(state: CreateState): boolean {
   }
   recordOwner(state);
   return true;
-}
-
-/** Whether the process, or with a negative id the process group, exists. */
-function processAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return errnoCode(error) !== "ESRCH";
-  }
 }
 
 function groupPath(state: CreateState): string {
@@ -316,10 +315,8 @@ function takeOverAbandoned(ctx: Context, state: CreateState): boolean {
     if (errnoCode(error) === "ENOENT") return false;
     throw error;
   }
-  const [host, pidText] = owner.split(" ");
-  const pid = Number(pidText);
-  if (host !== hostname() || !Number.isInteger(pid) || pid <= 0) return false;
-  if (runAlive(state, pid)) return false;
+  const pid = localOwner(owner);
+  if (pid === null || runAlive(state, pid)) return false;
   try {
     mkdirSync(join(state.claim, `taken-over-${pid}`));
   } catch (error) {

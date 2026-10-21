@@ -4,10 +4,13 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   acquireClaim,
   type KickoffOptions,
@@ -56,7 +59,6 @@ const options: KickoffOptions = {
   key: KEY,
   prompt: PROMPT,
   claimWaitMs: 0,
-  claimStaleMs: 60_000,
 };
 
 /** Write a receipt file as the launch of claim generation `generation`. */
@@ -87,6 +89,13 @@ function receiptOf(
   return top === undefined
     ? null
     : readFileSync(join(dir, String(top)), "utf8");
+}
+
+/** The id of a process that has ended. */
+function endedPid(): number {
+  const ended = Bun.spawnSync(["true"]);
+  expectSpawnExit(ended, 0, "true");
+  return ended.pid;
 }
 
 /** A context with a receipt from an earlier launch (generation 0). */
@@ -170,6 +179,23 @@ describe("reconcileKickoff", () => {
       "may have landed",
     );
   });
+  test("a receipt this tool does not write is refused, not taken as none", () => {
+    for (const line of [
+      "",
+      "pend",
+      `pending ${KEY}`,
+      `${KEY}:other-agent-1234:s-1`,
+    ]) {
+      const ctx = withReceipt(
+        { [get]: session("s-1"), [read]: ok("❯ later output\n") },
+        line,
+      );
+      expect(() => reconcileKickoff(ctx, A, KEY, PROMPT)).toThrow(
+        "is not one this tool writes",
+      );
+      expect(ctx.calls).not.toContain(read);
+    }
+  });
   test("a session that changes during the check is an error", () => {
     const ctx = withReceipt(
       { [get]: [session("s-1"), session("s-2")] },
@@ -202,40 +228,69 @@ describe("reconcileKickoff", () => {
 describe("claims", () => {
   test("a live claim is waited for, then refused", () => {
     const ctx = fakeContext({});
-    expect(acquireClaim(ctx, KEY, 0, 60_000)).toBe("1");
-    expect(() => acquireClaim(ctx, KEY, 0, 60_000)).toThrow(
+    expect(acquireClaim(ctx, KEY, 0)).toBe("1");
+    expect(() => acquireClaim(ctx, KEY, 0)).toThrow(
       "another launch is kicking off ABC-1",
     );
   });
-  test("an abandoned claim is taken over by the next generation, and the old one removed", () => {
+  test("a claim whose owner has ended is taken over by the next generation, and the old one removed", () => {
     const ctx = fakeContext({});
-    expect(acquireClaim(ctx, KEY, 0, 60_000)).toBe("1");
+    expect(acquireClaim(ctx, KEY, 0)).toBe("1");
     const dir = join(ctx.stateDir, "kickoff", "claims", KEY);
-    const old = new Date(Date.now() - 120_000);
-    utimesSync(join(dir, "1"), old, old);
-    expect(acquireClaim(ctx, KEY, 0, 60_000)).toBe("2");
+    writeFileSync(join(dir, "1", "owner"), `${hostname()} ${endedPid()}\n`);
+    expect(acquireClaim(ctx, KEY, 0)).toBe("2");
     expect(readdirSync(dir)).toEqual(["2"]);
+    expect(readFileSync(join(dir, "2", "owner"), "utf8")).toBe(
+      `${hostname()} ${process.pid}\n`,
+    );
+  });
+  test("a claim whose owner still runs is never taken over, however old", () => {
+    // A holder paused between its claim check and its send must not have a
+    // second launch send beside it once it resumes.
+    const ctx = fakeContext({});
+    expect(acquireClaim(ctx, KEY, 0)).toBe("1");
+    const dir = join(ctx.stateDir, "kickoff", "claims", KEY);
+    const old = new Date(Date.now() - 24 * 3_600_000);
+    utimesSync(join(dir, "1"), old, old);
+    utimesSync(join(dir, "1", "owner"), old, old);
+    expect(() => acquireClaim(ctx, KEY, 0)).toThrow(
+      "another launch is kicking off ABC-1 (claim 1)",
+    );
+    expect(readdirSync(dir)).toEqual(["1"]);
+  });
+  test("a claim owned on another host, or with no owner, is never taken over", () => {
+    for (const owner of [`elsewhere.invalid ${endedPid()}\n`, null, "\n"]) {
+      const ctx = fakeContext({});
+      expect(acquireClaim(ctx, KEY, 0)).toBe("1");
+      const dir = join(ctx.stateDir, "kickoff", "claims", KEY);
+      if (owner === null) rmSync(join(dir, "1", "owner"));
+      else writeFileSync(join(dir, "1", "owner"), owner);
+      expect(() => acquireClaim(ctx, KEY, 0)).toThrow(
+        `remove ${join(dir, "1")}`,
+      );
+      expect(readdirSync(dir)).toEqual(["1"]);
+    }
   });
   test("a holder releases only its own generation", () => {
     const ctx = fakeContext({});
-    acquireClaim(ctx, KEY, 0, 60_000);
+    acquireClaim(ctx, KEY, 0);
     releaseClaim(ctx, KEY, "7");
     expect(existsSync(join(ctx.stateDir, "kickoff", "claims", KEY, "1"))).toBe(
       true,
     );
     releaseClaim(ctx, KEY, "1");
-    expect(acquireClaim(ctx, KEY, 0, 60_000)).toBe("2");
+    expect(acquireClaim(ctx, KEY, 0)).toBe("2");
   });
   test("a released number is never taken again", () => {
     // A launch that read generation 1 as abandoned and paused must not be
     // able to create a number another launch holds after 1 was released.
     const ctx = fakeContext({});
     const dir = join(ctx.stateDir, "kickoff", "claims", KEY);
-    expect(acquireClaim(ctx, KEY, 0, 60_000)).toBe("1");
+    expect(acquireClaim(ctx, KEY, 0)).toBe("1");
     releaseClaim(ctx, KEY, "1");
-    expect(acquireClaim(ctx, KEY, 0, 60_000)).toBe("2");
+    expect(acquireClaim(ctx, KEY, 0)).toBe("2");
     releaseClaim(ctx, KEY, "2");
-    expect(acquireClaim(ctx, KEY, 0, 60_000)).toBe("3");
+    expect(acquireClaim(ctx, KEY, 0)).toBe("3");
     expect(readdirSync(dir)).toEqual(["3"]);
   });
 });
@@ -399,7 +454,8 @@ describe("kickoff", () => {
   test("a claim another launch took over is found before any record is touched", () => {
     const ctx = withReceipt(
       {
-        // While this launch checks, another takes the claim over by age.
+        // While this launch checks, its claim is removed by hand and another
+        // launch takes the next one.
         [get]: () => {
           mkdirSync(join(ctx.stateDir, "kickoff", "claims", KEY, "2"), {
             recursive: true,
@@ -441,9 +497,9 @@ describe("kickoff", () => {
   });
 
   test("a refused prompt never restores the earlier receipt over another launch's", () => {
-    // While this launch's send stalls, its claim goes stale and another
-    // launch takes it over, sends and records the kickoff; then Herdr refuses
-    // this launch's prompt.
+    // While this launch's send stalls, its claim is removed by hand and
+    // another launch takes the next one, sends and records the kickoff; then
+    // Herdr refuses this launch's prompt.
     const takeOver = (ctx: FakeContext, line: string) => {
       mkdirSync(join(ctx.stateDir, "kickoff", "claims", KEY, "2"));
       writeReceipt(ctx, A, "2", line);
@@ -467,9 +523,10 @@ describe("kickoff", () => {
   });
 
   test("a send that completes after another launch took over never replaces that launch's receipt", () => {
-    // This launch records pending s-1 and stalls past the claim's age; the
-    // agent restarts as s-2 and another launch takes the claim over, sends
-    // to s-2 and completes its receipt; then this launch's send succeeds.
+    // This launch records pending s-1 and stalls; its claim is removed by
+    // hand, the agent restarts as s-2 and another launch takes the next
+    // claim, sends to s-2 and completes its receipt; then this launch's send
+    // succeeds.
     const ctx: FakeContext = fakeContext({
       [get]: [session("s-1"), session("s-2"), session("s-2")],
       [send]: () => {
