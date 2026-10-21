@@ -7,15 +7,17 @@
 // The rules counted here keep that progressive loading working:
 //
 //   reference-depth   each reference SKILL.md does not name, by a link, a
-//                     skill-relative path or the folder holding it, counted
-//                     on that reference. An agent reads a reference one hop
+//                     skill-relative path or a folder under references/
+//                     holding it, counted on that reference. An agent reads a reference one hop
 //                     from SKILL.md reliably; reached only through another
 //                     reference, it often reads a part, or nothing.
 //                     Cross-links between references SKILL.md names add no
 //                     hop.
-//   reference-toc     a reference over 100 lines with no contents section
-//                     (a "Contents" heading followed by links to headings in
-//                     the file), so an agent reading a part sees the whole.
+//   reference-toc     a reference over 100 lines that does not open with a
+//                     contents section (a "Contents" heading, preceded by
+//                     at most the file's title heading, followed by links to
+//                     headings in the file), so an agent reading the top
+//                     sees the whole.
 //   issue-density     issue and pull-request ids above 5 per 100 prose lines
 //                     (blank lines included) of a SKILL.md or reference: each
 //                     id past the allowance.
@@ -28,7 +30,8 @@
 //                     counted.
 //   negative-trigger  a SKILL.md whose body says when not to use the skill
 //                     ("When not to use", "Not this skill") while its
-//                     description says nothing of the kind. Only the
+//                     description carries no exclusion ("not for", "do not
+//                     use", "use X instead", "unless"). Only the
 //                     description is read before invocation, so a negative
 //                     trigger in the body alone cannot stop a wrong pick.
 //
@@ -42,7 +45,8 @@
 //   <skills-dir>  a folder of skills, each `<skill>/SKILL.md`
 //   --json        print `{"counts": {"<rule>": {"<file>": n}}}` and nothing
 //                 else, the shape M1's ratchet reads (format "json")
-//   --strict      fail on any finding, for a repository that starts at zero
+//   --strict      fail on any finding, for a repository that starts at zero;
+//                 with --json too
 //   --ids         the pattern an issue or pull-request id matches (default:
 //                 a tracker key such as ENG-123, or #123; standards and
 //                 record ids such as SHA-256, UTF-8, RFC-9110 and ADR-0007
@@ -51,7 +55,9 @@
 // Exit: 0 measured (findings are reported, not failures, unless --strict);
 // 1 a finding under --strict; 2 a usage error, a folder with no skill, or a
 // file that cannot be read (unterminated or invalid frontmatter, a SKILL.md
-// without a description, an empty body).
+// without a description, an empty body). Measuring a merge base
+// (RATCHET_HISTORICAL=1, set by M1's ratchet), a skills folder that does not
+// exist yet or holds no skill measures as no findings.
 //
 // Built-ins only and self-contained, so a repository can copy this one file,
 // and M1's ratchet can measure its merge base with the head's copy of it.
@@ -118,8 +124,10 @@ const TIME_SENSITIVE = [
 ];
 const NOT_THIS_SKILL =
   /^(?:when not to\b|not this skill\b|do not use\b|don['’]t use\b|when to use something else\b)/i;
+// An exclusion, not any negative word: "instead of writing them by hand"
+// describes the work and stops no wrong pick.
 const NEGATIVE_CUE =
-  /\b(?:not|never|instead|rather than|unless|except|don['’]t)\b/i;
+  /\b(?:not (?:for|when|if|on|to use)|(?:do not|don['’]t|never) use|unless|instead(?! of\b))\b/i;
 const CONTENTS = /^(?:table of contents|contents|toc)$/i;
 
 interface Document {
@@ -155,7 +163,7 @@ export function parseDocument(file: string, source: string): Document {
     offset = match[0].split("\n").length;
   }
   if (!body.trim()) throw new InputError(`${file}: empty Markdown body`);
-  const lines = body.replace(/\s+$/, "").split(/\r?\n/);
+  const lines = body.trimEnd().split(/\r?\n/);
   return { file, lines, offset, code: fencedLines(lines), description };
 }
 
@@ -187,33 +195,93 @@ function fencedLines(lines: string[]): boolean[] {
   return code;
 }
 
-const withoutInlineCode = (line: string) => line.replace(/`[^`]*`/g, "");
+/** The length of the run of backticks starting at `from`. */
+function backticks(line: string, from: number): number {
+  let end = from;
+  while (line[end] === "`") end++;
+  return end - from;
+}
+
+/** The end of the backtick run exactly `run` long after `from`, or -1. */
+function closingRun(line: string, from: number, run: number): number {
+  for (let i = from; i < line.length; ) {
+    const n = backticks(line, i);
+    if (n === run) return i + n;
+    i += n || 1;
+  }
+  return -1;
+}
+
+/** The line without its code spans: a backtick run up to the next as long. */
+function withoutInlineCode(line: string): string {
+  let out = "";
+  for (let i = 0; i < line.length; ) {
+    const run = backticks(line, i);
+    if (!run) {
+      out += line[i++];
+      continue;
+    }
+    const end = closingRun(line, i + run, run);
+    if (end < 0) out += line.slice(i, i + run);
+    i = end < 0 ? i + run : end;
+  }
+  return out;
+}
 
 /** Heading text as a renderer slugs it (GitHub's rules), duplicates numbered. */
 function headingSlugs(doc: Document): { slugs: Set<string>; toc: number[] } {
   const slugs = new Set<string>();
   const seen = new Map<string, number>();
   const toc: number[] = [];
+  let before = 0;
   doc.lines.forEach((line, i) => {
-    const m = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
-    if (!m || doc.code[i]) return;
-    const text = plainText(m[2] ?? "");
+    const heading = headingText(line);
+    if (heading === undefined || doc.code[i]) return;
+    const text = plainText(heading);
+    const opening = before === 0 || (before === 1 && isTitle(doc));
+    before++;
     const base = text
       .toLowerCase()
       .replace(/[^\p{L}\p{N}\p{M}\- _]/gu, "")
       .replaceAll(" ", "-");
     const n = seen.get(base) ?? 0;
     seen.set(base, n + 1);
-    if (CONTENTS.test(text)) toc.push(i);
-    else slugs.add(n ? `${base}-${n}` : base);
+    if (CONTENTS.test(text)) {
+      if (opening) toc.push(i);
+    } else slugs.add(n ? `${base}-${n}` : base);
   });
   return { slugs, toc };
 }
 
+/** Whether the document's first heading is a level-1 title. */
+function isTitle(doc: Document): boolean {
+  const first = doc.lines.findIndex((l, i) => !doc.code[i] && headingDepth(l));
+  return first >= 0 && headingDepth(doc.lines[first] ?? "") === 1;
+}
+
+/** Trailing characters from `set` removed, without a backtracking pattern. */
+function trimTrailing(text: string, set: string): string {
+  let end = text.length;
+  while (end > 0 && set.includes(text.charAt(end - 1))) end--;
+  return text.slice(0, end);
+}
+
+/** An ATX heading's text without its markers, or undefined for any other line. */
+function headingText(line: string): string | undefined {
+  const depth = headingDepth(line);
+  if (!depth) return undefined;
+  const text = line.slice(depth).trim();
+  // A closing run of `#` counts only after a space: "C#" keeps its own.
+  const closed = trimTrailing(text, "#");
+  return closed === "" || /\s$/.test(closed) ? closed.trim() : text;
+}
+
+/** Link text kept, link targets, images' bangs, code and emphasis marks dropped. */
 function plainText(markdown: string): string {
   return markdown
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/[`*]/g, "")
+    .replace(/\]\([^)]*\)/g, "")
+    .replaceAll("![", "")
+    .replace(/[[\]`*]/g, "")
     .trim();
 }
 
@@ -230,7 +298,7 @@ function decoded(text: string): string {
   }
 }
 
-/** The lines under the heading at `start`, up to the next as high or higher. */
+/** The prose lines under the heading at `start`, up to the next as high or higher. */
 function section(doc: Document, start: number): string[] {
   const depth = headingDepth(doc.lines[start] ?? "");
   const end = doc.lines.findIndex((line, i) => {
@@ -238,10 +306,12 @@ function section(doc: Document, start: number): string[] {
     const d = headingDepth(line);
     return d > 0 && d <= depth;
   });
-  return doc.lines.slice(start + 1, end < 0 ? undefined : end);
+  return doc.lines
+    .slice(start + 1, end < 0 ? undefined : end)
+    .filter((_, k) => !doc.code[start + 1 + k]);
 }
 
-/** A contents section: a contents heading, then a link to a heading here. */
+/** A contents section at the top: a contents heading, then a link to a heading here. */
 function hasContents(doc: Document): boolean {
   const { slugs, toc } = headingSlugs(doc);
   const reachesHeading = (line: string) =>
@@ -265,7 +335,7 @@ function targets(doc: Document): string[] {
         ...line.matchAll(
           /(?:(?:<skill-dir>|\$\{CLAUDE_SKILL_DIR\})\/|(?<![\w./-]))(references\/[^\s`'")<>]*)/g,
         ),
-      ].map((m) => `<skill>/${(m[1] ?? "").replace(/[.,;:!?*_]+$/, "")}`),
+      ].map((m) => `<skill>/${trimTrailing(m[1] ?? "", ".,;:!?*_")}`),
     ];
     for (const target of found) if (target) out.push(target);
   });
@@ -288,8 +358,8 @@ function named(doc: Document, skillRoot: string): Set<string> {
 }
 
 /**
- * A reference SKILL.md does not name, by its path or by the folder holding
- * it, sits more than one hop away: reached through another reference, or not
+ * A reference SKILL.md does not name, by its path or by a folder under
+ * references/ holding it, sits more than one hop away: reached through another reference, or not
  * at all. Cross-links between references SKILL.md names add no hop.
  */
 function referenceDepth(
@@ -298,9 +368,14 @@ function referenceDepth(
   skillRoot: string,
 ): Finding[] {
   const path = resolve(reference);
+  const folders = resolve(skillRoot, "references");
+  // A folder names what it holds only from references/ down: naming the
+  // skill's own folder, or one above it, sends the agent to no reference.
+  const holds = (folder: string) =>
+    (folder === folders || folder.startsWith(`${folders}${sep}`)) &&
+    path.startsWith(`${folder}${sep}`);
   for (const p of fromSkill)
-    if (path === p || path.startsWith(`${p.replace(/[\\/]+$/, "")}${sep}`))
-      return [];
+    if (path === p || holds(trimTrailing(p, "\\/"))) return [];
   return [
     {
       file: reference,
@@ -349,8 +424,10 @@ function timeSensitive(doc: Document): Finding[] {
 
 function negativeTrigger(doc: Document): Finding[] {
   const heading = doc.lines.findIndex((line, i) => {
-    const m = /^#{1,6}\s+(.*)$/.exec(line);
-    return !doc.code[i] && m && NOT_THIS_SKILL.test(plainText(m[1] ?? ""));
+    const text = headingText(line);
+    return (
+      !doc.code[i] && text !== undefined && NOT_THIS_SKILL.test(plainText(text))
+    );
   });
   if (heading < 0 || NEGATIVE_CUE.test(doc.description ?? "")) return [];
   return [
@@ -420,12 +497,17 @@ function isDirectory(path: string): boolean {
   return statSync(path, { throwIfNoEntry: false })?.isDirectory() ?? false;
 }
 
-/** Each `<dir>/<skill>/SKILL.md` with its `references/**\/*.md`, sorted. */
-export function inventory(dir: string): Skill[] {
-  if (!isDirectory(dir))
+/**
+ * Each `<dir>/<skill>/SKILL.md` with its `references/**\/*.md`, sorted. A
+ * `historical` tree (a merge base) may predate the folder or its first skill.
+ */
+export function inventory(dir: string, historical = false): Skill[] {
+  if (!isDirectory(dir)) {
+    if (historical && !statSync(dir, { throwIfNoEntry: false })) return [];
     throw new InputError(`not a readable directory: ${dir}`);
+  }
   const out: Skill[] = [];
-  for (const entry of readdirSync(dir).sort()) {
+  for (const entry of readdirSync(dir).sort((a, b) => a.localeCompare(b))) {
     const root = join(dir, entry);
     const file = join(root, "SKILL.md");
     if (!statSync(file, { throwIfNoEntry: false })) continue;
@@ -433,19 +515,24 @@ export function inventory(dir: string): Skill[] {
     const references = isDirectory(folder)
       ? (readdirSync(folder, { recursive: true }) as string[])
           .filter((rel) => /\.md$/i.test(rel))
-          .sort()
+          .sort((a, b) => a.localeCompare(b))
           .map((rel) => slash(join(folder, rel)))
       : [];
     out.push({ root, file: slash(file), references });
   }
-  if (!out.length) throw new InputError(`${dir}: no skill to measure`);
+  if (!out.length && !historical)
+    throw new InputError(`${dir}: no skill to measure`);
   return out;
 }
 
 /** Findings of every skill in the skills folders. */
-export function measure(dirs: string[], options: Options): Finding[] {
+export function measure(
+  dirs: string[],
+  options: Options,
+  historical = false,
+): Finding[] {
   return dirs.flatMap((dir) =>
-    inventory(dir).flatMap((skill) =>
+    inventory(dir, historical).flatMap((skill) =>
       scanSkill(skill, readRegularFile, options),
     ),
   );
@@ -494,10 +581,12 @@ export function checkSkillAuthoring(argv: string[]): number {
   if (values.ids === "")
     throw new InputError(`--ids needs a pattern\n${USAGE}`);
   const options = { ids: new RegExp(values.ids ?? DEFAULT_IDS), density };
-  const findings = measure(positionals, options);
+  const historical = process.env.RATCHET_HISTORICAL === "1";
+  const findings = measure(positionals, options, historical);
+  const failed = values.strict && findings.length ? 1 : 0;
   if (values.json) {
     console.log(JSON.stringify({ counts: counts(findings) }));
-    return 0;
+    return failed;
   }
   for (const f of findings)
     console.log(`${f.file}:${f.line}: ${f.rule}: ${f.message}`);
@@ -505,7 +594,7 @@ export function checkSkillAuthoring(argv: string[]): number {
   console.log(
     `Skill authoring: ${RULES.map((r) => `${r} ${Object.values(totals[r] ?? {}).reduce((a, b) => a + b, 0)}`).join(", ")}`,
   );
-  return values.strict && findings.length ? 1 : 0;
+  return failed;
 }
 
 // An input it cannot measure is exit 2, never a pass.

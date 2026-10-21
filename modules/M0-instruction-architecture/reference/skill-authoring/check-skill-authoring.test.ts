@@ -27,10 +27,11 @@ const skillFile = (body: string, description = "Demo. Use when testing.") =>
 const prose = (n: number) =>
   Array.from({ length: n }, (_, i) => `Line ${i + 1}.`).join("\n");
 
-function run(args: string[]) {
+function run(args: string[], env: Record<string, string> = {}) {
   const result = Bun.spawnSync([process.execPath, script, ...args], {
     stdout: "pipe",
     stderr: "pipe",
+    env: { ...process.env, ...env },
   });
   return {
     exitCode: result.exitCode,
@@ -110,6 +111,18 @@ describe("reference-depth", () => {
     expect(counts(root)).toEqual({});
   });
 
+  test("naming the skill's folder or one above it names no reference", () => {
+    for (const link of ["[Home](.)", "[Parent](..)", "[Root](./)"]) {
+      const root = skills({
+        "SKILL.md": skillFile(`${link}\n`),
+        "references/hidden.md": "Hidden.\n",
+      });
+      expect(counts(root)).toEqual({
+        "reference-depth": { "references/hidden.md": 1 },
+      });
+    }
+  });
+
   test("a reference named only inside fenced code counts", () => {
     const root = skills({
       "SKILL.md": skillFile("```sh\ncat references/a.md\n```\n"),
@@ -140,6 +153,27 @@ describe("reference-toc", () => {
   test("a contents section whose links reach no heading does not count", () => {
     const toc = "# R\n\n## Contents\n\n- [Usage](#missing)\n\n## Usage\n";
     expect(counts(named(`${toc}${prose(100)}\n`))).toEqual({
+      "reference-toc": { "references/r.md": 1 },
+    });
+  });
+
+  test("a contents link inside fenced code does not count", () => {
+    const toc =
+      "# R\n\n## Contents\n\n```md\n- [Usage](#usage)\n```\n\n## Usage\n";
+    expect(counts(named(`${toc}${prose(100)}\n`))).toEqual({
+      "reference-toc": { "references/r.md": 1 },
+    });
+  });
+
+  test("the contents section opens the file: after the title, before other headings", () => {
+    const usage = `## Usage\n${prose(100)}\n`;
+    const contents = "## Contents\n\n- [Usage](#usage)\n\n";
+    expect(counts(named(`# R\n\nIntro.\n\n${contents}${usage}`))).toEqual({});
+    expect(counts(named(`${contents}${usage}`))).toEqual({});
+    expect(counts(named(`# R\n\n${usage}${contents}`))).toEqual({
+      "reference-toc": { "references/r.md": 1 },
+    });
+    expect(counts(named(`## Intro\n\n${contents}${usage}`))).toEqual({
       "reference-toc": { "references/r.md": 1 },
     });
   });
@@ -183,6 +217,7 @@ describe("time-sensitive", () => {
       "The claim holds as of this head, the merge just changed it.",
       "As of mayhem, decide as of decision time.",
       "`as of March 2026` is an example.",
+      "``recently added`` and ``` a `recently added` b ``` are examples too.",
       "```",
       "as of 2026",
       "```",
@@ -203,10 +238,23 @@ describe("negative-trigger", () => {
   });
 
   test("a description that carries one does not", () => {
-    const description = "Do the thing. Not for other things (use other).";
+    for (const description of [
+      "Do the thing. Not for other things (use other).",
+      "Do the thing; for other things use the other skill instead.",
+      "Do the thing, unless it is another thing.",
+      "Do the thing. Do not use it for other things.",
+    ])
+      expect(
+        counts(skills({ "SKILL.md": skillFile(body, description) })),
+      ).toEqual({});
+  });
+
+  test("a negative word that excludes nothing still counts", () => {
+    const description =
+      "Use when drafting release notes instead of writing them manually.";
     expect(
       counts(skills({ "SKILL.md": skillFile(body, description) })),
-    ).toEqual({});
+    ).toEqual({ "negative-trigger": { "SKILL.md": 1 } });
   });
 });
 
@@ -219,6 +267,23 @@ describe("output and exit codes", () => {
     expectSpawnExit(listed, 0);
     expect(listed.stdout).toMatch(/demo\/SKILL\.md:7: negative-trigger: /);
     expectSpawnExit(run(["--strict", root]), 1);
+    const json = run(["--json", "--strict", root]);
+    expectSpawnExit(json, 1);
+    expect(JSON.parse(json.stdout).counts["negative-trigger"]).toBeDefined();
+  });
+
+  test("measuring a merge base, a folder it predates measures as no findings", () => {
+    const history = { RATCHET_HISTORICAL: "1" };
+    for (const dir of [
+      join(scratch, "missing"),
+      skills({ "notes.md": "x\n" }),
+    ]) {
+      const result = run(["--json", dir], history);
+      expectSpawnExit(result, 0);
+      expect(JSON.parse(result.stdout)).toEqual({ counts: {} });
+    }
+    const unreadable = skills({ "SKILL.md": "---\nname: demo\n---\nBody.\n" });
+    expectSpawnExit(run(["--json", unreadable], history), 2);
   });
 
   test("an input it cannot measure is exit 2, never a pass", () => {

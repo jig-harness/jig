@@ -1,6 +1,6 @@
 ---
 name: release-notes
-description: Draft release notes from merged pull requests. Use when cutting a release; not for a changelog entry on a single pull request (use the changelog skill instead).
+description: Use when cutting a release, to draft its notes from the pull requests merged since the last tag; not for a changelog entry on a single pull request (use the changelog skill instead).
 ---
 
 # Release notes

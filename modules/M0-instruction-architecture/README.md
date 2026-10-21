@@ -109,13 +109,15 @@ counted by the [skill-authoring check](reference/skill-authoring/README.md).
   "currently the only option" go stale without anyone noticing; state the
   condition or the version instead. *Counted:* the common markers.
 - **Discovery controls are used for what they do**
-  ([what each runtime offers](mappings.md#skill-discovery-controls)). Scope a
-  skill tied to a file area to those paths, so it is listed only once a
-  matching file is read; keep workflow entry points and skills needed before
-  any file is chosen unscoped. Make a skill explicit-only (never listed,
-  started only by the user) when the user must decide to start it, not merely
-  because it changes something: check first whether a workflow calls it.
-  Hiding a skill from the user's menu saves no discovery budget.
+  ([what each runtime offers](mappings.md#skill-discovery-controls)). A
+  skill tied to a file area should reach the agent only once that area is in
+  play: scope it to those paths where the runtime can, and keep workflow
+  entry points and skills needed before any file is chosen unscoped. A skill
+  the user must decide to start should not be picked by the agent: make it
+  explicit-only where the runtime can, and not merely because it changes
+  something; check first whether a workflow calls it. What each control
+  removes from the listing differs per runtime, and hiding a skill from the
+  user's menu alone saves no discovery budget.
 
 ## Maturity levels
 

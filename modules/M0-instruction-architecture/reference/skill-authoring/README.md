@@ -20,16 +20,16 @@ run it from a pinned Jig checkout.
 
 | Rule | Counts | In |
 |------|--------|----|
-| `reference-depth` | each reference `SKILL.md` does not name: not by a link, not by a skill-relative path (`${CLAUDE_SKILL_DIR}/references/…`, `<skill-dir>/references/…`, `references/…`) and not by the folder holding it. Cross-links between references `SKILL.md` names add no hop | references |
-| `reference-toc` | a reference over 100 lines with no contents section: a heading named "Contents" (or "Table of contents") followed by a link to a heading in the same file | references |
+| `reference-depth` | each reference `SKILL.md` does not name: not by a link, not by a skill-relative path (`${CLAUDE_SKILL_DIR}/references/…`, `<skill-dir>/references/…`, `references/…`) and not by a folder under `references/` holding it (naming the skill's own folder, or one above, names no reference). Cross-links between references `SKILL.md` names add no hop | references |
+| `reference-toc` | a reference over 100 lines that does not open with a contents section: a heading named "Contents" (or "Table of contents"), preceded by at most the file's level-1 title, followed by a link outside fenced code to a heading in the same file | references |
 | `issue-density` | each issue or pull-request id past 5 per 100 prose lines, blank lines included (by default a tracker key such as `ENG-123`, or `#123`; standard and record ids such as `SHA-256`, `UTF-8`, `RFC-9110` and `ADR-0007` are not counted) | `SKILL.md` and references |
 | `time-sensitive` | each marker that goes stale with the calendar: "as of" a date, "at the time of writing", "recently added", "coming soon", a month and year, "nowadays". "As of v2.3" names a version and is not counted | `SKILL.md` and references |
-| `negative-trigger` | a body with a "When not to use" or "Not this skill" heading under a description that says nothing of the kind (no "not", "never", "instead", "rather than", "unless" or "except") | `SKILL.md` |
+| `negative-trigger` | a body with a "When not to use" or "Not this skill" heading under a description that carries no exclusion: none of "not for", "not when", "not if", "not on", "not to use", "do not use", "never use", "unless", or an "instead" that is not "instead of" | `SKILL.md` |
 
 A skill's files are `<skills-dir>/<skill>/SKILL.md` and every Markdown file
 under its `references/`. Fenced code is not prose and is never counted; a
-time-sensitive phrase inside an inline code span is an example and is not
-counted. The time-sensitive patterns catch the common markers only, so a
+time-sensitive phrase inside an inline code span, delimited by one backtick
+or several, is an example and is not counted. The time-sensitive patterns catch the common markers only, so a
 sentence such as "today the only option is X" still needs a reviewer.
 
 ## Usage
@@ -44,14 +44,17 @@ bun check-skill-authoring.ts [--json] [--strict] [--ids <regex>] [--density N] <
 - `--json` prints `{"counts": {"<rule>": {"<file>": n}}}` and nothing else,
   the shape [M1's ratchet](../../../M1-gates-enforcement-ladder/reference/ratchet/README.md)
   reads as a `json` counter.
-- `--strict` exits 1 on any finding, for a repository that starts at zero and
-  has no ratchet.
+- `--strict` exits 1 on any finding, with or without `--json`, for a
+  repository that starts at zero and has no ratchet.
 - `--ids` replaces the id pattern; `--density` the allowance per 100 prose
   lines.
 
 Exit 2 means the check could not measure: no skill in a folder, a folder that
 does not exist, unterminated or invalid frontmatter, a `SKILL.md` with no
-description, an empty body, or a usage error.
+description, an empty body, or a usage error. Under `RATCHET_HISTORICAL=1`,
+which M1's ratchet sets when it measures the merge base, a skills folder
+that does not exist yet, or holds no skill, measures as no findings: a
+repository can add its first skills and this counter in one change.
 
 Try it on the fixture, a skill that follows every rule:
 

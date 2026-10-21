@@ -107,6 +107,24 @@ describe("a json counter compared per file", () => {
     expect(check(r, 1)).toContain("a.md (2 → 3)");
   });
 
+  test("the base is measured with RATCHET_HISTORICAL=1, so a folder it predates can count as none", () => {
+    // Refuses a missing input unless it measures a merge base.
+    const strictScript = `
+import { existsSync } from "node:fs";
+if (!existsSync("docs") && process.env.RATCHET_HISTORICAL !== "1") process.exit(2);
+console.log(JSON.stringify({ counts: {} }));
+`;
+    const r = repo({ "a.md": "none\n" });
+    r.write("count.ts", strictScript);
+    r.write("docs/a.md", "none\n");
+    r.write(
+      "ratchet.json",
+      JSON.stringify({ ...wiring(), counters: [todoCounter, counter] }),
+    );
+    r.commit("add docs and their counter together");
+    check(r, 0);
+  });
+
   test("a command that fails or prints no counts could not be checked", () => {
     for (const script of [
       "process.exit(3);\n",

@@ -206,7 +206,13 @@ function measureOne(tree: string, c: Counter, historical: boolean): Measured {
     const counts = grepCounts(tree, c.patterns, c.files);
     return { ratcheted: counts, all: counts };
   }
-  const r = run(c.command, tree);
+  // A json command is told it measures a merge base, which may predate the
+  // files it reads; the other formats read no such inputs.
+  const r = run(
+    c.command,
+    tree,
+    c.format === "json" && historical ? { RATCHET_HISTORICAL: "1" } : {},
+  );
   if (c.format === "json") {
     if (r.code !== 0)
       throw new CountsError(
