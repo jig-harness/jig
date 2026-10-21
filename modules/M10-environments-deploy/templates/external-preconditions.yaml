@@ -1,0 +1,37 @@
+# Declare intended state, not dates on which somebody last checked it.
+# Run from a pinned Jig checkout or vendor its runtime dependencies:
+# https://github.com/jig-harness/jig/blob/main/modules/M10-environments-deploy/reference/external-preconditions/README.md
+version: 1
+preconditions:
+  - id: integration-branch
+    kind: branch-protection
+    owner: repository-administrators
+    description: Changes pass the integration checks before reaching the default branch.
+    state: active
+    target:
+      repository: example/project
+      branch: main
+    expected:
+      required_checks: [gates]
+      conversation_resolution: true
+      force_pushes: false
+      deletions: false
+      pull_requests: true
+      # When a bot writes directly, name its GitHub App. Each PR/check blocker
+      # must admit it, while force-push/deletion rules must still bind it.
+      # writer: {app_id: 42, slug: release-bot}
+    remediation: An administrator reviews classic protection and every applicable ruleset, requires gates and resolved threads, and forbids force pushes and deletion.
+    # Exceptions remain visible. Expiry is enforced at UTC midnight, and an
+    # exception never covers an unreadable state or an unimplemented checker.
+    # waiver:
+    #   reason: A temporary departure approved while recovery is scheduled
+    #   approved_by: repository-administrator
+    #   expires: "2030-01-01"
+  - id: service-identity
+    kind: identity-provider
+    owner: identity-administrators
+    description: The workflow identity can authenticate and perform the operation its consumer needs.
+    state: pending
+    target: {realm: example}
+    expected: {operation: authenticate-and-authorize}
+    remediation: Add an operated checker for this provider and then mark the entry active.
