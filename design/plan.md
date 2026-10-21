@@ -58,21 +58,6 @@ rollout:
 [adoption/greenfield.md](../adoption/greenfield.md) then points at
 `/jig:kickoff` instead of the seed.
 
-### 5. A shared runtime kernel and diagnostics
-
-The plugin's scripts each solve the same problems by hand: decoding JSON
-from `gh` and configuration files, retrying, releasing locks on a signal,
-reading the clock. When one fails, the cause is often lost (an error turned
-into a default answer, a child's error output discarded), and nothing
-records how long anything took. The ratchet counts those patterns, and
-`plugin/shared/` holds the guards, error helpers, clock and
-logger that replace them; what is left moves the code onto them.
-
-- **Burn-downs**, as code is touched: the 91 `exactOptionalPropertyTypes`
-  errors; drive-pr's own copies of `proc.ts`, `cli.ts` and
-  `gh-conditional.ts` beside the shared ones; the duplicated block in
-  `fleet-health.ts`; fallow's complexity hotspots.
-
 ### 7. The Notion store, run against Notion
 
 The [Notion store](../plugin/skills/reflect/README.md#notion-store) is built and

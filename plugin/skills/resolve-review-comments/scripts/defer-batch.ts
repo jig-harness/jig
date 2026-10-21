@@ -2804,7 +2804,7 @@ export async function runDeferBatch(
     reason: args.reason,
     severity: args.severity,
     category: args.category,
-    fix: args.fix === "" ? undefined : args.fix,
+    ...(args.fix === "" ? {} : { fix: args.fix }),
   });
 
   let identifier: string;

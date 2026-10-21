@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, realpathSync } from "node:fs";
 
 import { tmpdir } from "node:os";
@@ -42,6 +43,7 @@ export function createStateDurabilityFixtures() {
       },
     );
     if (stdin !== undefined) {
+      assert(proc.stdin, "spawned child must expose its piped stdin");
       proc.stdin.write(stdin);
       proc.stdin.end();
     }
@@ -130,7 +132,7 @@ export function createStateDurabilityFixtures() {
     const p = Bun.spawnSync(
       scriptArgv(join(SCRIPTS, "drive-state.ts"), ...args),
       {
-        cwd,
+        ...(cwd === undefined ? {} : { cwd }),
         env,
         stdin: stdin === undefined ? undefined : Buffer.from(stdin),
         stdout: "pipe",
