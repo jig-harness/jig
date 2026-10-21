@@ -478,7 +478,7 @@ work as part of the plugin:
   with its licence and a test that keeps it identical to the pinned package
   (as `plugin/shared/vendor/js-yaml.mjs` is).
 - **Windows cancellation:** follow the scope and reconsideration conditions
-  in [ADR-0007](docs/adr/ADR-0007-windows-cancellation-uses-captured-process-identities.md)
+  in [ADR-0008](docs/adr/ADR-0008-windows-cancellation-uses-captured-process-identities.md)
   when changing process launch, cancellation or the evidence that a
   cancellation completed.
 - **Description:** keep the frontmatter `description` (and an agent's) at 512

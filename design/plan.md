@@ -339,7 +339,7 @@ audit scores M12's new criterion from the report.
   Windows' Bash first, and under PowerShell (Codex on Windows) later. Much
   of the code already handles Windows: a pass and its registered runners
   are stopped by captured process identities within the cooperative scope
-  recorded in [ADR-0007](../docs/adr/ADR-0007-windows-cancellation-uses-captured-process-identities.md),
+  recorded in [ADR-0008](../docs/adr/ADR-0008-windows-cancellation-uses-captured-process-identities.md),
   the clone key is not a path,
   and the pass is
   spawned from an argument list. Both suites run on Windows every night; the tests

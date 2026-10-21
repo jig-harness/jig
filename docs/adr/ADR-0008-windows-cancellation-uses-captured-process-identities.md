@@ -1,5 +1,5 @@
 ---
-title: "ADR-0007: Windows cancellation uses captured process identities"
+title: "ADR-0008: Windows cancellation uses captured process identities"
 type: adr
 status: approved
 description: "Captured process identities and registered runners are sufficient for cooperative drive passes; Windows cancellation accepts the late-spawn race and provides no complete-tree containment guarantee"
@@ -15,7 +15,7 @@ related:
 tags: [adr, windows, process-control]
 ---
 
-# ADR-0007: Windows cancellation uses captured process identities
+# ADR-0008: Windows cancellation uses captured process identities
 
 **Status:** Approved · **Date:** 2026-10-20 · **Deciders:** Jig's maintainers, through pull-request review
 
