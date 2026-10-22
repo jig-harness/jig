@@ -323,6 +323,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.79.1] - 2026-10-22
+
+### Fixed
+
+- Drive listings identify each drive's repository in human output and JSON rows, so identical pull request numbers across clones can be distinguished.
+
 ## [0.79.0] - 2026-10-22
 
 ### Added
@@ -3417,7 +3423,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.79.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.79.1...HEAD
+[0.79.1]: https://github.com/jig-harness/jig/compare/v0.79.0...v0.79.1
 [0.79.0]: https://github.com/jig-harness/jig/compare/v0.78.0...v0.79.0
 [0.78.0]: https://github.com/jig-harness/jig/compare/v0.77.0...v0.78.0
 [0.77.0]: https://github.com/jig-harness/jig/compare/v0.76.0...v0.77.0
