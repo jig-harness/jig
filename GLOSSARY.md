@@ -518,6 +518,23 @@ make, use the entry's term instead.
 
 ## Process
 
+- **Cause fingerprint** — a stable identity for one cause of a scheduled
+  failure, built from the check or prerequisite, its scope and a normalized
+  failure signature. It excludes changing details such as run IDs and times,
+  so repeated failures find one issue. See
+  [M11](modules/M11-process-observability/README.md#scheduled-failures-one-issue-per-cause).
+- **Fencing** — protection against a worker that still believes it holds an
+  expired lock. Each lock acquisition gets a number larger than every earlier
+  one, and every write carries it; the store refuses a write whose number is
+  older than the newest it has seen, so the replaced worker cannot overwrite
+  its successor's work. See the
+  [scheduled-failure reconciliation design](design/scheduled-failure-reconciliation.md#tracker-interface-and-retry-safety).
+- **Flood breaker** — a per-cause limit on repeated failure notifications.
+  After a declared number of consecutive failures it announces suppression,
+  keeps the cause open and continues collecting evidence. Confirmed recovery
+  closes the issue and re-arms reporting; silence does not. See
+  [M11](modules/M11-process-observability/README.md#scheduled-failures-one-issue-per-cause).
+
 - **ADR (architecture decision record)** — a short numbered document capturing
   one significant decision, its context, and its consequences. Append-only
   history: superseded ADRs are marked, not rewritten.
@@ -1723,5 +1740,8 @@ identity. See [M10](modules/M10-environments-deploy/README.md#external-precondit
 
 A process that compares intended and observed state and maintains the
 corresponding record. For external preconditions, it maintains one current
-tracker issue while anything fails and closes it after recovery. See
-[M11](modules/M11-process-observability/README.md#one-current-issue-for-external-preconditions).
+tracker issue while anything fails and closes it after recovery. For
+scheduled failures, it opens, updates or closes the issue for each cause from
+complete evidence, retaining progress so retries do not repeat changes. See
+[M11](modules/M11-process-observability/README.md#one-current-issue-for-external-preconditions)
+and [scheduled failures](modules/M11-process-observability/README.md#scheduled-failures-one-issue-per-cause).

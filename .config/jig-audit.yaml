@@ -776,6 +776,14 @@ criteria:
     # Every scheduled job is declared in a cadence registry with the interval it must produce a result at, a check fails a scheduled workflow missing from it, and a scheduled watcher classifies each job's run history and fails for a job that is stale (no result inside its cadence plus grace) or red, so a schedule that stopped running never reads as green (expected-absent for a repository with no scheduled job).
     score: expected-absent
     evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: .github/workflows/gates.yml is the only workflow and has no schedule: trigger, so no scheduled job existed to declare or watch"
+  M11/scheduled-failures-reconciled-per-cause:   # standard, requires mechanical
+    # Separate evidence-only tests and classified triage maintain one issue per stable cause, closed only on confirmed recovery.
+    score: expected-absent
+    evidence: "Inherited evidence for this record's commit a66ee2269e50bdb33434f8c3f741ac337ec86a65: M11/scheduled-jobs-staleness-watched records gates.yml as the only workflow with no schedule. The commit is unavailable locally and the remote refused fetching it; no scheduled check existed according to that recorded evidence"
+  M11/scheduled-failure-flood-breaker:   # standard, requires mechanical
+    # An announced per-cause breaker bounds repeated comments after N failures and re-arms only on confirmed recovery.
+    score: expected-absent
+    evidence: "Inherited evidence for this record's commit a66ee2269e50bdb33434f8c3f741ac337ec86a65: M11/scheduled-jobs-staleness-watched records no scheduled job. The commit is unavailable locally and the remote refused fetching it; no scheduled-failure reporting needed a breaker according to that recorded evidence"
   M11/observability-gates-self-tested:   # strict, requires mechanical
     # The no-dark-instruments gate and the event-schema lint each ship a self-test that runs in CI, so a broken observability gate fails loudly.
     # prior: absent: These gates are not applied to Jig; module reference self-tests cover examples only

@@ -1,6 +1,6 @@
 Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.
 
-### What changed (133)
+### What changed (135)
 
 | Module | Criterion | Before → after | Change |
 |--------|-----------|----------------|--------|
@@ -59,6 +59,8 @@ Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/
 | M10 Environments deploy | `pipeline-index-derived-or-gated` | not scored → expected absent | Added by Jig |
 | M10 Environments deploy | `external-preconditions-live-checked` | not scored → absent | Added by Jig |
 | M11 Process observability | `scheduled-jobs-staleness-watched` | not scored → expected absent | Added by Jig |
+| M11 Process observability | `scheduled-failures-reconciled-per-cause` | not scored → absent | Added by Jig |
+| M11 Process observability | `scheduled-failure-flood-breaker` | not scored → absent | Added by Jig |
 | M11 Process observability | `heartbeat-reports-to-external-monitor` | not scored → expected absent | Added by Jig |
 | M11 Process observability | `external-preconditions-issue-reconciled` | not scored → absent | Added by Jig |
 | M12 Parallel agent ergonomics | `change-records-one-file-per-change` | not scored → expected absent | Added by Jig |
