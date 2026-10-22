@@ -170,6 +170,9 @@ the release in step 4 restores them. Then, for each:
 2. Comment on it, naming the anchor and every other issue in the batch, so a
    second agent sees it is spoken for and by which batch
    (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" comment <KEY> --body-file body.md`).
+   Once the last issue is commented on, remove the file
+   (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- body.md`):
+   a file left in the worktree keeps the drive from converging.
 
 Then write the batch form of the
 [intent chain](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), as `/jig:do-item`
@@ -181,9 +184,11 @@ with the file-writing tool:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/intent-chain.ts" --input batch-intent.json
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- batch-intent.json
 ```
 
-Keep the `pickupId` it prints: the pull request is captured with it in step 5.
+Run the second command only after the first exits `0`; it removes the input
+file so the worktree stays clean. Keep the `pickupId` the first prints: the pull request is captured with it in step 5.
 
 ### 4. Implement, one commit per issue
 

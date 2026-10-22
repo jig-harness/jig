@@ -483,9 +483,16 @@ async function checkRules(state: Session, args: string[]): Promise<void> {
     state,
     required(args[1], "base-relative rules file"),
   );
-  const list = fileList(state).filter((file) =>
-    statSync(join(state.root, file), { throwIfNoEntry: false })?.isFile(),
-  );
+  // A link among a path's components can lead outside the repository, so
+  // each file is kept only when its real location is inside the real root.
+  const reviewedRoot = realpathSync(state.root);
+  const list = fileList(state).filter((file) => {
+    const path = join(state.root, file);
+    return (
+      statSync(path, { throwIfNoEntry: false })?.isFile() === true &&
+      inside(reviewedRoot, realpathSync(path))
+    );
+  });
   if (list.length)
     process.stdout.write(
       await policy(state, script, list, true, undefined, { RULES: rules }),

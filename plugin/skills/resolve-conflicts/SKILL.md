@@ -415,14 +415,18 @@ The cause is why the path conflicted, from the same rules as the
 path's most telling cause when its regions have several). A path whose cause
 cannot be told is written without one.
 
-For a rebase, save the section with
-`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file conflict-section.txt -- bun "${CLAUDE_SKILL_DIR}/scripts/check-resolution.ts" --message`.
+For a rebase, save each stop's section to a file of its own, numbered from
+`1` in stop order, so a later stop cannot replace an earlier one's:
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file conflict-section-1.txt -- bun "${CLAUDE_SKILL_DIR}/scripts/check-resolution.ts" --message`
+for the first stop, `conflict-section-2.txt` for the second, and so on.
 After that command succeeds, run `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rebase --continue`,
 which keeps the replayed commit's own message. Every
 further stop is a new operation: map, resolve, record and check it again.
-When the rebase is done, post the saved sections on the pull request, or
-report them to the user when there is none, then remove the file with
-`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- conflict-section.txt`.
+When the rebase is done, post every saved section on the pull request, in
+stop order, or report them to the user when there is none, then remove each
+file with
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- conflict-section-1.txt`
+and its numbered siblings.
 
 The concluding sequence above records merges, cherry-picks and reverts.
 For a rebase, run the recorder once its last stop has been continued:

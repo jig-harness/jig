@@ -6,6 +6,7 @@ import {
   mkdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -417,4 +418,23 @@ test("policy checks do not run when all selected files have been deleted", () =>
   expectSpawnExit(result, 0);
   expect(result.stdout).toBe("");
   expect(result.stderr).toBe("");
+});
+
+test("policy checks skip a file reached through a link that leaves the repository", () => {
+  const root = fixture();
+  const outside = mkdtempSync(join(tmpdir(), "review outside "));
+  roots.push(outside);
+  writeFileSync(join(outside, "outside.ts"), "outside\n");
+  // "junction" lets Windows make a directory link without privileges.
+  symlinkSync(outside, join(root, "linkdir"), "junction");
+  const state = setup(root, "linkdir/outside.ts", "kept.ts");
+  const result = run(root, process.execPath, [
+    ...launch,
+    "check",
+    state.session,
+    "check.ts",
+    "rules.yaml",
+  ]);
+  expectSpawnExit(result, 0);
+  expect(JSON.parse(result.stdout).args).toEqual(["kept.ts"]);
 });

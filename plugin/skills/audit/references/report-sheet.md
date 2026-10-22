@@ -12,7 +12,7 @@ The worked example is the execa calibration run: the report source at
 `<skill-dir>/__tests__/fixtures/report/execa.report.json`, rendered with the
 record `<skill-dir>/calibration/2026-10-12-execa.jig-audit.yaml` and the
 configuration-fit report `__tests__/fixtures/report/execa.fit.json`.
-`<skill-dir>` is the directory of the `audit` skill (`<skill-dir>` in
+`<skill-dir>` is the directory of the `audit` skill (`${CLAUDE_SKILL_DIR}` in
 `SKILL.md`). Render it from outside any git repository: inside one, `report.ts`
 refuses a record of a commit that repository does not hold.
 

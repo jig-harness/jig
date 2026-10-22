@@ -1,5 +1,12 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -34,6 +41,17 @@ describe("scratch.ts --directory", () => {
     const r = scratch(cwd, "--directory", "..cache");
     expectSpawnExit(r.result, 0);
     expect(dirname(r.out.trim())).toBe(join(cwd, "..cache"));
+  });
+
+  test("refuses a parent reached through a link that leaves the working directory", () => {
+    const cwd = workdir();
+    const outside = workdir();
+    // "junction" lets Windows make a directory link without privileges.
+    symlinkSync(outside, join(cwd, ".context"), "junction");
+    const r = scratch(cwd, "--directory", ".context/jig-audit");
+    expectSpawnExit(r.result, 2);
+    expect(r.err).toContain("--directory must name a folder inside");
+    expect(readdirSync(outside)).toEqual([]);
   });
 
   for (const [name, arg] of [
