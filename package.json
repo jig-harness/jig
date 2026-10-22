@@ -15,7 +15,7 @@
   "private": true,
   "scripts": {
     "gates": "bun scripts/gates.ts",
-    "test": "bun test --timeout 30000 --parallel=4",
+    "test": "bun scripts/test.ts",
     "typecheck": "bun check",
     "deadcode": "fallow dead-code -q",
     "audit": "fallow audit -q",
