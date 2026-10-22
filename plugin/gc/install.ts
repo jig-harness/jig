@@ -11,6 +11,7 @@ import {
   previousMachineText,
   restoreScheduler,
   type SchedulerSnapshot,
+  checkLauncherResolves,
   schedulerPreview,
   snapshotScheduler,
   updateScheduler,
@@ -68,7 +69,7 @@ export async function install(options: {
   };
   const noEntries = next.repositories.length === 0 && !next.receipts;
   console.log(`Machine entry preview (${machinePath}):\n${dump({ gc: next })}`);
-  console.log(schedulerPreview(next, options.script, noEntries));
+  console.log(schedulerPreview(next, noEntries));
   if (!options.confirm) {
     console.log(
       "Preview only. Repeat with --yes to confirm these bounds and update the scheduler.",
@@ -79,6 +80,7 @@ export async function install(options: {
     throw new GcError(
       "Scheduler installation requires the installed plugin copy, outside every worktree",
     );
+  if (!noEntries) checkLauncherResolves();
   return exclusiveGcLock("install", async () => {
     const original = previousMachineText(machinePath);
     // Refuse a concurrent edit after the preview rather than overwrite it.
@@ -97,7 +99,7 @@ export async function install(options: {
     writeMachine(machinePath, dump({ ...values, gc: next }));
     let job: string;
     try {
-      job = await updateScheduler(next, options.script, noEntries);
+      job = await updateScheduler(next, noEntries);
     } catch (error) {
       throw new GcError(
         `${message(error)}; ${await rollBack(machinePath, original, previousJob)}`,

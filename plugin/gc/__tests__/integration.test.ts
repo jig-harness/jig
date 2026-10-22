@@ -272,6 +272,25 @@ test("scope creation records the subprocess identity in every nested scope", () 
 });
 
 /**
+ * Agent-tool fakes that list the plugin as installed at `installPath` (or not
+ * installed), as `claude plugin list --json` and `codex plugin list --json`
+ * answer; the job asks them where the plugin is at each run.
+ */
+function writeAgentTools(bin: string, installPath: string | null): void {
+  writeFakeProgram(
+    join(bin, "claude"),
+    `#!/usr/bin/env bun
+console.log(JSON.stringify(${JSON.stringify(installPath === null ? [] : [{ id: "jig@jig", scope: "user", installPath }])}));
+`,
+  );
+  writeFakeProgram(
+    join(bin, "codex"),
+    `#!/usr/bin/env bun
+console.log(JSON.stringify({ installed: [] }));
+`,
+  );
+}
+/**
  * The scheduler variants the install round trip runs under: launchd on macOS;
  * on Linux both systemd and cron, chosen by whether the user manager's socket
  * exists under `XDG_RUNTIME_DIR`.
@@ -327,6 +346,7 @@ if (${JSON.stringify(name)} === "crontab") {
 `;
     for (const name of ["launchctl", "systemctl", "crontab"])
       writeFakeProgram(join(bin, name), source(name));
+    writeAgentTools(bin, cache);
     const homeText = readFileSync(f.homeFile, "utf8");
     writeFileSync(f.homeFile, `${homeText}personal_setting: preserved\n`);
     f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
@@ -343,9 +363,15 @@ if (${JSON.stringify(name)} === "crontab") {
     };
     const job = jobs[variant] as string;
     const content = readFileSync(job, "utf8");
+    // The job names the launcher, never the plugin release that installed it.
+    const launcher = join(f.user, ".local/state/jig/gc/launcher");
     expect(content).toContain("--no-env-file");
-    expect(content).toContain("bunfig.toml");
-    expect(content).toContain(entry);
+    expect(content).toContain(join(launcher, "bunfig.toml"));
+    expect(content).toContain(join(launcher, "launcher.ts"));
+    expect(content).not.toContain(cache);
+    expect(content).toContain(`--claude=${join(bin, "claude")}`);
+    expect(existsSync(join(launcher, "launcher.ts"))).toBe(true);
+    expect(existsSync(join(launcher, "bunfig.toml"))).toBe(true);
     if (variant !== "cron") expect(existsSync(loaded)).toBe(true);
     const removed = run(
       f,
@@ -356,6 +382,7 @@ if (${JSON.stringify(name)} === "crontab") {
     expect(readFileSync(f.homeFile, "utf8")).toContain(
       "personal_setting: preserved",
     );
+    expect(existsSync(launcher)).toBe(false);
     if (variant === "cron")
       expect(readFileSync(cron, "utf8")).not.toContain("# jig-gc");
     else {
@@ -391,6 +418,7 @@ console.error("no crontab: scheduler unavailable");
 process.exit(1);
 `,
     );
+  writeAgentTools(bin, cache);
   f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
   writeFileSync(f.homeFile, dump({ gc: { repositories: [] } }));
   const previous = readFileSync(f.homeFile, "utf8");
@@ -402,6 +430,36 @@ process.exit(1);
   expectSpawnExit(result, 1);
   expect(result.stderr.toString()).toContain("machine configuration");
   expect(readFileSync(f.homeFile, "utf8")).toBe(previous);
+});
+
+test.skipIf(
+  skipsOnWindows(
+    "powershell",
+    "GC scheduler installation supports launchd, systemd and cron on macOS/Linux",
+  ),
+)("install refuses a job whose launcher could not find the plugin", () => {
+  const f = setup();
+  const cache = join(f.root, "installed");
+  cpSync(resolve(import.meta.dir, "../.."), cache, {
+    recursive: true,
+    filter: (source) => !source.includes("__tests__"),
+  });
+  const bin = join(f.root, "bin");
+  mkdirSync(bin);
+  writeAgentTools(bin, null);
+  const previous = readFileSync(f.homeFile, "utf8");
+  f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
+  const result = run(
+    f,
+    ["install", "--repo", f.repo, "--yes"],
+    join(cache, "jig.ts"),
+  );
+  expectSpawnExit(result, 1);
+  expect(result.stderr.toString()).toContain("jig@jig is not installed");
+  expect(readFileSync(f.homeFile, "utf8")).toBe(previous);
+  expect(
+    existsSync(join(f.user, ".local/state/jig/gc/launcher/launcher.ts")),
+  ).toBe(false);
 });
 
 /**
@@ -472,6 +530,7 @@ test.skipIf(
     writeFileSync(path, text);
   writeFileSync(enabled, "");
   writeFileSync(active, "");
+  writeAgentTools(bin, cache);
   f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
   const result = run(
     f,
