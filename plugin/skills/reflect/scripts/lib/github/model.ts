@@ -292,7 +292,9 @@ function summaryRows(
   events: readonly ReflectionEvent[],
   findings: readonly FindingEvent[],
 ): Row[] {
-  const ats = events.map((event) => event.at).sort();
+  const ats = events
+    .map((event) => event.at)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   return [
     ["Status", status],
     ["Severity", highestSeverity(findings.map((f) => f.severity))],
