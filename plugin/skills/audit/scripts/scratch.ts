@@ -1,7 +1,7 @@
 /** Create one audit's private scratch directory and print its absolute path. */
 import { existsSync, mkdirSync, mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { fail, failFrom, runMain } from "../../../shared/cli.ts";
 
@@ -27,7 +27,10 @@ function directory(argv: string[]): string {
   const parent = resolve(cwd, requested);
   // Lexically inside is not enough: a symbolic link among the existing
   // components would let the folder be created wherever it points.
-  if (!within(cwd, parent) || !within(realpathSync(cwd), existingReal(parent)))
+  if (
+    !parent.startsWith(below(cwd)) ||
+    !existingReal(parent).startsWith(below(realpathSync(cwd)))
+  )
     fail(
       2,
       `--directory must name a folder inside ${cwd}: ${requested}`,
@@ -36,11 +39,11 @@ function directory(argv: string[]): string {
   return parent;
 }
 
-/** True when `path` is strictly below `root`. */
-function within(root: string, path: string): boolean {
-  const part = relative(root, path);
-  const escapes = part === ".." || part.startsWith(`..${sep}`);
-  return part !== "" && !escapes && !isAbsolute(part);
+/** The prefix every path strictly below `root` starts with. The guard is a
+ *  prefix test on the resolved path itself, the containment check taint
+ *  analysers recognise. */
+function below(root: string): string {
+  return root.endsWith(sep) ? root : root + sep;
 }
 
 /** The real location `path` would be created at: its deepest existing
