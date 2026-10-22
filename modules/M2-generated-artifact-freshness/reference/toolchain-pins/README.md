@@ -119,7 +119,11 @@ captures the major.
 An exception names a `file` (an exact path relative to the root), the
 `value` it allows there and a non-empty `reason`. It excuses every pin of
 that value in that file, and nothing else: the file's other pins are still
-checked. An exception prunes itself. One whose value is the source's value
+checked. Where one file holds several pins of the tool, an exception may also
+name the `toml:`, `json:` or `yaml:` path of one site, and then excuses only
+the pin read through it: a package file whose type package lags the runtime
+is excused at `json: devDependencies.@types/bun`, so its `packageManager`
+pin set to the same value is still a finding. An exception prunes itself. One whose value is the source's value
 now, and one that no pin holds, excuse nothing, and each is a finding, as
 [M1](../../../M1-gates-enforcement-ladder/README.md) asks of every
 exception.

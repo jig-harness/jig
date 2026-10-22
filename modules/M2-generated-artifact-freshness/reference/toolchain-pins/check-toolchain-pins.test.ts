@@ -128,6 +128,10 @@ describe("outcomes", () => {
       ["no-reader.yaml", "needs one of toml, json, yaml, step or a pattern"],
       ["bad-pattern.yaml", "pattern is not a regular expression"],
       ["no-reason.yaml", "exceptions[0].reason must be a non-empty string"],
+      [
+        "exception-two-paths.yaml",
+        "exceptions[0] names more than one of toml, json, yaml",
+      ],
     ];
     expect(reasons.map(([f]) => f).sort()).toEqual(
       readdirSync(join(fix, "malformed")).sort(),
@@ -437,6 +441,50 @@ tools:
     );
     expect(strict.map((f) => f.problem)).toEqual([
       "bun is pinned to 1.4.2 here (json path devDependencies.@types/bun); mise.toml says 1.4.3.",
+    ]);
+  });
+
+  test("an exception that names a path excuses only the site read through it", () => {
+    const root = scratch({
+      "mise.toml": '[tools]\nbun = "1.4.3"\n',
+      "package.json":
+        '{ "packageManager": "bun@1.4.2", "devDependencies": { "@types/bun": "1.4.2" } }',
+    });
+    const [tool] = parseDeclaration(`
+tools:
+  bun:
+    source: { file: mise.toml, toml: tools.bun }
+    sites:
+      - { files: package.json, json: packageManager, pattern: '^bun@(.+)$' }
+      - { files: package.json, json: devDependencies.@types/bun }
+    exceptions:
+      - file: package.json
+        json: devDependencies.@types/bun
+        value: "1.4.2"
+        reason: the types package lags
+`);
+    if (tool === undefined) throw new Error("declaration did not parse");
+    const { findings } = checkTool(root, tool, "1.4.3", "pins.yaml");
+    expect(findings.map((f) => f.problem)).toEqual([
+      "bun is pinned to 1.4.2 here (json path packageManager (bun@1.4.2)); mise.toml says 1.4.3.",
+    ]);
+  });
+
+  test("an exception whose path no site reads excuses nothing and is a finding", () => {
+    const [tool] = parseDeclaration(`
+tools:
+  bun:
+    source: { file: mise.toml, toml: tools.bun }
+    sites:
+      - { files: package.json, json: devDependencies.@types/bun }
+    exceptions:
+      - { file: package.json, json: packageManager, value: "1.4.2", reason: lags }
+`);
+    if (tool === undefined) throw new Error("declaration did not parse");
+    const { findings } = checkTool(tree("drift"), tool, "1.4.3", "pins.yaml");
+    expect(findings.map((f) => f.problem)).toEqual([
+      "bun is pinned to 1.4.2 here (json path devDependencies.@types/bun); mise.toml says 1.4.3.",
+      "The exception for package.json (json path packageManager) allows 1.4.2, but no bun pin there holds it (lags).",
     ]);
   });
 

@@ -15,7 +15,9 @@
 // site, each with how to read it. Every pin read from a site must equal the
 // source's value, unless the declaration registers that file's value as an
 // exception with a reason. An exception excuses exactly one value in one
-// file, so it prunes itself: an exception whose value is the source's value
+// file, and, when it names a `toml:`, `json:` or `yaml:` path, only at the
+// site read through that path, so a file's other pins of the same value stay
+// checked. It prunes itself: an exception whose value is the source's value
 // now, or that no pin holds, is a finding.
 //
 // Reading a value. A `toml:`, `json:` or `yaml:` dotted path reads one value
@@ -101,6 +103,10 @@ export interface Exception {
   file: string;
   value: string;
   reason: string;
+  /** The structured format of the site path the exception is limited to. */
+  format?: Format | undefined;
+  /** The site path the exception is limited to; undefined excuses any site in the file. */
+  path?: string | undefined;
 }
 
 export interface Tool {
@@ -208,12 +214,22 @@ function site(raw: unknown, what: string): Site {
 
 function exception(raw: unknown, what: string): Exception {
   if (!isRecord(raw)) malformed(`${what} must be a map`);
+  if (FORMATS.filter((f) => raw[f] !== undefined).length > 1)
+    malformed(`${what} names more than one of ${FORMATS.join(", ")}`);
+  const format = FORMATS.find((f) => raw[f] !== undefined);
   return {
     file: text(raw.file, `${what}.file`),
     value: text(raw.value, `${what}.value`),
     reason: text(raw.reason, `${what}.reason`),
+    format,
+    path:
+      format === undefined ? undefined : text(raw[format], `${what}.${format}`),
   };
 }
+
+/** Where an exception applies, for a finding: its file, and its path when it names one. */
+const excepted = (e: Exception) =>
+  e.path === undefined ? e.file : `${e.file} (${e.format} path ${e.path})`;
 
 function tool(name: string, raw: unknown): Tool {
   if (!isRecord(raw)) malformed(`tools.${name} must be a map`);
@@ -583,13 +599,17 @@ function versionFileFinding(
 }
 
 /** The finding for one pin, or none when it agrees or an exception excuses it. */
-function pinFinding(scan: Scan, pin: Pin): Finding | undefined {
+function pinFinding(scan: Scan, site: Site, pin: Pin): Finding | undefined {
   const { tool, expected, declaration } = scan;
   if (pin.value === undefined && pin.versionFile !== undefined)
     return versionFileFinding(scan, pin, pin.versionFile);
   if (pin.value === expected) return undefined;
   const exception = tool.exceptions.find(
-    (e) => e.file === pin.file && e.value === pin.value,
+    (e) =>
+      e.file === pin.file &&
+      e.value === pin.value &&
+      (e.path === undefined ||
+        (e.format === site.format && e.path === site.path)),
   );
   if (exception !== undefined) {
     scan.excused.add(exception);
@@ -635,7 +655,7 @@ function checkSite(
     if (everyFile && read.length === 0) findings.push(gone([file]));
     for (const pin of read) {
       pins++;
-      const finding = pinFinding(scan, pin);
+      const finding = pinFinding(scan, site, pin);
       if (finding !== undefined) findings.push(finding);
     }
   }
@@ -649,8 +669,8 @@ function exceptionFinding(scan: Scan, e: Exception): Finding | undefined {
   if (e.value !== expected && excused.has(e)) return undefined;
   const problem =
     e.value === expected
-      ? `The exception for ${e.file} allows ${e.value}, which is ${tool.source.file}'s value now (${e.reason}).`
-      : `The exception for ${e.file} allows ${e.value}, but no ${tool.name} pin there holds it (${e.reason}).`;
+      ? `The exception for ${excepted(e)} allows ${e.value}, which is ${tool.source.file}'s value now (${e.reason}).`
+      : `The exception for ${excepted(e)} allows ${e.value}, but no ${tool.name} pin there holds it (${e.reason}).`;
   return {
     rule: RULE,
     file: declaration,

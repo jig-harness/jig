@@ -11,3 +11,9 @@ release: patch
   reads (a module's or tool's paths, the changelog's files) and that holds a
   literal `(` or `..` in those forms now matches differently: escape the
   parenthesis as `[(]` to keep matching it literally.
+
+### Added
+
+- A toolchain-pin exception can name the `toml:`, `json:` or `yaml:` path
+  of one pin site, and then excuses only the pin read through it, so a
+  file's other pins holding the same value stay checked.
