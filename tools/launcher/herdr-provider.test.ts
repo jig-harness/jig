@@ -91,6 +91,25 @@ describe("the branch", () => {
   test("a title in any script keeps its letters", () => {
     expect(slugOf("修复 登录页面")).toBe("修复-登录页面");
     expect(slugOf("Réparer la page de connexion")).toBe("réparer-la-page-de");
+    expect(slugOf("ठीक करें लॉगिन पेज")).toBe("ठीक-करें-लॉगिन-पेज");
+    expect(slugOf("Re\u0301parer la page de connexion")).toBe(
+      "réparer-la-page-de",
+    );
+  });
+
+  test("is not named by the repository's pattern for a key another issue's could continue", () => {
+    const repo = { branch: "feature/{key}-{slug}" };
+    const titled = (key: string) => ({ issue: key, branch: "", title: "Fix" });
+    expect(branchFor(repo, titled("ENG_X-7")).reusePrefix).toBe(
+      "feature/ENG_X-7-",
+    );
+    for (const key of ["ENG-1-2", "ENG", "ENG-1a", "12"])
+      expect(() => branchFor(repo, titled(key))).toThrow(
+        "not a key of the form TEAM-123",
+      );
+    expect(branchFor({ branch: "work/{key}" }, titled("ENG-1-2"))).toEqual({
+      branch: "work/ENG-1-2",
+    });
   });
 
   test("a name that cannot tell one issue's branches from another's is refused", () => {

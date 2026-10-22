@@ -25,7 +25,9 @@
  * With `{slug}` in the name, an issue whose branch was started under an
  * earlier title keeps that branch: the tool opens the one existing branch
  * that starts with the name's part before `{slug}`, and refuses when there
- * are several, unless the name it would give is one of them.
+ * are several, unless the name it would give is one of them. Such a name
+ * is refused for a key that is not a team key and a number (`ENG-12`), since
+ * another issue's key could continue it.
  *
  * An issue that is not routed to a repository is refused: unlike Conductor,
  * Herdr has no repository list to choose from. On this machine the tool runs
@@ -55,6 +57,15 @@ const KEYS = new Set(["path", "host", "agent", "base", "branch"]);
 
 /** How many of the title's words `{slug}` keeps. */
 export const SLUG_WORDS = 4;
+
+/**
+ * The issue keys a reuse prefix is built from: a team key without hyphens,
+ * a hyphen, and a number (`ENG-12`). No other such key continues one of
+ * them past a character other than a digit, so the part before `{slug}`
+ * starts only that issue's branches; a key the cache accepts beyond this
+ * (`ENG-1-2`) would let `ENG-1`'s prefix start its branch.
+ */
+const REUSE_KEY = /^[A-Za-z0-9_]+-[0-9]+$/;
 
 export interface HerdrRepo {
   path: string;
@@ -99,12 +110,14 @@ export function assertBranchTemplate(template: string, where: string): void {
 
 /**
  * The title's first `SLUG_WORDS` words, in lower case, joined by hyphens.
- * A word is a run of letters and digits in any script.
+ * A word is a run of letters, the marks combined with them, and digits, in
+ * any script, after canonical composition.
  */
 export function slugOf(title: string): string {
   return title
+    .normalize("NFC")
     .toLowerCase()
-    .split(/[^\p{L}\p{N}]+/u)
+    .split(/[^\p{L}\p{M}\p{N}]+/u)
     .filter(Boolean)
     .slice(0, SLUG_WORDS)
     .join("-");
@@ -165,6 +178,10 @@ export function branchFor(
   const named = repo.branch.replace("{key}", request.issue);
   const at = named.indexOf("{slug}");
   if (at === -1) return { branch: named };
+  if (!REUSE_KEY.test(request.issue))
+    throw new HerdrError(
+      `${request.issue} is not a key of the form TEAM-123, so a branch named by ${repo.branch} could not be told from another issue's`,
+    );
   const slug = slugOf(request.title);
   if (slug === "")
     throw new HerdrError(

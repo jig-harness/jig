@@ -179,7 +179,9 @@ local or on origin, that starts with the name's part before `{slug}`
 would name if that is among them, and otherwise refuses, naming them. So the
 name must hold `{key}` once, and `{slug}` at most once after it, with text
 between that does not open with a letter or digit, or that part would also
-start another issue's branch (`ENG-1`'s would start `ENG-12`'s). On a host, the
+start another issue's branch (`ENG-1`'s would start `ENG-12`'s). For the
+same reason, such a name is refused for an issue whose key is not a team key
+and a number (`ENG-1-2` would start under `ENG-1`'s). On a host, the
 issue's cache file is copied first to the same path under the host user's
 home, and the prompt names that copy; when this launch could not write the
 cache file, the launch is refused rather than copying a missing file or an
