@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-import { foldCase } from "../scripts/scratch.ts";
+import { hasPrefix, spelledLike } from "../scripts/scratch.ts";
 import { runScript } from "./helpers.ts";
 
 const dirs: string[] = [];
@@ -86,13 +86,38 @@ describe("scratch.ts --directory", () => {
   }
 });
 
-describe("foldCase", () => {
+describe("hasPrefix", () => {
   test("ignores case on Windows, as path.relative does there", () => {
-    expect(foldCase("C:\\Work\\Repo", "win32")).toBe("c:\\work\\repo");
+    expect(hasPrefix("C:\\Work\\Repo\\x", "c:\\work\\repo\\", "win32")).toBe(
+      true,
+    );
   });
 
   test("keeps case elsewhere", () => {
-    expect(foldCase("/Work/Repo", "linux")).toBe("/Work/Repo");
-    expect(foldCase("/Work/Repo", "darwin")).toBe("/Work/Repo");
+    expect(hasPrefix("/Work/Repo/x", "/work/repo/", "linux")).toBe(false);
+    expect(hasPrefix("/Work/Repo/x", "/work/repo/", "darwin")).toBe(false);
+    expect(hasPrefix("/Work/Repo/x", "/Work/Repo/", "darwin")).toBe(true);
+  });
+});
+
+describe("spelledLike", () => {
+  test("adopts the root's spelling of a case-variant prefix on Windows", () => {
+    expect(spelledLike("C:\\Work\\", "c:\\WORK\\sub", "win32")).toBe(
+      "C:\\Work\\sub",
+    );
+  });
+
+  test("never respells by an offset a length-changing case map shifted", () => {
+    // "İ" lower-cases to "i̇", two code units: a root spelled "i̇" folds equal
+    // to a path spelled "İ" whose prefix is one unit shorter, and slicing the
+    // path at the root's length would drop a character of the child's name.
+    expect(spelledLike("C:\\i\u0307\\", "C:\\İ\\sub", "win32")).toBe(
+      "C:\\İ\\sub",
+    );
+  });
+
+  test("leaves a path outside the root, or any path elsewhere, unchanged", () => {
+    expect(spelledLike("C:\\Work\\", "D:\\Other", "win32")).toBe("D:\\Other");
+    expect(spelledLike("/Work/", "/work/sub", "linux")).toBe("/work/sub");
   });
 });

@@ -24,14 +24,15 @@ function directory(argv: string[]): string {
   // A named parent stays inside the working directory: the argument comes
   // from an agent, and a scratch folder has no reason to be anywhere else.
   const cwd = process.cwd();
-  const parent = resolve(cwd, requested);
-  // Lexically inside is not enough: a symbolic link among the existing
-  // components would let the folder be created wherever it points.
+  const root = below(cwd);
+  const parent = spelledLike(root, resolve(cwd, requested));
+  // The created path itself passes a plain prefix test, the containment
+  // check taint analysers recognise. Lexically inside is not enough: a
+  // symbolic link among the existing components would let the folder be
+  // created wherever it points.
   if (
-    !foldCase(parent).startsWith(foldCase(below(cwd))) ||
-    !foldCase(existingReal(parent)).startsWith(
-      foldCase(below(realpathSync(cwd))),
-    )
+    !parent.startsWith(root) ||
+    !hasPrefix(existingReal(parent), below(realpathSync(cwd)))
   )
     fail(
       2,
@@ -41,20 +42,34 @@ function directory(argv: string[]): string {
   return parent;
 }
 
-/** The prefix every path strictly below `root` starts with. The guard is a
- *  prefix test on the resolved path itself, the containment check taint
- *  analysers recognise. */
+/** The prefix every path strictly below `root` starts with. */
 function below(root: string): string {
   return root.endsWith(sep) ? root : root + sep;
 }
 
-/** `path` as the platform compares it: Windows paths are case-insensitive,
- *  the same rule `path.relative` applies there. */
-export function foldCase(
+/** True when `path` starts with `prefix` as the platform compares paths:
+ *  Windows paths are case-insensitive, the same rule `path.relative` applies
+ *  there. Only the leading `prefix.length` characters are folded, so a case
+ *  mapping that changes a string's length cannot shift the comparison. */
+export function hasPrefix(
+  path: string,
+  prefix: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (platform !== "win32") return path.startsWith(prefix);
+  return path.slice(0, prefix.length).toLowerCase() === prefix.toLowerCase();
+}
+
+/** `path` with its leading `root` spelled as `root` is, when the platform
+ *  treats the two spellings as one path; otherwise `path` unchanged. */
+export function spelledLike(
+  root: string,
   path: string,
   platform: NodeJS.Platform = process.platform,
 ): string {
-  return platform === "win32" ? path.toLowerCase() : path;
+  return hasPrefix(path, root, platform)
+    ? root + path.slice(root.length)
+    : path;
 }
 
 /** The real location `path` would be created at: its deepest existing
