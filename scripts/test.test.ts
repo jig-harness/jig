@@ -33,7 +33,7 @@ function holdLock(root: string): void {
 }
 
 test("the fixed bun test arguments come first and the caller's follow them", () => {
-  expect(testCommand(["./website/"], "bun")).toEqual([
+  expect(testCommand(["./website/"], "bun", "linux")).toEqual([
     "bun",
     "test",
     "--timeout",
@@ -41,12 +41,26 @@ test("the fixed bun test arguments come first and the caller's follow them", () 
     "--parallel=4",
     "./website/",
   ]);
-  expect(testCommand([], "bun")).toEqual([
+  expect(testCommand([], "bun", "linux")).toEqual([
     "bun",
     "test",
     "--timeout",
     "30000",
     "--parallel=4",
+  ]);
+});
+
+test("Windows runs one worker while preserving the timeout, shard and caller arguments", () => {
+  expect(
+    testCommand(["--shard=2/4", "./plugin/skills/drive-pr/"], "bun", "win32"),
+  ).toEqual([
+    "bun",
+    "test",
+    "--timeout",
+    "30000",
+    "--parallel=1",
+    "--shard=2/4",
+    "./plugin/skills/drive-pr/",
   ]);
 });
 

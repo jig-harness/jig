@@ -59,7 +59,9 @@ so moves that are harmless alone collide here.
   the suite under the machine-wide resource lock
   ([M12](modules/M12-parallel-agent-ergonomics/README.md)'s
   `with-resource-lock.ts`), because the suite spawns process trees by the
-  hundred and two runs at once make both slower than the two in sequence. A
+  hundred and two runs at once make both slower than the two in sequence.
+  Native Windows uses one worker because concurrent process startups and
+  process-table queries exceed the tests' budgets; other platforms use four. A
   run that finds the lock held says whose it is and waits, up to an hour by
   default (`LOCK_TIMEOUT`); CI and `RESOURCE_LOCK_BYPASS=1` skip the lock. A
   single file run with `bun test <file>` takes no lock. After the last test,
@@ -256,7 +258,8 @@ violations and 2 when the only failures are stages that could not check.
 Two unrelated failures surface in one run rather than two; fix every stage
 the list names, not only the first.
 
-The repository test command uses 4 parallel file workers. Many suites spawn
+The repository test command uses one file worker on Windows and four on
+other platforms. Many suites spawn
 their own subprocesses; bounding file workers keeps those fixtures within
 their deadlines when several workspaces run checks on one machine.
 
