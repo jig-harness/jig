@@ -5,7 +5,6 @@
 import "../../styles/factory.css";
 import ActorChip from "../ActorChip.astro";
 import DesignRow from "./DesignRow.astro";
-import Plate from "../Plate.astro";
 import SectionHead from "../SectionHead.astro";
 import { factory } from "../../lib/data/index.ts";
 import { mdInline } from "../../lib/markdown.ts";
@@ -19,7 +18,7 @@ const designSkills = await Promise.all(
 const designPerson = await inline(f.designPerson);
 ---
 
-  <SectionHead id="design" label="A · Design and planning: the feature pipeline" note={`${countWord(f.pipeline.length)} stages, each reviewed before the next uses it`}><Plate name="drafting" width="150px" /></SectionHead>
+  <SectionHead id="design" label="A · Design and planning: the feature pipeline" note={`${countWord(f.pipeline.length)} stages, each reviewed before the next uses it`} />
   <figure class="level-fig" aria-label={`The ${countWord(f.pipeline.length)} design stages, who runs each, and what each hands on`}>
     <DesignRow />
   </figure>
