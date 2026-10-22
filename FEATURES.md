@@ -106,8 +106,9 @@ turns the stored findings into changes a person approves, and a class that
 keeps recurring is escalated to one tracker issue instead of filed again.
 `promote-memory` moves a lesson from an agent's private memory into a
 reviewed, shared document. The stores stand behind one contract with a
-conformance suite: a folder store, and a Notion store whose database people
-browse and filter.
+conformance suite: a folder store, a Notion store whose database people
+browse and filter, and a GitHub store that keeps the findings as issues of
+one repository.
 Around the skills, the [miss→lens flywheel](GLOSSARY.md) answers each
 significant miss with an additive check, validated on a replayable fixture
 before it may block anything.

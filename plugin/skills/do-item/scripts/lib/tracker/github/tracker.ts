@@ -635,6 +635,15 @@ export function gitHubTracker(client: Client): Tracker {
       };
       // Every name resolves before the first write, so a typo changes nothing.
       const ids = await client.labelIds([...labels.add, ...labels.remove]);
+      // Label names resolve case-insensitively, so 'Bug' and 'bug' are one
+      // label; adding and removing it would leave it removed.
+      const removed = new Set(labels.remove.map((l) => ids.get(l)));
+      const both = labels.add.filter((l) => removed.has(ids.get(l)));
+      if (both.length > 0)
+        throw new TrackerRequestError(
+          "invalid",
+          `the patch for ${key} both adds and removes ${both.map((l) => `'${l}'`).join(", ")}`,
+        );
       const fields = await fieldsInput(issue, patch);
       const parents = await parentChange(issue, patch.parent);
       if (fields !== null) await client.mutate(M.update, { input: fields });
@@ -686,6 +695,12 @@ export function gitHubTracker(client: Client): Tracker {
       checkRelation(key, type, target);
       const a = await client.mustIssue(key);
       const b = await client.mustIssue(target);
+      // `#1`, `1`, the qualified key and the address all name one issue.
+      if (a.id === b.id)
+        throw new TrackerRequestError(
+          "invalid",
+          `an issue cannot be related to itself: ${key} and ${target} are ${a.key}`,
+        );
       if (type === "blocks") {
         await client.mutate(M.addBlockedBy, {
           issueId: b.id,
@@ -701,16 +716,23 @@ export function gitHubTracker(client: Client): Tracker {
         });
         return;
       }
-      if (
-        (await relations(a.key)).some(
-          (r) => r.type === "related" && r.issue === b.key,
-        )
-      )
-        return;
+      // Each side's note is its own write, so each is checked on its own: a
+      // retry after one side failed writes only the missing note.
       const note = (other: GhIssue) =>
         `<!-- jig:related ${slug(other.ref)}#${other.ref.number} -->\nRelated to ${slug(other.ref)}#${other.ref.number}.`;
-      await client.mutate(M.comment, { subjectId: a.id, body: note(b) });
-      await client.mutate(M.comment, { subjectId: b.id, body: note(a) });
+      for (const [on, other] of [
+        [a, b],
+        [b, a],
+      ] as const)
+        if (
+          !(await relations(on.key)).some(
+            (r) => r.type === "related" && r.issue === other.key,
+          )
+        )
+          await client.mutate(M.comment, {
+            subjectId: on.id,
+            body: note(other),
+          });
     },
   };
   return tracker;

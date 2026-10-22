@@ -29,6 +29,7 @@ import { refuseRenamedSection } from "../overlay.ts";
 import { CANONICAL_STATES, type CanonicalState } from "./port.ts";
 import { TrackerConfigError } from "./config-error.ts";
 import { type GitHubSettings, parseGitHubSettings } from "./github/settings.ts";
+import { gitHubModel } from "./github/model.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 
 export interface TrackerConfig {
@@ -95,6 +96,28 @@ function refuseAmbiguousStates(states: Record<CanonicalState, string>): void {
   }
 }
 
+/**
+ * Refuse a GitHub priority label that is also a state label. In labels mode
+ * both are labels, so one label would set a state and a priority together,
+ * and changing either would drop the other.
+ */
+function refuseSharedLabels(
+  states: Record<CanonicalState, string>,
+  github: GitHubSettings,
+): void {
+  const { stateLabels } = gitHubModel(states, github);
+  for (const [priority, label] of Object.entries(github.priorityLabels)) {
+    const state = stateLabels.find(
+      (l) => l.trim().toLowerCase() === label.trim().toLowerCase(),
+    );
+    if (state !== undefined)
+      throw new TrackerConfigError(
+        `issue_tracker.github.priority_labels.${priority}`,
+        `issue_tracker.github.priority_labels.${priority} names '${label}', which is also the label of a state in issue_tracker.states; a priority needs a label of its own`,
+      );
+  }
+}
+
 /** Validate the `issue_tracker` section of a parsed overlay. */
 export function parseTrackerConfig(
   overlay: Record<string, unknown>,
@@ -137,12 +160,14 @@ export function parseTrackerConfig(
     }
   }
   refuseAmbiguousStates(states);
+  const github = parseGitHubSettings(section.github);
+  if (adapter === "github") refuseSharedLabels(states, github);
   return {
     adapter,
     team,
     states,
     labels: parseTrackerLabels(overlay),
-    github: parseGitHubSettings(section.github),
+    github,
   };
 }
 

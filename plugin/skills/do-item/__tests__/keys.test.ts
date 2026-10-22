@@ -90,7 +90,13 @@ describe("the key a branch names", () => {
     expect(keyFromBranch("issue/12-fix", GH, "issue/{key}-{slug}")).toBe("#12");
   });
 
-  it("cannot read a key the pattern puts after the slug", () => {
-    expect(keyFromBranch("fix-login-12", GH, "{slug}-{key}")).toBeNull();
+  it("reads a key the pattern puts after the slug from the whole branch", () => {
+    expect(keyFromBranch("fix-login-12", GH, "{slug}-{key}")).toBe("#12");
+    expect(keyFromBranch("fix-3-tests-12", GH, "{slug}-{key}")).toBe("#12");
+    expect(keyFromBranch("fix-3-tests", GH, "{slug}-{key}")).toBeNull();
+    expect(keyFromBranch("12", GH, "{slug}-{key}")).toBeNull();
+    expect(keyFromBranch("fix-flaky-eng-12", ENG, "{slug}-{key_lower}")).toBe(
+      "ENG-12",
+    );
   });
 });

@@ -268,40 +268,57 @@ describe("GitHub adapter: candidate pools", () => {
     conn(states.map((state) => ({ state })));
 
   it("filters open issues by every label list and the excluded labels", async () => {
-    const { t, calls } = gitHub(() =>
-      listed([
-        issueNode({
-          number: 1,
-          labels: ["xs", "repo:web", "priority: urgent"],
-          assignee: "dana",
-          extra: { subIssues: kids("CLOSED") },
+    const population = [
+      issueNode({
+        number: 1,
+        labels: ["xs", "repo:web", "priority: urgent"],
+        assignee: "dana",
+        extra: { subIssues: kids("CLOSED") },
+      }),
+      issueNode({
+        number: 2,
+        labels: ["small"],
+        extra: { subIssues: kids() },
+      }),
+      issueNode({
+        number: 3,
+        labels: ["xs", "repo:web", "hitl"],
+        extra: { subIssues: kids() },
+      }),
+      issueNode({
+        number: 4,
+        labels: ["xs", "repo:web", "In Progress"],
+        extra: { subIssues: kids("OPEN") },
+      }),
+      issueNode({
+        number: 5,
+        labels: ["small", "repo:web"],
+        extra: { subIssues: kids() },
+      }),
+    ];
+    // Like GitHub, the fake returns only issues carrying every filter label.
+    const { t, calls } = gitHub((c) => {
+      const want =
+        (c.variables as { filterBy?: { labels?: string[] } }).filterBy
+          ?.labels ?? [];
+      return listed(
+        population.filter((node) => {
+          const names = (
+            node.labels as { nodes: { name: string }[] }
+          ).nodes.map((l) => l.name);
+          return want.every((l) => names.includes(l));
         }),
-        issueNode({
-          number: 2,
-          labels: ["small"],
-          extra: { subIssues: kids() },
-        }),
-        issueNode({
-          number: 3,
-          labels: ["xs", "repo:web", "hitl"],
-          extra: { subIssues: kids() },
-        }),
-        issueNode({
-          number: 4,
-          labels: ["xs", "repo:web", "In Progress"],
-          extra: { subIssues: kids("OPEN") },
-        }),
-      ]),
-    );
+      );
+    });
     const pool = await t.openIssues({
       withSomeOf: [["xs", "small"], ["repo:web"]],
       withNoneOf: ["hitl"],
     });
-    expect(calls[0]?.variables).toMatchObject({
-      states: ["OPEN"],
-      filterBy: { labels: ["xs", "small"] },
-    });
-    expect(pool.map((p) => p.identifier)).toEqual(["#1", "#4"]);
+    expect(calls.map((c) => c.variables)).toMatchObject([
+      { states: ["OPEN"], filterBy: { labels: ["xs"] } },
+      { states: ["OPEN"], filterBy: { labels: ["small"] } },
+    ]);
+    expect(pool.map((p) => p.identifier)).toEqual(["#1", "#4", "#5"]);
     expect(pool[0]).toMatchObject({
       priority: 1,
       state: { id: "todo", name: "Todo", type: "unstarted" },

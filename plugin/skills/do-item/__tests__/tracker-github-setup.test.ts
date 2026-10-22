@@ -69,6 +69,23 @@ describe("issue_tracker.github", () => {
     expect(github.priorityLabels.urgent).toBe("P0");
   });
 
+  it("refuses a priority label that is also a state label, in labels mode only", () => {
+    const overlay = (states_from: string) => ({
+      issue_tracker: {
+        adapter: "github",
+        github: {
+          states_from,
+          project: "https://github.com/users/dana/projects/3",
+          priority_labels: { high: "in progress" },
+        },
+      },
+    });
+    expect(() => parseTrackerConfig(overlay("labels"))).toThrow(
+      "issue_tracker.github.priority_labels.high names 'in progress', which is also the label of a state",
+    );
+    expect(() => parseTrackerConfig(overlay("project"))).not.toThrow();
+  });
+
   it("refuses what it cannot use, naming the field", () => {
     const refuse = (github: Record<string, unknown>, message: string) =>
       expect(() => parseTrackerConfig({ issue_tracker: { github } })).toThrow(

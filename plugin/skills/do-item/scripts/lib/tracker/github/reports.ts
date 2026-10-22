@@ -378,17 +378,25 @@ export function reportOperations(client: Client, readers: Readers): ReportOps {
           "invalid",
           "a pool query needs at least one non-empty label list; an empty one would read every open issue",
         );
-      const [first, ...rest] = query.withSomeOf as [string[], ...string[][]];
-      const read = await client.list(
-        { states: ["OPEN"], labels: first },
-        OPEN_CHILDREN,
-      );
-      return read
+      // GitHub's label filter requires every listed label, so each
+      // alternative of the first group is read on its own and the union is
+      // deduplicated; every group is then applied locally.
+      const byKey = new Map<
+        string,
+        Awaited<ReturnType<typeof client.list>>[number]
+      >();
+      for (const label of query.withSomeOf[0] as string[])
+        for (const found of await client.list(
+          { states: ["OPEN"], labels: [label] },
+          OPEN_CHILDREN,
+        ))
+          if (!byKey.has(found.issue.key)) byKey.set(found.issue.key, found);
+      return [...byKey.values()]
         .filter(({ issue }) => {
           const labels = wholeLabels(issue);
           const has = (l: string) => labels.some((x) => same(x, l));
           return (
-            rest.every((list) => list.some(has)) &&
+            query.withSomeOf.every((list) => list.some(has)) &&
             !(query.withNoneOf ?? []).some(has)
           );
         })

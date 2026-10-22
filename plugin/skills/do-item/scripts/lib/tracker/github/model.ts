@@ -14,8 +14,9 @@
  *   state labels reads as the furthest along.
  * - `project`: the option of a Projects board's single-select field
  *   (`status_field`, default `Status`) named by `issue_tracker.states`. An
- *   open issue that is not on the board, or whose option names no open
- *   state, reads as `todo`.
+ *   open issue that is not on the board, or has no option set, reads as
+ *   `todo`; an option that names no open state is refused, since reading it
+ *   as `todo` would offer the issue for pickup.
  *
  * Priority is a label per level (`priority_labels`); none of them is 0. The
  * state labels and the priority labels are the state and the priority, so
@@ -28,6 +29,7 @@ import {
   type PriorityName,
 } from "./settings.ts";
 import type { CanonicalState, IssueState } from "../port.ts";
+import { TrackerConfigError } from "../config-error.ts";
 
 /** The open states, from least to furthest along. */
 export const OPEN_STATES = [
@@ -128,12 +130,17 @@ export function gitHubModel(
       : issue.status === null
         ? []
         : [issue.status];
-    let found: CanonicalState = "todo";
+    let found: CanonicalState | null = null;
     for (const s of OPEN_STATES) {
       const carried = labelsMode ? stateLabel(s) : states[s];
       if (carried !== null && names.some((n) => same(n, carried))) found = s;
     }
-    return found;
+    if (found === null && !labelsMode && issue.status !== null)
+      throw new TrackerConfigError(
+        "issue_tracker.states",
+        `the ${settings.statusField} option '${issue.status}' names no open state in issue_tracker.states; map it to one, or move the issue to an option that does`,
+      );
+    return found ?? "todo";
   }
 
   function stateOf(issue: StateInput): CanonicalState {

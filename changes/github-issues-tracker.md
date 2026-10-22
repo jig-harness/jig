@@ -37,5 +37,7 @@ session reflections there.
 
 - The issue a branch names is read under the configured
   `pull_requests.branch_name` pattern, with one leading `<word>/` segment
-  allowed, by both the drive's intent-chain handoff and `reflect`; the
-  handoff previously recognised only `feature/<KEY>-…` branches.
+  allowed before a team key, by both the drive's intent-chain handoff and
+  `reflect`, including a pattern that puts the key after the slug
+  (`{slug}-{key}`); the handoff previously recognised only
+  `feature/<KEY>-…` branches, and `reflect` a team key anywhere in the name.

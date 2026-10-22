@@ -124,24 +124,16 @@ export function repositoryId(root = consumerRoot()): string {
 
 /**
  * The issue key a branch name carries, in the tracker's key shape, or `null`
- * when the shape is unknown. A key that names its team (`ENG-12`) is found
- * anywhere in the name. A key a branch carries as a number alone is read
- * only where the branch-name pattern (`pull_requests.branch_name`) puts it,
- * since a number elsewhere in a name (`v2-retry`, `fix-3-tests`) is no key.
+ * when the shape is unknown. It is read where the branch-name pattern
+ * (`pull_requests.branch_name`) puts it, by the parser the drive's handoff
+ * uses, so both name the same issue for one branch.
  */
 export function issueFromBranch(
   branch: string,
   keys: IssueKeys | null,
   pattern: string = DEFAULT_BRANCH_PATTERN,
 ): string | null {
-  if (keys === null) return null;
-  if (new RegExp(`^(?:${keys.branchSource})$`).test("1"))
-    return keyFromBranch(branch, keys, pattern);
-  const match = new RegExp(
-    `(?:^|[^A-Za-z0-9])(${keys.branchSource})(?![0-9])`,
-    "i",
-  ).exec(branch);
-  return match === null ? null : keys.fromBranch(match[1] as string);
+  return keys === null ? null : keyFromBranch(branch, keys, pattern);
 }
 
 /** The configured branch-name pattern, or the default. */

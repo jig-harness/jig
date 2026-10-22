@@ -130,8 +130,9 @@ export function numberKeys(repository: string | null): IssueKeys {
  * segment the pattern does not have is allowed, since tools and people
  * prefix branches (`feature/`, a user name); a bare number is not
  * distinctive enough for that (`feature/3-column-layout` names no issue), so
- * a number key is read only where the pattern puts it. A pattern whose key
- * follows the slug cannot be read back, and gives `null`.
+ * a number key is read only where the pattern puts it. When the key follows
+ * the slug (`{slug}-{key}`), the whole branch must match the whole pattern,
+ * and the key is the last place it fits.
  */
 export function keyFromBranch(
   branch: string,
@@ -141,13 +142,33 @@ export function keyFromBranch(
   const at = pattern.search(/\{key(?:_lower)?\}/);
   if (at < 0) return null;
   const before = pattern.slice(0, at);
-  if (before.includes("{")) return null;
-  const re = new RegExp(
-    `^${keys.sharesPullRequestNumbers ? "" : "(?:[^/]+/)?"}${escapeRe(before)}(${keys.branchSource})(?=[-_/.]|$)`,
-    "i",
-  );
+  const re = before.includes("{")
+    ? new RegExp(`^${wholePattern(pattern, keys)}$`, "i")
+    : new RegExp(
+        `^${keys.sharesPullRequestNumbers ? "" : "(?:[^/]+/)?"}${escapeRe(before)}(${keys.branchSource})(?=[-_/.]|$)`,
+        "i",
+      );
   const m = re.exec(branch.trim());
   return m?.[1] === undefined ? null : keys.fromBranch(m[1]);
+}
+
+/**
+ * A branch-name pattern as a regular expression source: the first key
+ * captured, the slug any text.
+ */
+function wholePattern(pattern: string, keys: IssueKeys): string {
+  let captured = false;
+  return pattern
+    .split(/(\{[a-z_]+\})/)
+    .map((part) => {
+      if (part === "{key}" || part === "{key_lower}") {
+        const group = captured ? "(?:" : "(";
+        captured = true;
+        return `${group}${keys.branchSource})`;
+      }
+      return part === "{slug}" ? ".+" : escapeRe(part);
+    })
+    .join("");
 }
 
 /**

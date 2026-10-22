@@ -324,7 +324,14 @@ describe("context", () => {
   it("reads the issue key a branch carries", () => {
     const eng = teamKeys("ENG");
     expect(issueFromBranch("feature/eng-12-retry", eng)).toBe("ENG-12");
-    expect(issueFromBranch("fix-flaky-ENG-12", eng)).toBe("ENG-12");
+    expect(issueFromBranch("a/b/eng-12-fix", eng)).toBeNull();
+    expect(issueFromBranch("fix-flaky-ENG-12", eng)).toBeNull();
+    expect(issueFromBranch("fix-flaky-ENG-12", eng, "{slug}-{key}")).toBe(
+      "ENG-12",
+    );
+    expect(issueFromBranch("x/eng-12-retry", eng, "x/{key}-{slug}")).toBe(
+      "ENG-12",
+    );
     expect(issueFromBranch("feature/eng-12-retry", null)).toBeNull();
     expect(issueFromBranch("feature/meng-12", eng)).toBeNull();
   });

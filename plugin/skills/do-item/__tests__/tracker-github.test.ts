@@ -172,6 +172,23 @@ describe("GitHub adapter: reading an issue", () => {
     expect(calls[0]?.query).toContain('fieldValueByName(name: "Status")');
   });
 
+  it("refuses a board option that names no open state", async () => {
+    const { t } = gitHub(
+      (c) =>
+        oneIssue(
+          issueNode({
+            number: c.variables.number as number,
+            status: "Awaiting approval",
+            extra: { subIssues: conn([]) },
+          }),
+        ),
+      ON_BOARD,
+    );
+    await expect(t.getIssue("#1")).rejects.toThrow(
+      "the Status option 'Awaiting approval' names no open state",
+    );
+  });
+
   it("refuses a child list longer than one page", async () => {
     const { t } = gitHub(() =>
       oneIssue(issueNode({ number: 1, extra: { subIssues: conn([], "c1") } })),
@@ -416,6 +433,19 @@ describe("GitHub adapter: filing and planning", () => {
     );
   });
 
+  it("refuses a patch that adds and removes one label under two spellings", async () => {
+    const { t, calls } = gitHub((c) => {
+      if (c.op === "TrackerIssue")
+        return oneIssue(issueNode({ number: 5, labels: ["bug"] }));
+      if (c.op === "TrackerLabels") return repoLabels("bug");
+      return {};
+    });
+    await expect(
+      t.updateIssue("#5", { addLabels: ["Bug"], removeLabels: ["bug"] }),
+    ).rejects.toThrow("both adds and removes 'Bug'");
+    expect(writes(calls)).toEqual([]);
+  });
+
   it("removes the parent when the patch clears it", async () => {
     const { t, calls } = gitHub((c) =>
       oneIssue(
@@ -542,9 +572,9 @@ describe("GitHub adapter: relations", () => {
     });
   });
 
-  it("records related as a marked comment on each side, once", async () => {
-    let commented = false;
-    const { t, calls } = gitHub((c) => {
+  /** An adapter whose issues keep the comments written to them. */
+  function commenting(notes: Record<number, string[]>) {
+    return gitHub((c) => {
       if (c.op === "TrackerIssue")
         return oneIssue(
           issueNode({
@@ -557,40 +587,53 @@ describe("GitHub adapter: relations", () => {
             },
           }),
         );
-      if (c.op === "TrackerComments")
+      if (c.op === "TrackerComments") {
+        const n = c.variables.number as number;
         return {
           repository: {
             issue: {
-              id: "I_1",
+              id: `I_${n}`,
               comments: conn(
-                commented
-                  ? [
-                      {
-                        id: "C",
-                        body: "<!-- jig:related acme/app#2 -->",
-                        createdAt: "2026-01-01T00:00:00Z",
-                        authorAssociation: "OWNER",
-                      },
-                    ]
-                  : [],
+                (notes[n] ?? []).map((body, i) => ({
+                  id: `C_${n}_${i}`,
+                  body,
+                  createdAt: "2026-01-01T00:00:00Z",
+                  authorAssociation: "OWNER",
+                })),
               ),
             },
           },
         };
-      if (c.op === "TrackerComment") commented = true;
+      }
+      if (c.op === "TrackerComment") {
+        const n = Number(String(c.variables.subjectId).slice(2));
+        notes[n] = [...(notes[n] ?? []), String(c.variables.body)];
+      }
       return {};
     });
+  }
+  const commentedOn = (
+    calls: { op: string; variables: Record<string, unknown> }[],
+  ) =>
+    calls
+      .filter((c) => c.op === "TrackerComment")
+      .map((c) => c.variables.subjectId);
+
+  it("records related as a marked comment on each side, once", async () => {
+    const { t, calls } = commenting({});
     await t.relate("#1", "related", "#2");
-    expect(
-      calls
-        .filter((c) => c.op === "TrackerComment")
-        .map((c) => c.variables.subjectId),
-    ).toEqual(["I_1", "I_2"]);
+    expect(commentedOn(calls)).toEqual(["I_1", "I_2"]);
     expect(
       calls.find((c) => c.op === "TrackerComment")?.variables.body,
     ).toContain("<!-- jig:related acme/app#2 -->");
     await t.relate("#1", "related", "#2");
-    expect(calls.filter((c) => c.op === "TrackerComment")).toHaveLength(2);
+    expect(commentedOn(calls)).toEqual(["I_1", "I_2"]);
+  });
+
+  it("writes only the missing side of a half-written related link", async () => {
+    const { t, calls } = commenting({ 1: ["<!-- jig:related acme/app#2 -->"] });
+    await t.relate("#1", "related", "#2");
+    expect(commentedOn(calls)).toEqual(["I_2"]);
   });
 
   it("refuses an issue related to itself", async () => {
@@ -599,6 +642,17 @@ describe("GitHub adapter: relations", () => {
       "related to itself",
     );
     expect(calls).toEqual([]);
+  });
+
+  it("refuses an issue related to itself under another spelling of its key", async () => {
+    const { t, calls } = gitHub((c) =>
+      oneIssue(issueNode({ number: c.variables.number as number })),
+    );
+    for (const type of ["related", "blocks", "duplicate"] as const)
+      await expect(t.relate("#1", type, "1")).rejects.toThrow(
+        "related to itself",
+      );
+    expect(writes(calls)).toEqual([]);
   });
 });
 

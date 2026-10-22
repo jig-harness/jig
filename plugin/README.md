@@ -356,7 +356,9 @@ plugin's. Delete such a copy when you adopt the plugin's version.
 
 `drive-pr` and `do-item` read the same configuration file as the review
 skill. Every field below has a default except `issue_tracker.team`, which the
-tracker scripts require. A drive does not need an AI reviewer: without one it
+tracker scripts require on Linear; on GitHub Issues the key is the
+repository's own (`issue_tracker.github.repository`, by default the `origin`
+remote's), so no team is set. A drive does not need an AI reviewer: without one it
 converges on review threads and CI alone. A repository that has one names it
 with `review.reviewer_app` (or `review.reviewer_check_pattern`), and the drive
 then also waits for the check run, sticky comment and reviewed-commit marker
