@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { foldCase } from "../scripts/scratch.ts";
 import { runScript } from "./helpers.ts";
 
 const dirs: string[] = [];
@@ -54,6 +55,22 @@ describe("scratch.ts --directory", () => {
     expect(readdirSync(outside)).toEqual([]);
   });
 
+  test.if(process.platform === "win32")(
+    "accepts an absolute child spelled in a different case",
+    () => {
+      const cwd = workdir();
+      const r = scratch(
+        cwd,
+        "--directory",
+        join(cwd.toUpperCase(), ".context"),
+      );
+      expectSpawnExit(r.result, 0);
+      expect(dirname(r.out.trim()).toLowerCase()).toBe(
+        join(cwd, ".context").toLowerCase(),
+      );
+    },
+  );
+
   for (const [name, arg] of [
     ["a relative path that climbs out", "../elsewhere"],
     ["an absolute path outside", join(tmpdir(), "scratch-test-outside")],
@@ -67,4 +84,15 @@ describe("scratch.ts --directory", () => {
       expect(r.out).toBe("");
     });
   }
+});
+
+describe("foldCase", () => {
+  test("ignores case on Windows, as path.relative does there", () => {
+    expect(foldCase("C:\\Work\\Repo", "win32")).toBe("c:\\work\\repo");
+  });
+
+  test("keeps case elsewhere", () => {
+    expect(foldCase("/Work/Repo", "linux")).toBe("/Work/Repo");
+    expect(foldCase("/Work/Repo", "darwin")).toBe("/Work/Repo");
+  });
 });

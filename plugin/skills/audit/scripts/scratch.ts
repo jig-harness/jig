@@ -28,8 +28,10 @@ function directory(argv: string[]): string {
   // Lexically inside is not enough: a symbolic link among the existing
   // components would let the folder be created wherever it points.
   if (
-    !parent.startsWith(below(cwd)) ||
-    !existingReal(parent).startsWith(below(realpathSync(cwd)))
+    !foldCase(parent).startsWith(foldCase(below(cwd))) ||
+    !foldCase(existingReal(parent)).startsWith(
+      foldCase(below(realpathSync(cwd))),
+    )
   )
     fail(
       2,
@@ -44,6 +46,15 @@ function directory(argv: string[]): string {
  *  analysers recognise. */
 function below(root: string): string {
   return root.endsWith(sep) ? root : root + sep;
+}
+
+/** `path` as the platform compares it: Windows paths are case-insensitive,
+ *  the same rule `path.relative` applies there. */
+export function foldCase(
+  path: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return platform === "win32" ? path.toLowerCase() : path;
 }
 
 /** The real location `path` would be created at: its deepest existing
