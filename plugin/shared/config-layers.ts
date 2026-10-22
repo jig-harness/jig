@@ -45,6 +45,9 @@ const USER_LAYER_SWITCH = "JIG_USER_LAYER";
 /** Fields only a repository (or one run) may set; the user layer refuses them. */
 export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "gates.command",
+  "gc.kinds",
+  "gc.worktree_roots",
+  "gc.scratch_prefixes",
   "repository.base_branch",
   "issue_tracker.team",
   "issue_tracker.github.repository",

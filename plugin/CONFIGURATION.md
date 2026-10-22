@@ -25,7 +25,7 @@ Contents: [the file](#the-file) ·
 [`work_batch`](#work_batch) ·
 [`fleet_health`](#fleet_health) ·
 [`reflection`](#reflection) · [`changelog`](#changelog) ·
-[`code_stats`](#code_stats) ·
+[`code_stats`](#code_stats) · [`gc`](#gc) ·
 [procedure skills](#procedure-skills) ·
 [environment variables](#environment-variables) ·
 [complete example](#complete-example)
@@ -663,12 +663,67 @@ These are set per machine or per run, not committed:
 | `DRIVE_PR_*` (others) | Round limits, timeouts and repair budgets; listed in the [drive-pr README](skills/drive-pr/README.md) |
 | Others | A few knobs of a single skill, such as `REFLECT_THRESHOLD` of `resolve-review-comments`, are described where that skill's `SKILL.md` uses them |
 
+## `gc`
+
+The resource collector reads repository declarations separately from machine
+policy. The audit uses the same declaration validator as `jig gc`. No shell
+command can be registered as a collection kind.
+
+| Field | Type | Default / meaning | Read by |
+|-------|------|-------------------|---------|
+| `gc.kinds` | distinct string list | Empty; supported repository kinds: `tool-state`, `scratch`, `worktrees` | audit, gc |
+| `gc.worktree_roots` | distinct path list | Empty; roots containing the tool's worktrees, relative to the repository or absolute | audit, gc |
+| `gc.scratch_prefixes` | distinct path list | Empty; path prefixes of scratch directory names, relative to the repository or absolute; a filesystem root is refused | audit, gc |
+
+A collecting run fetches `.config/jig.yaml` from the remote URL and base branch
+recorded at install. It intersects that declaration with the confirmed kinds,
+roots and prefixes. Changes in a checkout, environment overrides, a changed
+remote URL, and newly widened base declarations cannot grant deletion authority.
+A report reads the checkout and names that source. An uninstalled repository
+can be reported but cannot be collected.
+
+### The machine's collection policy
+
+These settings live only in the user file (`$JIG_HOME/jig.yaml`, default
+`~/.jig/jig.yaml`); they cannot be set by a repository or environment override.
+Run `bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts gc install` to review the proposed entry, then repeat
+with `--yes` to confirm it and install the scheduler. Installation must run
+from the installed plugin copy, outside a Git checkout.
+
+| Setting in the user file's `gc` section | Default / meaning |
+|----------------------------------------|-------------------|
+| `repositories` | Empty; installer-written entries containing `path`, `remote`, `remote_url`, `base_branch`, and `bounds` (the confirmed declaration) |
+| `disabled` | Empty; kinds the machine will skip; cannot enable undeclared repository kinds |
+| `idle_days` | Mapping of repository kind to idle guard, default 7 days; allowed range 7–365, so machine policy can only tighten the default |
+| `receipts` | `false`; enable collection of old receipts |
+| `receipts_days` | 30; positive days to retain receipts; each kind's latest receipt is always kept |
+| `hour` | 4; local hour (0–23) for the daily scheduled run |
+| `collect_day` | 0; local weekday (Sunday 0 through Saturday 6) on which the daily run collects |
+| `min_free_bytes` | 0, disabled; collect on other days when available space in the home filesystem falls below this threshold |
+
+The job records Bun's executable, the installed command's path, `HOME`,
+`PATH`, `JIG_HOME`, and any explicit `TMPDIR`, `LOCK_ROOT` or `LOCK_NAME`.
+Collection uses the same machine-wide heavy-run lock as gate runs. Scheduled
+and child Bun invocations use the plugin's trusted configuration and disable
+checkout environment files and preloads.
+Report-only runs also write receipts, under
+`~/.local/state/jig/gc/<date>/<run-id>.json`. `gc receipts` lists them;
+`gc receipts <date>` lists a day and `gc receipts <run-id>` prints a run.
+Use `gc --json` for the receipt schema on standard output.
+
+The available collectors and remaining rollout work are in
+[the collector's README](gc/README.md).
+
 ## Complete example
 
 Every section, with values a typical repository might set. Copy only what
 differs from the defaults.
 
 ```yaml
+gc:
+  kinds: [tool-state]
+  worktree_roots: [../worktrees]
+  scratch_prefixes: [/tmp/example-test.]
 gates:
   command: make check                    # required by resolve-review-comments
 review:
