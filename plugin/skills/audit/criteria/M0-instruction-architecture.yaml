@@ -160,7 +160,7 @@ criteria:
       - "each other built-in tool a step names has its fallback beside it"
       - "no gate, hook, script or skill step needs a tool that a launcher or workspace app injects and no repository file registers; where a step mentions one, it is optional"
       - "a repository with no instruction that relies on a runtime-specific capability meets it"
-    since: next
+    since: 0.78.0
 
   - id: deny-lists-per-runtime
     level: standard
@@ -177,7 +177,7 @@ criteria:
       - "a runtime the team uses that has a permission format but no deny list while another does is a gap, and writing the gap down does not close it"
       - "a runtime the team uses that has no permission format meets it when the file of a runtime that has one says so"
       - "a repository that keeps no deny list for any runtime meets it (expected-absent)"
-    since: next
+    since: 0.78.0
 
   - id: standards-declare-scope
     level: standard
@@ -190,7 +190,7 @@ criteria:
       - "the universal instruction file or a document it links maps each standard to the artifact classes it governs, or each standard states its own"
       - "the mapping lists a script that starts a long-lived server or listener as runtime code, wherever the script lives"
       - "a rule about runtime behaviour (an injected clock, structured logging) names the classes it leaves out, such as one-shot tools and tests"
-    since: next
+    since: 0.78.0
 
   - id: review-stances-are-pointers
     level: standard
@@ -204,7 +204,7 @@ criteria:
       - "no stance's rule is restated in a second place; a pointer may say when a finding is worth raising, not what is done with it"
       - "the review process closes a finding that contradicts a stance as rejected with a link to its source"
       - "a repository with no standing review stance meets it"
-    since: next
+    since: 0.78.0
 
   - id: skill-authoring-rules
     level: standard
@@ -324,7 +324,7 @@ criteria:
     probe:
       mechanical:
         files: *ci-config
-    since: next
+    since: 0.78.0
 
   - id: skill-authoring-ratcheted
     level: strict
