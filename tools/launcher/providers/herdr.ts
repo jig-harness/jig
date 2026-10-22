@@ -16,6 +16,18 @@
  *   host   the SSH destination of that machine; this machine when absent
  *   agent  the Herdr agent kind to start; `claude` when absent
  *   base   what a new branch is cut from; the clone's `origin/HEAD` when absent
+ *   branch how the repository names an issue's branch, e.g.
+ *          `feature/{key}-{slug}`: `{key}` is the issue key as the tracker
+ *          writes it, `{slug}` the title's first words in lower case joined
+ *          by hyphens; the tracker's suggestion, else the issue key in lower
+ *          case, when absent
+ *
+ * With `{slug}` in the name, an issue whose branch was started under an
+ * earlier title keeps that branch: the tool opens the one existing branch
+ * that starts with the name's part before `{slug}`, and refuses when there
+ * are several, unless the name it would give is one of them. Such a name
+ * is refused for a key that is not a team key and a number (`ENG-12`), since
+ * another issue's key could continue it.
  *
  * An issue that is not routed to a repository is refused: unlike Conductor,
  * Herdr has no repository list to choose from. On this machine the tool runs
@@ -41,13 +53,75 @@ import type { OpenRequest, Provider } from "../provider.ts";
 export const HERDR_OPEN_BUDGET_MS = openLimitMs() + TRANSPORT_MS;
 
 const TOOL = join(import.meta.dir, "..", "..", "herdr", "workspace.ts");
-const KEYS = new Set(["path", "host", "agent", "base"]);
+const KEYS = new Set(["path", "host", "agent", "base", "branch"]);
+
+/** How many of the title's words `{slug}` keeps. */
+export const SLUG_WORDS = 4;
+
+/**
+ * The issue keys a reuse prefix is built from: a team key without hyphens,
+ * a hyphen, and a number (`ENG-12`). No other such key continues one of
+ * them past a character other than a digit, so the part before `{slug}`
+ * starts only that issue's branches; a key the cache accepts beyond this
+ * (`ENG-1-2`) would let `ENG-1`'s prefix start its branch.
+ */
+const REUSE_KEY = /^[A-Za-z0-9_]+-[0-9]+$/;
 
 export interface HerdrRepo {
   path: string;
   host?: string;
   agent?: string;
   base?: string;
+  branch?: string;
+}
+
+/**
+ * Refuse a branch name template that cannot name one issue's branches: it
+ * must hold `{key}` once and `{slug}` at most once, after `{key}` and apart
+ * from it by text that does not open with a letter or digit, or the part
+ * before `{slug}` would also start another issue's branch (`ENG-1` starts
+ * `ENG-12`, and `ENG-12` starts `ENG-122`).
+ */
+export function assertBranchTemplate(template: string, where: string): void {
+  const placeholders = template.match(/\{[^{}]*\}/g) ?? [];
+  const unknown = placeholders.filter((p) => p !== "{key}" && p !== "{slug}");
+  if (unknown.length > 0)
+    throw new HerdrError(
+      `${where}: unknown placeholder ${unknown[0]} (known: {key}, {slug})`,
+    );
+  const count = (p: string) => placeholders.filter((q) => q === p).length;
+  if (count("{key}") !== 1 || count("{slug}") > 1)
+    throw new HerdrError(
+      `${where} must hold {key} once and {slug} at most once`,
+    );
+  const key = template.indexOf("{key}");
+  const slug = template.indexOf("{slug}");
+  if (slug === -1) return;
+  const after = key + "{key}".length;
+  if (slug <= after)
+    throw new HerdrError(
+      `${where}: {slug} must come after {key}, with text between them`,
+    );
+  if (/^[\p{L}\p{N}]/u.test(template.slice(after)))
+    throw new HerdrError(
+      `${where}: the text after {key} must not open with a letter or digit, which would continue another issue's key`,
+    );
+}
+
+/**
+ * The title's first `SLUG_WORDS` words, in lower case, joined by hyphens.
+ * A word is a run of letters, the marks combined with them, and digits, in
+ * any script, after canonical composition, holding at least one letter or
+ * digit: marks with nothing to combine with are not a word.
+ */
+export function slugOf(title: string): string {
+  return title
+    .normalize("NFC")
+    .toLowerCase()
+    .split(/[^\p{L}\p{M}\p{N}]+/u)
+    .filter((word) => /[\p{L}\p{N}]/u.test(word))
+    .slice(0, SLUG_WORDS)
+    .join("-");
 }
 
 export function parseRepo(settings: unknown, label: string): HerdrRepo {
@@ -55,7 +129,7 @@ export function parseRepo(settings: unknown, label: string): HerdrRepo {
   if (typeof settings === "string") settings = { path: settings };
   if (!isRecord(settings))
     throw new HerdrError(
-      `${where} must be the clone's path or a mapping with path, host, agent, base`,
+      `${where} must be the clone's path or a mapping with path, host, agent, base, branch`,
     );
   for (const key of Object.keys(settings))
     if (!KEYS.has(key))
@@ -75,19 +149,49 @@ export function parseRepo(settings: unknown, label: string): HerdrRepo {
   if (host !== undefined) assertHost(host);
   const agent = text("agent");
   const base = text("base");
+  const branch = text("branch");
+  if (branch !== undefined) assertBranchTemplate(branch, `${where}.branch`);
   return {
     path,
     ...(host === undefined ? {} : { host }),
     ...(agent === undefined ? {} : { agent }),
     ...(base === undefined ? {} : { base }),
+    ...(branch === undefined ? {} : { branch }),
   };
 }
 
-/** The branch to open: the tracker's suggestion, else the issue key. */
+export interface BranchChoice {
+  branch: string;
+  /** An existing branch starting with this is opened instead; see the top. */
+  reusePrefix?: string;
+}
+
+/**
+ * The branch to open: the repository's name for the issue, else the
+ * tracker's suggestion, else the issue key.
+ */
 export function branchFor(
-  request: Pick<OpenRequest, "issue" | "branch">,
-): string {
-  return request.branch.trim() || request.issue.toLowerCase();
+  repo: Pick<HerdrRepo, "branch">,
+  request: Pick<OpenRequest, "issue" | "branch" | "title">,
+): BranchChoice {
+  if (repo.branch === undefined)
+    return { branch: request.branch.trim() || request.issue.toLowerCase() };
+  const named = repo.branch.replace("{key}", request.issue);
+  const at = named.indexOf("{slug}");
+  if (at === -1) return { branch: named };
+  if (!REUSE_KEY.test(request.issue))
+    throw new HerdrError(
+      `${request.issue} is not a key of the form TEAM-123, so a branch named by ${repo.branch} could not be told from another issue's`,
+    );
+  const slug = slugOf(request.title);
+  if (slug === "")
+    throw new HerdrError(
+      `${request.issue} has no title to name its branch by (${repo.branch}); open it again once the tracker can be read`,
+    );
+  return {
+    branch: named.replace("{slug}", slug),
+    reusePrefix: named.slice(0, at),
+  };
 }
 
 export function openArgs(
@@ -95,12 +199,14 @@ export function openArgs(
   request: OpenRequest,
   prompt: string,
 ): string[] {
+  const { branch, reusePrefix } = branchFor(repo, request);
   return [
     "open",
     "--repo",
     repo.path,
     "--branch",
-    branchFor(request),
+    branch,
+    ...(reusePrefix === undefined ? [] : ["--reuse-prefix", reusePrefix]),
     "--label",
     request.issue,
     "--agent",

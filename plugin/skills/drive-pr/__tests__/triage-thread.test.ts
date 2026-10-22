@@ -1,4 +1,5 @@
 import { scopedStateDir } from "./scoped-state-dir.ts";
+import { stateDirIdentityToken } from "../scripts/lib/state/lease.ts";
 /**
  * triage-thread.test.ts
  *
@@ -28,13 +29,12 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, delimiter } from "node:path";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
-
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 const SCRIPTS = join(import.meta.dir, "..", "scripts");
 const SCRIPT = join(SCRIPTS, "triage-thread.ts");
 const DRIVE_STATE = join(SCRIPTS, "drive-state.ts");
@@ -234,10 +234,10 @@ function withStateDirIdentity(
   env: Record<string, string>,
 ): Record<string, string> {
   if (env.DRIVE_PR_STATE_DIR === undefined) return env;
-  const st = statSync(env.DRIVE_PR_STATE_DIR);
+  const identity = stateDirIdentityToken(env.DRIVE_PR_STATE_DIR);
   return {
     ...env,
-    DRIVE_PR_STATE_DIR_IDENTITY: `${st.dev}:${st.ino}`,
+    DRIVE_PR_STATE_DIR_IDENTITY: identity,
   };
 }
 
@@ -390,7 +390,7 @@ describe("triage-thread.ts", () => {
     const body = "**accepted** — fixed the missing guard in abc1234.";
 
     const r = runTriage(["PRRT_fresh", "999"], body, dir, stateDir);
-    expect(r.exitCode).toBe(0);
+    expectSpawnExit(r, 0);
     expect(postedCount(dir)).toBe(1);
     expect(heldKeys(stateDir)).toBe("PRRT_fresh");
     const [item] = held(stateDir);
@@ -516,7 +516,7 @@ describe("triage-thread.ts", () => {
       dir,
       stateDir,
     );
-    expect(r.exitCode).toBe(0);
+    expectSpawnExit(r, 0);
     expect(postedCount(dir)).toBe(1);
     expect(resolvedCount(dir)).toBe(0);
     expect(heldKeys(stateDir)).toBe("PRRT_moot_held");

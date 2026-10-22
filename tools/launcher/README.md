@@ -163,10 +163,25 @@ repos:
       host: build-box          # SSH destination; this machine when absent
       agent: codex             # Herdr agent kind; claude when absent
       base: origin/main        # base of a new branch; the clone's origin/HEAD when absent
+      branch: feature/{key}-{slug}   # how the repository names an issue's branch
 ```
 
 The branch is the one the launch names, else the one the tracker suggests
-(read with the issue), else the issue key in lower case. On a host, the
+(read with the issue), else the issue key in lower case, unless the
+repository names its branches with `branch`. There, `{key}` is the issue key
+as the tracker writes it and `{slug}` the title's
+[slug](../../GLOSSARY.md): its first four words in lower case, joined by
+hyphens: `feature/{key}-{slug}` opens `ENG-12` as
+`feature/ENG-12-fix-the-login-page`. A branch already started for the issue
+is kept even after its title changed: the tool opens the one existing branch,
+local or on origin, that starts with the name's part before `{slug}`
+(`feature/ENG-12-`). When there are several, it opens the one the launch
+would name if that is among them, and otherwise refuses, naming them. So the
+name must hold `{key}` once, and `{slug}` at most once after it, with text
+between that does not open with a letter or digit, or that part would also
+start another issue's branch (`ENG-1`'s would start `ENG-12`'s). For the
+same reason, such a name is refused for an issue whose key is not a team key
+and a number (`ENG-1-2` would start under `ENG-1`'s). On a host, the
 issue's cache file is copied first to the same path under the host user's
 home, and the prompt names that copy; when this launch could not write the
 cache file, the launch is refused rather than copying a missing file or an

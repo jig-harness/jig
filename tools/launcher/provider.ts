@@ -31,6 +31,8 @@ export interface OpenRequest {
   promptFor: (cacheFile: string) => string;
   /** The tracker's suggested branch name; empty when it gave none. */
   branch: string;
+  /** The issue's title; empty when it could not be read. */
+  title: string;
   /**
    * This provider's settings for the repository the issue belongs to, exactly
    * as the configuration holds them; null when the issue was not routed (no

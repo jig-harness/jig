@@ -29,7 +29,7 @@ import {
 } from "../plugin/shared/resource-lock.ts";
 
 /** The fixed `bun test` arguments; the caller's extra ones follow them. */
-export const TEST_ARGS = ["test", "--timeout", "30000", "--parallel=4"];
+export const TEST_ARGS = ["test", "--timeout", "30000"];
 
 /** How long one run waits for another worktree's run, in seconds. */
 export const DEFAULT_LOCK_TIMEOUT = "3600";
@@ -38,8 +38,14 @@ export const DEFAULT_LOCK_TIMEOUT = "3600";
 export function testCommand(
   extra: readonly string[],
   bun = process.execPath,
+  platform = process.platform,
 ): string[] {
-  return [bun, ...TEST_ARGS, ...extra];
+  return [
+    bun,
+    ...TEST_ARGS,
+    `--parallel=${platform === "win32" ? 1 : 4}`,
+    ...extra,
+  ];
 }
 
 /** The lock's environment: the caller's, with this suite's default wait. */

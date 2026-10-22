@@ -810,6 +810,11 @@ make, use the entry's term instead.
 - **Severity mapping** — the one table that turns a finding's severity into
   the tracker priority it is filed with, shared by every
   path that files an issue so they cannot disagree.
+- **Slug** — a short form of a title that is safe to use in a name: its first
+  few words in lower case, joined by hyphens. A repository can have the
+  workspace launcher name an issue's branch with the issue key followed by
+  the slug of its title
+  ([tools/launcher/README.md](tools/launcher/README.md)).
 - **Worktree** — a git feature giving one repository multiple working
   directories, letting several agents work different branches of the same repo
   in parallel on one machine. *Avoid*: workspace for the checkout itself; a
