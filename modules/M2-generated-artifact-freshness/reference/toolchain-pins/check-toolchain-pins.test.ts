@@ -132,6 +132,7 @@ describe("outcomes", () => {
         "exception-two-paths.yaml",
         "exceptions[0] names more than one of toml, json, yaml",
       ],
+      ["exception-unknown-key.yaml", "exceptions[0] has unknown key(s) jsno"],
     ];
     expect(reasons.map(([f]) => f).sort()).toEqual(
       readdirSync(join(fix, "malformed")).sort(),
@@ -381,6 +382,10 @@ tools:
     [
       "tools:\n  bun:\n    source: { file: m, toml: a }\n    sites: [{ files: a, json: b }]\n    exceptions: [{ file: a, value: v, reason: ' ' }]\n",
       "exceptions[0].reason must be a non-empty string",
+    ],
+    [
+      "tools:\n  bun:\n    source: { file: m, toml: a }\n    sites: [{ files: a, json: b }]\n    exceptions: [{ file: a, jsno: b, value: v, reason: r }]\n",
+      "exceptions[0] has unknown key(s) jsno; it takes file, value, reason, toml, json, yaml",
     ],
   ])("rejects %j", (content, reason) =>
     expect(() => parseDeclaration(content)).toThrow(reason),

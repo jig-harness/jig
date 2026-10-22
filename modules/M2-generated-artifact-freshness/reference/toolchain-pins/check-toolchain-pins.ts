@@ -212,8 +212,17 @@ function site(raw: unknown, what: string): Site {
   };
 }
 
+const EXCEPTION_KEYS = ["file", "value", "reason", ...FORMATS];
+
 function exception(raw: unknown, what: string): Exception {
   if (!isRecord(raw)) malformed(`${what} must be a map`);
+  // An unknown key is most likely a misspelled path, and dropping it would
+  // widen the exception to every site in the file.
+  const unknown = Object.keys(raw).filter((k) => !EXCEPTION_KEYS.includes(k));
+  if (unknown.length > 0)
+    malformed(
+      `${what} has unknown key(s) ${unknown.join(", ")}; it takes ${EXCEPTION_KEYS.join(", ")}`,
+    );
   if (FORMATS.filter((f) => raw[f] !== undefined).length > 1)
     malformed(`${what} names more than one of ${FORMATS.join(", ")}`);
   const format = FORMATS.find((f) => raw[f] !== undefined);
