@@ -319,6 +319,37 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.79.0] - 2026-10-22
+
+### Added
+
+- The [Herdr workspace tool](tools/herdr/README.md) opens a branch as a
+  Herdr worktree workspace, on the machine or on a remote host over SSH, with
+  its agent started and its first prompt sent once per piece of work.
+  Opening the same work again reattaches instead of creating a second
+  worktree, and does not prompt an agent that already has the work. `remove`
+  runs the repository's remove hook and parks the worktree's reflection
+  findings before removing it.
+- The launcher's `herdr` provider opens a tracker issue through that tool;
+  set `provider: herdr` and `repos.<label>.herdr` in the launcher
+  configuration ([launcher](tools/launcher/README.md#providers)).
+- [M12](modules/M12-parallel-agent-ergonomics/mappings.md)'s worktree
+  lifecycle runs in Herdr: a repository's `.config/worktree-hooks/create` runs
+  in each new worktree, through a Herdr plugin, before an agent starts there,
+  and `.config/worktree-hooks/remove` runs before a worktree is removed.
+
+### Changed
+
+- The launcher takes the branch the tracker suggests, read with the issue,
+  when the launch itself names none; the prompt's branch hint and the
+  provider both use it.
+
+### Fixed
+
+- `/jig:reflect`'s journal gives each git call a minute and fails when one
+  takes longer, instead of waiting on a stalled repository for ever or reading
+  a stalled call as "no answer".
+
 ## [0.78.0] - 2026-10-22
 
 ### Added
@@ -3382,7 +3413,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.78.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.79.0...HEAD
+[0.79.0]: https://github.com/jig-harness/jig/compare/v0.78.0...v0.79.0
 [0.78.0]: https://github.com/jig-harness/jig/compare/v0.77.0...v0.78.0
 [0.77.0]: https://github.com/jig-harness/jig/compare/v0.76.0...v0.77.0
 [0.76.0]: https://github.com/jig-harness/jig/compare/v0.75.0...v0.76.0
