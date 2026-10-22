@@ -86,6 +86,13 @@ describe("the branch", () => {
     expect(() => branchFor(repo, issue("", "  ·  "))).toThrow(
       "no title to name its branch by",
     );
+    expect(() => branchFor(repo, issue("", "́ ̈́"))).toThrow(
+      "no title to name its branch by",
+    );
+  });
+
+  test("a mark with no letter or digit to combine with is not a word", () => {
+    expect(slugOf("Fix ́ the login page")).toBe("fix-the-login-page");
   });
 
   test("a title in any script keeps its letters", () => {

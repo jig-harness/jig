@@ -111,14 +111,15 @@ export function assertBranchTemplate(template: string, where: string): void {
 /**
  * The title's first `SLUG_WORDS` words, in lower case, joined by hyphens.
  * A word is a run of letters, the marks combined with them, and digits, in
- * any script, after canonical composition.
+ * any script, after canonical composition, holding at least one letter or
+ * digit: marks with nothing to combine with are not a word.
  */
 export function slugOf(title: string): string {
   return title
     .normalize("NFC")
     .toLowerCase()
     .split(/[^\p{L}\p{M}\p{N}]+/u)
-    .filter(Boolean)
+    .filter((word) => /[\p{L}\p{N}]/u.test(word))
     .slice(0, SLUG_WORDS)
     .join("-");
 }
