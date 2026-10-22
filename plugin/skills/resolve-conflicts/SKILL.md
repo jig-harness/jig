@@ -398,7 +398,9 @@ bun "${CLAUDE_SKILL_DIR}/scripts/events.ts"
 ```
 
 Run these commands in order, starting the next only after the preceding
-command exits `0`. The message file is written only on success and removed
+command exits `0`. Before the first, confirm that no `conflict-message.txt`
+exists in the worktree: if one does, it is not this run's, so stop and report
+it rather than overwrite it and then clean it away. The message file is written only on success and removed
 once the commit has used it, so the worktree is left clean; record the
 events only after the commit succeeds. If event recording fails, the committed
 resolution stands: report the failure and retry recording. The section reads:
@@ -419,8 +421,12 @@ For a rebase, save each stop's section to a file of its own, numbered from
 `1` in stop order, so a later stop cannot replace an earlier one's:
 `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file conflict-section-1.txt -- bun "${CLAUDE_SKILL_DIR}/scripts/check-resolution.ts" --message`
 for the first stop, `conflict-section-2.txt` for the second, and so on.
-After that command succeeds, run `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rebase --continue`,
-which keeps the replayed commit's own message. Every
+Before writing each one, confirm that no file of that name exists yet: if one
+does, it is not this run's, so stop and report it rather than overwrite it and
+later clean it away.
+After that command succeeds, run `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --env GIT_EDITOR true -- git rebase --continue`,
+which keeps the replayed commit's own message without opening an editor the
+wrapper gives no terminal. Every
 further stop is a new operation: map, resolve, record and check it again.
 When the rebase is done, post every saved section on the pull request, in
 stop order, or report them to the user when there is none, then remove each
