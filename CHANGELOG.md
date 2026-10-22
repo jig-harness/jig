@@ -323,6 +323,31 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.81.0] - 2026-10-22
+
+### Added
+
+- Shell-independent commands for pickup, pull request drives and their
+  sibling skills, including PowerShell. File arguments replace shell pipes
+  and redirections, and the review skill computes its file set and trusted
+  policy snapshot in Bun.
+
+### Changed
+
+- **Breaking:** `fix-ci` setup commands run through Bun's native shell on
+  every platform. Before upgrading, replace shell-specific setup syntax with
+  a Bun script or commands that Bun's shell supports.
+
+### Fixed
+
+- Recovery commands preserve paths containing shell punctuation without
+  requiring a Bash shell. A repository gate checks skill instructions for
+  shell-dependent commands.
+- File-output commands can explicitly save complete diagnostic reports from
+  a finding exit status while preserving existing reports on runner failures,
+  reported signal termination or truncated output. Explicit trace environment
+  edits survive child execution.
+
 ## [0.80.0] - 2026-10-22
 
 ### Added
@@ -3433,7 +3458,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.80.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.81.0...HEAD
+[0.81.0]: https://github.com/jig-harness/jig/compare/v0.80.0...v0.81.0
 [0.80.0]: https://github.com/jig-harness/jig/compare/v0.79.1...v0.80.0
 [0.79.1]: https://github.com/jig-harness/jig/compare/v0.79.0...v0.79.1
 [0.79.0]: https://github.com/jig-harness/jig/compare/v0.78.0...v0.79.0
