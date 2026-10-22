@@ -323,6 +323,13 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.83.0] - 2026-10-22
+
+### Added
+
+- A resource collection command, `jig gc`, with report-first runs, durable receipts, confirmed repository bounds, daily scheduler installation and drive-pr state reports across configured clones. Tool-state collection awaits coordinated creator admission. Scratch scopes record captured owner identities and remain report-only until fixture registration is available; worktree reports retain a collection veto until the session opener coordinates with the collector.
+- An M12 audit criterion for repositories to declare the machine-local resource kinds their tools create and their ownership boundaries.
+
 ## [0.82.0] - 2026-10-22
 
 GitHub Issues is a supported issue tracker beside Linear: picking up, filing,
@@ -3525,7 +3532,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.82.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.83.0...HEAD
+[0.83.0]: https://github.com/jig-harness/jig/compare/v0.82.0...v0.83.0
 [0.82.0]: https://github.com/jig-harness/jig/compare/v0.81.2...v0.82.0
 [0.81.2]: https://github.com/jig-harness/jig/compare/v0.81.1...v0.81.2
 [0.81.1]: https://github.com/jig-harness/jig/compare/v0.81.0...v0.81.1

@@ -66,21 +66,21 @@ fields:
     distinct: true
     read_by: [audit, gc]
     repository_only: true
-    since: next
+    since: 0.83.0
   gc.worktree_roots:
     type: list
     items: path
     distinct: true
     read_by: [audit, gc]
     repository_only: true
-    since: next
+    since: 0.83.0
   gc.scratch_prefixes:
     type: list
     items: path
     distinct: true
     read_by: [audit, gc]
     repository_only: true
-    since: next
+    since: 0.83.0
 
   gates.command:
     type: command

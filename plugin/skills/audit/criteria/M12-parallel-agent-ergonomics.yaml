@@ -17,7 +17,7 @@ criteria:
   - id: resource-kinds-declared
     level: standard
     requires: convention
-    since: next
+    since: 0.83.0
     statement: >-
       A repository whose tools leave machine-local resources declares their
       kinds and ownership boundaries, so a sweep reports its lifecycle proof
