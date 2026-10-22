@@ -17,10 +17,8 @@ sequentially without weakening their evidence requirements. A repository of
 under about 300 tracked files needs no delegation: the auditor surveys it
 inline, prompt by prompt. Each survey returns a structured synthesis with
 file-path evidence — never file dumps — and an answer for each open
-criterion of its own modules, one line each in the format the skill's
-`record.ts fill` reads (`M1/ci-runs-gates-on-pr: mechanical | evidence`); the
-auditor writes them into the record with `record.ts fill`, or `record.ts
-merge` for copies of the draft that subagents filled. Add a fifth,
+criterion of its own modules, one line each in the format `record.ts`’s `fill` operation reads (`M1/ci-runs-gates-on-pr: mechanical | evidence`); the
+auditor writes them into the record with `record.ts`’s `fill` operation, or `record.ts`’s `merge` operation for copies of the draft that subagents filled. Add a fifth,
 project-specific survey if the target has a large surface the four don't cover
 (e.g., a data platform).
 
@@ -80,7 +78,7 @@ criterion left `not-examined` beyond the profile's target) are in the
 [criteria format](../criteria/README.md#scoring).
 
 Every module carries [criteria](../criteria/README.md), so score
-**every** module by its criteria individually. The skill's `score.ts --draft`
+**every** module by its criteria individually. `score.ts` in `--draft` mode
 writes the record to fill in: one entry per criterion with its level and pass
 bar, where a criterion whose probe found its precondition missing is already
 scored `absent` with the search as evidence, marked `probe: `. Grade every
@@ -95,7 +93,7 @@ makes inapplicable (score it `expected-absent`).
 
 Where a generator has a documented read-only check mode (a type generator's
 `--check`, `tsc --noEmit`, a frozen-lockfile install check, or
-`git diff --exit-code` after running the generator in a scratch copy of the
+`bun "<skill-dir>/../../shared/command.ts" -- git diff --exit-code` after running the generator in a scratch copy of the
 checkout), run it: its result is evidence for the M2 freshness criteria, and
 a failing run is a stale file the survey alone would only have called
 unchecked. A check that prints nothing on success is reported with its exit
@@ -138,7 +136,7 @@ default order (fix drift first, then the modules one rung at a time).
 Rules: no finding without file-path evidence; distinguish *verified* facts
 from *unchecked* counts; keep the executive summary readable by someone who
 hasn't heard any of this vocabulary (link the glossary). Re-audits compare
-against the prior record (`record.ts compare`): fixed, still open, regressed,
+against the prior record (`record.ts`’s `compare` operation): fixed, still open, regressed,
 new, and added by Jig since the prior audit's version; a recommendation the
 team declined is not repeated until its condition holds.
 

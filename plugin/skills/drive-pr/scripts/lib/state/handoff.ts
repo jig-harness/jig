@@ -501,8 +501,7 @@ export async function renderHandoff(
     lines.push(
       "Do NOT re-reply to these. Once the push lands, resolve each one:",
       "",
-      "A `kind: thread` with `resolve-held-thread.ts --key K --pushed-sha",
-      '"$(git rev-parse HEAD)"` — it claims (`drive-state.ts claim-held --kind',
+      'A `kind: thread` with `bun "<skill-dir>/scripts/portable.ts" resolve-held-thread --key K` — it claims (`drive-state.ts claim-held --kind',
       "thread`), resolves, and removes the item atomically; no separate release.",
       "",
       // Deliberately ONE long line rather than wrapped to the width of the
@@ -510,7 +509,7 @@ export async function renderHandoff(
       // invocation, and a backtick span broken across a newline pastes as two
       // broken commands. `--pushed-sha` is required: the claim checks this
       // hold's OWN push provenance, not just the mutex.
-      `A \`kind: finding\`: \`drive-state.ts claim-held ${pr} --key K --kind finding --pushed-sha "$(git rev-parse HEAD)"\``,
+      `A \`kind: finding\`: \`bun "<skill-dir>/scripts/portable.ts" claim-held ${pr} --key K --kind finding\``,
       "first. Exit 0 means dispatch; every non-zero exit forbids it, but NOT the same",
       "way for every code: 1 USUALLY means a concurrent driver already holds this",
       "key — safe to skip it and continue with the next — or this hold's recorded",
@@ -524,8 +523,7 @@ export async function renderHandoff(
       `\`held\` (\`drive-state.ts held ${pr}\`) before trusting any other key from it, do`,
       'not assume "already finished" without checking; 3 (state unreadable) is not a',
       "per-key problem — STOP and inspect (`drive-state.ts get [PR]`) rather than",
-      "continuing to loop. On exit 0, answer it with `answer-summary-finding.ts",
-      '--pushed-sha "$(git rev-parse HEAD)"`, then release immediately with the',
+      'continuing to loop. On exit 0, write its reason verbatim to a file and answer through `bun "<skill-dir>/../../shared/command.ts" --stdin-file <reason-file> -- bun "<skill-dir>/scripts/portable.ts" answer-summary-finding <PR> --outcome <outcome> --fingerprint <key>`, then release immediately with the',
       `printed token — \`drive-state.ts release-held ${pr} --key K --token T\` —`,
       "rather than batching every answer and releasing `--all` at the end (SKILL.md",
       "§ 6): a crash mid-batch would re-answer already-done findings, and skipping",

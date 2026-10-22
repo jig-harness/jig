@@ -128,12 +128,7 @@ applied, idempotent append, and it prints the link for the `**deferred**`
 reply:
 
 ```bash
-bun "<skill-dir>/scripts/defer-batch.ts" <PR#> <type> \
-  --thread-url <url> --reason '<why deferred>' \
-  --severity <blocker|high|medium|low|unknown> --category <cat|unknown> \
-  --originating <originating-issue> <<'EOF'
-<the reviewer's finding, quoted verbatim>
-EOF
+bun "<skill-dir>/../../shared/command.ts" --stdin-file finding.txt -- bun "<skill-dir>/scripts/defer-batch.ts" <PR#> <type> --thread-url <url> --reason '<why deferred>' --severity <blocker|high|medium|low|unknown> --category <cat|unknown> --originating <originating-issue>
 ```
 
 A finding emitted only in the reviewer's sticky PR conversation comment has
@@ -141,18 +136,12 @@ no inline thread URL. Use the same helper with the comment permalink and the
 finding's stable fingerprint from the `ai-review-backlog` marker instead:
 
 ```bash
-bun "<skill-dir>/scripts/defer-batch.ts" <PR#> <type> \
-  --comment-url <https://github.com/owner/repo/pull/N#issuecomment-ID> \
-  --fingerprint <marker-safe-fingerprint> --reason '<why deferred>' \
-  --severity <blocker|high|medium|low|unknown> --category <cat|unknown> \
-  --originating <originating-issue> <<'EOF'
-<the reviewer's finding, quoted verbatim>
-EOF
+bun "<skill-dir>/../../shared/command.ts" --stdin-file finding.txt -- bun "<skill-dir>/scripts/defer-batch.ts" <PR#> <type> --comment-url <https://github.com/owner/repo/pull/N#issuecomment-ID> --fingerprint <marker-safe-fingerprint> --reason '<why deferred>' --severity <blocker|high|medium|low|unknown> --category <cat|unknown> --originating <originating-issue>
 ```
 
-The finding is stdin, never an argument — review text contains backticks and
-`$(...)` that a shell argument would evaluate before the script runs (the same
-reason reply bodies arrive via stdin). The append is idempotent on
+Write the reviewer's complete finding verbatim to `finding.txt` through the
+file-writing tool. The wrapper reads that file and supplies literal standard
+input to the helper; reviewer text is never shell source. The append is idempotent on
 the inline thread URL, or on the sticky comment plus fingerprint for a
 summary-only finding, so a crashed round re-runs safely and multiple findings
 in one sticky comment remain distinct. `--no-parent` covers the
@@ -170,7 +159,7 @@ one is passed, but still files it, at Urgent priority. `--category` is
 [the procedure](../SKILL.md)): an omitted flag is indistinguishable from an explicit
 `unknown` and could silently discard a real parsed value the caller already
 computed. It is recorded in the entry text only — pass the same value fed to
-`triage-ladder.ts --category` (`unknown` when the reviewer emits no
+the `--category` option of `triage-ladder.ts` (`unknown` when the reviewer emits no
 `🏷️ category:` tag).
 
 The batch issue follows every rule below (labels, parent, description fields)

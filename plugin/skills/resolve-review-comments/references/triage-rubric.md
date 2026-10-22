@@ -115,9 +115,7 @@ dropped; what is traded is recall for rounds, an explicit human decision, measur
 Resolve it mechanically, per otherwise-accepted finding:
 
 ```bash
-bun "<skill-dir>/scripts/triage-ladder.ts" \
-  --severity <blocker|high|medium|low|unknown> --tier <1-4> \
-  --category <token|unknown> --self-inflicted <true|false|unknown> [--pr N] [--obligatory]
+bun "<skill-dir>/scripts/triage-ladder.ts" --severity <blocker|high|medium|low|unknown> --tier <tier> --category <token|unknown> --self-inflicted <true|false|unknown> [--pr N] [--obligatory]
 ```
 
 One JSON verdict per finding: `stance`, a ready-to-post `reply` for a decline
@@ -126,7 +124,7 @@ One JSON verdict per finding: `stance`, a ready-to-post `reply` for a decline
 `reply.marker` line, never after it. That line must stay the reply's
 last non-blank line: `ladderDeclinePatterns` matches the marker only there,
 so appending the link after it drops the reply out of
-`defect-escape.ts --ladder-only`'s sample), `minimalDiff`, and
+the `--ladder-only` sample from `defect-escape.ts`), `minimalDiff`, and
 `anomalies` — every fail-open reason, announced rather than silent. It never
 exits nonzero over a config or round problem, because a rule whose whole job is
 damping must not be able to stop a drive.
@@ -226,8 +224,7 @@ does for all `wont-fix` outcomes.
 Monthly, over the declines the ladder itself made:
 
 ```bash
-bun "<skill-dir>/../drive-pr/scripts/defect-escape.ts" \
-  --since <YYYY-MM-DD> --until <YYYY-MM-DD> --ladder-only --json
+bun "<skill-dir>/../drive-pr/scripts/defect-escape.ts" --since <YYYY-MM-DD> --until <YYYY-MM-DD> --ladder-only --json
 ```
 
 `--ladder-only` narrows the sample to replies carrying the config's own
@@ -248,8 +245,10 @@ baseline document.
 For an accepted finding whose fix would widen the PR's scope. Both inputs are
 mechanical:
 
-- **Size**: derive the PR base branch with `gh pr view --json baseRefName`
-  and use per-file counts from `git diff --numstat` against its merge base.
+- **Size**: derive the PR base branch with
+  `bun "<skill-dir>/../../shared/command.ts" -- gh pr view --json baseRefName -q .baseRefName`
+  and use per-file counts from
+  `bun "<skill-dir>/../../shared/command.ts" -- git diff --numstat "<base>...HEAD"`, comparing with that base's merge base.
   Exclude generated paths using the consumer's authoritative generated-artifact
   registry. Aggregate PR additions/deletions cannot distinguish generated output.
 - **Sensitivity**: use the consumer's change-area projection and high-risk path
@@ -305,8 +304,7 @@ round's decision.
    history. Read it explicitly, before triaging:
 
    ```bash
-   bun "<skill-dir>/scripts/list-unresolved-threads.ts" \
-     [PR] --include-resolved
+   bun "<skill-dir>/scripts/list-unresolved-threads.ts" [PR] --include-resolved
    ```
 
    Each line carries `isResolved` plus the thread's comment bodies, so the
@@ -402,7 +400,8 @@ adds round cost, so:
   record cannot be liveness-tested, so a sessionless resolver that dies
   mid-drive keeps other trees out until its record goes stale — up to
   `DRIVE_PR_LEASE_STALE_MIN` (default 360m), the same bound a lease held on
-  another *host* already carries. `drive-state.ts clear-lease <PR> --all` ends
+  another *host* already carries. The `clear-lease` operation of
+  `drive-state.ts` with `--all` ends
   it immediately, and every refusal that names a tree-held record says so.
   Exporting `DRIVE_PR_SESSION=$$` is still worth doing where the harness makes
   it stick: a session lease clears the instant its pid does, so it trades that
@@ -439,11 +438,11 @@ adds round cost, so:
   them changes `converge.ts`'s own exit code.
 
   Detection, when you need to ask the question directly, is
-  `drive-state.ts lease <PR> --all` — every live lease on the PR from any
+  `bun "<skill-dir>/../drive-pr/scripts/drive-state.ts" lease <PR> --all` — every live lease on the PR from any
   tree, each with its worktree path, its `pid` field (`0` for a `worktree`
   holder, which has no session to name) and a `self` flag. Use
   that and nothing else. The obvious alternative is wrong in a way worth
-  remembering: `drive-state.ts held [PR]` stamps every item with the `actor`
+  remembering: the `held` operation of `drive-state.ts` stamps every item with the `actor`
   that made it, but a hold deliberately *outlives* its driver — a worktree
   that dies mid-round strands its holds exactly so another driver can finish
   them, which `/drive-pr` § 6 permits on purpose. A foreign `actor` is

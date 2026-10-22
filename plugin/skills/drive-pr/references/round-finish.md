@@ -252,7 +252,7 @@ therefore run
 already prescribes — step 3 holds, step 6 pushes:
 
 ```bash
-bun "<skill-dir>/scripts/drive-state.ts" stamp-held [PR] --sha "$(git rev-parse HEAD)"
+bun "<skill-dir>/scripts/portable.ts" stamp-held [PR]
 ```
 
 ## 3. The head-sync wait
@@ -264,8 +264,8 @@ PR head it reports to equal local HEAD:
 bun "<skill-dir>/scripts/drive-status.ts" [PR] --json --no-count
 ```
 
-Seconds after a push, `gh pr view --json headRefOid` still returns the
-**previous** SHA, where everything was settled and resolved. `drive-status.ts`
+Seconds after a push, `gh pr view` can still report the **previous** SHA in
+`headRefOid`, where everything was settled and resolved. `drive-status.ts`
 blocks on that mismatch rather than judging the stale head.
 
 **`--no-count` here is load-bearing, not cosmetic.** This call's job
@@ -299,8 +299,7 @@ idempotency:
 
 ### Draining a `kind: thread`
 
-**`kind: thread`** — resolved with `bun "<skill-dir>/scripts/resolve-held-thread.ts" --key K --pushed-sha
-"$(git rev-parse HEAD)"`, never with `resolve-thread.ts` directly: the raw
+**`kind: thread`** — resolved with `bun "<skill-dir>/scripts/portable.ts" resolve-held-thread [PR] --key K`, never with `resolve-thread.ts` directly: the raw
 mutation is unconditional and has no notion of which push justifies it. The wrapper checks the following before it calls that mutation at
 all: `--pushed-sha` is the PR's live head *and* this worktree's clean HEAD
 (the same ordering `answer-summary-finding.ts` enforces below), **and**,
@@ -366,7 +365,7 @@ So provenance is recorded **per hold**, and reads as these facts on the item
 itself:
 
 - **`actor`** — which working tree made the promise, stamped by `hold`. It is
-  derived from `git rev-parse --show-toplevel` and is not settable by `hold` or
+  derived from the working-tree root reported by `git rev-parse` and is not settable by `hold` or
   `stamp-held` (`restore-held` only carries back the value printed by
   `claim-held`): `drive.ts` holds a single-instance lock keyed by the same
   tree, so "one tree" and "one driver" are the same thing, and a managed
@@ -660,24 +659,13 @@ satisfies perfectly, and its dispatch is not idempotent, so a wrong answer is a
 permanent standing claim on the PR that no later round undoes.
 
 ```bash
-if TOKEN=$(bun "<skill-dir>/scripts/drive-state.ts" claim-held [PR] --key K --kind finding --pushed-sha "$(git rev-parse HEAD)"); then
-  echo "dispatch (answer-summary-finding.ts), then release:"
-  echo '  bun "<skill-dir>/scripts/drive-state.ts" release-held [PR] --key K --token "$TOKEN"'
-else
-  rc=$?   # captured in the `else`, NOT after `if !` — negating the condition
-          # with `!` also overwrites `$?` with the NEGATED status by the time
-          # a `then` branch runs, so `rc` there would always read 0
-  echo "do NOT dispatch (rc=$rc) — see below for what rc means"
-fi
+bun "<skill-dir>/scripts/portable.ts" claim-held [PR] --key K --kind finding
 ```
 
-This block deliberately has no `case`/no dummy per-branch bodies: a
-placeholder like `1) : ;;` looks like it enforces something but is a no-op —
-a literal caller falls straight past it and can dispatch anyway on exits that
-were supposed to forbid it, which is exactly the mistake an earlier version of
-this doc made. The `if`/`else` shape above is the only thing that has to be
-correct, and it is: dispatch code exists *only* inside the `then` branch, so
-there is nothing on the `else` side for a reader to fall through into.
+Read the exit status before dispatching anything. Save the token printed on
+success as literal data; pass it back with `--token <printed-token>` when
+releasing or unclaiming. The wrapper computes local HEAD internally and leaves
+the claim's per-hold provenance checks and exit codes intact.
 
 Exit `0` means you hold it: proceed to dispatch, then release. Every non-zero
 exit means **do not dispatch** — skip the key without touching GitHub — but the
@@ -741,11 +729,10 @@ Then dispatch and **release the instant the external operation succeeds,
 passing the token back**:
 
 ```bash
-bun "<skill-dir>/scripts/drive-state.ts" release-held [PR] --key K --token "$TOKEN"
+bun "<skill-dir>/scripts/drive-state.ts" release-held [PR] --key K --token <printed-token>
 ```
 
-A `finding` is answered with `bun "<skill-dir>/scripts/answer-summary-finding.ts" --pushed-sha
-"$(git rev-parse HEAD)"`, piping the item's own `.reason` field **verbatim** —
+A `finding` is answered with `bun "<skill-dir>/../../shared/command.ts" --stdin-file .context/held-reason.md -- bun "<skill-dir>/scripts/portable.ts" answer-summary-finding [PR] --outcome <outcome> --fingerprint <key>`, after writing the item's own `.reason` field **verbatim** to `.context/held-reason.md` with the file editor —
 never re-composed or re-derived from memory, which is exactly the recollection
 this batch exists not to depend on. `--pushed-sha` must be the PR's live head
 and this worktree's clean HEAD, so the marker cannot precede the push; it does
@@ -769,7 +756,7 @@ If the dispatch itself fails (a transient API error, not a crash), give the
 claim back immediately rather than leaving it to expire on its own:
 
 ```bash
-bun "<skill-dir>/scripts/drive-state.ts" unclaim-held [PR] --key K --token "$TOKEN"
+bun "<skill-dir>/scripts/drive-state.ts" unclaim-held [PR] --key K --token <printed-token>
 ```
 
 so a retry — this round or the next — is not blocked behind the staleness

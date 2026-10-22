@@ -127,7 +127,7 @@ sheet. Link the full viewer page in `related` where it adds value.
 ## Render and check
 
 ```bash
-bun <skill-dir>/scripts/explainer-sheet/explainer-sheet.ts render .context/explain/<id>/explainer.json --require-fresh
+bun "<skill-dir>/scripts/explainer-sheet/explainer-sheet.ts" render .context/explain/<id>/explainer.json --require-fresh
 ```
 
 It writes `<id>-explainer.html` and `<id>.md` to `.context/explain/<id>/`, or
@@ -151,7 +151,7 @@ returned header, then `mcp__linear__create_attachment_from_upload`). Remove an
 older explainer with the same title after the new one is attached, never
 before. Post the markdown as the comment, or a shorter comment that points to
 the sheet, through the tracker scripts of `/jig:do-item`
-(`<skill-dir>/../do-item/scripts/tracker.ts comment <KEY>`). Never commit a
+(`bun "<skill-dir>/../do-item/scripts/tracker.ts" comment <KEY> --body-file <comment-file>`). Never commit a
 rendered sheet to the repository.
 
 ## What the renderer guarantees

@@ -168,9 +168,7 @@ ready, grep for the four prescription smells:
 4. **Per-primitive visual recipes** in `02` (hue logic, segment counts):
    tokens *bind*; primitive visuals stay *open*.
 
-```bash
-grep -riE 'best for|strong default|i propose|use a |introduce a ' /tmp/design-brief-<slug>/uploads/*.md
-```
+Search every uploaded Markdown file for `best for`, `strong default`, `i propose`, `use a ` and `introduce a `, ignoring case, with the harness’s file-search tool.
 
 The binding-versus-open line, the five-step audit and a worked before/after
 example are in `${CLAUDE_SKILL_DIR}/references/anti-prescription-audit.md`.

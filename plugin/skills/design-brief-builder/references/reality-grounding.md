@@ -23,12 +23,12 @@ automation features.
 
 | Surface | Where to look | Tool |
 |---------|---------------|------|
-| Entity columns and types | the committed schema (dump, ORM schema, or migrations) | `grep -n "CREATE TABLE .*<entity>"` or the ORM model |
-| Related tables (links, suggestions, audit) | same | `grep -n "CREATE TABLE" \| grep -iE "<entity>\|suggestion\|provenance\|audit"` |
-| Enums (statuses, categories) | same | `grep -n "CREATE TYPE" \| grep -iE "status\|category\|kind"` |
-| Existing routes and components | the frontend's route or page directory for `<entity>` | `ls`, `wc -l`, `head` |
-| ADRs and feature docs | the repository's ADR directory and feature documentation | `ls`, targeted reads |
-| AI infrastructure | the services behind AI features; schema tables for AI output and suggestions | grep + read |
+| Entity columns and types | the committed schema (dump, ORM schema, or migrations) | search for the entity's table definition or read its ORM model |
+| Related tables (links, suggestions, audit) | same | search table definitions for the entity, suggestions, provenance and audit |
+| Enums (statuses, categories) | same | search type definitions for statuses, categories and kinds |
+| Existing routes and components | the frontend's route or page directory for `<entity>` | list files, then read the relevant components |
+| ADRs and feature docs | the repository's ADR directory and feature documentation | list files, then read the relevant documents |
+| AI infrastructure | the services behind AI features; schema tables for AI output and suggestions | search and read the relevant definitions |
 
 ## What to produce
 

@@ -415,7 +415,7 @@ and passes, and point the author at it, rather than checking by eye:
 | Job timeouts, cancelling pull-request concurrency, unfiltered required workflows, a `!cancelled()` aggregator, heavy suites off the per-change path, one key-affecting environment per cache group | a workflow-convention lint; Jig's reference is [M13's](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/reference/workflow-conventions/README.md), whose exceptions each carry a reason |
 | A container build's cache mount on every step that reads the store, and no per-command store flag | a cache-mount check over the Dockerfiles; Jig's reference is [M13's](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/reference/cache-mount-coverage/README.md) |
 | Expressions inside `run:`, over-broad permissions, secrets written to outputs, and `uses:` references a plain grep misses (YAML allows `uses : …`) | a static workflow auditor (for example zizmor) over `.github/workflows/` and `.github/actions/`, pinned to one version so finding counts stay comparable, each suppression with a reason; advisory until the tree is clean at the chosen level, blocking after |
-| Unpinned `curl \| sh` or install scripts | an install-script allowlist |
+| Unpinned downloads piped to a shell, or install scripts | an install-script allowlist |
 | Merge strategy (for example squash-only) | a merge-strategy validation |
 | Secrets leaked in the diff | a secret scan |
 
@@ -425,17 +425,17 @@ and passes, and point the author at it, rather than checking by eye:
 
 ```bash
 # Recent workflow runs
-gh run list --limit 10
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run list --limit 10
 
 # Recent runs of one workflow
-gh run list --workflow <workflow>.yml --limit 5
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run list --workflow <workflow>.yml --limit 5
 
 # Runs waiting for a runner (that wait is outside timeout-minutes)
-gh run list --status queued
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run list --status queued
 
 # Dispatch from the branch whose workflow file is current (2.6)
-gh workflow run <workflow>.yml --ref <branch> -f <input>=<value>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh workflow run <workflow>.yml --ref <branch> -f <input>=<value>
 
 # Dry-run a workflow locally (needs the `act` tool)
-act pull_request -W .github/workflows/<workflow>.yml --dryrun
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- act pull_request -W .github/workflows/<workflow>.yml --dryrun
 ```

@@ -50,6 +50,7 @@ import {
 import {
   applyImpliedClosure,
   changedFilesFromGit,
+  changedFilesFromWorktree,
   GitContextError,
   GitError,
   type GitEvent,
@@ -103,6 +104,7 @@ const NO_ACTIONS = "_(No post-deploy actions required for this changeset.)_";
 class UsageError extends Error {}
 
 interface Args {
+  worktree?: boolean;
   files?: string;
   /** `--files` holds NUL-separated paths (`git … -z`). */
   nul?: boolean;
@@ -173,6 +175,9 @@ const VALUE_FLAGS: Record<string, (args: Args, value: string) => void> = {
 
 /** The flags that take no value. */
 const SWITCHES: Record<string, (args: Args) => void> = {
+  "--worktree": (a) => {
+    a.worktree = true;
+  },
   "-z": (a) => {
     a.nul = true;
   },
@@ -255,6 +260,7 @@ function parseArgs(argv: string[], spec = RESOLVE_FLAGS): Args {
 const HELP = [
   "Usage: bun <skill-dir>/scripts/resolve.ts [options]",
   "",
+  "  --worktree             Include tracked and untracked workspace changes; requires --base <ref>",
   "  --files <path|->       Changed files, one per line, instead of git; - reads stdin",
   "  -z, --null             --files is NUL-separated (git diff -z --name-only), for any file name",
   "  --base <ref>           Pull request base branch (origin/<ref>...<head>); implies --event pull_request",
@@ -367,8 +373,27 @@ function failure(err: unknown, catalog?: string): number {
   throw err;
 }
 
-/** The changed files: the list given, else git's for the event. */
+/** Workspace mode has one base and cannot mix event or saved-list inputs. */
+function workspaceBase(args: Args): string {
+  const conflicting = [
+    args.files !== undefined,
+    args.nul,
+    args.event,
+    args.head,
+    args.since,
+    args.before,
+  ].some(Boolean);
+  if (!args.base || conflicting)
+    throw new UsageError(
+      "--worktree requires --base <ref> and cannot be combined with file lists or event options",
+    );
+  return args.base;
+}
+
+/** The changed files: the list given, else git's for the selected mode. */
 function changedFilesOf(args: Args, options: CliOptions): string[] {
+  if (args.worktree)
+    return changedFilesFromWorktree(workspaceBase(args), options.git);
   if (args.files !== undefined) return readFileList(args.files, args.nul);
   if (args.nul) throw new UsageError("-z applies to --files only");
   const eventName = eventOf(args);

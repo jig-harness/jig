@@ -97,8 +97,8 @@ wrap can split one sentence over several lines. The linter still measures it
 as one sentence.
 
 ```bash
-bun <skill-dir>/scripts/ste-lint/ste-lint.ts draft.md
-# or: cat draft.md | bun <skill-dir>/scripts/ste-lint/ste-lint.ts --json
+bun "<skill-dir>/scripts/ste-lint/ste-lint.ts" draft.md
+# Add --json for machine-readable output.
 ```
 
 `<skill-dir>` is the directory of the `decide` skill (`${CLAUDE_SKILL_DIR}` in

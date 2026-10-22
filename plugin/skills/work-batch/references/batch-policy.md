@@ -119,7 +119,7 @@ still proposed and the run warns.
 
 **Changed lines** are checked after implementing, since the diff does not
 exist when the batch is proposed: `pull_requests.size_budget`, which
-`do-item`'s `pr-plan.ts open` measures. Over it, the batch is trimmed,
+the `open` operation of `do-item`'s `pr-plan.ts` measures. Over it, the batch is trimmed,
 lowest-ranked issue first.
 
 **Measure before retuning.** Across the first batches that include a
