@@ -362,8 +362,7 @@ test.skipIf(
       `#!/usr/bin/env bun
 const args = process.argv.slice(2);
 if (args[0] === "print") process.exit(113);
-if (args[1] === "is-enabled") { console.log("disabled"); process.exit(1); }
-if (args[1] === "is-active") { console.log("inactive"); process.exit(3); }
+if (args[1] === "show") { console.log("LoadState=not-found\\nUnitFileState=\\nActiveState=inactive"); process.exit(0); }
 console.error("no crontab: scheduler unavailable");
 process.exit(1);
 `,
@@ -405,8 +404,7 @@ if (${JSON.stringify(name)} === "launchctl") {
   if (args[0] === "bootstrap") { refuse(readFileSync(args[2], "utf8")); writeFileSync(${JSON.stringify(active)}, ""); }
 }
 if (${JSON.stringify(name)} === "systemctl") {
-  if (args[1] === "is-enabled") { const on = existsSync(${JSON.stringify(enabled)}); console.log(on ? "enabled" : "disabled"); process.exit(on ? 0 : 1); }
-  if (args[1] === "is-active") { const on = existsSync(${JSON.stringify(active)}); console.log(on ? "active" : "inactive"); process.exit(on ? 0 : 3); }
+  if (args[1] === "show") console.log("LoadState=loaded\\nUnitFileState=" + (existsSync(${JSON.stringify(enabled)}) ? "enabled" : "disabled") + "\\nActiveState=" + (existsSync(${JSON.stringify(active)}) ? "active" : "inactive"));
   if (args[1] === "disable") { rmSync(${JSON.stringify(enabled)}, { force: true }); rmSync(${JSON.stringify(active)}, { force: true }); }
   if (args[1] === "enable") { refuse(readFileSync(${JSON.stringify(join(units, "jig-gc.service"))}, "utf8")); writeFileSync(${JSON.stringify(enabled)}, ""); if (args.includes("--now")) writeFileSync(${JSON.stringify(active)}, ""); }
   if (args[1] === "start") writeFileSync(${JSON.stringify(active)}, "");

@@ -24,9 +24,14 @@ function fakeSystemctl(paths: Markers & { log: string }): string {
 import { appendFileSync, existsSync, rmSync, writeFileSync } from "node:fs";
 const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(log)}, args.join(" ") + "\\n");
-if (process.env.BUS_DOWN && args[1].startsWith("is-")) { console.error("Failed to connect to bus"); process.exit(1); }
-if (args[1] === "is-enabled") { const on = existsSync(${JSON.stringify(enabled)}); console.log(on ? "enabled" : "disabled"); process.exit(on ? 0 : 1); }
-if (args[1] === "is-active") { const on = existsSync(${JSON.stringify(active)}); console.log(on ? "active" : "inactive"); process.exit(on ? 0 : 3); }
+// systemd 252 answers is-enabled for a missing unit with only a diagnostic.
+if (args[1] === "is-enabled" && process.env.NO_UNIT) { console.error("Failed to get unit file state for jig-gc.timer: No such file or directory"); process.exit(1); }
+if (args[1] === "show") {
+  if (process.env.BUS_DOWN) { console.error("Failed to connect to bus"); process.exit(1); }
+  // A unit systemd has never seen has no unit file state at all.
+  if (process.env.NO_UNIT) { console.log("LoadState=not-found\\nUnitFileState=\\nActiveState=inactive"); process.exit(0); }
+  console.log("LoadState=loaded\\nUnitFileState=" + (existsSync(${JSON.stringify(enabled)}) ? "enabled" : "disabled") + "\\nActiveState=" + (existsSync(${JSON.stringify(active)}) ? "active" : "inactive"));
+}
 if (args[1] === "disable") {
   if (existsSync(${JSON.stringify(failDisable)})) { console.error("Failed to stop jig-gc.timer"); process.exit(1); }
   rmSync(${JSON.stringify(enabled)}, { force: true });
@@ -63,7 +68,11 @@ try {
  * independent markers, as `systemctl` keeps them. `failDisable` makes
  * `disable` fail the way a stop that cannot complete does.
  */
-function systemdFixture(state: { enabled: boolean; active: boolean }) {
+function systemdFixture(state: {
+  enabled: boolean;
+  active: boolean;
+  installed?: boolean;
+}) {
   const root = mkdtempSync(join(tmpdir(), "gc-scheduler-"));
   const home = join(root, "home");
   const units = join(home, ".config/systemd/user");
@@ -78,8 +87,10 @@ function systemdFixture(state: { enabled: boolean; active: boolean }) {
     join(bin, "systemctl"),
     fakeSystemctl({ enabled, active, failDisable, log }),
   );
-  writeFileSync(join(units, "jig-gc.service"), "previous service\n");
-  writeFileSync(join(units, "jig-gc.timer"), "previous timer\n");
+  if (state.installed !== false) {
+    writeFileSync(join(units, "jig-gc.service"), "previous service\n");
+    writeFileSync(join(units, "jig-gc.timer"), "previous timer\n");
+  }
   if (state.enabled) writeFileSync(enabled, "");
   if (state.active) writeFileSync(active, "");
   // Snapshot, then stand in for an install that replaced and started the
@@ -136,4 +147,11 @@ test("a scheduler state that cannot be read stops before anything changes", () =
     "Cannot establish scheduler state",
   );
   expect(readFileSync(f.log, "utf8")).not.toContain("disable");
+});
+
+test("a first install reads the missing timer as absent and restores to nothing", () => {
+  const f = systemdFixture({ enabled: false, active: false, installed: false });
+  expectSpawnExit(f.restore({ NO_UNIT: "1" }), 0);
+  expect(existsSync(join(f.units, "jig-gc.timer"))).toBe(false);
+  expect(readFileSync(f.log, "utf8")).not.toMatch(/^--user (enable|start) /m);
 });

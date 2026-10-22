@@ -231,11 +231,25 @@ function readOptional(path: string): string | null {
     throw error;
   }
 }
+/** A scheduler query that answered nothing usable: never read as absence. */
+function unreadable(
+  command: string[],
+  result: Awaited<ReturnType<typeof run>>,
+): GcError {
+  const how = result.timedOut
+    ? "timed out"
+    : result.spawnFailed
+      ? "could not start"
+      : `exited ${result.code}`;
+  return new GcError(
+    `Cannot establish scheduler state: ${command.join(" ")} ${how}: ${(result.stderr || result.stdout).trim()}`,
+  );
+}
 /**
  * A probe answers yes, answers a documented no, or establishes nothing. Only
  * the first two are state: a timeout, a spawn failure or an unrecognised
  * answer throws, so an unreadable state is never recorded as an absent one.
- * `negative` names the documented "no" answers; `state` reads one from output.
+ * `negative` names the documented "no" answers.
  */
 async function probe(
   command: string[],
@@ -246,41 +260,89 @@ async function probe(
     if (result.code === 0) return true;
     if (negative(result)) return false;
   }
-  const how = result.timedOut
-    ? "timed out"
-    : result.spawnFailed
-      ? "could not start"
-      : `exited ${result.code}`;
-  throw new GcError(
-    `Cannot establish scheduler state: ${command.join(" ")} ${how}: ${(result.stderr || result.stdout).trim()}`,
-  );
-}
-function state(stdout: string): string {
-  return stdout.trim().split("\n")[0] ?? "";
+  throw unreadable(command, result);
 }
 // launchctl print exits 113 for a service it does not know.
 function launchdLoaded(target: string): Promise<boolean> {
   return probe(["launchctl", "print", target], ({ code }) => code === 113);
 }
 // https://www.freedesktop.org/software/systemd/man/latest/systemctl.html
+// `is-enabled` reports a missing unit differently across systemd versions
+// (`not-found` on stdout, or only a diagnostic on stderr), so state is read
+// through `show`, which answers for a missing unit with `LoadState=not-found`
+// and exits non-zero only when the manager itself cannot be asked.
+const ENABLED = new Set([
+  "enabled",
+  "enabled-runtime",
+  "static",
+  "alias",
+  "indirect",
+  "generated",
+  "transient",
+]);
 const NOT_ENABLED = new Set([
   "disabled",
   "linked",
   "linked-runtime",
   "masked",
   "masked-runtime",
-  "not-found",
 ]);
+const ACTIVE = new Set(["active", "reloading", "refreshing"]);
 const NOT_ACTIVE = new Set([
   "inactive",
   "failed",
   "activating",
   "deactivating",
 ]);
-function systemdState(verb: string, negative: Set<string>): Promise<boolean> {
-  return probe(["systemctl", "--user", verb, "jig-gc.timer"], ({ stdout }) =>
-    negative.has(state(stdout)),
+function classify(
+  name: string,
+  value: string | undefined,
+  yes: Set<string>,
+  no: Set<string>,
+): boolean {
+  if (value !== undefined && yes.has(value)) return true;
+  if (value !== undefined && no.has(value)) return false;
+  throw new GcError(
+    `Cannot establish scheduler state: systemctl reported ${name}=${value ?? "(missing)"} for jig-gc.timer`,
   );
+}
+async function systemdState(): Promise<{ enabled: boolean; active: boolean }> {
+  const command = [
+    "systemctl",
+    "--user",
+    "show",
+    "jig-gc.timer",
+    "--property=LoadState,UnitFileState,ActiveState",
+  ];
+  const result = await run(command, { timeoutSec: 30 });
+  if (result.timedOut || result.spawnFailed || result.code !== 0)
+    throw unreadable(command, result);
+  const props = new Map<string, string>();
+  for (const line of result.stdout.split("\n")) {
+    const at = line.indexOf("=");
+    if (at > 0) props.set(line.slice(0, at), line.slice(at + 1).trim());
+  }
+  const load = props.get("LoadState");
+  if (load === undefined)
+    throw new GcError(
+      "Cannot establish scheduler state: systemctl reported no LoadState for jig-gc.timer",
+    );
+  return {
+    enabled:
+      load !== "not-found" &&
+      classify(
+        "UnitFileState",
+        props.get("UnitFileState"),
+        ENABLED,
+        NOT_ENABLED,
+      ),
+    active: classify(
+      "ActiveState",
+      props.get("ActiveState"),
+      ACTIVE,
+      NOT_ACTIVE,
+    ),
+  };
 }
 export async function snapshotScheduler(
   scheduler: Scheduler = detectScheduler(),
@@ -304,12 +366,7 @@ export async function snapshotScheduler(
     const loaded = await launchdLoaded(`gui/${process.getuid?.()}/${LABEL}`);
     return { scheduler, files, enabled: loaded, active: loaded };
   }
-  return {
-    scheduler,
-    files,
-    enabled: await systemdState("is-enabled", NOT_ENABLED),
-    active: await systemdState("is-active", NOT_ACTIVE),
-  };
+  return { scheduler, files, ...(await systemdState()) };
 }
 /** Stops the replacement job; only a timer never installed may be skipped. */
 async function stopReplacement(launchd: boolean): Promise<void> {
