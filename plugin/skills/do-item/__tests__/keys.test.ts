@@ -68,6 +68,19 @@ describe("issue key shapes", () => {
         ?.example,
     ).toBe("#123");
   });
+
+  it("reads a web address on the origin's repository when none is configured", () => {
+    const github = parseTrackerConfig({ issue_tracker: { adapter: "github" } });
+    const url = "https://github.com/o/n/issues/12";
+    expect(
+      issueKeysOf(github, () => "git@github.com:o/n.git")?.normalize(url),
+    ).toBe("#12");
+    expect(
+      issueKeysOf(github, () => "git@github.com:o/other.git")?.normalize(url),
+    ).toBeNull();
+    expect(issueKeysOf(github, () => null)?.normalize(url)).toBeNull();
+    expect(issueKeysOf(github, () => null)?.normalize("12")).toBe("#12");
+  });
 });
 
 describe("the key a branch names", () => {

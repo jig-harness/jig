@@ -94,7 +94,7 @@ export function repoFromRemote(url: string): Repo | null {
  * there is none (git exits 1) or git cannot run: either way the repository
  * is not derivable, and `homeRepo` names the field to set.
  */
-function originUrl(): string | null {
+export function originUrl(): string | null {
   try {
     const r = Bun.spawnSync(["git", "config", "--get", "remote.origin.url"], {
       stdout: "pipe",

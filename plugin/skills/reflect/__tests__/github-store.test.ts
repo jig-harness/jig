@@ -150,7 +150,7 @@ describe("the GitHub store", () => {
       `gh label create jig-reflection --repo ${fake.repository}`,
     );
     // Without the label, a listing would look empty: it is refused instead.
-    expect((await store("list")).code).toBe(EXIT.failed);
+    expectSpawnExit(spawnResult(await store("list")), EXIT.failed, "list");
   });
 
   it("keeps one labelled issue per change, its events in one comment, and its title and description computed from them", async () => {
@@ -282,13 +282,22 @@ describe("the GitHub store", () => {
 
   it("reads an unreachable GitHub, a missing or refused token, or lasting server errors as unavailable", async () => {
     const { GH_TOKEN: _, ...noToken } = env;
-    expect((await store("list", "", noToken)).code).toBe(EXIT.unavailable);
-    expect((await store("list", "", { ...env, GH_TOKEN: "wrong" })).code).toBe(
+    expectSpawnExit(
+      spawnResult(await store("list", "", noToken)),
       EXIT.unavailable,
+      "list without a token",
     );
+    const before = fake.refused;
+    expectSpawnExit(
+      spawnResult(await store("list", "", { ...env, GH_TOKEN: "wrong" })),
+      EXIT.unavailable,
+      "list with a refused token",
+    );
+    // A refused credential is not retried: waiting does not change it.
+    expect(fake.refused - before).toBe(1);
     for (let i = 0; i < 4; i++)
       fake.failNext("JigReflectionRepository", 502, "Bad Gateway");
-    expect((await store("list")).code).toBe(EXIT.unavailable);
+    expectSpawnExit(spawnResult(await store("list")), EXIT.unavailable, "list");
     const port = fake.server.port;
     fake.stop();
     const r = await store("append", jsonl([sampleFinding(ID(1), "first")]), {

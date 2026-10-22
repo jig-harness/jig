@@ -83,6 +83,8 @@ export class FakeGitHub {
   readonly issues: FakeIssue[] = [];
   /** Operation names, in the order they came. */
   readonly requests: string[] = [];
+  /** Requests refused for their credential. */
+  refused = 0;
   hasIssuesEnabled = true;
   isArchived = false;
   viewerPermission = "ADMIN";
@@ -204,8 +206,10 @@ export class FakeGitHub {
   }
 
   private async handle(request: Request): Promise<Response> {
-    if (request.headers.get("authorization") !== `bearer ${this.token}`)
+    if (request.headers.get("authorization") !== `bearer ${this.token}`) {
+      this.refused += 1;
       return Response.json({ message: "Bad credentials" }, { status: 401 });
+    }
     const body = (await request.json()) as {
       query?: string;
       variables?: Json;

@@ -109,16 +109,26 @@ export class GitHubClient {
     });
   }
 
-  /** A query, retried while GitHub is unavailable or asks to wait. */
+  /**
+   * A query, retried while GitHub is unavailable or asks to wait; a refused
+   * credential is not retried, since waiting does not change it.
+   */
   read(query: string, variables: Record<string, unknown>): Promise<unknown> {
     return this.attempt(
       query,
       variables,
-      (error) => error instanceof GitHubApiError && error.unavailable,
+      (error) =>
+        error instanceof GitHubApiError &&
+        error.unavailable &&
+        !isAuthFailure(error),
     );
   }
 
-  /** A mutation, paced, and retried only after a rate-limit refusal. */
+  /**
+   * A mutation, paced, and retried only after a rate-limit refusal. A
+   * failure other than a rate limit or a refused credential may have been
+   * applied, and says so.
+   */
   async write(
     query: string,
     variables: Record<string, unknown>,
@@ -131,7 +141,8 @@ export class GitHubClient {
       if (
         error instanceof GitHubApiError &&
         error.unavailable &&
-        !isRateLimited(error)
+        !isRateLimited(error) &&
+        !isAuthFailure(error)
       )
         throw new GitHubApiError(
           `${error.message}; the write may have been applied, so it is not sent again`,
