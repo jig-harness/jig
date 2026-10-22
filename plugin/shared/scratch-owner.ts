@@ -3,21 +3,26 @@ import { GcError } from "./gc-error.ts";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isMapping } from "./config-layers.ts";
+import { swallow } from "./errors.ts";
 import {
   parsePosixProcessTable,
   parseWindowsProcessTable,
 } from "./process-table.ts";
 
 export const SCRATCH_OWNER_FILE = ".jig-scratch-owner.json";
+/**
+ * `start` is null where the process creation identity could not be captured
+ * (no `ps`, an incompatible one, restricted process inspection). The scope
+ * stays usable, and a collector treats its owner as unverifiable and keeps it.
+ */
 export interface ScratchOwner {
   version: 1;
   pid: number;
-  start: string;
+  start: string | null;
   createdAt: string;
 }
 let captured: ScratchOwner | undefined;
-function scratchOwner(): ScratchOwner {
-  if (captured) return captured;
+function processStart(): string | null {
   const windows = process.platform === "win32";
   const args = windows
     ? [
@@ -35,27 +40,32 @@ function scratchOwner(): ScratchOwner {
         "-o",
         "pid=,ppid=,pgid=,lstart=,stat=,args=",
       ];
-  const result = Bun.spawnSync(args, {
-    env: { ...process.env, LC_ALL: "C" },
-    timeout: 5000,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  let result: ReturnType<typeof Bun.spawnSync>;
+  try {
+    result = Bun.spawnSync(args, {
+      env: { ...process.env, LC_ALL: "C" },
+      timeout: 5000,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+  } catch (error) {
+    swallow(error, "scratch owner: no process table to read");
+    return null;
+  }
   const rows =
-    result.exitCode === 0
+    result.exitCode === 0 && result.stdout
       ? (windows ? parseWindowsProcessTable : parsePosixProcessTable)(
           result.stdout.toString(),
         )
       : null;
-  const row = rows?.find((item) => item.pid === process.pid);
-  if (!row?.start)
-    throw new GcError(
-      "scratch scope: cannot capture process creation identity",
-    );
-  captured = {
+  return rows?.find((item) => item.pid === process.pid)?.start || null;
+}
+/** Captured once per process, an unavailable identity included. */
+function scratchOwner(): ScratchOwner {
+  captured ??= {
     version: 1,
-    pid: row.pid,
-    start: row.start,
+    pid: process.pid,
+    start: processStart(),
     createdAt: new Date().toISOString(),
   };
   return captured;
@@ -77,8 +87,10 @@ export function readScratchOwner(root: string): ScratchOwner {
     typeof owner.pid !== "number" ||
     !Number.isSafeInteger(owner.pid) ||
     owner.pid <= 0 ||
-    typeof owner.start !== "string" ||
-    !owner.start ||
+    !(
+      owner.start === null ||
+      (typeof owner.start === "string" && owner.start)
+    ) ||
     typeof owner.createdAt !== "string" ||
     !Number.isFinite(Date.parse(owner.createdAt))
   )
@@ -86,7 +98,7 @@ export function readScratchOwner(root: string): ScratchOwner {
   return {
     version: 1,
     pid: owner.pid,
-    start: owner.start,
+    start: owner.start as string | null,
     createdAt: owner.createdAt,
   };
 }

@@ -1,18 +1,35 @@
 import { lstatSync, rmSync } from "node:fs";
 import { exclusiveGcLock } from "../../shared/gc-lock.ts";
 import { readReceipt, receiptPaths, stateRoot } from "../receipts.ts";
-import type { CollectionKind, Proof } from "../types.ts";
+import type { CollectionKind, Proof, Receipt } from "../types.ts";
 
-function scopeKey(kind: { name: string; repository?: string }): string {
+function scopeKey(kind: {
+  name: string;
+  repository?: string | undefined;
+}): string {
   return JSON.stringify([kind.name, kind.repository ?? null]);
 }
-/** The newest receipt path for every kind and repository the archive covers. */
+/** A scope whose inventory failed reported nothing about its resources. */
+function inventoryFailed(receipt: Receipt, key: string): boolean {
+  return receipt.resources.some(
+    (line) =>
+      line.resource === "*" &&
+      line.description === "inventory" &&
+      scopeKey({ name: line.kind, repository: line.repository }) === key,
+  );
+}
+/**
+ * The newest completed report for every kind and repository the archive
+ * covers. Unfinished receipts are preserved on their own and never displace it.
+ */
 function latestByScope(root: string): Map<string, string> {
   const latest = new Map<string, { path: string; startedAt: string }>();
   for (const path of receiptPaths(root)) {
     const receipt = readReceipt(path);
+    if (!receipt.completed) continue;
     for (const kind of receipt.kinds) {
       const key = scopeKey(kind);
+      if (inventoryFailed(receipt, key)) continue;
       const current = latest.get(key);
       if (
         !current ||
@@ -63,7 +80,7 @@ export function receiptsKind(days: number, root = stateRoot()): CollectionKind {
       return {
         state: "dead",
         reason:
-          "receipt retention elapsed; newer receipts cover every evaluated kind",
+          "receipt retention elapsed; newer completed reports cover every evaluated kind",
       };
     },
     collect: async (resource) => {

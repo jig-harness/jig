@@ -30,16 +30,20 @@ worktree reaper cannot remove.
 
 The repository declares kinds in `.config/jig.yaml`. The machine file
 controls the schedule, retention and longer idle guards. Collecting runs
-fetch the declaration from the install-recorded base branch and remote URL;
-only the intersection with confirmed install bounds is authorized. See
+fetch the declaration from the install-recorded base branch and remote URL,
+refusing when a URL rewrite rule redirects that URL; only the intersection
+with confirmed install bounds is authorized. Git hooks and the file-system
+monitor are disabled for these calls; transport and credential settings the
+user configured (an SSH command, a credential helper) apply as they do to the
+user's own fetches. See
 [configuration](../CONFIGURATION.md#gc).
 
 | Kind | Behavior |
 |------|----------|
 | `tool-state` | Runs drive-pr's existing state reaper in report mode for each configured clone. Receipts retain its full per-family proof. Collection remains disabled until state creators hold shared admission across every state use; the legacy reaper lock excludes only other reapers. |
-| `scratch` | Inventories only declared directory prefixes. Owner records include captured process creation identities; a live owner anywhere in the subtree keeps the root. Missing ownership is a finding. Collection remains disabled until fixture registration proves all holders gone. |
+| `scratch` | Inventories only declared directory prefixes. Owner records include captured process creation identities; a live owner anywhere in the subtree keeps the root. Where the identity cannot be captured (no readable process table), the record says so and the root is kept as unverified. Missing ownership is a finding. Collection remains disabled until fixture registration proves all holders gone. |
 | `worktrees` | Reports Git changes, hidden index flags, operations, pull request state, remote commit coverage, process holders and idleness. The primary checkout and paths outside declared roots are excluded. Ignored local content needs preservation evidence. Eligible worktrees remain report-only until the opener shares session admission. |
-| `receipts` | Machine kind; removes receipts past retention while preserving the latest receipt for each repository and kind. |
+| `receipts` | Machine kind; removes receipts past retention while preserving the latest completed report for each repository and kind. Unfinished receipts and runs whose inventory failed never take that place. |
 
 Scratch creators use `shared/gc-lock.ts` to hold shared admission while
 creating a scope and writing its owner record. Collectors take exclusive
@@ -63,7 +67,11 @@ proof with an unverified completion until the result is recorded.
 The installed job runs daily, reports by default, and collects on the
 configured weekday or under configured disk pressure. It uses launchd on
 macOS, a systemd user timer on Linux where available, and cron otherwise.
-The job records its executable paths and environment. Collecting runs hold
+The job records its executable paths and environment, the installed plugin
+copy's path among them. That path changes with each plugin release, so run
+`jig gc install --repo <repository> --yes` again after updating the plugin.
+A failed install puts back the previous job's files and activation. Collecting
+runs hold
 the same heavy-run lock as local gates. The design's later container, branch
 and process kinds wait for the first-stage rollout to run in a working
 repository; scratch remains report-only until the process stage.

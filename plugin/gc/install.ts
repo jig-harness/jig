@@ -1,7 +1,7 @@
 import { GcError } from "../shared/gc-error.ts";
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { gcConfiguration, type MachineConfig } from "./config.ts";
+import { gcConfiguration } from "./config.ts";
 import { baseDeclaration, gcGit as git } from "./git.ts";
 import { dump, load } from "../shared/yaml.ts";
 import { isMapping } from "../shared/config-layers.ts";
@@ -9,7 +9,10 @@ import { exclusiveGcLock } from "../shared/gc-lock.ts";
 import {
   installedScript,
   previousMachineText,
+  restoreScheduler,
+  type SchedulerSnapshot,
   schedulerPreview,
+  snapshotScheduler,
   updateScheduler,
 } from "./scheduler.ts";
 
@@ -87,6 +90,9 @@ export async function install(options: {
     const values: unknown = original ? load(original) : {};
     if (!isMapping(values))
       throw new GcError("Machine configuration must be a mapping");
+    // Captured before anything changes, so a failure can put back the job
+    // that was actually running rather than one rebuilt from this copy.
+    const previousJob = await snapshotScheduler();
     mkdirSync(dirname(machinePath), { recursive: true, mode: 0o700 });
     writeMachine(machinePath, dump({ ...values, gc: next }));
     let job: string;
@@ -94,7 +100,7 @@ export async function install(options: {
       job = await updateScheduler(next, options.script, noEntries);
     } catch (error) {
       throw new GcError(
-        `${message(error)}; ${await rollBack(machinePath, original, machine, options.script)}`,
+        `${message(error)}; ${await rollBack(machinePath, original, previousJob)}`,
       );
     }
     console.log(`Scheduler ${noEntries ? "removed" : "updated"}: ${job}`);
@@ -113,22 +119,17 @@ function writeMachine(path: string, text: string): void {
     rmSync(temporary, { force: true });
   }
 }
-/** A failed scheduler update restores the previous file and, where it can, the previous job. */
+/** A failed scheduler update restores the previous file and the previous job. */
 async function rollBack(
   path: string,
   original: string,
-  previous: MachineConfig,
-  script: string,
+  previousJob: SchedulerSnapshot,
 ): Promise<string> {
   if (original) writeMachine(path, original);
   else rmSync(path, { force: true });
   try {
-    await updateScheduler(
-      previous,
-      script,
-      previous.repositories.length === 0 && !previous.receipts,
-    );
-    return "machine configuration and scheduler job restored";
+    await restoreScheduler(previousJob);
+    return "machine configuration and previous scheduler job restored";
   } catch (error) {
     return `machine configuration restored; previous scheduler job not restored: ${message(error)}`;
   }

@@ -1,9 +1,17 @@
-import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { expect, spyOn, test } from "bun:test";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { gitEnvironment } from "../git.ts";
 import { scratchProof } from "../kinds/scratch.ts";
+import { worktreeActivity } from "../kinds/worktree-git.ts";
 import { reaperEnvironment } from "../kinds/tool-state.ts";
 import { receiptsKind } from "../kinds/receipts.ts";
 import { sharedGcLock, exclusiveGcLock } from "../../shared/gc-lock.ts";
@@ -67,6 +75,40 @@ test("unreadable identities and process tables fail closed", () => {
       later,
     ).state,
   ).toBe("unverified");
+});
+test("an owner recorded without a process identity keeps its scope", () => {
+  const dir = root();
+  writeFileSync(
+    join(dir, SCRATCH_OWNER_FILE),
+    JSON.stringify({
+      version: 1,
+      pid: 2,
+      start: null,
+      createdAt: "2000-01-01T00:00:00.000Z",
+    }),
+  );
+  expect(scratchProof(dir, [], 7, later).state).toBe("unverified");
+});
+test("a scope is still recorded where no process table can be read", () => {
+  const dir = root();
+  const owner = join(import.meta.dir, "..", "..", "shared", "scratch-owner.ts");
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      "-e",
+      `const { writeScratchOwner } = await import(${JSON.stringify(owner)}); writeScratchOwner(${JSON.stringify(dir)});`,
+    ],
+    {
+      env: { PATH: join(dir, "no-process-table"), HOME: dir },
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 30_000,
+    },
+  );
+  expectSpawnExit(result, 0);
+  expect(
+    JSON.parse(readFileSync(join(dir, SCRATCH_OWNER_FILE), "utf8")),
+  ).toMatchObject({ version: 1, start: null });
 });
 test("malformed child ownership prevents proving the parent dead", () => {
   const dir = root();
@@ -134,6 +176,25 @@ test("a scratch scan past its deadline refuses rather than stalling", () => {
   expect(() => scratchProof(scope, [], 7, Date.now(), 0)).toThrow(
     "exceeded its deadline",
   );
+});
+/** The clock passes the walk's entry check, then expires inside its loop. */
+function expiringAfterEntry(body: () => void): void {
+  let calls = 0;
+  const clock = spyOn(Date, "now").mockImplementation(() =>
+    calls++ === 0 ? 0 : 2,
+  );
+  try {
+    expect(body).toThrow("exceeded its deadline");
+  } finally {
+    clock.mockRestore();
+  }
+}
+test("a flat directory's walk checks its deadline between entries", () => {
+  const scope = root();
+  writeFileSync(join(scope, SCRATCH_OWNER_FILE), "{}");
+  for (const name of ["a", "b"]) writeFileSync(join(scope, name), "");
+  expiringAfterEntry(() => scratchProof(scope, [], 7, 0, 1));
+  expiringAfterEntry(() => worktreeActivity(scope, scope, 1));
 });
 test("machine guards cannot shorten the kind's default or add authority", () => {
   expect(() => parseMachine({ idle_days: { scratch: 1 } })).toThrow(
@@ -298,5 +359,41 @@ test("unfinished receipts retain their action evidence even past retention", asy
   );
   expect((await receiptsKind(30, dir).prove({ id: path })).state).toBe(
     "unverified",
+  );
+});
+
+test("an unfinished or failed-inventory run never displaces the last completed report", async () => {
+  const dir = root();
+  const report = writeReceipt(
+    receipt(
+      "2000-01-01T00-00-00.000Z-1-abcd",
+      "2000-01-01T00:00:00.000Z",
+      "scratch",
+    ),
+    dir,
+  );
+  const pending = receipt(
+    "2000-01-02T00-00-00.000Z-1-abcd",
+    "2000-01-02T00:00:00.000Z",
+    "scratch",
+  );
+  pending.completed = false;
+  writeReceipt(pending, dir);
+  const failed = receipt(
+    "2000-01-03T00-00-00.000Z-1-abcd",
+    "2000-01-03T00:00:00.000Z",
+    "scratch",
+  );
+  failed.resources.push({
+    kind: "scratch",
+    repository: "/repo",
+    resource: "*",
+    description: "inventory",
+    outcome: "unverified",
+    reason: "fixture failure",
+  });
+  writeReceipt(failed, dir);
+  expect((await receiptsKind(30, dir).prove({ id: report })).state).toBe(
+    "live",
   );
 });

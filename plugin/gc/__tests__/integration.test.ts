@@ -163,6 +163,27 @@ test("a changed remote fails the inventory closed with exit 1", () => {
     reason: expect.stringContaining("remote URL changed"),
   });
 });
+test("a URL rewrite of the installed remote fails the inventory closed", () => {
+  const f = setup();
+  const remote = f.machine.repositories[0]?.remote_url as string;
+  // The configured name still expands to the installed URL; only the fetch
+  // of that URL is redirected.
+  f.command(["git", "remote", "set-url", "origin", "alias:fixture"]);
+  f.command(["git", "config", `url.${remote}.insteadOf`, "alias:fixture"]);
+  f.command([
+    "git",
+    "config",
+    `url.${join(f.root, "different.git")}.insteadOf`,
+    remote,
+  ]);
+  const result = run(f, ["--collect", "--repo", f.repo, "--json"]);
+  expectSpawnExit(result, 1);
+  const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+  expect(receipt.resources[0]).toMatchObject({
+    outcome: "unverified",
+    reason: expect.stringContaining("insteadOf"),
+  });
+});
 test("install previews without writing a machine file or job", () => {
   const f = setup();
   const previous = readFileSync(f.homeFile, "utf8");
@@ -353,6 +374,71 @@ process.exit(1);
   expectSpawnExit(result, 1);
   expect(result.stderr.toString()).toContain("machine configuration");
   expect(readFileSync(f.homeFile, "utf8")).toBe(previous);
+});
+
+test.skipIf(
+  skipsOnWindows(
+    "powershell",
+    "GC scheduler installation supports launchd, systemd and cron on macOS/Linux",
+  ),
+)("a failed scheduler update restores the job that was running before", () => {
+  const f = setup();
+  const cache = join(f.root, "installed");
+  cpSync(resolve(import.meta.dir, "../.."), cache, {
+    recursive: true,
+    filter: (source) => !source.includes("__tests__"),
+  });
+  const bin = join(f.root, "bin");
+  mkdirSync(bin);
+  const cron = join(f.root, "crontab"),
+    active = join(f.root, "active");
+  const plist = join(f.user, "Library/LaunchAgents/dev.jig.gc.plist");
+  const units = join(f.user, ".config/systemd/user");
+  // Each fake refuses to start a job built by this install, so the update
+  // fails after replacing the previous job's files.
+  const source = (name: string) => `#!/usr/bin/env bun
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+const refuse = (text) => { if (text.includes("--scheduled")) { console.error("refused"); process.exit(1); } };
+if (${JSON.stringify(name)} === "crontab") {
+  if (args[0] === "-l") process.stdout.write(readFileSync(${JSON.stringify(cron)}, "utf8"));
+  else { const text = await Bun.stdin.text(); refuse(text); writeFileSync(${JSON.stringify(cron)}, text); }
+}
+if (${JSON.stringify(name)} === "launchctl") {
+  if (args[0] === "print") process.exit(existsSync(${JSON.stringify(active)}) ? 0 : 1);
+  if (args[0] === "bootout") rmSync(${JSON.stringify(active)}, { force: true });
+  if (args[0] === "bootstrap") { refuse(readFileSync(args[2], "utf8")); writeFileSync(${JSON.stringify(active)}, ""); }
+}
+if (${JSON.stringify(name)} === "systemctl") {
+  if (args[1] === "is-enabled") process.exit(existsSync(${JSON.stringify(active)}) ? 0 : 1);
+  if (args[1] === "disable") rmSync(${JSON.stringify(active)}, { force: true });
+  if (args[1] === "enable") { refuse(readFileSync(${JSON.stringify(join(units, "jig-gc.service"))}, "utf8")); writeFileSync(${JSON.stringify(active)}, ""); }
+}
+`;
+  for (const name of ["launchctl", "systemctl", "crontab"])
+    writeFakeProgram(join(bin, name), source(name));
+  mkdirSync(dirname(plist), { recursive: true });
+  mkdirSync(units, { recursive: true });
+  const previous = {
+    [plist]: "previous launchd job\n",
+    [join(units, "jig-gc.service")]: "previous service\n",
+    [join(units, "jig-gc.timer")]: "previous timer\n",
+    [cron]: "0 4 * * * previous-job # jig-gc\n",
+  };
+  for (const [path, text] of Object.entries(previous))
+    writeFileSync(path, text);
+  writeFileSync(active, "");
+  f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
+  const result = run(
+    f,
+    ["install", "--repo", f.repo, "--yes"],
+    join(cache, "jig.ts"),
+  );
+  expectSpawnExit(result, 1);
+  expect(result.stderr.toString()).toContain("previous scheduler job restored");
+  for (const [path, text] of Object.entries(previous))
+    expect(readFileSync(path, "utf8")).toBe(text);
+  expect(existsSync(active)).toBe(true);
 });
 
 test("tool-state delegates to the native reaper in report mode", () => {

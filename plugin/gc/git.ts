@@ -55,6 +55,15 @@ export async function baseDeclaration(
     entry.remote_url
   )
     throw new GcError("Installed remote URL changed; run gc install again");
+  // The fetch below names the recorded URL, which a URL rewrite rule added
+  // since installation could still redirect.
+  if (
+    (await gcGit(entry.path, ["ls-remote", "--get-url", entry.remote_url])) !==
+    entry.remote_url
+  )
+    throw new GcError(
+      "A url.<base>.insteadOf rule redirects the installed remote URL; remove it or run gc install again",
+    );
   await gcGit(entry.path, [
     "check-ref-format",
     `refs/heads/${entry.base_branch}`,

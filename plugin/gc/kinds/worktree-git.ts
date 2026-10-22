@@ -135,14 +135,22 @@ export async function processHolder(path: string): Promise<boolean | null> {
   if (result.code === 0 && result.stdout.trim()) return true;
   return result.code === 1 && !result.stdout.trim() ? false : null;
 }
-export function worktreeActivity(path: string, admin: string): number {
-  const deadline = Date.now() + 30_000;
+export function worktreeActivity(
+  path: string,
+  admin: string,
+  deadline = Date.now() + 30_000,
+): number {
   let newest = 0;
-  const walk = (dir: string): void => {
+  // Checked per entry: one flat directory can hold enough files to overrun.
+  const check = (): void => {
     if (Date.now() > deadline)
       throw new GcError("Worktree activity scan exceeded its deadline");
+  };
+  const walk = (dir: string): void => {
+    check();
     newest = Math.max(newest, lstatSync(dir).mtimeMs);
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      check();
       const child = join(dir, entry.name);
       newest = Math.max(newest, lstatSync(child).mtimeMs);
       if (entry.isDirectory()) walk(child);

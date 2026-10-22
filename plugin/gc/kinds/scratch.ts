@@ -29,17 +29,22 @@ export function scratchProof(
     const owner = readScratchOwner(path);
     owners++;
     const current = rows.find((row) => row.pid === owner.pid);
-    if (current && !current.start) unknown = true;
+    if (owner.start === null || (current && !current.start)) unknown = true;
     else if (current?.start === owner.start && !current.stat.startsWith("Z"))
       live = true;
   };
-  const walk = (path: string): void => {
-    // The scan holds the kind's lock; an unbounded tree must not stall it.
-    // The runner records the refusal as unverified.
+  // The scan holds the kind's lock; an unbounded tree, or one flat directory
+  // of many files, must not stall it. The runner records the refusal as
+  // unverified.
+  const check = (): void => {
     if (Date.now() > deadline)
       throw new GcError("Scratch scan exceeded its deadline");
+  };
+  const walk = (path: string): void => {
+    check();
     newest = Math.max(newest, lstatSync(path).mtimeMs);
     for (const entry of readdirSync(path, { withFileTypes: true })) {
+      check();
       const child = join(path, entry.name);
       newest = Math.max(newest, lstatSync(child).mtimeMs);
       if (entry.name === SCRATCH_OWNER_FILE) {
