@@ -63,9 +63,10 @@ so moves that are harmless alone collide here.
   run that finds the lock held says whose it is and waits, up to an hour by
   default (`LOCK_TIMEOUT`); CI and `RESOURCE_LOCK_BYPASS=1` skip the lock. A
   single file run with `bun test <file>` takes no lock. After the last test,
-  a test process kills every descendant a test left running and reports it
-  on stderr (`lib/test-reap-children-bun-preload.ts`): a reported leak is a
-  fixture that did not clean up, not noise.
+  a test process kills every descendant a test left running whose identity
+  it can read, and reports on stderr what it killed and what it had to leave
+  (`lib/test-reap-children-bun-preload.ts`): a reported leak is a fixture
+  that did not clean up, not noise.
 
 ## Pull-request lifecycle
 

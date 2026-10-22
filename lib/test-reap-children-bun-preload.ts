@@ -13,7 +13,9 @@
 // `afterAll` runs once per test process (each `--parallel` worker loads the
 // preloads), including when tests failed. It does not run when the process
 // is killed by a signal (the same residual test-tmpdir-bun-preload.ts
-// records), which a scheduled host sweep covers.
+// records), which a scheduled host sweep covers. The hooks carry their own
+// timeout rather than inheriting the runner's (5 s for a bare `bun test`),
+// which one process-table read and the reap's own deadline can outlast.
 import { afterAll, afterEach } from "bun:test";
 import { swallow } from "../plugin/shared/errors.ts";
 import {
@@ -22,6 +24,7 @@ import {
 } from "./test-reap-children.ts";
 
 const CAPTURE_INTERVAL_MS = 2_000;
+const HOOK_TIMEOUT_MS = 30_000;
 const captured = new Map<string, { pid: number; start: string }>();
 let lastCapture = 0;
 let capturing: Promise<unknown> | null = null;
@@ -50,7 +53,7 @@ Object.defineProperty(globalThis, Symbol.for("jig.test-reap.captured"), {
 
 afterEach(async () => {
   if (Date.now() - lastCapture >= CAPTURE_INTERVAL_MS) await capture();
-});
+}, HOOK_TIMEOUT_MS);
 
 afterAll(async () => {
   clearInterval(sampler);
@@ -76,4 +79,4 @@ afterAll(async () => {
     console.error(
       `test-reap: ${report.survived.length} process(es) a test left running could not be confirmed stopped (pid ${report.survived.join(", ")})`,
     );
-});
+}, HOOK_TIMEOUT_MS);

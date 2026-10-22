@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ProcessRow } from "../plugin/shared/process-table.ts";
 import {
+  captureProcessTree,
   identityTargetsGone,
   signalIdentityTargets,
 } from "../plugin/shared/process-tree.ts";
@@ -311,34 +312,63 @@ type Identity = { pid: number; start: string };
  * Run `bun test` on one probe file with the repository's bunfig.toml, so the
  * preload's registration is what is tested, not the function it calls. The
  * probe writes the identity of the process it leaves behind to the file it is
- * given, and that identity, never the bare pid, is what is killed afterwards,
- * so a pid the system has since reused is left alone.
+ * given. Every process the probe run had is also owned here, whatever the
+ * preload under test did: the identities the probe writes to the owned file
+ * before it relies on the preload, and those captured from outside while the
+ * run lasts. All of them are killed by identity afterwards, never by bare
+ * pid, so a pid the system has since reused is left alone.
  */
 async function withProbe(
-  source: (identityFile: string, dir: string) => string,
+  source: (identityFile: string, dir: string, ownedFile: string) => string,
   check: (stderr: string, identity: Identity) => Promise<void>,
 ) {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const dir = mkdtempSync(join(tmpdir(), "jig-test-reap-"));
   const identityFile = join(dir, "identity.json");
+  const ownedFile = join(dir, "owned.json");
   const probe = join(dir, "probe.test.ts");
-  writeFileSync(probe, source(identityFile, dir));
+  writeFileSync(probe, source(identityFile, dir, ownedFile));
+  const owned = new Map<string, Identity>();
   let identity: Identity | undefined;
+  const run = Bun.spawn([process.execPath, "test", probe], {
+    cwd: root,
+    stdout: "pipe",
+    stderr: "pipe",
+    timeout: 60_000,
+    killSignal: "SIGKILL",
+  });
+  const output = Promise.all([
+    new Response(run.stdout).text(),
+    new Response(run.stderr).text(),
+  ]);
   try {
-    const result = Bun.spawnSync([process.execPath, "test", probe], {
-      cwd: root,
-      stdout: "pipe",
-      stderr: "pipe",
-      timeout: 60_000,
-      killSignal: "SIGKILL",
+    let exited = false;
+    const done = run.exited.then(() => {
+      exited = true;
     });
+    while (!exited) {
+      for (const row of (await captureProcessTree(run.pid)) ?? [])
+        owned.set(`${row.pid}:${row.start}`, {
+          pid: row.pid,
+          start: row.start,
+        });
+      await Promise.race([done, Bun.sleep(100)]);
+    }
+    const [stdout, stderr] = await output;
     if (existsSync(identityFile))
       identity = JSON.parse(readFileSync(identityFile, "utf8")) as Identity;
-    expectSpawnExit(result, 0);
+    expectSpawnExit({ exitCode: run.exitCode, stdout, stderr }, 0);
     if (!identity) throw new Error("the probe recorded no identity");
-    await check(result.stderr.toString(), identity);
+    await check(stderr, identity);
   } finally {
-    if (identity) await signalIdentityTargets([identity], "SIGKILL");
+    run.kill("SIGKILL");
+    await run.exited;
+    const recorded = existsSync(ownedFile)
+      ? (JSON.parse(readFileSync(ownedFile, "utf8")) as Identity[])
+      : [];
+    for (const target of [...recorded, ...(identity ? [identity] : [])])
+      owned.set(`${target.pid}:${target.start}`, target);
+    await signalIdentityTargets([...owned.values()], "SIGKILL");
     rmSync(dir, { recursive: true, force: true });
   }
 }
@@ -379,21 +409,33 @@ test("leaks an idle child", async () => {
 // test kills before returning: only a capture taken while the test ran still
 // names the grandchild init adopted. The probe kills the leader once the
 // preload's own record names the grandchild, which its interval capture does
-// while the test waits.
+// while the test waits. It records both fixtures' identities from the process
+// table first, so they are cleaned up even when the preload is missing.
 test("a test process run with the repository's preloads reaps a grandchild orphaned before its test returned", async () => {
   await withProbe(
-    (identityFile, dir) => {
+    (identityFile, dir, ownedFile) => {
       const pidFile = join(dir, "grandchild");
       const childSource = `const g = Bun.spawn([process.execPath, '-e', '${idle}'], { stdout: 'ignore', stderr: 'ignore' }); require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(g.pid)); ${idle}`;
       return `import { test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { processTable } from ${JSON.stringify(tableModule)};
 test("orphans a grandchild", async () => {
   const child = Bun.spawn([process.execPath, "-e", ${JSON.stringify(childSource)}], { stdout: "ignore", stderr: "ignore" });
-  const captured = globalThis[Symbol.for("jig.test-reap.captured")];
   const deadline = Date.now() + 20_000;
+  let pid = 0;
+  let owned = [];
+  while (owned.length < 2 && Date.now() < deadline) {
+    pid = existsSync(${JSON.stringify(pidFile)}) ? Number(readFileSync(${JSON.stringify(pidFile)}, "utf8")) : 0;
+    owned = ((await processTable()) ?? [])
+      .filter((r) => (r.pid === child.pid || (pid > 0 && r.pid === pid)) && r.start !== "")
+      .map((r) => ({ pid: r.pid, start: r.start }));
+    if (owned.length < 2) await Bun.sleep(50);
+  }
+  writeFileSync(${JSON.stringify(ownedFile)}, JSON.stringify(owned));
+  if (owned.length < 2) throw new Error("the fixtures' identities could not be read");
+  const captured = globalThis[Symbol.for("jig.test-reap.captured")];
   let identity;
   while (!identity && Date.now() < deadline) {
-    const pid = existsSync(${JSON.stringify(pidFile)}) ? Number(readFileSync(${JSON.stringify(pidFile)}, "utf8")) : 0;
     identity = captured().find((captured) => captured.pid === pid);
     if (!identity) await Bun.sleep(50);
   }
