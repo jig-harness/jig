@@ -105,9 +105,10 @@ function detectScheduler(): Scheduler {
   if (process.platform === "darwin") return "launchd";
   if (process.platform !== "linux")
     throw new GcError("GC scheduling supports macOS and Linux");
-  return existsSync(`/run/user/${process.getuid?.()}/systemd/private`)
-    ? "systemd"
-    : "cron";
+  // The user manager's socket, where `systemctl --user` itself looks for it.
+  const runtime =
+    process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid?.()}`;
+  return existsSync(join(runtime, "systemd", "private")) ? "systemd" : "cron";
 }
 async function crontab(): Promise<string> {
   const result = await run(["crontab", "-l"], { timeoutSec: 30 });

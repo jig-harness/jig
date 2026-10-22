@@ -271,14 +271,24 @@ test("scope creation records the subprocess identity in every nested scope", () 
     });
 });
 
-test.skipIf(
-  skipsOnWindows(
-    "powershell",
-    "GC scheduler installation supports launchd, systemd and cron on macOS/Linux",
-  ),
-)(
-  "confirmed install preserves unrelated settings and uninstall removes only its job",
-  () => {
+/**
+ * The scheduler variants the install round trip runs under: launchd on macOS;
+ * on Linux both systemd and cron, chosen by whether the user manager's socket
+ * exists under `XDG_RUNTIME_DIR`.
+ */
+const schedulerVariants =
+  process.platform === "linux" ? ["systemd", "cron"] : [process.platform];
+
+test
+  .skipIf(
+    skipsOnWindows(
+      "powershell",
+      "GC scheduler installation supports launchd, systemd and cron on macOS/Linux",
+    ),
+  )
+  .each(schedulerVariants)(
+  "confirmed install preserves unrelated settings and uninstall removes only its job (%s)",
+  (variant) => {
     const f = setup();
     const cache = join(f.root, "installed");
     cpSync(resolve(import.meta.dir, "../.."), cache, {
@@ -289,7 +299,14 @@ test.skipIf(
     mkdirSync(bin);
     const log = join(f.root, "scheduler-calls.jsonl"),
       cron = join(f.root, "crontab"),
-      loaded = join(f.root, "loaded");
+      loaded = join(f.root, "loaded"),
+      enabled = join(f.root, "enabled"),
+      timer = join(f.user, ".config/systemd/user/jig-gc.timer");
+    const runtime = join(f.root, "runtime");
+    mkdirSync(join(runtime, "systemd"), { recursive: true });
+    if (variant === "systemd")
+      writeFileSync(join(runtime, "systemd", "private"), "");
+    f.env.XDG_RUNTIME_DIR = runtime;
     const source = (name: string) => `#!/usr/bin/env bun
 import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 const args=process.argv.slice(2); appendFileSync(${JSON.stringify(log)}, JSON.stringify({ program:${JSON.stringify(name)},args })+"\\n");
@@ -297,6 +314,11 @@ if (${JSON.stringify(name)} === "launchctl") {
   if(args[0]==="print") process.exit(existsSync(${JSON.stringify(loaded)})?0:113);
   if(args[0]==="bootstrap") writeFileSync(${JSON.stringify(loaded)},"loaded");
   if(args[0]==="bootout") rmSync(${JSON.stringify(loaded)},{force:true});
+}
+if (${JSON.stringify(name)} === "systemctl") {
+  if(args[1]==="show") console.log("LoadState=" + (existsSync(${JSON.stringify(timer)})?"loaded":"not-found") + "\\nUnitFileState=" + (existsSync(${JSON.stringify(enabled)})?"enabled":"disabled") + "\\nActiveState=" + (existsSync(${JSON.stringify(loaded)})?"active":"inactive"));
+  if(args[1]==="enable") { writeFileSync(${JSON.stringify(enabled)},""); if(args.includes("--now")) writeFileSync(${JSON.stringify(loaded)},""); }
+  if(args[1]==="disable") { rmSync(${JSON.stringify(enabled)},{force:true}); rmSync(${JSON.stringify(loaded)},{force:true}); }
 }
 if (${JSON.stringify(name)} === "crontab") {
   if(args[0]==="-l") { if(!existsSync(${JSON.stringify(cron)})) { console.error("no crontab"); process.exit(1); } process.stdout.write(readFileSync(${JSON.stringify(cron)},"utf8")); }
@@ -314,17 +336,17 @@ if (${JSON.stringify(name)} === "crontab") {
     expect(readFileSync(f.homeFile, "utf8")).toContain(
       "personal_setting: preserved",
     );
-    const candidates = [
-      join(f.user, "Library/LaunchAgents/dev.jig.gc.plist"),
-      join(f.user, ".config/systemd/user/jig-gc.service"),
+    const jobs: Record<string, string> = {
+      darwin: join(f.user, "Library/LaunchAgents/dev.jig.gc.plist"),
+      systemd: join(f.user, ".config/systemd/user/jig-gc.service"),
       cron,
-    ];
-    const job = candidates.find(existsSync);
-    expect(job).toBeDefined();
-    const content = readFileSync(job as string, "utf8");
+    };
+    const job = jobs[variant] as string;
+    const content = readFileSync(job, "utf8");
     expect(content).toContain("--no-env-file");
     expect(content).toContain("bunfig.toml");
     expect(content).toContain(entry);
+    if (variant !== "cron") expect(existsSync(loaded)).toBe(true);
     const removed = run(
       f,
       ["install", "--repo", f.repo, "--uninstall", "--machine", "--yes"],
@@ -334,10 +356,12 @@ if (${JSON.stringify(name)} === "crontab") {
     expect(readFileSync(f.homeFile, "utf8")).toContain(
       "personal_setting: preserved",
     );
-    for (const path of candidates.filter((path) => path !== cron))
-      expect(existsSync(path)).toBe(false);
-    if (existsSync(cron))
+    if (variant === "cron")
       expect(readFileSync(cron, "utf8")).not.toContain("# jig-gc");
+    else {
+      expect(existsSync(job)).toBe(false);
+      expect(existsSync(loaded)).toBe(false);
+    }
   },
 );
 
