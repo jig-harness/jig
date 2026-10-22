@@ -26,6 +26,10 @@ import {
   recurrence,
 } from "../scripts/lib/events.ts";
 import { parseReflection, splitWords } from "../scripts/lib/settings.ts";
+import {
+  numberKeys,
+  teamKeys,
+} from "../../do-item/scripts/lib/tracker/keys.ts";
 import { sampleFinding } from "../scripts/store-contract.ts";
 
 function decision(
@@ -318,9 +322,33 @@ describe("context", () => {
   });
 
   it("reads the issue key a branch carries", () => {
-    expect(issueFromBranch("feature/eng-12-retry", "ENG")).toBe("ENG-12");
+    const eng = teamKeys("ENG");
+    expect(issueFromBranch("feature/eng-12-retry", eng)).toBe("ENG-12");
+    expect(issueFromBranch("a/b/eng-12-fix", eng)).toBeNull();
+    expect(issueFromBranch("fix-flaky-ENG-12", eng)).toBeNull();
+    expect(issueFromBranch("fix-flaky-ENG-12", eng, "{slug}-{key}")).toBe(
+      "ENG-12",
+    );
+    expect(issueFromBranch("x/eng-12-retry", eng, "x/{key}-{slug}")).toBe(
+      "ENG-12",
+    );
     expect(issueFromBranch("feature/eng-12-retry", null)).toBeNull();
-    expect(issueFromBranch("feature/meng-12", "ENG")).toBeNull();
+    expect(issueFromBranch("feature/meng-12", eng)).toBeNull();
+  });
+
+  it("reads a GitHub issue's number only where the branch-name pattern puts it", () => {
+    const github = numberKeys(null);
+    expect(issueFromBranch("12-retry", github)).toBe("#12");
+    for (const branch of [
+      "fix-3-tests",
+      "v2-retry",
+      "feature/retry-12",
+      "feature/12-retry",
+    ])
+      expect(issueFromBranch(branch, github)).toBeNull();
+    expect(issueFromBranch("gh-12-retry", github, "gh-{key}-{slug}")).toBe(
+      "#12",
+    );
   });
 
   it("detects the harness and its wrapper from their variables", () => {

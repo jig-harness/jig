@@ -15,10 +15,10 @@ import { join } from "node:path";
  * A hit is a line to read, not a verdict: the same words appear in sentences
  * that must stay (a guardrail, live drift). The last alternative catches an
  * issue-tracker key used as a version marker ("as of ABC-123 this was
- * renamed").
+ * renamed", "as of #123").
  */
 export const S4_PATTERN =
-  /previously|formerly|no longer|used to |originally|historically|earlier version|^\*\*Update|as of [A-Z][A-Z0-9]*-[0-9]+/i;
+  /previously|formerly|no longer|used to |originally|historically|earlier version|^\*\*Update|as of (?:[A-Z][A-Z0-9]*-|#)[0-9]+/i;
 
 /** Top-level scalar fields of a document's frontmatter, or null if it has none. */
 export function frontmatter(text: string): Record<string, string> | null {

@@ -50,6 +50,11 @@ export function storeCommand(settings: ReflectionSettings): string[] {
         "--database",
         settings.notionDatabase as string,
       ]);
+    case "github":
+      return tsArgv(join(import.meta.dir, "..", "github-store.ts")).concat([
+        "--repository",
+        settings.githubRepository as string,
+      ]);
   }
 }
 

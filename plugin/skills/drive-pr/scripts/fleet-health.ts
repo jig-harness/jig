@@ -299,7 +299,7 @@ export async function runFleetHealth(
             title: l.title,
             state: l.state,
             mergedAt: l.mergedAt,
-            issueRefs: parseIssueRefs(l.body, cfg.teamKey),
+            issueRefs: parseIssueRefs(l.body, cfg.keys),
             rounds: [],
             postReviewShare: null,
             postReviewAdditions: 0,
@@ -360,7 +360,7 @@ export async function runFleetHealth(
           title: l.title,
           state: l.state,
           mergedAt: l.mergedAt,
-          issueRefs: parseIssueRefs(l.body, cfg.teamKey),
+          issueRefs: parseIssueRefs(l.body, cfg.keys),
           rounds,
           postReviewShare: pastEnd ? null : m.postReviewShare,
           postReviewAdditions: m.postReview.additions,
@@ -501,7 +501,7 @@ export async function runFleetHealth(
   ): Promise<{ issues: IssueFact[]; complete: boolean } | null> => {
     const body = await bodyOf(pr);
     if (body === null) return null;
-    const refs = parseIssueRefs(body, cfg.teamKey);
+    const refs = parseIssueRefs(body, cfg.keys);
     const missing = refs.filter(
       (r) => !issueCache.has(r) && !unresolvable.has(r),
     );
@@ -540,7 +540,7 @@ export async function runFleetHealth(
         if (deps.signal?.aborted === true) throw new Error(DEADLINE_MESSAGE);
         const d = await followupDepth(
           f.number,
-          { issuesOfPr, followupLabel },
+          { issuesOfPr, followupLabel, keys: cfg.keys },
           cfg.signals.followupDepth.maxWalk,
           depthMemo,
         );

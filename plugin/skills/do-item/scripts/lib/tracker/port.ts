@@ -2,9 +2,9 @@
  * The issue-tracker port: what the issue-pickup and PR-drive skills ask of an
  * issue tracker, independent of which tracker answers.
  *
- * Callers depend on this interface only. An adapter (one per tracker; Linear
- * today, in `linear.ts`) implements it, and `index.ts` picks the adapter the
- * consumer names in `issue_tracker.adapter`. Adding a tracker means adding an
+ * Callers depend on this interface only. An adapter (one per tracker: Linear
+ * in `linear.ts`, GitHub Issues in `github/`) implements it, and `index.ts`
+ * picks the adapter the consumer names in `issue_tracker.adapter`. Adding a tracker means adding an
  * adapter and registering it; no caller changes.
  *
  * Every read either returns what it was asked for or throws with a reason. A
@@ -62,7 +62,7 @@ export interface IssueSummary {
 export interface Issue {
   /** The tracker's own id (may equal `identifier`). */
   id: string;
-  /** The human key, `<TEAM>-<n>`. */
+  /** The human key: `<TEAM>-<n>` on Linear, `#<n>` on GitHub (`keys.ts`). */
   identifier: string;
   title: string;
   description: string;
@@ -277,10 +277,17 @@ export interface TrackerLabel {
   group: string | null;
 }
 
+/**
+ * One tracker as the skills use it. "This team" below is where the
+ * configured issues live: a Linear team, or one GitHub repository.
+ */
 export interface Tracker {
   /** The adapter name, as `issue_tracker.adapter` spells it. */
   readonly adapter: string;
-  /** The team key issue identifiers carry (`<TEAM>-<n>`). */
+  /**
+   * Where the issues live, for messages: the team key on Linear, the
+   * repository (`owner/name`) on GitHub.
+   */
   readonly team: string;
   /** The tracker's own name for a canonical state. */
   stateName(state: CanonicalState): string;
@@ -368,7 +375,8 @@ export interface Tracker {
   listLabels(): Promise<TrackerLabel[]>;
   /**
    * This team's issues whose title or description contains `text`, ignoring
-   * case; open ones only unless `includeClosed` is set.
+   * case; open ones only unless `includeClosed` is set. A tracker whose
+   * search matches words (GitHub) returns what its search matches.
    */
   searchIssues(
     text: string,

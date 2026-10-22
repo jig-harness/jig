@@ -81,7 +81,7 @@ Work the issue alone with [`/jig:do-item`](../do-item/SKILL.md) when:
 ### 1. Propose
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" <anchor> [--budget N] [--limit N] [--claimed KEY,KEY] [--format json]
+bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" "<anchor>" [--budget N] [--limit N] [--claimed "KEY,KEY"] [--format json]
 ```
 
 `<anchor>` is one of:
@@ -93,13 +93,17 @@ bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" <anchor> [--budget N] [--limit N
 | An epic's key | The epic's open children |
 | One issue's key | Open issues sharing its area-naming label; the issue is kept first. An issue that may not join a batch itself ends the run with a recommendation to work it alone |
 
+An issue key is `ENG-123` on Linear and `#123` on GitHub Issues, an issue of
+the configured repository; this document writes it as `<KEY>`. Quote a key,
+and an anchor, on a command line: an unquoted `#` starts a shell comment.
+
 The batch is filled in rank order to a point budget (each size costs points)
 and an item limit, whichever binds first, skipping an issue that does not fit
 rather than stopping at it. `--budget` and `--limit` override
 `work_batch.point_budget` and `work_batch.max_items` for one run.
 
 **Anchoring on an issue already started and assigned to you?** Add
-`--claimed <its key>`. Without it the script reads the issue's own state and
+`--claimed "<its key>"`. Without it the script reads the issue's own state and
 assignee as someone else's work and refuses it as the anchor.
 
 Read all three lists the script prints:
@@ -125,8 +129,8 @@ status message.
 ### 2. Check the proposal as a batch
 
 Read each proposed issue in full first: its description and its comments
-(`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" <KEY>` and
-`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/list_comments.ts" <KEY>`). A proposal carries titles and labels only. Then
+(`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" "<KEY>"` and
+`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/list_comments.ts" "<KEY>"`). A proposal carries titles and labels only. Then
 confirm what the script cannot:
 
 - **The issues are independent.** Two whose fixes touch the same function
@@ -160,7 +164,7 @@ the release in step 4 restores them. Then, for each:
    Step 4a item 1 does:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" transition <KEY> in_progress
+   bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" transition "<KEY>" in_progress
    ```
 
    (**judgment** — the assignee through the harness's tracker tool, the one
@@ -169,7 +173,7 @@ the release in step 4 restores them. Then, for each:
 
 2. Comment on it, naming the anchor and every other issue in the batch, so a
    second agent sees it is spoken for and by which batch
-   (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" comment <KEY> --body-file body.md`).
+   (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" comment "<KEY>" --body-file body.md`).
    Once the last issue is commented on, remove the file
    (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- body.md`):
    a file left in the worktree keeps the drive from converging.
@@ -198,7 +202,7 @@ name; create the
 branch from the planned base and switch to it before the first commit:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" branch --issue <highest-priority KEY> --title "<that issue's title>"
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" branch --issue "<highest-priority KEY>" --title "<that issue's title>"
 bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git switch -c <printed-branch-name> origin/<base>
 ```
 
@@ -235,7 +239,7 @@ this order:
    would leave its diff in the pull request.
 2. **Release** each issue taken out. Read it again first. If its state and
    assignee ids are still the ones the claim set, move it back to the state
-   recorded at the claim (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" transition <KEY> <canonical-state>`;
+   recorded at the claim (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" transition "<KEY>" <canonical-state>`;
    `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" states` maps a name to its canonical key) and restore the
    recorded assignee. If someone changed either since the claim, leave that
    change in place and name the issue in your report for a person to settle.
@@ -269,7 +273,7 @@ pre-PR code review gate (Step 4a) once over the union, with every mandatory
 review gate any issue's labels or paths name. Then plan the pull request:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" open --issue <highest-priority KEY> [--json]
+bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/pr-plan.ts" open --issue "<highest-priority KEY>" [--json]
 ```
 
 Follow the plan as `/jig:do-item`'s
@@ -286,10 +290,10 @@ Anchor: `billing` (change area). 4 issues, 9 of 16 points.
 
 | Issue | Commits | What changed |
 |-------|---------|--------------|
-| Closes ENG-123 | `a1b2c3d` | Rounded the invoice total once, at the end |
-| Closes ENG-130 | `d4e5f6a` | Named the missing currency in the error |
-| Closes ENG-131 | `b7c8d9e` | Paged the refund list |
-| Closes ENG-140 | `f0e1d2c` | Removed the unused export |
+| Closes <KEY> | `a1b2c3d` | Rounded the invoice total once, at the end |
+| Closes <KEY> | `d4e5f6a` | Named the missing currency in the error |
+| Closes <KEY> | `b7c8d9e` | Paged the refund list |
+| Closes <KEY> | `f0e1d2c` | Removed the unused export |
 ```
 
 A row per issue is what closes each issue on merge: an issue named only in
@@ -357,7 +361,7 @@ batches, a planning view marking issues batchable) ask the script instead of
 keeping their own copy of the rules:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file issues.json -- bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" --eligibility [--claimed KEY,KEY] [--catalog <path>]
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file issues.json -- bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" --eligibility [--claimed "KEY,KEY"] [--catalog <path>]
 ```
 
 It reads no tracker. **Input**: a JSON array of issues in the tracker
@@ -435,7 +439,7 @@ proposal's `--format json` output carries the same `version`.
 
 | Script | Purpose | Exit codes |
 |--------|---------|------------|
-| `bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" <anchor>` | Resolve the anchor, read its pool through the tracker interface, print the proposal (`--format table` or `json`) | `0` printed (possibly empty); `2` usage or an anchor that cannot be batched, with the reason and what to do instead; `1` configuration, catalog or tracker error |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" "<anchor>"` | Resolve the anchor, read its pool through the tracker interface, print the proposal (`--format table` or `json`) | `0` printed (possibly empty); `2` usage or an anchor that cannot be batched, with the reason and what to do instead; `1` configuration, catalog or tracker error |
 | `bun "${CLAUDE_SKILL_DIR}/scripts/candidates.ts" --eligibility` | Verdicts for issues on stdin, no tracker read | `0` printed; `2` usage or unreadable input; `1` configuration or catalog error |
 
 ## In the delivery loop

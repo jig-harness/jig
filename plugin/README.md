@@ -356,7 +356,9 @@ plugin's. Delete such a copy when you adopt the plugin's version.
 
 `drive-pr` and `do-item` read the same configuration file as the review
 skill. Every field below has a default except `issue_tracker.team`, which the
-tracker scripts require. A drive does not need an AI reviewer: without one it
+tracker scripts require on Linear; on GitHub Issues the key is the
+repository's own (`issue_tracker.github.repository`, by default the `origin`
+remote's), so no team is set. A drive does not need an AI reviewer: without one it
 converges on review threads and CI alone. A repository that has one names it
 with `review.reviewer_app` (or `review.reviewer_check_pattern`), and the drive
 then also waits for the check run, sticky comment and reviewed-commit marker
@@ -389,8 +391,8 @@ ci:
   required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires
   hold_label: ci:hold         # label your workflows honour to skip heavy jobs between review rounds; default: none (every push runs full CI)
 issue_tracker:
-  team: ENG                   # issue-tracker team key; required by the tracker scripts
-  adapter: linear             # which tracker adapter to use; Linear is the only one today
+  adapter: linear             # which tracker adapter to use: linear or github (GitHub Issues)
+  team: ENG                   # Linear's team key; required by the Linear adapter
   file_command: /jig:file-issue   # how an agent files an issue by hand
   taxonomy: label-taxonomy.yaml   # the label taxonomy file-issue validates against; default label-taxonomy.yaml
   states:                     # the tracker's own names for the workflow states
@@ -455,9 +457,11 @@ folder too; `JIG_VERIFICATION_FIT_LOG` overrides it.
 the tracker only through a small [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (read an issue with its
 comments, list its children, change its state, post a comment, run the
 reports' queries). An *adapter* implements that interface for one tracker;
-`issue_tracker.adapter` chooses it, and Linear is the only adapter today.
+`issue_tracker.adapter` chooses it: `linear`, or `github` for GitHub Issues.
 `issue_tracker.states` translates the skills' state names (`in_progress`,
-`done`, …) into the tracker's own. Supporting another tracker means adding an
+`done`, …) into the tracker's own; on GitHub Issues an open state is a label
+or a Projects board's option, and a closed one the reason the issue was
+closed ([`issue_tracker.github`](CONFIGURATION.md#issue_tracker)). Supporting another tracker means adding an
 adapter, not changing the skills.
 
 The remaining knobs are environment variables named `DRIVE_PR_*` (round

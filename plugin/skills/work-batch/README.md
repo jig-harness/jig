@@ -169,8 +169,9 @@ form. Each result carries what eligibility and ranking read: priority,
 creation time, the state and the assignee with their ids, every label,
 whether the issue has open children, and which nested lists were truncated.
 A pool is read to the end or the read fails, and it is scoped to the
-configured team (`issue_tracker.team`); an empty label condition is refused,
-since it would widen the pool to every open issue.
+configured team on Linear (`issue_tracker.team`) or the configured repository
+on GitHub Issues; an empty label condition is refused, since it would widen
+the pool to every open issue.
 
 ## Configuration
 

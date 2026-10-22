@@ -23,6 +23,7 @@ import {
   renewPickup,
   withFileLock,
 } from "../../../do-item/scripts/lib/intent-chain-pickup.ts";
+import { ANY_KEY_SOURCE } from "../../../do-item/scripts/lib/tracker/keys.ts";
 import { topLevelParagraphs } from "./markdown-paragraphs.ts";
 import {
   INTENT_CHAIN_SUBDIR,
@@ -63,7 +64,8 @@ export type CaptureResult =
 
 // A trailer line is the keyword followed by nothing but identifiers and their
 // separators — "Fixes the flake ENG-123 introduced." is prose, not a claim.
-const ID = "[A-Za-z][A-Za-z0-9]*-\\d+";
+// An identifier is a key of any tracker (`ENG-123` in any case, `#123`).
+const ID = ANY_KEY_SOURCE;
 // Horizontal whitespace only, and a real separator between identifiers: `\\s`
 // spans newlines and an optional separator lets `ENG-1ENG-2` or a line break
 // glue two identifiers into one "trailer".
@@ -94,9 +96,12 @@ export function prClaimsIdentifier(
   body: string,
 ): boolean {
   // An identifier-token boundary on both sides: a trailing digit or letter
-  // makes it a different issue.
+  // makes it a different issue. `#` is no word character, so a `#123` key
+  // also must not follow one (`owner/name#123` is another repository's
+  // issue), `&` (an HTML entity) or another `#`.
+  const before = identifier.startsWith("#") ? "[A-Za-z0-9_&#]" : "[A-Za-z0-9]";
   const token = new RegExp(
-    `(?<![A-Za-z0-9])${escapeRe(identifier)}(?![A-Za-z0-9])`,
+    `(?<!${before})${escapeRe(identifier)}(?![A-Za-z0-9])`,
     "i",
   );
   if (token.test(title)) return true;

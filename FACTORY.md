@@ -73,8 +73,9 @@ have little to work from.
     `origin`) are listed in [ROADMAP.md](ROADMAP.md) item 10;
   - bindings to a named tool go behind an interface where one has been built:
     the skills reach the issue tracker through a small
-    [tracker interface](GLOSSARY.md) whose first adapter is Linear, so another
-    tracker is a new adapter rather than a change to the skills (Jira and a
+    [tracker interface](GLOSSARY.md) with adapters for Linear and GitHub
+    Issues, so another tracker is a new adapter rather than a change to the
+    skills (Jira and a
     plan file kept in the repository are ROADMAP.md item 12; the review
     skill's deferral step still calls Linear directly, item 10), and the
     [workspace launcher](tools/launcher/README.md) opens workspaces through

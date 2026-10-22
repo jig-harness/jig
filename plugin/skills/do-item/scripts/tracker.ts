@@ -45,6 +45,7 @@
 import { readFile } from "node:fs/promises";
 import { runEntry } from "./lib/cli.ts";
 import { ownTrackerConfig } from "./lib/tracker/config.ts";
+import { ANY_KEY_SOURCE } from "./lib/tracker/keys.ts";
 import {
   CANONICAL_STATES,
   type CanonicalState,
@@ -176,8 +177,11 @@ export function parsePatch(key: string, text: string): IssuePatch {
 /** A lookup that cannot be answered; the operation fails rather than guess. */
 class ItemStateError extends Error {}
 
-/** The shape of an item key: letters and digits, a hyphen, a number. */
-const ITEM_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
+/**
+ * The shape of an item key on any tracker (`ENG-123`, `#123`), in any case:
+ * the keys come from documents, which may predate the configured tracker.
+ */
+const ITEM_KEY = new RegExp(`^${ANY_KEY_SOURCE}$`, "i");
 
 /** How many keys are looked up at once. */
 const LOOKUPS_AT_ONCE = 4;
@@ -189,7 +193,7 @@ export function parseItemKeys(text: string): string[] {
     const key = line.trim();
     if (key === "") continue;
     if (!ITEM_KEY.test(key))
-      throw new UsageError(`'${key}' is not an item key like ENG-123`);
+      throw new UsageError(`'${key}' is not an item key like ENG-123 or #123`);
     keys.add(key);
   }
   return [...keys].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));

@@ -60,10 +60,11 @@ subagent tokens and 30 to 45 minutes. That cost is why the threshold exists.
 ## The decision source
 
 Write the source as JSON with `"schema": "decision-sheet/v1"`. Keep the
-working copy in `.context/decide/<issue-key>/decision.json` (keep `.context/`
-out of version control). The rendered sheet
-embeds the source, so the attachment is the durable copy. The typed shape is
-`scripts/decision-sheet/source.ts`. Its validator rejects unknown fields, so
+working copy in `.context/decide/<stem>/decision.json` (keep `.context/`
+out of version control), where `<stem>` is the issue key's file name: the
+key itself on Linear (`ENG-123`), `issue-123` for `#123` on GitHub Issues.
+The rendered sheet embeds the source, so the attachment is the durable
+copy. The typed shape is `scripts/decision-sheet/source.ts`. Its validator rejects unknown fields, so
 a misspelt field fails loudly instead of dropping a claim.
 
 | Field | What it holds |
@@ -133,10 +134,12 @@ start a sentence with it.
   title, a name, a tag, a label, a citation, a glossary term or meaning, the
   priority or the reversibility. In a source with one call, `{call:c}` has no
   target, so it is rejected too: use `{opt:N}`.
-- An issue key with the sheet's own team prefix (`ENG-123` on a sheet whose
-  `id` is `ENG-…`) is still found by its pattern, because that shape is
-  unambiguous. It links to the issue on the document sheet, built from the
-  sheet's `url` (a tracker URL whose path holds `/issue/<KEY>`).
+- An issue key of the sheet's own tracker is still found by its pattern,
+  because that shape is unambiguous: on Linear a key with the sheet's team
+  prefix (`ENG-123` on a sheet whose `id` is `ENG-…`), on GitHub Issues a
+  `#123` of the sheet's repository. It links to the issue on the document
+  sheet, built from the sheet's `url`: a tracker URL whose path holds
+  `/issue/<KEY>`, or a GitHub issue's `https://github.com/<owner>/<name>/issues/<n>`.
 - A source without tokens still renders. It has no option links.
 
 ## Choose the layout
@@ -164,15 +167,15 @@ pick for a ruled call.
 ## Render and check
 
 ```bash
-bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" render .context/decide/ENG-123/decision.json --require-fresh
-bun "<skill-dir>/scripts/ste-lint/ste-lint.ts" .context/decide/ENG-123/ENG-123-comment.md .context/decide/ENG-123/ENG-123-elaboration.md
+bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" render .context/decide/<stem>/decision.json --require-fresh
+bun "<skill-dir>/scripts/ste-lint/ste-lint.ts" .context/decide/<stem>/<stem>-comment.md .context/decide/<stem>/<stem>-elaboration.md
 ```
 
 `render` takes `--template compact|document` and defaults to `document`.
-It writes three files: `<id>-decision-sheet.html`, `<id>-comment.md` and
-`<id>-elaboration.md`. They go to
-`.context/decide/<id>/` at the repository root, where `<id>` is the source's
-`id`, or to the directory that `--out` names. It prints a summary with the
+It writes three files: `<stem>-decision-sheet.html`, `<stem>-comment.md` and
+`<stem>-elaboration.md`. They go to
+`.context/decide/<stem>/` at the repository root, where `<stem>` is the file
+name of the source's `id`, or to the directory that `--out` names. It prints a summary with the
 template, the trigger result, the freshness result and the attachment fields to
 upload.
 
@@ -280,7 +283,7 @@ order and the checks and use its equivalent calls.
    `bun "<skill-dir>/../../shared/command.ts" --stdin-file issue.json -- bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" stale-attachments --keep <new-id>`.
    Delete each id that it prints with `mcp__linear__delete_attachment`. The
    script refuses if the new attachment is not on the issue.
-5. Post `<id>-comment.md` as a comment on the issue (`SKILL.md` § Tracker
+5. Post `<stem>-comment.md` as a comment on the issue (`SKILL.md` § Tracker
    operations).
 
 A tracker such as Linear serves an attachment as a download. The comment
@@ -297,9 +300,9 @@ example, as above):
    with `Decision sheet: `. Call `mcp__linear__get_attachment` with its `id`
    and `format: "url"`. The URL is signed for five minutes. Download it at
    once with the harness's download tool, saving it as `current.html`.
-2. Recover its source and its layout. Create `.context/decide/<issue-key>/`
+2. Recover its source and its layout. Create `.context/decide/<stem>/`
    with the file-writing tool first, then save the extracted source:
-   `bun "<skill-dir>/../../shared/command.ts" --stdout-file .context/decide/ENG-123/decision.json -- bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" extract current.html`.
+   `bun "<skill-dir>/../../shared/command.ts" --stdout-file .context/decide/<stem>/decision.json -- bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" extract current.html`.
    Then read the layout of the posted sheet:
    `bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" template current.html`.
    It prints `compact` or `document`.

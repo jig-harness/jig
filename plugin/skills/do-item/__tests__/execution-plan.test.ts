@@ -59,6 +59,21 @@ describe("shared execution-plan-v1 pickup", () => {
       ).toEqual([]);
     });
   }
+  it("selects the same issues from a plan keyed by GitHub issue numbers", () => {
+    const github = (v: unknown) =>
+      JSON.parse(JSON.stringify(v).replace(/"ENG-(\d+)"/g, '"#$1"'));
+    const result = selectExecutionIssue({
+      description: md(github(plan)),
+      epic: "#100",
+      live: github(live),
+      mergedConflictEdges: ["#1>#3"],
+    });
+    expect(result.eligible).toEqual(["#1", "#2"]);
+    expect(() =>
+      selectExecutionIssue({ ...input(md(plan)), epic: "#0" }),
+    ).toThrow("Malformed");
+    expect(() => readExecutionPlan(md({ ...plan, epic: "eng-100" }))).toThrow();
+  });
   it("reads legal fences and ignores heading decoys inside other fences", () => {
     const canonical = renderExecutionPlan(plan);
     for (const fence of ["```", "~~~~", "````"]) {

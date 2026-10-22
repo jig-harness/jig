@@ -106,8 +106,9 @@ turns the stored findings into changes a person approves, and a class that
 keeps recurring is escalated to one tracker issue instead of filed again.
 `promote-memory` moves a lesson from an agent's private memory into a
 reviewed, shared document. The stores stand behind one contract with a
-conformance suite: a folder store, and a Notion store whose database people
-browse and filter.
+conformance suite: a folder store, a Notion store whose database people
+browse and filter, and a GitHub store that keeps the findings as issues of
+one repository.
 Around the skills, the [miss→lens flywheel](GLOSSARY.md) answers each
 significant miss with an additive check, validated on a replayable fixture
 before it may block anything.
@@ -226,9 +227,9 @@ Values are read in [layers](GLOSSARY.md) for the person, the repository and
 the single run, every field is documented with its default and the skills
 that read it, and the audit checks the configuration against the repository.
 Bindings to a named tool stand behind an interface: the skills reach the
-issue tracker through a small [tracker interface](GLOSSARY.md) whose first
-adapter is Linear, so another tracker is a new adapter, not a change to the
-skills. [EXTENDING.md](plugin/EXTENDING.md) lists every point where an
+issue tracker through a small [tracker interface](GLOSSARY.md) with adapters
+for Linear and GitHub Issues, so another tracker is a new adapter, not a
+change to the skills. [EXTENDING.md](plugin/EXTENDING.md) lists every point where an
 organization plugs in its own commands, skills, reviewers and stores.
 
 - **Practice:** [M0](modules/M0-instruction-architecture/),

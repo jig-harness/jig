@@ -344,7 +344,7 @@ export function parseSource(value: unknown): DecisionSource {
     throw new SourceError(c.problems);
   if (value.schema !== SOURCE_SCHEMA)
     c.fail("$.schema", `must be "${SOURCE_SCHEMA}"`);
-  c.pattern(value.id, ISSUE_ID, "$.id", "an issue key such as ENG-123");
+  c.pattern(value.id, ISSUE_ID, "$.id", "an issue key such as ENG-123 or #123");
   c.url(value.url, "$.url");
   for (const key of [
     "title",
