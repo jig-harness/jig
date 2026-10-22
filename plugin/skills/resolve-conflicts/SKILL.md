@@ -51,12 +51,12 @@ would expand the unset variable to an empty string.
 
 Git 2.41 or newer is required: to reconstruct the automatic merge result
 without trusting already staged content, and to read every attribute from
-the staged `.gitattributes` files alone (`git --attr-source`).
+the staged `.gitattributes` files alone (Git's `--attr-source` option).
 Cherry-picking or reverting a merge commit with `-m` is unsupported: Git
 does not reliably retain the selected parent for reconstruction. The mapper
 refuses it before writing a snapshot; resolve and validate that operation
 manually. Merges recreated by
-`git rebase --rebase-merges` are supported through their replayed parents.
+a rebase using `--rebase-merges` are supported through their replayed parents.
 
 Run every command from the root of the repository with the conflicts. Never
 `cd` into the skill directory: the scripts find the repository, its
@@ -91,10 +91,10 @@ from this side before they are regenerated.
 
 | Script | What it does | Exit codes |
 |--------|--------------|------------|
-| `scripts/conflict-map.ts [--json] [--integration ours\|theirs]` | Maps the stopped operation and writes the snapshot. Read-only otherwise | 0 mapped; 2 usage, not in a git work tree, or invalid configuration; 3 nothing in progress, or the stored snapshot is unreadable (it is never replaced) |
-| `scripts/record.ts <path> <decision> [--reason "…"] [--command "…"] [--dropped "…"]` | Records one path's decision in the snapshot | 0 recorded; 2 usage (unknown path or decision, missing reason, no known regeneration command, or `regenerated` for a path that is not a lockfile or generated file); 3 nothing in progress, or no snapshot for this operation |
-| `scripts/check-resolution.ts [--json \| --message \| --commit-message]` | Verifies the resolution; prints the commit-message section | 0 passes; 1 problems; 2 usage or invalid configuration; 3 nothing in progress, or no snapshot for this operation; 4 needs a human (wins over 1) |
-| `scripts/events.ts [--json]` | Records the conflicts of the operation just concluded in the [live record](#the-live-record) | 0 recorded, already recorded, or nothing to record; 1 the record could not be written (the conclusion stands); 2 usage or not in a git work tree; 3 the operation is still in progress |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/conflict-map.ts" [--json] [--integration <side>]` | Maps the stopped operation and writes the snapshot. The integration side is `ours` or `theirs`; read-only otherwise | 0 mapped; 2 usage, not in a git work tree, or invalid configuration; 3 nothing in progress, or the stored snapshot is unreadable (it is never replaced) |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" "<path>" <decision> [--reason "<reason>"] [--command "<command>"] [--dropped "<reason>"]` | Records one path's decision in the snapshot | 0 recorded; 2 usage (unknown path or decision, missing reason, no known regeneration command, or `regenerated` for a path that is not a lockfile or generated file); 3 nothing in progress, or no snapshot for this operation |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/check-resolution.ts" [<output-option>]` | Verifies the resolution; prints the commit-message section. Output options are `--json`, `--message` and `--commit-message` | 0 passes; 1 problems; 2 usage or invalid configuration; 3 nothing in progress, or no snapshot for this operation; 4 needs a human (wins over 1) |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/events.ts" [--json]` | Records the conflicts of the operation just concluded in the [live record](#the-live-record) | 0 recorded, already recorded, or nothing to record; 1 the record could not be written (the conclusion stands); 2 usage or not in a git work tree; 3 the operation is still in progress |
 
 ## Step 1: Start or find the operation
 
@@ -107,7 +107,7 @@ configuration as the base holds it, so a branch forked before the repository
 adopted the skill is covered too:
 
 ```bash
-git fetch origin <base>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git fetch origin <base>
 bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base origin/<base> --dry-run
 ```
 
@@ -119,8 +119,8 @@ another file is thrown away:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base origin/<base>
-git add -A
-git commit -m "chore(changelog): move the branch's changelog edits into a change note"
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git add -A
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git commit -m "chore(changelog): move the branch's changelog edits into a change note"
 ```
 
 `convert.ts` refuses on uncommitted changes, so commit or set aside anything
@@ -132,8 +132,8 @@ To bring a branch up to date with its base (the `conflict-resolve` round of
 in, with a base section in the markers:
 
 ```bash
-git fetch origin <base>
-git -c merge.conflictStyle=zdiff3 merge origin/<base>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git fetch origin <base>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git -c merge.conflictStyle=zdiff3 merge origin/<base>
 ```
 
 Never rebase or force-push a branch that has an open pull request under a
@@ -166,21 +166,21 @@ upstream. If the merge guessed the integration side wrong (two feature
 branches, say), run it again with `--integration ours` or `--integration
 theirs`.
 
-Inspect `git diff --cached` before resolving. Every staged path must belong
+Inspect the output of `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git diff --cached` before resolving. Every staged path must belong
 to this operation, and every staged hunk outside your recorded decisions
 must match what git merged automatically. Keep unrelated staged work out of
 the operation without discarding it; do not conclude while it is present.
 
 Then read the intent behind every path: the commit messages it lists, and for
 a commit whose subject names a pull request, the pull request itself
-(`gh pr view <number>`). You are looking for *why* each side changed the code,
+(`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view <number>`). You are looking for *why* each side changed the code,
 which decides the resolution.
 
 Markers without a base section hide what each side changed. While a path is
 still unmerged and before you edit it, re-create its markers with one:
 
 ```bash
-git checkout --conflict=zdiff3 -- <path>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git checkout --conflict=zdiff3 -- <path>
 ```
 
 `--json` prints the full map, including each region's ours, base and theirs
@@ -191,13 +191,15 @@ text.
 Decide from the intents, never from which side "looks newer".
 
 - **Lockfile or generated file.** Take the integration side
-  (`git checkout --ours|--theirs -- <path>` for that side), resolve the
+  with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git checkout <side-option> -- "<path>"`,
+  substituting `--ours` or `--theirs` for `<side-option>` as the map requires. Resolve the
   sources it is built from first, then run the regeneration command the map
   printed (in the directory it names) and stage the result. Never edit a
   derived file by hand.
 - **Deleted on one side, changed on the other.** Find where the code went:
   `renamedTo`, or a search for the changed symbol. Carry the change there, or
-  record why it no longer applies, then `git rm` the old path (decision
+  record why it no longer applies, then remove the old path with
+  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rm -- "<path>"` (decision
   `deleted`) or keep it (decision `ours`, `theirs` or `combined`).
 - **Text.** Combine both changes where both intents still hold (`combined`).
   Keep one side only when the other change is superseded by it or already
@@ -212,7 +214,8 @@ Then look beyond the markers. A clean textual merge can still break a caller
 on the other side: search for uses of anything either side renamed, removed
 or changed the signature of, and fix them as part of the resolution.
 
-Stage every resolved path: `git add <path>` (or `git rm <path>`).
+Stage every resolved path with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git add -- "<path>"`,
+or record its removal with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rm -- "<path>"`.
 
 ## Step 4: Record each decision
 
@@ -239,8 +242,7 @@ was lost.
 [references/decisions.md](references/decisions.md) has a worked example of
 each decision.
 
-The record lives in the snapshot, `$(git rev-parse --git-path
-jig/conflicts.json)`, which is never committed. Its shape:
+The record lives in the Git-path snapshot `jig/conflicts.json`, which is never committed. Its shape:
 
 ```json
 {
@@ -349,20 +351,21 @@ It fails (exit 1), listing each problem with its file and line, when:
    so: the other side's lines under `ours` or `theirs`; anything under
    `rewritten` or `deleted` (reported, not failed; a deleted path reports
    every line either side added); and under `combined`, only lines
-   acknowledged with `record.ts <path> combined --dropped "<why>"`, which
+   acknowledged with `bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" "<path>" combined --dropped "<why>"`, which
    records the lines missing at that moment. An acknowledgement edited by
    hand counts only with a nonempty `why`. A side's own lines under
    its own decision always fail.
 
 Fix what it reports and run it again. Exit 4 means a path is recorded as
 `escalate`: go to Step 8. Exit 3 means the snapshot is missing or belongs to
-another operation: run `conflict-map.ts`, then record again.
+another operation: run `bun "${CLAUDE_SKILL_DIR}/scripts/conflict-map.ts"`,
+then record again.
 
 ## Step 6: Validate
 
 Read every `resolve_conflicts.obligations` entry reported by
 `check-resolution.ts`. Check its `check` text against the **whole staged
-diff** (`git diff --cached`), including conflict-free files and hunks git
+diff** (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git diff --cached`), including conflict-free files and hunks git
 merged automatically. Record the evidence and outcome for each obligation
 in the resolution report. An optional command supplements this review; a
 passing command does not establish that its prose obligation is satisfied.
@@ -388,12 +391,19 @@ plus the recorded section. `--commit-message` runs the check again and prints
 nothing unless it passes:
 
 ```bash
-message=$(mktemp)
-bun "${CLAUDE_SKILL_DIR}/scripts/check-resolution.ts" --commit-message > "$message" && git commit -F "$message" && bun "${CLAUDE_SKILL_DIR}/scripts/events.ts"
-rm -f "$message"
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file conflict-message.txt -- bun "${CLAUDE_SKILL_DIR}/scripts/check-resolution.ts" --commit-message
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git commit -F conflict-message.txt
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- conflict-message.txt
+bun "${CLAUDE_SKILL_DIR}/scripts/events.ts"
 ```
 
-The section reads:
+Run these commands in order, starting the next only after the preceding
+command exits `0`. Before the first, confirm that no `conflict-message.txt`
+exists in the worktree: if one does, it is not this run's, so stop and report
+it rather than overwrite it and then clean it away. The message file is written only on success and removed
+once the commit has used it, so the worktree is left clean; record the
+events only after the commit succeeds. If event recording fails, the committed
+resolution stands: report the failure and retry recording. The section reads:
 
 ```
 Conflicts resolved:
@@ -407,14 +417,25 @@ The cause is why the path conflicted, from the same rules as the
 path's most telling cause when its regions have several). A path whose cause
 cannot be told is written without one.
 
-For a rebase, save the section (`check-resolution.ts --message`) and run
-`git rebase --continue`, which keeps the replayed commit's own message. Every
+For a rebase, save each stop's section to a file of its own, numbered from
+`1` in stop order, so a later stop cannot replace an earlier one's:
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file conflict-section-1.txt -- bun "${CLAUDE_SKILL_DIR}/scripts/check-resolution.ts" --message`
+for the first stop, `conflict-section-2.txt` for the second, and so on.
+Before writing each one, confirm that no file of that name exists yet: if one
+does, it is not this run's, so stop and report it rather than overwrite it and
+later clean it away.
+After that command succeeds, run `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --env GIT_EDITOR true -- git rebase --continue`,
+which keeps the replayed commit's own message without opening an editor the
+wrapper gives no terminal. Every
 further stop is a new operation: map, resolve, record and check it again.
-When the rebase is done, post the saved sections on the pull request, or
-report them to the user when there is none.
+When the rebase is done, post every saved section on the pull request, in
+stop order, or report them to the user when there is none, then remove each
+file with
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- conflict-section-1.txt`
+and its numbered siblings.
 
-Then record the conflicts you resolved, in the same command for a merge, a
-cherry-pick or a revert, and once the last stop of a rebase is continued:
+The concluding sequence above records merges, cherry-picks and reverts.
+For a rebase, run the recorder once its last stop has been continued:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/events.ts"
@@ -438,18 +459,19 @@ each question.
 - **Interactive session:** put each question to the user with the options
   you see (keep ours, keep theirs, a combination you describe), then record
   their answer as the decision and continue from Step 5.
-- **Unattended (a drive's repair round):** abort the operation
-  (`git merge --abort`, `git rebase --abort`, `git cherry-pick --abort` or
-  `git revert --abort`), then verify the tree is clean: `git status --porcelain
-  --untracked-files=no` prints nothing and `git rev-parse -q --verify
-  MERGE_HEAD` fails. Print the questions on stderr and exit non-zero. That is
+- **Unattended (a drive's repair round):** abort with
+  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git <operation> --abort`, substituting the stopped operation
+  (`merge`, `rebase`, `cherry-pick` or `revert`). Then verify the tree is clean:
+  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --porcelain --untracked-files=no` must print nothing,
+  and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse -q --verify MERGE_HEAD` must exit non-zero.
+  Print the questions on stderr and exit non-zero. That is
   how drive-pr's `conflict-resolve` round hands a conflict to a human.
 
 ## The live record
 
 `events.ts` keeps the [live conflict record](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), what the replay cannot see: the rebases, cherry-picks and
 reverts, and the resolutions themselves. It appends one JSON line per
-conflicted path to `$(git rev-parse --git-common-dir)/jig/conflict-events.jsonl`,
+conflicted path to `jig/conflict-events.jsonl` under Git's common directory,
 which every worktree of the clone shares and nothing commits. The file holds
 this clone's events only: an operation resolved in another clone, or in a
 workspace since discarded, leaves none here.
@@ -472,7 +494,7 @@ event and no cause in the `Conflicts resolved:` section.
 
 When `conflict-map.ts` replaces the snapshot of an operation whose events
 cannot be written, it keeps that snapshot as pending in
-`$(git rev-parse --git-path jig)/pending/`, with the commit the operation
+the worktree's Git directory under `jig/pending/`, with the commit the operation
 concluded with, so the next `events.ts` records it from any checkout. It
 removes a pending snapshot only once its events are recorded, and exits 1
 while one still cannot be recorded. A pending snapshot without its commit
@@ -505,7 +527,7 @@ cause is derived from the three versions, not read from git's own run.
 ## What this skill never does
 
 - Force-push, or rebase a branch with an open pull request under a drive.
-- Take one side's whole text file (`git checkout --ours` or `--theirs`)
+- Take one side's whole text file with `git checkout` using `--ours` or `--theirs`
   without recording that decision and its reason.
 - Edit a lockfile or generated file by hand.
 - Conclude with conflict markers left, or before `check-resolution.ts`
@@ -629,7 +651,7 @@ It [replays](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) every mer
 (fetched pull-request heads such as `refs/pull/*/head` included; the stash
 and a forge's synthetic `refs/pull/*/merge` commits, under `refs/remotes/`
 too, left out): it merges the
-merge's two parents again with `git merge-tree --write-tree`, which needs no
+merge's two parents again with `git merge-tree` using `--write-tree`, which needs no
 working tree, in diff3 style so every conflicting region carries its
 [merge base](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). Git's
 new objects go to a temporary object directory, removed afterwards, so no

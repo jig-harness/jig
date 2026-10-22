@@ -41,11 +41,14 @@ version: 1
 # it would silently keep the default it was written to change. Unknown keys
 # elsewhere are ignored, so other tooling can share the file.
 strict:
+  - gc
   - changelog
   - changelog.release
   - pull_requests
   - issue_tracker.states
   - issue_tracker.labels
+  - issue_tracker.github
+  - issue_tracker.github.priority_labels
   - resolve_conflicts
   - reflection
   - code_stats
@@ -57,6 +60,28 @@ refused:
   do_issue: "renamed do_item: rename the section (its fields are unchanged); do-item refuses to run while it exists"
 
 fields:
+  gc.kinds:
+    type: list
+    items: string
+    distinct: true
+    read_by: [audit, gc]
+    repository_only: true
+    since: 0.83.0
+  gc.worktree_roots:
+    type: list
+    items: path
+    distinct: true
+    read_by: [audit, gc]
+    repository_only: true
+    since: 0.83.0
+  gc.scratch_prefixes:
+    type: list
+    items: path
+    distinct: true
+    read_by: [audit, gc]
+    repository_only: true
+    since: 0.83.0
+
   gates.command:
     type: command
     read_by: [resolve-review-comments, drive-pr, fix-ci, resolve-conflicts, descar]
@@ -240,7 +265,7 @@ fields:
 
   issue_tracker.adapter:
     type: enum
-    values: [linear]
+    values: [linear, github]
     default: linear
     read_by: [do-item, drive-pr, decide, work-batch]
   issue_tracker.team:
@@ -252,6 +277,34 @@ fields:
     type: map
     keys: [triage, backlog, todo, in_progress, in_review, ops_pending, done, canceled, duplicate]
     read_by: [do-item, work-batch]
+  issue_tracker.github.repository:
+    type: string
+    pattern: "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    repository_only: true
+    since: 0.82.0
+  issue_tracker.github.states_from:
+    type: enum
+    values: [labels, project]
+    default: labels
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    since: 0.82.0
+  issue_tracker.github.project:
+    type: string
+    pattern: "^https://github\\.com/(orgs|users)/[A-Za-z0-9-]+/projects/[1-9][0-9]*/?$"
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    repository_only: true
+    since: 0.82.0
+  issue_tracker.github.status_field:
+    type: string
+    default: Status
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    since: 0.82.0
+  issue_tracker.github.priority_labels:
+    type: map
+    keys: [urgent, high, medium, low]
+    read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
+    since: 0.82.0
   issue_tracker.labels.epic:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch]
@@ -498,7 +551,7 @@ fields:
     since: 0.28.0
   reflection.store:
     type: enum
-    values: [filesystem, command, notion]
+    values: [filesystem, command, notion, github]
     read_by: [reflect, review-reflections]
     since: 0.28.0
   reflection.path:
@@ -513,6 +566,11 @@ fields:
     type: string
     read_by: [reflect, review-reflections]
     since: 0.30.0
+  reflection.github.repository:
+    type: string
+    pattern: "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
+    read_by: [reflect, review-reflections]
+    since: 0.82.0
   reflection.journal:
     type: path
     read_by: [reflect, resolve-review-comments]

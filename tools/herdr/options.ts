@@ -9,8 +9,8 @@ import { HerdrError } from "./runner.ts";
 import { DEFAULT_WAIT_TIMEOUT_MS } from "./spawn.ts";
 
 export const USAGE = `usage:
-  workspace.ts [--host <ssh-target>] open --repo <clone> --branch <name> [--base <ref>] [--label <text>]
-      [--agent <kind>] [--no-agent] [--prompt <text> --key <key>] [--wait-timeout-ms <ms>] [--json]
+  workspace.ts [--host <ssh-target>] open --repo <clone> --branch <name> [--reuse-prefix <text>] [--base <ref>]
+      [--label <text>] [--agent <kind>] [--no-agent] [--prompt <text> --key <key>] [--wait-timeout-ms <ms>] [--json]
   workspace.ts [--host <ssh-target>] remove --repo <clone> --branch <name> [--force]
   workspace.ts created`;
 
@@ -33,6 +33,7 @@ function parseWaitTimeout(raw: string | undefined): number {
 export interface OpenOptions {
   repo: string;
   branch: string;
+  reusePrefix?: string;
   base?: string;
   label?: string;
   agent?: string;
@@ -51,6 +52,7 @@ export function parseOpen(args: string[]): OpenOptions {
       options: {
         repo: { type: "string" },
         branch: { type: "string" },
+        "reuse-prefix": { type: "string" },
         base: { type: "string" },
         label: { type: "string" },
         agent: { type: "string" },
@@ -67,9 +69,18 @@ export function parseOpen(args: string[]): OpenOptions {
     throw new UsageError(`open needs --repo and --branch\n${USAGE}`);
   if ((values.prompt === undefined) !== (values.key === undefined))
     throw new UsageError(`--prompt and --key go together\n${USAGE}`);
+  const reusePrefix = values["reuse-prefix"];
+  if (
+    reusePrefix !== undefined &&
+    (reusePrefix === "" || !values.branch.startsWith(reusePrefix))
+  )
+    throw new UsageError(
+      `--reuse-prefix must be non-empty and start --branch\n${USAGE}`,
+    );
   return {
     repo: values.repo,
     branch: values.branch,
+    ...(reusePrefix === undefined ? {} : { reusePrefix }),
     ...(values.base === undefined ? {} : { base: values.base }),
     ...(values.label === undefined ? {} : { label: values.label }),
     ...(values.agent === undefined ? {} : { agent: values.agent }),

@@ -11,6 +11,8 @@
  * The block name comes from `do_item.execution_plan_block` in the consumer
  * overlay (default `execution-plan-v1`).
  */
+import { readFile } from "node:fs/promises";
+import { parseArgs } from "./lib/cli.ts";
 import { readConfig, withSource } from "../../../shared/consumer.ts";
 import { doItemSection } from "./lib/overlay.ts";
 import {
@@ -21,8 +23,11 @@ import {
   type LiveIssue,
   readExecutionPlan,
 } from "./lib/execution-plan.ts";
+import { ANY_KEY_SOURCE } from "./lib/tracker/keys.ts";
 
-const KEY = /^[A-Z][A-Z0-9]*-\d+$/;
+/** An issue key of any tracker: the plan is read without the tracker's configuration. */
+const KEY = new RegExp(`^${ANY_KEY_SOURCE}$`);
+const EDGE = new RegExp(`^${ANY_KEY_SOURCE}>${ANY_KEY_SOURCE}$`);
 
 /**
  * The configured block name; the default when the repository sets none. An
@@ -73,9 +78,7 @@ export function selectExecutionIssue(
     Array.isArray(input.live) ||
     !Array.isArray(input.mergedConflictEdges) ||
     !input.mergedConflictEdges.every(
-      (e) =>
-        typeof e === "string" &&
-        /^[A-Z][A-Z0-9]*-\d+>[A-Z][A-Z0-9]*-\d+$/.test(e),
+      (e) => typeof e === "string" && EDGE.test(e),
     )
   )
     throw new Error("Malformed execution selection input");
@@ -125,16 +128,28 @@ async function readStdin(): Promise<string> {
 }
 
 if (import.meta.main) {
-  readStdin()
-    .then((text) => {
-      console.log(
-        JSON.stringify(
-          selectExecutionIssue(JSON.parse(text), executionPlanBlock()),
-        ),
-      );
-    })
-    .catch((err: unknown) => {
-      console.error(err instanceof Error ? err.message : String(err));
-      process.exitCode = 1;
-    });
+  const args = parseArgs(process.argv.slice(2), {
+    flags: [],
+    values: ["input"],
+    noPositional: true,
+    usage: "Usage: select_execution_issue.ts [--input <path>]",
+  });
+  if (!args.ok) {
+    console.error(args.message);
+    process.exitCode = 2;
+  } else {
+    const path = args.args.values.get("input");
+    (path === undefined ? readStdin() : readFile(path, "utf8"))
+      .then((text) => {
+        console.log(
+          JSON.stringify(
+            selectExecutionIssue(JSON.parse(text), executionPlanBlock()),
+          ),
+        );
+      })
+      .catch((err: unknown) => {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exitCode = 1;
+      });
+  }
 }

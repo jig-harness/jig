@@ -219,6 +219,7 @@ export async function launch(
     cacheWriteFailed: !cacheWritten,
     promptFor,
     branch,
+    title,
     repo,
     signal: AbortSignal.timeout(
       deps.openBudgetMs ?? provider.openBudgetMs ?? OPEN_BUDGET_MS,

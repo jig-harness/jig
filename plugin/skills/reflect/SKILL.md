@@ -45,7 +45,7 @@ and stop. Do not write findings anywhere else.
 ## 1. Gather
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/reflect.ts" gather [--mode quick|comprehensive]
+bun "${CLAUDE_SKILL_DIR}/scripts/reflect.ts" gather [--mode <mode>]
 ```
 
 Pass `--mode comprehensive` when this skill was invoked with
@@ -65,10 +65,10 @@ Ask yourself, and in an attended session the person:
 - **Comprehensive mode, in addition:** what worked well and should be kept,
   what could work better, and which skill outputs needed several iterations.
 
-Note each one:
+Save each finding as `<finding.json>`, then note it:
 
 ```bash
-echo '<finding JSON>' | bun "${CLAUDE_SKILL_DIR}/scripts/journal.ts" note
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file <finding.json> -- bun "${CLAUDE_SKILL_DIR}/scripts/journal.ts" note
 ```
 
 A finding is one JSON object:
@@ -99,10 +99,11 @@ bun "${CLAUDE_SKILL_DIR}/scripts/journal.ts" drop <id> --reason "same incident" 
 ```
 
 Two incidents of the same problem stay two findings: each is evidence of
-recurrence. Revise a finding instead of noting it again:
+recurrence. Save revised fields such as `class` and `severity` as
+`<revision.json>` and revise a finding instead of noting it again:
 
 ```bash
-echo '{"class": "...", "severity": "..."}' | bun "${CLAUDE_SKILL_DIR}/scripts/journal.ts" revise <id>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file <revision.json> -- bun "${CLAUDE_SKILL_DIR}/scripts/journal.ts" revise <id>
 ```
 
 ## 3. Name the class
@@ -161,8 +162,7 @@ person instead of filing.
 ## 6. Store
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/reflect.ts" contribute [--issue <class>=<issue>]... \
-  --session '{"model":"<model id>"}'
+bun "${CLAUDE_SKILL_DIR}/scripts/reflect.ts" contribute [--issue "<class>=<issue>"]... --session '{"model":"<model id>"}'
 ```
 
 It appends the unsent findings, and an `escalated` decision for every open
@@ -176,7 +176,7 @@ say so, it is not an error to work around.
 One short block: what was stored (with the store's references), what was
 escalated to which issue, what was dropped and why, and what stays in the
 journal. Under a drive, record the reflection with
-`drive-state.ts set-reflected` as `/jig:drive-pr` describes.
+the `set-reflected` operation of `drive-state.ts` as `/jig:drive-pr` describes.
 
 ## Rules
 

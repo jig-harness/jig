@@ -39,7 +39,7 @@ added since, and it does not repeat a recommendation the team declined.
    parallel where the agent can: agent scaffolding, documentation governance,
    automation and enforcement, review and learning loop. Each survey also
    scores its own modules' criteria, in a form the record tools write into
-   the draft (`record.ts fill`, `record.ts merge`); a small repository is
+   the draft (`record.ts`’s `fill` operation, `record.ts`’s `merge` operation); a small repository is
    surveyed by the agent itself. Where work runs in parallel, the audit also
    runs the sibling `resolve-conflicts` skill's read-only history report for
    the last 30 days as M12 evidence. It preserves the window and coverage
@@ -80,7 +80,7 @@ added since, and it does not repeat a recommendation the team declined.
    revisit) or *this is wrong*; can flag any criterion's score as wrong; and
    can change the profile and which of its conditional targets apply. It
    copies the decisions as one block. Pasted back to the agent,
-   `record.ts apply-feedback` records the declines, the profile and its
+   `record.ts`’s `apply-feedback` operation records the declines, the profile and its
    conditions, prints the accepted work ranked as the sheet's Start here
    ranks it, and prints every *wrong* as a calibration note without
    changing a score.

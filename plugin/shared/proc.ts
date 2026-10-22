@@ -109,6 +109,8 @@ export function ghCallTimeoutSeconds(): number {
 export interface RunResult {
   /** The child's exit code; 124 when the deadline killed it (GNU timeout's code). */
   code: number;
+  /** The terminating signal when the runtime reports one; absent for a numeric exit. */
+  signal?: NodeJS.Signals;
   stdout: string;
   stderr: string;
   timedOut: boolean;
@@ -560,6 +562,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     let timedOut = false;
     let spawnFailed = false;
     let groupSurvived = false;
+    let terminationSignal: NodeJS.Signals | undefined;
 
     const timers: ProcessTimers = {};
     const output = captureProcessOutput(child, opts, {
@@ -585,6 +588,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
           timedOut,
           bufferExceeded: output.bufferExceeded,
           spawnFailed,
+          ...(terminationSignal ? { signal: terminationSignal } : {}),
           stderrTail:
             code === 0 ? "" : lastBytes(output.tail || (extraErr ?? "")),
           ...(opts.reapGroup
@@ -635,7 +639,8 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     // pipes, which a background descendant inherited and holds open, so on
     // 'close' that descendant has already done its work (and usually gone).
     // Killing the group here closes those pipes, and 'close' then settles.
-    child.on("exit", () => {
+    child.on("exit", (_code, signal) => {
+      terminationSignal = signal ?? undefined;
       if (timedOut || output.bufferExceeded) return;
       if (opts.reapGroup && windows.enabled) {
         windows.reap(child.pid);

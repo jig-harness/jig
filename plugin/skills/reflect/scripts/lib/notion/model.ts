@@ -20,6 +20,7 @@ import {
   type Status,
   targetLabel,
 } from "../events.ts";
+import { changeEvents, changeTitle, decisionPlaces } from "../change-view.ts";
 
 /** In the database's description: the mark of a database `init` created. */
 export const STORE_MARK = "jig-reflection-store/1";
@@ -265,13 +266,7 @@ export function findingBlocks(finding: FindingEvent): Block[] {
 
 /** A decision as a review note under its finding; its record follows. */
 export function decisionBlocks(decision: DecisionEvent): Block[] {
-  const where = [
-    decision.commit === undefined ? null : `commit ${decision.commit}`,
-    decision.pull_request === undefined
-      ? null
-      : `pull request #${decision.pull_request}`,
-    decision.issue === undefined ? null : `issue ${decision.issue}`,
-  ].filter((part) => part !== null);
+  const where = decisionPlaces(decision, "#");
   return [
     paragraph([
       ...richText(`Review: ${decision.decision}`, true),
@@ -283,16 +278,6 @@ export function decisionBlocks(decision: DecisionEvent): Block[] {
 }
 
 // ── Pages and properties ────────────────────────────────────────────────────
-
-/** Which change a finding belongs to: its issue key, else its branch. */
-export function changeKey(finding: FindingEvent): string {
-  const change = finding.change;
-  const what =
-    change.issue !== null
-      ? `issue:${change.issue}`
-      : `branch:${change.branch ?? "(no branch)"}`;
-  return `${change.repository}#${what}`;
-}
 
 export function statusLabel(status: Status): StatusLabel {
   return status === "open"
@@ -389,19 +374,10 @@ export function pageProperties(
   status: StatusLabel;
   digest: string;
 } {
-  const findings = events
-    .filter((event): event is FindingEvent => event.type === "finding")
-    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
-  const decisions = events.filter(
-    (event): event is DecisionEvent => event.type === "decision",
-  );
-  const first = findings[0];
+  const { findings, decisions } = changeEvents(events);
   const latest = findings.at(-1);
   const change = latest?.change;
-  const title =
-    first === undefined
-      ? key
-      : `[${first.change.repository}] ${first.change.issue ?? first.change.branch ?? "(no branch)"}: ${first.title}`;
+  const title = changeTitle(key, findings[0]);
   const sessions = new Set(
     [...findings, ...decisions].map((event) => sessionSetup(event.session)),
   );

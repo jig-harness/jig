@@ -4,9 +4,15 @@
  * the meaning in a tooltip. Everything else is escaped text.
  *
  * Nothing here finds a reference by pattern in prose, except the issue id:
- * that shape (`ENG-1234`) is unambiguous. A genre that links its own ids (an
- * option, a step) does it with an explicit token, before calling `textHtml`.
+ * the shape of the sheet's own tracker (`ENG-1234`, `#1234`) is unambiguous.
+ * A genre that links its own ids (an option, a step) does it with an explicit
+ * token, before calling `textHtml`.
  */
+import {
+  type IssueKeys,
+  numberKeys,
+  teamKeys,
+} from "../../../do-item/scripts/lib/tracker/keys.ts";
 import { esc, reEscape, slug } from "./html.ts";
 
 export interface GlossaryEntry {
@@ -54,25 +60,64 @@ function termsOf(glossary: readonly GlossaryEntry[], ids: string[]): Term[] {
   return out;
 }
 
-/** The URL of an issue, built from the sheet's own issue URL so no organisation name is written here. */
-export function issueBase(url: string | undefined): string | undefined {
-  if (url === undefined) return undefined;
+/** Which ids in prose are issues, and the web address of each. */
+export interface IssueLinks {
+  keys: IssueKeys;
+  href(key: string): string;
+}
+
+/**
+ * How a sheet links issue ids, from the web address of its own issue, so no
+ * organisation name is written here. A GitHub issue
+ * (`https://github.com/<owner>/<repo>/issues/<n>`) links `#<n>` to that
+ * repository's issue; another tracker's (`…/issue/<TEAM>-<n>`) links the
+ * keys of `team`, else of the team the address names, to the same path.
+ * `undefined` when the address names no issue.
+ */
+export function issueLinks(
+  url: string | undefined,
+  team?: string,
+): IssueLinks | undefined {
+  let parsed: URL;
   try {
-    const parts = new URL(url).pathname.split("/").filter(Boolean);
-    const at = parts.indexOf("issue");
-    if (at < 1) return undefined;
-    return `${new URL(url).origin}/${parts.slice(0, at + 1).join("/")}/`;
+    parsed = new URL(url ?? "");
   } catch {
     return undefined;
   }
+  const parts = parsed.pathname.split("/").filter(Boolean);
+  return parsed.hostname === "github.com" && parts[2] === "issues"
+    ? githubLinks(parsed.origin, parts)
+    : teamLinks(parsed.origin, parts, team);
+}
+
+/** `#<n>` to `<origin>/<owner>/<repo>/issues/<n>`. */
+function githubLinks(origin: string, parts: string[]): IssueLinks {
+  const base = `${origin}/${parts.slice(0, 3).join("/")}/`;
+  return {
+    keys: numberKeys(`${parts[0]}/${parts[1]}`),
+    href: (key) => base + key.replace(/^#/, ""),
+  };
+}
+
+/** A team's keys to the path before `/issue/`, or `undefined` without one. */
+function teamLinks(
+  origin: string,
+  parts: string[],
+  team: string | undefined,
+): IssueLinks | undefined {
+  const at = parts.indexOf("issue");
+  const named = team || /^([A-Z][A-Z0-9]*)-\d+$/.exec(parts[at + 1] ?? "")?.[1];
+  if (at < 1 || !named) return undefined;
+  const base = `${origin}/${parts.slice(0, at + 1).join("/")}/`;
+  return { keys: teamKeys(named), href: (key) => base + key };
 }
 
 export interface InlineOptions {
   glossary: readonly GlossaryEntry[];
   /** An issue URL of the sheet; issue ids link to its tracker. No URL, no issue links. */
   issueUrl?: string;
-  /** The issue-id prefix to link (`ENG`); empty, no issue links. */
-  teamKey: string;
+  /** The team whose keys link, when the sheet's own id names it (`ENG`). */
+  team?: string | undefined;
 }
 
 export interface Inline {
@@ -89,19 +134,19 @@ export interface Inline {
 export function createInline(o: InlineOptions): Inline {
   const termIds = glossaryIds(o.glossary);
   const terms = termsOf(o.glossary, termIds);
-  const base = issueBase(o.issueUrl);
-  const docId = new RegExp(`\\b${reEscape(o.teamKey)}-\\d+\\b`, "g");
+  const links = issueLinks(o.issueUrl, o.team);
+  const docId = links && new RegExp(links.keys.source, "g");
   let tips = 0;
 
   function textHtml(text: string, seen: Set<string>): string {
     const found: { at: number; end: number; html: string; term?: string }[] =
       [];
-    if (base && o.teamKey)
+    if (links && docId)
       for (const m of text.matchAll(docId))
         found.push({
           at: m.index,
           end: m.index + m[0].length,
-          html: `<a class="ref-x" href="${esc(base + m[0])}">${esc(m[0])}</a>`,
+          html: `<a class="ref-x" href="${esc(links.href(m[0]))}">${esc(m[0])}</a>`,
         });
     for (const t of terms) {
       if (seen.has(t.id)) continue;

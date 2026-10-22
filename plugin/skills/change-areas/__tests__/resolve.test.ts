@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import {
   applyImpliedClosure,
   changedFilesFromGit,
+  changedFilesFromWorktree,
   GitContextError,
   type GitRunner,
   matchSeedAreas,
@@ -269,5 +270,35 @@ describe("the git layer", () => {
     expect(() => changedFilesFromGit({ eventName: "push" }, git)).toThrow(
       "bad revision",
     );
+  });
+});
+
+describe("working-tree files", () => {
+  test("includes committed, staged, unstaged and untracked paths without quoting or duplicates", () => {
+    const calls: string[][] = [];
+    const git: GitRunner = (args) => {
+      calls.push(args);
+      if (args[0] === "merge-base") return "abc123\n";
+      if (args[0] === "diff") return "src/café.ts\0docs/a b.md\0";
+      return "docs/new.md\0src/café.ts\0";
+    };
+    expect(changedFilesFromWorktree("origin/main", git)).toEqual([
+      "src/café.ts",
+      "docs/a b.md",
+      "docs/new.md",
+    ]);
+    expect(calls).toEqual([
+      ["merge-base", "origin/main", "HEAD"],
+      ["diff", "-z", "--no-renames", "--name-only", "abc123", "--"],
+      ["ls-files", "-z", "--others", "--exclude-standard"],
+    ]);
+  });
+  test("refuses unsafe references and failed git reads", () => {
+    expect(() => changedFilesFromWorktree("--cached", () => "")).toThrow();
+    expect(() =>
+      changedFilesFromWorktree("origin/main", () => {
+        throw new Error("cannot read git");
+      }),
+    ).toThrow("cannot read git");
   });
 });

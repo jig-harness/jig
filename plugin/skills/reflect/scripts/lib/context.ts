@@ -18,6 +18,12 @@ import {
 import { consumerRoot, readConfig } from "../../../../shared/consumer.ts";
 import { jigHome } from "../../../../shared/config-layers.ts";
 import {
+  type IssueKeys,
+  issueKeysOrNull,
+  keyFromBranch,
+} from "../../../do-item/scripts/lib/tracker/keys.ts";
+import { DEFAULT_BRANCH_PATTERN } from "../../../drive-pr/scripts/lib/pr-policy.ts";
+import {
   type Change,
   type Harness,
   parseObject,
@@ -116,25 +122,27 @@ export function repositoryId(root = consumerRoot()): string {
   return `local/${basename(folder)}-${path.slice(0, 12)}`;
 }
 
-/** The issue key a branch name carries, for the tracker's team key. */
+/**
+ * The issue key a branch name carries, in the tracker's key shape, or `null`
+ * when the shape is unknown. It is read where the branch-name pattern
+ * (`pull_requests.branch_name`) puts it, by the parser the drive's handoff
+ * uses, so both name the same issue for one branch.
+ */
 export function issueFromBranch(
   branch: string,
-  team: string | null,
+  keys: IssueKeys | null,
+  pattern: string = DEFAULT_BRANCH_PATTERN,
 ): string | null {
-  if (team === null || team === "") return null;
-  const escaped = team.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(
-    `(?:^|[^A-Za-z0-9])(${escaped}-\\d+)(?![0-9])`,
-    "i",
-  ).exec(branch);
-  return match === null ? null : (match[1] as string).toUpperCase();
+  return keys === null ? null : keyFromBranch(branch, keys, pattern);
 }
 
-function trackerTeam(): string | null {
-  const tracker = readConfig().issue_tracker as
+/** The configured branch-name pattern, or the default. */
+function branchPattern(): string {
+  const section = readConfig().pull_requests as
     | Record<string, unknown>
     | undefined;
-  return typeof tracker?.team === "string" ? tracker.team : null;
+  const pattern = section?.branch_name;
+  return typeof pattern === "string" ? pattern : DEFAULT_BRANCH_PATTERN;
 }
 
 /** The change a finding is about, as far as git can tell. */
@@ -144,7 +152,10 @@ export function currentChange(root = consumerRoot()): Change {
     repository: repositoryId(root),
     branch,
     pull_request: null,
-    issue: branch === null ? null : issueFromBranch(branch, trackerTeam()),
+    issue:
+      branch === null
+        ? null
+        : issueFromBranch(branch, issueKeysOrNull(), branchPattern()),
   };
 }
 

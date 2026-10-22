@@ -351,9 +351,9 @@ interface Limits {
 /** Run the setup command through the shell in the worktree; a setup that fails is no answer. */
 function runSetup(setup: string, where: string, limits: Limits): void {
   const s = asRun(
-    spawnSync(setup, {
+    spawnSync(process.execPath, ["exec", setup], {
       ...limits,
-      shell: process.platform === "win32" ? "sh" : true,
+      shell: false,
     }),
   );
   reportOutput(`setup ${where}`, s);

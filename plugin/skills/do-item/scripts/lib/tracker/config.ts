@@ -4,27 +4,32 @@
  *
  *   issue_tracker:
  *     adapter: linear          # which adapter answers; default `linear`
- *     team: ENG                # the key issue identifiers carry
+ *     team: ENG                # Linear: the key issue identifiers carry
  *     states:                  # canonical state → the tracker's own name
  *       in_progress: In Progress
  *     labels:                  # label role → the tracker's own label
  *       epic: epic
+ *     github:                  # GitHub Issues only (`github.ts`)
+ *       repository: owner/name # default: the `origin` remote's repository
+ *       states_from: labels    # or `project`, a Projects board's Status field
+ *       project: https://github.com/orgs/owner/projects/1
+ *       status_field: Status
+ *       priority_labels: { urgent: …, high: …, medium: …, low: … }
  *
  * Every field is optional here; an operation that needs one it lacks fails
  * with a message naming the field.
  */
 
-import {
-  readConfig,
-  readOverlay,
-  withSource,
-} from "../../../../../shared/consumer.ts";
+import { readOverlay, withSource } from "../../../../../shared/consumer.ts";
 import {
   parseTrackerLabels,
   type TrackerLabels,
 } from "../../../../../shared/tracker-labels.ts";
 import { refuseRenamedSection } from "../overlay.ts";
 import { CANONICAL_STATES, type CanonicalState } from "./port.ts";
+import { TrackerConfigError } from "./config-error.ts";
+import { type GitHubSettings, parseGitHubSettings } from "./github/settings.ts";
+import { gitHubModel } from "./github/model.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 
 export interface TrackerConfig {
@@ -35,6 +40,8 @@ export interface TrackerConfig {
   states: Record<CanonicalState, string>;
   /** The labels the skills act on, by role, defaults filled in. */
   labels: TrackerLabels;
+  /** The GitHub adapter's settings, defaults filled in. */
+  github: GitHubSettings;
 }
 
 export const DEFAULT_ADAPTER = "linear";
@@ -81,10 +88,35 @@ function refuseAmbiguousStates(states: Record<CanonicalState, string>): void {
       other !== undefined &&
       (group(other) === -1 || group(other) !== group(s))
     )
-      throw new Error(
+      throw new TrackerConfigError(
+        `issue_tracker.states.${s}`,
         `issue_tracker.states.${other} and issue_tracker.states.${s} both name '${states[s]}'; each state needs its own name`,
       );
     seen.set(key, s);
+  }
+}
+
+/**
+ * Refuse a GitHub priority label that is also a state label. In labels mode
+ * both are labels, so one label would set a state and a priority together,
+ * and changing either would drop the other.
+ */
+function refuseSharedLabels(
+  adapter: string,
+  states: Record<CanonicalState, string>,
+  github: GitHubSettings,
+): void {
+  if (adapter !== "github") return;
+  const { stateLabels } = gitHubModel(states, github);
+  for (const [priority, label] of Object.entries(github.priorityLabels)) {
+    const state = stateLabels.find(
+      (l) => l.trim().toLowerCase() === label.trim().toLowerCase(),
+    );
+    if (state !== undefined)
+      throw new TrackerConfigError(
+        `issue_tracker.github.priority_labels.${priority}`,
+        `issue_tracker.github.priority_labels.${priority} names '${label}', which is also the label of a state in issue_tracker.states; a priority needs a label of its own`,
+      );
   }
 }
 
@@ -130,7 +162,15 @@ export function parseTrackerConfig(
     }
   }
   refuseAmbiguousStates(states);
-  return { adapter, team, states, labels: parseTrackerLabels(overlay) };
+  const github = parseGitHubSettings(section.github);
+  refuseSharedLabels(adapter, states, github);
+  return {
+    adapter,
+    team,
+    states,
+    labels: parseTrackerLabels(overlay),
+    github,
+  };
 }
 
 /**
@@ -165,15 +205,6 @@ export function ownTrackerConfig(): TrackerConfig {
   return trackerConfigFrom(overlay);
 }
 
-/**
- * The consumer's team key, or `null` when no configuration layer declares
- * one. For callers that only recognise issue keys in text and
- * can do without them.
- */
-export function teamKeyOrNull(): string | null {
-  return trackerConfigFrom(readConfig()).team;
-}
-
 /** The consumer's team key; throws naming the field when it is not set. */
 export function requireTeamKey(
   config: TrackerConfig = trackerConfig(),
@@ -183,13 +214,4 @@ export function requireTeamKey(
       "issue_tracker.team is not set in the consumer overlay; it names the key issue identifiers carry (e.g. ENG for ENG-123)",
     );
   return config.team;
-}
-
-function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/** The source of a pattern matching one issue key of `team` (no anchors, no flags). */
-export function issueKeySource(team: string): string {
-  return `${escapeRe(team)}-\\d+`;
 }

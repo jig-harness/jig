@@ -112,6 +112,9 @@ describe("S4 reading list", () => {
     const text =
       "Previously X.\nfine\n**Update:** y\nas of ABC-12 renamed\nno longer here";
     expect(s4Lines(text).map((hit) => hit.line)).toEqual([1, 3, 4, 5]);
+    expect(
+      s4Lines("fine\nas of #123 renamed\nissue #4").map((h) => h.line),
+    ).toEqual([2]);
   });
   it("prints file:line: text", () => {
     const file = join(root, "docs/ops/runbook.md");

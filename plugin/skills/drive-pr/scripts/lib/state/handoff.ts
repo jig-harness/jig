@@ -33,9 +33,12 @@ import {
 import { basename, join } from "node:path";
 import { withFileLock } from "../../../../do-item/scripts/lib/intent-chain-pickup.ts";
 import {
-  issueKeySource,
-  teamKeyOrNull,
-} from "../../../../do-item/scripts/lib/tracker/config.ts";
+  ANY_TEAM_KEY,
+  type IssueKeys,
+  issueKeysOrNull,
+  keyFromBranch,
+} from "../../../../do-item/scripts/lib/tracker/keys.ts";
+import { DEFAULT_BRANCH_PATTERN, prPolicy } from "../pr-policy.ts";
 import { git, gitIdentityEnv } from "../proc.ts";
 import { atomicWrite } from "./fsutil.ts";
 import type { DriveState } from "./schema.ts";
@@ -101,9 +104,10 @@ function cell(text: string): string {
 /**
  * The Refocus intent chain:
  * `/do-item` writes one content file per work item under
- * `.context/intent-chain/<identifier>.md`, next to this handoff file, plus a
- * worktree-wide pointer at `.context/intent-chain/.current` naming which
- * identifier is current — and every round's pass reads this handoff file
+ * `.context/intent-chain/<stem>.md`, `<stem>` the key's file stem
+ * (`IssueKeys.toFileStem`: `ENG-12`, `issue-12`), next to this handoff file,
+ * plus a worktree-wide pointer at `.context/intent-chain/.current` holding
+ * the current item's stem — and every round's pass reads this handoff file
  * first, so carrying the chain here puts the epic's intent, the issue's scope
  * and its out-of-scope lines in front of every triage decision, dozens of
  * rounds after the pickup that last read them.
@@ -145,50 +149,55 @@ export const INTENT_CHAIN_POINTER = ".current";
 const INTENT_CHAIN_BUDGET = 4000;
 const INTENT_CHAIN_MARKER = " …[truncated]";
 
-/** `feature/<TEAM>-<n>-<slug>`, case-insensitive (trackers' own branch-name
- * helpers lowercase the identifier; the capture is uppercased to match the
- * canonical casing content files are named with), with the naming rule's own
- * delimiter — `-` or end of name — required after the number. `<TEAM>` is the
- * consumer's `issue_tracker.team`.
- *
- * Branch grammar is the branch-naming rule, deliberately NOT the writer's
- * identifier grammar (`isChainIssue`, used for snapshot keys and the
- * `.current` pointer): a branch is a slug namespace where
- * `<letters><digits>-<n>-…` (`feature/oauth-2-rollout`, `feature/py3-9-compat`)
- * is a legal identifier-free slug, so a wider grammar misreads it as an item
- * and fails closed on a real PR, while the narrow one's only cost — another
- * team's key falling through to `.current` — is benign. Do not widen it.
- * Known residual: a slug that itself begins `<team>-<n>-…` resolves that item
- * — the naming rule's reserved prefix, not a regex defect. */
-function branchIdentifierRe(teamKey: string): RegExp {
-  return new RegExp(`^feature/(${issueKeySource(teamKey)})(?=-|$)`, "i");
-}
-
-/** The consumer's team key, or null when it declares none (or the overlay is unreadable). */
-function consumerTeamKey(): string | null {
+/** The consumer's branch-name pattern, or the default when the policy is unreadable. */
+function consumerBranchPattern(): string {
   try {
-    return teamKeyOrNull();
+    return prPolicy().branchName;
   } catch {
-    return null;
+    return DEFAULT_BRANCH_PATTERN;
   }
 }
 
 /**
- * The work item a branch NAME resolves to, or null when it names none (or no
- * team key is configured, so no branch can name an item).
+ * The work item a branch NAME resolves to, in canonical form, or null when it
+ * names none (or the key shape is unknown, so no branch can name an item).
+ * The branch is read under the branch-name pattern `pr-plan.ts` names
+ * branches with (`pull_requests.branch_name`), through `keyFromBranch`: the
+ * key where the pattern puts it (after at most one leading `<word>/`
+ * segment for a team key, never for a key that is a bare number), followed
+ * by a separator or the end, in any case (trackers' own branch-name helpers
+ * lowercase it).
+ *
+ * Branch grammar is the configured tracker's key, deliberately NOT the
+ * writer's any-tracker identifier grammar (`isChainIssue`, used for snapshot
+ * keys): a branch is a slug namespace where `<letters><digits>-<n>-…`
+ * (`feature/oauth-2-rollout`, `feature/py3-9-compat`) is a legal
+ * identifier-free slug, so a wider grammar misreads it as an item and fails
+ * closed on a real PR, while the narrow one's only cost — another team's key
+ * falling through to `.current` — is benign. Do not widen it. Known
+ * residual: a slug that itself begins with a key where the pattern puts one
+ * (`<team>-<n>-…`, or `<n>-…` for a tracker keyed by number alone) resolves
+ * that item — the naming rule's reserved prefix, not a regex defect.
  */
 export function identifierFromBranchName(
   branch: string,
-  teamKey: string | null = consumerTeamKey(),
+  keys: IssueKeys | null = issueKeysOrNull(),
+  pattern: string = consumerBranchPattern(),
 ): string | null {
-  if (teamKey === null) return null;
-  const m = branchIdentifierRe(teamKey).exec(branch.trim());
-  return m?.[1] ? m[1].toUpperCase() : null;
+  return keys === null ? null : keyFromBranch(branch, keys, pattern);
+}
+
+/** Is `stem` a name the writer gives a snapshot (`IssueKeys.toFileStem`)?
+ * A stem of the configured shape, or a team key of any team (Linear's stem
+ * is its key), since the writer records a key of any team as given. Either
+ * is one plain file name. */
+function isSnapshotStem(stem: string, keys: IssueKeys | null): boolean {
+  return keys?.fromFileStem(stem) != null || ANY_TEAM_KEY.test(stem);
 }
 
 /**
  * The work item THIS worktree's checked-out branch names, or null if none
- * (detached HEAD, a non-`feature/` branch, not a git repo at all). Routed
+ * (detached HEAD, a branch that names no item, not a git repo at all). Routed
  * through the shared `git()` helper (`references/consistency.md`
  * — a new subprocess call under this directory registers for group
  * cancellation via `run()`/`git()` rather than hand-rolling its own
@@ -197,7 +206,7 @@ export function identifierFromBranchName(
  * `cwd: dir` — not the ambient process cwd — is load-bearing, not
  * incidental: it is what makes this safe to call from a plain `bun test`
  * run whose cwd is the repo's own checkout (which, for whoever happens to
- * run the suite, is very likely ALSO on a `feature/<TEAM>-…` branch under
+ * run the suite, is very likely ALSO on a branch naming an item under
  * the repository's own naming convention). Every existing test passes an isolated
  * scratch `dir` via `DRIVE_PR_INTENT_CHAIN_DIR` that is not a git repository
  * at all, so this git call fails closed to null there for any test that
@@ -210,7 +219,10 @@ export function identifierFromBranchName(
  * planted identifiers before it changed any assertion, but real ground
  * truth rather than a guarantee this function can enforce on its own.
  */
-async function identifierFromBranch(dir: string): Promise<string | null> {
+async function identifierFromBranch(
+  dir: string,
+  keys: IssueKeys | null,
+): Promise<string | null> {
   const r = await git(["rev-parse", "--abbrev-ref", "HEAD"], {
     cwd: dir,
     stderr: "ignore",
@@ -218,7 +230,7 @@ async function identifierFromBranch(dir: string): Promise<string | null> {
     env: gitIdentityEnv(),
   });
   if (r.code !== 0) return null;
-  return identifierFromBranchName(r.stdout);
+  return identifierFromBranchName(r.stdout, keys);
 }
 
 /** A snapshot is a regular file the writer created. `existsSync`/`readFileSync`
@@ -264,23 +276,20 @@ export async function resolveIntentChainFile(
     if (!/^[0-9]+$/.test(pr)) return null;
     return regularFileOrNull(join(chainDir, prCaptureFileName(pr)));
   }
-  const branchId = await identifierFromBranch(dir);
-  if (branchId) {
-    const file = join(chainDir, `${branchId}.md`);
+  const keys = issueKeysOrNull();
+  const branchId = await identifierFromBranch(dir, keys);
+  if (branchId && keys) {
+    const file = join(chainDir, `${keys.toFileStem(branchId)}.md`);
     return regularFileOrNull(file);
   }
-  let identifier: string;
+  let stem: string;
   try {
-    identifier = readFileSync(
-      join(chainDir, INTENT_CHAIN_POINTER),
-      "utf8",
-    ).trim();
+    stem = readFileSync(join(chainDir, INTENT_CHAIN_POINTER), "utf8").trim();
   } catch {
     return null;
   }
-  if (!/^[A-Za-z][A-Za-z0-9]*-\d+$/.test(identifier)) return null;
-  const file = join(chainDir, `${identifier}.md`);
-  return regularFileOrNull(file);
+  if (!isSnapshotStem(stem, keys)) return null;
+  return regularFileOrNull(join(chainDir, `${stem}.md`));
 }
 
 /** Best-effort mtime refresh: a failed touch must not cost the section. Runs
@@ -501,8 +510,7 @@ export async function renderHandoff(
     lines.push(
       "Do NOT re-reply to these. Once the push lands, resolve each one:",
       "",
-      "A `kind: thread` with `resolve-held-thread.ts --key K --pushed-sha",
-      '"$(git rev-parse HEAD)"` — it claims (`drive-state.ts claim-held --kind',
+      'A `kind: thread` with `bun "<skill-dir>/scripts/portable.ts" resolve-held-thread --key K` — it claims (`drive-state.ts claim-held --kind',
       "thread`), resolves, and removes the item atomically; no separate release.",
       "",
       // Deliberately ONE long line rather than wrapped to the width of the
@@ -510,7 +518,7 @@ export async function renderHandoff(
       // invocation, and a backtick span broken across a newline pastes as two
       // broken commands. `--pushed-sha` is required: the claim checks this
       // hold's OWN push provenance, not just the mutex.
-      `A \`kind: finding\`: \`drive-state.ts claim-held ${pr} --key K --kind finding --pushed-sha "$(git rev-parse HEAD)"\``,
+      `A \`kind: finding\`: \`bun "<skill-dir>/scripts/portable.ts" claim-held ${pr} --key K --kind finding\``,
       "first. Exit 0 means dispatch; every non-zero exit forbids it, but NOT the same",
       "way for every code: 1 USUALLY means a concurrent driver already holds this",
       "key — safe to skip it and continue with the next — or this hold's recorded",
@@ -524,8 +532,7 @@ export async function renderHandoff(
       `\`held\` (\`drive-state.ts held ${pr}\`) before trusting any other key from it, do`,
       'not assume "already finished" without checking; 3 (state unreadable) is not a',
       "per-key problem — STOP and inspect (`drive-state.ts get [PR]`) rather than",
-      "continuing to loop. On exit 0, answer it with `answer-summary-finding.ts",
-      '--pushed-sha "$(git rev-parse HEAD)"`, then release immediately with the',
+      'continuing to loop. On exit 0, write its reason verbatim to a file and answer through `bun "<skill-dir>/../../shared/command.ts" --stdin-file <reason-file> -- bun "<skill-dir>/scripts/portable.ts" answer-summary-finding <PR> --outcome <outcome> --fingerprint <key>`, then release immediately with the',
       `printed token — \`drive-state.ts release-held ${pr} --key K --token T\` —`,
       "rather than batching every answer and releasing `--all` at the end (SKILL.md",
       "§ 6): a crash mid-batch would re-answer already-done findings, and skipping",

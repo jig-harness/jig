@@ -8,6 +8,10 @@
  * trace.
  */
 
+import {
+  ANY_KEY_SOURCE,
+  shapeOfKey,
+} from "../../../do-item/scripts/lib/tracker/keys.ts";
 import { REPOSITORY_NAME, repositoryProblems } from "./freshness.ts";
 
 /** A claim with the place it was verified: `path#symbol`, `path:line`, an issue or an ADR. */
@@ -18,7 +22,11 @@ export interface SourcedClaim {
 
 export type Json = Record<string, unknown>;
 
-export const ISSUE_ID = /^[A-Z][A-Z0-9]*-\d+$/;
+/** An issue key of any tracker (`ENG-123`, `#123`): a sheet is validated without the tracker's configuration. */
+export const ISSUE_ID = new RegExp(`^${ANY_KEY_SOURCE}$`);
+/** An issue key as a file or directory name (`IssueKeys.toFileStem`): `ENG-123`, `issue-123`. */
+export const issueFileStem = (id: string): string =>
+  shapeOfKey(id)?.toFileStem(id) ?? id;
 export const DATE = /^\d{4}-\d{2}-\d{2}$/;
 export const COMMIT = /^[0-9a-f]{7,40}$/;
 export const SIMPLE_ID = /^[A-Za-z0-9]{1,8}$/;

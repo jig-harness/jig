@@ -5,7 +5,7 @@
  *
  * Usage:
  *   bun tools/herdr/workspace.ts [--host <ssh-target>] open --repo <clone> --branch <name>
- *       [--base <ref>] [--label <text>] [--agent <kind>] [--no-agent]
+ *       [--reuse-prefix <text>] [--base <ref>] [--label <text>] [--agent <kind>] [--no-agent]
  *       [--prompt <text> --key <key>] [--wait-timeout-ms <ms>] [--json]
  *   bun tools/herdr/workspace.ts [--host <ssh-target>] remove --repo <clone> --branch <name> [--force]
  *   bun tools/herdr/workspace.ts created
@@ -14,8 +14,10 @@
  * that has it, waits for the repository's create hook, starts the agent
  * (`claude` unless `--agent` names another Herdr agent kind) and, with
  * `--prompt`, sends it that first prompt once per `--key`. The base of a new
- * branch is the clone's `origin/HEAD` unless `--base` names one. `--json`
- * prints what was opened; progress goes to stderr.
+ * branch is the clone's `origin/HEAD` unless `--base` names one. With
+ * `--reuse-prefix`, the one existing branch whose name starts with it is
+ * opened instead of `--branch`. `--json` prints what was opened; progress
+ * goes to stderr.
  *
  * `remove` runs the repository's remove hook in the worktree, parks its
  * reflection findings and then removes it, refusing when either fails.
@@ -99,6 +101,9 @@ async function open(ctx: Context, values: OpenOptions): Promise<number> {
   const spawned = spawnWorkspace(ctx, {
     repo,
     branch: values.branch,
+    ...(values.reusePrefix === undefined
+      ? {}
+      : { reusePrefix: values.reusePrefix }),
     ...(values.base === undefined ? {} : { base: values.base }),
     ...(values.label === undefined ? {} : { label: values.label }),
     kind: values.agent ?? "claude",

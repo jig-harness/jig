@@ -1,20 +1,11 @@
-/**
- * outcome.test.ts
- *
- * Unit tests for `lib/outcome.ts`'s `hasLeaveOpenMarker` and
- * `hasNoOutcomeMarker` — plain functions, not subprocesses, so these are
- * direct in-process tests rather than spawning a script against fixture
- * files (the convention every other test in this directory uses, because
- * every other script under test IS a subprocess).
- */
-
+/** Exact trailing-line contracts shared by reply producers and readers. */
 import { describe, expect, it } from "bun:test";
 import {
   hasLeaveOpenMarker,
   hasNoOutcomeMarker,
   LEAVE_OPEN_MARKER,
   NO_OUTCOME_MARKER,
-} from "../scripts/lib/outcome.ts";
+} from "../reply-markers.ts";
 
 describe("hasLeaveOpenMarker", () => {
   it("recognizes the marker as the body's own dedicated trailing line", () => {

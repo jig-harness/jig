@@ -63,6 +63,9 @@ Then read `notices`:
 - `status-edited`: a person changed a status by hand where the store shows
   one. Show it beside its finding and ask the person to record it as a
   decision (step 6) or to put the shown status back.
+- `untrusted-record`: the store ignored records written by someone it does
+  not trust (on GitHub, someone who cannot write to the repository). Show
+  the reference and author; whether to re-record them is the person's call.
 
 `diagnose_error` set means the store's diagnosis failed: report it and go on
 from the events.
@@ -117,14 +120,17 @@ An owner outside the review's scope is refused.
 
 Make the approved changes in one pull request, following the repository's
 pull-request policy as [`/jig:do-item`](../do-item/SKILL.md) does, then record
-a decision per finding, one JSON object per line:
+a decision per finding. Save the decisions in `<decisions.jsonl>`, one JSON
+object per line, then run:
 
-```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/review.ts" record --session '{"model":"<model id>"}' <<'EOF'
-{"finding":"<id>","decision":"approved","reason":"<the change>","commit":"<sha>","pull_request":<n>}
+```jsonl
+{"finding":"<id>","decision":"approved","reason":"<the change>","commit":"<sha>","pull_request":123}
 {"finding":"<id>","decision":"deferred","reason":"<why, and when to revisit>"}
 {"finding":"<id>","decision":"dismissed","reason":"<why>"}
-EOF
+```
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file <decisions.jsonl> -- bun "${CLAUDE_SKILL_DIR}/scripts/review.ts" record --session '{"model":"<model id>"}'
 ```
 
 `approved` records where the change is (commit and pull request); the next

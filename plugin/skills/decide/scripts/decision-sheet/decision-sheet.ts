@@ -31,6 +31,7 @@ import {
 } from "../lib/overlay.ts";
 import { checkFreshness, claimSources, type Freshness } from "./freshness.ts";
 import { refusalToPost, repositoryRoot } from "../sheet-kit/freshness.ts";
+import { issueFileStem } from "../sheet-kit/source.ts";
 import { renderHtml } from "./html.ts";
 import {
   DEFAULT_TEMPLATE,
@@ -189,15 +190,16 @@ function main(argv: string[]): number {
       const outFlag = flag(args, "--out");
       if (!outFlag && !root)
         throw new UsageError("not inside a git repository; pass --out");
+      const stem = issueFileStem(source.id);
       const out = resolve(
-        outFlag ?? join(root as string, ".context", "decide", source.id),
+        outFlag ?? join(root as string, ".context", "decide", stem),
       );
       mkdirSync(out, { recursive: true });
       const html = renderHtml(source, template);
       const files = {
         sheet: join(out, sheetFilename(source)),
-        elaboration: join(out, `${source.id}-elaboration.md`),
-        comment: join(out, `${source.id}-comment.md`),
+        elaboration: join(out, `${stem}-elaboration.md`),
+        comment: join(out, `${stem}-comment.md`),
       };
       writeFileSync(files.sheet, html);
       writeFileSync(files.elaboration, renderElaboration(source));

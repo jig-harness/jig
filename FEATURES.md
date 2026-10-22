@@ -3,10 +3,10 @@
 The [modules](modules/README.md) state Jig's practices as rules that name no
 tool. This page is the other view: what a team can run, install or copy from
 Jig today, each with the practice it carries out and what is on the roadmap
-for it. The [skills](plugin/README.md) come from one plugin installed once per
-machine; the [quality gates](GLOSSARY.md) (checks a change must pass),
-templates and tools ship with their modules; your own values (gate command,
-reviewers, issue-tracker team and labels) live in one
+for it. The [skills and commands](plugin/README.md) come from one plugin
+installed once per machine; the [quality gates](GLOSSARY.md) (checks a change
+must pass), templates and reference tools ship with their modules; your own
+values (gate command, reviewers, issue-tracker team and labels) live in one
 [configuration](plugin/CONFIGURATION.md) file the skills read when they run.
 
 Everything here keeps a person on the decisions that matter: the intent, the
@@ -106,8 +106,9 @@ turns the stored findings into changes a person approves, and a class that
 keeps recurring is escalated to one tracker issue instead of filed again.
 `promote-memory` moves a lesson from an agent's private memory into a
 reviewed, shared document. The stores stand behind one contract with a
-conformance suite: a folder store, and a Notion store whose database people
-browse and filter.
+conformance suite: a folder store, a Notion store whose database people
+browse and filter, and a GitHub store that keeps the findings as issues of
+one repository.
 Around the skills, the [miss→lens flywheel](GLOSSARY.md) answers each
 significant miss with an additive check, validated on a replayable fixture
 before it may block anything.
@@ -214,9 +215,24 @@ configuration; a remote host, a container or an isolated configuration
 directory needs its own install
 ([where it works](plugin/README.md#where-it-works)).
 
+Agent sessions also leave worktrees, scratch directories and tool state
+behind. The [`jig gc`](plugin/gc/README.md) command, shipped with the plugin,
+reports what remains, checks whether it is still in use, and writes a
+[collection receipt](GLOSSARY.md) for every run. A repository declares the
+resource kinds and paths its tools create; a person confirms those bounds
+when installing a machine's daily job, which supports launchd on macOS,
+systemd user timers on Linux and cron where neither is available. Collecting
+runs read the declaration from the recorded remote base branch and stay
+within the confirmed bounds. Worktrees, scratch directories and tool state
+are currently report-only, because collecting them requires coordination with
+the tools that create and use them; old receipts can be collected while
+keeping the latest report for each repository and kind.
+
 - **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
-- **On the roadmap:** the skills checked inside Herdr (roadmap item 19), and
-  a runnable form of the workspace lifecycle for other runtimes (Later)
+- **On the roadmap:** the skills checked inside Herdr (roadmap item 19), a
+  runnable form of the workspace lifecycle for other runtimes (Later), and
+  coordinated resource collection followed by container, branch and
+  registered-process collection (roadmap item 24)
 
 ## One configuration file, read in layers
 
@@ -226,9 +242,9 @@ Values are read in [layers](GLOSSARY.md) for the person, the repository and
 the single run, every field is documented with its default and the skills
 that read it, and the audit checks the configuration against the repository.
 Bindings to a named tool stand behind an interface: the skills reach the
-issue tracker through a small [tracker interface](GLOSSARY.md) whose first
-adapter is Linear, so another tracker is a new adapter, not a change to the
-skills. [EXTENDING.md](plugin/EXTENDING.md) lists every point where an
+issue tracker through a small [tracker interface](GLOSSARY.md) with adapters
+for Linear and GitHub Issues, so another tracker is a new adapter, not a
+change to the skills. [EXTENDING.md](plugin/EXTENDING.md) lists every point where an
 organization plugs in its own commands, skills, reviewers and stores.
 
 - **Practice:** [M0](modules/M0-instruction-architecture/),

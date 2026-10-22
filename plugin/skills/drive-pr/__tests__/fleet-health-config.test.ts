@@ -74,7 +74,7 @@ describe("loadConfig", () => {
     );
     const cfg = loadConfig();
     expect(cfg.root).toBe(repo);
-    expect(cfg.teamKey).toBe("ENG");
+    expect(cfg.keys?.example).toBe("ENG-123");
     expect(cfg.labels).toEqual({
       epic: "initiative",
       followup: "follow-up",
@@ -88,6 +88,12 @@ describe("loadConfig", () => {
       closedStateTypes: ["completed", "canceled", "duplicate"],
     });
     expect(cfg.baselines.rounds_median?.value).toBe(10);
+  });
+
+  it("reads a GitHub tracker's key shape", () => {
+    copyFileSync(FIXTURE, join(repo, ".config", "fleet-health.yaml"));
+    overlay("issue_tracker:\n  adapter: github\n");
+    expect(loadConfig().keys?.example).toBe("#123");
   });
 
   it("follows fleet_health.config to the consumer's own file", () => {
@@ -104,7 +110,7 @@ describe("loadConfig", () => {
       const path = join(repo, ".config", "fleet-health.yaml");
       copyFileSync(FIXTURE, path);
       overlay("issue_tracker:\n  team: OPS\n");
-      expect(loadConfig(path).teamKey).toBe("OPS");
+      expect(loadConfig(path).keys?.example).toBe("OPS-123");
     } finally {
       rmSync(elsewhere, { recursive: true, force: true });
     }
@@ -133,7 +139,7 @@ describe("loadConfig", () => {
       path,
       readFileSync(FIXTURE, "utf8")
         .replace("  followup: follow-up\n", "")
-        .replace(/^  epic: .*\n/m, ""),
+        .replace(/^ {2}epic: .*\n/m, ""),
     );
     overlay(
       "issue_tracker:\n  labels:\n    epic: Initiative\n    followup: review-fu\n",

@@ -810,6 +810,11 @@ make, use the entry's term instead.
 - **Severity mapping** — the one table that turns a finding's severity into
   the tracker priority it is filed with, shared by every
   path that files an issue so they cannot disagree.
+- **Slug** — a short form of a title that is safe to use in a name: its first
+  few words in lower case, joined by hyphens. A repository can have the
+  workspace launcher name an issue's branch with the issue key followed by
+  the slug of its title
+  ([tools/launcher/README.md](tools/launcher/README.md)).
 - **Worktree** — a git feature giving one repository multiple working
   directories, letting several agents work different branches of the same repo
   in parallel on one machine. *Avoid*: workspace for the checkout itself; a
@@ -1537,6 +1542,13 @@ make, use the entry's term instead.
 - **Issue** — one unit of work in the issue tracker: what `/jig:do-item` picks
   up and a pull request closes. Skills say *item* for short. *Avoid*: ticket,
   card, task.
+- **Issue key** — the short name a tracker gives an issue, which branch
+  names, commit messages and pull requests carry to link work to it:
+  `ENG-123` on Linear (the team's prefix and a number), `#123` on GitHub
+  Issues (a number within one repository). Each *tracker adapter* defines
+  its key's shape, how a key appears in a branch name (`eng-123-…`,
+  `123-…`) and in a file name (`ENG-123`, `issue-123`). Write a key quoted
+  on a command line: an unquoted `#` starts a shell comment.
 - **Tracker interface and adapter** — the small set of issue-tracker
   operations a skill is allowed to use (read an issue with its comments and
   children, move it to a workflow state, comment, the reads the delivery
@@ -1548,9 +1560,9 @@ make, use the entry's term instead.
   interface does not have yet (attaching a file), and a few reads of
   Linear's own answers.
   [plugin/EXTENDING.md](plugin/EXTENDING.md#issue-tracker) lists
-  them under "What still assumes Linear". Linear's adapter is built;
-  adapters for Jira and for a plan file kept in the repository are planned
-  ([ROADMAP.md](ROADMAP.md) item 12).
+  them under "What still assumes Linear". Adapters for Linear and GitHub
+  Issues are built; adapters for Jira and for a plan file kept in the
+  repository are planned ([ROADMAP.md](ROADMAP.md) item 12).
 - **Batch** — several small, independent issues from one area of the code
   closed by one pull request, with one commit for each issue, so the review
   is paid once instead of once per issue

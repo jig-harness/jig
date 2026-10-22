@@ -60,14 +60,17 @@ keeps a person merging ([ADR-0003](docs/adr/ADR-0003-a-person-merges.md)).
 
 A few values are still fixed in the skills rather than read from
 [configuration](plugin/CONFIGURATION.md): the review skill's follow-up step
-calls Linear directly with fixed label groups, and the drive assumes a git
-remote named `origin`. They move into configuration.
+calls Linear directly with fixed label groups, so a repository on GitHub
+Issues cannot yet defer a review finding, and the drive assumes a git remote
+named `origin`. They move into configuration, and the follow-up step onto
+the tracker interface, so it files on every tracker Jig supports.
 
 ### 12. More tracker adapters
 
-Jira, and a plan file kept in the repository, beside Linear. The
-[tracker interface](GLOSSARY.md) first gains attaching a file, the one
-operation the skills need that the interface does not have yet.
+Jira, and a plan file kept in the repository, beside Linear and GitHub
+Issues. The [tracker interface](GLOSSARY.md) first gains attaching a file,
+the one operation the skills need that the interface does not have yet, and
+the workspace launcher learns to open GitHub issues.
 
 ### 15. M14 Testing strategy: the rest
 
@@ -150,9 +153,9 @@ the kinds it mints with its own facts, a machine sets the schedule, and
   ([what it covers](plugin/EXTENDING.md#forge-github)).
 - **CI logs from other providers.** `fix-ci` downloads a failed run from
   GitHub Actions only (any CI's saved log already works with `--log`).
-- **Windows for `drive-pr` and `do-item`.** Both skills, and the skills
-  they invoke, on native Windows: first under Claude Code with Git for
-  Windows' Bash, then under PowerShell for Codex.
+- **Windows for `drive-pr` and `do-item`.** Complete the authenticated
+  pickup, draft pull request, drive round and stop acceptance run under
+  Claude Code and Codex with PowerShell.
 - **Drive loop follow-ups.** A drive's CI-repair round running `fix-ci`,
   through a `fix-ci` mode that stops before pushing so the drive does the
   push itself.

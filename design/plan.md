@@ -130,7 +130,19 @@ Move into configuration when a consumer needs them:
 
 - the review skill's deferral step (`defer-batch.ts`) calls Linear directly,
   with fixed label groups, instead of going through the
-  [tracker interface](../GLOSSARY.md);
+  [tracker interface](../GLOSSARY.md), so a repository on GitHub Issues
+  cannot defer a finding. Moving it onto the interface makes it work on
+  every adapter; revisit for GitHub Issues what the step relies on that
+  GitHub lacks or spells differently: label groups (GitHub labels have none,
+  so the type and repository groups become configured label lists), its
+  `--originating` and `--team` keys (validated through the adapter's key
+  shape, `keys.ts`), the conditional description edits that keep concurrent
+  deferrals from losing an entry (the interface may need a compare-and-set
+  update, or a comment per entry where the tracker cannot compare), and
+  GitHub's secondary rate limit on writes when a review defers many
+  findings at once. Done when a deferral round files and appends its
+  findings on both adapters, with the fake-tracker tests both adapters'
+  tests use;
 - the drive pushes to and fetches from a remote named `origin`;
 - the markers of Jig's own finding format (`ai-review-backlog`,
   `ai-review-round`, the leading `ai-review-*` comments) are fixed, and the
@@ -153,14 +165,19 @@ golden files from the Python linter then retire with the translation.
 
 ### 12. More tracker adapters
 
-Jira, and a plan file kept in the repository. Both wait on the open decisions
-below. Before a second adapter works end to end, the
-[tracker interface](../GLOSSARY.md) gains attaching a file, which `decide`
-and `explain` now do through the Linear MCP tools or the `linear` command.
-The deferral step (item 10), `decide`, `explain` and `do-item`'s
-instructions then use the interface's operations, and `do-item`'s parent-status reconciliation reads the
-interface's answers instead of Linear's. [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker)
-lists what still assumes Linear.
+Jira, and a plan file kept in the repository, beside Linear and GitHub
+Issues. Both wait on the open decisions below. For every adapter to work end
+to end, the [tracker interface](../GLOSSARY.md) gains attaching a file,
+which `decide` and `explain` now do through the Linear MCP tools or the
+`linear` command. The deferral step (item 10), `decide`, `explain` and
+`do-item`'s instructions then use the interface's operations, and
+`do-item`'s parent-status reconciliation reads the interface's answers
+instead of Linear's on its native path too. The workspace launcher and the
+Herdr kickoff open Linear issues only: a GitHub key (`#123`) needs a
+launcher tracker for GitHub Issues and the key's file name (`issue-123`)
+where they name a cache file or a claim.
+[plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
+still assumes Linear.
 
 ### 15. M14 Testing strategy: the rest
 
@@ -310,12 +327,13 @@ closed, a receipt per run), kinds a repository enables with its own facts,
 and a machine layer for the schedule. What it will build, one pull request
 per step:
 
-- **The runner and the first kinds**: `jig gc` with report, collect,
-  receipts and install; the worktrees kind moved in from a working
-  repository with its scheduler installers; `drive-pr`'s state reaper and the
-  test scratch scope as kinds, the scratch scope writing an owner record
-  beside each directory; the `gc` sections of both configuration
-  layers; M12's practice, scheduler rows and audit criterion.
+- **Finish the first rollout**: move in the operated worktree reaper and its
+  scheduler tests, with the creating/opening tool taking the shared session
+  lock, and retire the working repository's copies in the same rollout.
+  Coordinate tool-state creators with collection admission before enabling
+  retirement; its legacy reaper lock excludes only other reapers.
+  Validate its weekly job through the installed command before starting
+  the later kinds. Worktree collection stays disabled until this integration.
 - **Containers, volumes and images**, keyed to the compose projects the
   worktrees derive, and the machine-level dangling images and build cache.
 - **Branches** merged as the forge records it (squash merges included) or
@@ -359,35 +377,18 @@ resource's proof before anything is collected.
 - **CI logs from other providers.** `fix-ci` finds and downloads a failed run
   through GitHub Actions only (any CI's saved log already works with
   `--log`); a provider interface for those two steps.
-- **Windows for `drive-pr` and `do-item`.** Both skills, and the skills
-  they invoke, running on native Windows under Claude Code with Git for
-  Windows' Bash first, and under PowerShell (Codex on Windows) later. Much
-  of the code already handles Windows: a pass and its registered runners
-  are stopped by captured process identities within the cooperative scope
-  recorded in [ADR-0008](../docs/adr/ADR-0008-windows-cancellation-uses-captured-process-identities.md),
-  the clone key is not a path,
-  and the pass is
-  spawned from an argument list. Both suites run on Windows every night; the tests
-  that need a step below skip there, and each skip names the step that lifts
-  it (`skipsOnWindows` in
-  [lib/test-helpers/windows-skip.ts](../lib/test-helpers/windows-skip.ts)).
-  The steps land in this order, each as its own pull request:
-  1. **The skills under Git Bash** (`git-bash`). Every script command led by
-     `bun`, the `ps`, `setsid` and `nohup` instructions replaced by the
-     scripts' own commands, the pass command resolved through
-     [`PATHEXT`](../GLOSSARY.md) (an npm-installed agent CLI is a `.cmd`),
-     `fix-ci`'s setup command run under a POSIX shell, and the platform
-     support stated in the skills' READMEs. Windows runs a `.cmd` or `.bat`
-     file only through `cmd.exe`, which the process runner's shell-less
-     `spawn` never starts, so the runner gains a launch path for them: a
-     resolved `.cmd` started as `cmd.exe /d /s /c` with every argument
-     quoted for `cmd.exe`'s own rules, tested with arguments holding
-     spaces, quotes, `%` and `^`. Done when a pickup, a driven round and a
-     stop work end to end on a Windows machine.
-  2. **PowerShell** (`powershell`, later): the shell constructs in the
-     skills' instructions (`$(…)`, heredocs, pipes into `grep` or `tail`,
-     `test`, `mktemp`, and `review`'s file-set logic) moved into the scripts
-     they feed, so the skills run under Codex on Windows without Git Bash.
+- **Windows for `drive-pr` and `do-item`.** The remaining acceptance work is
+  an **authenticated workflow**: run a real pickup, draft pull
+  request, driven round and stop on Windows under Claude Code and under
+  Codex with PowerShell. The deterministic smoke uses local fake services;
+  it does not certify the agent and credential integration. Fix what the
+  authenticated run finds, and remove the corresponding validation limits
+  from the skills' READMEs. Cancellation uses captured process identities
+  within the cooperative scope recorded in
+  [ADR-0008](../docs/adr/ADR-0008-windows-cancellation-uses-captured-process-identities.md).
+  **Fixture throughput** also remains: optimize the named multi-round,
+  long-CI drive and large post-retirement census fixtures until they fit their
+  existing native Windows test budgets, then lift their named skips.
 - **Gates and workspace infrastructure.** Cross-worktree locks and
   test infrastructure, remote gates, and a runnable form of
   [M12](../modules/M12-parallel-agent-ergonomics/README.md)'s workspace lifecycle

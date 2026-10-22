@@ -1,5 +1,10 @@
 # work-batch: several small issues, one pull request
 
+Run these commands in Bash or PowerShell with Bun, Git and GitHub CLI
+available to the command tool. Write tracker bodies and intent input with the
+file-writing tool, then pass file paths; branch names are read from the
+policy command output.
+
 **What problem this solves.** Most of the cost of a pull request is its
 review: the rounds of reviewer comments, the fixes, the waits for continuous
 integration (CI). That cost is paid per pull request, not per line. A team
@@ -164,8 +169,9 @@ form. Each result carries what eligibility and ranking read: priority,
 creation time, the state and the assignee with their ids, every label,
 whether the issue has open children, and which nested lists were truncated.
 A pool is read to the end or the read fails, and it is scoped to the
-configured team (`issue_tracker.team`); an empty label condition is refused,
-since it would widen the pool to every open issue.
+configured team on Linear (`issue_tracker.team`) or the configured repository
+on GitHub Issues; an empty label condition is refused, since it would widen
+the pool to every open issue.
 
 ## Configuration
 

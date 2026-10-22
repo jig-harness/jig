@@ -61,9 +61,7 @@ failures.
    follow with the answer ("Strong default", "Best for", "I propose")? If yes,
    **cut the answer**.
 2. Grep for smells:
-   ```bash
-   grep -riE 'best for|strong default|i propose|use a |introduce a ' /tmp/design-brief-<slug>/uploads/*.md
-   ```
+   Search every uploaded Markdown file for `best for`, `strong default`, `i propose`, `use a ` and `introduce a `, ignoring case, with the harness’s file-search tool.
 3. List every named composite primitive in `01-component-inventory.md`. For
    each: "Is this binding because it already exists (canonical bundle or
    production code), or am I inventing it?" **Cut the inventions.**

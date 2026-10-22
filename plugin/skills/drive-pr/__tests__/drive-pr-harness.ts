@@ -1205,9 +1205,13 @@ emit() {
   if [[ "$gh_kind" == 'pr view' || "$gh_kind" == 'repo view' ]]; then
     # gh returns ONLY the requested fields. A canned full object would hide a
     # caller that accidentally dropped one field from its --json projection.
-    body=$(jq -c --arg fields "$json_fields" 'with_entries(select(.key as $key | ($fields | split(",") | index($key)) != null))' "$1")
+    projection='with_entries(select(.key as $key | ($fields | split(",") | index($key)) != null))'
+    if [ -n "$filter" ]; then
+      jq -r --arg fields "$json_fields" "$projection | ($filter)" "$1"; return
+    fi
+    body=$(jq -c --arg fields "$json_fields" "$projection" "$1")
   else
-    body=$(cat "$1")
+    body=$(< "$1")
   fi
   [ "$slurp" -eq 1 ] && body="[$body]"
   if [ -n "$filter" ]; then printf '%s' "$body" | jq -r "$filter"; else printf '%s' "$body"; fi
@@ -1231,7 +1235,7 @@ if [ "\${1:-}" = "pr" ]; then
     case "$a" in
       *isDraft*)
         n=0
-        [ -f "$F/opening-reads" ] && n=$(cat "$F/opening-reads")
+        [ -f "$F/opening-reads" ] && n=$(< "$F/opening-reads")
         printf '%s' "$(( n + 1 ))" > "$F/opening-reads"
         ;;
     esac
@@ -1279,18 +1283,14 @@ if [ -n "$rest_pr" ]; then
     printf 'HTTP/2.0 502 Bad Gateway\\r\\n\\r\\n'
     exit 1
   fi
-  if printf '%s' "$rest_out" | jq -e 'type == "object"' >/dev/null 2>&1; then
-    rest_state=$(printf '%s' "$rest_out" | jq -r '.state // ""')
-  else
-    rest_state="$rest_out"
-  fi
-  rest_head=$(jq -r '.headRefOid // ""' "$F/pr-view.json" 2>/dev/null || true)
-  rest_body=$(jq -nc --arg st "$rest_state" --arg head "$rest_head" \\
-    '{state: (if $st == "OPEN" then "open"
-              elif ($st == "CLOSED" or $st == "MERGED") then "closed"
-              else ($st | ascii_downcase) end),
-      merged: ($st == "MERGED"),
-      head: {sha: $head}}')
+  rest_view=$(< "$F/pr-view.json") 2>/dev/null || rest_view=''
+  rest_body=$(jq -nc --arg st "$rest_out" --arg view "$rest_view" \\
+    '(try ($st | fromjson) catch null) as $value | (if ($value | type) == "object" then $value.state // "" else $st end) as $state
+     | ($view | try (fromjson.headRefOid // "") catch "") as $head
+     | {state: (if $state == "OPEN" then "open"
+                elif ($state == "CLOSED" or $state == "MERGED") then "closed"
+                else ($state | ascii_downcase) end),
+        merged: ($state == "MERGED"), head: {sha: $head}}')
   printf 'HTTP/2.0 200 OK\\r\\nContent-Type: application/json\\r\\n\\r\\n%s' "$rest_body"
   exit 0
 fi
@@ -1342,7 +1342,7 @@ if [ "$has_input" -eq 1 ]; then
   fi
   cat >> "$F/posted.jsonl"
   n=1
-  [ -f "$F/posted-seq" ] && n=$(( $(cat "$F/posted-seq") + 1 ))
+  [ -f "$F/posted-seq" ] && n=$(( $(< "$F/posted-seq") + 1 ))
   printf '%s' "$n" > "$F/posted-seq"
   id=$(( \${DRIVE_PR_POSTED_ID_BASE:-9000} + n ))
   out=$(jq -nc --argjson id "$id" \\
@@ -1374,10 +1374,10 @@ done
 # Falls through rather than answering here, same as dirty-after-reads above.
 if [ "$announce_sweep" -eq 1 ] && [ -f "$F/dirty-after-sweeps" ]; then
   n=0
-  [ -f "$F/sweep-reads" ] && n=$(cat "$F/sweep-reads")
+  [ -f "$F/sweep-reads" ] && n=$(< "$F/sweep-reads")
   n=$(( n + 1 ))
   printf '%s' "$n" > "$F/sweep-reads"
-  if [ "$n" -gt "$(cat "$F/dirty-after-sweeps")" ]; then
+  if [ "$n" -gt "$(< "$F/dirty-after-sweeps")" ]; then
     echo "an edit no round shipped, landed during a sweep" > leftover-sweep.txt
   fi
 fi
@@ -1403,7 +1403,7 @@ if [ -f "$F/stale-announcement" ] && [ "$announce_sweep" -eq 1 ]; then
     gone=$(jq -R -s 'split("\\n") | map(select(length > 0) | tonumber)' "$F/deleted.jsonl")
   fi
   jq -nc --arg o "\${DRIVE_PR_ANNOUNCE_OPENER_FIXTURE:-}" \\
-         --arg stale "$(cat "$F/stale-announcement")" \\
+         --arg stale "$(< "$F/stale-announcement")" \\
          --argjson gone "$gone" \\
     '[{id: 7, body: ($o + "\\n\\nan earlier run was killed before it could withdraw this\\n\\n<!-- drive-pr-merge-ready: " + $stale + " -->"),
        user: {login: "other"}, author_association: "OWNER"}]
@@ -1435,7 +1435,7 @@ if [ -f "$F/race-after-post" ] && [ -f "$F/posted-seq" ] \\
          --arg quoter "\${DRIVE_PR_QUOTER:-}" \\
          --arg forger "\${DRIVE_PR_FORGER:-}" \\
          --argjson rid "\${DRIVE_PR_RIVAL_ID:-1}" \\
-         --argjson ours "$(( \${DRIVE_PR_POSTED_ID_BASE:-9000} + $(cat "$F/posted-seq") ))" \\
+         --argjson ours "$(( \${DRIVE_PR_POSTED_ID_BASE:-9000} + $(< "$F/posted-seq") ))" \\
     '[{id: $rid, body: ($o + "\\n\\nthe rival driver got there first\\n\\n" + $m),
        user: {login: "other"}, author_association: "OWNER"},
       {id: $ours, body: ($o + "\\n\\nthe announcement this run posted\\n\\n" + $m),
@@ -1501,7 +1501,7 @@ if [ "\${1:-}" = "pr" ]; then
   done
   if [ -n "$has_state" ] && [ -n "$has_q" ]; then
     n=0
-    [ -f "$F/live-probes" ] && n=$(cat "$F/live-probes")
+    [ -f "$F/live-probes" ] && n=$(< "$F/live-probes")
     printf '%s' "$(( n + 1 ))" > "$F/live-probes"
   fi
 fi
@@ -1577,10 +1577,10 @@ if [ -f "$F/state-changes-after" ] && [ "\${1:-}" = "pr" ]; then
   done
   if [ "$wants_state" -eq 1 ]; then
     n=0
-    [ -f "$F/state-reads" ] && n=$(cat "$F/state-reads")
+    [ -f "$F/state-reads" ] && n=$(< "$F/state-reads")
     n=$(( n + 1 ))
     printf '%s' "$n" > "$F/state-reads"
-    if [ "$n" -gt "$(cat "$F/state-changes-after")" ]; then
+    if [ "$n" -gt "$(< "$F/state-changes-after")" ]; then
       emit "$F/pr-view-state-changed.json"; exit 0
     fi
   fi
@@ -1637,10 +1637,10 @@ if [ -f "$F/head-moves-after" ]; then
   done
   if [ "$wants_head" -eq 1 ]; then
     n=0
-    [ -f "$F/head-reads" ] && n=$(cat "$F/head-reads")
+    [ -f "$F/head-reads" ] && n=$(< "$F/head-reads")
     n=$(( n + 1 ))
     printf '%s' "$n" > "$F/head-reads"
-    if [ "$n" -gt "$(cat "$F/head-moves-after")" ]; then
+    if [ "$n" -gt "$(< "$F/head-moves-after")" ]; then
       emit "$F/pr-view-moved.json"; exit 0
     fi
   fi
@@ -1655,7 +1655,7 @@ if [ -f "$F/dirty-on-final-verify" ] && [ "\${1:-}" = "pr" ]; then
   for a in "$@"; do
     if [ "$a" = "state,headRefOid,labels" ]; then
       n=0
-      [ -f "$F/final-verify-reads" ] && n=$(cat "$F/final-verify-reads")
+      [ -f "$F/final-verify-reads" ] && n=$(< "$F/final-verify-reads")
       n=$(( n + 1 ))
       printf '%s' "$n" > "$F/final-verify-reads"
       if [ "$n" -eq 2 ]; then
@@ -1680,10 +1680,10 @@ if [ -f "$F/dirty-after-reads" ]; then
   for a in "$@"; do case "$a" in *headRefOid*|*isDraft*) wants_head=1 ;; esac; done
   if [ "$wants_head" -eq 1 ]; then
     n=0
-    [ -f "$F/head-reads" ] && n=$(cat "$F/head-reads")
+    [ -f "$F/head-reads" ] && n=$(< "$F/head-reads")
     n=$(( n + 1 ))
     printf '%s' "$n" > "$F/head-reads"
-    if [ "$n" -gt "$(cat "$F/dirty-after-reads")" ]; then
+    if [ "$n" -gt "$(< "$F/dirty-after-reads")" ]; then
       echo "an edit no round shipped, landed mid-run" > leftover-midrun.txt
     fi
   fi
@@ -1700,10 +1700,10 @@ if [ -f "$F/commit-after-reads" ]; then
   for a in "$@"; do case "$a" in *headRefOid*|*isDraft*) wants_head=1 ;; esac; done
   if [ "$wants_head" -eq 1 ]; then
     n=0
-    [ -f "$F/head-reads" ] && n=$(cat "$F/head-reads")
+    [ -f "$F/head-reads" ] && n=$(< "$F/head-reads")
     n=$(( n + 1 ))
     printf '%s' "$n" > "$F/head-reads"
-    if [ "$n" -gt "$(cat "$F/commit-after-reads")" ] \\
+    if [ "$n" -gt "$(< "$F/commit-after-reads")" ] \\
        && [ ! -f "$F/commit-after-reads-done" ]; then
       touch "$F/commit-after-reads-done"
       echo "an unreviewed commit, landed mid-run" > unreviewed-midrun.txt
@@ -1722,10 +1722,10 @@ if [ -f "$F/pr-view-unreadable-after" ]; then
   for a in "$@"; do case "$a" in *headRefOid*) wants_head=1 ;; esac; done
   if [ "$wants_head" -eq 1 ]; then
     n=0
-    [ -f "$F/head-reads" ] && n=$(cat "$F/head-reads")
+    [ -f "$F/head-reads" ] && n=$(< "$F/head-reads")
     n=$(( n + 1 ))
     printf '%s' "$n" > "$F/head-reads"
-    if [ "$n" -gt "$(cat "$F/pr-view-unreadable-after")" ]; then
+    if [ "$n" -gt "$(< "$F/pr-view-unreadable-after")" ]; then
       echo "gh-stub: simulated unreadable pr view" >&2
       exit 1
     fi
@@ -1836,10 +1836,10 @@ if [ -f "$F/draft-after-live-state-reads" ]; then
   for a in "$@"; do
     if [ "$a" = "state,headRefOid,mergeable,mergeStateStatus,isDraft,labels" ]; then
       n=0
-      [ -f "$F/live-state-reads" ] && n=$(cat "$F/live-state-reads")
+      [ -f "$F/live-state-reads" ] && n=$(< "$F/live-state-reads")
       n=$(( n + 1 ))
       printf '%s' "$n" > "$F/live-state-reads"
-      if [ "$n" -gt "$(cat "$F/draft-after-live-state-reads")" ]; then
+      if [ "$n" -gt "$(< "$F/draft-after-live-state-reads")" ]; then
         jq '.isDraft = true' "$F/pr-view.json" > "$F/pr-view.json.tmp" && mv "$F/pr-view.json.tmp" "$F/pr-view.json"
       fi
     fi
@@ -1937,7 +1937,7 @@ for a in "$@"; do
       # $F/vanish-key-on-resolve holds the OTHER key to release; \`--if-present\`
       # because a retry of THIS same mutation must not fail a second release.
       if [ -f "$F/vanish-key-on-resolve" ]; then
-        vk=$(cat "$F/vanish-key-on-resolve")
+        vk=$(< "$F/vanish-key-on-resolve")
         ${JSON.stringify(join(SCRIPTS, "drive-state.ts"))} release-held 999 --key "$vk" --if-present >/dev/null 2>&1 || true
       fi
       out='{"data":{"resolveReviewThread":{"thread":{"isResolved":true}}}}'
@@ -1985,7 +1985,7 @@ for a in "$@"; do
         cnt_file="$F/noderead-count-$tid"
         n0=$(cat "$cnt_file" 2>/dev/null || echo 0)
         if [ "$n0" = "0" ] || [ -z "$n0" ]; then
-          rk=$(cat "$F/rehold-key-after-first-noderead")
+          rk=$(< "$F/rehold-key-after-first-noderead")
           if [ "$rk" = "$tid" ]; then
             ${JSON.stringify(join(SCRIPTS, "drive-state.ts"))} hold 999 --key "$tid" --kind thread --outcome accepted --comment-url "https://example.invalid/$tid/rehold" >/dev/null 2>&1 || true
           fi
@@ -2016,7 +2016,7 @@ if [ -f "$F/sweep-thread-listing-fails-once" ]; then
   for a in "$@"; do case "$a" in graphql) is_graphql=1 ;; esac; done
   if [ "$is_graphql" -eq 1 ]; then
     n=0
-    [ -f "$F/graphql-calls" ] && n=$(cat "$F/graphql-calls")
+    [ -f "$F/graphql-calls" ] && n=$(< "$F/graphql-calls")
     n=$(( n + 1 ))
     printf '%s' "$n" > "$F/graphql-calls"
     if [ "$n" -eq 1 ]; then

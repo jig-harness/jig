@@ -21,7 +21,7 @@ Contents: [the loop](#the-loop) · [turning it on](#turning-it-on) ·
 [the journal](#the-journal) · [escalation](#escalation) ·
 [the store contract](#the-store-contract) ·
 [filesystem store](#filesystem-store) · [Notion store](#notion-store) ·
-[command store](#command-store) ·
+[GitHub store](#github-store) · [command store](#command-store) ·
 [where reflection is asked for](#where-reflection-is-asked-for) ·
 [scripts](#scripts) · [left out](#left-out)
 
@@ -110,7 +110,7 @@ the [JSONL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) format:
 
 | Field | Holds |
 |-------|-------|
-| `change` | Where the finding came from: the repository (its `origin` remote without protocol or `.git`, or, without one, `local/<folder>-<hash>`, the hash taken from the folder's path), the branch, and the pull request and issue when known. The issue is read from the branch name with the repository's `issue_tracker.team` |
+| `change` | Where the finding came from: the repository (its `origin` remote without protocol or `.git`, or, without one, `local/<folder>-<hash>`, the hash taken from the folder's path), the branch, and the pull request and issue when known. The issue is read from the branch name, under the configured tracker's key shape and `pull_requests.branch_name` (`eng-12-retry` names `ENG-12` on Linear, `12-retry` names `#12` on GitHub Issues) |
 | `kind` | `error` (something went wrong or cost time), `opportunity` (something could work better) or `unhelpful-content` ([instruction text that cost context without helping](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) |
 | `severity` | `high`, `medium` or `low`; for an opportunity or unhelpful content, its priority on the same scale |
 | `class` | A short kebab-case name for the failure shape, not the incident: `narrow-fix-per-round`, `instruction-missing-precondition`. Findings of one class are counted together, so a class already in the store is reused when it fits |
@@ -223,7 +223,7 @@ unreachable. When the store is unreachable at `reflect` time, the findings
 stay in the journal until the next `reflect` sends them.
 
 **A worktree about to be removed** parks its unsent findings:
-`journal.ts park` moves them to `~/.jig/pending/<repository>-<hash>/` (under
+`journal.ts`’s `park` operation moves them to `~/.jig/pending/<repository>-<hash>/` (under
 `JIG_HOME`; the hash is of the full repository name), and the next `reflect`
 in any worktree of the same repository adopts them, with their send marks. A
 pending file holding another repository's finding is left where it is. Each
@@ -256,8 +256,9 @@ by default) that is this repository's own, a new finding of that class owned by 
 with an `escalated` decision naming the issue, and a comment on the issue
 lists it. The issue is found through the repository's
 [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md).
-The label is shared by every repository filing into the tracker's team, so it
-does not say whose issue it is: the issue carries an
+The label is shared by every repository filing into the same tracker (one
+Linear team, or one GitHub repository's issues), so it does not say whose
+issue it is: the issue carries an
 [owner marker](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), the
 line `Jig owner: <owner>` with the owner percent-encoded, in its description
 (the plan's `owner_marker`, written when the issue is filed), and only an
@@ -288,7 +289,7 @@ any other.
 | `check` | none | `{"ok":true}`, or `{"ok":false,"reason":…,"fix":…}` | Says whether the store is reachable and writable, and how to fix it when not |
 | `append` | JSONL events | `{"stored":[{"id":…,"ref":…}]}` | Every event is stored, or none is reported stored that was not. An `append` that repeats a stored id may store it again; neither it nor a concurrent `append` loses another event. `ref` is a reference a person can open, or `null` |
 | `list` | `{"since":…}` (optional) | JSONL events | Every event, or every event at or after `since`, each id once: copies of one event are returned as one, and of different events under one id, the one whose stored text sorts first. A store may ignore `since` and return all. It never returns a ranked, capped or partial set: when it cannot read everything, it exits non-zero. Naming a finding's class works from this listing, and a capped one cannot show that a class does not exist, so the class would be coined again under a new name |
-| `diagnose` | none | JSONL notices | What the store holds that disagrees with the events as `list` returns them, one notice per line: `{"kind":"id-conflict","id":…,"copies":[{"ref":…,"text":…}]}` for different events under one id, and `{"kind":"status-edited","ref":…,"shown":…,"computed":…}` for a status a person changed by hand where a store shows one. A store with neither returns nothing |
+| `diagnose` | none | JSONL notices | What the store holds that disagrees with the events as `list` returns them, one notice per line: `{"kind":"id-conflict","id":…,"copies":[{"ref":…,"text":…}]}` for different events under one id, `{"kind":"status-edited","ref":…,"shown":…,"computed":…}` for a status a person changed by hand where a store shows one, and `{"kind":"untrusted-record","ref":…}` for records a store ignored because of who wrote them. A store with none of these returns nothing |
 
 Exit codes: 0 done; 1 failed (the reason on standard error); 2 usage; 3
 unavailable (unreachable, or not signed in), which `reflect` treats as "keep
@@ -310,7 +311,7 @@ business.
 **The conformance suite** checks a store command against all of this:
 
 ```sh
-bun <skill-dir>/scripts/store-contract.ts --command "<command> <its options>" [--bulk <events>]
+bun "<skill-dir>/scripts/store-contract.ts" --command "<command> <its options>" [--bulk <events>]
 ```
 
 Point the command at a fresh, empty store. The suite appends findings and
@@ -377,7 +378,7 @@ integration's secret as `NOTION_TOKEN`, then create the database under that
 page:
 
 ```sh
-bun <skill-dir>/scripts/notion-store.ts init --parent <page id or link>
+bun "<skill-dir>/scripts/notion-store.ts" init --parent <page id or link>
 ```
 
 It creates the database with its properties and views (*All changes*,
@@ -437,7 +438,7 @@ not create.
   yet merged, and otherwise its latest decision, so filters and boards on
   Status work. A property write that fails leaves the events stored and says
   so on standard error; the next append, of any event, or
-  `notion-store.ts --database <id> repair` recomputes them.
+  `bun "<skill-dir>/scripts/notion-store.ts" --database <id> repair` recomputes them.
 - **A status changed by hand is kept and surfaced.** The store also writes
   the Status it computed to a property no view shows, *Computed status*.
   Before every property update, `repair` included, a Status that differs from
@@ -480,6 +481,103 @@ not create.
 - **Conformance.** The Notion store passes the conformance suite and the
   behaviour above.
 
+## GitHub store
+
+`reflection.store: github` keeps the reflections as issues in a GitHub
+repository the team chooses, often a private one kept for them. A team that
+works in GitHub reads, searches and links the findings there, while the
+skills read and write the same events as with any other store.
+
+**Setup.** Sign in with `gh auth login` (or export a token as `GH_TOKEN`)
+as an account with write access to the repository, create the label
+`jig-reflection` that marks the store's issues (with `gh label create`, or
+in the repository's label settings; the store's `check` prints the exact
+command when the label is missing), and name the repository:
+
+```yaml
+reflection:
+  store: github
+  github:
+    repository: <owner/name>
+```
+
+`check` reports a missing or refused credential, a repository the account
+cannot see, Issues turned off, an archived repository, an account that
+cannot write to it, and a missing label, each with its fix (for the label,
+the command above).
+
+- **Through GitHub's GraphQL API.** Requests go through `gh api graphql`,
+  signed in as `gh` is, or, with `JIG_GITHUB_GRAPHQL_URL` set, over https to
+  that endpoint (a GitHub Enterprise Server) with the token in `GH_TOKEN` or
+  `GITHUB_TOKEN`. `list` reads the repository's issue listing filtered by the
+  label, open and closed, and every comment of each, page by page to the
+  end; it never uses GitHub's search, whose results stop at a thousand. A
+  page GitHub answers only in part, or a page that says more follow without
+  saying where, fails the read: a store that cannot be read whole is not
+  read at all.
+- **One issue per change.** An issue per issue key (else branch) per
+  repository, labelled `jig-reflection` and titled `[<repository>] <issue or
+  branch>: <first finding's title>`. Each `append` adds a comment holding its
+  events for that change, as many to a comment as GitHub's limit on a comment
+  (65,536 characters) allows, each with the time, the session, and each
+  finding or decision as readable text. A decision goes to its finding's
+  issue; a decision about a finding the store does not hold goes to an issue
+  of its own. An event too long for one comment is refused.
+- **The record is in the comments.** Below each finding and each decision,
+  in a collapsed section named *Record*, is its event as one line in a
+  `json jig-reflection-event` code block. `list` reads events from these
+  blocks and nothing else; a store comment opens with the line
+  `<!-- jig-reflection-events -->`, and other comments are left alone, so
+  people discuss a finding in comments of their own. A record that does not
+  hold a valid event is an error naming its comment. In the readable text,
+  `@` and `#` are kept from mentioning people or linking issues.
+- **Only writers' records count.** A comment is read as a record only when
+  its author can write to the repository (GitHub's author association
+  `OWNER`, `MEMBER` or `COLLABORATOR`); anyone else's is ignored, and
+  `diagnose` reports it (`untrusted-record`, with the comment, its author and
+  the association) so a person sees it. GitHub works the association out
+  when the store is read, so the records of someone who loses access to the
+  repository stop counting: `diagnose` then shows them. An issue opened by
+  someone who cannot write is never the issue a change's events go to.
+- **The title and description are a view.** They are recomputed from the
+  events after every write, against the whole store's
+  [computed state](#computed-state): the change's status (as the Notion
+  store computes it), highest severity, classes, components, repository,
+  issue, branch, pull request, skills, harness, model, Jig version, first and
+  last reflected, and a line per finding. An edit to them is replaced at the
+  next write. The store never closes, reopens, relabels or edits anything
+  else. An update that fails leaves the events stored and says so on
+  standard error; the next append, of any event, or
+  `bun "<skill-dir>/scripts/github-store.ts" --repository <owner/name> repair`
+  recomputes it.
+- **Retries and races are harmless.** `append` reads the store before
+  writing and does not write an event whose exact text is already there, so
+  a retried append adds nothing, and it only ever adds comments, so no write
+  removes another's. A write GitHub answers with a server error may have been
+  applied, so it is not sent again: the append reads as unavailable, and
+  running it again finishes it. Two sessions that open an issue for the same
+  change at the same moment leave two issues; since state comes from events,
+  `list` merges them, and later writes go to the older. The issue's change
+  is named in a hidden line of its description.
+- **Rate limits.** Writes start at least a second apart
+  (`JIG_GITHUB_INTERVAL_MS` changes it), as GitHub asks of requests that
+  create content. A read is retried when GitHub is unavailable; a write only
+  when GitHub refused it for a secondary rate limit, after the wait its
+  `Retry-After` names (a minute when it names none). All the waits of one run
+  stay within a minute together, so a store that keeps being refused reads as
+  unavailable well inside the deadline.
+- **`ref`** is a link to the comment that holds the event.
+- **Exit codes.** 3 (unavailable) for a missing or refused credential,
+  GitHub out of reach, or a rate limit that outlasts the retries; 1 for
+  anything GitHub refused, such as a repository the account cannot see.
+- **Privacy.** The repository holds the findings of every repository that
+  writes to it, and everyone who can read it sees all of them; keep it
+  private unless all of them may be public. Deleting a comment takes its
+  events out of the store, and taking the label off an issue takes all of
+  its events out.
+- **Conformance.** The GitHub store passes the conformance suite and the
+  behaviour above against a local fake of GitHub's API.
+
 ## Command store
 
 `reflection.store: command` runs `reflection.command` (a list of words, or a
@@ -493,10 +591,10 @@ Only when reflection is on; when it is off nothing below happens.
 
 | Where | What it does |
 |-------|--------------|
-| [`drive-pr`](../drive-pr/README.md) | `drive-status.ts` reports `reflectDue`, and `drive.ts` arms `$DRIVE_PR_REFLECT_DUE`, when the review rounds since the last reflection pass the threshold; the pass runs `/jig:reflect` and records it with `drive-state.ts set-reflected` |
+| [`drive-pr`](../drive-pr/README.md) | `drive-status.ts` reports `reflectDue`, and `drive.ts` arms `$DRIVE_PR_REFLECT_DUE`, when the review rounds since the last reflection pass the threshold; the pass runs `/jig:reflect` and records it with the `set-reflected` operation of `drive-state.ts` |
 | [`resolve-review-comments`](../resolve-review-comments/README.md) | `await-round.ts`, at wind-down after a pull request took more than `REFLECT_THRESHOLD` rounds, notes the round count in the journal (a `review-took-many-rounds` finding with an id derived from the pull request) and asks for `/jig:reflect`; the drive's rounds pass through it too |
 | [`do-item`](../do-item/SKILL.md) | Asks for `/jig:reflect` when a recurring pattern scout finds a class of problem |
-| [M12 worktree removal](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/templates/worktree-hooks.md) | The removal hook asks for `/jig:reflect` and runs `journal.ts park`, refusing the removal when parking fails |
+| [M12 worktree removal](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/templates/worktree-hooks.md) | The removal hook asks for `/jig:reflect` and runs `journal.ts`’s `park` operation, refusing the removal when parking fails |
 
 ## Scripts
 
@@ -507,6 +605,7 @@ Only when reflection is on; when it is off nothing below happens.
 | `scripts/store.ts` | One store operation against the configured store, under its deadline |
 | `scripts/filesystem-store.ts` | The filesystem store, behind the contract |
 | `scripts/notion-store.ts` | The Notion store, behind the contract, with `init` and `repair` |
+| `scripts/github-store.ts` | The GitHub store, behind the contract, with `repair` |
 | `scripts/store-contract.ts` | The conformance suite |
 
 ## Left out

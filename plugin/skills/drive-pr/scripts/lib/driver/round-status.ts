@@ -54,7 +54,7 @@ async function previewConflictingRound(
       );
       console.error(reasonLine);
       console.error(
-        `  Fix: git fetch origin && git merge origin/${base}, resolve, run the gates, push. (DRIVE_PR_CONFLICT_REPAIR_ROUNDS=0 disables the automated repair pass)`,
+        `  Fix: bun "<skill-dir>/../../shared/command.ts" -- git fetch origin; after success, bun "<skill-dir>/../../shared/command.ts" -- git merge origin/${base}, resolve, run the gates, push. (DRIVE_PR_CONFLICT_REPAIR_ROUNDS=0 disables the automated repair pass)`,
       );
     }
     return 9;

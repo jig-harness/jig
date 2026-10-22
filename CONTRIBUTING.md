@@ -55,6 +55,20 @@ so moves that are harmless alone collide here.
 - **Install only with `bun install`**: another package manager writes its own
   lockfile beside `bun.lock` and installs versions the gates and CI do not
   test.
+- **One suite run per machine**: `bun run test`, and so `bun run gates`, runs
+  the suite under the machine-wide resource lock
+  ([M12](modules/M12-parallel-agent-ergonomics/README.md)'s
+  `with-resource-lock.ts`), because the suite spawns process trees by the
+  hundred and two runs at once make both slower than the two in sequence.
+  Native Windows uses one worker because concurrent process startups and
+  process-table queries exceed the tests' budgets; other platforms use four. A
+  run that finds the lock held says whose it is and waits, up to an hour by
+  default (`LOCK_TIMEOUT`); CI and `RESOURCE_LOCK_BYPASS=1` skip the lock. A
+  single file run with `bun test <file>` takes no lock. After the last test,
+  a test process kills every descendant a test left running whose identity
+  it can read, and reports on stderr what it killed and what it had to leave
+  (`lib/test-reap-children-bun-preload.ts`): a reported leak is a fixture
+  that did not clean up, not noise.
 
 ## Pull-request lifecycle
 
@@ -244,7 +258,8 @@ violations and 2 when the only failures are stages that could not check.
 Two unrelated failures surface in one run rather than two; fix every stage
 the list names, not only the first.
 
-The repository test command uses 4 parallel file workers. Many suites spawn
+The repository test command uses one file worker on Windows and four on
+other platforms. Many suites spawn
 their own subprocesses; bounding file workers keeps those fixtures within
 their deadlines when several workspaces run checks on one machine.
 
@@ -516,6 +531,13 @@ work as part of the plugin:
   `.claude/skills/<name>/…` for your own files.
 - **Working directory:** scripts run with the consumer repository as the
   working directory and must not depend on being run from the skill directory.
+- **Commands:** skill instructions use single-line `bun` invocations with
+  plain arguments, so the same command works in Bash and PowerShell. Move
+  composition into the script and take generated input from a file. For a
+  direct program call with file input or output, use
+  `plugin/shared/command.ts`; it passes an argument array with a deadline.
+  `scripts/check-skill-shell-neutrality.ts` checks executable examples and
+  composed inline commands across skill instructions and reference pages.
 - **Consumer values:** read them at run time through
   `plugin/shared/consumer.ts` (`readConfig`, or
   `readOverlay` where the skill requires an adopted repository), which merges
