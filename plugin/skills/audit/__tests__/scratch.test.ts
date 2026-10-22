@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   realpathSync,
@@ -53,6 +54,22 @@ describe("scratch.ts --directory", () => {
     expectSpawnExit(r.result, 2);
     expect(r.err).toContain("--directory must name a folder inside");
     expect(readdirSync(outside)).toEqual([]);
+  });
+
+  test("refuses a link to a sibling whose name differs only in case", () => {
+    const base = workdir();
+    const cwd = join(base, "repo");
+    const sibling = join(base, "REPO");
+    mkdirSync(cwd);
+    // Where the filesystem folds case the two names are one folder, and there
+    // is no sibling to escape to.
+    if (existsSync(sibling)) return;
+    mkdirSync(sibling);
+    symlinkSync(sibling, join(cwd, ".context"), "junction");
+    const r = scratch(cwd, "--directory", ".context/jig-audit");
+    expectSpawnExit(r.result, 2);
+    expect(r.err).toContain("--directory must name a folder inside");
+    expect(readdirSync(sibling)).toEqual([]);
   });
 
   test.if(process.platform === "win32")(

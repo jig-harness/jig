@@ -29,10 +29,12 @@ function directory(argv: string[]): string {
   // The created path itself passes a plain prefix test, the containment
   // check taint analysers recognise. Lexically inside is not enough: a
   // symbolic link among the existing components would let the folder be
-  // created wherever it points.
+  // created wherever it points. Real paths are compared exactly as the
+  // filesystem spells them, never case-folded: a Windows directory can be
+  // case-sensitive, where a differently cased sibling is another folder.
   if (
     !parent.startsWith(root) ||
-    !hasPrefix(existingReal(parent), below(realpathSync(cwd)))
+    !existingReal(parent).startsWith(below(realpathSync.native(cwd)))
   )
     fail(
       2,
@@ -73,12 +75,13 @@ export function spelledLike(
 }
 
 /** The real location `path` would be created at: its deepest existing
- *  ancestor resolved through links, with the missing components appended. */
+ *  ancestor resolved through links and spelled as the filesystem stores it,
+ *  with the missing components appended. */
 function existingReal(path: string): string {
   let existing = path;
   while (!existsSync(existing) && dirname(existing) !== existing)
     existing = dirname(existing);
-  return join(realpathSync(existing), relative(existing, path));
+  return join(realpathSync.native(existing), relative(existing, path));
 }
 
 async function main(argv: string[]): Promise<number> {
