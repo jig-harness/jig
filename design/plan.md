@@ -92,27 +92,15 @@ decision reaches the reflection store.
 
 [Herdr](https://herdr.dev) is the workspace runtime Jig's tooling targets
 first ([ADR-0005](../docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
-What is built so far was written for Conductor; this item makes Herdr the
-runtime it is built and tested for. Done when:
+The [Herdr workspace tool](../tools/herdr/README.md), the launcher's `herdr`
+provider and M12's worktree lifecycle in Herdr are in place. Done when:
 
-- the [launcher](../tools/launcher/README.md) has a `herdr` provider: it opens
-  the routed issue's repository as a worktree workspace
-  (`herdr worktree create`), starts the agent in it (`herdr agent start`)
-  and hands it the prompt (`herdr agent prompt`), on the machine or on a
-  remote host, with its own tests; the launcher's other parts do not change,
-  and any consumer repository's own Herdr launch commands are retired in the
-  same rollout;
-- [M12](../modules/M12-parallel-agent-ergonomics/mappings.md)'s worktree
-  lifecycle runs in Herdr: the create hook from the `worktree.created`
-  plugin event, in the created worktree; the remove hook from a wrapper
-  around `herdr worktree remove` that parks before removing (the
-  `worktree.removed` event fires once the checkout is gone, so it only
-  notifies); checked against the Herdr row of its mappings;
+- each consumer repository's own Herdr launch and worktree commands call the
+  workspace tool, and their copies of what it does are deleted, keeping only
+  the repository's own setup as its `.config/worktree-hooks/create`;
 - `drive-pr`, `do-item` and `review`'s reading of a delegated agent's output
   are run in a Herdr workspace on macOS and on Linux, and what differs is
-  fixed or written down;
-- [plugin/EXTENDING.md](../plugin/EXTENDING.md)'s support tables list Herdr
-  wherever they list a workspace runtime.
+  fixed or written down.
 
 ## Next
 
@@ -192,8 +180,7 @@ Done when both gates are in M14's reference with their criteria.
 Practices a working repository validated, for modules that exist today:
 
 - **M10 and M11**:
-  - a ledger of out-of-tree work that blocks promotion;
-  - one self-closing issue per cause of a scheduled failure.
+  - a ledger of out-of-tree work that blocks promotion.
 - **M6 and M7**:
   - an acceptance stage;
   - plan claims checked against the code before building;
@@ -203,7 +190,6 @@ Practices a working repository validated, for modules that exist today:
 - **M0, M4 and M5**:
   - a reference generator for the model roster, when the working tool moves
     here;
-  - instructions that keep working in every runtime;
   - files that change only with an approved decision record.
 
 Done when each module states the practice with its mappings and criteria, and
@@ -312,7 +298,45 @@ skipped the others, each seed lens's eval fixtures have passed live, and the
 tallying script turns a fixture set of threads into one parity row per lens
 version.
 
+### 24. Resource garbage collection for a developer machine
+
+A machine that runs many worktrees fills with what their sessions leave
+behind (fixture processes, scratch directories, container volumes and images,
+merged branches, tool state), each kind cleaned by its own script on its own
+schedule or by nobody.
+[design/resource-gc.md](resource-gc.md) has how it works: one runner, one
+contract (a lifecycle predicate decides, age only guards, report first, fail
+closed, a receipt per run), kinds a repository enables with its own facts,
+and a machine layer for the schedule. What it will build, one pull request
+per step:
+
+- **The runner and the first kinds**: `jig gc` with report, collect,
+  receipts and install; the worktrees kind moved in from a working
+  repository with its scheduler installers; `drive-pr`'s state reaper and the
+  test scratch scope as kinds, the scratch scope writing an owner record
+  beside each directory; the `gc` sections of both configuration
+  layers; M12's practice, scheduler rows and audit criterion.
+- **Containers, volumes and images**, keyed to the compose projects the
+  worktrees derive, and the machine-level dangling images and build cache.
+- **Branches** merged as the forge records it (squash merges included) or
+  into the base by ancestry, with the remote branch gone.
+- **Processes**: the process registry as a shared module, the test runner
+  registering its fixtures, and the kind reaping registered trees whose
+  owner is gone.
+
+Done when a working repository's weekly sweep is the installed `jig gc`
+job, its own reapers and installers are gone, and the report names each
+resource's proof before anything is collected.
+
 ## Later
+
+- **Scheduled-failure reconciliation.** Move an operated reconciler onto the
+  existing tracker interface, following the
+  [design](scheduled-failure-reconciliation.md). M11 states the per-cause
+  issue lifecycle and announced flood breaker; implementation remains open.
+  Done when evidence-only tests feed separate triage, retries and overlapping
+  runs preserve one issue per cause, and suppression and genuine recovery
+  are verified in a consumer with the source copy retired.
 
 - **Jira store for reflections.** One issue per finding, of a custom issue
   type with fields for class, severity, target, harness, model and Jig
@@ -366,7 +390,8 @@ version.
      they feed, so the skills run under Codex on Windows without Git Bash.
 - **Gates and workspace infrastructure.** Cross-worktree locks and
   test infrastructure, remote gates, and a runnable form of
-  [M12](../modules/M12-parallel-agent-ergonomics/README.md)'s workspace lifecycle.
+  [M12](../modules/M12-parallel-agent-ergonomics/README.md)'s workspace lifecycle
+  for runtimes other than Herdr, which has [one](../tools/herdr/README.md#the-worktree-hooks).
 - **Change-area consumer lint.** The `lint-consumers` check moves into the
   [change-areas skill](../plugin/skills/change-areas/README.md): the path
   lists in agent rules, hook configuration and CI workflow triggers checked

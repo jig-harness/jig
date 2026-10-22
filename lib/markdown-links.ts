@@ -535,7 +535,7 @@ function lineFinder(content: string): (index: number) => number {
  * escapes removed and its character references decoded, left to right, so an
  * escaped `&` starts no reference.
  */
-function unescapeDestination(target: string): string {
+export function unescapeDestination(target: string): string {
   return target.replace(
     /\\([!-/:-@[-`{-~])|&(?:#\d{1,7}|#[xX][\da-fA-F]{1,6}|[A-Za-z][A-Za-z\d]{1,31});/g,
     (whole, escaped: string | undefined) =>

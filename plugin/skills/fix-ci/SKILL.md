@@ -270,7 +270,8 @@ Read the JSON. If `errors_found` is 0:
 
 From the parsed JSON, list every error with its file, its type or code, a
 short description and the planned fix. With five or more errors, track them in
-the harness's task list (Claude Code: `TaskCreate`).
+the harness's task list (Claude Code: `TaskCreate`), or a checklist in your
+status message where it has none.
 
 ## Step 2: Fix all errors, in priority order
 

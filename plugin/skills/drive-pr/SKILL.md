@@ -336,7 +336,7 @@ you look:
   semantics, and a detached descendant of the pass holding the pipe open
   would wedge the round.
 - **Fleet listing** — `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts"` lists
-  every drive lock in this clone's state universe with owner, liveness (by
+  every drive lock in this clone's state universe with repository, owner, liveness (by
   exactly the rule recovery uses — `lib/claim.ts`), worktree, start time,
   log path and billing account (the billing identity the pass is
   billing against, a subscription account or an API/Console key, resolved at
@@ -351,7 +351,10 @@ you look:
   unset) `oauthAccount` for a Claude pass,
   `OPENAI_API_KEY` (same fingerprint treatment) / `$CODEX_HOME/auth.json` for
   a Codex one, `null` with a stated reason when neither resolves); `--json`
-  for machines; `--stop <PR>` requests that a live driver stop its pass
+  for machines. Each row's `repository` names the origin's owner/repository,
+  falling back to the clone's Git common directory when origin is unavailable
+  or yields no plain owner/repository pair; the origin URL is never printed.
+  `--stop <PR>` requests that a live driver stop its pass
   tree and then release its locks. Process identity is verified through the
   platform process table (`ps` on POSIX, PowerShell on Windows), and a
   cooperative stop request lets a Windows driver run its own cleanup.

@@ -67,7 +67,8 @@ hook or the interface instead.
 | CI system | Any CI that reports checks to GitHub | `ci.required_checks`; `fix-ci --log` | [Log download and workflow review](#ci-system) are GitHub Actions only |
 | Git remote | `origin` | — | Roadmap item 10 |
 | Agent tool | Claude Code, Codex | [Copying the skills](#agent-tools) for any other | — |
-| Workspace launcher | Linear and Conductor, on macOS | [A provider](#workspace-launcher) in Jig | Herdr provider, the primary target: roadmap item 19 |
+| Workspace launcher | Linear; Herdr (the primary target) on macOS and Linux, locally or on a host over SSH; Conductor on macOS | [A provider](#workspace-launcher) in Jig | — |
+| Workspace runtime | Herdr, through the [workspace tool](https://github.com/jig-harness/jig/blob/main/tools/herdr/README.md) and its plugin; any runtime that creates worktrees and starts sessions, for the skills | M12's [hook points](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md) | — |
 | Operating system | macOS and Linux; Windows for most skills | — | [`drive-pr`, `do-item` and the launcher](#operating-systems) |
 | The repository's language and stack | Any | Practice mappings; Bun runs Jig's tools only | — |
 
@@ -385,14 +386,14 @@ interfaces of its own, each with one implementation chosen in
 
 - a **tracker** ([`tracker.ts`](https://github.com/jig-harness/jig/blob/main/tools/launcher/tracker.ts)): Linear;
 - a **workspace provider** ([`provider.ts`](https://github.com/jig-harness/jig/blob/main/tools/launcher/provider.ts)):
-  Conductor, which runs on macOS only.
+  Herdr, the workspace runtime Jig's tooling targets first
+  ([ADR-0005](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)),
+  on macOS and Linux and on a remote host; and Conductor, which runs on
+  macOS only.
 
 A new provider is a module in `tools/launcher/providers/` that validates its
 per-repository settings and opens the workspace, registered in `index.ts`
-there; a tracker is added the same way under `trackers/`. A Herdr provider
-is next: Herdr is the workspace runtime Jig's tooling targets first
-([ADR-0005](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md),
-[ROADMAP.md](https://github.com/jig-harness/jig/blob/main/ROADMAP.md) item 19).
+there; a tracker is added the same way under `trackers/`.
 
 ## Operating systems
 
@@ -406,9 +407,10 @@ every night, where Windows leaves out only the suites listed in
 | --- | --- | --- | --- | --- |
 | `drive-pr` | yes | yes | Git Bash; full smoke pending | Requires Git for Windows; native PowerShell support is planned |
 | `do-item` | yes | yes | Git Bash; full smoke pending | Requires Git for Windows; native PowerShell support is planned |
-| The launcher | yes | no | no | Its one provider, Conductor, is a macOS app |
+| The launcher | yes | yes, with the Herdr provider | no | Conductor is a macOS app; Herdr runs on macOS and Linux |
+| The Herdr workspace tool | yes | yes | no | Herdr's Windows support is in beta and not yet a target |
 | Every other skill | yes | yes | yes | — |
-| Developing Jig (`bun run gates`) | yes | yes | yes, without the launcher's suite | — |
+| Developing Jig (`bun run gates`) | yes | yes | yes, without the launcher's and the Herdr tool's suites | — |
 
 The supervision code finds and stops Windows processes from native snapshots
 and a polled stop request. Batch command shims run through `cmd.exe`; skill

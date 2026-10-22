@@ -1,11 +1,13 @@
 /** The registered workspace providers, by the name configuration uses. */
 import type { Provider } from "../provider.ts";
 import { conductorProvider } from "./conductor.ts";
+import { herdrProvider } from "./herdr.ts";
 
 // A Map, so a configured name can only ever find a registered provider, never
 // something an object inherits (`constructor`, `toString`).
 const PROVIDERS = new Map<string, () => Provider>([
   ["conductor", () => conductorProvider()],
+  ["herdr", () => herdrProvider()],
 ]);
 
 export function providerNames(): string[] {

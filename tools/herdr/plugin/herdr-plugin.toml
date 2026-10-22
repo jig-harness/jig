@@ -1,0 +1,14 @@
+# Jig's worktree lifecycle for Herdr: runs a repository's create hook
+# (.config/worktree-hooks/create) in each worktree Herdr creates. Herdr runs
+# the command in this directory, so the path to the tool is relative to it.
+# See tools/herdr/README.md.
+id = "jig.worktree-lifecycle"
+name = "Jig worktree lifecycle"
+version = "0.1.0"
+min_herdr_version = "0.8.0"
+description = "Run the repository's M12 create hook in each new worktree"
+platforms = ["linux", "macos"]
+
+[[events]]
+on = "worktree.created"
+command = ["bun", "../workspace.ts", "created"]

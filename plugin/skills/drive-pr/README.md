@@ -168,6 +168,14 @@ configuration, because they describe one machine's layout:
 | `JIG_VERIFICATION_FIT_LOG` | Where `verification-fit.ts` appends its verdicts | `~/.local/state/jig/verification-fit.jsonl` |
 | `DRIVE_PR_REAPER_LAUNCHD_LABEL`, `DRIVE_PR_REAPER_CRONTAB_MARKER` | Name a scheduled `bun "<skill-dir>/scripts/reap-state.ts" --delete` job, so `migrate-state-dir.ts` refuses while it is enabled | Unset: no schedule is checked |
 
+`drives.ts` identifies each drive's repository in both human listings and
+JSON rows (`repository`): the origin's owner/repository, or the clone's Git
+common directory when origin is unavailable or its URL yields no plain
+owner/repository pair. The origin URL itself is never printed, so a credential
+in it stays out of listings. This label is read locally and does not contact
+the hosting service. State, logs and leases for the same PR
+number in different clones stay in separate clone directories.
+
 ### CI hold
 
 Without a hold, every intermediate push runs the repository's full CI, and

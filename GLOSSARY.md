@@ -96,6 +96,24 @@ make, use the entry's term instead.
 - **Load path** — the way a file reaches a runtime's context: read natively,
   or brought in by an import. A text pointer ("see `AGENTS.md`") is not a
   load path; the model may or may not follow it.
+- **Portable fallback** — what an instruction says to do in a runtime that
+  lacks the capability it relies on: read the skill's `SKILL.md` where there
+  is no slash command, ask in plain text where there is no question tool.
+  See [M0](modules/M0-instruction-architecture/README.md#invariant).
+- **Control plane** — a service that tracks an agent's job and can reach a
+  person on its behalf: a job runner or orchestrator that can park a job and
+  raise a question there. A run that has one parks the job for an answer;
+  a run with neither a control plane nor a person to answer stops and states
+  the question.
+  See [M0](modules/M0-instruction-architecture/README.md#invariant).
+- **Host-injected tool** — a tool a launcher or workspace app adds to an
+  agent session without any file in the repository registering it (often an
+  *MCP* server). Searching the repository does not find it and its
+  configuration cannot gate it, so it is a convenience, never a dependency.
+- **Artifact class** — the kind of file a standard governs, decided by what
+  the file does rather than where it lives: runtime code (services, workers,
+  route handlers), one-shot command-line tools that exit after their work,
+  tests, and prose instruction files.
 - **Vendoring** — copying external material into a repo so it remains
   available and stable regardless of the original's location or lifetime.
 - **MCP (Model Context Protocol)** — an open standard for connecting AI
@@ -500,6 +518,23 @@ make, use the entry's term instead.
 
 ## Process
 
+- **Cause fingerprint** — a stable identity for one cause of a scheduled
+  failure, built from the check or prerequisite, its scope and a normalized
+  failure signature. It excludes changing details such as run IDs and times,
+  so repeated failures find one issue. See
+  [M11](modules/M11-process-observability/README.md#scheduled-failures-one-issue-per-cause).
+- **Fencing** — protection against a worker that still believes it holds an
+  expired lock. Each lock acquisition gets a number larger than every earlier
+  one, and every write carries it; the store refuses a write whose number is
+  older than the newest it has seen, so the replaced worker cannot overwrite
+  its successor's work. See the
+  [scheduled-failure reconciliation design](design/scheduled-failure-reconciliation.md#tracker-interface-and-retry-safety).
+- **Flood breaker** — a per-cause limit on repeated failure notifications.
+  After a declared number of consecutive failures it announces suppression,
+  keeps the cause open and continues collecting evidence. Confirmed recovery
+  closes the issue and re-arms reporting; silence does not. See
+  [M11](modules/M11-process-observability/README.md#scheduled-failures-one-issue-per-cause).
+
 - **ADR (architecture decision record)** — a short numbered document capturing
   one significant decision, its context, and its consequences. Append-only
   history: superseded ADRs are marked, not rewritten.
@@ -792,6 +827,20 @@ make, use the entry's term instead.
   worktree sees them, so nothing another worktree, or a person not working
   in it, needs belongs there
   ([memory tiers](modules/M9-tasks-memory/templates/MEMORY-TIERS.md)).
+- **Collection kind** — one class of resource a machine's garbage collector
+  knows how to judge and remove (worktrees, scratch directories, container
+  volumes, merged branches, tool state, registered processes), shipped with
+  its own *lifecycle predicate*. A repository enables a kind and supplies the
+  facts it needs; it cannot register a command in its place
+  ([resource GC design](design/resource-gc.md)).
+- **Lifecycle predicate** — the test that proves a resource is no longer in
+  use, from a fact about its life rather than its age: its pull request
+  merged, its worktree is gone, its owner process exited. Age is only an
+  extra guard on top of it.
+- **Collection receipt** — the record every garbage-collection run leaves,
+  a report-only run included: the kinds it evaluated, each resource with its
+  outcome (collected with its proof and size, would be collected, refused
+  with its reason, unverified) and the exit status.
 - **Machine-local store** — a folder outside every *worktree*, one per clone
   and at a path the user can move, where tools keep what the worktrees of one
   machine share: locks, *leases*, a review loop's records, a working copy of
@@ -1097,6 +1146,11 @@ make, use the entry's term instead.
   hands a contested finding to when the triage rubric cannot settle it. It
   reads the code, rules fix now, reject, won't fix, defer or escalate, and
   never edits; only an escalation reaches a human.
+- **Standing rejection** — the prepared answer to a review finding that
+  contradicts a settled project stance: the finding is closed as *rejected*
+  with a link to the one place the stance is written, however small the
+  asked-for edit. A **standing review stance** is such a stance; the
+  instructions reviewers read point to its source and never restate it.
 - **Moot (as a resolution)** — the terminal state for a review finding whose
   anchored code no longer exists: deleted or rewritten by a later commit.
   Distinct from *rejected* on purpose — rejected asserts the reviewer was
@@ -1525,6 +1579,16 @@ make, use the entry's term instead.
   step, so adding one does not change the rest of the launcher; which exist
   and which are planned is in the
   [launcher's README](tools/launcher/README.md#providers).
+- **Kickoff** — the first prompt an agent is given in a new workspace,
+  usually the pickup skill and the issue key. The
+  [Herdr workspace tool](tools/herdr/README.md) sends it once per piece of
+  work: a retried or repeated launch never sends it to an agent that already
+  has it.
+- **Worktree hooks** — the commands a repository runs when one of its
+  worktrees is created (set it up) and before one is removed (nudge a
+  reflection, keep unsent findings): *M12*'s lifecycle. In Herdr they are the
+  executables `.config/worktree-hooks/create` and `remove`
+  ([Herdr workspace tool](tools/herdr/README.md#the-worktree-hooks)).
 - **Deep link** — a web-style address (`<app>://…`) that opens a desktop
   app at a given place; the launcher's Conductor provider uses one to open a
   workspace with the prompt and the repository already filled in.
@@ -1676,5 +1740,8 @@ identity. See [M10](modules/M10-environments-deploy/README.md#external-precondit
 
 A process that compares intended and observed state and maintains the
 corresponding record. For external preconditions, it maintains one current
-tracker issue while anything fails and closes it after recovery. See
-[M11](modules/M11-process-observability/README.md#one-current-issue-for-external-preconditions).
+tracker issue while anything fails and closes it after recovery. For
+scheduled failures, it opens, updates or closes the issue for each cause from
+complete evidence, retaining progress so retries do not repeat changes. See
+[M11](modules/M11-process-observability/README.md#one-current-issue-for-external-preconditions)
+and [scheduled failures](modules/M11-process-observability/README.md#scheduled-failures-one-issue-per-cause).

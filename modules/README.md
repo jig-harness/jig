@@ -14,7 +14,7 @@ and reference gates.
 
 | Module | Practice area | Runnable in the plugin |
 |--------|---------------|------------------------|
-| [M0 Instruction architecture](M0-instruction-architecture/) | Layered agent-instruction files, conditional rules, glossary, dispositions | — |
+| [M0 Instruction architecture](M0-instruction-architecture/) | Layered agent-instruction files, conditional rules, glossary, dispositions, fallbacks for each runtime, rules scoped by artifact class | — |
 | [M1 Gates & enforcement ladder](M1-gates-enforcement-ladder/) | Quality gates, agent-runtime and git hooks, grep gates and the rules for writing gates, CI authority, suppression registry | [`fix-ci`](../plugin/skills/fix-ci/SKILL.md), [`github-actions`](../plugin/skills/github-actions/SKILL.md) |
 | [M2 Generated-artifact freshness](M2-generated-artifact-freshness/) | Drift gates for anything derived from a source of truth | — |
 | [M3 Change-area catalog](M3-change-area-catalog/) | Path→implication mapping as SSoT with generated projections | [`change-areas`](../plugin/skills/change-areas/README.md) resolves and checks the catalog; [`review`](../plugin/skills/review/SKILL.md) reads it |
