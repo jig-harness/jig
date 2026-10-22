@@ -342,18 +342,28 @@ async function withProbe(
     new Response(run.stderr).text(),
   ]);
   try {
-    let exited = false;
-    const done = run.exited.then(() => {
-      exited = true;
-    });
-    while (!exited) {
-      for (const row of (await captureProcessTree(run.pid)) ?? [])
-        owned.set(`${row.pid}:${row.start}`, {
-          pid: row.pid,
-          start: row.start,
-        });
+    // The run's pid names the run only while its handle is unreaped; a
+    // snapshot read later may find a process that reused it. The run's
+    // creation identity is bound from a snapshot that finished while the
+    // handle was still live, and a snapshot is owned only when its root
+    // carries that identity.
+    const live = () => run.exitCode === null && run.signalCode === null;
+    const done = run.exited;
+    let rootStart: string | undefined;
+    while (live()) {
+      const rows = await captureProcessTree(run.pid);
+      const root = rows?.find((row) => row.pid === run.pid);
+      if (rootStart === undefined && root?.start && live())
+        rootStart = root.start;
+      if (rows && root && root.start === rootStart)
+        for (const row of rows)
+          owned.set(`${row.pid}:${row.start}`, {
+            pid: row.pid,
+            start: row.start,
+          });
       await Promise.race([done, Bun.sleep(100)]);
     }
+    await done;
     const [stdout, stderr] = await output;
     if (existsSync(identityFile))
       identity = JSON.parse(readFileSync(identityFile, "utf8")) as Identity;
