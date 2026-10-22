@@ -77,9 +77,19 @@ export function jobFiles(
         .join("\n")}\n`,
       "jig-gc.timer": `[Unit]\nDescription=Daily Jig resource report\n[Timer]\nOnCalendar=*-*-* ${String(job.hour).padStart(2, "0")}:00:00\nPersistent=true\n[Install]\nWantedBy=timers.target\n`,
     };
-  // Cron interprets percent signs before the shell sees quoting.
   const line = `0 ${job.hour} * * * ${["env", ...Object.entries(job.env).map(([key, value]) => `${key}=${value}`), ...command].map(quote).join(" ")}`;
-  return { crontab: `${line.replace(/%/g, "\\%")} ${CRON_MARKER}\n` };
+  return { crontab: `${cronCommand(line)} ${CRON_MARKER}\n` };
+}
+/**
+ * Cron reads percent signs before the shell sees quoting: an unescaped one
+ * ends the command, and a preceding backslash is its only escape. A value's
+ * own backslash before a percent sign would pair with that escape instead,
+ * and cron has no spelling for a literal backslash-percent, so it is refused.
+ */
+function cronCommand(line: string): string {
+  if (line.includes("\\%"))
+    throw new GcError("Cron values cannot contain a backslash before %");
+  return line.split("%").join("\\%");
 }
 async function execute(command: string[], stdin?: string): Promise<void> {
   const result = await run(command, {
@@ -125,6 +135,9 @@ function installedJob(machine: MachineConfig, script: string): Job {
         ? { LOCK_ROOT: resolve(process.env.LOCK_ROOT) }
         : {}),
       ...(process.env.LOCK_NAME ? { LOCK_NAME: process.env.LOCK_NAME } : {}),
+      ...(process.env.DRIVE_PR_STATE_DIR
+        ? { DRIVE_PR_STATE_DIR: resolve(process.env.DRIVE_PR_STATE_DIR) }
+        : {}),
     },
     hour: machine.hour,
   };
@@ -197,6 +210,26 @@ export async function updateScheduler(
   return scheduler === "launchd"
     ? updateLaunchd(dir, files, remove)
     : updateSystemd(dir, files, remove);
+}
+/** The concrete job a confirmed install would write, shown before confirmation. */
+export function schedulerPreview(
+  machine: MachineConfig,
+  script: string,
+  remove: boolean,
+): string {
+  let scheduler: Scheduler;
+  try {
+    scheduler = detectScheduler();
+  } catch (error) {
+    return `Scheduler preview unavailable: ${(error as Error).message}`;
+  }
+  if (remove)
+    return `Scheduler preview (${scheduler}): the jig-gc job is removed`;
+  const files = jobFiles(scheduler, installedJob(machine, script));
+  return [
+    `Scheduler preview (${scheduler}):`,
+    ...Object.entries(files).map(([name, text]) => `--- ${name}\n${text}`),
+  ].join("\n");
 }
 export function installedScript(script: string): boolean {
   let current = dirname(realpathSync(script));

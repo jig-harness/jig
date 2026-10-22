@@ -157,6 +157,8 @@ export async function collectionPlan(options: {
       (entry) => !selected || resolve(entry.path) === selected,
     );
   if (selected && entries.length === 0) entries = [{ path: selected }];
+  // Receipts are machine-local: planning them must not fetch any base.
+  if (options.kind === "receipts") entries = [];
   const kinds: CollectionKind[] = [];
   for (const entry of entries)
     kinds.push(...(await entryPlan(entry, options, machine)));

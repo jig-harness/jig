@@ -15,6 +15,7 @@ export function scratchProof(
   rows: ProcessRow[] | null,
   idleDays: number,
   now = Date.now(),
+  deadline = Date.now() + 30_000,
 ): Proof {
   if (rows === null)
     return { state: "unverified", reason: "process table unavailable" };
@@ -33,6 +34,10 @@ export function scratchProof(
       live = true;
   };
   const walk = (path: string): void => {
+    // The scan holds the kind's lock; an unbounded tree must not stall it.
+    // The runner records the refusal as unverified.
+    if (Date.now() > deadline)
+      throw new GcError("Scratch scan exceeded its deadline");
     newest = Math.max(newest, lstatSync(path).mtimeMs);
     for (const entry of readdirSync(path, { withFileTypes: true })) {
       const child = join(path, entry.name);

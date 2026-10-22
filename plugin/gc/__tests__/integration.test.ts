@@ -169,8 +169,18 @@ test("install previews without writing a machine file or job", () => {
   const result = run(f, ["install", "--repo", f.repo]);
   expectSpawnExit(result, 0);
   expect(result.stdout.toString()).toContain("Preview only");
+  expect(result.stdout.toString()).toContain("Scheduler preview");
+  if (process.platform !== "win32")
+    expect(result.stdout.toString()).toContain("--scheduled");
   expect(readFileSync(f.homeFile, "utf8")).toBe(previous);
   expect(existsSync(join(f.user, "Library", "LaunchAgents"))).toBe(false);
+});
+test("uninstall reads only machine policy, so a broken checkout cannot block it", () => {
+  const f = setup();
+  writeFileSync(join(f.repo, ".config/jig.yaml"), "gc: {kinds: [unknown]}\n");
+  const result = run(f, ["install", "--repo", f.repo, "--uninstall"]);
+  expectSpawnExit(result, 0);
+  expect(result.stdout.toString()).toContain("Preview only");
 });
 test("the command runs from a copied plugin with no node_modules", () => {
   const f = setup();
@@ -310,6 +320,41 @@ if (${JSON.stringify(name)} === "crontab") {
   },
 );
 
+test.skipIf(
+  skipsOnWindows(
+    "powershell",
+    "GC scheduler installation supports launchd, systemd and cron on macOS/Linux",
+  ),
+)("a failed scheduler update restores the machine configuration", () => {
+  const f = setup();
+  const cache = join(f.root, "installed");
+  cpSync(resolve(import.meta.dir, "../.."), cache, {
+    recursive: true,
+    filter: (source) => !source.includes("__tests__"),
+  });
+  const bin = join(f.root, "bin");
+  mkdirSync(bin);
+  for (const name of ["launchctl", "systemctl", "crontab"])
+    writeFakeProgram(
+      join(bin, name),
+      `#!/usr/bin/env bun
+console.error("no crontab: scheduler unavailable");
+process.exit(1);
+`,
+    );
+  f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
+  writeFileSync(f.homeFile, dump({ gc: { repositories: [] } }));
+  const previous = readFileSync(f.homeFile, "utf8");
+  const result = run(
+    f,
+    ["install", "--repo", f.repo, "--yes"],
+    join(cache, "jig.ts"),
+  );
+  expectSpawnExit(result, 1);
+  expect(result.stderr.toString()).toContain("machine configuration");
+  expect(readFileSync(f.homeFile, "utf8")).toBe(previous);
+});
+
 test("tool-state delegates to the native reaper in report mode", () => {
   const f = setup();
   writeFileSync(
@@ -373,4 +418,23 @@ test("worktree index flags cannot hide edits from the report", () => {
     outcome: "refused",
     reason: "index flags hide possible changes from git status",
   });
+});
+test("collecting receipts alone never fetches a registered repository", () => {
+  const f = setup();
+  writeFileSync(
+    f.homeFile,
+    dump({
+      gc: {
+        repositories: f.machine.repositories.map((entry) => ({
+          ...entry,
+          remote_url: join(f.root, "missing.git"),
+        })),
+        receipts: true,
+      },
+    }),
+  );
+  const result = run(f, ["--collect", "--kind", "receipts", "--json"]);
+  expectSpawnExit(result, 0);
+  const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+  expect(receipt.kinds.map((kind) => kind.name)).toEqual(["receipts"]);
 });

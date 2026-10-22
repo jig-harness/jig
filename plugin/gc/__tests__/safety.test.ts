@@ -4,13 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gitEnvironment } from "../git.ts";
 import { scratchProof } from "../kinds/scratch.ts";
+import { reaperEnvironment } from "../kinds/tool-state.ts";
 import { receiptsKind } from "../kinds/receipts.ts";
 import { sharedGcLock, exclusiveGcLock } from "../../shared/gc-lock.ts";
 import { SCRATCH_OWNER_FILE } from "../../shared/scratch-owner.ts";
 import { boundDeclaration, parseDeclaration, parseMachine } from "../config.ts";
 import { jobFiles } from "../scheduler.ts";
 import { argumentsFor, scheduledCollection } from "../cli.ts";
-import { writeReceipt, receiptPaths } from "../receipts.ts";
+import { readReceipt, writeReceipt, receiptPaths } from "../receipts.ts";
 import type { Receipt } from "../types.ts";
 
 const root = () => mkdtempSync(join(tmpdir(), "gc-safety-"));
@@ -22,7 +23,7 @@ function record(dir: string, pid: number, start: string) {
       version: 1,
       pid,
       start,
-      createdAt: "2000-01-01T00:00:00Z",
+      createdAt: "2000-01-01T00:00:00.000Z",
     }),
   );
 }
@@ -127,6 +128,13 @@ test("a base change can only narrow the confirmed install bounds", () => {
   expect(result.widened).toBe(true);
   expect(result.declaration).toEqual(installed);
 });
+test("a scratch scan past its deadline refuses rather than stalling", () => {
+  const scope = root();
+  writeFileSync(join(scope, SCRATCH_OWNER_FILE), "{}");
+  expect(() => scratchProof(scope, [], 7, Date.now(), 0)).toThrow(
+    "exceeded its deadline",
+  );
+});
 test("machine guards cannot shorten the kind's default or add authority", () => {
   expect(() => parseMachine({ idle_days: { scratch: 1 } })).toThrow(
     "integer from 7",
@@ -156,6 +164,12 @@ test("scheduler files preserve exact argv and explicit environment", () => {
   expect(() => jobFiles("cron", { ...job, command: ["bad\ncommand"] })).toThrow(
     "line breaks",
   );
+  expect(
+    jobFiles("cron", { ...job, env: { LOCK_NAME: "50%" } }).crontab,
+  ).toContain("'LOCK_NAME=50\\%'");
+  expect(() =>
+    jobFiles("cron", { ...job, env: { LOCK_NAME: "a\\%b" } }),
+  ).toThrow("backslash before %");
 });
 test("bad arguments are refused before a sweep", () => {
   for (const args of [
@@ -189,7 +203,7 @@ test("receipt retention preserves the latest run of each kind", async () => {
   const old = writeReceipt(
     receipt(
       "2000-01-01T00-00-00.000Z-1-abcd",
-      "2000-01-01T00:00:00Z",
+      "2000-01-01T00:00:00.000Z",
       "scratch",
     ),
     dir,
@@ -197,7 +211,7 @@ test("receipt retention preserves the latest run of each kind", async () => {
   const kept = writeReceipt(
     receipt(
       "2000-01-02T00-00-00.000Z-1-abcd",
-      "2000-01-02T00:00:00Z",
+      "2000-01-02T00:00:00.000Z",
       "worktrees",
     ),
     dir,
@@ -205,7 +219,7 @@ test("receipt retention preserves the latest run of each kind", async () => {
   writeReceipt(
     receipt(
       "2000-01-03T00-00-00.000Z-1-abcd",
-      "2000-01-03T00:00:00Z",
+      "2000-01-03T00:00:00.000Z",
       "scratch",
     ),
     dir,
@@ -214,6 +228,14 @@ test("receipt retention preserves the latest run of each kind", async () => {
   expect(receiptPaths(dir)).toHaveLength(3);
   expect((await kind.prove({ id: old })).state).toBe("dead");
   expect((await kind.prove({ id: kept })).state).toBe("live");
+});
+test("a receipt whose dates would not sort chronologically is refused", () => {
+  const dir = root();
+  const path = writeReceipt(
+    receipt("2000-10-01T00-00-00.000Z-1-abcd", "October 1, 2000", "scratch"),
+    dir,
+  );
+  expect(() => readReceipt(path)).toThrow("Invalid collection receipt");
 });
 
 test("forge and Git identity overrides are scrubbed case-insensitively", () => {
@@ -229,6 +251,20 @@ test("forge and Git identity overrides are scrubbed case-insensitively", () => {
       PATH: "/bin",
     }),
   ).toEqual({ PATH: "/bin" });
+});
+
+test("the state reaper keeps the relocated state root but not worktree identity", () => {
+  expect(
+    reaperEnvironment("/repo", {
+      DRIVE_PR_STATE_DIR: "/state",
+      DRIVE_PR_WORKTREE: "/wrong",
+      PATH: "/bin",
+    }),
+  ).toEqual({
+    DRIVE_PR_STATE_DIR: "/state",
+    JIG_CONSUMER_ROOT: "/repo",
+    PATH: "/bin",
+  });
 });
 
 test("systemd escapes command dollars while preserving environment dollars", () => {
@@ -247,7 +283,7 @@ test("unfinished receipts retain their action evidence even past retention", asy
   const dir = root();
   const pending = receipt(
     "2000-01-01T00-00-00.000Z-1-abcd",
-    "2000-01-01T00:00:00Z",
+    "2000-01-01T00:00:00.000Z",
     "scratch",
   );
   pending.completed = false;
@@ -255,7 +291,7 @@ test("unfinished receipts retain their action evidence even past retention", asy
   writeReceipt(
     receipt(
       "2000-01-02T00-00-00.000Z-1-abcd",
-      "2000-01-02T00:00:00Z",
+      "2000-01-02T00:00:00.000Z",
       "scratch",
     ),
     dir,

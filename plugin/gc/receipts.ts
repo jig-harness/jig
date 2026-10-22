@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Receipt } from "./types.ts";
 
 export function stateRoot(): string {
@@ -24,6 +24,15 @@ function receiptPath(receipt: Receipt, root: string): string {
   const dir = join(root, receipt.startedAt.slice(0, 10));
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   return join(dir, `${receipt.runId}.json`);
+}
+/** A file's fsync does not persist the directory entry that names it. */
+function syncDirectory(path: string): void {
+  const fd = openSync(path, "r");
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
 }
 function publish(receipt: Receipt, path: string, replace: boolean): void {
   const temporary = `${path}.${crypto.randomUUID()}.tmp`;
@@ -40,6 +49,10 @@ function publish(receipt: Receipt, path: string, replace: boolean): void {
   } finally {
     rmSync(temporary, { force: true });
   }
+  // Removal follows publication, so the day directory's own entry and the
+  // receipt's name must both survive a crash first.
+  syncDirectory(dirname(path));
+  syncDirectory(dirname(dirname(path)));
 }
 export function writeReceipt(receipt: Receipt, root = stateRoot()): string {
   const path = receiptPath(receipt, root);
@@ -81,8 +94,13 @@ export function receiptPaths(root = stateRoot()): string[] {
     );
 }
 const KIND_NAMES = ["scratch", "worktrees", "tool-state", "receipts"];
+/** Retention orders these as text, which is chronological only in this form. */
 function isDate(value: unknown): boolean {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
+  return (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) &&
+    Number.isFinite(Date.parse(value))
+  );
 }
 function isKnownKind(value: unknown): boolean {
   return typeof value === "string" && KIND_NAMES.includes(value);

@@ -24,14 +24,17 @@ export function gitEnvironment(
   );
 }
 export async function gcGit(root: string, args: string[]): Promise<string> {
-  // Observation must not refresh the index or execute a checkout's monitor.
-  // Command-line configuration also propagates to Git's submodule children.
+  // Observation must not refresh the index or execute a checkout's monitor,
+  // and the base fetch must not run hooks, which a hooks path can place in
+  // tracked files. Command-line configuration also reaches submodule children.
   const result = await run(
     [
       "git",
       "--no-optional-locks",
       "-c",
       "core.fsmonitor=false",
+      "-c",
+      "core.hooksPath=/dev/null",
       "-C",
       root,
       ...args,

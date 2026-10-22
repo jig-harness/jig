@@ -24,8 +24,8 @@ criteria:
       before collecting and keeps unregistered or unverified resources.
     observe:
       - "the repository declares the resource kinds its tools mint, their roots or prefixes where needed, and the owner records each predicate requires"
-      - "a scheduled collector reports before removing, records receipts and refuses an unknown lifecycle or an unregistered resource"
-      - "with Jig: gc.kinds declares the shipped kinds; gc install records confirmed bounds in the machine file; checkout or environment configuration cannot widen collection authority"
+      - "the repository's instructions or configuration name the collector that sweeps those kinds, one that reports before removing, records receipts and keeps an unknown lifecycle or an unregistered resource"
+      - "with Jig: .config/jig.yaml sets gc.kinds to the shipped kinds it mints, with gc.worktree_roots and gc.scratch_prefixes where those kinds need them (the machine's installation and its confirmed bounds live outside the repository and are not scored)"
       - "expected-absent only where the repository's tooling leaves no machine-local resources between runs"
 
   - id: branch-reuse-and-footgun-bans-written

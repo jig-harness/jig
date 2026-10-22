@@ -214,30 +214,24 @@ configuration; a remote host, a container or an isolated configuration
 directory needs its own install
 ([where it works](plugin/README.md#where-it-works)).
 
+Agent sessions also leave worktrees, scratch directories and tool state
+behind. The [`jig gc`](plugin/gc/README.md) command, shipped with the plugin,
+reports what remains, checks whether it is still in use, and writes a
+[collection receipt](GLOSSARY.md) for every run. A repository declares the
+resource kinds and paths its tools create; a person confirms those bounds
+when installing a machine's daily job, which supports launchd on macOS,
+systemd user timers on Linux and cron where neither is available. Collecting
+runs read the declaration from the recorded remote base branch and stay
+within the confirmed bounds. Worktrees, scratch directories and tool state
+are currently report-only, because collecting them requires coordination with
+the tools that create and use them; old receipts can be collected while
+keeping the latest report for each repository and kind.
+
 - **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
-- **On the roadmap:** the skills checked inside Herdr (roadmap item 19), and
-  a runnable form of the workspace lifecycle for other runtimes (Later)
-
-## Resource reports and scheduled collection
-
-Agent sessions leave worktrees, scratch directories and tool state on a
-developer machine. The `jig gc` command reports what remains, checks whether
-it is still in use, and writes a [collection receipt](GLOSSARY.md) for every
-run. A repository declares the resource kinds and paths its tools create;
-a person confirms those bounds when installing a machine's daily job.
-Collecting runs read the declaration from the recorded remote base branch
-and stay within the confirmed bounds.
-
-Worktrees, scratch directories and tool state are currently report-only:
-collection requires coordination with the tools that create and use them.
-Old receipts can be collected while keeping the latest report for each
-repository and kind. The job supports launchd on macOS, systemd user timers
-on Linux and cron where neither is available.
-
-- **Tool:** [`jig gc`](plugin/gc/README.md), shipped with the plugin
-- **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
-- **On the roadmap:** coordinated collection and rollout, followed by
-  container, branch and registered-process collection (roadmap item 24)
+- **On the roadmap:** the skills checked inside Herdr (roadmap item 19), a
+  runnable form of the workspace lifecycle for other runtimes (Later), and
+  coordinated resource collection followed by container, branch and
+  registered-process collection (roadmap item 24)
 
 ## One configuration file, read in layers
 

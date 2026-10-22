@@ -63,6 +63,22 @@ function parseReport(text: string): ReaperReport {
   if (!validReport(report)) throw new GcError("Invalid state reaper report");
   return report;
 }
+/**
+ * Worktree identity is dropped, but the relocated state root is the supported
+ * location contract every drive-pr participant shares, so it is kept.
+ */
+export function reaperEnvironment(
+  repository: string,
+  env: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  return {
+    ...gitEnvironment(env),
+    ...(env.DRIVE_PR_STATE_DIR
+      ? { DRIVE_PR_STATE_DIR: env.DRIVE_PR_STATE_DIR }
+      : {}),
+    JIG_CONSUMER_ROOT: repository,
+  };
+}
 export function toolStateKind(
   repository: string,
   declaration: string,
@@ -88,7 +104,7 @@ export function toolStateKind(
       {
         cwd: repository,
         timeoutSec: 600,
-        env: { ...gitEnvironment(), JIG_CONSUMER_ROOT: repository },
+        env: reaperEnvironment(repository),
       },
     );
     if (![0, 1].includes(result.code) || !result.stdout.trim())

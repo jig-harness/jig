@@ -60,6 +60,24 @@ writeFileSync(${JSON.stringify(marker)}, "executed"); process.stdout.write("toke
   expect(readFileSync(index)).toEqual(before);
 });
 
+test("collector ref updates cannot run a hook from the configured hooks path", async () => {
+  const f = repository();
+  const marker = join(f.root, "hook-ran");
+  const hooks = join(f.repo, ".githooks");
+  mkdirSync(hooks);
+  writeFakeProgram(
+    join(hooks, "reference-transaction"),
+    `#!/usr/bin/env bun
+import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(marker)}, "executed");
+`,
+  );
+  f.git("config", "core.hooksPath", ".githooks");
+  await gcGit(f.repo, ["update-ref", "refs/jig-gc/probe", "HEAD"]);
+  await gcGit(f.repo, ["update-ref", "--no-deref", "-d", "refs/jig-gc/probe"]);
+  expect(existsSync(marker)).toBe(false);
+});
+
 test("pull request evidence excludes identically named branches in unrelated forks", () => {
   const f = repository();
   f.git("remote", "add", "origin", "https://github.com/team/repo.git");

@@ -1,7 +1,7 @@
 import { GcError } from "../shared/gc-error.ts";
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { gcConfiguration } from "./config.ts";
+import { gcConfiguration, type MachineConfig } from "./config.ts";
 import { baseDeclaration, gcGit as git } from "./git.ts";
 import { dump, load } from "../shared/yaml.ts";
 import { isMapping } from "../shared/config-layers.ts";
@@ -9,6 +9,7 @@ import { exclusiveGcLock } from "../shared/gc-lock.ts";
 import {
   installedScript,
   previousMachineText,
+  schedulerPreview,
   updateScheduler,
 } from "./scheduler.ts";
 
@@ -20,7 +21,12 @@ export async function install(options: {
   machine: boolean;
 }): Promise<number> {
   const root = resolve(options.repository);
-  const { machine, machinePath, repositoryValues } = gcConfiguration(root);
+  // Removal needs only machine policy: a broken checkout cannot obstruct it.
+  const repositoryText = options.uninstall ? null : undefined;
+  const { machine, machinePath, repositoryValues } = gcConfiguration(
+    root,
+    repositoryText,
+  );
   let repositories = [...machine.repositories];
   if (options.uninstall)
     repositories = options.machine
@@ -57,7 +63,9 @@ export async function install(options: {
     repositories,
     ...(options.machine ? { receipts: false } : {}),
   };
+  const noEntries = next.repositories.length === 0 && !next.receipts;
   console.log(`Machine entry preview (${machinePath}):\n${dump({ gc: next })}`);
+  console.log(schedulerPreview(next, options.script, noEntries));
   if (!options.confirm) {
     console.log(
       "Preview only. Repeat with --yes to confirm these bounds and update the scheduler.",
@@ -71,7 +79,7 @@ export async function install(options: {
   return exclusiveGcLock("install", async () => {
     const original = previousMachineText(machinePath);
     // Refuse a concurrent edit after the preview rather than overwrite it.
-    const current = gcConfiguration(root).machine;
+    const current = gcConfiguration(root, repositoryText).machine;
     if (JSON.stringify(current) !== JSON.stringify(machine))
       throw new GcError(
         "Machine configuration changed during preview; retry install",
@@ -79,19 +87,49 @@ export async function install(options: {
     const values: unknown = original ? load(original) : {};
     if (!isMapping(values))
       throw new GcError("Machine configuration must be a mapping");
-    const file = { ...values, gc: next };
     mkdirSync(dirname(machinePath), { recursive: true, mode: 0o700 });
-    const temporary = `${machinePath}.${process.pid}.tmp`;
+    writeMachine(machinePath, dump({ ...values, gc: next }));
+    let job: string;
     try {
-      writeFileSync(temporary, dump(file), { flag: "wx", mode: 0o600 });
-      renameSync(temporary, machinePath);
-    } finally {
-      rmSync(temporary, { force: true });
+      job = await updateScheduler(next, options.script, noEntries);
+    } catch (error) {
+      throw new GcError(
+        `${message(error)}; ${await rollBack(machinePath, original, machine, options.script)}`,
+      );
     }
-    const noEntries = next.repositories.length === 0 && !next.receipts;
-    console.log(
-      `Scheduler ${noEntries ? "removed" : "updated"}: ${await updateScheduler(next, options.script, noEntries)}`,
-    );
+    console.log(`Scheduler ${noEntries ? "removed" : "updated"}: ${job}`);
     return 0;
   });
+}
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+function writeMachine(path: string, text: string): void {
+  const temporary = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(temporary, text, { flag: "wx", mode: 0o600 });
+    renameSync(temporary, path);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+/** A failed scheduler update restores the previous file and, where it can, the previous job. */
+async function rollBack(
+  path: string,
+  original: string,
+  previous: MachineConfig,
+  script: string,
+): Promise<string> {
+  if (original) writeMachine(path, original);
+  else rmSync(path, { force: true });
+  try {
+    await updateScheduler(
+      previous,
+      script,
+      previous.repositories.length === 0 && !previous.receipts,
+    );
+    return "machine configuration and scheduler job restored";
+  } catch (error) {
+    return `machine configuration restored; previous scheduler job not restored: ${message(error)}`;
+  }
 }

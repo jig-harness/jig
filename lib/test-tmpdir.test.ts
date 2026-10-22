@@ -22,7 +22,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, resolve } from "node:path";
+import { expectSpawnExit } from "./test-helpers/expect-spawn-exit.ts";
 import {
   scopeTestTmpdir,
   TEST_TMPDIR_ENV,
@@ -269,4 +270,31 @@ describe("scopeTestTmpdir", () => {
     between.release();
     expect(envSnapshot()).toEqual(before);
   });
+
+  it.skipIf(SKIP_PERMISSION_SIM)(
+    "a home without a writable admission store still yields a scope",
+    () => {
+      const home = mkdtempSync(join(tmpdir(), "readonly-home."));
+      chmodSync(home, 0o500);
+      try {
+        const module = resolve(import.meta.dir, "test-tmpdir.ts");
+        const result = Bun.spawnSync(
+          [
+            process.execPath,
+            "-e",
+            `const { scopeTestTmpdir } = await import(${JSON.stringify(module)}); scopeTestTmpdir().release();`,
+          ],
+          {
+            env: { ...process.env, HOME: home },
+            stdout: "pipe",
+            stderr: "pipe",
+            timeout: 30_000,
+          },
+        );
+        expectSpawnExit(result, 0);
+      } finally {
+        chmodSync(home, 0o700);
+      }
+    },
+  );
 });
