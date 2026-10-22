@@ -1,4 +1,5 @@
 import { scopedStateDir } from "./scoped-state-dir.ts";
+import { plantRetirableQuarantine } from "./reap-entry-fixture.ts";
 /**
  * reap-state.test.ts — the sweep of drive-pr's artifacts in its per-clone
  * state directory (by default `~/.local/state/jig/drive-pr/<cloneKey>/`).
@@ -1555,19 +1556,10 @@ describe("entry-count warning — the count compaction cannot reduce", () => {
       const pr = "9001";
       writeFileSync(join(d, `drive-pr-${pr}.json`), "{}");
       writeFileSync(join(d, `drive-pr-${pr}.log`), "log\n");
-      // Enough quarantine entries on this ONE merged-PR family to cross the
-      // warn threshold before cleanup. A single `gh` call retires the whole
-      // family at once (every entry shares the same anchor), so this stays
-      // fast even at this scale.
-      const OVER_THRESHOLD = 50_010;
-      for (let i = 0; i < OVER_THRESHOLD; i++) {
-        const owner = i.toString(16).padStart(24, "0");
-        writeFileSync(
-          join(d, `drive-pr-${pr}.json.lock.stale.owner.${owner}`),
-          "",
-        );
-      }
       backdate(d, 30);
+      // Cross the real warning threshold on one merged-PR family. Bound file
+      // creation concurrency so setup does not serialize every metadata write.
+      await plantRetirableQuarantine(d, pr, 50_010);
 
       const r = await reapJson(["--delete"], {
         stateDir: d,
