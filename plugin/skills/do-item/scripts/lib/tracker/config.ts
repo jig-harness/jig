@@ -102,9 +102,11 @@ function refuseAmbiguousStates(states: Record<CanonicalState, string>): void {
  * and changing either would drop the other.
  */
 function refuseSharedLabels(
+  adapter: string,
   states: Record<CanonicalState, string>,
   github: GitHubSettings,
 ): void {
+  if (adapter !== "github") return;
   const { stateLabels } = gitHubModel(states, github);
   for (const [priority, label] of Object.entries(github.priorityLabels)) {
     const state = stateLabels.find(
@@ -161,7 +163,7 @@ export function parseTrackerConfig(
   }
   refuseAmbiguousStates(states);
   const github = parseGitHubSettings(section.github);
-  if (adapter === "github") refuseSharedLabels(states, github);
+  refuseSharedLabels(adapter, states, github);
   return {
     adapter,
     team,

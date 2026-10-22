@@ -135,12 +135,17 @@ export function gitHubModel(
       const carried = labelsMode ? stateLabel(s) : states[s];
       if (carried !== null && names.some((n) => same(n, carried))) found = s;
     }
-    if (found === null && !labelsMode && issue.status !== null)
+    if (found === null && !labelsMode) refuseUnmapped(issue.status);
+    return found ?? "todo";
+  }
+
+  /** Refuse a board option that names no open state; no option is `todo`. */
+  function refuseUnmapped(status: string | null): void {
+    if (status !== null)
       throw new TrackerConfigError(
         "issue_tracker.states",
-        `the ${settings.statusField} option '${issue.status}' names no open state in issue_tracker.states; map it to one, or move the issue to an option that does`,
+        `the ${settings.statusField} option '${status}' names no open state in issue_tracker.states; map it to one, or move the issue to an option that does`,
       );
-    return found ?? "todo";
   }
 
   function stateOf(issue: StateInput): CanonicalState {
