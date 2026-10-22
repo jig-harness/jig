@@ -76,6 +76,7 @@ criteria:
     observe:
       - "a create hook allocates/prints the worktree's port slot"
       - "a remove hook prints a reflection nudge (non-blocking)"
+      - "in Herdr: executable `.config/worktree-hooks/create` and `remove` count as wired only when the repository also tracks how both are reached: creation through a setup script or documented install step that installs Jig's Herdr plugin (tools/herdr/plugin), or through commands or launcher configuration that open worktrees with tools/herdr's `open`, which runs the create hook itself where no plugin is installed; and removal through commands or launcher configuration that remove worktrees with tools/herdr's `remove`; the hook files alone are configured, not wired, since an installed plugin and a habit of opening or removing through the tool are not facts the repository shows"
 
   - id: worktree-namespaces-keyed-and-reaped
     level: standard
