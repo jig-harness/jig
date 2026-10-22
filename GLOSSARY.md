@@ -810,6 +810,20 @@ make, use the entry's term instead.
   worktree sees them, so nothing another worktree, or a person not working
   in it, needs belongs there
   ([memory tiers](modules/M9-tasks-memory/templates/MEMORY-TIERS.md)).
+- **Collection kind** — one class of resource a machine's garbage collector
+  knows how to judge and remove (worktrees, scratch directories, container
+  volumes, merged branches, tool state, registered processes), shipped with
+  its own *lifecycle predicate*. A repository enables a kind and supplies the
+  facts it needs; it cannot register a command in its place
+  ([resource GC design](design/resource-gc.md)).
+- **Lifecycle predicate** — the test that proves a resource is no longer in
+  use, from a fact about its life rather than its age: its pull request
+  merged, its worktree is gone, its owner process exited. Age is only an
+  extra guard on top of it.
+- **Collection receipt** — the record every garbage-collection run leaves,
+  a report-only run included: the kinds it evaluated, each resource with its
+  outcome (collected with its proof and size, would be collected, refused
+  with its reason, unverified) and the exit status.
 - **Machine-local store** — a folder outside every *worktree*, one per clone
   and at a path the user can move, where tools keep what the worktrees of one
   machine share: locks, *leases*, a review loop's records, a working copy of
