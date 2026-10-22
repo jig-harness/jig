@@ -42,19 +42,13 @@ included (leaving them out under-reports a new file, often the one most in
 need of a gate):
 
 ```bash
-set -o pipefail
-BASE=$(git merge-base origin/main HEAD) &&
-  { git diff -z --no-renames --name-only "$BASE" &&
-    git ls-files -z --others --exclude-standard; } |
-  bun "${CLAUDE_SKILL_DIR}/scripts/resolve.ts" --files - -z
+bun "${CLAUDE_SKILL_DIR}/scripts/resolve.ts" --worktree --base origin/main
 ```
 
 Use the repository's base branch for `origin/main`. An empty list means
-nothing changed, and owes no checks: `pipefail` makes a git command that
-fails fail the pipeline instead of handing the resolver an empty list, and
-`-z` passes the paths separated by null bytes, so a name git would quote (non-ASCII,
-a quote, a backslash) still matches its area's globs; a line-per-path list
-that holds a quoted path is refused. Other entry points:
+nothing changed, and owes no checks. The script reads the merge base, tracked
+diff and untracked paths internally, keeps path bytes intact and stops on any
+failed Git command. Other entry points:
 `--base <branch>` (a pull request's diff, `origin/<branch>...HEAD`), `--event
 push` (every commit since the push event's `before`, or `--before <sha>`;
 the last commit without one), `--event workflow_dispatch --since <ref>`

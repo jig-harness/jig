@@ -523,11 +523,12 @@ describe("drive-state.ts durability", () => {
       // get ONE runnable invocation, not `drive-state.ts` alone on one line
       // and `claim-held ...` as a bogus separate command on the next. Each
       // command has to sit fully inside its own line, script name and
-      // subcommand together — including `--pushed-sha`, which the claim
-      // requires.
+      // subcommand together. The portable wrapper derives the full HEAD
+      // before invoking the provenance-checked claim.
       expect(out).toContain(
-        '`drive-state.ts claim-held 999 --key K --kind finding --pushed-sha "$(git rev-parse HEAD)"`\nfirst.',
+        '`bun "<skill-dir>/scripts/portable.ts" claim-held 999 --key K --kind finding`\nfirst.',
       );
+      expect(out).not.toContain("$(git rev-parse HEAD)");
       expect(out).toContain(
         "`drive-state.ts release-held 999 --key K --token T`",
       );

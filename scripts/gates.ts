@@ -36,6 +36,7 @@ import { checkRoadmap } from "./check-roadmap.ts";
 import { checkContextBudget } from "./check-context-budget.ts";
 import { checkSupplyChainLockstep } from "./check-supply-chain-lockstep.ts";
 import { checkPlugin } from "./check-plugin.ts";
+import { checkSkillShellNeutrality } from "./check-skill-shell-neutrality.ts";
 import { checkSkillFallbacks } from "./check-skill-fallbacks.ts";
 const root = join(import.meta.dir, "..");
 
@@ -149,6 +150,7 @@ export const CHECKS: Stage[] = [
   check("review-risk.ts --check", checkReviewRisk),
   check("check-roadmap.ts", checkRoadmap),
   check("check-plugin.ts", checkPlugin),
+  check("check-skill-shell-neutrality.ts", checkSkillShellNeutrality),
 ];
 
 /**

@@ -26,7 +26,7 @@
 > Return two things. First, your synthesis, as the survey prompt asks.
 > Second, answers for every criterion of **your survey's modules** that the
 > draft leaves unscored, one line each, in the format the audit's
-> `record.ts fill` reads:
+> `record.ts`’s `fill` operation reads:
 >
 > ```text
 > M1/ci-runs-gates-on-pr: mechanical | .github/workflows/ci.yml:12 runs the gate set on pull_request; fit.json: required on main

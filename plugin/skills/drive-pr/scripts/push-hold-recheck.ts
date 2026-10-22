@@ -17,9 +17,10 @@
  * Opt-in by the environment, never by guessing: `guarded-push.ts` exports
  * `$DRIVE_PR_HOLD_RECHECK_PR` (and `$DRIVE_PR_MAILBOX_DIR`) to the `git push`
  * it spawns, plus `$DRIVE_PR_HOLD_RECHECK_ABORT_FILE`, which this script writes
- * only when it aborts the push for a hold. A push nobody wrapped — a developer's own — carries neither, and
- * the lefthook entry short-circuits in shell before this script (and a bun
- * startup) ever runs.
+ * only when it aborts the push for a hold. A push nobody wrapped — a
+ * developer's own — leaves the PR variable unset. The documented hook starts
+ * Bun for every push; this script then exits before reading the mailbox when
+ * that variable is unset.
  *
  * Fail-closed like every other reader of the directive log: a hold, or a
  * directive log this cannot read, aborts the push (exit 17 — the hook's
@@ -42,8 +43,7 @@ import {
 
 async function main(): Promise<number> {
   const raw = process.env.DRIVE_PR_HOLD_RECHECK_PR;
-  // Unset: not a guarded push. The lefthook entry already skips before
-  // reaching here; this keeps the script itself safe to run by hand. SET but
+  // Unset: not a guarded push; return before reading the mailbox. SET but
   // empty is not "unset" — it falls through to the malformed refusal below.
   if (raw === undefined) return 0;
   if (!isDigits(raw)) {

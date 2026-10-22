@@ -47,10 +47,11 @@ a command below says to run it inside the base snapshot (see
 [Policy comes from the base branch](#policy-comes-from-the-base-branch-not-the-change-under-review)).
 Never `cd` into the skill directory.
 
-Run shell examples in Bash; on Windows, use Git Bash from Git for Windows
-with Bun, Git and Git Bash’s bundled utilities on `PATH`. The file-list
-commands need null-delimited records (`sort -zu`, `read -r -d ''` and
-`grep -qzxF`) to preserve paths containing spaces and shell punctuation.
+The commands run in PowerShell, Bash and other shells with Bun, Git and
+GitHub CLI on `PATH`. Replace placeholders with literal values from the
+preceding output. Keep the shipped bootstrap configuration flags: they prevent
+the reviewed tree’s Bun configuration or environment files from running
+before setup has created the trusted snapshot.
 
 ### Consumer configuration
 
@@ -59,7 +60,7 @@ Every field is optional. Read them from the base branch's copy of
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
-| `repository.base_branch` | The branch the change is compared against (`origin/<branch>`) | The clone's `origin/HEAD` when it has one, else `gh repo view --json defaultBranchRef -q .defaultBranchRef.name` |
+| `repository.base_branch` | The branch the change is compared against (`origin/<branch>`) | The clone's `origin/HEAD` when it has one, else the default branch from GitHub repository metadata |
 | `adr.rules_file` | Path, from the repository root, to the machine-readable ADR rules file (`pattern_rules`, and optionally `semantic_rules` and `artifact_detection`) | Detected: the one tracked file named `adr-rules.yaml`, `.adr-rules.yaml` or `adr-rules.yml`, or `rules.yaml` or `rules.yml` inside an `adr-rules/` directory, outside test fixtures and templates. No file: Tier 1 runs the generic checks only and says so in the summary |
 | `drive.validation_plan_command` | The command that reads the changed files (one per line) on stdin and prints the validation plan as JSON, including `reviewSkills` (mandatory specialist review skills) and optionally `postDeploy` | No plan command: resolve the catalog with the change-areas resolver (below), or there are no catalog-mandated specialist gates |
 | `drive.change_areas_catalog` | Path to the change-area catalog (YAML whose `areas:` map holds area key → `{paths, impliedBy, review: {skills}, postDeploy, …}`) | No catalog: skip the catalog steps and say so in the summary |
@@ -90,191 +91,111 @@ that reads the rules from there, because a change could point
 `adr.rules_file` at a weaker file that also exists on the base branch, or
 move its rules file out of discovery.
 
-Two rules carry the invariant into every command below; a step that breaks
-either one leaks the reviewed tree into policy:
+The review helper enforces these boundaries without shell pipelines or
+environment assignments:
 
-- **A policy command's inputs are enumerated, not filtered.** Nothing ambient
-  from the reviewed tree or from the caller's session reaches a command that
-  applies policy (the ADR `locate.ts` script, the M5 rule check, the
-  validation plan command, any rule detector or contract check). Removing
-  the variables known to be dangerous does not hold: the Jig scripts
-  read the repository and overlay from `JIG_*` variables, git reads
-  `GIT_DIR` and its siblings, the rule check reads its window and strictness
-  from the environment, and Bun loads a `.env` file and a `bunfig.toml` from
-  the current directory on its own, so each new reader is one more variable
-  to forget. Instead, each such command starts from an empty environment
-  (`env -i`) and receives only these values:
-
-  | Variable | Value |
-  |----------|-------|
-  | `PATH`, `HOME` | the caller's, so that tools are found; `PATH` must not name a directory inside the reviewed tree |
-  | `JIG_CONSUMER_ROOT` | `<base-tree>` |
-  | `JIG_OVERLAY` | `<base-tree>/.config/jig.yaml` |
-  | `JIG_USER_LAYER` | `off`, so the caller's user layer (`$HOME/.jig/jig.yaml`) is not read: `HOME` is passed for tools, and the policy comes from the base branch's file alone |
-  | `RULES` (rule check only) | `<base-tree>/<rulesFile>` |
-  | `WINDOW`, `STRICT` (rule check only) | left unset, so the check's defaults apply (a two-line `follow_check` window, warnings not counted as failures), unless the base branch's own gate definition sets them: then the values written there, read from `<base-tree>` |
-
-  Every Bun invocation also takes `--no-env-file`, so no `.env` file is
-  loaded, and `--config=<bunfig>`, so the base snapshot's runtime
-  configuration applies instead of the current directory's (a `bunfig.toml`
-  can name a `preload` script that runs before the command). Give any other
-  runtime that reads configuration or environment files from the current
-  directory the same treatment. The shape, with the command's own arguments
-  after it:
-
-  ```bash
-  env -i PATH="$PATH" HOME="$HOME" \
-    JIG_CONSUMER_ROOT="<base-tree>" \
-    JIG_OVERLAY="<base-tree>/.config/jig.yaml" \
-    JIG_USER_LAYER=off \
-    bun --no-env-file --config="<bunfig>" <script> <arguments>
-  ```
-
-- **One effective file list, separated by null bytes, built and checked
-  once.** The list of files under review is collected once during setup
-  (step 3) and every later step reads only that list: classification, the
-  catalog, the rule checks and Tier 1. Git writes a path with a non-ASCII
-  byte (`src/café.ts`) quoted and escaped unless asked for null-terminated
-  output (`core.quotePath`), so a list held one path per line names files
-  that do not exist. Produce the list with `-z` (`git diff -z --name-only`,
-  `git ls-files -z`), store it in a file rather than a shell variable, and
-  consume it with `while IFS= read -r -d '' f` or `xargs -0`. A path that
-  contains a newline is rejected when the list is built, which stops the
-  review: some commands take one path per line (the validation plan command
-  does), and there such a path would split into two records naming files
-  that do not exist.
+- Policy commands receive an enumerated environment: the caller's `PATH`
+  and `HOME`, the native host variables needed to locate tools on Windows
+  (`SYSTEMROOT`, `WINDIR`, `COMSPEC`, `PATHEXT`, `TEMP`, `TMP`,
+  `USERPROFILE`), `NoDefaultCurrentDirectoryInExePath=1`,
+  `JIG_CONSUMER_ROOT=<base-tree>`,
+  `JIG_OVERLAY=<base-tree>/.config/jig.yaml`, and `JIG_USER_LAYER=off`.
+  The helper derives `PATH` from absolute directories outside the reviewed
+  tree, dropping relative and reviewed-tree entries before its first Git or
+  GitHub CLI invocation. It stops if no trusted directory remains.
+  Its own Git and GitHub CLI calls add only the variables they need to reach
+  a remote (SSH agent, proxies, certificate bundles, GitHub CLI configuration
+  and tokens, `APPDATA`, `LOCALAPPDATA`); policy commands never receive them.
+  The rule check additionally receives `RULES=<base-tree>/<rulesFile>`.
+  `WINDOW` and `STRICT` stay unset; where the base branch requires other
+  values, run its trusted gate wrapper with the `run` operation below.
+  Every policy Bun child starts inside the snapshot with `--no-env-file`
+  and the snapshot's `bunfig.toml`, or an empty configuration when that file
+  is absent. Its configured preloads finish there before a trusted startup
+  helper enters the reviewed tree for a content check. This keeps relative
+  preload paths inside the snapshot while retaining the check's normal
+  command-line entry point. The shared process runner adds its own Windows
+  cancellation registry (`JIG_PROCESS_REGISTRY_DIR`), enforces a deadline of
+  60 seconds and reaps descendants; ambient tracing variables are not
+  forwarded. A policy command that leaves unfinished descendants fails even
+  when its direct process exits successfully.
+- One effective file list is stored outside both trees, separated by null
+  bytes. Git supplies null-byte-delimited output; no shell splits or unquotes it.
+  The helper deduplicates it and rejects line breaks because a configured
+  validation plan receives one path per line. Deleted paths remain in the
+  list for classification and catalog routing; content checks skip files
+  that no longer exist. Every later step reads this same list.
 
 Set up once per review:
 
-1. **Resolve the base once.** First resolve the default branch, the same way
-   the configuration table does: the clone's `origin/HEAD` when it has one,
-   else the name GitHub reports. Read the overlay from that branch's copy,
-   never from the change:
+1. **Create the trusted snapshot and file list.** Run from the reviewed
+   repository. The helper resolves `origin/HEAD`, or asks GitHub for the
+   default branch, fetches it, and reads its overlay through the shared
+   configuration reader with user and environment configuration disabled.
+   It fetches `repository.base_branch`, or the default branch when absent,
+   and creates a detached temporary checkout. For a pull request, pass
+   `--pr <PR>` to use that pull request's base instead.
 
-   ```bash
-   if default=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD); then
-     default=${default#origin/}
-   else
-     default=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name)
-   fi
-   [ -n "$default" ] || { echo "ERROR: cannot resolve the default branch" >&2; exit 1; }
-   git fetch origin "$default" &&
-     git show "origin/$default:.config/jig.yaml"
+   ```sh
+   bun --no-env-file --config="${CLAUDE_SKILL_DIR}/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/scripts/review.ts" setup
    ```
 
-   An overlay absent on the default branch means every field takes its
-   default. `<base>` is then the pull request's own base when reviewing a
-   pull request (`gh pr view <PR> --json baseRefName -q .baseRefName`), else
-   that overlay's `repository.base_branch`, else the default branch. Every
-   later step uses this `<base>`; none resolves it again.
-2. **Check out the base snapshot.** Create a temporary, detached checkout of
-   it and remove it when the review ends. `<base-tree>` below stands for its
-   absolute path, `<effective-files>` for the absolute path of a temporary
-   file outside both trees that holds the effective file list, and
-   `<bunfig>` for `<base-tree>/bunfig.toml`, or, when the base branch has
-   none, an empty file outside both trees (Bun refuses a `--config` path
-   that does not exist):
+   With explicit files, append `--files` and the paths as separate quoted
+   arguments. Otherwise the list includes all changes since the merge base,
+   committed, staged, unstaged and untracked, with both sides of renames:
 
-   ```bash
-   git fetch origin "<base>"
-   git worktree add --detach "<base-tree>" "origin/<base>"
-   [ -f "<base-tree>/bunfig.toml" ] || : > "<bunfig>"
-   # when the review ends:
-   git worktree remove --force "<base-tree>"
-   rm -f "<effective-files>" "<bunfig>"   # the last only when it was created
+   ```sh
+   bun --no-env-file --config="${CLAUDE_SKILL_DIR}/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/scripts/review.ts" setup --files "src/orders/orders.service.ts" "docs/plan.md"
    ```
 
-3. **Collect the effective file list once.** With `--files`, the named
-   files are the list, exactly as given and relative to the reviewed tree's
-   root. Otherwise it is the cumulative change: everything the branch
-   changes since it left the base branch, committed or not, tracked or
-   untracked, so a pull request with a clean working tree still yields its
-   full change set. Then reject any path containing a newline. From the
-   reviewed tree's root:
+   Keep the JSON output's `session`, `base`, `baseTree`, `files` and `bunfig`
+   values. `<session>` below is the absolute `session` path. Use its one
+   `base` value throughout the review. To inspect the fixed file list as a
+   JSON array without changing path boundaries:
 
-   ```bash
-   set -o pipefail
-   if [ "$#" -gt 0 ]; then   # the --files arguments, one per positional parameter
-     printf '%s\0' "$@" | sort -zu > "<effective-files>"
-   else
-     VALIDATION_BASE=$(git merge-base "origin/<base>" HEAD) || { echo "ERROR: cannot resolve merge-base against origin/<base>" >&2; exit 1; }
-     { git diff --no-renames --name-only -z "$VALIDATION_BASE" &&
-       git ls-files --others --exclude-standard -z; } | sort -zu > "<effective-files>"
-   fi || { echo "ERROR: cannot collect the files under review" >&2; exit 1; }
-   if [ "$(tr -cd '\n' < "<effective-files>" | wc -c)" -ne 0 ]; then
-     echo "ERROR: a file under review has a newline in its path; rename it, then review again" >&2; exit 1
-   fi
+   ```sh
+   bun --no-env-file --config="${CLAUDE_SKILL_DIR}/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/scripts/review.ts" files "<session>"
    ```
 
-   The list includes deleted files. They count for classification (deleting
-   a migration is a migration change) and for the catalog, but have no
-   content to check: content checks take only the entries that are still
-   files in the reviewed tree, and the deletion itself is reviewed as part
-   of the diff. The filter that keeps those entries skips the others
-   explicitly, so a deleted last entry, or a change that only deletes, still
-   leaves the pipeline successful:
+2. **Resolve policy inside the snapshot.** ADR discovery and configuration
+   reads use the trusted snapshot, with the enumerated environment:
 
-   ```bash
-   while IFS= read -r -d '' f; do if [ -f "$f" ]; then printf '%s\0' "$f"; fi; done < "<effective-files>"
+   ```sh
+   bun --no-env-file --config="${CLAUDE_SKILL_DIR}/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/scripts/review.ts" locate "<session>"
+   bun --no-env-file --config="${CLAUDE_SKILL_DIR}/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/scripts/review.ts" config "<session>" drive.change_areas_catalog
    ```
 
-   Each step below that names `<effective-files>` means this list. To read
-   it, `tr '\0' '\n' < "<effective-files>"` prints one path per line.
-4. **Resolve configuration inside the snapshot.** Read the overlay from
-   `<base-tree>/.config/jig.yaml`, and locate the ADR rules
-   file, configured or detected, by running the `/jig:adr` skill's
-   script inside the snapshot with the enumerated environment, so both the
-   configured path and the discovery come from the base branch:
+   Read `rulesFile` from the locator's JSON. A nonzero exit is blocking:
+   report the missing or ambiguous policy input and stop. Every configured
+   policy value comes from this snapshot. Never read the reviewed tree's
+   overlay to select a policy path.
 
-   ```bash
-   cd "<base-tree>" &&
-     env -i PATH="$PATH" HOME="$HOME" \
-       JIG_CONSUMER_ROOT="<base-tree>" \
-       JIG_OVERLAY="<base-tree>/.config/jig.yaml" \
-       JIG_USER_LAYER=off \
-       bun --no-env-file --config="<bunfig>" "${CLAUDE_SKILL_DIR}/../adr/scripts/locate.ts"
+3. **Run policy over the reviewed data.** Pass the base-relative rule-check
+   script and rules-file paths. The script comes from the snapshot, while
+   its relative file arguments resolve against the reviewed tree. This
+   preserves anchored exclusions and checks added files' actual contents:
+
+   ```sh
+   bun --no-env-file --config="${CLAUDE_SKILL_DIR}/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/scripts/review.ts" check "<session>" "<path to adr-rules-check.ts>" "<rulesFile>"
    ```
 
-   Read `rulesFile` from its output; the rules are
-   `<base-tree>/<rulesFile>`, and the catalog is
-   `<base-tree>/<drive.change_areas_catalog>`. A non-zero exit means the
-   configured path does not exist on the base branch or several rules files
-   match there: report the message and stop.
-5. **Run policy commands from the snapshot, over the reviewed data.**
-   Commands, specialist skills and their scripts are the base snapshot's
-   copies, and each runs with the enumerated environment. A command that
-   reads only the file list (the validation plan command) runs inside
-   `<base-tree>` with the list on its standard input. A command that reads
-   file contents runs from the reviewed tree's root, because the reviewed
-   files and their repository-relative paths are there, but takes its
-   script and its rules from the snapshot by absolute path. The M5 ADR rule
-   check (`adr-rules-check.ts`) shows why the paths must stay
-   repository-relative: it opens each argument relative to the current
-   directory, silently skips an argument that is not a file, and matches
-   each rule's `exclude` globs against the argument as given. Run from the
-   snapshot with the same paths, it would check the base branch's old copies
-   and skip every added file; given absolute paths, no anchored exclusion
-   (`scripts/**`, say) would match. Running from the reviewed tree's root is
-   also where that tree's own `.env` and `bunfig.toml` sit, which is why the
-   environment is enumerated rather than inherited. So, from the reviewed
-   tree's root:
+   An empty surviving file list succeeds without invoking a check that
+   might interpret no arguments as a request to inspect the whole tree.
+   For another trusted Bun script, choose `snapshot` for commands that read
+   policy or the file list, or `reviewed` for checks that read changed file
+   contents. The script path is always relative to the snapshot; extra
+   arguments follow it:
 
-   ```bash
-   (
-     set -o pipefail
-     while IFS= read -r -d '' f; do if [ -f "$f" ]; then printf '%s\0' "$f"; fi; done < "<effective-files>" |
-       env -i PATH="$PATH" HOME="$HOME" \
-         JIG_CONSUMER_ROOT="<base-tree>" \
-         JIG_OVERLAY="<base-tree>/.config/jig.yaml" \
-         JIG_USER_LAYER=off \
-         RULES="<base-tree>/<rulesFile>" \
-         xargs -0 bun --no-env-file --config="<bunfig>" "<base-tree>/<path to adr-rules-check.ts>"
-   )
+   ```sh
+   bun --no-env-file --config="${CLAUDE_SKILL_DIR}/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/scripts/review.ts" run "<session>" reviewed "<path to contract-check.ts>"
    ```
 
-   When no file is left to check, `xargs` runs the check once with no
-   arguments (it reports nothing to check) or, on macOS, not at all; either
-   way the step succeeds.
+4. **Clean up at the end, including after a blocked review.** This removes
+   the detached worktree and its temporary list, configuration and session:
+
+   ```sh
+   bun --no-env-file --config="${CLAUDE_SKILL_DIR}/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/scripts/review.ts" cleanup "<session>"
+   ```
 
 A policy file the change adds or edits is a proposed policy change: review
 its diff as part of the change (a weakened rule or a removed gate is itself a
@@ -284,7 +205,7 @@ the summary.
 
 ## Quick start
 
-```bash
+```text
 # Review uncommitted changes (most common)
 /jig:review
 
@@ -337,13 +258,12 @@ the repository's own layout, using these generic types:
 **When reviewing an existing pull request** (`--pr`, or a pull request
 already open for this branch), read prior findings before starting Tier 1:
 
-```bash
-bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/list-unresolved-threads.ts" <PR>
+```sh
+bun --no-env-file --config="${CLAUDE_SKILL_DIR}/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/list-unresolved-threads.ts" <PR>
 ```
 
-Not `gh pr view <PR> --comments`, which returns only top-level conversation
-comments and silently omits every inline review thread, including blocking
-ones.
+The `--comments` mode of `gh pr view` returns only top-level conversation
+comments and omits every inline review thread, including blocking ones.
 
 **Resolve the catalog for every review, not only catalog changes.** The table
 above routes tiers; it does not route specialist gates. Those come from the
@@ -352,51 +272,22 @@ follows the frontend row to Tier 1 only, and would otherwise skip a
 catalog-mandated design-language review, exactly as an infrastructure diff
 would skip its infrastructure review.
 
-Use the same `<effective-files>` list. Substitute `<catalog>`
-(`drive.change_areas_catalog`, from the base snapshot's overlay) and
-`<validation_plan_command>` (`drive.validation_plan_command`, likewise):
+Resolve the catalog with the session's fixed list and trusted configuration:
 
-```bash
-# Check if the catalog is in the diff. grep reads the list file itself, one
-# null-terminated entry at a time (-z), rather than from a pipe: `-q` exits at
-# the first match without draining its input, and under `pipefail` the
-# SIGPIPE that leaves a still-writing producer would report a failure even
-# though grep matched.
-grep -qzxF "<catalog>" "<effective-files>" && echo "catalog_changed"
-
-# Resolve the change areas of the files under review inside the snapshot,
-# with the enumerated environment. The plan command's contract is one path
-# per line on its standard input, so the list is converted at that boundary
-# only (setup step 3 has already rejected any path containing a newline).
-# When the command runs bun, add `--no-env-file --config="<bunfig>"` to it.
-tr '\0' '\n' < "<effective-files>" |
-  (cd "<base-tree>" &&
-    env -i PATH="$PATH" HOME="$HOME" \
-      JIG_CONSUMER_ROOT="<base-tree>" \
-      JIG_OVERLAY="<base-tree>/.config/jig.yaml" \
-      JIG_USER_LAYER=off \
-      sh -c '<validation_plan_command>')
+```sh
+bun --no-env-file --config="${CLAUDE_SKILL_DIR}/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/scripts/review.ts" catalog "<session>"
 ```
 
-When the repository declares a catalog but no plan command, resolve it with
-the [change-areas](../change-areas/SKILL.md) skill's resolver, run the same
-way, and read `reviewSkills` and `postDeploy` from its JSON. It
-reads the catalog `drive.change_areas_catalog` names from the snapshot's
-overlay, relative to the snapshot (an absolute path stays as it is), and
-`--no-validation` lets a catalog that declares no validation profiles route
-its reviews. The resolver reads the list as setup step 3 wrote it (`-z`), so
-every path reaches it byte for byte:
-
-```bash
-(cd "<base-tree>" &&
-  env -i PATH="$PATH" HOME="$HOME" \
-    JIG_CONSUMER_ROOT="<base-tree>" \
-    JIG_OVERLAY="<base-tree>/.config/jig.yaml" \
-    JIG_USER_LAYER=off \
-    bun --no-env-file --config="<bunfig>" \
-      "${CLAUDE_SKILL_DIR}/../change-areas/scripts/resolve.ts" \
-      --files - -z --format json --no-validation) < "<effective-files>"
-```
+The helper prints `catalog_changed` on stderr when the configured catalog
+is listed and prints the validation plan's JSON on stdout. A configured
+`drive.validation_plan_command` runs inside the snapshot through Bun's
+portable shell, with the enumerated environment and one path per line on
+stdin. Commands requiring a particular external shell must name that shell
+and have it installed; Jig's own procedure needs no Git Bash. Without a
+plan command, the sibling change-areas resolver reads the same null-byte-delimited list
+with `--no-validation` and resolves `reviewSkills` and `postDeploy` against
+the snapshot's catalog. No catalog yields an empty plan and must be
+mentioned in the summary.
 
 Any failure is a blocking finding of the catalog's own validation (below),
 an unknown field included: a misspelt `review` would otherwise carry no
@@ -436,25 +327,15 @@ pattern within a few lines. When a rule names a `detector` command, that
 command is authoritative for the part of the rule it covers; a clean grep of
 the `pattern` alone never clears such a rule. If the repository wires its ADR
 rule check as a command (often inside its gates), run the base snapshot's copy
-of it over `<effective-files>`, as setup step 5 shows, instead of
+of it over `<effective-files>`, as setup step 3 shows, instead of
 hand-grepping. Critical violations **block** further progress.
 
-```bash
-# Example quick checks over the listed files that still exist. grep exits 1
-# when nothing matches, which is a clean result here, and 2 on an error (an
-# unreadable file, say). An error from any grep in any iteration fails the
-# block, after every file has been checked.
-(
-  status=0
-  while IFS= read -r -d '' f; do
-    if [ -f "$f" ]; then
-      grep -Hn "console\.log(" -- "$f" || { rc=$?; [ "$rc" -eq 1 ] || status=$rc; }
-      grep -Hn ": any\|as any" -- "$f" || { rc=$?; [ "$rc" -eq 1 ] || status=$rc; }
-    fi
-  done < "<effective-files>"
-  exit "$status"
-)
+```sh
+bun --no-env-file --config="${CLAUDE_SKILL_DIR}/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/scripts/review.ts" patterns "<session>"
 ```
+
+The helper prints example `console.log`, `: any` and `as any` matches with
+file and line numbers, skips deleted files, and fails on a read error.
 
 A grep hit is not itself a finding. Read it against the rule's own scope and
 the repository's instructions on which standards apply to which kinds of file
@@ -477,8 +358,8 @@ findings but must not gain new ones). List every such trailer in the summary
 as a finding for a person to confirm, with the rule and the reason given,
 whatever the gates say:
 
-```bash
-git log --format='%h %(trailers:key=Ratchet-Loosen,valueonly,separator=%x2C )' <base>..HEAD | grep -v '^[0-9a-f]* *$'
+```sh
+bun --no-env-file --config="${CLAUDE_SKILL_DIR}/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/scripts/review.ts" trailers "<session>"
 ```
 
 **Tier 2, contract validation (mid-size model):** run the repository's own

@@ -6,12 +6,12 @@
  * Usage:
  *     bun tracker.ts children <issue-key>
  *     bun tracker.ts transition <issue-key> <canonical-state>
- *     bun tracker.ts comment <issue-key>          # body on stdin
+ *     bun tracker.ts comment <issue-key> --body-file body.md
  *     bun tracker.ts states                       # canonical → tracker names
  *     bun tracker.ts issue-states                 # item keys on stdin → open/closed
  *     bun tracker.ts labels                       # label role → tracker labels
- *     bun tracker.ts create                       # new issue as JSON on stdin
- *     bun tracker.ts update <issue-key>           # patch as JSON on stdin
+ *     bun tracker.ts create --input issue.json
+ *     bun tracker.ts update <issue-key> --input patch.json
  *     bun tracker.ts search [--include-closed] [--] <text>
  *     bun tracker.ts relations <issue-key>
  *     bun tracker.ts relate <issue-key> <blocks|related|duplicate> <target-key>
@@ -42,6 +42,7 @@
  * project or issue that does not resolve to exactly one included.
  */
 
+import { readFile } from "node:fs/promises";
 import { runEntry } from "./lib/cli.ts";
 import { ownTrackerConfig } from "./lib/tracker/config.ts";
 import {
@@ -241,9 +242,10 @@ interface Operation {
   arity: number;
   takes: string;
   flags?: string[];
+  input?: "input" | "body-file";
   /** Print the result indented, for a person reading a listing. */
   indent?: boolean;
-  run: (args: string[], flags: Set<string>) => Promise<unknown>;
+  run: (args: string[], flags: Set<string>, input?: string) => Promise<unknown>;
 }
 
 const OPERATIONS: Record<string, Operation> = {
@@ -294,8 +296,10 @@ const OPERATIONS: Record<string, Operation> = {
   comment: {
     arity: 1,
     takes: "one issue key; the body comes on stdin",
-    run: async ([key]) => {
-      const body = await readStdin();
+    input: "body-file",
+    run: async ([key], _flags, input) => {
+      const body =
+        input === undefined ? await readStdin() : await readFile(input, "utf8");
       if (body.trim() === "") throw new UsageError("the comment body is empty");
       await openTracker().postComment(key as string, body);
       return { issue: key, commented: true };
@@ -304,16 +308,23 @@ const OPERATIONS: Record<string, Operation> = {
   create: {
     arity: 0,
     takes: "no argument; the issue comes on stdin",
-    run: async () => {
-      const issue = parseNewIssue(await readStdin());
+    input: "input",
+    run: async (_args, _flags, input) => {
+      const issue = parseNewIssue(
+        input === undefined ? await readStdin() : await readFile(input, "utf8"),
+      );
       return openTracker().createIssue(issue);
     },
   },
   update: {
     arity: 1,
     takes: "one issue key; the patch comes on stdin",
-    run: async ([key]) => {
-      const patch = parsePatch(key as string, await readStdin());
+    input: "input",
+    run: async ([key], _flags, input) => {
+      const patch = parsePatch(
+        key as string,
+        input === undefined ? await readStdin() : await readFile(input, "utf8"),
+      );
       await openTracker().updateIssue(key as string, patch);
       return { issue: key, updated: true };
     },
@@ -369,36 +380,71 @@ function isUsage(err: unknown): err is Error {
   );
 }
 
-export async function main(argv: string[]): Promise<number> {
-  const [name, ...rest] = argv;
-  const op =
-    name !== undefined && Object.hasOwn(OPERATIONS, name)
-      ? OPERATIONS[name]
-      : undefined;
-  if (op === undefined)
-    return usage(
-      name === undefined ? "missing operation" : `unknown operation: ${name}`,
-    );
-  // `--` ends the options: what follows is positional, so text that starts
-  // with `--` can be searched for.
-  const end = rest.indexOf("--");
-  const options = end === -1 ? rest : rest.slice(0, end);
-  const flags = options.filter((a) => a.startsWith("--"));
+function operationNamed(name: string | undefined): Operation {
+  if (name === undefined) throw new UsageError("missing operation");
+  if (!Object.hasOwn(OPERATIONS, name))
+    throw new UsageError(`unknown operation: ${name}`);
+  return OPERATIONS[name] as Operation;
+}
+
+/** The separator and everything after it are positional, even flag-like text. */
+function optionBoundary(args: string[]): number {
+  const separator = args.indexOf("--");
+  return separator === -1 ? args.length : separator;
+}
+
+function requiredInputPath(path: string | undefined, flag: string): string {
+  if (!path || path.startsWith("--"))
+    throw new UsageError(`--${flag} requires a path`);
+  return path;
+}
+
+/** Remove the operation's file option before checking its remaining arguments. */
+function inputFile(op: Operation, rest: string[]): string | undefined {
+  if (op.input === undefined) return undefined;
+  const index = rest.slice(0, optionBoundary(rest)).indexOf(`--${op.input}`);
+  if (index === -1) return undefined;
+  const path = requiredInputPath(rest[index + 1], op.input);
+  rest.splice(index, 2);
+  return path;
+}
+
+function operationArguments(op: Operation, name: string, rest: string[]) {
+  const boundary = optionBoundary(rest);
+  const options = rest.slice(0, boundary);
+  const flags = options.filter((arg) => arg.startsWith("--"));
   const args = [
-    ...options.filter((a) => !a.startsWith("--")),
-    ...(end === -1 ? [] : rest.slice(end + 1)),
+    ...options.filter((arg) => !arg.startsWith("--")),
+    ...rest.slice(boundary + 1),
   ];
-  const unknown = flags.filter((f) => !(op.flags ?? []).includes(f));
-  if (unknown.length > 0) return usage(`unknown option: ${unknown.join(", ")}`);
-  if (args.length !== op.arity) return usage(`${name} takes ${op.takes}`);
+  const allowed = new Set(op.flags);
+  const unknown = flags.filter((flag) => !allowed.has(flag));
+  if (unknown.length)
+    throw new UsageError(`unknown option: ${unknown.join(", ")}`);
+  if (args.length !== op.arity)
+    throw new UsageError(`${name} takes ${op.takes}`);
+  return { args, flags: new Set(flags) };
+}
+
+function reportFailure(error: unknown): number {
+  if (isUsage(error)) return usage(error.message);
+  console.error(
+    `ERROR: ${error instanceof Error ? error.message : String(error)}`,
+  );
+  return 1;
+}
+
+export async function main(argv: string[]): Promise<number> {
   try {
-    const out = await op.run(args, new Set(flags));
+    const [name, ...rest] = argv;
+    const op = operationNamed(name);
+    const input = inputFile(op, rest);
+    const { args, flags } = operationArguments(op, name as string, rest);
+    const out = await op.run(args, flags, input);
     console.log(JSON.stringify(out, null, op.indent === true ? 2 : undefined));
     return 0;
-  } catch (err) {
-    if (isUsage(err)) return usage(err.message);
-    console.error(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
-    return 1;
+  } catch (error) {
+    return reportFailure(error);
   }
 }
 
