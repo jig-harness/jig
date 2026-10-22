@@ -259,29 +259,29 @@ fields:
     pattern: "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
     repository_only: true
-    since: next
+    since: 0.82.0
   issue_tracker.github.states_from:
     type: enum
     values: [labels, project]
     default: labels
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
-    since: next
+    since: 0.82.0
   issue_tracker.github.project:
     type: string
     pattern: "^https://github\\.com/(orgs|users)/[A-Za-z0-9-]+/projects/[1-9][0-9]*/?$"
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
     repository_only: true
-    since: next
+    since: 0.82.0
   issue_tracker.github.status_field:
     type: string
     default: Status
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
-    since: next
+    since: 0.82.0
   issue_tracker.github.priority_labels:
     type: map
     keys: [urgent, high, medium, low]
     read_by: [do-item, drive-pr, file-issue, reflect, work-batch]
-    since: next
+    since: 0.82.0
   issue_tracker.labels.epic:
     type: string
     read_by: [do-item, resolve-review-comments, drive-pr, work-batch]
@@ -547,7 +547,7 @@ fields:
     type: string
     pattern: "^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
     read_by: [reflect, review-reflections]
-    since: next
+    since: 0.82.0
   reflection.journal:
     type: path
     read_by: [reflect, resolve-review-comments]
