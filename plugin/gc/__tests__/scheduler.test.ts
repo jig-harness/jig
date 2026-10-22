@@ -24,8 +24,9 @@ function fakeSystemctl(paths: Markers & { log: string }): string {
 import { appendFileSync, existsSync, rmSync, writeFileSync } from "node:fs";
 const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(log)}, args.join(" ") + "\\n");
-if (args[1] === "is-enabled") process.exit(existsSync(${JSON.stringify(enabled)}) ? 0 : 1);
-if (args[1] === "is-active") process.exit(existsSync(${JSON.stringify(active)}) ? 0 : 1);
+if (process.env.BUS_DOWN && args[1].startsWith("is-")) { console.error("Failed to connect to bus"); process.exit(1); }
+if (args[1] === "is-enabled") { const on = existsSync(${JSON.stringify(enabled)}); console.log(on ? "enabled" : "disabled"); process.exit(on ? 0 : 1); }
+if (args[1] === "is-active") { const on = existsSync(${JSON.stringify(active)}); console.log(on ? "active" : "inactive"); process.exit(on ? 0 : 3); }
 if (args[1] === "disable") {
   if (existsSync(${JSON.stringify(failDisable)})) { console.error("Failed to stop jig-gc.timer"); process.exit(1); }
   rmSync(${JSON.stringify(enabled)}, { force: true });
@@ -90,6 +91,8 @@ function systemdFixture(state: { enabled: boolean; active: boolean }) {
       env: {
         ...process.env,
         HOME: home,
+        // homedir() reads USERPROFILE on Windows.
+        USERPROFILE: home,
         PATH: `${bin}${delimiter}${process.env.PATH}`,
         ...env,
       },
@@ -123,4 +126,14 @@ test("a replacement timer that cannot be stopped fails the restoration", () => {
   expectSpawnExit(result, 1);
   expect(result.stderr.toString()).toContain("Failed to stop jig-gc.timer");
   expect(readFileSync(f.log, "utf8")).not.toContain("daemon-reload");
+});
+
+test("a scheduler state that cannot be read stops before anything changes", () => {
+  const f = systemdFixture({ enabled: true, active: true });
+  const result = f.restore({ BUS_DOWN: "1" });
+  expectSpawnExit(result, 1);
+  expect(result.stderr.toString()).toContain(
+    "Cannot establish scheduler state",
+  );
+  expect(readFileSync(f.log, "utf8")).not.toContain("disable");
 });

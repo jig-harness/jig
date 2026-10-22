@@ -164,10 +164,7 @@ async function updateLaunchd(
 ): Promise<string> {
   const path = join(dir, `${LABEL}.plist`);
   const domain = `gui/${process.getuid?.()}`;
-  const loaded = await run(["launchctl", "print", `${domain}/${LABEL}`], {
-    timeoutSec: 30,
-  });
-  if (loaded.code === 0)
+  if (await launchdLoaded(`${domain}/${LABEL}`))
     await execute(["launchctl", "bootout", `${domain}/${LABEL}`]);
   if (remove) rmSync(path, { force: true });
   else {
@@ -234,8 +231,56 @@ function readOptional(path: string): string | null {
     throw error;
   }
 }
-async function succeeds(command: string[]): Promise<boolean> {
-  return (await run(command, { timeoutSec: 30 })).code === 0;
+/**
+ * A probe answers yes, answers a documented no, or establishes nothing. Only
+ * the first two are state: a timeout, a spawn failure or an unrecognised
+ * answer throws, so an unreadable state is never recorded as an absent one.
+ * `negative` names the documented "no" answers; `state` reads one from output.
+ */
+async function probe(
+  command: string[],
+  negative: (result: { code: number; stdout: string }) => boolean,
+): Promise<boolean> {
+  const result = await run(command, { timeoutSec: 30 });
+  if (!result.timedOut && !result.spawnFailed) {
+    if (result.code === 0) return true;
+    if (negative(result)) return false;
+  }
+  const how = result.timedOut
+    ? "timed out"
+    : result.spawnFailed
+      ? "could not start"
+      : `exited ${result.code}`;
+  throw new GcError(
+    `Cannot establish scheduler state: ${command.join(" ")} ${how}: ${(result.stderr || result.stdout).trim()}`,
+  );
+}
+function state(stdout: string): string {
+  return stdout.trim().split("\n")[0] ?? "";
+}
+// launchctl print exits 113 for a service it does not know.
+function launchdLoaded(target: string): Promise<boolean> {
+  return probe(["launchctl", "print", target], ({ code }) => code === 113);
+}
+// https://www.freedesktop.org/software/systemd/man/latest/systemctl.html
+const NOT_ENABLED = new Set([
+  "disabled",
+  "linked",
+  "linked-runtime",
+  "masked",
+  "masked-runtime",
+  "not-found",
+]);
+const NOT_ACTIVE = new Set([
+  "inactive",
+  "failed",
+  "activating",
+  "deactivating",
+]);
+function systemdState(verb: string, negative: Set<string>): Promise<boolean> {
+  return probe(["systemctl", "--user", verb, "jig-gc.timer"], ({ stdout }) =>
+    negative.has(state(stdout)),
+  );
 }
 export async function snapshotScheduler(
   scheduler: Scheduler = detectScheduler(),
@@ -256,26 +301,21 @@ export async function snapshotScheduler(
     names.map((name) => [join(dir, name), readOptional(join(dir, name))]),
   );
   if (scheduler === "launchd") {
-    const loaded = await succeeds([
-      "launchctl",
-      "print",
-      `gui/${process.getuid?.()}/${LABEL}`,
-    ]);
+    const loaded = await launchdLoaded(`gui/${process.getuid?.()}/${LABEL}`);
     return { scheduler, files, enabled: loaded, active: loaded };
   }
-  const unit = ["systemctl", "--user"];
   return {
     scheduler,
     files,
-    enabled: await succeeds([...unit, "is-enabled", "jig-gc.timer"]),
-    active: await succeeds([...unit, "is-active", "jig-gc.timer"]),
+    enabled: await systemdState("is-enabled", NOT_ENABLED),
+    active: await systemdState("is-active", NOT_ACTIVE),
   };
 }
 /** Stops the replacement job; only a timer never installed may be skipped. */
 async function stopReplacement(launchd: boolean): Promise<void> {
   if (launchd) {
     const target = `gui/${process.getuid?.()}/${LABEL}`;
-    if (await succeeds(["launchctl", "print", target]))
+    if (await launchdLoaded(target))
       await execute(["launchctl", "bootout", target]);
   } else if (existsSync(join(jobDirectory("systemd"), "jig-gc.timer")))
     await execute(["systemctl", "--user", "disable", "--now", "jig-gc.timer"]);

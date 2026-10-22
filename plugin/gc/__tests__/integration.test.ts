@@ -294,7 +294,7 @@ test.skipIf(
 import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 const args=process.argv.slice(2); appendFileSync(${JSON.stringify(log)}, JSON.stringify({ program:${JSON.stringify(name)},args })+"\\n");
 if (${JSON.stringify(name)} === "launchctl") {
-  if(args[0]==="print") process.exit(existsSync(${JSON.stringify(loaded)})?0:1);
+  if(args[0]==="print") process.exit(existsSync(${JSON.stringify(loaded)})?0:113);
   if(args[0]==="bootstrap") writeFileSync(${JSON.stringify(loaded)},"loaded");
   if(args[0]==="bootout") rmSync(${JSON.stringify(loaded)},{force:true});
 }
@@ -358,7 +358,12 @@ test.skipIf(
   for (const name of ["launchctl", "systemctl", "crontab"])
     writeFakeProgram(
       join(bin, name),
+      // Prior state reads as absent; every change fails.
       `#!/usr/bin/env bun
+const args = process.argv.slice(2);
+if (args[0] === "print") process.exit(113);
+if (args[1] === "is-enabled") { console.log("disabled"); process.exit(1); }
+if (args[1] === "is-active") { console.log("inactive"); process.exit(3); }
 console.error("no crontab: scheduler unavailable");
 process.exit(1);
 `,
@@ -395,13 +400,13 @@ if (${JSON.stringify(name)} === "crontab") {
   else { const text = await Bun.stdin.text(); refuse(text); writeFileSync(${JSON.stringify(cron)}, text); }
 }
 if (${JSON.stringify(name)} === "launchctl") {
-  if (args[0] === "print") process.exit(existsSync(${JSON.stringify(active)}) ? 0 : 1);
+  if (args[0] === "print") process.exit(existsSync(${JSON.stringify(active)}) ? 0 : 113);
   if (args[0] === "bootout") rmSync(${JSON.stringify(active)}, { force: true });
   if (args[0] === "bootstrap") { refuse(readFileSync(args[2], "utf8")); writeFileSync(${JSON.stringify(active)}, ""); }
 }
 if (${JSON.stringify(name)} === "systemctl") {
-  if (args[1] === "is-enabled") process.exit(existsSync(${JSON.stringify(enabled)}) ? 0 : 1);
-  if (args[1] === "is-active") process.exit(existsSync(${JSON.stringify(active)}) ? 0 : 1);
+  if (args[1] === "is-enabled") { const on = existsSync(${JSON.stringify(enabled)}); console.log(on ? "enabled" : "disabled"); process.exit(on ? 0 : 1); }
+  if (args[1] === "is-active") { const on = existsSync(${JSON.stringify(active)}); console.log(on ? "active" : "inactive"); process.exit(on ? 0 : 3); }
   if (args[1] === "disable") { rmSync(${JSON.stringify(enabled)}, { force: true }); rmSync(${JSON.stringify(active)}, { force: true }); }
   if (args[1] === "enable") { refuse(readFileSync(${JSON.stringify(join(units, "jig-gc.service"))}, "utf8")); writeFileSync(${JSON.stringify(enabled)}, ""); if (args.includes("--now")) writeFileSync(${JSON.stringify(active)}, ""); }
   if (args[1] === "start") writeFileSync(${JSON.stringify(active)}, "");
