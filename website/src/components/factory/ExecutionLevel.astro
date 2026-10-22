@@ -3,7 +3,6 @@
 // the follow-up return, the pull-request loop in text, and the station table.
 import "../../styles/factory.css";
 import ActorLine from "../ActorLine.astro";
-import Plate from "../Plate.astro";
 import SectionHead from "../SectionHead.astro";
 import ReturnRail from "./ReturnRail.astro";
 import StationBox from "../StationBox.astro";
@@ -17,7 +16,7 @@ const prLoop = await Promise.all(f.prLoop.map(async (s) => ({ n: s.n, html: awai
 const lineRows = await Promise.all(f.line.map(async (s) => ({ ...s, whatHtml: await inline(s.what) })));
 ---
 
-  <SectionHead id="execution" label="B · Execution: the work-item line" note={`one work item, ${countWord(f.line.length)} stations`}><Plate name="line" width="300px" /></SectionHead>
+  <SectionHead id="execution" label="B · Execution: the work-item line" note={`one work item, ${countWord(f.line.length)} stations`} />
   <figure class="level-fig" aria-label={`The ${countWord(f.line.length)} execution stations, who runs each, and what each hands on`}>
     <ol class="row seven">
       {f.line.map((s, i) => <StationBox station={s} arrow={i < f.line.length - 1} handoff={HANDOFFS[s.id]?.label} />)}

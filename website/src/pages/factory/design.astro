@@ -1,5 +1,6 @@
 ---
 import DesignLevel from "../../components/factory/DesignLevel.astro";
+import Plate from "../../components/Plate.astro";
 import Base from "../../layouts/Base.astro";
 import { factory } from "../../lib/data/index.ts";
 import { mdInline } from "../../lib/markdown.ts";
@@ -14,10 +15,13 @@ const hands = level ? await mdInline(level.handsOn, "FACTORY.md") : "";
 
 <Base title="Design and planning" description={`The feature pipeline: ${countWord(f.pipeline.length)} stages from research to an epic of planned work items, each reviewed before the next uses it, and the skills that run them.`}>
   <section class="page wrap">
-    <div class="intro">
-      <span class="eyebrow">Jig as a software factory · level A</span>
-      <h1 class="display">Design and planning: the feature pipeline.</h1>
-      <p class="muted small">The unit of work is <span set:html={unit} />; what the level hands on is <span set:html={hands} />. <a href="/factory/#levels">Both levels, in figure 2</a>.</p>
+    <div class="intro-row">
+      <div class="intro">
+        <span class="eyebrow">Jig as a software factory · level A</span>
+        <h1 class="display">Design and planning: the feature pipeline.</h1>
+        <p class="muted small">The unit of work is <span set:html={unit} />; what the level hands on is <span set:html={hands} />. <a href="/factory/#levels">Both levels, in figure 2</a>.</p>
+      </div>
+      <span class="intro-plate"><Plate name="drafting" width="100%" /></span>
     </div>
     <DesignLevel />
   </section>
