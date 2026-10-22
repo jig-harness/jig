@@ -67,7 +67,7 @@ criteria:
   - id: scheduled-failures-reconciled-per-cause
     level: standard
     requires: mechanical
-    since: next
+    since: 0.80.0
     statement: >-
       Scheduled-check test jobs produce evidence without tracker or model
       calls; separate triage classifies findings as regression, intended
@@ -83,7 +83,7 @@ criteria:
   - id: scheduled-failure-flood-breaker
     level: standard
     requires: mechanical
-    since: next
+    since: 0.80.0
     statement: >-
       Each scheduled-failure cause has a durable breaker that announces
       suppression after a declared positive N consecutive failures, bounds
