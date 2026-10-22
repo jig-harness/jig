@@ -83,8 +83,8 @@ beside it.
 
 Practices working repositories validated, added to the modules that exist:
 watchdogs for what is deployed (M10, M11), an acceptance stage (M6), a skill
-that runs M7's post-merge stage in any repository, a generator for the model roster and instructions that keep working
-in every agent tool (M0, M4, M5).
+that runs M7's post-merge stage in any repository, and a generator for the
+model roster (M0).
 
 ### 20. `code-stats`: test-runner configuration and audit evidence
 

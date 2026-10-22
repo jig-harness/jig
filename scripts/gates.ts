@@ -36,6 +36,7 @@ import { checkRoadmap } from "./check-roadmap.ts";
 import { checkContextBudget } from "./check-context-budget.ts";
 import { checkSupplyChainLockstep } from "./check-supply-chain-lockstep.ts";
 import { checkPlugin } from "./check-plugin.ts";
+import { checkSkillFallbacks } from "./check-skill-fallbacks.ts";
 const root = join(import.meta.dir, "..");
 
 /**
@@ -130,6 +131,7 @@ export const CHECKS: Stage[] = [
   check("check-supply-chain-lockstep.ts", checkSupplyChainLockstep),
   check("check-md-links.ts", checkLinks),
   check("check-instruction-paths.ts", checkInstructionPaths),
+  check("check-skill-fallbacks.ts", checkSkillFallbacks),
   check("check-md-tables.ts", checkTables),
   check("check-glossary-coverage.ts", checkGlossary),
   check("check-no-tracker-refs.ts", checkTracker),
