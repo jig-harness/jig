@@ -237,7 +237,7 @@ export function branchesWithPrefix(
     .filter((ref) => ref.startsWith("refs/heads/"))
     .map((ref) => ref.slice("refs/heads/".length))
     .filter((name) => name.startsWith(prefix));
-  return [...new Set(names)].sort();
+  return [...new Set(names)].sort((a, b) => (a < b ? -1 : Number(a > b)));
 }
 
 /**

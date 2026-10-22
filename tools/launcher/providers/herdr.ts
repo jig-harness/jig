@@ -83,7 +83,7 @@ export interface HerdrRepo {
  * `ENG-12`, and `ENG-12` starts `ENG-122`).
  */
 export function assertBranchTemplate(template: string, where: string): void {
-  const placeholders = template.match(/\{[^}]*\}/g) ?? [];
+  const placeholders = template.match(/\{[^{}]*\}/g) ?? [];
   const unknown = placeholders.filter((p) => p !== "{key}" && p !== "{slug}");
   if (unknown.length > 0)
     throw new HerdrError(
