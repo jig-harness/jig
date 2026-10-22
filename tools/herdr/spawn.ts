@@ -11,11 +11,16 @@
  * created with plain git is in only one of them. A reattach finishes what an
  * earlier run left undone (the upstream, the agent) instead of only reporting
  * the path.
+ *
+ * With a reuse prefix, the branch is chosen first: a piece of work that
+ * already has a branch, under whatever name it was started with, is opened
+ * on that branch instead of a second one beside it.
  */
 import { normalizeAgentName, startAgent } from "./agent.ts";
 import {
   assertBranchName,
   assertLinkedWorktree,
+  branchesWithPrefix,
   decideBranchAction,
   defaultBase,
   ensureUpstreamTracking,
@@ -45,6 +50,12 @@ export interface SpawnOptions {
   repo: string;
   branch: string;
   /**
+   * Open the one existing branch, local or on origin, whose name starts with
+   * this instead of `branch`, which must start with it too; `branch` when
+   * there is none. Several are refused unless `branch` is one of them.
+   */
+  reusePrefix?: string;
+  /**
    * What a new branch is cut from, e.g. `origin/main`; the clone's
    * `origin/HEAD` when absent, read only when a new branch is created.
    */
@@ -60,6 +71,8 @@ export interface SpawnOptions {
 
 export interface Spawned {
   path: string;
+  /** The branch opened: `--branch`, or the existing one the reuse prefix found. */
+  branch: string;
   /** The worktree already existed. */
   reattached: boolean;
   workspaceId: string;
@@ -181,8 +194,26 @@ function createWorktree(ctx: Context, options: SpawnOptions): Opened {
   return created;
 }
 
-export function spawnWorkspace(ctx: Context, options: SpawnOptions): Spawned {
-  assertBranchName(ctx, options.branch);
+/** The branch to open: the one asked for, or the existing one it continues. */
+function chooseBranch(ctx: Context, options: SpawnOptions): string {
+  const { repo, branch, reusePrefix } = options;
+  if (reusePrefix === undefined) return branch;
+  const found = branchesWithPrefix(ctx, repo, reusePrefix);
+  if (found.length === 0 || found.includes(branch)) return branch;
+  const [only, ...more] = found;
+  if (only === undefined || more.length > 0)
+    throw new HerdrError(
+      `several branches start with ${reusePrefix}: ${found.join(", ")}; open the one to continue by its name, without --reuse-prefix`,
+    );
+  ctx.log(`↺ ${only} already starts with ${reusePrefix}; opening it`);
+  return only;
+}
+
+export function spawnWorkspace(ctx: Context, requested: SpawnOptions): Spawned {
+  assertBranchName(ctx, requested.branch);
+  const options = { ...requested, branch: chooseBranch(ctx, requested) };
+  if (options.branch !== requested.branch)
+    assertBranchName(ctx, options.branch);
   // Resolved before anything is created, so a clone that cannot be
   // identified fails with nothing left behind.
   const agentName = normalizeAgentName(
@@ -216,6 +247,7 @@ export function spawnWorkspace(ctx: Context, options: SpawnOptions): Spawned {
 
   const spawned: Spawned = {
     path: opened.worktree.path,
+    branch: options.branch,
     reattached,
     workspaceId,
     agentName,

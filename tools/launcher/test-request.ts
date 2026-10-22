@@ -9,6 +9,7 @@ export function openRequest(
   head: string,
   options: {
     branch?: string;
+    title?: string;
     cacheFile?: string;
     cacheWriteFailed?: boolean;
   } = {},
@@ -24,6 +25,7 @@ export function openRequest(
     cacheWriteFailed: options.cacheWriteFailed ?? false,
     promptFor,
     branch: options.branch ?? "",
+    title: options.title ?? "",
     repo,
     signal: new AbortController().signal,
   };
