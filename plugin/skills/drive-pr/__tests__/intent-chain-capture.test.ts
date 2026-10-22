@@ -198,6 +198,16 @@ describe("prClaimsIdentifier", () => {
   });
 });
 
+describe("prClaimsIdentifier — GitHub issue keys", () => {
+  it("reads #<n> in the title and on trailer lines, bounded on both sides", () => {
+    expect(prClaimsIdentifier("#7", "fix: y (#7)", "")).toBe(true);
+    expect(prClaimsIdentifier("#7", "x", "Closes #3, #7")).toBe(true);
+    expect(prClaimsIdentifier("#7", "x", "Fixes #70")).toBe(false);
+    expect(prClaimsIdentifier("#7", "x", "Closes owner/name#7")).toBe(false);
+    expect(prClaimsIdentifier("#7", "fix: &#7; y", "")).toBe(false);
+  });
+});
+
 describe("prClaimsIdentifier — non-claim contexts", () => {
   it("ignores a trailer inside an HTML comment or a quote lazy continuation", () => {
     expect(prClaimsIdentifier("ENG-7", "x", "<!--\nCloses ENG-7\n-->")).toBe(

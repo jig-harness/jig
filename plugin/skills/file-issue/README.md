@@ -25,6 +25,7 @@ validator. The agent's procedure is [SKILL.md](SKILL.md).
 /jig:file-issue                     # file an issue from the conversation
 /jig:file-issue Add CSV export      # the same, with a title to start from
 /jig:file-issue plan ENG-123        # re-label, split or relate an existing issue
+/jig:file-issue plan #123           # the same, on GitHub Issues
 ```
 
 Filing goes: read the taxonomy, read the discussion, ask only what is
@@ -59,7 +60,7 @@ the repository configured.
 | Field | Default | What it sets |
 |-------|---------|--------------|
 | `issue_tracker.taxonomy` | `label-taxonomy.yaml` | The label taxonomy, relative to the repository root |
-| `issue_tracker.team` | none (required) | The tracker team the issues are filed in |
+| `issue_tracker.team` | none (required on Linear) | Linear only: the team the issues are filed in, the prefix of their keys (`ENG` in `ENG-123`) |
 | `issue_tracker.labels` | the default roles | Which label is the human-in-the-loop flag, the operator-step flag, the epic flag, the review follow-up flag and the pattern prefix |
 | `drive.change_areas_catalog` | none | The change-area catalog labels are derived from when a diff exists |
 | `review.taxonomy.categories` | none | The category list an issue's category is checked against; `unknown` is always allowed |

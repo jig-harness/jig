@@ -1537,6 +1537,13 @@ make, use the entry's term instead.
 - **Issue** — one unit of work in the issue tracker: what `/jig:do-item` picks
   up and a pull request closes. Skills say *item* for short. *Avoid*: ticket,
   card, task.
+- **Issue key** — the short name a tracker gives an issue, which branch
+  names, commit messages and pull requests carry to link work to it:
+  `ENG-123` on Linear (the team's prefix and a number), `#123` on GitHub
+  Issues (a number within one repository). Each *tracker adapter* defines
+  its key's shape, how a key appears in a branch name (`eng-123-…`,
+  `123-…`) and in a file name (`ENG-123`, `issue-123`). Write a key quoted
+  on a command line: an unquoted `#` starts a shell comment.
 - **Tracker interface and adapter** — the small set of issue-tracker
   operations a skill is allowed to use (read an issue with its comments and
   children, move it to a workflow state, comment, the reads the delivery
@@ -1548,9 +1555,9 @@ make, use the entry's term instead.
   interface does not have yet (attaching a file), and a few reads of
   Linear's own answers.
   [plugin/EXTENDING.md](plugin/EXTENDING.md#issue-tracker) lists
-  them under "What still assumes Linear". Linear's adapter is built;
-  adapters for Jira and for a plan file kept in the repository are planned
-  ([ROADMAP.md](ROADMAP.md) item 12).
+  them under "What still assumes Linear". Adapters for Linear and GitHub
+  Issues are built; adapters for Jira and for a plan file kept in the
+  repository are planned ([ROADMAP.md](ROADMAP.md) item 12).
 - **Batch** — several small, independent issues from one area of the code
   closed by one pull request, with one commit for each issue, so the review
   is paid once instead of once per issue

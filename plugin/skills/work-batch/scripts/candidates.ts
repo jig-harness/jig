@@ -17,9 +17,8 @@
  *  3. **The budget.** Points per size against a point budget, and an item
  *     limit, filled in rank order in one pass.
  *
- * Whether the proposed issues really are one coherent change, whether the
- * implemented diff stayed in budget and how to write the pull request is
- * judgment, and stays in SKILL.md.
+ * Whether the proposed issues are one coherent change, whether the diff
+ * stayed in budget and how to write the pull request stay in SKILL.md.
  *
  * Usage:
  *     bun candidates.ts <anchor> [--limit N] [--budget N] [--claimed K1,K2]
@@ -44,6 +43,7 @@ import { consumerRoot, readOverlay } from "../../../shared/consumer.ts";
 import { isRecord } from "../../../shared/guards.ts";
 import { parseArgs } from "../../do-item/scripts/lib/cli.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
+import { issueKeysOrNull } from "../../do-item/scripts/lib/tracker/keys.ts";
 import type {
   PoolIssue,
   Tracker,
@@ -66,6 +66,7 @@ import {
   soloFlagOf,
   stateStanding,
 } from "./lib/eligibility.ts";
+import { anchorIssueKey } from "./lib/anchor-key.ts";
 import { Refusal } from "./lib/errors.ts";
 import {
   type BatchPolicy,
@@ -313,8 +314,6 @@ export function verdictSizes(policy: BatchPolicy): string[] {
 // ─────────────────────────────────────────────────────────────────────────────
 // Anchors
 // ─────────────────────────────────────────────────────────────────────────────
-
-const ISSUE_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
 
 /**
  * Labels that name one of `areas` (`do_item.agents.codearea_areas`): as the
@@ -711,9 +710,10 @@ export async function run(
   anchorInput: string,
   opts: BuildOptions,
   root: string = consumerRoot(),
+  keys = issueKeysOrNull(),
 ): Promise<Proposal> {
-  if (ISSUE_KEY.test(anchorInput) && !catalog?.has(anchorInput))
-    return runIssueAnchor(tracker, catalog, policy, anchorInput, opts);
+  const key = anchorIssueKey(anchorInput, catalog, root, keys);
+  if (key !== null) return runIssueAnchor(tracker, catalog, policy, key, opts);
   if (catalog === null)
     refuse(
       "drive.change_areas_catalog is not set: an area or path anchor needs the change-area catalog. Anchor on an issue or an epic, or declare the catalog.",

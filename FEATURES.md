@@ -226,9 +226,9 @@ Values are read in [layers](GLOSSARY.md) for the person, the repository and
 the single run, every field is documented with its default and the skills
 that read it, and the audit checks the configuration against the repository.
 Bindings to a named tool stand behind an interface: the skills reach the
-issue tracker through a small [tracker interface](GLOSSARY.md) whose first
-adapter is Linear, so another tracker is a new adapter, not a change to the
-skills. [EXTENDING.md](plugin/EXTENDING.md) lists every point where an
+issue tracker through a small [tracker interface](GLOSSARY.md) with adapters
+for Linear and GitHub Issues, so another tracker is a new adapter, not a
+change to the skills. [EXTENDING.md](plugin/EXTENDING.md) lists every point where an
 organization plugs in its own commands, skills, reviewers and stores.
 
 - **Practice:** [M0](modules/M0-instruction-architecture/),

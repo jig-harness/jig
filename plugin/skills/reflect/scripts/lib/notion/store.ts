@@ -25,11 +25,17 @@ import {
   type ReflectionEvent,
   type Session,
 } from "../events.ts";
+import {
+  changeKey,
+  changeKeyOf,
+  eventsOn,
+  planFindingsFirst,
+  winnersOf,
+} from "../change-view.ts";
 import { NOTION_VERSION, type NotionApi, NotionError } from "./api.ts";
 import { compactId } from "./ids.ts";
 import {
   type Block,
-  changeKey,
   decisionBlocks,
   EVENT_CAPTION,
   findingBlocks,
@@ -431,28 +437,6 @@ export async function syncProperties(
   return { page: page.id, ref: page.url, kept, shown, computed: status };
 }
 
-/**
- * The events a page holds, each as `list` returns it: where a page holds
- * the losing copy of an id conflict, the winning copy speaks for it.
- */
-function eventsOn(
-  ids: Iterable<string>,
-  winners: ReadonlyMap<string, ReflectionEvent>,
-): ReflectionEvent[] {
-  return [...new Set(ids)].flatMap((id) => {
-    const event = winners.get(id);
-    return event === undefined ? [] : [event];
-  });
-}
-
-function winnersOf(
-  copies: ReadonlyArray<{ event: ReflectionEvent; text: string }>,
-): Map<string, ReflectionEvent> {
-  return new Map(
-    distinctById(copies).map((stored) => [stored.event.id, stored.event]),
-  );
-}
-
 function idsOn(page: PageRead): string[] {
   return page.copies.map((copy) => copy.id);
 }
@@ -678,7 +662,7 @@ class AppendPlan {
       return home.target;
     }
     const target = this.targetFor(
-      home.page.key ?? changeKeyOf(home.page),
+      home.page.key ?? pageKeyOf(home.page),
       home.page,
     );
     const anchor = anchorFor(home.page, event.finding);
@@ -758,7 +742,7 @@ function pagesToSync(
   }
   for (const page of pages) {
     if (out.has(page.id) || page.copies.length === 0) continue;
-    const key = page.key ?? changeKeyOf(page);
+    const key = page.key ?? pageKeyOf(page);
     const ids = idsOn(page);
     if (
       pageProperties(key, eventsOn(ids, winners), state).digest !== page.digest
@@ -801,11 +785,7 @@ export async function appendEvents(
 ): Promise<AppendResult> {
   const pages = await readStore(api, database, now.getTime());
   const plan = new AppendPlan(pages);
-  // Findings first, so a decision finds a finding sent beside it.
-  for (const { event, text } of lines)
-    if (event.type === "finding") plan.add(event, text);
-  for (const { event, text } of lines)
-    if (event.type === "decision") plan.add(event, text);
+  planFindingsFirst(lines, (event, text) => plan.add(event, text));
   const stamp = `${now.toISOString().slice(0, 19)}Z`;
   for (const target of plan.targets.values())
     await writeTarget(api, database, target, stamp);
@@ -846,7 +826,7 @@ export async function repair(
         await syncProperties(
           api,
           page,
-          page.key ?? changeKeyOf(page),
+          page.key ?? pageKeyOf(page),
           eventsOn(idsOn(page), winners),
           state,
         ),
@@ -860,11 +840,8 @@ export async function repair(
   return { synced, failures };
 }
 
-function changeKeyOf(page: PageRead): string {
-  const finding = page.copies.find((copy) => copy.event.type === "finding");
-  return finding === undefined
-    ? UNFILED_KEY
-    : changeKey(finding.event as FindingEvent);
+function pageKeyOf(page: PageRead): string {
+  return changeKeyOf(page.copies, UNFILED_KEY);
 }
 
 /** What the store holds that disagrees with the events, one notice each. */
@@ -889,7 +866,7 @@ export async function diagnose(
       kind: "status-edited",
       ref: page.url,
       shown: page.shown,
-      computed: pageProperties(page.key ?? changeKeyOf(page), events, state)
+      computed: pageProperties(page.key ?? pageKeyOf(page), events, state)
         .status,
       findings: events
         .filter((event) => event.type === "finding")

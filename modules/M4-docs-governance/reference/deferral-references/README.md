@@ -211,7 +211,9 @@ markers:                            # default: the list below
 
 - **`items`** is required and has no default: no pattern fits every tracker, and
   a loose one reads `ADR-12` or `CVE-2024-1` as an item. Use the tracker
-  team's key (`\bENG-\d+\b`) or a link shape. If a pattern has a capture group,
+  team's key (`\bENG-\d+\b`), a GitHub issue's (`(?<![\w&#])#\d+\b`; it
+  matches a pull request's number too, which the provider then reports as
+  `not_found`) or a link shape. If a pattern has a capture group,
   group 1 is the key (so the key is not the whole URL); without one, the whole
   match. A pattern that matches the empty string is refused, and a match that
   yields an empty key names no item.

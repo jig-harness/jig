@@ -31,7 +31,7 @@
  *
  * Usage:
  *     bun determine_agent.ts <issue-json-file>
- *     bun get_issue.ts ENG-123 | bun determine_agent.ts -
+ *     bun get_issue.ts <issue-key> | bun determine_agent.ts -
  *     bun determine_agent.ts - --catalog /path/to/catalog.yaml
  *
  * The catalog is read through the plugin's one change-area catalog reader

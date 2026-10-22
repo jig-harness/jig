@@ -130,7 +130,19 @@ Move into configuration when a consumer needs them:
 
 - the review skill's deferral step (`defer-batch.ts`) calls Linear directly,
   with fixed label groups, instead of going through the
-  [tracker interface](../GLOSSARY.md);
+  [tracker interface](../GLOSSARY.md), so a repository on GitHub Issues
+  cannot defer a finding. Moving it onto the interface makes it work on
+  every adapter; revisit for GitHub Issues what the step relies on that
+  GitHub lacks or spells differently: label groups (GitHub labels have none,
+  so the type and repository groups become configured label lists), its
+  `--originating` and `--team` keys (validated through the adapter's key
+  shape, `keys.ts`), the conditional description edits that keep concurrent
+  deferrals from losing an entry (the interface may need a compare-and-set
+  update, or a comment per entry where the tracker cannot compare), and
+  GitHub's secondary rate limit on writes when a review defers many
+  findings at once. Done when a deferral round files and appends its
+  findings on both adapters, with the fake-tracker tests both adapters'
+  tests use;
 - the drive pushes to and fetches from a remote named `origin`;
 - the markers of Jig's own finding format (`ai-review-backlog`,
   `ai-review-round`, the leading `ai-review-*` comments) are fixed, and the
@@ -153,14 +165,19 @@ golden files from the Python linter then retire with the translation.
 
 ### 12. More tracker adapters
 
-Jira, and a plan file kept in the repository. Both wait on the open decisions
-below. Before a second adapter works end to end, the
-[tracker interface](../GLOSSARY.md) gains attaching a file, which `decide`
-and `explain` now do through the Linear MCP tools or the `linear` command.
-The deferral step (item 10), `decide`, `explain` and `do-item`'s
-instructions then use the interface's operations, and `do-item`'s parent-status reconciliation reads the
-interface's answers instead of Linear's. [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker)
-lists what still assumes Linear.
+Jira, and a plan file kept in the repository, beside Linear and GitHub
+Issues. Both wait on the open decisions below. For every adapter to work end
+to end, the [tracker interface](../GLOSSARY.md) gains attaching a file,
+which `decide` and `explain` now do through the Linear MCP tools or the
+`linear` command. The deferral step (item 10), `decide`, `explain` and
+`do-item`'s instructions then use the interface's operations, and
+`do-item`'s parent-status reconciliation reads the interface's answers
+instead of Linear's on its native path too. The workspace launcher and the
+Herdr kickoff open Linear issues only: a GitHub key (`#123`) needs a
+launcher tracker for GitHub Issues and the key's file name (`issue-123`)
+where they name a cache file or a claim.
+[plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
+still assumes Linear.
 
 ### 15. M14 Testing strategy: the rest
 

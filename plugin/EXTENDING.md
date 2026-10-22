@@ -60,8 +60,8 @@ hook or the interface instead.
 | --- | --- | --- | --- |
 | Local checks, generators, lints | Any command | [A command](#commands-a-repository-supplies) | — |
 | Review skills, implementing agents, scouts | The repository's own | [Configuration](#the-repositorys-own-skills-and-agents) | — |
-| Issue tracker | Linear | [A tracker adapter](#issue-tracker) in Jig | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12 |
-| Reflection store | A folder of files, a Notion database, or any command | [A store command](#reflection-stores), no change to Jig | Jira: roadmap, later |
+| Issue tracker | Linear; GitHub Issues | [A tracker adapter](#issue-tracker) in Jig | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12 |
+| Reflection store | A folder of files, a Notion database, a GitHub repository's issues, or any command | [A store command](#reflection-stores), no change to Jig | Jira: roadmap, later |
 | AI reviewer | Any bot, by login, app and check name; finding severities from CodeRabbit, Greptile, the Codex connector, Jig's own finding format, or any reviewer [configured](#severity-formats); GitHub code scanning alerts from any tool, SonarQube Cloud's included | [Configuration](#ai-reviewers) | — |
 | Forge (where pull requests live) | GitHub, through the `gh` command | — | [No forge interface yet](#forge-github): roadmap, later |
 | CI system | Any CI that reports checks to GitHub | `ci.required_checks`; `fix-ci --log` | [Log download and workflow review](#ci-system) are GitHub Actions only |
@@ -136,22 +136,52 @@ procedure runs the issue operations as commands of
 are named by canonical keys (`in_progress`, `in_review`, …) that
 `issue_tracker.states` maps to the tracker's own names.
 
-**Implementations.** Linear
-([`linear.ts`](skills/do-item/scripts/lib/tracker/linear.ts)), the default
-for `issue_tracker.adapter`. It reads `LINEAR_API_KEY` or
-`LINEAR_API_TOKEN`, or uses a signed-in `linear` command.
+**Implementations.**
+
+- **Linear** ([`linear.ts`](skills/do-item/scripts/lib/tracker/linear.ts)),
+  the default for `issue_tracker.adapter`. It reads `LINEAR_API_KEY` or
+  `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client.
+  Keys are `<TEAM>-<n>`, with the team from `issue_tracker.team`.
+- **GitHub Issues** (`github`,
+  [`github/`](skills/do-item/scripts/lib/tracker/github/tracker.ts)), the
+  issues of one repository (`issue_tracker.github.repository`, else the
+  `origin` remote's). It uses the signed-in `gh` command-line client. Keys
+  are `#<n>`; a key of another repository (a sub-issue or a blocker may live
+  elsewhere) is `owner/name#<n>`. How the interface's vocabulary maps onto
+  GitHub:
+  - closed states are the reason an issue was closed: completed is `done`,
+    not planned is `canceled`, duplicate is `duplicate`; open states are a
+    label per state (`issue_tracker.github.states_from: labels`, the
+    default) or the option of a Projects board's single-select field
+    (`project`); `todo` is the state with no label;
+  - priority is a label per level (`issue_tracker.github.priority_labels`),
+    and a project is a milestone;
+  - parent and children are sub-issues, `blocks` is GitHub's issue
+    dependency, `duplicate` closes the issue as a duplicate of the other;
+    GitHub has no `related` link, so each issue gets a comment naming the
+    other, with a marker the adapter reads back from comments by people who
+    can write to the repository (the same rule makes a comment trusted);
+  - the reports read the repository's issue list rather than GitHub's
+    search, which returns at most 1,000 matches; text search for duplicates
+    uses the search and refuses a result it cannot return in full. GitHub
+    does not record when an issue started, so the stuck-epic census dates it
+    no earlier than its real start (the time its state label was added, or
+    its board item last changed).
 
 **To add one.** Implement the `Tracker` interface in a module beside
 `linear.ts`, register it in `ADAPTERS` in
-[`index.ts`](skills/do-item/scripts/lib/tracker/index.ts), add its name to
-`issue_tracker.adapter`'s values in the audit's
+[`index.ts`](skills/do-item/scripts/lib/tracker/index.ts), give its key
+shape an entry in [`keys.ts`](skills/do-item/scripts/lib/tracker/keys.ts),
+add its name to `issue_tracker.adapter`'s values in the audit's
 [configuration schema](skills/audit/config-schema.yaml) and in
 [CONFIGURATION.md](CONFIGURATION.md#issue_tracker), and test it as
-`tracker.test.ts` tests the Linear adapter, against a fake of the tracker's
-interface. Callers do not change. The interface's vocabulary was shaped
-by Linear, so an adapter maps its tracker onto it:
+`tracker.test.ts` and `tracker-github.test.ts` test the built adapters,
+against a fake of the tracker's interface. Callers do not change. An
+adapter maps its tracker onto the interface's vocabulary:
 
-- issue keys are `<TEAM>-<number>`, with the team from `issue_tracker.team`;
+- an issue key has the shape the adapter's `keys.ts` entry defines; every
+  caller that finds a key in text, reads one from a branch name or names a
+  file after one goes through that entry;
 - priority is a number from 0 (none) to 4 (low);
 - relations are directed and read from each issue's side: `relate A blocks
   B` makes B wait for A, and B reads it as `blocked_by` A; `relate A
@@ -161,28 +191,27 @@ by Linear, so an adapter maps its tracker onto it:
   the metrics count (completed, canceled, duplicate); active states such as
   `in_progress` and `in_review` belong to none of them.
 
-A tracker whose identifiers have no team part (GitHub Issues' `#123`) needs
-the key format opened up first.
-
 **What still assumes Linear.** These bypass the interface today, so a
 second adapter does not yet reach them:
 
 - **Deferring review findings.** `resolve-review-comments` files deferred
   findings through its own Linear client (`defer-batch.ts`), with fixed type
-  and repository label groups.
+  and repository label groups; with GitHub Issues as the tracker, deferred
+  findings cannot be filed yet.
 - **Operations the interface does not have.** Attaching a file. Where a
   skill needs it (`decide` and `explain` attaching a sheet), its
   instructions name the Linear MCP tools or the `linear` command.
 - **Skill instructions not yet moved.** `decide` escalating and `do-item`
   where no script covers a step still name the Linear MCP tools in their
-  instructions, though the interface now has the operations.
-- **Response shapes.** `do-item`'s parent-status reconciliation reads the
-  shape of Linear's own answers.
+  instructions as the native form; the script forms work on every adapter.
+- **Response shapes.** `do-item`'s parent-status reconciliation, on its
+  native path, reads the shape of Linear's own answers; its script path
+  works on every adapter.
 - **Names.** The review-triage file's `severity_mapping.<severity>.linear_priority`;
   `fractal-metrics.ts --skip-linear`; the change-area catalog still accepts
   the older `linear:` block beside `tracker:`.
 - **The launcher**, which has a tracker interface of its own
-  ([below](#workspace-launcher)).
+  ([below](#workspace-launcher)), and opens Linear issues only.
 
 A repository gate (`scripts/check-tracker-boundary.ts` in Jig's own
 repository) keeps the rest of the plugin's code, and the planning skills'
@@ -208,7 +237,8 @@ machine, or a whole team, writes to
   [JSONL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on standard input, writes it on standard output,
   and exits 0 (done), 1 (failed), 2 (usage) or 3 (unavailable).
 - **The stores.** `filesystem`, a folder of files and the default;
-  `notion`, a Notion database people browse and filter; and `command`, any
+  `notion`, a Notion database people browse and filter; `github`, one issue
+  per change in a GitHub repository the team chooses; and `command`, any
   command that keeps the contract. A Jira store is planned for later.
 - **To add one.** Write a command in any language that keeps the contract,
   run the conformance suite (`store-contract.ts`) against it, and choose it

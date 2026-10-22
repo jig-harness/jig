@@ -31,8 +31,6 @@ import { type ExplainerSource, splitSteps, stepWords } from "./source.ts";
 
 export const SOURCE_BLOCK_ID = "explainer-source";
 
-const ISSUE_IN_URL = /\/issue\/([A-Z][A-Z0-9]*)-\d+/;
-
 /**
  * Render the sheet. `figures` maps each figure id of the source to its built,
  * checked SVG (`figures.ts`); a figure without one is an error, never a gap.
@@ -44,7 +42,6 @@ export function renderExplainerHtml(
   const inline = createInline({
     glossary: source.terms ?? [],
     ...definedFields({ issueUrl: source.url }),
-    teamKey: (source.url && ISSUE_IN_URL.exec(source.url)?.[1]) || "",
   });
   const steps = new Set((source.flow ?? []).map((s) => s.id));
 

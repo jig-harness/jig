@@ -34,7 +34,7 @@
  *   1  the policy or a repository fact could not be read
  */
 
-import { consumerRoot } from "../../../shared/consumer.ts";
+import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
 import {
   baseBranch,
   reviewsDrafts,
@@ -58,6 +58,12 @@ import {
 } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { ghCall, git } from "../../drive-pr/scripts/lib/proc.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
+import { trackerConfigFrom } from "./lib/tracker/config.ts";
+import {
+  ANY_TEAM_KEY,
+  type IssueKeys,
+  issueKeysOf,
+} from "./lib/tracker/keys.ts";
 
 /** Stands for the URL `gh pr create` prints for the new pull request. */
 const PR_PLACEHOLDER = "<PR URL>";
@@ -67,7 +73,22 @@ const USAGE = [
   "       pr-plan.ts open [--issue <KEY>] [--stack-on <branch>] [--accept-oversize <reason>] [--json]",
 ].join("\n");
 
-const ISSUE_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
+/**
+ * The issue `--issue` names, in canonical form, and the segment a branch
+ * name carries for it; `null` when it names no issue. The configured
+ * tracker's key shape reads it (any case, and for GitHub a bare number or
+ * the issue's web address too); with no team configured, any team's key
+ * as given.
+ */
+export function readIssueArg(
+  input: string,
+  keys: IssueKeys | null,
+): { key: string; branchKey: string } | null {
+  if (keys === null)
+    return ANY_TEAM_KEY.test(input) ? { key: input, branchKey: input } : null;
+  const key = keys.normalize(input);
+  return key === null ? null : { key, branchKey: keys.toBranch(key) };
+}
 
 /** A policy refusal: exit 3 with these lines on stderr. */
 class Refusal extends Error {
@@ -427,91 +448,138 @@ export function formatOpenPlan(plan: OpenPlan): string {
   return lines.join("\n");
 }
 
-async function main(): Promise<number> {
-  const parsed = parseArgs(process.argv.slice(2), {
+/** Ends the command with `code`, `message` on stderr. */
+class CliExit extends Error {
+  readonly code: number;
+  constructor(code: number, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+const errorText = (e: unknown): string =>
+  e instanceof Error ? e.message : String(e);
+
+/** The configured key shape; exit 1 when the tracker settings are invalid. */
+function readKeys(): IssueKeys | null {
+  try {
+    return issueKeysOf(trackerConfigFrom(readConfig()));
+  } catch (e) {
+    throw new CliExit(1, `ERROR: ${errorText(e)}`);
+  }
+}
+
+/** The pull-request policy; exit 1 when it is invalid. */
+function readPolicy(): PrPolicy {
+  try {
+    return prPolicy();
+  } catch (e) {
+    throw new CliExit(1, `ERROR: ${errorText(e)}`);
+  }
+}
+
+type IssueArg = NonNullable<ReturnType<typeof readIssueArg>>;
+
+/** The issue `--issue` names, `null` without one; exit 2 when it names none. */
+function issueOf(
+  values: Map<string, string>,
+  keys: IssueKeys | null,
+): IssueArg | null {
+  const input = values.get("issue");
+  if (input === undefined) return null;
+  const issue = readIssueArg(input, keys);
+  if (issue === null)
+    throw new CliExit(
+      2,
+      `--issue must be an issue key such as ${keys?.example ?? "ENG-123"} (got ${input})\n${USAGE}`,
+    );
+  return issue;
+}
+
+/** `branch`: print the branch name the policy gives the issue. */
+async function branchCommand(
+  values: Map<string, string>,
+  issue: IssueArg | null,
+  policy: PrPolicy,
+  json: boolean,
+): Promise<number> {
+  const title = values.get("title");
+  if (issue === null || title === undefined || title.trim() === "")
+    throw new CliExit(2, `branch needs --issue and --title\n${USAGE}`);
+  for (const v of ["stack-on", "accept-oversize"])
+    if (values.has(v))
+      throw new CliExit(2, `--${v} applies to open, not branch\n${USAGE}`);
+  const branch = renderBranchName(policy.branchName, issue.branchKey, title);
+  const check = await git(["check-ref-format", "--branch", branch], {
+    stderr: "ignore",
+  });
+  if (check.code !== 0)
+    throw new CliExit(
+      1,
+      `ERROR: pull_requests.branch_name (${policy.branchName}) renders ${JSON.stringify(branch)}, which is not a valid branch name`,
+    );
+  console.log(json ? JSON.stringify({ branch }) : branch);
+  return 0;
+}
+
+/** `open`: print the plan for opening the current branch's pull request. */
+async function openCommand(
+  values: Map<string, string>,
+  issue: string | null,
+  policy: PrPolicy,
+  json: boolean,
+): Promise<number> {
+  if (values.has("title"))
+    throw new CliExit(2, `--title applies to branch, not open\n${USAGE}`);
+  const acceptOversize = values.get("accept-oversize") ?? null;
+  if (acceptOversize !== null && acceptOversize.trim() === "")
+    throw new CliExit(2, `--accept-oversize needs a reason\n${USAGE}`);
+  let plan: OpenPlan;
+  try {
+    plan = await buildOpenPlan({
+      root: consumerRoot(),
+      policy,
+      issue,
+      stackOn: values.get("stack-on") ?? null,
+      acceptOversize,
+    });
+  } catch (e) {
+    if (e instanceof Refusal) throw new CliExit(3, e.lines.join("\n"));
+    throw new CliExit(1, `ERROR: ${errorText(e)}`);
+  }
+  console.log(json ? JSON.stringify(plan, null, 2) : formatOpenPlan(plan));
+  return 0;
+}
+
+async function run(argv: string[]): Promise<number> {
+  const parsed = parseArgs(argv, {
     flags: ["json"],
     values: ["issue", "title", "stack-on", "accept-oversize"],
     usage: USAGE,
   });
-  if (!parsed.ok) {
-    console.error(parsed.message);
-    return 2;
-  }
+  if (!parsed.ok) throw new CliExit(2, parsed.message);
   const { flags, values, positional } = parsed.args;
   const json = flags.has("json");
-  const issue = values.get("issue") ?? null;
-  if (issue !== null && !ISSUE_KEY.test(issue)) {
-    console.error(
-      `--issue must be an issue key such as ENG-123 (got ${issue})\n${USAGE}`,
-    );
-    return 2;
-  }
+  const issue = issueOf(values, readKeys());
+  const policy = readPolicy();
+  if (positional === "branch")
+    return branchCommand(values, issue, policy, json);
+  if (positional === "open")
+    return openCommand(values, issue?.key ?? null, policy, json);
+  throw new CliExit(
+    2,
+    `unknown command ${JSON.stringify(positional)}\n${USAGE}`,
+  );
+}
 
-  let policy: PrPolicy;
+async function main(): Promise<number> {
   try {
-    policy = prPolicy();
+    return await run(process.argv.slice(2));
   } catch (e) {
-    console.error(`ERROR: ${e instanceof Error ? e.message : String(e)}`);
-    return 1;
+    if (!(e instanceof CliExit)) throw e;
+    console.error(e.message);
+    return e.code;
   }
-
-  if (positional === "branch") {
-    const title = values.get("title");
-    if (issue === null || title === undefined || title.trim() === "") {
-      console.error(`branch needs --issue and --title\n${USAGE}`);
-      return 2;
-    }
-    for (const v of ["stack-on", "accept-oversize"])
-      if (values.has(v)) {
-        console.error(`--${v} applies to open, not branch\n${USAGE}`);
-        return 2;
-      }
-    const branch = renderBranchName(policy.branchName, issue, title);
-    const check = await git(["check-ref-format", "--branch", branch], {
-      stderr: "ignore",
-    });
-    if (check.code !== 0) {
-      console.error(
-        `ERROR: pull_requests.branch_name (${policy.branchName}) renders ${JSON.stringify(branch)}, which is not a valid branch name`,
-      );
-      return 1;
-    }
-    console.log(json ? JSON.stringify({ branch }) : branch);
-    return 0;
-  }
-
-  if (positional === "open") {
-    if (values.has("title")) {
-      console.error(`--title applies to branch, not open\n${USAGE}`);
-      return 2;
-    }
-    const acceptOversize = values.get("accept-oversize") ?? null;
-    if (acceptOversize !== null && acceptOversize.trim() === "") {
-      console.error(`--accept-oversize needs a reason\n${USAGE}`);
-      return 2;
-    }
-    try {
-      const plan = await buildOpenPlan({
-        root: consumerRoot(),
-        policy,
-        issue,
-        stackOn: values.get("stack-on") ?? null,
-        acceptOversize,
-      });
-      console.log(json ? JSON.stringify(plan, null, 2) : formatOpenPlan(plan));
-      return 0;
-    } catch (e) {
-      if (e instanceof Refusal) {
-        for (const line of e.lines) console.error(line);
-        return 3;
-      }
-      console.error(`ERROR: ${e instanceof Error ? e.message : String(e)}`);
-      return 1;
-    }
-  }
-
-  console.error(`unknown command ${JSON.stringify(positional)}\n${USAGE}`);
-  return 2;
 }
 
 if (import.meta.main) runEntry(main);

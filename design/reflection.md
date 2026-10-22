@@ -3,9 +3,11 @@
 **What problem this solves.** Session reflection
 ([`reflect`](../plugin/skills/reflect/README.md) and
 [`review-reflections`](../plugin/skills/review-reflections/README.md)) keeps
-its records in a store behind a contract. The plugin ships a filesystem store
-and a [Notion store](../plugin/skills/reflect/README.md#notion-store), a
-database people browse, filter and sort. A team that reads and triages its
+its records in a store behind a contract. The plugin ships a filesystem store,
+a [Notion store](../plugin/skills/reflect/README.md#notion-store), a
+database people browse, filter and sort, and a
+[GitHub store](../plugin/skills/reflect/README.md#github-store), issues of a
+repository the team chooses. A team that reads and triages its
 work in Jira wants the findings there, while the skills keep reading and
 writing the same events. This design describes that store. Everything else
 about reflection (the events, the computed state, the journal, the store

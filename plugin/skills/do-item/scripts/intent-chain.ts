@@ -3,9 +3,10 @@
  * Write the Refocus intent-chain snapshot.
  *
  * Type: Writer
- * Input: JSON on stdin (or `--input <path>`) — the Linear data `/do-item`
+ * Input: JSON on stdin (or `--input <path>`) — the tracker data `/do-item`
  *   already fetched; see `IntentChainInput`.
- * Output: `<worktree>/.context/intent-chain/<identifier>.md` (or
+ * Output: `<worktree>/.context/intent-chain/<stem>.md`, `<stem>` the key's
+ *   file stem under the configured tracker (`ENG-12`, `issue-12`) (or
  *   `--out <path>` to override the content file directly — which writes NO
  *   alias or pointer files at all), plus, on the default path, the worktree
  *   `.current` pointer always and the session snapshot only when a session id
@@ -65,10 +66,12 @@ import {
 import { dirname, join } from "node:path";
 import { parseArgs } from "./lib/cli.ts";
 import {
+  IDENTIFIER_RE,
   prunePickups,
   withFileLock,
   writePickup,
 } from "./lib/intent-chain-pickup.ts";
+import { issueKeysOrNull } from "./lib/tracker/keys.ts";
 
 /** Hard ceiling on the rendered snapshot, in characters (code points). */
 export const BUDGET = 4000;
@@ -79,7 +82,7 @@ export const LINE_CAP = 1000;
 /**
  * Cap on a single header field (`identifier`, `updatedAt`) in a source line,
  * marker included. `isChainIssue` bounds neither field's length — a real
- * Linear identifier or ISO timestamp is a few dozen characters, but nothing
+ * issue key or ISO timestamp is a few dozen characters, but nothing
  * stops a caller from passing something absurd — and the header (up to three
  * source lines) is rendered before the truncation loop below ever runs, so an
  * unbounded field there is invisible to every floor the loop enforces. Capped
@@ -426,7 +429,7 @@ export function refocusArm(
   const o = override?.trim().toLowerCase();
   if (o === "1" || o === "on") return "on";
   if (o === "0" || o === "off") return "off";
-  const n = /-(\d+)$/.exec(identifier)?.[1];
+  const n = /[-#](\d+)$/.exec(identifier)?.[1];
   if (n === undefined) return "off";
   return Number(n.at(-1)) % 2 === 1 ? "on" : "off";
 }
@@ -479,14 +482,10 @@ function linesWithinFloor(lines: string[]): string[] {
  * Cap an identifier at `SOURCE_FIELD_CAP` wherever it is embedded into
  * rendered text — a section heading or a batch-item line, not just the
  * header's own source lines. `isChainIssue` bounds an identifier's format,
- * never its length, so every embed site needs this, not only `sourceLine`:
- * an uncapped identifier in a section `heading` is invisible to the
- * truncation loop below (which only shrinks a section's `text`/`lines`, never
- * its `heading`), so it can make the header-plus-headings alone exceed
- * BUDGET before that loop ever runs — at which point the final backstop cap
- * fires for real and prefix-slices away whatever protected content comes
- * after it, exactly the failure `SOURCE_FIELD_CAP` was introduced to prevent
- * for the header.
+ * never its length, and the truncation loop below shrinks a section's
+ * `text`/`lines`, never its `heading`: an uncapped identifier there can make
+ * the header-plus-headings alone exceed BUDGET, and the final backstop cap
+ * would then prefix-slice away the protected content after it.
  */
 function capId(identifier: string): string {
   return capWithMarker(identifier, SOURCE_FIELD_CAP);
@@ -693,7 +692,7 @@ function isChainIssue(v: unknown): v is ChainIssue {
   const o = v as Record<string, unknown>;
   return (
     typeof o.identifier === "string" &&
-    /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(o.identifier) &&
+    IDENTIFIER_RE.test(o.identifier) &&
     (o.title === undefined || typeof o.title === "string") &&
     (o.updatedAt === undefined || typeof o.updatedAt === "string") &&
     (o.description === undefined || typeof o.description === "string")
@@ -972,16 +971,17 @@ export function main(argv: string[]): number {
   }
   if (!isIntentChainInput(input)) {
     console.error(
-      "intent-chain: input must be { issue: { identifier, ... }, epic?, subIssue?, mode?, items? } with Linear identifiers",
+      "intent-chain: input must be { issue: { identifier, ... }, epic?, subIssue?, mode?, items? } with issue keys as identifiers",
     );
     discardStaleSessionSnapshot(parsed.args.values.get("out"));
     return 1;
   }
   const identifier = input.issue.identifier;
+  const keys = issueKeysOrNull();
+  const stem = (id: string) => keys?.toFileStem(id) ?? id;
   const outOverride = parsed.args.values.get("out");
-  // `repoRoot()` shells out to git — evaluated lazily, and only for the
-  // default (no `--out`) path, exactly like the older code's `??
-  // defaultOutPath()`. An explicit `--out` opts out of the whole worktree
+  // `repoRoot()` shells out to git, so only the default (no `--out`) path
+  // evaluates it. An explicit `--out` opts out of the whole worktree
   // convention: there is no worktree-relative `.current`/session snapshot a
   // caller pointing somewhere else would want written, and a test harness
   // passing `--out` must not have this process shell out to git or touch the
@@ -994,7 +994,7 @@ export function main(argv: string[]): number {
   } else {
     root = repoRoot();
     chainDir = join(root, ".context", "intent-chain");
-    out = join(chainDir, `${identifier}.md`);
+    out = join(chainDir, `${stem(identifier)}.md`);
   }
   const rendered = renderIntentChain(input, process.env.JIG_REFOCUS);
   try {
@@ -1031,12 +1031,12 @@ export function main(argv: string[]): number {
       );
     });
     for (const alias of aliasIdentifiers(input, identifier)) {
-      attempt(`alias snapshot ${alias}.md`, () =>
-        writeAtomic(join(dir, `${alias}.md`), rendered.text),
+      attempt(`alias snapshot ${stem(alias)}.md`, () =>
+        writeAtomic(join(dir, `${stem(alias)}.md`), rendered.text),
       );
     }
     attempt(".current pointer", () =>
-      writeAtomic(join(dir, ".current"), identifier),
+      writeAtomic(join(dir, ".current"), stem(identifier)),
     );
     // Claude Code sets `CLAUDE_CODE_SESSION_ID`; Codex sets neither that nor
     // any CLAUDE_* name, but exposes its session as `CODEX_THREAD_ID`. An

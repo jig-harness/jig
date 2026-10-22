@@ -23,10 +23,13 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { ANY_KEY_SOURCE } from "./tracker/keys.ts";
 
 export const PICKUP_MAX_BYTES = 64 * 1024;
 export const PICKUP_TOKEN_RE = /^[a-f0-9]{64}$/;
-const IDENTIFIER_RE = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
+/** A work item's key of any tracker (`ENG-12` in any case, `#12`): the
+ * identifier grammar of the snapshot writer and the pickup archive. */
+export const IDENTIFIER_RE = new RegExp(`^${ANY_KEY_SOURCE}$`, "i");
 const ARM_LINE_RE = /^<!-- refocus-arm: (on|off) -->$/;
 const RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 /** An active publication holds its temporary file for milliseconds; anything

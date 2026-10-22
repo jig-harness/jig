@@ -65,7 +65,7 @@ Every field is optional. Read them from the base branch's copy of
 | `drive.validation_plan_command` | The command that reads the changed files (one per line) on stdin and prints the validation plan as JSON, including `reviewSkills` (mandatory specialist review skills) and optionally `postDeploy` | No plan command: resolve the catalog with the change-areas resolver (below), or there are no catalog-mandated specialist gates |
 | `drive.change_areas_catalog` | Path to the change-area catalog (YAML whose `areas:` map holds area key → `{paths, impliedBy, review: {skills}, postDeploy, …}`) | No catalog: skip the catalog steps and say so in the summary |
 | `review.bots` | The logins of the repository's AI reviewers | No AI reviewer is assumed |
-| `issue_tracker.team` | The key the tracker's issue identifiers carry (`ENG` for `ENG-123`), used to recognise the issue a deferral names | A deferral must still name its issue; any issue key or link counts |
+| `issue_tracker.team` | Linear only: the prefix its issue keys carry (`ENG` for `ENG-123`), used to recognise the issue a deferral names; on GitHub Issues a key is `#123` | A deferral must still name its issue; any issue key or link counts |
 
 ### Policy comes from the base branch, not the change under review
 
@@ -344,8 +344,9 @@ command-line entry points are commonly out of a rule's scope.
 
 **Every tier: a deferral names a filed issue.** If the diff, its pull request
 body or a comment defers scope ("out of scope", "separate issue", "follow-up",
-"TODO", "phase 2"), it must name the tracker issue it defers to (the key
-carries the repository's `issue_tracker.team`, e.g. `ENG-123`). An unnamed
+"TODO", "phase 2"), it must name the tracker issue it defers to (its key:
+`ENG-123` on Linear, where `issue_tracker.team` names the prefix, or `#123`
+on GitHub Issues). An unnamed
 deferral is not a deferral but a disappearance: the work it carves out is
 never filed, and the gap it leaves ships as if it were closed. Flag every
 unnamed deferral as a warning and require either a filed issue or its

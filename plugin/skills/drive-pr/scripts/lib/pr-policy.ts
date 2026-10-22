@@ -243,16 +243,19 @@ export function slugify(title: string): string {
   return (lastDash > 0 ? cut.slice(0, lastDash) : cut).replace(/-+$/, "");
 }
 
-/** The branch name for an issue under `pattern`. */
+/**
+ * The branch name for an issue under `pattern`. `branchKey` is the key as a
+ * branch carries it (`IssueKeys.toBranch`: `ENG-123`, `123` for `#123`).
+ */
 export function renderBranchName(
   pattern: string,
-  key: string,
+  branchKey: string,
   title: string,
 ): string {
   const slug = slugify(title);
   return pattern
-    .replaceAll("{key_lower}", key.toLowerCase())
-    .replaceAll("{key}", key)
+    .replaceAll("{key_lower}", branchKey.toLowerCase())
+    .replaceAll("{key}", branchKey)
     .replaceAll("{slug}", slug)
     .replace(/-{2,}/g, "-")
     .replace(/[-/]+$/, "");

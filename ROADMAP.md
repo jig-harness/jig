@@ -60,14 +60,17 @@ keeps a person merging ([ADR-0003](docs/adr/ADR-0003-a-person-merges.md)).
 
 A few values are still fixed in the skills rather than read from
 [configuration](plugin/CONFIGURATION.md): the review skill's follow-up step
-calls Linear directly with fixed label groups, and the drive assumes a git
-remote named `origin`. They move into configuration.
+calls Linear directly with fixed label groups, so a repository on GitHub
+Issues cannot yet defer a review finding, and the drive assumes a git remote
+named `origin`. They move into configuration, and the follow-up step onto
+the tracker interface, so it files on every tracker Jig supports.
 
 ### 12. More tracker adapters
 
-Jira, and a plan file kept in the repository, beside Linear. The
-[tracker interface](GLOSSARY.md) first gains attaching a file, the one
-operation the skills need that the interface does not have yet.
+Jira, and a plan file kept in the repository, beside Linear and GitHub
+Issues. The [tracker interface](GLOSSARY.md) first gains attaching a file,
+the one operation the skills need that the interface does not have yet, and
+the workspace launcher learns to open GitHub issues.
 
 ### 15. M14 Testing strategy: the rest
 

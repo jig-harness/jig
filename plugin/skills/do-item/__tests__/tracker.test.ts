@@ -12,7 +12,6 @@ import {
   defaultStateName,
   parseTrackerConfig,
   requireTeamKey,
-  teamKeyOrNull,
 } from "../scripts/lib/tracker/config.ts";
 import { knownAdapters, openTracker } from "../scripts/lib/tracker/index.ts";
 import {
@@ -161,7 +160,7 @@ describe("tracker configuration", () => {
   });
 
   it("refuses an unknown adapter at open time", () => {
-    expect(knownAdapters()).toEqual(["linear"]);
+    expect(knownAdapters()).toEqual(["linear", "github"]);
     expect(() =>
       openTracker(
         parseTrackerConfig({ issue_tracker: { adapter: "jira", team: "ENG" } }),
@@ -169,7 +168,7 @@ describe("tracker configuration", () => {
     ).toThrow("not supported");
   });
 
-  describe("teamKeyOrNull", () => {
+  describe("opening from the overlay", () => {
     const saved = process.env.JIG_OVERLAY;
     let dir: string | null = null;
     afterEach(() => {
@@ -177,15 +176,6 @@ describe("tracker configuration", () => {
       else process.env.JIG_OVERLAY = saved;
       if (dir !== null) rmSync(dir, { recursive: true, force: true });
       dir = null;
-    });
-    it("is null without an overlay and the team with one", () => {
-      dir = mkdtempSync(join(tmpdir(), "tracker-config-"));
-      process.env.JIG_OVERLAY = join(dir, "missing.yaml");
-      expect(teamKeyOrNull()).toBeNull();
-      const path = join(dir, "overlay.yaml");
-      writeFileSync(path, "issue_tracker:\n  team: ENG\n");
-      process.env.JIG_OVERLAY = path;
-      expect(teamKeyOrNull()).toBe("ENG");
     });
     it("opening the tracker refuses the pre-rename do_issue section", () => {
       dir = mkdtempSync(join(tmpdir(), "tracker-config-"));
