@@ -349,8 +349,9 @@ the Jig repository's `lib/`, so run them from a pinned Jig checkout or vendor
 - **Garbage collection of a developer machine.** A sweep of what every
   worktree's sessions left behind (leftover processes, scratch directories,
   caches and containers keyed to worktrees that no longer exist), run by the
-  owner with the same report-first rule as the namespace reaper, is designed
-  and not yet validated in a working repository.
+  owner with the same report-first rule as the namespace reaper, is
+  [roadmap item 24](../../ROADMAP.md); its design is in
+  [design/resource-gc.md](../../design/resource-gc.md).
 - **A copyable command-rewriting hook** that applies the quiet wrapper in
   an agent runtime: the contract and the safety model are in
   [mappings.md](mappings.md#agent-facing-gate-output), and each repository

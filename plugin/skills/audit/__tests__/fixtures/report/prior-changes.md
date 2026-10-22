@@ -1,6 +1,6 @@
 Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.
 
-### What changed (129)
+### What changed (135)
 
 | Module | Criterion | Before → after | Change |
 |--------|-----------|----------------|--------|
@@ -8,8 +8,13 @@ Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/
 | M0 Instruction architecture | `instruction-file-stays-small` | not scored → absent | Added by Jig |
 | M0 Instruction architecture | `load-model-recorded` | not scored → absent | Added by Jig |
 | M0 Instruction architecture | `model-pins-are-family-aliases` | not scored → expected absent | Added by Jig |
+| M0 Instruction architecture | `runtime-capabilities-name-fallbacks` | not scored → absent | Added by Jig |
+| M0 Instruction architecture | `deny-lists-per-runtime` | not scored → absent | Added by Jig |
+| M0 Instruction architecture | `standards-declare-scope` | not scored → absent | Added by Jig |
+| M0 Instruction architecture | `review-stances-are-pointers` | not scored → absent | Added by Jig |
 | M0 Instruction architecture | `skill-authoring-rules` | not scored → expected absent | Added by Jig |
 | M0 Instruction architecture | `context-budget-gated` | not scored → absent | Added by Jig |
+| M0 Instruction architecture | `skill-invocation-fallback-gated` | not scored → absent | Added by Jig |
 | M0 Instruction architecture | `skill-authoring-ratcheted` | not scored → expected absent | Added by Jig |
 | M1 Gates enforcement ladder | `dependency-release-cooldown` | not scored → absent | Added by Jig |
 | M1 Gates enforcement ladder | `install-scripts-allowlisted` | not scored → absent | Added by Jig |
@@ -66,6 +71,7 @@ Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/
 | M12 Parallel agent ergonomics | `gate-output-quiet-on-green` | not scored → absent | Added by Jig |
 | M12 Parallel agent ergonomics | `quiet-wrapper-self-tested` | not scored → absent | Added by Jig |
 | M12 Parallel agent ergonomics | `verdict-line-per-part` | not scored → absent | Added by Jig |
+| M12 Parallel agent ergonomics | `merge-conflict-hotspots-measured` | not scored → absent | Added by Jig |
 | M13 Pipeline economy | `superseded-pr-runs-cancelled` | not scored → absent | Added by Jig |
 | M13 Pipeline economy | `every-job-has-timeout` | not scored → absent | Added by Jig |
 | M13 Pipeline economy | `no-required-pipeline-path-filtered` | not scored → convention | Added by Jig |

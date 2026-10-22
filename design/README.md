@@ -59,6 +59,7 @@ with the review.
 | [The jig-harness.dev website](website.md) | 18 |
 | [Merge conflicts, measured](merge-conflicts.md) | 22 |
 | [Review lenses](review-lenses.md) | 23 |
+| [Resource garbage collection](resource-gc.md) | 24 |
 
 ## Starting a design
 

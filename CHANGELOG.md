@@ -154,6 +154,10 @@ changes are marked **Breaking** and say what a consumer changes.
 - [M16](modules/M16-releases-versions/mappings.md)'s mappings cover a released package's path to its registry: checks of what the package holds before it publishes (publint, Are the Types Wrong?, `twine check`, check-wheel-contents, `cargo publish --dry-run`), publishing without a stored token through npm's, PyPI's and crates.io's trusted publishing, and preview packages a consumer can install from a pull request before it merges. The glossary defines trusted publishing, provenance and preview package.
 - [M16](modules/M16-releases-versions/mappings.md#listing-what-the-release-contains)'s mappings cover listing what a release contains: generating a software bill of materials from the tag's commit for npm, Python, Rust and container images, including bundled artifacts and builds with their own target or features; exporting a GitHub repository's dependency graph as an inventory of the repository, not a release; and attesting the bill of materials to a file or a container image with `actions/attest`, and verifying it. The module lists a bill of materials for each release as future work, and the glossary defines it.
 - [GLOSSARY.md](GLOSSARY.md) defines a *seed lens*: a review lens Jig ships, the review form of one rule a Jig module states, for the part of the rule no gate can check. Seed lenses are planned for the `review` skill ([ROADMAP.md](ROADMAP.md), item 23).
+- [GLOSSARY.md](GLOSSARY.md) defines *collection kind*, *lifecycle
+  predicate* and *collection receipt*, the terms of the designed garbage
+  collection of a developer machine's leftover worktrees, scratch, containers,
+  branches, tool state and processes.
 
 ### Changed
 
@@ -318,6 +322,57 @@ changes are marked **Breaking** and say what a consumer changes.
 - A link to a section of the getting-started, plugin, features or
   principles page no longer stops well below the header: it lands just
   under it.
+
+## [0.79.1] - 2026-10-22
+
+### Fixed
+
+- Drive listings identify each drive's repository in human output and JSON rows, so identical pull request numbers across clones can be distinguished.
+
+## [0.79.0] - 2026-10-22
+
+### Added
+
+- The [Herdr workspace tool](tools/herdr/README.md) opens a branch as a
+  Herdr worktree workspace, on the machine or on a remote host over SSH, with
+  its agent started and its first prompt sent once per piece of work.
+  Opening the same work again reattaches instead of creating a second
+  worktree, and does not prompt an agent that already has the work. `remove`
+  runs the repository's remove hook and parks the worktree's reflection
+  findings before removing it.
+- The launcher's `herdr` provider opens a tracker issue through that tool;
+  set `provider: herdr` and `repos.<label>.herdr` in the launcher
+  configuration ([launcher](tools/launcher/README.md#providers)).
+- [M12](modules/M12-parallel-agent-ergonomics/mappings.md)'s worktree
+  lifecycle runs in Herdr: a repository's `.config/worktree-hooks/create` runs
+  in each new worktree, through a Herdr plugin, before an agent starts there,
+  and `.config/worktree-hooks/remove` runs before a worktree is removed.
+
+### Changed
+
+- The launcher takes the branch the tracker suggests, read with the issue,
+  when the launch itself names none; the prompt's branch hint and the
+  provider both use it.
+
+### Fixed
+
+- `/jig:reflect`'s journal gives each git call a minute and fails when one
+  takes longer, instead of waiting on a stalled repository for ever or reading
+  a stalled call as "no answer".
+
+## [0.78.0] - 2026-10-22
+
+### Added
+
+- [M0](modules/M0-instruction-architecture/README.md#invariant) states new invariants. Instructions are portable: one that relies on a capability only some runtimes have (a slash command, a built-in tool, a tool the host injects, a permission rule) names its fallback, and a host-injected tool is never a dependency. Rules declare their scope: each standard names the artifact classes it governs, and standing review stances point to their one source instead of restating it.
+- M0's [mappings](modules/M0-instruction-architecture/mappings.md#runtime-specific-capabilities-and-their-fallbacks) list each runtime-specific capability with its fallback per runtime: how to run a skill without its slash command, the order for asking the user, the deny-list formats of Claude Code and Codex with the command forms each cannot match, and tools the host injects.
+- A [skill-invocation fallback lint](modules/M0-instruction-architecture/reference/skill-invocation-fallback/README.md), an M0 reference gate that fails a `/<skill>` with no fallback for that skill beside it.
+- The AGENTS.md skeleton gains *Standards scope by artifact class* and *Standing review stances* sections.
+- M0 audit criteria at Standard: `runtime-capabilities-name-fallbacks`, `deny-lists-per-runtime`, `standards-declare-scope` and `review-stances-are-pointers`; at Strict: `skill-invocation-fallback-gated`. A re-audit reports them as added by Jig.
+
+### Changed
+
+- `do-item`, `file-issue` and `work-batch` ask in plain text wherever `AskUserQuestion` cannot be used, a Claude Code permission mode that denies it included, and say what to do when nobody is there to answer a question: stop and state it. `do-item` names a fallback for delegating where the harness has no Task tool, and `fix-ci` for tracking errors where it has no task list.
 
 ## [0.77.0] - 2026-10-21
 
@@ -3368,7 +3423,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.77.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.79.1...HEAD
+[0.79.1]: https://github.com/jig-harness/jig/compare/v0.79.0...v0.79.1
+[0.79.0]: https://github.com/jig-harness/jig/compare/v0.78.0...v0.79.0
+[0.78.0]: https://github.com/jig-harness/jig/compare/v0.77.0...v0.78.0
 [0.77.0]: https://github.com/jig-harness/jig/compare/v0.76.0...v0.77.0
 [0.76.0]: https://github.com/jig-harness/jig/compare/v0.75.0...v0.76.0
 [0.75.0]: https://github.com/jig-harness/jig/compare/v0.74.0...v0.75.0

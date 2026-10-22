@@ -39,7 +39,7 @@ export interface LauncherConfig {
   skill: string;
   /** The tracker label group whose value names the repository. */
   repoLabelGroup: string;
-  /** Repository label -> settings per provider (`conductor`, later `herdr`). */
+  /** Repository label -> settings per provider (`conductor`, `herdr`). */
   repos: Record<string, Record<string, unknown>>;
 }
 
