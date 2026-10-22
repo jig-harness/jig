@@ -446,8 +446,15 @@ you look:
   watching that directory pays the same cost. Every gate
   fails closed, and the idle guard (`--min-age-days`, default 7) is an extra
   bound on top of the lifecycle predicate, never a substitute — a pure age
-  sweep here is unsafe. Run it on a schedule (weekly is enough) from the
-  machine's own scheduler; the skill ships no installer for one.
+  sweep here is unsafe. Run it with `--delete` on a schedule (weekly is
+  enough) from the machine's own scheduler; that schedule is what deletes.
+  Resource collection's `tool-state` kind reports the same families with
+  receipts across configured clones once a repository lists it in `gc.kinds`
+  and runs `bun --no-env-file --config="${CLAUDE_SKILL_DIR}/../../gc/bunfig.toml" "${CLAUDE_SKILL_DIR}/../../jig.ts" gc install --repo <repository>`,
+  which previews, then the same command with `--yes` to confirm. It never
+  passes `--delete`, so keep the reaper's own schedule beside it.
+  The [collection reference](../../gc/README.md) describes its confirmed
+  bounds.
 - **Windows filesystem access** — state writes and lock moves retry sharing
   errors (`EPERM`, `EACCES`, `EBUSY`) for up to two seconds. Exclusive directory
   creation also retries a pending deletion; an actual occupant still refuses

@@ -77,6 +77,7 @@ that a skill hands a narrow job to):
 | [review-arbiter](agents/review-arbiter.md) | Rules on contested review findings the triage rubric cannot settle (fix now, reject, won't fix, defer or escalate to a human); reads code, never edits | `jig:review-arbiter` (Claude Code; see [Codex notes](#codex-notes)) |
 
 Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
+[machine resource collection](#machine-resource-collection) ·
 [requirements](#requirements) ·
 [install](#install-the-plugin) · [use](#use-a-skill) ·
 [configure a repository](#configure-a-repository) ·
@@ -90,6 +91,22 @@ Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
 [release](#releases) ·
 [moving from the `groundwork` plugin](#moving-from-the-groundwork-plugin) ·
 [moving off the per-worktree installer](#moving-off-the-per-worktree-installer)
+
+## Machine resource collection
+
+The plugin also ships `jig gc`, a command-line tool that reports registered
+machine-local leftovers and writes a receipt. Run it with trusted Bun startup:
+
+```sh
+bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts gc
+```
+
+Replace `<plugin>` with the absolute installed plugin path. `gc install`
+previews the repository bounds and daily scheduler; `--yes` confirms them.
+Collecting runs use the install-recorded base declaration and stay within
+the confirmed bounds. See [resource collection](gc/README.md) for supported
+kinds and collection limits, and [configuration](CONFIGURATION.md#gc) for
+both configuration layers.
 
 ## Set up from an agent session
 

@@ -304,7 +304,11 @@ describe("the reading skills", () => {
         expect([
           f.path,
           skill,
-          existsSync(join(plugin, "skills", skill, "SKILL.md")),
+          existsSync(
+            skill === "gc"
+              ? join(plugin, "jig.ts")
+              : join(plugin, "skills", skill, "SKILL.md"),
+          ),
         ]).toEqual([f.path, skill, true]);
   });
 });

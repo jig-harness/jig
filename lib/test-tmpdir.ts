@@ -26,6 +26,25 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sharedGcLock } from "../plugin/shared/gc-lock.ts";
+import { writeScratchOwner } from "../plugin/shared/scratch-owner.ts";
+
+/**
+ * Scratch collection is report-only, so a home the admission store cannot be
+ * created in (a read-only container or sandbox home) costs no safety: the
+ * owner record still marks the scope, and no collector removes it. Every
+ * other admission failure, a collection in progress above all, still refuses.
+ */
+function scratchAdmission(): () => void {
+  try {
+    return sharedGcLock("scratch");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EROFS" || code === "EACCES" || code === "EPERM")
+      return () => undefined;
+    throw error;
+  }
+}
 
 export const TEST_TMPDIR_PREFIX = "jig-test-tmp.";
 export const TEST_TMPDIR_ENV = "JIG_TEST_TMPDIR";
@@ -120,7 +139,19 @@ export function scopeTestTmpdir(
   const systemEnv = options.systemEnv ?? TEST_TMPDIR_SYSTEM_ENV;
   validateOptions(prefix, rootEnv, systemEnv);
   const systemTmpdir = tmpdir();
-  const root = mkdtempSync(join(systemTmpdir, prefix));
+  const releaseAdmission = scratchAdmission();
+  let root: string;
+  try {
+    root = mkdtempSync(join(systemTmpdir, prefix));
+    try {
+      writeScratchOwner(root);
+    } catch (error) {
+      rmSync(root, { recursive: true, force: true });
+      throw error;
+    }
+  } finally {
+    releaseAdmission();
+  }
 
   const previous = new Map<string, string | undefined>();
   for (const name of [...TMPDIR_VARS, rootEnv, systemEnv]) {

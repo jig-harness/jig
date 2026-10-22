@@ -3,10 +3,10 @@
 The [modules](modules/README.md) state Jig's practices as rules that name no
 tool. This page is the other view: what a team can run, install or copy from
 Jig today, each with the practice it carries out and what is on the roadmap
-for it. The [skills](plugin/README.md) come from one plugin installed once per
-machine; the [quality gates](GLOSSARY.md) (checks a change must pass),
-templates and tools ship with their modules; your own values (gate command,
-reviewers, issue-tracker team and labels) live in one
+for it. The [skills and commands](plugin/README.md) come from one plugin
+installed once per machine; the [quality gates](GLOSSARY.md) (checks a change
+must pass), templates and reference tools ship with their modules; your own
+values (gate command, reviewers, issue-tracker team and labels) live in one
 [configuration](plugin/CONFIGURATION.md) file the skills read when they run.
 
 Everything here keeps a person on the decisions that matter: the intent, the
@@ -215,9 +215,24 @@ configuration; a remote host, a container or an isolated configuration
 directory needs its own install
 ([where it works](plugin/README.md#where-it-works)).
 
+Agent sessions also leave worktrees, scratch directories and tool state
+behind. The [`jig gc`](plugin/gc/README.md) command, shipped with the plugin,
+reports what remains, checks whether it is still in use, and writes a
+[collection receipt](GLOSSARY.md) for every run. A repository declares the
+resource kinds and paths its tools create; a person confirms those bounds
+when installing a machine's daily job, which supports launchd on macOS,
+systemd user timers on Linux and cron where neither is available. Collecting
+runs read the declaration from the recorded remote base branch and stay
+within the confirmed bounds. Worktrees, scratch directories and tool state
+are currently report-only, because collecting them requires coordination with
+the tools that create and use them; old receipts can be collected while
+keeping the latest report for each repository and kind.
+
 - **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
-- **On the roadmap:** the skills checked inside Herdr (roadmap item 19), and
-  a runnable form of the workspace lifecycle for other runtimes (Later)
+- **On the roadmap:** the skills checked inside Herdr (roadmap item 19), a
+  runnable form of the workspace lifecycle for other runtimes (Later), and
+  coordinated resource collection followed by container, branch and
+  registered-process collection (roadmap item 24)
 
 ## One configuration file, read in layers
 
