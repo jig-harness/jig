@@ -214,10 +214,16 @@ export async function updateScheduler(
     ? updateLaunchd(dir, files, remove)
     : updateSystemd(dir, files, remove);
 }
-/** The job as it stood before an update: its files' text and whether it ran. */
+/**
+ * The job as it stood before an update: its files' text, whether it starts on
+ * its own (`enabled`) and whether it is running now (`active`). systemd keeps
+ * the two independently, so each is captured and restored on its own; for
+ * launchd and cron a loaded job is both.
+ */
 export interface SchedulerSnapshot {
   scheduler: Scheduler;
   files: Record<string, string | null>;
+  enabled: boolean;
   active: boolean;
 }
 function readOptional(path: string): string | null {
@@ -228,29 +234,71 @@ function readOptional(path: string): string | null {
     throw error;
   }
 }
-export async function snapshotScheduler(): Promise<SchedulerSnapshot> {
-  const scheduler = detectScheduler();
+async function succeeds(command: string[]): Promise<boolean> {
+  return (await run(command, { timeoutSec: 30 })).code === 0;
+}
+export async function snapshotScheduler(
+  scheduler: Scheduler = detectScheduler(),
+): Promise<SchedulerSnapshot> {
   if (scheduler === "cron")
-    return { scheduler, files: { crontab: await crontab() }, active: true };
+    return {
+      scheduler,
+      files: { crontab: await crontab() },
+      enabled: true,
+      active: true,
+    };
   const dir = jobDirectory(scheduler);
   const names =
     scheduler === "launchd"
       ? [`${LABEL}.plist`]
       : ["jig-gc.service", "jig-gc.timer"];
-  const probe =
-    scheduler === "launchd"
-      ? ["launchctl", "print", `gui/${process.getuid?.()}/${LABEL}`]
-      : ["systemctl", "--user", "is-enabled", "jig-gc.timer"];
-  const active = (await run(probe, { timeoutSec: 30 })).code === 0;
+  const files = Object.fromEntries(
+    names.map((name) => [join(dir, name), readOptional(join(dir, name))]),
+  );
+  if (scheduler === "launchd") {
+    const loaded = await succeeds([
+      "launchctl",
+      "print",
+      `gui/${process.getuid?.()}/${LABEL}`,
+    ]);
+    return { scheduler, files, enabled: loaded, active: loaded };
+  }
+  const unit = ["systemctl", "--user"];
   return {
     scheduler,
-    files: Object.fromEntries(
-      names.map((name) => [join(dir, name), readOptional(join(dir, name))]),
-    ),
-    active,
+    files,
+    enabled: await succeeds([...unit, "is-enabled", "jig-gc.timer"]),
+    active: await succeeds([...unit, "is-active", "jig-gc.timer"]),
   };
 }
-/** Writes back the snapshot's exact files and activation, not a rebuilt job. */
+/** Stops the replacement job; only a timer never installed may be skipped. */
+async function stopReplacement(launchd: boolean): Promise<void> {
+  if (launchd) {
+    const target = `gui/${process.getuid?.()}/${LABEL}`;
+    if (await succeeds(["launchctl", "print", target]))
+      await execute(["launchctl", "bootout", target]);
+  } else if (existsSync(join(jobDirectory("systemd"), "jig-gc.timer")))
+    await execute(["systemctl", "--user", "disable", "--now", "jig-gc.timer"]);
+}
+async function startPrevious(snapshot: SchedulerSnapshot): Promise<void> {
+  if (snapshot.scheduler === "launchd") {
+    const [plist] = Object.keys(snapshot.files);
+    if (snapshot.active && plist)
+      await execute([
+        "launchctl",
+        "bootstrap",
+        `gui/${process.getuid?.()}`,
+        plist,
+      ]);
+    return;
+  }
+  await execute(["systemctl", "--user", "daemon-reload"]);
+  if (snapshot.enabled)
+    await execute(["systemctl", "--user", "enable", "jig-gc.timer"]);
+  if (snapshot.active)
+    await execute(["systemctl", "--user", "start", "jig-gc.timer"]);
+}
+/** Writes back the snapshot's exact files and states, not a rebuilt job. */
 export async function restoreScheduler(
   snapshot: SchedulerSnapshot,
 ): Promise<void> {
@@ -258,30 +306,11 @@ export async function restoreScheduler(
     await execute(["crontab", "-"], snapshot.files.crontab ?? "");
     return;
   }
-  const launchd = snapshot.scheduler === "launchd";
-  const domain = `gui/${process.getuid?.()}`;
-  if (launchd) {
-    const loaded = await run(["launchctl", "print", `${domain}/${LABEL}`], {
-      timeoutSec: 30,
-    });
-    if (loaded.code === 0)
-      await execute(["launchctl", "bootout", `${domain}/${LABEL}`]);
-  } else
-    await run(["systemctl", "--user", "disable", "--now", "jig-gc.timer"], {
-      timeoutSec: 30,
-    });
+  await stopReplacement(snapshot.scheduler === "launchd");
   for (const [path, text] of Object.entries(snapshot.files))
     if (text === null) rmSync(path, { force: true });
     else writeFileSync(path, text, { mode: 0o600 });
-  if (launchd) {
-    const [plist] = Object.keys(snapshot.files);
-    if (snapshot.active && plist)
-      await execute(["launchctl", "bootstrap", domain, plist]);
-    return;
-  }
-  await execute(["systemctl", "--user", "daemon-reload"]);
-  if (snapshot.active)
-    await execute(["systemctl", "--user", "enable", "--now", "jig-gc.timer"]);
+  await startPrevious(snapshot);
 }
 /** The concrete job a confirmed install would write, shown before confirmation. */
 export function schedulerPreview(

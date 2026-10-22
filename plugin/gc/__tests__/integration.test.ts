@@ -376,6 +376,39 @@ process.exit(1);
   expect(readFileSync(f.homeFile, "utf8")).toBe(previous);
 });
 
+/**
+ * Scheduler fakes that refuse to start a job built by this install, so the
+ * update fails after replacing the previous job's files. systemd keeps the
+ * timer's enablement and activity as two independent markers.
+ */
+function restoringFake(
+  name: string,
+  paths: { cron: string; enabled: string; active: string; units: string },
+): string {
+  const { cron, enabled, active, units } = paths;
+  return `#!/usr/bin/env bun
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+const refuse = (text) => { if (text.includes("--scheduled")) { console.error("refused"); process.exit(1); } };
+if (${JSON.stringify(name)} === "crontab") {
+  if (args[0] === "-l") process.stdout.write(readFileSync(${JSON.stringify(cron)}, "utf8"));
+  else { const text = await Bun.stdin.text(); refuse(text); writeFileSync(${JSON.stringify(cron)}, text); }
+}
+if (${JSON.stringify(name)} === "launchctl") {
+  if (args[0] === "print") process.exit(existsSync(${JSON.stringify(active)}) ? 0 : 1);
+  if (args[0] === "bootout") rmSync(${JSON.stringify(active)}, { force: true });
+  if (args[0] === "bootstrap") { refuse(readFileSync(args[2], "utf8")); writeFileSync(${JSON.stringify(active)}, ""); }
+}
+if (${JSON.stringify(name)} === "systemctl") {
+  if (args[1] === "is-enabled") process.exit(existsSync(${JSON.stringify(enabled)}) ? 0 : 1);
+  if (args[1] === "is-active") process.exit(existsSync(${JSON.stringify(active)}) ? 0 : 1);
+  if (args[1] === "disable") { rmSync(${JSON.stringify(enabled)}, { force: true }); rmSync(${JSON.stringify(active)}, { force: true }); }
+  if (args[1] === "enable") { refuse(readFileSync(${JSON.stringify(join(units, "jig-gc.service"))}, "utf8")); writeFileSync(${JSON.stringify(enabled)}, ""); if (args.includes("--now")) writeFileSync(${JSON.stringify(active)}, ""); }
+  if (args[1] === "start") writeFileSync(${JSON.stringify(active)}, "");
+}
+`;
+}
+
 test.skipIf(
   skipsOnWindows(
     "powershell",
@@ -391,32 +424,15 @@ test.skipIf(
   const bin = join(f.root, "bin");
   mkdirSync(bin);
   const cron = join(f.root, "crontab"),
+    enabled = join(f.root, "enabled"),
     active = join(f.root, "active");
   const plist = join(f.user, "Library/LaunchAgents/dev.jig.gc.plist");
   const units = join(f.user, ".config/systemd/user");
-  // Each fake refuses to start a job built by this install, so the update
-  // fails after replacing the previous job's files.
-  const source = (name: string) => `#!/usr/bin/env bun
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-const args = process.argv.slice(2);
-const refuse = (text) => { if (text.includes("--scheduled")) { console.error("refused"); process.exit(1); } };
-if (${JSON.stringify(name)} === "crontab") {
-  if (args[0] === "-l") process.stdout.write(readFileSync(${JSON.stringify(cron)}, "utf8"));
-  else { const text = await Bun.stdin.text(); refuse(text); writeFileSync(${JSON.stringify(cron)}, text); }
-}
-if (${JSON.stringify(name)} === "launchctl") {
-  if (args[0] === "print") process.exit(existsSync(${JSON.stringify(active)}) ? 0 : 1);
-  if (args[0] === "bootout") rmSync(${JSON.stringify(active)}, { force: true });
-  if (args[0] === "bootstrap") { refuse(readFileSync(args[2], "utf8")); writeFileSync(${JSON.stringify(active)}, ""); }
-}
-if (${JSON.stringify(name)} === "systemctl") {
-  if (args[1] === "is-enabled") process.exit(existsSync(${JSON.stringify(active)}) ? 0 : 1);
-  if (args[1] === "disable") rmSync(${JSON.stringify(active)}, { force: true });
-  if (args[1] === "enable") { refuse(readFileSync(${JSON.stringify(join(units, "jig-gc.service"))}, "utf8")); writeFileSync(${JSON.stringify(active)}, ""); }
-}
-`;
   for (const name of ["launchctl", "systemctl", "crontab"])
-    writeFakeProgram(join(bin, name), source(name));
+    writeFakeProgram(
+      join(bin, name),
+      restoringFake(name, { cron, enabled, active, units }),
+    );
   mkdirSync(dirname(plist), { recursive: true });
   mkdirSync(units, { recursive: true });
   const previous = {
@@ -427,6 +443,7 @@ if (${JSON.stringify(name)} === "systemctl") {
   };
   for (const [path, text] of Object.entries(previous))
     writeFileSync(path, text);
+  writeFileSync(enabled, "");
   writeFileSync(active, "");
   f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
   const result = run(
