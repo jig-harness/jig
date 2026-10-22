@@ -54,7 +54,7 @@ An optional summary of the release.
   rules of `change-notes.ts` stay beside it, since the parser reports no source
   positions and reads inline HTML as text. It needs a Bun that ships
   `Bun.markdown`; any other fails with a message naming the version it needs
-  (Jig pins 1.4.3).
+  (Jig pins 1.4.4).
 - Text before the first section is the release's summary, so only a note with
   `release` may have one. No `#` or `##` heading: the step writes the version
   heading and its date.
