@@ -22,13 +22,17 @@ not from the plugin.
 
 ```sh
 bun tools/herdr/workspace.ts [--host <ssh-target>] open --repo <clone> --branch <name> \
-    [--base <ref>] [--label <text>] [--agent <kind>] [--no-agent] \
+    [--reuse-prefix <text>] [--base <ref>] [--label <text>] [--agent <kind>] [--no-agent] \
     [--prompt <text> --key <key>] [--wait-timeout-ms <ms>] [--json]
 bun tools/herdr/workspace.ts [--host <ssh-target>] remove --repo <clone> --branch <name> [--force]
 ```
 
 **`open`** creates the branch's worktree in the clone, or reattaches to the
-one that has it:
+one that has it. With `--reuse-prefix`, which `--branch` must start with,
+it first chooses the branch: the one existing branch, local or on origin,
+whose name starts with it is opened instead of `--branch`, so work started
+under an earlier name keeps its branch. Several stop the run unless
+`--branch` is one of them; `--json` reports the branch opened. Then:
 
 1. It looks for a worktree on the branch in both Herdr's list and the
    clone's own `git worktree list`, since a worktree made with plain git is

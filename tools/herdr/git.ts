@@ -203,6 +203,44 @@ export function probeBranch(
 }
 
 /**
+ * The branches whose names start with `prefix`, local or on origin, sorted
+ * and each named once. Both sides are read: a branch started and never
+ * pushed is only local, and one pushed from another clone only on origin.
+ */
+export function branchesWithPrefix(
+  ctx: Context,
+  repo: string,
+  prefix: string,
+): string[] {
+  const local = ctx.run([
+    "git",
+    "-C",
+    repo,
+    "for-each-ref",
+    "--format=%(refname)",
+    "refs/heads/",
+  ]);
+  if (local.status !== 0)
+    throw new HerdrError(
+      `git for-each-ref failed: cannot tell which branches start with ${prefix}: ${output(local)}`,
+    );
+  const remote = ctx.run(["git", "-C", repo, "ls-remote", "--heads", "origin"]);
+  if (remote.status !== 0)
+    throw new HerdrError(
+      `git ls-remote failed (exit ${remote.status}): cannot tell which branches start with ${prefix} on origin: ${output(remote)}`,
+    );
+  const names = [
+    ...local.stdout.split("\n"),
+    ...remote.stdout.split("\n").map((line) => line.split("\t")[1] ?? ""),
+  ]
+    .map((ref) => ref.trim())
+    .filter((ref) => ref.startsWith("refs/heads/"))
+    .map((ref) => ref.slice("refs/heads/".length))
+    .filter((name) => name.startsWith(prefix));
+  return [...new Set(names)].sort();
+}
+
+/**
  * Point the branch's upstream at `origin/<branch>` when origin has it; a
  * branch never pushed has nothing to track. Runs on every path, reattaching
  * included, after refreshing the ref, so a repair an earlier run could not

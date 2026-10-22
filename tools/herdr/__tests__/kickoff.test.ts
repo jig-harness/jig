@@ -46,6 +46,7 @@ const session = (value: string | null) =>
 
 const spawned = (fields: Partial<Spawned> = {}): Spawned => ({
   path: "/wt",
+  branch: "feat/x",
   reattached: false,
   workspaceId: "w1",
   agentName: A,
