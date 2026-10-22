@@ -368,6 +368,9 @@ resource's proof before anything is collected.
   from the skills' READMEs. Cancellation uses captured process identities
   within the cooperative scope recorded in
   [ADR-0008](../docs/adr/ADR-0008-windows-cancellation-uses-captured-process-identities.md).
+  **Fixture throughput** also remains: optimize the named multi-round,
+  long-CI drive and large post-retirement census fixtures until they fit their
+  existing native Windows test budgets, then lift their named skips.
 - **Gates and workspace infrastructure.** Cross-worktree locks and
   test infrastructure, remote gates, and a runnable form of
   [M12](../modules/M12-parallel-agent-ergonomics/README.md)'s workspace lifecycle

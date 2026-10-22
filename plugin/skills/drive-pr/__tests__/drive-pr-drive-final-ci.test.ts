@@ -33,6 +33,7 @@ import {
   runDrive,
   runDriveIn,
   state,
+  skipLongDriveFixture,
 } from "./drive-loop-harness.ts";
 
 const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
@@ -455,106 +456,109 @@ describe("drive.ts loop control", () => {
     expect(failingStatusNames(null)).toBeNull();
   });
 
-  it("treats a mixed verdict as actionable when only one failing name is a stale required check", async () => {
-    // The general form of the cascade above, but with the required
-    // check ALSO failing rather than skipped — the exact shape
-    // `failing: Schema gate, detect-changes` with
-    // `finalCi.code === 4`. The old `.some()` predicate read ANY required
-    // name in the verdict as proof the WHOLE verdict was unreliable,
-    // deferring `detect-changes` — a definitively fresh, non-required
-    // failure — to the witness wait right alongside the ambiguous `Schema
-    // gate` one, contradicting the neighbouring comment's own stated intent
-    // that a non-required failure "is trusted immediately". Fixed, the
-    // verdict is stale only when EVERY failing name is required, so this
-    // mixed case is dispatched as an ordinary CI-repair instead.
-    const mixed: CheckRunFixture[] = [
-      {
-        name: "Schema gate",
-        status: "completed",
-        conclusion: "failure",
-        app: "github-actions",
-        started: "2026-09-10T10:01:00Z",
-      },
-      {
-        name: "detect-changes",
-        status: "completed",
-        conclusion: "failure",
-        app: "github-actions",
-        started: "2026-09-10T10:01:00Z",
-      },
-    ];
-    const { dir, stateDir } = writeFixture({
-      threads: [],
-      head: scratchClean.head,
-      reviewedSha: scratchClean.head,
-      ciHeld: true,
-      checkRuns: [REVIEWER_RUN, DORMANT_ARM, ...mixed],
-    });
-    writeFileSync(
-      join(dir, "timeline.json"),
-      JSON.stringify([
+  it.skipIf(skipLongDriveFixture)(
+    "treats a mixed verdict as actionable when only one failing name is a stale required check",
+    async () => {
+      // The general form of the cascade above, but with the required
+      // check ALSO failing rather than skipped — the exact shape
+      // `failing: Schema gate, detect-changes` with
+      // `finalCi.code === 4`. The old `.some()` predicate read ANY required
+      // name in the verdict as proof the WHOLE verdict was unreliable,
+      // deferring `detect-changes` — a definitively fresh, non-required
+      // failure — to the witness wait right alongside the ambiguous `Schema
+      // gate` one, contradicting the neighbouring comment's own stated intent
+      // that a non-required failure "is trusted immediately". Fixed, the
+      // verdict is stale only when EVERY failing name is required, so this
+      // mixed case is dispatched as an ordinary CI-repair instead.
+      const mixed: CheckRunFixture[] = [
         {
-          node_id: "LE_1",
-          event: "labeled",
-          label: { name: "ci:hold" },
-          actor: { login: "drive-user" },
-          created_at: "2026-09-10T09:59:00Z",
+          name: "Schema gate",
+          status: "completed",
+          conclusion: "failure",
+          app: "github-actions",
+          started: "2026-09-10T10:01:00Z",
         },
-      ]),
-    );
-    const seeded = await state(
-      stateDir,
-      [
-        "set-ci-hold",
-        "999",
-        "--set",
-        "held",
-        "--event-id",
-        "LE_1",
-        "--head",
-        scratchClean.head,
-        "--actor-name",
-        "drive-user",
-        "--created-at",
-        "2026-09-10T09:59:00Z",
-        "--check-run-watermark",
-        "10000",
-      ],
-      scratchClean.dir,
-    );
-    expect(seeded.exitCode).toBe(0);
-    rmSync(join(scratchClean.dir, ".context"), {
-      recursive: true,
-      force: true,
-    });
-    const r = await runDriveIn(
-      dir,
-      stateDir,
-      [
-        "--keep-draft",
-        "--no-head-sync",
-        "--max-rounds",
-        "1",
-        "--",
-        ...PASS_TASK,
-      ],
-      undefined,
-      {
-        env: {
-          DRIVE_PR_CI_REPAIR_ROUNDS: "1",
-          // Bounds a hypothetical regression to a fast failure instead of a
-          // 30-minute hang: against the OLD `.some()` predicate this fixture
-          // falls into the witness wait instead of dispatching a repair.
-          DRIVE_PR_FINAL_CI_WITNESS_POLLS: "1",
+        {
+          name: "detect-changes",
+          status: "completed",
+          conclusion: "failure",
+          app: "github-actions",
+          started: "2026-09-10T10:01:00Z",
         },
-      },
-    );
-    expect(r.stderr).toContain("TASK=ci-repair");
-    expect(r.stderr).toContain("DETAIL=Schema gate, detect-changes");
-    expect(r.stderr).not.toContain(
-      "no fresh exact-head required-check witness",
-    );
-  });
+      ];
+      const { dir, stateDir } = writeFixture({
+        threads: [],
+        head: scratchClean.head,
+        reviewedSha: scratchClean.head,
+        ciHeld: true,
+        checkRuns: [REVIEWER_RUN, DORMANT_ARM, ...mixed],
+      });
+      writeFileSync(
+        join(dir, "timeline.json"),
+        JSON.stringify([
+          {
+            node_id: "LE_1",
+            event: "labeled",
+            label: { name: "ci:hold" },
+            actor: { login: "drive-user" },
+            created_at: "2026-09-10T09:59:00Z",
+          },
+        ]),
+      );
+      const seeded = await state(
+        stateDir,
+        [
+          "set-ci-hold",
+          "999",
+          "--set",
+          "held",
+          "--event-id",
+          "LE_1",
+          "--head",
+          scratchClean.head,
+          "--actor-name",
+          "drive-user",
+          "--created-at",
+          "2026-09-10T09:59:00Z",
+          "--check-run-watermark",
+          "10000",
+        ],
+        scratchClean.dir,
+      );
+      expect(seeded.exitCode).toBe(0);
+      rmSync(join(scratchClean.dir, ".context"), {
+        recursive: true,
+        force: true,
+      });
+      const r = await runDriveIn(
+        dir,
+        stateDir,
+        [
+          "--keep-draft",
+          "--no-head-sync",
+          "--max-rounds",
+          "1",
+          "--",
+          ...PASS_TASK,
+        ],
+        undefined,
+        {
+          env: {
+            DRIVE_PR_CI_REPAIR_ROUNDS: "1",
+            // Bounds a hypothetical regression to a fast failure instead of a
+            // 30-minute hang: against the OLD `.some()` predicate this fixture
+            // falls into the witness wait instead of dispatching a repair.
+            DRIVE_PR_FINAL_CI_WITNESS_POLLS: "1",
+          },
+        },
+      );
+      expect(r.stderr).toContain("TASK=ci-repair");
+      expect(r.stderr).toContain("DETAIL=Schema gate, detect-changes");
+      expect(r.stderr).not.toContain(
+        "no fresh exact-head required-check witness",
+      );
+    },
+  );
 
   it("drive-status.ts's --json output actually carries failingCheckNames/failingCheckRunNames/failingStatusNames", async () => {
     // `evaluate()` computed both fields on its internal report object, but
