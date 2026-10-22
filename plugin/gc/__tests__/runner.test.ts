@@ -126,6 +126,8 @@ test("collection intent and proof exist on disk before removal", async () => {
     receiptRoot: root,
   });
   expect(receipt.completed).toBe(true);
+  // The checks above run inside collect, where a failure becomes an outcome.
+  expect(receipt.resources[0]?.outcome).toBe("collected");
 });
 
 test("a receipt failure prevents every collection action", async () => {

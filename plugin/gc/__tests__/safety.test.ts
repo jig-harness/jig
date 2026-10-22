@@ -143,6 +143,20 @@ test("reader and writer admission exclude each other", async () => {
   );
   expect(readdirSync(join(dir, "scratch"))).toEqual([]);
 });
+test("a writer whose process exited blocks collectors, not creators", async () => {
+  const dir = root();
+  const child = Bun.spawnSync([process.execPath, "-e", "0"]);
+  expectSpawnExit(child, 0);
+  mkdirSync(join(dir, "scratch"));
+  const writer = join(dir, "scratch", "writer");
+  writeFileSync(writer, String(child.pid));
+  sharedGcLock("scratch", dir)();
+  await expect(
+    exclusiveGcLock("scratch", async () => undefined, dir),
+  ).rejects.toThrow(`${writer} names a process that has exited`);
+  writeFileSync(writer, String(process.pid));
+  expect(() => sharedGcLock("scratch", dir)).toThrow(writer);
+});
 test("repository declarations cannot register commands or production kinds", () => {
   expect(() => parseDeclaration({ command: "rm -rf" }, "/repo")).toThrow(
     "Unknown gc.command",

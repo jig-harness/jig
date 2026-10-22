@@ -181,7 +181,8 @@ async function updateSystemd(
   files: Record<string, string>,
   remove: boolean,
 ): Promise<string> {
-  if (remove)
+  // systemctl refuses to disable a unit that was never installed.
+  if (remove && existsSync(join(dir, "jig-gc.timer")))
     await execute(["systemctl", "--user", "disable", "--now", "jig-gc.timer"]);
   for (const [name, text] of Object.entries(files)) {
     const path = join(dir, name);
