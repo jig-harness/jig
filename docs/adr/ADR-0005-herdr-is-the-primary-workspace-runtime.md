@@ -5,7 +5,7 @@ status: approved
 description: "Jig's practices name no workspace runtime; its runnable tooling is built and tested for Herdr first, and other runtimes are supported through the same interfaces"
 lifecycle: permanent
 version: "1.0"
-last_updated: 2026-10-16
+last_updated: 2026-10-21
 owner: maintainers
 decision_date: 2026-10-16
 supersedes: ~
@@ -90,5 +90,6 @@ presented as Jig's default.
 
 Not yet checked by a gate. `reflect` records Herdr as the session's wrapper
 when `HERDR_ENV` is set (`plugin/skills/reflect/__tests__/events.test.ts`).
-The Herdr launcher provider is to carry its own tests, as the Conductor
-provider does in `tools/launcher/launcher.test.ts`.
+The Herdr workspace tool and the launcher's Herdr provider carry their own
+tests (`tools/herdr/__tests__/`, `tools/launcher/herdr-provider.test.ts`),
+and the tool's README lists the Herdr commands and output it relies on.

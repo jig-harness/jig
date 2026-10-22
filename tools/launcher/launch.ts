@@ -48,7 +48,7 @@ import { getTracker } from "./trackers/index.ts";
 export const READ_BUDGET_MS = 40_000;
 /** Bounds the assignment, which comes after the read and has its own budget. */
 export const ASSIGN_BUDGET_MS = 15_000;
-/** Bounds the provider's last step; opening a workspace takes seconds. */
+/** Bounds the provider's last step unless the provider sets its own bound. */
 export const OPEN_BUDGET_MS = 30_000;
 
 export interface LaunchDeps {
@@ -129,6 +129,7 @@ async function readAndAssign(
   return { fresh: read.cache, repoLabel: read.repoLabel };
 }
 
+/** Write the context cache; false, after a warning, when the write failed. */
 function persistCache(
   home: string,
   issue: string,
@@ -137,18 +138,28 @@ function persistCache(
   fallback: FallbackEnvironment,
   nowSeconds: number,
   warn: Warn,
-): void {
+): boolean {
   try {
     if (fresh !== null) writeCache(home, issue, fresh);
     // Seed at least the description when the tracker could not be read, but
     // never replace an existing cache with a thinner one.
     else if (!existsSync(file) && fallback.prompt)
       writeCache(home, issue, fallbackCache(issue, fallback, nowSeconds));
+    return true;
   } catch (error) {
     warn(
       `Could not write the context cache: ${error instanceof Error ? error.message : String(error)}`,
     );
+    return false;
   }
+}
+
+/** The branch the launch named, else the tracker's suggestion read with the issue. */
+export function chooseBranch(
+  named: string,
+  fresh: Pick<ContextCache, "branch_name"> | null,
+): string {
+  return named || fresh?.branch_name || "";
 }
 
 export async function launch(
@@ -168,8 +179,8 @@ export async function launch(
     if (settings[provider.name] !== undefined)
       provider.validateRepo(settings[provider.name], label);
 
-  const branch = branchArg || tracker.launchEnvironment.branch || "";
-  const fallback = { prompt: tracker.launchEnvironment.prompt, branch };
+  const named = branchArg || tracker.launchEnvironment.branch || "";
+  const fallback = { prompt: tracker.launchEnvironment.prompt, branch: named };
   const file = cachePath(home, issue);
   const { fresh, repoLabel } = await readAndAssign(
     tracker,
@@ -183,25 +194,35 @@ export async function launch(
     deps.assignBudgetMs ?? ASSIGN_BUDGET_MS,
     warn,
   );
-  persistCache(home, issue, file, fresh, fallback, nowSeconds(), warn);
-
-  const prompt = buildPrompt({
-    skill: config.skill,
+  const cacheWritten = persistCache(
+    home,
     issue,
-    title: fresh?.title ?? titleOf(file, warn),
-    branch,
-    cacheFile: file,
-  });
+    file,
+    fresh,
+    fallback,
+    nowSeconds(),
+    warn,
+  );
+  const branch = chooseBranch(named, fresh);
+
+  const title = fresh?.title ?? titleOf(file, warn);
+  const promptFor = (cacheFile: string): string =>
+    buildPrompt({ skill: config.skill, issue, title, branch, cacheFile });
   const repo =
     repoLabel === null
       ? null
       : (config.repos[repoLabel]?.[provider.name] ?? null);
   await provider.open({
     issue,
-    prompt,
+    prompt: promptFor(file),
+    cacheFile: file,
+    cacheWriteFailed: !cacheWritten,
+    promptFor,
     branch,
     repo,
-    signal: AbortSignal.timeout(deps.openBudgetMs ?? OPEN_BUDGET_MS),
+    signal: AbortSignal.timeout(
+      deps.openBudgetMs ?? provider.openBudgetMs ?? OPEN_BUDGET_MS,
+    ),
   });
 }
 

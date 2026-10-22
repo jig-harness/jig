@@ -203,7 +203,11 @@ an issue tracker's "open in coding agent" button to a workspace: it assigns
 the issue, writes the whole issue to a file the agent reads, picks the
 repository from the issue's label and opens the workspace through a
 [provider](GLOSSARY.md). Herdr is the [workspace runtime](GLOSSARY.md) the
-tooling targets first, on macOS, Linux and remote hosts. On a machine where
+tooling targets first, on macOS, Linux and remote hosts: the
+[Herdr workspace tool](tools/herdr/README.md) opens an issue's branch as a
+worktree workspace with its agent started and its first prompt sent once,
+reattaches instead of duplicating either, and runs the repository's
+worktree create and remove hooks. On a machine where
 the plugin is installed, it needs no setup per workspace in Herdr, Conductor
 or any tool that creates worktrees and starts sessions with your agent
 configuration; a remote host, a container or an isolated configuration
@@ -211,9 +215,8 @@ directory needs its own install
 ([where it works](plugin/README.md#where-it-works)).
 
 - **Practice:** [M12](modules/M12-parallel-agent-ergonomics/)
-- **On the roadmap:** the launcher's Herdr provider and the skills checked
-  inside Herdr (roadmap item 19), and a runnable form of the workspace
-  lifecycle (Later)
+- **On the roadmap:** the skills checked inside Herdr (roadmap item 19), and
+  a runnable form of the workspace lifecycle for other runtimes (Later)
 
 ## One configuration file, read in layers
 
