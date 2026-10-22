@@ -121,8 +121,17 @@ jobs:
         run: New-Item -ItemType Directory -Force -Path "C:\Program Files\Git\tmp" | Out-Null
       - name: Install locked dependencies, scripts off
         run: bun install --frozen-lockfile --ignore-scripts
+      - name: Enable Windows drive timing spans
+        shell: pwsh
+        run: |
+          "JIG_TRACE=1" >> $env:GITHUB_ENV
+          "JIG_TRACE_FILE=$env:RUNNER_TEMP/drive-pr-trace.jsonl" >> $env:GITHUB_ENV
       - name: Run this shard of the drive-pr suite
         run: bun run test --shard=${{ matrix.shard }}/4 ./plugin/skills/drive-pr/
+      - name: Print Windows drive timing spans on failure
+        if: failure()
+        shell: pwsh
+        run: Get-Content "$env:RUNNER_TEMP/drive-pr-trace.jsonl" -ErrorAction SilentlyContinue
 
   website:
     name: website (${{ matrix.os }})
