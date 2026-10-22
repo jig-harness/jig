@@ -3,15 +3,17 @@
 Picking up an issue should keep its context, validation and review together.
 Without a shared procedure, a started item can lose its findings between
 sessions or reach a pull request without the checks its changes need.
-`/jig:do-item <issue-key>` takes an issue from the configured tracker,
-checks its context and human checkpoints, delegates the work, validates it,
-opens a draft pull request under the repository's policy and arms
+`/jig:do-item <issue-key>` takes an issue from the configured tracker (its
+key is `ENG-123` on Linear, `#123` on GitHub Issues), checks its context and
+human checkpoints, delegates the work, validates it, opens a draft pull
+request under the repository's policy and arms
 [`drive-pr`](../drive-pr/README.md). A person merges.
 
 ## Requirements and platforms
 
-Install the [plugin requirements](../../README.md#requirements), and set
-`issue_tracker.team` in the repository's `.config/jig.yaml`. The complete
+Install the [plugin requirements](../../README.md#requirements), and name the
+tracker in the repository's `.config/jig.yaml`: `issue_tracker.adapter`, and
+on Linear `issue_tracker.team`. The complete
 procedure and configuration fields are in [SKILL.md](SKILL.md).
 
 The instructions run in Bash on macOS and Linux, and PowerShell on Windows.
@@ -23,7 +25,7 @@ Run every TypeScript script through `bun`, from the consumer repository's
 root. For example, using the installed do-item skill directory:
 
 ```bash
-bun "<skill-dir>/scripts/get_issue.ts" <issue-key>
+bun "<skill-dir>/scripts/get_issue.ts" "<issue-key>"
 ```
 
 Native Windows tests cover the pickup scripts and the drive's process

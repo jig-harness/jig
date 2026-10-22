@@ -8,8 +8,7 @@
  *   - what the skills' own validation rejects;
  *   - derivations that fail: a command whose program or script does not
  *     exist, a configured path that is missing, an integration branch that
- *     cannot be found, a required check that never runs, a tracker that
- *     cannot be reached;
+ *     cannot be found, a required check that never runs, an unreachable tracker;
  *   - declared values the repository contradicts, such as `stacking: none`
  *     with stacked pull requests open, or an AI reviewer named that posted on
  *     no recent pull request (or one that ran while none is named);
@@ -22,8 +21,7 @@
  *     heuristic), and a gate program the Claude Code settings do not allow;
  *   - configured tracker labels that the repository's label taxonomy
  *     (`issue_tracker.taxonomy`, else `label-taxonomy.yaml`) does not
- *     define, and a `review.taxonomy.types`
- *     that differs from the taxonomy's types;
+ *     define, and a `review.taxonomy.types` that differs from its types;
  *   - settings the repository's shape suggests but does not use;
  *   - the facts a profile suggestion rests on (`lib/profile-facts.ts`):
  *     contributors, deploy signals in CI and in tracked deploy
@@ -84,6 +82,7 @@ import { parseSeverityFormats } from "../../drive-pr/scripts/lib/severity-format
 import { refuseRenamedSection } from "../../do-item/scripts/lib/overlay.ts";
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
+import { trackerProbeKey } from "./lib/tracker-probe.ts";
 import { detectPackageManager } from "../../fix-ci/scripts/consumer-config.ts";
 import { journalPath } from "../../reflect/scripts/lib/context.ts";
 import { parseObligations } from "../../resolve-conflicts/scripts/lib/obligations.ts";
@@ -1494,11 +1493,12 @@ function forgeChecks(
 }
 
 async function trackerCheck(config: Config): Promise<Finding[]> {
-  const team = at(config, "issue_tracker.team");
-  if (typeof team !== "string") return [];
+  if (at(config, "issue_tracker") === undefined) return [];
   try {
-    const tracker = openTracker(parseTrackerConfig(config));
-    const probe = tracker.getIssue(`${team}-1`);
+    const trackerConfig = parseTrackerConfig(config);
+    const key = trackerProbeKey(trackerConfig);
+    if (key === null) return [];
+    const probe = openTracker(trackerConfig).getIssue(key);
     const timeout = new Promise<never>((_, reject) =>
       setTimeout(
         () => reject(new Error("no answer within 30 seconds")),

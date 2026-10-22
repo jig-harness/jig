@@ -1,6 +1,6 @@
 /**
  * Open the consumer's issue tracker: read `issue_tracker` from the overlay and
- * hand it to the adapter it names. Callers import from here and use the
+ * hand it to the adapter it names (`linear`, `github`). Callers import from here and use the
  * `Tracker` port; they never import an adapter.
  *
  * To add a tracker: implement `Tracker` in a sibling module and register a
@@ -12,21 +12,36 @@ import {
   requireTeamKey,
   type TrackerConfig,
 } from "./config.ts";
+import { gitHubClient } from "./github/client.ts";
+import { gitHubModel } from "./github/model.ts";
+import { homeRepo } from "./github/refs.ts";
+import { gitHubTracker } from "./github/tracker.ts";
+import { defaultTransport as gitHubTransport } from "./github/transport.ts";
 import { defaultTransport, linearTracker } from "./linear.ts";
 import type { Tracker } from "./port.ts";
 
 export type { CanonicalState, Tracker } from "./port.ts";
 export { CANONICAL_STATES } from "./port.ts";
 
-type AdapterFactory = (config: TrackerConfig & { team: string }) => Tracker;
+/** Builds an adapter; throws naming the field when a setting it needs is missing. */
+type AdapterFactory = (config: TrackerConfig) => Tracker;
 
 const ADAPTERS: Record<string, AdapterFactory> = {
   linear: (config) =>
     linearTracker({
-      team: config.team,
+      team: requireTeamKey(config),
       states: config.states,
       transport: defaultTransport(),
     }),
+  github: (config) =>
+    gitHubTracker(
+      gitHubClient({
+        home: homeRepo(config.github.repository),
+        model: gitHubModel(config.states, config.github),
+        settings: config.github,
+        transport: gitHubTransport(),
+      }),
+    ),
 };
 
 /** The adapters this version knows, by `issue_tracker.adapter` name. */
@@ -36,7 +51,9 @@ export function knownAdapters(): string[] {
 
 /**
  * The tracker the consumer configured. Throws with the field to fix when the
- * overlay is missing, names an unknown adapter, or declares no team.
+ * overlay is missing, names an unknown adapter, or lacks a setting the
+ * adapter needs (a team for Linear; for GitHub, a repository when the
+ * `origin` remote does not name one).
  */
 export function openTracker(
   config: TrackerConfig = ownTrackerConfig(),
@@ -48,5 +65,5 @@ export function openTracker(
     throw new Error(
       `issue_tracker.adapter '${config.adapter}' is not supported (known: ${knownAdapters().join(", ")})`,
     );
-  return factory({ ...config, team: requireTeamKey(config) });
+  return factory(config);
 }

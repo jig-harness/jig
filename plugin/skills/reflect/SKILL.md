@@ -162,7 +162,7 @@ person instead of filing.
 ## 6. Store
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/reflect.ts" contribute [--issue <class>=<issue>]... --session '{"model":"<model id>"}'
+bun "${CLAUDE_SKILL_DIR}/scripts/reflect.ts" contribute [--issue "<class>=<issue>"]... --session '{"model":"<model id>"}'
 ```
 
 It appends the unsent findings, and an `escalated` decision for every open

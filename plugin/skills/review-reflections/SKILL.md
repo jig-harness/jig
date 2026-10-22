@@ -63,6 +63,9 @@ Then read `notices`:
 - `status-edited`: a person changed a status by hand where the store shows
   one. Show it beside its finding and ask the person to record it as a
   decision (step 6) or to put the shown status back.
+- `untrusted-record`: the store ignored records written by someone it does
+  not trust (on GitHub, someone who cannot write to the repository). Show
+  the reference and author; whether to re-record them is the person's call.
 
 `diagnose_error` set means the store's diagnosis failed: report it and go on
 from the events.

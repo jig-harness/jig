@@ -88,7 +88,8 @@ export function keyInBranch(branch: string): string | undefined {
 /**
  * With `issue_tracker.team` unset, the team whose issue keys the repository's
  * history carries most: merged pull requests, commit subjects on the
- * integration branch and branch names, counted per source. A team is offered
+ * integration branch and branch names, counted per source. None for a
+ * GitHub tracker, whose keys are issue numbers with no team. A team is offered
  * when it has at least 3 keys and more than half of all keys found, and the
  * evidence states its count in each source that has it, and how many keys
  * name other teams, so a person can weigh it.
@@ -98,6 +99,7 @@ export function trackerTeamSuggestion(
   sources: KeySource[],
 ): Suggestion[] {
   if (at(config, "issue_tracker.team") !== undefined) return [];
+  if (at(config, "issue_tracker.adapter") === "github") return [];
   const totals = new Map<string, number>();
   for (const source of sources)
     for (const key of source.keys)

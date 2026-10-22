@@ -75,7 +75,10 @@ such as `{ step : 1 }`, is an error.
 Every flow step and every claim has a `source`. Cite repository-rooted paths
 with a symbol: `src/checkout/pricing.service.ts#buildQuote`.
 Several citations go in one `source`, separated by `; `. `ADR-NNNN` and an
-issue key such as `ENG-123` count too. Prefer `#symbol` to line numbers, which move. Each
+issue key such as `ENG-123` count too, and so does a GitHub issue's `#123`
+where the repository's tracker is GitHub Issues (or none is configured): a
+symbol always follows a path, so a citation that is only `#<n>` is never
+one. Prefer `#symbol` to line numbers, which move. Each
 segment may carry a trailing ` (note)`. `validate` and `render` refuse any
 other segment, such as prose, so every citation names something the freshness
 guard can check.
@@ -151,7 +154,7 @@ returned header, then `mcp__linear__create_attachment_from_upload`). Remove an
 older explainer with the same title after the new one is attached, never
 before. Post the markdown as the comment, or a shorter comment that points to
 the sheet, through the tracker scripts of `/jig:do-item`
-(`bun "<skill-dir>/../do-item/scripts/tracker.ts" comment <KEY> --body-file <comment-file>`). Never commit a
+(`bun "<skill-dir>/../do-item/scripts/tracker.ts" comment "<KEY>" --body-file <comment-file>`). Never commit a
 rendered sheet to the repository.
 
 ## What the renderer guarantees

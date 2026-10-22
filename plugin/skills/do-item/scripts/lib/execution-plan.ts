@@ -17,6 +17,8 @@
  * format.
  */
 
+import { ANY_KEY_SOURCE } from "./tracker/keys.ts";
+
 export const DEFAULT_BLOCK = "execution-plan-v1";
 
 export interface PlanEdge {
@@ -52,8 +54,9 @@ const SURFACE_KINDS = new Set([
 
 const object = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
-const id = (v: unknown): v is string =>
-  typeof v === "string" && /^[A-Z][A-Z0-9]*-\d+$/.test(v);
+const KEY = new RegExp(`^${ANY_KEY_SOURCE}$`);
+/** An issue key of any tracker (`ENG-12`, `#12`). */
+const id = (v: unknown): v is string => typeof v === "string" && KEY.test(v);
 const text = (v: unknown): v is string =>
   typeof v === "string" && v.trim().length > 0;
 /** Rendered inline as prose, so a newline could open a block the plan never had. */

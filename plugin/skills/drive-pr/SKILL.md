@@ -559,13 +559,15 @@ could forge or forget.
    `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view --json number --jq .number` for the current branch. Refuse with
    the `gh` error if neither yields one; do not guess.
 2. **Refuse to arm an uncleared human checkpoint.** The PR serves **every**
-   issue key in its branch name and every one a closing keyword names in its
-   body (`Closes`/`Fixes`/`Resolves <key>`) — check each one, never a chosen
-   first. An issue the body merely cites (`References:`, `Related:`, a prose
-   mention) is context the PR does not claim to deliver, so its gate is not
+   issue key its branch name carries and every one a closing keyword names in
+   its body (`Closes`/`Fixes`/`Resolves <KEY>`) — check each one, never a
+   chosen first. A key is `ENG-123` on Linear and `#123` on GitHub Issues; a
+   branch carries it as `pull_requests.branch_name` renders it (`eng-123-…`
+   for `ENG-123`, `123-…` for `#123`). An issue the body merely cites
+   (`References:`, `Related:`, a prose mention) is context the PR does not claim to deliver, so its gate is not
    this PR's to honour and its lookup failing is not a reason to refuse. For
    each, read its labels through `/jig:do-item`'s tracker scripts
-   (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" <KEY>`) and, when
+   (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" "<KEY>"`) and, when
    it has a parent, the parent's description too, applying `/jig:do-item`'s
    human-in-the-loop (HITL) gate check
    ([`do-item/SKILL.md`](../do-item/SKILL.md) Step 4a: the repository's `hitl`

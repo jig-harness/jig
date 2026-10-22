@@ -23,8 +23,11 @@ import {
   type LiveIssue,
   readExecutionPlan,
 } from "./lib/execution-plan.ts";
+import { ANY_KEY_SOURCE } from "./lib/tracker/keys.ts";
 
-const KEY = /^[A-Z][A-Z0-9]*-\d+$/;
+/** An issue key of any tracker: the plan is read without the tracker's configuration. */
+const KEY = new RegExp(`^${ANY_KEY_SOURCE}$`);
+const EDGE = new RegExp(`^${ANY_KEY_SOURCE}>${ANY_KEY_SOURCE}$`);
 
 /**
  * The configured block name; the default when the repository sets none. An
@@ -75,9 +78,7 @@ export function selectExecutionIssue(
     Array.isArray(input.live) ||
     !Array.isArray(input.mergedConflictEdges) ||
     !input.mergedConflictEdges.every(
-      (e) =>
-        typeof e === "string" &&
-        /^[A-Z][A-Z0-9]*-\d+>[A-Z][A-Z0-9]*-\d+$/.test(e),
+      (e) => typeof e === "string" && EDGE.test(e),
     )
   )
     throw new Error("Malformed execution selection input");

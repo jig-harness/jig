@@ -47,6 +47,8 @@ export const REPOSITORY_ONLY_FIELDS: readonly string[] = [
   "gates.command",
   "repository.base_branch",
   "issue_tracker.team",
+  "issue_tracker.github.repository",
+  "issue_tracker.github.project",
   "review.repo_slug",
   "review.repo_label",
   "ci.required_checks",
