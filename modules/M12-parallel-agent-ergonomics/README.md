@@ -43,7 +43,10 @@ up front.
 > exit status, with one named verdict line per part; and an agent left
 > running unattended can be reached through a **control channel** of its
 > worktree, whose binding **directives** are a closed set enforced by code
-> that **fails closed**, while free-text notes only advise.
+> that **fails closed**, while free-text notes only advise; a repository
+> working in parallel **measures where its merges conflict**, and removes
+> each [conflict hotspot](../../GLOSSARY.md) at its cause or records why it
+> keeps it.
 
 Everything below is one tool-independent statement made mechanical; the
 per-ecosystem wiring lives in [mappings.md](mappings.md).
@@ -187,6 +190,23 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
    skill ships it as the drive mailbox; its layout and the equivalents per
    agent runner are in [mappings.md](mappings.md#control-channels).
 
+10. **Measure merge conflicts at their cause** — replay the merges in a named
+    time window and rank the paths that conflicted, with their causes. A
+    [conflict hotspot](../../GLOSSARY.md) is a path that meets the configured
+    recurrence threshold (at least 3 merges by default). For each hotspot,
+    remove the cause or record a decision to keep it, with a reason and a
+    condition for revisiting it. Compare windows of the same length and scope before and after the
+    remedy to see whether the cause stops. The
+    [`resolve-conflicts` history report](../../plugin/skills/resolve-conflicts/SKILL.md#where-past-merges-conflicted-the-history-report)
+    is the runnable form. It distinguishes files whose layout creates
+    conflicts (shared counts, version lines or additions at the same place)
+    from two changes to the same thing. Its replay sees reachable merge
+    commits; the skill separately keeps a live record of rebases,
+    cherry-picks and reverts resolved in this clone. Keep its coverage limits with the findings: silence from
+    the live record is not proof of a conflict-free branch. Feed recurring
+    causes into the existing [M8 learning loop](../M8-learning-loop/) rather
+    than creating a second issue queue.
+
 The whole copyable model — all its rules in one place, ready to drop into a docs
 tree — is [`templates/WORKTREE-ERGONOMICS.md`](templates/WORKTREE-ERGONOMICS.md).
 The branch-discipline block is written to be **imported into an agent instruction
@@ -215,7 +235,9 @@ governs how those files layer), so every agent inherits the rules.
   writes; the quiet form is **scripted**: a summary on green, the full
   output on red, the gate's own exit status, one verdict line per part;
   and where agents run unattended, each takes a **control channel** whose
-  directives are enforced by code and fail closed.
+  directives are enforced by code and fail closed; where work runs in
+  parallel, dated merge-conflict reports name their window and coverage,
+  and every hotspot has a remedy or a recorded decision to keep it.
 - **Strict** — the port allocator and the resource lock each **ship a self-test
   that runs in CI**, so a broken utility fails loudly; the teardown hook's
   reflection nudge is wired to the [M8](../M8-learning-loop/) loop; and the
@@ -263,6 +285,11 @@ governs how those files layer), so every agent inherits the rules.
    your own loop, each checked by code at a named checkpoint and failing
    closed ([mappings.md](mappings.md#control-channels)).
 
+10. Where work runs in parallel, run the history report for a named window
+    ([mappings.md](mappings.md#measuring-merge-conflicts)), retain its coverage
+    statement, and record a remedy or a keep decision for every hotspot.
+    Rerun it over comparable windows after a remedy lands.
+
 ## Status
 
 ### What the module provides
@@ -278,6 +305,7 @@ governs how those files layer), so every agent inherits the rules.
 | [`reference/worktree-namespace/`](reference/worktree-namespace/) | The per-worktree data namespace: the name derived from a worktree's identity, and the reaper's decision (which of one owner's namespaces are expired or orphaned, which were created unlabelled, with production refused) |
 | [`reference/quiet-run/`](reference/quiet-run/) | The quiet-run wrapper: a verdict line and the tail on green, everything on red, the command's own exit status; with its self-test |
 | [`drive-pr`'s drive mailbox](../../plugin/skills/drive-pr/SKILL.md#the-drive-mailbox) | The control channel into an unattended review loop: notes, and the `hold-push`, `pause` and `stop` directives with their checkpoints |
+| [`resolve-conflicts` history report](../../plugin/skills/resolve-conflicts/SKILL.md#where-past-merges-conflicted-the-history-report) | A read-only replay: paths, causes, hotspots and coverage |
 | [`mappings.md`](mappings.md) | Worktree managers and agent runners, package managers, CI providers, change notes and the union merge driver, per-database namespace commands, test-runner quiet flags and the command-rewriting hook per agent runtime, control channels |
 | [maturity criteria](../../plugin/skills/audit/criteria/M12-parallel-agent-ergonomics.yaml) | The criteria the [audit skill](../../plugin/skills/audit/README.md) scores |
 
@@ -304,7 +332,10 @@ the Jig repository's `lib/`, so run them from a pinned Jig checkout or vendor
   per part) apply to any repository where an agent runs the gates, single
   checkout or not. The change-note criteria are expected-absent where no
   changelog or version changes with each pull request, and the
-  control-channel criterion where no agent runs unattended.
+  control-channel criterion where no agent runs unattended. Merge-conflict
+  measurement applies wherever people or agents work in parallel, including
+  across machines; it is expected-absent only where work never runs in
+  parallel.
 - **A control channel the agent must obey in free text.** Notes stay
   advisory by design; see core piece 9.
 
@@ -318,8 +349,9 @@ the Jig repository's `lib/`, so run them from a pinned Jig checkout or vendor
 - **Garbage collection of a developer machine.** A sweep of what every
   worktree's sessions left behind (leftover processes, scratch directories,
   caches and containers keyed to worktrees that no longer exist), run by the
-  owner with the same report-first rule as the namespace reaper, is designed
-  and not yet validated in a working repository.
+  owner with the same report-first rule as the namespace reaper, is
+  [roadmap item 24](../../ROADMAP.md); its design is in
+  [design/resource-gc.md](../../design/resource-gc.md).
 - **A copyable command-rewriting hook** that applies the quiet wrapper in
   an agent runtime: the contract and the safety model are in
   [mappings.md](mappings.md#agent-facing-gate-output), and each repository

@@ -23,6 +23,7 @@ import { parseConfig } from "./config.ts";
 import { type ContextCache, cachePath } from "./cache.ts";
 import { type LaunchDeps, launch } from "./launch.ts";
 import type { OpenRequest, Provider } from "./provider.ts";
+import { openRequest } from "./test-request.ts";
 import {
   conductorProvider,
   deepLink,
@@ -935,13 +936,8 @@ test("an unknown provider fails before anything is fetched", async () => {
 
 // ── Conductor provider ─────────────────────────────────────────────────────
 
-const request = (repo: unknown): OpenRequest => ({
-  issue: "ENG-1",
-  prompt: "/s ENG-1\nBranch hint: a&b",
-  branch: "",
-  repo,
-  signal: new AbortController().signal,
-});
+const request = (repo: unknown): OpenRequest =>
+  openRequest(repo, "/s ENG-1\nBranch hint: a&b");
 
 test("a routed repository is forced with prompt and path", () => {
   expect(deepLink(request("x"), "/Users/me/My Repo #1")).toBe(

@@ -1,16 +1,14 @@
 /**
- * The Markdown copy of the audit sheet: what changed since the prior audit,
- * row by row, and how the criteria still open are counted against the
- * profile's target. Kept apart from the rest of the sheet's tests because the
- * expected rows list every criterion added since the prior record, so the
- * list grows with the criteria.
+ * The audit sheet's Markdown copy, compared with an earlier audit: what is
+ * still open within the profile's target, what lies beyond it, and what
+ * changed since.
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { renderReportMarkdown } from "../scripts/report/markdown.ts";
 import { noProfile, priorRecord, reportInput } from "./report-fixtures.ts";
 
-describe("the Markdown copy: changes since the last audit", () => {
+describe("the Markdown copy, since the last audit", () => {
   test("lists the criteria still open within the target, and only counts those beyond it", () => {
     const text = renderReportMarkdown(reportInput({ prior: priorRecord() }));
     expect(text).toContain(

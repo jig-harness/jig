@@ -76,6 +76,7 @@ criteria:
     observe:
       - "a create hook allocates/prints the worktree's port slot"
       - "a remove hook prints a reflection nudge (non-blocking)"
+      - "in Herdr: executable `.config/worktree-hooks/create` and `remove` count as wired only when the repository also tracks how both are reached: creation through a setup script or documented install step that installs Jig's Herdr plugin (tools/herdr/plugin), or through commands or launcher configuration that open worktrees with tools/herdr's `open`, which runs the create hook itself where no plugin is installed; and removal through commands or launcher configuration that remove worktrees with tools/herdr's `remove`; the hook files alone are configured, not wired, since an installed plugin and a habit of opening or removing through the tool are not facts the repository shows"
 
   - id: worktree-namespaces-keyed-and-reaped
     level: standard
@@ -250,3 +251,18 @@ criteria:
       - "the gate runner (a script, a task runner, a wrapper around each part) prints one line per part naming it and its outcome"
       - "a rule where agents read it says that a missing verdict line means the part did not run"
       - "expected-absent when the gate set is one command with one outcome"
+
+  - id: merge-conflict-hotspots-measured
+    level: standard
+    requires: convention
+    since: 0.77.0
+    statement: >-
+      A repository working in parallel measures where its merges conflict,
+      and each conflict hotspot is removed at its cause or kept by a recorded
+      decision with a reason and a condition for revisiting it.
+    observe:
+      - "dated reports rank conflicted paths with causes and state the time window, recurrence threshold and coverage limits"
+      - "each reported hotspot links to a change that removes its cause, work to make that change, or a recorded keep decision with its reason and revisit condition"
+      - "reports after a remedy compare like windows to check whether its cause stopped recurring"
+      - "the audit's own replay supplies current conflict evidence but does not establish that the repository already measures or acts on hotspots"
+      - "expected-absent only where neither people nor agents work in parallel; an empty history or a clone with no live events does not establish this"

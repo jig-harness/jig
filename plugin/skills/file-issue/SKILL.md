@@ -93,8 +93,10 @@ command.
 ### Asking the user
 
 Where this skill says "ask the user", use `AskUserQuestion` under Claude
-Code; in any other interactive harness, ask a plain-text numbered question
-and end the turn. Never pick on the user's behalf.
+Code where the session can use it; in any interactive harness where it
+cannot (another harness, or a permission mode that denies the tool), ask a
+plain-text numbered question and end the turn. With nobody to answer, stop and state the question rather
+than write anything. Never pick on the user's behalf.
 
 ## Modes
 

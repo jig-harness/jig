@@ -33,6 +33,7 @@ test("the gate set runs its cheap stages first and --fast runs only those", asyn
     "bun scripts/check-supply-chain-lockstep.ts",
     "bun scripts/check-md-links.ts",
     "bun scripts/check-instruction-paths.ts",
+    "bun scripts/check-skill-fallbacks.ts",
     "bun scripts/check-md-tables.ts",
     "bun scripts/check-glossary-coverage.ts",
     "bun scripts/check-no-tracker-refs.ts",

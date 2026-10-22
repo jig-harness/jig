@@ -38,16 +38,13 @@ from them.
 
 ### 19. Herdr as the primary workspace runtime
 
-[Herdr](https://herdr.dev) becomes the [workspace runtime](GLOSSARY.md)
-Jig's tooling is built and tested for first
+[Herdr](https://herdr.dev) is the [workspace runtime](GLOSSARY.md) Jig's
+tooling is built and tested for first
 ([ADR-0005](docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
-The [launcher](tools/launcher/README.md) opens a tracker issue as a Herdr
-worktree workspace with the agent started and given its prompt, on the
-machine or on a remote host;
-[M12](modules/M12-parallel-agent-ergonomics/README.md)'s worktree lifecycle
-runs in Herdr workspaces, keeping a worktree's unsent reflection findings
-before it is removed; and the drive, pickup and review skills are
-checked inside Herdr on macOS and Linux.
+Opening a tracker issue as a Herdr workspace, on the machine or on a remote
+host, and M12's worktree lifecycle in Herdr are available
+([the Herdr workspace tool](tools/herdr/README.md)); what remains is checking
+the drive, pickup and review skills inside Herdr on macOS and Linux.
 
 ## Next
 
@@ -83,8 +80,8 @@ beside it.
 
 Practices working repositories validated, added to the modules that exist:
 watchdogs for what is deployed (M10, M11), an acceptance stage (M6), a skill
-that runs M7's post-merge stage in any repository, a generator for the model roster and instructions that keep working
-in every agent tool (M0, M4, M5).
+that runs M7's post-merge stage in any repository, and a generator for the
+model roster (M0).
 
 ### 20. `code-stats`: test-runner configuration and audit evidence
 
@@ -107,13 +104,10 @@ GitHub.
 
 ### 22. Merge conflicts, measured
 
-A report of where a repository's merges conflict, from its git history and
-from each resolution [`resolve-conflicts`](plugin/skills/resolve-conflicts/SKILL.md)
-makes: which files, how often, why (a count, a list or a version every
-change edits in one place, or two changes to the same lines), and the change
-that removes each cause. [M12](modules/M12-parallel-agent-ergonomics/README.md)
-gains the practice of measuring and removing
-[conflict hotspots](GLOSSARY.md), and the audit scores it.
+Measured [conflict hotspots](GLOSSARY.md) become findings in the
+[reflection store](plugin/skills/reflect/README.md), grouped by their cause,
+so the existing review and escalation loop turns recurring conflicts into
+changes to the repository.
 
 ### 23. Seed review lenses
 
@@ -125,6 +119,16 @@ comments that say what the code does now ([M4](modules/M4-docs-governance/README
 and types that admit no invalid value (M15). Each runs only when the diff
 gives it something to check, comments until measurement shows it may block,
 and can be loaded by a repository's own automated reviewer.
+
+### 24. Resource garbage collection for a developer machine
+
+One command, `jig gc`, that reports and then reclaims what parallel agent
+worktrees leave on a machine: fixture processes, scratch directories,
+container volumes and images, merged branches and tool state. Every kind
+follows one contract (something must prove the resource dead, age only
+guards, report first, fail closed, a receipt per run); a repository enables
+the kinds it mints with its own facts, a machine sets the schedule, and
+[M12](modules/M12-parallel-agent-ergonomics/README.md) gains the practice.
 
 ## Later
 
@@ -150,7 +154,7 @@ and can be loaded by a repository's own automated reviewer.
 - **Gates and workspace infrastructure.** Locks shared across
   worktrees, remote gates, and a runnable form of
   [M12](modules/M12-parallel-agent-ergonomics/README.md)'s workspace
-  lifecycle.
+  lifecycle for runtimes other than Herdr.
 - **Change-area consumer lint.** The
   [change-areas skill](plugin/skills/change-areas/README.md) checks the path
   lists in agent rules, hook configuration and CI workflow triggers against

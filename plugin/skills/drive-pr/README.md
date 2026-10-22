@@ -168,6 +168,14 @@ configuration, because they describe one machine's layout:
 | `JIG_VERIFICATION_FIT_LOG` | Where `verification-fit.ts` appends its verdicts | `~/.local/state/jig/verification-fit.jsonl` |
 | `DRIVE_PR_REAPER_LAUNCHD_LABEL`, `DRIVE_PR_REAPER_CRONTAB_MARKER` | Name a scheduled `bun "<skill-dir>/scripts/reap-state.ts" --delete` job, so `migrate-state-dir.ts` refuses while it is enabled | Unset: no schedule is checked |
 
+`drives.ts` identifies each drive's repository in both human listings and
+JSON rows (`repository`): the origin's owner/repository, or the clone's Git
+common directory when origin is unavailable or its URL yields no plain
+owner/repository pair. The origin URL itself is never printed, so a credential
+in it stays out of listings. This label is read locally and does not contact
+the hosting service. State, logs and leases for the same PR
+number in different clones stay in separate clone directories.
+
 ### CI hold
 
 Without a hold, every intermediate push runs the repository's full CI, and
@@ -584,3 +592,17 @@ preloads); they never run from the plugin cache.
 The `__tests__/terminal-states*.test.ts` suites check that every terminal
 state's exit code agrees across `scripts/`, `SKILL.md`, this page and
 `references/terminal-states.md`.
+
+The cross-PR scoreboard (`scripts/fractal-metrics.ts`) also measures the share
+of merged pull requests that met a conflict. It combines the sibling
+`resolve-conflicts` history report with this clone’s live events and prints
+conflicted, observed-clean and unknown counts over the forge’s merged PR
+cohort. A clean observation requires replayed PR ancestry and no forge-recorded
+force-push. The replay covers merges committed since the cohort's earliest
+sampled commit, pull-request opening or merge; a pull request whose ancestry
+holds an older merge stays unknown. A partial clone with git
+before 2.45 leaves ancestry unknown rather than risk a fetch. The fleet-health file’s `merge_conflicts.coverage_floor` (default
+`0.9`) and `baselines.merge_conflict_share.value` govern its verdict; the
+whole-cohort bounds must agree too. Missing heads, rewritten branches and
+resolutions in other clones limit coverage. A capped forge cohort has no
+verdict. The report includes coverage and bounds in JSON and terminal output.

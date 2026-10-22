@@ -3,8 +3,8 @@
 Where each instruction layer (see the module [README](README.md)) lives in
 each major agent runtime, and how the universal-file + tool-delta pattern
 maps onto it. Vendor conventions move fast: the table below is current as of
-2026-07, the Claude Code and Codex loading rows as of 2026-10, and the
-budgets carry their own dates. Before you
+2026-07, the Claude Code and Codex loading rows and the deny-list row as of
+2026-10, and the budgets and the capability table carry their own dates. Before you
 rely on a detail, check it the way [What each runtime loads](#what-each-runtime-loads)
 describes; a vendor's docs page is not enough.
 
@@ -16,9 +16,10 @@ describes; a vendor's docs page is not enough.
 | Tool-specific delta | `CLAUDE.md` (delta + `@AGENTS.md` import) | usually none needed — reads the universal file directly | `.cursor/rules/` entry with `alwaysApply: true` (delta only; Cursor reads `AGENTS.md` natively); legacy `.cursorrules` is deprecated | `.github/copilot-instructions.md` (delta only, for the surfaces that do not read `AGENTS.md`) |
 | Per-directory files (added to the parent's, not replacing them) | nested `CLAUDE.md`, read when a file under it is read; a nested `AGENTS.md` by default only in a project with no `CLAUDE.md` of its own (otherwise only with a user-level setting), so beside a root `CLAUDE.md` pair it with a nested `CLAUDE.md` that imports it | nested `AGENTS.md` files along the path; an `AGENTS.override.md` in a directory is read *instead of* that directory's `AGENTS.md` | nested `.cursor/rules/` directories; nested `AGENTS.md` | nested `AGENTS.md` (coding agent) |
 | Conditional rules (path-scoped) | `.claude/rules/*.md` with `paths:` frontmatter (no `paths:` ⇒ always-loaded) — see [templates/rules-README.md](templates/rules-README.md) | no native equivalent — state scoped rules in the relevant nested `AGENTS.md` instead | `.cursor/rules/*.mdc` with `globs:` frontmatter (`alwaysApply: true` ⇒ always-loaded) | `.github/instructions/*.instructions.md` with `applyTo:` frontmatter |
-| Skills (on-demand procedures) | `.claude/skills/<name>/SKILL.md`, invoked as `/<name>` | `.agents/skills/<name>/SKILL.md` (scanned walking up to repo root; follows symlinks) | no direct equivalent — `.cursor/commands/` covers reusable prompts | `.github/prompts/*.prompt.md` |
+| Skills (on-demand procedures) | `.claude/skills/<name>/SKILL.md`, invoked as `/<name>` | `.agents/skills/<name>/SKILL.md` (scanned walking up to repo root; follows symlinks) | `.agents/skills/<name>/SKILL.md` or `.cursor/skills/<name>/SKILL.md`, and for compatibility `.claude/skills/` and `.codex/skills/`; invoked as `/<name>` | `.github/prompts/*.prompt.md` |
 | Glossary | plain file (`GLOSSARY.md` / `CONTEXT.md`) linked from the universal file — same in every runtime; Claude Code can additionally auto-load a reminder rule scoped to source/docs paths | same | same | same |
 | Dispositions / HITL registry | plain docs linked from the universal file — runtime-independent | same | same | same |
+| Command deny list (enforced, not read: see [the capability table](#runtime-specific-capabilities-and-their-fallbacks)) | `permissions.deny` in `.claude/settings.json` | `prefix_rule` entries in `.codex/rules/*.rules` | not observed | not observed |
 
 ## What each runtime loads
 
@@ -116,7 +117,7 @@ Where the always-loaded surface lives in each runtime:
 |------|-------------|--------------|--------|----------------|
 | Chained instruction files | `CLAUDE.md` with its imports, root to working directory | `AGENTS.md` chain, root to working directory | `AGENTS.md` and `alwaysApply: true` rules | `.github/copilot-instructions.md`; `AGENTS.md` for the coding agent |
 | Unscoped rules | `.claude/rules/*.md` without `paths:` | none | `.cursor/rules/*.mdc` with `alwaysApply: true` | `.github/instructions/*.instructions.md` with `applyTo: "**"` |
-| Skill and agent discovery metadata | name, description and `when_to_use` of every model-invocable skill; each subagent's name and description | name and description of each skill it scans | none native | prompt files are invoked, not listed |
+| Skill and agent discovery metadata | name, description and `when_to_use` of every model-invocable skill; each subagent's name and description | name and description of each skill it scans | the skills it discovers at startup, for the agent to apply by context | prompt files are invoked, not listed |
 | [MCP](../../GLOSSARY.md) server instruction blocks | the `instructions` each connected server sends | the servers' `instructions`, where the runtime passes them on | the same | the same |
 
 MCP (Model Context Protocol) server instruction blocks arrive from the
@@ -230,12 +231,164 @@ needs real files in its scan path. The portable mechanism:
 
 Fallback for runtimes with no skill discovery at all: reference the skill
 by path in the instruction file ("read `.claude/skills/<name>/SKILL.md`
-and follow it") — any tool that can read files can execute a skill.
+and follow it") — any tool that can read files can execute a skill. Wherever
+prose names a skill by its slash command, it gives that fallback too, in the
+order and with the limits in
+[Running a skill](#running-a-skill); the
+[skill-invocation fallback lint](reference/skill-invocation-fallback/README.md)
+checks it.
 
 The skill mirror command runs under the pinned Bun runtime; see
 [tools/README.md](../../tools/README.md) for the source-checkout layout.
 Windows requires Developer Mode or permission to create symlinks for this
 optional discovery mirror; it never substitutes copies for the canonical skills.
+
+## Runtime-specific capabilities and their fallbacks
+
+An instruction that relies on a capability only some runtimes have does
+nothing in the others, and nothing says so: the agent skips the step or
+improvises one. M0's [portability invariant](README.md#invariant) asks each
+such instruction to name its fallback, or the equivalent per runtime, with
+the gaps written down. What each runtime offers, observed in 2026-10; "not
+observed" means nobody has checked it, not that the runtime lacks it, so the
+portable fallback applies there:
+
+| Capability | Claude Code | OpenAI Codex | Cursor | GitHub Copilot | pi | Portable fallback |
+|------------|-------------|--------------|--------|----------------|----|-------------------|
+| Running a skill | `/<name>` from `.claude/skills/`; a plugin's skill as `/<plugin>:<name>` | skills scanned from `.agents/skills/` ([the mirror](#cross-runtime-skill-discovery-the-symlink-mirror)); a plugin's skill asked for by name (`<plugin>:<name>`) | `/<name>` from `.agents/skills/`, `.cursor/skills/`, `.claude/skills/` or `.codex/skills/` | `.github/prompts/*.prompt.md` | not observed | read the skill's `SKILL.md` and follow it |
+| Asking the user | the built-in `AskUserQuestion` tool | not observed | not observed | not observed | not observed | a plain-text numbered question, then wait |
+| Denying a command | `permissions.deny` in `.claude/settings.json` | `prefix_rule` in `.codex/rules/*.rules` | not observed | not observed | not observed | none: a written policy is a request, not a control |
+| A tool the host injects | present only in a session the injecting launcher or app started | the same | the same | the same | the same | the repository's own script or command |
+
+### Running a skill
+
+Prose that names a skill by its slash command also gives the fallback, in
+this order: the runtime's own skill directory (`.agents/skills/<name>/`
+where the [mirror](#cross-runtime-skill-discovery-the-symlink-mirror) keeps
+one), then a direct read of `SKILL.md`. Resolve the skill's `references/`
+and `scripts/` from the skill's own directory, which for a mirrored skill is
+the symlink's target, not the mirror. A link to the skill's `SKILL.md`
+beside the command is the shortest fallback that works everywhere.
+
+A skill shipped in a plugin runs the way each runtime runs an installed
+plugin's skill: `/<plugin>:<name>` in Claude Code, asked for by name
+(`<plugin>:<name>`) in Codex. Where neither works, or the skill was
+installed by copying or linking its folder into a skill directory, the
+fallback is the same as for any skill: the runtime's own skill directory,
+then a read of the installed skill's `SKILL.md`. The plugin's installation
+notes say where each runtime installs it. The
+[lint](reference/skill-invocation-fallback/README.md) leaves plugin
+commands out, because the installed `SKILL.md` lies outside the repository
+it scans.
+
+Run the lint beside the context-budget checks; it uses only Bun's
+built-ins, and needs `lib/cli.ts`, `lib/files.ts`, `lib/findings.ts` and
+`lib/markdown-links.ts` when vendored:
+
+```sh
+bun jig/modules/M0-instruction-architecture/reference/skill-invocation-fallback/check-skill-invocation-fallback.ts \
+  --skills .claude/skills AGENTS.md CONTRIBUTING.md docs .claude/skills
+```
+
+### Asking the user
+
+A step that needs a person's answer asks in the first way that applies:
+
+1. **A runner with a [control plane](../../GLOSSARY.md)** (a service that tracks the job and can
+   reach a person) parks the job and raises the question there.
+2. **Claude Code, in an interactive session that may use it**, uses its
+   built-in `AskUserQuestion`; where the session cannot use it, the next
+   branch that applies.
+3. **Any remaining interactive session** uses its own question tool where it
+   has one and its permissions allow it; otherwise it asks a plain-text
+   numbered question and ends its turn.
+4. **A run with nobody to answer and no control plane** stops and states the
+   question, rather than picking for the user.
+
+A call site that names only `AskUserQuestion` is incomplete: elsewhere it
+has no behaviour at all. Plain text is the branch every runtime has, so a
+per-runtime picker abstraction adds nothing it does not already cover.
+
+### Deny lists per runtime
+
+A command the team forbids an agent to run is denied in each runtime's own
+format. Both formats below were observed in 2026-10.
+
+- **Claude Code**: `permissions.deny` in `.claude/settings.json`, a list of
+  tool patterns; a Bash pattern may hold wildcards, so a flag after a
+  variable argument can be matched:
+
+  ```json
+  {
+    "permissions": {
+      "deny": ["Bash(git push --force *)", "Bash(git push * --force)"]
+    }
+  }
+  ```
+
+  A `*` matches any text, spaces included, but the spaces around it are
+  literal: `Bash(git push * --force)` does not match `git push --force`,
+  which needs the first pattern. Claude Code splits a compound command
+  (`&&`, `;`, `|`, a subshell, a command substitution) and applies a deny
+  rule to each part, and matches past a leading environment-variable
+  assignment and a fixed set of wrappers such as `timeout` and `nohup`.
+  It does not match the same program written another way: an absolute path
+  (`/usr/bin/git push`), a command passed to `sh -c`, or a flag before the
+  subcommand (`git -C . push`).
+
+- **OpenAI Codex**: `prefix_rule` entries in `.codex/rules/*.rules`, written
+  in Starlark (a small Python-like configuration language). Each rule
+  matches the command's argument list, split into words, as a literal prefix
+  from its first word; `decision` is `allow`, `prompt` or `forbidden`, and
+  where several rules match, the most restrictive wins. The project's rules
+  load only once its project layer is trusted.
+
+  ```python
+  # Mirrors: <docs/agent-policy.md § Forbidden commands>.
+  # Gaps: see that section; a flag after a variable argument is not matched.
+  prefix_rule(
+      pattern = ["git", "push", "--force"],
+      decision = "forbidden",
+      justification = "Force-pushing rewrites shared history.",
+  )
+  ```
+
+What Codex's literal prefix cannot match:
+
+- a flag after a variable argument: `git push origin <branch> --force`;
+- a script run through the package manager's `run`: `pnpm run <script>` and
+  `bun run <script>` put `run` second, so `["pnpm", "<script>"]` does not
+  match them;
+- a global flag placed before the verb: `kubectl -n <namespace> patch …`
+  needs its own literal rule for each form, since there are no wildcards;
+- part of a single word, such as the type in `<type>/<name>`.
+
+Neither format follows the command into a script or an alias. A string
+passed to a shell differs: Claude Code does not match into `sh -c`, while
+Codex splits a `bash`, `sh` or `zsh` `-c`/`-lc` script made only of plain
+words and `&&`, `||`, `;` or `|` into its commands and checks each; a script
+with a redirection, a substitution, a variable assignment, a wildcard or
+control flow stays one opaque command that only a rule on the shell itself
+matches. A deny list is a backstop worth having for the commands that do the
+most harm, not a sandbox.
+
+The two formats differ, so each runtime's file is written by hand and kept
+in step by convention: every file's header names the one written policy it
+mirrors and lists the forms it cannot match, and a change to the policy
+changes every file that names it.
+
+### Tools the host injects
+
+A launcher or workspace app may add tools to a session, such as a Model
+Context Protocol ([MCP](../../GLOSSARY.md)) server registered in no file of
+the repository. Searching the repository finds no trace of it, and the
+repository's configuration cannot turn it off or gate it. Such a tool is a
+convenience: no gate, hook, script or skill step depends on it. A step that
+can use one discovers it in the running session, and treats its absence as
+the ordinary case. A tool that looks like a cheaper route to something the
+repository already does is the trap: a workspace-diff view lists the
+changed files, but the repository's change-impact command is what decides
+which checks a change must run.
 
 ## Skill discovery controls
 

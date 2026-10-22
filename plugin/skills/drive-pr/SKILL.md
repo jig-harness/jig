@@ -336,7 +336,7 @@ you look:
   semantics, and a detached descendant of the pass holding the pipe open
   would wedge the round.
 - **Fleet listing** — `bun "${CLAUDE_SKILL_DIR}/scripts/drives.ts"` lists
-  every drive lock in this clone's state universe with owner, liveness (by
+  every drive lock in this clone's state universe with repository, owner, liveness (by
   exactly the rule recovery uses — `lib/claim.ts`), worktree, start time,
   log path and billing account (the billing identity the pass is
   billing against, a subscription account or an API/Console key, resolved at
@@ -351,7 +351,10 @@ you look:
   unset) `oauthAccount` for a Claude pass,
   `OPENAI_API_KEY` (same fingerprint treatment) / `$CODEX_HOME/auth.json` for
   a Codex one, `null` with a stated reason when neither resolves); `--json`
-  for machines; `--stop <PR>` requests that a live driver stop its pass
+  for machines. Each row's `repository` names the origin's owner/repository,
+  falling back to the clone's Git common directory when origin is unavailable
+  or yields no plain owner/repository pair; the origin URL is never printed.
+  `--stop <PR>` requests that a live driver stop its pass
   tree and then release its locks. Process identity is verified through the
   platform process table (`ps` on POSIX, PowerShell on Windows), and a
   cooperative stop request lets a Windows driver run its own cleanup.
@@ -2359,6 +2362,21 @@ non-default `--days`). The metric catalogue, directions and tolerances are
 means the scoreboard is **partial** and is still printed. Who runs it, when,
 and where the result is recorded is the repository's decision; this section
 deliberately does not set it.
+
+The same PR window includes `merge_conflict_share`: the share of observed
+merged PRs that met a conflict. It reads the sibling conflict-history report
+and this clone’s live events. A PR is observed clean only when its own merge
+ancestry is fully replayed and the forge reports no force-push. The replay
+covers merges committed since the cohort's earliest sampled commit, PR opening
+or merge, and a PR whose ancestry holds an older merge stays unknown; in a
+partial clone with git before 2.45, which could fetch, every
+PR's ancestry is unknown. Unknown PRs
+stay in the cohort: the report prints coverage and whole-cohort bounds, and
+withholds a verdict below `merge_conflicts.coverage_floor` in the fleet-health
+file (default `0.9`), or when those bounds reach different verdicts. Record its
+baseline as `baselines.merge_conflict_share.value` in that file. A capped forge
+list withholds the verdict. Missing heads and invisible resolutions in other
+clones are coverage limits, never evidence that a PR was clean.
 
 ### Ceremony versus progress — is the loop still producing product?
 
