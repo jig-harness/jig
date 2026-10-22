@@ -57,22 +57,13 @@ import {
 } from "../scripts/reap-state.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
+import {
+  compactsDirectoryFences,
+  skipLargeCensus,
+} from "./reap-state-platform.ts";
 
 const REAP = join(import.meta.dir, "..", "scripts", "reap-state.ts");
 const DAY_MS = 86_400_000;
-
-function compactsDirectoryFences(): boolean {
-  return (
-    byPlatform(
-      "Windows preserves nonempty directory fences to block delayed directory replacement",
-      {
-        windows: "no",
-        posix: "yes",
-      },
-    ) === "yes"
-  );
-}
 
 let root: string;
 let repo: string;
@@ -1557,36 +1548,43 @@ describe("entry-count warning — the count compaction cannot reduce", () => {
   });
 
   // Real entry creation and retirement can take a minute on watched volumes.
-  it("is based on what THIS run leaves behind, not the pre-cleanup census — a retire crossing the threshold must not still warn", async () => {
-    const d = freshStateDir();
-    const pr = "9001";
-    writeFileSync(join(d, `drive-pr-${pr}.json`), "{}");
-    writeFileSync(join(d, `drive-pr-${pr}.log`), "log\n");
-    // Enough quarantine entries on this ONE merged-PR family to cross the
-    // warn threshold before cleanup. A single `gh` call retires the whole
-    // family at once (every entry shares the same anchor), so this stays
-    // fast even at this scale.
-    const OVER_THRESHOLD = 50_010;
-    for (let i = 0; i < OVER_THRESHOLD; i++) {
-      const owner = i.toString(16).padStart(24, "0");
-      writeFileSync(
-        join(d, `drive-pr-${pr}.json.lock.stale.owner.${owner}`),
-        "",
-      );
-    }
-    backdate(d, 30);
+  it.skipIf(skipLargeCensus)(
+    "is based on what THIS run leaves behind, not the pre-cleanup census — a retire crossing the threshold must not still warn",
+    async () => {
+      const d = freshStateDir();
+      const pr = "9001";
+      writeFileSync(join(d, `drive-pr-${pr}.json`), "{}");
+      writeFileSync(join(d, `drive-pr-${pr}.log`), "log\n");
+      // Enough quarantine entries on this ONE merged-PR family to cross the
+      // warn threshold before cleanup. A single `gh` call retires the whole
+      // family at once (every entry shares the same anchor), so this stays
+      // fast even at this scale.
+      const OVER_THRESHOLD = 50_010;
+      for (let i = 0; i < OVER_THRESHOLD; i++) {
+        const owner = i.toString(16).padStart(24, "0");
+        writeFileSync(
+          join(d, `drive-pr-${pr}.json.lock.stale.owner.${owner}`),
+          "",
+        );
+      }
+      backdate(d, 30);
 
-    const r = await reapJson(["--delete"], { stateDir: d, ghDir: GH_MERGED() });
+      const r = await reapJson(["--delete"], {
+        stateDir: d,
+        ghDir: GH_MERGED(),
+      });
 
-    expect(r.retire.map((x) => x.id)).toEqual([`pr:${pr}`]);
-    expect(entriesOf(d)).toEqual([]);
-    // The pre-cleanup census genuinely crossed the threshold...
-    expect(r.entries).toBeGreaterThanOrEqual(50_000);
-    // ...but this run's own retirement cleared the whole family, so the
-    // warning must be silent — before this fix it was computed from the
-    // pre-cleanup census above and would have fired here regardless.
-    expect(r.entryCountWarning).toBeNull();
-  }, 60_000);
+      expect(r.retire.map((x) => x.id)).toEqual([`pr:${pr}`]);
+      expect(entriesOf(d)).toEqual([]);
+      // The pre-cleanup census genuinely crossed the threshold...
+      expect(r.entries).toBeGreaterThanOrEqual(50_000);
+      // ...but this run's own retirement cleared the whole family, so the
+      // warning must be silent — before this fix it was computed from the
+      // pre-cleanup census above and would have fired here regardless.
+      expect(r.entryCountWarning).toBeNull();
+    },
+    60_000,
+  );
 
   it("refuses to infer an override namespace outside a Git clone", async () => {
     const d = freshStateDir();

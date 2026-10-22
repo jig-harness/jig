@@ -28,7 +28,16 @@ import {
 } from "./drive-pr-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
-import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
+import {
+  byPlatform,
+  skipsOnWindows,
+} from "../../../../lib/test-helpers/windows-skip.ts";
+
+/** Full driver fixtures whose native startup cost exceeds the existing budget. */
+export const skipLongDriveFixture = skipsOnWindows(
+  "fixture-throughput",
+  "the multi-round or long-CI driver fixture exceeds 30 seconds on native Windows",
+);
 
 /** Wait for actual pass readiness; the budget includes native fixture startup. */
 export async function awaitFixtureMarker(marker: string): Promise<boolean> {

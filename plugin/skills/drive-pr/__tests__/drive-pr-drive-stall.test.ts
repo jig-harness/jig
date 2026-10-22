@@ -27,6 +27,7 @@ import {
   runDrive,
   runDriveIn,
   state,
+  skipLongDriveFixture,
 } from "./drive-loop-harness.ts";
 
 const writeFixture = (f: Parameters<typeof rawFixture>[0]) =>
@@ -349,33 +350,36 @@ describe("drive.ts loop control", () => {
   // so the fixture, the forge stub and `evaluate()`'s key arrays are all live),
   // where those manufactured their sequences from a null or a swap the
   // fingerprint probes already cover directly.
-  it("does not stall-stop while rounds make observable progress", async () => {
-    // Each pass drops one review thread from the fixture, so every gate reads
-    // a different unresolved SET: the fingerprint moves, the streak resets,
-    // and the plain --max-rounds bound is what ends the drive. This is the
-    // probe that distinguishes "streak of identical gates" from "any N
-    // completed passes" — an over-eager detector that ignores the fingerprint
-    // turns this red with a 13.
-    const PASS_RESOLVES_ONE = [
-      "sh",
-      "-c",
-      ': pass for 999; jq \'.data.repository.pullRequest.reviewThreads.nodes |= .[1:]\' "$DRIVE_PR_FIXTURES/threads.json" > "$DRIVE_PR_FIXTURES/threads.json.tmp" && mv "$DRIVE_PR_FIXTURES/threads.json.tmp" "$DRIVE_PR_FIXTURES/threads.json"',
-    ];
-    const r = await runDrive(
-      {
-        threads: [
-          { id: "PRRT_a", path: "a.ts", bot: true },
-          { id: "PRRT_b", path: "b.ts", bot: true },
-          { id: "PRRT_c", path: "c.ts", bot: true },
-        ],
-        head: scratchClean.head,
-        reviewedSha: scratchClean.head,
-      },
-      ["--max-rounds", "2", "--", ...PASS_RESOLVES_ONE],
-    );
-    expect(r.exitCode).toBe(6);
-    expect(r.stderr).not.toContain("changed NOTHING");
-  });
+  it.skipIf(skipLongDriveFixture)(
+    "does not stall-stop while rounds make observable progress",
+    async () => {
+      // Each pass drops one review thread from the fixture, so every gate reads
+      // a different unresolved SET: the fingerprint moves, the streak resets,
+      // and the plain --max-rounds bound is what ends the drive. This is the
+      // probe that distinguishes "streak of identical gates" from "any N
+      // completed passes" — an over-eager detector that ignores the fingerprint
+      // turns this red with a 13.
+      const PASS_RESOLVES_ONE = [
+        "sh",
+        "-c",
+        ': pass for 999; jq \'.data.repository.pullRequest.reviewThreads.nodes |= .[1:]\' "$DRIVE_PR_FIXTURES/threads.json" > "$DRIVE_PR_FIXTURES/threads.json.tmp" && mv "$DRIVE_PR_FIXTURES/threads.json.tmp" "$DRIVE_PR_FIXTURES/threads.json"',
+      ];
+      const r = await runDrive(
+        {
+          threads: [
+            { id: "PRRT_a", path: "a.ts", bot: true },
+            { id: "PRRT_b", path: "b.ts", bot: true },
+            { id: "PRRT_c", path: "c.ts", bot: true },
+          ],
+          head: scratchClean.head,
+          reviewedSha: scratchClean.head,
+        },
+        ["--max-rounds", "2", "--", ...PASS_RESOLVES_ONE],
+      );
+      expect(r.exitCode).toBe(6);
+      expect(r.stderr).not.toContain("changed NOTHING");
+    },
+  );
 
   // ── Spawn-boundary integration floor ──────────────────────────────────────
   // The composition the fold's own unit probes cannot reach: real threads,

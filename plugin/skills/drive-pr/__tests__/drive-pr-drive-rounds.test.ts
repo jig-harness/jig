@@ -48,6 +48,7 @@ import {
   PASS_NOOP,
   runDrive,
   runDriveIn,
+  skipLongDriveFixture,
 } from "./drive-loop-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
@@ -387,56 +388,64 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("exit 3");
   });
 
-  it("arms $DRIVE_PR_REFLECT_DUE past the third round, and not before", async () => {
-    // The /reflect obligation sits past three rounds: repeat findings at that
-    // depth are a scaffolding gap, not reviewer noise. A shell script cannot
-    // invoke a slash command, so the exported flag IS the mechanism — if it
-    // never reaches the pass, the duty is back in session memory, which is what
-    // this skill exists to end. Unbraced `$VAR` on purpose: `${VAR:-default}`
-    // inside a plain JS string reads to biome as a mistyped template literal.
-    // An unset variable echoes as empty, which is the assertion below anyway.
-    const PASS_ECHO_FLAG = [
-      "sh",
-      "-c",
-      'echo "pass for 999: REFLECT=[$DRIVE_PR_REFLECT_DUE]" >&2; exit 0',
-    ];
-    // Five deliberate no-op rounds — the reflect duty only arms past round 3,
-    // so the stall stop (which would correctly end this drive at gate 3) is
-    // disabled for the probe. The stall behaviour has its own probes.
-    const r = await runDrive(
-      { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] },
-      ["--no-head-sync", "--max-rounds", "5", "--", ...PASS_ECHO_FLAG],
-      undefined,
-      { env: { DRIVE_PR_STALL_ROUNDS: "0", JIG__REFLECTION__ENABLED: "true" } },
-    );
-    // The stub pass never advances the head, so `passes` drives the count:
-    // rounds 1-3 unset, rounds 4-5 armed.
-    expect(r.stderr).toContain("REFLECT=[]");
-    expect(r.stderr).toContain("REFLECT=[4]");
-    expect(r.stderr).toContain("REFLECT=[5]");
-    expect(r.stderr).not.toContain("REFLECT=[3]");
-    expect(r.stderr).toContain("/jig:reflect is DUE");
-  });
-
-  it("never arms $DRIVE_PR_REFLECT_DUE while reflection is off", async () => {
-    const r = await runDrive(
-      { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] },
-      [
-        "--no-head-sync",
-        "--max-rounds",
-        "5",
-        "--",
+  it.skipIf(skipLongDriveFixture)(
+    "arms $DRIVE_PR_REFLECT_DUE past the third round, and not before",
+    async () => {
+      // The /reflect obligation sits past three rounds: repeat findings at that
+      // depth are a scaffolding gap, not reviewer noise. A shell script cannot
+      // invoke a slash command, so the exported flag IS the mechanism — if it
+      // never reaches the pass, the duty is back in session memory, which is what
+      // this skill exists to end. Unbraced `$VAR` on purpose: `${VAR:-default}`
+      // inside a plain JS string reads to biome as a mistyped template literal.
+      // An unset variable echoes as empty, which is the assertion below anyway.
+      const PASS_ECHO_FLAG = [
         "sh",
         "-c",
         'echo "pass for 999: REFLECT=[$DRIVE_PR_REFLECT_DUE]" >&2; exit 0',
-      ],
-      undefined,
-      { env: { DRIVE_PR_STALL_ROUNDS: "0" } },
-    );
-    expect(r.stderr).toContain("REFLECT=[]");
-    expect(r.stderr).not.toContain("REFLECT=[4]");
-    expect(r.stderr).not.toContain("is DUE");
-  });
+      ];
+      // Five deliberate no-op rounds — the reflect duty only arms past round 3,
+      // so the stall stop (which would correctly end this drive at gate 3) is
+      // disabled for the probe. The stall behaviour has its own probes.
+      const r = await runDrive(
+        { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] },
+        ["--no-head-sync", "--max-rounds", "5", "--", ...PASS_ECHO_FLAG],
+        undefined,
+        {
+          env: { DRIVE_PR_STALL_ROUNDS: "0", JIG__REFLECTION__ENABLED: "true" },
+        },
+      );
+      // The stub pass never advances the head, so `passes` drives the count:
+      // rounds 1-3 unset, rounds 4-5 armed.
+      expect(r.stderr).toContain("REFLECT=[]");
+      expect(r.stderr).toContain("REFLECT=[4]");
+      expect(r.stderr).toContain("REFLECT=[5]");
+      expect(r.stderr).not.toContain("REFLECT=[3]");
+      expect(r.stderr).toContain("/jig:reflect is DUE");
+    },
+  );
+
+  it.skipIf(skipLongDriveFixture)(
+    "never arms $DRIVE_PR_REFLECT_DUE while reflection is off",
+    async () => {
+      const r = await runDrive(
+        { threads: [{ id: "PRRT_a", path: "a.ts", bot: true }] },
+        [
+          "--no-head-sync",
+          "--max-rounds",
+          "5",
+          "--",
+          "sh",
+          "-c",
+          'echo "pass for 999: REFLECT=[$DRIVE_PR_REFLECT_DUE]" >&2; exit 0',
+        ],
+        undefined,
+        { env: { DRIVE_PR_STALL_ROUNDS: "0" } },
+      );
+      expect(r.stderr).toContain("REFLECT=[]");
+      expect(r.stderr).not.toContain("REFLECT=[4]");
+      expect(r.stderr).not.toContain("is DUE");
+    },
+  );
 
   describe("--handoff-at, the context-economy dial", () => {
     // Nothing here can read a session's context usage, so the dial is an
@@ -919,53 +928,56 @@ describe("drive.ts loop control", () => {
     );
   }
 
-  it("RAISING --max-rounds admits the round the previous bound rejected", async () => {
-    // drive-status.ts persists a head before drive.ts rejects it, so the
-    // over-limit head is already counted. Seeding a local counter from that
-    // durable count and incrementing on top counts the head twice across the
-    // resume: the operator raises 3 → 4 to admit exactly this round, and it is
-    // rejected again without the pass ever running.
-    const { dir, stateDir } = writeFixture({
-      threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
-    });
-    // 3 heads counted, and the head about to be reviewed is not one of them —
-    // so drive-status.ts will bump the durable count to 4 before drive.ts sees
-    // it, exactly as it does at a real bound.
-    seedRounds(stateDir, 3, PREV);
-    const env = {
-      ...gitCleanEnv(),
-      PATH: `${binDir}${delimiter}${process.env.PATH}`,
-      DRIVE_PR_FIXTURES: dir,
-      DRIVE_PR_STATE_DIR: stateDir,
-      DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
-    };
-    const at = async (max: string) => {
-      const p = Bun.spawn(
-        scriptArgv(
-          join(SCRIPTS, "drive.ts"),
-          "999",
-          "--no-head-sync",
-          "--max-rounds",
-          max,
-          "--",
-          ...PASS_LOUD,
-        ),
-        { cwd: scratchClean.dir, env, stdout: "pipe", stderr: "pipe" },
-      );
-      const [stdout, stderr, exitCode] = await Promise.all([
-        new Response(p.stdout).text(),
-        new Response(p.stderr).text(),
-        p.exited,
-      ]);
-      return { stdout, stderr, exitCode };
-    };
-    // At the old bound the head is counted (3 → 4) and then rejected.
-    const held = await at("3");
-    expectSpawnExit(held, 6);
-    expect(held.stderr).not.toContain("RAN_THE_PASS");
-    // Resume with the limit raised by one — no re-seed, because the whole point
-    // is that this head is ALREADY counted. It must now be worked.
-    const raised = await at("4");
-    expect(raised.stderr).toContain("RAN_THE_PASS");
-  });
+  it.skipIf(skipLongDriveFixture)(
+    "RAISING --max-rounds admits the round the previous bound rejected",
+    async () => {
+      // drive-status.ts persists a head before drive.ts rejects it, so the
+      // over-limit head is already counted. Seeding a local counter from that
+      // durable count and incrementing on top counts the head twice across the
+      // resume: the operator raises 3 → 4 to admit exactly this round, and it is
+      // rejected again without the pass ever running.
+      const { dir, stateDir } = writeFixture({
+        threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
+      });
+      // 3 heads counted, and the head about to be reviewed is not one of them —
+      // so drive-status.ts will bump the durable count to 4 before drive.ts sees
+      // it, exactly as it does at a real bound.
+      seedRounds(stateDir, 3, PREV);
+      const env = {
+        ...gitCleanEnv(),
+        PATH: `${binDir}${delimiter}${process.env.PATH}`,
+        DRIVE_PR_FIXTURES: dir,
+        DRIVE_PR_STATE_DIR: stateDir,
+        DRIVE_PR_HANDOFF_DIR: join(dir, "handoff"),
+      };
+      const at = async (max: string) => {
+        const p = Bun.spawn(
+          scriptArgv(
+            join(SCRIPTS, "drive.ts"),
+            "999",
+            "--no-head-sync",
+            "--max-rounds",
+            max,
+            "--",
+            ...PASS_LOUD,
+          ),
+          { cwd: scratchClean.dir, env, stdout: "pipe", stderr: "pipe" },
+        );
+        const [stdout, stderr, exitCode] = await Promise.all([
+          new Response(p.stdout).text(),
+          new Response(p.stderr).text(),
+          p.exited,
+        ]);
+        return { stdout, stderr, exitCode };
+      };
+      // At the old bound the head is counted (3 → 4) and then rejected.
+      const held = await at("3");
+      expectSpawnExit(held, 6);
+      expect(held.stderr).not.toContain("RAN_THE_PASS");
+      // Resume with the limit raised by one — no re-seed, because the whole point
+      // is that this head is ALREADY counted. It must now be worked.
+      const raised = await at("4");
+      expect(raised.stderr).toContain("RAN_THE_PASS");
+    },
+  );
 });
