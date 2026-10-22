@@ -33,6 +33,8 @@ export const WINDOWS_STEPS = {
   "git-bash": "the skills under Git Bash and the pass launcher",
   /** The skills under PowerShell, for a machine without Git Bash. */
   powershell: "the skills under PowerShell",
+  /** Native fixture throughput within the existing test deadlines. */
+  "fixture-throughput": "native fixture throughput within test budgets",
 } as const;
 
 export type WindowsStep = keyof typeof WINDOWS_STEPS;

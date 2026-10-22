@@ -93,6 +93,7 @@ describe("a branch no checkout holds", () => {
     });
     expect(spawnWorkspace(ctx, options)).toEqual({
       path: WT,
+      branch: B,
       reattached: false,
       workspaceId: "w1",
       agentName: A,
@@ -261,4 +262,82 @@ test("an invalid branch name fails before anything is looked up", () => {
     "not a valid branch name",
   );
   expect(ctx.calls).toHaveLength(1);
+});
+
+describe("with a reuse prefix", () => {
+  const refs = `git -C ${R} for-each-ref --format=%(refname) refs/heads/`;
+  const heads = `git -C ${R} ls-remote --heads origin`;
+  const asked = "feat/new";
+  const reuse = {
+    ...options,
+    branch: asked,
+    reusePrefix: "feat/",
+    noAgent: true,
+  };
+  const reattach: Record<string, Answer> = {
+    ...common,
+    [`git check-ref-format --branch ${asked}`]: ok(asked),
+    [herdrList]: result({
+      worktrees: [{ branch: B, path: WT, open_workspace_id: "w1" }],
+    }),
+    [gitList]: porcelain([
+      [R, "main"],
+      [WT, B],
+    ]),
+    [`herdr worktree open --cwd ${R} --path ${WT} --label ${B} --no-focus`]:
+      opened("w1", "w1:p1", true),
+  };
+
+  test("the one branch already started is opened instead of a second", () => {
+    const ctx = fakeContext({
+      ...reattach,
+      [refs]: ok(`refs/heads/main\nrefs/heads/${B}\n`),
+      [heads]: ok(`abc\trefs/heads/${B}\ndef\trefs/heads/main\n`),
+    });
+    expect(spawnWorkspace(ctx, reuse)).toMatchObject({
+      branch: B,
+      reattached: true,
+    });
+    expect(ctx.lines).toContain(`↺ ${B} already starts with feat/; opening it`);
+  });
+
+  test("several are refused unless the asked branch is one of them", () => {
+    const several = {
+      ...reattach,
+      [refs]: ok(`refs/heads/${B}\n`),
+      [heads]: ok("abc\trefs/heads/feat/y\n"),
+    };
+    const ctx = fakeContext(several);
+    expect(() => spawnWorkspace(ctx, reuse)).toThrow(
+      "several branches start with feat/: feat/x, feat/y",
+    );
+    expect(ctx.calls.some((c) => c.startsWith("herdr worktree"))).toBe(false);
+    const named = fakeContext({
+      ...several,
+      [`git check-ref-format --branch ${B}`]: ok(B),
+    });
+    expect(spawnWorkspace(named, { ...reuse, branch: B }).branch).toBe(B);
+  });
+
+  test("with none, the asked branch is created", () => {
+    const ctx = fakeContext({
+      ...fresh,
+      [refs]: ok("refs/heads/main\n"),
+      [heads]: ok(""),
+    });
+    expect(
+      spawnWorkspace(ctx, { ...reuse, branch: B, reusePrefix: "feat/" }).branch,
+    ).toBe(B);
+  });
+
+  test("an origin that cannot be asked is an error, not an absent branch", () => {
+    const ctx = fakeContext({
+      ...reattach,
+      [refs]: ok(""),
+      [heads]: fail(128, "Could not resolve host"),
+    });
+    expect(() => spawnWorkspace(ctx, reuse)).toThrow(
+      "cannot tell which branches start with feat/ on origin",
+    );
+  });
 });

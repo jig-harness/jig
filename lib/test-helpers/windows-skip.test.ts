@@ -51,7 +51,17 @@ describe("skipsOnWindows", () => {
       "file-system",
       "git-bash",
       "powershell",
+      "fixture-throughput",
     ]);
+  });
+
+  test("accepts the native fixture throughput work piece", () => {
+    expect(
+      skipsOnWindows(
+        "fixture-throughput" as WindowsStep,
+        "fixture exceeds its budget",
+      ),
+    ).toBe(process.platform === "win32");
   });
 });
 

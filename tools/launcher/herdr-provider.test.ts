@@ -10,6 +10,7 @@ import {
   herdrProvider,
   loginShellPath,
   parseRepo,
+  slugOf,
 } from "./providers/herdr.ts";
 
 const cacheFile = join(
@@ -57,11 +58,100 @@ describe("settings", () => {
   });
 });
 
-test("the branch is the tracker's suggestion, else the issue key", () => {
-  expect(branchFor({ issue: "ENG-1", branch: "me/eng-1-fix" })).toBe(
-    "me/eng-1-fix",
-  );
-  expect(branchFor({ issue: "ENG-1", branch: "" })).toBe("eng-1");
+describe("the branch", () => {
+  const issue = (branch: string, title = "") => ({
+    issue: "ENG-1",
+    branch,
+    title,
+  });
+
+  test("is the tracker's suggestion, else the issue key", () => {
+    expect(branchFor({}, issue("me/eng-1-fix"))).toEqual({
+      branch: "me/eng-1-fix",
+    });
+    expect(branchFor({}, issue(""))).toEqual({ branch: "eng-1" });
+  });
+
+  test("follows the repository's name for it, with the part before {slug} to reuse", () => {
+    const repo = { branch: "feature/{key}-{slug}" };
+    expect(
+      branchFor(repo, issue("me/eng-1", "Fix the  Login: page, twice!")),
+    ).toEqual({
+      branch: "feature/ENG-1-fix-the-login-page",
+      reusePrefix: "feature/ENG-1-",
+    });
+    expect(branchFor({ branch: "work/{key}" }, issue("me/eng-1"))).toEqual({
+      branch: "work/ENG-1",
+    });
+    expect(() => branchFor(repo, issue("", "  ·  "))).toThrow(
+      "no title to name its branch by",
+    );
+    expect(() => branchFor(repo, issue("", "́ ̈́"))).toThrow(
+      "no title to name its branch by",
+    );
+  });
+
+  test("a mark with no letter or digit to combine with is not a word", () => {
+    expect(slugOf("Fix ́ the login page")).toBe("fix-the-login-page");
+  });
+
+  test("a title in any script keeps its letters", () => {
+    expect(slugOf("修复 登录页面")).toBe("修复-登录页面");
+    expect(slugOf("Réparer la page de connexion")).toBe("réparer-la-page-de");
+    expect(slugOf("ठीक करें लॉगिन पेज")).toBe("ठीक-करें-लॉगिन-पेज");
+    expect(slugOf("Re\u0301parer la page de connexion")).toBe(
+      "réparer-la-page-de",
+    );
+  });
+
+  test("is not named by the repository's pattern for a key another issue's could continue", () => {
+    const repo = { branch: "feature/{key}-{slug}" };
+    const titled = (key: string) => ({ issue: key, branch: "", title: "Fix" });
+    expect(branchFor(repo, titled("ENG_X-7")).reusePrefix).toBe(
+      "feature/ENG_X-7-",
+    );
+    for (const key of ["ENG-1-2", "ENG", "ENG-1a", "12"])
+      expect(() => branchFor(repo, titled(key))).toThrow(
+        "not a key of the form TEAM-123",
+      );
+    expect(branchFor({ branch: "work/{key}" }, titled("ENG-1-2"))).toEqual({
+      branch: "work/ENG-1-2",
+    });
+  });
+
+  test("a name that cannot tell one issue's branches from another's is refused", () => {
+    const named = (branch: string) => parseRepo({ path: "/a", branch }, "app");
+    expect(named("feature/{key}-{slug}").branch).toBe("feature/{key}-{slug}");
+    expect(() => named("feature/{slug}")).toThrow("{key} once");
+    expect(() => named("{key}-{key}")).toThrow("{key} once");
+    expect(() => named("{key}{slug}")).toThrow("text between them");
+    expect(() => named("{slug}-{key}")).toThrow("after {key}");
+    expect(() => named("feature/{key}2{slug}")).toThrow(
+      "must not open with a letter or digit",
+    );
+    expect(() => named("feature/{key}x-{slug}")).toThrow(
+      "must not open with a letter or digit",
+    );
+    expect(() => named("{key}-{title}")).toThrow("unknown placeholder {title}");
+  });
+
+  test("is passed to the tool with its reuse prefix", async () => {
+    const seen: string[][] = [];
+    const provider = herdrProvider({
+      runTool: async (_host, args) => {
+        seen.push(args);
+        return { status: 0, stderr: "" };
+      },
+    });
+    await provider.open({
+      ...request({ path: "/srv/app", branch: "feature/{key}-{slug}" }),
+      title: "Fix login",
+    });
+    const args = seen[0] ?? [];
+    const after = (flag: string) => args[args.indexOf(flag) + 1];
+    expect(after("--branch")).toBe("feature/ENG-1-fix-login");
+    expect(after("--reuse-prefix")).toBe("feature/ENG-1-");
+  });
 });
 
 describe("open", () => {

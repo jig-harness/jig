@@ -41,6 +41,10 @@ command from the root of the repository whose PR is being driven.
 Windows requires Git for Windows. Commands run in native PowerShell and
 POSIX shells. The authenticated end-to-end smoke — picking an item, opening a
 draft PR, arming a drive, completing a round, and stopping it — is pending.
+Native Windows validation also excludes named multi-round and long-CI
+driver fixtures and the large post-retirement census fixture until their
+startup and filesystem work fit the existing test budgets. Other tests of
+these behaviors continue to run.
 
 For Windows `.cmd` or `.bat` pass launchers, arguments cannot contain carriage
 returns, newlines or null bytes. Supply multiline

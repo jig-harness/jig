@@ -246,10 +246,13 @@ function recordedRun(groupFile: string): {
  * has ended and the other is not this run's to kill. A group that is gone
  * answers ESRCH; on macOS one whose processes have all exited but are not yet
  * reaped answers EPERM, and has nothing left to kill either.
+ * Cleanup keeps processStart's own fixed deadline after the run budget expires,
+ * so an expired hook still gets its identity checked before any group signal.
  */
 function endGroup(ctx: Context, groupFile: string): void {
   const { group } = recordedRun(groupFile);
-  if (group === undefined || !groupAlive(ctx, group)) return;
+  if (group === undefined || !groupAlive({ ...ctx, budget: (ms) => ms }, group))
+    return;
   try {
     process.kill(-group.pid, "SIGKILL");
   } catch (error) {

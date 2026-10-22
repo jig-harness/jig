@@ -8,4 +8,4 @@ minimumReleaseAge = 259200
 [test]
 # Fixtures are input data, including deliberate .test.ts examples.
 pathIgnorePatterns = ["**/fixtures/**", "**/fixture/**", ".context/**", "dist/**", "seeds/**"]
-preload = ["./lib/test-tmpdir-bun-preload.ts", "./lib/test-jig-config-preload.ts", "./lib/test-env-preload.ts", "./plugin/skills/resolve-review-comments/__tests__/preload.ts"]
+preload = ["./lib/test-tmpdir-bun-preload.ts", "./lib/test-jig-config-preload.ts", "./lib/test-env-preload.ts", "./lib/test-reap-children-bun-preload.ts", "./plugin/skills/resolve-review-comments/__tests__/preload.ts"]

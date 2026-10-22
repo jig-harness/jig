@@ -34,6 +34,7 @@ import {
 import { SCRIPTS, gitCleanEnv, useDrivePrSuite } from "./drive-pr-harness.ts";
 
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
 
 import { createFindingsPostFenceFixtures } from "./drive-pr-findings-post-fence-fixtures.ts";
 
@@ -227,7 +228,15 @@ describe("assert-post-allowed.ts (the external-mutation fence)", () => {
     symlinkSync(join(parent, "state-target-does-not-exist"), link);
     const r = await fence(link, []);
     expect(r.exitCode).toBe(1);
-    expect(r.stderr).toContain("could not be read");
+    expect(r.stderr).toContain(
+      byPlatform(
+        "native Windows reports ENOTDIR for enumeration through a dangling directory link",
+        {
+          windows: "ENOTDIR",
+          posix: "could not be read",
+        },
+      ),
+    );
   });
 
   it("fails CLOSED when the lease set cannot be enumerated", async () => {

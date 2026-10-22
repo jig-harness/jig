@@ -323,6 +323,26 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.81.2] - 2026-10-22
+
+### Fixed
+
+- Reduce process startup in the drive-pr test fixtures while preserving the
+  fixture queries and responses used to check the driver on Windows.
+- Keep exact state-directory identities in the triage fixture so Windows
+  inode values cannot lose precision before the posting fence checks them.
+- Name the remaining Windows fixture throughput limits for multi-round,
+  long-CI drive and large post-retirement census tests; their
+  existing deadlines remain in place while native optimization is pending.
+
+## [0.81.1] - 2026-10-22
+
+### Fixed
+
+- The reaper's entry-count regression fixture creates and backdates files with
+  bounded concurrency, reducing setup time on macOS while preserving coverage
+  of the real warning threshold and the count after cleanup.
+
 ## [0.81.0] - 2026-10-22
 
 ### Added
@@ -3458,7 +3478,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.81.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.81.2...HEAD
+[0.81.2]: https://github.com/jig-harness/jig/compare/v0.81.1...v0.81.2
+[0.81.1]: https://github.com/jig-harness/jig/compare/v0.81.0...v0.81.1
 [0.81.0]: https://github.com/jig-harness/jig/compare/v0.80.0...v0.81.0
 [0.80.0]: https://github.com/jig-harness/jig/compare/v0.79.1...v0.80.0
 [0.79.1]: https://github.com/jig-harness/jig/compare/v0.79.0...v0.79.1
