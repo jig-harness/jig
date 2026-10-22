@@ -41,3 +41,6 @@ session reflections there.
   `reflect`, including a pattern that puts the key after the slug
   (`{slug}-{key}`); the handoff previously recognised only
   `feature/<KEY>-…` branches, and `reflect` a team key anywhere in the name.
+- `pull_requests.branch_name` refuses a pattern whose placeholders touch
+  (`{slug}{key}`): no branch rendered from it tells where the slug ends and
+  the key begins.

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { renderBranchName } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
 import {
   ANY_KEY_SOURCE,
@@ -98,5 +99,36 @@ describe("the key a branch names", () => {
     expect(keyFromBranch("fix-flaky-eng-12", ENG, "{slug}-{key_lower}")).toBe(
       "ENG-12",
     );
+  });
+
+  it("reads back the key of every branch the renderer makes", () => {
+    const patterns = [
+      "{key_lower}-{slug}",
+      "feature/{key}/{slug}",
+      "{slug}-{key}",
+      "{slug}--{key}",
+      "{slug}-{key}-",
+      "{key}--{slug}/",
+      "work--{key_lower}-{slug}",
+    ];
+    const titles = ["Fix", "Fix 3 tests", "v2 retry 12"];
+    for (const pattern of patterns)
+      for (const [keys, key] of [
+        [GH, "#12"],
+        [ENG, "ENG-12"],
+      ] as const)
+        for (const title of titles) {
+          const branch = renderBranchName(pattern, keys.toBranch(key), title);
+          expect({
+            pattern,
+            branch,
+            key: keyFromBranch(branch, keys, pattern),
+          }).toEqual({ pattern, branch, key });
+        }
+  });
+
+  it("reads no key where two placeholders touch", () => {
+    expect(keyFromBranch("fix12", GH, "{slug}{key}")).toBeNull();
+    expect(keyFromBranch("12fix", GH, "{key}{slug}")).toBeNull();
   });
 });

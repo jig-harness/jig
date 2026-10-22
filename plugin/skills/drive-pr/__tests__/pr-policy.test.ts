@@ -102,6 +102,7 @@ describe("parsePrPolicy", () => {
     [{ branch_name: "{slug}" }, /must contain \{key\} or \{key_lower\}/],
     [{ branch_name: "{key}-{title}" }, /unknown placeholder \{title\}/],
     [{ branch_name: "{key}-{slug" }, /unknown placeholder|unbalanced brace/],
+    [{ branch_name: "{slug}{key}" }, /two placeholders side by side/],
   ])("refuses %j", (section, message) => {
     expect(() => policy(section)).toThrow(message);
   });

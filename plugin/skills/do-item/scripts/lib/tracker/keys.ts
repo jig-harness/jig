@@ -132,24 +132,38 @@ export function numberKeys(repository: string | null): IssueKeys {
  * distinctive enough for that (`feature/3-column-layout` names no issue), so
  * a number key is read only where the pattern puts it. When the key follows
  * the slug (`{slug}-{key}`), the whole branch must match the whole pattern,
- * and the key is the last place it fits.
+ * and the key is the last place it fits. The pattern is read as rendered
+ * (`tidyBranchName`), and one whose placeholders touch (`{slug}{key}`) names
+ * no key: no text tells where one value ends and the next begins.
  */
 export function keyFromBranch(
   branch: string,
   keys: IssueKeys,
   pattern: string,
 ): string | null {
-  const at = pattern.search(/\{key(?:_lower)?\}/);
+  const tidy = tidyBranchName(pattern);
+  if (tidy.includes("}{")) return null;
+  const at = tidy.search(/\{key(?:_lower)?\}/);
   if (at < 0) return null;
-  const before = pattern.slice(0, at);
+  const before = tidy.slice(0, at);
   const re = before.includes("{")
-    ? new RegExp(`^${wholePattern(pattern, keys)}$`, "i")
+    ? new RegExp(`^${wholePattern(tidy, keys)}$`, "i")
     : new RegExp(
         `^${keys.sharesPullRequestNumbers ? "" : "(?:[^/]+/)?"}${escapeRe(before)}(${keys.branchSource})(?=[-_/.]|$)`,
         "i",
       );
   const m = re.exec(branch.trim());
   return m?.[1] === undefined ? null : keys.fromBranch(m[1]);
+}
+
+/**
+ * A branch name as the renderer leaves it: each run of `-` made one, and
+ * trailing `-` and `/` dropped. A pattern tidied the same way is the shape
+ * every branch rendered from it has, since no key or slug starts or ends
+ * with `-`.
+ */
+export function tidyBranchName(name: string): string {
+  return name.replace(/-{2,}/g, "-").replace(/[-/]+$/, "");
 }
 
 /**

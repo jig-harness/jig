@@ -18,6 +18,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { withSource } from "../../../../shared/consumer.ts";
+import { tidyBranchName } from "../../../do-item/scripts/lib/tracker/keys.ts";
 import { readOptionalOverlay } from "./overlay.ts";
 import { ghCall, git } from "./proc.ts";
 import { isRecord } from "../../../../shared/guards.ts";
@@ -117,6 +118,10 @@ export function validateBranchPattern(pattern: string): void {
   if (/[{}]/.test(pattern.replace(/\{[a-z_]+\}/g, "")))
     throw new Error(
       `pull_requests.branch_name has an unbalanced brace: ${JSON.stringify(pattern)}`,
+    );
+  if (pattern.includes("}{"))
+    throw new Error(
+      `pull_requests.branch_name puts two placeholders side by side: ${JSON.stringify(pattern)}; separate them with a character such as \`-\` or \`/\`, or the key cannot be read back from a branch`,
     );
 }
 
@@ -253,12 +258,12 @@ export function renderBranchName(
   title: string,
 ): string {
   const slug = slugify(title);
-  return pattern
-    .replaceAll("{key_lower}", branchKey.toLowerCase())
-    .replaceAll("{key}", branchKey)
-    .replaceAll("{slug}", slug)
-    .replace(/-{2,}/g, "-")
-    .replace(/[-/]+$/, "");
+  return tidyBranchName(
+    pattern
+      .replaceAll("{key_lower}", branchKey.toLowerCase())
+      .replaceAll("{key}", branchKey)
+      .replaceAll("{slug}", slug),
+  );
 }
 
 /** The line that links the pull request to its issue, or `null` for `none`. */
