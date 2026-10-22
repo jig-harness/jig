@@ -2066,8 +2066,8 @@ it.skipIf(process.platform === "win32")(
     // test green while restoring the exact fail-open they exist to guard —
     // a vacuous safety harness.
     //
-    // The mid-run mutation is REAL here, not simulated: `main()` reads stdin
-    // (line ~464) BEFORE it calls `assertPostAllowed` (~482), so a process
+    // The mid-run mutation is REAL here, not simulated: `main()` reads the body
+    // through `readReplyBody()` BEFORE posting reaches `assertPostAllowed`, so a process
     // spawned with an open stdin pipe is parked with every module already
     // loaded and the fence not yet run. Deleting the skills root in that
     // window is precisely the state the guard is about — a tree changing
@@ -2084,13 +2084,13 @@ it.skipIf(process.platform === "win32")(
     // that in a comment, as the first cut did, is not preventing it.
     //
     // The marker is patched into the COPY, never into production: the copied
-    // entrypoint writes it immediately before `readStdinAll()`, which is after
+    // entrypoint writes it immediately before `readReplyBody()`, which is after
     // every static import has been evaluated and before the fence runs. That
     // is exactly the window this test needs, and it leaves `assertPostAllowed`
     // — the thing under test — untouched.
     const readyFile = join(tmpRoot, "skills-parent-vanishes-ready");
     const entry = join(rrc, "reply-to-thread.ts");
-    const READY_ANCHOR = "const body = await readStdinAll();";
+    const READY_ANCHOR = "const body = await readReplyBody(options);";
     const patched = readFileSync(entry, "utf8").replace(
       READY_ANCHOR,
       `{ const fs = await import('node:fs'); fs.writeFileSync(${JSON.stringify(readyFile)}, 'ready'); }\n  ${READY_ANCHOR}`,

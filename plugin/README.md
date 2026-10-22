@@ -157,12 +157,14 @@ on the command it lacks. The `resolve-conflicts` history report is the
 exception: it checks git's version first, and refuses an older git, or a
 partial clone on a git that cannot be kept from fetching.
 
-- **macOS and Linux; Git Bash on Windows.** On Windows, install Git for
-  Windows and run the skills through its Git Bash shell. The instructions
-  use Bash and the utilities bundled with Git for Windows; PowerShell
-  support is planned. Native Windows tests run in CI, but the complete
-  Claude Code pickup → draft pull request → drive round → stop smoke test
-  is still pending. See [drive-pr](skills/drive-pr/README.md) and
+- **macOS, Linux and Windows, including PowerShell.** Skill commands use
+  Bun with plain arguments. Shell composition and generated input are handled
+  inside scripts; commands that read generated text take a file argument.
+  Git Bash is optional for the skills' own commands. A consumer's configured
+  setup or check command still needs its own runtime and tools. Native Windows
+  tests run in CI, but the complete authenticated
+  pickup → draft pull request → drive round → stop smoke test, under Claude
+  Code and under Codex with PowerShell, is still pending. See [drive-pr](skills/drive-pr/README.md) and
   [do-item](skills/do-item/README.md) for the current validation limits.
 
 ## Install the plugin

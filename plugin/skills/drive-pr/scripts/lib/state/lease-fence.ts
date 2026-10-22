@@ -581,7 +581,7 @@ export async function assertTreeMutationAllowed(
         "live session already holds this tree, so proceeding would be a claim this",
         "process could not actually verify.",
         "",
-        `If it is debris, remove it deliberately:  rm '${path}'`,
+        `If it is debris, remove this file deliberately with your file tools: ${path}`,
         `Otherwise it stops blocking on its own once ${leaseStaleMin()}m pass`,
         "without modification.",
       );

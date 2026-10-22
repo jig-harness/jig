@@ -31,9 +31,11 @@ Each repository supplies its own values in `.config/jig.yaml`
 (see [Consumer configuration](#consumer-configuration)); the repository's own
 instructions supply its policy, label taxonomy and validation commands.
 
-The human's page is [README.md](README.md). On Windows, these instructions
-require Git for Windows and Git Bash; PowerShell support is planned. Lead
-every TypeScript script command with `bun`, including sibling skills.
+The human's page is [README.md](README.md). Run these commands in Bash or
+PowerShell with Bun, Git and GitHub CLI available to the command tool. Lead
+every TypeScript script command with `bun`, including siblings.
+Write generated bodies and JSON through the file-writing tool, then pass their
+paths as arguments; no shell utility is needed.
 
 ### Paths and working directory
 
@@ -130,7 +132,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue <KEY> [--stack-on <bra
   merged, and warnings. Then open it with exactly those arguments:
 
   ```bash
-  gh pr create <createArgs...> --title "<title in the planned convention>" --body-file <body.md>
+  bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr create <createArgs...> --title "<title in the planned convention>" --body-file <body.md>
   ```
 
   Fill the body from the planned template when there is one, put the
@@ -176,7 +178,7 @@ Context Protocol ([MCP](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md
 | List comments | `bun "${CLAUDE_SKILL_DIR}/scripts/list_comments.ts" <KEY>` | `mcp__linear__list_comments` |
 | List children | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" children <KEY>` | `mcp__linear__list_issues` with a parent filter |
 | Transition state | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition <KEY> <canonical-state>` | `mcp__linear__save_issue` with `state: <mapped name>` |
-| Post comment | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment <KEY> < body.md` | `mcp__linear__save_comment` |
+| Post comment | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment <KEY> --body-file body.md` | `mcp__linear__save_comment` |
 | File a new issue | The consumer's `issue_tracker.file_command` | — |
 
 Issue keys in this document look like `ENG-123`.
@@ -234,14 +236,14 @@ fetch labels, state and parent below: launcher context never carries them.
 Fetch the issue with the script form:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "$ARGUMENTS"
+bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" <KEY>
 ```
 
 It works for every adapter and also returns `sub_issue_analysis`. If it
 stops on the renamed `do_issue` section, stop as above. If it
 cannot run here (for example no tracker credential in this environment) and
 the harness has a native integration for the tracker, use that instead
-(**judgment** — Linear: `mcp__linear__get_issue({ id: "$ARGUMENTS" })`).
+(**judgment** — Linear: `mcp__linear__get_issue({ id: <KEY> })`).
 
 Record which one succeeded as `trackerTransport` (`"script"` or `"native"`).
 Every later tracker call branches on this recorded value rather than
@@ -259,10 +261,10 @@ Comments are already in hand only when launcher context carried
 `comments_cached: true`. Otherwise fetch them on the recorded transport:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/list_comments.ts" "$ARGUMENTS"
+bun "${CLAUDE_SKILL_DIR}/scripts/list_comments.ts" <KEY>
 ```
 
-(**judgment** — native, Linear: `mcp__linear__list_comments({ issueId: "$ARGUMENTS" })`.)
+(**judgment** — native, Linear: `mcp__linear__list_comments({ issueId: <KEY> })`.)
 
 Exit `0` prints a JSON array of `{ body, createdAt }`; an empty array is a
 legitimate "no comments yet". A non-zero exit means the tracker is
@@ -273,10 +275,11 @@ A long-running issue can carry several **Scout Findings** comments. Choosing
 the newest and judging its freshness is a tested script, not hand-run prose:
 
 ```bash
-echo "$COMMENTS_JSON" | bun "${CLAUDE_SKILL_DIR}/scripts/select_scout_finding.ts" --current-hash "$(git rev-parse --short HEAD)"
+bun "${CLAUDE_SKILL_DIR}/scripts/select_scout_finding.ts" --input comments.json --git-head
 ```
 
-Pass the comment array through verbatim; each comment needs `body` plus
+Write the comment array verbatim to `comments.json` with the file-writing tool;
+`--git-head` reads the current short hash internally. Pass each comment through verbatim; each comment needs `body` plus
 whichever of `created_at` or `createdAt` it carries. The script keeps comments
 whose body opens with `## Scout Findings` and returns
 `{"action", "selectedIndex", "selectedHash", "reason"}`:
@@ -358,15 +361,11 @@ get-issue call) when it has one:
   issue. Step 4b rewrites it with the selected sub-issue added as `subIssue`.
 
 Each entry is `{ identifier, title, updatedAt, description }`, copied verbatim
-from the tracker. Serialize the object as **one line** of compact JSON (every
-newline inside a description becomes an escaped `\n`) and pass it on stdin
-through a quoted heredoc. A one-line JSON body can never equal the heredoc's
-delimiter line, so tracker text cannot end the heredoc early:
+from the tracker. Use the file-writing tool to serialize the object to
+`intent-chain-input.json`, then pass its path:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/intent-chain.ts" <<'INTENT_CHAIN_JSON'
-{"epic":{"identifier":"ENG-100",…},"issue":{"identifier":"ENG-123",…}}
-INTENT_CHAIN_JSON
+bun "${CLAUDE_SKILL_DIR}/scripts/intent-chain.ts" --input intent-chain-input.json
 ```
 
 The script prints `{ path, sessionPath, pickupId, chars, arm, truncated, pointerErrors }`.
@@ -394,7 +393,8 @@ so, since Refocus will keep injecting it.
 yet trusted): if the arm is `on`, re-read the writer's `sessionPath` after
 every compaction and before each review round, and answer its questions
 before your next step. Alongside each read, refresh the copy's retention
-clock (`touch <sessionPath> 2>/dev/null || true`, best effort): the writer
+clock with `bun "${CLAUDE_SKILL_DIR}/scripts/read-session.ts" <sessionPath>`
+(the retention refresh is best effort): the writer
 prunes session copies untouched for 14 days, and a plain read does not update
 that time. If the copy is missing, or `sessionPath` is null or its write
 failed, preserve the tracker context fetched for this invocation in your
@@ -464,7 +464,7 @@ routing below remain **exact**.
    it to `in_progress` and assign it to yourself.
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "$ARGUMENTS" in_progress
+   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition <KEY> in_progress
    ```
 
    (**judgment** — native, Linear:
@@ -507,26 +507,18 @@ routing below remain **exact**.
 
 3. **exact** — **Persist the findings to the tracker**: post a comment whose
    first line is exactly `## Scout Findings (<hash>)`, where `<hash>` is
-   `git rev-parse --short HEAD`. That heading is the exact shape
+   the output of `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --short HEAD`. That heading is the exact shape
    `select_scout_finding.ts` parses in Step 2; any other wording makes the
    hash unreadable on the next pass. The tracker is the store because the
    findings must survive worktree deletion and be readable by a different
    harness.
 
-   Scout findings are free-form generated text, so the body must never be
-   spliced into shell source — not in a double-quoted string, and not in a
-   heredoc with a fixed delimiter: a heredoc closes on any line equal to its
-   delimiter, so a body containing that line would end it early and run the
-   rest as shell. Pick a long, freshly invented random delimiter (never a
-   fixed string), confirm the body contains no line equal to it, and pipe the
-   body into the comment operation in one command:
+   Write the complete findings body with the file-writing tool to
+   `scout-findings.md`, starting with `## Scout Findings (<hash>)`. Pass the
+   file path so generated text reaches the tracker verbatim:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment "$ARGUMENTS" <<'<RANDOM_DELIMITER>'
-   ## Scout Findings (<hash>)
-
-   <findings body>
-   <RANDOM_DELIMITER>
+   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment <KEY> --body-file scout-findings.md
    ```
 
    (**judgment** — native, Linear: `mcp__linear__save_comment` with the same
@@ -660,12 +652,11 @@ routing below remain **exact**.
    **Skip condition — fewer than 20 non-test lines changed (Tiers 1–3 only):**
 
    ```bash
-   git diff <base>...HEAD -- \
-     ':!*.test.ts' ':!*.spec.ts' ':!*.test.tsx' ':!*.spec.tsx' ':!**/__tests__/**' \
-     | grep -c '^[+-][^+-]'
+   bun "${CLAUDE_SKILL_DIR}/scripts/changed-lines.ts" <base>
    ```
 
-   Adjust the test-file patterns to the repository's languages. If the count
+   Pass additional excluded git pathspecs after the base to replace the default
+   TypeScript test patterns for the repository's languages. If the count
    is under 20 (or zero), skip Tiers 1–3 and log
    `"Pre-PR review skipped: N non-test lines changed (threshold: 20)."` The
    skip does **not** extend to the catalog's `reviewSkills` or the runbook pass
@@ -683,7 +674,7 @@ routing below remain **exact**.
    and the 20-line skip does not apply, since a five-line edit to a
    production step is exactly the change that most needs a reader. Run
    `shellcheck` over the extracted shell blocks and fix what it reports;
-   install it first if `command -v shellcheck` finds nothing. Check:
+   install it first when it is unavailable. Check:
 
    - **Network calls (`curl`, `wget`, …)**: are the scheme and host checked
      against an allowlist tied to the intended target? A size- and
@@ -710,7 +701,7 @@ routing below remain **exact**.
    them — a stale approval does not cover the code the PR now ships.
 
    **Tier 1 — Pattern checks (fast scout):** give a fast, inexpensive model
-   `git diff <base>...HEAD` (non-test files) and the repository's documented
+   the output of `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git diff "<base>...HEAD"` (non-test files) and the repository's documented
    coding rules (its agent instructions and any machine-readable rules file).
    `CRITICAL` violations **block**: fix before proceeding.
 
@@ -761,7 +752,7 @@ routing below remain **exact**.
 
    - **`APPROVED WITH WARNINGS`**: put the Tier 2 warnings verbatim under
      `## Review Notes` in the PR body, then push.
-   - **`APPROVED`**: `git push -u origin <branch>`.
+   - **`APPROVED`**: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push -u origin "<branch>"`.
 
    Then run `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` and open the PR exactly as it plans
    ([Pull-request policy](#pull-request-policy)). An exit `3` is a policy
@@ -774,7 +765,7 @@ routing below remain **exact**.
       list.
    2. **judgment** — Classify each error:
       - **Related**: a file, symbol or test this branch touches
-        (`git diff --name-only <base>...HEAD`), or a consumer of a changed
+        (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git diff --name-only "<base>...HEAD"`), or a consumer of a changed
         export. Fix it.
       - **Unrelated**: a failure already on `<base>`, a flaky test, an
         environment problem (network, missing secret, service not running,
@@ -988,10 +979,11 @@ snapshot mapping are **exact**.
    `execution-plan-v1`). The Markdown around it is for humans; never parse
    its steps, blockers or overrides as machine facts.
 
-   Run the selector with one JSON object on stdin:
+   Write the selection object to `selection-input.json` through the file-writing
+   tool and pass its path:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/select_execution_issue.ts" < selection-input.json
+   bun "${CLAUDE_SKILL_DIR}/scripts/select_execution_issue.ts" --input selection-input.json
    ```
 
    The input is `{ description, epic, live, mergedConflictEdges }`:
@@ -1019,7 +1011,7 @@ snapshot mapping are **exact**.
    b. Verify each `mergeConflicts` edge's delivering PR against its recorded
       `conflictFiles`. Find the PRs in the predecessor's description and
       comments; check issue reference, scope and changed files with
-      `gh pr view <URL> --json body,files,baseRefName,mergedAt`. Require it
+      `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view "<URL>" --json "body,files,baseRefName,mergedAt"`. Require it
       to target the integration branch and have `mergedAt` set. A merged PR
       for earlier work on the same issue does not clear a later open one.
       Ambiguous or unreadable evidence keeps the pair out; `ops_pending`,
@@ -1189,7 +1181,7 @@ data flow, not an executable harness API.
        //
        // PHASE A — an agent action, not a script. For every child whose key
        // matches /^[A-Za-z][A-Za-z0-9]*-\d+$/ (defense in depth before it
-       // reaches a command line), issue `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" <key>` as its OWN Bash
+       // reaches a command line), issue `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" <key>` as its OWN command-tool
        // call, all in the SAME turn (parallel tool calls), never one at a
        // time: each call may take up to 30 seconds. Build `childFetchResults`,
        // a Map from the REQUESTED key to the parsed stdout; omit any call that
@@ -1222,11 +1214,12 @@ data flow, not an executable harness API.
    }
    ```
 
-   Pipe `listing` (compact JSON) to the reconciler and parse its stdout as
+   Write `listing` as `reconcile-input.json` through the file-writing tool;
+   pass that file to the reconciler and parse its stdout as
    `decision`:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/reconcile_parent_status.ts" < reconcile-input.json
+   bun "${CLAUDE_SKILL_DIR}/scripts/reconcile_parent_status.ts" --input reconcile-input.json
    ```
 
 2. **exact** — **Act on `decision.verdict`**. `decision.parentState` is the
@@ -1311,10 +1304,10 @@ Without such a runner, ask as in [Asking the user](#asking-the-user).
 |--------|---------|-------|--------|
 | `get_issue.ts` | Fetch an issue | Issue key | JSON with details and sub-issue analysis |
 | `list_comments.ts` | Fetch an issue's comments | Issue key | JSON array of `{ body, createdAt }` |
-| `tracker.ts` | Tracker operations: `children`, `transition`, `comment`, and the configured `states` and `labels` | Operation, issue key, and a canonical state or a body on stdin | Operation result |
+| `tracker.ts` | Tracker operations: `children`, `transition`, `comment`, and the configured `states` and `labels` | Operation, issue key, and a canonical state or a body from `--body-file` (stdin also supported) | Operation result |
 | `determine_agent.ts` | Route an issue to an agent and its scouts | Issue JSON (path or `-`) | JSON with agent and scouts |
-| `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (stdin) and `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
-| `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
-| `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (stdin) | JSON decision (`verdict`, `parentState`, `parentStateName`, `reason`) |
+| `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (`--input` or stdin), `--git-head` or `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
+| `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (`--input` or stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
+| `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (`--input` or stdin) | JSON decision (`verdict`, `parentState`, `parentStateName`, `reason`) |
 | `pr-plan.ts` | Apply the pull-request policy: a branch name, or the plan for opening the current branch's PR | `branch --issue <KEY> --title <title>`, or `open [--issue <KEY>] [--stack-on <branch>] [--accept-oversize <reason>]` | Branch name, or the plan (text or `--json`); exit `3` when the policy refuses |
 | `intent-chain.ts` | Write the Refocus intent-chain snapshot (Step 3.5); `--clear-session` removes this session's copy | `IntentChainInput` JSON (stdin or `--input`); nothing with `--clear-session` | Snapshot files and a JSON summary (`path`, `sessionPath`, `pickupId`, `chars`, `arm`, `truncated`, `pointerErrors`); with `--clear-session`, `{ sessionPath, removed }` |

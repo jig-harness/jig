@@ -5,7 +5,7 @@ from. It is rendered from two things: the audit record (the scores, the
 evidence, the profile and the declined recommendations) and a **report
 source**, one JSON file the agent writes after scoring. The report source
 holds only what the record does not: the summary, the recommendations, the
-gaps left on purpose, the drift found, what was examined and the terms used. `report.ts render` writes
+gaps left on purpose, the drift found, what was examined and the terms used. `report.ts`’s `render` operation writes
 the sheet and a Markdown copy with the same content.
 
 The worked example is the execa calibration run: the report source at
@@ -123,7 +123,7 @@ rather than empty. An unknown key is an error.
   record still scores the audited commit, so the criteria it moves still read
   as before; the sheet shows the card as done ("Applied in #53"), leaves it
   out of Start here and the counts of work, and offers no choice on it. The
-  decisions block never names it, and `record.ts apply-feedback` refuses a
+  decisions block never names it, and `record.ts`’s `apply-feedback` operation refuses a
   block that decides one. Leave `status` out while the work is open.
   `applied_in` is checked for its form only, so a commit can stand in until
   the pull request exists; then name the pull request and render again.
@@ -135,11 +135,10 @@ rather than empty. An unknown key is an error.
   unattended run, which applies recommendations without a person, skips it
   and leaves it for the team.
 - A recommendation that names any ref the record declines and still holds is
-  refused: leave that work out until its date passes (`record.ts compare`
+  refused: leave that work out until its date passes (`record.ts`’s `compare` operation
   says which entries are due) or its condition holds, which you record by
   setting the entry's `revisit_after` to today. For an entry naming a
-  `config/` finding, save the fit report again with `config-fit.ts --json
-  --record <draft record>`: the sheet finds a configuration recommendation's
+  `config/` finding, save the fit report again with the `--json` and `--record` options of `config-fit.ts`: the sheet finds a configuration recommendation's
   refs only among that report's findings, and a report saved against the
   committed record still holds the finding back. A configuration error is
   never held: no decline hides it.
@@ -150,7 +149,7 @@ by a recommendation's `refs` or left on purpose. A gap that no recommendation
 names and no held decline covers is an **uncovered gap**: the sheet marks it
 in the map and the module detail, lists it under the recommendations as *Not
 covered by a recommendation* with the criterion's statement, and counts it in
-the summary. `report.ts validate --record` prints each one as a warning,
+the summary. The `validate` operation of `report.ts` with `--record` prints each one as a warning,
 without changing the exit code. Answer each with a recommendation, or leave
 it on purpose in `left_on_purpose`.
 
@@ -168,7 +167,7 @@ filters the sheet, which shows the entries that are gaps under it. Unlike a decl
 team's decision in the record, it is the auditor's choice for this report.
 
 A criterion the record scores **`not-examined`** (beyond the profile's
-target, left unexamined by `score.ts --draft --profile`) is never a gap and
+target, left unexamined by the `--draft` and `--profile` options of `score.ts`) is never a gap and
 never uncovered.
 
 ## The profile
@@ -228,9 +227,9 @@ recommendations, each saying why it is not for now.
 Run from the repository under audit:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/config-fit.ts" --json > <scratch>/fit.json
-bun "${CLAUDE_SKILL_DIR}/scripts/report.ts" validate <scratch>/jig-audit.json --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json [--profile <id> [--conditions M3,M12]]
-bun "${CLAUDE_SKILL_DIR}/scripts/report.ts" render <scratch>/jig-audit.json --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json [--profile <id> [--conditions M3,M12]] [--prior .config/jig-audit.yaml [--history <record>]…] [--out <dir>]
+bun "<skill-dir>/../../shared/command.ts" --stdout-file <scratch>/fit.json --stdout-exit-code 1 -- bun "<skill-dir>/scripts/config-fit.ts" --json
+bun "<skill-dir>/scripts/report.ts" validate <scratch>/jig-audit.json --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json [--profile <id> [--conditions M3,M12]]
+bun "<skill-dir>/scripts/report.ts" render <scratch>/jig-audit.json --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json [--profile <id> [--conditions M3,M12]] [--prior .config/jig-audit.yaml [--history <record>]…] [--out <dir>]
 ```
 
 Run inside a git repository, both commands refuse (exit 2) a record whose
@@ -246,7 +245,7 @@ a scratch folder; `--other-repository` renders another repository's audit on
 purpose.
 
 - `--record` defaults to `.config/jig-audit.yaml`; during an audit, name the
-  completed draft. The record must be complete (`record.ts check`).
+  completed draft. The record must be complete (`record.ts`’s `check` operation).
 - `--prior` adds the "since the last audit" section: fixed, regressed, new,
   added by Jig, level changes and the standing of each declined entry.
 - `--history <record>`, given once per record and only with `--prior`, adds
@@ -268,8 +267,8 @@ purpose.
   is dated after the prior:
 
   ```bash
-  git log --format=%H <commit> -- .config/jig-audit.yaml
-  git show <sha>:.config/jig-audit.yaml > <scratch>/jig-audit.<sha>.yaml
+  bun "<skill-dir>/../../shared/command.ts" -- git log --format=%H <commit> -- .config/jig-audit.yaml
+  bun "<skill-dir>/../../shared/command.ts" --stdout-file <scratch>/jig-audit.<sha>.yaml -- git show <sha>:.config/jig-audit.yaml
   ```
 
 - `--out` defaults to a new temporary folder, because the sheet names paths
@@ -383,7 +382,7 @@ flagged **This score is wrong**, with a note it needs. The choices stay in
 the browser, keyed by repository, commit and the report's fingerprint (a hash
 of every recommendation's fields), so a sheet of another version of the
 report starts clean. The tray counts them and copies them as one block for
-`record.ts apply-feedback`, which refuses a block whose `report:` is not the
+`record.ts`’s `apply-feedback` operation, which refuses a block whose `report:` is not the
 fingerprint of the report source it is given:
 
 ```yaml

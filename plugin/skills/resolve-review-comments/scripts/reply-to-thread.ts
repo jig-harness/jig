@@ -1,4 +1,11 @@
 #!/usr/bin/env bun
+import {
+  hasLeaveOpenMarker,
+  hasNoOutcomeMarker,
+  LEAVE_OPEN_MARKER,
+  LEAVE_OPEN_MARKER_PRODUCER_ENV,
+  NO_OUTCOME_MARKER,
+} from "../../../shared/reply-markers.ts";
 import { siblingSkill } from "../../../shared/consumer.ts";
 /**
  * Reply IN-THREAD on a review thread, keyed off its GraphQL node id — the SAME
@@ -8,28 +15,16 @@ import { siblingSkill } from "../../../shared/consumer.ts";
  * the fix/reject rationale stays attached to the finding. Prints the new
  * comment url.
  *
- * Usage: reply-to-thread.ts <THREAD_NODE_ID> [--no-outcome] <<'EOF'
- *        literal reply text — no shell expansion
- *        EOF
- *        reply-to-thread.ts <THREAD_NODE_ID> < body.txt
- *   THREAD_NODE_ID = the `threadId` field from list-unresolved-threads.ts
- *   BODY is read from stdin — never a shell argument. A body passed as an
- *   argument would be shell-evaluated (backticks, $(...), $VAR
- *   expanded/dropped before this script ever runs, corrupting the audit trail
- *   silently). Use a QUOTED heredoc (<<'EOF', not <<EOF) or a file
- *   for literal review text. The danger is specifically a double-quoted
- *   BODY="...raw text..." assignment — that expands backticks/$()/$VAR at
- *   ASSIGNMENT time, before the script ever runs, moving the same corruption
- *   one step earlier instead of eliminating it. An already-safely-held variable
- *   is fine to pass through: quoted expansion ("$BODY") does not re-evaluate
- *   its contents, so
- *   `printf '%s' "$BODY" | reply-to-thread.ts "$THREAD_NODE_ID"` is safe.
+ * Usage: bun reply-to-thread.ts <THREAD_NODE_ID> [--no-outcome] --body-file reply.md
+ * Programmatic callers may supply the body on standard input instead.
+ * File and standard-input bodies are read verbatim; the text never becomes
+ * shell source. Outcome validation and the mutation fences apply equally.
  *
  * On Windows, invoke through the runtime (`bun reply-to-thread.ts …`) — a
  * shebang only carries the POSIX direct-execution path.
  */
 
-import { existsSync, lstatSync, statSync } from "node:fs";
+import { existsSync, lstatSync, statSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fail, readStdinAll, runMain } from "../../../shared/cli.ts";
 import { ghCall, run } from "../../../shared/proc.ts";
@@ -97,64 +92,6 @@ export function validateOutcomeBody(body: string): boolean {
   );
   if (!m) return false;
   return /[A-Za-z0-9]/.test(m[3] ?? "");
-}
-
-/**
- * Duplicated from `drive-pr/scripts/lib/outcome.ts`'s `LEAVE_OPEN_MARKER` +
- * `hasLeaveOpenMarker` + `LEAVE_OPEN_MARKER_PRODUCER_ENV`, not imported — same
- * reason `validateOutcomeBody` above is a self-contained copy rather than a
- * shared import of `qualifyingOutcome`: `/drive-pr` depends on THIS skill, so
- * importing anything from it here would close a cycle and break the
- * standalone-installable contract (see `assertPostAllowed`'s own header,
- * just below). Having independent readers of the identical literal string is
- * the accepted trade this skill boundary already makes.
- *
- * `triage-thread.ts` is the only script that sets
- * `LEAVE_OPEN_MARKER_PRODUCER_ENV`, on its own single call site here,
- * unconditionally — every guard governing whether a body may legitimately
- * carry the marker already ran inside `triage-thread.ts` before that call.
- * This is NOT authentication (an agent invoking this script directly can set
- * the same env var) — it closes the one ACCIDENTAL path: a trusted author
- * posting a reply straight through this script whose body happens to end in
- * the marker's exact trailing-line form without meaning to.
- */
-const LEAVE_OPEN_MARKER = "<!-- triage-thread:leave-open -->";
-const LEAVE_OPEN_MARKER_PRODUCER_ENV = "DRIVE_PR_INTERNAL_LEAVE_OPEN_MARKER";
-function hasLeaveOpenMarker(body: string): boolean {
-  const lines = body.split("\n");
-  let i = lines.length - 1;
-  // Skipping BLANK (whitespace-only) lines is safe either way — it only
-  // decides which line becomes the CANDIDATE, never whether that candidate
-  // counts as the marker. `.trim()` stays here.
-  while (i >= 0 && lines[i]?.replace(/\r$/, "").trim() === "") i--;
-  if (i < 0) return false;
-  // The candidate itself gets no such tolerance: an indented or padded
-  // near-match (a doc example, a quoted snippet) must not count as the
-  // durable marker — exact match only (same root cause as lib/outcome.ts's
-  // own copy of this function).
-  return lines[i]?.replace(/\r$/, "") === LEAVE_OPEN_MARKER;
-}
-
-/**
- * Duplicated from `drive-pr/scripts/lib/outcome.ts`'s `NO_OUTCOME_MARKER` +
- * `hasNoOutcomeMarker` — same skill-boundary reason as `LEAVE_OPEN_MARKER`
- * just above. Unlike that marker, THIS script is the sole legitimate
- * producer (appended below whenever `--no-outcome` is passed), so there is
- * no separate producer-env gate: any caller-supplied body already ending in
- * this exact trailing line is refused outright, never authorized.
- *
- * Exists so `isLeftOpenThread` (`lib/status/evaluate.ts`) can tell a genuine
- * `--no-outcome` clarifying question apart from a trusted author's own
- * outcome-less prose posted straight on GitHub — which never passes through
- * this script and so can never carry the marker.
- */
-const NO_OUTCOME_MARKER = "<!-- reply-to-thread:no-outcome -->";
-function hasNoOutcomeMarker(body: string): boolean {
-  const lines = body.split("\n");
-  let i = lines.length - 1;
-  while (i >= 0 && lines[i]?.replace(/\r$/, "").trim() === "") i--;
-  if (i < 0) return false;
-  return lines[i]?.replace(/\r$/, "") === NO_OUTCOME_MARKER;
 }
 
 /**
@@ -493,43 +430,71 @@ async function assertPostAllowed(): Promise<void> {
   fail(r.code, "reply-to-thread: refusing to post — see the fence above.");
 }
 
-async function main(): Promise<number> {
-  const argv = process.argv.slice(2);
+interface ReplyOptions {
+  requireOutcome: boolean;
+  bodyFile?: string;
+}
+
+const REPLY_USAGE =
+  "usage: reply-to-thread.ts <thread-node-id> [--no-outcome] [--body-file <path>] (body must come from stdin or a file)";
+
+function replyTarget(argv: string[]): string {
   const threadId = argv[0] ?? "";
-  if (threadId === "") {
-    fail(2, "usage: reply-to-thread.ts <thread-node-id> <<'EOF' ... EOF");
-  }
+  if (threadId === "")
+    fail(2, "usage: reply-to-thread.ts <thread-node-id> [--body-file <path>]");
+  return threadId;
+}
 
-  // Reject a two-argument call (the body passed as an argument, not on stdin)
-  // BEFORE reading stdin. Checked by ARITY, not by whether argv[1] is
-  // non-empty: a caller passing an explicit empty string as the second
-  // argument (e.g. an unset $REPLY) must fail the same way. Silently accepting
-  // either form would ignore the argument and read whatever stdin the caller
-  // happens to have open — e.g. the remaining NDJSON lines of a
-  // `list-unresolved-threads.ts | while read ...` loop — and post that as the
-  // reply instead of failing fast.
-  let requireOutcome = true;
-  if (argv.length === 2) {
-    if (argv[1] === "--no-outcome") {
-      requireOutcome = false;
-    } else {
-      fail(
-        2,
-        "usage: reply-to-thread.ts <thread-node-id> [--no-outcome] <<'EOF' ... EOF (the only allowed 2nd argument is --no-outcome — the body must come from stdin)",
-      );
-    }
-  } else if (argv.length > 2) {
-    fail(
-      2,
-      "usage: reply-to-thread.ts <thread-node-id> [--no-outcome] <<'EOF' ... EOF",
-    );
-  }
+function bodyFilePath(path: string | undefined): string {
+  if (!path || path.startsWith("--")) fail(2, "--body-file requires a path");
+  return path;
+}
 
-  const body = await readStdinAll();
+function noOutcomeOption(options: ReplyOptions): void {
+  if (!options.requireOutcome) fail(2, REPLY_USAGE);
+  options.requireOutcome = false;
+}
+
+function bodyFileOption(options: ReplyOptions, path: string | undefined): void {
+  if (options.bodyFile !== undefined) fail(2, REPLY_USAGE);
+  options.bodyFile = bodyFilePath(path);
+}
+
+function readReplyOption(
+  argv: string[],
+  index: number,
+  options: ReplyOptions,
+): number {
+  switch (argv[index]) {
+    case "--no-outcome":
+      noOutcomeOption(options);
+      return index;
+    case "--body-file":
+      bodyFileOption(options, argv[index + 1]);
+      return index + 1;
+    default:
+      fail(2, REPLY_USAGE);
+  }
+}
+
+function replyOptions(argv: string[]): ReplyOptions {
+  const options: ReplyOptions = { requireOutcome: true };
+  for (let index = 1; index < argv.length; index++)
+    index = readReplyOption(argv, index, options);
+  return options;
+}
+
+async function readReplyBody(options: ReplyOptions): Promise<string> {
+  return options.bodyFile === undefined
+    ? await readStdinAll()
+    : readFileSync(options.bodyFile, "utf8");
+}
+
+function validateReplyBody(body: string, requireOutcome: boolean): void {
   if (body === "") {
     fail(
       2,
-      "usage: reply-to-thread.ts <thread-node-id> [--no-outcome] <<'EOF' ... EOF (stdin body was empty)",
+      "usage: reply-to-thread.ts <thread-node-id> [--no-outcome] [--body-file <path>] (body was empty)",
     );
   }
 
@@ -540,10 +505,11 @@ async function main(): Promise<number> {
   if (requireOutcome && !validateOutcomeBody(body)) {
     fail(2, OUTCOME_HELP);
   }
+}
 
+function validateReplyMarkers(body: string): void {
   // Refuse a body already ending in LEAVE_OPEN_MARKER's trailing-line form
-  // unless `triage-thread.ts` is the caller (see the marker duplication's own
-  // header above for why this is a local copy, not an import). Applies
+  // unless `triage-thread.ts` is the caller. Applies
   // regardless of `--no-outcome`: the marker's meaning is tied to
   // `--leave-open` semantics, so it is equally an accident on a
   // clarifying-question reply.
@@ -569,7 +535,9 @@ async function main(): Promise<number> {
       "Remove that trailing line — this script appends it itself when --no-outcome is passed.",
     );
   }
+}
 
+async function postReply(threadId: string, postBody: string): Promise<number> {
   // The request document is built as JSON and delivered on stdin
   // (`--input -`), never through `gh api -f`/`-F`: `-f body=@-` sends the
   // LITERAL string "@-" (the `@file`/`@-` magic is `-F`-only), and `-F`
@@ -580,8 +548,6 @@ async function main(): Promise<number> {
   // `--no-outcome` replies carry NO_OUTCOME_MARKER as their own trailing
   // line — the durable evidence `isLeftOpenThread` requires (see that
   // constant's own header, above).
-  const postBody = requireOutcome ? body : `${body}\n\n${NO_OUTCOME_MARKER}`;
-
   const request = JSON.stringify({
     query:
       "mutation($threadId:ID!, $body:String!){ addPullRequestReviewThreadReply(input:{ pullRequestReviewThreadId:$threadId, body:$body }){ comment{ url } } }",
@@ -616,6 +582,19 @@ async function main(): Promise<number> {
   if (r.code !== 0) return r.code;
   process.stdout.write(r.stdout);
   return 0;
+}
+
+async function main(): Promise<number> {
+  const argv = process.argv.slice(2);
+  const threadId = replyTarget(argv);
+  const options = replyOptions(argv);
+  const body = await readReplyBody(options);
+  validateReplyBody(body, options.requireOutcome);
+  validateReplyMarkers(body);
+  return postReply(
+    threadId,
+    options.requireOutcome ? body : `${body}\n\n${NO_OUTCOME_MARKER}`,
+  );
 }
 
 // Guarded so the test suite can import validateOutcomeBody without spawning

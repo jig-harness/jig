@@ -73,7 +73,7 @@ export async function runConflictPhase(
   console.error(reasonLine);
   if (base !== "") {
     console.error(
-      `  Fix: git fetch origin && git merge origin/${base}, resolve, run the gates, push.`,
+      `  Fix: bun "<skill-dir>/../../shared/command.ts" -- git fetch origin; after success, bun "<skill-dir>/../../shared/command.ts" -- git merge origin/${base}, resolve, run the gates, push.`,
     );
   } else {
     console.error(

@@ -20,22 +20,22 @@ Run from the repository root. The catalog is the repository's
 or the file `--catalog <path>` names.
 
 ```bash
-# The changed files, separated by null bytes (-z), from a file or from standard input (-):
-set -o pipefail
-git diff -z --name-only origin/main... | bun <skill-dir>/scripts/resolve.ts --files - -z
+# The complete workspace change, including untracked files:
+bun "<skill-dir>/scripts/resolve.ts" --worktree --base origin/main
 
 # From git, for a CI event:
-bun <skill-dir>/scripts/resolve.ts --base main                 # pull request: origin/main...HEAD
-bun <skill-dir>/scripts/resolve.ts --event push --before <sha>  # every commit the push carried
-bun <skill-dir>/scripts/resolve.ts --event workflow_dispatch --since origin/last-green
+bun "<skill-dir>/scripts/resolve.ts" --base main                 # pull request: origin/main...HEAD
+bun "<skill-dir>/scripts/resolve.ts" --event push --before <sha>  # every commit the push carried
+bun "<skill-dir>/scripts/resolve.ts" --event workflow_dispatch --since origin/last-green
 
 # Check the catalog:
-bun <skill-dir>/scripts/check.ts
+bun "<skill-dir>/scripts/check.ts"
 ```
 
 An empty list means nothing changed and owes no checks, so a hook must not
-feed it the output of a git command that failed: run the pipeline under
-`set -o pipefail`. `-z` reads the paths separated by null bytes, so a name git would
+feed it the output of a git command that failed. Prefer `--worktree --base`
+for workspace changes: it collects each Git result internally and stops on failure.
+For saved file lists, `-z` reads the paths separated by null bytes, so a name git would
 quote (non-ASCII, a quote, a backslash, a control character) keeps its
 bytes and matches its area's globs. Without `-z` the list is one path per
 line, kept as written apart from a `\r` line ending; a path git quoted is
@@ -63,8 +63,9 @@ commit since the last verified one; there is no default for it.
 
 | Option | Meaning |
 |---|---|
+| `--worktree` | Tracked and untracked workspace changes from the merge base; requires `--base <ref>` and refuses event or file-list options |
 | `--files <path\|->` | The changed files instead of git; `-` reads standard input |
-| `-z`, `--null` | `--files` is separated by null bytes, as `git diff -z --name-only` prints it |
+| `-z`, `--null` | `--files` is separated by null bytes, as Git prints its null-terminated changed-path list |
 | `--base <ref>` | A pull request's base branch; implies `--event pull_request` |
 | `--event <name>` | `push`, `pull_request` or `workflow_dispatch` (default: `$GITHUB_EVENT_NAME`, else `push`) |
 | `--before <sha>` | With `push`: the commit the push moved from (default: the push event's `before`) |

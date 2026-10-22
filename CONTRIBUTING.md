@@ -516,6 +516,13 @@ work as part of the plugin:
   `.claude/skills/<name>/…` for your own files.
 - **Working directory:** scripts run with the consumer repository as the
   working directory and must not depend on being run from the skill directory.
+- **Commands:** skill instructions use single-line `bun` invocations with
+  plain arguments, so the same command works in Bash and PowerShell. Move
+  composition into the script and take generated input from a file. For a
+  direct program call with file input or output, use
+  `plugin/shared/command.ts`; it passes an argument array with a deadline.
+  `scripts/check-skill-shell-neutrality.ts` checks executable examples and
+  composed inline commands across skill instructions and reference pages.
 - **Consumer values:** read them at run time through
   `plugin/shared/consumer.ts` (`readConfig`, or
   `readOverlay` where the skill requires an adopted repository), which merges

@@ -43,6 +43,29 @@ describe("resolve.ts", () => {
     expect(json.validation.profiles).toEqual(["shallow", "standard"]);
   });
 
+  test("--worktree covers the full workspace and refuses conflicting input modes", () => {
+    const root = consumer();
+    const base = git(root, "rev-parse", "HEAD").trim();
+    commit(root, { "apps/web-app/page.tsx": "committed" }, "web");
+    write(root, "docs/guide.md", "unstaged");
+    write(root, "tools/staged.ts", "staged");
+    git(root, "add", "tools/staged.ts");
+    write(root, "docs/new café.md", "untracked");
+    const result = run(root, "resolve.ts", ["--worktree", "--base", base]);
+    expectSpawnExit(result, 0);
+    expect(JSON.parse(result.stdout).changedFiles.sort()).toEqual([
+      "apps/web-app/page.tsx",
+      "docs/guide.md",
+      "docs/new café.md",
+      "tools/staged.ts",
+    ]);
+    expectSpawnExit(
+      run(root, "resolve.ts", ["--worktree", "--base", base, "--files", "-"]),
+      2,
+    );
+    expectSpawnExit(run(root, "resolve.ts", ["--worktree"]), 2);
+  });
+
   test("push resolves the last commit, and a merge commit adds its parents' files", () => {
     const root = consumer();
     commit(root, { "apps/web-app/page.tsx": "x" }, "web");

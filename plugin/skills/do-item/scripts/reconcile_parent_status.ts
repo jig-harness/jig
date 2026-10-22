@@ -14,7 +14,7 @@
  * Output: JSON `ReconcileDecision` on stdout.
  *
  * Usage:
- *     echo "$RECONCILE_INPUT_JSON" | bun reconcile_parent_status.ts
+ *     bun reconcile_parent_status.ts --input reconcile-input.json
  *
  * Exit codes: 0 decided, 2 usage, 1 unreadable/invalid stdin or a missing/
  * invalid consumer overlay (the state names and labels come from it).
@@ -31,6 +31,10 @@ import {
 } from "./get_issue.ts";
 import { defaultStateName, ownTrackerConfig } from "./lib/tracker/config.ts";
 import { CANONICAL_STATES, type CanonicalState } from "./lib/tracker/port.ts";
+import {
+  readJsonInput,
+  INVALID_JSON_INPUT,
+} from "../../../shared/json-input.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
 
 /** A label as either transport supplies it: a flat string (MCP, get_issue.ts) or `{ name }`. */
@@ -522,37 +526,22 @@ function readStdin(): Promise<string> {
 async function main(): Promise<number> {
   const parsed = parseArgs(process.argv.slice(2), {
     flags: [],
-    values: [],
+    values: ["input"],
     noPositional: true,
-    usage: "Usage: reconcile_parent_status.ts  (ReconcileInput JSON on stdin)",
+    usage:
+      "Usage: reconcile_parent_status.ts [--input <file>] (otherwise ReconcileInput JSON on stdin)",
   });
   if (!parsed.ok) {
     console.error(parsed.message);
     return 2;
   }
 
-  let raw: string;
-  try {
-    raw = await readStdin();
-  } catch (err) {
-    console.error(
-      `failed to read stdin: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return 1;
-  }
+  const input = await readJsonInput(parsed.args.values.get("input"), readStdin);
+  if (input === INVALID_JSON_INPUT) return 1;
 
-  let input: unknown;
-  try {
-    input = JSON.parse(raw);
-  } catch (err) {
-    console.error(
-      `stdin is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return 1;
-  }
   if (!isReconcileInputShape(input)) {
     console.error(
-      "stdin is not a valid ReconcileInput: expected { found?, truncated?, parentLabels: [], children: [{ state?, labels? }] }",
+      "input is not a valid ReconcileInput: expected { found?, truncated?, parentLabels: [], children: [{ state?, labels? }] }",
     );
     return 1;
   }

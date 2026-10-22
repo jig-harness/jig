@@ -82,7 +82,7 @@ function checkNoForeignSessionInTree(path: string): void {
       "whether another live session already holds this tree (mirroring",
       "the identified claim path's unreadable-and-fresh check).",
       "",
-      `If it is debris, remove it deliberately:  rm '${path}'`,
+      `If it is debris, remove this file deliberately with your file tools: ${path}`,
       `Otherwise it stops blocking on its own once ${leaseStaleMin()}m pass`,
       "without modification.",
     );
@@ -887,7 +887,7 @@ function assertTreeClaimReadable(path: string, reason: string[]): void {
     "",
     ...reason,
     "",
-    `If it is debris, remove it deliberately:  rm '${path}'`,
+    `If it is debris, remove this file deliberately with your file tools: ${path}`,
     `Otherwise it stops blocking on its own once ${leaseStaleMin()}m pass`,
     "without modification.",
   );
