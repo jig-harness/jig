@@ -125,16 +125,17 @@ export function numberKeys(repository: string | null): IssueKeys {
  * The key a branch name carries under the branch-name pattern
  * (`pull_requests.branch_name`, whose `{key}` or `{key_lower}` the branch
  * was built from), or `null` when it carries none. The branch must start
- * with the pattern's text before the key, then the key, then a separator
- * (`-`, `_`, `/`, `.`) or the end. For a team key, one leading `<word>/`
- * segment the pattern does not have is allowed, since tools and people
- * prefix branches (`feature/`, a user name); a bare number is not
- * distinctive enough for that (`feature/3-column-layout` names no issue), so
- * a number key is read only where the pattern puts it. When the key follows
- * the slug (`{slug}-{key}`), the whole branch must match the whole pattern,
- * and the key is the last place it fits. The pattern is read as rendered
- * (`tidyBranchName`), and one whose placeholders touch (`{slug}{key}`) names
- * no key: no text tells where one value ends and the next begins.
+ * with the pattern's text before the key, then the key, then the pattern's
+ * text after it, a separator (`-`, `_`, `/`, `.`) or the end. For a team
+ * key, one leading `<word>/` segment the pattern does not have is allowed,
+ * since tools and people prefix branches (`feature/`, a user name); a bare
+ * number is not distinctive enough for that (`feature/3-column-layout`
+ * names no issue), so a number key is read only where the pattern puts it.
+ * When the key follows the slug (`{slug}-{key}`), the whole branch must
+ * match the pattern as rendered, with a slug or with an empty one (a title
+ * with no Latin letters or digits), and the key is the last place it fits.
+ * The pattern is read as rendered (`tidyBranchName`), and a pattern
+ * `branchPatternAmbiguity` refuses names no key.
  */
 export function keyFromBranch(
   branch: string,
@@ -142,25 +143,55 @@ export function keyFromBranch(
   pattern: string,
 ): string | null {
   const tidy = tidyBranchName(pattern);
-  if (tidy.includes("}{")) return null;
+  if (branchPatternAmbiguity(tidy) !== null) return null;
   const at = tidy.search(/\{key(?:_lower)?\}/);
   if (at < 0) return null;
   const before = tidy.slice(0, at);
-  const re = before.includes("{")
-    ? new RegExp(`^${wholePattern(tidy, keys)}$`, "i")
-    : new RegExp(
-        `^${keys.sharesPullRequestNumbers ? "" : "(?:[^/]+/)?"}${escapeRe(before)}(${keys.branchSource})(?=[-_/.]|$)`,
-        "i",
-      );
-  const m = re.exec(branch.trim());
-  return m?.[1] === undefined ? null : keys.fromBranch(m[1]);
+  const name = branch.trim();
+  const shapes = [tidy, tidyBranchName(tidy.replace("{slug}", ""))];
+  if (!before.includes("{")) {
+    // The pattern's text after the key, as rendered with a slug and without.
+    const after = shapes.map((shape) =>
+      escapeRe(
+        /^[^{]*/.exec(shape.slice(shape.indexOf("}", at) + 1))?.[0] ?? "",
+      ),
+    );
+    const m = new RegExp(
+      `^${keys.sharesPullRequestNumbers ? "" : "(?:[^/]+/)?"}${escapeRe(before)}(${keys.branchSource})(?=[-_/.]|$${after.map((a) => (a === "" ? "" : `|${a}`)).join("")})`,
+      "i",
+    ).exec(name);
+    return m?.[1] === undefined ? null : keys.fromBranch(m[1]);
+  }
+  const found = new Set<string>();
+  for (const shape of shapes) {
+    const m = new RegExp(`^${wholePattern(shape, keys)}$`, "i").exec(name);
+    if (m?.[1] !== undefined) found.add(keys.fromBranch(m[1]));
+  }
+  return found.size === 1 ? ([...found][0] ?? null) : null;
+}
+
+/**
+ * Why the branches a pattern renders cannot all be read back to their key,
+ * or `null` when they can: two placeholders side by side, more than one
+ * `{slug}`, or a digit beside a key. Every key ends in digits and a number
+ * key is nothing else, so a digit beside one moves where the key ends or
+ * starts (`{slug}1{key}` renders `fix112` for #12, which reads as #2 as
+ * well). Read on the pattern as written or as tidied alike.
+ */
+export function branchPatternAmbiguity(pattern: string): string | null {
+  if (pattern.includes("}{")) return "puts two placeholders side by side";
+  if (pattern.split("{slug}").length > 2) return "uses {slug} more than once";
+  if (/\d\{key(?:_lower)?\}|\{key(?:_lower)?\}\d/.test(pattern))
+    return "puts a digit beside the key";
+  return null;
 }
 
 /**
  * A branch name as the renderer leaves it: each run of `-` made one, and
  * trailing `-` and `/` dropped. A pattern tidied the same way is the shape
- * every branch rendered from it has, since no key or slug starts or ends
- * with `-`.
+ * every branch rendered from it with a nonempty slug has, since no key or
+ * slug starts or ends with `-`; with an empty slug, the shape is the
+ * pattern without `{slug}`, tidied.
  */
 export function tidyBranchName(name: string): string {
   return name.replace(/-{2,}/g, "-").replace(/[-/]+$/, "");

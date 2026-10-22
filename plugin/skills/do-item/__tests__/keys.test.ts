@@ -110,8 +110,14 @@ describe("the key a branch names", () => {
       "{slug}-{key}-",
       "{key}--{slug}/",
       "work--{key_lower}-{slug}",
+      "work-{slug}-{key}",
+      "{slug}/{key}-x",
+      "{key}x-{slug}",
+      "{key}-{slug}-x",
+      "{key}-/{slug}",
     ];
-    const titles = ["Fix", "Fix 3 tests", "v2 retry 12"];
+    // "!!!" and a non-Latin title slugify to nothing.
+    const titles = ["Fix", "Fix 3 tests", "v2 retry 12", "!!!", "Ошибка"];
     for (const pattern of patterns)
       for (const [keys, key] of [
         [GH, "#12"],
@@ -130,5 +136,16 @@ describe("the key a branch names", () => {
   it("reads no key where two placeholders touch", () => {
     expect(keyFromBranch("fix12", GH, "{slug}{key}")).toBeNull();
     expect(keyFromBranch("12fix", GH, "{key}{slug}")).toBeNull();
+  });
+
+  it("reads no key where a digit sits beside the key, or {slug} repeats", () => {
+    expect(keyFromBranch("121-fix", GH, "{key}1-{slug}")).toBeNull();
+    expect(keyFromBranch("fix112", GH, "{slug}1{key}")).toBeNull();
+    expect(keyFromBranch("a-1-b-2-c", GH, "{slug}-{key}-{slug}")).toBeNull();
+  });
+
+  it("reads the key after the pattern's own text, not any separator", () => {
+    expect(keyFromBranch("12x-fix", GH, "{key}x-{slug}")).toBe("#12");
+    expect(keyFromBranch("12y-fix", GH, "{key}x-{slug}")).toBeNull();
   });
 });

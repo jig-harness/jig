@@ -18,7 +18,10 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { withSource } from "../../../../shared/consumer.ts";
-import { tidyBranchName } from "../../../do-item/scripts/lib/tracker/keys.ts";
+import {
+  branchPatternAmbiguity,
+  tidyBranchName,
+} from "../../../do-item/scripts/lib/tracker/keys.ts";
 import { readOptionalOverlay } from "./overlay.ts";
 import { ghCall, git } from "./proc.ts";
 import { isRecord } from "../../../../shared/guards.ts";
@@ -119,9 +122,10 @@ export function validateBranchPattern(pattern: string): void {
     throw new Error(
       `pull_requests.branch_name has an unbalanced brace: ${JSON.stringify(pattern)}`,
     );
-  if (pattern.includes("}{"))
+  const ambiguity = branchPatternAmbiguity(tidyBranchName(pattern));
+  if (ambiguity !== null)
     throw new Error(
-      `pull_requests.branch_name puts two placeholders side by side: ${JSON.stringify(pattern)}; separate them with a character such as \`-\` or \`/\`, or the key cannot be read back from a branch`,
+      `pull_requests.branch_name ${ambiguity}: ${JSON.stringify(pattern)}; put a separator such as \`-\` or \`/\` between placeholders and beside the key, and {slug} in once, or the key cannot be read back from a branch`,
     );
 }
 

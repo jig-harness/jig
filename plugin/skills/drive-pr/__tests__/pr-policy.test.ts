@@ -103,6 +103,9 @@ describe("parsePrPolicy", () => {
     [{ branch_name: "{key}-{title}" }, /unknown placeholder \{title\}/],
     [{ branch_name: "{key}-{slug" }, /unknown placeholder|unbalanced brace/],
     [{ branch_name: "{slug}{key}" }, /two placeholders side by side/],
+    [{ branch_name: "{key}1-{slug}" }, /a digit beside the key/],
+    [{ branch_name: "{slug}1{key}" }, /a digit beside the key/],
+    [{ branch_name: "{slug}-{key}-{slug}" }, /\{slug\} more than once/],
   ])("refuses %j", (section, message) => {
     expect(() => policy(section)).toThrow(message);
   });

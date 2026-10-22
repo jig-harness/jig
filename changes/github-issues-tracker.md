@@ -42,5 +42,7 @@ session reflections there.
   (`{slug}-{key}`); the handoff previously recognised only
   `feature/<KEY>-…` branches, and `reflect` a team key anywhere in the name.
 - `pull_requests.branch_name` refuses a pattern whose placeholders touch
-  (`{slug}{key}`): no branch rendered from it tells where the slug ends and
-  the key begins.
+  (`{slug}{key}`), that puts a digit beside the key (`{slug}1{key}`) or that
+  uses `{slug}` twice: no branch rendered from it tells where the key begins
+  and ends. A branch rendered from a title with no Latin letters or digits
+  (an empty slug) is read back too.
