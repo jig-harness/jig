@@ -18,8 +18,16 @@ useDrivePrSuite();
 it.each([
   {
     name: "projects and filters with one jq startup",
-    args: ["pr", "view", "999", "--json", "state", "--jq", '.state + "!"'],
-    expected: "OPEN!",
+    args: [
+      "pr",
+      "view",
+      "999",
+      "--json",
+      "state",
+      "--jq",
+      '[.state + "!", has("headRefOid")] | @json',
+    ],
+    expected: '["OPEN!",false]',
     queries: 1,
   },
   {
