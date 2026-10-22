@@ -54,6 +54,8 @@
  * Exit codes: 0 no errors; 1 at least one error; 2 usage or an unreadable
  * configuration file.
  */
+import { changelogValidation } from "./lib/section-validation.ts";
+import { parseDeclaration } from "../../../gc/config.ts";
 import {
   ENV_PREFIX,
   isMapping as isRecord,
@@ -72,13 +74,7 @@ import {
 } from "../../../shared/consumer.ts";
 import { adrConfig } from "../../adr/scripts/locate.ts";
 import { sheetRepositories } from "../../decide/scripts/lib/overlay.ts";
-import {
-  parseChangelogSection,
-  resolve as resolveChangelog,
-} from "../../changelog/scripts/config.ts";
-import { workingTree } from "../../changelog/scripts/notes-dir.ts";
 import { parseCodeStatsConfig } from "../../code-stats/scripts/lib/config.ts";
-import { releasableVersion } from "../../changelog/scripts/versions.ts";
 import { parsePrPolicy } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { parseSeverityFormats } from "../../drive-pr/scripts/lib/severity-formats.ts";
 import { refuseRenamedSection } from "../../do-item/scripts/lib/overlay.ts";
@@ -805,6 +801,7 @@ function batchSizesOf(config: Config): string[] | null {
  * points are set.
  */
 function sizePointsFindings(config: Config): Finding[] {
+  // The size points are the cross-field rule's to report.
   const batchSizes = batchSizesOf(config);
   if (batchSizes === null) return [];
   const points = at(config, "work_batch.size_points");
@@ -860,12 +857,12 @@ function skillValidation(
     parseObligations(config.resolve_conflicts),
   );
   attempt("code-stats", () => parseCodeStatsConfig(config.code_stats));
+  attempt("gc", () => parseDeclaration(config.gc, root));
   attempt("design-brief-builder (handback)", () => {
     const handback = at(config, "design_brief.handback");
     if (handback !== undefined && !validSettings(handback))
       throw new ExitError(2, settingsRequirement);
   });
-  // The size points are the cross-field rule's to report.
   const batchSizes = batchSizesOf(config);
   if (batchSizes !== null && sizePointsFindings(config).length === 0)
     attempt("work-batch", () => parseWorkBatchSection(config, batchSizes));
@@ -875,27 +872,6 @@ function skillValidation(
     if (journal !== null) journalPath(journal, root);
   });
   return findings;
-}
-
-/**
- * The changelog section resolved against the audited repository as the
- * skill's commands resolve it: the changelog and its format, the version
- * source set or derived from the manifests, and, from version files, the one
- * version they all hold, checked as one the release can move in every file.
- */
-function changelogValidation(config: Config, root: string): void {
-  const section = parseChangelogSection(config.changelog);
-  if (section === null) return;
-  const read = workingTree(root);
-  const resolved = resolveChangelog(root, section, read);
-  if (resolved.version.kind === "files")
-    releasableVersion(resolved.version, {
-      read,
-      format: resolved.format,
-      tagPrefix: resolved.tagPrefix,
-      changelog: read(resolved.changelog) ?? "",
-      tags: () => [],
-    });
 }
 
 /** A newer plugin installed than this session runs: the audit would judge with old criteria. */

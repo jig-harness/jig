@@ -372,8 +372,9 @@ round. A repository that did not is never asked for one.
 The state dir grows with every lock generation. `bun "<skill-dir>/scripts/reap-state.ts"`
 (dry-run by default, `--delete` to act) compacts what is still in use on POSIX
 systems, retains nonempty [directory fences](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on Windows, and
-deletes the files of merged PRs and removed worktrees; run it weekly from the
-machine's own scheduler if you drive many PRs. [`SKILL.md`](SKILL.md) § Running
+deletes the files of merged PRs and removed worktrees. For a shared schedule
+and per-family receipts across configured clones, declare the `tool-state` kind
+and use [resource collection](../../gc/README.md). [`SKILL.md`](SKILL.md) § Running
 it (the *State reaping* entry) explains what it may and may not delete.
 On Windows, the sweep upgrades older empty file fences by atomically publishing
 a complete directory fence. Failed publication retains its staging until a real

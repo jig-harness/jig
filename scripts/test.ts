@@ -21,10 +21,12 @@
 // `--path-ignore-patterns=…` work as they did.
 import { readFileSync, readlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
 import { swallow } from "../plugin/shared/errors.ts";
-import { main as withResourceLock } from "../modules/M12-parallel-agent-ergonomics/reference/resource-lock/with-resource-lock.ts";
+import {
+  main as withResourceLock,
+  resourceLockPath,
+} from "../plugin/shared/resource-lock.ts";
 
 /** The fixed `bun test` arguments; the caller's extra ones follow them. */
 export const TEST_ARGS = ["test", "--timeout", "30000", "--parallel=4"];
@@ -65,12 +67,7 @@ export function lockHolder(
 ): string | null {
   const name = env.LOCK_NAME || "heavy";
   const root = env.LOCK_ROOT || env.TMPDIR || tmpdir();
-  const safe = Array.from(new TextEncoder().encode(name), (b) =>
-    /[A-Za-z0-9._-]/.test(String.fromCharCode(b))
-      ? String.fromCharCode(b)
-      : "_",
-  ).join("");
-  const lock = join(root, `jig-lock.${safe}`);
+  const lock = resourceLockPath(root, name);
   try {
     return platform === "win32"
       ? readFileSync(lock, "utf8")

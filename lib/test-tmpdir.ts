@@ -26,6 +26,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sharedGcLock } from "../plugin/shared/gc-lock.ts";
+import { writeScratchOwner } from "../plugin/shared/scratch-owner.ts";
 
 export const TEST_TMPDIR_PREFIX = "jig-test-tmp.";
 export const TEST_TMPDIR_ENV = "JIG_TEST_TMPDIR";
@@ -120,7 +122,19 @@ export function scopeTestTmpdir(
   const systemEnv = options.systemEnv ?? TEST_TMPDIR_SYSTEM_ENV;
   validateOptions(prefix, rootEnv, systemEnv);
   const systemTmpdir = tmpdir();
-  const root = mkdtempSync(join(systemTmpdir, prefix));
+  const releaseAdmission = sharedGcLock("scratch");
+  let root: string;
+  try {
+    root = mkdtempSync(join(systemTmpdir, prefix));
+    try {
+      writeScratchOwner(root);
+    } catch (error) {
+      rmSync(root, { recursive: true, force: true });
+      throw error;
+    }
+  } finally {
+    releaseAdmission();
+  }
 
   const previous = new Map<string, string | undefined>();
   for (const name of [...TMPDIR_VARS, rootEnv, systemEnv]) {

@@ -15,6 +15,7 @@
   "private": true,
   "scripts": {
     "gates": "bun scripts/gates.ts",
+    "jig": "bun --no-env-file --config=plugin/gc/bunfig.toml plugin/jig.ts",
     "test": "bun scripts/test.ts",
     "typecheck": "bun check",
     "deadcode": "fallow dead-code -q",

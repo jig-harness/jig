@@ -310,12 +310,13 @@ closed, a receipt per run), kinds a repository enables with its own facts,
 and a machine layer for the schedule. What it will build, one pull request
 per step:
 
-- **The runner and the first kinds**: `jig gc` with report, collect,
-  receipts and install; the worktrees kind moved in from a working
-  repository with its scheduler installers; `drive-pr`'s state reaper and the
-  test scratch scope as kinds, the scratch scope writing an owner record
-  beside each directory; the `gc` sections of both configuration
-  layers; M12's practice, scheduler rows and audit criterion.
+- **Finish the first rollout**: move in the operated worktree reaper and its
+  scheduler tests, with the creating/opening tool taking the shared session
+  lock, and retire the working repository's copies in the same rollout.
+  Coordinate tool-state creators with collection admission before enabling
+  retirement; its legacy reaper lock excludes only other reapers.
+  Validate its weekly job through the installed command before starting
+  the later kinds. Worktree collection stays disabled until this integration.
 - **Containers, volumes and images**, keyed to the compose projects the
   worktrees derive, and the machine-level dangling images and build cache.
 - **Branches** merged as the forge records it (squash merges included) or
