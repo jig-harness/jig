@@ -9,8 +9,9 @@ release: patch
   `@(…)` and `!(…)` as pattern groups and expands `{1..3}` as a range, so a
   glob in a repository's own configuration that `code-stats` or `changelog`
   reads (a module's or tool's paths, the changelog's files) and that holds a
-  literal `(` or `..` in those forms now matches differently: escape the
-  parenthesis as `[(]` to keep matching it literally.
+  literal `(` or `{1..3}` in those forms now matches differently: escape the
+  parenthesis as `[(]` and the range as `\{1..3\}` to keep matching them
+  literally. Parentheses without one of those prefixes stay literal.
 
 ### Added
 
