@@ -25,7 +25,7 @@
  * With `{slug}` in the name, an issue whose branch was started under an
  * earlier title keeps that branch: the tool opens the one existing branch
  * that starts with the name's part before `{slug}`, and refuses when there
- * are several.
+ * are several, unless the name it would give is one of them.
  *
  * An issue that is not routed to a repository is refused: unlike Conductor,
  * Herdr has no repository list to choose from. On this machine the tool runs
@@ -67,8 +67,9 @@ export interface HerdrRepo {
 /**
  * Refuse a branch name template that cannot name one issue's branches: it
  * must hold `{key}` once and `{slug}` at most once, after `{key}` and apart
- * from it, or the part before `{slug}` would also start another issue's
- * branch (`ENG-1` starts `ENG-12`).
+ * from it by text that does not open with a letter or digit, or the part
+ * before `{slug}` would also start another issue's branch (`ENG-1` starts
+ * `ENG-12`, and `ENG-12` starts `ENG-122`).
  */
 export function assertBranchTemplate(template: string, where: string): void {
   const placeholders = template.match(/\{[^}]*\}/g) ?? [];
@@ -84,17 +85,26 @@ export function assertBranchTemplate(template: string, where: string): void {
     );
   const key = template.indexOf("{key}");
   const slug = template.indexOf("{slug}");
-  if (slug !== -1 && slug <= key + "{key}".length)
+  if (slug === -1) return;
+  const after = key + "{key}".length;
+  if (slug <= after)
     throw new HerdrError(
       `${where}: {slug} must come after {key}, with text between them`,
     );
+  if (/^[\p{L}\p{N}]/u.test(template.slice(after)))
+    throw new HerdrError(
+      `${where}: the text after {key} must not open with a letter or digit, which would continue another issue's key`,
+    );
 }
 
-/** The title's first `SLUG_WORDS` words, in lower case, joined by hyphens. */
+/**
+ * The title's first `SLUG_WORDS` words, in lower case, joined by hyphens.
+ * A word is a run of letters and digits in any script.
+ */
 export function slugOf(title: string): string {
   return title
     .toLowerCase()
-    .split(/[^a-z0-9]+/)
+    .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean)
     .slice(0, SLUG_WORDS)
     .join("-");

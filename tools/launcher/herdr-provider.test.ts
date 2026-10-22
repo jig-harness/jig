@@ -10,6 +10,7 @@ import {
   herdrProvider,
   loginShellPath,
   parseRepo,
+  slugOf,
 } from "./providers/herdr.ts";
 
 const cacheFile = join(
@@ -87,6 +88,11 @@ describe("the branch", () => {
     );
   });
 
+  test("a title in any script keeps its letters", () => {
+    expect(slugOf("修复 登录页面")).toBe("修复-登录页面");
+    expect(slugOf("Réparer la page de connexion")).toBe("réparer-la-page-de");
+  });
+
   test("a name that cannot tell one issue's branches from another's is refused", () => {
     const named = (branch: string) => parseRepo({ path: "/a", branch }, "app");
     expect(named("feature/{key}-{slug}").branch).toBe("feature/{key}-{slug}");
@@ -94,6 +100,12 @@ describe("the branch", () => {
     expect(() => named("{key}-{key}")).toThrow("{key} once");
     expect(() => named("{key}{slug}")).toThrow("text between them");
     expect(() => named("{slug}-{key}")).toThrow("after {key}");
+    expect(() => named("feature/{key}2{slug}")).toThrow(
+      "must not open with a letter or digit",
+    );
+    expect(() => named("feature/{key}x-{slug}")).toThrow(
+      "must not open with a letter or digit",
+    );
     expect(() => named("{key}-{title}")).toThrow("unknown placeholder {title}");
   });
 
@@ -109,14 +121,10 @@ describe("the branch", () => {
       ...request({ path: "/srv/app", branch: "feature/{key}-{slug}" }),
       title: "Fix login",
     });
-    expect(seen[0]).toEqual(
-      expect.arrayContaining([
-        "--branch",
-        "feature/ENG-1-fix-login",
-        "--reuse-prefix",
-        "feature/ENG-1-",
-      ]),
-    );
+    const args = seen[0] ?? [];
+    const after = (flag: string) => args[args.indexOf(flag) + 1];
+    expect(after("--branch")).toBe("feature/ENG-1-fix-login");
+    expect(after("--reuse-prefix")).toBe("feature/ENG-1-");
   });
 });
 
