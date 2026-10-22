@@ -154,6 +154,10 @@ changes are marked **Breaking** and say what a consumer changes.
 - [M16](modules/M16-releases-versions/mappings.md)'s mappings cover a released package's path to its registry: checks of what the package holds before it publishes (publint, Are the Types Wrong?, `twine check`, check-wheel-contents, `cargo publish --dry-run`), publishing without a stored token through npm's, PyPI's and crates.io's trusted publishing, and preview packages a consumer can install from a pull request before it merges. The glossary defines trusted publishing, provenance and preview package.
 - [M16](modules/M16-releases-versions/mappings.md#listing-what-the-release-contains)'s mappings cover listing what a release contains: generating a software bill of materials from the tag's commit for npm, Python, Rust and container images, including bundled artifacts and builds with their own target or features; exporting a GitHub repository's dependency graph as an inventory of the repository, not a release; and attesting the bill of materials to a file or a container image with `actions/attest`, and verifying it. The module lists a bill of materials for each release as future work, and the glossary defines it.
 - [GLOSSARY.md](GLOSSARY.md) defines a *seed lens*: a review lens Jig ships, the review form of one rule a Jig module states, for the part of the rule no gate can check. Seed lenses are planned for the `review` skill ([ROADMAP.md](ROADMAP.md), item 23).
+- [GLOSSARY.md](GLOSSARY.md) defines *collection kind*, *lifecycle
+  predicate* and *collection receipt*, the terms of the designed garbage
+  collection of a developer machine's leftover worktrees, scratch, containers,
+  branches, tool state and processes.
 
 ### Changed
 
