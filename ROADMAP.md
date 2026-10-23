@@ -130,6 +130,47 @@ guards, report first, fail closed, a receipt per run); a repository enables
 the kinds it mints with its own facts, a machine sets the schedule, and
 [M12](modules/M12-parallel-agent-ergonomics/README.md) gains the practice.
 
+### 25. `init`: setting a repository up for Jig
+
+One command in a fresh clone that derives the values the repository already
+states (gate command, integration branch, reviewers, issue-key prefix,
+catalog, changelog), asks only what it cannot derive, writes
+`.config/jig.yaml` with the evidence beside each value, enables the plugin
+for everyone who clones, and checks the result the way the audit will. The
+audit stays the measurement; init is the setup, and the audit's remedy for a
+fixable configuration finding.
+
+### 26. Work types: depth by kind of work
+
+An item's type (bug, feature, improvement, task, spike) derived from the
+tracker's label taxonomy, its own issue type or a conventional title prefix,
+and one table saying what each type changes: pre-scouts, test-first, review
+tiers, the change note, batchability, autonomy. A type lightens the work
+only where no flag label, catalog review or gate asks for more, and an item
+whose type is unknown gets the deepest treatment.
+
+### 27. `verify` and `debug`: evidence before claims, and a bounded debugging protocol
+
+`verify` runs a check and keeps the proof: the command, the tree it ran
+against, its exit code, the test counts from the runner's own report, and
+the output's head and tail, so a pull request's "tests pass" points at a
+record and a new test's failing run is recorded before its passing one.
+`debug` works one failure whose cause is not obvious through a fixed
+protocol: reproduce, attribute on a fresh base, narrow, write down each
+hypothesis, fix, and stop after a stated budget with the ledger posted where
+the work is tracked, instead of a fourth guess.
+
+### 28. The spec a work item links
+
+A work item names where its requirements and acceptance criteria live, in
+its own body or in whatever spec framework the repository already uses, and
+Jig resolves that reference read-only, through an adapter per layout, into
+requirements, acceptance criteria and tasks with their ids. The implementing
+agent and the reviewer get the list, and the pull request accounts for every
+criterion: met with evidence, deferred to a filed item, or not applicable.
+Jig writes no spec and dictates no format; the tools that write specs well
+are recommended beside the adapter that reads each.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** A reusable reconciler for
