@@ -140,7 +140,7 @@ such as Socket, report in a check and a summary comment, and the review loop
 reads neither today. The loop will read their alerts as findings with a
 severity, answer or fix them like any other finding, and show their scores
 without acting on them. A failing check of such a tool does not stop a pull
-request by itself; its alerts do.
+request by itself, unless the repository requires that check; its alerts do.
 
 ## Later
 

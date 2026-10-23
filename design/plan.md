@@ -369,14 +369,15 @@ build, one pull request per step:
   plan, never as findings, with no threshold that turns a score into one.
 - **A failing check does not block by itself**: the reporter's check run
   leaves the overall CI verdict, and only its alerts carry weight, as
-  findings. A repository whose branch protection requires the check keeps
-  that requirement. Before building, check how the verdict treats a failing
-  non-required check today.
+  findings. A check the repository's effective CI policy requires (listed in
+  `ci.required_checks`, or required by branch protection when that is unset)
+  keeps that requirement. Before building, check how the verdict treats a
+  failing non-required check today.
 
 Done when a drive on a pull request whose report carries an alert with a
 severity answers it as a finding, a report with scores and no alert adds none,
 and a failing reporter check with no alert does not hold the drive back,
-unless the repository's branch protection requires that check.
+unless the repository's effective CI policy requires that check.
 
 ## Later
 
