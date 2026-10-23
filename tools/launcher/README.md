@@ -95,8 +95,7 @@ none of them, with the first provider in the list. So
 Herdr, one with only a `conductor` entry in Conductor, and anything else in
 Herdr, which refuses an issue it has no repository for. Putting `conductor`
 first instead sends those to Conductor, which detects the repository itself.
-Changing the line to `provider: conductor` sends every issue to Conductor
-without touching the entries:
+For example:
 
 ```yaml
 provider: [herdr, conductor]
@@ -107,6 +106,9 @@ repos:
   my-website:
     conductor: Website         # no herdr entry: opens in Conductor
 ```
+
+Changing the first line to `provider: conductor` sends every issue to
+Conductor without touching the entries.
 
 ## What happens on launch
 
