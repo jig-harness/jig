@@ -91,9 +91,14 @@ discharge two criteria and one criterion is not counted twice:
 which anyone who can write an issue controls, and what the resolver reads
 reaches the implementing agent's and the reviewer's prompts. Before reading,
 the resolver resolves a reference's real path and reads it only when that
-path is inside the repository root: an absolute path, a `..` that leaves
-the root, or a symbolic link whose target is outside it is not read and goes
-into `unresolved` with the reason. A link to a web page is never fetched by
+path is inside the repository root and an adapter's layout claims it: each
+adapter declares the path patterns its artifacts take (`openspec/changes/*/`,
+`specs/*.spec.md`, Markdown and its own manifest files under its folder),
+and a path no adapter's patterns match, or one Git ignores, is not read. So
+an absolute path, a `..` that leaves the root, a symbolic link whose target
+is outside it, and an in-repository file such as `.env` all go into
+`unresolved` with the reason. The conformance test every adapter passes
+includes these refusals, checked before any read. A link to a web page is never fetched by
 the resolver. A tracker document is read through the tracker interface,
 by the id the tracker lists among this issue's own documents and
 attachments, never by fetching a URL taken from the body: a link in the

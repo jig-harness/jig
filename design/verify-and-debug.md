@@ -45,14 +45,21 @@ exit 0  ·  2m14s  ·  412 cases ran, 0 skipped (junit: .reports/junit.xml)
 record ~/.local/share/jig/evidence/example-web/3f9c2a1/8e1d/20261023T141502-4b7e.json
 ```
 
-- **The tree, not the commit.** The tree hash of what the command could
-  read: `HEAD` plus every staged and unstaged change to a tracked file and
+- **The tree, not the commit.** The tree hash of the working tree Git
+  tracks or would track: `HEAD` plus every staged and unstaged change to a tracked file and
   every untracked file Git does not ignore, written into a temporary index
   (`GIT_INDEX_FILE`, `git add -A`, `git write-tree`) so the real index is
   untouched. A record made before an edit, or before a new untracked file
-  appeared, does not vouch for the tree after it. Ignored files (build
-  output, dependencies) are outside the identity, as they are outside the
-  pull request.
+  appeared, does not vouch for the tree after it. Ignored files (installed
+  dependencies, build output, caches) are outside the identity, and a
+  record does not vouch for them: an edit there leaves the hash unchanged.
+  The record says so in its scope field, and the inputs that decide them
+  are covered instead. A lockfile or build configuration is tracked, so a
+  change to it changes the hash. A command whose result depends on build
+  output builds it inside the same run (the gates do), so no earlier
+  build's output is trusted. Ignored state edited by hand outside both is
+  the residual, and CI, which starts from a clean checkout, remains the
+  authority over it.
 - **The same tree after the run.** The hash is taken again when the command
   ends. When the two differ (another session, a formatter or the command
   itself changed a file the identity covers) the record is kept, marked
@@ -64,8 +71,10 @@ record ~/.local/share/jig/evidence/example-web/3f9c2a1/8e1d/20261023T141502-4b7e
   when the same command passes on the same tree later. Lookup indexes runs
   by tree and command and reads the newest unless asked for all of them.
 - **Counts from the report.** Where the command writes a JUnit report, the
-  record holds the cases run, skipped and failed per suite from it
-  (`shared/junit-report.ts`), never from the runner's summary line. The
+  record holds the cases run and skipped per suite, and the failed cases
+  by name across the report, from it (`shared/junit-report.ts`, whose
+  suites count run and skipped cases and whose cases carry the failure),
+  never from the runner's summary line. The
   report must be this run's: before the command starts, `evidence.ts` moves
   any file at the report path aside, and after it ends reads the report only
   when one exists there again, written after the run began. A report left by

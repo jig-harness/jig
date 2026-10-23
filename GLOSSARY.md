@@ -762,7 +762,8 @@ make, use the entry's term instead.
   [file-issue](plugin/skills/file-issue/README.md#the-label-taxonomy)).
 - **Work type** — the kind of work an item is (bug, feature, improvement,
   task, spike), derived from its type label, the tracker's own issue type or
-  its title prefix rather than asked; it sets how much each delivery station
+  its title prefix, with one question asked only in an interactive session
+  where none of those identifies it; it sets how much each delivery station
   does for the item, never which stations exist, and never lowers a depth a
   *flag label*, a catalog review or a gate raises
   ([design](design/work-types.md)).
@@ -990,7 +991,7 @@ make, use the entry's term instead.
   ([M14](modules/M14-testing-strategy/README.md); `fix-ci` ships it as
   `probe-base.ts`).
 - **Evidence record** — the kept proof that a check ran: the command, the
-  exact working tree it ran against, its exit code, the test counts from the
+  working tree it ran against (every file Git does not ignore), its exit code, the test counts from the
   runner's own report, and the start and end of its output. An edit to the
   tree after the run makes the record stop applying, so "the tests pass"
   points at a run rather than a sentence

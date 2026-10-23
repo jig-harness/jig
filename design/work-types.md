@@ -3,7 +3,7 @@
 **What problem this solves.** Every work item goes through the same stations
 at the same depth. `do-item` routes only on whether an issue has sub-issues;
 a one-line copy fix and a new feature both get the intent snapshot, the
-three review tiers and a changelog note, and the only relief is a line count
+review tiers and a changelog note, and the only relief is a line count
 that skips the review. The kinds of work are already there, scattered:
 `issue_tracker.labels.bug` turns the pattern pre-scout on (for a bug with no
 pattern evidence yet, whose mistake could recur elsewhere),

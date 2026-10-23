@@ -9,8 +9,8 @@ repository already states, asking the few it does not, writing the file,
 ignoring the working folder, enabling the plugin for everyone who clones, and
 checking the result the way the audit will. A team that wants to try one
 skill is sent through a measurement of its whole repository first. With this
-built, one command in a fresh clone leaves behind a committed, checked
-configuration and says what to run next; the audit stays the measurement it
+built, one command in a fresh clone leaves behind a checked configuration
+ready to commit and says what to run next; the audit stays the measurement it
 is.
 
 This is the design of [plan.md](plan.md) item 26. Nothing of it is built. The
@@ -75,12 +75,16 @@ the day one skill learns a new lockfile.
 5. **Write.** `.config/jig.yaml`; `.context/` into `.gitignore` when the
    repository has no entry; and the project-level enablement that gives
    everyone who clones the plugin (for Claude Code, `enabledPlugins` and the
-   marketplace entry in `.claude/settings.json`; for Codex, whatever its
-   project-level equivalent is at the time, and a line in the output when it
-   has none). Each file is shown before it is written in an interactive
-   session.
+   marketplace entry in `.claude/settings.json`). Codex has no
+   repository-level plugin enablement: a plugin is enabled in each user's
+   `~/.codex/config.toml`, or synced for a team by a workspace
+   administrator. So init writes no Codex file, and its output says that
+   each Codex user runs the plugin's two install commands, which it prints.
+   The fixture tests assert both: the Claude Code settings written, and no
+   Codex file with that line in the output. Each file is shown before it is
+   written in an interactive session.
 6. **Check.** Run the audit's `config-fit.ts` on the result and sort its
-   findings three ways. A finding about a field init derived or wrote is
+   findings by what they are about. A finding about a field init derived or wrote is
    init's bug, and the run reports it as one: init's contract is that it
    leaves none of those. A finding about a field a person set, which init
    preserves, is reported with that field's line and the fix, and init does
@@ -101,7 +105,12 @@ writes `since: next` on its schema entry, and the release step's existing
 placeholder replacement writes the version there. `/jig:init --refresh`
 compares the plugin version the file was written under (a comment line init
 writes, `# jig: <version>`) with the installed one and lists the schema
-entries whose `since` is newer, deriving the ones it can. The audit's configuration fit reports a file older than the plugin's
+entries whose `since` is newer, deriving the ones it can. A file without
+that line (written by hand, or copied from the audit's starter) has no
+version to compare, so refresh lists every schema field the file lacks and
+derives the ones it can. In both cases it adds fields and never changes
+one already present: without init's own record of what it wrote, a
+present field is treated as one a person set. The audit's configuration fit reports a file older than the plugin's
 last field-adding release with the same remedy.
 
 ### What it touches elsewhere
