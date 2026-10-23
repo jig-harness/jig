@@ -322,8 +322,8 @@ not resolve it either.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `issue_tracker.adapter` | adapter name | `linear` | do-item, drive-pr, decide, work-batch | Which [tracker adapter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) answers: `linear` or `github`. `linear` reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client. `github` (GitHub Issues) uses the signed-in `gh` command-line client, which also reads `GH_TOKEN` or `GITHUB_TOKEN`; with `JIG_GITHUB_GRAPHQL_URL` set it sends requests to that GraphQL endpoint (a GitHub Enterprise Server) with the token from `GH_TOKEN` or `GITHUB_TOKEN` |
-| `issue_tracker.team` | team key such as `ENG` | **Required by the Linear adapter**; elsewhere Linear issue keys are not recognised | do-item, drive-pr, review, work-batch | Linear only: the key issue identifiers carry (`ENG` for `ENG-123`). GitHub Issues keys are `#123`, of the repository `issue_tracker.github.repository` names |
+| `issue_tracker.adapter` | adapter name | `github` | do-item, drive-pr, decide, work-batch | Which [tracker adapter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) answers: `github` or `linear`. `github` (GitHub Issues) uses the signed-in `gh` command-line client, which also reads `GH_TOKEN` or `GITHUB_TOKEN`; with `JIG_GITHUB_GRAPHQL_URL` set it sends requests to that GraphQL endpoint (a GitHub Enterprise Server) with the token from `GH_TOKEN` or `GITHUB_TOKEN`. `linear` reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client. A file that sets `issue_tracker.team` without `issue_tracker.adapter` (or with it empty) is refused, since the default adapter has no team: add `adapter: linear` |
+| `issue_tracker.team` | team key such as `ENG` | **Required by the Linear adapter**; refused unless `issue_tracker.adapter` is set too | do-item, drive-pr, review, work-batch | Linear only: the key issue identifiers carry (`ENG` for `ENG-123`). GitHub Issues keys are `#123`, of the repository `issue_tracker.github.repository` names |
 | `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read), work-batch | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate`. On GitHub Issues, `done`, `canceled` and `duplicate` are an issue closed as completed, not planned or duplicate, and each open state is the label (or, with `issue_tracker.github.states_from: project`, the board option) of that name; `todo` carries no label, so a new issue is in `todo` |
 | `issue_tracker.github.repository` | `owner/name` | The repository the `origin` remote points to on github.com | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the repository whose issues the skills work on |
 | `issue_tracker.github.states_from` | `labels` or `project` | `labels` | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: where an open issue's workflow state is kept. `labels`: a label per state, named by `issue_tracker.states`. `project`: the option of a Projects board's single-select field; an open issue with no option is in `todo`, and one whose option names no open state is refused; the token then needs the `project` scope (`gh auth refresh -s project`) |
@@ -773,8 +773,8 @@ ci:
   required_checks: [build, test]
   hold_label: ci:hold
 issue_tracker:
-  adapter: linear                        # or github
-  team: ENG                              # required by the Linear adapter
+  adapter: linear                        # or github, the default
+  team: ENG                              # Linear only: required by the Linear adapter
   file_command: /jig:file-issue
   taxonomy: docs/label-taxonomy.yaml
   states:

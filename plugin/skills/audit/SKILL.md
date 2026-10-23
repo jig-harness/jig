@@ -113,7 +113,9 @@ It judges the repository's file alone: the user file (`~/.jig/jig.yaml`) and
 `JIG__*` variables belong to whoever runs the audit. What they add on this
 machine is reported as facts (`fact:user-layer`, `fact:environment-layer`),
 and a user file that sets a field only a repository may set is a warning
-(`fact:user-layer-refused`).
+(`fact:user-layer-refused`). The tracker check is the exception: it probes the
+tracker the skills here select, so it reads all three layers, and layers that
+cannot be loaded are an error, since every skill here refuses them too.
 
 If it warns `fact:newer-plugin-installed`, stop and tell the user: this
 session runs an older plugin than the one installed, and a session keeps the
