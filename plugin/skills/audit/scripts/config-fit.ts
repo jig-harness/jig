@@ -78,7 +78,7 @@ import { parseSeverityFormats } from "../../drive-pr/scripts/lib/severity-format
 import { refuseRenamedSection } from "../../do-item/scripts/lib/overlay.ts";
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
-import { trackerProbeKey } from "./lib/tracker-probe.ts";
+import { trackerProbeable } from "./lib/tracker-probe.ts";
 import { detectPackageManager } from "../../fix-ci/scripts/consumer-config.ts";
 import { journalPath } from "../../reflect/scripts/lib/context.ts";
 import { parseObligations } from "../../resolve-conflicts/scripts/lib/obligations.ts";
@@ -1469,20 +1469,22 @@ function forgeChecks(
 }
 
 /**
- * Ask the tracker the configuration selects for its first issue. A
- * configured repository without an `issue_tracker` section is probed too:
- * it runs on the default adapter.
+ * Ask the tracker the configuration selects whether it answers for the
+ * audited repository: its credential and its team or repository, never an
+ * issue, whose contents are no part of reachability. A configured repository
+ * without an `issue_tracker` section is probed too: it runs on the default
+ * adapter, which derives its repository from `root`'s `origin` remote.
  */
 async function trackerCheck(
   config: Config,
   configured: boolean,
+  root: string,
 ): Promise<Finding[]> {
   if (!configured) return [];
   try {
     const trackerConfig = parseTrackerConfig(config);
-    const key = trackerProbeKey(trackerConfig);
-    if (key === null) return [];
-    const probe = openTracker(trackerConfig).getIssue(key);
+    if (!trackerProbeable(trackerConfig)) return [];
+    const probe = openTracker(trackerConfig, root).reach();
     const timeout = new Promise<never>((_, reject) =>
       setTimeout(
         () => reject(new Error("no answer within 30 seconds")),
@@ -3214,7 +3216,9 @@ export async function configFit(opts: {
   const state: ForgeState = { required: null, pulls: null };
   if (!opts.offline) {
     report.findings.push(...forgeChecks(config, opts.root, report, state));
-    report.findings.push(...(await trackerCheck(config, report.configured)));
+    report.findings.push(
+      ...(await trackerCheck(config, report.configured, opts.root)),
+    );
   } else
     report.findings.push({
       id: "unchecked:offline",

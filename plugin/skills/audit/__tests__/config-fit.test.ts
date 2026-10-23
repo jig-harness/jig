@@ -1531,22 +1531,51 @@ gates:
       report.findings.find((f) => f.id === "derivation:issue_tracker")?.message,
     ).toContain("cannot be reached");
   });
-  test("a configured repository without a tracker section probes the default tracker", () => {
-    const dir = repo({
-      ".config/jig.yaml": "repository:\n  base_branch: main\n",
+  describe("a configured repository without a tracker section", () => {
+    /**
+     * The tracker finding when config-fit runs in `cwd` on the repository
+     * `JIG_CONSUMER_ROOT` names (the working directory when unset), with the
+     * fake forge answering GraphQL with `graphql`.
+     */
+    function trackerFinding(graphql: string, cwd?: string): string | undefined {
+      const dir = repo({
+        ".config/jig.yaml": "repository:\n  base_branch: main\n",
+      });
+      git(dir, "remote", "add", "origin", "https://github.com/example/web.git");
+      const bin = fakeGh(dir, { ...answers(), "api graphql": graphql });
+      const env = cleanEnv({
+        PATH: withPath(bin),
+        ...(cwd === undefined ? {} : { JIG_CONSUMER_ROOT: dir }),
+      });
+      const report = JSON.parse(
+        runScript("config-fit.ts", ["--json"], cwd ?? dir, env).out,
+      ) as Report;
+      return report.findings.find((f) => f.id === "derivation:issue_tracker")
+        ?.message;
+    }
+    // The repository answers; its issue #1 is one no issue read can parse,
+    // so a probe that read an issue would fail.
+    const REACHED = JSON.stringify({
+      data: { repository: { id: "R_1", issue: { number: 1 } } },
     });
-    const bin = fakeGh(dir, { ...answers(), "api graphql": "!no answer" });
-    const report = JSON.parse(
-      runScript(
-        "config-fit.ts",
-        ["--json"],
-        dir,
-        cleanEnv({ PATH: withPath(bin) }),
-      ).out,
-    ) as Report;
-    expect(
-      report.findings.find((f) => f.id === "derivation:issue_tracker")?.message,
-    ).toContain("the github tracker cannot be reached");
+
+    test("probes the default tracker, whose failure is an error", () => {
+      expect(trackerFinding("!fake forge: no answer")).toContain(
+        "the github tracker cannot be reached",
+      );
+      expect(trackerFinding("!fake forge: no answer")).toContain(
+        "fake forge: no answer",
+      );
+    });
+
+    test("is reachable when its repository answers, reading no issue", () => {
+      expect(trackerFinding(REACHED)).toBeUndefined();
+    });
+
+    test("probes the audited repository, not the working directory", () => {
+      // The working directory has no origin remote; the audited one does.
+      expect(trackerFinding(REACHED, repo({}))).toBeUndefined();
+    });
   });
 
   test("the forge's default branch wins over a stale origin/HEAD, which is warned", () => {

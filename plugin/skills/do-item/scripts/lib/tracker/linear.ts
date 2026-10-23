@@ -1114,6 +1114,10 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     team,
     stateName: (state) => states[state],
 
+    async reach() {
+      await teamId();
+    },
+
     async getIssue(key) {
       let data: unknown;
       try {

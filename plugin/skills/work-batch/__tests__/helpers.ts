@@ -148,6 +148,7 @@ export function fakeTracker(
     queries,
     childReads,
     stateName: (s) => s,
+    reach: () => Promise.resolve(),
     getIssue: unsupported("getIssue"),
     listComments: unsupported("listComments"),
     listChildren: unsupported("listChildren"),

@@ -123,7 +123,8 @@ named in configuration:
 **Interface.** The skills reach the tracker through the
 [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), defined in
 [`do-item/scripts/lib/tracker/port.ts`](skills/do-item/scripts/lib/tracker/port.ts):
-read an issue with its comments and children, move it to a workflow state,
+check that the tracker answers for the team or repository (the audit's
+reachability probe, which reads no issue), read an issue with its comments and children, move it to a workflow state,
 comment, file an issue, change its fields and labels, search this team's
 issues, read and add relations between issues, list the labels an issue can
 carry, read whether an item is open (`tracker.ts issue-states`, which M4's

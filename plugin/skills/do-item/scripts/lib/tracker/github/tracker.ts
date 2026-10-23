@@ -518,6 +518,10 @@ export function gitHubTracker(client: Client): Tracker {
     team: slug(home),
     stateName: (state) => model.stateName(state),
 
+    async reach() {
+      await client.repositoryId();
+    },
+
     async getIssue(key) {
       const found = await client.issue(
         client.ref(key),
