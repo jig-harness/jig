@@ -104,48 +104,151 @@ export function outsideCheckout(script: string): boolean {
 
 export type PluginList = (program: string) => unknown;
 
+const STOP_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+
+/** Why the launcher stopped a child: its deadline, its output, or a signal to the launcher. */
+type StopCause = "deadline" | "output" | NodeJS.Signals;
+
+/** How one supervised child ended. */
+interface Outcome {
+  code: number | null;
+  /** Null when the child ended on its own. */
+  stopped: StopCause | null;
+  stdout: string;
+  stderr: string;
+}
+
+interface Supervision {
+  deadlineMs: number;
+  /** Between `SIGTERM` and `SIGKILL`; zero sends `SIGKILL` at once. */
+  graceMs: number;
+  /** Captures stdout and stderr, together at most this many bytes; otherwise both are inherited. */
+  captureBytes?: number;
+  /** Names the child on stderr when it is stopped. */
+  announce?: string;
+}
+
 /**
- * Asks one agent tool for its plugins. A tool that does not answer within
- * `timeoutMs` gets `SIGKILL`, which it cannot ignore, and the lookup fails at
- * once rather than waiting for a pipe some process it started may still hold.
+ * Runs one child to its end under the launcher's ownership: every process the
+ * launcher waits on starts here. The child leads its own process group, so a
+ * signal reaches everything it started. Past the deadline, past the capture
+ * budget, or when the launcher itself is told to stop, the group gets
+ * `SIGTERM` and, `graceMs` later, `SIGKILL`. At `SIGKILL` the run settles at
+ * once: the pipes are destroyed and the child unreferenced, so a descendant
+ * still holding them cannot keep the launcher alive. Captured output is
+ * decoded once, whole, so a character split across chunks survives. The
+ * stop-signal handlers live exactly as long as the child.
  */
-export function listPlugins(
-  program: string,
-  timeoutMs = 30_000,
-): Promise<unknown> {
+function supervise(command: string[], options: Supervision): Promise<Outcome> {
   return new Promise((settle, fail) => {
-    const child = spawn(program, ["plugin", "list", "--json"], {
-      stdio: ["ignore", "pipe", "pipe"],
+    const capture = options.captureBytes !== undefined;
+    const child = spawn(command[0] as string, command.slice(1), {
+      stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit",
+      detached: true,
     });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      fail(new LauncherError(`did not answer within ${timeoutMs / 1000}s`));
-    }, timeoutMs);
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      fail(error);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        fail(new LauncherError(`exited ${code}: ${stderr.trim()}`));
+    const signal = (name: NodeJS.Signals) => {
+      try {
+        process.kill(-(child.pid as number), name);
+      } catch {
+        child.kill(name);
+      }
+    };
+    const chunks = { stdout: [] as Buffer[], stderr: [] as Buffer[] };
+    let captured = 0;
+    let stopped: StopCause | null = null;
+    let escalation: ReturnType<typeof setTimeout> | undefined;
+    let done = false;
+    const release = () => {
+      done = true;
+      clearTimeout(deadline);
+      clearTimeout(escalation);
+      for (const name of STOP_SIGNALS) process.off(name, onSignal);
+    };
+    const finish = (code: number | null) => {
+      if (done) return;
+      release();
+      // A stopped child's group is ended whole, whatever the child did.
+      if (stopped) signal("SIGKILL");
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      child.unref();
+      settle({
+        code,
+        stopped,
+        stdout: Buffer.concat(chunks.stdout).toString("utf8"),
+        stderr: Buffer.concat(chunks.stderr).toString("utf8"),
+      });
+    };
+    const stop = (
+      cause: StopCause,
+      reason: string,
+      graceMs = options.graceMs,
+    ) => {
+      if (stopped || done) return;
+      stopped = cause;
+      if (options.announce)
+        console.error(
+          `jig gc launcher: ${reason}; stopping ${options.announce}`,
+        );
+      if (graceMs <= 0) {
+        finish(null);
         return;
       }
-      try {
-        settle(JSON.parse(stdout));
-      } catch (error) {
-        fail(error);
-      }
+      signal("SIGTERM");
+      escalation = setTimeout(() => finish(null), graceMs);
+    };
+    const deadline = setTimeout(
+      () => stop("deadline", `ran past ${options.deadlineMs / 1000}s`),
+      options.deadlineMs,
+    );
+    const onSignal = (name: NodeJS.Signals) => stop(name, `received ${name}`);
+    for (const name of STOP_SIGNALS) process.on(name, onSignal);
+    for (const stream of ["stdout", "stderr"] as const) {
+      child[stream]?.on("data", (chunk: Buffer) => {
+        captured += chunk.length;
+        if (captured > (options.captureBytes as number)) {
+          stop("output", `printed more than ${options.captureBytes} bytes`, 0);
+          return;
+        }
+        chunks[stream].push(chunk);
+      });
+    }
+    child.on("error", (error) => {
+      if (done) return;
+      release();
+      fail(error);
     });
+    // Captured output is whole only once the pipes close.
+    child.on(capture ? "close" : "exit", (code) => finish(code));
   });
+}
+
+/** The launcher was told to stop: no further lookup or collection runs. */
+class LauncherStopped extends LauncherError {
+  override name = "LauncherStopped";
+}
+
+/**
+ * Asks one agent tool for its plugins. A tool that does not answer within
+ * `timeoutMs`, or prints more than `maxBytes`, is killed with its process
+ * group and the lookup fails; a stop signal ends the lookup and the launch.
+ */
+export async function listPlugins(
+  program: string,
+  timeoutMs = 30_000,
+  maxBytes = 4 * 1024 * 1024,
+): Promise<unknown> {
+  const { code, stopped, stdout, stderr } = await supervise(
+    [program, "plugin", "list", "--json"],
+    { deadlineMs: timeoutMs, graceMs: 0, captureBytes: maxBytes },
+  );
+  if (stopped === "deadline")
+    throw new LauncherError(`did not answer within ${timeoutMs / 1000}s`);
+  if (stopped === "output")
+    throw new LauncherError(`printed more than ${maxBytes} bytes`);
+  if (stopped) throw new LauncherStopped(`received ${stopped}`);
+  if (code !== 0) throw new LauncherError(`exited ${code}: ${stderr.trim()}`);
+  return JSON.parse(stdout);
 }
 
 /**
@@ -190,6 +293,7 @@ export async function installedEntry(
       }
       return realpathSync(entry);
     } catch (error) {
+      if (error instanceof LauncherStopped) throw error;
       failures.push(`${name}: ${(error as Error).message}`);
     }
   }
@@ -226,64 +330,24 @@ export function collectionDeadlineMs(
   return (wait + 7200) * 1000;
 }
 
-const STOP_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
-
 /**
  * Runs the collector to its exit. The scheduler bounds nothing, so the
  * launcher does: past the deadline, or when the launcher itself is told to
  * stop, the collector's process group gets `SIGTERM` and, `graceMs` later,
- * `SIGKILL`, and the run fails whatever status the collector exits with. The
- * collector leads its own group so that every process it started ends with it.
+ * `SIGKILL`, and the run fails whatever status the collector exits with.
  */
-export function runCollector(
+export async function runCollector(
   command: string[],
   deadlineMs = collectionDeadlineMs(),
   graceMs = 30_000,
 ): Promise<number> {
-  return new Promise((settle, fail) => {
-    const child = spawn(command[0] as string, command.slice(1), {
-      stdio: "inherit",
-      detached: true,
-    });
-    const signal = (name: NodeJS.Signals) => {
-      try {
-        process.kill(-(child.pid as number), name);
-      } catch {
-        child.kill(name);
-      }
-    };
-    let escalation: ReturnType<typeof setTimeout> | undefined;
-    const stop = (reason: string) => {
-      if (escalation) return;
-      console.error(`jig gc launcher: ${reason}; stopping the collector`);
-      signal("SIGTERM");
-      escalation = setTimeout(() => signal("SIGKILL"), graceMs);
-    };
-    const deadline = setTimeout(
-      () => stop(`the collector ran past ${deadlineMs / 1000}s`),
-      deadlineMs,
-    );
-    const onSignal = (name: NodeJS.Signals) => stop(`received ${name}`);
-    for (const name of STOP_SIGNALS) process.on(name, onSignal);
-    const finish = () => {
-      clearTimeout(deadline);
-      for (const name of STOP_SIGNALS) process.off(name, onSignal);
-      if (escalation) {
-        clearTimeout(escalation);
-        signal("SIGKILL");
-      }
-    };
-    child.on("error", (error) => {
-      finish();
-      fail(error);
-    });
-    child.on("exit", (code) => {
-      const stopped = escalation !== undefined;
-      finish();
-      // A stopped run did not finish, even when the collector exits 0 on SIGTERM.
-      settle(stopped ? code || 1 : (code ?? 1));
-    });
+  const { code, stopped } = await supervise(command, {
+    deadlineMs,
+    graceMs,
+    announce: "the collector",
   });
+  // A stopped run did not finish, even when the collector exits 0 on SIGTERM.
+  return stopped ? code || 1 : (code ?? 1);
 }
 
 async function main(argv: string[]): Promise<number> {

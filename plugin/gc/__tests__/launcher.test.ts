@@ -205,7 +205,8 @@ test.skipIf(
       [
         process.execPath,
         "-e",
-        `process.on("SIGTERM", () => require("node:fs").writeFileSync(${JSON.stringify(caught)}, "")); setInterval(() => {}, 1000);`,
+        'process.on("SIGTERM", () => require("node:fs").writeFileSync(process.argv[1], "")); setInterval(() => {}, 1000);',
+        caught,
       ],
       2000,
       300,
@@ -226,7 +227,8 @@ test.skipIf(
       [
         process.execPath,
         "-e",
-        `process.on("SIGTERM", () => { require("node:fs").writeFileSync(${JSON.stringify(caught)}, ""); process.exit(0); }); setInterval(() => {}, 1000);`,
+        'process.on("SIGTERM", () => { require("node:fs").writeFileSync(process.argv[1], ""); process.exit(0); }); setInterval(() => {}, 1000);',
+        caught,
       ],
       2000,
       10_000,
@@ -281,6 +283,148 @@ test.skipIf(skipsOnWindows("powershell", "signals are POSIX"))(
     expect(alive).toBe(false);
   },
 );
+
+/** Whether `pid` is gone within `ms`, polled. */
+async function goneWithin(pid: number, ms: number): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return true;
+    }
+    await Bun.sleep(50);
+  }
+  return false;
+}
+
+/** Polls for a file a child writes, and reads it. */
+async function readWhenWritten(path: string, ms = 10_000): Promise<string> {
+  const deadline = Date.now() + ms;
+  while (!existsSync(path) || readFileSync(path, "utf8") === "") {
+    if (Date.now() > deadline) throw new Error(`${path} was never written`);
+    await Bun.sleep(50);
+  }
+  return readFileSync(path, "utf8");
+}
+
+test.skipIf(skipsOnWindows("powershell", "process groups are POSIX"))(
+  "a lookup ends the launcher at its deadline even while a descendant holds its pipes",
+  async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+    const claude = join(root, "claude");
+    const pidFile = join(root, "pid");
+    // The descendant leaves the tool's process group, so no group signal
+    // reaches it, and keeps the tool's stdout and stderr open.
+    writeFakeProgram(
+      claude,
+      `#!/usr/bin/env bun
+const { spawn } = require("node:child_process");
+const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "inherit" });
+require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
+setInterval(() => {}, 1000);
+`,
+    );
+    const lookup = join(root, "lookup.ts");
+    writeFileSync(
+      lookup,
+      `const { listPlugins } = await import(process.argv[2]);
+try { await listPlugins(process.argv[3], 1000); } catch (error) { console.error(error.message); process.exitCode = 3; }
+`,
+    );
+    const result = Bun.spawnSync(
+      [
+        process.execPath,
+        lookup,
+        resolve(import.meta.dir, "..", "launcher.ts"),
+        claude,
+      ],
+      { stdout: "pipe", stderr: "pipe", timeout: 20_000 },
+    );
+    const descendant = Number(await readWhenWritten(pidFile));
+    try {
+      expectSpawnExit(result, 3);
+      expect(result.stderr.toString()).toContain("did not answer within 1s");
+    } finally {
+      process.kill(descendant, "SIGKILL");
+    }
+  },
+);
+
+test.skipIf(skipsOnWindows("powershell", "signals are POSIX"))(
+  "a launcher told to stop during the lookup ends the tool and fails at once",
+  async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+    const { launcher, config } = installedLauncher(root);
+    const claude = join(root, "claude");
+    const codex = join(root, "codex");
+    const pidFile = join(root, "pid");
+    const asked = join(root, "codex-asked");
+    writeFakeProgram(
+      claude,
+      `#!/usr/bin/env bun\nrequire("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));\nsetInterval(() => {}, 1000);\n`,
+    );
+    // A stopped launch asks no further tool.
+    writeFakeProgram(
+      codex,
+      `#!/usr/bin/env bun\nrequire("node:fs").writeFileSync(${JSON.stringify(asked)}, "");\nconsole.log("{}");\n`,
+    );
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        "--no-env-file",
+        `--config=${config}`,
+        launcher,
+        `--claude=${claude}`,
+        `--codex=${codex}`,
+        "--",
+        "gc",
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const tool = Number(await readWhenWritten(pidFile));
+    const started = Date.now();
+    child.kill("SIGTERM");
+    const status = await Promise.race([child.exited, Bun.sleep(15_000)]);
+    if (status === undefined) child.kill("SIGKILL");
+    expect(status).toBe(1);
+    expect(Date.now() - started).toBeLessThan(15_000);
+    expect(await new Response(child.stderr).text()).toContain(
+      "received SIGTERM",
+    );
+    expect(await goneWithin(tool, 3000)).toBe(true);
+    expect(existsSync(asked)).toBe(false);
+  },
+);
+
+test.skipIf(skipsOnWindows("powershell", "process groups are POSIX"))(
+  "a tool printing without end is stopped at the output budget",
+  async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+    const claude = join(root, "claude");
+    writeFakeProgram(
+      claude,
+      `#!/usr/bin/env bun\nsetInterval(() => process.stderr.write("x".repeat(65536)), 1);\n`,
+    );
+    await expect(listPlugins(claude, 20_000, 200_000)).rejects.toThrow(
+      "printed more than 200000 bytes",
+    );
+  },
+);
+
+test("a character split across output chunks survives the lookup", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+  const claude = join(root, "claude");
+  // é is C3 A9 in UTF-8; the tool writes the two bytes apart.
+  writeFakeProgram(
+    claude,
+    `#!/usr/bin/env bun
+process.stdout.write(Buffer.concat([Buffer.from('[{"id":"jig@jig","scope":"user","installPath":"/caf'), Buffer.from([0xc3])]));
+setTimeout(() => process.stdout.write(Buffer.concat([Buffer.from([0xa9]), Buffer.from('"}]')])), 200);
+`,
+  );
+  expect(claudePluginDirectory(await listPlugins(claude))).toBe("/café");
+});
 
 test.skipIf(
   skipsOnWindows(
