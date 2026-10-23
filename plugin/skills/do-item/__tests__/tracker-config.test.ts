@@ -1,8 +1,10 @@
 /** The tracker settings: defaults, validation and opening the adapter they name. */
 import { afterEach, describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   defaultStateName,
   parseTrackerConfig,
@@ -105,11 +107,8 @@ describe("tracker configuration", () => {
   });
 
   describe("opening from the overlay", () => {
-    const saved = process.env.JIG_OVERLAY;
     let dir: string | null = null;
     afterEach(() => {
-      if (saved === undefined) delete process.env.JIG_OVERLAY;
-      else process.env.JIG_OVERLAY = saved;
       if (dir !== null) rmSync(dir, { recursive: true, force: true });
       dir = null;
     });
@@ -120,8 +119,26 @@ describe("tracker configuration", () => {
         path,
         "issue_tracker:\n  adapter: linear\n  team: ENG\ndo_issue:\n  gates: []\n",
       );
-      process.env.JIG_OVERLAY = path;
-      expect(() => openTracker()).toThrow("now called do_item");
+      // The overlay is named in a child's environment, never this process's.
+      const index = join(import.meta.dir, "../scripts/lib/tracker/index.ts");
+      const r = spawnSync(
+        process.execPath,
+        [
+          "-e",
+          `import { openTracker } from ${JSON.stringify(index)};
+try { openTracker(); } catch (e) { console.log(e.message); process.exit(3); }`,
+        ],
+        {
+          env: { ...process.env, JIG_OVERLAY: path },
+          encoding: "utf8",
+          timeout: 60_000,
+        },
+      );
+      expectSpawnExit(
+        { exitCode: r.status, stdout: r.stdout, stderr: r.stderr },
+        3,
+      );
+      expect(r.stdout).toContain("now called do_item");
     });
   });
 });

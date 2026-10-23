@@ -96,6 +96,12 @@ gates:
     expect(additions).toBe(
       "# Add to .config/jig.yaml:\npull_requests:\n  # seen: pull_requests.issue_link\n  issue_link: refs\n",
     );
+    // An empty value sets nothing, so the draft still offers the field.
+    expect(
+      draftConfig([suggest("gates.command", "make check")], schema, {
+        gates: { command: null },
+      }),
+    ).toContain('command: "make check"');
     expect(
       draftConfig([suggest("pull_requests.stacking", "none")], schema, null),
     ).toBeUndefined();

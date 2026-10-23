@@ -33,6 +33,12 @@ describe("trackerTeamSuggestion", () => {
       { field: "issue_tracker.adapter", value: "linear" },
       { field: "issue_tracker.team", value: "ENG" },
     ]);
+    expect(
+      trackerTeamSuggestion({ issue_tracker: { adapter: null } }, sources),
+    ).toMatchObject([
+      { field: "issue_tracker.adapter", value: "linear" },
+      { field: "issue_tracker.team", value: "ENG" },
+    ]);
   });
 
   it("offers no team to a GitHub tracker", () => {

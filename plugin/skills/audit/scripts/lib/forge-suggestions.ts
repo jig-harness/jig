@@ -116,8 +116,9 @@ export function trackerTeamSuggestion(
   const evidence = `${team}-<n> issue keys in ${counts.join(", ")}${
     others > 0 ? ` (${others} key(s) of other teams)` : ""
   }`;
+  // An empty `adapter:` (null) is no adapter: the default, which refuses a team.
   const adapter: Suggestion[] =
-    at(config, "issue_tracker.adapter") === undefined
+    at(config, "issue_tracker.adapter") == null
       ? [
           {
             field: "issue_tracker.adapter",

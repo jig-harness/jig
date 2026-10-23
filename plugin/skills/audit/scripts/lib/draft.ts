@@ -95,7 +95,8 @@ function merge(entry: Entry, s: Suggestion): void {
 
 /**
  * The fields the draft writes, in the order first suggested: known to the
- * schema, not set by the repository's file, and not equal to the default.
+ * schema, not set by the repository's file (an empty value, null, sets
+ * nothing), and not equal to the default.
  */
 function entries(
   suggestions: Suggestion[],
@@ -106,7 +107,7 @@ function entries(
   const found = new Map<string, Entry>();
   for (const s of suggestions) {
     const field = byPath.get(s.field);
-    if (field === undefined || at(existing, s.field) !== undefined) continue;
+    if (field === undefined || at(existing, s.field) != null) continue;
     const entry = found.get(s.field);
     if (entry) merge(entry, s);
     else found.set(s.field, { field, value: s.value, evidence: [s.evidence] });
