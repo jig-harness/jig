@@ -139,7 +139,11 @@ passes. The `body` adapter is the one every repository has.
   `specs.exception_label` to the item, and an exception counts only when
   the forge's or tracker's own label event names an actor in that set
   other than the pull request's author and the identity the implementing
-  agent runs as. Permission to apply the label is not eligibility: with
+  agent runs as. A team in the set counts the actor through the forge's or
+  tracker's own membership read, made each time the exception is judged,
+  so an actor who has left the team no longer qualifies; a membership that
+  cannot be read counts as not a member. Permission to apply the label is
+  not eligibility: with
   the set empty, which is the default, no exception counts. Before it asks, `do-item`
   writes the exception record to the item as one comment: the item's
   references, each source's revision (the last commit to touch its path
@@ -248,7 +252,7 @@ recommendation names the adapter the repository's layout would turn on.
 |---|---|---|---|
 | `specs.adapters` | list of adapter names, in order | every adapter whose layout is present, then `body` | do-item, review, file-issue, followup |
 | `specs.body_section` | heading text | `Spec` | do-item, file-issue |
-| `specs.require_for_types` | list of work types | `[feature]` | do-item |
+| `specs.require_for_types` | list of work types | `[feature]` | do-item, the required check |
 | `specs.deferral_label` | label | `issue_tracker.labels.followup` | do-item |
 | `specs.exception_label` | label | `spec-exception` | do-item, the required check |
 | `specs.exception_approvers` | list of forge or tracker logins and teams | empty: no exception counts | do-item, the required check |
