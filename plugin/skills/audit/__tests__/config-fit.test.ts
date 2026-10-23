@@ -1418,7 +1418,10 @@ declined:
       "review.sticky_marker, drive.reviews_drafts",
     );
     expect(user?.message).not.toContain("review.bots");
-    expect(ids(report)).toContain("fact:environment-layer");
+    const layer = report.findings.find(
+      (f) => f.id === "fact:environment-layer",
+    );
+    expect(layer?.message).toContain("except for the tracker check");
     // A field that describes one repository makes every skill refuse the user file.
     expect(
       report.findings.find((f) => f.id === "fact:user-layer-refused")?.message,
@@ -1591,6 +1594,11 @@ gates:
       };
       expect(trackerFinding(REACHED, undefined, environment)).toContain(
         "the linear tracker cannot be reached",
+      );
+      // Layers the skills refuse are an error, not an unchecked tracker.
+      const refused = { ...environment, JIG__ISSUE_TRACKER__ADAPTER: "[x" };
+      expect(trackerFinding(REACHED, undefined, refused)).toContain(
+        "every skill here refuses to run",
       );
     });
   });

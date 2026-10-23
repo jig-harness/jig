@@ -898,8 +898,8 @@ function leafFields(config: Config, prefix = ""): string[] {
 
 /**
  * What the configuration layers of the machine running the audit add: the
- * audit judges the repository's file alone, but the skills on this machine
- * also read the user file and the environment.
+ * audit judges the repository's file alone, but the skills on this machine,
+ * and `trackerCheck`, also read the user file and the environment.
  */
 function machineLayers(config: Config, schema: Schema): Finding[] {
   const findings: Finding[] = [];
@@ -929,7 +929,7 @@ function machineLayers(config: Config, schema: Schema): Finding[] {
     findings.push({
       id: "fact:user-layer",
       severity: "info",
-      message: `on this machine ${path} sets ${filled.join(", ")}, which the repository's file leaves unset: the skills here use those values, others get the defaults. The audit judged the repository's file alone`,
+      message: `on this machine ${path} sets ${filled.join(", ")}, which the repository's file leaves unset: the skills here use those values, others get the defaults. The audit judged the repository's file alone, except for the tracker check, which reads the configuration as the skills here do`,
     });
   const variables = Object.keys(process.env).filter((k) =>
     k.startsWith(ENV_PREFIX),
@@ -938,7 +938,7 @@ function machineLayers(config: Config, schema: Schema): Finding[] {
     findings.push({
       id: "fact:environment-layer",
       severity: "info",
-      message: `${variables.join(", ")} set values for this run only; the audit ignored them`,
+      message: `${variables.join(", ")} set values for this run only; the audit ignored them, except for the tracker check, which reads the configuration as the skills here do`,
     });
   return findings;
 }
@@ -1483,20 +1483,10 @@ async function trackerCheck(
   root: string,
 ): Promise<Finding[]> {
   if (!configured) return [];
-  let config: Config;
+  let config: Config | undefined;
   try {
     const text = readFileSync(file, "utf8");
     config = layeredConfig(root, process.env, text).values;
-  } catch (e) {
-    return [
-      {
-        id: "unchecked:issue_tracker",
-        severity: "info",
-        message: `the tracker is unchecked: the configuration layers cannot be read (${e instanceof Error ? e.message : String(e)})`,
-      },
-    ];
-  }
-  try {
     const trackerConfig = parseTrackerConfig(config);
     if (!trackerProbeable(trackerConfig)) return [];
     const deadline = new AbortController();
@@ -1510,11 +1500,15 @@ async function trackerCheck(
     await Promise.race([probe, timeout]);
     return [];
   } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
     return [
       {
         id: "derivation:issue_tracker",
         severity: "error",
-        message: `the ${String(at(config, "issue_tracker.adapter") ?? "github")} tracker cannot be reached: ${e instanceof Error ? e.message : String(e)}`,
+        message:
+          config === undefined
+            ? `the tracker is unchecked: the configuration the skills read cannot be loaded, so every skill here refuses to run (${reason})`
+            : `the ${String(at(config, "issue_tracker.adapter") ?? "github")} tracker cannot be reached: ${reason}`,
       },
     ];
   }
