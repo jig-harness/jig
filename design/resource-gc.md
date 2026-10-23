@@ -250,7 +250,10 @@ field, how to see the last run and how to remove the job: launchd on macOS,
 a systemd user timer on Linux, cron where neither is present. Two lessons
 from the working repository's installers are kept: the job runs the installed
 plugin's copy of the command, never a worktree's checkout, because a worktree
-can be reaped out from under its own scheduled job; and the job's environment
+can be reaped out from under its own scheduled job, and it finds that copy when
+it runs, through a launcher kept at a fixed place, because the copy's path
+changes with every release and a path stored in the job would keep running the
+old collector, or none once the old cache copy is gone; and the job's environment
 is written into the job file, since a scheduler starts no login shell and
 inherits nothing from the shell that installed it.
 

@@ -272,6 +272,25 @@ test("scope creation records the subprocess identity in every nested scope", () 
 });
 
 /**
+ * Agent-tool fakes that list the plugin as installed at `installPath` (or not
+ * installed), as `claude plugin list --json` and `codex plugin list --json`
+ * answer; the job asks them where the plugin is at each run.
+ */
+function writeAgentTools(bin: string, installPath: string | null): void {
+  writeFakeProgram(
+    join(bin, "claude"),
+    `#!/usr/bin/env bun
+console.log(JSON.stringify(${JSON.stringify(installPath === null ? [] : [{ id: "jig@jig", scope: "user", installPath }])}));
+`,
+  );
+  writeFakeProgram(
+    join(bin, "codex"),
+    `#!/usr/bin/env bun
+console.log(JSON.stringify({ installed: [] }));
+`,
+  );
+}
+/**
  * The scheduler variants the install round trip runs under: launchd on macOS;
  * on Linux both systemd and cron, chosen by whether the user manager's socket
  * exists under `XDG_RUNTIME_DIR`.
@@ -327,10 +346,19 @@ if (${JSON.stringify(name)} === "crontab") {
 `;
     for (const name of ["launchctl", "systemctl", "crontab"])
       writeFakeProgram(join(bin, name), source(name));
+    writeAgentTools(bin, cache);
     const homeText = readFileSync(f.homeFile, "utf8");
     writeFileSync(f.homeFile, `${homeText}personal_setting: preserved\n`);
     f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
     const entry = join(cache, "jig.ts");
+    // A lock wait the heavy-run lock would refuse is refused before any write.
+    f.env.LOCK_TIMEOUT = "soon";
+    const before = readFileSync(f.homeFile, "utf8");
+    const refused = run(f, ["install", "--repo", f.repo, "--yes"], entry);
+    expectSpawnExit(refused, 1);
+    expect(refused.stderr.toString()).toContain("LOCK_TIMEOUT must be");
+    expect(readFileSync(f.homeFile, "utf8")).toBe(before);
+    f.env.LOCK_TIMEOUT = "60";
     const installed = run(f, ["install", "--repo", f.repo, "--yes"], entry);
     expectSpawnExit(installed, 0);
     expect(readFileSync(f.homeFile, "utf8")).toContain(
@@ -343,9 +371,17 @@ if (${JSON.stringify(name)} === "crontab") {
     };
     const job = jobs[variant] as string;
     const content = readFileSync(job, "utf8");
+    // The job names the launcher, never the plugin release that installed it.
+    const launcher = join(f.user, ".local/state/jig/gc/launcher");
     expect(content).toContain("--no-env-file");
-    expect(content).toContain("bunfig.toml");
-    expect(content).toContain(entry);
+    expect(content).toContain(join(launcher, "bunfig.toml"));
+    expect(content).toContain(join(launcher, "launcher.ts"));
+    expect(content).not.toContain(cache);
+    expect(content).toContain(`--claude=${join(bin, "claude")}`);
+    // The job waits for the lock, and bounds its run, as configured at install.
+    expect(content).toMatch(/LOCK_TIMEOUT(<\/key><string>|=)60\b/);
+    expect(existsSync(join(launcher, "launcher.ts"))).toBe(true);
+    expect(existsSync(join(launcher, "bunfig.toml"))).toBe(true);
     if (variant !== "cron") expect(existsSync(loaded)).toBe(true);
     const removed = run(
       f,
@@ -356,6 +392,7 @@ if (${JSON.stringify(name)} === "crontab") {
     expect(readFileSync(f.homeFile, "utf8")).toContain(
       "personal_setting: preserved",
     );
+    expect(existsSync(launcher)).toBe(false);
     if (variant === "cron")
       expect(readFileSync(cron, "utf8")).not.toContain("# jig-gc");
     else {
@@ -391,6 +428,7 @@ console.error("no crontab: scheduler unavailable");
 process.exit(1);
 `,
     );
+  writeAgentTools(bin, cache);
   f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
   writeFileSync(f.homeFile, dump({ gc: { repositories: [] } }));
   const previous = readFileSync(f.homeFile, "utf8");
@@ -402,6 +440,36 @@ process.exit(1);
   expectSpawnExit(result, 1);
   expect(result.stderr.toString()).toContain("machine configuration");
   expect(readFileSync(f.homeFile, "utf8")).toBe(previous);
+});
+
+test.skipIf(
+  skipsOnWindows(
+    "powershell",
+    "GC scheduler installation supports launchd, systemd and cron on macOS/Linux",
+  ),
+)("install refuses a job whose launcher could not find the plugin", () => {
+  const f = setup();
+  const cache = join(f.root, "installed");
+  cpSync(resolve(import.meta.dir, "../.."), cache, {
+    recursive: true,
+    filter: (source) => !source.includes("__tests__"),
+  });
+  const bin = join(f.root, "bin");
+  mkdirSync(bin);
+  writeAgentTools(bin, null);
+  const previous = readFileSync(f.homeFile, "utf8");
+  f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
+  const result = run(
+    f,
+    ["install", "--repo", f.repo, "--yes"],
+    join(cache, "jig.ts"),
+  );
+  expectSpawnExit(result, 1);
+  expect(result.stderr.toString()).toContain("jig@jig is not installed");
+  expect(readFileSync(f.homeFile, "utf8")).toBe(previous);
+  expect(
+    existsSync(join(f.user, ".local/state/jig/gc/launcher/launcher.ts")),
+  ).toBe(false);
 });
 
 /**
@@ -468,10 +536,16 @@ test.skipIf(
     [join(units, "jig-gc.timer")]: "previous timer\n",
     [cron]: "0 4 * * * previous-job # jig-gc\n",
   };
+  // The launcher the previous job runs, which this install replaces.
+  const launcher = join(f.user, ".local/state/jig/gc/launcher");
+  mkdirSync(launcher, { recursive: true });
+  previous[join(launcher, "launcher.ts")] = "previous launcher\n";
+  previous[join(launcher, "bunfig.toml")] = "previous bunfig\n";
   for (const [path, text] of Object.entries(previous))
     writeFileSync(path, text);
   writeFileSync(enabled, "");
   writeFileSync(active, "");
+  writeAgentTools(bin, cache);
   f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
   const result = run(
     f,
@@ -484,6 +558,68 @@ test.skipIf(
     expect(readFileSync(path, "utf8")).toBe(text);
   expect(existsSync(active)).toBe(true);
 });
+
+test.skipIf(
+  skipsOnWindows(
+    "powershell",
+    "GC scheduler installation supports launchd, systemd and cron on macOS/Linux",
+  ),
+)(
+  "removing one repository keeps the job and launcher, without finding the plugin",
+  () => {
+    const f = setup();
+    const cache = join(f.root, "installed");
+    cpSync(resolve(import.meta.dir, "../.."), cache, {
+      recursive: true,
+      filter: (source) => !source.includes("__tests__"),
+    });
+    const bin = join(f.root, "bin");
+    mkdirSync(bin);
+    const calls = join(f.root, "scheduler-calls");
+    for (const name of ["launchctl", "systemctl", "crontab"])
+      writeFakeProgram(
+        join(bin, name),
+        // The job the remaining repository runs must not be read or rewritten.
+        `#!/usr/bin/env bun
+require("node:fs").appendFileSync(${JSON.stringify(calls)}, "${name}\\n");
+process.exit(1);
+`,
+      );
+    const launcher = join(
+      f.env.HOME as string,
+      ".local",
+      "state",
+      "jig",
+      "gc",
+      "launcher",
+    );
+    mkdirSync(launcher, { recursive: true });
+    writeFileSync(
+      join(launcher, "launcher.ts"),
+      "// the running job's launcher\n",
+    );
+    writeAgentTools(bin, null);
+    f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
+    const other = { ...f.machine.repositories[0], path: join(f.root, "other") };
+    writeFileSync(
+      f.homeFile,
+      dump({ gc: { repositories: [...f.machine.repositories, other] } }),
+    );
+    const result = run(
+      f,
+      ["install", "--repo", f.repo, "--uninstall", "--yes"],
+      join(cache, "jig.ts"),
+    );
+    expectSpawnExit(result, 0);
+    const text = readFileSync(f.homeFile, "utf8");
+    expect(text).toContain(other.path);
+    expect(text).not.toContain(`path: ${f.repo}\n`);
+    expect(existsSync(calls)).toBe(false);
+    expect(readFileSync(join(launcher, "launcher.ts"), "utf8")).toBe(
+      "// the running job's launcher\n",
+    );
+  },
+);
 
 test("tool-state delegates to the native reaper in report mode", () => {
   const f = setup();
