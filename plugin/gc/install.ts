@@ -66,7 +66,7 @@ export async function install(options: {
     );
   // Removing an entry withdraws authority, so it never waits on plugin
   // discovery.
-  if (!options.uninstall) checkLauncherResolves();
+  if (!options.uninstall) await checkLauncherResolves();
   return exclusiveGcLock("install", async () => {
     const original = previousMachineText(machinePath);
     // Refuse a concurrent edit after the preview rather than overwrite it.

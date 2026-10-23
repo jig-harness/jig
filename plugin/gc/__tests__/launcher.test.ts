@@ -2,8 +2,10 @@ import { expect, test } from "bun:test";
 import {
   copyFileSync,
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   symlinkSync,
   writeFileSync,
@@ -18,6 +20,7 @@ import {
   codexPluginDirectory,
   collectionDeadlineMs,
   installedEntry,
+  listPlugins,
   outsideCheckout,
   parseLauncherArguments,
   runCollector,
@@ -80,7 +83,7 @@ test("the launcher takes the recorded programs, then the collector's arguments",
   );
 });
 
-test("a copy inside a checkout is refused and the next tool is tried", () => {
+test("a copy inside a checkout is refused and the next tool is tried", async () => {
   const checkout = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
   mkdirSync(join(checkout, ".git"));
   const inside = pluginCopy(checkout, "worktree");
@@ -95,12 +98,12 @@ test("a copy inside a checkout is refused and the next tool is tried", () => {
     codex: { installed: [{ pluginId: "jig@jig", version: "9.9.9" }] },
   };
   const list = (program: string) => lists[program];
-  expect(() => installedEntry({ claude: "claude" }, list)).toThrow(
+  await expect(installedEntry({ claude: "claude" }, list)).rejects.toThrow(
     "inside a checkout",
   );
-  expect(installedEntry({ claude: "claude", codex: "codex" }, list, home)).toBe(
-    realpathSync(join(cached, "9.9.9", "jig.ts")),
-  );
+  expect(
+    await installedEntry({ claude: "claude", codex: "codex" }, list, home),
+  ).toBe(realpathSync(join(cached, "9.9.9", "jig.ts")));
 });
 
 test.skipIf(skipsOnWindows("powershell", "symbolic links need privileges"))(
@@ -171,6 +174,15 @@ test.skipIf(
   expect(outsideCheckout(join(root, "linked"))).toBe(false);
 });
 
+/**
+ * A file a signal-test child writes from its `SIGTERM` handler. The deadline
+ * leaves the child time to start, and the file proves the handler under test
+ * ran rather than the signal ending the child before it was installed.
+ */
+function signalMarker(): string {
+  return join(mkdtempSync(join(tmpdir(), "gc-launcher-")), "caught");
+}
+
 test("a collection's deadline covers the lock wait it may spend first", () => {
   expect(collectionDeadlineMs({})).toBe((3600 + 7200) * 1000);
   expect(collectionDeadlineMs({ LOCK_TIMEOUT: "" })).toBe((3600 + 7200) * 1000);
@@ -187,17 +199,20 @@ test.skipIf(
 )(
   "a collector past its deadline is stopped, even one that ignores SIGTERM",
   async () => {
+    const caught = signalMarker();
     const started = Date.now();
     const status = await runCollector(
       [
         process.execPath,
         "-e",
-        'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);',
+        `process.on("SIGTERM", () => require("node:fs").writeFileSync(${JSON.stringify(caught)}, "")); setInterval(() => {}, 1000);`,
       ],
-      300,
+      2000,
       300,
     );
     expect(status).not.toBe(0);
+    // The child ignored SIGTERM, so only the escalation could have ended it.
+    expect(existsSync(caught)).toBe(true);
     expect(Date.now() - started).toBeLessThan(20_000);
   },
 );
@@ -205,17 +220,20 @@ test.skipIf(
 test.skipIf(
   skipsOnWindows("powershell", "process groups and signals are POSIX"),
 )("a stopped collector fails the run even when it exits 0", async () => {
+  const caught = signalMarker();
   expect(
     await runCollector(
       [
         process.execPath,
         "-e",
-        'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1000);',
+        `process.on("SIGTERM", () => { require("node:fs").writeFileSync(${JSON.stringify(caught)}, ""); process.exit(0); }); setInterval(() => {}, 1000);`,
       ],
-      300,
+      2000,
       10_000,
     ),
   ).not.toBe(0);
+  // The child's own exit-0 handler ran: the status is the launcher's verdict.
+  expect(existsSync(caught)).toBe(true);
 });
 
 test("a collector that finishes keeps its own exit status", async () => {
@@ -224,14 +242,45 @@ test("a collector that finishes keeps its own exit status", async () => {
   ).toBe(3);
 });
 
-test("no recorded tool, or a tool that cannot answer, is an error naming why", () => {
-  expect(() => installedEntry({})).toThrow("no agent tool recorded");
-  expect(() =>
+test("no recorded tool, or a tool that cannot answer, is an error naming why", async () => {
+  await expect(installedEntry({})).rejects.toThrow("no agent tool recorded");
+  await expect(
     installedEntry({ claude: "claude" }, () => {
       throw new Error("exited 1: offline");
     }),
-  ).toThrow("claude: exited 1: offline");
+  ).rejects.toThrow("claude: exited 1: offline");
 });
+
+test.skipIf(skipsOnWindows("powershell", "signals are POSIX"))(
+  "a tool that ignores SIGTERM and never answers fails the lookup in time",
+  async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+    const claude = join(root, "claude");
+    const pidFile = join(root, "pid");
+    writeFakeProgram(
+      claude,
+      `#!/usr/bin/env bun\nrequire("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));\nprocess.on("SIGTERM", () => {});\nsetInterval(() => {}, 1000);\n`,
+    );
+    const started = Date.now();
+    await expect(listPlugins(claude, 1000)).rejects.toThrow(
+      "did not answer within 1s",
+    );
+    expect(Date.now() - started).toBeLessThan(20_000);
+    // The tool is gone, not left running beside the collector.
+    const pid = Number(readFileSync(pidFile, "utf8"));
+    const deadline = Date.now() + 3000;
+    let alive = true;
+    while (alive && Date.now() < deadline) {
+      try {
+        process.kill(pid, 0);
+        await Bun.sleep(50);
+      } catch {
+        alive = false;
+      }
+    }
+    expect(alive).toBe(false);
+  },
+);
 
 test.skipIf(
   skipsOnWindows(

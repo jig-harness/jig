@@ -143,9 +143,9 @@ function pluginPrograms(): { claude?: string; codex?: string } {
  * Fails an install whose job could not find the plugin it would run: the
  * scheduler reports a job's failures where nobody reads them.
  */
-export function checkLauncherResolves(): void {
+export async function checkLauncherResolves(): Promise<void> {
   try {
-    installedEntry(pluginPrograms());
+    await installedEntry(pluginPrograms());
   } catch (error) {
     throw new GcError((error as Error).message);
   }

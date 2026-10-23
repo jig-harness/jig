@@ -10,7 +10,7 @@
  *   bun --no-env-file --config=<dir>/bunfig.toml <dir>/launcher.ts \
  *     [--claude=<program>] [--codex=<program>] -- gc --scheduled
  */
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, parse, sep } from "node:path";
@@ -104,15 +104,48 @@ export function outsideCheckout(script: string): boolean {
 
 export type PluginList = (program: string) => unknown;
 
-function listPlugins(program: string): unknown {
-  const result = spawnSync(program, ["plugin", "list", "--json"], {
-    encoding: "utf8",
-    timeout: 30_000,
+/**
+ * Asks one agent tool for its plugins. A tool that does not answer within
+ * `timeoutMs` gets `SIGKILL`, which it cannot ignore, and the lookup fails at
+ * once rather than waiting for a pipe some process it started may still hold.
+ */
+export function listPlugins(
+  program: string,
+  timeoutMs = 30_000,
+): Promise<unknown> {
+  return new Promise((settle, fail) => {
+    const child = spawn(program, ["plugin", "list", "--json"], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      fail(new LauncherError(`did not answer within ${timeoutMs / 1000}s`));
+    }, timeoutMs);
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      fail(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        fail(new LauncherError(`exited ${code}: ${stderr.trim()}`));
+        return;
+      }
+      try {
+        settle(JSON.parse(stdout));
+      } catch (error) {
+        fail(error);
+      }
+    });
   });
-  if (result.error) throw result.error;
-  if (result.status !== 0)
-    throw new LauncherError(`exited ${result.status}: ${result.stderr.trim()}`);
-  return JSON.parse(result.stdout);
 }
 
 /**
@@ -120,11 +153,11 @@ function listPlugins(program: string): unknown {
  * outside every checkout. The programs are the absolute paths recorded at
  * install: the job's `PATH` never picks one.
  */
-export function installedEntry(
+export async function installedEntry(
   programs: { claude?: string; codex?: string },
   list: PluginList = listPlugins,
   codexHome?: string,
-): string {
+): Promise<string> {
   const failures: string[] = [];
   const candidates: [
     string,
@@ -141,7 +174,7 @@ export function installedEntry(
   for (const [name, program, directoryOf] of candidates) {
     if (!program) continue;
     try {
-      const directory = directoryOf(list(program));
+      const directory = directoryOf(await list(program));
       if (!directory) {
         failures.push(`${name}: ${PLUGIN_ID} is not installed`);
         continue;
@@ -256,7 +289,7 @@ export function runCollector(
 async function main(argv: string[]): Promise<number> {
   try {
     const { programs, rest } = parseLauncherArguments(argv);
-    const entry = installedEntry(programs);
+    const entry = await installedEntry(programs);
     return await runCollector([
       process.execPath,
       "--no-env-file",
