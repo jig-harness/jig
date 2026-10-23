@@ -1468,8 +1468,16 @@ function forgeChecks(
   ];
 }
 
-async function trackerCheck(config: Config): Promise<Finding[]> {
-  if (at(config, "issue_tracker") === undefined) return [];
+/**
+ * Ask the tracker the configuration selects for its first issue. A
+ * configured repository without an `issue_tracker` section is probed too:
+ * it runs on the default adapter.
+ */
+async function trackerCheck(
+  config: Config,
+  configured: boolean,
+): Promise<Finding[]> {
+  if (!configured) return [];
   try {
     const trackerConfig = parseTrackerConfig(config);
     const key = trackerProbeKey(trackerConfig);
@@ -3206,7 +3214,7 @@ export async function configFit(opts: {
   const state: ForgeState = { required: null, pulls: null };
   if (!opts.offline) {
     report.findings.push(...forgeChecks(config, opts.root, report, state));
-    report.findings.push(...(await trackerCheck(config)));
+    report.findings.push(...(await trackerCheck(config, report.configured)));
   } else
     report.findings.push({
       id: "unchecked:offline",

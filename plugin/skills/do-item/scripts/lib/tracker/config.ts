@@ -123,10 +123,11 @@ function refuseSharedLabels(
 /**
  * `team` is Linear's key. Under the default GitHub adapter it would be
  * ignored without a word, so a file that predates the default's change is
- * refused until it names its adapter.
+ * refused until it names its adapter. An empty `adapter:` (null) falls back
+ * to the default like an omitted one, so it is refused the same way.
  */
 function refuseTeamWithoutAdapter(adapter: unknown, team: unknown): void {
-  if (adapter === undefined && team !== null)
+  if ((adapter === undefined || adapter === null) && team !== null)
     throw new TrackerConfigError(
       "issue_tracker.adapter",
       `issue_tracker.team is set but issue_tracker.adapter is not, and the default adapter is ${DEFAULT_ADAPTER}, which has no team; set issue_tracker.adapter: linear to keep ${team} issue keys`,

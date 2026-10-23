@@ -1531,6 +1531,24 @@ gates:
       report.findings.find((f) => f.id === "derivation:issue_tracker")?.message,
     ).toContain("cannot be reached");
   });
+  test("a configured repository without a tracker section probes the default tracker", () => {
+    const dir = repo({
+      ".config/jig.yaml": "repository:\n  base_branch: main\n",
+    });
+    const bin = fakeGh(dir, { ...answers(), "api graphql": "!no answer" });
+    const report = JSON.parse(
+      runScript(
+        "config-fit.ts",
+        ["--json"],
+        dir,
+        cleanEnv({ PATH: withPath(bin) }),
+      ).out,
+    ) as Report;
+    expect(
+      report.findings.find((f) => f.id === "derivation:issue_tracker")?.message,
+    ).toContain("the github tracker cannot be reached");
+  });
+
   test("the forge's default branch wins over a stale origin/HEAD, which is warned", () => {
     const stale = repo({ ".config/jig.yaml": 'gates:\n  command: "true"\n' });
     withOrigin(stale, { main: null, develop: null }, "main");

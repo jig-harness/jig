@@ -80,6 +80,9 @@ describe("tracker configuration", () => {
     expect(() =>
       parseTrackerConfig({ issue_tracker: { team: "ENG" } }),
     ).toThrow("issue_tracker.adapter: linear");
+    expect(() =>
+      parseTrackerConfig({ issue_tracker: { adapter: null, team: "ENG" } }),
+    ).toThrow("issue_tracker.adapter: linear");
     expect(
       parseTrackerConfig({ issue_tracker: { adapter: "github", team: "ENG" } })
         .adapter,
