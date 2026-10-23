@@ -48,7 +48,9 @@ record ~/.local/share/jig/evidence/example-web/3f9c2a1/8e1d/20261023T141502-4b7e
 - **The tree, not the commit.** The tree hash of the working tree Git
   tracks or would track: `HEAD` plus every staged and unstaged change to a tracked file and
   every untracked file Git does not ignore, written into a temporary index
-  (`GIT_INDEX_FILE`, `git add -A`, `git write-tree`) so the real index is
+  (`GIT_INDEX_FILE`, `git read-tree HEAD`, `git add -A`, `git write-tree`;
+  reading `HEAD` first keeps a tracked file that now matches an ignore rule
+  or sits outside a sparse checkout) so the real index is
   untouched. A record made before an edit, or before a new untracked file
   appeared, does not vouch for the tree after it. Ignored files (installed
   dependencies, build output, caches) are outside the identity, and a
@@ -153,7 +155,9 @@ Where it is used:
   tree of the branch's latest passing plan record that precedes the
   seen-to-fail record, or the base when none does. Every file outside the
   tests must read in the seen-to-fail tree as it does in that preceding
-  tree. A branch that writes test A, implements A, then writes test B meets
+  tree, compared path by path: a path present in one tree and absent from
+  the other differs, so an added or deleted implementation file counts as
+  a change, and a rename counts as both. A branch that writes test A, implements A, then writes test B meets
   it for B, whose red tree differs from A's green tree only in tests. A
   failing run made with part of the fix already in the working tree does
   not meet `test_first`.
@@ -200,7 +204,10 @@ The protocol, each step with its record:
    The time budget bounds the runs inside it too: each verify run `debug`
    starts gets the smaller of its own timeout and the budget left, and a run
    still going when the budget ends is cancelled through the process
-   deadline and recorded as timed out. The skill then
+   deadline and recorded as timed out. The `probe-base.ts` run of step 2 is
+   bounded the same way: its `--timeout` applies to each of its calls, so
+   `debug` runs the whole probe under the process deadline with the budget
+   left, and a probe cut off there could not decide. The skill then
    posts the ledger where the work is tracked (the pull request when there
    is one, else the issue), names what it ruled out and what it would try
    next, and ends with the terminal state its caller understands: inside a

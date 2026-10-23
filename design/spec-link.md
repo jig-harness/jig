@@ -190,7 +190,10 @@ opens a pull request directly passes neither, so on their own they score
 `advisory`. The `mechanical` observation is enforcement on every change: a
 required check on the pull request reads its linked item's type and refuses
 a pull request of a required type whose `## Acceptance` section accounts
-for no criterion, or leaves one unaccounted for. The audit also reports,
+for no criterion, or leaves one unaccounted for, unless the section
+records the person's exception with its reason. The audit reports the
+share of such exceptions beside the score, so work that went ahead
+without criteria is visible rather than counted as enforced. It also reports,
 as evidence and not as the score, the share of items from the last 30 days
 typed as a required type that resolve to at least one criterion, and the
 recommendation names the adapter the repository's layout would turn on.

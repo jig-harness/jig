@@ -99,8 +99,11 @@ the day one skill learns a new lockfile.
 ### Refresh after a plugin release
 
 The field history refresh reads is the configuration schema's own
-(`plugin/skills/audit/config-schema.yaml`): each field's entry carries
-`since`, the plugin version that added it. A branch that adds a field
+(`plugin/skills/audit/config-schema.yaml`): a field's entry carries
+`since`, the plugin version that added it, except a field older than the
+audit skill, which carries none. Such a field predates every version init
+can have written, so refresh treats it as older than any `# jig:` line and
+never lists it as new. A branch that adds a field
 writes `since: next` on its schema entry, and the release step's existing
 placeholder replacement writes the version there. `/jig:init --refresh`
 compares the plugin version the file was written under (a comment line init

@@ -118,7 +118,9 @@ M9's criteria gain one at Standard: the pickup procedure types the
 repository's items before it works them. Its rungs follow the
 [criteria ladder](../plugin/skills/audit/criteria/README.md). The
 `convention` observation is the policy: the taxonomy declares the `types`
-family and the instructions say every item carries a type label. The
+family and the instructions say how every item gets its type: a type
+label, or the title prefix where the repository's title convention
+declares one (step 3). The
 pickup procedure that derives the type and treats an underivable one as
 `unknown` (`do-item` with this design built), and the filing procedure that
 writes the type label (`file-issue`), run only where those helpers are
@@ -128,8 +130,9 @@ enforcement on every change: a required check on the pull request derives
 its linked item's type the same way and refuses one whose item is
 untyped, so no item reaches a merge untyped and lighter. Beside the
 score, as evidence and not as a rung, the audit runs `determine_type.ts` on the items the tracker
-shows changed in the last 30 days and reports the share typed by a label
-(step 1) or the tracker's own type (step 2), with a sample: a mapping no
+shows changed in the last 30 days and reports the share each step typed
+(label, tracker type, title prefix) and the share left `unknown`, with a
+sample: a mapping no
 item's labels reach shows there. That the mapping resolves to labels the
 taxonomy declares stays a configuration check, reported beside it.
 
