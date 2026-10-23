@@ -293,9 +293,10 @@ export interface Tracker {
   stateName(state: CanonicalState): string;
   /**
    * Resolves when the tracker answers for this team: the credential works and
-   * the team (Linear) or repository (GitHub) exists. Reads no issue.
+   * the team (Linear) or repository (GitHub) exists. Reads no issue. An
+   * aborted `signal` ends the request in flight.
    */
-  reach(): Promise<void>;
+  reach(signal?: AbortSignal): Promise<void>;
 
   // ── Issue pickup ──
   /** One issue with its labels and children; `null` when it does not exist. */

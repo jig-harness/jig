@@ -60,8 +60,11 @@ export interface Client {
     extra?: string,
     signal?: AbortSignal,
   ): Promise<Array<{ issue: GhIssue; raw: Record<string, unknown> }>>;
-  /** The home repository's node id. */
-  repositoryId(): Promise<string>;
+  /**
+   * The home repository's node id. A call with a `signal` asks afresh and
+   * leaves the remembered answer alone, so an abort never poisons it.
+   */
+  repositoryId(signal?: AbortSignal): Promise<string>;
   /** Every label of the home repository, with its id. */
   repoLabels(): Promise<Array<{ id: string; name: string }>>;
   /** Label names to ids; each must name a label of the home repository. */
@@ -225,11 +228,16 @@ export function gitHubClient(opts: ClientOptions): Client {
       });
     },
 
-    repositoryId() {
-      repoId ??= (async () => {
-        const data = record(await transport(REPO_ID_QUERY, repoVars), "data");
+    repositoryId(signal) {
+      const ask = async () => {
+        const data = record(
+          await transport(REPO_ID_QUERY, repoVars, signal),
+          "data",
+        );
         return str(record(data.repository, "repository").id, "repository.id");
-      })();
+      };
+      if (signal !== undefined) return ask();
+      repoId ??= ask();
       return repoId;
     },
 

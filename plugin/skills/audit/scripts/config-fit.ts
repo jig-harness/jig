@@ -1484,12 +1484,13 @@ async function trackerCheck(
   try {
     const trackerConfig = parseTrackerConfig(config);
     if (!trackerProbeable(trackerConfig)) return [];
-    const probe = openTracker(trackerConfig, root).reach();
+    const deadline = new AbortController();
+    const probe = openTracker(trackerConfig, root).reach(deadline.signal);
     const timeout = new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error("no answer within 30 seconds")),
-        30_000,
-      ).unref(),
+      setTimeout(() => {
+        reject(new Error("no answer within 30 seconds"));
+        deadline.abort();
+      }, 30_000).unref(),
     );
     await Promise.race([probe, timeout]);
     return [];

@@ -7,6 +7,7 @@
  * factory in `ADAPTERS`. No caller changes.
  */
 
+import { consumerRoot } from "../../../../../shared/consumer.ts";
 import {
   ownTrackerConfig,
   requireTeamKey,
@@ -24,10 +25,10 @@ export type { CanonicalState, Tracker } from "./port.ts";
 export { CANONICAL_STATES } from "./port.ts";
 
 /**
- * Builds an adapter for the repository at `root` (the working directory when
- * omitted); throws naming the field when a setting it needs is missing.
+ * Builds an adapter for the repository at `root`; throws naming the field
+ * when a setting it needs is missing.
  */
-type AdapterFactory = (config: TrackerConfig, root?: string) => Tracker;
+type AdapterFactory = (config: TrackerConfig, root: string) => Tracker;
 
 const ADAPTERS: Record<string, AdapterFactory> = {
   linear: (config) =>
@@ -56,12 +57,14 @@ export function knownAdapters(): string[] {
  * The tracker the consumer configured. Throws with the field to fix when the
  * overlay is missing, names an unknown adapter, or lacks a setting the
  * adapter needs (a team for Linear; for GitHub, a repository when the
- * `origin` remote of the repository at `root`, the working directory when
- * omitted, does not name one).
+ * `origin` remote of the repository at `root` does not name one). `root`
+ * defaults to the consumer root, the repository `ownTrackerConfig()` reads
+ * its configuration from, so the configuration and the repository it
+ * derives always come from the same place.
  */
 export function openTracker(
   config: TrackerConfig = ownTrackerConfig(),
-  root?: string,
+  root: string = consumerRoot(),
 ): Tracker {
   const factory = Object.hasOwn(ADAPTERS, config.adapter)
     ? ADAPTERS[config.adapter]
