@@ -99,7 +99,9 @@ import { load } from "../../../shared/yaml.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
 import { taxonomyFindings } from "./lib/taxonomy-fit.ts";
 import {
+  configuredAt,
   ghJson,
+  namesReached,
   newerInstalledVersion,
   onDisk,
   packageScripts,
@@ -455,21 +457,21 @@ function fileProblems(name: string, ctx: Context, direct: boolean): Problem[] {
     return [{ severity: "error", message: `${name} is not a file` }];
   if (direct && process.platform !== "win32" && (stat.mode & 0o111) === 0)
     return [{ severity: "error", message: `${name} is not executable` }];
-  const relative = isAbsolute(name)
-    ? null
-    : normalize(name).replaceAll("\\", "/");
-  if (
-    relative !== null &&
-    !relative.startsWith("..") &&
-    !ctx.tracked.has(relative)
-  )
-    return [
-      {
-        severity: "warning",
-        message: `${name} is not tracked, so a fresh clone lacks it`,
-      },
-    ];
-  return [];
+  if (isAbsolute(name)) return [];
+  const untracked = namesReached(ctx.root, name).filter(
+    (reached) => !ctx.tracked.has(reached),
+  );
+  if (untracked.length === 0) return [];
+  const which = untracked.join(", ");
+  return [
+    {
+      severity: "warning",
+      message:
+        which === normalize(name).replaceAll("\\", "/")
+          ? `${name} is not tracked, so a fresh clone lacks it`
+          : `${name} reaches ${which}, which is not tracked, so a fresh clone lacks it`,
+    },
+  ];
 }
 
 /** What a missing package script costs: `target` is the script's name. */
@@ -663,7 +665,7 @@ function pathFindings(field: Field, value: unknown, root: string): Finding[] {
   if (typeof value !== "string" || value.trim() === "" || !field.exists)
     return [];
   if (value.startsWith("~")) return [];
-  if (existsSync(onDisk(root, value))) return [];
+  if (existsSync(configuredAt(root, value))) return [];
   const required = field.exists === "required";
   return [
     {

@@ -26,13 +26,13 @@ release: patch
   executable is suggested as `bash <path>`, as on other platforms, rather
   than as `./<path>`.
 - The audit's label-taxonomy finding names the configured file with forward
-  slashes on every platform, and reads the file through the path as
-  configured, so a Windows network share path (`\\server\share\…`), or one
-  that climbs out of a link with `..`, absolute or relative, is checked
-  rather than reported unreadable.
-- The audit's configuration fit reads every configured path, and every file
-  a configured command names, as written: a relative path that climbs out of
-  a link with `..` is no longer reported missing.
+  slashes on every platform, and the audit reads the taxonomy the way
+  `/jig:file-issue` does, so a Windows network share path
+  (`\\server\share\…`) is checked rather than reported unreadable.
+- The audit's configuration fit reads a file a configured command names the
+  way the shell running the command reaches it, following a link before a
+  `..`, and warns that a fresh clone lacks it unless both the file it
+  reaches and every link on the way are tracked.
 - A relative `JIG_TRACE_FILE` now records the spans of the process that set
   it on Windows too.
 - The design-brief renderer waits for Chromium's debugging endpoint while

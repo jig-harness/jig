@@ -14,8 +14,15 @@ import {
   pluginVersion,
 } from "../../../../shared/plugin-version.ts";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, sep } from "node:path";
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
 export { trackedFiles } from "../../../adr/scripts/locate.ts";
 export { pluginVersion };
@@ -217,10 +224,61 @@ export function runsDirectly(
 }
 
 /**
- * The file a configured or command-named `path` reaches from `root`, without
- * normalizing it: `join` would collapse `link/..` by text, while the file
- * system follows `link` first, as the program reading the setting does.
+ * The file a configured setting names from `root`: absolute as written,
+ * relative joined to the root, the way the scripts reading a setting
+ * resolve it (`join` collapses `link/..` by text).
+ */
+export function configuredAt(root: string, path: string): string {
+  return isAbsolute(path) ? path : join(root, path);
+}
+
+/**
+ * The file a command-named `path` reaches from `root`, without normalizing
+ * it: a shell running the command from the root follows `link` before `..`.
  */
 export function onDisk(root: string, path: string): string {
   return isAbsolute(path) ? path : `${root}${sep}${path}`;
+}
+
+/** A repository-relative name for `path`, or null outside the repository. */
+function inRepo(realRoot: string, path: string): string | null {
+  const name = relative(realRoot, path).replaceAll("\\", "/");
+  return name === "" ||
+    name === ".." ||
+    name.startsWith("../") ||
+    isAbsolute(name)
+    ? null
+    : name;
+}
+
+/**
+ * The repository names a fresh clone needs for the relative `name` to reach
+ * from `root` the file it reaches here: every link the path passes through,
+ * by its own location, and the file it lands on, by its real location.
+ * Inside the repository only; a path that does not resolve needs nothing.
+ */
+export function namesReached(root: string, name: string): string[] {
+  const realRoot = realpathSync(root);
+  const segments = name.split(process.platform === "win32" ? /[\\/]/ : "/");
+  const names: string[] = [];
+  // Walk the real location segment by segment: `..` climbs out of where a
+  // link led, which a path-level realpath would collapse by text first.
+  let real = realRoot;
+  for (const segment of segments) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") {
+      real = dirname(real);
+      continue;
+    }
+    const entry = join(real, segment);
+    if (!existsSync(entry)) return [];
+    if (lstatSync(entry).isSymbolicLink()) {
+      const link = inRepo(realRoot, entry);
+      if (link !== null) names.push(link);
+    }
+    real = realpathSync(entry);
+  }
+  const file = inRepo(realRoot, real);
+  if (file !== null) names.push(file);
+  return names;
 }

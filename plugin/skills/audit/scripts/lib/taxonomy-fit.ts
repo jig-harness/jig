@@ -14,9 +14,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, posix } from "node:path";
 import { isMapping } from "../../../../shared/config-layers.ts";
 import { load } from "../../../../shared/yaml.ts";
+import { taxonomyAt } from "../../../file-issue/scripts/lib/config.ts";
 import { compileOpenPattern } from "../../../file-issue/scripts/lib/taxonomy.ts";
 import { probedFiles } from "./criteria.ts";
-import { onDisk } from "./repo.ts";
 import { at, type Finding } from "./schema.ts";
 
 const TAXONOMY_NAMES = new Set(["label-taxonomy.yaml", "label-taxonomy.yml"]);
@@ -105,7 +105,7 @@ function openPattern(value: unknown, prefix: string): RegExp | null {
 }
 
 function parseTaxonomy(root: string, path: string): Taxonomy {
-  const parsed: unknown = load(readFileSync(onDisk(root, path), "utf8"));
+  const parsed: unknown = load(readFileSync(taxonomyAt(root, path), "utf8"));
   if (!isMapping(parsed)) unreadable("it is not a mapping");
   const groups = families(parsed, "groups");
   const categories = families(parsed, "categories");
@@ -255,8 +255,8 @@ export function taxonomyFindings(
 ): Finding[] {
   const configured = at(config, "issue_tracker.taxonomy");
   if (typeof configured === "string" && configured.trim() !== "") {
-    if (!existsSync(onDisk(root, configured))) return [];
-    // Read through the path as configured; only its name in a finding is
+    if (!existsSync(taxonomyAt(root, configured))) return [];
+    // Read the file the file-issue skill reads; only its name in a finding is
     // spelled with forward slashes. A backslash separates only on Windows,
     // elsewhere it is part of a name, and normalizing the path that is read
     // would turn a Windows network or extended-length path into another one.
