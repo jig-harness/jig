@@ -52,8 +52,9 @@ mapping below; it does not add stations.
 1. A label in the taxonomy's `types` family, through
    `issue_tracker.types` (`{bug: [bug, type:bug], feature: [feature, type:feature], …}`),
    which generalises `issue_tracker.labels.bug` and keeps it as an alias.
-2. The tracker's own issue type where the adapter exposes one (GitHub issue
-   types; Linear has none, and the adapter says so).
+2. The tracker's own issue type, from the issue's `nativeType` field
+   (GitHub issue types; Linear has none, and its adapter sets the field to
+   `null`).
 3. The title's Conventional Commits prefix when the repository's title
    convention is conventional (`fix:` is a bug, `feat:` a feature, `chore:`
    and `docs:` a task, `refactor:` and `perf:` an improvement).
@@ -129,7 +130,15 @@ their own they score `advisory`. The `mechanical` observation is
 enforcement on every change: a required check on the pull request derives
 its linked item's type the same way and refuses one whose item is
 untyped, or that links no item at all, so no work reaches a merge untyped
-and lighter. Beside the
+and lighter. It counts as enforcement only when nothing it decides with
+comes from the pull request it judges
+([M7](../modules/M7-pr-lifecycle-review/README.md), invariant 8): its
+workflow and script and `issue_tracker.types` are read from the target
+base branch or a pinned version, never from the head, so a pull request
+that changes the mapping is judged by the base's mapping, and the change
+takes effect once it merges; the check may run the head's copy beside it
+and report what that copy would decide, as a comment that decides
+nothing. Beside the
 score, as evidence and not as a rung, the audit runs `determine_type.ts` on the items the tracker
 shows changed in the last 30 days and reports the share each step typed
 (label, tracker type, title prefix) and the share left `unknown`, with a
@@ -148,16 +157,22 @@ taxonomy declares stays a configuration check, reported beside it.
 
 1. **The derivation.** `determine_type.ts`, `issue_tracker.types`, the
    defaults table as data with its tests, documented in
-   [CONFIGURATION.md](../plugin/CONFIGURATION.md). `do-item` prints the type
-   and changes nothing yet.
+   [CONFIGURATION.md](../plugin/CONFIGURATION.md). The tracker interface's
+   `Issue` gains a provider-neutral `nativeType` field, the tracker's own
+   type name or `null`, and `get_issue.ts` prints it: the GitHub adapter
+   fills it from the issue type, and the Linear adapter always sets `null`,
+   which is how it says it has none. Derivation step 2 reads only that
+   field. `do-item` prints the type and changes nothing yet.
 2. **`do-item` reads the row.** The scattered conditions move to the table;
    the tests for the pattern pre-scout and the review skip show the same
    behaviour from the defaults, then a `task` fixture shows the lighter path.
 3. **`work-batch` and `file-issue`.**
 4. **The required check**: a portable script that derives the linked
    item's type as `determine_type.ts` does and refuses a pull request
-   whose item is untyped or that links no item; its tests; a workflow template and the setup
-   step that makes it a required check on the base branch. Until a
+   whose item is untyped or that links no item; its tests; a workflow
+   template that runs the script and reads the mapping from the base
+   branch, never the head, and the setup step that makes it a required
+   check on the base branch. Until a
    repository installs it, the criterion scores `advisory` there.
 5. **The map column and the audit criterion.**
 

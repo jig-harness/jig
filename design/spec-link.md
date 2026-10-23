@@ -142,7 +142,14 @@ passes. The `body` adapter is the one every repository has.
   carries the reason: one `unresolved` line per unread source, or, when
   the item has no source at all or its sources yield no criterion, one
   `exception` line for the item. A line of either kind without that
-  label event accounts for nothing. With nobody to answer, it stops and states the gap, as
+  label event accounts for nothing. The approval covers what was in front
+  of the person who gave it, and only while it stands: the label must
+  still be on the item, and its latest application must come after the
+  last change to the item's references and to the section's `unresolved`
+  and `exception` lines. A source added, or a line rewritten, after the
+  label was applied leaves that line unapproved until an eligible actor
+  removes and re-applies the label, and a removed label
+  approves nothing. With nobody to answer, it stops and states the gap, as
   [plugin/AGENTS.md](../plugin/AGENTS.md) requires of a question nobody can
   answer, and leaves the item for a person; a repository that wants
   features without requirements picked up unattended says so beforehand by
@@ -199,7 +206,17 @@ a pull request that links no item, since its type is then `unknown` and
 takes the strictest row, and one of a required type whose `## Acceptance` section accounts
 for no criterion, or leaves one unaccounted for, unless the exception is
 recorded as `do-item`'s step above requires: the reason in the section,
-and the label applied by someone other than the author. The audit reports the
+and the label applied by someone other than both the pull request's author
+and the identity the implementing agent runs as, still applied, and
+applied after the exception's lines last changed. The check counts as
+enforcement only when nothing it decides with comes from the pull request
+it judges ([M7](../modules/M7-pr-lifecycle-review/README.md), invariant
+8): its workflow and script, `specs.require_for_types`, the type mapping
+and the exception label are read from the target base branch or a pinned
+version, never from the head. A pull request that changes any of them is
+judged by the base's copy, and the proposed change takes effect once it
+merges; the check may run the head's copy beside it and report what that
+copy would decide, as a comment that decides nothing. The audit reports the
 share of such exceptions beside the score, so work that went ahead
 without criteria is visible rather than counted as enforced. It also reports,
 as evidence and not as the score, the share of items from the last 30 days
@@ -227,9 +244,11 @@ recommendation names the adapter the repository's layout would turn on.
    the reviewer's list, the policy refusal, the recommended-skills page.
 4. **The required check**: a portable script that reads the linked item's
    type and the `## Acceptance` section and refuses as the audit's
-   `mechanical` rung describes, including the exception label's actor;
-   its tests; a workflow template and the setup step that makes it a
-   required check on the base branch. Until a repository installs it, the
+   `mechanical` rung describes, including the exception label's actor,
+   that it is still applied and that it postdates the exception's lines;
+   its tests; a workflow template that runs the script and reads the
+   policy from the base branch, never the head, and the setup step that
+   makes it a required check on the base branch. Until a repository installs it, the
    criterion scores `advisory` there.
 5. **`review`, `file-issue`, `followup`, the epic close.**
 6. **The tracker source**, once the tracker interface has attachments.

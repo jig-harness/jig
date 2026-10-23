@@ -151,18 +151,24 @@ Where it is used:
   `test_first` ([work types](work-types.md)) is the stronger rule that the
   failing test is written before the fix. Commit times cannot show that,
   since a record covers uncommitted changes, so the check reads the
-  seen-to-fail record's tree instead, against the increment before it: the
-  tree of the passing plan record that closed the branch's previous
-  increment, the first one after the previous seen-to-fail record in which
-  that record's test passes, or the base when there is no earlier
-  increment. A passing run that closes no increment is never a baseline,
-  so an implementation change made between increments without a failing
-  test of its own counts against the next increment. Every file outside the
-  tests must read in the seen-to-fail tree as it does in that preceding
-  tree, compared path by path: a path present in one tree and absent from
-  the other differs, so an added or deleted implementation file counts as
-  a change, and a rename counts as both. A branch that writes test A, implements A, then writes test B meets
-  it for B, whose red tree differs from A's green tree only in tests. A
+  seen-to-fail record's tree instead, against the increment before it.
+  An increment opens with a seen-to-fail record and closes with the first
+  passing plan record after it in which its test passes; seen-to-fail
+  records made while an increment is still open join it, so tests written
+  red one after another and then fixed together are one increment. Its
+  baseline is the tree of the passing plan record that closed the previous
+  increment, or the base when there is none, and always precedes the
+  increment's first red run. A passing run that closes no increment is
+  never a baseline, so an implementation change made between increments
+  without a failing test of its own counts against the next increment.
+  Every file outside the tests must read in each of the increment's
+  seen-to-fail trees as it does in its baseline, compared path by path: a
+  path present in one tree and absent from the other differs, so an added
+  or deleted implementation file counts as a change, and a rename counts
+  as both. A branch that writes test A, implements A, then writes test B
+  meets it for B, whose red tree differs from A's green tree only in tests;
+  one that writes test A and test B, each run red, then implements both,
+  meets it for both, whose red trees differ from the base only in tests. A
   failing run made with part of the fix already in the working tree does
   not meet `test_first`.
 - **`fix-ci`** records the local re-run of each fixed check, so "verify
