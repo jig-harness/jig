@@ -65,6 +65,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize, relative } from "node:path";
 import {
   consumerRoot,
+  layeredConfig,
   OVERLAY_RELPATH,
   overlayPath,
   parseReviewConfig,
@@ -1471,16 +1472,30 @@ function forgeChecks(
 /**
  * Ask the tracker the configuration selects whether it answers for the
  * audited repository: its credential and its team or repository, never an
- * issue, whose contents are no part of reachability. A configured repository
- * without an `issue_tracker` section is probed too: it runs on the default
- * adapter, which derives its repository from `root`'s `origin` remote.
+ * issue, whose contents are no part of reachability. The configuration is
+ * `file` merged with this machine's user file and environment, as the skills
+ * read it; one that sets no `issue_tracker` section is probed too: it runs on
+ * the default adapter, which derives its repository from `root`'s `origin`.
  */
 async function trackerCheck(
-  config: Config,
+  file: string,
   configured: boolean,
   root: string,
 ): Promise<Finding[]> {
   if (!configured) return [];
+  let config: Config;
+  try {
+    const text = readFileSync(file, "utf8");
+    config = layeredConfig(root, process.env, text).values;
+  } catch (e) {
+    return [
+      {
+        id: "unchecked:issue_tracker",
+        severity: "info",
+        message: `the tracker is unchecked: the configuration layers cannot be read (${e instanceof Error ? e.message : String(e)})`,
+      },
+    ];
+  }
   try {
     const trackerConfig = parseTrackerConfig(config);
     if (!trackerProbeable(trackerConfig)) return [];
@@ -3218,7 +3233,7 @@ export async function configFit(opts: {
   if (!opts.offline) {
     report.findings.push(...forgeChecks(config, opts.root, report, state));
     report.findings.push(
-      ...(await trackerCheck(config, report.configured, opts.root)),
+      ...(await trackerCheck(opts.file, report.configured, opts.root)),
     );
   } else
     report.findings.push({

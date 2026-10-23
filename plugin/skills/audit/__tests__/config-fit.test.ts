@@ -1535,9 +1535,13 @@ gates:
     /**
      * The tracker finding when config-fit runs in `cwd` on the repository
      * `JIG_CONSUMER_ROOT` names (the working directory when unset), with the
-     * fake forge answering GraphQL with `graphql`.
+     * fake forge answering GraphQL with `graphql` and `extra` set.
      */
-    function trackerFinding(graphql: string, cwd?: string): string | undefined {
+    function trackerFinding(
+      graphql: string,
+      cwd?: string,
+      extra: Record<string, string> = {},
+    ): string | undefined {
       const dir = repo({
         ".config/jig.yaml": "repository:\n  base_branch: main\n",
       });
@@ -1546,6 +1550,7 @@ gates:
       const env = cleanEnv({
         PATH: withPath(bin),
         ...(cwd === undefined ? {} : { JIG_CONSUMER_ROOT: dir }),
+        ...extra,
       });
       const report = JSON.parse(
         runScript("config-fit.ts", ["--json"], cwd ?? dir, env).out,
@@ -1575,6 +1580,18 @@ gates:
     test("probes the audited repository, not the working directory", () => {
       // The working directory has no origin remote; the audited one does.
       expect(trackerFinding(REACHED, repo({}))).toBeUndefined();
+    });
+
+    test("probes the tracker the environment layer selects", () => {
+      // The forge answers, so only a probe of the default tracker passes.
+      const environment = {
+        JIG_USER_LAYER: "off",
+        JIG__ISSUE_TRACKER__ADAPTER: "linear",
+        JIG__ISSUE_TRACKER__TEAM: "ENG",
+      };
+      expect(trackerFinding(REACHED, undefined, environment)).toContain(
+        "the linear tracker cannot be reached",
+      );
     });
   });
 
