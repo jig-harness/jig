@@ -15,7 +15,7 @@ import {
 } from "../../../../shared/plugin-version.ts";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, sep } from "node:path";
 
 export { trackedFiles } from "../../../adr/scripts/locate.ts";
 export { pluginVersion };
@@ -214,4 +214,13 @@ export function runsDirectly(
     cwd: root,
   });
   return listed.code === 0 && listed.stdout.startsWith("100755 ");
+}
+
+/**
+ * The file a configured or command-named `path` reaches from `root`, without
+ * normalizing it: `join` would collapse `link/..` by text, while the file
+ * system follows `link` first, as the program reading the setting does.
+ */
+export function onDisk(root: string, path: string): string {
+  return isAbsolute(path) ? path : `${root}${sep}${path}`;
 }

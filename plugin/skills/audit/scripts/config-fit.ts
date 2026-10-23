@@ -101,6 +101,7 @@ import { taxonomyFindings } from "./lib/taxonomy-fit.ts";
 import {
   ghJson,
   newerInstalledVersion,
+  onDisk,
   packageScripts,
   pluginVersion,
   run,
@@ -446,7 +447,7 @@ interface Context {
  * tracked (a fresh clone lacks it), or, run directly on POSIX, not executable.
  */
 function fileProblems(name: string, ctx: Context, direct: boolean): Problem[] {
-  const path = isAbsolute(name) ? name : join(ctx.root, name);
+  const path = onDisk(ctx.root, name);
   if (!existsSync(path))
     return [{ severity: "error", message: `${name} does not exist` }];
   const stat = statSync(path);
@@ -662,7 +663,7 @@ function pathFindings(field: Field, value: unknown, root: string): Finding[] {
   if (typeof value !== "string" || value.trim() === "" || !field.exists)
     return [];
   if (value.startsWith("~")) return [];
-  if (existsSync(isAbsolute(value) ? value : join(root, value))) return [];
+  if (existsSync(onDisk(root, value))) return [];
   const required = field.exists === "required";
   return [
     {
@@ -2392,7 +2393,7 @@ interface RunFile {
 
 /** The text of a file a command runs, when it is a readable file of modest size. */
 function runFileText(root: string, name: string): RunFile[] {
-  const path = isAbsolute(name) ? name : join(root, name);
+  const path = onDisk(root, name);
   const stat = statSync(path, { throwIfNoEntry: false });
   return stat?.isFile() && stat.size < 1_000_000
     ? [{ name, text: readFileSync(path, "utf8") }]
