@@ -423,7 +423,7 @@ from the taxonomy's types family, the tracker's own type or a conventional
 title prefix, never asked when derivable; one depth table per type with
 defaults a repository overrides field by field; a type lowering depth only
 where no flag, catalog review or gate raises it; an unknown type getting
-the deepest row. What it will build, one pull request per step:
+the strictest value of every field. What it will build, one pull request per step:
 
 - **The derivation**: `determine_type.ts`, `issue_tracker.types`, the
   defaults table as data with its tests, in CONFIGURATION.md; `do-item`
@@ -476,7 +476,8 @@ attachments once the interface has them) that returns requirements,
 acceptance criteria and tasks with their ids; the result handed to the
 implementing agent and the reviewer; a pull-request section accounting for
 every criterion as met with an evidence record (item 28), deferred to a
-filed item, or not applicable. Jig writes no spec and dictates no format.
+filed item, or not applicable. The delivery loop writes no spec and
+dictates no format.
 What it will build, one pull request per step:
 
 - **The resolver and the `body` adapter**, with the conformance test every
@@ -494,8 +495,8 @@ What it will build, one pull request per step:
 
 Done when a feature whose body links a spec in any supported layout
 reaches its pull request with every acceptance criterion accounted for,
-one with none says so before any code is written, and the stance (a work
-item links its requirements; Jig writes no spec) is a decision record.
+one with none stops, saying so, before any code is written, and the stance (a work
+item links its requirements; the delivery loop writes no spec) is a decision record.
 
 ## Later
 

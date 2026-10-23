@@ -11,7 +11,7 @@ skills resolve what an item links into requirements, acceptance criteria
 and tasks with their ids, in whatever framework the repository keeps them,
 hand them to the agent and the reviewer, and the pull request closes with
 each criterion met with evidence, deferred to a filed item, or not
-applicable. Jig writes no spec and dictates no format.
+applicable. The delivery loop writes no spec and dictates no format.
 
 This is the design of [plan.md](plan.md) item 29, following the
 [spec ecosystems research note](spec-ecosystems-research.md). Nothing of it
@@ -28,7 +28,7 @@ what the item links is the repository's own.
 > **accounts for every acceptance criterion**: met, with the evidence record
 > that shows it; deferred, with the tracker item that carries it; or not
 > applicable, with a sentence. An item whose work type requires requirements
-> and links none is said to be so before any code is written.
+> and links none stops, saying so, before any code is written.
 
 ## How it works
 
@@ -44,7 +44,7 @@ returns and the repository root, and prints one result:
     {"adapter": "body", "ref": "## Acceptance criteria", "evidence": "section"}
   ],
   "requirements": [{"id": "export-csv", "text": "…", "source": 0}],
-  "acceptance": [{"id": "AC-1", "text": "…", "requirement": "export-csv", "source": 0}],
+  "acceptance": [{"id": "AC-1", "key": "openspec/changes/add-export/#AC-1", "text": "…", "requirement": "export-csv", "source": 0}],
   "tasks": [{"id": "1.2", "text": "…", "done": false, "source": 0}],
   "unresolved": ["https://…/design-doc (no adapter)"]
 }
@@ -72,6 +72,30 @@ it finds rather than the first:
    issue, when the tracker interface gains the attachment operation
    ([the plan](plan.md), item 12).
 
+Keeping every reference needs two rules, so that one line cannot discharge
+two criteria and one criterion is not counted twice:
+
+- **One source per artifact.** A source is identified by its canonical
+  path in the repository (or its tracker id), so the same spec found
+  through a body link and through the convention scan is one source, with
+  both findings in its `evidence`.
+- **Keys qualified by their source.** Every requirement, criterion and task
+  carries a `key`: its source's canonical reference and its local id
+  (`openspec/changes/add-export/#AC-1`). Two specs that both number an
+  `AC-1` give two keys. The pull-request section, the reviewer's list and a
+  thread that cites a criterion use the key; the short id is shown alone
+  only where it is unique in the result.
+
+**Reads stay inside the repository.** A reference comes from an issue body,
+which anyone who can write an issue controls, and what the resolver reads
+reaches the implementing agent's and the reviewer's prompts. Before reading,
+the resolver resolves a reference's real path and reads it only when that
+path is inside the repository root: an absolute path, a `..` that leaves
+the root, or a symbolic link whose target is outside it is not read and goes
+into `unresolved` with the reason. A link to a web page is never fetched by
+the resolver; it is `unresolved` unless an adapter claims it as a tracker
+document.
+
 Each adapter reads the tool's own machine-readable surface where it has one
 (OpenSpec's `show` with its machine-readable flag, cc-sdd's `spec.json`,
 GSD's and Compound Engineering's frontmatter, BMAD's index, Tessl's
@@ -86,10 +110,13 @@ passes. The `body` adapter is the one every repository has.
 
 - **`do-item`**, after it fetches the issue: the `spec` pre-scout that the
   work-type table names ([work types](work-types.md)) runs the resolver. A
-  feature with an empty result stops to say so in an interactive session
-  (one question: proceed without requirements, or point at them), and
-  otherwise proceeds with a status line that names the gap and a pull
-  request that says it. The delegation prompt carries the requirements and
+  feature with an empty result stops before any code is written. In an
+  interactive session it asks one question: proceed without requirements,
+  or point at them. With nobody to answer, it stops and states the gap, as
+  [plugin/AGENTS.md](../plugin/AGENTS.md) requires of a question nobody can
+  answer, and leaves the item for a person; a repository that wants
+  features without requirements picked up unattended says so beforehand by
+  leaving `feature` out of `specs.require_for_types`. The delegation prompt carries the requirements and
   acceptance criteria by id, and the Tier 3 reviewer gets the same list
   instead of the sentence it gets today.
 - **The pull-request body** gains an `## Acceptance` section the skill
@@ -121,8 +148,10 @@ Jig recommends, with credit, the tools that write specs well in
 [RECOMMENDED-SKILLS.md](../plugin/RECOMMENDED-SKILLS.md), each with the
 adapter that reads what it writes, and keeps M6's templates for the
 repository that wants a layout of its own; the kickoff family
-([the plan](plan.md), item 3) merges them into one of each. No skill in the
-plugin writes a spec.
+([the plan](plan.md), item 3) merges them into one of each and writes a new
+project's first requirements and architecture documents from them, as one
+layout the resolver reads. No skill in the delivery loop writes a spec or
+rewrites one a repository already keeps.
 
 ### The audit
 
@@ -155,8 +184,9 @@ on.
 
 ## Left out
 
-- **A spec format, template or writing skill of Jig's own.** The research
-  note says why; M6's templates stay as one layout among the ones the
+- **A spec format the resolver requires, or a skill in the delivery loop
+  that writes specs.** The research note says why; M6's templates, and the
+  kickoff skill that writes from them, stay one layout among the ones the
   resolver reads.
 - **A stakeholder sign-off record.** Whether an approval by someone who
   reads no pull requests belongs in Jig is not settled; nothing here

@@ -30,10 +30,10 @@ includes or links what the work needs. The question is whether the link can
 become a resolvable, checkable fact without Jig dictating the form of what
 it points to.
 
-The landscape was read on the date above from each project's own
-repository and documentation; versions and counts are of that day. The
-profiles behind the table are in the session that wrote this note; the
-table keeps what decides the question.
+The landscape was read on the date above from each project's own public
+repository and documentation, found under the project's name; versions
+and counts are of that day, so a reader checking a row reads that project's
+history at that date. The table keeps what decides the question.
 
 ## Options considered
 
@@ -58,7 +58,7 @@ table keeps what decides the question.
   item's own body, and returns requirements, acceptance criteria and tasks
   with their ids; the skills hand that to the implementing agent and the
   reviewer, and the pull request says which criteria were met, with
-  evidence, and which were deferred. Jig writes no spec.
+  evidence, and which were deferred. The delivery loop writes no spec.
 - **Pros:** keeps the stance that fits both heavy and light repositories;
   rides each framework's own validator and living-spec step; one adapter per
   layout, like the tracker adapters.
@@ -112,7 +112,7 @@ to 5 (a fixed tree of validated documents).
 | Can another tool find "the spec for this item"? | Only where the tool has a machine-readable surface: OpenSpec's commands, `spec.json`, GSD's and Compound Engineering's frontmatter, BMAD's index, Tessl's `targets`. For the rest, the path convention is the surface. | the "what another tool can read" column |
 | Who talks to a tracker? | Almost nobody beyond GitHub through the command line. Two tools bind to Linear and Jira by configuration. Jig's tracker interface is already ahead here. | the tracker column |
 | Who checks shipped work against the spec? | Three: a converge step, an outcome check after review, and OpenSpec's archive that merges deltas. None of them is a document a second tool could check; each is a prompt in its own pipeline. | Spec Kit, the namesake Jig, OpenSpec |
-| Where does the stakeholder page live? | In the one tool that has it, on a vendor's hosted artifact. Everyone else keeps requirements in the repository and status in the tracker. | the namesake Jig |
+| Where does the stakeholder page live? | In the one tool that has it, on a vendor's hosted artifact. The tools whose layouts a resolver can read keep requirements in the repository and status in the tracker; gstack and Traycer keep their documents outside the repository, and pro-workflow keeps none. | the namesake Jig; the gstack, Traycer and pro-workflow rows |
 | What is the trend? | Towards less process inside the tool: one framework removed its verification stages across two major versions, one retired its planning extension, one never shipped its spec-as-source product. The ones growing are the ones with a validator and a machine-readable surface. | Agent OS, Traycer, Tessl; OpenSpec, GSD Core, Spec Kit |
 
 ## Recommendation

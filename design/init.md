@@ -79,9 +79,15 @@ the day one skill learns a new lockfile.
    project-level equivalent is at the time, and a line in the output when it
    has none). Each file is shown before it is written in an interactive
    session.
-6. **Check.** Run the audit's `config-fit.ts` on the result. Init's contract
-   is that its output passes it: a finding here is init's bug, and the run
-   reports it as one.
+6. **Check.** Run the audit's `config-fit.ts` on the result and sort its
+   findings three ways. A finding about a field init derived or wrote is
+   init's bug, and the run reports it as one: init's contract is that it
+   leaves none of those. A finding about a field a person set, which init
+   preserves, is reported with that field's line and the fix, and init does
+   not change the field. A finding about the world outside the file (a
+   checkout behind its remote, a required check the base branch does not
+   have, a tracker that cannot be reached, a host that contradicts the
+   repository) is reported with its remedy, since no overlay can fix it.
 7. **Hand on.** Print what was written, what was asked, and the next
    commands: commit the files, `/jig:audit` to choose a profile and see the
    gaps, or `/jig:do-item <key>` to run one item.

@@ -2,10 +2,11 @@
 
 **What problem this solves.** Every work item goes through the same stations
 at the same depth. `do-item` routes only on whether an issue has sub-issues;
-a one-line copy fix and a new feature both get the pattern pre-scout, the
-intent snapshot, the three review tiers and a changelog note, and the only
-relief is a line count that skips the review. The kinds of work are already
-there, scattered: `issue_tracker.labels.bug` turns the pattern pre-scout on,
+a one-line copy fix and a new feature both get the intent snapshot, the
+three review tiers and a changelog note, and the only relief is a line count
+that skips the review. The kinds of work are already there, scattered:
+`issue_tracker.labels.bug` turns the pattern pre-scout on (for a bug with no
+pattern evidence yet, whose mistake could recur elsewhere),
 `batch_sizes` decides what `work-batch` may take, `hitl` revokes autonomy,
 and the [label taxonomy](../GLOSSARY.md) of
 [M9](../modules/M9-tasks-memory/README.md) holds a closed list of types that
@@ -18,7 +19,7 @@ This is the design of [plan.md](plan.md) item 27, a change to `do-item`,
 
 ## The rule
 
-> An item's **work type** is derived from the tracker, from a closed list the
+> An item's [work type](../GLOSSARY.md) is derived from the tracker, from a closed list the
 > repository declares, and never asked when it can be derived. **One table**
 > says what a type changes, with defaults a repository overrides. A type
 > **lowers depth only where nothing else raises it**: a
@@ -56,7 +57,7 @@ mapping below; it does not add stations.
 3. The title's Conventional Commits prefix when the repository's title
    convention is conventional (`fix:` is a bug, `feat:` a feature, `chore:`
    and `docs:` a task, `refactor:` and `perf:` an improvement).
-4. Otherwise `unknown`, which maps to the deepest depth, and the run says so
+4. Otherwise `unknown`, which takes the strictest depth, and the run says so
    in its status line. In an interactive session `do-item` may ask one
    question; it never asks when a step above answered.
 
@@ -79,7 +80,17 @@ defaults, and a repository overrides a single field rather than the row.
 | `autonomy` | full | full | full | full | `hitl` |
 | `pr_body_sections` | reproduction, cause, fix | requirements covered, what was left out | before and after | what changed | findings, recommendation |
 
-Two columns never appear: which agent implements (that is routing by label
+No single row is the deepest in every field (a bug has the pattern
+pre-scout a feature lacks), so `unknown` is not a row a repository edits or
+points at another type. It is computed field by field from the effective
+rows, the defaults with the repository's overrides: the union of the
+pre-scouts, `test_first` required, the union of the review tiers, the
+review never skipped, the change note required, not batchable, and the
+union of the body sections. Autonomy stays `full`, because an unknown type
+is not a spike; the `hitl` label still applies as on every type. An
+override that lightens one type's row therefore cannot lighten `unknown`.
+
+These columns never appear: which agent implements (that is routing by label
 and catalog area, which stays as it is) and which catalog review skills run
 (the catalog's `reviewSkills` and `do_item.gates` run on every type; the
 table cannot name them because it cannot remove them).
@@ -101,10 +112,15 @@ table cannot name them because it cannot remove them).
 
 ### The audit
 
-M9's criteria gain one at Standard: the taxonomy's `types` family is read
-by the pickup procedure (the configuration maps it, or the defaults apply to
-labels that exist). The criterion is a fact about the repository, as the
-criteria must be: the mapping resolves to labels the taxonomy declares.
+M9's criteria gain one at Standard: the pickup procedure types the
+repository's items. The audit runs `determine_type.ts` on the items the
+tracker shows changed in the last 30 days and reports the share typed by a
+label (step 1) or the tracker's own type (step 2), with the evidence of a
+sample. That is a fact about the repository, as the criteria must be, and
+it is observed from the derivation's own output: a mapping no item's
+labels reach does not pass it. That the mapping resolves to labels the
+taxonomy declares stays a configuration check, reported beside it, not
+the criterion.
 
 ## Configuration
 
@@ -112,7 +128,6 @@ criteria must be: the mapping resolves to labels the taxonomy declares.
 |---|---|---|---|
 | `issue_tracker.types` | map from type to a list of labels | `bug` from `issue_tracker.labels.bug`, the rest `[<type>, type:<type>]` | do-item, work-batch, file-issue |
 | `do_item.work_types.<type>.<field>` | one field of the depth table | the table above | do-item, work-batch |
-| `do_item.work_types.unknown` | a type name | the deepest row, `feature` | do-item |
 
 ## Build order
 

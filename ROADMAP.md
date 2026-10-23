@@ -182,8 +182,8 @@ Jig resolves that reference read-only, through an adapter per layout, into
 requirements, acceptance criteria and tasks with their ids. The implementing
 agent and the reviewer get the list, and the pull request accounts for every
 criterion: met with evidence, deferred to a filed item, or not applicable.
-Jig writes no spec and dictates no format; the tools that write specs well
-are recommended beside the adapter that reads each.
+The delivery loop writes no spec and dictates no format; the tools that
+write specs well are recommended beside the adapter that reads each.
 
 ## Later
 
