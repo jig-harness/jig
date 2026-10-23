@@ -238,9 +238,19 @@ The protocol, each step with its record:
    left, and a probe cut off there could not decide. A probe killed that way
    never reaches the `finally` blocks that remove its worktree, its scratch
    directory and its `refs/probe-base/*` ref, so the probe records each of
-   them, with its own process identity, before creating it, and
-   `probe-base.ts --reconcile` removes every recorded resource whose probe
-   is no longer alive. `debug` runs it after a probe the deadline ended,
+   them, with its own process identity, before creating it. A killed probe
+   can leave its Git, setup or test command running, because a descendant
+   outlives its parent (ADR-0008), so the probe starts each command
+   asynchronously and adds its identity (process id and start time) to the
+   record as it starts, before waiting on it. `probe-base.ts --reconcile`
+   removes a recorded resource only when every holder is proved gone: each
+   recorded identity no longer running, and no process with its working
+   directory or an open file inside the worktree or the scratch directory,
+   which also covers a command started in the instant before its identity
+   was written and anything that command started. A process table or
+   identity that cannot be read counts as a live holder, and the resource
+   is kept for the next reconciliation, as
+   [resource collection](resource-gc.md) requires. `debug` runs it after a probe the deadline ended,
    and every probe runs it before starting, so a probe killed by any caller
    is reclaimed by the next. The skill then
    posts the ledger where the work is tracked (the pull request when there
@@ -290,7 +300,9 @@ The protocol, each step with its record:
    and one whose budget runs out, and `probe-base.ts`'s resource record and
    `--reconcile`, tested by a probe killed at its deadline during setup and
    during the command, whose worktree, scratch directory and ref are gone
-   after reconciliation.
+   after reconciliation, by a probe killed while its test command keeps
+   running, whose resources reconciliation keeps until that command ends,
+   and by an unreadable process table, which keeps them too.
 
 ## Left out
 
