@@ -1536,15 +1536,16 @@ gates:
   });
   describe("a configured repository without a tracker section", () => {
     /**
-     * The tracker finding when config-fit runs in `cwd` on the repository
-     * `JIG_CONSUMER_ROOT` names (the working directory when unset), with the
-     * fake forge answering GraphQL with `graphql` and `extra` set.
+     * The tracker finding, and config-fit's exit status, when it runs in
+     * `cwd` on the repository `JIG_CONSUMER_ROOT` names (the working
+     * directory when unset), the fake forge answering GraphQL with
+     * `graphql`, with `extra` set.
      */
     function trackerFinding(
       graphql: string,
       cwd?: string,
       extra: Record<string, string> = {},
-    ): string | undefined {
+    ): { finding: Report["findings"][number] | undefined; code: number } {
       const dir = repo({
         ".config/jig.yaml": "repository:\n  base_branch: main\n",
       });
@@ -1555,11 +1556,10 @@ gates:
         ...(cwd === undefined ? {} : { JIG_CONSUMER_ROOT: dir }),
         ...extra,
       });
-      const report = JSON.parse(
-        runScript("config-fit.ts", ["--json"], cwd ?? dir, env).out,
-      ) as Report;
-      return report.findings.find((f) => f.id === "derivation:issue_tracker")
-        ?.message;
+      const run = runScript("config-fit.ts", ["--json"], cwd ?? dir, env);
+      const { findings } = JSON.parse(run.out) as Report;
+      const finding = findings.find((f) => f.id === "derivation:issue_tracker");
+      return { finding, code: run.code };
     }
     // The repository answers; its issue #1 is one no issue read can parse,
     // so a probe that read an issue would fail.
@@ -1567,39 +1567,38 @@ gates:
       data: { repository: { id: "R_1", issue: { number: 1 } } },
     });
 
-    test("probes the default tracker, whose failure is an error", () => {
-      expect(trackerFinding("!fake forge: no answer")).toContain(
-        "the github tracker cannot be reached",
-      );
-      expect(trackerFinding("!fake forge: no answer")).toContain(
-        "fake forge: no answer",
-      );
-    });
-
-    test("is reachable when its repository answers, reading no issue", () => {
-      expect(trackerFinding(REACHED)).toBeUndefined();
-    });
-
-    test("probes the audited repository, not the working directory", () => {
+    test("probes the audited repository, reading no issue", () => {
+      expect(trackerFinding(REACHED).finding).toBeUndefined();
       // The working directory has no origin remote; the audited one does.
-      expect(trackerFinding(REACHED, repo({}))).toBeUndefined();
+      expect(trackerFinding(REACHED, repo({})).finding).toBeUndefined();
     });
 
-    test("probes the tracker the environment layer selects", () => {
-      // The forge answers, so only a probe of the default tracker passes.
-      const environment = {
+    // Each fails the audit. Only the first forge fails, so only a probe of
+    // the default tracker passes the rest; Linear answers through the fake
+    // client fakeGh installs, never a real one.
+    test.each([
+      ["!fake forge: no answer", {}, /github tracker .*fake forge/],
+      [
+        REACHED,
+        { ADAPTER: "linear", TEAM: "ENG" },
+        /linear tracker .*fake linear/,
+      ],
+      [REACHED, { ADAPTER: "[x" }, /every skill here refuses to run/],
+      [REACHED, { ADAPTER: "jira" }, /'jira' is not supported/],
+    ] as const)("%s with %o is an error: %p", (graphql, tracker, message) => {
+      const layer = Object.fromEntries(
+        Object.entries(tracker).map(([k, v]) => [
+          `JIG__ISSUE_TRACKER__${k}`,
+          v,
+        ]),
+      );
+      const r = trackerFinding(graphql, undefined, {
         JIG_USER_LAYER: "off",
-        JIG__ISSUE_TRACKER__ADAPTER: "linear",
-        JIG__ISSUE_TRACKER__TEAM: "ENG",
-      };
-      expect(trackerFinding(REACHED, undefined, environment)).toContain(
-        "the linear tracker cannot be reached",
-      );
-      // Layers the skills refuse are an error, not an unchecked tracker.
-      const refused = { ...environment, JIG__ISSUE_TRACKER__ADAPTER: "[x" };
-      expect(trackerFinding(REACHED, undefined, refused)).toContain(
-        "every skill here refuses to run",
-      );
+        ...layer,
+      });
+      expect(r.finding?.severity).toBe("error");
+      expect(r.finding?.message).toMatch(message);
+      expect(r.code).toBe(1);
     });
   });
 

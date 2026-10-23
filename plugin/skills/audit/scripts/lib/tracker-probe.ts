@@ -3,12 +3,18 @@
  */
 
 import type { TrackerConfig } from "../../../do-item/scripts/lib/tracker/config.ts";
+import { knownAdapters } from "../../../do-item/scripts/lib/tracker/index.ts";
 import { issueKeysOf } from "../../../do-item/scripts/lib/tracker/keys.ts";
 
 /**
- * `false` when the tracker's key shape is unknown (a Linear tracker with no
- * team): then there is no team to ask about, and nothing to probe.
+ * `false` only when a known adapter's key shape is unknown (a Linear tracker
+ * with no team): then there is no team to ask about, and nothing to probe.
+ * An adapter this version does not know is probed, so that `openTracker`
+ * refuses it as every skill does.
  */
 export function trackerProbeable(config: TrackerConfig): boolean {
-  return issueKeysOf(config, () => null) !== null;
+  return (
+    !knownAdapters().includes(config.adapter) ||
+    issueKeysOf(config, () => null) !== null
+  );
 }
