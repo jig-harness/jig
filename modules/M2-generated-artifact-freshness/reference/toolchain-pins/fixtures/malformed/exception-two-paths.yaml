@@ -1,0 +1,7 @@
+tools:
+  bun:
+    source: { file: mise.toml, toml: tools.bun }
+    sites:
+      - { files: package.json, json: packageManager }
+    exceptions:
+      - { file: package.json, json: packageManager, yaml: a, value: "1.4.2", reason: r }

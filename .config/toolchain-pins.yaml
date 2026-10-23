@@ -17,3 +17,8 @@ tools:
       - files: plugin/skills/changelog/action.yml
         step: oven-sh/setup-bun
         with: bun-version
+    exceptions:
+      - file: package.json
+        json: devDependencies.@types/bun
+        value: "1.4.3"
+        reason: the types package for Bun 1.4.4 is not published yet
