@@ -267,10 +267,10 @@ describe("a rebase", () => {
     "records every stop, the earlier ones when the next map would overwrite their snapshot",
     () => {
       twoStops();
-      expect(s.gitTry("rebase", "main").code).not.toBe(0);
+      ok(s.gitTry("rebase", "main"), 1);
       resolve("one.md", BOTH);
       // Continuing stops again, on the second commit.
-      expect(s.gitTry("rebase", "--continue").code).not.toBe(0);
+      ok(s.gitTry("rebase", "--continue"), 1);
       // The second stop: mapping it records the first stop's events first.
       const map = s.script("conflict-map.ts");
       ok(map);
@@ -302,9 +302,9 @@ describe("a record that cannot be written when the next map replaces the snapsho
     "keeps the snapshot pending, and events.ts records it once it can",
     () => {
       twoStops();
-      expect(s.gitTry("rebase", "main").code).not.toBe(0);
+      ok(s.gitTry("rebase", "main"), 1);
       resolve("one.md", BOTH);
-      expect(s.gitTry("rebase", "--continue").code).not.toBe(0);
+      ok(s.gitTry("rebase", "--continue"), 1);
       const file = eventsFile();
       symlinkSync(`${s.home}/nowhere`, file);
       const map = s.script("conflict-map.ts");
@@ -332,9 +332,9 @@ describe("a record that cannot be written when the next map replaces the snapsho
     "records it from a checkout where its conclusion is not above HEAD",
     () => {
       twoStops();
-      expect(s.gitTry("rebase", "main").code).not.toBe(0);
+      ok(s.gitTry("rebase", "main"), 1);
       resolve("one.md", BOTH);
-      expect(s.gitTry("rebase", "--continue").code).not.toBe(0);
+      ok(s.gitTry("rebase", "--continue"), 1);
       const file = eventsFile();
       symlinkSync(`${s.home}/nowhere`, file);
       ok(s.script("conflict-map.ts"));
@@ -363,9 +363,9 @@ describe("a record that cannot be written when the next map replaces the snapsho
     "records it though the current snapshot is unreadable",
     () => {
       twoStops();
-      expect(s.gitTry("rebase", "main").code).not.toBe(0);
+      ok(s.gitTry("rebase", "main"), 1);
       resolve("one.md", BOTH);
-      expect(s.gitTry("rebase", "--continue").code).not.toBe(0);
+      ok(s.gitTry("rebase", "--continue"), 1);
       const file = eventsFile();
       symlinkSync(`${s.home}/nowhere`, file);
       ok(s.script("conflict-map.ts"));
@@ -391,7 +391,7 @@ describe("a record that cannot be written when the next map replaces the snapsho
 
   it("stays pending while its conclusion is neither kept nor found", () => {
     twoStops();
-    expect(s.gitTry("rebase", "main").code).not.toBe(0);
+    ok(s.gitTry("rebase", "main"), 1);
     ok(s.script("conflict-map.ts"));
     const jig = s
       .git("rev-parse", "--path-format=absolute", "--git-path", "jig")
