@@ -136,7 +136,19 @@ Move into configuration when a consumer needs them:
 
 - the review skill's deferral step (`defer-batch.ts`) calls Linear directly,
   with fixed label groups, instead of going through the
-  [tracker interface](../GLOSSARY.md);
+  [tracker interface](../GLOSSARY.md), so a repository on GitHub Issues,
+  the default tracker, cannot defer a finding. Moving it onto the interface makes it work on
+  every adapter; revisit for GitHub Issues what the step relies on that
+  GitHub lacks or spells differently: label groups (GitHub labels have none,
+  so the type and repository groups become configured label lists), its
+  `--originating` and `--team` keys (validated through the adapter's key
+  shape, `keys.ts`), the conditional description edits that keep concurrent
+  deferrals from losing an entry (the interface may need a compare-and-set
+  update, or a comment per entry where the tracker cannot compare), and
+  GitHub's secondary rate limit on writes when a review defers many
+  findings at once. Done when a deferral round files and appends its
+  findings on both adapters, with the fake-tracker tests both adapters'
+  tests use;
 - the drive pushes to and fetches from a remote named `origin`;
 - the markers of Jig's own finding format (`ai-review-backlog`,
   `ai-review-round`, the leading `ai-review-*` comments) are fixed, and the
@@ -159,14 +171,19 @@ golden files from the Python linter then retire with the translation.
 
 ### 12. More tracker adapters
 
-Jira, and a plan file kept in the repository. Both wait on the open decisions
-below. Before a second adapter works end to end, the
-[tracker interface](../GLOSSARY.md) gains attaching a file, which `decide`
-and `explain` now do through the Linear MCP tools or the `linear` command.
-The deferral step (item 10), `decide`, `explain` and `do-item`'s
-instructions then use the interface's operations, and `do-item`'s parent-status reconciliation reads the
-interface's answers instead of Linear's. [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker)
-lists what still assumes Linear.
+Jira, and a plan file kept in the repository, beside Linear and GitHub
+Issues. Both wait on the open decisions below. For every adapter to work end
+to end, the [tracker interface](../GLOSSARY.md) gains attaching a file,
+which `decide` and `explain` now do through the Linear MCP tools or the
+`linear` command. The deferral step (item 10), `decide`, `explain` and
+`do-item`'s instructions then use the interface's operations, and
+`do-item`'s parent-status reconciliation reads the interface's answers
+instead of Linear's on its native path too. The workspace launcher and the
+Herdr kickoff open Linear issues only: a GitHub key (`#123`) needs a
+launcher tracker for GitHub Issues and the key's file name (`issue-123`)
+where they name a cache file or a claim.
+[plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
+still assumes Linear.
 
 ### 15. M14 Testing strategy: the rest
 
@@ -316,12 +333,13 @@ closed, a receipt per run), kinds a repository enables with its own facts,
 and a machine layer for the schedule. What it will build, one pull request
 per step:
 
-- **The runner and the first kinds**: `jig gc` with report, collect,
-  receipts and install; the worktrees kind moved in from a working
-  repository with its scheduler installers; `drive-pr`'s state reaper and the
-  test scratch scope as kinds, the scratch scope writing an owner record
-  beside each directory; the `gc` sections of both configuration
-  layers; M12's practice, scheduler rows and audit criterion.
+- **Finish the first rollout**: move in the operated worktree reaper and its
+  scheduler tests, with the creating/opening tool taking the shared session
+  lock, and retire the working repository's copies in the same rollout.
+  Coordinate tool-state creators with collection admission before enabling
+  retirement; its legacy reaper lock excludes only other reapers.
+  Validate its weekly job through the installed command before starting
+  the later kinds. Worktree collection stays disabled until this integration.
 - **Containers, volumes and images**, keyed to the compose projects the
   worktrees derive, and the machine-level dangling images and build cache.
 - **Branches** merged as the forge records it (squash merges included) or
@@ -334,7 +352,43 @@ Done when a working repository's weekly sweep is the installed `jig gc`
 job, its own reapers and installers are gone, and the report names each
 resource's proof before anything is collected.
 
-### 25. `init`: setting a repository up for Jig
+### 25. Dependency-review feedback
+
+A tool that reviews what a pull request does to the repository's
+dependencies (Socket is one) reports through a check run and one summary
+comment, and raises no review thread. The loop's CI verdict already counts
+that check run like any other non-reviewer check (`ciVerdictOf` in
+`plugin/skills/drive-pr/scripts/lib/status/evidence.ts`), so a failing one
+reads as failing CI whether or not the repository requires it; what the loop
+does not do is read the alerts as findings
+([AI reviewers](../plugin/EXTENDING.md#ai-reviewers) says why). What it will
+build, one pull request per step:
+
+- **Read the report**: a dependency reporter is configured by its login and
+  check name, and read by a format of its own, the way a
+  [severity format](../plugin/EXTENDING.md#severity-formats) is: only from
+  comments and checks that login posted. Socket is the first built-in, checked
+  against its real comments and check runs.
+- **Alerts become findings**: each alert the report carries is a finding that
+  names the package and the alert, with its severity mapped onto `blocker`,
+  `high`, `medium` and `low`. It enters the loop through the path summary
+  comments already use, so the decline ladder and a top-level answer apply
+  unchanged.
+- **Scores stay advisory**: a report's scores (supply chain, quality,
+  maintenance, license) appear in the drive's status and the pull-request
+  plan, never as findings, with no threshold that turns a score into one.
+- **A failing check does not block by itself**: the reporter's check run
+  leaves the overall CI verdict, and only its alerts carry weight, as
+  findings. A check the repository's effective CI policy requires (listed in
+  `ci.required_checks`, or required by branch protection when that is unset)
+  keeps that requirement.
+
+Done when a drive on a pull request whose report carries an alert with a
+severity answers it as a finding, a report with scores and no alert adds none,
+and a failing reporter check with no alert does not hold the drive back,
+unless the repository's effective CI policy requires that check.
+
+### 26. `init`: setting a repository up for Jig
 
 A repository adopts Jig by hand today: read the configuration reference,
 write `.config/jig.yaml`, or copy the audit's starter configuration out of
@@ -359,7 +413,7 @@ Done when a fresh clone with no configuration runs `/jig:init`, commits
 what it wrote, passes the audit's configuration fit without a finding, and
 the brownfield and greenfield pages send a new repository there first.
 
-### 26. Work types: depth by kind of work
+### 27. Work types: depth by kind of work
 
 Every item runs the same stations at the same depth, and the kinds of work
 Jig already knows (`labels.bug`, `batch_sizes`, `hitl`, the taxonomy's
@@ -385,7 +439,7 @@ Done when a task-typed issue reaches its pull request with the depth its
 row gives, a feature keeps every gate it has today, and the three former
 conditions have no reader outside the table.
 
-### 27. `verify` and `debug`: evidence before claims, and a bounded debugging protocol
+### 28. `verify` and `debug`: evidence before claims, and a bounded debugging protocol
 
 A claim that the tests pass points at nothing, and a failure whose cause is
 not named gets a fix, then another. [design/verify-and-debug.md](verify-and-debug.md)
@@ -400,7 +454,7 @@ What it will build, one pull request per step:
 - **The record**: `shared/evidence.ts` with its tests, run from a plugin copy.
 - **`verify`**: the skill, its README, the lifecycle row, the M14 link.
 - **`do-item` and `fix-ci` record and require**: the policy refusal, the
-  body's evidence section, the seen-to-fail requirement by work type (item 26).
+  body's evidence section, the seen-to-fail requirement by work type (item 27).
 - **`debug`**: the skill, the ledger, the budget, the hand-off from
   `fix-ci`, tests with a fixture whose failure needs attribution and one
   whose budget runs out.
@@ -409,7 +463,7 @@ Done when a pull request `do-item` opens carries an evidence section for
 the pushed tree, `fix-ci` hands a surviving test failure to `debug`, and a
 drive's repair round ends with a posted ledger when the budget runs out.
 
-### 28. The spec a work item links
+### 29. The spec a work item links
 
 A work item carries or links its requirements, and the link is prose:
 `do-item` hands the agent the body, the reviewer is told to check "the
@@ -421,7 +475,7 @@ then the common repository layouts by convention, then the tracker's
 attachments once the interface has them) that returns requirements,
 acceptance criteria and tasks with their ids; the result handed to the
 implementing agent and the reviewer; a pull-request section accounting for
-every criterion as met with an evidence record (item 27), deferred to a
+every criterion as met with an evidence record (item 28), deferred to a
 filed item, or not applicable. Jig writes no spec and dictates no format.
 What it will build, one pull request per step:
 
@@ -431,7 +485,7 @@ What it will build, one pull request per step:
 - **The repository adapters**, two or three layouts per pull request, each
   with its fixture folder; M6's audit criterion with the last of them.
 - **`do-item` reads and requires**: the `spec` pre-scout by work type
-  (item 26), the delegation prompt and the reviewer's list, the policy
+  (item 27), the delegation prompt and the reviewer's list, the policy
   refusal for an unaccounted criterion, the recommended-skills page naming
   the spec-writing tools with the adapter that reads each.
 - **`review` in plan mode, `file-issue`, `/followup` and the epic close.**

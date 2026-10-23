@@ -77,6 +77,7 @@ that a skill hands a narrow job to):
 | [review-arbiter](agents/review-arbiter.md) | Rules on contested review findings the triage rubric cannot settle (fix now, reject, won't fix, defer or escalate to a human); reads code, never edits | `jig:review-arbiter` (Claude Code; see [Codex notes](#codex-notes)) |
 
 Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
+[machine resource collection](#machine-resource-collection) ·
 [requirements](#requirements) ·
 [install](#install-the-plugin) · [use](#use-a-skill) ·
 [configure a repository](#configure-a-repository) ·
@@ -90,6 +91,22 @@ Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
 [release](#releases) ·
 [moving from the `groundwork` plugin](#moving-from-the-groundwork-plugin) ·
 [moving off the per-worktree installer](#moving-off-the-per-worktree-installer)
+
+## Machine resource collection
+
+The plugin also ships `jig gc`, a command-line tool that reports registered
+machine-local leftovers and writes a receipt. Run it with trusted Bun startup:
+
+```sh
+bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts gc
+```
+
+Replace `<plugin>` with the absolute installed plugin path. `gc install`
+previews the repository bounds and daily scheduler; `--yes` confirms them.
+Collecting runs use the install-recorded base declaration and stay within
+the confirmed bounds. See [resource collection](gc/README.md) for supported
+kinds and collection limits, and [configuration](CONFIGURATION.md#gc) for
+both configuration layers.
 
 ## Set up from an agent session
 
@@ -150,7 +167,7 @@ the new session, run the audit: `/jig:audit` in Claude Code, or ask for the
 | **git** | 2.36 or later (`--path-format` for absolute paths and `git worktree list -z`; `resolve-conflicts` needs 2.41, to reconstruct automatic merge results and read attributes from the index with `--attr-source`, and its history report 2.43, or 2.45 in a partial clone) | Every skill that reads the repository |
 | **GitHub CLI** (`gh`), signed in with access to the repositories you work on | 2.48 or later (`gh api --slurp`) | Every skill that works on pull requests. Jig supports GitHub as its only forge ([extending](EXTENDING.md#forge-github)) |
 | **The `gh-stack` extension** | Any | Only `pull_requests.stacking: native` |
-| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in |
+| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the default GitHub adapter, the signed-in `gh` above and nothing more. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in |
 
 Most skills do not check these versions when they run: an older tool fails
 on the command it lacks. The `resolve-conflicts` history report is the
@@ -356,7 +373,10 @@ plugin's. Delete such a copy when you adopt the plugin's version.
 
 `drive-pr` and `do-item` read the same configuration file as the review
 skill. Every field below has a default except `issue_tracker.team`, which the
-tracker scripts require. A drive does not need an AI reviewer: without one it
+tracker scripts require on Linear (`issue_tracker.adapter: linear`); on GitHub
+Issues, the default, the key is the repository's own
+(`issue_tracker.github.repository`, by default the `origin` remote's), so no
+team is set. A drive does not need an AI reviewer: without one it
 converges on review threads and CI alone. A repository that has one names it
 with `review.reviewer_app` (or `review.reviewer_check_pattern`), and the drive
 then also waits for the check run, sticky comment and reviewed-commit marker
@@ -389,8 +409,8 @@ ci:
   required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires
   hold_label: ci:hold         # label your workflows honour to skip heavy jobs between review rounds; default: none (every push runs full CI)
 issue_tracker:
-  team: ENG                   # issue-tracker team key; required by the tracker scripts
-  adapter: linear             # which tracker adapter to use; Linear is the only one today
+  adapter: github             # which tracker adapter to use: github (GitHub Issues, the default) or linear
+  # team: ENG                 # Linear only: its team key, required by the Linear adapter
   file_command: /jig:file-issue   # how an agent files an issue by hand
   taxonomy: label-taxonomy.yaml   # the label taxonomy file-issue validates against; default label-taxonomy.yaml
   states:                     # the tracker's own names for the workflow states
@@ -455,9 +475,11 @@ folder too; `JIG_VERIFICATION_FIT_LOG` overrides it.
 the tracker only through a small [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (read an issue with its
 comments, list its children, change its state, post a comment, run the
 reports' queries). An *adapter* implements that interface for one tracker;
-`issue_tracker.adapter` chooses it, and Linear is the only adapter today.
+`issue_tracker.adapter` chooses it: `github` for GitHub Issues (the default), or `linear`.
 `issue_tracker.states` translates the skills' state names (`in_progress`,
-`done`, …) into the tracker's own. Supporting another tracker means adding an
+`done`, …) into the tracker's own; on GitHub Issues an open state is a label
+or a Projects board's option, and a closed one the reason the issue was
+closed ([`issue_tracker.github`](CONFIGURATION.md#issue_tracker)). Supporting another tracker means adding an
 adapter, not changing the skills.
 
 The remaining knobs are environment variables named `DRIVE_PR_*` (round

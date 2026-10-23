@@ -133,7 +133,7 @@ test("a user layer does not make a repository look adopted", () => {
 for (const field of [
   "gates:\n  command: make check",
   "repository:\n  base_branch: develop",
-  "issue_tracker:\n  team: ENG",
+  "issue_tracker:\n  adapter: linear\n  team: ENG",
   "ci:\n  required_checks: [build]",
   "changelog:\n  file: CHANGELOG.md",
   "changelog:\n  release:\n    push: direct",
@@ -378,11 +378,13 @@ test("the environment variables are bounded together, not only one by one", () =
 });
 
 test("a tracker setting's error names the variable or file that set it", () => {
-  repository("issue_tracker:\n  team: ENG\n");
+  repository("issue_tracker:\n  adapter: linear\n  team: ENG\n");
   process.env.JIG__ISSUE_TRACKER__LABELS__BUG = "oops";
   expect(() => trackerConfig()).toThrow("$JIG__ISSUE_TRACKER__LABELS__BUG");
   delete process.env.JIG__ISSUE_TRACKER__LABELS__BUG;
-  repository("issue_tracker:\n  team: ENG\nreview:\n  taxonomy: []\n");
+  repository(
+    "issue_tracker:\n  adapter: linear\n  team: ENG\nreview:\n  taxonomy: []\n",
+  );
   expect(() => trackerConfig()).toThrow(
     `review.taxonomy must be an object: ${join(repo, ".config", "jig.yaml")}`,
   );

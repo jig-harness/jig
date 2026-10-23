@@ -13,7 +13,7 @@ hand them to the agent and the reviewer, and the pull request closes with
 each criterion met with evidence, deferred to a filed item, or not
 applicable. Jig writes no spec and dictates no format.
 
-This is the design of [plan.md](plan.md) item 28, following the
+This is the design of [plan.md](plan.md) item 29, following the
 [spec ecosystems research note](spec-ecosystems-research.md). Nothing of it
 is built. The stance it keeps is M6's: the item is the unit of work, and
 what the item links is the repository's own.

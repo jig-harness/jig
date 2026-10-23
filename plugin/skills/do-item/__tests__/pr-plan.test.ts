@@ -14,8 +14,10 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 import {
   countChangedLines,
   measureChange,
+  readIssueArg,
   shellQuote,
 } from "../scripts/pr-plan.ts";
+import { numberKeys, teamKeys } from "../scripts/lib/tracker/keys.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 
 const SCRIPT = join(import.meta.dir, "..", "scripts", "pr-plan.ts");
@@ -99,8 +101,15 @@ function fakeGh(f: FakeGh): void {
   writeFakeProgram(join(bin, "gh"), `${script}\n`);
 }
 
+/** The repository's policy; keys are Linear's (`ENG-1`) unless the text names a tracker. */
 function overlay(text: string): void {
-  writeFileSync(overlayFile, `repository:\n  base_branch: main\n${text}`);
+  const tracker = text.includes("issue_tracker:")
+    ? ""
+    : "issue_tracker:\n  adapter: linear\n";
+  writeFileSync(
+    overlayFile,
+    `repository:\n  base_branch: main\n${tracker}${text}`,
+  );
 }
 
 function git(...args: string[]): string {
@@ -237,6 +246,54 @@ describe("pr-plan.ts branch", () => {
     expect(plan("branch", "--issue", "ENG-7").code).toBe(2);
     expect(plan("branch", "--issue", "not a key", "--title", "x").code).toBe(2);
   });
+
+  it("reads a key of the configured team in any case", () => {
+    overlay("issue_tracker:\n  adapter: linear\n  team: ENG\n");
+    expect(plan("branch", "--issue", "eng-7", "--title", "x").stdout).toBe(
+      "eng-7-x\n",
+    );
+    const r = plan("branch", "--issue", "OPS-7", "--title", "x");
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain("such as ENG-123");
+  });
+
+  it("names a GitHub issue by its number alone, however it is given", () => {
+    overlay(
+      "issue_tracker:\n  adapter: github\n  github:\n    repository: owner/name\npull_requests:\n  branch_name: feature/{key}-{slug}\n",
+    );
+    for (const issue of [
+      "12",
+      "#12",
+      "https://github.com/owner/name/issues/12",
+    ])
+      expect(plan("branch", "--issue", issue, "--title", "Add it").stdout).toBe(
+        "feature/12-add-it\n",
+      );
+    const r = plan("branch", "--issue", "ENG-7", "--title", "x");
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain("such as #123");
+  });
+});
+
+describe("readIssueArg", () => {
+  it("takes any team's key as given when no team is configured", () => {
+    expect(readIssueArg("eng-7", null)).toEqual({
+      key: "eng-7",
+      branchKey: "eng-7",
+    });
+    expect(readIssueArg("#7", null)).toBeNull();
+  });
+
+  it("canonicalises through the configured shape", () => {
+    expect(readIssueArg("#7", numberKeys(null))).toEqual({
+      key: "#7",
+      branchKey: "7",
+    });
+    expect(readIssueArg("eng-7", teamKeys("ENG"))).toEqual({
+      key: "ENG-7",
+      branchKey: "ENG-7",
+    });
+  });
 });
 
 describe("pr-plan.ts open", () => {
@@ -256,6 +313,13 @@ describe("pr-plan.ts open", () => {
     expect(p.body.issueLink).toBe("Closes ENG-1");
     expect(p.size.changedLines).toBe(5);
     expect(p.afterCreate).toEqual([]);
+  });
+
+  it("links a GitHub issue as #<n>", () => {
+    overlay("issue_tracker:\n  adapter: github\n");
+    commitLines("a.txt", 1);
+    const p = JSON.parse(plan("open", "--issue", "12", "--json").stdout);
+    expect(p.body.issueLink).toBe("Closes #12");
   });
 
   it("opens Ready and adds labels when the policy says so", () => {

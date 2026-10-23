@@ -55,8 +55,12 @@ const layerRows = await Promise.all(
           <div class="trk-col">
             <span class="label">Adapters</span>
             <div class="adapter">
+              <span class="adapter-name">GitHub Issues</span>
+              <span class="muted">the default; one repository's issues</span>
+            </div>
+            <div class="adapter">
               <span class="adapter-name">Linear</span>
-              <span class="muted">the only adapter today, out of the box</span>
+              <span class="muted">chosen with <code>adapter: linear</code></span>
             </div>
             <div class="adapter todo">
               <ActorLine actor={{ kind: "todo", item: "12", text: "Jira, and a plan file kept in the repository" }} />

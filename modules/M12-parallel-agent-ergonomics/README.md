@@ -213,6 +213,22 @@ The branch-discipline block is written to be **imported into an agent instructio
 file** (the [M0 instruction-architecture](../M0-instruction-architecture/) module
 governs how those files layer), so every agent inherits the rules.
 
+## Resource lifecycle
+
+A machine-local resource is collected only when its lifecycle proves every
+holder gone. Age is an additional guard, and unregistered resources or an
+unreadable proof are findings to keep. A collector reports before collection,
+checks the proof again at removal, and writes a receipt for report-only runs
+as well as collections. Its creator and collector coordinate at the final
+check; a tool's refusing removal protects only the conditions it checks.
+
+[Jig's resource collector](../../plugin/gc/README.md) supplies the runner,
+receipts, confirmed repository bounds, scheduler installation and adapters
+for drive-pr state and scratch scopes. Scratch is report-only until fixture
+registration covers every holder. Worktree reports evaluate lifecycle evidence; collection waits for the
+operated reaper migration and session opener's shared lock. The machine policy
+can tighten a repository declaration and cannot widen it.
+
 ## Maturity levels
 
 - **Lite** — the branch reuse-before-create rule and the footgun bans are
@@ -346,12 +362,12 @@ the Jig repository's `lib/`, so run them from a pinned Jig checkout or vendor
   it is not shipped, to keep the allocator stateless and dependency-free.
 - **A runnable workspace lifecycle**, and cross-worktree locks as shared
   tooling, are later work in the [roadmap](../../ROADMAP.md).
-- **Garbage collection of a developer machine.** A sweep of what every
-  worktree's sessions left behind (leftover processes, scratch directories,
-  caches and containers keyed to worktrees that no longer exist), run by the
-  owner with the same report-first rule as the namespace reaper, is
-  [roadmap item 24](../../ROADMAP.md); its design is in
-  [design/resource-gc.md](../../design/resource-gc.md).
+- **Resource collection rollout.** The runner and first adapters are in
+  [the plugin](../../plugin/gc/README.md). Moving in the operated worktree
+  reaper and its opener's lock, validating the installed weekly sweep, and
+  then adding container, branch and registered-process kinds remain in
+  [roadmap item 24](../../ROADMAP.md), following
+  [the design](../../design/resource-gc.md)'s build order.
 - **A copyable command-rewriting hook** that applies the quiet wrapper in
   an agent runtime: the contract and the safety model are in
   [mappings.md](mappings.md#agent-facing-gate-output), and each repository

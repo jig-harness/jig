@@ -13,7 +13,7 @@ nothing downstream reads. With this built, an item's type is one derived
 fact, one table says what each type changes, and depth shrinks for light
 work without ever removing a gate a flag or the catalog demands.
 
-This is the design of [plan.md](plan.md) item 26, a change to `do-item`,
+This is the design of [plan.md](plan.md) item 27, a change to `do-item`,
 `work-batch` and `file-issue`. Nothing of it is built.
 
 ## The rule

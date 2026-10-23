@@ -12,8 +12,8 @@
  * Differences from the reference renderer:
  *
  * - A reference to an option or a call is an explicit token (`refs.ts`), never
- *   found by a pattern in prose. Issue-key links (`ENG-123`) stay pattern-based: that
- *   shape is unambiguous.
+ *   found by a pattern in prose. Issue-key links (`ENG-123`, `#123`) stay
+ *   pattern-based: the shape of the sheet's own tracker is unambiguous.
  * - The Pick control of the matrix is an icon in its own narrow column, so it
  *   adds no row height.
  * - Every text goes through `esc` (it also escapes `'`), never a local copy.
@@ -99,7 +99,7 @@ export function renderDocumentHtml(source: DecisionSource): string {
   const inline = createInline({
     glossary: source.glossary ?? [],
     issueUrl: source.url,
-    teamKey: source.id.split("-")[0] ?? "",
+    team: /^([A-Z][A-Z0-9]*)-\d+$/.exec(source.id)?.[1],
   });
   const termIds = inline.termIds;
   const callIds = new Set(source.calls.map((c) => c.id));

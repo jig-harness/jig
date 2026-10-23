@@ -14,8 +14,7 @@
  *    presentation (else it re-comments forever), and a cooldown must end;
  *  - the SHIPPED config: it parses, and every product area it names exists in
  *    the change-area catalog (a rename must not silently shrink progress);
- *  - the composition `main` runs, against injected deps, including the
- *    budget refusal and the failure breaker.
+ *  - `main`'s composition, against injected deps, refusals and breaker too.
  *
  * No network: everything is pure over fixtures.
  */
@@ -33,6 +32,7 @@ import { join } from "node:path";
 import yaml from "js-yaml";
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
 import { linearTracker } from "../../do-item/scripts/lib/tracker/linear.ts";
+import { teamKeys } from "../../do-item/scripts/lib/tracker/keys.ts";
 import {
   BudgetError,
   MIN_GRAPHQL_BUDGET,
@@ -90,7 +90,7 @@ const BEFORE = "2026-08-01T12:00:00Z";
 const FIXTURES = join(import.meta.dir, "fixtures");
 const CONTEXT: ConfigContext = {
   root: FIXTURES,
-  teamKey: "ENG",
+  keys: teamKeys("ENG"),
   epicLabel: "epic",
   followupLabel: "follow-up",
   repositoryLabels: ["repo-web", "repo-api"],
@@ -261,10 +261,10 @@ describe("issue references and follow-up origins", () => {
     ]);
     // With the consumer's team key, another team's key is not a reference.
     // Another team's key ends the trailer like prose does.
-    expect(parseIssueRefs("Closes ENG-1, OPS-2 & ENG-3", "ENG")).toEqual([
-      "ENG-1",
-    ]);
-    expect(parseIssueRefs("closes eng-3", "ENG")).toEqual(["ENG-3"]);
+    expect(
+      parseIssueRefs("Closes ENG-1, OPS-2 & ENG-3", teamKeys("ENG")),
+    ).toEqual(["ENG-1"]);
+    expect(parseIssueRefs("closes eng-3", teamKeys("ENG"))).toEqual(["ENG-3"]);
     // A second keyword still starts its own match, and prose between ids ends one.
     expect(parseIssueRefs("Closes ENG-1 and see ENG-2")).toEqual(["ENG-1"]);
   });

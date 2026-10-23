@@ -23,6 +23,12 @@ import {
   DEFAULT_ADAPTER,
   parseTrackerConfig,
 } from "../../do-item/scripts/lib/tracker/config.ts";
+import {
+  DEFAULT_STATES_FROM,
+  DEFAULT_STATUS_FIELD,
+  GITHUB_STATE_SOURCES,
+  PRIORITY_NAMES,
+} from "../../do-item/scripts/lib/tracker/github/settings.ts";
 import { DEFAULT_MAX_ROUNDS } from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
@@ -195,6 +201,15 @@ describe("the reading skills", () => {
     expect(field("changelog.format")?.values).toEqual([...FORMAT_IDS]);
   });
 
+  test("accept the GitHub adapter's value sets the schema lists", () => {
+    expect(field("issue_tracker.github.states_from")?.values).toEqual([
+      ...GITHUB_STATE_SOURCES,
+    ]);
+    expect(field("issue_tracker.github.priority_labels")?.keys).toEqual([
+      ...PRIORITY_NAMES,
+    ]);
+  });
+
   test("read the code_stats section's fields, all of them repository-only", () => {
     expect(under("code_stats").sort()).toEqual([...CODE_STATS_FIELDS].sort());
     expect(field("code_stats.kinds")?.keys).toEqual([...CODE_STATS_KINDS]);
@@ -232,6 +247,8 @@ describe("the reading skills", () => {
       "pull_requests.issue_link": policy.issueLink,
       "drive.max_rounds": DEFAULT_MAX_ROUNDS,
       "issue_tracker.adapter": DEFAULT_ADAPTER,
+      "issue_tracker.github.states_from": DEFAULT_STATES_FROM,
+      "issue_tracker.github.status_field": DEFAULT_STATUS_FIELD,
       "issue_tracker.taxonomy": DEFAULT_TAXONOMY,
       "do_item.execution_plan_block": DEFAULT_BLOCK,
       "changelog.notes_dir": CHANGELOG_DEFAULTS.notesDir,
@@ -287,7 +304,11 @@ describe("the reading skills", () => {
         expect([
           f.path,
           skill,
-          existsSync(join(plugin, "skills", skill, "SKILL.md")),
+          existsSync(
+            skill === "gc"
+              ? join(plugin, "jig.ts")
+              : join(plugin, "skills", skill, "SKILL.md"),
+          ),
         ]).toEqual([f.path, skill, true]);
   });
 });

@@ -13,7 +13,7 @@ built, one command in a fresh clone leaves behind a committed, checked
 configuration and says what to run next; the audit stays the measurement it
 is.
 
-This is the design of [plan.md](plan.md) item 25. Nothing of it is built. The
+This is the design of [plan.md](plan.md) item 26. Nothing of it is built. The
 detection it rests on exists inside the audit's configuration-fit script
 (`plugin/skills/audit/scripts/config-fit.ts`, with the draft in its `lib/draft.ts`),
 which prints a starter configuration and never writes one.

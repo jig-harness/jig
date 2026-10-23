@@ -38,7 +38,7 @@ export interface ParsedArgs {
  * them took the FIRST non-flag argument and silently dropped unknown flags and
  * later positionals, while determine_agent.ts treated every unrecognised
  * token — flag or not — as the input path, last one winning. So
- * `get_issue.ts ENG-123 --typo`, `get_issue.ts ENG-123 ENG-124` and
+ * `get_issue.ts <key> --typo`, `get_issue.ts <key> <key>` and
  * `determine_agent.ts - --typo` each proceeded or failed as a generic runtime
  * error rather than as the usage error argparse gave them. At most one
  * positional is accepted because no script here takes two; whether omitting it

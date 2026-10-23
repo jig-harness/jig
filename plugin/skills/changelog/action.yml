@@ -130,7 +130,7 @@ runs:
       with:
         # The Bun Jig tests with: mise.toml's pin, which `bun run pins`
         # holds this to (.config/toolchain-pins.yaml).
-        bun-version: 1.4.3
+        bun-version: 1.4.4
     - name: Check the branch's change notes
       if: inputs.command == 'check'
       shell: bash

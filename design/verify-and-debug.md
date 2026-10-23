@@ -14,7 +14,7 @@ claim that something works points at a record of the run that showed it,
 and a failure whose cause is not obvious is worked through one protocol that
 stops and hands over after a stated budget.
 
-This is the design of [plan.md](plan.md) item 27: two skills, `verify` and
+This is the design of [plan.md](plan.md) item 28: two skills, `verify` and
 `debug`, and the evidence record they share. Nothing of it is built; `fix-ci`'s `probe-base.ts` and
 `shared/junit-report.ts` are the parts that exist.
 

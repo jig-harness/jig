@@ -804,6 +804,9 @@ criteria:
     score: expected-absent
     evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no scheduled job existed, so there was no watcher to report to a monitor"
   # M12 parallel-agent-ergonomics
+  M12/resource-kinds-declared:
+    score: absent
+    evidence: "At the audited commit .config/jig.yaml declares no resource kinds or ownership boundaries for a machine-local collector"
   M12/branch-reuse-and-footgun-bans-written:   # lite, requires convention
     # The branch reuse-before-create rule and the shared-state footgun bans (no git stash across worktrees, no root install with the wrong package manager) are written down where agents will read them.
     # prior: absent: AGENTS.md says only 'feature branches with pull requests against main'; no reuse-before-create rule and no stash or wrong-manager ban (git grep stash in AGENTS.md, */AGENTS.md, README.md: none), though Jig is worked in parallel worktrees

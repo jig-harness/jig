@@ -4,7 +4,8 @@
  * analysis.
  *
  * Type: Discovery
- * Input: an issue key (e.g. ENG-123)
+ * Input: an issue key in the configured tracker's shape (`ENG-123`, `#123`;
+ *   a GitHub issue also by its number or web address)
  * Output: JSON with the issue's details, labels, children and
  *   `sub_issue_analysis`
  *
@@ -20,6 +21,7 @@
 
 import { parseArgs, runEntry } from "./lib/cli.ts";
 import { openTracker } from "./lib/tracker/index.ts";
+import { type IssueKeys, issueKeysOrNull } from "./lib/tracker/keys.ts";
 import {
   CANONICAL_STATES,
   type CanonicalState,
@@ -191,14 +193,24 @@ export function issueResult(
   return result;
 }
 
-function notFound(issueId: string, why: string): Record<string, unknown> {
+function notFound(
+  issueId: string,
+  why: string,
+  keys: IssueKeys | null,
+): Record<string, unknown> {
+  // A tracker that reads a bare number keys issues by number alone (GitHub).
+  const byNumber = keys?.normalize("123") != null;
   return {
     error: `Issue ${issueId} not found${why === "" ? "" : `: ${why}`}`,
     found: false,
     suggestions: [
-      "Check the key format (e.g. ENG-123, not just 123)",
-      "Check issue_tracker.team in .config/jig.yaml",
-      "Use the tracker's own integration (Linear: the get_issue MCP tool)",
+      byNumber
+        ? `Check the issue number (e.g. ${keys?.example}, 123 or the issue's web address)`
+        : `Check the key format (e.g. ${keys?.example ?? "ENG-123"}, not just 123)`,
+      byNumber
+        ? "Check issue_tracker.github.repository in .config/jig.yaml"
+        : "Check issue_tracker.team in .config/jig.yaml",
+      "Use the tracker's own integration (Linear: the get_issue MCP tool; GitHub: gh issue view)",
     ],
   };
 }
@@ -208,19 +220,23 @@ function notFound(issueId: string, why: string): Record<string, unknown> {
  * cannot be read, and a tracker that cannot be reached are all reported as
  * not found, with the reason: the caller's next step is the same (fall back
  * to the tracker's own integration, or stop), and an unusable answer must
- * never read as a found issue with empty fields.
+ * never read as a found issue with empty fields. The key is read as a person
+ * may give it (`keys.normalize`) and passed on as given when it is not one.
  */
 export async function getIssue(
-  issueId: string,
+  input: string,
   tracker: Tracker = openTracker(),
+  keys: IssueKeys | null = issueKeysOrNull(),
 ): Promise<Record<string, unknown>> {
+  const issueId = keys?.normalize(input) ?? input;
   let issue: Issue | null;
   try {
     issue = await tracker.getIssue(issueId);
   } catch (err) {
-    return notFound(issueId, err instanceof Error ? err.message : String(err));
+    const why = err instanceof Error ? err.message : String(err);
+    return notFound(issueId, why, keys);
   }
-  if (issue === null) return notFound(issueId, "");
+  if (issue === null) return notFound(issueId, "", keys);
   const stateNames = Object.fromEntries(
     CANONICAL_STATES.map((s) => [s, tracker.stateName(s)]),
   ) as Record<CanonicalState, string>;

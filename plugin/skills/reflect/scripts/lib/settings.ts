@@ -15,7 +15,17 @@ import {
 import { isMapping, jigHome } from "../../../../shared/config-layers.ts";
 import { notionId } from "./notion/ids.ts";
 
-export const STORE_KINDS = ["filesystem", "command", "notion"] as const;
+/** A `reflection` setting that cannot be used, naming the field. */
+export class SettingError extends Error {
+  override name = "SettingError";
+}
+
+export const STORE_KINDS = [
+  "filesystem",
+  "command",
+  "notion",
+  "github",
+] as const;
 export type StoreKind = (typeof STORE_KINDS)[number];
 export const MODES = ["quick", "comprehensive"] as const;
 export type Mode = (typeof MODES)[number];
@@ -29,6 +39,8 @@ export interface ReflectionSettings {
   command: string[] | null;
   /** The Notion store's database id. */
   notionDatabase: string | null;
+  /** The GitHub store's repository, `owner/name`. */
+  githubRepository: string | null;
   /** The journal's path when configured, absolute; null for the default. */
   journal: string | null;
   escalateAfter: number;
@@ -74,7 +86,7 @@ export function splitWords(line: string): string[] {
   const rest = line.replace(word, "");
   const unclosed = /['"]/.exec(rest);
   if (unclosed !== null)
-    throw new Error(`unclosed ${unclosed[0]} in "${line}"`);
+    throw new SettingError(`unclosed ${unclosed[0]} in "${line}"`);
   return words;
 }
 
@@ -84,6 +96,7 @@ const KNOWN = [
   "path",
   "command",
   "notion",
+  "github",
   "journal",
   "escalate_after",
   "timeout_sec",
@@ -98,7 +111,9 @@ function oneOf<T extends string>(
 ): T {
   if (value === undefined) return fallback;
   if (!(allowed as readonly unknown[]).includes(value))
-    throw new Error(`reflection.${field} must be one of ${allowed.join(", ")}`);
+    throw new SettingError(
+      `reflection.${field} must be one of ${allowed.join(", ")}`,
+    );
   return value as T;
 }
 
@@ -116,9 +131,11 @@ function positiveWhole(
 ): number {
   if (value === undefined) return fallback;
   if (!Number.isSafeInteger(value) || (value as number) < 1)
-    throw new Error(`reflection.${field} must be a whole number of at least 1`);
+    throw new SettingError(
+      `reflection.${field} must be a whole number of at least 1`,
+    );
   if ((value as number) > max)
-    throw new Error(`reflection.${field} must be at most ${max}`);
+    throw new SettingError(`reflection.${field} must be at most ${max}`);
   return value as number;
 }
 
@@ -129,7 +146,7 @@ function pathSetting(
 ): string | null {
   if (value === undefined) return null;
   if (typeof value !== "string" || value.trim() === "")
-    throw new Error(`reflection.${field} must be a path`);
+    throw new SettingError(`reflection.${field} must be a path`);
   return expandPath(value, root);
 }
 
@@ -142,29 +159,98 @@ function commandSetting(value: unknown): string[] | null {
         ? (value as string[])
         : null;
   if (words === null)
-    throw new Error(
+    throw new SettingError(
       "reflection.command must be a command line or a list of words",
     );
-  if (words.length === 0) throw new Error("reflection.command is empty");
+  if (words.length === 0) throw new SettingError("reflection.command is empty");
   return words;
 }
 
 /** `reflection.notion`: the database's id, from an id or a link. */
 function notionSetting(value: unknown): string | null {
   if (value === undefined) return null;
-  if (!isMapping(value)) throw new Error("reflection.notion must be a mapping");
+  if (!isMapping(value))
+    throw new SettingError("reflection.notion must be a mapping");
   const unknown = Object.keys(value).find((key) => key !== "database");
   if (unknown !== undefined)
-    throw new Error(
+    throw new SettingError(
       `reflection.notion.${unknown} is not a Notion store setting (known: database)`,
     );
   const id =
     typeof value.database === "string" ? notionId(value.database) : null;
   if (id === null)
-    throw new Error(
+    throw new SettingError(
       "reflection.notion.database must be a Notion database id or link",
     );
   return id;
+}
+
+/**
+ * An `owner/name` GitHub repository: an owner of letters, digits and single
+ * inner hyphens, and a name of letters, digits, `.`, `_` and `-`.
+ */
+const GITHUB_REPOSITORY =
+  /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}\/[A-Za-z0-9._-]{1,100}$/;
+
+/** `reflection.github`: the repository the store keeps its issues in. */
+export function githubSetting(value: unknown): string | null {
+  if (value === undefined) return null;
+  if (!isMapping(value))
+    throw new SettingError("reflection.github must be a mapping");
+  const unknown = Object.keys(value).find((key) => key !== "repository");
+  if (unknown !== undefined)
+    throw new SettingError(
+      `reflection.github.${unknown} is not a GitHub store setting (known: repository)`,
+    );
+  const repository =
+    typeof value.repository === "string" ? value.repository.trim() : "";
+  const name = repository.split("/")[1];
+  if (!GITHUB_REPOSITORY.test(repository) || name === "." || name === "..")
+    throw new SettingError(
+      "reflection.github.repository must be a GitHub repository as owner/name",
+    );
+  return repository;
+}
+
+/** A store's own setting, required when that store is the chosen one. */
+function requiredFor<T>(
+  store: StoreKind,
+  kind: StoreKind,
+  value: T | null,
+  field: string,
+): T | null {
+  if (store === kind && value === null)
+    throw new SettingError(
+      `reflection.store is ${kind}, so ${field} is required`,
+    );
+  return value;
+}
+
+/** The settings of the stores other than the filesystem's. */
+function storeSettings(
+  section: Record<string, unknown>,
+  store: StoreKind,
+): Pick<ReflectionSettings, "command" | "notionDatabase" | "githubRepository"> {
+  return {
+    command: requiredFor(
+      store,
+      "command",
+      commandSetting(section.command),
+      "reflection.command",
+    ),
+    notionDatabase: requiredFor(
+      store,
+      "notion",
+      notionSetting(section.notion),
+      "reflection.notion.database",
+    ),
+    githubRepository: requiredFor(
+      store,
+      "github",
+      githubSetting(section.github),
+      "reflection.github.repository",
+    ),
+  };
 }
 
 /** Parse the merged `reflection` section; `undefined` means off. */
@@ -173,36 +259,27 @@ export function parseReflection(
   root = consumerRoot(),
 ): Reflection {
   if (section === undefined || section === null) return { on: false };
-  if (!isMapping(section)) throw new Error("reflection must be a mapping");
+  if (!isMapping(section))
+    throw new SettingError("reflection must be a mapping");
   const unknown = Object.keys(section).find((key) => !KNOWN.includes(key));
   if (unknown !== undefined)
-    throw new Error(
+    throw new SettingError(
       `reflection.${unknown} is not a reflection setting (known: ${KNOWN.join(", ")})`,
     );
   if (section.enabled !== undefined && typeof section.enabled !== "boolean")
-    throw new Error("reflection.enabled must be true or false");
+    throw new SettingError("reflection.enabled must be true or false");
   if (section.enabled === false)
     return section.journal === undefined
       ? { on: false }
       : { on: false, journal: pathSetting(section.journal, "journal", root) };
   const store = oneOf(section.store, STORE_KINDS, "store", DEFAULTS.store);
-  const command = commandSetting(section.command);
-  if (store === "command" && command === null)
-    throw new Error(
-      "reflection.store is command, so reflection.command is required",
-    );
-  const notionDatabase = notionSetting(section.notion);
-  if (store === "notion" && notionDatabase === null)
-    throw new Error(
-      "reflection.store is notion, so reflection.notion.database is required",
-    );
   return {
     on: true,
     store,
+    // Before the other settings, so a store's missing setting is reported first.
+    ...storeSettings(section, store),
     path:
       pathSetting(section.path, "path", root) ?? join(jigHome(), "reflections"),
-    command,
-    notionDatabase,
     journal: pathSetting(section.journal, "journal", root),
     escalateAfter: positiveWhole(
       section.escalate_after,

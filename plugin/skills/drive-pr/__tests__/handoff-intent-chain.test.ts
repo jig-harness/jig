@@ -34,6 +34,10 @@ import {
   resolveIntentChainFile,
 } from "../scripts/lib/state/handoff.ts";
 import { freshState } from "../scripts/lib/state/schema.ts";
+import {
+  numberKeys,
+  teamKeys,
+} from "../../do-item/scripts/lib/tracker/keys.ts";
 
 let dir: string;
 let handoffDir: string;
@@ -603,7 +607,8 @@ describe("handoff intent-chain section", () => {
     }
   });
 
-  // Branch grammar is the branch-naming rule (`feature/<TEAM>-<n>-<slug>`),
+  // Branch grammar is the branch-naming rule (`pull_requests.branch_name`,
+  // `{key_lower}-{slug}` here, after at most one leading `<word>/` segment),
   // NOT the writer's wider identifier grammar: a branch is a slug namespace, and
   // the wider grammar misreads a permitted identifier-free slug as an item and
   // fails the handoff closed. The writer side of the grammar is pinned in
@@ -613,6 +618,8 @@ describe("handoff intent-chain section", () => {
     expect(identifierFromBranchName("feature/eng-12-slug")).toBe("ENG-12");
     expect(identifierFromBranchName("feature/ENG-411")).toBe("ENG-411");
     expect(identifierFromBranchName("feature/ENG-9\n")).toBe("ENG-9");
+    expect(identifierFromBranchName("eng-12-slug")).toBe("ENG-12");
+    expect(identifierFromBranchName("scratch/ENG-1-slug")).toBe("ENG-1");
   });
 
   it("reads a permitted identifier-free slug as naming no item, however identifier-shaped", () => {
@@ -629,12 +636,12 @@ describe("handoff intent-chain section", () => {
 
   it("resolves no item from a branch that names none", () => {
     // `feature/<slug>` with no leading identifier (a batch PR's branch), a
-    // non-`feature/` branch, a digit-led key, an identifier with no number,
-    // and another team's key.
+    // key behind two segments, a digit-led key, an identifier with no
+    // number, and another team's key.
     for (const name of [
       "feature/work-batch-eng-8554-8558",
       "feature/some-slug",
-      "scratch/ENG-1-slug",
+      "a/b/ENG-1-slug",
       "main",
       "feature/1ENG-5-slug",
       "feature/ENG-slug",
@@ -803,9 +810,32 @@ describe("handoff intent-chain section", () => {
   });
 });
 
-describe("identifierFromBranchName without a team key", () => {
+describe("identifierFromBranchName under another key shape or pattern", () => {
+  const pattern = "{key_lower}-{slug}";
   it("resolves no item when the consumer declares no team", () => {
     expect(identifierFromBranchName("feature/ENG-1-slug", null)).toBeNull();
-    expect(identifierFromBranchName("feature/OPS-7-slug", "OPS")).toBe("OPS-7");
+    expect(
+      identifierFromBranchName("feature/OPS-7-slug", teamKeys("OPS"), pattern),
+    ).toBe("OPS-7");
+  });
+
+  it("reads a GitHub issue's number where the pattern puts the key, nowhere else", () => {
+    const keys = numberKeys(null);
+    expect(identifierFromBranchName("12-slug", keys, pattern)).toBe("#12");
+    expect(identifierFromBranchName("12", keys, pattern)).toBe("#12");
+    for (const name of [
+      "feature/12-slug",
+      "feature/fix-12-slug",
+      "feature/2fa-rollout",
+      "feature/0-slug",
+      "release-12",
+    ])
+      expect(identifierFromBranchName(name, keys, pattern)).toBeNull();
+    expect(
+      identifierFromBranchName("item-12-x", keys, "item-{key}-{slug}"),
+    ).toBe("#12");
+    expect(
+      identifierFromBranchName("work/item-12-x", keys, "item-{key}-{slug}"),
+    ).toBeNull();
   });
 });

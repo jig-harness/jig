@@ -323,6 +323,97 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.84.0] - 2026-10-23
+
+GitHub Issues is now the tracker the skills use when a repository does not choose one; Linear stays one setting away.
+
+### Changed
+
+- **Breaking:** `issue_tracker.adapter` defaults to `github` instead of `linear`. A repository that uses Linear and leaves the adapter out must add `adapter: linear` under `issue_tracker` in `.config/jig.yaml`; until then the skills refuse its configuration, naming the field, rather than reading `issue_tracker.team` and ignoring it. A repository on GitHub Issues needs no `issue_tracker` section at all: the tracker is the `origin` remote's repository, and the skills use the signed-in `gh` client.
+- The audit's starter configuration offers `issue_tracker.adapter: linear` along with the team it finds in a repository's history (an empty `adapter:` counts as unset, and the draft says to replace that line rather than add a second), and its tracker-unreachable finding names GitHub when no adapter is set. The audit probes the tracker the skills select in every configured repository, the default one included (the repository's file merged with the machine's user file and `JIG__*` environment, as the skills read it, so configuration layers the skills refuse, an adapter included, are an error rather than an unchecked tracker, and the audit's user-file and environment facts say the tracker check reads them), by asking whether its team or repository answers rather than reading an issue, and derives a GitHub repository from the audited repository's `origin` remote rather than the working directory's; every other skill derives it from the repository it reads its configuration from (`JIG_CONSUMER_ROOT` when set).
+- The review skill's deferral step still files through Linear only ([EXTENDING.md](plugin/EXTENDING.md#issue-tracker) lists what still assumes Linear), so deferring a review finding on the default tracker waits for the roadmap's item 10.
+
+## [0.83.2] - 2026-10-23
+
+### Added
+
+- A toolchain-pin exception can name the `toml:`, `json:` or `yaml:` path
+  of one pin site, and then excuses only the pin read through it, so a
+  file's other pins holding the same value stay checked.
+
+### Changed
+
+- Jig tests with Bun 1.4.4, and the `changelog` skill's GitHub Action
+  installs it. Bun 1.4.4's glob matcher reads `?(…)`, `*(…)`, `+(…)`,
+  `@(…)` and `!(…)` as pattern groups and expands `{1..3}` as a range, so a
+  glob in a repository's own configuration that `code-stats` or `changelog`
+  reads (a module's or tool's paths, the changelog's files) and that holds a
+  literal `(` or `{1..3}` in those forms now matches differently: escape the
+  parenthesis as `[(]` and the range as `\{1..3\}` to keep matching them
+  literally. Parentheses without one of those prefixes stay literal.
+
+## [0.83.1] - 2026-10-23
+
+### Fixed
+
+- The scheduled `jig gc` job no longer stores the path of the plugin release that installed it, which a plugin update leaves behind. The job runs a small launcher that `jig gc install` keeps under `~/.local/state/jig/gc/launcher/`; at each run it asks `claude plugin list --json` (or `codex plugin list --json`) for the installed plugin and runs that copy, so an update reaches the job without reinstalling. Run `jig gc install --repo <repository> --yes` once to replace a job written by an earlier release.
+- `jig gc install --uninstall` for one repository, while others remain, now changes only the machine entry and leaves the scheduled job as it is.
+- A scheduled `jig gc` run that stalls is now stopped: the launcher ends the collector after the heavy-run lock's wait (`LOCK_TIMEOUT`, which install now carries into the job) and two hours more, and when the scheduler stops the launcher; a stopped run reports failure. An agent tool that does not answer the launcher's plugin lookup within 30 seconds, or prints more than 4 MiB, is killed with its process group and that lookup fails; the run fails only when no other recorded agent tool names an installed copy. An agent tool still answering when the scheduler stops the launcher is killed the same way, and the run fails. A descendant that starts its own session leaves the process group and is not stopped.
+
+## [0.83.0] - 2026-10-22
+
+### Added
+
+- A resource collection command, `jig gc`, with report-first runs, durable receipts, confirmed repository bounds, daily scheduler installation and drive-pr state reports across configured clones. Tool-state collection awaits coordinated creator admission. Scratch scopes record captured owner identities and remain report-only until fixture registration is available; worktree reports retain a collection veto until the session opener coordinates with the collector.
+- An M12 audit criterion for repositories to declare the machine-local resource kinds their tools create and their ownership boundaries.
+
+## [0.82.0] - 2026-10-22
+
+GitHub Issues is a supported issue tracker beside Linear: picking up, filing,
+planning and reporting work on the issues of a repository, and keeping
+session reflections there.
+
+### Added
+
+- A GitHub Issues tracker adapter: set `issue_tracker.adapter: github`, and
+  `do-item`, `file-issue`, `work-batch`, `reflect`'s escalation and the
+  fleet metrics work on the issues of the repository the `origin` remote
+  points to (or `issue_tracker.github.repository`), through the signed-in
+  `gh` command line. Issue keys are `#123`; a bare number or the issue's web
+  address is read as the same key. An open issue's workflow state is a label
+  per state, or with `issue_tracker.github.states_from: project` the option
+  of a Projects board's Status field; a closed one is the reason it was
+  closed. Priority is a label per level, a project is a milestone, children
+  are sub-issues, and `blocks` and `duplicate` use GitHub's own dependency
+  and duplicate links
+  ([configuration](plugin/CONFIGURATION.md#issue_tracker),
+  [how it maps](plugin/EXTENDING.md#issue-tracker)).
+- A `github` reflection store: with `reflection.store: github` and
+  `reflection.github.repository: owner/name`, session reflections are kept
+  as issues of that repository, one per change, each finding a record in a
+  comment; only comments by people who can write to the repository count
+  ([the GitHub store](plugin/skills/reflect/README.md#github-store)).
+- An [issue key](GLOSSARY.md) now has the shape its tracker gives it
+  wherever the skills read or write one: in branch names (`123-fix-login`
+  under the default `{key_lower}-{slug}`), commit and pull-request trailers
+  (`Closes #123`), file names (`issue-123`), decision and explainer sheets,
+  and the fleet metrics. The skills' procedures quote every key on a command
+  line, since an unquoted `#` starts a shell comment.
+
+### Changed
+
+- The issue a branch names is read under the configured
+  `pull_requests.branch_name` pattern, with one leading `<word>/` segment
+  allowed before a team key, by both the drive's intent-chain handoff and
+  `reflect`, including a pattern that puts the key after the slug
+  (`{slug}-{key}`); the handoff previously recognised only
+  `feature/<KEY>-…` branches, and `reflect` a team key anywhere in the name.
+- `pull_requests.branch_name` refuses a pattern whose placeholders touch
+  (`{slug}{key}`), that puts a digit beside the key (`{slug}1{key}`) or that
+  uses `{slug}` twice: no branch rendered from it tells where the key begins
+  and ends. A branch rendered from a title with no Latin letters or digits
+  (an empty slug) is read back too.
+
 ## [0.81.2] - 2026-10-22
 
 ### Fixed
@@ -3478,7 +3569,12 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.81.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.84.0...HEAD
+[0.84.0]: https://github.com/jig-harness/jig/compare/v0.83.2...v0.84.0
+[0.83.2]: https://github.com/jig-harness/jig/compare/v0.83.1...v0.83.2
+[0.83.1]: https://github.com/jig-harness/jig/compare/v0.83.0...v0.83.1
+[0.83.0]: https://github.com/jig-harness/jig/compare/v0.82.0...v0.83.0
+[0.82.0]: https://github.com/jig-harness/jig/compare/v0.81.2...v0.82.0
 [0.81.2]: https://github.com/jig-harness/jig/compare/v0.81.1...v0.81.2
 [0.81.1]: https://github.com/jig-harness/jig/compare/v0.81.0...v0.81.1
 [0.81.0]: https://github.com/jig-harness/jig/compare/v0.80.0...v0.81.0

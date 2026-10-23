@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Decide what a parent (epic) issue's Linear status should become, given its
+ * Decide what a parent (epic) issue's tracker status should become, given its
  * sub-issues' current states — SKILL.md Step 5a's "parent-status decision",
  * as a tested callsite rather than inline pseudocode.
  *

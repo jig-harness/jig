@@ -60,10 +60,10 @@ with the review.
 | [Merge conflicts, measured](merge-conflicts.md) | 22 |
 | [Review lenses](review-lenses.md) | 23 |
 | [Resource garbage collection](resource-gc.md) | 24 |
-| [Setting a repository up for Jig](init.md) | 25 |
-| [Work types](work-types.md) | 26 |
-| [Evidence before claims, and a debugging protocol](verify-and-debug.md) | 27 |
-| [The spec a work item links](spec-link.md), with its [research note](spec-ecosystems-research.md) | 28 |
+| [Setting a repository up for Jig](init.md) | 26 |
+| [Work types](work-types.md) | 27 |
+| [Evidence before claims, and a debugging protocol](verify-and-debug.md) | 28 |
+| [The spec a work item links](spec-link.md), with its [research note](spec-ecosystems-research.md) | 29 |
 
 ## Starting a design
 

@@ -12,12 +12,8 @@
  * nested connections silently, so every nested read carries its `pageInfo`.
  */
 
-import {
-  type RunHandle,
-  type RunResult,
-  run,
-} from "../../../../drive-pr/scripts/lib/proc.ts";
-import { registerCancellationGroup } from "../../../../../shared/proc.ts";
+import { type RunResult, run } from "../../../../drive-pr/scripts/lib/proc.ts";
+import { pager, postGraphQL, runClient } from "./graphql.ts";
 import {
   CLOSED_STATE_TYPES,
   type CanonicalState,
@@ -35,7 +31,6 @@ import {
   type LedgerIssue,
   type PoolIssue,
   type PoolQuery,
-  RELATION_TYPES,
   type StartedIssueActivity,
   type Tracker,
   type TrackerLabel,
@@ -43,6 +38,12 @@ import {
   type WindowSpec,
 } from "./port.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
+import {
+  checkPatch,
+  checkPriority,
+  checkRelation,
+  requireTitle,
+} from "./requests.ts";
 
 export const LINEAR_API = "https://api.linear.app/graphql";
 export const LINEAR_TIMEOUT_MS = 30_000;
@@ -122,16 +123,15 @@ export function httpTransport(
 ): LinearTransport {
   return async (query, variables, signal) => {
     if (cancelled(signal)) throw abortedError(signal);
-    const timeout = AbortSignal.timeout(LINEAR_TIMEOUT_MS);
     let res: Response;
     try {
-      res = await fetchImpl(LINEAR_API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: token },
-        body: JSON.stringify({ query, variables }),
-        signal:
-          signal === undefined ? timeout : AbortSignal.any([timeout, signal]),
-      });
+      res = await postGraphQL(
+        fetchImpl,
+        LINEAR_API,
+        token,
+        { query, variables },
+        { timeoutMs: LINEAR_TIMEOUT_MS, signal },
+      );
     } catch (err) {
       if (cancelled(signal)) throw abortedError(signal);
       throw new LinearApiError(
@@ -161,37 +161,14 @@ export function httpTransport(
 }
 
 /**
- * Runs the client through the shared runner, which puts it in its own process
- * group, ends that whole group at `LINEAR_TIMEOUT_MS` or when `signal` aborts,
- * settles without waiting for pipes a descendant holds, and bounds the output
- * it captures. Taking the run's handle makes ending the group this caller's
- * job, so the group is also registered with the shared signal forwarder while
- * it runs: a SIGINT, SIGTERM or SIGHUP to this process ends the client too.
+ * Runs the client through the shared runner (`runClient`), ended at
+ * `LINEAR_TIMEOUT_MS` or when `signal` aborts.
  */
-async function runCli(
+function runCli(
   argv: string[],
   signal: AbortSignal | undefined,
 ): Promise<RunResult> {
-  let handle: RunHandle | undefined;
-  let release: (() => void) | undefined;
-  const stop = () => void handle?.stop();
-  signal?.addEventListener("abort", stop, { once: true });
-  try {
-    return await run(argv, {
-      timeoutSec: LINEAR_TIMEOUT_MS / 1000,
-      onSpawn: (spawned) => {
-        handle = spawned;
-        if (spawned.pid !== undefined)
-          release = registerCancellationGroup(spawned.pid, undefined, () =>
-            spawned.stop(),
-          );
-        if (cancelled(signal)) stop();
-      },
-    });
-  } finally {
-    release?.();
-    signal?.removeEventListener("abort", stop);
-  }
+  return runClient(run, argv, { timeoutMs: LINEAR_TIMEOUT_MS, signal });
 }
 
 /** Why a finished client run cannot be read as a response, if it cannot. */
@@ -318,52 +295,13 @@ function stateOf(v: unknown, where: string): IssueState {
 }
 
 /**
- * Read every page of one connection. `pick` finds the connection in a page's
- * data. A cursor seen twice, or an issue repeated across pages (the list moved
- * under the read), is an incomplete read, not a result. An aborted `signal`
- * ends the read in flight and starts no further page.
+ * Read every page of one connection (`pager`): a node is told apart by its
+ * key, else its id.
  */
-export async function pageAll(
-  transport: LinearTransport,
-  query: string,
-  variables: Record<string, unknown>,
-  pick: (data: Record<string, unknown>) => unknown,
-  where: string,
-  signal?: AbortSignal,
-): Promise<unknown[]> {
-  const out: unknown[] = [];
-  const seen = new Set<string>();
-  const ids = new Set<string>();
-  let after: string | null = null;
-  for (;;) {
-    const data = await transport(query, { ...variables, after }, signal);
-    if (!isRecord(data))
-      throw new ShapeError(`${where}: response is not an object`);
-    const conn = pick(data);
-    if (
-      !isRecord(conn) ||
-      !Array.isArray(conn.nodes) ||
-      !isRecord(conn.pageInfo)
-    )
-      throw new ShapeError(`${where}: unexpected connection shape`);
-    for (const node of conn.nodes) {
-      const id = isRecord(node) ? (node.identifier ?? node.id) : undefined;
-      if (typeof id !== "string") continue;
-      if (ids.has(id))
-        throw new ShapeError(`${where}: ${id} repeated across pages`);
-      ids.add(id);
-    }
-    out.push(...conn.nodes);
-    if (typeof conn.pageInfo.hasNextPage !== "boolean")
-      throw new ShapeError(`${where}: pageInfo.hasNextPage is not a boolean`);
-    if (!conn.pageInfo.hasNextPage) return out;
-    const cursor = conn.pageInfo.endCursor;
-    if (typeof cursor !== "string" || seen.has(cursor))
-      throw new ShapeError(`${where}: pagination cursor missing or repeated`);
-    seen.add(cursor);
-    after = cursor;
-  }
-}
+export const pageAll = pager({
+  idOf: (node) => node.identifier ?? node.id,
+  fail: (message) => new ShapeError(message),
+});
 
 // ── Issue pickup ───────────────────────────────────────────────────────────
 
@@ -1012,18 +950,6 @@ function parseLabel(
   };
 }
 
-/** Refuse a priority outside the tracker's scale before any request. */
-function checkPriority(priority: number | undefined): void {
-  if (
-    priority !== undefined &&
-    (!Number.isInteger(priority) || priority < 0 || priority > 4)
-  )
-    throw new TrackerRequestError(
-      "invalid",
-      `priority must be an integer from 0 (none) to 4 (low), not ${JSON.stringify(priority)}`,
-    );
-}
-
 /**
  * The one node of a lookup connection whose `name` is `wanted`. A partial
  * page, or a name matching none or several, throws: a write must not land on
@@ -1047,36 +973,6 @@ function onlyMatch(
       `${what} matched ${matches.length} resources in the tracker, expected exactly 1`,
     );
   return record(matches[0], what);
-}
-
-function requireTitle(title: string | undefined): void {
-  if (title !== undefined && title.trim() === "")
-    throw new TrackerRequestError(
-      "invalid",
-      "an issue needs a non-empty title",
-    );
-}
-
-/** Refuse a patch that changes nothing or both adds and removes a label. */
-function checkPatch(key: string, patch: IssuePatch): void {
-  const add = patch.addLabels ?? [];
-  const remove = patch.removeLabels ?? [];
-  const fields = (
-    ["title", "description", "priority", "parent", "project"] as const
-  ).filter((f) => patch[f] !== undefined);
-  if (fields.length === 0 && add.length === 0 && remove.length === 0)
-    throw new TrackerRequestError(
-      "invalid",
-      `the patch for ${key} changes nothing`,
-    );
-  requireTitle(patch.title);
-  checkPriority(patch.priority);
-  const both = add.filter((l) => remove.includes(l));
-  if (both.length > 0)
-    throw new TrackerRequestError(
-      "invalid",
-      `the patch for ${key} both adds and removes ${both.map((l) => `'${l}'`).join(", ")}`,
-    );
 }
 
 /** The fields of a patch Linear takes as they are. */
@@ -1201,8 +1097,11 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     return ids;
   }
 
-  async function teamId(): Promise<string> {
-    const data = record(await transport(TEAM_QUERY, { key: team }), "data");
+  async function teamId(signal?: AbortSignal): Promise<string> {
+    const data = record(
+      await transport(TEAM_QUERY, { key: team }, signal),
+      "data",
+    );
     const node = onlyMatch(data.teams, team, "key", `team '${team}'`);
     return str(node.id, `team '${team}'.id`);
   }
@@ -1217,6 +1116,10 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     adapter: "linear",
     team,
     stateName: (state) => states[state],
+
+    async reach(signal) {
+      await teamId(signal);
+    },
 
     async getIssue(key) {
       let data: unknown;
@@ -1702,16 +1605,7 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     },
 
     async relate(key, type, target) {
-      if (!(RELATION_TYPES as readonly string[]).includes(type))
-        throw new TrackerRequestError(
-          "invalid",
-          `'${type}' is not a relation type (${RELATION_TYPES.join(", ")})`,
-        );
-      if (key === target)
-        throw new TrackerRequestError(
-          "invalid",
-          `an issue cannot be related to itself: ${key}`,
-        );
+      checkRelation(key, type, target);
       const issueId = (await issueIdAndTeam(key)).id;
       const relatedIssueId = (await issueIdAndTeam(target)).id;
       const data = record(

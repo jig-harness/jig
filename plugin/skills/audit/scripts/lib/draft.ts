@@ -8,7 +8,8 @@
  * default is left out, since writing it changes nothing, and so is a field
  * the schema does not know. An addition to a section the file already has
  * says so: pasted as a second section, it would be a duplicate key, which
- * every skill refuses.
+ * every skill refuses. A field the file sets to null is offered as a
+ * replacement of that line, for the same reason.
  */
 import { isMapping } from "../../../../shared/config-layers.ts";
 import { at, type Field, type Schema } from "./schema.ts";
@@ -45,6 +46,8 @@ interface Entry {
   field: Field;
   value: unknown;
   evidence: string[];
+  /** The file already has this key, set to null: the line replaces it. */
+  replaces: boolean;
 }
 
 const STARTER_HEADER = [
@@ -55,6 +58,7 @@ const STARTER_HEADER = [
 ];
 const ADDITIONS_HEADER = "# Add to .config/jig.yaml:";
 const MERGE_NOTE = "   # the file has this section: add the fields under it";
+const REPLACE_NOTE = "   # the file sets this to null: replace that line";
 
 /** Text YAML reads back as the same string without quotes. */
 const PLAIN = /^[A-Za-z_][A-Za-z0-9_./-]*$/;
@@ -95,7 +99,8 @@ function merge(entry: Entry, s: Suggestion): void {
 
 /**
  * The fields the draft writes, in the order first suggested: known to the
- * schema, not set by the repository's file, and not equal to the default.
+ * schema, not set by the repository's file (an empty value, null, sets
+ * nothing), and not equal to the default.
  */
 function entries(
   suggestions: Suggestion[],
@@ -106,10 +111,17 @@ function entries(
   const found = new Map<string, Entry>();
   for (const s of suggestions) {
     const field = byPath.get(s.field);
-    if (field === undefined || at(existing, s.field) !== undefined) continue;
+    const current = at(existing, s.field);
+    if (field === undefined || current != null) continue;
     const entry = found.get(s.field);
     if (entry) merge(entry, s);
-    else found.set(s.field, { field, value: s.value, evidence: [s.evidence] });
+    else
+      found.set(s.field, {
+        field,
+        value: s.value,
+        evidence: [s.evidence],
+        replaces: current === null,
+      });
   }
   return [...found.values()].filter(
     (e) => e.field.default === undefined || !same(e.value, e.field.default),
@@ -145,7 +157,7 @@ function lines(node: Tree, indent = ""): string[] {
           ...child.evidence.map(
             (e) => `${indent}# ${e.replace(/\s*\n\s*/g, " ")}`,
           ),
-          `${indent}${key}: ${flow(child.value)}`,
+          `${indent}${key}: ${flow(child.value)}${child.replaces ? REPLACE_NOTE : ""}`,
         ],
   );
 }

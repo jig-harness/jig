@@ -3,7 +3,7 @@
   "license": "Apache-2.0 AND MIT-0",
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
-    "@types/bun": "1.4.3",
+    "@types/bun": "1.4.4",
     "@types/js-yaml": "4.0.9",
     "fallow": "3.33.1",
     "happy-dom": "20.11.6",
@@ -11,10 +11,11 @@
     "playwright-core": "1.62.1",
     "typescript": "7.0.2"
   },
-  "packageManager": "bun@1.4.3",
+  "packageManager": "bun@1.4.4",
   "private": true,
   "scripts": {
     "gates": "bun scripts/gates.ts",
+    "jig": "bun --no-env-file --config=plugin/gc/bunfig.toml plugin/jig.ts",
     "test": "bun scripts/test.ts",
     "typecheck": "bun check",
     "deadcode": "fallow dead-code -q",

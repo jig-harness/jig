@@ -479,13 +479,12 @@ export function deliveryFactOf(
 
 /** Open the consumer's tracker; throws with a reason. */
 export function connectTracker(cfg: FleetHealthConfig): Tracker {
-  if (cfg.teamKey === null)
+  if (cfg.keys === null)
     throw new Error(
-      "no issue_tracker.team in the consumer overlay, so issue keys cannot be read",
+      "the tracker's issue-key shape is unknown (a Linear tracker needs issue_tracker.team), so issue keys cannot be read",
     );
-  return openTracker(
-    trackerConfigFrom(layeredConfig(cfg.root ?? consumerRoot()).values),
-  );
+  const root = cfg.root ?? consumerRoot();
+  return openTracker(trackerConfigFrom(layeredConfig(root).values), root);
 }
 
 /** Issues named by key, keyed by key. A key that resolves to nothing is simply absent. */

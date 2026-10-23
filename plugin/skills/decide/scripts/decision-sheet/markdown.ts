@@ -17,6 +17,7 @@
  */
 
 import { cell, code, href, lit } from "../sheet-kit/markdown.ts";
+import { issueFileStem } from "../sheet-kit/source.ts";
 import {
   COMMENT,
   LABEL,
@@ -247,7 +248,7 @@ function elaboration(source: DecisionSource): string {
 }
 
 export function sheetFilename(source: DecisionSource): string {
-  return `${source.id}${SHEET_FILENAME_SUFFIX}`;
+  return `${issueFileStem(source.id)}${SHEET_FILENAME_SUFFIX}`;
 }
 
 /**

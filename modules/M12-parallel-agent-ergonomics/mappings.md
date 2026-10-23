@@ -12,7 +12,7 @@ onto concrete worktree managers / agent runners, package managers, and
 
 The module ships portable scripts for the mechanisms below; the rest is
 convention. Run the resource-lock script from a pinned Jig checkout, keeping
-`plugin/shared/cleanup.ts` at its relative path for the process cleanup
+`plugin/shared/` at its relative path for the shared lock and process cleanup
 registry. Point one variable at the module in that checkout and build
 paths from it, exactly as the other modules do. The change-note commands
 ship inside the plugin; run them from its installed cache with the consumer
@@ -260,3 +260,22 @@ decision about the work itself. Record the hotspot's cause, remedy or keep
 decision, reason and revisit condition in the repository's learning loop.
 Compare like windows after the change rather than treating an empty or
 partial report as proof that the cause is gone.
+
+## Machine resource collection schedules
+
+The invariant is a daily report and a weekly collection, with explicit
+executable paths and environment. The installed plugin copy owns the command;
+a worktree checkout cannot host a job that may remove that checkout.
+`bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts gc install` previews the repository bounds and installs
+on confirmation (`--yes`). See [the command](../../plugin/gc/README.md) for
+its configuration, proof requirements and rollout limits.
+
+| Platform scheduler | Installed file or entry | Cadence | See the last run | Remove |
+|--------------------|-------------------------|---------|------------------|--------|
+| macOS launchd | `~/Library/LaunchAgents/dev.jig.gc.plist` | `StartCalendarInterval.Hour`, from machine `gc.hour` | `launchctl print gui/<uid>/dev.jig.gc`; collection receipts | `gc install --uninstall --machine --yes` |
+| Linux systemd user timer | `~/.config/systemd/user/jig-gc.service` and `jig-gc.timer` | `OnCalendar`, from machine `gc.hour` | `systemctl --user status jig-gc.timer`; `journalctl --user -u jig-gc.service`; receipts | `gc install --uninstall --machine --yes` |
+| cron fallback | Current user's crontab, marked `# jig-gc` | Daily hour field from machine `gc.hour` | Collection receipts; scheduler's own mail or logs | `gc install --uninstall --machine --yes` |
+
+The command chooses collection on machine `gc.collect_day` or under
+`gc.min_free_bytes` pressure; other daily runs report. Removing one repository
+keeps the job while another repository or machine-level kind remains.

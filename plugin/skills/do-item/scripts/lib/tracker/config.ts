@@ -3,28 +3,33 @@
  * `.config/jig.yaml`:
  *
  *   issue_tracker:
- *     adapter: linear          # which adapter answers; default `linear`
- *     team: ENG                # the key issue identifiers carry
+ *     adapter: github          # which adapter answers; default `github`
+ *     team: ENG                # Linear only: the key issue identifiers carry
  *     states:                  # canonical state → the tracker's own name
  *       in_progress: In Progress
  *     labels:                  # label role → the tracker's own label
  *       epic: epic
+ *     github:                  # GitHub Issues only (`github.ts`)
+ *       repository: owner/name # default: the `origin` remote's repository
+ *       states_from: labels    # or `project`, a Projects board's Status field
+ *       project: https://github.com/orgs/owner/projects/1
+ *       status_field: Status
+ *       priority_labels: { urgent: …, high: …, medium: …, low: … }
  *
  * Every field is optional here; an operation that needs one it lacks fails
  * with a message naming the field.
  */
 
-import {
-  readConfig,
-  readOverlay,
-  withSource,
-} from "../../../../../shared/consumer.ts";
+import { readOverlay, withSource } from "../../../../../shared/consumer.ts";
 import {
   parseTrackerLabels,
   type TrackerLabels,
 } from "../../../../../shared/tracker-labels.ts";
 import { refuseRenamedSection } from "../overlay.ts";
 import { CANONICAL_STATES, type CanonicalState } from "./port.ts";
+import { TrackerConfigError } from "./config-error.ts";
+import { type GitHubSettings, parseGitHubSettings } from "./github/settings.ts";
+import { gitHubModel } from "./github/model.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 
 export interface TrackerConfig {
@@ -35,9 +40,11 @@ export interface TrackerConfig {
   states: Record<CanonicalState, string>;
   /** The labels the skills act on, by role, defaults filled in. */
   labels: TrackerLabels;
+  /** The GitHub adapter's settings, defaults filled in. */
+  github: GitHubSettings;
 }
 
-export const DEFAULT_ADAPTER = "linear";
+export const DEFAULT_ADAPTER = "github";
 
 /** A canonical key as a display name: `in_progress` → `In Progress`. */
 export function defaultStateName(state: CanonicalState): string {
@@ -81,11 +88,50 @@ function refuseAmbiguousStates(states: Record<CanonicalState, string>): void {
       other !== undefined &&
       (group(other) === -1 || group(other) !== group(s))
     )
-      throw new Error(
+      throw new TrackerConfigError(
+        `issue_tracker.states.${s}`,
         `issue_tracker.states.${other} and issue_tracker.states.${s} both name '${states[s]}'; each state needs its own name`,
       );
     seen.set(key, s);
   }
+}
+
+/**
+ * Refuse a GitHub priority label that is also a state label. In labels mode
+ * both are labels, so one label would set a state and a priority together,
+ * and changing either would drop the other.
+ */
+function refuseSharedLabels(
+  adapter: string,
+  states: Record<CanonicalState, string>,
+  github: GitHubSettings,
+): void {
+  if (adapter !== "github") return;
+  const { stateLabels } = gitHubModel(states, github);
+  for (const [priority, label] of Object.entries(github.priorityLabels)) {
+    const state = stateLabels.find(
+      (l) => l.trim().toLowerCase() === label.trim().toLowerCase(),
+    );
+    if (state !== undefined)
+      throw new TrackerConfigError(
+        `issue_tracker.github.priority_labels.${priority}`,
+        `issue_tracker.github.priority_labels.${priority} names '${label}', which is also the label of a state in issue_tracker.states; a priority needs a label of its own`,
+      );
+  }
+}
+
+/**
+ * `team` is Linear's key. Under the default GitHub adapter it would be
+ * ignored without a word, so a file that predates the default's change is
+ * refused until it names its adapter. An empty `adapter:` (null) falls back
+ * to the default like an omitted one, so it is refused the same way.
+ */
+function refuseTeamWithoutAdapter(adapter: unknown, team: unknown): void {
+  if ((adapter === undefined || adapter === null) && team !== null)
+    throw new TrackerConfigError(
+      "issue_tracker.adapter",
+      `issue_tracker.team is set but issue_tracker.adapter is not, and the default adapter is ${DEFAULT_ADAPTER}, which has no team; set issue_tracker.adapter: linear to keep ${team} issue keys`,
+    );
 }
 
 /** Validate the `issue_tracker` section of a parsed overlay. */
@@ -110,6 +156,8 @@ export function parseTrackerConfig(
       `issue_tracker.team must be an issue key prefix such as ENG (got ${JSON.stringify(team)})`,
     );
 
+  refuseTeamWithoutAdapter(section.adapter, team);
+
   const states = Object.fromEntries(
     CANONICAL_STATES.map((s) => [s, defaultStateName(s)]),
   ) as Record<CanonicalState, string>;
@@ -130,7 +178,15 @@ export function parseTrackerConfig(
     }
   }
   refuseAmbiguousStates(states);
-  return { adapter, team, states, labels: parseTrackerLabels(overlay) };
+  const github = parseGitHubSettings(section.github);
+  refuseSharedLabels(adapter, states, github);
+  return {
+    adapter,
+    team,
+    states,
+    labels: parseTrackerLabels(overlay),
+    github,
+  };
 }
 
 /**
@@ -165,15 +221,6 @@ export function ownTrackerConfig(): TrackerConfig {
   return trackerConfigFrom(overlay);
 }
 
-/**
- * The consumer's team key, or `null` when no configuration layer declares
- * one. For callers that only recognise issue keys in text and
- * can do without them.
- */
-export function teamKeyOrNull(): string | null {
-  return trackerConfigFrom(readConfig()).team;
-}
-
 /** The consumer's team key; throws naming the field when it is not set. */
 export function requireTeamKey(
   config: TrackerConfig = trackerConfig(),
@@ -183,13 +230,4 @@ export function requireTeamKey(
       "issue_tracker.team is not set in the consumer overlay; it names the key issue identifiers carry (e.g. ENG for ENG-123)",
     );
   return config.team;
-}
-
-function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/** The source of a pattern matching one issue key of `team` (no anchors, no flags). */
-export function issueKeySource(team: string): string {
-  return `${escapeRe(team)}-\\d+`;
 }

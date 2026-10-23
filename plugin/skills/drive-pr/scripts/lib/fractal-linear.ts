@@ -176,7 +176,7 @@ export async function fetchLinearSide(
   // 0 open epics as an improvement.
   if (epicNodes.length === 0) {
     throw new Error(
-      `no issue carries the '${epicLabel}' label in team ${tracker.team} — far more likely a renamed label than zero epics`,
+      `no issue carries the '${epicLabel}' label in the tracker — far more likely a renamed label than zero epics`,
     );
   }
   const epics = epicStats(
