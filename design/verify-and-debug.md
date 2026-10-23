@@ -150,7 +150,11 @@ Where it is used:
   applies to every new test, a new file or a new case in an existing one,
   whatever the work type; `pr-plan.ts` finds new cases by comparing the case
   identities in the JUnit reports of the base and the pushed tree, and where no
-  report names cases the body names the tests. The work type's
+  report names cases the body names the tests. A name in the body says
+  which tests are new and records no run: such a test counts as seen to
+  fail, and closes an increment, only through records of a command that
+  emits a fresh case-level result for it, and without one it stays
+  unaccounted. The work type's
   `test_first` ([work types](work-types.md)) is the stronger rule that the
   failing test is written before the fix. Commit times cannot show that,
   since a record covers uncommitted changes, so the check reads the

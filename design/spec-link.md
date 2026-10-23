@@ -135,10 +135,12 @@ passes. The `body` adapter is the one every repository has.
   interactive session it asks one question: proceed without requirements
   (for a partial resolution, without the unread sources), or point at
   them. Proceeding is an explicit exception, and the author cannot grant
-  it alone: the person who decides applies `specs.exception_label` to the
-  item, and an exception counts only when the forge's or tracker's own
-  label event names an actor other than the pull request's author and the
-  identity the implementing agent runs as. Before it asks, `do-item`
+  it alone: one of `specs.exception_approvers` applies
+  `specs.exception_label` to the item, and an exception counts only when
+  the forge's or tracker's own label event names an actor in that set
+  other than the pull request's author and the identity the implementing
+  agent runs as. Permission to apply the label is not eligibility: with
+  the set empty, which is the default, no exception counts. Before it asks, `do-item`
   writes the exception record to the item as one comment: the item's
   references, each source's revision (the last commit to touch its path
   for a repository file, the forge's or tracker's own last-edited time
@@ -159,7 +161,7 @@ passes. The `body` adapter is the one every repository has.
   the record's lines. A line of either kind that no standing approval
   covers accounts for nothing. A source added or edited after the record,
   or a line the record does not carry, needs a new record and a fresh
-  application of the label by an eligible actor, and a removed label
+  application of the label by an eligible approver, and a removed label
   approves nothing. The section is written after the approval, from the
   record, so writing it never outdates the approval. With nobody to answer, it stops and states the gap, as
   [plugin/AGENTS.md](../plugin/AGENTS.md) requires of a question nobody can
@@ -218,15 +220,16 @@ a pull request that links no item, since its type is then `unknown` and
 takes the strictest row, and one of a required type whose `## Acceptance` section accounts
 for no criterion, or leaves one unaccounted for, unless the exception is
 recorded as `do-item`'s step above requires: the reason in the section,
-and the label applied by someone other than both the pull request's author
-and the identity the implementing agent runs as, still applied, applied
+and the label applied by a member of `specs.exception_approvers` other
+than both the pull request's author and the identity the implementing
+agent runs as, still applied, applied
 after the exception record's last edit, with the item's references and its
 sources' revisions still as the record states them and the section's
 exception lines equal to the record's. The check counts as
 enforcement only when nothing it decides with comes from the pull request
 it judges ([M7](../modules/M7-pr-lifecycle-review/README.md), invariant
 8): its workflow and script, `specs.require_for_types`, the type mapping
-and the exception label are read from the target base branch or a pinned
+the exception label and the approver set are read from the target base branch or a pinned
 version, never from the head. A pull request that changes any of them is
 judged by the base's copy, and the proposed change takes effect once it
 merges. The head's copy may run only in a separate, unprivileged shadow
@@ -248,6 +251,7 @@ recommendation names the adapter the repository's layout would turn on.
 | `specs.require_for_types` | list of work types | `[feature]` | do-item |
 | `specs.deferral_label` | label | `issue_tracker.labels.followup` | do-item |
 | `specs.exception_label` | label | `spec-exception` | do-item, the required check |
+| `specs.exception_approvers` | list of forge or tracker logins and teams | empty: no exception counts | do-item, the required check |
 
 ## Build order
 

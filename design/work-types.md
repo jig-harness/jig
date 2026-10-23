@@ -159,7 +159,7 @@ taxonomy declares stays a configuration check, reported beside it.
 
 | Field | Type | Default | Read by |
 |---|---|---|---|
-| `issue_tracker.types` | map from type to a list of labels | `bug` from `issue_tracker.labels.bug`, the rest `[<type>, type:<type>]` | do-item, work-batch, file-issue |
+| `issue_tracker.types` | map from type to a list of labels | `bug` from `issue_tracker.labels.bug`, the rest `[<type>, type:<type>]` | `determine_type.ts`, the required check, do-item, work-batch, file-issue |
 | `do_item.work_types.<type>.<field>` | one field of the depth table | the table above | do-item, work-batch |
 
 The effective type set is the keys of `issue_tracker.types`, or the

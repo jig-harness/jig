@@ -496,8 +496,9 @@ What it will build, one pull request per step:
   refusal for an unaccounted criterion, the recommended-skills page naming
   the spec-writing tools with the adapter that reads each.
 - **The required check** that refuses an unlinked pull request or an
-  unaccounted criterion, honouring an exception only when someone other than the
-  author and the implementing agent's identity applied its label after the exception record `do-item` writes (the references, each source's revision and the exception lines) last changed, the record still matches, and the label is
+  unaccounted criterion, honouring an exception only when a member of
+  `specs.exception_approvers` other than the author and the implementing
+  agent's identity applied its label after the exception record `do-item` writes (the references, each source's revision and the exception lines) last changed, the record still matches, and the label is
   still on, reading its script and policy from the base branch rather than
   the head, with a workflow template and the setup that makes it required.
 - **`review` in plan mode, `file-issue`, `/followup` and the epic close.**
