@@ -351,12 +351,12 @@ function checkConfigFile(
   try {
     const parsed = parseConfig(readFileSync(config, "utf8"), config);
     getTracker(parsed.tracker, { home, env });
-    const provider = getProvider(parsed.provider);
-    for (const [label, settings] of Object.entries(parsed.repos))
-      if (settings[provider.name] !== undefined)
-        provider.validateRepo(settings[provider.name], label);
+    for (const provider of parsed.providers.map(getProvider))
+      for (const [label, settings] of Object.entries(parsed.repos))
+        if (settings[provider.name] !== undefined)
+          provider.validateRepo(settings[provider.name], label);
     plan.good(
-      `${config}: tracker ${parsed.tracker}, provider ${parsed.provider}, ${Object.keys(parsed.repos).length} routed repositories`,
+      `${config}: tracker ${parsed.tracker}, provider ${parsed.providers.join(", ")}, ${Object.keys(parsed.repos).length} routed repositories`,
     );
   } catch (error) {
     plan.problem(error instanceof Error ? error.message : String(error));

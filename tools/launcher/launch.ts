@@ -56,8 +56,10 @@ export interface LaunchDeps {
   env: Record<string, string | undefined>;
   /** Replaces the configured tracker; tests use it. */
   tracker?: Tracker;
-  /** Replaces the configured provider; tests use it. */
+  /** Replaces the configured providers with this one; tests use it. */
   provider?: Provider;
+  /** Replaces the configured providers, in order; tests use it. */
+  providers?: [Provider, ...Provider[]];
   nowSeconds?: () => number;
   readBudgetMs?: number;
   assignBudgetMs?: number;
@@ -162,6 +164,20 @@ export function chooseBranch(
   return named || fresh?.branch_name || "";
 }
 
+/**
+ * The first provider the repository has settings for, else the first one,
+ * which opens an unrouted issue its own way or refuses it.
+ */
+export function chooseProvider(
+  providers: readonly [Provider, ...Provider[]],
+  settings: Record<string, unknown> | undefined,
+): Provider {
+  return (
+    providers.find((provider) => settings?.[provider.name] !== undefined) ??
+    providers[0]
+  );
+}
+
 export async function launch(
   issue: string,
   branchArg: string | undefined,
@@ -174,10 +190,16 @@ export async function launch(
   const nowSeconds = deps.nowSeconds ?? (() => Date.now() / 1000);
   const config = loadConfig(home, env);
   const tracker = deps.tracker ?? getTracker(config.tracker, { home, env });
-  const provider = deps.provider ?? getProvider(config.provider);
-  for (const [label, settings] of Object.entries(config.repos))
-    if (settings[provider.name] !== undefined)
-      provider.validateRepo(settings[provider.name], label);
+  const [firstName, ...restNames] = config.providers;
+  const providers: [Provider, ...Provider[]] =
+    deps.providers ??
+    (deps.provider
+      ? [deps.provider]
+      : [getProvider(firstName), ...restNames.map(getProvider)]);
+  for (const provider of providers)
+    for (const [label, settings] of Object.entries(config.repos))
+      if (settings[provider.name] !== undefined)
+        provider.validateRepo(settings[provider.name], label);
 
   const named = branchArg || tracker.launchEnvironment.branch || "";
   const fallback = { prompt: tracker.launchEnvironment.prompt, branch: named };
@@ -208,10 +230,9 @@ export async function launch(
   const title = fresh?.title ?? titleOf(file, warn);
   const promptFor = (cacheFile: string): string =>
     buildPrompt({ skill: config.skill, issue, title, branch, cacheFile });
-  const repo =
-    repoLabel === null
-      ? null
-      : (config.repos[repoLabel]?.[provider.name] ?? null);
+  const settings = repoLabel === null ? undefined : config.repos[repoLabel];
+  const provider = chooseProvider(providers, settings);
+  const repo = settings?.[provider.name] ?? null;
   await provider.open({
     issue,
     prompt: promptFor(file),

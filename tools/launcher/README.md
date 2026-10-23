@@ -70,7 +70,7 @@ because the tracker starts the launcher before any repository is known.
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `tracker` | `linear` | Which issue tracker the issue is read from. |
-| `provider` | `conductor` | Which workspace provider opens the issue. |
+| `provider` | `conductor` | Which workspace provider opens the issue: one name, or a list in order of preference. |
 | `skill` | `/jig:do-item` | The slash command the first prompt starts with; the issue key follows it. |
 | `repo_label_group` | `Repo` | The tracker label group whose value names the repository. |
 | `repos` | none | Repository label → that repository's settings, one entry per provider. |
@@ -88,6 +88,23 @@ An issue whose label has no entry, that carries no label in the group, or whose
 labels could not be read in full, is not routed; the provider then detects the
 repository itself.
 
+With a list, an issue opens with the first provider its repository has an
+entry for, and an unrouted issue with the first provider in the list. So
+`provider: [herdr, conductor]` opens a repository with a `herdr` entry in
+Herdr and every other one in Conductor, and changing the line to
+`provider: conductor` sends them all to Conductor without touching the
+entries:
+
+```yaml
+provider: [herdr, conductor]
+repos:
+  my-service:
+    herdr: {path: ~/dev/my-service, host: build-box}
+    conductor: my-service
+  my-website:
+    conductor: Website         # no herdr entry: opens in Conductor
+```
+
 ## What happens on launch
 
 1. Read the issue from the tracker. Linear's reader follows every connection's
@@ -99,7 +116,8 @@ repository itself.
    reader sees a partial file). The directory name is historical: it predates a
    second launcher and every launcher shares it so the issue-pickup skill needs
    no per-launcher branch.
-4. Choose the repository from the label, and hand the prompt to the provider,
+4. Choose the repository from the label and the provider from the
+   repository's entries, and hand the prompt to the provider,
    which has 30 seconds to open the workspace unless it sets its own budget
    (Herdr's is derived from its tool's own limits).
 
