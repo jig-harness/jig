@@ -187,6 +187,7 @@ repos:
       agent: codex             # Herdr agent kind; claude when absent
       base: origin/main        # base of a new branch; the clone's origin/HEAD when absent
       branch: feature/{key}-{slug}   # how the repository names an issue's branch
+      slug: ascii              # {slug} in a-z and 0-9 only; any (every script) when absent
 ```
 
 The branch is the one the launch names, else the one the tracker suggests
@@ -195,7 +196,13 @@ repository names its branches with `branch`. There, `{key}` is the issue key
 as the tracker writes it and `{slug}` the title's
 [slug](../../GLOSSARY.md): its first four words in lower case, joined by
 hyphens: `feature/{key}-{slug}` opens `ENG-12` as
-`feature/ENG-12-fix-the-login-page`. A branch already started for the issue
+`feature/ENG-12-fix-the-login-page`. The slug keeps letters of any script,
+unless `slug: ascii` keeps only `a-z` and `0-9`, for a repository that
+accepts nothing else in a branch name: accents are dropped and `ß` becomes
+`ss` (`Über-Export` is `uber-export`), other letters are dropped, a word left
+empty is skipped so the slug is the first four words that remain
+(`修复 login 页面 page now ok` is `login-page-now-ok`), and a title left with
+none is refused. A branch already started for the issue
 is kept even after its title changed: the tool opens the one existing branch,
 local or on origin, that starts with the name's part before `{slug}`
 (`feature/ENG-12-`). When there are several, it opens the one the launch

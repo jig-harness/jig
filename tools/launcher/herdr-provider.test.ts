@@ -104,6 +104,49 @@ describe("the branch", () => {
     );
   });
 
+  test("with slug: ascii, folds accented Latin letters to a-z", () => {
+    expect(slugOf("Über-Export für Straße", "ascii")).toBe(
+      "uber-export-fur-strasse",
+    );
+    expect(slugOf("Re\u0301parer ＡＰＩ Ⅻ", "ascii")).toBe("reparer-api-xii");
+  });
+
+  test("with slug: ascii, drops letters outside Latin and skips the words left empty", () => {
+    expect(slugOf("修复 login 页面 page now ok", "ascii")).toBe(
+      "login-page-now-ok",
+    );
+    expect(slugOf("Søren's ठीक fix", "ascii")).toBe("sren-s-fix");
+  });
+
+  test("with slug: ascii, a title with no ASCII letter or digit is refused", () => {
+    const repo = { branch: "feature/{key}-{slug}", slug: "ascii" as const };
+    const titled = (title: string) => ({ issue: "ENG-1", branch: "", title });
+    expect(() => branchFor(repo, titled("修复 登录页面"))).toThrow(
+      "no ASCII letters or digits to name its branch by",
+    );
+    expect(branchFor(repo, titled("Über-Export"))).toEqual({
+      branch: "feature/ENG-1-uber-export",
+      reusePrefix: "feature/ENG-1-",
+    });
+    expect(
+      branchFor({ branch: "feature/{key}-{slug}" }, titled("修复 登录页面"))
+        .branch,
+    ).toBe("feature/ENG-1-修复-登录页面");
+  });
+
+  test("the slug setting is any or ascii, and any is the default", () => {
+    expect(parseRepo({ path: "/a", slug: "ascii" }, "app").slug).toBe("ascii");
+    expect(parseRepo({ path: "/a" }, "app").slug).toBeUndefined();
+    expect(slugOf("Über-Export")).toBe(slugOf("Über-Export", "any"));
+    expect(slugOf("Über-Export")).toBe("über-export");
+    expect(() => parseRepo({ path: "/a", slug: "latin" }, "app")).toThrow(
+      "repos.app.herdr.slug: unknown value latin (known: any, ascii)",
+    );
+    expect(() => parseRepo({ path: "/a", sluggy: "x" }, "app")).toThrow(
+      "known: path, host, agent, base, branch, slug",
+    );
+  });
+
   test("is not named by the repository's pattern for a key another issue's could continue", () => {
     const repo = { branch: "feature/{key}-{slug}" };
     const titled = (key: string) => ({ issue: key, branch: "", title: "Fix" });

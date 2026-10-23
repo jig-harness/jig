@@ -21,6 +21,9 @@
  *          writes it, `{slug}` the title's first words in lower case joined
  *          by hyphens; the tracker's suggestion, else the issue key in lower
  *          case, when absent
+ *   slug   which letters `{slug}` keeps: `any` (the default) keeps letters of
+ *          any script; `ascii` keeps only `a-z` and `0-9`, for a repository
+ *          that accepts nothing else in a branch name
  *
  * With `{slug}` in the name, an issue whose branch was started under an
  * earlier title keeps that branch: the tool opens the one existing branch
@@ -53,7 +56,11 @@ import type { OpenRequest, Provider } from "../provider.ts";
 export const HERDR_OPEN_BUDGET_MS = openLimitMs() + TRANSPORT_MS;
 
 const TOOL = join(import.meta.dir, "..", "..", "herdr", "workspace.ts");
-const KEYS = new Set(["path", "host", "agent", "base", "branch"]);
+const KEYS = new Set(["path", "host", "agent", "base", "branch", "slug"]);
+
+/** Which letters `{slug}` keeps; see `slugOf`. */
+export const SLUG_KINDS = ["any", "ascii"] as const;
+export type SlugKind = (typeof SLUG_KINDS)[number];
 
 /** How many of the title's words `{slug}` keeps. */
 export const SLUG_WORDS = 4;
@@ -73,6 +80,7 @@ export interface HerdrRepo {
   agent?: string;
   base?: string;
   branch?: string;
+  slug?: SlugKind;
 }
 
 /**
@@ -113,15 +121,30 @@ export function assertBranchTemplate(template: string, where: string): void {
  * A word is a run of letters, the marks combined with them, and digits, in
  * any script, after canonical composition, holding at least one letter or
  * digit: marks with nothing to combine with are not a word.
+ *
+ * With `ascii`, each word is folded to the letters `a-z` and digits `0-9`
+ * first: compatibility decomposition splits an accented letter into its
+ * base and marks, the marks are dropped and `ß` becomes `ss` (`Über` is
+ * `uber`, `Straße` is `strasse`); any other letter is dropped, and a word
+ * left with nothing is skipped, so a title in another script has no slug.
  */
-export function slugOf(title: string): string {
-  return title
+export function slugOf(title: string, kind: SlugKind = "any"): string {
+  const words = title
     .normalize("NFC")
     .toLowerCase()
     .split(/[^\p{L}\p{M}\p{N}]+/u)
-    .filter((word) => /[\p{L}\p{N}]/u.test(word))
-    .slice(0, SLUG_WORDS)
-    .join("-");
+    .filter((word) => /[\p{L}\p{N}]/u.test(word));
+  const kept = kind === "any" ? words : words.map(asciiOf).filter(Boolean);
+  return kept.slice(0, SLUG_WORDS).join("-");
+}
+
+function asciiOf(word: string): string {
+  return word
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .replaceAll("ß", "ss")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
 }
 
 export function parseRepo(settings: unknown, label: string): HerdrRepo {
@@ -129,7 +152,7 @@ export function parseRepo(settings: unknown, label: string): HerdrRepo {
   if (typeof settings === "string") settings = { path: settings };
   if (!isRecord(settings))
     throw new HerdrError(
-      `${where} must be the clone's path or a mapping with path, host, agent, base, branch`,
+      `${where} must be the clone's path or a mapping with ${[...KEYS].join(", ")}`,
     );
   for (const key of Object.keys(settings))
     if (!KEYS.has(key))
@@ -151,13 +174,23 @@ export function parseRepo(settings: unknown, label: string): HerdrRepo {
   const base = text("base");
   const branch = text("branch");
   if (branch !== undefined) assertBranchTemplate(branch, `${where}.branch`);
+  const slug = text("slug");
+  if (slug !== undefined && !isSlugKind(slug))
+    throw new HerdrError(
+      `${where}.slug: unknown value ${slug} (known: ${SLUG_KINDS.join(", ")})`,
+    );
   return {
     path,
     ...(host === undefined ? {} : { host }),
     ...(agent === undefined ? {} : { agent }),
     ...(base === undefined ? {} : { base }),
     ...(branch === undefined ? {} : { branch }),
+    ...(slug === undefined ? {} : { slug }),
   };
+}
+
+function isSlugKind(value: string): value is SlugKind {
+  return (SLUG_KINDS as readonly string[]).includes(value);
 }
 
 export interface BranchChoice {
@@ -171,7 +204,7 @@ export interface BranchChoice {
  * tracker's suggestion, else the issue key.
  */
 export function branchFor(
-  repo: Pick<HerdrRepo, "branch">,
+  repo: Pick<HerdrRepo, "branch" | "slug">,
   request: Pick<OpenRequest, "issue" | "branch" | "title">,
 ): BranchChoice {
   if (repo.branch === undefined)
@@ -183,10 +216,14 @@ export function branchFor(
     throw new HerdrError(
       `${request.issue} is not a key of the form TEAM-123, so a branch named by ${repo.branch} could not be told from another issue's`,
     );
-  const slug = slugOf(request.title);
-  if (slug === "")
+  if (slugOf(request.title) === "")
     throw new HerdrError(
       `${request.issue} has no title to name its branch by (${repo.branch}); open it again once the tracker can be read`,
+    );
+  const slug = slugOf(request.title, repo.slug);
+  if (slug === "")
+    throw new HerdrError(
+      `${request.issue}'s title has no ASCII letters or digits to name its branch by (${repo.branch}, slug: ascii); give the issue such a title, or set slug: any for the repository if its branch names may hold other letters`,
     );
   return {
     branch: named.replace("{slug}", slug),
