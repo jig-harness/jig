@@ -150,10 +150,36 @@ test.skipIf(skipsOnWindows("powershell", "symbolic links need privileges"))(
   },
 );
 
+test.skipIf(
+  skipsOnWindows("powershell", "a backslash separates Windows paths"),
+)("a backslash is part of a POSIX filename, never a separator", () => {
+  // root/repo\name is a checkout; root/repo/name, the same text split at
+  // the backslash, is not, and holds a file of the same name.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+  const checkout = join(root, "repo\\name");
+  mkdirSync(join(checkout, ".git"), { recursive: true });
+  mkdirSync(join(checkout, "bin"));
+  writeFileSync(join(checkout, "bin", "claude"), "");
+  mkdirSync(join(root, "repo", "name", "bin"), { recursive: true });
+  writeFileSync(join(root, "repo", "name", "bin", "claude"), "");
+  expect(outsideCheckout(join(checkout, "bin", "claude"))).toBe(false);
+  expect(outsideCheckout(join(root, "repo", "name", "bin", "claude"))).toBe(
+    true,
+  );
+  // A link whose target text holds the backslash leads into the checkout too.
+  symlinkSync(join(checkout, "bin", "claude"), join(root, "linked"));
+  expect(outsideCheckout(join(root, "linked"))).toBe(false);
+});
+
 test("a collection's deadline covers the lock wait it may spend first", () => {
-  expect(collectionDeadlineMs(undefined)).toBe((3600 + 7200) * 1000);
-  expect(collectionDeadlineMs("60")).toBe((60 + 7200) * 1000);
-  expect(collectionDeadlineMs("nonsense")).toBe((3600 + 7200) * 1000);
+  expect(collectionDeadlineMs({})).toBe((3600 + 7200) * 1000);
+  expect(collectionDeadlineMs({ LOCK_TIMEOUT: "" })).toBe((3600 + 7200) * 1000);
+  expect(collectionDeadlineMs({ LOCK_TIMEOUT: "60" })).toBe((60 + 7200) * 1000);
+  // Zero is a valid wait: one attempt at the lock, then the work.
+  expect(collectionDeadlineMs({ LOCK_TIMEOUT: "0" })).toBe(7200 * 1000);
+  expect(collectionDeadlineMs({ LOCK_TIMEOUT: "nonsense" })).toBe(
+    (3600 + 7200) * 1000,
+  );
 });
 
 test.skipIf(
@@ -175,6 +201,22 @@ test.skipIf(
     expect(Date.now() - started).toBeLessThan(20_000);
   },
 );
+
+test.skipIf(
+  skipsOnWindows("powershell", "process groups and signals are POSIX"),
+)("a stopped collector fails the run even when it exits 0", async () => {
+  expect(
+    await runCollector(
+      [
+        process.execPath,
+        "-e",
+        'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1000);',
+      ],
+      300,
+      10_000,
+    ),
+  ).not.toBe(0);
+});
 
 test("a collector that finishes keeps its own exit status", async () => {
   expect(

@@ -16,6 +16,8 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, parse, sep } from "node:path";
 
 const PLUGIN_ID = "jig@jig";
+/** The separators of this platform's paths: a backslash is a filename character on POSIX. */
+const SEPARATORS = sep === "\\" ? /[\\/]/ : /\//;
 
 /** A launch that cannot go on; the message says why and what to run. */
 class LauncherError extends Error {
@@ -52,14 +54,15 @@ export function codexPluginDirectory(
  * Every path resolving `path` passes through: each directory above it, each
  * symbolic link on the way and each link's target. It resolves one component
  * at a time, as the kernel does: a link is followed before the components
- * after it, so `..` climbs from where the link led, never from the text.
+ * after it, so `..` climbs from where the link led, never from the text, and
+ * only this platform's separators split a component.
  */
 function resolutionPaths(path: string): string[] {
   const absolute = isAbsolute(path) ? path : `${process.cwd()}${sep}${path}`;
   const root = parse(absolute).root;
   let current = root;
   const paths = [root];
-  const pending = absolute.slice(root.length).split(/[\\/]/);
+  const pending = absolute.slice(root.length).split(SEPARATORS);
   let links = 0;
   while (pending.length > 0) {
     const name = pending.shift() as string;
@@ -83,7 +86,7 @@ function resolutionPaths(path: string): string[] {
       current = targetRoot;
       paths.push(current);
     }
-    pending.unshift(...target.slice(targetRoot.length).split(/[\\/]/));
+    pending.unshift(...target.slice(targetRoot.length).split(SEPARATORS));
   }
   return paths;
 }
@@ -179,13 +182,15 @@ export function parseLauncherArguments(argv: string[]): {
 
 /**
  * How long one collection may run: the machine heavy-run lock's wait
- * (`LOCK_TIMEOUT`, an hour unless set) and two hours of work after it.
+ * (`LOCK_TIMEOUT`, whole seconds, zero included; an hour unless set) and two
+ * hours of work after it.
  */
 export function collectionDeadlineMs(
-  lockTimeout = process.env.LOCK_TIMEOUT,
+  env: NodeJS.ProcessEnv = process.env,
 ): number {
-  const wait = Number(lockTimeout);
-  return ((Number.isFinite(wait) && wait > 0 ? wait : 3600) + 7200) * 1000;
+  const timeout = env.LOCK_TIMEOUT ?? "";
+  const wait = /^[0-9]+$/.test(timeout) ? Number(timeout) : 3600;
+  return (wait + 7200) * 1000;
 }
 
 const STOP_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
@@ -194,8 +199,8 @@ const STOP_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
  * Runs the collector to its exit. The scheduler bounds nothing, so the
  * launcher does: past the deadline, or when the launcher itself is told to
  * stop, the collector's process group gets `SIGTERM` and, `graceMs` later,
- * `SIGKILL`. The collector leads its own group so that every process it
- * started ends with it.
+ * `SIGKILL`, and the run fails whatever status the collector exits with. The
+ * collector leads its own group so that every process it started ends with it.
  */
 export function runCollector(
   command: string[],
@@ -240,8 +245,10 @@ export function runCollector(
       fail(error);
     });
     child.on("exit", (code) => {
+      const stopped = escalation !== undefined;
       finish();
-      settle(code ?? 1);
+      // A stopped run did not finish, even when the collector exits 0 on SIGTERM.
+      settle(stopped ? code || 1 : (code ?? 1));
     });
   });
 }

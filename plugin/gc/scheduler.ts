@@ -14,6 +14,7 @@ import {
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { run } from "../shared/proc.ts";
+import { MAX_TIMEOUT_SECONDS } from "../shared/resource-lock.ts";
 import { installedEntry, outsideCheckout } from "./launcher.ts";
 import type { MachineConfig } from "./config.ts";
 import { stateRoot } from "./receipts.ts";
@@ -170,7 +171,16 @@ function installLauncher(): void {
     for (const file of staged) rmSync(file.temporary, { force: true });
   }
 }
-function installedJob(machine: MachineConfig): Job {
+/** A `LOCK_TIMEOUT` the heavy-run lock accepts, refused at install otherwise. */
+function lockTimeout(value: string): string {
+  if (!/^[0-9]+$/.test(value) || Number(value) > MAX_TIMEOUT_SECONDS)
+    throw new GcError(
+      `LOCK_TIMEOUT must be a whole number of seconds from 0 to ${MAX_TIMEOUT_SECONDS}: ${value}`,
+    );
+  return value;
+}
+/** The job to write; a removal names it only, so a bad value cannot block it. */
+function installedJob(machine: MachineConfig, removing = false): Job {
   const root = homedir();
   const directory = launcherDirectory();
   return {
@@ -195,6 +205,10 @@ function installedJob(machine: MachineConfig): Job {
         ? { LOCK_ROOT: resolve(process.env.LOCK_ROOT) }
         : {}),
       ...(process.env.LOCK_NAME ? { LOCK_NAME: process.env.LOCK_NAME } : {}),
+      // The lock wait, and the launcher's deadline built on it.
+      ...(process.env.LOCK_TIMEOUT && !removing
+        ? { LOCK_TIMEOUT: lockTimeout(process.env.LOCK_TIMEOUT) }
+        : {}),
       // The agent tools read their registries from these.
       ...(process.env.CLAUDE_CONFIG_DIR
         ? { CLAUDE_CONFIG_DIR: resolve(process.env.CLAUDE_CONFIG_DIR) }
@@ -280,7 +294,7 @@ export async function updateScheduler(
   remove = false,
 ): Promise<string> {
   const scheduler = detectScheduler();
-  const files = jobFiles(scheduler, installedJob(machine));
+  const files = jobFiles(scheduler, installedJob(machine, remove));
   mkdirSync(stateRoot(), { recursive: true, mode: 0o700 });
   // In place before the job that runs it, and gone only after that job is.
   if (!remove) installLauncher();

@@ -351,6 +351,14 @@ if (${JSON.stringify(name)} === "crontab") {
     writeFileSync(f.homeFile, `${homeText}personal_setting: preserved\n`);
     f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
     const entry = join(cache, "jig.ts");
+    // A lock wait the heavy-run lock would refuse is refused before any write.
+    f.env.LOCK_TIMEOUT = "soon";
+    const before = readFileSync(f.homeFile, "utf8");
+    const refused = run(f, ["install", "--repo", f.repo, "--yes"], entry);
+    expectSpawnExit(refused, 1);
+    expect(refused.stderr.toString()).toContain("LOCK_TIMEOUT must be");
+    expect(readFileSync(f.homeFile, "utf8")).toBe(before);
+    f.env.LOCK_TIMEOUT = "60";
     const installed = run(f, ["install", "--repo", f.repo, "--yes"], entry);
     expectSpawnExit(installed, 0);
     expect(readFileSync(f.homeFile, "utf8")).toContain(
@@ -370,6 +378,8 @@ if (${JSON.stringify(name)} === "crontab") {
     expect(content).toContain(join(launcher, "launcher.ts"));
     expect(content).not.toContain(cache);
     expect(content).toContain(`--claude=${join(bin, "claude")}`);
+    // The job waits for the lock, and bounds its run, as configured at install.
+    expect(content).toMatch(/LOCK_TIMEOUT(<\/key><string>|=)60\b/);
     expect(existsSync(join(launcher, "launcher.ts"))).toBe(true);
     expect(existsSync(join(launcher, "bunfig.toml"))).toBe(true);
     if (variant !== "cron") expect(existsSync(loaded)).toBe(true);
