@@ -40,18 +40,18 @@ returns and the repository root, and prints one result:
 ```json
 {
   "sources": [
-    {"adapter": "openspec", "ref": "openspec/changes/add-export/", "evidence": "body link"},
-    {"adapter": "body", "ref": "## Acceptance criteria", "evidence": "section"}
+    {"adapter": "openspec", "ref": "openspec/changes/add-export/", "evidence": ["body link", "convention"]},
+    {"adapter": "body", "ref": "#body/Acceptance criteria", "evidence": ["section"]}
   ],
-  "requirements": [{"id": "export-csv", "text": "…", "source": 0}],
-  "acceptance": [{"id": "AC-1", "key": "openspec/changes/add-export/#AC-1", "text": "…", "requirement": "export-csv", "source": 0}],
-  "tasks": [{"id": "1.2", "text": "…", "done": false, "source": 0}],
+  "requirements": [{"id": "export-csv", "key": "openspec/changes/add-export/#export-csv", "text": "…", "source": 0}],
+  "acceptance": [{"id": "AC-1", "key": "openspec/changes/add-export/#AC-1", "text": "…", "requirement": "openspec/changes/add-export/#export-csv", "source": 0}],
+  "tasks": [{"id": "1.2", "key": "openspec/changes/add-export/#1.2", "text": "…", "done": false, "source": 0}],
   "unresolved": ["https://…/design-doc (no adapter)"]
 }
 ```
 
-It finds references in three places, in this order, and keeps every one
-it finds rather than the first:
+It finds references in the following places, in this order, and keeps
+every one it finds rather than the first:
 
 1. **The body.** A section whose heading the configuration names
    (`## Spec` by default, `## Requirements` and `## Acceptance criteria`
@@ -72,17 +72,18 @@ it finds rather than the first:
    issue, when the tracker interface gains the attachment operation
    ([the plan](plan.md), item 12).
 
-Keeping every reference needs two rules, so that one line cannot discharge
-two criteria and one criterion is not counted twice:
+Keeping every reference needs the rules below, so that one line cannot
+discharge two criteria and one criterion is not counted twice:
 
 - **One source per artifact.** A source is identified by its canonical
   path in the repository (or its tracker id), so the same spec found
   through a body link and through the convention scan is one source, with
-  both findings in its `evidence`.
+  both findings in its `evidence` list.
 - **Keys qualified by their source.** Every requirement, criterion and task
   carries a `key`: its source's canonical reference and its local id
-  (`openspec/changes/add-export/#AC-1`). Two specs that both number an
-  `AC-1` give two keys. The pull-request section, the reviewer's list and a
+  (`openspec/changes/add-export/#AC-1`), and a criterion names the
+  requirement it serves by that requirement's key. Two specs that both
+  number an `AC-1` give two keys. The pull-request section, the reviewer's list and a
   thread that cites a criterion use the key; the short id is shown alone
   only where it is unique in the result.
 
@@ -93,8 +94,14 @@ the resolver resolves a reference's real path and reads it only when that
 path is inside the repository root: an absolute path, a `..` that leaves
 the root, or a symbolic link whose target is outside it is not read and goes
 into `unresolved` with the reason. A link to a web page is never fetched by
-the resolver; it is `unresolved` unless an adapter claims it as a tracker
-document.
+the resolver. A tracker document is read through the tracker interface,
+by the id the tracker lists among this issue's own documents and
+attachments, never by fetching a URL taken from the body: a link in the
+body that names a tracker document counts only when that id is in the
+issue's list, and is otherwise `unresolved`. The read runs with the
+tracker interface's credentials against the configured tracker alone, so
+an issue cannot point the resolver at another host or at a document the
+issue does not carry.
 
 Each adapter reads the tool's own machine-readable surface where it has one
 (OpenSpec's `show` with its machine-readable flag, cc-sdd's `spec.json`,
@@ -108,9 +115,15 @@ passes. The `body` adapter is the one every repository has.
 
 ### Where the result is used
 
-- **`do-item`**, after it fetches the issue: the `spec` pre-scout that the
-  work-type table names ([work types](work-types.md)) runs the resolver. A
-  feature with an empty result stops before any code is written. In an
+- **`do-item`**, after it fetches the issue, runs the resolver for every
+  type in `specs.require_for_types`, whatever that type's pre-scouts say,
+  and for any other type whose row names the `spec` pre-scout
+  ([work types](work-types.md)), where the result is context and its
+  absence stops nothing. For a required type, requirements are present
+  only when a resolved source yields at least one acceptance criterion: a
+  source that yields only requirements or tasks, one its adapter cannot
+  parse, and an empty result all count as none, and the item stops before
+  any code is written. In an
   interactive session it asks one question: proceed without requirements,
   or point at them. With nobody to answer, it stops and states the gap, as
   [plugin/AGENTS.md](../plugin/AGENTS.md) requires of a question nobody can
@@ -155,11 +168,18 @@ rewrites one a repository already keeps.
 
 ### The audit
 
-M6's criteria gain one at Standard, a repository fact: the items the
-tracker holds in the last 30 days that the pickup procedure would type as
-features resolve to at least one source. The audit reports the share, and
-the recommendation names the adapter the repository's layout would turn
-on.
+M6's criteria gain one at Standard: work of a required type is not picked
+up without acceptance criteria. Its rungs follow the
+[criteria ladder](../plugin/skills/audit/criteria/README.md). The
+`convention` observation is the policy: `specs.require_for_types` is set,
+or left at its default, and the instructions say where an item's
+requirements go. The `mechanical` observation is the enforcement: the
+pickup procedure the repository runs refuses an item of a required type
+whose resolver result has no acceptance criterion (`do-item`'s stop above),
+and `pr-plan.ts`'s refusal guards the pull request. The audit also reports,
+as evidence and not as the score, the share of items from the last 30 days
+typed as a required type that resolve to at least one criterion, and the
+recommendation names the adapter the repository's layout would turn on.
 
 ## Configuration
 

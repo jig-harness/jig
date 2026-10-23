@@ -28,7 +28,7 @@ The two skills share one detector and divide the rest by what they write.
 | Reads | the repository, the plugin's installation on this machine | the repository, its host settings, its tracker, the last record |
 | Writes | `.config/jig.yaml`, `.gitignore`, the host's project-level plugin enablement | `.config/jig-audit.yaml`, the sheet |
 | Never | scores a criterion, recommends a practice, writes a gate | writes the configuration, asks a setup question |
-| Ends with | a configuration that passes the audit's configuration fit, and the next command | a sheet of decisions |
+| Ends with | a configuration the audit's configuration fit finds nothing wrong with in the fields init wrote, the other findings reported with their remedy, and the next command | a sheet of decisions |
 
 The boundary rule: **init derives and writes the [consumer overlay](../GLOSSARY.md); the audit measures the repository and judges the overlay.** When the audit's configuration fit finds something init can fix (a missing field the repository implies, a stale value after a plugin release), its remedy is "run `/jig:init --refresh`", not a second copy of the fix. When init is done, it names the audit as the next step for a team choosing a profile, and `/jig:do-item` for a team that wants to run one item first.
 
@@ -94,11 +94,14 @@ the day one skill learns a new lockfile.
 
 ### Refresh after a plugin release
 
-A change note that adds a configuration field names it `since: next`; the
-release writes the version. `/jig:init --refresh` compares the plugin version
-the file was written under (a comment line init writes, `# jig: <version>`)
-with the installed one and lists the fields added since, deriving the ones it
-can. The audit's configuration fit reports a file older than the plugin's
+The field history refresh reads is the configuration schema's own
+(`plugin/skills/audit/config-schema.yaml`): each field's entry carries
+`since`, the plugin version that added it. A branch that adds a field
+writes `since: next` on its schema entry, and the release step's existing
+placeholder replacement writes the version there. `/jig:init --refresh`
+compares the plugin version the file was written under (a comment line init
+writes, `# jig: <version>`) with the installed one and lists the schema
+entries whose `since` is newer, deriving the ones it can. The audit's configuration fit reports a file older than the plugin's
 last field-adding release with the same remedy.
 
 ### What it touches elsewhere
@@ -125,7 +128,8 @@ Init reads every field and adds none of its own.
    `plugin/shared/detect.ts` with their tests; the audit's behaviour is
    unchanged and its tests prove it.
 2. **The skill.** `plugin/skills/init/`: `SKILL.md`, `README.md`,
-   `scripts/init.ts` (derive, ask, write, check), tests that run it from a
+   `scripts/init.ts` (derive, ask, write, check, and refresh from the
+   schema's `since` entries), tests that run it from a
    plugin copy against fixture repositories with and without a configuration,
    the lifecycle-map row, the README table row.
 3. **The pointers.** Adoption pages, setup's next step, the audit's remedy

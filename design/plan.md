@@ -410,8 +410,10 @@ What it will build, one pull request per step:
 - **Project-level enablement** in the host settings files.
 
 Done when a fresh clone with no configuration runs `/jig:init`, commits
-what it wrote, passes the audit's configuration fit without a finding, and
-the brownfield and greenfield pages send a new repository there first.
+what it wrote, the audit's configuration fit reports no finding about a
+field init derived or wrote, every other finding is reported with its
+remedy, and the brownfield and greenfield pages send a new repository
+there first.
 
 ### 27. Work types: depth by kind of work
 

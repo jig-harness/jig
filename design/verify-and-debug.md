@@ -40,7 +40,7 @@ under the same root the fleet-health snapshots use), and prints a short
 block:
 
 ```
-EVIDENCE  tree 3f9c2a1  bun run gates
+EVIDENCE  tree 3f9c2a1  gates
 exit 0  ·  2m14s  ·  412 cases ran, 0 skipped (junit: .reports/junit.xml)
 record ~/.local/share/jig/evidence/example-web/3f9c2a1/8e1d/20261023T141502-4b7e.json
 ```
@@ -53,13 +53,24 @@ record ~/.local/share/jig/evidence/example-web/3f9c2a1/8e1d/20261023T141502-4b7e
   appeared, does not vouch for the tree after it. Ignored files (build
   output, dependencies) are outside the identity, as they are outside the
   pull request.
+- **The same tree after the run.** The hash is taken again when the command
+  ends. When the two differ (another session, a formatter or the command
+  itself changed a file the identity covers) the record is kept, marked
+  `tree-changed`, and vouches for no tree: lookup never returns it as proof.
+  An edit made and undone inside the run is not seen; a record answers
+  for the tree the command started and ended on.
 - **One record per run.** Every run gets its own id and its own file, and
   no run overwrites another: a failing run that a ledger cites stays there
   when the same command passes on the same tree later. Lookup indexes runs
   by tree and command and reads the newest unless asked for all of them.
 - **Counts from the report.** Where the command writes a JUnit report, the
   record holds the cases run, skipped and failed per suite from it
-  (`shared/junit-report.ts`), never from the runner's summary line. A suite
+  (`shared/junit-report.ts`), never from the runner's summary line. The
+  report must be this run's: before the command starts, `evidence.ts` moves
+  any file at the report path aside, and after it ends reads the report only
+  when one exists there again, written after the run began. A report left by
+  an earlier run is never read, and a run that writes none is recorded as
+  `no report`, which a check needing report-backed counts refuses. A suite
   that ran zero cases is marked as M14's [skip tripwire](../GLOSSARY.md)
   would mark it: not a pass, even when another suite in the same command
   ran.
@@ -72,9 +83,14 @@ record ~/.local/share/jig/evidence/example-web/3f9c2a1/8e1d/20261023T141502-4b7e
 - **Output kept short, and kept local.** The first and last 60 lines, and
   the full output in a file beside the record. A record is evidence, not a
   log. Test and diagnostic output can carry credentials or personal data,
-  so output never leaves the machine: what travels to a pull request, an
-  issue or a reply is the printed block (command, tree, exit, counts, record
-  id), and a ledger cites records by id instead of quoting their output.
+  so output never leaves the machine, and neither does the exact command
+  line, which can carry them too (a token in a header, a password in a
+  connection string). What travels to a pull request, an issue or a reply
+  is the printed block, whose command field is a display name: the name the
+  validation plan gives the check, or for any other command the program's
+  name and the command hash, never its arguments. The block's other fields
+  are the tree, exit, counts and record id, and a ledger cites records by id
+  instead of quoting their output.
   Records older than `verify.retention_days` (default 30) are collected as a
   kind of the [resource collection](resource-gc.md) runner, with its
   receipts.
@@ -122,8 +138,11 @@ Where it is used:
   names in the JUnit reports of the base and the pushed tree, and where no
   report names cases the body names the tests. The work type's
   `test_first` ([work types](work-types.md)) is the stronger rule that the
-  failing test is written before the fix; it decides only whether the
-  seen-to-fail record must predate the fix's first commit.
+  failing test is written before the fix. Commit times cannot show that,
+  since a record covers uncommitted changes, so the check reads the
+  seen-to-fail record's tree instead: every file the diff changes outside
+  its tests must read there as it does on the base. A failing run made with
+  part of the fix already in the working tree does not meet `test_first`.
 - **`fix-ci`** records the local re-run of each fixed check, so "verify
   locally" in its name is a record rather than a sentence.
 - **`drive-pr`** reads the body's evidence section when it certifies a
@@ -163,7 +182,11 @@ The protocol, each step with its record:
    verify the reproduction command and the validation plan. The fix is
    described in terms of the cause, in the commit and the pull-request body.
 6. **Stop and hand over.** After `debug.max_hypotheses` failed hypotheses
-   (default 3) or `debug.time_budget_minutes` (default 45), the skill stops,
+   (default 3) or `debug.time_budget_minutes` (default 45), the skill stops.
+   The time budget bounds the runs inside it too: each verify run `debug`
+   starts gets the smaller of its own timeout and the budget left, and a run
+   still going when the budget ends is cancelled through the process
+   deadline and recorded as timed out. The skill then
    posts the ledger where the work is tracked (the pull request when there
    is one, else the issue), names what it ruled out and what it would try
    next, and ends with the terminal state its caller understands: inside a
@@ -199,8 +222,10 @@ The protocol, each step with its record:
 ## Build order
 
 1. **The record.** `shared/evidence.ts` with its tests (tree identity with
-   untracked files, one record per run, per-suite counts, the deadline,
-   expected failure, lookup), run from a plugin copy.
+   untracked files, a tree changed during the run, one record per run,
+   per-suite counts from a fresh report and a stale report refused, the
+   deadline, expected failure, the redacted block, lookup), run from a
+   plugin copy.
 2. **`verify`.** The skill, its README, the lifecycle row, the M14 link.
 3. **`do-item` and `fix-ci` record and require.** The policy refusal, the
    body section, the seen-to-fail requirement by work type.

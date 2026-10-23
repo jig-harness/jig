@@ -85,10 +85,12 @@ pre-scout a feature lacks), so `unknown` is not a row a repository edits or
 points at another type. It is computed field by field from the effective
 rows, the defaults with the repository's overrides: the union of the
 pre-scouts, `test_first` required, the union of the review tiers, the
-review never skipped, the change note required, not batchable, and the
-union of the body sections. Autonomy stays `full`, because an unknown type
-is not a spike; the `hitl` label still applies as on every type. An
-override that lightens one type's row therefore cannot lighten `unknown`.
+review never skipped, the change note required, not batchable, the
+union of the body sections, and autonomy `hitl`: failing to derive a type
+does not show the item is not a spike. An unattended run therefore stops
+on an `unknown` item and states the gap, as it does on a `hitl` label, and
+a type label clears it. An override that lightens one type's row cannot
+lighten `unknown`.
 
 These columns never appear: which agent implements (that is routing by label
 and catalog area, which stays as it is) and which catalog review skills run
@@ -113,14 +115,20 @@ table cannot name them because it cannot remove them).
 ### The audit
 
 M9's criteria gain one at Standard: the pickup procedure types the
-repository's items. The audit runs `determine_type.ts` on the items the
-tracker shows changed in the last 30 days and reports the share typed by a
-label (step 1) or the tracker's own type (step 2), with the evidence of a
-sample. That is a fact about the repository, as the criteria must be, and
-it is observed from the derivation's own output: a mapping no item's
-labels reach does not pass it. That the mapping resolves to labels the
-taxonomy declares stays a configuration check, reported beside it, not
-the criterion.
+repository's items before it works them. Its rungs follow the
+[criteria ladder](../plugin/skills/audit/criteria/README.md). The
+`convention` observation is the policy: the taxonomy declares the `types`
+family and the instructions say every item carries a type label. The
+`mechanical` observation is the enforcement: the pickup procedure the
+repository runs derives the type on every item and treats an underivable
+one as `unknown` (`do-item` with this design built), and the filing
+procedure writes the type label (`file-issue`), so no item reaches
+implementation untyped and lighter. Beside the score, as evidence and not
+as a rung, the audit runs `determine_type.ts` on the items the tracker
+shows changed in the last 30 days and reports the share typed by a label
+(step 1) or the tracker's own type (step 2), with a sample: a mapping no
+item's labels reach shows there. That the mapping resolves to labels the
+taxonomy declares stays a configuration check, reported beside it.
 
 ## Configuration
 
