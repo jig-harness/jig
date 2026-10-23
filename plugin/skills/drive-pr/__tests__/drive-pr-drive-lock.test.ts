@@ -42,6 +42,7 @@ import {
   plantClaim,
   pollUntil,
   awaitFixtureMarker,
+  blockedPassScript,
   simulateTakeover,
   worktreeLockNameFor,
 } from "./drive-loop-harness.ts";
@@ -1088,6 +1089,7 @@ describe("drive.ts loop control", () => {
       // the announcement, leaving the timer as the only thing that can move
       // the heartbeat inside the window.
       const started = join(dir, "pass-started");
+      const release = join(dir, "pass-release");
       const proc = Bun.spawn(
         scriptArgv(
           join(SCRIPTS, "drive.ts"),
@@ -1098,7 +1100,7 @@ describe("drive.ts loop control", () => {
           "--",
           "sh",
           "-c",
-          `: pass for 999; : > ${JSON.stringify(started)}; sleep 5; exit 0`,
+          `: pass for 999\n${blockedPassScript(started, release)}`,
         ),
         {
           env: {
@@ -1117,12 +1119,7 @@ describe("drive.ts loop control", () => {
         },
       );
       try {
-        let running = false;
-        for (let i = 0; i < 400 && !running; i++) {
-          running = existsSync(started);
-          if (!running) await Bun.sleep(25);
-        }
-        expect(running).toBe(true);
+        expect(await awaitFixtureMarker(started)).toBe(true);
         // The claim IS the heartbeat: its mtime is what the renewal moves,
         // and its name is what makes the renewal unable to touch a
         // successor.
@@ -1130,7 +1127,8 @@ describe("drive.ts loop control", () => {
         expect(held.length).toBe(1);
         const beat = join(worktree, held[0] as string);
         const first = statSync(beat).mtimeMs;
-        // Well inside the pass's own sleep, so no round boundary falls here.
+        // The pass stays running until released, so no round boundary falls
+        // here.
         await Bun.sleep(800);
         const second = statSync(beat).mtimeMs;
         expect(second).toBeGreaterThan(first);
@@ -1138,10 +1136,11 @@ describe("drive.ts loop control", () => {
         // Same discipline as the sibling test below: a failed poll or
         // assertion above must not skip the kill and leave a live driver
         // running past this test.
+        writeFileSync(release, "");
         proc.kill();
         await proc.exited;
       }
-    });
+    }, 120000);
 
     it("holds a FILE-BACKED account identity steady for an ACTIVE pass, never overwriting it mid-pass with the account the next pass would use", async () => {
       // A resolved-once-at-arm-time account is correct for
@@ -1170,9 +1169,10 @@ describe("drive.ts loop control", () => {
         join(tmpdir(), "drive-pr-claude-stub-"),
       );
       const startedMarker = join(dir, "claude-pass-started");
+      const releaseMarker = join(dir, "claude-pass-release");
       writeFakeProgram(
         join(claudeStubDir, "claude"),
-        `#!/bin/sh\n: > ${JSON.stringify(startedMarker)}\nsleep 5\nexit 0\n`,
+        `#!/bin/sh\n${blockedPassScript(startedMarker, releaseMarker)}\n`,
       );
 
       const claudeConfigDir = mkdtempSync(
@@ -1215,12 +1215,7 @@ describe("drive.ts loop control", () => {
       );
 
       try {
-        let running = false;
-        for (let i = 0; i < 400 && !running; i++) {
-          running = existsSync(startedMarker);
-          if (!running) await Bun.sleep(25);
-        }
-        expect(running).toBe(true);
+        expect(await awaitFixtureMarker(startedMarker)).toBe(true);
 
         const readAccount = (): unknown => {
           const held = claimsIn(worktree);
@@ -1245,7 +1240,7 @@ describe("drive.ts loop control", () => {
 
         // Simulate a login swap: the file changes in place, independent of
         // this driver process's own environment — but the pass is still
-        // actively running (asleep, well inside its own 5s sleep) and already
+        // actively running (blocked until the test releases it) and already
         // holds the OLD identity.
         writeFileSync(
           claudeJsonPath,
@@ -1273,12 +1268,13 @@ describe("drive.ts loop control", () => {
         // assertion above skipped both the kill and the cleanup below,
         // leaving a live driver plus its temp dirs to contaminate later
         // suite cases.
+        writeFileSync(releaseMarker, "");
         proc.kill();
         await proc.exited;
         rmSync(claudeStubDir, { recursive: true, force: true });
         rmSync(claudeConfigDir, { recursive: true, force: true });
       }
-    });
+    }, 120000);
 
     it("does not resurrect a recovered claim via the account-identity rewrite", async () => {
       // An earlier revision called `refreshAccountIdentity` BEFORE
@@ -1300,9 +1296,10 @@ describe("drive.ts loop control", () => {
         join(tmpdir(), "drive-pr-claude-stub-"),
       );
       const startedMarker = join(dir, "claude-pass-started");
+      const releaseMarker = join(dir, "claude-pass-release");
       writeFakeProgram(
         join(claudeStubDir, "claude"),
-        `#!/bin/sh\n: > ${JSON.stringify(startedMarker)}\nsleep 5\nexit 0\n`,
+        `#!/bin/sh\n${blockedPassScript(startedMarker, releaseMarker)}\n`,
       );
 
       const claudeConfigDir = mkdtempSync(
@@ -1345,12 +1342,7 @@ describe("drive.ts loop control", () => {
       );
 
       try {
-        let running = false;
-        for (let i = 0; i < 400 && !running; i++) {
-          running = existsSync(startedMarker);
-          if (!running) await Bun.sleep(25);
-        }
-        expect(running).toBe(true);
+        expect(await awaitFixtureMarker(startedMarker)).toBe(true);
 
         // Both land on disk together, with no await between them, so the very
         // next heartbeat tick sees an account change AND a missing claim in
@@ -1378,12 +1370,13 @@ describe("drive.ts loop control", () => {
       } finally {
         // Not protected by `try/finally` before this fix — see the sibling
         // test above.
+        writeFileSync(releaseMarker, "");
         proc.kill();
         await proc.exited;
         rmSync(claudeStubDir, { recursive: true, force: true });
         rmSync(claudeConfigDir, { recursive: true, force: true });
       }
-    });
+    }, 120000);
 
     it("refreshes a FILE-BACKED account identity synchronously the moment a pass exits, not only on the next heartbeat tick", async () => {
       // Clearing `activePass` reopens the exact window `refreshAccountIdentity`'s
@@ -1859,9 +1852,10 @@ exit 0
         join(tmpdir(), "drive-pr-claude-stub-"),
       );
       const startedMarker = join(dir, "claude-pass-started");
+      const releaseMarker = join(dir, "claude-pass-release");
       writeFakeProgram(
         join(claudeStubDir, "claude"),
-        `#!/bin/sh\n: > ${JSON.stringify(startedMarker)}\nsleep 1\nexit 0\n`,
+        `#!/bin/sh\n${blockedPassScript(startedMarker, releaseMarker)}\n`,
       );
 
       const claudeConfigDir = mkdtempSync(
@@ -1906,12 +1900,7 @@ exit 0
       );
 
       try {
-        let running = false;
-        for (let i = 0; i < 400 && !running; i++) {
-          running = existsSync(startedMarker);
-          if (!running) await Bun.sleep(25);
-        }
-        expect(running).toBe(true);
+        expect(await awaitFixtureMarker(startedMarker)).toBe(true);
 
         // Plant a SECOND claim directly, without touching the real one — the
         // same end state a resurrection race leaves behind (this
@@ -1930,6 +1919,8 @@ exit 0
             oauthAccount: { emailAddress: "after@example.com" },
           }),
         );
+        // Only now may the pass exit: its exit is what runs the rewrite.
+        writeFileSync(releaseMarker, "");
 
         const [stderr, exitCode] = await Promise.all([
           new Response(proc.stderr).text(),
@@ -1942,12 +1933,13 @@ exit 0
         // only the other claim survives.
         expect(claimsIn(worktree)).toEqual(["claim.ghost01"]);
       } finally {
+        writeFileSync(releaseMarker, "");
         proc.kill();
         await proc.exited;
         rmSync(claudeStubDir, { recursive: true, force: true });
         rmSync(claudeConfigDir, { recursive: true, force: true });
       }
-    });
+    }, 120000);
 
     it.skipIf(NO_DIR_MODES)(
       "retries every held lock independently, not just the first one to reach `fresh`",

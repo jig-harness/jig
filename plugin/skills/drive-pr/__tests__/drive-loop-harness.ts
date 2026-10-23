@@ -53,6 +53,22 @@ export async function awaitFixtureMarker(marker: string): Promise<boolean> {
 }
 
 /**
+ * Shell commands for a pass that announces itself at `started` and then stays
+ * running until the test creates `release`, so a test's operations against
+ * the active pass cannot race the pass's exit however the test is scheduled.
+ * The wait is bounded (about 60 s) so a test that fails before releasing
+ * never leaves the pass behind; the test's own timeout is longer.
+ */
+export function blockedPassScript(started: string, release: string): string {
+  return [
+    `: > ${JSON.stringify(started)}`,
+    "i=0",
+    `while [ ! -e ${JSON.stringify(release)} ] && [ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done`,
+    "exit 0",
+  ].join("\n");
+}
+
+/**
  * drive.ts's fixed waits, compressed for every drive `runDriveIn` spawns
  * (a test that spawns drive.ts itself spreads this into its env): the
  * final-CI poll (10s in production), the settle after removing the CI hold
