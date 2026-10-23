@@ -38,7 +38,7 @@ import {
   fallbackCache,
   writeCache,
 } from "./cache.ts";
-import { loadConfig } from "./config.ts";
+import { configPath, configStep, loadConfig } from "./config.ts";
 import type { Provider } from "./provider.ts";
 import { getProvider } from "./providers/index.ts";
 import type { ReadRequest, Tracker } from "./tracker.ts";
@@ -58,8 +58,8 @@ export interface LaunchDeps {
   tracker?: Tracker;
   /** Replaces the configured providers with this one; tests use it. */
   provider?: Provider;
-  /** Replaces the configured providers, in order; tests use it. */
-  providers?: [Provider, ...Provider[]];
+  /** Finds a configured provider by name in place of the registry; tests use it. */
+  providerNamed?: (name: string) => Provider;
   nowSeconds?: () => number;
   readBudgetMs?: number;
   assignBudgetMs?: number;
@@ -189,17 +189,21 @@ export async function launch(
   const warn = deps.warn ?? ((m: string) => console.error(`[launcher] ${m}`));
   const nowSeconds = deps.nowSeconds ?? (() => Date.now() / 1000);
   const config = loadConfig(home, env);
-  const tracker = deps.tracker ?? getTracker(config.tracker, { home, env });
-  const [firstName, ...restNames] = config.providers;
-  const providers: [Provider, ...Provider[]] =
-    deps.providers ??
-    (deps.provider
+  const { tracker, providers } = configStep(configPath(home, env), () => {
+    const named = deps.providerNamed ?? getProvider;
+    const [first, ...rest] = config.providers;
+    const resolved: [Provider, ...Provider[]] = deps.provider
       ? [deps.provider]
-      : [getProvider(firstName), ...restNames.map(getProvider)]);
-  for (const provider of providers)
-    for (const [label, settings] of Object.entries(config.repos))
-      if (settings[provider.name] !== undefined)
-        provider.validateRepo(settings[provider.name], label);
+      : [named(first), ...rest.map(named)];
+    for (const provider of resolved)
+      for (const [label, settings] of Object.entries(config.repos))
+        if (settings[provider.name] !== undefined)
+          provider.validateRepo(settings[provider.name], label);
+    return {
+      tracker: deps.tracker ?? getTracker(config.tracker, { home, env }),
+      providers: resolved,
+    };
+  });
 
   const named = branchArg || tracker.launchEnvironment.branch || "";
   const fallback = { prompt: tracker.launchEnvironment.prompt, branch: named };

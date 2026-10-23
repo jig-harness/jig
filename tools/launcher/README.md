@@ -89,11 +89,14 @@ labels could not be read in full, is not routed; the provider then detects the
 repository itself.
 
 With a list, an issue opens with the first provider its repository has an
-entry for, and an unrouted issue with the first provider in the list. So
+entry for, and an unrouted issue, or one whose repository has an entry for
+none of them, with the first provider in the list. So
 `provider: [herdr, conductor]` opens a repository with a `herdr` entry in
-Herdr and every other one in Conductor, and changing the line to
-`provider: conductor` sends them all to Conductor without touching the
-entries:
+Herdr, one with only a `conductor` entry in Conductor, and anything else in
+Herdr, which refuses an issue it has no repository for. Putting `conductor`
+first instead sends those to Conductor, which detects the repository itself.
+Changing the line to `provider: conductor` sends every issue to Conductor
+without touching the entries:
 
 ```yaml
 provider: [herdr, conductor]

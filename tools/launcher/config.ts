@@ -30,6 +30,23 @@ export class LauncherConfigError extends Error {
   override name = "LauncherConfigError";
 }
 
+/**
+ * Run a step that reads, resolves or checks the configuration at `path`, so
+ * every failure is a LauncherConfigError naming the file, the original kept
+ * as its cause.
+ */
+export function configStep<T>(path: string, step: () => T): T {
+  try {
+    return step();
+  } catch (error) {
+    if (error instanceof LauncherConfigError) throw error;
+    throw new LauncherConfigError(
+      `${path}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+}
+
 export const DEFAULT_SKILL = "/jig:do-item";
 export const DEFAULT_TRACKER = "linear";
 export const DEFAULT_PROVIDER = "conductor";
@@ -98,7 +115,9 @@ function providerList(
 /** Parse configuration text; every error names the file and the key. */
 export function parseConfig(text: string, path: string): LauncherConfig {
   const raw: unknown =
-    text.trim() === "" ? {} : load(text, { schema: CONFIG_SCHEMA });
+    text.trim() === ""
+      ? {}
+      : configStep(path, () => load(text, { schema: CONFIG_SCHEMA }));
   if (!isRecord(raw))
     throw new LauncherConfigError(`${path}: expected a mapping`);
   const known = new Set([
