@@ -136,11 +136,13 @@ the kinds it mints with its own facts, a machine sets the schedule, and
 ### 25. Dependency-review feedback
 
 Tools that review a pull request's dependency changes for supply-chain risk,
-such as Socket, report in a check and a summary comment, and the review loop
-reads neither today. The loop will read their alerts as findings with a
-severity, answer or fix them like any other finding, and show their scores
-without acting on them. A failing check of such a tool does not stop a pull
-request by itself, unless the repository requires that check; its alerts do.
+such as Socket, report in a check and a summary comment. The review loop
+already counts a failing check of theirs in its CI verdict, like any other
+check, but does not read their alerts. The loop will read their alerts as
+findings with a severity, answer or fix them like any other finding, and show
+their scores without acting on them. A failing check of such a tool will not
+stop a pull request by itself, unless the repository requires that check; its
+alerts will.
 
 ## Later
 

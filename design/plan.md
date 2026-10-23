@@ -350,7 +350,11 @@ resource's proof before anything is collected.
 
 A tool that reviews what a pull request does to the repository's
 dependencies (Socket is one) reports through a check run and one summary
-comment, and raises no review thread, so the review loop does not see it
+comment, and raises no review thread. The loop's CI verdict already counts
+that check run like any other non-reviewer check (`ciVerdictOf` in
+`plugin/skills/drive-pr/scripts/lib/status/evidence.ts`), so a failing one
+reads as failing CI whether or not the repository requires it; what the loop
+does not do is read the alerts as findings
 ([AI reviewers](../plugin/EXTENDING.md#ai-reviewers) says why). What it will
 build, one pull request per step:
 
@@ -371,8 +375,7 @@ build, one pull request per step:
   leaves the overall CI verdict, and only its alerts carry weight, as
   findings. A check the repository's effective CI policy requires (listed in
   `ci.required_checks`, or required by branch protection when that is unset)
-  keeps that requirement. Before building, check how the verdict treats a
-  failing non-required check today.
+  keeps that requirement.
 
 Done when a drive on a pull request whose report carries an alert with a
 severity answers it as a finding, a report with scores and no alert adds none,
