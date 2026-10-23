@@ -261,42 +261,17 @@ function inRepo(realRoot: string, path: string): string | null {
 }
 
 /**
- * A directory-entry name approximately as the platform's file system
- * compares it. NTFS ignores case one UTF-16 unit at a time and never
- * Unicode normalization, so `é` and `e` + combining acute are two entries
- * there; APFS and HFS+ ignore both, and fold case per character (final
- * sigma folds to sigma), which upper- then lower-casing each character
- * alone approximates.
- */
-function foldName(name: string): string {
-  let folded = "";
-  if (process.platform !== "win32") {
-    for (const char of name.normalize("NFD")) {
-      const upper = char.toUpperCase();
-      folded +=
-        [...upper].length === 1 ? upper.toLowerCase() : char.toLowerCase();
-    }
-    return folded;
-  }
-  for (let i = 0; i < name.length; i++) {
-    const unit = name[i] as string;
-    const upper = unit.toUpperCase();
-    folded += upper.length === 1 ? upper : unit;
-  }
-  return folded;
-}
-
-/**
- * `segment` of the directory `dir` as the directory itself spells it: on a
- * case-insensitive file system `CHECK.ts` reaches the entry `check.ts`, and
- * the tracked name is the entry's. The exact spelling first; otherwise the
- * entry of the same file, which the file system's own lookup chose when it
- * resolved `segment`. Only when hard links give that file several names
- * here does `foldName` pick among them, and a pick it cannot make keeps the
+ * `segment` of the real directory `dir` as the directory itself spells it:
+ * on a case-insensitive file system `CHECK.ts` reaches the entry
+ * `check.ts`, and the tracked name is the entry's. The file system names
+ * the entry its own lookup chose (`realpath`), so no comparison is
+ * emulated here. A symbolic link cannot be asked without following it: the
+ * exact spelling, else the one entry here of the same file, else the
  * command's spelling.
  */
-function spelled(dir: string, segment: string): string {
+function spelled(dir: string, segment: string, link: boolean): string {
   const entry = join(dir, segment);
+  if (!link) return realpathSync.native(entry);
   const names = readdirSync(dir);
   if (names.includes(segment)) return entry;
   const own = lstatSync(entry, { bigint: true });
@@ -308,10 +283,7 @@ function spelled(dir: string, segment: string): string {
     });
     return other?.ino === own.ino && other.dev === own.dev;
   });
-  const folded = foldName(segment);
-  const chosen =
-    same.length === 1 ? same : same.filter((name) => foldName(name) === folded);
-  return chosen.length === 1 ? join(dir, chosen[0] as string) : entry;
+  return same.length === 1 ? join(dir, same[0] as string) : entry;
 }
 
 /** Links a resolution expands before giving up, as the kernel's SYMLOOP limit does. */
@@ -355,7 +327,7 @@ export function namesReached(root: string, name: string): string[] {
     }
     const stat = lstatSync(join(real, segment), { throwIfNoEntry: false });
     if (stat === undefined) return [];
-    const entry = spelled(real, segment);
+    const entry = spelled(real, segment, stat.isSymbolicLink());
     if (!stat.isSymbolicLink()) {
       real = entry;
       continue;

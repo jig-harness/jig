@@ -176,6 +176,13 @@ caseTest(
   },
 );
 
+// Upper- then lower-casing maps both `i` and dotless `ı` to `i`, but the
+// file system keeps them distinct: scripts/I.ts reaches only i.ts.
+caseTest("a dotless-i hard link does not hide the entry I reaches", () => {
+  const dir = hardLinked("scripts/i.ts", "scripts/ı.ts");
+  expect(commandProblems("bun scripts/I.ts", dir)).toEqual([]);
+});
+
 // NTFS keeps `é` and `e` + combining acute as two entries, and
 // scripts/É.ts reaches only the composed one; macOS cannot hold both.
 test.skipIf(process.platform !== "win32")(
