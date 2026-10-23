@@ -38,7 +38,7 @@
 //   check-deferrals.ts [--config <file>] --all --list-keys
 //   check-deferrals.ts [--config <file>] --all --states <states.json>
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { cli, splitLines } from "../docs";
 import { type Unit, units } from "./blocks";
@@ -747,8 +747,8 @@ function plan(argv: string[], env: Env, cwd: string): Plan {
  * repository at `root`: a file the command line names is read from the
  * repository the check judges, never from elsewhere on the machine. Both the
  * path as named and the file its links lead to must lie inside, so neither an
- * alias of the working directory nor a link out of the repository decides the
- * answer. The path as named is what is returned: it is the file's identity in
+ * alias of the working directory or of the repository's root nor a link out
+ * of the repository decides the answer. The path as named is what is returned: it is the file's identity in
  * the index, which a link in the working tree must not replace.
  */
 function inRepository(
@@ -758,13 +758,29 @@ function inRepository(
   flag: string,
 ): string {
   const inside = realpathSync.native(root) + sep;
-  const named = resolve(realpathSync.native(cwd), path);
+  const named = fromRoot(resolve(realpathSync.native(cwd), path), inside);
   const linked = existsSync(named) ? realpathSync.native(named) : named;
   if (!named.startsWith(inside) || !linked.startsWith(inside))
     throw new DeferralsError(
       `${flag} ${path} lies outside the repository ${root}`,
     );
   return named;
+}
+
+/**
+ * `path` with its outermost ancestor that is the repository's root spelled as
+ * `inside` spells it, so another spelling of the root (an 8.3 short name, a
+ * link to the repository) names the same file. Only the root is respelled: a
+ * link below it stays as named, for the checks that must see it.
+ */
+function fromRoot(path: string, inside: string): string {
+  const ancestors = [path];
+  for (let at = dirname(path); at !== ancestors.at(-1); at = dirname(at))
+    ancestors.push(at);
+  for (const at of ancestors.reverse())
+    if (existsSync(at) && realpathSync.native(at) + sep === inside)
+      return inside.slice(0, -sep.length) + path.slice(at.length);
+  return path;
 }
 
 /**

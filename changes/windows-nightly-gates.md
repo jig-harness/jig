@@ -5,8 +5,9 @@ release: patch
 ### Fixed
 
 - On Windows, `jig gc` no longer fails every run with `EPERM` when it writes a
-  collection receipt: Windows refuses to flush a directory, and its file
-  system records the entry with the write.
+  collection receipt. Windows refuses to flush a directory, so there a
+  receipt's directory entry is not flushed: a power loss just after a receipt
+  is written or updated can lose that write.
 - On Windows, a configured shell command (`code_stats.classify_command`,
   `resolve_conflicts` obligation commands, the changelog's `after_version`)
   reaches `cmd.exe` as written, so a quoted program path such as
@@ -20,6 +21,10 @@ release: patch
   call a path inside it outside.
 - `resolve-conflicts` treats a staged link to an absolute Windows path
   (`C:/…`) as leaving the repository, as it treats one to `/…`.
+- On Windows, the audit's configuration fit reads a gate script's executable
+  bit from the git index, so a shell script the index does not mark
+  executable is suggested as `bash <path>`, as on other platforms, rather
+  than as `./<path>`.
 - The audit's label-taxonomy finding names the configured file with forward
   slashes on every platform.
 - A relative `JIG_TRACE_FILE` now records the spans of the process that set

@@ -104,6 +104,7 @@ import {
   packageScripts,
   pluginVersion,
   run,
+  runsDirectly,
   skillDir,
   today,
   trackedFiles,
@@ -1657,7 +1658,7 @@ function scriptFileGates(
       swallow(error, `${file} is tracked but missing from the working tree`);
       return [];
     }
-    const executable = process.platform === "win32" || (mode & 0o111) !== 0;
+    const executable = runsDirectly(root, file, mode);
     if (!executable && !/\.(sh|bash)$/.test(file)) return [];
     const { runBy, settled, unsettled } = ciSettlement(
       jobs.flatMap((job) =>

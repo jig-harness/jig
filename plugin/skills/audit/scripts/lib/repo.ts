@@ -198,3 +198,20 @@ export function newerInstalledVersion(
     .sort(compareVersions);
   return newer.at(-1) ?? null;
 }
+
+/**
+ * Whether a shell runs the tracked `file` (of stat `mode`) directly. Windows'
+ * file system has no executable bit, so there the index's is read: the one a
+ * checkout elsewhere takes.
+ */
+export function runsDirectly(
+  root: string,
+  file: string,
+  mode: number,
+): boolean {
+  if (process.platform !== "win32") return (mode & 0o111) !== 0;
+  const listed = run("git", ["ls-files", "-s", "--", `:(top,literal)${file}`], {
+    cwd: root,
+  });
+  return listed.code === 0 && listed.stdout.startsWith("100755 ");
+}

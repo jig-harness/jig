@@ -60,8 +60,7 @@ let scratch: string;
 let scripts: string;
 let shared: string;
 beforeAll(() => {
-  // The real path, as a script finds its own: links resolved and, on
-  // Windows, 8.3 short names expanded.
+  // The real path a script finds: links resolved, 8.3 short names expanded.
   scratch = realpathSync.native(mkdtempSync(join(tmpdir(), "jig-plugin-")));
   // The plugin cache holds the plugin as the release channels ship it
   // (skills, shared code, agents, assets, manifests), without its tests and

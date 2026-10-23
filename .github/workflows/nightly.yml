@@ -9,7 +9,7 @@
 # per platform, split into parallel shards; the do-item suite runs inside the
 # gate set on both. On Windows the gate script leaves out only the POSIX-only
 # suites (see SEPARATE_SUITES and POSIX_ONLY_SUITES in scripts/gates.ts), and
-# the gate set runs as seven jobs, each taking a part of the test files.
+# the gate set runs as parallel jobs, each taking a part of the test files.
 # Before its gates, Windows exercises the documented pickup and drive
 # commands in PowerShell against local fake services. The normal gate set
 # runs the same smoke with native argument arrays.
@@ -43,7 +43,7 @@ jobs:
             runner: macos-latest
           # Windows runs test files one at a time and starts processes several
           # times slower, so its test stage, about an hour whole, is split
-          # seven ways. Bun deals the files out in turn, and the
+          # into parts. Bun deals the files out in turn, and the
           # resolve-conflicts suite alone takes some 25 minutes there, its
           # check-resolution file 10, so fewer parts leave one that holds
           # several of its files near the job's budget. Each part also runs

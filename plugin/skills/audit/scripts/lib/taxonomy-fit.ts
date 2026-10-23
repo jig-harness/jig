@@ -258,8 +258,13 @@ export function taxonomyFindings(
   const configured = at(config, "issue_tracker.taxonomy");
   if (typeof configured === "string" && configured.trim() !== "") {
     if (!existsSync(resolveIn(root, configured))) return [];
-    // Named as configured, with forward slashes on every platform.
-    return checkAgainst(config, root, posix.normalize(configured));
+    // Named as configured, with forward slashes on every platform. A
+    // backslash separates only on Windows; elsewhere it is part of a name.
+    const named =
+      process.platform === "win32"
+        ? configured.replaceAll("\\", "/")
+        : configured;
+    return checkAgainst(config, root, posix.normalize(named));
   }
   const found = probedFiles(tracked).filter((f) =>
     TAXONOMY_NAMES.has(basename(f)),

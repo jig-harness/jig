@@ -27,8 +27,10 @@ function receiptPath(receipt: Receipt, root: string): string {
 }
 /**
  * A file's fsync does not persist the directory entry that names it. Windows
- * refuses to fsync a directory (EPERM), and NTFS journals the entry with the
- * rename or link that created it, so there is nothing to sync there.
+ * refuses to fsync a directory (EPERM), and Node offers no other flush of a
+ * directory entry there, so on Windows the entry is left to the file system:
+ * NTFS keeps it consistent across a crash, but a power loss just after
+ * publication can lose the newest receipt or its latest update.
  */
 function syncDirectory(path: string): void {
   if (process.platform === "win32") return;
@@ -64,7 +66,10 @@ export function writeReceipt(receipt: Receipt, root = stateRoot()): string {
   publish(receipt, path, false);
   return path;
 }
-/** One file per run, atomically updated; intent is durable before removal. */
+/**
+ * One file per run, atomically updated; intent is durable before removal,
+ * except for the directory entry on Windows (see syncDirectory).
+ */
 export function openReceipt(
   receipt: Receipt,
   root = stateRoot(),
