@@ -378,7 +378,11 @@ describe("work that is not a batch item", () => {
       });
     }
     const named = policy({
-      issue_tracker: { team: "ENG", states: { backlog: "Someday" } },
+      issue_tracker: {
+        adapter: "linear",
+        team: "ENG",
+        states: { backlog: "Someday" },
+      },
     });
     expect(at("someday ", "", named)).toBeNull();
     expect(at("Someday", "backlog")).toBeNull();
@@ -394,7 +398,11 @@ describe("work that is not a batch item", () => {
     for (const name of ["constructor", "__proto__", "toString"])
       expect(at(name)).toEqual({ kind: "unknown-state", state: name });
     const done = policy({
-      issue_tracker: { team: "ENG", states: { done: "Constructor" } },
+      issue_tracker: {
+        adapter: "linear",
+        team: "ENG",
+        states: { done: "Constructor" },
+      },
     });
     expect(at("Constructor", done)).toEqual({
       kind: "already-closed",

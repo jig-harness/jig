@@ -1488,7 +1488,7 @@ async function trackerCheck(config: Config): Promise<Finding[]> {
       {
         id: "derivation:issue_tracker",
         severity: "error",
-        message: `the ${String(at(config, "issue_tracker.adapter") ?? "linear")} tracker cannot be reached: ${e instanceof Error ? e.message : String(e)}`,
+        message: `the ${String(at(config, "issue_tracker.adapter") ?? "github")} tracker cannot be reached: ${e instanceof Error ? e.message : String(e)}`,
       },
     ];
   }

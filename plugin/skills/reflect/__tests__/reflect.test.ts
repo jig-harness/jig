@@ -97,7 +97,10 @@ describe("the journal", () => {
       "git@github.com:Example/Web.git",
       "eng-12-retry",
     );
-    repo.write(".config/jig.yaml", "issue_tracker:\n  team: ENG\n");
+    repo.write(
+      ".config/jig.yaml",
+      "issue_tracker:\n  adapter: linear\n  team: ENG\n",
+    );
     const id = repo.note(finding({ session: { model: "a-model" } }), [
       "--skill",
       "drive-pr",

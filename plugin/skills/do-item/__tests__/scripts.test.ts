@@ -1177,7 +1177,7 @@ describe("tracker.ts", () => {
     const overlay = join(dir, "overlay.yaml");
     writeFileSync(
       overlay,
-      "issue_tracker:\n  team: ENG\ndo_issue:\n  gates: []\n",
+      "issue_tracker:\n  adapter: linear\n  team: ENG\ndo_issue:\n  gates: []\n",
     );
     for (const op of ["states", "labels"]) {
       const r = spawnSync(process.execPath, [join(SCRIPTS, "tracker.ts"), op], {

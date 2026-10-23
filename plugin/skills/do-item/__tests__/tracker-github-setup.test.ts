@@ -126,9 +126,9 @@ describe("issue_tracker.github", () => {
     );
     expect(github.adapter).toBe("github");
     expect(github.team).toBe("acme/app");
-    expect(() => openTracker(parseTrackerConfig({}))).toThrow(
-      "issue_tracker.team",
-    );
+    expect(() =>
+      openTracker(parseTrackerConfig({ issue_tracker: { adapter: "linear" } })),
+    ).toThrow("issue_tracker.team");
   });
 });
 

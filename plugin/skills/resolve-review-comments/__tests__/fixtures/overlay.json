@@ -2,6 +2,9 @@
   "skills": [
     "resolve-review-comments"
   ],
+  "issue_tracker": {
+    "adapter": "linear"
+  },
   "gates": {
     "command": "bun run gates"
   },

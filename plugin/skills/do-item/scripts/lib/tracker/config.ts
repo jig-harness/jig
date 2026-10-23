@@ -3,8 +3,8 @@
  * `.config/jig.yaml`:
  *
  *   issue_tracker:
- *     adapter: linear          # which adapter answers; default `linear`
- *     team: ENG                # Linear: the key issue identifiers carry
+ *     adapter: github          # which adapter answers; default `github`
+ *     team: ENG                # Linear only: the key issue identifiers carry
  *     states:                  # canonical state → the tracker's own name
  *       in_progress: In Progress
  *     labels:                  # label role → the tracker's own label
@@ -44,7 +44,7 @@ export interface TrackerConfig {
   github: GitHubSettings;
 }
 
-export const DEFAULT_ADAPTER = "linear";
+export const DEFAULT_ADAPTER = "github";
 
 /** A canonical key as a display name: `in_progress` → `In Progress`. */
 export function defaultStateName(state: CanonicalState): string {
@@ -120,6 +120,19 @@ function refuseSharedLabels(
   }
 }
 
+/**
+ * `team` is Linear's key. Under the default GitHub adapter it would be
+ * ignored without a word, so a file that predates the default's change is
+ * refused until it names its adapter.
+ */
+function refuseTeamWithoutAdapter(adapter: unknown, team: unknown): void {
+  if (adapter === undefined && team !== null)
+    throw new TrackerConfigError(
+      "issue_tracker.adapter",
+      `issue_tracker.team is set but issue_tracker.adapter is not, and the default adapter is ${DEFAULT_ADAPTER}, which has no team; set issue_tracker.adapter: linear to keep ${team} issue keys`,
+    );
+}
+
 /** Validate the `issue_tracker` section of a parsed overlay. */
 export function parseTrackerConfig(
   overlay: Record<string, unknown>,
@@ -141,6 +154,8 @@ export function parseTrackerConfig(
     throw new Error(
       `issue_tracker.team must be an issue key prefix such as ENG (got ${JSON.stringify(team)})`,
     );
+
+  refuseTeamWithoutAdapter(section.adapter, team);
 
   const states = Object.fromEntries(
     CANONICAL_STATES.map((s) => [s, defaultStateName(s)]),

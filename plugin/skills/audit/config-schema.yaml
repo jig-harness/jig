@@ -266,7 +266,7 @@ fields:
   issue_tracker.adapter:
     type: enum
     values: [linear, github]
-    default: linear
+    default: github
     read_by: [do-item, drive-pr, decide, work-batch]
   issue_tracker.team:
     type: string

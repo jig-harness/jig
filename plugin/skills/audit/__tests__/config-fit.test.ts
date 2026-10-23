@@ -1449,6 +1449,7 @@ declined:
       "review.bots",
       "pull_requests.stacking",
       "review.repo_slug",
+      "issue_tracker.adapter",
       "issue_tracker.team",
       "drive.change_areas_catalog",
       "gates.command",
@@ -1468,6 +1469,8 @@ pull_requests:
   stacking: branch
 issue_tracker:
   # ENG-<n> issue keys in 3 of the last 3 merged pull requests
+  adapter: linear
+  # ENG-<n> issue keys in 3 of the last 3 merged pull requests
   team: ENG
 drive:
   # docs/change-areas.yaml is tracked and named like a change-area catalog
@@ -1480,7 +1483,7 @@ gates:
     expect(checkConfig(parsed, loadSchema())).toEqual([]);
     expect(parsed).toEqual({
       review: { bots: ["example-review[bot]"], repo_slug: "example/web" },
-      issue_tracker: { team: "ENG" },
+      issue_tracker: { adapter: "linear", team: "ENG" },
       pull_requests: { stacking: "branch" },
       drive: { change_areas_catalog: "docs/change-areas.yaml" },
       gates: { command: "npm run test" },
@@ -1507,7 +1510,7 @@ gates:
     const added = load(report.draft ?? "") as Record<string, unknown>;
     expect(added).toEqual({
       review: { bots: ["example-review[bot]"], repo_slug: "example/web" },
-      issue_tracker: { team: "ENG" },
+      issue_tracker: { adapter: "linear", team: "ENG" },
       pull_requests: { stacking: "branch" },
     });
     expect(checkConfig(added, loadSchema())).toEqual([]);
@@ -1516,7 +1519,7 @@ gates:
   test("a tracker without credentials cannot be reached", () => {
     const dir = repo({
       ".config/jig.yaml":
-        "repository:\n  base_branch: main\nissue_tracker:\n  team: ENG\n",
+        "repository:\n  base_branch: main\nissue_tracker:\n  adapter: linear\n  team: ENG\n",
     });
     const bin = fakeGh(dir, answers());
     // Only the fake gh and the system tools: no tracker client, no credential.

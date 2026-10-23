@@ -130,8 +130,8 @@ Move into configuration when a consumer needs them:
 
 - the review skill's deferral step (`defer-batch.ts`) calls Linear directly,
   with fixed label groups, instead of going through the
-  [tracker interface](../GLOSSARY.md), so a repository on GitHub Issues
-  cannot defer a finding. Moving it onto the interface makes it work on
+  [tracker interface](../GLOSSARY.md), so a repository on GitHub Issues,
+  the default tracker, cannot defer a finding. Moving it onto the interface makes it work on
   every adapter; revisit for GitHub Issues what the step relies on that
   GitHub lacks or spells differently: label groups (GitHub labels have none,
   so the type and repository groups become configured label lists), its

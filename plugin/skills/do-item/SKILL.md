@@ -59,13 +59,13 @@ configuration from the working directory.
 
 ### Consumer configuration
 
-Every field is optional except `issue_tracker.team` on the Linear adapter.
+Every field is optional except `issue_tracker.team` on the Linear adapter (`issue_tracker.adapter: linear`).
 The skill reads them at run time from `.config/jig.yaml`:
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
-| `issue_tracker.adapter` | Which tracker adapter the scripts use: `linear` (credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client) or `github` for GitHub Issues (the logged-in `gh` command-line client; its settings are under `issue_tracker.github`, [configuration reference](../../CONFIGURATION.md#issue_tracker)). Jira and a plan file kept in the repository are planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters) | `linear` |
-| `issue_tracker.team` | Linear only: the team the repository files into, as the prefix its issue keys carry (`ENG` for `ENG-123`) | Required on Linear: the tracker scripts stop with a message naming this field. Not used on GitHub Issues |
+| `issue_tracker.adapter` | Which tracker adapter the scripts use: `github` for GitHub Issues (the logged-in `gh` command-line client; its settings are under `issue_tracker.github`, [configuration reference](../../CONFIGURATION.md#issue_tracker)) or `linear` (credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client). Jira and a plan file kept in the repository are planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters) | `github` |
+| `issue_tracker.team` | Linear only: the team the repository files into, as the prefix its issue keys carry (`ENG` for `ENG-123`) | Required on Linear: the tracker scripts stop with a message naming this field. Not used on GitHub Issues, and refused without `issue_tracker.adapter: linear` |
 | `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress" |
 | `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
 | `issue_tracker.labels` | The repository's label for each role the skill acts on (see the table below) | The default names below |
