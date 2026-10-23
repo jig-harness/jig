@@ -131,7 +131,8 @@ interface Supervision {
 /**
  * Runs one child to its end under the launcher's ownership: every process the
  * launcher waits on starts here. The child leads its own process group, so a
- * signal reaches everything it started. Past the deadline, past the capture
+ * signal reaches everything that stays in it; a descendant that starts its own
+ * session leaves the group and is out of reach. Past the deadline, past the capture
  * budget, or when the launcher itself is told to stop, the group gets
  * `SIGTERM` and, `graceMs` later, `SIGKILL`. At `SIGKILL` the run settles at
  * once: the pipes are destroyed and the child unreferenced, so a descendant
