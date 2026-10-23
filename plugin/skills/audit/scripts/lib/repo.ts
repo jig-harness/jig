@@ -261,14 +261,23 @@ function inRepo(realRoot: string, path: string): string | null {
 }
 
 /**
- * A directory-entry name as the platform's file system compares it. NTFS
- * ignores case one UTF-16 unit at a time and never Unicode normalization,
- * so `é` and `e` + combining acute are two entries there; APFS and HFS+
- * ignore both.
+ * A directory-entry name approximately as the platform's file system
+ * compares it. NTFS ignores case one UTF-16 unit at a time and never
+ * Unicode normalization, so `é` and `e` + combining acute are two entries
+ * there; APFS and HFS+ ignore both, and fold case per character (final
+ * sigma folds to sigma), which upper- then lower-casing each character
+ * alone approximates.
  */
 function foldName(name: string): string {
-  if (process.platform !== "win32") return name.normalize("NFD").toLowerCase();
   let folded = "";
+  if (process.platform !== "win32") {
+    for (const char of name.normalize("NFD")) {
+      const upper = char.toUpperCase();
+      folded +=
+        [...upper].length === 1 ? upper.toLowerCase() : char.toLowerCase();
+    }
+    return folded;
+  }
   for (let i = 0; i < name.length; i++) {
     const unit = name[i] as string;
     const upper = unit.toUpperCase();
@@ -280,10 +289,11 @@ function foldName(name: string): string {
 /**
  * `segment` of the directory `dir` as the directory itself spells it: on a
  * case-insensitive file system `CHECK.ts` reaches the entry `check.ts`, and
- * the tracked name is the entry's. The exact spelling first; otherwise only
- * a name the file system compares equal to it (`foldName`) and of the same
- * file: identity alone would admit a hard link, which shares the file under
- * another name.
+ * the tracked name is the entry's. The exact spelling first; otherwise the
+ * entry of the same file, which the file system's own lookup chose when it
+ * resolved `segment`. Only when hard links give that file several names
+ * here does `foldName` pick among them, and a pick it cannot make keeps the
+ * command's spelling.
  */
 function spelled(dir: string, segment: string): string {
   const entry = join(dir, segment);
@@ -291,16 +301,17 @@ function spelled(dir: string, segment: string): string {
   if (names.includes(segment)) return entry;
   const own = lstatSync(entry, { bigint: true });
   if (own.ino === 0n) return entry;
-  const folded = foldName(segment);
-  const same = names.find((name) => {
-    if (foldName(name) !== folded) return false;
+  const same = names.filter((name) => {
     const other = lstatSync(join(dir, name), {
       bigint: true,
       throwIfNoEntry: false,
     });
     return other?.ino === own.ino && other.dev === own.dev;
   });
-  return same === undefined ? entry : join(dir, same);
+  const folded = foldName(segment);
+  const chosen =
+    same.length === 1 ? same : same.filter((name) => foldName(name) === folded);
+  return chosen.length === 1 ? join(dir, chosen[0] as string) : entry;
 }
 
 /** Links a resolution expands before giving up, as the kernel's SYMLOOP limit does. */

@@ -37,9 +37,12 @@ release: patch
   file system, a command that spells a tracked file in another case
   (`scripts/CHECK.ts` for `scripts/check.ts`) counts as tracked, and a hard
   link of another name never stands in for the entry the command reaches.
-  Names compare the way the file system compares them: macOS ignores
-  Unicode normalization, while on Windows `é` and `e` followed by a
-  combining accent are different names.
+  The tracked name is the entry the file system's own lookup reached, so
+  any spelling macOS treats as the same name (final sigma `ς` for `σ`, for
+  one) counts. Only when hard links give the file several names in one
+  directory are names compared by hand: macOS ignores Unicode normalization,
+  while on Windows `é` and `e` followed by a combining accent are different
+  names.
 - A relative `JIG_TRACE_FILE` now records the spans of the process that set
   it on Windows too.
 - The design-brief renderer waits for Chromium's debugging endpoint while

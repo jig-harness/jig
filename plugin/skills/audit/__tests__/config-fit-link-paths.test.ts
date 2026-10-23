@@ -162,6 +162,20 @@ caseTest("a tracked entry is not hidden by an untracked hard link", () => {
   expect(commandProblems("bun scripts/CHECK.ts", dir)).toEqual([]);
 });
 
+// Case folding maps final sigma to sigma; lower-casing does not.
+caseTest("a command spelled with final sigma reaches the sigma entry", () => {
+  const dir = committed({ "scripts/σ.ts": "" });
+  expect(commandProblems("bun scripts/ς.ts", dir)).toEqual([]);
+});
+
+caseTest(
+  "a hard link does not hide the sigma entry a final sigma reaches",
+  () => {
+    const dir = hardLinked("scripts/σ.ts", "scripts/aaa.ts");
+    expect(commandProblems("bun scripts/ς.ts", dir)).toEqual([]);
+  },
+);
+
 // NTFS keeps `é` and `e` + combining acute as two entries, and
 // scripts/É.ts reaches only the composed one; macOS cannot hold both.
 test.skipIf(process.platform !== "win32")(
