@@ -46,7 +46,7 @@ import { retryAttempts, retryDelay, wait } from "../../../shared/retry.ts";
  *
  *   <type> is the Type-group label the batched findings share, from the
  *   repository's declared taxonomy (bug, feature, infra, docs, chore) — one of
- *   the key's three components, with the repository label and PR number.
+ *   the key's components, with the repository label and PR number.
  *   The reviewer's FINDING text is read from STDIN, never from an argument:
  *   review text routinely contains backticks/$( )/$VAR that a shell argument
  *   would evaluate or drop before the script runs (the same reason reply bodies use stdin). Use a quoted heredoc (<<'EOF') or a file.
@@ -72,8 +72,7 @@ import { retryAttempts, retryDelay, wait } from "../../../shared/retry.ts";
  *     rather than the title, so a batch may be retitled to say what it
  *     contains without a later round losing it and minting a duplicate, and it
  *     carries the repository, so another consumer's PR of the same number and
- *     Type no longer collides (that used to be a Repo-LABEL check which had to
- *     abort on an unlabelled or multiply-labelled candidate). A candidate whose
+ *     Type does not collide, whatever its labels say. A candidate whose
  *     TYPE or REPO LABEL disagrees with its own marker aborts the run as
  *     mislabelled. An API failure
  *     ABORTS — it is never read as "not found", because create-on-error is how
@@ -866,12 +865,9 @@ export function pickBatch<T extends { createdAt: string }>(candidates: T[]): T {
  * second one is the outcome that is never acceptable — one issue carrying two
  * Size labels violates the taxonomy in the name of repairing it.
  *
- * Repo joined Type and Size here once the key carried the repository itself.
- * It used to be decided by a four-outcome `repoVerdict` that failed closed on
- * an unlabelled or multiply-labelled candidate, because the title key carried
- * no repository and the LABEL was all that kept a deferral out of another
- * repository's backlog. The marker settles ownership first now, so Repo
- * reconciles like any mandatory label — except that a single DIFFERING value
+ * Repo is decided here with Type and Size. The key marker carries the
+ * repository and settles ownership before this runs, so Repo reconciles like
+ * any mandatory label — except that a single DIFFERING value
  * is a conflict, not a tolerable alternative as with Size: it contradicts the
  * key in the issue's own description, so stamping over it rewrites a
  * mislabelling silently.
@@ -1106,10 +1102,9 @@ export function repairableMissingLabels(
   const liveNames = new Set(live.map((l) => l.name));
   // `wanted.repoLabel` is excluded from the generic `requiredContext` /
   // `requiredExtras` filters below and repaired ONLY through
-  // `missingSingleValued` above — which now decides the Repo
-  // group on the same absent/duplicate/differing terms as Type and Size (it
-  // previously had its own `repoVerdict` branch here, for the same reason and
-  // with the same effect). The generic filters test raw `!liveNames.has(n)`
+  // `missingSingleValued` above, which decides the Repo group on the same
+  // absent/duplicate/differing terms as Type and Size. The generic filters
+  // test raw `!liveNames.has(n)`
   // membership — exactly the signal a CONFLICTING Repo value also produces —
   // so a caller naming the repo label via `--labels` (legitimate: see "does
   // not duplicate a REPO label that is also passed as an extra" below) would
@@ -2625,9 +2620,8 @@ export async function runDeferBatch(
     `the open \`pr-followup\` issues carrying '${marker}'`,
   );
   // The marker carries the repository, so a foreign consumer's batch for the
-  // same PR number and Type does not match — the Repo-LABEL gate that stood
-  // here is no longer what keeps a deferral out of someone else's backlog.
-  // What survives is ordinary reconciliation: see `missingSingleValued`.
+  // same PR number and Type does not match; the Repo label is ordinary
+  // reconciliation (see `missingSingleValued`), not an ownership gate.
   const candidates = (foundConn.nodes ?? []).filter((c) =>
     hasBatchKey(c.description ?? "", args.repoLabel, args.pr, args.type),
   );
@@ -2679,13 +2673,11 @@ export async function runDeferBatch(
     title = target.title;
     // No `descriptionForRepair` here, unlike `appendWithRetry`'s seed rebuild
     // — a consequence of the key living in the description, not an omission.
-    // This site used to rebuild a WIPED description, reachable while the
-    // lookup was title-keyed. `target` now reaches this branch only by
-    // carrying the marker on a scaffold line, so `existingDescription` is
-    // non-blank by construction and a rebuild could never fire; an unreachable
-    // safety net is worse than one live path. The wipe is still handled where
-    // it stays reachable — `appendWithRetry`'s mid-loop rebuild, which also
-    // restores the key. See `descriptionForRepair`.
+    // `target` reaches this branch only by carrying the marker on a scaffold
+    // line, so `existingDescription` is non-blank by construction and a
+    // rebuild could never fire. A wipe is handled where it is reachable —
+    // `appendWithRetry`'s mid-loop rebuild, which also restores the key. See
+    // `descriptionForRepair`.
     const existingDescription = target.description ?? "";
     const next = appendEntry(existingDescription, entry, args.entryKey);
     appended = next.appended;

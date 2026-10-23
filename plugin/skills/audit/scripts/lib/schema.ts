@@ -116,21 +116,37 @@ function validSpec(spec: unknown): boolean {
   if (Object.keys(spec).some((k) => !SPEC_KEYS.has(k))) return false;
   if (spec.type === "list" ? !validItems(spec.items) : spec.items !== undefined)
     return false;
-  if (!validSpecPattern(spec.pattern)) return false;
+  if (!validSpecPattern(spec.type, spec.pattern)) return false;
   return spec.values_type === undefined
     ? true
     : spec.type === "map" && validSpec(spec.values_type);
 }
 
+/** The types whose values are text, and so the only ones a `pattern` constrains. */
+const PATTERN_TYPES: ReadonlySet<unknown> = new Set([
+  "string",
+  "command",
+  "path",
+]);
+
 /**
- * Whether a spec's `pattern`, when present, is a string. A malformed pattern
- * throws its own error, as a field's `pattern` does.
+ * What is wrong with a `pattern` on a value of `type`, or null when it is
+ * absent or a string on a text type. A malformed pattern throws the regular
+ * expression's own error.
  */
-function validSpecPattern(pattern: unknown): boolean {
-  if (pattern === undefined) return true;
-  if (typeof pattern !== "string") return false;
+function patternProblem(type: unknown, pattern: unknown): string | null {
+  if (pattern === undefined) return null;
+  if (typeof pattern !== "string")
+    return "pattern must be a regular expression";
+  if (!PATTERN_TYPES.has(type))
+    return "pattern applies only to string, command and path";
   new RegExp(pattern);
-  return true;
+  return null;
+}
+
+/** Whether a spec's `pattern`, when present, is one its type enforces. */
+function validSpecPattern(type: unknown, pattern: unknown): boolean {
+  return patternProblem(type, pattern) === null;
 }
 
 /** Whether a list field's `items` is a type spec or maps keys to type specs. */
@@ -173,13 +189,7 @@ const ENTRY_CHECKS: ((entry: Entry) => string | null)[] = [
     e.min !== undefined && typeof e.min !== "number"
       ? "min must be a number"
       : null,
-  (e) => {
-    if (e.pattern === undefined) return null;
-    if (typeof e.pattern !== "string")
-      return "pattern must be a regular expression";
-    new RegExp(e.pattern);
-    return null;
-  },
+  (e) => patternProblem(e.type, e.pattern),
   (e) =>
     e.keys !== undefined && !stringList(e.keys) ? "keys must be a list" : null,
   (e) =>

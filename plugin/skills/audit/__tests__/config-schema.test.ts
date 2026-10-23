@@ -401,6 +401,30 @@ describe("the schema's own format", () => {
       parseSchema(withField({ type: "list", items: { type: "list" } })),
     ).toThrow("a list needs items");
   });
+  test("a pattern constrains only a text type, at any depth", () => {
+    for (const type of ["integer", "boolean", "enum", "list", "map", "any"])
+      expect(() =>
+        parseSchema(
+          withField({ type, values: ["a"], items: "string", pattern: "^1$" }),
+        ),
+      ).toThrow("pattern applies only to string, command and path");
+    for (const type of ["integer", "boolean", "list", "map", "any"])
+      expect(() =>
+        parseSchema(
+          withField({
+            type: "list",
+            items: { type, items: "string", pattern: "^1$" },
+          }),
+        ),
+      ).toThrow("a list needs items");
+    const nested = parseSchema(
+      withField({ type: "list", items: { type: "path", pattern: "^1$" } }),
+    );
+    expect(checkConfig({ a: { b: ["1"] } }, nested)).toEqual([]);
+    expect(checkConfig({ a: { b: ["2"] } }, nested).map((f) => f.id)).toEqual([
+      "type:a.b",
+    ]);
+  });
   test("a default is a value the field accepts", () => {
     expect(() =>
       parseSchema(withField({ type: "enum", values: ["a"], default: "b" })),

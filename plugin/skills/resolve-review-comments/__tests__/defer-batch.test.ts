@@ -3774,14 +3774,19 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
   }
 
   it("APPENDS to a RETITLED batch instead of minting a duplicate — the whole point of the marker key", async () => {
-    // The defect this change fixes: title-as-key demanded exact equality and
-    // a FIND miss fell through to CREATE, so retitling a batch whose pull
-    // request could still run a round minted a duplicate. This batch shares
-    // nothing with `batchTitle(pr, type)` and must still be found.
+    // The batch is found by the key marker in its description, so a title
+    // that shares nothing with `batchTitle(pr, type)` must still be found
+    // and appended to, never answered with a second batch.
     const target = makeTarget(null, {
       title: "Tighten the matching guards flagged in review",
     });
     expect(target.title).not.toBe(batchTitle(pr, type));
+    const marker = batchKeyMarker(
+      baseArgs.repoLabel,
+      baseArgs.pr,
+      baseArgs.type,
+    );
+    expect(target.description).toContain(marker);
 
     const calls: string[] = [];
     let written = "";
@@ -3791,8 +3796,17 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
       }
       if (query.includes("issues(first: 50")) {
         calls.push("find");
+        // Apply the lookup's own semantics: the server returns the target
+        // only to a description search for its exact key marker, so a
+        // lookup by title, or by any other needle, finds nothing.
+        const byMarker =
+          /description:\s*\{\s*contains:\s*\$search\s*\}/.test(query) &&
+          vars.search === marker;
         return {
-          issues: { pageInfo: { hasNextPage: false }, nodes: [target] },
+          issues: {
+            pageInfo: { hasNextPage: false },
+            nodes: byMarker ? [target] : [],
+          },
         };
       }
       if (query.includes("issueCreate(")) {

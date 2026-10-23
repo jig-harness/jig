@@ -86,11 +86,9 @@ export const SAFE_KEY_COMPONENT_DESCRIPTION =
  * field this script already authors and appends to. An HTML comment, so it
  * renders invisibly.
  *
- * It carries the repository, which the title never did: consumers share one
- * tracker workspace and pull-request numbers collide across them, so telling
- * two same-numbered batches apart used to fall to a Repo-LABEL check that had
- * to fail closed on an unlabelled or multiply-labelled candidate. A foreign
- * batch now simply does not match.
+ * It carries the repository: consumers share one tracker workspace and
+ * pull-request numbers collide across them, so another consumer's batch for
+ * the same number and Type does not match, whatever its labels say.
  *
  * `parseArgs` checks every component with `isSafeKeyComponent` first.
  */
@@ -219,14 +217,10 @@ export function initialDescription(
  *
  * RECONCILE never touches a batch's `parentId` (see the file header): it
  * belongs to whichever entry filed the batch FIRST, and an append neither
- * changes nor reads it. A repair that rebuilt the scaffold from THIS
- * invocation's own `--no-parent` flag ignored that entirely — an append that
- * happens to pass `--no-parent` onto a batch whose first entry selected a
- * normal epic parent left the issue's `parentId` field untouched (still
- * parented) while its just-rebuilt description asserted
- * `**No epic parent**` and named THIS run's rejected epic, corrupting the
- * placement audit trail a reader relies on. `hasParent` is read from a fresh
- * query of the batch's actual `parent` field, not from `args.noParent`.
+ * changes nor reads it. So the rebuilt scaffold's placement claim follows the
+ * issue's actual `parent`, read fresh as `hasParent`, never this invocation's
+ * `--no-parent` flag: an append passing `--no-parent` onto a parented batch
+ * would otherwise write `**No epic parent**` over an issue that has one.
  *
  * When the batch genuinely has no parent, `invocationRationale` is NEVER
  * reused here — even when this run happens to have one of its own. Having
@@ -239,10 +233,9 @@ export function initialDescription(
  * `rejectedEpic: null`, NOT `''`. `''` is `initialDescription`'s rendering
  * for a VERIFIED fact ("the originating issue has no epic to inherit"),
  * which this fallback has no way to know: the batch could equally have been
- * filed parentless because ITS OWN originating issue rejected a real epic.
- * Reusing `''` here rendered a description that both admitted the reason
- * was unrecoverable AND asserted a specific, possibly false, one in the same
- * sentence.
+ * filed parentless because ITS OWN originating issue rejected a real epic,
+ * and `''` would assert one specific reason beside the admission that the
+ * reason is lost.
  */
 export function noParentRationaleForRepair(
   hasParent: boolean,
@@ -266,20 +259,19 @@ export function noParentRationaleForRepair(
  * Called from ONE site: `appendWithRetry`'s mid-loop rebuild, after a
  * concurrent writer clobbers the description. Testing this function directly
  * covers the logic but NOT the wiring, so that call site is exercised
- * separately against a mock `LinearClient` — `main()` was extracted into
- * `runDeferBatch` for exactly that reason, after a rebuild reachable by no
- * test let a regression through.
+ * separately through `runDeferBatch` against a mock `LinearClient`.
  *
  * The rebuild also restores the `batchKeyMarker` line, the LOOKUP KEY:
  * without it a writer blanking the description mid-append would leave the
  * batch permanently unfindable. The same holds for a writer that keeps the
  * text but drops the key line, so a non-blank description with no key line
  * gets the marker put back in front of it. One carrying a DIFFERENT key line
- * is returned unchanged; `appendWithRetry` refuses that case before writing. `runDeferBatch` no
- * longer rebuilds — a candidate gets there by matching the marker in the very
- * description passed here, so a blank one cannot arrive; a batch wiped while
- * no run is in flight is simply unfindable, its entries gone with it, so a
- * fresh batch is honest rather than appending to an empty husk.
+ * is returned unchanged; `appendWithRetry` refuses that case before writing.
+ * `runDeferBatch`'s append to a found batch never rebuilds: a candidate is
+ * found by the marker in its description, so a blank one cannot arrive. A
+ * batch wiped while no run is in flight is unfindable, its entries gone with
+ * it, so the next run files a fresh batch rather than appending to an empty
+ * husk.
  */
 export function descriptionForRepair(
   liveDescription: string,
@@ -325,9 +317,9 @@ export function scaffoldPortion(description: string): string {
  * present or absent) agree with the issue's FRESHLY read `hasParent`?
  *
  * A mid-loop rebuild can race a reparent/unparent, so the REBUILT scaffold is
- * built from a `hasParent` already stale when written — the verify step
- * re-reads `parent` on every attempt, but until this function existed nothing
- * compared that fresh value against what the confirmed description CLAIMS.
+ * built from a `hasParent` already stale when written. The verify step
+ * re-reads `parent` on every attempt, and this compares that fresh value
+ * against what the confirmed description CLAIMS.
  * Only meaningful for a description THIS run rebuilt (`appendWithRetry`'s
  * `everRebuiltScaffold`): an ordinary batch's claim predates this run, and
  * RECONCILE never touches it.
