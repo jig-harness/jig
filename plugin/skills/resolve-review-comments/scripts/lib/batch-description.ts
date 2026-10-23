@@ -8,7 +8,7 @@
  * directly and cannot drift against the caller's state.
  *
  * The two halves belong together: `initialDescription` is what WRITES the key,
- * `hasBatchKey` is what READS it, and `scaffoldPortion` is what bounds where
+ * `hasBatchKey` is what READS it, and `leadingKeyLine` is what bounds where
  * it may be read from. Splitting them would let the three disagree about where
  * in a description the key lives.
  */
@@ -40,8 +40,16 @@ export function batchTitle(pr: string, type: string): string {
  * the batch under something no later round reconstructs.
  */
 export function isSafeKeyComponent(value: string): boolean {
-  return /^[A-Za-z0-9._:@+/-]+$/.test(value);
+  return new RegExp(SAFE_KEY_COMPONENT_PATTERN).test(value);
 }
+
+/**
+ * `isSafeKeyComponent`'s rule as a regular-expression source, shared with the
+ * audit skill's configuration schema (`review.repo_label` and the entries of
+ * `review.taxonomy.types` / `.repos`), so the auditor flags a declared value
+ * this script would refuse before a deferral ever reaches it.
+ */
+export const SAFE_KEY_COMPONENT_PATTERN = "^[A-Za-z0-9._:@+/-]+$";
 
 /**
  * Why `value` cannot be a batch-key component, or `undefined` when it can.
@@ -97,17 +105,15 @@ export function batchKeyMarker(
 /**
  * Does this description carry this batch key?
  *
- * Two narrowings, both load-bearing: the server filter this backs is a
- * SUBSTRING match, so an issue merely QUOTING another batch's marker comes
- * back as a candidate, and claiming it would append the finding into a
- * different batch — the destructive direction.
- *
- * 1. Scoped to `scaffoldPortion`, above `## Entries`. Entry text is external
- *    and model-generated, and deferrals about this file quote markers
- *    verbatim. Same split, same reason, as `placementMatchesFreshParent`.
- * 2. A whole trimmed LINE, as `appendEntry` keys entry headings. `renderEntry`
- *    prefixes quoted lines with `> ` and labels reason/fix, so no rendered
- *    entry yields a bare marker line even before the scoping.
+ * The key is honoured only in its canonical position: the description's
+ * first non-blank line, indented by at most three spaces, exactly as
+ * `initialDescription` writes it. The server filter this backs is a SUBSTRING
+ * match, so any issue merely QUOTING a marker comes back as a candidate:
+ * another batch's entry quoting it, or an unrelated issue showing it in a
+ * fenced or indented code example. Claiming such an issue would append the
+ * finding into it, the destructive direction. A fenced example cannot start
+ * on the first line with the marker itself, and four or more leading spaces
+ * make the line an indented code block, so neither reads as a key.
  *
  * Exact-case: the marker is machine-written, never typed.
  */
@@ -117,10 +123,24 @@ export function hasBatchKey(
   pr: string,
   type: string,
 ): boolean {
-  const marker = batchKeyMarker(repoLabel, pr, type);
-  return scaffoldPortion(description)
+  return leadingKeyLine(description) === batchKeyMarker(repoLabel, pr, type);
+}
+
+/**
+ * The description's first non-blank line, with up to three spaces of
+ * indentation and trailing whitespace removed, when it has the shape of a
+ * batch-key marker; otherwise `null`. The canonical position `hasBatchKey`
+ * reads, exposed so a writer can tell a description that has LOST its key
+ * from one that carries a DIFFERENT batch's key.
+ */
+export function leadingKeyLine(description: string): string | null {
+  const first = description
     .split("\n")
-    .some((line) => line.trim() === marker);
+    .find((line) => line.trim() !== "")
+    ?.trimEnd();
+  if (first === undefined || !/^ {0,3}<!-- defer-batch-key: /.test(first))
+    return null;
+  return first.trimStart();
 }
 
 /**
@@ -147,9 +167,9 @@ export interface NoParentRationale {
  * The scaffold a freshly created batch issue starts from.
  *
  * The `batchKeyMarker` line comes FIRST: it is the key every later round
- * finds this batch by, so it must sit in the scaffold slice `hasBatchKey`
- * reads (above `## Entries`), survive every rebuild, and stay put when a
- * person edits the prose below it.
+ * finds this batch by, so it must sit in the one position `hasBatchKey`
+ * reads, survive every rebuild, and stay put when a person edits the prose
+ * below it.
  */
 export function initialDescription(
   repoLabel: string,
@@ -250,9 +270,12 @@ export function noParentRationaleForRepair(
  * `runDeferBatch` for exactly that reason, after a rebuild reachable by no
  * test let a regression through.
  *
- * The rebuild also restores the `batchKeyMarker` line, now the LOOKUP KEY
- * rather than mere prose: without it a writer blanking the description
- * mid-append would leave the batch permanently unfindable. `runDeferBatch` no
+ * The rebuild also restores the `batchKeyMarker` line, the LOOKUP KEY:
+ * without it a writer blanking the description mid-append would leave the
+ * batch permanently unfindable. The same holds for a writer that keeps the
+ * text but drops the key line, so a non-blank description with no key line
+ * gets the marker put back in front of it. One carrying a DIFFERENT key line
+ * is returned unchanged; `appendWithRetry` refuses that case before writing. `runDeferBatch` no
  * longer rebuilds — a candidate gets there by matching the marker in the very
  * description passed here, so a blank one cannot arrive; a batch wiped while
  * no run is in flight is simply unfindable, its entries gone with it, so a
@@ -266,15 +289,17 @@ export function descriptionForRepair(
   originating: string,
   hasParent: boolean,
 ): string {
-  return liveDescription.trim() === ""
-    ? initialDescription(
-        repoLabel,
-        pr,
-        type,
-        originating,
-        noParentRationaleForRepair(hasParent),
-      )
-    : liveDescription;
+  if (liveDescription.trim() === "")
+    return initialDescription(
+      repoLabel,
+      pr,
+      type,
+      originating,
+      noParentRationaleForRepair(hasParent),
+    );
+  if (leadingKeyLine(liveDescription) === null)
+    return `${batchKeyMarker(repoLabel, pr, type)}\n\n${liveDescription}`;
+  return liveDescription;
 }
 
 /**

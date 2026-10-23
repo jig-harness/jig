@@ -238,6 +238,7 @@ import {
   batchKeyMarker,
   batchTitle,
   hasBatchKey,
+  leadingKeyLine,
   descriptionForRepair,
   initialDescription,
   keyComponentError,
@@ -695,16 +696,6 @@ export function headingEntryKey(line: string): string | null {
   return link ? link[2] || link[1] || "" : rest;
 }
 
-/**
- * The entry headings a description actually contains, skipping anything inside
- * a FENCED code block.
- *
- * CommonMark renders a `### …` line inside ``` or ~~~ as code, not a heading,
- * so counting one as a real entry makes the append skip a finding that was
- * never recorded — the thread then resolves with nothing tracking it. Same
- * failure the indented-code-block bound closed; this is its sibling, and the
- * two together are what "a heading is a heading" actually means here.
- */
 /**
  * The entry headings a description actually contains, skipping anything inside
  * a FENCED code block.
@@ -1770,6 +1761,7 @@ async function rebuildDescriptionAndLabels(
   wantedForRepair: Args,
   requiredContext: string[],
   signal: AbortSignal,
+  identifier: string,
 ): Promise<{
   description: string;
   needsDescriptionWrite: boolean;
@@ -1777,6 +1769,7 @@ async function rebuildDescriptionAndLabels(
   missingLabels: string[];
   addLabels: LabelNode[];
 }> {
+  abortOnForeignKey(liveDescription, args, identifier);
   const description = appendEntry(
     descriptionForRepair(
       liveDescription,
@@ -1807,6 +1800,49 @@ async function rebuildDescriptionAndLabels(
     missingLabels,
     addLabels,
   };
+}
+
+/**
+ * What a freshly read description is missing for this append to count as
+ * confirmed: this run's entry, and the batch key line.
+ *
+ * The entry is checked unconditionally, never only when this run appended
+ * it: an entry already present at read time can be erased by a concurrent
+ * stale replacement after it. The key line likewise: a concurrent writer can
+ * keep the entry while dropping the marker, and a batch confirmed without its
+ * key is one the next round cannot find, so it files a duplicate.
+ */
+function descriptionGapsOf(liveDescription: string, args: Args): string[] {
+  return [
+    hasEntry(liveDescription, args.entryKey) ? "" : "the entry",
+    hasBatchKey(liveDescription, args.repoLabel, args.pr, args.type)
+      ? ""
+      : "the batch key line",
+  ].filter((gap) => gap !== "");
+}
+
+/**
+ * Abort if a FRESH read shows the batch's description now leads with a
+ * DIFFERENT batch's key line. A missing key line is repaired
+ * (`descriptionForRepair` puts this batch's marker back); a conflicting one
+ * is not, because either key may be the one a later round should find, and
+ * overwriting it would orphan the other batch's lookup.
+ */
+function abortOnForeignKey(
+  liveDescription: string,
+  args: Args,
+  identifier: string,
+): void {
+  const keyLine = leadingKeyLine(liveDescription);
+  if (
+    keyLine !== null &&
+    keyLine !== batchKeyMarker(args.repoLabel, args.pr, args.type)
+  ) {
+    fail(
+      1,
+      `defer-batch: ${identifier}'s description now leads with a different batch key ('${keyLine}') than this finding's ('${batchKeyMarker(args.repoLabel, args.pr, args.type)}') — a concurrent writer replaced the key line. Do NOT resolve the review thread. Restore the key line that belongs to ${identifier}, then re-run.`,
+    );
+  }
 }
 
 /**
@@ -2093,6 +2129,7 @@ export async function appendWithRetry(
       wantedForRepair,
       requiredContext,
       signal,
+      target.identifier,
     );
     description = rebuilt.description;
     needsDescriptionWrite = rebuilt.needsDescriptionWrite;
@@ -2211,11 +2248,7 @@ export async function appendWithRetry(
     livePriority = issue.priority;
     const liveDescription = issue.description ?? "";
     const liveNames = new Set(liveLabels.map((l) => l.name));
-    // UNCONDITIONAL, not `!appended || …`. An entry that was already
-    // present at read time can be erased by a concurrent stale
-    // replacement after it, and treating "I did not need to append" as
-    // "the entry is there" approves exactly that case.
-    const entryOk = hasEntry(liveDescription, args.entryKey);
+    const descriptionGaps = descriptionGapsOf(liveDescription, args);
     // The whole CONTRACT, not just this run's additions — a concurrent
     // replacement can drop a mandatory label that predates this run, which
     // a `missingLabels`-only check never asks about.
@@ -2234,7 +2267,7 @@ export async function appendWithRetry(
     // is exactly the case this check exists to catch and repair on retry.
     const priorityOk = priorityReflectsSeverity(livePriority, args.severity);
     if (
-      entryOk &&
+      descriptionGaps.length === 0 &&
       stillMissing.length === 0 &&
       contractProblems.length === 0 &&
       priorityOk
@@ -2298,7 +2331,7 @@ export async function appendWithRetry(
       };
     }
     unconfirmed = [
-      entryOk ? "" : "the entry",
+      ...descriptionGaps,
       stillMissing.length === 0 ? "" : `label(s) ${stillMissing.join(", ")}`,
       contractProblems.length === 0
         ? ""
@@ -2366,6 +2399,7 @@ export async function appendWithRetry(
         wantedForRepair,
         requiredContext,
         signal,
+        target.identifier,
       );
       // Compared against THIS attempt's own fresh `liveDescription`, not the
       // pre-loop seed — mirrors `livePriority`'s refresh-from-the-latest-read
@@ -2579,8 +2613,8 @@ export async function runDeferBatch(
 
   // FIND — a failure here THROWS (runMain → exit 1); it is never "not found",
   // and neither is a truncated page (`assertComplete` below). The needle is
-  // the whole `batchKeyMarker`: `hasBatchKey` demands a whole scaffold LINE
-  // equal to it anyway, so nothing that could match is lost, and the narrower
+  // the whole `batchKeyMarker`: `hasBatchKey` demands the description's
+  // leading line equal it anyway, so nothing that could match is lost, and the narrower
   // server-side filter keeps the page from being where a same-key batch hides.
   const marker = batchKeyMarker(args.repoLabel, args.pr, args.type);
   assertNotAborted(signal, "the FIND_BATCHES lookup");

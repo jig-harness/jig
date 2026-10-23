@@ -30,7 +30,12 @@ export type FieldType = (typeof FIELD_TYPES)[number];
 /** A nested value's type: a type name, or a list or map with its own entries' types. */
 export type TypeSpec =
   | FieldType
-  | { type: FieldType; items?: Items; values_type?: TypeSpec };
+  | {
+      type: FieldType;
+      items?: Items;
+      values_type?: TypeSpec;
+      pattern?: string;
+    };
 
 /** A list's entries: one type for all, or mappings with a type per key. */
 export type Items = TypeSpec | { fields: Record<string, TypeSpec> };
@@ -102,7 +107,7 @@ function stringList(v: unknown): v is string[] {
 
 type Entry = Record<string, unknown>;
 
-const SPEC_KEYS = new Set(["type", "items", "values_type"]);
+const SPEC_KEYS = new Set(["type", "items", "values_type", "pattern"]);
 
 /** Whether `spec` is a type name, or a list or map spec with typed entries. */
 function validSpec(spec: unknown): boolean {
@@ -111,9 +116,21 @@ function validSpec(spec: unknown): boolean {
   if (Object.keys(spec).some((k) => !SPEC_KEYS.has(k))) return false;
   if (spec.type === "list" ? !validItems(spec.items) : spec.items !== undefined)
     return false;
+  if (!validSpecPattern(spec.pattern)) return false;
   return spec.values_type === undefined
     ? true
     : spec.type === "map" && validSpec(spec.values_type);
+}
+
+/**
+ * Whether a spec's `pattern`, when present, is a string. A malformed pattern
+ * throws its own error, as a field's `pattern` does.
+ */
+function validSpecPattern(pattern: unknown): boolean {
+  if (pattern === undefined) return true;
+  if (typeof pattern !== "string") return false;
+  new RegExp(pattern);
+  return true;
 }
 
 /** Whether a list field's `items` is a type spec or maps keys to type specs. */

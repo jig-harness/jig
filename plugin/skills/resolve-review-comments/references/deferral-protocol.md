@@ -107,8 +107,7 @@ No justification in the round report, no individual issue.
 The batch key and contract:
 
 - **One batch issue per repository, PR and Type**, keyed on a marker the
-  helper writes into the issue's **description**, on a line of its own above
-  `## Entries`:
+  helper writes as the **first line** of the issue's description:
 
   ```markdown
   <!-- defer-batch-key: repo=project pr=4374 type=bug -->
@@ -120,21 +119,19 @@ The batch key and contract:
 - **The title is display-only.** A new batch is seeded as
   `PR #NNNN <type> review follow-ups` (e.g. `PR #42 bug review follow-ups`),
   and nothing ever looks a batch up by it — so **retitle a batch freely** to
-  say what it actually contains. That is the point of keying on the marker:
-  while the title *was* the key, matching was exact-equality with
-  create-on-miss, so renaming a batch whose pull request could still run a
-  round minted a duplicate, which is why trackers accumulate batches titled
-  nothing but their PR number and Type.
+  say what it actually contains.
+- **Only the first line is the key.** A marker anywhere else in a
+  description (quoted in an entry, or shown in a code example in some other
+  issue) is not, so the helper never appends to an issue merely because it
+  mentions a key.
 - **Why per Type**: the taxonomy's Type group is pick-one and Type is chosen
   from the finding, so a batch mixing incompatible Types (a correctness bug
   and a docs correction) cannot be labeled honestly. One batch per PR and
   Type is still far fewer issues than one per finding.
 - **Why per repository**: the key carries the repository because consumers
-  share one tracker workspace and pull-request numbers collide across them. A
-  foreign batch simply does not match the key; it used to be told apart by the
-  Repo *label*, which forced the helper to abort whenever a candidate's Repo
-  group was absent or held more than one value. The label and the key must
-  agree — a batch whose Repo or Type label contradicts its own marker is
+  share one tracker workspace and pull-request numbers collide across them, so
+  another repository's batch for the same PR number and Type does not match
+  the key. The label and the key must agree — a batch whose Repo or Type label contradicts its own marker is
   refused rather than silently restamped. Because both are embedded in a
   one-line HTML comment, a Repo or Type label declared in `review.taxonomy`
   must be free of whitespace and of anything that could open or close a
@@ -147,9 +144,10 @@ The batch key and contract:
   key lives there, so a wiped description — or an edited marker — makes the
   batch unfindable and the next round files a fresh one under a key nothing
   can match. Edit prose and entries freely; leave that one line
-  byte-for-byte. (A writer that blanks the description *while* the helper is
-  mid-append is repaired automatically: the helper rebuilds the scaffold,
-  marker included.)
+  byte-for-byte. (A writer that blanks the description or drops the marker
+  *while* the helper is mid-append is repaired automatically: the helper
+  puts the marker back before confirming the append. A marker replaced by a
+  different batch's key is refused instead, for a person to settle.)
 - Each deferred thread's reply links whichever issue carries it — several
   threads may link the same batch issue.
 

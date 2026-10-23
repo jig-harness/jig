@@ -6,7 +6,7 @@ release: minor
 
 - **Breaking.** `resolve-review-comments`' deferral batches are now looked up
   by a marker in the issue **description** — `<!-- defer-batch-key: repo=…
-  pr=… type=… -->`, written on its own line above `## Entries` — instead of by
+  pr=… type=… -->`, written as the description's first line — instead of by
   the issue title. The title becomes display-only, so a batch can be retitled
   to say what it actually contains; previously the title *was* the key, matched
   by exact equality with create-on-miss, so renaming a batch whose pull request
@@ -19,9 +19,10 @@ release: minor
 
   **What a consumer changes:** any batch issue that is still *live* — its pull
   request still open, so a later round will look it up — needs the marker added
-  to the top of its description, or that round files a second issue beside it.
+  as the first line of its description, or that round files a second issue beside it.
   Batches on merged pull requests need nothing: no round will look them up
-  again. The marker is exactly
+  again. Only the first line counts: a marker anywhere else in a description
+  is ignored, so an issue that merely quotes one is never appended to. The marker is exactly
   `<!-- defer-batch-key: repo=<your repo label> pr=<number> type=<type> -->`,
   with the repository label and Type as they appear in
   `review.taxonomy.repos` / `.types`. Once added, stop editing that line:
@@ -32,4 +33,5 @@ release: minor
   `letters, digits, . _ : @ + / -` with no whitespace — a label that cannot be
   embedded in an HTML comment on one line is refused before anything is
   written, rather than producing a malformed key. Rename any such label in
-  `review.taxonomy`.
+  `review.taxonomy`. The audit's configuration check flags such a label in
+  `review.repo_label`, `review.taxonomy.repos` or `review.taxonomy.types`.

@@ -49,6 +49,7 @@ import {
 } from "../../changelog/scripts/config.ts";
 import { FORMAT_IDS } from "../../changelog/scripts/formats.ts";
 import { DEFAULT_TAXONOMY } from "../../file-issue/scripts/lib/config.ts";
+import { SAFE_KEY_COMPONENT_PATTERN } from "../../resolve-review-comments/scripts/lib/batch-description.ts";
 import {
   DEFAULT_AREA as CODE_STATS_DEFAULT_AREA,
   FIELDS as CODE_STATS_FIELDS,
@@ -274,6 +275,40 @@ describe("the reading skills", () => {
     expect(problems(2 ** 53)).toEqual([
       "drive.max_rounds must be a whole number ≥ 1",
     ]);
+  });
+
+  test("refuse the batch-key labels the deferral helper refuses", () => {
+    const itemPattern = (path: string) => {
+      const items = field(path)?.items;
+      return typeof items === "object" && "pattern" in items
+        ? items.pattern
+        : undefined;
+    };
+    expect(field("review.repo_label")?.pattern).toBe(
+      SAFE_KEY_COMPONENT_PATTERN,
+    );
+    expect(itemPattern("review.taxonomy.repos")).toBe(
+      SAFE_KEY_COMPONENT_PATTERN,
+    );
+    expect(itemPattern("review.taxonomy.types")).toBe(
+      SAFE_KEY_COMPONENT_PATTERN,
+    );
+    const messages = checkConfig(
+      {
+        review: {
+          repo_label: "my repo",
+          taxonomy: { types: ["bug", "tech debt"], repos: ["web"] },
+        },
+      },
+      schema,
+    ).map((f) => f.message);
+    expect(messages.some((m) => m.startsWith("review.repo_label"))).toBe(true);
+    expect(messages).toContain(
+      `review.taxonomy.types entry 2 must match ${SAFE_KEY_COMPONENT_PATTERN}`,
+    );
+    expect(messages.some((m) => m.startsWith("review.taxonomy.repos"))).toBe(
+      false,
+    );
   });
 
   test("read the fields the schema lists in their strict maps", () => {
