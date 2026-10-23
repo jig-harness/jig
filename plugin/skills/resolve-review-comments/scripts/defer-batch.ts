@@ -45,8 +45,8 @@ import { retryAttempts, retryDelay, wait } from "../../../shared/retry.ts";
  *   command the real run aborts.
  *
  *   <type> is the Type-group label the batched findings share, from the
- *   repository's declared taxonomy (bug, feature, infra, docs, chore) — it is
- *   in the title because it is the lookup key.
+ *   repository's declared taxonomy (bug, feature, infra, docs, chore) — one of
+ *   the key's components, with the repository label and PR number.
  *   The reviewer's FINDING text is read from STDIN, never from an argument:
  *   review text routinely contains backticks/$( )/$VAR that a shell argument
  *   would evaluate or drop before the script runs (the same reason reply bodies use stdin). Use a quoted heredoc (<<'EOF') or a file.
@@ -62,22 +62,19 @@ import { retryAttempts, retryDelay, wait } from "../../../shared/retry.ts";
  *   append, which would report a later real deferral as already present.
  *
  * Behaviour:
- *   - FIND: searches open issues whose title is exactly
- *     `PR #<N> <type> review follow-ups` (case-insensitive) — keyed on the
- *     TITLE, deliberately not on `pr-followup`, because filtering by that
- *     label made a batch missing it invisible and the helper then minted a
- *     second issue under a key that already had one; it is a run-independent
- *     mandatory label, so the batch is found and the label reconciled onto it
- *     — AND which do not
- *     carry a DIFFERENT Repo label — the title carries no repository, so
- *     another repo's PR of the same number and Type mints an identically
- *     titled batch, and appending to it files the deferral into someone
- *     else's backlog. A candidate carrying NO Repo label ABORTS the run: it
- *     is ambiguous rather than ours, and claiming it would both misfile the
- *     finding and stamp that issue with this repo's label. A candidate whose
- *     TYPE disagrees with the title aborts too — Type is the lookup key, so
- *     the batch is mislabelled and appending would file the finding under a
- *     Type that decides which findings may share the batch. An API failure
+ *   - FIND: searches open issues whose DESCRIPTION carries the key marker
+ *     `<!-- defer-batch-key: repo=<repo> pr=<N> type=<type> -->` on a line of
+ *     its own, above `## Entries` — keyed on the MARKER, deliberately not on
+ *     `pr-followup`, because filtering by that label made a batch missing it
+ *     invisible and the helper then minted a second issue under a key that
+ *     already had one; it is a run-independent mandatory label, so the batch
+ *     is found and the label reconciled onto it. The key is in the description
+ *     rather than the title, so a batch may be retitled to say what it
+ *     contains without a later round losing it and minting a duplicate, and it
+ *     carries the repository, so another consumer's PR of the same number and
+ *     Type does not collide, whatever its labels say. A candidate whose
+ *     TYPE or REPO LABEL disagrees with its own marker aborts the run as
+ *     mislabelled. An API failure
  *     ABORTS — it is never read as "not found", because create-on-error is how
  *     duplicate batch keys are minted . A TRUNCATED page aborts for the same reason: a batch sitting
  *     past the requested page reads as absent, and the helper would mint a
@@ -86,14 +83,16 @@ import { retryAttempts, retryDelay, wait } from "../../../shared/retry.ts";
  *     rather than acting on a partial view. Two open issues under one key is
  *     a pre-existing defect: the oldest wins the append and the others are
  *     named on stderr. Find-then-create is likewise not atomic and Linear has
- *     no unique-title constraint, so two runs that both saw no candidate both
+ *     no unique-key constraint, so two runs that both saw no candidate both
  *     create. That cannot be PREVENTED here for the same reason the append
  *     race cannot, but it is NOTICED: a create re-queries the key afterwards
  *     and names any duplicate loudly, so the run that made the mess reports it
  *     rather than leaving it for whoever reads the tracker next. Merging them
  *     stays a human call — closing someone else's issue is not a deferral
  *     helper's decision.
- *   - CREATE (when absent): title per the protocol; labels = `pr-followup` +
+ *   - CREATE (when absent): the protocol's SEED title, which nothing later
+ *     reads (the key is the description marker, written first in the
+ *     scaffold); labels = `pr-followup` +
  *     <type> + size (default `small`) + consumer-configured repo label +
  *     the originating issue's inherited context labels (`agent:*`,
  *     `domain:*`, `codearea:*`) + `--labels` extras; parent = the originating
@@ -234,6 +233,18 @@ import {
   SEVERITY_UNKNOWN,
 } from "./lib/ladder.ts";
 import { type Clock, systemClock } from "../../../shared/clock.ts";
+import {
+  batchKeyMarker,
+  batchTitle,
+  hasBatchKey,
+  leadingKeyLine,
+  descriptionForRepair,
+  initialDescription,
+  keyComponentError,
+  type NoParentRationale,
+  placementMatchesFreshParent,
+  scaffoldPortion,
+} from "./lib/batch-description.ts";
 
 const LINEAR_API = "https://api.linear.app/graphql";
 const LINEAR_TIMEOUT_MS = 30_000;
@@ -300,6 +311,9 @@ export const BATCH_TYPES = consumer.taxonomy?.types ?? [];
 export const REVIEW_CATEGORIES = consumer.taxonomy?.categories ?? [];
 const CONTEXT_PREFIXES = consumer.taxonomy?.context_prefixes ?? [];
 const OWNERSHIP_PREFIXES = consumer.taxonomy?.ownership_prefixes ?? [];
+
+/** Where this skill's PRs live; `--repo-slug` covers a fork. */
+export const DEFAULT_REPO_SLUG = consumer.repo_slug ?? "";
 
 /**
  * Is this Size label one a BATCH may carry? Shared by the pre-write gate and
@@ -526,21 +540,6 @@ async function sleepUnlessAborted(
   }
 }
 
-/** The protocol's lookup key: Type is in the title deliberately. */
-export function batchTitle(pr: string, type: string): string {
-  return `PR #${pr} ${type} review follow-ups`;
-}
-
-/**
- * Does an existing issue title carry this PR+Type batch key? Case-insensitive
- * and whitespace-trimmed — a hand-filed batch issue may vary casing, and a
- * near-miss that spawns a SECOND issue under the same key recreates exactly
- * the noise batching exists to eliminate.
- */
-export function isBatchTitle(title: string, pr: string, type: string): boolean {
-  return title.trim().toLowerCase() === batchTitle(pr, type).toLowerCase();
-}
-
 export interface EntryInput {
   sourceUrl: string;
   /** The exact heading-key idempotency marker; defaults to `sourceUrl`. */
@@ -594,9 +593,6 @@ export function renderEntry(e: EntryInput): string {
 export function entryHeading(entryKey: string): string {
   return `### ${entryKey}`;
 }
-
-/** Where this skill's PRs live; `--repo-slug` covers a fork. */
-export const DEFAULT_REPO_SLUG = consumer.repo_slug ?? "";
 
 /**
  * The shape a `--thread-url` must have: a GitHub review-thread permalink on
@@ -767,180 +763,6 @@ export function appendEntry(
   };
 }
 
-/**
- * The domain-mismatch exception's audit trail: the protocol requires a
- * parentless follow-up to state WHY no epic holds it and which epic was
- * rejected, so `--no-parent` carries both rather than silently dropping the
- * parent (deferral-protocol.md § Parent).
- */
-export interface NoParentRationale {
-  reason: string;
-  /**
-   * The originating issue's own epic, `''` when it had none to reject, or
-   * `null` when this run genuinely does not KNOW which of those two is
-   * true (a repair reconstructing a wiped description with no rationale of
-   * its own to fall back on — see `noParentRationaleForRepair`). `''` and
-   * `null` render differently in `initialDescription`: `''` is an asserted
-   * fact ("no epic to inherit"), `null` is an admitted gap. Collapsing the
-   * two would assert a fact this run never verified.
-   */
-  rejectedEpic: string | null;
-}
-
-/** The scaffold a freshly created batch issue starts from. */
-export function initialDescription(
-  pr: string,
-  originating: string,
-  noParent?: NoParentRationale,
-): string {
-  const provenance =
-    originating === ""
-      ? `Batch of review deferrals from PR #${pr} (no originating issue — PR has no ticket).`
-      : `Batch of review deferrals from PR #${pr}; originating issue ${originating}.`;
-  const lines = [
-    provenance,
-    "",
-    "Filed per the batch-by-default rule in Jig's resolve-review-comments",
-    "`references/deferral-protocol.md` § Batching",
-    "is the default. Each entry is self-contained: the review-source URL, the",
-    "reviewer's finding quoted, and why it was deferred rather than fixed in the PR.",
-  ];
-  if (noParent !== undefined) {
-    // THREE renderings, not two: `null` must not fall into either asserted
-    // branch below — see `NoParentRationale.rejectedEpic`'s own doc. Only
-    // `''` (a verified fact: this run read the originating issue and it had
-    // no epic) and a real identifier (a verified fact: this run read the
-    // originating issue and rejected its named epic) are assertions this
-    // scaffold is entitled to make.
-    const placement =
-      noParent.rejectedEpic === null
-        ? ""
-        : noParent.rejectedEpic === ""
-          ? " (the originating issue has no epic to inherit)."
-          : ` Originating issue's epic is ${noParent.rejectedEpic} (rejected as unrelated).`;
-    lines.push("", `**No epic parent**: ${noParent.reason}${placement}`);
-  }
-  lines.push("", "## Entries");
-  return lines.join("\n");
-}
-
-/**
- * The no-parent scaffold to use when rebuilding a WIPED description (a
- * hand-filed/partial batch, or a concurrent writer's blank-out mid-append) —
- * derived from the batch's OWN current placement, not this invocation's
- * `noParentRationale`.
- *
- * RECONCILE never touches a batch's `parentId` (see the file header): it
- * belongs to whichever entry filed the batch FIRST, and an append neither
- * changes nor reads it. A repair that rebuilt the scaffold from THIS
- * invocation's own `--no-parent` flag ignored that entirely — an append that
- * happens to pass `--no-parent` onto a batch whose first entry selected a
- * normal epic parent left the issue's `parentId` field untouched (still
- * parented) while its just-rebuilt description asserted
- * `**No epic parent**` and named THIS run's rejected epic, corrupting the
- * placement audit trail a reader relies on. `hasParent` is read from a fresh
- * query of the batch's actual `parent` field, not from `args.noParent`.
- *
- * When the batch genuinely has no parent, `invocationRationale` is NEVER
- * reused here — even when this run happens to have one of its own. Having
- * one only proves THIS append also passed `--no-parent`; it proves nothing
- * about whether that reason matches the reason the batch's FIRST entry was
- * originally placed parentless. Those can differ (a different originating
- * issue, a different rejected epic), and presenting one as the other writes
- * false placement provenance into the audit trail. A repair therefore always falls back to the
- * generic placeholder that records the original reason as lost — with
- * `rejectedEpic: null`, NOT `''`. `''` is `initialDescription`'s rendering
- * for a VERIFIED fact ("the originating issue has no epic to inherit"),
- * which this fallback has no way to know: the batch could equally have been
- * filed parentless because ITS OWN originating issue rejected a real epic.
- * Reusing `''` here rendered a description that both admitted the reason
- * was unrecoverable AND asserted a specific, possibly false, one in the same
- * sentence.
- */
-export function noParentRationaleForRepair(
-  hasParent: boolean,
-): NoParentRationale | undefined {
-  if (hasParent) return undefined;
-  return {
-    reason:
-      "the batch was filed with no epic parent; the original reason was lost when its description was cleared and this repair could not recover it",
-    rejectedEpic: null,
-  };
-}
-
-/**
- * The description this run should treat the batch as starting from: the
- * LIVE description when non-empty, otherwise a freshly built scaffold whose
- * no-parent block (if any) is derived from `hasParent` alone via
- * `noParentRationaleForRepair` — this invocation's own rationale is never
- * consulted, because it describes why THIS append used `--no-parent`, not
- * why the batch was originally placed parentless.
- *
- * Shared by BOTH sites that rebuild a wiped description — `runDeferBatch`'s
- * pre-loop read and `appendWithRetry`'s own mid-loop rebuild after a
- * concurrent writer clobbers it — so the two cannot silently diverge. Testing
- * this function directly (below, in the test suite) covers the LOGIC both
- * call sites share, but NOT whether either call site is actually wired to
- * it — that overclaim is what the pre-loop site's rebuild being reachable by
- * no test at all let slip through once (`main()` was neither exported nor
- * exercised by this file's suite, so a regression at that call site failed
- * nothing). `main()` was extracted into `runDeferBatch` for exactly this
- * reason, mirroring `appendWithRetry`'s own seam, and each call site's wiring
- * is now tested separately against a mock `LinearClient`.
- */
-export function descriptionForRepair(
-  liveDescription: string,
-  pr: string,
-  originating: string,
-  hasParent: boolean,
-): string {
-  return liveDescription.trim() === ""
-    ? initialDescription(pr, originating, noParentRationaleForRepair(hasParent))
-    : liveDescription;
-}
-
-/**
- * The SCAFFOLD slice of a batch description — everything `initialDescription`
- * writes (provenance, the batching-protocol note, and the `**No epic
- * parent**` placement claim when present) — as opposed to `## Entries` and
- * everything after it.
- *
- * Every placement check must be scoped to this slice, never the whole
- * description: an entry's finding/reason/fix-sketch is external,
- * model-generated text, so an unrestricted `description.includes('**No epic
- * parent**')` mistakes an entry that happens to quote that exact marker for
- * the scaffold's own claim (both in `placementMatchesFreshParent`, which is
- * why the split lives here once rather than being duplicated at each call
- * site).
- */
-export function scaffoldPortion(description: string): string {
-  return description.split("## Entries", 1)[0] ?? description;
-}
-
-/**
- * Does a description's own placement claim (its `**No epic parent**` block,
- * present or absent) agree with the issue's FRESHLY read `hasParent`?
- *
- * A blank-description repair can race a reparent/unparent between the initial
- * candidate lookup and this run's first write, so the REBUILT scaffold is built
- * from a `hasParent` that was already stale the moment it was written —
- * `appendWithRetry`'s verify step re-reads `parent` fresh on every attempt, but
- * until this function existed nothing compared that fresh value against what
- * the description it had just confirmed actually CLAIMS. Only meaningful for a
- * description THIS run rebuilt (see `appendWithRetry`'s `everRebuiltScaffold`
- * tracking) — an ordinary batch's placement claim predates this run, and
- * RECONCILE deliberately never touches it (`descriptionForRepair`'s own doc:
- * placement "belongs to whichever originating issue filed the batch FIRST").
- */
-export function placementMatchesFreshParent(
-  description: string,
-  hasParent: boolean,
-): boolean {
-  const claimsNoParent =
-    scaffoldPortion(description).includes("**No epic parent**");
-  return claimsNoParent === !hasParent;
-}
-
 interface PageInfo {
   hasNextPage: boolean;
 }
@@ -1032,47 +854,6 @@ export function pickBatch<T extends { createdAt: string }>(candidates: T[]): T {
   );
 }
 
-/** Whether a same-key candidate belongs to this repository, or cannot be told. */
-export type RepoVerdict =
-  | "this-repo"
-  | "other-repo"
-  | "unlabelled"
-  | "ambiguous";
-
-/**
- * Is this candidate a batch for THIS repository?
- *
- * The batch key is `PR #<N> <type>`, which carries no repository — so a
- * different repo in the same Linear workspace hitting the same PR number and
- * Type produces an identically titled `pr-followup` issue, and appending to it
- * misfiles the deferral into another repo's backlog entirely.
- *
- * Four outcomes, because a Repo group that is MISSING or holds more than one
- * label is ambiguous rather than reassuring, and BOTH uncertain states fail
- * closed — a caller that handles only `other-repo` would skip the two verdicts
- * that matter most. An earlier revision treated a missing label as this
- * repo's — a repairable gap — reasoning that skipping it would mint a
- * duplicate under the key. That is the wrong trade: an unlabelled
- * `PR #42 chore review follow-ups` filed for another repo would be claimed,
- * appended to, and then STAMPED `project` by the reconciliation path.
- * Claiming it is destructive and silent; a duplicate is tracker noise a human
- * merges. So `unlabelled` and `ambiguous` both fail closed and the caller asks
- * the operator to fix the issue's Repo group.
- */
-export function repoVerdict(
-  labels: LabelNode[],
-  repoLabel: string,
-): RepoVerdict {
-  const repo = labels.filter((l) => groupOf(l) === REPO_GROUP);
-  if (repo.length === 0) return "unlabelled";
-  // CARDINALITY, not membership. A batch carrying both `project` and
-  // `website` contains the requested label, so a `.some()` test calls it ours
-  // — while it is exactly as ambiguous as carrying none, and taxonomy-invalid
-  // besides. Being in a single-valued group means being the ONLY one.
-  if (repo.length > 1) return "ambiguous";
-  return repo[0]?.name === repoLabel ? "this-repo" : "other-repo";
-}
-
 /**
  * Which single-valued mandatory groups an existing batch is missing entirely,
  * as the label name that should fill each.
@@ -1083,10 +864,17 @@ export function repoVerdict(
  * call's `xs` would overwrite a decision this script did not make. Adding the
  * second one is the outcome that is never acceptable — one issue carrying two
  * Size labels violates the taxonomy in the name of repairing it.
+ *
+ * Repo is decided here with Type and Size. The key marker carries the
+ * repository and settles ownership before this runs, so Repo reconciles like
+ * any mandatory label — except that a single DIFFERING value
+ * is a conflict, not a tolerable alternative as with Size: it contradicts the
+ * key in the issue's own description, so stamping over it rewrites a
+ * mislabelling silently.
  */
 export function missingSingleValued(
   present: LabelNode[],
-  wanted: { type: string; size: string },
+  wanted: { type: string; size: string; repoLabel: string },
 ): {
   add: string[];
   conflicts: Array<{ group: string; has: string; duplicate: boolean }>;
@@ -1094,12 +882,10 @@ export function missingSingleValued(
   const add: string[] = [];
   const conflicts: Array<{ group: string; has: string; duplicate: boolean }> =
     [];
-  // Repo is NOT here: `repoVerdict` already decided it, and it fails closed on
-  // an unlabelled or ambiguous candidate — so anything reaching this point
-  // carries exactly the right Repo label and there is nothing left to report.
   for (const [group, want] of [
     [TYPE_GROUP, wanted.type],
     [SIZE_GROUP, wanted.size],
+    [REPO_GROUP, wanted.repoLabel],
   ] as const) {
     const held = present.filter((l) => groupOf(l) === group);
     const has = held.map((l) => l.name).join(", ");
@@ -1163,8 +949,6 @@ export function batchContractHolds(
   requiredExtras: string[],
 ): string[] {
   const problems: string[] = [];
-  const repo = repoVerdict(live, wanted.repoLabel);
-  if (repo !== "this-repo") problems.push(`Repo group is ${repo}`);
   if (!live.some((l) => l.name === PROVENANCE_LABEL)) {
     // Not merely bookkeeping: `FIND_BATCHES` no longer filters on it, but
     // anything else that does — and the protocol's own contract — stops
@@ -1177,6 +961,9 @@ export function batchContractHolds(
   for (const c of single.conflicts) {
     if (c.duplicate) problems.push(`${c.group} holds ${c.has}`);
     else if (c.group === TYPE_GROUP) problems.push(`${TYPE_GROUP} is ${c.has}`);
+    // Repo reports like Type, not Size: a differing value contradicts the
+    // repository in this batch's own key marker.
+    else if (c.group === REPO_GROUP) problems.push(`${REPO_GROUP} is ${c.has}`);
     else if (
       c.group === SIZE_GROUP &&
       !(BATCH_SIZES as readonly string[]).includes(c.has)
@@ -1292,19 +1079,19 @@ export function contextLabelsToAdd(
  * `fetchLabels` and written twice, so dedupe the SET rather than one pairing
  * of it.
  *
- * The Repo repair is gated on `repoVerdict`, not on `liveNames.has(...)`
- * membership: a concurrent writer that REPLACES the Repo label with a
- * different Repo-group value (`other-repo`) is not the same state as one
- * that ERASES it entirely (`unlabelled`), even though both make
+ * The Repo repair is gated on the Repo GROUP's occupancy, via
+ * `missingSingleValued`, not on `liveNames.has(...)` membership: a concurrent
+ * writer that REPLACES the Repo label with a different Repo-group value is not
+ * the same state as one that ERASES it entirely, even though both make
  * `liveNames.has(wanted.repoLabel)` false. Treating them alike unioned
  * `wanted.repoLabel` onto the conflicting value, leaving the LIVE issue
- * carrying two Repo labels — `repoVerdict` then reports `ambiguous` on the
- * very next read, so the retry loop still fails safe eventually, but the
- * invalid two-label mutation it wrote along the way persists and needs
- * manual cleanup. Only a genuinely ABSENT Repo group is repairable here;
- * `other-repo`/`ambiguous` are left unrepaired for `batchContractHolds` to
- * flag as a problem — the same treatment a differing Type or a duplicated
- * group already gets above, via `missingSingleValued`'s `conflicts`.
+ * carrying two Repo labels — the very next read then reports the group as
+ * duplicated, so the retry loop still fails safe eventually, but the invalid
+ * two-label mutation it wrote along the way persists and needs manual
+ * cleanup. Only a genuinely ABSENT Repo group is repairable here; a differing
+ * or duplicated one is left unrepaired for `batchContractHolds` to flag as a
+ * problem — the same treatment a differing Type or a duplicated group already
+ * gets, and now through the same code path.
  */
 export function repairableMissingLabels(
   live: LabelNode[],
@@ -1313,23 +1100,23 @@ export function repairableMissingLabels(
   requiredExtras: string[],
 ): string[] {
   const liveNames = new Set(live.map((l) => l.name));
-  const repoIsAbsent = repoVerdict(live, wanted.repoLabel) === "unlabelled";
   // `wanted.repoLabel` is excluded from the generic `requiredContext` /
-  // `requiredExtras` filters below and repaired ONLY through the dedicated
-  // `repoIsAbsent` branch above. The generic filters test raw
-  // `!liveNames.has(n)` membership — exactly the signal a CONFLICTING Repo
-  // value also produces — so a caller naming the repo label via `--labels`
-  // (legitimate: see "does not duplicate a REPO label that is also passed
-  // as an extra" below) would otherwise let those filters re-add it onto a
-  // conflicting value even though the dedicated branch just correctly
-  // refused to. `repoIsAbsent` already covers the one case those filters
-  // could legitimately help with (genuinely absent), so excluding the name
-  // from them entirely loses nothing and closes the bypass.
+  // `requiredExtras` filters below and repaired ONLY through
+  // `missingSingleValued` above, which decides the Repo group on the same
+  // absent/duplicate/differing terms as Type and Size. The generic filters
+  // test raw `!liveNames.has(n)`
+  // membership — exactly the signal a CONFLICTING Repo value also produces —
+  // so a caller naming the repo label via `--labels` (legitimate: see "does
+  // not duplicate a REPO label that is also passed as an extra" below) would
+  // otherwise let those filters re-add it onto a conflicting value even though
+  // the single-valued pass just correctly refused to. That pass already covers
+  // the one case those filters could legitimately help with (genuinely
+  // absent), so excluding the name from them entirely loses nothing and closes
+  // the bypass.
   return [
     ...new Set([
       ...(liveNames.has(PROVENANCE_LABEL) ? [] : [PROVENANCE_LABEL]),
       ...missingSingleValued(live, wanted).add,
-      ...(repoIsAbsent ? [wanted.repoLabel] : []),
       ...requiredContext.filter(
         (n) => n !== wanted.repoLabel && !liveNames.has(n),
       ),
@@ -1631,17 +1418,22 @@ async function createRelated(
  * re-query cannot drift apart — they must agree about what counts as a
  * candidate or the second read would answer a different question.
  *
- * Keyed on the TITLE alone, deliberately NOT on `pr-followup`. Filtering by
- * that label made a hand-filed or partially-created batch missing it
- * INVISIBLE, so the helper minted a second issue under a key that already had
- * one — the exact defect this lookup exists to prevent. It is a
- * run-independent mandatory label like any other, so the right move is to find
- * the batch and reconcile the label onto it. The title needle is exact enough
- * to keep the population tight (`isBatchTitle` then demands equality), and
- * every ambiguity below still fails closed.
+ * Keyed on the description's `batchKeyMarker`, deliberately NOT on
+ * `pr-followup`. Filtering by that label made a hand-filed or
+ * partially-created batch missing it INVISIBLE, so the helper minted a second
+ * issue under a key that already had one — the exact defect this lookup exists
+ * to prevent. It is a run-independent mandatory label like any other, so the
+ * right move is to find the batch and reconcile the label onto it.
+ *
+ * `contains`, not `containsIgnoreCase`: the needle is machine-written, so an
+ * exact-case filter loses nothing and narrows what can come back. It is still
+ * only a SUBSTRING match — an issue quoting another batch's marker matches too
+ * — so the server filter narrows and `hasBatchKey` decides, the same division
+ * of labour the title lookup used before it (`title: containsIgnoreCase`
+ * narrowed, `isBatchTitle` demanded equality).
  */
 const FIND_BATCHES = `query($search: String!) { issues(first: 50, filter: {
-     title: { containsIgnoreCase: $search },
+     description: { contains: $search },
      state: { type: { nin: ["completed", "canceled"] } }
    }) {
      pageInfo { hasNextPage }
@@ -1755,9 +1547,17 @@ export function parseArgs(argv: string[]): Args | string {
   if (pr === undefined || type === undefined)
     return "expected exactly <PR#> and <type>";
   if (!/^[0-9]+$/.test(pr)) return `PR number must be digits, got '${pr}'`;
-  if (!(BATCH_TYPES as readonly string[]).includes(type)) {
-    return `<type> must be one of ${BATCH_TYPES.join("|")}, got '${type}' — the repository's declared Type taxonomy (consumer review.taxonomy.types)`;
-  }
+  // Membership AND key-component shape in one check: the Type vocabulary is
+  // consumer YAML, so a value containing whitespace or a comment delimiter
+  // cannot be embedded in `batchKeyMarker`. Refused before any network call.
+  const typeError = keyComponentError(
+    "<type>",
+    type,
+    BATCH_TYPES as readonly string[],
+    TYPE_GROUP,
+    "review.taxonomy.types",
+  );
+  if (typeError !== undefined) return typeError;
   const repoSlug = opts["repo-slug"] ?? DEFAULT_REPO_SLUG;
   if (!/^[\w.-]+\/[\w.-]+$/.test(repoSlug)) {
     return `--repo-slug must look like owner/name, got '${repoSlug}'`;
@@ -1846,9 +1646,17 @@ export function parseArgs(argv: string[]): Args | string {
     return "--team <KEY> is required with --originating none";
   }
   const repoLabel = opts["repo-label"] ?? consumer.repo_label ?? "";
-  if (!(BATCH_REPOS as readonly string[]).includes(repoLabel)) {
-    return `--repo-label must be one of ${BATCH_REPOS.join("|")}, got '${repoLabel}' — the repository's declared Repo taxonomy (consumer review.taxonomy.repos)`;
-  }
+  // The Repo sibling of the `<type>` check, and the one that most needs the
+  // shape half: a label like `my repo` renders a `repo=` value that runs into
+  // the next field.
+  const repoError = keyComponentError(
+    "--repo-label",
+    repoLabel,
+    BATCH_REPOS as readonly string[],
+    REPO_GROUP,
+    "review.taxonomy.repos",
+  );
+  if (repoError !== undefined) return repoError;
   const extraLabels = (opts.labels ?? "")
     .split(",")
     .map((x) => x.trim())
@@ -1948,6 +1756,7 @@ async function rebuildDescriptionAndLabels(
   wantedForRepair: Args,
   requiredContext: string[],
   signal: AbortSignal,
+  identifier: string,
 ): Promise<{
   description: string;
   needsDescriptionWrite: boolean;
@@ -1955,8 +1764,16 @@ async function rebuildDescriptionAndLabels(
   missingLabels: string[];
   addLabels: LabelNode[];
 }> {
+  abortOnForeignKey(liveDescription, args, identifier);
   const description = appendEntry(
-    descriptionForRepair(liveDescription, args.pr, args.originating, hasParent),
+    descriptionForRepair(
+      liveDescription,
+      args.repoLabel,
+      args.pr,
+      args.type,
+      args.originating,
+      hasParent,
+    ),
     entry,
     args.entryKey,
   ).description;
@@ -1978,6 +1795,49 @@ async function rebuildDescriptionAndLabels(
     missingLabels,
     addLabels,
   };
+}
+
+/**
+ * What a freshly read description is missing for this append to count as
+ * confirmed: this run's entry, and the batch key line.
+ *
+ * The entry is checked unconditionally, never only when this run appended
+ * it: an entry already present at read time can be erased by a concurrent
+ * stale replacement after it. The key line likewise: a concurrent writer can
+ * keep the entry while dropping the marker, and a batch confirmed without its
+ * key is one the next round cannot find, so it files a duplicate.
+ */
+function descriptionGapsOf(liveDescription: string, args: Args): string[] {
+  return [
+    hasEntry(liveDescription, args.entryKey) ? "" : "the entry",
+    hasBatchKey(liveDescription, args.repoLabel, args.pr, args.type)
+      ? ""
+      : "the batch key line",
+  ].filter((gap) => gap !== "");
+}
+
+/**
+ * Abort if a FRESH read shows the batch's description now leads with a
+ * DIFFERENT batch's key line. A missing key line is repaired
+ * (`descriptionForRepair` puts this batch's marker back); a conflicting one
+ * is not, because either key may be the one a later round should find, and
+ * overwriting it would orphan the other batch's lookup.
+ */
+function abortOnForeignKey(
+  liveDescription: string,
+  args: Args,
+  identifier: string,
+): void {
+  const keyLine = leadingKeyLine(liveDescription);
+  if (
+    keyLine !== null &&
+    keyLine !== batchKeyMarker(args.repoLabel, args.pr, args.type)
+  ) {
+    fail(
+      1,
+      `defer-batch: ${identifier}'s description now leads with a different batch key ('${keyLine}') than this finding's ('${batchKeyMarker(args.repoLabel, args.pr, args.type)}') — a concurrent writer replaced the key line. Do NOT resolve the review thread. Restore the key line that belongs to ${identifier}, then re-run.`,
+    );
+  }
 }
 
 /**
@@ -2169,11 +2029,7 @@ export async function appendWithRetry(
   // escalates to 1 (Urgent), this run computes 2 (High) from the STALE 0 and
   // writes it — silently downgrading the live Urgent — and the verify below
   // only checks that priority now reflects THIS run's own severity, never
-  // that it didn't just erase a stronger concurrent one. Only worth the
-  // extra round-trip when a write is actually going to happen AND the stale
-  // snapshot itself looks like it needs a bump — a batch already at/above
-  // `args.severity` per `originalPriority` cannot be under-escalated by staying
-  // stale, since this loop never lowers a priority it reads. One fresh read
+  // that it didn't just erase a stronger concurrent one. One fresh read
   // here, taken as close to the first write as this function gets, shrinks that
   // window down to the same network-round-trip-sized gap every later attempt's
   // own verify-then-retry already accepts.
@@ -2195,12 +2051,13 @@ export async function appendWithRetry(
   // additive-write discipline) and rebuilt through the exact same
   // read-then-decide path (`rebuildDescriptionAndLabels`) the mid-loop retry
   // already uses, so priming and the mid-loop retry cannot drift on what
-  // "read-then-decide" means. Gated the same way as the priority-only
-  // priming it replaces — `needsWrite` first, so a pure no-op run pays
-  // nothing — plus `needsInitialDescriptionWrite`: a labels- or
-  // priority-only write never sends `description` at all (see that
-  // parameter's own doc), so it carries none of THIS race's clobber risk
-  // and gets none of this extra round-trip.
+  // "read-then-decide" means. Gated on `needsWrite` alone, so a pure no-op
+  // run pays nothing while every write is preceded by a fresh read: the
+  // guards in this read (`abortOnOwnershipMismatch`, and `abortOnForeignKey`
+  // inside `rebuildDescriptionAndLabels`) must pass before ANY mutation, a
+  // label-only `issueAddLabel` included — a batch whose key line a
+  // concurrent writer replaced is refused before this run stamps its labels
+  // on it, not after.
   //
   // Same residual as the priority-only priming above, for the same reason:
   // this narrows the window from "the caller's entire initial read plus
@@ -2217,11 +2074,7 @@ export async function appendWithRetry(
   // → B-write(stale) → B-verify interleaving in this file's own doc comment
   // passes on both sides. That is the documented, accepted residual, and it
   // applies to this priming for the same reason.
-  if (
-    needsWrite &&
-    (needsInitialDescriptionWrite ||
-      !priorityReflectsSeverity(originalPriority, args.severity))
-  ) {
+  if (needsWrite) {
     const primed = await linear(
       `query($id: String!) { issue(id: $id) {
          description
@@ -2264,6 +2117,7 @@ export async function appendWithRetry(
       wantedForRepair,
       requiredContext,
       signal,
+      target.identifier,
     );
     description = rebuilt.description;
     needsDescriptionWrite = rebuilt.needsDescriptionWrite;
@@ -2382,11 +2236,7 @@ export async function appendWithRetry(
     livePriority = issue.priority;
     const liveDescription = issue.description ?? "";
     const liveNames = new Set(liveLabels.map((l) => l.name));
-    // UNCONDITIONAL, not `!appended || …`. An entry that was already
-    // present at read time can be erased by a concurrent stale
-    // replacement after it, and treating "I did not need to append" as
-    // "the entry is there" approves exactly that case.
-    const entryOk = hasEntry(liveDescription, args.entryKey);
+    const descriptionGaps = descriptionGapsOf(liveDescription, args);
     // The whole CONTRACT, not just this run's additions — a concurrent
     // replacement can drop a mandatory label that predates this run, which
     // a `missingLabels`-only check never asks about.
@@ -2405,7 +2255,7 @@ export async function appendWithRetry(
     // is exactly the case this check exists to catch and repair on retry.
     const priorityOk = priorityReflectsSeverity(livePriority, args.severity);
     if (
-      entryOk &&
+      descriptionGaps.length === 0 &&
       stillMissing.length === 0 &&
       contractProblems.length === 0 &&
       priorityOk
@@ -2436,10 +2286,8 @@ export async function appendWithRetry(
       // function's only SAFE full rebuild path is the wipe branch above — which
       // does not apply here, because the description is not wiped, only wrongly
       // placed. The write already landed by this point, so a bare "re-run"
-      // would NOT self-heal it: a later run's own `seedWasRepaired` reads
-      // `false` against this now-non-empty description, so
-      // `descriptionForRepair` returns it unchanged and nothing ever revisits
-      // the placement claim again.
+      // would NOT self-heal it: `descriptionForRepair` returns this
+      // now-non-empty description unchanged, so nothing revisits the claim.
       //
       // The message below sends a HUMAN to do the surgery an automated
       // repair here may not: edit ONLY the scaffold's placement line,
@@ -2471,7 +2319,7 @@ export async function appendWithRetry(
       };
     }
     unconfirmed = [
-      entryOk ? "" : "the entry",
+      ...descriptionGaps,
       stillMissing.length === 0 ? "" : `label(s) ${stillMissing.join(", ")}`,
       contractProblems.length === 0
         ? ""
@@ -2539,6 +2387,7 @@ export async function appendWithRetry(
         wantedForRepair,
         requiredContext,
         signal,
+        target.identifier,
       );
       // Compared against THIS attempt's own fresh `liveDescription`, not the
       // pre-loop seed — mirrors `livePriority`'s refresh-from-the-latest-read
@@ -2752,49 +2601,25 @@ export async function runDeferBatch(
 
   // FIND — a failure here THROWS (runMain → exit 1); it is never "not found",
   // and neither is a truncated page (`assertComplete` below). The needle is
-  // the WHOLE batch title rather than `PR #<N> `: `isBatchTitle` demands exact
-  // equality anyway, so nothing that could match is lost, and the narrower
+  // the whole `batchKeyMarker`: `hasBatchKey` demands the description's
+  // leading line equal it anyway, so nothing that could match is lost, and the narrower
   // server-side filter keeps the page from being where a same-key batch hides.
+  const marker = batchKeyMarker(args.repoLabel, args.pr, args.type);
   assertNotAborted(signal, "the FIND_BATCHES lookup");
-  const found = await linear(
-    FIND_BATCHES,
-    { search: batchTitle(args.pr, args.type) },
-    signal,
-  );
+  const found = await linear(FIND_BATCHES, { search: marker }, signal);
   const foundConn = found.issues as Connection<Candidate>;
   assertComplete(
     foundConn.pageInfo,
-    `the open \`pr-followup\` issues matching '${batchTitle(args.pr, args.type)}'`,
+    `the open \`pr-followup\` issues carrying '${marker}'`,
   );
-  const titleMatches = (foundConn.nodes ?? []).filter((c) =>
-    isBatchTitle(c.title, args.pr, args.type),
+  // The marker carries the repository, so a foreign consumer's batch for the
+  // same PR number and Type does not match; the Repo label is ordinary
+  // reconciliation (see `missingSingleValued`), not an ownership gate.
+  const candidates = (foundConn.nodes ?? []).filter((c) =>
+    hasBatchKey(c.description ?? "", args.repoLabel, args.pr, args.type),
   );
-  for (const c of titleMatches) {
+  for (const c of candidates) {
     assertComplete(c.labels.pageInfo, `the labels on ${c.identifier}`);
-  }
-  // The key carries no repository, so another repo's PR of the same number and
-  // Type produces an identically titled batch. Excluding it here is what keeps
-  // a deferral from being filed into someone else's backlog.
-  const candidates: Candidate[] = [];
-  for (const c of titleMatches) {
-    const verdict = repoVerdict(c.labels.nodes, args.repoLabel);
-    if (verdict === "this-repo") {
-      candidates.push(c);
-    } else if (verdict === "other-repo") {
-      console.error(
-        `defer-batch: ignoring ${c.identifier} — same title, different Repo label than '${args.repoLabel}'.`,
-      );
-    } else if (verdict === "ambiguous") {
-      fail(
-        1,
-        `defer-batch: ${c.identifier} matches the batch key '${batchTitle(args.pr, args.type)}' but carries MORE THAN ONE Repo label, so which repository it belongs to is undecidable even though '${args.repoLabel}' is among them. Fix ${c.identifier}'s Repo group in Linear, then re-run.`,
-      );
-    } else {
-      fail(
-        1,
-        `defer-batch: ${c.identifier} matches the batch key '${batchTitle(args.pr, args.type)}' but carries no Repo label, so there is no way to tell whether it is this repository's batch or another's. Refusing to append: claiming it would file this finding into someone else's backlog AND stamp that issue '${args.repoLabel}'. Label ${c.identifier} with its Repo group in Linear, then re-run.`,
-      );
-    }
   }
 
   const entry = renderEntry({
@@ -2809,6 +2634,10 @@ export async function runDeferBatch(
 
   let identifier: string;
   let url: string;
+  // The batch's ACTUAL title: the title is display-only now, so a batch may
+  // have been retitled and reporting the seed would name an issue that no
+  // longer exists.
+  let title: string;
   let created = false;
   let appended = false;
   let alreadyPresent = false;
@@ -2834,36 +2663,17 @@ export async function runDeferBatch(
     );
     identifier = target.identifier;
     url = target.url;
-    // A hand-filed or partially-created batch can have a null/empty
-    // description — reachable since the lookup became title-keyed and started
-    // finding batches it previously skipped. Appending the bare entry to it
-    // would leave the description never recording the PR or the originating
-    // issue, which the protocol requires of every follow-up.
-    //
-    // The no-parent block in the rebuilt scaffold is derived from the
-    // batch's OWN `parent` field (`target.parent`), not from this
-    // invocation's own `noParentRationale` — see `descriptionForRepair` /
-    // `noParentRationaleForRepair`. An append neither changes nor reads a
-    // batch's `parentId`, so using this run's own flag here could describe a
-    // genuinely parented batch as parentless (or the reverse), corrupting
-    // the placement audit trail. `!= null`, not `!== null` — see the sibling
-    // call site's own comment in `appendWithRetry`.
+    title = target.title;
+    // No `descriptionForRepair` here, unlike `appendWithRetry`'s seed rebuild
+    // — a consequence of the key living in the description, not an omission.
+    // `target` reaches this branch only by carrying the marker on a scaffold
+    // line, so `existingDescription` is non-blank by construction and a
+    // rebuild could never fire. A wipe is handled where it is reachable —
+    // `appendWithRetry`'s mid-loop rebuild, which also restores the key. See
+    // `descriptionForRepair`.
     const existingDescription = target.description ?? "";
-    // Whether `baseDescription` below is a rebuild from a wipe, using
-    // `target.parent` — read at the INITIAL find, not a later query — as its
-    // `hasParent`. That staleness is exactly what `appendWithRetry`'s
-    // `everRebuiltScaffold`/placement check exists to catch: a reparent or
-    // unparent racing between this read and the write below leaves the
-    // scaffold's placement claim wrong the moment it is written.
-    const seedWasRepaired = existingDescription.trim() === "";
-    const baseDescription = descriptionForRepair(
-      existingDescription,
-      args.pr,
-      args.originating,
-      target.parent != null,
-    );
-    const next = appendEntry(baseDescription, entry, args.entryKey);
-    appended = next.appended || baseDescription !== existingDescription;
+    const next = appendEntry(existingDescription, entry, args.entryKey);
+    appended = next.appended;
     alreadyPresent = !next.appended;
 
     // The ownership judgment the protocol requires BEFORE batching
@@ -2948,14 +2758,24 @@ export async function runDeferBatch(
         );
       }
       if (c.group === TYPE_GROUP) {
-        // Type is not a judgment like Size — it IS the batch key. A batch
-        // titled `… chore review follow-ups` carrying `bug` is not this key's
-        // batch, so appending a chore finding to it and telling the caller to
-        // resolve against it misfiles the finding under a Type that decides
-        // which findings may share the batch at all.
+        // Type is not a judgment like Size — it is PART OF the batch key. A
+        // batch whose key marker says `type=chore` carrying the `bug` label is
+        // not this key's batch, so appending a chore finding to it and telling
+        // the caller to resolve against it misfiles the finding under a Type
+        // that decides which findings may share the batch at all.
         fail(
           1,
-          `defer-batch: ${identifier} matches the key '${batchTitle(args.pr, args.type)}' but carries ${TYPE_GROUP} '${c.has}'. Type is the lookup key, so a batch whose Type disagrees with its title is mislabelled — appending here would file a '${args.type}' finding into a '${c.has}' batch. Fix ${identifier}'s Type in Linear, then re-run.`,
+          `defer-batch: ${identifier} carries the key '${marker}' but is labelled ${TYPE_GROUP} '${c.has}'. Type is part of the lookup key, so a batch whose Type label disagrees with its own key is mislabelled — appending here would file a '${args.type}' finding into a '${c.has}' batch. Fix ${identifier}'s Type in Linear, then re-run.`,
+        );
+      }
+      if (c.group === REPO_GROUP) {
+        // The Repo sibling of the Type case: the repository is in the key
+        // too, so a contradicting label is a mislabelling to report. Stamping
+        // over it is how a batch belonging to another consumer gets claimed —
+        // what the retired `repoVerdict` existed to prevent.
+        fail(
+          1,
+          `defer-batch: ${identifier} carries the key '${marker}' but is labelled ${REPO_GROUP} '${c.has}'. The repository is part of the lookup key, so the label and the key contradict each other and which repository owns this batch is undecidable. Fix ${identifier}'s Repo group in Linear (or its key marker, if the label is the correct one), then re-run.`,
         );
       }
       console.error(
@@ -3041,7 +2861,7 @@ export async function runDeferBatch(
         `${JSON.stringify({
           identifier,
           url,
-          title: batchTitle(args.pr, args.type),
+          title,
           created: false,
           appended: false,
           alreadyPresent: false,
@@ -3057,7 +2877,10 @@ export async function runDeferBatch(
         linear,
         { id: target.id, identifier },
         next.description,
-        seedWasRepaired,
+        // Never a rebuild: the seed is the description this candidate was
+        // FOUND by, so it carries the key. `appendWithRetry` still raises its
+        // own `everRebuiltScaffold` on a mid-loop wipe.
+        false,
         // A priority bump is a THIRD reason this run must write, alongside
         // a fresh entry and a missing label — see `priorityReflectsSeverity`.
         appended ||
@@ -3151,7 +2974,13 @@ export async function runDeferBatch(
       return 0;
     }
     const desc = appendEntry(
-      initialDescription(args.pr, args.originating, noParentRationale),
+      initialDescription(
+        args.repoLabel,
+        args.pr,
+        args.type,
+        args.originating,
+        noParentRationale,
+      ),
       entry,
       args.entryKey,
     ).description;
@@ -3188,10 +3017,13 @@ export async function runDeferBatch(
     }
     identifier = createdIssue.identifier;
     url = createdIssue.url;
+    // The seed title this run just wrote — accurate at creation, and the only
+    // moment the seed and the live title are guaranteed to agree.
+    title = batchTitle(args.pr, args.type);
     created = true;
     appended = true;
     labelsAdded = wanted;
-    // Find-then-create is not atomic and Linear has no unique-title
+    // Find-then-create is not atomic and Linear has no unique-key
     // constraint, so two runs that both saw no candidate both create. That
     // cannot be prevented here (see the header's concurrency note), but it CAN
     // be noticed: re-query the key now and name the duplicate loudly, so the
@@ -3205,49 +3037,26 @@ export async function runDeferBatch(
     // finding this run DID persist, the exact false-failure `assertNotAborted`
     // exists to prevent elsewhere, turned inside out. A deadline firing here
     // just skips the duplicate-notice best-effort re-query, which is safe.
-    const after = await linear(
-      FIND_BATCHES,
-      { search: batchTitle(args.pr, args.type) },
-      signal,
-    );
+    const after = await linear(FIND_BATCHES, { search: marker }, signal);
     const afterConn = after.issues as Connection<Candidate>;
-    // Same completeness guards the initial lookup applies — a truncated page
-    // here means a concurrent duplicate could sit past it, or a candidate's
-    // Repo label be omitted, and the run would print success without the
-    // warning this re-query exists to emit.
+    // Same completeness guard the initial lookup applies — a truncated page
+    // here means a concurrent duplicate could sit past it, and the run would
+    // print success without the warning this re-query exists to emit.
     assertComplete(
       afterConn.pageInfo,
-      `the post-create re-query for '${batchTitle(args.pr, args.type)}'`,
+      `the post-create re-query for '${marker}'`,
     );
-    const sameKey = (afterConn.nodes ?? []).filter(
+    // Every same-key issue is this repository's by construction, so the
+    // ownership triage that stood here has nothing to decide: anything else
+    // carrying this marker is a concurrent duplicate.
+    const others = (afterConn.nodes ?? []).filter(
       (c) =>
-        isBatchTitle(c.title, args.pr, args.type) && c.id !== createdIssue.id,
+        hasBatchKey(c.description ?? "", args.repoLabel, args.pr, args.type) &&
+        c.id !== createdIssue.id,
     );
-    for (const c of sameKey) {
-      assertComplete(c.labels.pageInfo, `the labels on ${c.identifier}`);
-    }
-    const others: Candidate[] = [];
-    for (const c of sameKey) {
-      const verdict = repoVerdict(c.labels.nodes, args.repoLabel);
-      if (verdict === "this-repo") {
-        others.push(c);
-      } else if (verdict !== "other-repo") {
-        // The initial lookup aborts on `unlabelled`/`ambiguous` because
-        // ownership cannot be determined, and that matters MORE here: a
-        // same-key issue of undecidable ownership appearing right after a
-        // concurrent create is the case most likely to be a duplicate.
-        // Dropping it silently would let this run report success over exactly
-        // that. The created issue stands — re-run once the ambiguity is
-        // resolved and the append is idempotent.
-        fail(
-          1,
-          `defer-batch: created ${identifier}, then found ${c.identifier} under the same batch key '${batchTitle(args.pr, args.type)}' whose Repo group is ${verdict} — ownership is undecidable, so this run cannot say whether it just made a duplicate. ${identifier} exists and carries the entry; do NOT resolve the review thread yet. Fix ${c.identifier}'s Repo group (and merge if it is a duplicate), then re-run.`,
-        );
-      }
-    }
     for (const c of others) {
       console.error(
-        `defer-batch: WARNING — ${c.identifier} carries the same batch key '${batchTitle(args.pr, args.type)}' as the ${identifier} just created; a concurrent run created one too. Both are open: merge them, keeping the oldest.`,
+        `defer-batch: WARNING — ${c.identifier} carries the same batch key '${marker}' as the ${identifier} just created; a concurrent run created one too. Both are open: merge them, keeping the oldest.`,
       );
     }
     if (originatingUuid !== "") {
@@ -3260,7 +3069,7 @@ export async function runDeferBatch(
     `${JSON.stringify({
       identifier,
       url,
-      title: batchTitle(args.pr, args.type),
+      title,
       created,
       appended,
       alreadyPresent,
