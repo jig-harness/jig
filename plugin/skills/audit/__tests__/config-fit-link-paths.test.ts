@@ -161,3 +161,15 @@ caseTest("a tracked entry is not hidden by an untracked hard link", () => {
   const dir = hardLinked("scripts/check.ts", "scripts/aaa.ts");
   expect(commandProblems("bun scripts/CHECK.ts", dir)).toEqual([]);
 });
+
+// NTFS keeps `é` and `e` + combining acute as two entries, and
+// scripts/É.ts reaches only the composed one; macOS cannot hold both.
+test.skipIf(process.platform !== "win32")(
+  "a hard link spelled with another Unicode normalization is another entry on NTFS",
+  () => {
+    const dir = hardLinked("scripts/é.ts", "scripts/é.ts");
+    expect(commandProblems("bun scripts/É.ts", dir)[0]?.message).toBe(
+      "scripts/É.ts reaches scripts/é.ts, which is not tracked, so a fresh clone lacks it",
+    );
+  },
+);

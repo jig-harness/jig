@@ -260,18 +260,30 @@ function inRepo(realRoot: string, path: string): string | null {
     : name;
 }
 
-/** A directory-entry name as a case- and normalization-insensitive file system compares it. */
+/**
+ * A directory-entry name as the platform's file system compares it. NTFS
+ * ignores case one UTF-16 unit at a time and never Unicode normalization,
+ * so `é` and `e` + combining acute are two entries there; APFS and HFS+
+ * ignore both.
+ */
 function foldName(name: string): string {
-  return name.normalize("NFD").toLowerCase();
+  if (process.platform !== "win32") return name.normalize("NFD").toLowerCase();
+  let folded = "";
+  for (let i = 0; i < name.length; i++) {
+    const unit = name[i] as string;
+    const upper = unit.toUpperCase();
+    folded += upper.length === 1 ? upper : unit;
+  }
+  return folded;
 }
 
 /**
  * `segment` of the directory `dir` as the directory itself spells it: on a
  * case-insensitive file system `CHECK.ts` reaches the entry `check.ts`, and
  * the tracked name is the entry's. The exact spelling first; otherwise only
- * a name spelling the same entry, apart from case and Unicode normalization,
- * and of the same file: identity alone would admit a hard link, which
- * shares the file under another name.
+ * a name the file system compares equal to it (`foldName`) and of the same
+ * file: identity alone would admit a hard link, which shares the file under
+ * another name.
  */
 function spelled(dir: string, segment: string): string {
   const entry = join(dir, segment);
