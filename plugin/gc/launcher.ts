@@ -11,9 +11,9 @@
  *     [--claude=<program>] [--codex=<program>] -- gc --scheduled
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 const PLUGIN_ID = "jig@jig";
 
@@ -49,25 +49,32 @@ export function codexPluginDirectory(
 }
 
 /**
+ * Every path resolving `path` passes through: each directory above it, each
+ * symbolic link on the way and each link's target, resolved hop by hop.
+ */
+function resolutionPaths(path: string, links = 0): string[] {
+  if (links > 40) throw new LauncherError(`too many symbolic links: ${path}`);
+  const absolute = resolve(path);
+  const parent = dirname(absolute);
+  if (parent === absolute) return [absolute];
+  const here = join(realpathSync(parent), basename(absolute));
+  const paths = [...resolutionPaths(parent, links), absolute, here];
+  if (!lstatSync(here).isSymbolicLink()) return paths;
+  return [
+    ...paths,
+    ...resolutionPaths(resolve(dirname(here), readlinkSync(here)), links + 1),
+  ];
+}
+
+/**
  * Whether no checkout holds the script: a worktree reaper could remove it,
- * and a branch could change it. The path is what runs, so the directories
- * that name it count as much as the file a symbolic link resolves to.
+ * and a branch could change it. The path is what runs, so every directory and
+ * symbolic link its resolution passes through counts, not only where it ends.
  */
 export function outsideCheckout(script: string): boolean {
-  const directory = dirname(resolve(script));
-  return [
-    directory,
-    realpathSync(directory),
-    dirname(realpathSync(script)),
-  ].every((start) => {
-    let current = start;
-    for (;;) {
-      if (existsSync(join(current, ".git"))) return false;
-      const parent = dirname(current);
-      if (parent === current) return true;
-      current = parent;
-    }
-  });
+  return resolutionPaths(script).every(
+    (path) => !existsSync(join(path, ".git")),
+  );
 }
 
 export type PluginList = (program: string) => unknown;

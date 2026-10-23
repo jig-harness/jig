@@ -75,8 +75,10 @@ At each run the launcher asks the agent tool (`claude plugin list --json`, or
 installed copy of the plugin and runs that copy's collector, so a plugin
 update reaches the job without a new install. A copy inside a git checkout is
 refused, as at install, and so is an agent tool found inside one, by its path
-or by what that path links to. Install itself fails when the launcher could
-not find the plugin it would run; removing a repository does not need it to. A run that finds no installed copy later fails
+or by any directory or symbolic link its resolution passes through. Install itself fails when the launcher could
+not find the plugin it would run. Removing a repository while others remain
+changes only the machine entry and leaves the job, its launcher and the agent
+tools it recorded as they are, so it never needs the plugin to be found. A run that finds no installed copy later fails
 and says so in the scheduler's error output. The job's environment carries
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME` when set, so it asks the same registry
 the install did. Run `jig gc install --repo <repository> --yes`

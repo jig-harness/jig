@@ -554,44 +554,62 @@ test.skipIf(
     "powershell",
     "GC scheduler installation supports launchd, systemd and cron on macOS/Linux",
   ),
-)("removing one repository does not need the plugin to be found", () => {
-  const f = setup();
-  const cache = join(f.root, "installed");
-  cpSync(resolve(import.meta.dir, "../.."), cache, {
-    recursive: true,
-    filter: (source) => !source.includes("__tests__"),
-  });
-  const bin = join(f.root, "bin");
-  mkdirSync(bin);
-  for (const name of ["launchctl", "systemctl", "crontab"])
-    writeFakeProgram(
-      join(bin, name),
-      // No job yet; every change succeeds.
-      `#!/usr/bin/env bun
-const args = process.argv.slice(2);
-if (args[0] === "print") process.exit(113);
-if (args[1] === "show") console.log("LoadState=not-found\\nUnitFileState=\\nActiveState=inactive");
-if (args[0] === "-l") { console.error("no crontab"); process.exit(1); }
-if (args[0] === "-") await Bun.stdin.text();
+)(
+  "removing one repository keeps the job and launcher, without finding the plugin",
+  () => {
+    const f = setup();
+    const cache = join(f.root, "installed");
+    cpSync(resolve(import.meta.dir, "../.."), cache, {
+      recursive: true,
+      filter: (source) => !source.includes("__tests__"),
+    });
+    const bin = join(f.root, "bin");
+    mkdirSync(bin);
+    const calls = join(f.root, "scheduler-calls");
+    for (const name of ["launchctl", "systemctl", "crontab"])
+      writeFakeProgram(
+        join(bin, name),
+        // The job the remaining repository runs must not be read or rewritten.
+        `#!/usr/bin/env bun
+require("node:fs").appendFileSync(${JSON.stringify(calls)}, "${name}\\n");
+process.exit(1);
 `,
+      );
+    const launcher = join(
+      f.env.HOME as string,
+      ".local",
+      "state",
+      "jig",
+      "gc",
+      "launcher",
     );
-  writeAgentTools(bin, null);
-  f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
-  const other = { ...f.machine.repositories[0], path: join(f.root, "other") };
-  writeFileSync(
-    f.homeFile,
-    dump({ gc: { repositories: [...f.machine.repositories, other] } }),
-  );
-  const result = run(
-    f,
-    ["install", "--repo", f.repo, "--uninstall", "--yes"],
-    join(cache, "jig.ts"),
-  );
-  expectSpawnExit(result, 0);
-  const text = readFileSync(f.homeFile, "utf8");
-  expect(text).toContain(other.path);
-  expect(text).not.toContain(`path: ${f.repo}\n`);
-});
+    mkdirSync(launcher, { recursive: true });
+    writeFileSync(
+      join(launcher, "launcher.ts"),
+      "// the running job's launcher\n",
+    );
+    writeAgentTools(bin, null);
+    f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
+    const other = { ...f.machine.repositories[0], path: join(f.root, "other") };
+    writeFileSync(
+      f.homeFile,
+      dump({ gc: { repositories: [...f.machine.repositories, other] } }),
+    );
+    const result = run(
+      f,
+      ["install", "--repo", f.repo, "--uninstall", "--yes"],
+      join(cache, "jig.ts"),
+    );
+    expectSpawnExit(result, 0);
+    const text = readFileSync(f.homeFile, "utf8");
+    expect(text).toContain(other.path);
+    expect(text).not.toContain(`path: ${f.repo}\n`);
+    expect(existsSync(calls)).toBe(false);
+    expect(readFileSync(join(launcher, "launcher.ts"), "utf8")).toBe(
+      "// the running job's launcher\n",
+    );
+  },
+);
 
 test("tool-state delegates to the native reaper in report mode", () => {
   const f = setup();

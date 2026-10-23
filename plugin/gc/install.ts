@@ -31,45 +31,29 @@ export async function install(options: {
     root,
     repositoryText,
   );
-  let repositories = [...machine.repositories];
-  if (options.uninstall)
-    repositories = options.machine
+  const repositories = options.uninstall
+    ? options.machine
       ? []
-      : repositories.filter((entry) => entry.path !== root);
-  else {
-    const repository = repositoryValues.repository;
-    let base: string;
-    if (isMapping(repository) && typeof repository.base_branch === "string")
-      base = repository.base_branch;
-    else {
-      const head = await git(root, [
-        "symbolic-ref",
-        "refs/remotes/origin/HEAD",
-      ]);
-      base = head.replace(/^refs\/remotes\/origin\//, "");
-    }
-    const entry = {
-      path: root,
-      remote: "origin",
-      remote_url: (await git(root, ["remote", "get-url", "origin"])).trim(),
-      base_branch: base,
-      bounds: { kinds: [], worktree_roots: [], scratch_prefixes: [] },
-    };
-    const current = await baseDeclaration(entry);
-    const proposed = { ...entry, bounds: current.declaration };
-    repositories = [
-      ...repositories.filter((old) => old.path !== root),
-      proposed,
-    ];
-  }
+      : machine.repositories.filter((entry) => entry.path !== root)
+    : [
+        ...machine.repositories.filter((old) => old.path !== root),
+        await proposedEntry(root, repositoryValues.repository),
+      ];
   const next = {
     ...machine,
     repositories,
     ...(options.machine ? { receipts: false } : {}),
   };
   const noEntries = next.repositories.length === 0 && !next.receipts;
+  // The job names no repository: removing one while others remain changes
+  // only the machine entry, and keeps the job and the programs it recorded.
+  const keepJob = options.uninstall && !noEntries;
   console.log(`Machine entry preview (${machinePath}):\n${dump({ gc: next })}`);
-  console.log(schedulerPreview(next, noEntries));
+  console.log(
+    keepJob
+      ? "Scheduler preview: the jig-gc job is unchanged"
+      : schedulerPreview(next, noEntries),
+  );
   if (!options.confirm) {
     console.log(
       "Preview only. Repeat with --yes to confirm these bounds and update the scheduler.",
@@ -81,7 +65,7 @@ export async function install(options: {
       "Scheduler installation requires the installed plugin copy, outside every worktree",
     );
   // Removing an entry withdraws authority, so it never waits on plugin
-  // discovery; the job left for the others is rewritten either way.
+  // discovery.
   if (!options.uninstall) checkLauncherResolves();
   return exclusiveGcLock("install", async () => {
     const original = previousMachineText(machinePath);
@@ -94,6 +78,11 @@ export async function install(options: {
     const values: unknown = original ? load(original) : {};
     if (!isMapping(values))
       throw new GcError("Machine configuration must be a mapping");
+    if (keepJob) {
+      writeMachine(machinePath, dump({ ...values, gc: next }));
+      console.log("Scheduler unchanged: the job still serves the others");
+      return 0;
+    }
     // Captured before anything changes, so a failure can put back the job
     // that was actually running rather than one rebuilt from this copy.
     const previousJob = await snapshotScheduler();
@@ -110,6 +99,25 @@ export async function install(options: {
     console.log(`Scheduler ${noEntries ? "removed" : "updated"}: ${job}`);
     return 0;
   });
+}
+/** The entry install proposes for the repository at `root`. */
+async function proposedEntry(root: string, repository: unknown) {
+  let base: string;
+  if (isMapping(repository) && typeof repository.base_branch === "string")
+    base = repository.base_branch;
+  else {
+    const head = await git(root, ["symbolic-ref", "refs/remotes/origin/HEAD"]);
+    base = head.replace(/^refs\/remotes\/origin\//, "");
+  }
+  const entry = {
+    path: root,
+    remote: "origin",
+    remote_url: (await git(root, ["remote", "get-url", "origin"])).trim(),
+    base_branch: base,
+    bounds: { kinds: [], worktree_roots: [], scratch_prefixes: [] },
+  };
+  const current = await baseDeclaration(entry);
+  return { ...entry, bounds: current.declaration };
 }
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

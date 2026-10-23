@@ -117,6 +117,10 @@ test.skipIf(skipsOnWindows("powershell", "symbolic links need privileges"))(
     // A directory link outside the checkout naming its bin directory.
     symlinkSync(join(checkout, "bin"), join(outside, "bin"));
     expect(outsideCheckout(join(outside, "bin", "claude"))).toBe(false);
+    // A chain that leaves the checkout again: the hop in it still counts.
+    symlinkSync(program, join(checkout, "bridge"));
+    symlinkSync(join(checkout, "bridge"), join(outside, "chained"));
+    expect(outsideCheckout(join(outside, "chained"))).toBe(false);
   },
 );
 
