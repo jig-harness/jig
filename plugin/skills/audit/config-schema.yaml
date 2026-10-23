@@ -14,7 +14,10 @@
 #               path:    relative to the repository root unless absolute
 #   values    enum: the allowed values; integer: words allowed besides a number
 #   min       integer: the least allowed number
-#   pattern   string: a regular expression the value must match
+#   pattern   string, command, path: a regular expression the value must
+#             match; also allowed in a nested type spec of one of those types
+#             (a list's `items`), applying to each entry; refused on any other
+#             type
 #   nullable  true when `null` is accepted and means "not set"
 #   items     list: the type of each entry: a type name; `fields:` for a
 #             list of mappings, each field typed; or, for a nested list or map,
@@ -106,6 +109,7 @@ fields:
     read_by: [resolve-review-comments]
   review.repo_label:
     type: string
+    pattern: "^[A-Za-z0-9._:@+/-]+$"
     read_by: [resolve-review-comments, work-batch]
     repository_only: true
   review.repo_slug:
@@ -115,13 +119,13 @@ fields:
     repository_only: true
   review.taxonomy.types:
     type: list
-    items: string
+    items: { type: string, pattern: "^[A-Za-z0-9._:@+/-]+$" }
     distinct: true
     nonempty: true
     read_by: [resolve-review-comments, work-batch]
   review.taxonomy.repos:
     type: list
-    items: string
+    items: { type: string, pattern: "^[A-Za-z0-9._:@+/-]+$" }
     distinct: true
     nonempty: true
     read_by: [resolve-review-comments, drive-pr, work-batch]
