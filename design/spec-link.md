@@ -195,14 +195,15 @@ only where those helpers are used: a person who picks an item up by hand or
 opens a pull request directly passes neither, so on their own they score
 `advisory`. The `mechanical` observation is enforcement on every change: a
 required check on the pull request reads its linked item's type and refuses
-a pull request of a required type whose `## Acceptance` section accounts
+a pull request that links no item, since its type is then `unknown` and
+takes the strictest row, and one of a required type whose `## Acceptance` section accounts
 for no criterion, or leaves one unaccounted for, unless the exception is
 recorded as `do-item`'s step above requires: the reason in the section,
 and the label applied by someone other than the author. The audit reports the
 share of such exceptions beside the score, so work that went ahead
 without criteria is visible rather than counted as enforced. It also reports,
 as evidence and not as the score, the share of items from the last 30 days
-typed as a required type that resolve to at least one criterion, and the
+typed as a required type that resolve completely to at least one criterion, and the
 recommendation names the adapter the repository's layout would turn on.
 
 ## Configuration

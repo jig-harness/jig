@@ -128,12 +128,13 @@ used: an item picked up by hand or filed directly passes neither, so on
 their own they score `advisory`. The `mechanical` observation is
 enforcement on every change: a required check on the pull request derives
 its linked item's type the same way and refuses one whose item is
-untyped, so no item reaches a merge untyped and lighter. Beside the
+untyped, or that links no item at all, so no work reaches a merge untyped
+and lighter. Beside the
 score, as evidence and not as a rung, the audit runs `determine_type.ts` on the items the tracker
 shows changed in the last 30 days and reports the share each step typed
 (label, tracker type, title prefix) and the share left `unknown`, with a
-sample: a mapping no
-item's labels reach shows there. That the mapping resolves to labels the
+sample of the `unknown` items and their labels, so a type whose mapping
+matches none of the labels items actually carry is visible. That the mapping resolves to labels the
 taxonomy declares stays a configuration check, reported beside it.
 
 ## Configuration
@@ -155,7 +156,7 @@ taxonomy declares stays a configuration check, reported beside it.
 3. **`work-batch` and `file-issue`.**
 4. **The required check**: a portable script that derives the linked
    item's type as `determine_type.ts` does and refuses a pull request
-   whose item is untyped; its tests; a workflow template and the setup
+   whose item is untyped or that links no item; its tests; a workflow template and the setup
    step that makes it a required check on the base branch. Until a
    repository installs it, the criterion scores `advisory` there.
 5. **The map column and the audit criterion.**
