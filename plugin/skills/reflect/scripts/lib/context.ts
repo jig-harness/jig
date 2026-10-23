@@ -6,7 +6,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import {
   basename,
   dirname,
@@ -167,6 +167,23 @@ export function gitDir(root = consumerRoot()): string {
 }
 
 /**
+ * `path` as the file system spells it: its nearest existing ancestor with
+ * links resolved and, on Windows, 8.3 short names expanded, as git spells the
+ * top level; the part that does not exist yet as given.
+ */
+function spelled(path: string): string {
+  const rest: string[] = [];
+  let head = path;
+  while (!existsSync(head)) {
+    const parent = dirname(head);
+    if (parent === head) return path;
+    rest.unshift(basename(head));
+    head = parent;
+  }
+  return join(realpathSync.native(head), ...rest);
+}
+
+/**
  * The worktree's journal. The default lives in the worktree's own git
  * directory, which git never tracks and which goes when the worktree goes.
  * A configured path that git would track is refused.
@@ -179,7 +196,7 @@ export function journalPath(
     return join(gitDir(root), "jig", "reflection-journal.jsonl");
   const top = git(["rev-parse", "--show-toplevel"], root);
   if (top !== null) {
-    const inside = relative(resolve(top), configured);
+    const inside = relative(spelled(resolve(top)), spelled(configured));
     // Outside the repository only when its first segment is `..`: a name
     // such as `..notes` is a directory inside it.
     const segments = inside.split(/[\\/]/);

@@ -757,9 +757,9 @@ function inRepository(
   path: string,
   flag: string,
 ): string {
-  const inside = realpathSync(root) + sep;
-  const named = resolve(realpathSync(cwd), path);
-  const linked = existsSync(named) ? realpathSync(named) : named;
+  const inside = realpathSync.native(root) + sep;
+  const named = resolve(realpathSync.native(cwd), path);
+  const linked = existsSync(named) ? realpathSync.native(named) : named;
   if (!named.startsWith(inside) || !linked.startsWith(inside))
     throw new DeferralsError(
       `${flag} ${path} lies outside the repository ${root}`,
@@ -786,7 +786,10 @@ function refuseAlias(
 ): void {
   if (!existsSync(configPath)) return;
   const path = relativePath(repo.root, configPath);
-  const real = relativePath(realpathSync(repo.root), realpathSync(configPath));
+  const real = relativePath(
+    realpathSync.native(repo.root),
+    realpathSync.native(configPath),
+  );
   if (path === real) return;
   const entry = git(repo, [
     "ls-files",

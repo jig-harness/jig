@@ -25,8 +25,13 @@ function receiptPath(receipt: Receipt, root: string): string {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   return join(dir, `${receipt.runId}.json`);
 }
-/** A file's fsync does not persist the directory entry that names it. */
+/**
+ * A file's fsync does not persist the directory entry that names it. Windows
+ * refuses to fsync a directory (EPERM), and NTFS journals the entry with the
+ * rename or link that created it, so there is nothing to sync there.
+ */
 function syncDirectory(path: string): void {
+  if (process.platform === "win32") return;
   const fd = openSync(path, "r");
   try {
     fsyncSync(fd);

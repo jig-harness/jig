@@ -11,7 +11,7 @@
  * configured file that does not exist.
  */
 import { existsSync, readFileSync } from "node:fs";
-import { basename, isAbsolute, join, normalize } from "node:path";
+import { basename, isAbsolute, join, posix } from "node:path";
 import { isMapping } from "../../../../shared/config-layers.ts";
 import { load } from "../../../../shared/yaml.ts";
 import { compileOpenPattern } from "../../../file-issue/scripts/lib/taxonomy.ts";
@@ -258,7 +258,8 @@ export function taxonomyFindings(
   const configured = at(config, "issue_tracker.taxonomy");
   if (typeof configured === "string" && configured.trim() !== "") {
     if (!existsSync(resolveIn(root, configured))) return [];
-    return checkAgainst(config, root, normalize(configured));
+    // Named as configured, with forward slashes on every platform.
+    return checkAgainst(config, root, posix.normalize(configured));
   }
   const found = probedFiles(tracked).filter((f) =>
     TAXONOMY_NAMES.has(basename(f)),

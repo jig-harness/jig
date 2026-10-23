@@ -268,7 +268,8 @@ test("the action's release commits the release step's writes, after_version incl
     "release-branch": "changelog-release",
     changed: "true",
     commit,
-    bundle: join(temp, "jig-changelog-release.bundle"),
+    // The action's bash step joins with a slash, on Windows too.
+    bundle: `${temp}/jig-changelog-release.bundle`,
   });
   expect(git(dir, "rev-parse", "HEAD^").trim()).toBe(start);
   expect(git(dir, "log", "-1", "--format=%s%n%an <%ae>")).toBe(

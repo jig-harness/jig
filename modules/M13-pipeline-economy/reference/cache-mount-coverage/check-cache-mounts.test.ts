@@ -92,7 +92,8 @@ test("a missing mount names the stage, the line, the path and the fix", () => {
   expectSpawnExit(result, 1);
   const lines = result.stderr.trim().split("\n");
   expect(lines[0]).toMatch(
-    /partial\/Dockerfile:11: \[cache-mount-missing\] stage 'build' keeps the pnpm store on \/pnpm-store/,
+    // The path as given, so with backslashes on Windows.
+    /partial[\\/]Dockerfile:11: \[cache-mount-missing\] stage 'build' keeps the pnpm store on \/pnpm-store/,
   );
   expect(lines[1]).toContain("--mount=type=cache,target=/pnpm-store");
   expect(result.stderr).toContain("Dockerfile:12:");

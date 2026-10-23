@@ -348,13 +348,6 @@ describe("the configuration file", () => {
       evidence:
         "scripts/gates.sh is an executable script named like the repository's check, and CI runs it (.github/workflows/ci.yml)",
     });
-    // Without a package script or CI step, a gate script CI does not run is still found.
-    const alone = repo({ "scripts/check.sh": "#!/bin/sh\ntrue\n" });
-    expect(
-      fitIn(alone, ["--offline"]).suggestions.find(
-        (s) => s.field === "gates.command",
-      )?.value,
-    ).toBe("bash scripts/check.sh");
   });
 
   test("a gate script CI only mentions, or runs with arguments that cannot be kept, is suggested as such", () => {

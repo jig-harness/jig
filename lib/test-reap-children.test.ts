@@ -16,11 +16,24 @@ import {
   signalIdentityTargets,
 } from "../plugin/shared/process-tree.ts";
 import { expectSpawnExit } from "./test-helpers/expect-spawn-exit.ts";
+import { skipsOnWindows } from "./test-helpers/windows-skip.ts";
 import {
   captureDescendants,
   recordDescendants,
   reapSurvivingDescendants,
 } from "./test-reap-children.ts";
+
+/**
+ * Bun spawns its children on Windows inside a job object that ends them when
+ * their parent exits, so a grandchild dies with its leader and none is ever
+ * orphaned for the reap to find.
+ */
+const orphanTest = test.skipIf(
+  skipsOnWindows(
+    "process-lifecycle",
+    "a Bun child's children end with it on Windows, so no grandchild is orphaned",
+  ),
+);
 
 function row(pid: number, ppid: number, start = `start-${pid}`): ProcessRow {
   return { pid, ppid, pgid: pid, start, stat: "S", args: `p${pid}` };
@@ -297,14 +310,17 @@ test("a real tree a test left behind is gone after the reap", async () => {
   expect(gone).toBe(true);
 });
 
-test("a real grandchild init adopted after its leader died is reaped through the capture", async () => {
-  const { child, tree, report, gone } = await reapRealTree(true);
-  expect(tree.length).toBe(2);
-  const grandchild = tree.find((identity) => identity.pid !== child);
-  expect(report.signalled).toEqual([grandchild?.pid ?? -1]);
-  expect(report.survived).toEqual([]);
-  expect(gone).toBe(true);
-});
+orphanTest(
+  "a real grandchild init adopted after its leader died is reaped through the capture",
+  async () => {
+    const { child, tree, report, gone } = await reapRealTree(true);
+    expect(tree.length).toBe(2);
+    const grandchild = tree.find((identity) => identity.pid !== child);
+    expect(report.signalled).toEqual([grandchild?.pid ?? -1]);
+    expect(report.survived).toEqual([]);
+    expect(gone).toBe(true);
+  },
+);
 
 type Identity = { pid: number; start: string };
 
@@ -421,12 +437,14 @@ test("leaks an idle child", async () => {
 // preload's own record names the grandchild, which its interval capture does
 // while the test waits. It records both fixtures' identities from the process
 // table first, so they are cleaned up even when the preload is missing.
-test("a test process run with the repository's preloads reaps a grandchild orphaned before its test returned", async () => {
-  await withProbe(
-    (identityFile, dir, ownedFile) => {
-      const pidFile = join(dir, "grandchild");
-      const childSource = `const g = Bun.spawn([process.execPath, '-e', '${idle}'], { stdout: 'ignore', stderr: 'ignore' }); require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(g.pid)); ${idle}`;
-      return `import { test } from "bun:test";
+orphanTest(
+  "a test process run with the repository's preloads reaps a grandchild orphaned before its test returned",
+  async () => {
+    await withProbe(
+      (identityFile, dir, ownedFile) => {
+        const pidFile = join(dir, "grandchild");
+        const childSource = `const g = Bun.spawn([process.execPath, '-e', '${idle}'], { stdout: 'ignore', stderr: 'ignore' }); require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(g.pid)); ${idle}`;
+        return `import { test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { processTable } from ${JSON.stringify(tableModule)};
 test("orphans a grandchild", async () => {
@@ -455,11 +473,13 @@ test("orphans a grandchild", async () => {
   await child.exited;
 }, 30_000);
 `;
-    },
-    async (stderr, identity) => {
-      expect(stderr).toContain(
-        `test-reap: killed 1 process(es) a test left running (pid ${identity.pid})`,
-      );
-    },
-  );
-}, 90_000);
+      },
+      async (stderr, identity) => {
+        expect(stderr).toContain(
+          `test-reap: killed 1 process(es) a test left running (pid ${identity.pid})`,
+        );
+      },
+    );
+  },
+  90_000,
+);
