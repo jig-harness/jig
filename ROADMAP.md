@@ -133,6 +133,15 @@ guards, report first, fail closed, a receipt per run); a repository enables
 the kinds it mints with its own facts, a machine sets the schedule, and
 [M12](modules/M12-parallel-agent-ergonomics/README.md) gains the practice.
 
+### 25. Dependency-review feedback
+
+Tools that review a pull request's dependency changes for supply-chain risk,
+such as Socket, report in a check and a summary comment, and the review loop
+reads neither today. The loop will read their alerts as findings with a
+severity, answer or fix them like any other finding, and show their scores
+without acting on them. A failing check of such a tool does not stop a pull
+request by itself; its alerts do.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** A reusable reconciler for

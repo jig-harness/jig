@@ -346,6 +346,38 @@ Done when a working repository's weekly sweep is the installed `jig gc`
 job, its own reapers and installers are gone, and the report names each
 resource's proof before anything is collected.
 
+### 25. Dependency-review feedback
+
+A tool that reviews what a pull request does to the repository's
+dependencies (Socket is one) reports through a check run and one summary
+comment, and raises no review thread, so the review loop does not see it
+([AI reviewers](../plugin/EXTENDING.md#ai-reviewers) says why). What it will
+build, one pull request per step:
+
+- **Read the report**: a dependency reporter is configured by its login and
+  check name, and read by a format of its own, the way a
+  [severity format](../plugin/EXTENDING.md#severity-formats) is: only from
+  comments and checks that login posted. Socket is the first built-in, checked
+  against its real comments and check runs.
+- **Alerts become findings**: each alert the report carries is a finding that
+  names the package and the alert, with its severity mapped onto `blocker`,
+  `high`, `medium` and `low`. It enters the loop through the path summary
+  comments already use, so the decline ladder and a top-level answer apply
+  unchanged.
+- **Scores stay advisory**: a report's scores (supply chain, quality,
+  maintenance, license) appear in the drive's status and the pull-request
+  plan, never as findings, with no threshold that turns a score into one.
+- **A failing check does not block by itself**: the reporter's check run
+  leaves the overall CI verdict, and only its alerts carry weight, as
+  findings. A repository whose branch protection requires the check keeps
+  that requirement. Before building, check how the verdict treats a failing
+  non-required check today.
+
+Done when a drive on a pull request whose report carries an alert with a
+severity answers it as a finding, a report with scores and no alert adds none,
+and a failing reporter check with no alert does not hold the drive back,
+unless the repository's branch protection requires that check.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** Move an operated reconciler onto the
