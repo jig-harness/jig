@@ -1,0 +1,212 @@
+# Machine-evaluable criteria for M2 (generated-artifact freshness).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent → convention → mechanical.
+module: M2
+name: generated-artifact-freshness
+purpose: >-
+  Files and facts derived from other files are kept fresh mechanically, so
+  nobody acts on a stale copy.
+criteria:
+  - id: derived-inventory-exists
+    level: lite
+    requires: convention
+    statement: >-
+      Every committed derived file is listed in one canonical place together
+      with the command that regenerates it.
+    observe:
+      - "an inventory (README section, docs page, or manifest) pairs each derived file with its generator"
+      - "no committed derived file is missing from the inventory"
+
+  - id: hand-editing-forbidden
+    level: lite
+    requires: convention
+    statement: >-
+      Hand-editing derived files is documented as forbidden, and each derived
+      file's header identifies it as generated with its regenerate command;
+      where the format cannot carry a header (JSON, a vendored file pinned
+      by its hash), the file's inventory entry says it is not edited by hand.
+    observe:
+      - "instruction file or inventory states the hand-editing ban"
+      - "derived files open with a generated-file marker naming the regenerate command"
+      - "a derived file whose format takes no comment, or whose bytes are pinned, has an inventory entry with its regenerate command and that it is not edited by hand"
+
+  - id: numbers-in-prose-rule-stated
+    level: standard
+    requires: convention
+    statement: >-
+      The universal instruction file states the test for a number in prose:
+      one that constrains its content stays, one that tallies an adjacent
+      list is dropped or registered as a fact a commit-nothing check derives.
+    observe:
+      - "the universal instruction file, or a rule it links, states the constraint-versus-tally test with an example of each"
+      - "the rule names what a tally that stays needs: a registered fact with a check, or a marker saying the number is a measurement"
+    since: 0.44.0
+
+  - id: committed-derived-full-triad
+    level: standard
+    requires: mechanical
+    statement: >-
+      Every committed derived file has the full freshness triad: a regenerate
+      script, a CI drift check that fails when the file is stale, and a
+      pre-commit hook that regenerates and stages it when its inputs change.
+    observe:
+      - "a runnable regenerate script exists per derived file"
+      - "a CI job regenerates to a temp location, diffs, and fails on mismatch"
+      - "hook-manager config (lefthook/husky/pre-commit) auto-stages the regenerated file"
+
+  - id: instruction-path-references-checked
+    level: standard
+    requires: mechanical
+    statement: >-
+      A CI check verifies that repo paths referenced in instruction files
+      resolve to existing files or directories.
+    observe:
+      - "CI job runs a referenced-path-exists check over the instruction files"
+    probe:
+      mechanical:
+        files: &ci-config
+          - ".github/workflows/*.yml"
+          - ".github/workflows/*.yaml"
+          - ".forgejo/workflows/*"
+          - ".gitea/workflows/*"
+          - ".gitlab-ci.yml"
+          - ".circleci/config.yml"
+          - ".circleci/config.yaml"
+          - "azure-pipelines.yml"
+          - "azure-pipelines.yaml"
+          - ".azure-pipelines/**"
+          - ".pipelines/**"
+          - "bitbucket-pipelines.yml"
+          - "Jenkinsfile"
+          - "**/Jenkinsfile"
+          - "**/*.jenkinsfile"
+          - ".buildkite/**"
+          - ".drone.yml"
+          - ".drone.yaml"
+          - ".woodpecker.yml"
+          - ".woodpecker.yaml"
+          - ".woodpecker/**"
+          - ".travis.yml"
+          - ".cirrus.yml"
+          - ".cirrus.star"
+          - "appveyor.yml"
+          - ".appveyor.yml"
+          - ".semaphore/**"
+          - ".teamcity/**"
+          - "bitrise.yml"
+          - "codemagic.yaml"
+          - "codefresh.yml"
+          - "cloudbuild.yaml"
+          - "cloudbuild.yml"
+          - "buildspec.yml"
+          - "buildspec.yaml"
+          - ".tekton/**"
+          - ".harness/**"
+          - ".build.yml"
+          - ".builds/**"
+          - "**/*.gocd.yaml"
+          - "**/*.gocd.yml"
+          - ".concourse/**"
+          - "ci/pipeline*.yml"
+          - "ci/pipeline*.yaml"
+          - ".onedev-buildspec.yml"
+
+  - id: toolchain-pins-one-source
+    level: standard
+    requires: mechanical
+    since: 0.48.0
+    statement: >-
+      Each toolchain version (the runtime, the compiler, the package
+      manager) is declared in one source file; every other place that
+      repeats it (CI setup steps, container build arguments,
+      package-manager fields, a type package that tracks the runtime) is
+      checked in CI to equal it; and a pin that differs on purpose is
+      registered as an exception with a reason.
+    observe:
+      - "one file (a version manager's file, a project file) is named as the source of each tool's version, and the places that repeat it are listed with it"
+      - "a check in CI reads every listed pin site and fails when a pin differs from the source, names no version, or is gone"
+      - "a deliberate exception (a canary on the next release) is registered with a reason, and the check fails an exception that excuses nothing"
+    probe:
+      mechanical:
+        files: *ci-config
+
+  - id: prose-facts-ci-checked
+    level: strict
+    requires: mechanical
+    statement: >-
+      Derivable facts stated in prose (counts, rosters) are re-derived and
+      compared by a CI check that commits no generated file.
+    observe:
+      - "a registry declares each fact once, with the source it derives from and the phrasings a stated copy may take"
+      - "CI job re-derives each registered fact and fails when a stated copy, in any registered phrasing, disagrees, and passes when none is stated"
+      - "no generated cache of the derived facts is committed to the repo"
+    probe:
+      mechanical:
+        files: *ci-config
+
+  - id: schema-artifacts-use-ephemeral-replay
+    level: strict
+    requires: mechanical
+    statement: >-
+      Every schema-like committed artifact's drift check replays its source
+      of truth from scratch in a throwaway environment, normalizes both
+      sides identically, and compares.
+    observe:
+      - "drift check spins an ephemeral database/container and applies migrations from zero"
+      - "committed artifact and fresh dump pass through the same normalization before diff"
+
+  - id: artifact-inventory-generated-and-gated
+    level: strict
+    requires: mechanical
+    statement: >-
+      Every derived file is declared once in one inventory, with its outputs,
+      its source, its regenerate command and its check, and CI runs every
+      declared check through one generic runner under a required check, with
+      no per-generator CI step, so a generator cannot ship without its check.
+    observe:
+      - "one inventory (a standalone file or the change-area catalog's `generated:` entries) declares each derived file's outputs, source, regenerate command and check, each output once"
+      - "one CI step under a required check runs every declared check through a runner that reports every check's result and fails closed on an inventory it cannot read or a check that cannot start"
+      - "no generator's freshness check has a hand-added CI step or workflow of its own (a post-merge regeneration workflow publishes rather than checks, and is not one), and an entry without a check is refused by the inventory's validation"
+
+  - id: regeneration-after-merge-via-pull-request
+    level: strict
+    requires: mechanical
+    statement: >-
+      Every derived file regenerated after a merge reaches the protected
+      branch through a pull request on a fixed branch per generator that a
+      person merges, with no CI-skip marker on its branch commit or its
+      merge commit, published with a credential scoped to contents and pull
+      requests.
+    observe:
+      - "a workflow on the push to the integration branch, filtered to the generator's inputs and never its outputs, regenerates and publishes through a pull request; no step pushes a generated commit straight to the protected branch"
+      - "the branch name is fixed per generator, so an open pull request is updated rather than duplicated; the job neither merges it nor arms an automatic merge, and overwrites the branch only while every commit on it is the generator's own, with the push leased to the tip it inspected"
+      - "the publish step refuses a branch commit message carrying any of the platform's CI-skip instructions, no merge commit message (subject, body or trailers) carries one, and the step fails before any work when the publishing credential is missing"
+    since: 0.44.0
+
+  - id: generator-reaches-every-input
+    level: standard
+    requires: mechanical
+    statement: >-
+      Every generator that selects its inputs by a list it maintains has a
+      CI check that the set it reads equals the set of inputs that exist,
+      reporting an unreached input and a listed input that no longer exists.
+    observe:
+      - "for each generator with a maintained input list (stubs, includes, a roster), a check enumerates the inputs that exist and the inputs the generator reads and fails on any difference"
+      - "the check runs under a required check, beside the artifact's freshness check or as part of its inventory entry's `check`"
+      - "the check fails closed when either enumeration cannot be read or finds nothing"
+    since: 0.44.0
+
+  - id: derivation-one-way-compared-as-data
+    level: standard
+    requires: mechanical
+    statement: >-
+      A contract artifact that disagrees with its source is regenerated,
+      never edited to match; each link of a chain of derived files has its
+      own drift check; a structured artifact's drift check compares parsed
+      data with both sides normalized identically; and no derived schema is
+      authored twice.
+    observe:
+      - "the hand-edit ban names the source as the place to change and the regenerate command as the only fix; no artifact is both generated and maintained by hand"
+      - "the drift check of each JSON or YAML artifact parses both copies and compares data, naming the differing paths, and any normalization is one function applied to both sides"
+      - "where one derived file feeds another, each link has its own check with its own fresh output"
+    since: 0.44.0

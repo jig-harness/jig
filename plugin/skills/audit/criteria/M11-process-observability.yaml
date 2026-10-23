@@ -1,0 +1,158 @@
+# Machine-evaluable criteria for M11 (process observability).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+module: M11
+name: process-observability
+purpose: >-
+  The delivery process itself is measured, so decisions about gates and
+  reviewers rest on data.
+criteria:
+  - id: process-events-documented
+    level: lite
+    requires: convention
+    statement: >-
+      The process events the team measures (review outcome + cost, gate
+      pass/fail + duration, cycle times) are named and documented as a closed
+      set, distinct from product analytics.
+    observe:
+      - "a telemetry doc / event-schema names the process event types and their required fields"
+      - "it is explicit that these measure the delivery process, not the product"
+
+  - id: at-least-one-event-emitted
+    level: lite
+    requires: convention
+    statement: >-
+      At least one process event is actually emitted by the machinery that runs
+      the process (not merely described).
+    observe:
+      - "an emitter posts at least one event type (e.g. gate_result from the gate ladder)"
+
+  - id: metrics-registry-no-dark-instruments
+    level: standard
+    requires: mechanical
+    statement: >-
+      A metrics registry exists where every metric declares a wired source and
+      an owner, and a check fails the build if any source is missing, empty, or
+      a placeholder (a dark instrument).
+    observe:
+      - "a metrics-registry file lists metrics each with a source + owner"
+      - "a no-dark-instruments check runs and fails on a TODO/empty/unset source"
+
+  - id: review-and-gate-events-validated
+    level: standard
+    requires: mechanical
+    statement: >-
+      Review outcomes and gate results are emitted as typed events and validated
+      against the declared event schema by a lint.
+    observe:
+      - "review_completed and gate_result events are emitted with their required fields"
+      - "an event-schema lint validates a stream and fails on an unknown type or missing required field"
+
+  - id: scheduled-jobs-staleness-watched
+    level: standard
+    requires: mechanical
+    since: 0.45.0
+    statement: >-
+      Every scheduled job is declared in a cadence registry with the interval
+      it must produce a result at, a check fails a scheduled workflow missing
+      from it, and a scheduled watcher classifies each job's run history and
+      fails for a job that is stale (no result inside its cadence plus grace)
+      or red, so a schedule that stopped running never reads as green
+      (expected-absent for a repository with no scheduled job).
+    observe:
+      - "a cadence registry lists each scheduled job with an expected cadence (and a grace and a red threshold, or the defaults)"
+      - "a check fails a scheduled workflow that the registry does not list"
+      - "a scheduled workflow classifies each job's runs against its cadence and exits non-zero for stale and for red"
+
+  - id: observability-gates-self-tested
+    level: strict
+    requires: mechanical
+    statement: >-
+      The no-dark-instruments gate and the event-schema lint each ship a
+      self-test that runs in CI, so a broken observability gate fails loudly.
+    observe:
+      - "each gate has a paired self-test exercising a known pass and a known fail"
+      - "CI runs the self-tests"
+    probe:
+      mechanical:
+        files: &ci-config
+          - ".github/workflows/*.yml"
+          - ".github/workflows/*.yaml"
+          - ".forgejo/workflows/*"
+          - ".gitea/workflows/*"
+          - ".gitlab-ci.yml"
+          - ".circleci/config.yml"
+          - ".circleci/config.yaml"
+          - "azure-pipelines.yml"
+          - "azure-pipelines.yaml"
+          - ".azure-pipelines/**"
+          - ".pipelines/**"
+          - "bitbucket-pipelines.yml"
+          - "Jenkinsfile"
+          - "**/Jenkinsfile"
+          - "**/*.jenkinsfile"
+          - ".buildkite/**"
+          - ".drone.yml"
+          - ".drone.yaml"
+          - ".woodpecker.yml"
+          - ".woodpecker.yaml"
+          - ".woodpecker/**"
+          - ".travis.yml"
+          - ".cirrus.yml"
+          - ".cirrus.star"
+          - "appveyor.yml"
+          - ".appveyor.yml"
+          - ".semaphore/**"
+          - ".teamcity/**"
+          - "bitrise.yml"
+          - "codemagic.yaml"
+          - "codefresh.yml"
+          - "cloudbuild.yaml"
+          - "cloudbuild.yml"
+          - "buildspec.yml"
+          - "buildspec.yaml"
+          - ".tekton/**"
+          - ".harness/**"
+          - ".build.yml"
+          - ".builds/**"
+          - "**/*.gocd.yaml"
+          - "**/*.gocd.yml"
+          - ".concourse/**"
+          - "ci/pipeline*.yml"
+          - "ci/pipeline*.yaml"
+          - ".onedev-buildspec.yml"
+
+  - id: promotion-cites-recorded-measurement
+    level: strict
+    requires: mechanical
+    statement: >-
+      Promoting a gate to blocking, or a reviewer/lens from comment-only to
+      blocking, cites a recorded measurement from a provably live instrument
+      (ties to M7's precision bar and M8's parity report).
+    observe:
+      - "a promoted gate/reviewer/lens carries a recorded measurement clearing the bar"
+      - "the instrument behind it is wired (passes no-dark-instruments), not aspirational"
+
+  - id: process-dashboards-reviewed
+    level: strict
+    requires: convention
+    statement: >-
+      Dashboards for gate pass-rate, review-adoption, and reviewer cost exist,
+      render from the registry, and are reviewed on a cadence.
+    observe:
+      - "dashboards for pass-rate + adoption + cost exist and trace to registry metrics"
+      - "a review cadence for them is stated (drift is looked at, not just recorded)"
+
+  - id: heartbeat-reports-to-external-monitor
+    level: strict
+    requires: mechanical
+    since: 0.45.0
+    statement: >-
+      The heartbeat watcher reports to a monitor outside the system it watches
+      on both outcomes, a success when no job is red or stale and a failure
+      otherwise, and the monitor raises an incident when a report does not
+      arrive, so a watcher that itself stopped is an incident
+      (expected-absent for a repository with no scheduled job).
+    observe:
+      - "the watcher's workflow sends a report to an external monitor after the verdict, with a success form and a failure form"
+      - "the monitor's expected period matches the watcher's cadence and it alerts on a missing report"

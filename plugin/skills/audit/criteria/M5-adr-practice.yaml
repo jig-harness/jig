@@ -1,0 +1,214 @@
+# Machine-evaluable criteria for M5 (ADR practice).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+module: M5
+name: adr-practice
+purpose: >-
+  Significant decisions are recorded once, numbered and append-only, so they
+  are not re-argued or silently broken later.
+criteria:
+  - id: adrs-exist-numbered-from-template
+    level: lite
+    requires: convention
+    statement: >-
+      Decisions are captured as numbered ADR files from a shared template with
+      consistent frontmatter (a decision date and a status).
+    observe:
+      - "an ADR directory holds ADR-NNNN-*.md files with frontmatter"
+      - "an ADR template exists and is referenced by the instructions"
+    probe:
+      files: &adr-files
+        - "**/ADR-[0-9]*.md"
+        - "**/*adr*/**/[0-9][0-9][0-9]*.md"
+        - "**/*decision*/**/[0-9][0-9][0-9]*.md"
+
+  - id: amendment-discipline-documented
+    level: lite
+    requires: convention
+    statement: >-
+      The evolution rule is written down: an approved ADR is amended (dated
+      Amendments entry) or superseded, never silently rewritten.
+    observe:
+      - "the ADR conventions state amendment-or-supersession, not in-place rewrite"
+
+  - id: numbering-gate-enforced
+    level: standard
+    requires: mechanical
+    statement: >-
+      A check fails when two ADRs claim the same number, and it runs in CI (the
+      authority), ideally mirrored in a pre-push hook.
+    observe:
+      - "a CI job runs a duplicate-ADR-number check and fails on a collision"
+      - "the same check is available as a local hook"
+    probe:
+      all:
+        - files: *adr-files
+        - mechanical:
+            files: &ci-config
+              - ".github/workflows/*.yml"
+              - ".github/workflows/*.yaml"
+              - ".forgejo/workflows/*"
+              - ".gitea/workflows/*"
+              - ".gitlab-ci.yml"
+              - ".circleci/config.yml"
+              - ".circleci/config.yaml"
+              - "azure-pipelines.yml"
+              - "azure-pipelines.yaml"
+              - ".azure-pipelines/**"
+              - ".pipelines/**"
+              - "bitbucket-pipelines.yml"
+              - "Jenkinsfile"
+              - "**/Jenkinsfile"
+              - "**/*.jenkinsfile"
+              - ".buildkite/**"
+              - ".drone.yml"
+              - ".drone.yaml"
+              - ".woodpecker.yml"
+              - ".woodpecker.yaml"
+              - ".woodpecker/**"
+              - ".travis.yml"
+              - ".cirrus.yml"
+              - ".cirrus.star"
+              - "appveyor.yml"
+              - ".appveyor.yml"
+              - ".semaphore/**"
+              - ".teamcity/**"
+              - "bitrise.yml"
+              - "codemagic.yaml"
+              - "codefresh.yml"
+              - "cloudbuild.yaml"
+              - "cloudbuild.yml"
+              - "buildspec.yml"
+              - "buildspec.yaml"
+              - ".tekton/**"
+              - ".harness/**"
+              - ".build.yml"
+              - ".builds/**"
+              - "**/*.gocd.yaml"
+              - "**/*.gocd.yml"
+              - ".concourse/**"
+              - "ci/pipeline*.yml"
+              - "ci/pipeline*.yaml"
+              - ".onedev-buildspec.yml"
+
+  - id: adr-frontmatter-validated
+    level: standard
+    requires: mechanical
+    statement: >-
+      ADR frontmatter is machine-validated, including the ADR-specific fields
+      decision_date, supersedes, and superseded_by.
+    observe:
+      - "a frontmatter checker (see M4) enforces ADR-specific required fields"
+      - "a CI job runs it on changed ADRs"
+    probe:
+      files: *adr-files
+
+  - id: supersession-metadata-used
+    level: standard
+    requires: convention
+    statement: >-
+      Superseding a decision updates both files: the new ADR sets supersedes
+      and the old one sets superseded_by plus a deprecated status.
+    observe:
+      - "superseded ADRs carry superseded_by and a deprecated/superseded status"
+      - "superseding ADRs carry supersedes pointing back"
+    probe:
+      files: *adr-files
+
+  - id: decisions-extracted-to-rules
+    level: strict
+    requires: mechanical
+    statement: >-
+      Pattern-checkable ADR decisions are distilled into a machine-readable
+      rules catalog, each rule citing its ADR, and a checker enforces them on
+      changed code in CI.
+    observe:
+      - "a rules catalog maps decisions to patterns, each linked to an ADR"
+      - "a CI check applies the rules to changed code and fails on critical violations"
+    probe:
+      all:
+        - files: *adr-files
+        - mechanical:
+            files: *ci-config
+
+  - id: numbering-gate-mirrored-both-rungs
+    level: strict
+    requires: mechanical
+    statement: >-
+      The numbering gate runs both client-side (pre-push) and server-side (CI),
+      so a duplicate cannot be pushed past a bypassed local hook.
+    observe:
+      - "a pre-push hook runs the numbering gate"
+      - "a CI job runs the identical gate as a required check"
+    probe:
+      all:
+        - files: *adr-files
+        - mechanical:
+            files: *ci-config
+        - mechanical: &hook-manager
+            any:
+              - files:
+                  - "lefthook.yml"
+                  - "lefthook.yaml"
+                  - "lefthook.toml"
+                  - "lefthook.json"
+                  - ".lefthook.yml"
+                  - ".lefthook.yaml"
+                  - ".lefthook.toml"
+                  - ".lefthook.json"
+                  - ".config/lefthook.yml"
+                  - ".config/lefthook.yaml"
+                  - ".config/lefthook.toml"
+                  - ".config/lefthook.json"
+                  - ".husky/**"
+                  - ".pre-commit-config.yaml"
+                  - ".githooks/**"
+                  - ".git-hooks/**"
+                  - ".overcommit.yml"
+                  - ".rusty-hook.toml"
+                  - "rusty-hook.toml"
+                  - ".cargo-husky/**"
+                  - ".simple-git-hooks.*"
+                  - "simple-git-hooks.*"
+                  - "captainhook.json"
+                  - "grumphp.yml"
+                  - "grumphp.yml.dist"
+                  - "hk.pkl"
+                  - "**/pre-commit"
+                  - "**/pre-push"
+                  - "**/commit-msg"
+              - grep: { files: ["package.json"], pattern: "\"(simple-git-hooks|husky|pre-commit|gitHooks|ghooks)\"" }
+              - grep:
+                  files: ["package.json", "Makefile", "GNUmakefile", "justfile", "Taskfile.y*ml", "mise.toml", ".mise.toml", "**/*.sh"]
+                  pattern: "core\\.hooksPath"
+
+  - id: rule-checker-self-tested
+    level: strict
+    requires: mechanical
+    statement: >-
+      The ADR-rule checker ships with a self-test proving it still catches
+      known violations, run in CI so a broken rule gate fails loudly.
+    observe:
+      - "a self-test exercises each rule shape and runs in CI"
+    probe:
+      all:
+        - files: *adr-files
+        - mechanical:
+            files: *ci-config
+
+  - id: skeleton-changes-need-recorded-authority
+    level: strict
+    requires: mechanical
+    since: 0.39.0
+    statement: >-
+      The files that hold the architecture's contracts are listed in a
+      machine-readable inventory, and a check blocks a change to one unless
+      the change edits the inventory or a commit trailer names an approved
+      decision record; the check fails when an inventory entry matches no
+      file, and the agent instructions tell agents to read the inventory
+      before modifying and treat those files as read-only.
+    observe:
+      - "a machine-readable inventory lists skeleton files, each with the contract it holds"
+      - "a commit-msg hook and a required CI check fail a change to a listed file that neither edits the inventory nor names an approved decision record"
+      - "the check fails closed on an inventory entry that matches no file and on a named record that does not resolve or is not approved"
+      - "the agent instructions say to read the inventory before modifying and to treat listed files as read-only"

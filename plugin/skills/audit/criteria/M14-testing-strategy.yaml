@@ -1,0 +1,349 @@
+# Machine-evaluable criteria for M14 (testing strategy).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+#
+# Repo-shape note: a library with no running system has no end-to-end sweep
+# to place, and a repository with no database or authorization layer has no
+# isolation predicate to prove; those criteria are expected-absent there.
+module: M14
+name: testing-strategy
+purpose: >-
+  Each test suite runs where its time budget allows, and a passing test
+  means the behaviour works.
+criteria:
+  - id: test-tiers-declared
+    level: lite
+    requires: convention
+    since: 0.27.0
+    statement: >-
+      Every test suite has a written tier (unit, integration, end-to-end or
+      the repository's own names) with the trigger that runs it and its time
+      budget.
+    observe:
+      - "a testing doc, the instruction file or comments in the CI configuration name each suite with its trigger and budget"
+      - "the full end-to-end sweep, where one exists, is written down as nightly or on demand, never per change; end-to-end tests of journeys nothing else checks may run after every merge"
+
+  - id: testing-rules-written
+    level: lite
+    requires: convention
+    since: 0.27.0
+    statement: >-
+      The testing rules are written where agents and people read them: test
+      doubles reject what the real dependency rejects, runtime code reads
+      time from an injected clock, waits poll with a deadline instead of
+      sleeping, tests change the home directory, working directory or
+      environment only in a subprocess, and a new test is seen to fail
+      before its pass is trusted.
+    observe:
+      - "a testing doc, rule file or the instruction file states the rules for doubles, time, waiting, developer state and seeing a new test fail first"
+      - "the instruction file points at it"
+
+  - id: stale-test-triage-written
+    level: lite
+    requires: convention
+    since: 0.48.0
+    statement: >-
+      The procedure for a test failure the change did not cause is written
+      where agents and people read it: the failure is reproduced on a
+      freshly fetched base in a throwaway worktree before it is attributed,
+      never with a stash, and a failed fetch is no answer; a test that fails
+      on the base too is fixed inline when cheap or deleted with a tracker
+      item recording what it covered; a test is regenerated only when its
+      premise is obsolete and the new test asserts what the old one
+      protected.
+    observe:
+      - "a testing doc, rule file or the instruction file states the fresh-base reproduction, the fix-inline-or-delete-with-a-tracker-item rule and the regenerate-only-on-an-obsolete-premise rule"
+      - "it names the steps or the command (fetch, a throwaway worktree, the install into it, the test command on one file) and forbids a stash or a checkout of the base in the working tree"
+      - "the instruction file points at it"
+
+  - id: tier-budgets-enforced
+    level: standard
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      Every CI job that runs tests has an enforced budget on the suite's
+      elapsed time: a job timeout, a timeout on the command that runs the
+      suite, or a step that fails when the suite runs over its tier's
+      budget. A per-test timeout alone does not count: it bounds one test,
+      not the suite.
+    observe:
+      - "test jobs carry timeout-minutes / timeout: / options { timeout(...) }, or the suite's command runs under timeout <duration>"
+      - "or a step compares the suite's elapsed time with the budget and fails"
+      - "where the tier declares a budget, the bound that counts is no looser than it: a job timeout well above the suite's budget is a backstop against a hang, not the budget's enforcement"
+    probe:
+      files: &ci-config
+        - ".github/workflows/*.yml"
+        - ".github/workflows/*.yaml"
+        - ".forgejo/workflows/*"
+        - ".gitea/workflows/*"
+        - ".gitlab-ci.yml"
+        - ".circleci/config.yml"
+        - ".circleci/config.yaml"
+        - "azure-pipelines.yml"
+        - "azure-pipelines.yaml"
+        - ".azure-pipelines/**"
+        - ".pipelines/**"
+        - "bitbucket-pipelines.yml"
+        - "Jenkinsfile"
+        - "**/Jenkinsfile"
+        - "**/*.jenkinsfile"
+        - ".buildkite/**"
+        - ".drone.yml"
+        - ".drone.yaml"
+        - ".woodpecker.yml"
+        - ".woodpecker.yaml"
+        - ".woodpecker/**"
+        - ".travis.yml"
+        - ".cirrus.yml"
+        - ".cirrus.star"
+        - "appveyor.yml"
+        - ".appveyor.yml"
+        - ".semaphore/**"
+        - ".teamcity/**"
+        - "bitrise.yml"
+        - "codemagic.yaml"
+        - "codefresh.yml"
+        - "cloudbuild.yaml"
+        - "cloudbuild.yml"
+        - "buildspec.yml"
+        - "buildspec.yaml"
+        - ".tekton/**"
+        - ".harness/**"
+        - ".build.yml"
+        - ".builds/**"
+        - "**/*.gocd.yaml"
+        - "**/*.gocd.yml"
+        - ".concourse/**"
+        - "ci/pipeline*.yml"
+        - "ci/pipeline*.yaml"
+        - ".onedev-buildspec.yml"
+
+  - id: full-e2e-never-per-change
+    level: standard
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      The full end-to-end sweep, whose journeys other checks already cover,
+      runs only on a schedule or on demand, and a check over the CI
+      configuration fails when its workflow gains a per-change trigger
+      (end-to-end tests that are the only check of a critical journey may
+      run after every merge; expected-absent where the repository has no
+      end-to-end suite).
+    observe:
+      - "the workflow running the full end-to-end suite triggers on schedule / dispatch only"
+      - "a lint or grep gate run in CI fails a per-change trigger (pull_request, push, merge request) on that workflow"
+
+  - id: tests-type-checked
+    level: standard
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      Test files are type-checked in CI by the same kind of check as runtime
+      code (for a compiled language, the test sources compile in CI;
+      expected-absent only for a language that has no type checker to apply;
+      a checker that exists for the language but is not configured scores
+      absent).
+    observe:
+      - "the type-check configuration CI runs includes the test files (tsconfig include, tsconfig.test.json, mypy/pyright paths)"
+      - "or the language compiles test sources as part of the CI build"
+
+  - id: spawn-exit-assertions-print-output
+    level: standard
+    requires: convention
+    since: 0.48.0
+    statement: >-
+      A test that asserts a spawned process's exit status asserts it through
+      a helper that prints the child's captured output when the assertion
+      fails, and the rule is written where agents and people read it
+      (expected-absent where no test spawns a process).
+    observe:
+      - "a shared test helper takes the spawn result with its captured stdout and stderr and throws with both on a mismatch, and the tests that spawn a process assert through it"
+      - "the testing doc or the instruction file names the helper as the rule"
+      - "at the mechanical rung, a lint rule or grep gate flags an assertion on a spawn result's exit field in test files, blocking in CI directly or through a ratchet on its count"
+
+  - id: tests-come-with-changes
+    level: standard
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      A CI check fails a change whose changed source file has no test,
+      unless the file is listed in a registered exemption with a reason, and
+      a pre-push hook runs the same check before the push.
+    observe:
+      - "a CI job maps each changed source file to its test path and fails when none exists"
+      - "the pre-push hook configuration runs the same check"
+      - "exemptions live in a reviewed file or list, each with a reason"
+    probe:
+      all:
+        - mechanical:
+            files: *ci-config
+        - mechanical: &hook-manager
+            any:
+              - files:
+                  - "lefthook.yml"
+                  - "lefthook.yaml"
+                  - "lefthook.toml"
+                  - "lefthook.json"
+                  - ".lefthook.yml"
+                  - ".lefthook.yaml"
+                  - ".lefthook.toml"
+                  - ".lefthook.json"
+                  - ".config/lefthook.yml"
+                  - ".config/lefthook.yaml"
+                  - ".config/lefthook.toml"
+                  - ".config/lefthook.json"
+                  - ".husky/**"
+                  - ".pre-commit-config.yaml"
+                  - ".githooks/**"
+                  - ".git-hooks/**"
+                  - ".overcommit.yml"
+                  - ".rusty-hook.toml"
+                  - "rusty-hook.toml"
+                  - ".cargo-husky/**"
+                  - ".simple-git-hooks.*"
+                  - "simple-git-hooks.*"
+                  - "captainhook.json"
+                  - "grumphp.yml"
+                  - "grumphp.yml.dist"
+                  - "hk.pkl"
+                  - "**/pre-commit"
+                  - "**/pre-push"
+                  - "**/commit-msg"
+              - grep: { files: ["package.json"], pattern: "\"(simple-git-hooks|husky|pre-commit|gitHooks|ghooks)\"" }
+              - grep:
+                  files: ["package.json", "Makefile", "GNUmakefile", "justfile", "Taskfile.y*ml", "mise.toml", ".mise.toml", "**/*.sh"]
+                  pattern: "core\\.hooksPath"
+
+  - id: fixed-sleeps-banned
+    level: standard
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      A gate rejects fixed sleeps in test and tooling code, except those
+      carrying a suppression token registered for local timing; waits for
+      external state poll with a deadline.
+    observe:
+      - "a lint rule or grep gate run in CI flags sleep / setTimeout / time.sleep / Thread.sleep in tests"
+      - "its suppression token is listed in the suppression-token registry"
+
+  - id: provisioned-suites-executed
+    level: standard
+    requires: mechanical
+    since: 0.48.0
+    statement: >-
+      Every CI job that exists for a suite that can run nothing (a job that
+      provisions a database, a queue, a browser or a credential the suite
+      skips itself without; a shard or path selection of one suite) fails
+      when that suite executed zero tests, counted from the runner's
+      machine-readable report as the test cases not skipped, and fails when
+      the report is missing (expected-absent where no job exists for such a
+      suite).
+    observe:
+      - "the job runs the suite with a JUnit (or equivalent) report written to a file"
+      - "a step after the suite reads the report and fails the job when no test case executed, per suite where several suites in the job could each skip"
+      - "the count comes from the report's test cases, not from the runner's human summary line, and a missing or unreadable report fails the job"
+    probe:
+      files: *ci-config
+
+  - id: dependency-workarounds-pinned
+    level: standard
+    requires: convention
+    since: 0.48.0
+    statement: >-
+      Every workaround for a defect in a dependency has a test beside it
+      that asserts the defective behaviour against the real dependency and
+      names the workaround, and the written rule is that a pin failing
+      after an upgrade retires or adapts the workaround rather than
+      updating the assertion (expected-absent where the repository has no
+      such workaround).
+    observe:
+      - "each dependency workaround (a patch, a wrapper, a decode step compensating for a driver's or library's defect) has a test naming it that asserts the defective behaviour against the real dependency, not against the workaround or a double"
+      - "the testing doc or the pin's header states that a failure after an upgrade is the signal to retire or adapt the workaround, never an assertion to update"
+
+  - id: clock-reads-linted
+    level: strict
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      A lint rule rejects direct wall-clock reads in runtime code outside
+      the one system-clock adapter, so runtime code gets the current time
+      from an injected clock.
+    observe:
+      - "a lint rule (GritQL plugin, no-restricted-syntax, banned-api, forbidigo, ArchUnit, BannedApiAnalyzers) bans Date.now / new Date() / datetime.now / time.Now / Instant.now in runtime code"
+      - "it blocks in CI, directly or through a ratchet on its count"
+
+  - id: predicates-proven-against-engine
+    level: strict
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      Isolation and visibility predicates (tenant scope, soft delete,
+      authorization) are tested in CI against the engine that evaluates
+      them, with data that would leak if the predicate were missing
+      (expected-absent where the repository has no such predicates).
+    observe:
+      - "a CI job provisions the real database or policy engine and runs predicate tests against it"
+      - "those tests seed a second tenant or a deleted record and assert it is hidden"
+
+  - id: developer-state-isolated
+    level: strict
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      Test runs cannot touch the developer's real state: the home
+      directory, temp directory and the tool's own configuration point at
+      per-run locations before any code under test starts (the test command
+      launches the runner with them set, or tests spawn the code under test
+      as a subprocess with them set), and a lint rejects in-process changes
+      to them in test files.
+    observe:
+      - "the test script or a wrapper sets HOME / TMPDIR / the tool's configuration variables to per-run locations in the environment it launches the runner with; a fixture that changes them inside the test process does not count"
+      - "a lint or grep gate rejects process.env.HOME = / process.chdir( (or the ecosystem's equivalent) in tests"
+
+  - id: doubles-and-builders-typed
+    level: strict
+    requires: convention
+    since: 0.27.0
+    statement: >-
+      Test doubles and test-data builders are typed against the real
+      contract, doubles reject inputs the real dependency rejects, and
+      builders return one declared type with deterministic defaults.
+    observe:
+      - "doubles are declared with the real interface type (Pick<T>, satisfies, autospec, implementing the interface), not any"
+      - "fakes of command-line tools or APIs fail on an unknown flag or request"
+      - "the testing doc or the pull-request template asks for a mutation check on a new double: break the real call site, see the test fail, restore it"
+      - "builders declare their return type and use fixed identifiers and timestamps"
+
+  - id: coverage-trend-scheduled
+    level: strict
+    requires: mechanical
+    since: 0.27.0
+    statement: >-
+      A scheduled CI job publishes coverage as a trend, also when it is
+      below target, refuses to publish incomplete data, and no merge is
+      blocked on a per-file coverage threshold.
+    observe:
+      - "a workflow on a schedule runs coverage and publishes it (dashboard, hosted service, artifact)"
+      - "the publish step runs even when the coverage step fails, and fails when a package's report is missing"
+      - "no per-file blocking coverage threshold is configured"
+    probe:
+      files: *ci-config
+
+  - id: next-release-canary
+    level: strict
+    requires: mechanical
+    since: 0.48.0
+    statement: >-
+      A scheduled workflow with no per-change trigger, which is not a
+      required check, runs the suites with behaviour pins and the
+      integration tier with its dependencies provisioned, and a
+      compiled-binary smoke test where the product ships a binary, against
+      the next release of the runtime or a driver, and records the build it
+      used.
+    observe:
+      - "a workflow on schedule and manual dispatch installs the runtime's next-release channel (canary, nightly, beta, release candidate) and runs the integration-tier suites with their dependencies provisioned"
+      - "it writes the runtime's version and revision to the run summary or log"
+      - "it has no pull_request or push trigger and is not among the required checks; where the product ships a compiled binary, a job builds it with the next release and executes it against its exit-code contract"
+      - "its next-release pin is a registered exception wherever the repository checks its pin sites (M2's toolchain-pins declaration, or its equivalent)"
+    probe:
+      files: *ci-config

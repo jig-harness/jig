@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/hooks/turn-budget-guard.ts\"",
+            "timeout": 15,
+            "statusMessage": "Counting this session's agentic turns"
+          }
+        ]
+      }
+    ]
+  }
+}

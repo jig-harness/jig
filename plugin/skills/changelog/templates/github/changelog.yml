@@ -1,0 +1,375 @@
+# Change notes in CI, through Jig's `changelog` skill — GitHub Actions
+# workflow. Copy to .github/workflows/changelog.yml; `/jig:changelog setup`
+# walks through it and checks each step.
+#
+# Replace before use (setup fills these in):
+#   <jig-owner>                   the owner of the Jig repository the action
+#                                 comes from
+#   0000000000000000000000000000000000000000 # v0.0.0
+#                                 the full commit hash of the Jig release's
+#                                 tag, and that release's version as the
+#                                 comment; a tag can be moved, a hash cannot
+#   <integration-branch>          the branch releases are made on
+#   <workflow that reports a required check>
+#                                 the name (`name:`) of each workflow whose
+#                                 jobs report the integration branch's required
+#                                 checks, one list entry each
+#
+# What it does:
+#
+#   - The branch check, on every pull request: every change note reads, the
+#     branch leaves the version and the changelog's sections to the release
+#     step, and a change to a released path carries a note that asks for a
+#     release. A release pull request passes when re-running the release step
+#     on its merge base gives exactly its change. Make the `check` job a
+#     required check of the integration branch.
+#   - The release, on every push to the integration branch: the release step
+#     writes the waiting notes into the changelog and moves the version, in a
+#     job that holds no key (`release`), then a job that runs nothing from the
+#     repository (`push`) puts that commit on the integration branch
+#     (`changelog.release.push: direct`) or force-pushes it to
+#     `changelog.release.branch` and opens or updates the release pull request
+#     a person merges (`pull-request`). Every note waiting is one release, and
+#     runs go one at a time, never cancelled, so no two pick the same version.
+#   - The tags, after each run of the workflows that report the required
+#     checks, and every six hours as a backstop: each released version is
+#     tagged on the commit that released it, once every required check on that
+#     commit passed (`tag-plan`, then `tag-push`). A check that was cancelled
+#     is run again once; a releasing commit whose checks failed is left
+#     untagged, fails `tag-plan` and is reported by `status.ts` for a person.
+#     Only versions newer than the newest release tag on origin are tagged,
+#     and with no release tag yet only the newest release heading, so the
+#     versions of an untagged history are never tagged and published:
+#     `status.ts` lists what the first run would tag.
+#     A required check that runs only on pull requests never reports on the
+#     integration branch, so its versions would wait forever: list the checks
+#     the integration branch runs in `ci.required_checks` when its rules
+#     require others.
+#
+# The key. Both modes push as a GitHub App, since a push with the workflow's
+# own token starts no other workflow: the release commit would get no checks
+# and its tag would start no publishing job. The App has Contents read and
+# write, and in `pull-request` mode Pull requests read and write, never
+# Workflows, so no release commit can change a workflow. Its client ID is the
+# variable CHANGELOG_APP_CLIENT_ID and its private key the secret
+# CHANGELOG_APP_PRIVATE_KEY of the `changelog-release` environment, which only
+# the integration branch may use. Only `push` and `tag-push` name that
+# environment; neither checks the repository out or runs anything from it.
+# They take what they act on (a git bundle of the release commit, the tag plan)
+# from a job that ran the repository's code, so they check every value against
+# a strict pattern first. In `direct` mode the integration branch's ruleset
+# lets the App past its rules (`always`), while a second ruleset keeps force
+# pushes and deletion blocked for it too (`release-access.ts` checks both).
+# A ruleset on tags that restricts who creates them must let the App past it
+# as well, or `tag-push` is refused. GitHub runs a `workflow_run` or
+# `schedule` workflow from the default branch, so `tag-push` uses the
+# environment from there: this workflow expects the integration branch to be
+# the default branch.
+#
+# The `tag-plan` job re-runs cancelled checks with this workflow's own token,
+# granted Actions write in that job alone, and reads the required checks with
+# Checks and Statuses read; every other job keeps the workflow's
+# `contents: read`. It runs nothing from the repository: the action starts
+# Bun outside the checkout, so no file the repository holds (bunfig.toml,
+# .env, tsconfig.json) reaches it. Its checkout keeps no credential; the
+# action hands the token to the one git call that reads origin's tags.
+#
+# Every `uses:` is pinned to a full commit, with its version as a comment.
+#
+# The skill:
+#   https://github.com/jig-harness/jig/blob/main/plugin/skills/changelog/README.md
+name: changelog
+
+on:
+  pull_request:
+  push:
+    branches: ["<integration-branch>"]
+  workflow_run:
+    workflows: ["<workflow that reports a required check>"]
+    types: [completed]
+    branches: ["<integration-branch>"]
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A pull request's newer push cancels its older run. A release or a tag run is
+# never cancelled: the release runs one at a time on the newest tip, so a run
+# that waited writes whatever notes are still there, and a newer tag run
+# waiting replaces an older one, since it plans from a newer state.
+concurrency:
+  group: changelog-${{ github.event_name == 'pull_request' && format('check-{0}', github.ref) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'release' || 'tag') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The branch itself, not its merge with the base: a release pull
+          # request is reproduced on the merge base it was written on.
+          ref: ${{ github.event.pull_request.head.sha }}
+          # The check compares the branch with its merge base.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: <jig-owner>/jig/plugin/skills/changelog@0000000000000000000000000000000000000000 # v0.0.0
+        with:
+          command: check
+          base: ${{ github.event.pull_request.base.sha }}
+          head-ref: ${{ github.event.pull_request.head.ref }}
+
+  # The release step and after_version, with no key: nothing here can reach
+  # the environment that holds the App's.
+  release:
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/<integration-branch>'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      changed: ${{ steps.release.outputs.changed }}
+      version: ${{ steps.release.outputs.version }}
+      start: ${{ steps.release.outputs.start }}
+      commit: ${{ steps.release.outputs.commit }}
+      push: ${{ steps.release.outputs.push }}
+      release-branch: ${{ steps.release.outputs.release-branch }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          # The branch's newest commit, not the one that started the run: a
+          # run that waited behind another releases everything merged since.
+          ref: <integration-branch>
+          # The notes are ordered by the commits that added them.
+          fetch-depth: 0
+          # after_version runs here; it gets no credential.
+          persist-credentials: false
+      - id: release
+        uses: <jig-owner>/jig/plugin/skills/changelog@0000000000000000000000000000000000000000 # v0.0.0
+        with:
+          command: release
+      - if: steps.release.outputs.changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: changelog-release
+          path: ${{ steps.release.outputs.bundle }}
+          if-no-files-found: error
+          retention-days: 1
+
+  # Puts the release commit where the mode says, with the App's token. It
+  # checks nothing out and runs nothing from the repository: git reads the
+  # bundle as data, and every value from the release job is checked first.
+  push:
+    needs: release
+    if: needs.release.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: changelog-release
+    permissions: {}
+    steps:
+      - name: Check what the release job handed on
+        env:
+          MODE: ${{ needs.release.outputs.push }}
+          RELEASE_BRANCH: ${{ needs.release.outputs.release-branch }}
+          VERSION: ${{ needs.release.outputs.version }}
+          START: ${{ needs.release.outputs.start }}
+          COMMIT: ${{ needs.release.outputs.commit }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          case "$MODE" in direct | pull-request) ;; *) fail "unknown release mode '$MODE'";; esac
+          [[ "$START" =~ ^[0-9a-f]{40}$ ]] || fail "the release's start is not a commit hash"
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail "the release commit is not a commit hash"
+          if [ -n "$VERSION" ]; then
+            [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]] ||
+              fail "'$VERSION' is not a version"
+          fi
+          if [ "$MODE" = pull-request ]; then
+            [ -n "$VERSION" ] || fail "a release pull request needs a version"
+            if ! [[ "$RELEASE_BRANCH" =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ ]] ||
+              ! git check-ref-format --branch "$RELEASE_BRANCH" > /dev/null; then
+              fail "'$RELEASE_BRANCH' is not a branch name"
+            fi
+            [ "$RELEASE_BRANCH" != "$BRANCH" ] || fail "the release branch is the integration branch"
+          fi
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: changelog-release
+          path: ${{ runner.temp }}/changelog-release
+      - name: Mint the App's token (direct)
+        if: needs.release.outputs.push == 'direct'
+        id: app-direct
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.CHANGELOG_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CHANGELOG_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Mint the App's token (pull-request)
+        if: needs.release.outputs.push == 'pull-request'
+        id: app-pr
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.CHANGELOG_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CHANGELOG_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Push the release
+        env:
+          TOKEN: ${{ steps.app-direct.outputs.token || steps.app-pr.outputs.token }}
+          MODE: ${{ needs.release.outputs.push }}
+          RELEASE_BRANCH: ${{ needs.release.outputs.release-branch }}
+          VERSION: ${{ needs.release.outputs.version }}
+          START: ${{ needs.release.outputs.start }}
+          COMMIT: ${{ needs.release.outputs.commit }}
+          BRANCH: ${{ github.ref_name }}
+          BUNDLE: ${{ runner.temp }}/changelog-release/jig-changelog-release.bundle
+        run: |
+          set -euo pipefail
+          remote="https://x-access-token:${TOKEN}@${GITHUB_SERVER_URL#https://}/${GITHUB_REPOSITORY}.git"
+          # An empty repository with no hooks: the bundle is read as data.
+          repo="$RUNNER_TEMP/changelog-push"
+          git init -q "$repo"
+          cd "$repo"
+          git config core.hooksPath /dev/null
+          # The bundle holds only the release commit, on top of the commit the
+          # release ran on, which the push needs to compute what to send.
+          git fetch -q --no-tags --depth=1 "$remote" "$START"
+          git bundle verify -q "$BUNDLE"
+          git fetch -q --no-tags "$BUNDLE" "HEAD:refs/heads/changelog-push"
+          [ "$(git rev-parse refs/heads/changelog-push)" = "$COMMIT" ] ||
+            { echo "::error::the bundle does not hold the release commit"; exit 1; }
+          if [ "$(git rev-list --count "$START..$COMMIT")" != 1 ] || [ "$(git rev-parse "$COMMIT^")" != "$START" ]; then
+            echo "::error::the release commit is not one commit on top of $START"
+            exit 1
+          fi
+          if [ "$MODE" = direct ]; then
+            if git push -q "$remote" "$COMMIT:refs/heads/$BRANCH"; then exit 0; fi
+            # A merge that landed while this ran has its own run queued behind
+            # this one, which writes these notes too; any other failure fails.
+            tip=$(git ls-remote "$remote" "refs/heads/$BRANCH" | cut -f1)
+            if [ "$tip" != "$START" ]; then
+              echo "::notice::$BRANCH moved during the release; the run queued behind this one writes these notes"
+              exit 0
+            fi
+            exit 1
+          fi
+          # pull-request: the release branch is regenerated from scratch on
+          # every push, so it is replaced whatever it held.
+          git push -q --force "$remote" "$COMMIT:refs/heads/$RELEASE_BRANCH"
+          export GH_TOKEN="$TOKEN"
+          title="chore(release): $VERSION"
+          body="The release step's commit for $VERSION: the change notes waiting on $BRANCH, written into the changelog, and the version moved. Every push to $BRANCH regenerates this branch from scratch, so change a note through an ordinary pull request rather than here. Merge it to release; the tag follows once the merged commit's required checks pass."
+          number=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$RELEASE_BRANCH" --base "$BRANCH" \
+            --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+            echo "::notice::updated the release pull request #$number for $VERSION"
+          else
+            gh pr create --repo "$GITHUB_REPOSITORY" --head "$RELEASE_BRANCH" --base "$BRANCH" \
+              --title "$title" --body "$body"
+          fi
+
+  # Which released versions can be tagged now, with cancelled checks run
+  # again once. No key: its token may only read and re-run.
+  tag-plan:
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push') ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/<integration-branch>')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+      checks: read
+      statuses: read
+    outputs:
+      ready: ${{ steps.plan.outputs.ready }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: <integration-branch>
+          # A version is tagged on the first commit of the branch's history
+          # that has its heading; the tags already made are read from origin.
+          fetch-depth: 0
+          # The token, which may re-run workflows, stays out of the
+          # checkout's .git/config: the action hands it to the one git call
+          # that reads origin's tags.
+          persist-credentials: false
+      - id: plan
+        uses: <jig-owner>/jig/plugin/skills/changelog@0000000000000000000000000000000000000000 # v0.0.0
+        with:
+          command: tag
+          rerun: "true"
+      # After the plan's ready list is handed on, so a failed version does
+      # not hold back the others.
+      - name: Fail for a releasing commit whose checks failed
+        if: steps.plan.outputs.failed == 'true'
+        run: |
+          echo "::error::a releasing commit failed its required checks and stays untagged: the plan above names it and its checks"
+          exit 1
+
+  # Makes each ready tag through the API, with the App's token, so a workflow
+  # that publishes on a new tag starts. Runs nothing from the repository.
+  tag-push:
+    needs: tag-plan
+    if: ${{ !cancelled() && needs.tag-plan.outputs.ready != '' && needs.tag-plan.outputs.ready != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: changelog-release
+    permissions: {}
+    steps:
+      - name: Check the plan
+        env:
+          READY: ${{ needs.tag-plan.outputs.ready }}
+        run: |
+          set -euo pipefail
+          jq -e 'type == "array" and all(.[]; type == "object"
+            and (.tag | type) == "string" and (.commit | type) == "string"
+            and .message == .tag)' <<< "$READY" > /dev/null ||
+            { echo "::error::the tag plan is not a list of {tag, commit, message}"; exit 1; }
+          jq -r '.[] | [.tag, .commit] | @tsv' <<< "$READY" | while IFS=$'\t' read -r tag commit; do
+            if ! [[ "$tag" =~ ^([A-Za-z0-9][A-Za-z0-9._/@-]*)?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]*)?$ ]] ||
+              ! git check-ref-format "refs/tags/$tag"; then
+              echo "::error::'$tag' is not a release tag"
+              exit 1
+            fi
+            [[ "$commit" =~ ^[0-9a-f]{40}$ ]] ||
+              { echo "::error::$tag: '$commit' is not a commit hash"; exit 1; }
+          done
+      - name: Mint the App's token
+        id: app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.CHANGELOG_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CHANGELOG_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Tag each ready version
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          READY: ${{ needs.tag-plan.outputs.ready }}
+          BRANCH: <integration-branch>
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS=$'\t' read -r tag commit; do
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" > /dev/null 2>&1; then
+              echo "::notice::$tag exists already; left as it is"
+              continue
+            fi
+            # Only a commit of the integration branch is tagged.
+            state=$(gh api "repos/$GITHUB_REPOSITORY/compare/$commit...$BRANCH" --jq .status)
+            if [ "$state" != ahead ] && [ "$state" != identical ]; then
+              echo "::error::$tag: $commit is not on $BRANCH ($state); not tagged"
+              failed=1
+              continue
+            fi
+            object=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="$tag" -f message="$tag" \
+              -f object="$commit" -f type=commit --jq .sha)
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$object" > /dev/null
+            echo "::notice::tagged $commit $tag"
+          done < <(jq -r '.[] | [.tag, .commit] | @tsv' <<< "$READY")
+          exit "$failed"

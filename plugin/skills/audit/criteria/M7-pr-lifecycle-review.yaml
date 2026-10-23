@@ -1,0 +1,272 @@
+# Machine-evaluable criteria for M7 (PR lifecycle & review).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+module: M7
+name: pr-lifecycle-review
+purpose: >-
+  Who reviews what, when a pull request is ready and who may merge are written
+  down and enforced, and automated reviewers earn their power.
+criteria:
+  - id: lifecycle-documented
+    level: lite
+    requires: convention
+    statement: >-
+      The PR lifecycle is written down once — open as a draft (or Ready, where
+      the repository declares that no reviewer reviews drafts), self-review,
+      review, resolve threads, Ready (by a human or an adopted review driver),
+      human merges — and referenced by the instructions.
+    observe:
+      - "a pr-lifecycle doc states the draft -> review -> resolve loop (Ready inside it) -> merge, or, where the repository declares that no reviewer reviews drafts, the Ready-at-open review -> resolve -> merge loop"
+      - "it names merging as a human-only step and says who marks Ready"
+
+  - id: self-review-before-request
+    level: lite
+    requires: convention
+    statement: >-
+      Authors are expected to read their own full diff and run the local gate
+      set before requesting review.
+    observe:
+      - "the lifecycle doc requires author self-review + local gates before requesting review"
+
+  - id: reviews-selected-by-change-area
+    level: standard
+    requires: mechanical
+    statement: >-
+      Which mandatory reviews a PR needs is derived from the change-area
+      catalog (a generated projection), not a hand-kept list or reviewer memory.
+    observe:
+      - "a review-gate projection is generated from the M3 catalog"
+      - "review requests / required checks are driven by that projection"
+
+  - id: automated-reviewer-comment-only-with-bar
+    level: standard
+    requires: convention
+    statement: >-
+      Any automated reviewer runs comment-only, and a pre-committed precision
+      bar for ever flipping it (or a lens) to blocking is written down.
+    observe:
+      - "the review config sets a comment-only posture for new reviewers/lenses"
+      - "a precision bar (and who measures it) is recorded, not implied"
+
+  - id: automated-review-source-independent
+    level: standard
+    requires: mechanical
+    statement: >-
+      A secret-bearing or merge-relevant automated reviewer gets its runtime,
+      prompts, and active policy from a pinned external source, separately
+      hosted service, or target base branch — never the PR head it reviews.
+    observe:
+      - "review wiring identifies a trusted runtime and policy source outside the PR head"
+      - "proposed reviewer changes can only affect a separate unprivileged shadow run, not their own authoritative review"
+
+  - id: comment-resolution-loop-gated
+    level: standard
+    requires: mechanical
+    statement: >-
+      Every review thread reaches a terminal state (addressed / rejected /
+      deferred / moot) with an audit trail, and no PR merges with an open
+      thread.
+    observe:
+      - "the addressed/rejected/deferred/moot loop contract is documented"
+      - "an unresolved-threads check runs as a required merge gate in CI"
+      - "the state set is closed — an unrecognised state fails rather than passing"
+      - "a state claiming a change (addressed / deferred / moot) fails without a reference to one, not merely with blank text"
+
+  - id: moot-distinct-from-rejected
+    level: standard
+    requires: convention
+    statement: >-
+      A finding whose anchored code no longer exists has its own terminal state,
+      distinct from rejection, so a learning loop is not told the reviewer was
+      wrong when it was right about deleted code.
+    observe:
+      - "a moot (or equivalently named) state exists and is documented as distinct from rejection"
+      - "it requires a trail naming what superseded the finding"
+
+  # Two rungs of the same obligation. The convention — an anchored encoding, and
+  # an exporter that decodes it — is what Standard asks for. Validating the
+  # verdict as it is WRITTEN is strictly more, and is the rung below.
+  - id: verdict-declared-not-inferred
+    level: standard
+    requires: convention
+    statement: >-
+      The author declares the terminal state in a machine-readable, anchored
+      form at reply time, rather than leaving it to be reconstructed from prose.
+    observe:
+      - "a verdict encoding is specified (leading token, trailer, or forge field) and anchored to a fixed position, not a free-text search"
+      - "an export adapter decodes that encoding onto the gate's closed state set, rather than passing reply prose to the gate"
+      - "'cannot tell' is its own exported value, distinguishable from a real state"
+
+  # Encoding-agnostic on purpose: this scores THAT the verdict is validated where
+  # it is written, never which encoding was picked. Jig states no
+  # preference between a leading token and a trailer (see mappings.md).
+  - id: verdict-validated-at-write-time
+    level: strict
+    requires: mechanical
+    statement: >-
+      The tool that posts thread replies validates the declared verdict as the
+      reply is written, so a missing verdict fails immediately instead of
+      becoming an unclassifiable row at export.
+    observe:
+      - "the reply-posting tool rejects a reply carrying no verdict, at write time"
+      - "an explicit opt-out flag exists for replies that are deliberately not a verdict"
+
+  - id: review-loop-convergence-rules
+    level: strict
+    requires: mechanical
+    statement: >-
+      The loop's stop condition distinguishes 'no open threads' from 'the
+      reviewer has not reported yet', and re-checks that the PR is still open
+      each round.
+    observe:
+      - "a convergence check runs per round and its result is the loop's control flow, not a person's judgement"
+      - "convergence waits for the reviewer to settle before declaring zero threads a stop"
+      - "the loop aborts when the PR stops being open, rather than pushing to a branch that will not merge"
+      - "the check counts every thread the merge gate would reject, not only those literally marked open"
+
+  - id: post-merge-obligations-settled
+    level: standard
+    requires: convention
+    statement: >-
+      After a merge, each class of residual obligation (tracker state,
+      deferred findings, out-of-tree actions, temporary scaffolding, live
+      verification, the next step) is settled as owed and filed or done, or
+      as not owed with the evidence that settled it, and a deferred reply is
+      checked against the tracker rather than trusted.
+    observe:
+      - "the lifecycle doc has a post-merge stage naming those classes, each ending owed or not owed with evidence ('nothing found' is not evidence)"
+      - "the stage re-lists resolved threads and summary findings and confirms each deferred reply's referenced item exists, instead of relying on the reply's text"
+      - "the stage picks the next item with a bias toward closure (a nearly-done epic, then operations that can be cleared, then a batch of small items) and leaves the pick to a person"
+      - "the stage reverts temporary scaffolding in the repository and outside it (timeouts, gates, drivers, branches, environments, flags) and asks for live verification only when the change has a runtime surface, has reached an environment and is not covered by CI"
+      - "on recent merges, a closing comment or pass report records each class as owed or not owed (a scheduled or hook-run pass that only reports is advisory; mechanical needs a check that fails while a merge has a class nobody recorded)"
+    since: 0.52.0
+
+  - id: pr-target-wiring-fork-safe
+    level: standard
+    requires: mechanical
+    statement: >-
+      No secret-bearing reviewer workflow checks out and runs untrusted fork
+      code, and a lint enforces it.
+    observe:
+      - "a pull_request_target safety lint runs in CI over the workflows"
+      - "no workflow trips it (fork code is treated as data under privileged triggers)"
+
+  - id: human-ready-and-merge-enforced
+    level: strict
+    requires: mechanical
+    statement: >-
+      Merging is mechanically reserved to humans — branch protection requires
+      a human actor and green required checks. (Who may mark Ready is a
+      convention, scored under hitl-registry-published: GitHub and GitLab let
+      any writer take the draft-to-Ready transition.)
+    observe:
+      - "branch protection requires required checks + review before merge"
+      - "automation cannot self-merge (no bot bypass of the human merge step)"
+
+  - id: pr-shape-policy-declared
+    level: standard
+    requires: convention
+    statement: >-
+      How pull requests are shaped is declared once where the PR-opening agent
+      reads it: whether they may stack and how, the maximum stack depth,
+      branch naming, the issue link, and a size budget.
+    observe:
+      - "a configuration file or instructions section declares the stacking mode (none, forge-native, or plain branch chains)"
+      - "the same place declares branch naming, the issue link and the size budget, or states the defaults apply"
+
+  - id: pr-final-target-resolvable
+    level: strict
+    requires: mechanical
+    statement: >-
+      Every open PR's final integration target is resolvable by tooling, and
+      the tool that opens PRs refuses one whose target is not: a stack the
+      policy forbids, a base no open PR chain leads from, a stack deeper than
+      allowed, or a change over the size budget without a stated reason.
+    observe:
+      - "the PR-opening tool applies the declared policy and exits non-zero on a violation"
+      - "on recent PRs, every base is the integration branch, a forge-native stack, or a chain of open same-repository PRs ending at it"
+
+  - id: hitl-registry-published
+    level: strict
+    requires: convention
+    statement: >-
+      The human-only decision classes (merge, promote a reviewer to blocking,
+      expand scope, overrule a human, and mark Ready unless delegated to a
+      review driver; where the repository runs a post-merge stage or closes
+      epics on a verdict, also picking the next item and reopening on a
+      rejecting verdict or waiving a missing acceptance review) are listed in
+      one registry, and a hitl label revokes autonomous merge.
+    observe:
+      - "a HITL decision registry enumerates the human-only decisions with a trigger each"
+      - "a hitl label is defined and revokes autonomous merge for the linked PR"
+      - "the registry names who may mark Ready: humans, plus the review driver when the repository delegates to it"
+      - "where the repository runs a post-merge stage or closes epics on a verdict, the registry also lists picking the next item and reopening on a rejecting verdict or waiving a missing acceptance review, the latter naming an approver other than whoever runs the post-merge pass or the epic-closing step"
+      - "on recent PRs, every draft-to-Ready transition was made by a human or by the declared review driver"
+
+  - id: reviewer-promotion-gated-on-measurement
+    level: strict
+    requires: mechanical
+    statement: >-
+      Promoting a reviewer or lens from comment-only to blocking is gated on
+      measured precision (from the M8 corpus / parity report), not a hunch.
+    observe:
+      - "a lens flipped to blocking carries a recorded precision measurement clearing the bar"
+      - "the measurement source (M8 parity report) is wired, not aspirational"
+
+  - id: review-gates-self-tested
+    level: strict
+    requires: mechanical
+    statement: >-
+      The PR-target safety lint and the unresolved-threads gate each ship a
+      self-test that runs in CI, so a broken review gate fails loudly.
+    observe:
+      - "each gate has a paired self-test exercising a known pass and a known fail"
+      - "CI runs the self-tests"
+    probe:
+      mechanical:
+        files: &ci-config
+          - ".github/workflows/*.yml"
+          - ".github/workflows/*.yaml"
+          - ".forgejo/workflows/*"
+          - ".gitea/workflows/*"
+          - ".gitlab-ci.yml"
+          - ".circleci/config.yml"
+          - ".circleci/config.yaml"
+          - "azure-pipelines.yml"
+          - "azure-pipelines.yaml"
+          - ".azure-pipelines/**"
+          - ".pipelines/**"
+          - "bitbucket-pipelines.yml"
+          - "Jenkinsfile"
+          - "**/Jenkinsfile"
+          - "**/*.jenkinsfile"
+          - ".buildkite/**"
+          - ".drone.yml"
+          - ".drone.yaml"
+          - ".woodpecker.yml"
+          - ".woodpecker.yaml"
+          - ".woodpecker/**"
+          - ".travis.yml"
+          - ".cirrus.yml"
+          - ".cirrus.star"
+          - "appveyor.yml"
+          - ".appveyor.yml"
+          - ".semaphore/**"
+          - ".teamcity/**"
+          - "bitrise.yml"
+          - "codemagic.yaml"
+          - "codefresh.yml"
+          - "cloudbuild.yaml"
+          - "cloudbuild.yml"
+          - "buildspec.yml"
+          - "buildspec.yaml"
+          - ".tekton/**"
+          - ".harness/**"
+          - ".build.yml"
+          - ".builds/**"
+          - "**/*.gocd.yaml"
+          - "**/*.gocd.yml"
+          - ".concourse/**"
+          - "ci/pipeline*.yml"
+          - "ci/pipeline*.yaml"
+          - ".onedev-buildspec.yml"

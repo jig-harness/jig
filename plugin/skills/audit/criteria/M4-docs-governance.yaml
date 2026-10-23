@@ -1,0 +1,198 @@
+# Machine-evaluable criteria for M4 (docs-as-wiki governance).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+module: M4
+name: docs-governance
+purpose: >-
+  Documentation has a lifecycle, metadata and generated navigation, so people
+  and agents can tell current pages from stale ones.
+criteria:
+  - id: governance-model-written
+    level: lite
+    requires: convention
+    statement: >-
+      A written governance model names the frontmatter fields, the
+      status/lifecycle vocabulary, the de-scarring rule, and the authority
+      hierarchy for resolving conflicts between docs.
+    observe:
+      - "a schema/governance doc lists required frontmatter fields and their enum vocabularies"
+      - "the de-scarring rule and an authority hierarchy are stated in prose"
+
+  - id: docs-start-from-template
+    level: lite
+    requires: convention
+    statement: >-
+      New docs start from a schema-conformant template rather than a copied
+      neighbor.
+    observe:
+      - "a doc template with valid frontmatter exists and is referenced by the instructions"
+
+  - id: frontmatter-machine-validated
+    level: standard
+    requires: mechanical
+    statement: >-
+      A check validates every doc's frontmatter against the schema (required
+      fields present, enum membership, date format) and runs in CI.
+    observe:
+      - "a frontmatter checker validates required fields, enums, and last_updated format"
+      - "a CI job runs it on changed docs and fails on violations"
+    probe:
+      mechanical:
+        files: &ci-config
+          - ".github/workflows/*.yml"
+          - ".github/workflows/*.yaml"
+          - ".forgejo/workflows/*"
+          - ".gitea/workflows/*"
+          - ".gitlab-ci.yml"
+          - ".circleci/config.yml"
+          - ".circleci/config.yaml"
+          - "azure-pipelines.yml"
+          - "azure-pipelines.yaml"
+          - ".azure-pipelines/**"
+          - ".pipelines/**"
+          - "bitbucket-pipelines.yml"
+          - "Jenkinsfile"
+          - "**/Jenkinsfile"
+          - "**/*.jenkinsfile"
+          - ".buildkite/**"
+          - ".drone.yml"
+          - ".drone.yaml"
+          - ".woodpecker.yml"
+          - ".woodpecker.yaml"
+          - ".woodpecker/**"
+          - ".travis.yml"
+          - ".cirrus.yml"
+          - ".cirrus.star"
+          - "appveyor.yml"
+          - ".appveyor.yml"
+          - ".semaphore/**"
+          - ".teamcity/**"
+          - "bitrise.yml"
+          - "codemagic.yaml"
+          - "codefresh.yml"
+          - "cloudbuild.yaml"
+          - "cloudbuild.yml"
+          - "buildspec.yml"
+          - "buildspec.yaml"
+          - ".tekton/**"
+          - ".harness/**"
+          - ".build.yml"
+          - ".builds/**"
+          - "**/*.gocd.yaml"
+          - "**/*.gocd.yml"
+          - ".concourse/**"
+          - "ci/pipeline*.yml"
+          - "ci/pipeline*.yaml"
+          - ".onedev-buildspec.yml"
+
+  - id: index-generated-and-freshness-gated
+    level: standard
+    requires: mechanical
+    statement: >-
+      The navigation index is generated from the tree and a CI drift gate
+      fails when the committed index no longer matches what the generator
+      produces.
+    observe:
+      - "a generator produces the index from doc frontmatter"
+      - "a CI check regenerates and fails on a stale committed index"
+    probe:
+      mechanical:
+        files: *ci-config
+
+  - id: frontmatter-subset-declared
+    level: standard
+    requires: mechanical
+    statement: >-
+      The frontmatter check either reads documents with a full YAML parser,
+      or states the subset of YAML it reads and rejects every construct
+      outside it with an error instead of guessing at a value.
+    observe:
+      - "the frontmatter check's documentation or the governance doc lists the YAML constructs it reads and the ones it rejects (or the check parses documents with a full YAML parser)"
+      - "a document using a construct outside the stated subset (an anchor, a duplicate key, a value continued on the next line) fails the check, and a self-test proves it per construct"
+      - "a line-oriented reader with no stated subset, or one that silently takes the first of two duplicate keys, is not credited"
+    since: 0.23.0
+
+  - id: authority-hierarchy-written
+    level: standard
+    requires: convention
+    statement: >-
+      A single-valued authority hierarchy is written down so contradictions
+      between docs resolve without a judgment call.
+    observe:
+      - "the governance doc states an ordered precedence for conflicting sources"
+
+  - id: descarring-lint-blocks-approval
+    level: strict
+    requires: mechanical
+    statement: >-
+      A scar lint prevents a doc from reaching status approved while carrying
+      review scars (strikethroughs, resolution phrasing, reviewer dialogue),
+      with a self-test proving the lint still catches scars.
+    observe:
+      - "a scar lint scans approved docs and fails on scar markers"
+      - "a blocking self-test proves the lint catches known scars"
+
+  - id: stale-doc-gate
+    level: strict
+    requires: mechanical
+    statement: >-
+      A CI check requires last_updated to advance in the same diff when a
+      doc's body changes, so freshness metadata cannot silently lie.
+    observe:
+      - "a diff-aware check fails when a body change (an added or removed line after the frontmatter) does not advance last_updated, unless it already equals today's UTC date"
+      - "only a last_updated line inside the frontmatter counts as a bump, compared after cutting comments and quotes, so a body line starting last_updated: or an added comment does not pass"
+      - "CI runs it over the pull request's range with history back to the merge base, and a run without a range says it skipped rather than passing"
+    probe:
+      mechanical:
+        files: *ci-config
+
+  - id: generators-stamp-sticky-utc
+    level: strict
+    requires: mechanical
+    statement: >-
+      Every generator that writes a dated document into the docs tree stamps
+      last_updated with the UTC date, and advances it only when its output
+      changed.
+    observe:
+      - "a generator writing a document with a last_updated field under the docs tree takes the date in UTC"
+      - "it keeps the existing date when only the date would change (a shared stamping helper, or a comparison that sets aside the last_updated line only)"
+      - "a repository whose generators write no dated document into the docs tree scores expected-absent"
+    since: 0.23.0
+
+  - id: orphan-report-generated
+    level: strict
+    requires: mechanical
+    statement: >-
+      The index generator also writes a report of the documents no other
+      document lists as related, and the freshness gate covers that report;
+      orphans themselves warn and never fail.
+    observe:
+      - "a generated report lists the documents referenced by no other document's related list"
+      - "the drift gate that checks the index fails when the committed report is stale"
+      - "a report written by hand, or one no gate checks, counts as convention"
+    since: 0.23.0
+
+  - id: path-rules-enforce-subtree-vocabulary
+    level: strict
+    requires: mechanical
+    statement: >-
+      Where a subtree of the docs tree requires frontmatter fields or values
+      that differ from the rest of the tree, path-scoped rules in the schema
+      enforce them in the frontmatter check, and a rule that cannot be
+      evaluated fails the check.
+    observe:
+      - "the schema declares rules for path prefixes (required fields, values narrowed from the tree's vocabulary, forbidden body text) and the frontmatter check applies them"
+      - "a malformed rule (an unknown key, a pattern that does not compile, a value outside the tree's enum) fails the check rather than matching nothing"
+      - "a repository with no subtree whose requirements differ from the rest scores expected-absent"
+    since: 0.23.0
+
+  - id: wiki-lint-cadence-and-promotion
+    level: strict
+    requires: mechanical
+    statement: >-
+      A scheduled wiki-lint runs the health checks (stale, broken links,
+      orphans, retrospection backlog) and posts findings, and raw-to-compiled
+      promotion (retrospection backlog) is tracked.
+    observe:
+      - "a scheduled job runs the wiki-lint table and records findings (e.g. to an activity log)"
+      - "the retrospection/raw-notes backlog awaiting promotion is tracked"

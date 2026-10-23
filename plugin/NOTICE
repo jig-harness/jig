@@ -1,0 +1,88 @@
+Jig
+Copyright 2026 Docomply
+
+Jig Harness, its short form Jig, the logo and the jig-harness.dev domain are
+trademarks of Van Code B.V., licensed to this project; what you may do with them is at
+https://github.com/jig-harness/jig/blob/main/TRADEMARK.md.
+
+Jig is licensed under the Apache License, Version 2.0 (LICENSE), except the
+template files listed below, which are licensed under MIT No Attribution
+(LICENSE-MIT-0, at the repository root) so that a repository can paste them
+in without carrying a notice.
+
+Templates under MIT No Attribution:
+
+modules/M0-instruction-architecture/templates/AGENTS-skeleton.md
+modules/M0-instruction-architecture/templates/GLOSSARY-skeleton.md
+modules/M0-instruction-architecture/templates/dispositions.md
+modules/M0-instruction-architecture/templates/hitl-registry.md
+modules/M0-instruction-architecture/templates/rules-README.md
+modules/M1-gates-enforcement-ladder/templates/ci-pr-gates.yml
+modules/M1-gates-enforcement-ladder/templates/hook-self-tests.sh
+modules/M1-gates-enforcement-ladder/templates/hook-self-tests.test.ts
+modules/M1-gates-enforcement-ladder/templates/lefthook.yml
+modules/M1-gates-enforcement-ladder/templates/secret-scan.yml
+modules/M1-gates-enforcement-ladder/templates/supply-chain-policy.yaml
+modules/M1-gates-enforcement-ladder/templates/suppression-registry.md
+modules/M10-environments-deploy/templates/CI-ARCHITECTURE.md
+modules/M10-environments-deploy/templates/pipeline.example.yaml
+modules/M11-process-observability/templates/TELEMETRY.md
+modules/M11-process-observability/templates/event-schema.yaml
+modules/M11-process-observability/templates/metrics-registry.yaml
+modules/M11-process-observability/templates/scheduled-jobs.yaml
+modules/M12-parallel-agent-ergonomics/templates/WORKTREE-ERGONOMICS.md
+modules/M12-parallel-agent-ergonomics/templates/branch-discipline.md
+modules/M12-parallel-agent-ergonomics/templates/worktree-hooks.md
+modules/M13-pipeline-economy/templates/PIPELINE-ECONOMY.md
+modules/M13-pipeline-economy/templates/ci-cost-ledger.yaml
+modules/M13-pipeline-economy/templates/queue-watchdog.yml
+modules/M14-testing-strategy/templates/TESTING.md
+modules/M14-testing-strategy/templates/runtime-canary.yml
+modules/M15-contracts-errors/templates/ERROR-HANDLING.md
+modules/M15-contracts-errors/templates/INTERFACE-SURFACE.md
+modules/M15-contracts-errors/templates/MIGRATIONS.md
+modules/M15-contracts-errors/templates/error-codes.yaml
+modules/M2-generated-artifact-freshness/templates/generated-files.yaml
+modules/M2-generated-artifact-freshness/templates/regenerate-after-merge.yml
+modules/M3-change-area-catalog/templates/catalog.yaml
+modules/M4-docs-governance/templates/WIKI-SCHEMA.md
+modules/M4-docs-governance/templates/frontmatter-schema.yaml
+modules/M5-adr-practice/templates/ADR-template.md
+modules/M5-adr-practice/templates/adr-rules.yaml
+modules/M5-adr-practice/templates/skeleton.yaml
+modules/M6-feature-delivery-pipeline/templates/PIPELINE.md
+modules/M6-feature-delivery-pipeline/templates/architecture-template.md
+modules/M6-feature-delivery-pipeline/templates/prd-template.md
+modules/M6-feature-delivery-pipeline/templates/research-note-template.md
+modules/M7-pr-lifecycle-review/templates/HITL-REGISTRY.md
+modules/M7-pr-lifecycle-review/templates/PR-LIFECYCLE.md
+modules/M7-pr-lifecycle-review/templates/review-config.yaml
+modules/M8-learning-loop/templates/AUDIT-CATALOG.md
+modules/M8-learning-loop/templates/FLYWHEEL.md
+modules/M8-learning-loop/templates/corpus.yaml
+modules/M8-learning-loop/templates/deep-review-tracker.md
+modules/M8-learning-loop/templates/miss-taxonomy.yaml
+modules/M8-learning-loop/templates/reflection-inbox.md
+modules/M9-tasks-memory/templates/ISSUE-TEMPLATES.md
+modules/M9-tasks-memory/templates/MEMORY-TIERS.md
+modules/M9-tasks-memory/templates/label-taxonomy.yaml
+modules/M9-tasks-memory/templates/phase-formula.yaml
+plugin/skills/changelog/templates/common-changelog.md
+plugin/skills/changelog/templates/github/app-manifest-direct.json
+plugin/skills/changelog/templates/github/app-manifest-pull-request.json
+plugin/skills/changelog/templates/github/changelog.yml
+plugin/skills/changelog/templates/keep-a-changelog.md
+
+Third-party code, each under the licence in the file listed, which sits
+beside it:
+
+plugin/shared/vendor/js-yaml.LICENSE
+  js-yaml 4.1.1, MIT License, Copyright (C) 2011-2015 by Vitaly Puzrin
+lib/vendor/js-yaml.LICENSE
+  js-yaml 4.1.1, MIT License, Copyright (C) 2011-2015 by Vitaly Puzrin
+plugin/skills/decide/scripts/ste-lint/LICENSE
+  ste-lint, MIT License, Copyright (c) 2026 Dustin Yuchen Teng
+plugin/skills/audit/scripts/report/lucide/LICENSE
+  Lucide icons, ISC License, Copyright (c) 2026 Lucide Icons and
+  Contributors; the icons derived from Feather, MIT License, Copyright (c)
+  2013-present Cole Bemis

@@ -1,0 +1,252 @@
+# Machine-evaluable criteria for M12 (parallel-agent ergonomics).
+# Schema: README.md in this folder. Each criterion is an
+# observable repo fact, scored absent -> convention -> mechanical.
+#
+# Expected-absent: a repo that never runs parallel agents on one machine has
+# nothing to partition, so its worktree criteria (branches and footguns, ports,
+# the heavy-run mutex, worktree hooks and namespaces, the teardown nudge) score
+# expected-absent there, not as gaps. The gate-output criteria (the quiet form,
+# its self-test, the verdict line per part) apply to every repository an agent
+# runs gates in, single checkout or not, and are scored on their own.
+module: M12
+name: parallel-agent-ergonomics
+purpose: >-
+  Several agents can work one repository in parallel without colliding over
+  ports, heavy runs or branches.
+criteria:
+  - id: branch-reuse-and-footgun-bans-written
+    level: lite
+    requires: convention
+    statement: >-
+      The branch reuse-before-create rule and the shared-state footgun bans
+      (no git stash across worktrees, no root install with the wrong package
+      manager) are written down where agents will read them.
+    observe:
+      - "an instruction/doc states: reuse an existing branch before creating one"
+      - "a footgun list bans stash-across-worktrees and wrong-manager root installs, each with a reason"
+
+  - id: port-allocation-convention-exists
+    level: lite
+    requires: convention
+    statement: >-
+      A per-worktree port-allocation convention exists, so two worktrees do not
+      default to the same port.
+    observe:
+      - "a documented convention assigns each worktree a port (a range to pick from, or a derivation)"
+
+  - id: change-records-one-file-per-change
+    level: lite
+    requires: convention
+    statement: >-
+      A change records its changelog entry (and any version bump) in a file of
+      its own, not as an edit to a file every change edits, so merging one
+      change does not put the others in conflict.
+    observe:
+      - "a doc tells contributors to add a per-change note file (changes/, .changeset/, changelog.d/, newsfragments/ or similar) instead of editing the changelog"
+      - "expected-absent: the repository keeps no changelog or version that changes with each pull request"
+      - "Jig's changelog skill meets it where `.config/jig.yaml` sets `changelog.file` and a contributor doc points at its notes folder; `/jig:changelog setup` is the remedy where a changelog is edited by every pull request"
+    since: 0.31.0
+
+  - id: port-allocation-scripted
+    level: standard
+    requires: mechanical
+    statement: >-
+      Per-worktree port allocation is scripted and deterministic — the same
+      worktree identity always maps to the same in-range port.
+    observe:
+      - "a script maps a worktree id to a stable port within a configured range"
+      - "the dev flow / a create hook calls it rather than hardcoding a port"
+
+  - id: heavy-run-mutex-scripted-with-ci-bypass
+    level: standard
+    requires: mechanical
+    statement: >-
+      Heavy build/test runs pass through a scripted cross-worktree mutex that
+      serializes them on one machine and bypasses under CI.
+    observe:
+      - "a lock wrapper (atomic mkdir-style) guards heavy commands across worktrees"
+      - "it runs the command immediately when a CI signal is set (CI / an explicit bypass)"
+
+  - id: worktree-hooks-wired
+    level: standard
+    requires: mechanical
+    statement: >-
+      Worktree create/remove hooks are wired — create allocates and surfaces the
+      port slot, remove nudges reflection.
+    observe:
+      - "a create hook allocates/prints the worktree's port slot"
+      - "a remove hook prints a reflection nudge (non-blocking)"
+
+  - id: worktree-namespaces-keyed-and-reaped
+    level: standard
+    requires: mechanical
+    since: 0.37.0
+    statement: >-
+      Where worktrees share a database server, each worktree's data namespace
+      is derived from its identity by a script, created with an owner and an
+      expiry, and reaped by its owner through a command that reports before
+      it drops and refuses the production namespace (expected-absent for a
+      repository with no database or no parallel worktrees).
+    observe:
+      - "the migration or dev command derives the namespace (a schema, a database, a key prefix) from the branch or worktree name; the same identity always maps to the same name"
+      - "production is the namespace with no prefix and needs an explicit flag to be targeted; the derivation never yields it"
+      - "creation writes the owner and an expiry (a schema comment, a registry row); a reap command lists each namespace with its reason (expired, orphaned, unlabelled) and drops only after the report, only the owner's, never an unlabelled one"
+
+  - id: change-records-assembled-after-merge
+    level: standard
+    requires: mechanical
+    statement: >-
+      A release step assembles the per-change notes into the changelog and
+      sets the version after the merge, one run at a time, and a check fails
+      a change whose note it cannot read or that edits what the step writes.
+    observe:
+      - "a CI job or release tool on the integration branch writes the notes into the changelog and moves the version (Changesets, towncrier, scriv, changie, or a script)"
+      - "a pull-request check fails a malformed note, or a direct edit to the changelog's release sections or the version"
+      - "Jig's changelog skill meets both where `.config/jig.yaml` sets `changelog.file` and a workflow runs its action (`plugin/skills/changelog` with `command: check` on pull requests and `command: release` on the integration branch, as its workflow template does); without such a workflow the release step is not wired, and `/jig:changelog setup` is the remedy"
+    since: 0.31.0
+
+  - id: unattended-agent-control-channel
+    level: standard
+    requires: mechanical
+    since: 0.46.0
+    statement: >-
+      An agent left running unattended can be reached without killing it,
+      through a control channel whose directives (at least stopping, pausing
+      or holding its push) are a closed set enforced by code and fail closed,
+      while free-text notes only advise (expected-absent where no agent runs
+      unattended).
+    observe:
+      - "a channel per worktree (files in its gitignored scratch, or a runner feature) accepts directives from a live session while the agent runs"
+      - "each directive is checked by code at a named checkpoint (before a push, between rounds), not left to the agent to obey"
+      - "an unreadable channel or directive is treated as a hold or a stop, never as clear"
+      - "Jig's drive-pr skill in use (its drive mailbox) meets this for review loops only where its push-hold recheck (push-hold-recheck.ts) runs as the last pre-push hook command in the installed hooks; without it a hold sent during the pre-push hooks is not honoured, and the channel is not yet mechanical"
+
+  - id: utilities-self-tested-in-ci
+    level: strict
+    requires: mechanical
+    statement: >-
+      The port allocator and the resource lock each ship a self-test that runs
+      in CI, so a broken utility fails loudly instead of silently misallocating.
+    observe:
+      - "each utility has a paired self-test exercising a known pass and a known fail"
+      - "CI runs both self-tests"
+
+  - id: teardown-nudges-reflection-wired
+    level: strict
+    requires: mechanical
+    statement: >-
+      The worktree teardown hook's reflection nudge is wired to the learning
+      loop, so a session's lessons have a durable destination.
+    observe:
+      - "the remove hook points at the reflection step / learning-loop inbox (ties to M8)"
+      - "the nudge fires on teardown without blocking it"
+      - "with Jig's reflect skill: the remove hook parks the worktree's unsent reflection findings (`journal.ts park`) and refuses the removal only when parking fails"
+
+  - id: footgun-bans-enforced-where-mechanizable
+    level: strict
+    requires: mechanical
+    statement: >-
+      The footgun bans are enforced where mechanizable — e.g. a hook or lint
+      rejects a root install with a package manager the repo did not declare.
+    observe:
+      - "a hook/lint derives the declared package manager and rejects the others at the root"
+      - "the remaining bans that cannot be mechanized are still documented"
+
+  - id: gate-quiet-invocation-named
+    level: lite
+    requires: convention
+    since: 0.38.0
+    statement: >-
+      The gate commands name a quiet invocation for agents (a reporter flag or
+      a script), with the rule that no filter in a pipe stands between a gate
+      and its exit status.
+    observe:
+      - "the instruction file or the gate documentation names, for each gate command, the quiet form agents run (a reporter flag such as `--reporter=dot`, or a script such as `test:quiet`)"
+      - "a written rule says a gate's output is never filtered through a pipe (`| tail`, `| grep`) that would replace its exit status"
+
+  - id: gate-output-quiet-on-green
+    level: standard
+    requires: mechanical
+    since: 0.38.0
+    statement: >-
+      Each gate command an agent runs has a quiet form that prints a summary
+      on success and the full output on failure, and exits with the gate's
+      own status rather than a filter's.
+    observe:
+      - "a package script or wrapper (test:quiet, lint:quiet, a quiet-run wrapper) condenses a passing run and prints a failing run in full"
+      - "the wrapper takes the exit status from the command itself, not from a pipe through a filter (no `| tail` or `| grep` between the gate and its status)"
+      - "the instruction file or the gate set names the quiet form as what agents run"
+
+  - id: quiet-wrapper-self-tested
+    level: strict
+    requires: mechanical
+    since: 0.38.0
+    statement: >-
+      The quiet wrapper ships a self-test, run in CI, proving that a failing
+      run keeps its status and prints in full, and the agent runtime applies
+      the quiet form by itself where it has a hook for that.
+    observe:
+      - "a self-test of the wrapper runs a failing command through it and asserts the command's own exit status and its full output"
+      - "CI runs that self-test"
+      - "where the agent runtime has a command-rewriting hook, a tracked hook applies the quiet form, and a command it cannot classify runs unchanged with its full output"
+    probe:
+      mechanical:
+        files: &ci-config
+          - ".github/workflows/*.yml"
+          - ".github/workflows/*.yaml"
+          - ".forgejo/workflows/*"
+          - ".gitea/workflows/*"
+          - ".gitlab-ci.yml"
+          - ".circleci/config.yml"
+          - ".circleci/config.yaml"
+          - "azure-pipelines.yml"
+          - "azure-pipelines.yaml"
+          - ".azure-pipelines/**"
+          - ".pipelines/**"
+          - "bitbucket-pipelines.yml"
+          - "Jenkinsfile"
+          - "**/Jenkinsfile"
+          - "**/*.jenkinsfile"
+          - ".buildkite/**"
+          - ".drone.yml"
+          - ".drone.yaml"
+          - ".woodpecker.yml"
+          - ".woodpecker.yaml"
+          - ".woodpecker/**"
+          - ".travis.yml"
+          - ".cirrus.yml"
+          - ".cirrus.star"
+          - "appveyor.yml"
+          - ".appveyor.yml"
+          - ".semaphore/**"
+          - ".teamcity/**"
+          - "bitrise.yml"
+          - "codemagic.yaml"
+          - "codefresh.yml"
+          - "cloudbuild.yaml"
+          - "cloudbuild.yml"
+          - "buildspec.yml"
+          - "buildspec.yaml"
+          - ".tekton/**"
+          - ".harness/**"
+          - ".build.yml"
+          - ".builds/**"
+          - "**/*.gocd.yaml"
+          - "**/*.gocd.yml"
+          - ".concourse/**"
+          - "ci/pipeline*.yml"
+          - "ci/pipeline*.yaml"
+          - ".onedev-buildspec.yml"
+
+  - id: verdict-line-per-part
+    level: standard
+    requires: convention
+    since: 0.38.0
+    statement: >-
+      A gate run with several parts ends each part with one named verdict
+      line, and its reader treats a part without one as not run, never as
+      passed.
+    observe:
+      - "the gate runner (a script, a task runner, a wrapper around each part) prints one line per part naming it and its outcome"
+      - "a rule where agents read it says that a missing verdict line means the part did not run"
+      - "expected-absent when the gate set is one command with one outcome"
