@@ -19,10 +19,19 @@ import {
   lstatSync,
   readFileSync,
   readdirSync,
+  readlinkSync,
   realpathSync,
   statSync,
 } from "node:fs";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import {
+  dirname,
+  isAbsolute,
+  join,
+  parse,
+  relative,
+  sep,
+  win32,
+} from "node:path";
 
 export { trackedFiles } from "../../../adr/scripts/locate.ts";
 export { pluginVersion };
@@ -251,32 +260,57 @@ function inRepo(realRoot: string, path: string): string | null {
     : name;
 }
 
+/** Links a resolution expands before giving up, as the kernel's SYMLOOP limit does. */
+const MAX_LINKS = 40;
+
+/** The components of `path` in order, after its root when it has one. */
+function components(path: string): string[] {
+  return path
+    .slice(parse(path).root.length)
+    .split(process.platform === "win32" ? /[\\/]/ : "/")
+    .filter((part) => part !== "" && part !== ".");
+}
+
 /**
  * The repository names a fresh clone needs for the relative `name` to reach
- * from `root` the file it reaches here: every link the path passes through,
- * by its own location, and the file it lands on, by its real location.
- * Inside the repository only; a path that does not resolve needs nothing.
+ * from `root` the file it reaches here: every link the resolution passes
+ * through, by its own location, including links inside another link's
+ * target, and the file it lands on, by its real location. Resolved the way
+ * the platform resolves it: on POSIX component by component, so `..` climbs
+ * out of where a link led; on Windows `..` is collapsed by text first.
+ * Inside the repository only; a path that does not resolve, or loops, needs
+ * nothing.
  */
 export function namesReached(root: string, name: string): string[] {
   const realRoot = realpathSync(root);
-  const segments = name.split(process.platform === "win32" ? /[\\/]/ : "/");
+  const pending = components(
+    process.platform === "win32" ? win32.normalize(name) : name,
+  );
   const names: string[] = [];
-  // Walk the real location segment by segment: `..` climbs out of where a
-  // link led, which a path-level realpath would collapse by text first.
   let real = realRoot;
-  for (const segment of segments) {
-    if (segment === "" || segment === ".") continue;
+  let links = 0;
+  for (
+    let segment = pending.shift();
+    segment !== undefined;
+    segment = pending.shift()
+  ) {
     if (segment === "..") {
       real = dirname(real);
       continue;
     }
     const entry = join(real, segment);
-    if (!existsSync(entry)) return [];
-    if (lstatSync(entry).isSymbolicLink()) {
-      const link = inRepo(realRoot, entry);
-      if (link !== null) names.push(link);
+    const stat = lstatSync(entry, { throwIfNoEntry: false });
+    if (stat === undefined) return [];
+    if (!stat.isSymbolicLink()) {
+      real = entry;
+      continue;
     }
-    real = realpathSync(entry);
+    if (++links > MAX_LINKS) return [];
+    const link = inRepo(realRoot, entry);
+    if (link !== null) names.push(link);
+    const target = readlinkSync(entry);
+    if (isAbsolute(target)) real = parse(target).root;
+    pending.unshift(...components(target));
   }
   const file = inRepo(realRoot, real);
   if (file !== null) names.push(file);

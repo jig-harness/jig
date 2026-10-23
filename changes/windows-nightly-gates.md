@@ -30,9 +30,10 @@ release: patch
   `/jig:file-issue` does, so a Windows network share path
   (`\\server\share\…`) is checked rather than reported unreadable.
 - The audit's configuration fit reads a file a configured command names the
-  way the shell running the command reaches it, following a link before a
-  `..`, and warns that a fresh clone lacks it unless both the file it
-  reaches and every link on the way are tracked.
+  way the platform resolves it: on POSIX it follows a link before a `..`,
+  on Windows it collapses `..` first. It warns that a fresh clone lacks the
+  file unless both the file it reaches and every link on the way, including
+  a link inside another link's target, are tracked.
 - A relative `JIG_TRACE_FILE` now records the spans of the process that set
   it on Windows too.
 - The design-brief renderer waits for Chromium's debugging endpoint while

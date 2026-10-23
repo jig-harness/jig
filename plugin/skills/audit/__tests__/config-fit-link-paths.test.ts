@@ -57,3 +57,41 @@ linkTest("an untracked link a command passes through is reported", () => {
     "link/check.ts reaches link, which is not tracked, so a fresh clone lacks it",
   );
 });
+
+linkTest("an untracked link inside a link's target is reported", () => {
+  const dir = scratchRepo({ "real/check.ts": "" });
+  dirs.push(dir);
+  symlinkSync(join(dir, "real"), join(dir, "intermediate"));
+  symlinkSync("intermediate", join(dir, "link"));
+  git(dir, "add", "--", "link");
+  git(dir, "commit", "-q", "-m", "link");
+  expect(commandProblems("bun link/check.ts", dir)[0]?.message).toBe(
+    "link/check.ts reaches intermediate, which is not tracked, so a fresh clone lacks it",
+  );
+});
+
+linkTest("a link loop needs nothing tracked", () => {
+  const dir = scratchRepo({});
+  dirs.push(dir);
+  symlinkSync("b", join(dir, "a"));
+  symlinkSync("a", join(dir, "b"));
+  expect(commandProblems("bun a/check.ts", dir)[0]?.message).toContain(
+    "does not exist",
+  );
+});
+
+// Windows collapses `link/..` by text, so the root-level check.ts runs.
+test.skipIf(process.platform !== "win32")(
+  "on Windows a command through link/.. is tracked by the collapsed name",
+  () => {
+    const dir = linked({ "real/check.ts": "", "check.ts": "" }, [
+      "real/check.ts",
+    ]);
+    expect(commandProblems("bun link/../check.ts", dir)).toEqual([
+      {
+        severity: "warning",
+        message: "link/../check.ts is not tracked, so a fresh clone lacks it",
+      },
+    ]);
+  },
+);
