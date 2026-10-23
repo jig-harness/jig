@@ -61,6 +61,7 @@ describe("solo-only flags", () => {
   it("follows the repository's names for the label roles", () => {
     const p = policy({
       issue_tracker: {
+        adapter: "linear",
         team: "ENG",
         labels: { hitl: "needs-human", manual_ops: "ops-step" },
       },
@@ -90,6 +91,7 @@ describe("solo-only flags", () => {
       },
       {
         issue_tracker: {
+          adapter: "linear",
           team: "ENG",
           labels: {
             extractable_tails: ["hitl:legal"],
@@ -206,7 +208,11 @@ describe("the work_batch section", () => {
   it("gives a batch size named like an Object property the default weight 0", () => {
     const sizes = ["xs", "constructor", "__proto__", "toString"];
     const p = policy({
-      issue_tracker: { team: "ENG", labels: { batch_sizes: sizes } },
+      issue_tracker: {
+        adapter: "linear",
+        team: "ENG",
+        labels: { batch_sizes: sizes },
+      },
       work_batch: {
         sizes,
         size_points: { xs: 1, constructor: 2, ["__proto__"]: 3, toString: 4 },

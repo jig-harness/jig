@@ -96,6 +96,22 @@ gates:
     expect(additions).toBe(
       "# Add to .config/jig.yaml:\npull_requests:\n  # seen: pull_requests.issue_link\n  issue_link: refs\n",
     );
+    // An empty value sets nothing, so the draft still offers the field, as a
+    // replacement of the null line: a second `command:` would be a duplicate.
+    const replacing =
+      draftConfig([suggest("gates.command", "make check")], schema, {
+        gates: { command: null },
+      }) ?? "";
+    expect(replacing).toContain(
+      'command: "make check"   # the file sets this to null: replace that line',
+    );
+    expect(load(replacing)).toEqual({ gates: { command: "make check" } });
+    // A field the file does not have at all is an addition, with no note.
+    expect(
+      draftConfig([suggest("gates.command", "make check")], schema, {
+        gates: {},
+      }),
+    ).not.toContain("replace that line");
     expect(
       draftConfig([suggest("pull_requests.stacking", "none")], schema, null),
     ).toBeUndefined();

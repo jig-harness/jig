@@ -18,7 +18,7 @@ import { type BatchPolicy, batchPolicy } from "../scripts/lib/policy.ts";
 
 /** A repository that names its labels the way the defaults do, with every check on. */
 export const OVERLAY: Record<string, unknown> = {
-  issue_tracker: { team: "ENG" },
+  issue_tracker: { adapter: "linear", team: "ENG" },
   review: {
     repo_label: "web",
     taxonomy: {
@@ -148,6 +148,7 @@ export function fakeTracker(
     queries,
     childReads,
     stateName: (s) => s,
+    reach: () => Promise.resolve(),
     getIssue: unsupported("getIssue"),
     listComments: unsupported("listComments"),
     listChildren: unsupported("listChildren"),

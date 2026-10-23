@@ -65,6 +65,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize, relative } from "node:path";
 import {
   consumerRoot,
+  layeredConfig,
   OVERLAY_RELPATH,
   overlayPath,
   parseReviewConfig,
@@ -78,7 +79,7 @@ import { parseSeverityFormats } from "../../drive-pr/scripts/lib/severity-format
 import { refuseRenamedSection } from "../../do-item/scripts/lib/overlay.ts";
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
-import { trackerProbeKey } from "./lib/tracker-probe.ts";
+import { trackerProbeable } from "./lib/tracker-probe.ts";
 import { detectPackageManager } from "../../fix-ci/scripts/consumer-config.ts";
 import { journalPath } from "../../reflect/scripts/lib/context.ts";
 import { parseObligations } from "../../resolve-conflicts/scripts/lib/obligations.ts";
@@ -897,8 +898,8 @@ function leafFields(config: Config, prefix = ""): string[] {
 
 /**
  * What the configuration layers of the machine running the audit add: the
- * audit judges the repository's file alone, but the skills on this machine
- * also read the user file and the environment.
+ * audit judges the repository's file alone, but the skills on this machine,
+ * and `trackerCheck`, also read the user file and the environment.
  */
 function machineLayers(config: Config, schema: Schema): Finding[] {
   const findings: Finding[] = [];
@@ -928,7 +929,7 @@ function machineLayers(config: Config, schema: Schema): Finding[] {
     findings.push({
       id: "fact:user-layer",
       severity: "info",
-      message: `on this machine ${path} sets ${filled.join(", ")}, which the repository's file leaves unset: the skills here use those values, others get the defaults. The audit judged the repository's file alone`,
+      message: `on this machine ${path} sets ${filled.join(", ")}, which the repository's file leaves unset: the skills here use those values, others get the defaults. The audit judged the repository's file alone, except for the tracker check, which reads the configuration as the skills here do`,
     });
   const variables = Object.keys(process.env).filter((k) =>
     k.startsWith(ENV_PREFIX),
@@ -937,7 +938,7 @@ function machineLayers(config: Config, schema: Schema): Finding[] {
     findings.push({
       id: "fact:environment-layer",
       severity: "info",
-      message: `${variables.join(", ")} set values for this run only; the audit ignored them`,
+      message: `${variables.join(", ")} set values for this run only; the audit ignored them, except for the tracker check, which reads the configuration as the skills here do`,
     });
   return findings;
 }
@@ -1468,27 +1469,46 @@ function forgeChecks(
   ];
 }
 
-async function trackerCheck(config: Config): Promise<Finding[]> {
-  if (at(config, "issue_tracker") === undefined) return [];
+/**
+ * Ask the tracker the configuration selects whether it answers for the
+ * audited repository: its credential and its team or repository, never an
+ * issue, whose contents are no part of reachability. The configuration is
+ * `file` merged with this machine's user file and environment, as the skills
+ * read it; one that sets no `issue_tracker` section is probed too: it runs on
+ * the default adapter, which derives its repository from `root`'s `origin`.
+ */
+async function trackerCheck(
+  file: string,
+  configured: boolean,
+  root: string,
+): Promise<Finding[]> {
+  if (!configured) return [];
+  let config: Config | undefined;
   try {
+    const text = readFileSync(file, "utf8");
+    config = layeredConfig(root, process.env, text).values;
     const trackerConfig = parseTrackerConfig(config);
-    const key = trackerProbeKey(trackerConfig);
-    if (key === null) return [];
-    const probe = openTracker(trackerConfig).getIssue(key);
+    if (!trackerProbeable(trackerConfig)) return [];
+    const deadline = new AbortController();
+    const probe = openTracker(trackerConfig, root).reach(deadline.signal);
     const timeout = new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error("no answer within 30 seconds")),
-        30_000,
-      ).unref(),
+      setTimeout(() => {
+        reject(new Error("no answer within 30 seconds"));
+        deadline.abort();
+      }, 30_000).unref(),
     );
     await Promise.race([probe, timeout]);
     return [];
   } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
     return [
       {
         id: "derivation:issue_tracker",
         severity: "error",
-        message: `the ${String(at(config, "issue_tracker.adapter") ?? "linear")} tracker cannot be reached: ${e instanceof Error ? e.message : String(e)}`,
+        message:
+          config === undefined
+            ? `the tracker is unchecked: the configuration the skills read cannot be loaded, so every skill here refuses to run (${reason})`
+            : `the ${String(at(config, "issue_tracker.adapter") ?? "github")} tracker cannot be reached: ${reason}`,
       },
     ];
   }
@@ -3206,7 +3226,9 @@ export async function configFit(opts: {
   const state: ForgeState = { required: null, pulls: null };
   if (!opts.offline) {
     report.findings.push(...forgeChecks(config, opts.root, report, state));
-    report.findings.push(...(await trackerCheck(config)));
+    report.findings.push(
+      ...(await trackerCheck(opts.file, report.configured, opts.root)),
+    );
   } else
     report.findings.push({
       id: "unchecked:offline",

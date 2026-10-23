@@ -89,7 +89,8 @@ export function keyInBranch(branch: string): string | undefined {
  * With `issue_tracker.team` unset, the team whose issue keys the repository's
  * history carries most: merged pull requests, commit subjects on the
  * integration branch and branch names, counted per source. None for a
- * GitHub tracker, whose keys are issue numbers with no team. A team is offered
+ * GitHub tracker, whose keys are issue numbers with no team; with the adapter
+ * unset the tracker is GitHub, so the suggestion names the adapter too. A team is offered
  * when it has at least 3 keys and more than half of all keys found, and the
  * evidence states its count in each source that has it, and how many keys
  * name other teams, so a person can weigh it.
@@ -115,7 +116,20 @@ export function trackerTeamSuggestion(
   const evidence = `${team}-<n> issue keys in ${counts.join(", ")}${
     others > 0 ? ` (${others} key(s) of other teams)` : ""
   }`;
+  // An empty `adapter:` (null) is no adapter: the default, which refuses a team.
+  const adapter: Suggestion[] =
+    at(config, "issue_tracker.adapter") == null
+      ? [
+          {
+            field: "issue_tracker.adapter",
+            value: "linear",
+            evidence,
+            message: `${evidence}: set issue_tracker.adapter: linear, since the default adapter is github and a team is Linear's`,
+          },
+        ]
+      : [];
   return [
+    ...adapter,
     {
       field: "issue_tracker.team",
       value: team,
