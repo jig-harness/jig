@@ -10,10 +10,10 @@
  *   bun --no-env-file --config=<dir>/bunfig.toml <dir>/launcher.ts \
  *     [--claude=<program>] [--codex=<program>] -- gc --scheduled
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, parse, sep } from "node:path";
 
 const PLUGIN_ID = "jig@jig";
 
@@ -50,20 +50,42 @@ export function codexPluginDirectory(
 
 /**
  * Every path resolving `path` passes through: each directory above it, each
- * symbolic link on the way and each link's target, resolved hop by hop.
+ * symbolic link on the way and each link's target. It resolves one component
+ * at a time, as the kernel does: a link is followed before the components
+ * after it, so `..` climbs from where the link led, never from the text.
  */
-function resolutionPaths(path: string, links = 0): string[] {
-  if (links > 40) throw new LauncherError(`too many symbolic links: ${path}`);
-  const absolute = resolve(path);
-  const parent = dirname(absolute);
-  if (parent === absolute) return [absolute];
-  const here = join(realpathSync(parent), basename(absolute));
-  const paths = [...resolutionPaths(parent, links), absolute, here];
-  if (!lstatSync(here).isSymbolicLink()) return paths;
-  return [
-    ...paths,
-    ...resolutionPaths(resolve(dirname(here), readlinkSync(here)), links + 1),
-  ];
+function resolutionPaths(path: string): string[] {
+  const absolute = isAbsolute(path) ? path : `${process.cwd()}${sep}${path}`;
+  const root = parse(absolute).root;
+  let current = root;
+  const paths = [root];
+  const pending = absolute.slice(root.length).split(/[\\/]/);
+  let links = 0;
+  while (pending.length > 0) {
+    const name = pending.shift() as string;
+    if (name === "" || name === ".") continue;
+    if (name === "..") {
+      current = dirname(current);
+      paths.push(current);
+      continue;
+    }
+    const next = join(current, name);
+    paths.push(next);
+    if (!lstatSync(next).isSymbolicLink()) {
+      current = next;
+      continue;
+    }
+    if (++links > 40)
+      throw new LauncherError(`too many symbolic links: ${path}`);
+    const target = readlinkSync(next);
+    const targetRoot = parse(target).root;
+    if (targetRoot) {
+      current = targetRoot;
+      paths.push(current);
+    }
+    pending.unshift(...target.slice(targetRoot.length).split(/[\\/]/));
+  }
+  return paths;
 }
 
 /**
@@ -155,26 +177,90 @@ export function parseLauncherArguments(argv: string[]): {
   return { programs, rest: argv.slice(index + 1) };
 }
 
-function main(argv: string[]): number {
+/**
+ * How long one collection may run: the machine heavy-run lock's wait
+ * (`LOCK_TIMEOUT`, an hour unless set) and two hours of work after it.
+ */
+export function collectionDeadlineMs(
+  lockTimeout = process.env.LOCK_TIMEOUT,
+): number {
+  const wait = Number(lockTimeout);
+  return ((Number.isFinite(wait) && wait > 0 ? wait : 3600) + 7200) * 1000;
+}
+
+const STOP_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+
+/**
+ * Runs the collector to its exit. The scheduler bounds nothing, so the
+ * launcher does: past the deadline, or when the launcher itself is told to
+ * stop, the collector's process group gets `SIGTERM` and, `graceMs` later,
+ * `SIGKILL`. The collector leads its own group so that every process it
+ * started ends with it.
+ */
+export function runCollector(
+  command: string[],
+  deadlineMs = collectionDeadlineMs(),
+  graceMs = 30_000,
+): Promise<number> {
+  return new Promise((settle, fail) => {
+    const child = spawn(command[0] as string, command.slice(1), {
+      stdio: "inherit",
+      detached: true,
+    });
+    const signal = (name: NodeJS.Signals) => {
+      try {
+        process.kill(-(child.pid as number), name);
+      } catch {
+        child.kill(name);
+      }
+    };
+    let escalation: ReturnType<typeof setTimeout> | undefined;
+    const stop = (reason: string) => {
+      if (escalation) return;
+      console.error(`jig gc launcher: ${reason}; stopping the collector`);
+      signal("SIGTERM");
+      escalation = setTimeout(() => signal("SIGKILL"), graceMs);
+    };
+    const deadline = setTimeout(
+      () => stop(`the collector ran past ${deadlineMs / 1000}s`),
+      deadlineMs,
+    );
+    const onSignal = (name: NodeJS.Signals) => stop(`received ${name}`);
+    for (const name of STOP_SIGNALS) process.on(name, onSignal);
+    const finish = () => {
+      clearTimeout(deadline);
+      for (const name of STOP_SIGNALS) process.off(name, onSignal);
+      if (escalation) {
+        clearTimeout(escalation);
+        signal("SIGKILL");
+      }
+    };
+    child.on("error", (error) => {
+      finish();
+      fail(error);
+    });
+    child.on("exit", (code) => {
+      finish();
+      settle(code ?? 1);
+    });
+  });
+}
+
+async function main(argv: string[]): Promise<number> {
   try {
     const { programs, rest } = parseLauncherArguments(argv);
     const entry = installedEntry(programs);
-    const result = spawnSync(
+    return await runCollector([
       process.execPath,
-      [
-        "--no-env-file",
-        `--config=${join(dirname(entry), "gc", "bunfig.toml")}`,
-        entry,
-        ...rest,
-      ],
-      { stdio: "inherit" },
-    );
-    if (result.error) throw result.error;
-    return result.status ?? 1;
+      "--no-env-file",
+      `--config=${join(dirname(entry), "gc", "bunfig.toml")}`,
+      entry,
+      ...rest,
+    ]);
   } catch (error) {
     console.error(`jig gc launcher: ${(error as Error).message}`);
     return 1;
   }
 }
 
-if (import.meta.main) process.exitCode = main(process.argv.slice(2));
+if (import.meta.main) process.exitCode = await main(process.argv.slice(2));

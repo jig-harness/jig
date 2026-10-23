@@ -16,9 +16,11 @@ import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
 import {
   claudePluginDirectory,
   codexPluginDirectory,
+  collectionDeadlineMs,
   installedEntry,
   outsideCheckout,
   parseLauncherArguments,
+  runCollector,
 } from "../launcher.ts";
 
 /** The launcher as install leaves it: its file and startup config, alone. */
@@ -123,6 +125,62 @@ test.skipIf(skipsOnWindows("powershell", "symbolic links need privileges"))(
     expect(outsideCheckout(join(outside, "chained"))).toBe(false);
   },
 );
+
+test.skipIf(skipsOnWindows("powershell", "symbolic links need privileges"))(
+  "a link is followed before the `..` after it, as the kernel resolves it",
+  () => {
+    // safe/bin/claude -> safe/hop/../payload, with safe/hop -> repo/subdir:
+    // the kernel climbs from repo/subdir to repo/payload, not to safe/payload.
+    const checkout = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+    mkdirSync(join(checkout, ".git"));
+    mkdirSync(join(checkout, "subdir"));
+    writeFileSync(join(checkout, "payload"), "");
+    const safe = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+    mkdirSync(join(safe, "bin"));
+    writeFileSync(join(safe, "payload"), "");
+    symlinkSync(join(checkout, "subdir"), join(safe, "hop"));
+    symlinkSync(`${join(safe, "hop")}/../payload`, join(safe, "bin", "claude"));
+    expect(realpathSync(join(safe, "bin", "claude"))).toBe(
+      join(checkout, "payload"),
+    );
+    expect(outsideCheckout(join(safe, "bin", "claude"))).toBe(false);
+    // The same text with no link in the way stays outside.
+    symlinkSync(`${join(safe, "bin")}/../payload`, join(safe, "plain"));
+    expect(outsideCheckout(join(safe, "plain"))).toBe(true);
+  },
+);
+
+test("a collection's deadline covers the lock wait it may spend first", () => {
+  expect(collectionDeadlineMs(undefined)).toBe((3600 + 7200) * 1000);
+  expect(collectionDeadlineMs("60")).toBe((60 + 7200) * 1000);
+  expect(collectionDeadlineMs("nonsense")).toBe((3600 + 7200) * 1000);
+});
+
+test.skipIf(
+  skipsOnWindows("powershell", "process groups and signals are POSIX"),
+)(
+  "a collector past its deadline is stopped, even one that ignores SIGTERM",
+  async () => {
+    const started = Date.now();
+    const status = await runCollector(
+      [
+        process.execPath,
+        "-e",
+        'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);',
+      ],
+      300,
+      300,
+    );
+    expect(status).not.toBe(0);
+    expect(Date.now() - started).toBeLessThan(20_000);
+  },
+);
+
+test("a collector that finishes keeps its own exit status", async () => {
+  expect(
+    await runCollector([process.execPath, "-e", "process.exit(3)"], 60_000),
+  ).toBe(3);
+});
 
 test("no recorded tool, or a tool that cannot answer, is an error naming why", () => {
   expect(() => installedEntry({})).toThrow("no agent tool recorded");

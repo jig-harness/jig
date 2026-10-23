@@ -79,7 +79,7 @@ or by any directory or symbolic link its resolution passes through. Install itse
 not find the plugin it would run. Removing a repository while others remain
 changes only the machine entry and leaves the job, its launcher and the agent
 tools it recorded as they are, so it never needs the plugin to be found. A run that finds no installed copy later fails
-and says so in the scheduler's error output. The job's environment carries
+and says so in the scheduler's error output. A run is bounded: past the heavy-run lock's wait (`LOCK_TIMEOUT`, an hour unless set) and two hours more, or when the scheduler stops the launcher, the collector and every process it started get `SIGTERM`, then `SIGKILL` 30 seconds later. The job's environment carries
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME` when set, so it asks the same registry
 the install did. Run `jig gc install --repo <repository> --yes`
 again after moving Bun or an agent tool, or to replace the launcher. A failed install puts back the previous job's files, launcher and activation. Collecting
