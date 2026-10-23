@@ -8,7 +8,8 @@
 # website dependencies installed. The drive-pr suite runs in its own jobs, one
 # per platform, split into parallel shards; the do-item suite runs inside the
 # gate set on both. On Windows the gate script leaves out only the POSIX-only
-# suites (see SEPARATE_SUITES and POSIX_ONLY_SUITES in scripts/gates.ts).
+# suites (see SEPARATE_SUITES and POSIX_ONLY_SUITES in scripts/gates.ts), and
+# the gate set runs as seven jobs, each taking a part of the test files.
 # Before its gates, Windows exercises the documented pickup and drive
 # commands in PowerShell against local fake services. The normal gate set
 # runs the same smoke with native argument arrays.
@@ -33,23 +34,40 @@ concurrency:
 
 jobs:
   platform-gates:
-    name: gates (${{ matrix.os }})
+    name: gates (${{ matrix.os }}${{ matrix.shard && format(', {0}', matrix.shard) || '' }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: macos
             runner: macos-latest
-          - os: windows
-            runner: windows-latest
+          # Windows runs test files one at a time and starts processes several
+          # times slower, so its test stage, about an hour whole, is split
+          # seven ways. Bun deals the files out in turn, and the
+          # resolve-conflicts suite alone takes some 25 minutes there, its
+          # check-resolution file 10, so fewer parts leave one that holds
+          # several of its files near the job's budget. Each part also runs
+          # the rest of the gate set, a few minutes, so each reports on its
+          # own as the macOS job does.
+          - { os: windows, runner: windows-latest, shard: 1/7 }
+          - { os: windows, runner: windows-latest, shard: 2/7 }
+          - { os: windows, runner: windows-latest, shard: 3/7 }
+          - { os: windows, runner: windows-latest, shard: 4/7 }
+          - { os: windows, runner: windows-latest, shard: 5/7 }
+          - { os: windows, runner: windows-latest, shard: 6/7 }
+          - { os: windows, runner: windows-latest, shard: 7/7 }
     runs-on: ${{ matrix.runner }}
-    # Windows takes the longest, about 10 minutes on the standard image.
+    # A Windows part takes the longest, up to about 17 minutes on the
+    # standard image.
     timeout-minutes: 25
     env:
       # The drive-pr-suite, drive-pr-suite-windows and website jobs below run
       # the separate suites; on Windows the gate script also leaves out the
       # POSIX-only suites.
       JIG_GATES_SKIP_SEPARATE_SUITES: "1"
+      # The part of the test files this job runs (scripts/gates.ts); empty,
+      # on macOS, runs them all.
+      JIG_GATES_TEST_SHARD: ${{ matrix.shard }}
       # Every runner image has Google Chrome, so a sheet's browser checks
       # fail here when it is missing instead of being skipped with a warning.
       JIG_REQUIRE_BROWSER: "1"
@@ -69,8 +87,9 @@ jobs:
       # This small smoke uses a local repository and strict fake services. It
       # checks the installed artifact's documented pickup and drive commands
       # in the actual Windows shell, independently of an authenticated agent.
+      # One part runs it.
       - name: Run documented skill commands in PowerShell
-        if: matrix.os == 'windows'
+        if: matrix.shard == '1/7'
         shell: pwsh
         env:
           JIG_TEST_PWSH: "1"
