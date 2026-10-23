@@ -260,11 +260,18 @@ function inRepo(realRoot: string, path: string): string | null {
     : name;
 }
 
+/** A directory-entry name as a case- and normalization-insensitive file system compares it. */
+function foldName(name: string): string {
+  return name.normalize("NFD").toLowerCase();
+}
+
 /**
  * `segment` of the directory `dir` as the directory itself spells it: on a
  * case-insensitive file system `CHECK.ts` reaches the entry `check.ts`, and
- * the tracked name is the entry's. Matched by file identity, the exact
- * spelling first, so a hard link of another name never stands in for it.
+ * the tracked name is the entry's. The exact spelling first; otherwise only
+ * a name spelling the same entry, apart from case and Unicode normalization,
+ * and of the same file: identity alone would admit a hard link, which
+ * shares the file under another name.
  */
 function spelled(dir: string, segment: string): string {
   const entry = join(dir, segment);
@@ -272,7 +279,9 @@ function spelled(dir: string, segment: string): string {
   if (names.includes(segment)) return entry;
   const own = lstatSync(entry, { bigint: true });
   if (own.ino === 0n) return entry;
+  const folded = foldName(segment);
   const same = names.find((name) => {
+    if (foldName(name) !== folded) return false;
     const other = lstatSync(join(dir, name), {
       bigint: true,
       throwIfNoEntry: false,

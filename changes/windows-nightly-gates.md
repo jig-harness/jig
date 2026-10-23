@@ -35,7 +35,8 @@ release: patch
   file unless both the file it reaches and every link on the way, including
   a link inside another link's target, are tracked. On a case-insensitive
   file system, a command that spells a tracked file in another case
-  (`scripts/CHECK.ts` for `scripts/check.ts`) counts as tracked.
+  (`scripts/CHECK.ts` for `scripts/check.ts`) counts as tracked, and a hard
+  link of another name never stands in for the entry the command reaches.
 - A relative `JIG_TRACE_FILE` now records the spans of the process that set
   it on Windows too.
 - The design-brief renderer waits for Chromium's debugging endpoint while

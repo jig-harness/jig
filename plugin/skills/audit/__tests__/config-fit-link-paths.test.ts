@@ -1,5 +1,11 @@
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  linkSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import { commandProblems } from "../scripts/config-fit.ts";
@@ -134,3 +140,24 @@ caseLinkTest(
     expect(commandProblems("bun Scripts/LINK/Check.ts", dir)).toEqual([]);
   },
 );
+
+/** A repository holding `tracked`, with `untracked` a hard link to it. */
+function hardLinked(tracked: string, untracked: string): string {
+  const dir = committed({ [tracked]: "" });
+  linkSync(join(dir, tracked), join(dir, untracked));
+  return dir;
+}
+
+// Hard links share a file's identity, never its name: SCRIPTS/CHECK.ts
+// reaches the entry check.ts, whichever other name shares its file.
+caseTest("an untracked hard link is not tracked by its other name", () => {
+  const dir = hardLinked("scripts/aaa.ts", "scripts/check.ts");
+  expect(commandProblems("bun scripts/CHECK.ts", dir)[0]?.message).toBe(
+    "scripts/CHECK.ts reaches scripts/check.ts, which is not tracked, so a fresh clone lacks it",
+  );
+});
+
+caseTest("a tracked entry is not hidden by an untracked hard link", () => {
+  const dir = hardLinked("scripts/check.ts", "scripts/aaa.ts");
+  expect(commandProblems("bun scripts/CHECK.ts", dir)).toEqual([]);
+});
