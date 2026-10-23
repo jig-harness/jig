@@ -436,7 +436,7 @@ the strictest value of every field. What it will build, one pull request per ste
 - **`work-batch` and `file-issue`**: batchability from the row; the type
   written at filing.
 - **The required check** that refuses a pull request whose item is
-  untyped or links no item, reading its script and the type mapping from
+  of type `unknown` or links no item, reading its script and the type mapping from
   the base branch rather than the head, with a workflow template and the
   setup that makes it required.
 - **The lifecycle map's column and M9's audit criterion.**
@@ -497,7 +497,7 @@ What it will build, one pull request per step:
   the spec-writing tools with the adapter that reads each.
 - **The required check** that refuses an unlinked pull request or an
   unaccounted criterion, honouring an exception only when someone other than the
-  author and the implementing agent's identity applied its label after its lines, the item's references and their sources' content last changed and the label is
+  author and the implementing agent's identity applied its label after the exception record `do-item` writes (the references, each source's revision and the exception lines) last changed, the record still matches, and the label is
   still on, reading its script and policy from the base branch rather than
   the head, with a workflow template and the setup that makes it required.
 - **`review` in plan mode, `file-issue`, `/followup` and the epic close.**

@@ -138,22 +138,25 @@ passes. The `body` adapter is the one every repository has.
   it alone: the person who decides applies `specs.exception_label` to the
   item, and an exception counts only when the forge's or tracker's own
   label event names an actor other than the pull request's author and the
-  identity the implementing agent runs as. The `## Acceptance` section
-  carries the reason: one `unresolved` line per unread source, or, when
-  the item has no source at all or its sources yield no criterion, one
-  `exception` line for the item. A line of either kind without that
-  label event accounts for nothing. The approval covers what was in front
-  of the person who gave it, and only while it stands: the label must
-  still be on the item, and its latest application must come after the
-  last change to the item's references, to the content of every source
-  they name, and to the section's `unresolved` and `exception` lines. A
-  source's content changes when its revision moves: the last commit to
-  touch its path for a repository file, the forge's or tracker's own
-  last-edited time for a document or an issue, and a source whose
-  revision cannot be read counts as changed. A source added or edited, or
-  a line rewritten, after the label was applied leaves that line
-  unapproved until an eligible actor removes and re-applies the label, and
-  a removed label approves nothing. With nobody to answer, it stops and states the gap, as
+  identity the implementing agent runs as. Before it asks, `do-item`
+  writes the exception record to the item as one comment: the item's
+  references, each source's revision (the last commit to touch its path
+  for a repository file, the forge's or tracker's own last-edited time
+  for a document or an issue), and the lines the pull request's
+  `## Acceptance` section will carry: one `unresolved` line per unread
+  source, or, when the item has no source at all or its sources yield no
+  criterion, one `exception` line for the item, each with its reason. The
+  approval covers that record, and only while it stands: the label must
+  still be on the item, its latest application must come after the
+  record's last edit, the item's references and every source's revision
+  must still match the record, a revision that cannot be read counts as
+  changed, and the section's `unresolved` and `exception` lines must be
+  the record's lines. A line of either kind that no standing approval
+  covers accounts for nothing. A source added or edited after the record,
+  or a line the record does not carry, needs a new record and a fresh
+  application of the label by an eligible actor, and a removed label
+  approves nothing. The section is written after the approval, from the
+  record, so writing it never outdates the approval. With nobody to answer, it stops and states the gap, as
   [plugin/AGENTS.md](../plugin/AGENTS.md) requires of a question nobody can
   answer, and leaves the item for a person; a repository that wants
   features without requirements picked up unattended says so beforehand by
@@ -211,9 +214,10 @@ takes the strictest row, and one of a required type whose `## Acceptance` sectio
 for no criterion, or leaves one unaccounted for, unless the exception is
 recorded as `do-item`'s step above requires: the reason in the section,
 and the label applied by someone other than both the pull request's author
-and the identity the implementing agent runs as, still applied, and
-applied after the item's references, the content of their sources and the
-exception's lines last changed. The check counts as
+and the identity the implementing agent runs as, still applied, applied
+after the exception record's last edit, with the item's references and its
+sources' revisions still as the record states them and the section's
+exception lines equal to the record's. The check counts as
 enforcement only when nothing it decides with comes from the pull request
 it judges ([M7](../modules/M7-pr-lifecycle-review/README.md), invariant
 8): its workflow and script, `specs.require_for_types`, the type mapping

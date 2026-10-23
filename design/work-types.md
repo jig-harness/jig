@@ -54,7 +54,10 @@ mapping below; it does not add stations.
    which generalises `issue_tracker.labels.bug` and keeps it as an alias.
 2. The tracker's own issue type, from the issue's `nativeType` field
    (GitHub issue types; Linear has none, and its adapter sets the field to
-   `null`).
+   `null`, which leaves this step unanswered). A value is matched to a
+   type name in the effective type set ignoring case, so `Bug` gives
+   `bug`; a value that matches none, such as a custom `Incident`, leaves
+   this step unanswered, and the evidence names the value.
 3. The title's Conventional Commits prefix when the repository's title
    convention is conventional (`fix:` is a bug, `feat:` a feature, `chore:`
    and `docs:` a task, `refactor:` and `perf:` an improvement).
@@ -128,9 +131,10 @@ writes the type label (`file-issue`), run only where those helpers are
 used: an item picked up by hand or filed directly passes neither, so on
 their own they score `advisory`. The `mechanical` observation is
 enforcement on every change: a required check on the pull request derives
-its linked item's type the same way and refuses one whose item is
-untyped, or that links no item at all, so no work reaches a merge untyped
-and lighter. It counts as enforcement only when nothing it decides with
+its linked item's type the same way and refuses one whose item's type
+derives as `unknown`, or that links no item at all, so no work reaches a
+merge without a type; `do-item`'s strictest depth for `unknown` governs
+the work until then, and a type label clears both. It counts as enforcement only when nothing it decides with
 comes from the pull request it judges
 ([M7](../modules/M7-pr-lifecycle-review/README.md), invariant 8): its
 workflow and script and `issue_tracker.types` are read from the target
@@ -154,6 +158,15 @@ taxonomy declares stays a configuration check, reported beside it.
 | `issue_tracker.types` | map from type to a list of labels | `bug` from `issue_tracker.labels.bug`, the rest `[<type>, type:<type>]` | do-item, work-batch, file-issue |
 | `do_item.work_types.<type>.<field>` | one field of the depth table | the table above | do-item, work-batch |
 
+The effective type set is the keys of `issue_tracker.types`, or the
+default list when the field is unset. Renaming a type is a new key whose
+row is copied from nothing: a type outside the default list must carry a
+complete `do_item.work_types` row, a default type left out of the map is
+dropped with its row, and `unknown` is never a key. Loading the
+configuration refuses a type with no complete row, a `do_item.work_types`
+entry for a type outside the set, and a label listed under two types,
+since the derivation's first step could not then decide.
+
 ## Build order
 
 1. **The derivation.** `determine_type.ts`, `issue_tracker.types`, the
@@ -170,7 +183,7 @@ taxonomy declares stays a configuration check, reported beside it.
 3. **`work-batch` and `file-issue`.**
 4. **The required check**: a portable script that derives the linked
    item's type as `determine_type.ts` does and refuses a pull request
-   whose item is untyped or that links no item; its tests; a workflow
+   whose item's type is `unknown` or that links no item; its tests; a workflow
    template that runs the script and reads the mapping from the base
    branch, never the head, and the setup step that makes it a required
    check on the base branch. Until a

@@ -73,10 +73,13 @@ record ~/.local/share/jig/evidence/example-web/3f9c2a1/8e1d/20261023T141502-4b7e
   when the same command passes on the same tree later. Lookup indexes runs
   by tree and command and reads the newest unless asked for all of them.
 - **Counts from the report.** Where the command writes a JUnit report, the
-  record holds the cases run and skipped per suite, and the failed cases
-  by name across the report, from it (`shared/junit-report.ts`, whose
+  record holds the cases run and skipped per suite, the failed cases
+  across the report, and each case's own result (passed, failed or
+  skipped), from it (`shared/junit-report.ts`, whose
   suites count run and skipped cases and whose cases carry the failure),
-  never from the runner's summary line. The
+  never from the runner's summary line. A case is identified by its
+  `classname` and `name` together, so two cases of one name in different
+  classes stay two. The
   report must be this run's: before the command starts, `evidence.ts` moves
   any file at the report path aside, and after it ends reads the report only
   when one exists there again, written after the run began. A report left by
@@ -142,18 +145,21 @@ Where it is used:
   each test the diff adds. A seen-to-fail record ran before the fix, so it
   belongs to an earlier tree of the branch: it is listed with that tree and
   the test it names, and it counts when that test is in the pushed tree and
-  passes in the plan's records there. Two requirements meet here and stay
+  has the case-level result passed in the plan's records there. Two requirements meet here and stay
   apart. [M14](../modules/M14-testing-strategy/README.md)'s seen-to-fail
   applies to every new test, a new file or a new case in an existing one,
   whatever the work type; `pr-plan.ts` finds new cases by comparing the case
-  names in the JUnit reports of the base and the pushed tree, and where no
+  identities in the JUnit reports of the base and the pushed tree, and where no
   report names cases the body names the tests. The work type's
   `test_first` ([work types](work-types.md)) is the stronger rule that the
   failing test is written before the fix. Commit times cannot show that,
   since a record covers uncommitted changes, so the check reads the
   seen-to-fail record's tree instead, against the increment before it.
   An increment opens with a seen-to-fail record and closes with the first
-  passing plan record after it in which its test passes; seen-to-fail
+  passing plan record after it in which each of its tests has the
+  case-level result passed: a skipped case closes nothing, whatever the
+  suite's skip tripwire says, and a report without case results closes
+  nothing either; seen-to-fail
   records made while an increment is still open join it, so tests written
   red one after another and then fixed together are one increment. Its
   baseline is the tree of the passing plan record that closed the previous
