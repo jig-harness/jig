@@ -6,12 +6,19 @@
 // moves it. Stricter than the audit itself: the configuration file must exist,
 // and a key Jig does not know inside one of its sections fails, since the
 // skills would ignore it and a misspelt field keeps its default; a top-level
-// section Jig does not own is left alone. Offline: the repository host and
+// section Jig does not own is left alone. The record's commit must be in the
+// checkout's history: a record that names a branch commit a squash merge
+// replaced fails on the integration branch, where it would otherwise rot
+// until the next audit refused it. Offline: the repository host and
 // tracker are not read. Exit 1 on a mismatch; 2 when a file cannot be read or
 // there is no criterion to score against.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
+import {
+  LEAKY_GIT_ENV,
+  spawnSync,
+} from "../plugin/shared/guarded-git-spawn.ts";
 import { configFit } from "../plugin/skills/audit/scripts/config-fit.ts";
 import { loadModules } from "../plugin/skills/audit/scripts/lib/criteria.ts";
 import { loadProfiles } from "../plugin/skills/audit/scripts/lib/profiles.ts";
@@ -40,6 +47,10 @@ export async function checkAuditFit(
       criteriaDir === undefined ? loadProfiles(modules) : undefined;
     for (const p of checkRecord(record, modules, profiles))
       problems.push(`${RECORD_RELPATH}: ${p}`);
+    if (!inHistory(root, record.commit))
+      problems.push(
+        `${RECORD_RELPATH}: commit ${record.commit} is not in HEAD's history; point it at the integration-branch commit the audit scored`,
+      );
     const report = await configFit({
       root,
       file: join(root, ".config/jig.yaml"),
@@ -72,6 +83,22 @@ export async function checkAuditFit(
     "re-evaluate the audit for this change: score new criteria in .config/jig-audit.yaml, fix the configuration (plugin/skills/audit/SKILL.md)",
   );
   return 1;
+}
+
+/** Whether `commit` is HEAD or one of its ancestors in the checkout at `root`. */
+function inHistory(root: string, commit: string): boolean {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) =>
+        !(LEAKY_GIT_ENV as readonly string[]).includes(key.toUpperCase()),
+    ),
+  );
+  const result = spawnSync(
+    "git",
+    ["-C", root, "merge-base", "--is-ancestor", commit, "HEAD"],
+    { env },
+  );
+  return result.status === 0;
 }
 
 if (import.meta.main) cli(() => checkAuditFit());
