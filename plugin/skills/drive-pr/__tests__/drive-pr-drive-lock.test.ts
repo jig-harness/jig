@@ -42,6 +42,7 @@ import {
   plantClaim,
   pollUntil,
   awaitFixtureMarker,
+  blockedPassScript,
   simulateTakeover,
   worktreeLockNameFor,
 } from "./drive-loop-harness.ts";
@@ -1088,6 +1089,7 @@ describe("drive.ts loop control", () => {
       // the announcement, leaving the timer as the only thing that can move
       // the heartbeat inside the window.
       const started = join(dir, "pass-started");
+      const release = join(dir, "pass-release");
       const proc = Bun.spawn(
         scriptArgv(
           join(SCRIPTS, "drive.ts"),
@@ -1098,7 +1100,7 @@ describe("drive.ts loop control", () => {
           "--",
           "sh",
           "-c",
-          `: pass for 999; : > ${JSON.stringify(started)}; sleep 5; exit 0`,
+          `: pass for 999\n${blockedPassScript(started, release)}`,
         ),
         {
           env: {
@@ -1125,7 +1127,8 @@ describe("drive.ts loop control", () => {
         expect(held.length).toBe(1);
         const beat = join(worktree, held[0] as string);
         const first = statSync(beat).mtimeMs;
-        // Well inside the pass's own sleep, so no round boundary falls here.
+        // The pass stays running until released, so no round boundary falls
+        // here.
         await Bun.sleep(800);
         const second = statSync(beat).mtimeMs;
         expect(second).toBeGreaterThan(first);
@@ -1133,6 +1136,7 @@ describe("drive.ts loop control", () => {
         // Same discipline as the sibling test below: a failed poll or
         // assertion above must not skip the kill and leave a live driver
         // running past this test.
+        writeFileSync(release, "");
         proc.kill();
         await proc.exited;
       }
@@ -1165,9 +1169,10 @@ describe("drive.ts loop control", () => {
         join(tmpdir(), "drive-pr-claude-stub-"),
       );
       const startedMarker = join(dir, "claude-pass-started");
+      const releaseMarker = join(dir, "claude-pass-release");
       writeFakeProgram(
         join(claudeStubDir, "claude"),
-        `#!/bin/sh\n: > ${JSON.stringify(startedMarker)}\nsleep 5\nexit 0\n`,
+        `#!/bin/sh\n${blockedPassScript(startedMarker, releaseMarker)}\n`,
       );
 
       const claudeConfigDir = mkdtempSync(
@@ -1235,7 +1240,7 @@ describe("drive.ts loop control", () => {
 
         // Simulate a login swap: the file changes in place, independent of
         // this driver process's own environment — but the pass is still
-        // actively running (asleep, well inside its own 5s sleep) and already
+        // actively running (blocked until the test releases it) and already
         // holds the OLD identity.
         writeFileSync(
           claudeJsonPath,
@@ -1263,6 +1268,7 @@ describe("drive.ts loop control", () => {
         // assertion above skipped both the kill and the cleanup below,
         // leaving a live driver plus its temp dirs to contaminate later
         // suite cases.
+        writeFileSync(releaseMarker, "");
         proc.kill();
         await proc.exited;
         rmSync(claudeStubDir, { recursive: true, force: true });
@@ -1290,9 +1296,10 @@ describe("drive.ts loop control", () => {
         join(tmpdir(), "drive-pr-claude-stub-"),
       );
       const startedMarker = join(dir, "claude-pass-started");
+      const releaseMarker = join(dir, "claude-pass-release");
       writeFakeProgram(
         join(claudeStubDir, "claude"),
-        `#!/bin/sh\n: > ${JSON.stringify(startedMarker)}\nsleep 5\nexit 0\n`,
+        `#!/bin/sh\n${blockedPassScript(startedMarker, releaseMarker)}\n`,
       );
 
       const claudeConfigDir = mkdtempSync(
@@ -1363,6 +1370,7 @@ describe("drive.ts loop control", () => {
       } finally {
         // Not protected by `try/finally` before this fix — see the sibling
         // test above.
+        writeFileSync(releaseMarker, "");
         proc.kill();
         await proc.exited;
         rmSync(claudeStubDir, { recursive: true, force: true });
@@ -1844,9 +1852,10 @@ exit 0
         join(tmpdir(), "drive-pr-claude-stub-"),
       );
       const startedMarker = join(dir, "claude-pass-started");
+      const releaseMarker = join(dir, "claude-pass-release");
       writeFakeProgram(
         join(claudeStubDir, "claude"),
-        `#!/bin/sh\n: > ${JSON.stringify(startedMarker)}\nsleep 1\nexit 0\n`,
+        `#!/bin/sh\n${blockedPassScript(startedMarker, releaseMarker)}\n`,
       );
 
       const claudeConfigDir = mkdtempSync(
@@ -1910,6 +1919,8 @@ exit 0
             oauthAccount: { emailAddress: "after@example.com" },
           }),
         );
+        // Only now may the pass exit: its exit is what runs the rewrite.
+        writeFileSync(releaseMarker, "");
 
         const [stderr, exitCode] = await Promise.all([
           new Response(proc.stderr).text(),
@@ -1922,6 +1933,7 @@ exit 0
         // only the other claim survives.
         expect(claimsIn(worktree)).toEqual(["claim.ghost01"]);
       } finally {
+        writeFileSync(releaseMarker, "");
         proc.kill();
         await proc.exited;
         rmSync(claudeStubDir, { recursive: true, force: true });

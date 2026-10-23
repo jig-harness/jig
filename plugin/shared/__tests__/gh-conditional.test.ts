@@ -158,7 +158,9 @@ function initRepo(name: string, origin: string): string {
 beforeAll(async () => {
   // The first test's cache hit needs its first `git` probe to settle within
   // the probe's deadline; a child whose events the runtime lost would turn
-  // caching off for that read instead.
+  // caching off for that read instead. A lost throwaway spends that wait's
+  // whole 5 s bound before the fixtures below, so the hook carries its own
+  // deadline rather than the runner's (also 5 s for a bare `bun test`).
   await spendFirstSpawn();
   tmpRoot = mkdtempSync(join(tmpdir(), "gh-conditional-"));
   binDir = join(tmpRoot, "bin");
@@ -169,7 +171,7 @@ beforeAll(async () => {
   repoB = initRepo("repo-b", "git@github.com:acme/gadgets.git");
   savedCwd = process.cwd();
   for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
-});
+}, 30_000);
 
 afterAll(() => {
   process.chdir(savedCwd);
