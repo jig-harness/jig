@@ -63,8 +63,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-const MAX_TIMEOUT_SECONDS = 604800,
-  MIN_POLL_SECONDS = 0.001,
+/** The longest `LOCK_TIMEOUT` the lock accepts, in seconds. */
+export const MAX_TIMEOUT_SECONDS = 604800;
+const MIN_POLL_SECONDS = 0.001,
   MAX_POLL_SECONDS = 3600;
 const errorCode = (error: unknown) => (error as NodeJS.ErrnoException).code;
 // One read of who owns `path`: the owner text, "" for an entry that carries no

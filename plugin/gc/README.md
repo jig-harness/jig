@@ -67,10 +67,22 @@ proof with an unverified completion until the result is recorded.
 The installed job runs daily, reports by default, and collects on the
 configured weekday or under configured disk pressure. It uses launchd on
 macOS, a systemd user timer on Linux where available, and cron otherwise.
-The job records its executable paths and environment, the installed plugin
-copy's path among them. That path changes with each plugin release, so run
-`jig gc install --repo <repository> --yes` again after updating the plugin.
-A failed install puts back the previous job's files and activation. Collecting
+The job records its environment and the path of Bun, but not the plugin
+copy's, which changes with each release. It runs a launcher that install
+copies, with the trusted startup file, to `~/.local/state/jig/gc/launcher/`.
+At each run the launcher asks the agent tool (`claude plugin list --json`, or
+`codex plugin list --json`, by the absolute path found at install) for the
+installed copy of the plugin and runs that copy's collector, so a plugin
+update reaches the job without a new install. A copy inside a git checkout is
+refused, as at install, and so is an agent tool found inside one, by its path
+or by any directory or symbolic link its resolution passes through. Install itself fails when the launcher could
+not find the plugin it would run. Removing a repository while others remain
+changes only the machine entry and leaves the job, its launcher and the agent
+tools it recorded as they are, so it never needs the plugin to be found. A run that finds no installed copy later fails
+and says so in the scheduler's error output. An agent tool that does not answer within 30 seconds or prints more than 4 MiB gets `SIGKILL` with its process group, and its lookup fails: the launcher then asks the other agent tool it recorded, and the run fails, naming each failed lookup, only when none names an installed copy. A stop from the scheduler during the lookup ends the agent tool too and asks no further one. A run is bounded: past the heavy-run lock's wait (`LOCK_TIMEOUT`, an hour unless set) and two hours more, or when the scheduler stops the launcher, the collector's process group gets `SIGTERM`, then `SIGKILL` 30 seconds later, and the run fails. The launcher signals only the process groups it started: a descendant that starts its own session leaves the group, is not stopped, and can no longer hold the run open. Install records `LOCK_TIMEOUT` in the job when it is set, and refuses a value the lock would not accept. The job's environment carries
+`CLAUDE_CONFIG_DIR` and `CODEX_HOME` when set, so it asks the same registry
+the install did. Run `jig gc install --repo <repository> --yes`
+again after moving Bun or an agent tool, or to replace the launcher. A failed install puts back the previous job's files, launcher and activation. Collecting
 runs hold
 the same heavy-run lock as local gates. The design's later container, branch
 and process kinds wait for the first-stage rollout to run in a working

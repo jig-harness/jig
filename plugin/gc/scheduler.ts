@@ -2,16 +2,20 @@ import { jigHome } from "../shared/config-layers.ts";
 import { GcError } from "../shared/gc-error.ts";
 /** Platform schedulers run an installed copy with an explicit environment. */
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { run } from "../shared/proc.ts";
+import { MAX_TIMEOUT_SECONDS } from "../shared/resource-lock.ts";
+import { installedEntry, outsideCheckout } from "./launcher.ts";
 import type { MachineConfig } from "./config.ts";
 import { stateRoot } from "./receipts.ts";
 
@@ -116,14 +120,79 @@ async function crontab(): Promise<string> {
   if (result.code === 1 && /no crontab/i.test(result.stderr)) return "";
   throw new GcError(`Cannot read crontab: ${result.stderr}`);
 }
-function installedJob(machine: MachineConfig, script: string): Job {
+/**
+ * Where the job's entry point lives. It is outside every plugin release, so
+ * the job does not name one: the launcher finds the installed copy per run.
+ */
+function launcherDirectory(): string {
+  return join(stateRoot(), "launcher");
+}
+/**
+ * The agent tools the launcher may ask for the installed plugin copy, by the
+ * absolute path found now: a program inside a checkout is never recorded.
+ */
+function pluginPrograms(): { claude?: string; codex?: string } {
+  const programs: { claude?: string; codex?: string } = {};
+  for (const name of ["claude", "codex"] as const) {
+    const program = Bun.which(name);
+    if (program && outsideCheckout(program)) programs[name] = program;
+  }
+  return programs;
+}
+/**
+ * Fails an install whose job could not find the plugin it would run: the
+ * scheduler reports a job's failures where nobody reads them.
+ */
+export async function checkLauncherResolves(): Promise<void> {
+  try {
+    await installedEntry(pluginPrograms());
+  } catch (error) {
+    throw new GcError((error as Error).message);
+  }
+}
+const LAUNCHER_FILES = ["launcher.ts", "bunfig.toml"];
+/**
+ * Replaces the launcher and its trusted startup file. Both are copied beside
+ * their targets before either is replaced, so a failed copy leaves the
+ * previous pair in place.
+ */
+function installLauncher(): void {
+  const directory = launcherDirectory();
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const staged = LAUNCHER_FILES.map((name) => ({
+    source: join(import.meta.dir, name),
+    target: join(directory, name),
+    temporary: join(directory, `${name}.${process.pid}.tmp`),
+  }));
+  try {
+    for (const file of staged) copyFileSync(file.source, file.temporary);
+    for (const file of staged) renameSync(file.temporary, file.target);
+  } finally {
+    for (const file of staged) rmSync(file.temporary, { force: true });
+  }
+}
+/** A `LOCK_TIMEOUT` the heavy-run lock accepts, refused at install otherwise. */
+function lockTimeout(value: string): string {
+  if (!/^[0-9]+$/.test(value) || Number(value) > MAX_TIMEOUT_SECONDS)
+    throw new GcError(
+      `LOCK_TIMEOUT must be a whole number of seconds from 0 to ${MAX_TIMEOUT_SECONDS}: ${value}`,
+    );
+  return value;
+}
+/** The job to write; a removal names it only, so a bad value cannot block it. */
+function installedJob(machine: MachineConfig, removing = false): Job {
   const root = homedir();
+  const directory = launcherDirectory();
   return {
     command: [
       realpathSync(process.execPath),
       "--no-env-file",
-      `--config=${join(dirname(realpathSync(script)), "gc", "bunfig.toml")}`,
-      realpathSync(script),
+      `--config=${join(directory, "bunfig.toml")}`,
+      join(directory, "launcher.ts"),
+      ...Object.entries(pluginPrograms()).map(
+        ([name, program]) => `--${name}=${program}`,
+      ),
+      "--",
       "gc",
       "--scheduled",
     ],
@@ -136,6 +205,17 @@ function installedJob(machine: MachineConfig, script: string): Job {
         ? { LOCK_ROOT: resolve(process.env.LOCK_ROOT) }
         : {}),
       ...(process.env.LOCK_NAME ? { LOCK_NAME: process.env.LOCK_NAME } : {}),
+      // The lock wait, and the launcher's deadline built on it.
+      ...(process.env.LOCK_TIMEOUT && !removing
+        ? { LOCK_TIMEOUT: lockTimeout(process.env.LOCK_TIMEOUT) }
+        : {}),
+      // The agent tools read their registries from these.
+      ...(process.env.CLAUDE_CONFIG_DIR
+        ? { CLAUDE_CONFIG_DIR: resolve(process.env.CLAUDE_CONFIG_DIR) }
+        : {}),
+      ...(process.env.CODEX_HOME
+        ? { CODEX_HOME: resolve(process.env.CODEX_HOME) }
+        : {}),
       ...(process.env.DRIVE_PR_STATE_DIR
         ? { DRIVE_PR_STATE_DIR: resolve(process.env.DRIVE_PR_STATE_DIR) }
         : {}),
@@ -197,14 +277,11 @@ function jobDirectory(scheduler: "launchd" | "systemd"): string {
     ? join(homedir(), "Library", "LaunchAgents")
     : join(homedir(), ".config", "systemd", "user");
 }
-export async function updateScheduler(
-  machine: MachineConfig,
-  script: string,
-  remove = false,
+async function applyJob(
+  scheduler: Scheduler,
+  files: Record<string, string>,
+  remove: boolean,
 ): Promise<string> {
-  const scheduler = detectScheduler();
-  const files = jobFiles(scheduler, installedJob(machine, script));
-  mkdirSync(stateRoot(), { recursive: true, mode: 0o700 });
   if (scheduler === "cron") return updateCron(files, remove);
   const dir = jobDirectory(scheduler);
   mkdirSync(dir, { recursive: true });
@@ -212,17 +289,59 @@ export async function updateScheduler(
     ? updateLaunchd(dir, files, remove)
     : updateSystemd(dir, files, remove);
 }
+export async function updateScheduler(
+  machine: MachineConfig,
+  remove = false,
+): Promise<string> {
+  const scheduler = detectScheduler();
+  const files = jobFiles(scheduler, installedJob(machine, remove));
+  mkdirSync(stateRoot(), { recursive: true, mode: 0o700 });
+  // In place before the job that runs it, and gone only after that job is.
+  if (!remove) installLauncher();
+  const job = await applyJob(scheduler, files, remove);
+  if (remove) rmSync(launcherDirectory(), { recursive: true, force: true });
+  return job;
+}
 /**
  * The job as it stood before an update: its files' text, whether it starts on
  * its own (`enabled`) and whether it is running now (`active`). systemd keeps
  * the two independently, so each is captured and restored on its own; for
- * launchd and cron a loaded job is both.
+ * launchd and cron a loaded job is both. `launcher` holds the files the job
+ * runs, `null` for one that did not exist, since an update replaces them too.
  */
 export interface SchedulerSnapshot {
   scheduler: Scheduler;
   files: Record<string, string | null>;
+  launcher: Record<string, string | null>;
   enabled: boolean;
   active: boolean;
+}
+function launcherSnapshot(): Record<string, string | null> {
+  return Object.fromEntries(
+    LAUNCHER_FILES.map((name) => {
+      const path = join(launcherDirectory(), name);
+      return [path, readOptional(path)];
+    }),
+  );
+}
+/** Puts back the launcher files the snapshot saw, each staged then renamed. */
+function restoreLauncher(launcher: Record<string, string | null>): void {
+  const entries = Object.entries(launcher);
+  if (entries.every(([, text]) => text === null)) {
+    rmSync(launcherDirectory(), { recursive: true, force: true });
+    return;
+  }
+  mkdirSync(launcherDirectory(), { recursive: true, mode: 0o700 });
+  const temporary = (path: string) => `${path}.${process.pid}.tmp`;
+  try {
+    for (const [path, text] of entries)
+      if (text !== null) writeFileSync(temporary(path), text, { mode: 0o600 });
+    for (const [path, text] of entries)
+      if (text === null) rmSync(path, { force: true });
+      else renameSync(temporary(path), path);
+  } finally {
+    for (const [path] of entries) rmSync(temporary(path), { force: true });
+  }
 }
 function readOptional(path: string): string | null {
   try {
@@ -348,10 +467,12 @@ async function systemdState(): Promise<{ enabled: boolean; active: boolean }> {
 export async function snapshotScheduler(
   scheduler: Scheduler = detectScheduler(),
 ): Promise<SchedulerSnapshot> {
+  const launcher = launcherSnapshot();
   if (scheduler === "cron")
     return {
       scheduler,
       files: { crontab: await crontab() },
+      launcher,
       enabled: true,
       active: true,
     };
@@ -365,9 +486,9 @@ export async function snapshotScheduler(
   );
   if (scheduler === "launchd") {
     const loaded = await launchdLoaded(`gui/${process.getuid?.()}/${LABEL}`);
-    return { scheduler, files, enabled: loaded, active: loaded };
+    return { scheduler, files, launcher, enabled: loaded, active: loaded };
   }
-  return { scheduler, files, ...(await systemdState()) };
+  return { scheduler, files, launcher, ...(await systemdState()) };
 }
 /** Stops the replacement job; only a timer never installed may be skipped. */
 async function stopReplacement(launchd: boolean): Promise<void> {
@@ -400,6 +521,8 @@ async function startPrevious(snapshot: SchedulerSnapshot): Promise<void> {
 export async function restoreScheduler(
   snapshot: SchedulerSnapshot,
 ): Promise<void> {
+  // In place before the restored job can start and run it.
+  restoreLauncher(snapshot.launcher);
   if (snapshot.scheduler === "cron") {
     await execute(["crontab", "-"], snapshot.files.crontab ?? "");
     return;
@@ -413,7 +536,6 @@ export async function restoreScheduler(
 /** The concrete job a confirmed install would write, shown before confirmation. */
 export function schedulerPreview(
   machine: MachineConfig,
-  script: string,
   remove: boolean,
 ): string {
   let scheduler: Scheduler;
@@ -424,20 +546,14 @@ export function schedulerPreview(
   }
   if (remove)
     return `Scheduler preview (${scheduler}): the jig-gc job is removed`;
-  const files = jobFiles(scheduler, installedJob(machine, script));
+  const files = jobFiles(scheduler, installedJob(machine));
   return [
     `Scheduler preview (${scheduler}):`,
     ...Object.entries(files).map(([name, text]) => `--- ${name}\n${text}`),
   ].join("\n");
 }
 export function installedScript(script: string): boolean {
-  let current = dirname(realpathSync(script));
-  for (;;) {
-    if (existsSync(join(current, ".git"))) return false;
-    const parent = dirname(current);
-    if (parent === current) return true;
-    current = parent;
-  }
+  return outsideCheckout(script);
 }
 /** Preserve unrelated YAML settings when only the machine's gc entry changes. */
 export function previousMachineText(path: string): string {
