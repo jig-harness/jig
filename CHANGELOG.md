@@ -323,6 +323,25 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.83.2] - 2026-10-23
+
+### Added
+
+- A toolchain-pin exception can name the `toml:`, `json:` or `yaml:` path
+  of one pin site, and then excuses only the pin read through it, so a
+  file's other pins holding the same value stay checked.
+
+### Changed
+
+- Jig tests with Bun 1.4.4, and the `changelog` skill's GitHub Action
+  installs it. Bun 1.4.4's glob matcher reads `?(…)`, `*(…)`, `+(…)`,
+  `@(…)` and `!(…)` as pattern groups and expands `{1..3}` as a range, so a
+  glob in a repository's own configuration that `code-stats` or `changelog`
+  reads (a module's or tool's paths, the changelog's files) and that holds a
+  literal `(` or `{1..3}` in those forms now matches differently: escape the
+  parenthesis as `[(]` and the range as `\{1..3\}` to keep matching them
+  literally. Parentheses without one of those prefixes stay literal.
+
 ## [0.83.1] - 2026-10-23
 
 ### Fixed
@@ -3540,7 +3559,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.83.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.83.2...HEAD
+[0.83.2]: https://github.com/jig-harness/jig/compare/v0.83.1...v0.83.2
 [0.83.1]: https://github.com/jig-harness/jig/compare/v0.83.0...v0.83.1
 [0.83.0]: https://github.com/jig-harness/jig/compare/v0.82.0...v0.83.0
 [0.82.0]: https://github.com/jig-harness/jig/compare/v0.81.2...v0.82.0
