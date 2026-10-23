@@ -60,7 +60,11 @@ mapping below; it does not add stations.
    this step unanswered, and the evidence names the value.
 3. The title's Conventional Commits prefix when the repository's title
    convention is conventional (`fix:` is a bug, `feat:` a feature, `chore:`
-   and `docs:` a task, `refactor:` and `perf:` an improvement).
+   and `docs:` a task, `refactor:` and `perf:` an improvement). A prefix
+   answers only when its type is in the effective type set: a prefix whose
+   type the repository dropped or renamed leaves this step unanswered, as
+   an unmatched `nativeType` does in step 2, and the evidence names the
+   prefix.
 4. Otherwise `unknown`, which takes the strictest depth, and the run says so
    in its status line. In an interactive session `do-item` may ask one
    question; it never asks when a step above answered.

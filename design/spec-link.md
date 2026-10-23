@@ -142,15 +142,20 @@ passes. The `body` adapter is the one every repository has.
   writes the exception record to the item as one comment: the item's
   references, each source's revision (the last commit to touch its path
   for a repository file, the forge's or tracker's own last-edited time
-  for a document or an issue), and the lines the pull request's
+  for a document or an issue, or, for a source that could not be read,
+  `unread` with what the read returned: not found, no access, or a
+  layout no adapter parses), and the lines the pull request's
   `## Acceptance` section will carry: one `unresolved` line per unread
   source, or, when the item has no source at all or its sources yield no
   criterion, one `exception` line for the item, each with its reason. The
   approval covers that record, and only while it stands: the label must
   still be on the item, its latest application must come after the
   record's last edit, the item's references and every source's revision
-  must still match the record, a revision that cannot be read counts as
-  changed, and the section's `unresolved` and `exception` lines must be
+  must still match the record. A source the record lists as `unread`
+  matches while the same read still returns the same answer; once it
+  reads, or fails differently, it has changed. A source the record gives a
+  revision for has changed when its revision can no longer be read. The
+  section's `unresolved` and `exception` lines must be
   the record's lines. A line of either kind that no standing approval
   covers accounts for nothing. A source added or edited after the record,
   or a line the record does not carry, needs a new record and a fresh
