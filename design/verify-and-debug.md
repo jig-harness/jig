@@ -235,7 +235,14 @@ The protocol, each step with its record:
    deadline and recorded as timed out. The `probe-base.ts` run of step 2 is
    bounded the same way: its `--timeout` applies to each of its calls, so
    `debug` runs the whole probe under the process deadline with the budget
-   left, and a probe cut off there could not decide. The skill then
+   left, and a probe cut off there could not decide. A probe killed that way
+   never reaches the `finally` blocks that remove its worktree, its scratch
+   directory and its `refs/probe-base/*` ref, so the probe records each of
+   them, with its own process identity, before creating it, and
+   `probe-base.ts --reconcile` removes every recorded resource whose probe
+   is no longer alive. `debug` runs it after a probe the deadline ended,
+   and every probe runs it before starting, so a probe killed by any caller
+   is reclaimed by the next. The skill then
    posts the ledger where the work is tracked (the pull request when there
    is one, else the issue), names what it ruled out and what it would try
    next, and ends with the terminal state its caller understands: inside a
@@ -280,7 +287,10 @@ The protocol, each step with its record:
    body section, the seen-to-fail requirement by work type.
 4. **`debug`.** The skill, the ledger, the budget, the hand-off from
    `fix-ci`, tests with a fixture repository whose failure needs attribution
-   and one whose budget runs out.
+   and one whose budget runs out, and `probe-base.ts`'s resource record and
+   `--reconcile`, tested by a probe killed at its deadline during setup and
+   during the command, whose worktree, scratch directory and ref are gone
+   after reconciliation.
 
 ## Left out
 
