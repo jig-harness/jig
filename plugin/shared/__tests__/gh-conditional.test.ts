@@ -27,6 +27,7 @@ import {
   it,
 } from "bun:test";
 import { spawnSync } from "../guarded-git-spawn.ts";
+import { spendFirstSpawn } from "../../../lib/test-helpers/first-spawn.ts";
 import type { SpawnSyncOptions } from "node:child_process";
 import {
   chmodSync,
@@ -154,7 +155,11 @@ function initRepo(name: string, origin: string): string {
   return dir;
 }
 
-beforeAll(() => {
+beforeAll(async () => {
+  // The first test's cache hit needs its first `git` probe to settle within
+  // the probe's deadline; a child whose events the runtime lost would turn
+  // caching off for that read instead.
+  await spendFirstSpawn();
   tmpRoot = mkdtempSync(join(tmpdir(), "gh-conditional-"));
   binDir = join(tmpRoot, "bin");
   mkdirSync(binDir);

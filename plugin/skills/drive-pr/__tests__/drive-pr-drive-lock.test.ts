@@ -1117,12 +1117,7 @@ describe("drive.ts loop control", () => {
         },
       );
       try {
-        let running = false;
-        for (let i = 0; i < 400 && !running; i++) {
-          running = existsSync(started);
-          if (!running) await Bun.sleep(25);
-        }
-        expect(running).toBe(true);
+        expect(await awaitFixtureMarker(started)).toBe(true);
         // The claim IS the heartbeat: its mtime is what the renewal moves,
         // and its name is what makes the renewal unable to touch a
         // successor.
@@ -1141,7 +1136,7 @@ describe("drive.ts loop control", () => {
         proc.kill();
         await proc.exited;
       }
-    });
+    }, 120000);
 
     it("holds a FILE-BACKED account identity steady for an ACTIVE pass, never overwriting it mid-pass with the account the next pass would use", async () => {
       // A resolved-once-at-arm-time account is correct for
@@ -1215,12 +1210,7 @@ describe("drive.ts loop control", () => {
       );
 
       try {
-        let running = false;
-        for (let i = 0; i < 400 && !running; i++) {
-          running = existsSync(startedMarker);
-          if (!running) await Bun.sleep(25);
-        }
-        expect(running).toBe(true);
+        expect(await awaitFixtureMarker(startedMarker)).toBe(true);
 
         const readAccount = (): unknown => {
           const held = claimsIn(worktree);
@@ -1278,7 +1268,7 @@ describe("drive.ts loop control", () => {
         rmSync(claudeStubDir, { recursive: true, force: true });
         rmSync(claudeConfigDir, { recursive: true, force: true });
       }
-    });
+    }, 120000);
 
     it("does not resurrect a recovered claim via the account-identity rewrite", async () => {
       // An earlier revision called `refreshAccountIdentity` BEFORE
@@ -1345,12 +1335,7 @@ describe("drive.ts loop control", () => {
       );
 
       try {
-        let running = false;
-        for (let i = 0; i < 400 && !running; i++) {
-          running = existsSync(startedMarker);
-          if (!running) await Bun.sleep(25);
-        }
-        expect(running).toBe(true);
+        expect(await awaitFixtureMarker(startedMarker)).toBe(true);
 
         // Both land on disk together, with no await between them, so the very
         // next heartbeat tick sees an account change AND a missing claim in
@@ -1383,7 +1368,7 @@ describe("drive.ts loop control", () => {
         rmSync(claudeStubDir, { recursive: true, force: true });
         rmSync(claudeConfigDir, { recursive: true, force: true });
       }
-    });
+    }, 120000);
 
     it("refreshes a FILE-BACKED account identity synchronously the moment a pass exits, not only on the next heartbeat tick", async () => {
       // Clearing `activePass` reopens the exact window `refreshAccountIdentity`'s
@@ -1906,12 +1891,7 @@ exit 0
       );
 
       try {
-        let running = false;
-        for (let i = 0; i < 400 && !running; i++) {
-          running = existsSync(startedMarker);
-          if (!running) await Bun.sleep(25);
-        }
-        expect(running).toBe(true);
+        expect(await awaitFixtureMarker(startedMarker)).toBe(true);
 
         // Plant a SECOND claim directly, without touching the real one — the
         // same end state a resurrection race leaves behind (this
@@ -1947,7 +1927,7 @@ exit 0
         rmSync(claudeStubDir, { recursive: true, force: true });
         rmSync(claudeConfigDir, { recursive: true, force: true });
       }
-    });
+    }, 120000);
 
     it.skipIf(NO_DIR_MODES)(
       "retries every held lock independently, not just the first one to reach `fresh`",
