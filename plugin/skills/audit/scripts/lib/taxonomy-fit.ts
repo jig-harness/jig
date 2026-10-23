@@ -258,13 +258,15 @@ export function taxonomyFindings(
   const configured = at(config, "issue_tracker.taxonomy");
   if (typeof configured === "string" && configured.trim() !== "") {
     if (!existsSync(resolveIn(root, configured))) return [];
-    // Named as configured, with forward slashes on every platform. A
-    // backslash separates only on Windows; elsewhere it is part of a name.
+    // Read through the path as configured; only its name in a finding is
+    // spelled with forward slashes. A backslash separates only on Windows,
+    // elsewhere it is part of a name, and normalizing the path that is read
+    // would turn a Windows network or extended-length path into another one.
     const named =
       process.platform === "win32"
         ? configured.replaceAll("\\", "/")
         : configured;
-    return checkAgainst(config, root, posix.normalize(named));
+    return checkAgainst(config, root, configured, posix.normalize(named));
   }
   const found = probedFiles(tracked).filter((f) =>
     TAXONOMY_NAMES.has(basename(f)),
@@ -282,15 +284,19 @@ export function taxonomyFindings(
   return checkAgainst(config, root, path);
 }
 
-/** The findings against the taxonomy at `path`, relative to `root`. */
+/**
+ * The findings against the taxonomy read from `file`, relative to `root`,
+ * named `path` in each finding.
+ */
 function checkAgainst(
   config: Record<string, unknown>,
   root: string,
-  path: string,
+  file: string,
+  path = file,
 ): Finding[] {
   let taxonomy: Taxonomy;
   try {
-    taxonomy = parseTaxonomy(root, path);
+    taxonomy = parseTaxonomy(root, file);
   } catch (e) {
     return [
       {

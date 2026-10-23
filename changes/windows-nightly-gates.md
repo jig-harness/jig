@@ -26,7 +26,10 @@ release: patch
   executable is suggested as `bash <path>`, as on other platforms, rather
   than as `./<path>`.
 - The audit's label-taxonomy finding names the configured file with forward
-  slashes on every platform.
+  slashes on every platform, and reads the file through the path as
+  configured, so a Windows network share path (`\\server\share\…`), or one
+  that climbs out of a link with `..`, is checked rather than reported
+  unreadable.
 - A relative `JIG_TRACE_FILE` now records the spans of the process that set
   it on Windows too.
 - The design-brief renderer waits for Chromium's debugging endpoint while
