@@ -991,7 +991,9 @@ make, use the entry's term instead.
   ([M14](modules/M14-testing-strategy/README.md); `fix-ci` ships it as
   `probe-base.ts`).
 - **Evidence record** — the kept proof that a check ran: the command, the
-  working tree it ran against (every file Git does not ignore), its exit code, the test counts from the
+  working tree it ran against (every tracked file, with its staged and
+  unstaged changes, and every untracked file Git does not ignore), its exit
+  code, the test counts from the
   runner's own report, and the start and end of its output. An edit to the
   tree after the run makes the record stop applying, so "the tests pass"
   points at a run rather than a sentence

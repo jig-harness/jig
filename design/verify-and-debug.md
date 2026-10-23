@@ -149,9 +149,14 @@ Where it is used:
   `test_first` ([work types](work-types.md)) is the stronger rule that the
   failing test is written before the fix. Commit times cannot show that,
   since a record covers uncommitted changes, so the check reads the
-  seen-to-fail record's tree instead: every file the diff changes outside
-  its tests must read there as it does on the base. A failing run made with
-  part of the fix already in the working tree does not meet `test_first`.
+  seen-to-fail record's tree instead, against the increment before it: the
+  tree of the branch's latest passing plan record that precedes the
+  seen-to-fail record, or the base when none does. Every file outside the
+  tests must read in the seen-to-fail tree as it does in that preceding
+  tree. A branch that writes test A, implements A, then writes test B meets
+  it for B, whose red tree differs from A's green tree only in tests. A
+  failing run made with part of the fix already in the working tree does
+  not meet `test_first`.
 - **`fix-ci`** records the local re-run of each fixed check, so "verify
   locally" in its name is a record rather than a sentence.
 - **`drive-pr`** reads the body's evidence section when it certifies a

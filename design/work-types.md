@@ -119,12 +119,15 @@ repository's items before it works them. Its rungs follow the
 [criteria ladder](../plugin/skills/audit/criteria/README.md). The
 `convention` observation is the policy: the taxonomy declares the `types`
 family and the instructions say every item carries a type label. The
-`mechanical` observation is the enforcement: the pickup procedure the
-repository runs derives the type on every item and treats an underivable
-one as `unknown` (`do-item` with this design built), and the filing
-procedure writes the type label (`file-issue`), so no item reaches
-implementation untyped and lighter. Beside the score, as evidence and not
-as a rung, the audit runs `determine_type.ts` on the items the tracker
+pickup procedure that derives the type and treats an underivable one as
+`unknown` (`do-item` with this design built), and the filing procedure that
+writes the type label (`file-issue`), run only where those helpers are
+used: an item picked up by hand or filed directly passes neither, so on
+their own they score `advisory`. The `mechanical` observation is
+enforcement on every change: a required check on the pull request derives
+its linked item's type the same way and refuses one whose item is
+untyped, so no item reaches a merge untyped and lighter. Beside the
+score, as evidence and not as a rung, the audit runs `determine_type.ts` on the items the tracker
 shows changed in the last 30 days and reports the share typed by a label
 (step 1) or the tracker's own type (step 2), with a sample: a mapping no
 item's labels reach shows there. That the mapping resolves to labels the

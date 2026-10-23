@@ -125,12 +125,18 @@ passes. The `body` adapter is the one every repository has.
   and for any other type whose row names the `spec` pre-scout
   ([work types](work-types.md)), where the result is context and its
   absence stops nothing. For a required type, requirements are present
-  only when a resolved source yields at least one acceptance criterion: a
-  source that yields only requirements or tasks, one its adapter cannot
-  parse, and an empty result all count as none, and the item stops before
-  any code is written. In an
-  interactive session it asks one question: proceed without requirements,
-  or point at them. With nobody to answer, it stops and states the gap, as
+  only when the resolution is complete and yields at least one acceptance
+  criterion. Complete means every source the item references resolved: one
+  its adapter cannot parse, or a link that leads nowhere, leaves the
+  resolution partial even when another source supplies criteria, since the
+  unread source's criteria would go unaccounted for. A source that yields
+  only requirements or tasks, an empty result and a partial resolution all
+  count as none, and the item stops before any code is written. In an
+  interactive session it asks one question: proceed without requirements
+  (for a partial resolution, without the unread sources), or point at
+  them. Proceeding is an explicit exception: the `## Acceptance` section
+  lists each unread source as `unresolved` with the person's reason, and
+  `pr-plan.ts` counts such a line as accounted for only with that reason. With nobody to answer, it stops and states the gap, as
   [plugin/AGENTS.md](../plugin/AGENTS.md) requires of a question nobody can
   answer, and leaves the item for a person; a repository that wants
   features without requirements picked up unattended says so beforehand by
@@ -178,10 +184,13 @@ up without acceptance criteria. Its rungs follow the
 [criteria ladder](../plugin/skills/audit/criteria/README.md). The
 `convention` observation is the policy: `specs.require_for_types` is set,
 or left at its default, and the instructions say where an item's
-requirements go. The `mechanical` observation is the enforcement: the
-pickup procedure the repository runs refuses an item of a required type
-whose resolver result has no acceptance criterion (`do-item`'s stop above),
-and `pr-plan.ts`'s refusal guards the pull request. The audit also reports,
+requirements go. `do-item`'s stop above and `pr-plan.ts`'s refusal run
+only where those helpers are used: a person who picks an item up by hand or
+opens a pull request directly passes neither, so on their own they score
+`advisory`. The `mechanical` observation is enforcement on every change: a
+required check on the pull request reads its linked item's type and refuses
+a pull request of a required type whose `## Acceptance` section accounts
+for no criterion, or leaves one unaccounted for. The audit also reports,
 as evidence and not as the score, the share of items from the last 30 days
 typed as a required type that resolve to at least one criterion, and the
 recommendation names the adapter the repository's layout would turn on.
