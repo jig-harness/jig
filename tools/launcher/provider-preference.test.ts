@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LauncherConfigError, parseConfig } from "./config.ts";
+import { LauncherConfigError, loadConfig, parseConfig } from "./config.ts";
 import { install } from "./install.ts";
 import { chooseProvider, launch } from "./launch.ts";
 import type { Provider } from "./provider.ts";
@@ -155,6 +155,24 @@ describe("install --check with a provider list", () => {
     );
   });
 
+  test("reports an unreadable configuration file by name", () => {
+    const home = mkdtempSync(join(tmpdir(), "launcher-preference-"));
+    try {
+      const path = join(home, ".linear", "launcher.yaml");
+      mkdirSync(path, { recursive: true });
+      const lines = install({
+        home,
+        bun: process.execPath,
+        script: join(import.meta.dirname, "launch.ts"),
+        env: {},
+        check: true,
+      }).lines.join("\n");
+      expect(lines).toContain(`${path}: `);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   test("validates the second provider's settings", () => {
     expect(
       check("provider: [conductor, herdr]\nrepos:\n  app:\n    herdr: 7\n"),
@@ -172,4 +190,23 @@ test("malformed YAML is a configuration error naming the file", () => {
   expect(thrown).toBeInstanceOf(LauncherConfigError);
   expect(String(thrown)).toContain("c.yaml: ");
   expect((thrown as Error).cause).toBeDefined();
+});
+
+test("an unreadable configuration file is a configuration error naming the file", () => {
+  const home = mkdtempSync(join(tmpdir(), "launcher-preference-"));
+  try {
+    const path = join(home, ".linear", "launcher.yaml");
+    mkdirSync(path, { recursive: true });
+    let thrown: unknown;
+    try {
+      loadConfig(home, {});
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(LauncherConfigError);
+    expect(String(thrown)).toContain(`${path}: `);
+    expect((thrown as Error).cause).toBeDefined();
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });

@@ -354,7 +354,10 @@ function checkConfigFile(
   env: Record<string, string | undefined>,
 ): void {
   try {
-    const parsed = parseConfig(readFileSync(config, "utf8"), config);
+    const parsed = parseConfig(
+      configStep(config, () => readFileSync(config, "utf8")),
+      config,
+    );
     configStep(config, () => {
       getTracker(parsed.tracker, { home, env });
       for (const provider of parsed.providers.map(getProvider))

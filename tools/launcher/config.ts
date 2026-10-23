@@ -174,5 +174,8 @@ export function loadConfig(
 ): LauncherConfig {
   const path = configPath(home, env);
   if (!existsSync(path)) return parseConfig("", path);
-  return parseConfig(readFileSync(path, "utf8"), path);
+  return parseConfig(
+    configStep(path, () => readFileSync(path, "utf8")),
+    path,
+  );
 }
