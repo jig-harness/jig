@@ -2029,11 +2029,7 @@ export async function appendWithRetry(
   // escalates to 1 (Urgent), this run computes 2 (High) from the STALE 0 and
   // writes it — silently downgrading the live Urgent — and the verify below
   // only checks that priority now reflects THIS run's own severity, never
-  // that it didn't just erase a stronger concurrent one. Only worth the
-  // extra round-trip when a write is actually going to happen AND the stale
-  // snapshot itself looks like it needs a bump — a batch already at/above
-  // `args.severity` per `originalPriority` cannot be under-escalated by staying
-  // stale, since this loop never lowers a priority it reads. One fresh read
+  // that it didn't just erase a stronger concurrent one. One fresh read
   // here, taken as close to the first write as this function gets, shrinks that
   // window down to the same network-round-trip-sized gap every later attempt's
   // own verify-then-retry already accepts.
@@ -2055,12 +2051,13 @@ export async function appendWithRetry(
   // additive-write discipline) and rebuilt through the exact same
   // read-then-decide path (`rebuildDescriptionAndLabels`) the mid-loop retry
   // already uses, so priming and the mid-loop retry cannot drift on what
-  // "read-then-decide" means. Gated the same way as the priority-only
-  // priming it replaces — `needsWrite` first, so a pure no-op run pays
-  // nothing — plus `needsInitialDescriptionWrite`: a labels- or
-  // priority-only write never sends `description` at all (see that
-  // parameter's own doc), so it carries none of THIS race's clobber risk
-  // and gets none of this extra round-trip.
+  // "read-then-decide" means. Gated on `needsWrite` alone, so a pure no-op
+  // run pays nothing while every write is preceded by a fresh read: the
+  // guards in this read (`abortOnOwnershipMismatch`, and `abortOnForeignKey`
+  // inside `rebuildDescriptionAndLabels`) must pass before ANY mutation, a
+  // label-only `issueAddLabel` included — a batch whose key line a
+  // concurrent writer replaced is refused before this run stamps its labels
+  // on it, not after.
   //
   // Same residual as the priority-only priming above, for the same reason:
   // this narrows the window from "the caller's entire initial read plus
@@ -2077,11 +2074,7 @@ export async function appendWithRetry(
   // → B-write(stale) → B-verify interleaving in this file's own doc comment
   // passes on both sides. That is the documented, accepted residual, and it
   // applies to this priming for the same reason.
-  if (
-    needsWrite &&
-    (needsInitialDescriptionWrite ||
-      !priorityReflectsSeverity(originalPriority, args.severity))
-  ) {
+  if (needsWrite) {
     const primed = await linear(
       `query($id: String!) { issue(id: $id) {
          description

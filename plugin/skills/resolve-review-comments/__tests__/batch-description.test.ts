@@ -455,6 +455,60 @@ describe("appendWithRetry — the batch key line survives the append", () => {
     }
     expect(fake.description()).toBe(foreign);
   });
+
+  it("refuses a label-only repair on a batch whose key line was replaced, before adding any label", async () => {
+    const foreign = appendEntry(
+      `${batchKeyMarker("project", "9999", "bug")}\n\n## Entries`,
+      entry,
+      threadUrl,
+    ).description;
+    const repoLabel = label("project", REPO_GROUP);
+    const mutations: string[] = [];
+    const linear: LinearClient = async (query) => {
+      if (query.includes("mutation")) {
+        mutations.push(query);
+        return { issueAddLabel: { success: true } };
+      }
+      return {
+        issue: {
+          description: foreign,
+          priority: required(SEVERITY_TO_PRIORITY[SEVERITY_UNKNOWN]),
+          labels: {
+            pageInfo: { hasNextPage: false },
+            nodes: labels.filter((l) => l.name !== "project"),
+          },
+        },
+      };
+    };
+    const errSpy = spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await expect(
+        appendWithRetry(
+          linear,
+          { id: "issue-1", identifier: "ENG-9999" },
+          keyed,
+          false, // seedWasRepaired
+          true, // needsInitialWrite: the Repo label is missing
+          [repoLabel],
+          ["project"],
+          entry,
+          args,
+          "small",
+          required(SEVERITY_TO_PRIORITY[SEVERITY_UNKNOWN]),
+          context,
+          context,
+          new AbortController().signal,
+          async () => undefined,
+          false, // needsInitialDescriptionWrite: the entry is already there
+        ),
+      ).rejects.toBeInstanceOf(ExitError);
+      const messages = errSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+      expect(messages).toContain("different batch key");
+    } finally {
+      errSpy.mockRestore();
+    }
+    expect(mutations).toEqual([]);
+  });
 });
 
 describe("scaffoldPortion", () => {

@@ -2725,6 +2725,14 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
           serverLabels = [...serverLabels, missingLabel];
         return { issueAddLabel: { success: true } };
       }
+      if (query.includes("issueLabels")) {
+        return {
+          issueLabels: {
+            pageInfo: { hasNextPage: false },
+            nodes: [missingLabel],
+          },
+        };
+      }
       if (query.includes("issueUpdate")) {
         calls.push("write");
         const input = vars.input as { description?: string };
