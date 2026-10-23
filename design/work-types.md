@@ -136,9 +136,10 @@ comes from the pull request it judges
 workflow and script and `issue_tracker.types` are read from the target
 base branch or a pinned version, never from the head, so a pull request
 that changes the mapping is judged by the base's mapping, and the change
-takes effect once it merges; the check may run the head's copy beside it
-and report what that copy would decide, as a comment that decides
-nothing. Beside the
+takes effect once it merges. The head's copy may run only in a separate,
+unprivileged shadow job with no secrets and a read-only token, never in
+the job that decides, and reports what it would decide as a comment that
+decides nothing (M7, invariants 8 and 9). Beside the
 score, as evidence and not as a rung, the audit runs `determine_type.ts` on the items the tracker
 shows changed in the last 30 days and reports the share each step typed
 (label, tracker type, title prefix) and the share left `unknown`, with a

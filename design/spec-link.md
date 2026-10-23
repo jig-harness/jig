@@ -145,11 +145,15 @@ passes. The `body` adapter is the one every repository has.
   label event accounts for nothing. The approval covers what was in front
   of the person who gave it, and only while it stands: the label must
   still be on the item, and its latest application must come after the
-  last change to the item's references and to the section's `unresolved`
-  and `exception` lines. A source added, or a line rewritten, after the
-  label was applied leaves that line unapproved until an eligible actor
-  removes and re-applies the label, and a removed label
-  approves nothing. With nobody to answer, it stops and states the gap, as
+  last change to the item's references, to the content of every source
+  they name, and to the section's `unresolved` and `exception` lines. A
+  source's content changes when its revision moves: the last commit to
+  touch its path for a repository file, the forge's or tracker's own
+  last-edited time for a document or an issue, and a source whose
+  revision cannot be read counts as changed. A source added or edited, or
+  a line rewritten, after the label was applied leaves that line
+  unapproved until an eligible actor removes and re-applies the label, and
+  a removed label approves nothing. With nobody to answer, it stops and states the gap, as
   [plugin/AGENTS.md](../plugin/AGENTS.md) requires of a question nobody can
   answer, and leaves the item for a person; a repository that wants
   features without requirements picked up unattended says so beforehand by
@@ -208,15 +212,18 @@ for no criterion, or leaves one unaccounted for, unless the exception is
 recorded as `do-item`'s step above requires: the reason in the section,
 and the label applied by someone other than both the pull request's author
 and the identity the implementing agent runs as, still applied, and
-applied after the exception's lines last changed. The check counts as
+applied after the item's references, the content of their sources and the
+exception's lines last changed. The check counts as
 enforcement only when nothing it decides with comes from the pull request
 it judges ([M7](../modules/M7-pr-lifecycle-review/README.md), invariant
 8): its workflow and script, `specs.require_for_types`, the type mapping
 and the exception label are read from the target base branch or a pinned
 version, never from the head. A pull request that changes any of them is
 judged by the base's copy, and the proposed change takes effect once it
-merges; the check may run the head's copy beside it and report what that
-copy would decide, as a comment that decides nothing. The audit reports the
+merges. The head's copy may run only in a separate, unprivileged shadow
+job with no secrets and a read-only token, never in the job that decides,
+and reports what it would decide as a comment that decides nothing
+(M7, invariants 8 and 9). The audit reports the
 share of such exceptions beside the score, so work that went ahead
 without criteria is visible rather than counted as enforced. It also reports,
 as evidence and not as the score, the share of items from the last 30 days

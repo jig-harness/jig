@@ -169,8 +169,16 @@ Where it is used:
   meets it for B, whose red tree differs from A's green tree only in tests;
   one that writes test A and test B, each run red, then implements both,
   meets it for both, whose red trees differ from the base only in tests. A
-  failing run made with part of the fix already in the working tree does
-  not meet `test_first`.
+  failing run made with part of its fix written since its baseline does
+  not meet `test_first`. What trees cannot show is which increment a change
+  serves: everything written between an increment's red run and its
+  closing green record is credited to that increment, so part of a later
+  fix written early, under an earlier test, reaches the later increment's
+  baseline and passes the check. The check therefore certifies that each
+  test failed before every implementation change since its baseline, and
+  nothing about whether each increment's change was needed by its own
+  test. That judgement stays with the reviewer, who has each
+  seen-to-fail record's tree in the `## Evidence` section to compare.
 - **`fix-ci`** records the local re-run of each fixed check, so "verify
   locally" in its name is a record rather than a sentence.
 - **`drive-pr`** reads the body's evidence section when it certifies a

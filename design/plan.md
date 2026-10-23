@@ -497,7 +497,7 @@ What it will build, one pull request per step:
   the spec-writing tools with the adapter that reads each.
 - **The required check** that refuses an unlinked pull request or an
   unaccounted criterion, honouring an exception only when someone other than the
-  author and the implementing agent's identity applied its label after its lines last changed and the label is
+  author and the implementing agent's identity applied its label after its lines, the item's references and their sources' content last changed and the label is
   still on, reading its script and policy from the base branch rather than
   the head, with a workflow template and the setup that makes it required.
 - **`review` in plan mode, `file-issue`, `/followup` and the epic close.**
