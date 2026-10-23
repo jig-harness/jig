@@ -260,6 +260,28 @@ function inRepo(realRoot: string, path: string): string | null {
     : name;
 }
 
+/**
+ * `segment` of the directory `dir` as the directory itself spells it: on a
+ * case-insensitive file system `CHECK.ts` reaches the entry `check.ts`, and
+ * the tracked name is the entry's. Matched by file identity, the exact
+ * spelling first, so a hard link of another name never stands in for it.
+ */
+function spelled(dir: string, segment: string): string {
+  const entry = join(dir, segment);
+  const names = readdirSync(dir);
+  if (names.includes(segment)) return entry;
+  const own = lstatSync(entry, { bigint: true });
+  if (own.ino === 0n) return entry;
+  const same = names.find((name) => {
+    const other = lstatSync(join(dir, name), {
+      bigint: true,
+      throwIfNoEntry: false,
+    });
+    return other?.ino === own.ino && other.dev === own.dev;
+  });
+  return same === undefined ? entry : join(dir, same);
+}
+
 /** Links a resolution expands before giving up, as the kernel's SYMLOOP limit does. */
 const MAX_LINKS = 40;
 
@@ -278,11 +300,12 @@ function components(path: string): string[] {
  * target, and the file it lands on, by its real location. Resolved the way
  * the platform resolves it: on POSIX component by component, so `..` climbs
  * out of where a link led; on Windows `..` is collapsed by text first.
- * Inside the repository only; a path that does not resolve, or loops, needs
- * nothing.
+ * Every name is the file system's spelling of what it reaches, never the
+ * command's. Inside the repository only; a path that does not resolve, or
+ * loops, needs nothing.
  */
 export function namesReached(root: string, name: string): string[] {
-  const realRoot = realpathSync(root);
+  const realRoot = realpathSync.native(root);
   const pending = components(
     process.platform === "win32" ? win32.normalize(name) : name,
   );
@@ -298,9 +321,9 @@ export function namesReached(root: string, name: string): string[] {
       real = dirname(real);
       continue;
     }
-    const entry = join(real, segment);
-    const stat = lstatSync(entry, { throwIfNoEntry: false });
+    const stat = lstatSync(join(real, segment), { throwIfNoEntry: false });
     if (stat === undefined) return [];
+    const entry = spelled(real, segment);
     if (!stat.isSymbolicLink()) {
       real = entry;
       continue;

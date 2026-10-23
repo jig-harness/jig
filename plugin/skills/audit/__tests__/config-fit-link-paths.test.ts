@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import { commandProblems } from "../scripts/config-fit.ts";
@@ -93,5 +93,44 @@ test.skipIf(process.platform !== "win32")(
         message: "link/../check.ts is not tracked, so a fresh clone lacks it",
       },
     ]);
+  },
+);
+
+// Whether the scratch directory's file system ignores case, as macOS and
+// Windows ones do by default; the case tests mean nothing elsewhere.
+const ignoresCase = (() => {
+  const dir = scratchRepo({ probe: "" });
+  dirs.push(dir);
+  return existsSync(join(dir, "PROBE"));
+})();
+const caseTest = test.skipIf(!ignoresCase);
+const caseLinkTest = test.skipIf(
+  !ignoresCase ||
+    skipsOnWindows("file-system", "symbolic links need privileges on Windows"),
+);
+
+function committed(files: Record<string, string>): string {
+  const dir = scratchRepo(files);
+  dirs.push(dir);
+  return dir;
+}
+
+// A case-insensitive file system runs scripts/check.ts for SCRIPTS/CHECK.ts.
+caseTest(
+  "a command spelled in another case is tracked by the entry it reaches",
+  () => {
+    const dir = committed({ "scripts/check.ts": "" });
+    expect(commandProblems("bun SCRIPTS/CHECK.ts", dir)).toEqual([]);
+  },
+);
+
+caseLinkTest(
+  "a link spelled in another case is tracked by its own entry",
+  () => {
+    const dir = committed({ "scripts/.keep": "", "real/check.ts": "" });
+    symlinkSync(join(dir, "real"), join(dir, "scripts", "link"));
+    git(dir, "add", "--", "scripts/link");
+    git(dir, "commit", "-q", "-m", "link");
+    expect(commandProblems("bun Scripts/LINK/Check.ts", dir)).toEqual([]);
   },
 );

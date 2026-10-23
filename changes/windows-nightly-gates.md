@@ -33,7 +33,9 @@ release: patch
   way the platform resolves it: on POSIX it follows a link before a `..`,
   on Windows it collapses `..` first. It warns that a fresh clone lacks the
   file unless both the file it reaches and every link on the way, including
-  a link inside another link's target, are tracked.
+  a link inside another link's target, are tracked. On a case-insensitive
+  file system, a command that spells a tracked file in another case
+  (`scripts/CHECK.ts` for `scripts/check.ts`) counts as tracked.
 - A relative `JIG_TRACE_FILE` now records the spans of the process that set
   it on Windows too.
 - The design-brief renderer waits for Chromium's debugging endpoint while
