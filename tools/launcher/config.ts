@@ -25,6 +25,28 @@ declare module "js-yaml" {
 // pass the mapping check, and `<<: *anchor` still merges a shared mapping in.
 const CONFIG_SCHEMA = CORE_SCHEMA.extend({ implicit: [types.merge] });
 
+/** A configuration file the launcher cannot use; the message names the file and the key. */
+export class LauncherConfigError extends Error {
+  override name = "LauncherConfigError";
+}
+
+/**
+ * Run a step that reads, resolves or checks the configuration at `path`, so
+ * every failure is a LauncherConfigError naming the file, the original kept
+ * as its cause.
+ */
+export function configStep<T>(path: string, step: () => T): T {
+  try {
+    return step();
+  } catch (error) {
+    if (error instanceof LauncherConfigError) throw error;
+    throw new LauncherConfigError(
+      `${path}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+}
+
 export const DEFAULT_SKILL = "/jig:do-item";
 export const DEFAULT_TRACKER = "linear";
 export const DEFAULT_PROVIDER = "conductor";
@@ -33,8 +55,11 @@ export const DEFAULT_REPO_LABEL_GROUP = "Repo";
 export interface LauncherConfig {
   /** Which issue tracker the issue is read from. */
   tracker: string;
-  /** Which workspace provider opens the issue. */
-  provider: string;
+  /**
+   * The workspace providers in order of preference: an issue opens with the
+   * first one its repository has settings for, else the first one.
+   */
+  providers: [string, ...string[]];
   /** The slash command that starts the work; the issue key follows it. */
   skill: string;
   /** The tracker label group whose value names the repository. */
@@ -60,15 +85,41 @@ function optionalString(
   const value = raw[key];
   if (value === undefined) return fallback;
   if (typeof value !== "string" || value.trim() === "")
-    throw new Error(`${path}: ${key} must be a non-empty string`);
+    throw new LauncherConfigError(`${path}: ${key} must be a non-empty string`);
   return value.trim();
+}
+
+/** `provider`: one name, or a list of distinct names in order of preference. */
+function providerList(
+  raw: Record<string, unknown>,
+  path: string,
+): [string, ...string[]] {
+  const value = raw.provider;
+  if (value === undefined) return [DEFAULT_PROVIDER];
+  const names = Array.isArray(value) ? value : [value];
+  if (
+    names.length === 0 ||
+    names.some((name) => typeof name !== "string" || name.trim() === "")
+  )
+    throw new LauncherConfigError(
+      `${path}: provider must be a non-empty string or a list of them`,
+    );
+  const [first, ...rest] = names.map((name) => (name as string).trim());
+  if (first === undefined || new Set([first, ...rest]).size !== rest.length + 1)
+    throw new LauncherConfigError(
+      `${path}: provider lists a name more than once`,
+    );
+  return [first, ...rest];
 }
 
 /** Parse configuration text; every error names the file and the key. */
 export function parseConfig(text: string, path: string): LauncherConfig {
   const raw: unknown =
-    text.trim() === "" ? {} : load(text, { schema: CONFIG_SCHEMA });
-  if (!isRecord(raw)) throw new Error(`${path}: expected a mapping`);
+    text.trim() === ""
+      ? {}
+      : configStep(path, () => load(text, { schema: CONFIG_SCHEMA }));
+  if (!isRecord(raw))
+    throw new LauncherConfigError(`${path}: expected a mapping`);
   const known = new Set([
     "tracker",
     "provider",
@@ -78,7 +129,7 @@ export function parseConfig(text: string, path: string): LauncherConfig {
   ]);
   for (const key of Object.keys(raw))
     if (!known.has(key))
-      throw new Error(
+      throw new LauncherConfigError(
         `${path}: unknown key ${key} (known: ${[...known].join(", ")})`,
       );
   // No prototype: a label is any string, `__proto__` and `constructor`
@@ -86,10 +137,12 @@ export function parseConfig(text: string, path: string): LauncherConfig {
   const repos: LauncherConfig["repos"] = Object.create(null);
   if (raw.repos !== undefined) {
     if (!isRecord(raw.repos))
-      throw new Error(`${path}: repos must be a mapping of label to settings`);
+      throw new LauncherConfigError(
+        `${path}: repos must be a mapping of label to settings`,
+      );
     for (const [label, settings] of Object.entries(raw.repos)) {
       if (!isRecord(settings))
-        throw new Error(
+        throw new LauncherConfigError(
           `${path}: repos.${label} must map a provider name to its settings`,
         );
       repos[label] = settings;
@@ -97,12 +150,12 @@ export function parseConfig(text: string, path: string): LauncherConfig {
   }
   const skill = optionalString(raw, "skill", DEFAULT_SKILL, path);
   if (!skill.startsWith("/") || /\s/.test(skill))
-    throw new Error(
+    throw new LauncherConfigError(
       `${path}: skill must be one slash command, e.g. ${DEFAULT_SKILL}`,
     );
   return {
     tracker: optionalString(raw, "tracker", DEFAULT_TRACKER, path),
-    provider: optionalString(raw, "provider", DEFAULT_PROVIDER, path),
+    providers: providerList(raw, path),
     skill,
     repoLabelGroup: optionalString(
       raw,
@@ -121,5 +174,8 @@ export function loadConfig(
 ): LauncherConfig {
   const path = configPath(home, env);
   if (!existsSync(path)) return parseConfig("", path);
-  return parseConfig(readFileSync(path, "utf8"), path);
+  return parseConfig(
+    configStep(path, () => readFileSync(path, "utf8")),
+    path,
+  );
 }

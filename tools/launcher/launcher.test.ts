@@ -870,7 +870,7 @@ test("an inherited property name is not a provider", () => {
 test("configuration defaults apply to an empty file", () => {
   expect(parseConfig("", "c.yaml")).toEqual({
     tracker: "linear",
-    provider: "conductor",
+    providers: ["conductor"],
     skill: "/jig:do-item",
     repoLabelGroup: "Repo",
     repos: {},
@@ -913,7 +913,7 @@ for (const [yaml, message] of [
   ["2026-01-01\n", "expected a mapping"],
   ["repos:\n  a: b\n", "repos.a must map a provider name"],
   ["skill: do it\n", "skill must be one slash command"],
-  ["provider: 3\n", "provider must be a non-empty string"],
+  ["provider: 3\n", "provider must be a non-empty string or a list"],
 ] as const) {
   test(`configuration rejects ${message}`, () => {
     expect(() => parseConfig(yaml, "c.yaml")).toThrow(message);
