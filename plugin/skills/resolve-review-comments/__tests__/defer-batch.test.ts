@@ -21,20 +21,30 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { load as parseYaml } from "js-yaml";
 import {
+  batchKeyMarker,
+  batchTitle,
+  descriptionForRepair,
+  hasBatchKey,
+  initialDescription,
+  isSafeKeyComponent,
+  type NoParentRationale,
+  noParentRationaleForRepair,
+  placementMatchesFreshParent,
+  scaffoldPortion,
+} from "../scripts/lib/batch-description.ts";
+import {
   APPEND_ATTEMPTS,
-  type Args,
   appendEntry,
   appendWithRetry,
+  type Args,
   BATCH_REPOS,
   BATCH_SIZES,
   BATCH_TYPES,
   batchContractHolds,
-  batchTitle,
   commentUrlPattern,
   contextAfterReconcile,
   contextLabelsToAdd,
   DEFAULT_REPO_SLUG,
-  descriptionForRepair,
   entryHeading,
   entryHeadings,
   FINDING_FINGERPRINT,
@@ -43,40 +53,33 @@ import {
   hasRelationTo,
   headingEntryKey,
   inheritedContextLabels,
-  initialDescription,
   isBatchableSize,
-  isBatchTitle,
   isComplete,
   type LinearClient,
   missingSingleValued,
-  type NoParentRationale,
-  noParentRationaleForRepair,
   ownerDomainMismatches,
-  PRIORITY_TO_SEVERITY,
-  PROVENANCE_LABEL,
   parseArgs,
   pickBatch,
-  placementMatchesFreshParent,
+  PRIORITY_TO_SEVERITY,
   priorityAfterSeverity,
   priorityReflectsSeverity,
+  PROVENANCE_LABEL,
   RELATED_TYPE,
+  renderEntry,
+  repairableMissingLabels,
   REPO_GROUP,
   RETRY_BASE_MS,
   RETRY_MAX_MS,
-  REVIEW_CATEGORIES,
-  renderEntry,
-  repairableMissingLabels,
-  repoVerdict,
   retryBackoffMs,
+  REVIEW_CATEGORIES,
   runDeferBatch,
   SEVERITY_RANK_ORDER,
   SEVERITY_TO_PRIORITY,
-  SIZE_GROUP,
-  scaffoldPortion,
   severityRank,
+  SIZE_GROUP,
   summaryEntryKey,
-  TYPE_GROUP,
   threadUrlPattern,
+  TYPE_GROUP,
 } from "../scripts/defer-batch.ts";
 import { ExitError } from "../../../shared/cli.ts";
 import {
@@ -101,31 +104,121 @@ function required<T>(value: T | undefined): T {
   return value;
 }
 
-describe("batchTitle / isBatchTitle", () => {
-  it("renders the protocol title with the Type as the lookup key", () => {
+describe("batchTitle — the SEED title, no longer the key", () => {
+  // `hasBatchKey` takes no title argument at all; the renaming regression
+  // test at the `runDeferBatch` level is the behavioural half of this claim.
+  it("renders the protocol title and carries no key", () => {
     expect(batchTitle("123", "chore")).toBe("PR #123 chore review follow-ups");
+    expect(batchTitle("123", "chore")).not.toContain("defer-batch-key");
+  });
+});
+
+describe("batchKeyMarker / hasBatchKey", () => {
+  const key = (repo: string, pr: string, type: string) =>
+    initialDescription(repo, pr, type, "ENG-101");
+
+  it("renders the documented marker, carrying repo, PR and Type", () => {
+    expect(batchKeyMarker("project", "4374", "bug")).toBe(
+      "<!-- defer-batch-key: repo=project pr=4374 type=bug -->",
+    );
   });
 
-  it("matches its own rendering", () => {
-    expect(isBatchTitle(batchTitle("123", "chore"), "123", "chore")).toBe(true);
-  });
-
-  it("matches case-insensitively and across padding", () => {
+  it("matches the marker its own scaffold emits", () => {
     expect(
-      isBatchTitle("  PR #123 Chore review follow-ups ", "123", "chore"),
+      hasBatchKey(key("project", "123", "chore"), "project", "123", "chore"),
     ).toBe(true);
   });
 
-  it("does not match a different Type under the same PR", () => {
-    expect(isBatchTitle("PR #123 bug review follow-ups", "123", "chore")).toBe(
-      false,
-    );
+  // Each row must NOT read as this batch's key. The repo row is why the
+  // repository is in the key at all: consumers share one tracker workspace,
+  // so another consumer's PR #123 chore batch was titled identically and only
+  // a Repo-LABEL check stood between it and this run's append.
+  it.each([
+    ["a different Type", key("project", "123", "bug")],
+    ["a different repository", key("website", "123", "chore")],
+    ["a PR number this one merely prefixes", key("project", "12", "chore")],
+    [
+      "a case variant of a machine-written marker",
+      "<!-- DEFER-BATCH-KEY: REPO=PROJECT PR=123 TYPE=CHORE -->",
+    ],
+    [
+      "a marker that is not a whole line",
+      `see ${batchKeyMarker("project", "123", "chore")} for context`,
+    ],
+    ["an empty description — a wiped batch carries no key", ""],
+  ])("does not match %s", (_why, description) => {
+    expect(hasBatchKey(description, "project", "123", "chore")).toBe(false);
   });
 
-  it("does not match a PR number that merely prefixes this one", () => {
-    expect(isBatchTitle("PR #12 chore review follow-ups", "123", "chore")).toBe(
-      false,
-    );
+  it("tolerates whitespace around the marker line", () => {
+    expect(
+      hasBatchKey(
+        `   ${batchKeyMarker("project", "123", "chore")}  \n\nprose`,
+        "project",
+        "123",
+        "chore",
+      ),
+    ).toBe(true);
+  });
+
+  it("IGNORES a marker QUOTED inside an entry — only the scaffold counts", () => {
+    // Reachable via the server-side `description: { contains }` substring
+    // filter, and not hypothetical: a deferral from a pull request touching
+    // defer-batch.ts quotes a marker verbatim.
+    const foreign = batchKeyMarker("project", "9999", "bug");
+    const sourceUrl =
+      "https://github.com/example/project/pull/123#discussion_r1";
+    const description = appendEntry(
+      key("project", "123", "chore"),
+      renderEntry({
+        sourceUrl,
+        finding: `the key marker is ${foreign}\n${foreign}`,
+        reason: `should not forge ${foreign}`,
+        severity: "low",
+        category: "correctness",
+        fix: foreign,
+      }),
+      sourceUrl,
+    ).description;
+
+    // Present in the raw text — a bare `includes` would match — yet not this
+    // batch's key, while its own key still resolves.
+    expect(description).toContain(foreign);
+    expect(hasBatchKey(description, "project", "9999", "bug")).toBe(false);
+    expect(hasBatchKey(description, "project", "123", "chore")).toBe(true);
+  });
+});
+
+describe("isSafeKeyComponent", () => {
+  // A refusal, not a sanitiser — see the predicate's own doc. Every rejected
+  // shape is reachable: the Type and Repo vocabularies are consumer YAML.
+  it("accepts the shapes taxonomies use and refuses what breaks the marker", () => {
+    for (const ok of [
+      "project",
+      "bug",
+      "agent:meta",
+      "codearea:scaffolding",
+      "my-repo",
+      "repo.v2",
+      "a_b",
+      "scope/name",
+      "team@org",
+      "c++",
+    ]) {
+      expect(isSafeKeyComponent(ok)).toBe(true);
+    }
+    for (const bad of [
+      "", // `repo=` with no value
+      "my repo", // runs into the next field
+      "a\nb", // defeats the whole-line match
+      "a-->b", // closes the comment early
+      "<!--x", // opens a nested comment
+      "a>b",
+      "a=b", // confusable with the key=value separator
+      "héllo", // non-ASCII, conservatively out
+    ]) {
+      expect(isSafeKeyComponent(bad)).toBe(false);
+    }
   });
 });
 
@@ -597,7 +690,7 @@ describe("appendEntry onto an EMPTY description", () => {
     expect(bare).not.toContain("ENG-101");
 
     const seeded = appendEntry(
-      initialDescription("123", "ENG-101"),
+      initialDescription("project", "123", "chore", "ENG-101"),
       entry,
       url,
     ).description;
@@ -609,7 +702,7 @@ describe("appendEntry onto an EMPTY description", () => {
 
 describe("initialDescription — the no-parent rationale", () => {
   it("records the reason and names the epic that was rejected", () => {
-    const s = initialDescription("123", "ENG-101", {
+    const s = initialDescription("project", "123", "chore", "ENG-101", {
       reason: "tooling defect under a compliance epic",
       rejectedEpic: "ENG-100",
     });
@@ -620,7 +713,7 @@ describe("initialDescription — the no-parent rationale", () => {
   });
 
   it("says so plainly when there was no epic to reject", () => {
-    const s = initialDescription("123", "ENG-101", {
+    const s = initialDescription("project", "123", "chore", "ENG-101", {
       reason: "originating issue is itself an epic",
       rejectedEpic: "",
     });
@@ -628,9 +721,9 @@ describe("initialDescription — the no-parent rationale", () => {
   });
 
   it("omits the block entirely when the follow-up is parented", () => {
-    expect(initialDescription("123", "ENG-101")).not.toContain(
-      "**No epic parent**",
-    );
+    expect(
+      initialDescription("project", "123", "chore", "ENG-101"),
+    ).not.toContain("**No epic parent**");
   });
 });
 
@@ -664,7 +757,13 @@ describe("noParentRationaleForRepair", () => {
     // same breath. The rendered description must state neither "no epic to
     // inherit" nor name any epic.
     const fallback = noParentRationaleForRepair(false);
-    const rendered = initialDescription("123", "ENG-1234", fallback);
+    const rendered = initialDescription(
+      "project",
+      "123",
+      "chore",
+      "ENG-1234",
+      fallback,
+    );
     expect(rendered).toContain("**No epic parent**");
     expect(rendered).not.toContain("no epic to inherit");
     expect(rendered).not.toContain("rejected as unrelated");
@@ -687,12 +786,21 @@ describe("descriptionForRepair", () => {
   // not just the helper it delegates to.
 
   it("returns the live description unchanged when it is non-empty", () => {
-    const live = initialDescription("123", "ENG-101");
-    expect(descriptionForRepair(live, "123", "ENG-101", true)).toBe(live);
+    const live = initialDescription("project", "123", "chore", "ENG-101");
+    expect(
+      descriptionForRepair(live, "project", "123", "chore", "ENG-101", true),
+    ).toBe(live);
   });
 
   it("rebuilds a wiped description WITHOUT a no-parent block when the batch actually has a parent", () => {
-    const rebuilt = descriptionForRepair("", "123", "ENG-101", true);
+    const rebuilt = descriptionForRepair(
+      "",
+      "project",
+      "123",
+      "chore",
+      "ENG-101",
+      true,
+    );
     expect(rebuilt).not.toContain("**No epic parent**");
     expect(rebuilt).toContain("PR #123");
   });
@@ -700,7 +808,9 @@ describe("descriptionForRepair", () => {
   it("rebuilds a wiped description with the lost-reason fallback when the batch genuinely has no parent — never this run's own rationale", () => {
     const rebuilt = descriptionForRepair(
       "   ", // whitespace-only counts as wiped
+      "project",
       "123",
+      "chore",
       "ENG-101",
       false,
     );
@@ -712,14 +822,16 @@ describe("descriptionForRepair", () => {
 
 describe("initialDescription", () => {
   it("carries the PR and the originating issue", () => {
-    const s = initialDescription("123", "ENG-101");
+    const s = initialDescription("project", "123", "chore", "ENG-101");
     expect(s).toContain("PR #123");
     expect(s).toContain("ENG-101");
     expect(s).toContain("## Entries");
   });
 
   it("states the no-ticket case instead of a blank", () => {
-    expect(initialDescription("123", "")).toContain("no originating issue");
+    expect(initialDescription("project", "123", "chore", "")).toContain(
+      "no originating issue",
+    );
   });
 });
 
@@ -951,48 +1063,56 @@ describe("ownerDomainMismatches", () => {
   });
 });
 
-describe("repoVerdict", () => {
-  it("names another repository batch sharing the PR number and Type", () => {
-    expect(
-      repoVerdict(
-        [
-          label("pr-followup"),
-          label("chore", TYPE_GROUP),
-          label("website", REPO_GROUP),
-        ],
-        "project",
-      ),
-    ).toBe("other-repo");
-  });
+describe("missingSingleValued — Repo joins Type and Size", () => {
+  const wanted = { type: "chore", size: "small", repoLabel: "project" };
 
-  it("names this repository batch", () => {
-    expect(repoVerdict([label("project", REPO_GROUP)], "project")).toBe(
-      "this-repo",
+  it("repairs an ABSENT Repo group, like any other mandatory group", () => {
+    // Repo joined Type and Size once the key started carrying the repository
+    // Ownership is settled by the marker before reconciliation
+    // runs, so an absent label is an ordinary repairable gap rather than the
+    // undecidable case the retired `repoVerdict` had to fail closed on.
+    const r = missingSingleValued(
+      [label("chore", TYPE_GROUP), label("small", SIZE_GROUP)],
+      wanted,
     );
+    expect(r.add).toEqual(["project"]);
+    expect(r.conflicts).toEqual([]);
   });
 
-  it("reports a batch with NO Repo label as UNLABELLED, not as ours", () => {
-    // The caller fails closed on this. Treating it as ours would claim
-    // another repo's batch, append to it, and then stamp it `project` —
-    // destructive and silent, where a duplicate is only tracker noise.
-    expect(
-      repoVerdict(
-        [label("pr-followup"), label("chore", TYPE_GROUP)],
-        "project",
-      ),
-    ).toBe("unlabelled");
+  it("reports a DIFFERING Repo label as a conflict, never repairing it", () => {
+    // Adding `project` alongside `website` would leave the live issue
+    // carrying two Repo labels — taxonomy-invalid in the name of repair.
+    const r = missingSingleValued(
+      [
+        label("chore", TYPE_GROUP),
+        label("small", SIZE_GROUP),
+        label("website", REPO_GROUP),
+      ],
+      wanted,
+    );
+    expect(r.add).toEqual([]);
+    expect(r.conflicts).toEqual([
+      { group: REPO_GROUP, has: "website", duplicate: false },
+    ]);
   });
 
-  it("reports MORE THAN ONE Repo label as ambiguous, not as ours", () => {
-    // `[project, website]` CONTAINS the requested label, so a membership
-    // test calls it ours — while it is exactly as undecidable as carrying
-    // none. Being in a single-valued group means being the only one.
-    expect(
-      repoVerdict(
-        [label("project", REPO_GROUP), label("website", REPO_GROUP)],
-        "project",
-      ),
-    ).toBe("ambiguous");
+  it("reports MORE THAN ONE Repo label as a duplicate, not as satisfied", () => {
+    // `[project, website]` CONTAINS the requested label, so a membership test
+    // calls the group satisfied — while it is exactly as undecidable as
+    // carrying none. Being in a single-valued group means being the only one.
+    const r = missingSingleValued(
+      [
+        label("chore", TYPE_GROUP),
+        label("small", SIZE_GROUP),
+        label("project", REPO_GROUP),
+        label("website", REPO_GROUP),
+      ],
+      wanted,
+    );
+    expect(r.add).toEqual([]);
+    expect(r.conflicts).toEqual([
+      { group: REPO_GROUP, has: "project, website", duplicate: true },
+    ]);
   });
 
   it("reads the group from Linear, not from the label name", () => {
@@ -1000,14 +1120,20 @@ describe("repoVerdict", () => {
     // Repo label just because it is present.
     expect(groupOf(label("codearea:scaffolding"))).toBe("");
     expect(groupOf(label("project", REPO_GROUP))).toBe(REPO_GROUP);
-    expect(repoVerdict([label("codearea:scaffolding")], "project")).toBe(
-      "unlabelled",
+    const r = missingSingleValued(
+      [
+        label("chore", TYPE_GROUP),
+        label("small", SIZE_GROUP),
+        label("codearea:scaffolding"),
+      ],
+      wanted,
     );
+    expect(r.add).toEqual(["project"]);
   });
 });
 
 describe("missingSingleValued", () => {
-  const wanted = { type: "chore", size: "small" };
+  const wanted = { type: "chore", size: "small", repoLabel: "project" };
 
   it("fills a group the batch is missing entirely", () => {
     const r = missingSingleValued(
@@ -1015,17 +1141,6 @@ describe("missingSingleValued", () => {
       wanted,
     );
     expect(r.add).toEqual(["chore", "small"]);
-    expect(r.conflicts).toEqual([]);
-  });
-
-  it("says nothing about Repo — repoVerdict already failed closed on it", () => {
-    // Anything reaching reconciliation carries the right Repo label, so a
-    // Repo entry here could only ever be unreachable logic.
-    const r = missingSingleValued(
-      [label("chore", TYPE_GROUP), label("small", SIZE_GROUP)],
-      wanted,
-    );
-    expect(r.add).toEqual([]);
     expect(r.conflicts).toEqual([]);
   });
 
@@ -1040,6 +1155,7 @@ describe("missingSingleValued", () => {
         label("bug", TYPE_GROUP),
         label("small", SIZE_GROUP),
         label("xs", SIZE_GROUP),
+        label("project", REPO_GROUP),
       ],
       wanted,
     );
@@ -1051,11 +1167,16 @@ describe("missingSingleValued", () => {
   });
 
   it("reports a differing TYPE as a conflict for the caller to abort on", () => {
-    // Type is the lookup key, not a judgment like Size: a batch titled
-    // `... chore ...` carrying `bug` is mislabelled, and appending a chore
-    // finding to it misfiles under a Type that decides who may share it.
+    // Type is part of the lookup key, not a judgment like Size: a batch whose
+    // key marker says `type=chore` carrying `bug` is mislabelled, and
+    // appending a chore finding to it misfiles under a Type that decides who
+    // may share it.
     const r = missingSingleValued(
-      [label("bug", TYPE_GROUP), label("small", SIZE_GROUP)],
+      [
+        label("bug", TYPE_GROUP),
+        label("small", SIZE_GROUP),
+        label("project", REPO_GROUP),
+      ],
       wanted,
     );
     expect(r.add).toEqual([]);
@@ -1868,7 +1989,7 @@ describe("appendWithRetry — the actual retry loop, against a mock LinearClient
     // aborts — but the point of this test is what it must NOT have done
     // along the way.
     expect(result.confirmed).toBe(false);
-    expect(result.unconfirmed).toContain("Repo group is other-repo");
+    expect(result.unconfirmed).toContain("Repo is website");
     expect(addedLabelNames).not.toContain("project");
     expect(calls.filter((c) => c === "addLabel").length).toBe(0);
   });
@@ -2999,7 +3120,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
   // builds when the batch's `parent` looked null at the STALE read this
   // run's seed was built from (`main()`'s initial candidate lookup).
   const rebuiltNoParentDescription = appendEntry(
-    initialDescription("123", "ENG-1234", {
+    initialDescription("project", "123", "chore", "ENG-1234", {
       reason:
         "the batch was filed with no epic parent; the original reason was lost when its description was cleared and this repair could not recover it",
       rejectedEpic: null,
@@ -3199,7 +3320,7 @@ describe("appendWithRetry — the stale-parent placement race, against a mock Li
     // third argument produce), but a concurrent writer has since
     // unparented the issue.
     const rebuiltHasParentDescription = appendEntry(
-      initialDescription("123", "ENG-1234"),
+      initialDescription("project", "123", "chore", "ENG-1234"),
       entry,
       threadUrl,
     ).description;
@@ -3915,13 +4036,21 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
   const contextLabels = [label("domain:tooling")];
 
   /** A hand-filed batch with a WIPED description — `descriptionForRepair`'s scenario. */
-  function makeWipedTarget(parent: { id: string } | null) {
+  /**
+   * A batch as FIND returns it: carrying its key marker, the only way a
+   * candidate reaches the append path. The title decides nothing.
+   */
+  function makeTarget(
+    parent: { id: string } | null,
+    overrides: { title?: string; description?: string } = {},
+  ) {
     return {
       id: "issue-1",
       identifier: "ENG-9999",
-      title: batchTitle(pr, type),
+      title: overrides.title ?? batchTitle(pr, type),
       url: "https://linear.app/project/issue/ENG-9999",
-      description: "",
+      description:
+        overrides.description ?? initialDescription("project", pr, type, ""),
       createdAt: "2020-01-01T00:00:00.000Z",
       parent,
       labels: {
@@ -3939,9 +4068,16 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
     };
   }
 
-  it("rebuilds a wiped, PARENTLESS batch through descriptionForRepair — includes the lost-reason fallback, not a bare initialDescription", async () => {
-    const target = makeWipedTarget(null);
-    let writtenDescription = "";
+  /**
+   * A mock whose FIRST verify read reports the description WIPED — a
+   * concurrent writer blanking it after this run found the batch — and every
+   * later one echoes the last write. The reachable rebuild trigger.
+   */
+  function wipeOnFirstVerify(
+    target: ReturnType<typeof makeTarget>,
+    freshParent: { id: string } | null,
+  ) {
+    const state = { written: "", verifies: 0 };
     const linear: LinearClient = async (query, vars) => {
       if (query.includes("teams(filter")) {
         return { teams: { nodes: [{ id: "team-1", key: "ENG" }] } };
@@ -3952,18 +4088,101 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
         };
       }
       if (query.includes("issueUpdate(")) {
-        writtenDescription = (vars.input as { description: string })
-          .description;
+        state.written = (vars.input as { description: string }).description;
         return { issueUpdate: { success: true } };
       }
+      state.verifies += 1;
       return {
         issue: {
-          description: writtenDescription,
+          description: state.verifies === 1 ? "" : state.written,
+          parent: freshParent,
+          labels: target.labels,
+        },
+      };
+    };
+    return { linear, state };
+  }
+
+  it("APPENDS to a RETITLED batch instead of minting a duplicate — the whole point of the marker key", async () => {
+    // The defect this change fixes: title-as-key demanded exact equality and
+    // a FIND miss fell through to CREATE, so retitling a batch whose pull
+    // request could still run a round minted a duplicate. This batch shares
+    // nothing with `batchTitle(pr, type)` and must still be found.
+    const target = makeTarget(null, {
+      title: "Tighten the matching guards flagged in review",
+    });
+    expect(target.title).not.toBe(batchTitle(pr, type));
+
+    const calls: string[] = [];
+    let written = "";
+    const linear: LinearClient = async (query, vars) => {
+      if (query.includes("teams(filter")) {
+        return { teams: { nodes: [{ id: "team-1", key: "ENG" }] } };
+      }
+      if (query.includes("issues(first: 50")) {
+        calls.push("find");
+        return {
+          issues: { pageInfo: { hasNextPage: false }, nodes: [target] },
+        };
+      }
+      if (query.includes("issueCreate(")) {
+        calls.push("create");
+        return {
+          issueCreate: {
+            success: true,
+            issue: { id: "new", identifier: "ENG-0000", url: "u" },
+          },
+        };
+      }
+      if (query.includes("issueUpdate(")) {
+        calls.push("update");
+        written = (vars.input as { description: string }).description;
+        return { issueUpdate: { success: true } };
+      }
+      // Echo the last write rather than rebuilding the entry: the append is
+      // keyed on the rendered heading, so a re-derived fixture can disagree
+      // with the real run and read as "the entry did not survive".
+      return {
+        issue: {
+          description: written,
           parent: null,
           labels: target.labels,
         },
       };
     };
+
+    let payload = "";
+    const outSpy = spyOn(process.stdout, "write").mockImplementation(
+      (chunk: unknown) => {
+        payload += String(chunk);
+        return true;
+      },
+    );
+    try {
+      expect(
+        await runDeferBatch(linear, baseArgs, "the reviewer finding text"),
+      ).toBe(0);
+    } finally {
+      outSpy.mockRestore();
+    }
+
+    expect(calls).not.toContain("create");
+    expect(calls).toContain("update");
+    const result = JSON.parse(payload) as {
+      identifier: string;
+      created: boolean;
+      title: string;
+    };
+    expect(result.created).toBe(false);
+    expect(result.identifier).toBe("ENG-9999");
+    // And it reports the REAL title, not the seed: a caller told otherwise
+    // would name an issue that no longer exists.
+    expect(result.title).toBe("Tighten the matching guards flagged in review");
+  });
+
+  it("rebuilds a wiped, PARENTLESS batch through descriptionForRepair — includes the lost-reason fallback, not a bare initialDescription", async () => {
+    const target = makeTarget(null);
+    const { linear, state } = wipeOnFirstVerify(target, null);
 
     const code = await runDeferBatch(
       linear,
@@ -3972,25 +4191,38 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
     );
 
     expect(code).toBe(0);
-    // The exact bug this file's history fixed: reverting this call site to
+    // The exact bug this file's history fixed: reverting the call site to
     // `initialDescription(args.pr, args.originating, noParentRationale)` —
     // `noParentRationale` is `undefined` here, since `args.noParent` is
     // false — would OMIT the `**No epic parent**` block entirely. Wiring
     // through `descriptionForRepair` instead uses
-    // `noParentRationaleForRepair(target.parent != null)` — the lost-reason
+    // `noParentRationaleForRepair(issue.parent != null)` — the lost-reason
     // fallback — which includes it.
-    expect(writtenDescription).toContain("**No epic parent**");
-    expect(writtenDescription).toContain(
+    expect(state.written).toContain("**No epic parent**");
+    expect(state.written).toContain(
       "the original reason was lost when its description was cleared",
     );
-    expect(writtenDescription).toContain(`PR #${pr}`);
+    expect(state.written).toContain(`PR #${pr}`);
+  });
+
+  it("restores the KEY MARKER when it rebuilds — a wiped batch must not become unfindable", async () => {
+    // Why the mid-loop rebuild matters more than it used to: the marker IS
+    // the key, so restoring only the prose would leave the batch invisible to
+    // every later round, which would then mint duplicates under a dead key.
+    const target = makeTarget(null);
+    const { linear, state } = wipeOnFirstVerify(target, null);
+
+    expect(
+      await runDeferBatch(linear, baseArgs, "the reviewer finding text"),
+    ).toBe(0);
+    expect(hasBatchKey(state.written, "project", pr, type)).toBe(true);
   });
 
   it("warns loudly when severity is 'blocker' — a deferred blocker is a contradiction, but the finding is still tracked (and filed at Urgent priority)", async () => {
     // The issue's own text (references/deferral-protocol.md § When to
     // defer): deferring a blocker finding is a contradiction, so this must
     // warn — but NOT abort, since the finding still needs to be tracked.
-    const target = makeWipedTarget(null);
+    const target = makeTarget(null);
     let writtenDescription = "";
     let writtenPriority: number | undefined;
     const linear: LinearClient = async (query, vars) => {
@@ -4039,30 +4271,8 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
   });
 
   it("rebuilds a wiped, PARENTED batch WITHOUT the no-parent block", async () => {
-    const target = makeWipedTarget({ id: "epic-uuid-1" });
-    let writtenDescription = "";
-    const linear: LinearClient = async (query, vars) => {
-      if (query.includes("teams(filter")) {
-        return { teams: { nodes: [{ id: "team-1", key: "ENG" }] } };
-      }
-      if (query.includes("issues(first: 50")) {
-        return {
-          issues: { pageInfo: { hasNextPage: false }, nodes: [target] },
-        };
-      }
-      if (query.includes("issueUpdate(")) {
-        writtenDescription = (vars.input as { description: string })
-          .description;
-        return { issueUpdate: { success: true } };
-      }
-      return {
-        issue: {
-          description: writtenDescription,
-          parent: { id: "epic-uuid-1" },
-          labels: target.labels,
-        },
-      };
-    };
+    const target = makeTarget({ id: "epic-uuid-1" });
+    const { linear, state } = wipeOnFirstVerify(target, { id: "epic-uuid-1" });
 
     const code = await runDeferBatch(
       linear,
@@ -4071,8 +4281,8 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
     );
 
     expect(code).toBe(0);
-    expect(writtenDescription).not.toContain("**No epic parent**");
-    expect(writtenDescription).toContain(`PR #${pr}`);
+    expect(state.written).not.toContain("**No epic parent**");
+    expect(state.written).toContain(`PR #${pr}`);
   });
 
   it("wires `seedWasRepaired` through to appendWithRetry's placement check — a race is caught, not silently confirmed", async () => {
@@ -4086,7 +4296,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
     // read shows a real parent — a reparent race between the two. Only a
     // correctly wired `seedWasRepaired: true` makes `appendWithRetry` treat
     // this as a placement mismatch and reject.
-    const target = makeWipedTarget(null);
+    const target = makeTarget(null);
     let writtenDescription = "";
     // `appendWithRetry`'s own pre-attempt-1 priming does a FRESH full
     // read — including `parent` — before ever writing, which closes the
@@ -4165,7 +4375,7 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
     // receives the EXACT SAME signal instance, and (2) the run still rejects
     // via `appendWithRetry`'s own deadline check further downstream, which only
     // fires against the signal it was actually handed.
-    const target = makeWipedTarget(null);
+    const target = makeTarget(null);
     const seenSignals: AbortSignal[] = [];
     const controller = new AbortController();
     const linear: LinearClient = async (query, _vars, signal) => {

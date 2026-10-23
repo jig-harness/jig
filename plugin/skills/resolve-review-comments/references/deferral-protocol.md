@@ -106,20 +106,50 @@ No justification in the round report, no individual issue.
 
 The batch key and contract:
 
-- **One batch issue per PR and Type**, titled
-  `PR #NNNN <type> review follow-ups` (e.g. `PR #42 bug review follow-ups`).
-  The Type is in the title because it is the lookup key. Its description
-  lists every batched finding: the thread URL, the reviewer's finding quoted,
-  and the deferral reason — each entry self-contained enough to act on
-  without re-reading the PR.
+- **One batch issue per repository, PR and Type**, keyed on a marker the
+  helper writes into the issue's **description**, on a line of its own above
+  `## Entries`:
+
+  ```markdown
+  <!-- defer-batch-key: repo=project pr=4374 type=bug -->
+  ```
+
+  The rest of the description lists every batched finding: the thread URL, the
+  reviewer's finding quoted, and the deferral reason — each entry
+  self-contained enough to act on without re-reading the PR.
+- **The title is display-only.** A new batch is seeded as
+  `PR #NNNN <type> review follow-ups` (e.g. `PR #42 bug review follow-ups`),
+  and nothing ever looks a batch up by it — so **retitle a batch freely** to
+  say what it actually contains. That is the point of keying on the marker:
+  while the title *was* the key, matching was exact-equality with
+  create-on-miss, so renaming a batch whose pull request could still run a
+  round minted a duplicate, which is why trackers accumulate batches titled
+  nothing but their PR number and Type.
 - **Why per Type**: the taxonomy's Type group is pick-one and Type is chosen
   from the finding, so a batch mixing incompatible Types (a correctness bug
   and a docs correction) cannot be labeled honestly. One batch per PR and
   Type is still far fewer issues than one per finding.
-- **One batch issue per PR and Type means across all rounds**, and rounds
-  arrive per push — the helper below finds the existing open batch under the
-  key before creating one. A second issue under the same key recreates
-  exactly the tracker noise batching exists to eliminate.
+- **Why per repository**: the key carries the repository because consumers
+  share one tracker workspace and pull-request numbers collide across them. A
+  foreign batch simply does not match the key; it used to be told apart by the
+  Repo *label*, which forced the helper to abort whenever a candidate's Repo
+  group was absent or held more than one value. The label and the key must
+  agree — a batch whose Repo or Type label contradicts its own marker is
+  refused rather than silently restamped. Because both are embedded in a
+  one-line HTML comment, a Repo or Type label declared in `review.taxonomy`
+  must be free of whitespace and of anything that could open or close a
+  comment; the helper refuses such a label before writing anything.
+- **One batch issue per key means across all rounds**, and rounds arrive per
+  push — the helper below finds the existing open batch under the key before
+  creating one. A second issue under the same key recreates exactly the
+  tracker noise batching exists to eliminate.
+- **Leave the marker line alone, and never blank a batch's description.** The
+  key lives there, so a wiped description — or an edited marker — makes the
+  batch unfindable and the next round files a fresh one under a key nothing
+  can match. Edit prose and entries freely; leave that one line
+  byte-for-byte. (A writer that blanks the description *while* the helper is
+  mid-append is repaired automatically: the helper rebuilds the scaffold,
+  marker included.)
 - Each deferred thread's reply links whichever issue carries it — several
   threads may link the same batch issue.
 
@@ -298,3 +328,7 @@ For a finding on a PR that closes an issue whose parent epic is `EPIC-12`:
   is merely hard stays in scope.
 - Deferring optional polish. That is `wont-fix` — no issue, no tracker noise.
   The deferral queue is for work that must happen, or it stops meaning that.
+- Clearing a batch's description, or editing its `defer-batch-key` marker line.
+  That is where the cross-round key lives, so the batch stops being findable
+  and the next round files a duplicate. The title, by contrast, is safe to
+  change — that is the whole point of keying on the marker.
