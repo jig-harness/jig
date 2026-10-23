@@ -13,7 +13,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const PLUGIN_ID = "jig@jig";
 
@@ -48,15 +48,26 @@ export function codexPluginDirectory(
     : null;
 }
 
-/** Whether no checkout holds the script: a worktree reaper could remove it. */
+/**
+ * Whether no checkout holds the script: a worktree reaper could remove it,
+ * and a branch could change it. The path is what runs, so the directories
+ * that name it count as much as the file a symbolic link resolves to.
+ */
 export function outsideCheckout(script: string): boolean {
-  let current = dirname(realpathSync(script));
-  for (;;) {
-    if (existsSync(join(current, ".git"))) return false;
-    const parent = dirname(current);
-    if (parent === current) return true;
-    current = parent;
-  }
+  const directory = dirname(resolve(script));
+  return [
+    directory,
+    realpathSync(directory),
+    dirname(realpathSync(script)),
+  ].every((start) => {
+    let current = start;
+    for (;;) {
+      if (existsSync(join(current, ".git"))) return false;
+      const parent = dirname(current);
+      if (parent === current) return true;
+      current = parent;
+    }
+  });
 }
 
 export type PluginList = (program: string) => unknown;

@@ -80,7 +80,9 @@ export async function install(options: {
     throw new GcError(
       "Scheduler installation requires the installed plugin copy, outside every worktree",
     );
-  if (!noEntries) checkLauncherResolves();
+  // Removing an entry withdraws authority, so it never waits on plugin
+  // discovery; the job left for the others is rewritten either way.
+  if (!options.uninstall) checkLauncherResolves();
   return exclusiveGcLock("install", async () => {
     const original = previousMachineText(machinePath);
     // Refuse a concurrent edit after the preview rather than overwrite it.

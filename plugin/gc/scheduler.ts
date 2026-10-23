@@ -149,19 +149,25 @@ export function checkLauncherResolves(): void {
     throw new GcError((error as Error).message);
   }
 }
-/** Replaces the launcher and its trusted startup file in whole, or not at all. */
+const LAUNCHER_FILES = ["launcher.ts", "bunfig.toml"];
+/**
+ * Replaces the launcher and its trusted startup file. Both are copied beside
+ * their targets before either is replaced, so a failed copy leaves the
+ * previous pair in place.
+ */
 function installLauncher(): void {
   const directory = launcherDirectory();
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  for (const name of ["launcher.ts", "bunfig.toml"]) {
-    const target = join(directory, name);
-    const temporary = `${target}.${process.pid}.tmp`;
-    try {
-      copyFileSync(join(import.meta.dir, name), temporary);
-      renameSync(temporary, target);
-    } finally {
-      rmSync(temporary, { force: true });
-    }
+  const staged = LAUNCHER_FILES.map((name) => ({
+    source: join(import.meta.dir, name),
+    target: join(directory, name),
+    temporary: join(directory, `${name}.${process.pid}.tmp`),
+  }));
+  try {
+    for (const file of staged) copyFileSync(file.source, file.temporary);
+    for (const file of staged) renameSync(file.temporary, file.target);
+  } finally {
+    for (const file of staged) rmSync(file.temporary, { force: true });
   }
 }
 function installedJob(machine: MachineConfig): Job {
@@ -286,13 +292,42 @@ export async function updateScheduler(
  * The job as it stood before an update: its files' text, whether it starts on
  * its own (`enabled`) and whether it is running now (`active`). systemd keeps
  * the two independently, so each is captured and restored on its own; for
- * launchd and cron a loaded job is both.
+ * launchd and cron a loaded job is both. `launcher` holds the files the job
+ * runs, `null` for one that did not exist, since an update replaces them too.
  */
 export interface SchedulerSnapshot {
   scheduler: Scheduler;
   files: Record<string, string | null>;
+  launcher: Record<string, string | null>;
   enabled: boolean;
   active: boolean;
+}
+function launcherSnapshot(): Record<string, string | null> {
+  return Object.fromEntries(
+    LAUNCHER_FILES.map((name) => {
+      const path = join(launcherDirectory(), name);
+      return [path, readOptional(path)];
+    }),
+  );
+}
+/** Puts back the launcher files the snapshot saw, each staged then renamed. */
+function restoreLauncher(launcher: Record<string, string | null>): void {
+  const entries = Object.entries(launcher);
+  if (entries.every(([, text]) => text === null)) {
+    rmSync(launcherDirectory(), { recursive: true, force: true });
+    return;
+  }
+  mkdirSync(launcherDirectory(), { recursive: true, mode: 0o700 });
+  const temporary = (path: string) => `${path}.${process.pid}.tmp`;
+  try {
+    for (const [path, text] of entries)
+      if (text !== null) writeFileSync(temporary(path), text, { mode: 0o600 });
+    for (const [path, text] of entries)
+      if (text === null) rmSync(path, { force: true });
+      else renameSync(temporary(path), path);
+  } finally {
+    for (const [path] of entries) rmSync(temporary(path), { force: true });
+  }
 }
 function readOptional(path: string): string | null {
   try {
@@ -418,10 +453,12 @@ async function systemdState(): Promise<{ enabled: boolean; active: boolean }> {
 export async function snapshotScheduler(
   scheduler: Scheduler = detectScheduler(),
 ): Promise<SchedulerSnapshot> {
+  const launcher = launcherSnapshot();
   if (scheduler === "cron")
     return {
       scheduler,
       files: { crontab: await crontab() },
+      launcher,
       enabled: true,
       active: true,
     };
@@ -435,9 +472,9 @@ export async function snapshotScheduler(
   );
   if (scheduler === "launchd") {
     const loaded = await launchdLoaded(`gui/${process.getuid?.()}/${LABEL}`);
-    return { scheduler, files, enabled: loaded, active: loaded };
+    return { scheduler, files, launcher, enabled: loaded, active: loaded };
   }
-  return { scheduler, files, ...(await systemdState()) };
+  return { scheduler, files, launcher, ...(await systemdState()) };
 }
 /** Stops the replacement job; only a timer never installed may be skipped. */
 async function stopReplacement(launchd: boolean): Promise<void> {
@@ -470,6 +507,8 @@ async function startPrevious(snapshot: SchedulerSnapshot): Promise<void> {
 export async function restoreScheduler(
   snapshot: SchedulerSnapshot,
 ): Promise<void> {
+  // In place before the restored job can start and run it.
+  restoreLauncher(snapshot.launcher);
   if (snapshot.scheduler === "cron") {
     await execute(["crontab", "-"], snapshot.files.crontab ?? "");
     return;

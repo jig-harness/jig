@@ -526,6 +526,11 @@ test.skipIf(
     [join(units, "jig-gc.timer")]: "previous timer\n",
     [cron]: "0 4 * * * previous-job # jig-gc\n",
   };
+  // The launcher the previous job runs, which this install replaces.
+  const launcher = join(f.user, ".local/state/jig/gc/launcher");
+  mkdirSync(launcher, { recursive: true });
+  previous[join(launcher, "launcher.ts")] = "previous launcher\n";
+  previous[join(launcher, "bunfig.toml")] = "previous bunfig\n";
   for (const [path, text] of Object.entries(previous))
     writeFileSync(path, text);
   writeFileSync(enabled, "");
@@ -542,6 +547,50 @@ test.skipIf(
   for (const [path, text] of Object.entries(previous))
     expect(readFileSync(path, "utf8")).toBe(text);
   expect(existsSync(active)).toBe(true);
+});
+
+test.skipIf(
+  skipsOnWindows(
+    "powershell",
+    "GC scheduler installation supports launchd, systemd and cron on macOS/Linux",
+  ),
+)("removing one repository does not need the plugin to be found", () => {
+  const f = setup();
+  const cache = join(f.root, "installed");
+  cpSync(resolve(import.meta.dir, "../.."), cache, {
+    recursive: true,
+    filter: (source) => !source.includes("__tests__"),
+  });
+  const bin = join(f.root, "bin");
+  mkdirSync(bin);
+  for (const name of ["launchctl", "systemctl", "crontab"])
+    writeFakeProgram(
+      join(bin, name),
+      // No job yet; every change succeeds.
+      `#!/usr/bin/env bun
+const args = process.argv.slice(2);
+if (args[0] === "print") process.exit(113);
+if (args[1] === "show") console.log("LoadState=not-found\\nUnitFileState=\\nActiveState=inactive");
+if (args[0] === "-l") { console.error("no crontab"); process.exit(1); }
+if (args[0] === "-") await Bun.stdin.text();
+`,
+    );
+  writeAgentTools(bin, null);
+  f.env.PATH = `${bin}${delimiter}${f.env.PATH}`;
+  const other = { ...f.machine.repositories[0], path: join(f.root, "other") };
+  writeFileSync(
+    f.homeFile,
+    dump({ gc: { repositories: [...f.machine.repositories, other] } }),
+  );
+  const result = run(
+    f,
+    ["install", "--repo", f.repo, "--uninstall", "--yes"],
+    join(cache, "jig.ts"),
+  );
+  expectSpawnExit(result, 0);
+  const text = readFileSync(f.homeFile, "utf8");
+  expect(text).toContain(other.path);
+  expect(text).not.toContain(`path: ${f.repo}\n`);
 });
 
 test("tool-state delegates to the native reaper in report mode", () => {

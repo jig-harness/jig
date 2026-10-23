@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   realpathSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,6 +17,7 @@ import {
   claudePluginDirectory,
   codexPluginDirectory,
   installedEntry,
+  outsideCheckout,
   parseLauncherArguments,
 } from "../launcher.ts";
 
@@ -98,6 +100,25 @@ test("a copy inside a checkout is refused and the next tool is tried", () => {
     realpathSync(join(cached, "9.9.9", "jig.ts")),
   );
 });
+
+test.skipIf(skipsOnWindows("powershell", "symbolic links need privileges"))(
+  "a link inside a checkout is inside it, wherever the link points",
+  () => {
+    const checkout = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+    mkdirSync(join(checkout, ".git"));
+    mkdirSync(join(checkout, "bin"));
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "gc-launcher-")));
+    const program = join(outside, "claude");
+    writeFileSync(program, "");
+    expect(outsideCheckout(program)).toBe(true);
+    // The link's own directory is in the checkout; its target is not.
+    symlinkSync(program, join(checkout, "bin", "claude"));
+    expect(outsideCheckout(join(checkout, "bin", "claude"))).toBe(false);
+    // A directory link outside the checkout naming its bin directory.
+    symlinkSync(join(checkout, "bin"), join(outside, "bin"));
+    expect(outsideCheckout(join(outside, "bin", "claude"))).toBe(false);
+  },
+);
 
 test("no recorded tool, or a tool that cannot answer, is an error naming why", () => {
   expect(() => installedEntry({})).toThrow("no agent tool recorded");

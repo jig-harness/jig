@@ -74,12 +74,13 @@ At each run the launcher asks the agent tool (`claude plugin list --json`, or
 `codex plugin list --json`, by the absolute path found at install) for the
 installed copy of the plugin and runs that copy's collector, so a plugin
 update reaches the job without a new install. A copy inside a git checkout is
-refused, as at install, and install itself fails when the launcher could not
-find the plugin it would run. A run that finds no installed copy later fails
+refused, as at install, and so is an agent tool found inside one, by its path
+or by what that path links to. Install itself fails when the launcher could
+not find the plugin it would run; removing a repository does not need it to. A run that finds no installed copy later fails
 and says so in the scheduler's error output. The job's environment carries
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME` when set, so it asks the same registry
 the install did. Run `jig gc install --repo <repository> --yes`
-again after moving Bun or an agent tool, or to replace the launcher. A failed install puts back the previous job's files and activation. Collecting
+again after moving Bun or an agent tool, or to replace the launcher. A failed install puts back the previous job's files, launcher and activation. Collecting
 runs hold
 the same heavy-run lock as local gates. The design's later container, branch
 and process kinds wait for the first-stage rollout to run in a working
