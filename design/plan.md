@@ -435,6 +435,8 @@ the strictest value of every field. What it will build, one pull request per ste
   default move to the table, with a `task` fixture showing the lighter path.
 - **`work-batch` and `file-issue`**: batchability from the row; the type
   written at filing.
+- **The required check** that refuses a pull request whose item is
+  untyped, with a workflow template and the setup that makes it required.
 - **The lifecycle map's column and M9's audit criterion.**
 
 Done when a task-typed issue reaches its pull request with the depth its
@@ -491,6 +493,10 @@ What it will build, one pull request per step:
   (item 27), the delegation prompt and the reviewer's list, the policy
   refusal for an unaccounted criterion, the recommended-skills page naming
   the spec-writing tools with the adapter that reads each.
+- **The required check** that refuses an unaccounted criterion on every
+  pull request, honouring an exception only when someone other than the
+  author applied its label, with a workflow template and the setup that
+  makes it required.
 - **`review` in plan mode, `file-issue`, `/followup` and the epic close.**
 - **The tracker source**, once the tracker interface has attachments
   (item 12).

@@ -152,8 +152,12 @@ Where it is used:
   failing test is written before the fix. Commit times cannot show that,
   since a record covers uncommitted changes, so the check reads the
   seen-to-fail record's tree instead, against the increment before it: the
-  tree of the branch's latest passing plan record that precedes the
-  seen-to-fail record, or the base when none does. Every file outside the
+  tree of the passing plan record that closed the branch's previous
+  increment, the first one after the previous seen-to-fail record in which
+  that record's test passes, or the base when there is no earlier
+  increment. A passing run that closes no increment is never a baseline,
+  so an implementation change made between increments without a failing
+  test of its own counts against the next increment. Every file outside the
   tests must read in the seen-to-fail tree as it does in that preceding
   tree, compared path by path: a path present in one tree and absent from
   the other differs, so an added or deleted implementation file counts as

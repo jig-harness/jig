@@ -153,7 +153,12 @@ taxonomy declares stays a configuration check, reported beside it.
    the tests for the pattern pre-scout and the review skip show the same
    behaviour from the defaults, then a `task` fixture shows the lighter path.
 3. **`work-batch` and `file-issue`.**
-4. **The map column and the audit criterion.**
+4. **The required check**: a portable script that derives the linked
+   item's type as `determine_type.ts` does and refuses a pull request
+   whose item is untyped; its tests; a workflow template and the setup
+   step that makes it a required check on the base branch. Until a
+   repository installs it, the criterion scores `advisory` there.
+5. **The map column and the audit criterion.**
 
 ## Left out
 

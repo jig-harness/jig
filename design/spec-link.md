@@ -134,9 +134,15 @@ passes. The `body` adapter is the one every repository has.
   count as none, and the item stops before any code is written. In an
   interactive session it asks one question: proceed without requirements
   (for a partial resolution, without the unread sources), or point at
-  them. Proceeding is an explicit exception: the `## Acceptance` section
-  lists each unread source as `unresolved` with the person's reason, and
-  `pr-plan.ts` counts such a line as accounted for only with that reason. With nobody to answer, it stops and states the gap, as
+  them. Proceeding is an explicit exception, and the author cannot grant
+  it alone: the person who decides applies `specs.exception_label` to the
+  item, and an exception counts only when the forge's or tracker's own
+  label event names an actor other than the pull request's author and the
+  identity the implementing agent runs as. The `## Acceptance` section
+  carries the reason: one `unresolved` line per unread source, or, when
+  the item has no source at all or its sources yield no criterion, one
+  `exception` line for the item. A line of either kind without that
+  label event accounts for nothing. With nobody to answer, it stops and states the gap, as
   [plugin/AGENTS.md](../plugin/AGENTS.md) requires of a question nobody can
   answer, and leaves the item for a person; a repository that wants
   features without requirements picked up unattended says so beforehand by
@@ -190,8 +196,9 @@ opens a pull request directly passes neither, so on their own they score
 `advisory`. The `mechanical` observation is enforcement on every change: a
 required check on the pull request reads its linked item's type and refuses
 a pull request of a required type whose `## Acceptance` section accounts
-for no criterion, or leaves one unaccounted for, unless the section
-records the person's exception with its reason. The audit reports the
+for no criterion, or leaves one unaccounted for, unless the exception is
+recorded as `do-item`'s step above requires: the reason in the section,
+and the label applied by someone other than the author. The audit reports the
 share of such exceptions beside the score, so work that went ahead
 without criteria is visible rather than counted as enforced. It also reports,
 as evidence and not as the score, the share of items from the last 30 days
@@ -206,6 +213,7 @@ recommendation names the adapter the repository's layout would turn on.
 | `specs.body_section` | heading text | `Spec` | do-item, file-issue |
 | `specs.require_for_types` | list of work types | `[feature]` | do-item |
 | `specs.deferral_label` | label | `issue_tracker.labels.followup` | do-item |
+| `specs.exception_label` | label | `spec-exception` | do-item, the required check |
 
 ## Build order
 
@@ -216,8 +224,14 @@ recommendation names the adapter the repository's layout would turn on.
    each with its fixture folder; the audit criterion with the last of them.
 3. **`do-item` reads and requires**: the pre-scout, the delegation prompt,
    the reviewer's list, the policy refusal, the recommended-skills page.
-4. **`review`, `file-issue`, `followup`, the epic close.**
-5. **The tracker source**, once the tracker interface has attachments.
+4. **The required check**: a portable script that reads the linked item's
+   type and the `## Acceptance` section and refuses as the audit's
+   `mechanical` rung describes, including the exception label's actor;
+   its tests; a workflow template and the setup step that makes it a
+   required check on the base branch. Until a repository installs it, the
+   criterion scores `advisory` there.
+5. **`review`, `file-issue`, `followup`, the epic close.**
+6. **The tracker source**, once the tracker interface has attachments.
 
 ## Left out
 
