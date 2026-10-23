@@ -386,12 +386,22 @@ test.skipIf(skipsOnWindows("powershell", "signals are POSIX"))(
     const started = Date.now();
     child.kill("SIGTERM");
     const status = await Promise.race([child.exited, Bun.sleep(15_000)]);
-    if (status === undefined) child.kill("SIGKILL");
-    expect(status).toBe(1);
+    if (status === undefined) {
+      // The tool leads its own process group, so killing the launcher leaves it.
+      child.kill("SIGKILL");
+      try {
+        process.kill(-tool, "SIGKILL");
+      } catch {
+        // The group already ended.
+      }
+    }
+    const [stdout, stderr] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expectSpawnExit({ exitCode: status ?? null, stdout, stderr }, 1);
     expect(Date.now() - started).toBeLessThan(15_000);
-    expect(await new Response(child.stderr).text()).toContain(
-      "received SIGTERM",
-    );
+    expect(stderr).toContain("received SIGTERM");
     expect(await goneWithin(tool, 3000)).toBe(true);
     expect(existsSync(asked)).toBe(false);
   },
