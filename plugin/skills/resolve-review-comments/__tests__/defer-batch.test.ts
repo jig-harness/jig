@@ -3977,17 +3977,16 @@ describe("runDeferBatch — main()'s wiring of the wiped-description rebuild", (
     expect(state.written).toContain(`PR #${pr}`);
   });
 
-  it("wires `seedWasRepaired` through to appendWithRetry's placement check — a race is caught, not silently confirmed", async () => {
-    // Nothing else in this suite would catch `runDeferBatch` passing a
-    // hardcoded `false` for `appendWithRetry`'s `seedWasRepaired` parameter
-    // instead of the `existingDescription.trim() === ''` it actually computes —
-    // the same untested-call-site class this extraction was meant to fix,
-    // reproduced in the fix itself. This test fails (reports `code === 0`
-    // instead of rejecting) if that wiring is lost: `target` is WIPED and
-    // PARENTLESS at the read `runDeferBatch` seeds from, but the verify's fresh
-    // read shows a real parent — a reparent race between the two. Only a
-    // correctly wired `seedWasRepaired: true` makes `appendWithRetry` treat
-    // this as a placement mismatch and reject.
+  it("rejects a reparent that lands after priming found a wiped scaffold — the race is caught, not silently confirmed", async () => {
+    // `runDeferBatch` passes `seedWasRepaired: false` (its seed is the
+    // description the candidate was found by), so the placement-claim
+    // responsibility here comes from `appendWithRetry`'s own priming read:
+    // it finds the description WIPED and PARENTLESS, rebuilds the scaffold
+    // with a no-parent claim, and records `scaffoldWasWiped`. The verify's
+    // fresh read then shows a real parent — a reparent between attempt 1's
+    // write and its verify. This test fails (reports `code === 0` instead of
+    // rejecting) if priming's `scaffoldWasWiped` stops reaching the
+    // placement check.
     const target = makeTarget(null);
     let writtenDescription = "";
     // `appendWithRetry`'s own pre-attempt-1 priming does a FRESH full
