@@ -323,6 +323,14 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.83.1] - 2026-10-23
+
+### Fixed
+
+- The scheduled `jig gc` job no longer stores the path of the plugin release that installed it, which a plugin update leaves behind. The job runs a small launcher that `jig gc install` keeps under `~/.local/state/jig/gc/launcher/`; at each run it asks `claude plugin list --json` (or `codex plugin list --json`) for the installed plugin and runs that copy, so an update reaches the job without reinstalling. Run `jig gc install --repo <repository> --yes` once to replace a job written by an earlier release.
+- `jig gc install --uninstall` for one repository, while others remain, now changes only the machine entry and leaves the scheduled job as it is.
+- A scheduled `jig gc` run that stalls is now stopped: the launcher ends the collector after the heavy-run lock's wait (`LOCK_TIMEOUT`, which install now carries into the job) and two hours more, and when the scheduler stops the launcher; a stopped run reports failure. An agent tool that does not answer the launcher's plugin lookup within 30 seconds, or prints more than 4 MiB, is killed with its process group and that lookup fails; the run fails only when no other recorded agent tool names an installed copy. An agent tool still answering when the scheduler stops the launcher is killed the same way, and the run fails. A descendant that starts its own session leaves the process group and is not stopped.
+
 ## [0.83.0] - 2026-10-22
 
 ### Added
@@ -3532,7 +3540,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.83.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.83.1...HEAD
+[0.83.1]: https://github.com/jig-harness/jig/compare/v0.83.0...v0.83.1
 [0.83.0]: https://github.com/jig-harness/jig/compare/v0.82.0...v0.83.0
 [0.82.0]: https://github.com/jig-harness/jig/compare/v0.81.2...v0.82.0
 [0.81.2]: https://github.com/jig-harness/jig/compare/v0.81.1...v0.81.2
