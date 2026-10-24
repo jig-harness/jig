@@ -284,7 +284,11 @@ function spelled(dir: string, segment: string, link: boolean): string[] {
     });
     return other?.ino === own.ino && other.dev === own.dev;
   });
-  return same.length === 0 ? [entry] : same.map((name) => join(dir, name));
+  // Directory order is unspecified; sorted, the alternatives read the same
+  // on every file system.
+  return same.length === 0
+    ? [entry]
+    : same.sort().map((name) => join(dir, name));
 }
 
 /** Links a resolution expands before giving up, as the kernel's SYMLOOP limit does. */
