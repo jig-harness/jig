@@ -235,12 +235,17 @@ The protocol, each step with its record:
    deadline and recorded as timed out. The `probe-base.ts` run of step 2 is
    bounded the same way: its `--timeout` applies to each of its calls, so
    `debug` runs the whole probe under the process deadline with the budget
-   left, and a probe cut off there could not decide. A probe killed that way
-   never reaches the `finally` blocks that remove its worktree, its scratch
-   directory and its `refs/probe-base/*` ref, so the probe records each of
-   them, with its own process identity, before creating it. A killed probe
-   can leave its Git, setup or test command running, because a descendant
-   outlives its parent (ADR-0008), so no holder may exist before its entry
+   left, and a probe cut off there could not decide. The probe records its
+   worktree, its scratch directory and its `refs/probe-base/*` ref, with
+   its own process identity, before creating each. A setup or test command
+   can leave a descendant running after it exits, and a killed probe can
+   leave its Git, setup or test command running, because a descendant
+   outlives its parent (ADR-0008); the same holds when the probe returns
+   normally, throws, or hits its own `--timeout`. So the probe removes none
+   of these resources on any path: the `finally` blocks that today run
+   `git worktree remove --force` and a recursive delete instead write the
+   probe's outcome into the record, and every resource the probe created
+   stays for the report below. No holder may exist before its entry
    does: before starting each command the probe writes a pending launch
    entry naming the command and itself, durably (written to a temporary
    file, flushed and renamed into place), then starts the command
@@ -261,9 +266,9 @@ The protocol, each step with its record:
    worktree, the scratch directory, the ref) for whoever has checked that
    nothing still uses it, since a holder no check can enumerate counts as
    live ([resource collection](resource-gc.md)). `debug` runs the report
-   after a probe the deadline ended and puts it in its hand-over, and every
-   probe runs it before starting and names a leftover it finds, so a probe
-   killed by any caller is reported by the next. The skill then
+   after every probe, however it ended, and puts it in its hand-over, and
+   every probe runs it before starting and names each leftover it finds, so
+   a probe that ended any way, under any caller, is reported by the next. The skill then
    posts the ledger where the work is tracked (the pull request when there
    is one, else the issue), names what it ruled out and what it would try
    next, and ends with the terminal state its caller understands: inside a
@@ -316,9 +321,12 @@ The protocol, each step with its record:
    reported live, by a probe killed after writing a pending entry and
    before recording a Git command's identity, and the same for a test
    command, reported unverified, by a command's child still alive in its
-   process group after the command exits, reported live, and by an
-   unreadable process table, reported unverified; no case removes
-   anything.
+   process group after the command exits, reported live, by a probe that
+   returns normally while a detached descendant of its test command still
+   uses the worktree, and by one that throws an internal error, each
+   leaving the worktree, scratch directory and ref in place and reported,
+   and by an unreadable process table, reported unverified; no case
+   removes anything.
 
 ## Left out
 
