@@ -246,22 +246,24 @@ The protocol, each step with its record:
    file, flushed and renamed into place), then starts the command
    asynchronously as the leader of its own process group, and only then
    adds the command's identity (process id and start time) to the entry
-   before waiting on it. `probe-base.ts --reconcile` removes a recorded
-   resource only when every entry proves its holders gone: the recorded
-   identity no longer running and, on POSIX, no process left in its process
-   group, which its descendants inherit. A pending entry that never gained
-   an identity is an unresolved registration: the probe died between
-   writing it and recording the command, and nothing can show whether the
-   command started, so the resource is never removed by reconciliation and
-   is reported as unverified for a person to clear. A descendant that
-   leaves its process group, and on Windows, which has none, any
-   descendant, is covered only by the captured-identity model, with the
-   race ADR-0008 accepts. A process table or
-   identity that cannot be read counts as a live holder, and the resource
-   is kept for the next reconciliation, as
-   [resource collection](resource-gc.md) requires. `debug` runs it after a probe the deadline ended,
-   and every probe runs it before starting, so a probe killed by any caller
-   is reclaimed by the next. The skill then
+   before waiting on it. Process evidence cannot prove that every holder
+   is gone: a descendant that leaves its process group, or on Windows any
+   descendant, survives the captured identities, and ADR-0008 accepts that
+   race only for cooperative cancellation, never as a licence to delete. So
+   `probe-base.ts --reconcile` only reports; it never removes a resource.
+   Per recorded resource it says whether every entry's holders were
+   observed gone (the recorded identity no longer running and, on POSIX, no
+   process left in its process group), whether one is still live, or
+   whether it is unverified: a pending entry that never gained an identity,
+   or a process table or identity that cannot be read. Removal is a
+   person's act: the report prints, per resource, the commands that remove
+   it (`git worktree remove` without `--force`, which refuses a dirty
+   worktree, the scratch directory, the ref) for whoever has checked that
+   nothing still uses it, since a holder no check can enumerate counts as
+   live ([resource collection](resource-gc.md)). `debug` runs the report
+   after a probe the deadline ended and puts it in its hand-over, and every
+   probe runs it before starting and names a leftover it finds, so a probe
+   killed by any caller is reported by the next. The skill then
    posts the ledger where the work is tracked (the pull request when there
    is one, else the issue), names what it ruled out and what it would try
    next, and ends with the terminal state its caller understands: inside a
@@ -308,14 +310,15 @@ The protocol, each step with its record:
    `fix-ci`, tests with a fixture repository whose failure needs attribution
    and one whose budget runs out, and `probe-base.ts`'s resource record and
    `--reconcile`, tested by a probe killed at its deadline during setup and
-   during the command, whose worktree, scratch directory and ref are gone
-   after reconciliation, by a probe killed while its test command keeps
-   running, whose resources reconciliation keeps until that command ends,
-   by a probe killed after writing a pending entry and before recording a
-   Git command's identity, and the same for a test command, whose resources
-   reconciliation keeps and reports as unverified, by a command's child
-   still alive in its process group after the command exits, which keeps
-   them, and by an unreadable process table, which keeps them too.
+   during the command, whose worktree, scratch directory and ref are
+   reported with their holders observed gone and are still present after
+   the report, by a probe killed while its test command keeps running,
+   reported live, by a probe killed after writing a pending entry and
+   before recording a Git command's identity, and the same for a test
+   command, reported unverified, by a command's child still alive in its
+   process group after the command exits, reported live, and by an
+   unreadable process table, reported unverified; no case removes
+   anything.
 
 ## Left out
 
