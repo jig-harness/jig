@@ -101,7 +101,7 @@ import { taxonomyFindings } from "./lib/taxonomy-fit.ts";
 import {
   configuredAt,
   ghJson,
-  namesReached,
+  trackedNeeds,
   newerInstalledVersion,
   onDisk,
   packageScripts,
@@ -458,20 +458,19 @@ function fileProblems(name: string, ctx: Context, direct: boolean): Problem[] {
   if (direct && process.platform !== "win32" && (stat.mode & 0o111) === 0)
     return [{ severity: "error", message: `${name} is not executable` }];
   if (isAbsolute(name)) return [];
-  const untracked = namesReached(ctx.root, name).filter(
-    (reached) => !reached.some((alternative) => ctx.tracked.has(alternative)),
-  );
-  if (untracked.length === 0) return [];
+  const { untracked, unsure } = trackedNeeds(ctx.root, name, ctx.tracked);
   const which = untracked.map((reached) => reached.join(" or ")).join(", ");
-  return [
-    {
-      severity: "warning",
-      message:
-        which === normalize(name).replaceAll("\\", "/")
-          ? `${name} is not tracked, so a fresh clone lacks it`
-          : `${name} reaches ${which}, which is not tracked, so a fresh clone lacks it`,
-    },
-  ];
+  const messages = unsure.map(
+    ({ reached, held }) =>
+      `${name} reaches one of ${reached.join(" or ")}, the same file, and only ${held.join(" or ")} is tracked; which name the lookup took cannot be told, so a fresh clone may lack it`,
+  );
+  if (untracked.length > 0)
+    messages.unshift(
+      which === normalize(name).replaceAll("\\", "/")
+        ? `${name} is not tracked, so a fresh clone lacks it`
+        : `${name} reaches ${which}, which is not tracked, so a fresh clone lacks it`,
+    );
+  return messages.map((message) => ({ severity: "warning", message }));
 }
 
 /** What a missing package script costs: `target` is the script's name. */

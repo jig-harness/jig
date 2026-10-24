@@ -41,8 +41,9 @@ release: patch
   its lookup reached, so any spelling it treats as the same name (final
   sigma `ς` for `σ`, for one) counts, and the audit never compares names by
   hand. A symbolic link with several names in one directory (hard links of
-  the link itself) cannot be asked which name the lookup reached, so either
-  name being tracked counts.
+  the link itself) cannot be asked which name the lookup reached: it counts
+  as tracked when every name is, and when only some are, the audit warns
+  that it cannot tell whether a fresh clone holds the one reached.
 - A relative `JIG_TRACE_FILE` now records the spans of the process that set
   it on Windows too.
 - The design-brief renderer waits for Chromium's debugging endpoint while

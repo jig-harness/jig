@@ -143,20 +143,39 @@ caseLinkTest(
   },
 );
 
-// A link with two names (hard links of the link itself) cannot be asked
-// which one scripts/LINK reached; either, tracked, is its name.
-caseLinkTest("a hard-linked link is tracked by either of its names", () => {
+/** A repository whose scripts/link → real has the hard link scripts/alias, `tracked` committed. */
+function twoNamedLink(tracked: string[]): string {
   const dir = committed({ "scripts/.keep": "", "real/check.ts": "" });
   symlinkSync(join(dir, "real"), join(dir, "scripts", "link"));
-  git(dir, "add", "--", "scripts/link");
-  git(dir, "commit", "-q", "-m", "link");
   const linked = spawnSync("ln", ["-P", "scripts/link", "scripts/alias"], {
     cwd: dir,
     encoding: "utf8",
   });
   expectSpawnExit({ ...linked, exitCode: linked.status }, 0, "ln -P");
+  git(dir, "add", "--", ...tracked);
+  git(dir, "commit", "-q", "-m", "link");
+  return dir;
+}
+
+// A link with two names (hard links of the link itself) cannot be asked
+// which one scripts/LINK reached: tracked only when both names are.
+caseLinkTest("a hard-linked link is tracked when both its names are", () => {
+  const dir = twoNamedLink(["scripts/link", "scripts/alias"]);
   expect(commandProblems("bun scripts/LINK/check.ts", dir)).toEqual([]);
 });
+
+caseLinkTest.each([["scripts/link"], ["scripts/alias"]])(
+  "a hard-linked link with only %s tracked is uncertain",
+  (tracked) => {
+    const dir = twoNamedLink([tracked]);
+    expect(commandProblems("bun scripts/LINK/check.ts", dir)).toEqual([
+      {
+        severity: "warning",
+        message: `scripts/LINK/check.ts reaches one of scripts/alias or scripts/link, the same file, and only ${tracked} is tracked; which name the lookup took cannot be told, so a fresh clone may lack it`,
+      },
+    ]);
+  },
+);
 
 /** A repository holding `tracked`, with `untracked` a hard link to it. */
 function hardLinked(tracked: string, untracked: string): string {

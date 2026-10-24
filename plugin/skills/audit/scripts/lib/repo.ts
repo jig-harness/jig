@@ -306,10 +306,10 @@ function components(path: string): string[] {
  * the platform resolves it: on POSIX component by component, so `..` climbs
  * out of where a link led; on Windows `..` is collapsed by text first.
  * Every name is the file system's spelling of what it reaches, never the
- * command's. Each need is a list of alternatives, one of which a fresh
- * clone must hold: a link with several names here is any of them
- * (`spelled`). Inside the repository only; a path that does not resolve, or
- * loops, needs nothing.
+ * command's. Each need is a list of alternatives, the names the entry
+ * reached may have: a link with several names here may be any of them
+ * (`spelled`), and which one cannot be told. Inside the repository only; a
+ * path that does not resolve, or loops, needs nothing.
  */
 export function namesReached(root: string, name: string): string[][] {
   const realRoot = realpathSync.native(root);
@@ -345,4 +345,25 @@ export function namesReached(root: string, name: string): string[][] {
   const file = inRepo(realRoot, real);
   if (file !== null) names.push([file]);
   return names;
+}
+
+/**
+ * The needs of `namesReached` a fresh clone holding `tracked` lacks: none
+ * of the names tracked, or, for a need with several names, only some. The
+ * lookup took one of those and cannot be asked which, so the tracked name
+ * may not be the one it took.
+ */
+export function trackedNeeds(
+  root: string,
+  name: string,
+  tracked: Set<string>,
+): { untracked: string[][]; unsure: { reached: string[]; held: string[] }[] } {
+  const untracked: string[][] = [];
+  const unsure: { reached: string[]; held: string[] }[] = [];
+  for (const reached of namesReached(root, name)) {
+    const held = reached.filter((alternative) => tracked.has(alternative));
+    if (held.length === 0) untracked.push(reached);
+    else if (held.length < reached.length) unsure.push({ reached, held });
+  }
+  return { untracked, unsure };
 }
