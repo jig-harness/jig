@@ -82,8 +82,7 @@ have little to work from.
     providers in the same way: Herdr, the [workspace runtime](GLOSSARY.md)
     Jig's tooling targets first
     ([ADR-0005](docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)),
-    gets the next provider (ROADMAP.md item 19), beside the Conductor
-    provider already built;
+    Orca, on this machine or on a paired Orca server, and Conductor;
   - the practices themselves name no tool, and each module maps them onto the
     common CI providers, hook managers, trackers and agent runtimes; the
     skills run in Claude Code and Codex, and some, such as `fix-ci` and
@@ -232,9 +231,9 @@ so any platform can supply it:
 
 - **Parallel workspaces**: many agents on one machine without colliding
   ([M12](modules/M12-parallel-agent-ergonomics/)). The plugin is installed once
-  per machine and needs no setup per workspace in Herdr, Conductor or any
-  other tool that creates worktrees and starts sessions with the user's own
-  agent configuration. A runner with its own configuration directory, a
+  per machine and needs no setup per workspace in Herdr, Orca, Conductor or
+  any other tool that creates worktrees and starts sessions with the user's
+  own agent configuration. A runner with its own configuration directory, a
   container, or a tool without plugin support needs the setup in
   [plugin/README.md § Where it works](plugin/README.md#where-it-works).
 - **Environments and deployment**: verify what merged, ship only what was

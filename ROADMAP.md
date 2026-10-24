@@ -173,7 +173,16 @@ alerts will.
 - **Gates and workspace infrastructure.** Locks shared across
   worktrees, remote gates, and a runnable form of
   [M12](modules/M12-parallel-agent-ergonomics/README.md)'s workspace
-  lifecycle for runtimes other than Herdr.
+  lifecycle for runtimes other than Herdr and Orca.
+- **Orca: what is left.** The [Orca workspace tool](tools/orca/README.md)
+  opens and removes worktrees and the launcher opens issues in Orca, on a
+  machine or on a paired Orca server. Still open: an agent's start recorded
+  on the server rather than on the launching machine, so two machines never
+  start it twice; reflection findings parked on a server's host before a
+  removal; the delivery skills showing their state on Orca's workspace board
+  and linking the pull request to the worktree; and the drive, pickup and
+  review skills checked inside Orca worktrees on a server, as item 19 does
+  for Herdr.
 - **Change-area consumer lint.** The
   [change-areas skill](plugin/skills/change-areas/README.md) checks the path
   lists in agent rules, hook configuration and CI workflow triggers against
