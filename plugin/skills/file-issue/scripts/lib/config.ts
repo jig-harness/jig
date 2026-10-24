@@ -31,6 +31,14 @@ export function taxonomySetting(values: Record<string, unknown>): string {
 
 /** The absolute path of the consumer's label taxonomy. */
 export function taxonomyPath(root = consumerRoot()): string {
-  const setting = taxonomySetting(readConfig());
+  return taxonomyAt(root, taxonomySetting(readConfig()));
+}
+
+/**
+ * The file a taxonomy `setting` names from `root`: absolute as written,
+ * relative joined to the root. The audit reads the taxonomy through this
+ * too, so it checks the file this skill uses.
+ */
+export function taxonomyAt(root: string, setting: string): string {
   return isAbsolute(setting) ? setting : join(root, setting);
 }

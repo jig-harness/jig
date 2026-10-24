@@ -922,6 +922,31 @@ describe("the live half through the command", () => {
     },
   );
 
+  test.each([["--states"], ["--config"]])(
+    "%s naming a file by an absolute path through another spelling of the repository's root is read",
+    (flag) => {
+      const r = repo(docs);
+      r.write(
+        "states.json",
+        JSON.stringify({ "ENG-1": "open", "ENG-2": "open", "ENG-3": "open" }),
+      );
+      const alias = `${r.dir}-alias`;
+      symlinkSync(r.dir, alias, "dir");
+      const states =
+        flag === "--states" ? join(alias, "states.json") : "states.json";
+      const config = join(
+        flag === "--config" ? alias : r.dir,
+        ".config/deferral-references.yaml",
+      );
+      const result = r.run(["--all", "--config", config, "--states", states]);
+      expectSpawnExit(result, 0);
+      expect(result.stdout).toBe(
+        "check-deferrals: 3 document(s), 2 deferral(s), 0 finding(s)\n",
+      );
+      expect(result.stderr).not.toContain("lies outside the repository");
+    },
+  );
+
   test("a link inside the repository to a file outside it is refused, unread", () => {
     const r = repo(docs);
     r.write("../linked.json", "{}");

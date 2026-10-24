@@ -2,7 +2,7 @@
 import { realpathSync } from "node:fs";
 import { isMapping } from "../../shared/config-layers.ts";
 import { GcError } from "../../shared/gc-error.ts";
-import { isAbsolute, relative, sep } from "node:path";
+import { isAbsolute, normalize, relative, sep } from "node:path";
 import { gcGit as git } from "../git.ts";
 import {
   worktreePolicy,
@@ -46,7 +46,8 @@ export function worktreesKind(
           const path = fields.find((field) => field.startsWith("worktree "));
           if (!path) throw new GcError("Malformed Git worktree record");
           return {
-            id: path.slice(9),
+            // Native separators: Git for Windows prints forward slashes.
+            id: normalize(path.slice(9)),
             details: {
               locked: fields.some(
                 (field) => field === "locked" || field.startsWith("locked "),
@@ -58,7 +59,9 @@ export function worktreesKind(
         throw new GcError("Git worktree inventory was empty or malformed");
       const canonical = roots.map((root) => {
         try {
-          return realpathSync(root);
+          // As git spells a worktree: links resolved and, on Windows, 8.3
+          // short names expanded.
+          return realpathSync.native(root);
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code === "ENOENT") return root;
           throw error;

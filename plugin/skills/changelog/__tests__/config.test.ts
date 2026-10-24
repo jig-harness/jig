@@ -293,7 +293,7 @@ describe("where the section is read from", () => {
       ".config/jig.yaml": jigYaml("  file: CHANGELOG.md\n  authors: nope"),
     });
     expect(() => loadChangelogConfig(root, env())).toThrow(
-      /changelog\.authors must be true or false: .*\.config\/jig\.yaml/,
+      /changelog\.authors must be true or false: .*\.config[\\/]jig\.yaml/,
     );
   });
 });

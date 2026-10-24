@@ -178,7 +178,7 @@ describe("configuration and failures", () => {
     - name: web
       paths: ["web/**"]
   default_area: other-code
-  classify_command: "${process.execPath} classify.ts"
+  classify_command: ${JSON.stringify(`"${process.execPath}" classify.ts`)}
 `,
       "classify.ts":
         'const lines = (await Bun.stdin.text()).split("\\n").filter(Boolean);\nfor (const p of lines) if (p.endsWith(".gen.txt")) console.log(JSON.stringify({ path: p, kind: "code", area: "web" }));\n',
@@ -202,12 +202,12 @@ describe("configuration and failures", () => {
     const run = runCli(root, ["--json"]);
     expectSpawnExit(run, 1);
     expect(run.stderr).toContain('code_stats.kinds has unknown kind "tests"');
-    expect(run.stderr).toContain(".config/jig.yaml");
+    expect(run.stderr).toContain(join(".config", "jig.yaml"));
   });
 
   test("a failing classify command fails the report", () => {
     const root = repository({
-      ".config/jig.yaml": `code_stats:\n  classify_command: "${process.execPath} fail.ts"\n`,
+      ".config/jig.yaml": `code_stats:\n  classify_command: ${JSON.stringify(`"${process.execPath}" fail.ts`)}\n`,
       "fail.ts": "console.error('no classification');\nprocess.exitCode = 4;\n",
     });
     const run = runCli(root, ["--json"]);
@@ -220,7 +220,7 @@ describe("configuration and failures", () => {
     "a tracked path holding a newline is refused when a classify command is set",
     () => {
       const root = repository({
-        ".config/jig.yaml": `code_stats:\n  classify_command: "${process.execPath} -e 0"\n`,
+        ".config/jig.yaml": `code_stats:\n  classify_command: ${JSON.stringify(`"${process.execPath}" -e 0`)}\n`,
         "odd\nname.txt": "x\n",
       });
       const run = runCli(root, ["--json"]);

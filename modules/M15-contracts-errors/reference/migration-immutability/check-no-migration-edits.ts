@@ -227,10 +227,14 @@ function parseArgs(args: string[]): Options {
   return { base, head, repo, match: pattern, dir };
 }
 
-/** `path` with symbolic links resolved where it exists, else as given. */
+/**
+ * `path` as the file system spells it where it exists, else as given: links
+ * resolved and, on Windows, 8.3 short names expanded, as git spells its top
+ * level.
+ */
 function realPath(path: string): string {
   try {
-    return realpathSync(path);
+    return realpathSync.native(path);
   } catch {
     return path;
   }

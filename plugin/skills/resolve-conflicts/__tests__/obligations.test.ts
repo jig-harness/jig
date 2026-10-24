@@ -1,11 +1,23 @@
 import { afterEach, expect, test } from "bun:test";
+import { rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import {
   parseObligations,
   runObligations,
 } from "../scripts/lib/obligations.ts";
 import { CONFIG_COMBINED, mergeConflict, Scratch } from "./scratch.ts";
+
+/**
+ * A command line sh and cmd.exe both run alike: Bun evaluating `js`, which
+ * holds no double quote, as the platform shell runs a configured command.
+ */
+const bunCommand = (js: string) => `"${process.execPath}" -e "${js}"`;
+
+/** A command that writes `text` and a newline to helper.txt. */
+const writeHelper = (text: string) =>
+  bunCommand(`require('node:fs').writeFileSync('helper.txt', '${text}\\n')`);
 
 let scratch: Scratch | undefined;
 afterEach(() => scratch?.cleanup());
@@ -40,11 +52,13 @@ test("commands run from the consumer root and surface failure while text checks 
     { check: "Read every resolved hunk" },
     {
       check: "Consumer file is present",
-      command: `"${process.execPath}" -e 'process.exit(require("node:fs").existsSync("expected.txt") ? 0 : 1)'`,
+      command: bunCommand(
+        "process.exit(require('node:fs').existsSync('expected.txt') ? 0 : 1)",
+      ),
     },
     {
       check: "Reject invalid result",
-      command: `"${process.execPath}" -e 'console.error("guard missing"); process.exit(7)'`,
+      command: bunCommand("console.error('guard missing'); process.exit(7)"),
     },
   ]);
   expect(results.map((result) => result.status)).toEqual([
@@ -113,7 +127,7 @@ test("runtime rejects malformed obligations with the configuration source", () =
   const run = scratch.script(join(scratch.root, "probe.ts"));
   expectSpawnExit({ ...run, exitCode: run.code }, 1);
   expect(run.stderr).toContain("resolve_conflicts.obligations[0].command");
-  expect(run.stderr).toContain(".config/jig.yaml");
+  expect(run.stderr).toContain(join(".config", "jig.yaml"));
 });
 
 function resolvedMerge(setup?: (s: Scratch) => void): Scratch {
@@ -159,7 +173,10 @@ test("CLI reports pending text and successful commands for the whole resolved me
 test("CLI blocks failed commands and emits no commit message", () => {
   const s = resolvedMerge();
   setObligations(s, [
-    { check: "Preserve guards", command: "echo missing-guard >&2; exit 7" },
+    {
+      check: "Preserve guards",
+      command: bunCommand("console.error('missing-guard'); process.exit(7)"),
+    },
   ]);
   const report = s.script("check-resolution.ts", ["--json"]);
   expectSpawnExit({ ...report, exitCode: report.code }, 1);
@@ -185,7 +202,8 @@ test("CLI rechecks staged provenance after a configured command", () => {
   setObligations(s, [
     {
       check: "Run repository check",
-      command: "echo unrelated > unrelated.txt; git add unrelated.txt",
+      // `&&` chains commands in sh and cmd.exe alike.
+      command: "echo unrelated> unrelated.txt && git add unrelated.txt",
     },
   ]);
   const run = s.script("check-resolution.ts", ["--json"]);
@@ -263,8 +281,8 @@ test("a command that changes a file stops the later commands, even when the file
     setup.commit("Add the helper", { "helper.txt": "staged\n" }),
   );
   setObligations(s, [
-    { check: "Prepare", command: "echo edited > helper.txt" },
-    { check: "Validate and restore", command: "echo staged > helper.txt" },
+    { check: "Prepare", command: writeHelper("edited") },
+    { check: "Validate and restore", command: writeHelper("staged") },
   ]);
   const run = s.script("check-resolution.ts", ["--json"]);
   expectSpawnExit({ ...run, exitCode: run.code }, 1);
@@ -404,39 +422,48 @@ for (const flag of ["--assume-unchanged", "--skip-worktree"])
     ]);
   });
 
-test("flagged files whose names hold a newline or start with a quote are compared literally", () => {
-  const newline = "a\nb.txt";
-  const quoted = '"quoted.txt';
-  const s = resolvedMerge((setup) =>
-    setup.commit("Add awkward names", {
-      [newline]: "staged\n",
-      [quoted]: "staged\n",
-    }),
-  );
-  s.git("update-index", "--skip-worktree", "--", newline, quoted);
-  setObligations(s, [{ check: "Validate", command: "true" }]);
-  let run = s.script("check-resolution.ts", ["--json"]);
-  expectSpawnExit({ ...run, exitCode: run.code }, 0);
+test.skipIf(
+  skipsOnWindows(
+    "file-system",
+    "Windows allows neither a newline nor a double quote in a file name",
+  ),
+)(
+  "flagged files whose names hold a newline or start with a quote are compared literally",
+  () => {
+    const newline = "a\nb.txt";
+    const quoted = '"quoted.txt';
+    const s = resolvedMerge((setup) =>
+      setup.commit("Add awkward names", {
+        [newline]: "staged\n",
+        [quoted]: "staged\n",
+      }),
+    );
+    s.git("update-index", "--skip-worktree", "--", newline, quoted);
+    setObligations(s, [{ check: "Validate", command: "true" }]);
+    let run = s.script("check-resolution.ts", ["--json"]);
+    expectSpawnExit({ ...run, exitCode: run.code }, 0);
 
-  s.write(newline, "edited on disk\n");
-  run = s.script("check-resolution.ts", ["--json"]);
-  expectSpawnExit({ ...run, exitCode: run.code }, 1);
-  const paths = JSON.parse(run.stdout).problems.map(
-    (p: { path: string }) => p.path,
-  );
-  expect(paths).toContain(newline);
-  expect(paths).not.toContain(quoted);
-});
+    s.write(newline, "edited on disk\n");
+    run = s.script("check-resolution.ts", ["--json"]);
+    expectSpawnExit({ ...run, exitCode: run.code }, 1);
+    const paths = JSON.parse(run.stdout).problems.map(
+      (p: { path: string }) => p.path,
+    );
+    expect(paths).toContain(newline);
+    expect(paths).not.toContain(quoted);
+  },
+);
 
 test("a flagged symlink checked out as a plain file under core.symlinks=false is compared as git checks it out", () => {
   const s = resolvedMerge((setup) => {
     setup.write("target.txt", "target\n");
-    setup.run("ln", ["-s", "target.txt", "link"]);
+    // A real link: Git Bash's `ln -s` copies the file on Windows.
+    symlinkSync("target.txt", join(setup.root, "link"));
     setup.git("add", "target.txt", "link");
     setup.git("commit", "-q", "-m", "Add the link");
   });
   s.git("config", "core.symlinks", "false");
-  s.run("rm", ["link"]);
+  rmSync(join(s.root, "link"));
   s.git("checkout", "--", "link");
   expect(s.read("link")).toBe("target.txt");
   s.git("update-index", "--assume-unchanged", "--", "link");

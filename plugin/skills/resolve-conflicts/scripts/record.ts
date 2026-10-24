@@ -22,6 +22,7 @@
  * operation in progress, no snapshot, or a snapshot of a different operation
  * (run conflict-map.ts).
  */
+import { realpathSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { mapConflicts } from "./conflict-map.ts";
 import { catalogGeneratedEntries } from "./lib/classify.ts";
@@ -133,7 +134,14 @@ async function main(): Promise<number> {
   const root = topLevel();
   if (root === null) fail(2, "record: not inside a git work tree.");
   const { snapshot, operation } = currentSnapshot("record", root);
-  const fromCwd = relative(root, resolve(given)).split(sep).join("/");
+  // Both sides as the file system spells them: git prints the top level with
+  // links resolved and, on Windows, 8.3 short names expanded.
+  const fromCwd = relative(
+    realpathSync.native(root),
+    resolve(realpathSync.native(process.cwd()), given),
+  )
+    .split(sep)
+    .join("/");
   const path = Object.hasOwn(snapshot.paths, given) ? given : fromCwd;
   const entry = mappedEntry(root, operation, snapshot, path, given);
 
