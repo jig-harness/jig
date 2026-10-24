@@ -1,4 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   linkSync,
@@ -7,6 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import { commandProblems } from "../scripts/config-fit.ts";
 import { git, scratchRepo } from "./helpers.ts";
@@ -140,6 +142,21 @@ caseLinkTest(
     expect(commandProblems("bun Scripts/LINK/Check.ts", dir)).toEqual([]);
   },
 );
+
+// A link with two names (hard links of the link itself) cannot be asked
+// which one scripts/LINK reached; either, tracked, is its name.
+caseLinkTest("a hard-linked link is tracked by either of its names", () => {
+  const dir = committed({ "scripts/.keep": "", "real/check.ts": "" });
+  symlinkSync(join(dir, "real"), join(dir, "scripts", "link"));
+  git(dir, "add", "--", "scripts/link");
+  git(dir, "commit", "-q", "-m", "link");
+  const linked = spawnSync("ln", ["-P", "scripts/link", "scripts/alias"], {
+    cwd: dir,
+    encoding: "utf8",
+  });
+  expectSpawnExit({ ...linked, exitCode: linked.status }, 0, "ln -P");
+  expect(commandProblems("bun scripts/LINK/check.ts", dir)).toEqual([]);
+});
 
 /** A repository holding `tracked`, with `untracked` a hard link to it. */
 function hardLinked(tracked: string, untracked: string): string {

@@ -459,10 +459,10 @@ function fileProblems(name: string, ctx: Context, direct: boolean): Problem[] {
     return [{ severity: "error", message: `${name} is not executable` }];
   if (isAbsolute(name)) return [];
   const untracked = namesReached(ctx.root, name).filter(
-    (reached) => !ctx.tracked.has(reached),
+    (reached) => !reached.some((alternative) => ctx.tracked.has(alternative)),
   );
   if (untracked.length === 0) return [];
-  const which = untracked.join(", ");
+  const which = untracked.map((reached) => reached.join(" or ")).join(", ");
   return [
     {
       severity: "warning",

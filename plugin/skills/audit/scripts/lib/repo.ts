@@ -265,17 +265,18 @@ function inRepo(realRoot: string, path: string): string | null {
  * on a case-insensitive file system `CHECK.ts` reaches the entry
  * `check.ts`, and the tracked name is the entry's. The file system names
  * the entry its own lookup chose (`realpath`), so no comparison is
- * emulated here. A symbolic link cannot be asked without following it: the
- * exact spelling, else the one entry here of the same file, else the
- * command's spelling.
+ * emulated here. A symbolic link cannot be asked without following it, so
+ * it is named by its exact spelling, else by every entry here of the same
+ * file: hard links of one link are indistinguishable without comparing
+ * names, and any of them may be the one the lookup chose.
  */
-function spelled(dir: string, segment: string, link: boolean): string {
+function spelled(dir: string, segment: string, link: boolean): string[] {
   const entry = join(dir, segment);
-  if (!link) return realpathSync.native(entry);
+  if (!link) return [realpathSync.native(entry)];
   const names = readdirSync(dir);
-  if (names.includes(segment)) return entry;
+  if (names.includes(segment)) return [entry];
   const own = lstatSync(entry, { bigint: true });
-  if (own.ino === 0n) return entry;
+  if (own.ino === 0n) return [entry];
   const same = names.filter((name) => {
     const other = lstatSync(join(dir, name), {
       bigint: true,
@@ -283,7 +284,7 @@ function spelled(dir: string, segment: string, link: boolean): string {
     });
     return other?.ino === own.ino && other.dev === own.dev;
   });
-  return same.length === 1 ? join(dir, same[0] as string) : entry;
+  return same.length === 0 ? [entry] : same.map((name) => join(dir, name));
 }
 
 /** Links a resolution expands before giving up, as the kernel's SYMLOOP limit does. */
@@ -305,15 +306,17 @@ function components(path: string): string[] {
  * the platform resolves it: on POSIX component by component, so `..` climbs
  * out of where a link led; on Windows `..` is collapsed by text first.
  * Every name is the file system's spelling of what it reaches, never the
- * command's. Inside the repository only; a path that does not resolve, or
+ * command's. Each need is a list of alternatives, one of which a fresh
+ * clone must hold: a link with several names here is any of them
+ * (`spelled`). Inside the repository only; a path that does not resolve, or
  * loops, needs nothing.
  */
-export function namesReached(root: string, name: string): string[] {
+export function namesReached(root: string, name: string): string[][] {
   const realRoot = realpathSync.native(root);
   const pending = components(
     process.platform === "win32" ? win32.normalize(name) : name,
   );
-  const names: string[] = [];
+  const names: string[][] = [];
   let real = realRoot;
   let links = 0;
   for (
@@ -327,19 +330,19 @@ export function namesReached(root: string, name: string): string[] {
     }
     const stat = lstatSync(join(real, segment), { throwIfNoEntry: false });
     if (stat === undefined) return [];
-    const entry = spelled(real, segment, stat.isSymbolicLink());
+    const entries = spelled(real, segment, stat.isSymbolicLink());
     if (!stat.isSymbolicLink()) {
-      real = entry;
+      real = entries[0] as string;
       continue;
     }
     if (++links > MAX_LINKS) return [];
-    const link = inRepo(realRoot, entry);
-    if (link !== null) names.push(link);
-    const target = readlinkSync(entry);
+    const link = entries.flatMap((entry) => inRepo(realRoot, entry) ?? []);
+    if (link.length > 0) names.push(link);
+    const target = readlinkSync(join(real, segment));
     if (isAbsolute(target)) real = parse(target).root;
     pending.unshift(...components(target));
   }
   const file = inRepo(realRoot, real);
-  if (file !== null) names.push(file);
+  if (file !== null) names.push([file]);
   return names;
 }
