@@ -23,7 +23,9 @@ consumer configuration, read at run time: from the consumer repository, or for
 a machine-level command such as the launcher, from the user's home.
 [plugin/](plugin/README.md) installs and checks the plugin on a machine and
 tests its layout. [launcher/](launcher/README.md) wires an issue tracker's "open in
-coding agent" button to a workspace on this machine.
+coding agent" button to a workspace on this machine, through the
+[herdr/](herdr/README.md) and [orca/](orca/README.md) workspace tools, which
+also open and remove worktree workspaces by hand.
 
 ## Runtime choice
 

@@ -370,6 +370,20 @@ describe("context", () => {
       entrypoint: null,
       wrapper: "herdr",
     });
+    expect(
+      detectHarness({ CLAUDECODE: "1", ORCA_WORKTREE_ID: "r::/w" }),
+    ).toEqual({
+      name: "claude-code",
+      version: null,
+      entrypoint: null,
+      wrapper: "orca",
+    });
+    expect(detectHarness({ ORCA_PANE_KEY: "t:p" })).toEqual({
+      name: null,
+      version: null,
+      entrypoint: null,
+      wrapper: "orca",
+    });
     expect(detectHarness({ HERDR_ENV: "0" })).toBeNull();
     expect(detectHarness({ PATH: "/bin" })).toBeNull();
   });

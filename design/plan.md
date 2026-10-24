@@ -428,7 +428,33 @@ unless the repository's effective CI policy requires that check.
 - **Gates and workspace infrastructure.** Cross-worktree locks and
   test infrastructure, remote gates, and a runnable form of
   [M12](../modules/M12-parallel-agent-ergonomics/README.md)'s workspace lifecycle
-  for runtimes other than Herdr, which has [one](../tools/herdr/README.md#the-worktree-hooks).
+  for runtimes other than Herdr and Orca, which have one
+  ([Herdr](../tools/herdr/README.md#the-worktree-hooks),
+  [Orca](../tools/orca/README.md)).
+- **Orca: what is left.** The [Orca workspace tool](../tools/orca/README.md)
+  and the launcher's `orca` provider open an issue's branch as an Orca
+  worktree, on a machine or on a paired Orca server, with the create hook
+  run and the agent started once per issue. Still open:
+  - the agent's start is recorded on the launching machine
+    (`~/.jig/orca/kickoff/`), so two machines opening one issue on the same
+    server each start an agent; record it on the server, as the Herdr tool
+    does on its host, once Orca offers a place to keep it or the tool runs
+    there;
+  - `remove` parks reflection findings only when the clone is on this
+    machine; on a server's host it says so and leaves them. Run the journal
+    there, as the Herdr tool runs on its host;
+  - `do-item` and `drive-pr` could show their state on Orca's workspace
+    board (`orca worktree set --workspace-status`) and link the pull request
+    to the worktree (`orca reference add`), and the tracker's GitHub issues
+    could be linked with `--issue`; bring these in once a consumer runs its
+    work in Orca and wants them;
+  - a worktree created in the Orca app gets Orca's branch name and Orca's
+    own setup hook, not the repository's convention and create hook; say in
+    M12's mappings how a repository's `orca.yaml` setup script and Orca's
+    branch-prefix setting approximate them, once validated in a consumer;
+  - the drive, pickup and review skills checked inside Orca worktrees on a
+    server, as item 19 does for Herdr, and the launcher's Orca provider
+    tried on Windows.
 - **Change-area consumer lint.** The `lint-consumers` check moves into the
   [change-areas skill](../plugin/skills/change-areas/README.md): the path
   lists in agent rules, hook configuration and CI workflow triggers checked
