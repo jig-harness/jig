@@ -240,14 +240,23 @@ The protocol, each step with its record:
    directory and its `refs/probe-base/*` ref, so the probe records each of
    them, with its own process identity, before creating it. A killed probe
    can leave its Git, setup or test command running, because a descendant
-   outlives its parent (ADR-0008), so the probe starts each command
-   asynchronously and adds its identity (process id and start time) to the
-   record as it starts, before waiting on it. `probe-base.ts --reconcile`
-   removes a recorded resource only when every holder is proved gone: each
-   recorded identity no longer running, and no process with its working
-   directory or an open file inside the worktree or the scratch directory,
-   which also covers a command started in the instant before its identity
-   was written and anything that command started. A process table or
+   outlives its parent (ADR-0008), so no holder may exist before its entry
+   does: before starting each command the probe writes a pending launch
+   entry naming the command and itself, durably (written to a temporary
+   file, flushed and renamed into place), then starts the command
+   asynchronously as the leader of its own process group, and only then
+   adds the command's identity (process id and start time) to the entry
+   before waiting on it. `probe-base.ts --reconcile` removes a recorded
+   resource only when every entry proves its holders gone: the recorded
+   identity no longer running and, on POSIX, no process left in its process
+   group, which its descendants inherit. A pending entry that never gained
+   an identity is an unresolved registration: the probe died between
+   writing it and recording the command, and nothing can show whether the
+   command started, so the resource is never removed by reconciliation and
+   is reported as unverified for a person to clear. A descendant that
+   leaves its process group, and on Windows, which has none, any
+   descendant, is covered only by the captured-identity model, with the
+   race ADR-0008 accepts. A process table or
    identity that cannot be read counts as a live holder, and the resource
    is kept for the next reconciliation, as
    [resource collection](resource-gc.md) requires. `debug` runs it after a probe the deadline ended,
@@ -302,7 +311,11 @@ The protocol, each step with its record:
    during the command, whose worktree, scratch directory and ref are gone
    after reconciliation, by a probe killed while its test command keeps
    running, whose resources reconciliation keeps until that command ends,
-   and by an unreadable process table, which keeps them too.
+   by a probe killed after writing a pending entry and before recording a
+   Git command's identity, and the same for a test command, whose resources
+   reconciliation keeps and reports as unverified, by a command's child
+   still alive in its process group after the command exits, which keeps
+   them, and by an unreadable process table, which keeps them too.
 
 ## Left out
 
