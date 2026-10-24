@@ -235,9 +235,13 @@ The protocol, each step with its record:
    deadline and recorded as timed out. The `probe-base.ts` run of step 2 is
    bounded the same way: its `--timeout` applies to each of its calls, so
    `debug` runs the whole probe under the process deadline with the budget
-   left, and a probe cut off there could not decide. The probe records its
+   left, and a probe cut off there could not decide. Every record the
+   probe writes is durable before the step it guards: written to a
+   temporary file, flushed and renamed into place. The probe records its
    worktree, its scratch directory and its `refs/probe-base/*` ref, with
-   its own process identity, before creating each. A setup or test command
+   its own process identity, that way before creating each, so a probe
+   killed at any point leaves no resource without a record; a resource
+   recorded and never created is reported as absent. A setup or test command
    can leave a descendant running after it exits, and a killed probe can
    leave its Git, setup or test command running, because a descendant
    outlives its parent (ADR-0008); the same holds when the probe returns
@@ -247,8 +251,8 @@ The protocol, each step with its record:
    probe's outcome into the record, and every resource the probe created
    stays for the report below. No holder may exist before its entry
    does: before starting each command the probe writes a pending launch
-   entry naming the command and itself, durably (written to a temporary
-   file, flushed and renamed into place), then starts the command
+   entry naming the command and itself, durably in the same way, then
+   starts the command
    asynchronously as the leader of its own process group, and only then
    adds the command's identity (process id and start time) to the entry
    before waiting on it. Process evidence cannot prove that every holder
@@ -314,8 +318,10 @@ The protocol, each step with its record:
 4. **`debug`.** The skill, the ledger, the budget, the hand-off from
    `fix-ci`, tests with a fixture repository whose failure needs attribution
    and one whose budget runs out, and `probe-base.ts`'s resource record and
-   `--reconcile`, tested by a probe killed at its deadline during setup and
-   during the command, whose worktree, scratch directory and ref are
+   `--reconcile`, tested by a probe killed after durably recording a
+   resource and before creating it, reported absent, by one killed right
+   after creating it, reported with its record, by a probe killed at its
+   deadline during setup and during the command, whose worktree, scratch directory and ref are
    reported with their holders observed gone and are still present after
    the report, by a probe killed while its test command keeps running,
    reported live, by a probe killed after writing a pending entry and
