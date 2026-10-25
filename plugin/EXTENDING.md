@@ -443,7 +443,7 @@ every night, where Windows leaves out only the suites listed in
 | The Herdr workspace tool | yes | yes | no | Herdr's Windows support is in beta and not yet a target |
 | The Orca workspace tool | yes | yes | not tested | Orca runs on Windows, but the tool's hook and SSH steps are POSIX shell |
 | Every other skill | yes | yes | yes | — |
-| Developing Jig (`bun run gates`) | yes | yes | yes, without the launcher's and the Herdr tool's suites | — |
+| Developing Jig (`bun run gates`) | yes | yes | yes, without the launcher's, the Herdr tool's and the Orca tool's suites | — |
 
 The supervision code finds and stops Windows processes from native snapshots
 and a polled stop request. Batch command shims run through `cmd.exe`; skill
