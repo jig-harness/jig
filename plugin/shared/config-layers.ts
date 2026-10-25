@@ -113,7 +113,13 @@ export function isMapping(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-function nonEmpty(value: string | undefined): string | undefined {
+/**
+ * A layer-selection variable's value, or undefined when it is unset or
+ * blank: how every such variable (`JIG_HOME`, `JIG_OVERLAY`,
+ * `JIG_USER_LAYER`) is read, here and by a reader that selects the layers of
+ * another machine from that machine's environment.
+ */
+export function nonEmpty(value: string | undefined): string | undefined {
   return value === undefined || value.trim() === "" ? undefined : value;
 }
 

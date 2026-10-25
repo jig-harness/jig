@@ -99,23 +99,32 @@ worktree's local branch when it can tell the branch is merged, and keeps it
 otherwise. Parking runs the reflection journal in this process, so it
 happens only when the clone is on this machine. On a server's host the tool
 reads the worktree's journal over SSH, where the configuration on the host
-puts it: `reflection.journal` in the worktree's `.config/jig.yaml`, else in
-the host user's `~/.jig/jig.yaml` (`JIG_HOME` moves it), else the journal's
-default place in the worktree's git directory; a `JIG__…` variable of a
-session on the host is not seen. It refuses the removal while unsent
-findings are in the journal, since removing the worktree would delete them:
-run `/jig:reflect` in the worktree there, or park them there with the
-reflect skill's `journal.ts park`, and remove it again. It refuses as well
-while it cannot tell where the journal is: a configuration file on the host
-it cannot read or parse, or a `reflection.journal` that is not a path. Once
-the worktree is gone, the receipts of the agents started in it are set aside
-(below), so the next open of their keys starts an agent again.
+puts it, choosing the configuration files as the reflect skill chooses them
+there from the host's environment (what its non-interactive shell exports):
+`reflection.journal` in the worktree's `.config/jig.yaml`, or in the file
+`JIG_OVERLAY` names instead, else in the host user's `~/.jig/jig.yaml`
+(`JIG_HOME` moves it; `JIG_USER_LAYER=off` leaves it out), else the
+journal's default place in the worktree's git directory. A path setting is
+expanded as the skill expands it: `~` is the host's home directory, a
+relative path the worktree's. A `JIG__…` variable of a session on the host
+is not seen. It refuses the removal while unsent findings are in the
+journal, since removing the worktree would delete them: run `/jig:reflect`
+in the worktree there, or park them there with the reflect skill's
+`journal.ts park`, and remove it again. It refuses as well while it cannot
+tell where the journal is, or whether it is there: a configuration file on
+the host it cannot read or parse, a `reflection.journal` that is not a path,
+a relative `JIG_HOME` or `JIG_OVERLAY` (a session there resolves one against
+its own directory), a path it cannot inspect (a parent it may not search, a
+filesystem error), or a directory or special file where a configuration file
+or the journal should be. Only a path the host reports nothing at counts as
+absent. Once the worktree is gone, the receipts of the agents started in it
+are set aside (below), so the next open of their keys starts an agent again.
 
 **`--environment`** names a paired Orca server (`orca environment list`), so
 Orca's tool runs here and reaches the server, and the worktree is created on
 the server's machine. Git and the hooks must run where the clone is, so
 `--ssh` names that machine's SSH destination, which needs `git` and a POSIX
-shell (`sh`, `test`, `mkdir`, `rm`, `cat`) on the `PATH` of a
+shell (`sh`, `test`, `mkdir`, `rm`, `cat`, `ls`, `env`) on the `PATH` of a
 non-interactive SSH session and an SSH key the caller can use without a
 prompt, and nothing from Jig. A path Orca reports is a path on the server.
 
@@ -136,9 +145,11 @@ so the tool keeps its own record, a **receipt** per key and agent, in
 `~/.jig/orca/kickoff/local/<repository id>/<key>.<agent>.json` for Orca on
 this machine and `~/.jig/orca/kickoff/server/<name>/<repository id>/…` for
 a paired server (`JIG_HOME` moves `~/.jig`; a name is percent-encoded where
-it holds anything but letters, digits, `.`, `_` and `-`), written on the
-machine the tool runs on. The repository id is Orca's, so the same key in
-two repositories is two starts, and so are two agents on one key.
+it holds anything but letters, digits, `_` and `-`, so the `.` between the
+key, the agent and `json` is the only one in the file name, and `ENG-1.a`
+with agent `b` is not `ENG-1` with agent `a.b`), written on the machine the
+tool runs on. The repository id is Orca's, so the same key in two
+repositories is two starts, and so are two agents on one key.
 
 - An open with a `--key` and no receipt creates one as pending, which
   succeeds for exactly one open at a time, starts the agent, and completes
@@ -156,16 +167,18 @@ two repositories is two starts, and so are two agents on one key.
   fixed.
 - A receipt for a worktree that is gone is set aside beside it, and the
   start recorded anew. `remove` sets aside the receipts of the worktree it
-  removed, under a dated name. An open that found the branch in another
-  checkout sets aside a receipt naming a different worktree; one that had
-  to create the worktree sets aside the receipt it found before creating
-  it, which records an agent in the worktree that stood at that path
-  before, while a receipt another open wrote since, for the new worktree,
-  records a start in it and stands. Setting a receipt aside succeeds for
-  exactly one open: the stale receipt is linked under a name carrying the
-  start it records, which only the first open to try can do, and that
-  open's pending receipt then takes its place without the file being absent
-  in between. A second open that read the same stale receipt waits for the
+  removed, under a dated name. An open that finds the branch in no worktree
+  sets aside the key's receipt, which records an agent in a worktree that is
+  gone or no longer holds the branch, *before* it creates one: Orca gives a
+  worktree at the same path the same id, and a step that fails after the
+  creation (the create hook, say, or the open's process ending) must not
+  leave the old receipt for the next open, which reattaches, to read as the
+  new worktree's own. An open that found the branch in another checkout sets
+  aside a receipt naming a different worktree, and its pending receipt takes
+  the stale one's place without the file being absent in between. Setting a
+  receipt aside succeeds for exactly one open: the stale receipt is linked
+  under a name carrying the start it records, which only the first open to
+  try can do. A second open that read the same stale receipt waits for the
   replacement (2 minutes at most), then finds the start made; the message
   past that names the copy to remove when the open that made it never
   finished.

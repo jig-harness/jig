@@ -17,7 +17,12 @@ import {
   ok,
 } from "../../herdr/__tests__/fake.ts";
 import type { RunResult } from "../../herdr/runner.ts";
-import { CREATE_HOOK_CLAIM, CREATE_HOOK_MARK } from "../hooks.ts";
+import {
+  CREATE_HOOK_CLAIM,
+  CREATE_HOOK_MARK,
+  HOST_ENVIRONMENT_SCRIPT,
+  inspectCommand,
+} from "../hooks.ts";
 import { fileSegment, type Receipt, receiptPath } from "../receipts.ts";
 import { remoteHook, type Workspace } from "../runner.ts";
 import type { OpenOptions } from "../workspace.ts";
@@ -35,10 +40,29 @@ export const CLAIM = `${GIT_DIR}/${CREATE_HOOK_CLAIM}`;
 export const JOURNAL = `${GIT_DIR}/${DEFAULT_JOURNAL_IN_GIT_DIR}`;
 /** The worktree's own Jig configuration on the host. */
 export const REPO_CONFIG = `${WT}/.config/jig.yaml`;
-/** The host user's Jig configuration, where the host's shell says it is. */
+/** The host user's Jig configuration, under the home directory the host's shell reports. */
 export const USER_CONFIG = "/home/me/.jig/jig.yaml";
-export const userConfigPath = `sh -c printf %s "\${JIG_HOME:-$HOME/.jig}/jig.yaml"`;
-export const hostHome = 'sh -c printf %s "$HOME"';
+/** The host's shell asked for its layer-selection variables and home directory. */
+export const hostEnv = `sh -c ${HOST_ENVIRONMENT_SCRIPT}`;
+type HostVariable = "HOME" | "JIG_HOME" | "JIG_OVERLAY" | "JIG_USER_LAYER";
+/** The host's answer: each variable's value NUL-terminated, an unset one empty. */
+export const hostEnvOf = (
+  vars: Partial<Record<HostVariable, string>> = { HOME: "/home/me" },
+): RunResult =>
+  ok(
+    (["HOME", "JIG_HOME", "JIG_OVERLAY", "JIG_USER_LAYER"] as HostVariable[])
+      .map((name) => `${vars[name] ?? ""}\0`)
+      .join(""),
+  );
+/** The host asked what is at a path. */
+export const inspect = (path: string): string => inspectCommand(path).join(" ");
+/** The host's listing of a regular file, a directory, and its message that nothing is there. */
+export const isFile = ok("-rw-r--r--  1 me  staff  12 Jan  1 00:00 x\n");
+export const isDir = ok("drwxr-xr-x  3 me  staff  96 Jan  1 00:00 x\n");
+export const absent = fail(
+  2,
+  "ls: cannot access 'x': No such file or directory\n",
+);
 
 /** An Orca success envelope. */
 export const answer = (result: unknown): RunResult =>
@@ -155,8 +179,9 @@ export function workspaceOf(
   table: Record<string, Answer>,
   environment?: string,
   ssh?: string,
+  stateDir = mkdtempSync(join(tmpdir(), "orca-state-")),
 ): Workspace & { ctx: FakeContext } {
-  const ctx = fakeContext(table, mkdtempSync(join(tmpdir(), "orca-state-")));
+  const ctx = fakeContext(table, stateDir);
   return {
     ctx,
     orca: ctx,

@@ -23,7 +23,12 @@ import {
   GIT_DIR,
   gitDir,
   gitList,
-  hostHome,
+  hostEnv,
+  hostEnvOf,
+  inspect,
+  isFile,
+  isDir,
+  absent,
   ID,
   JOURNAL,
   list,
@@ -40,7 +45,6 @@ import {
   sentReceipt,
   show,
   USER_CONFIG,
-  userConfigPath,
   workspaceOf,
   writeReceiptFile,
   WT,
@@ -58,10 +62,10 @@ describe("remove", () => {
     [list]: answer({ worktrees: [row(B)] }),
     [`test -x ${WT}/.config/worktree-hooks/remove`]: fail(1),
     // The host's configuration names no journal, so the default is looked at.
-    [userConfigPath]: ok(USER_CONFIG),
-    [`test -f ${USER_CONFIG}`]: fail(1),
-    [`test -f ${REPO_CONFIG}`]: fail(1),
-    [`test -f ${JOURNAL}`]: fail(1),
+    [hostEnv]: hostEnvOf(),
+    [inspect(USER_CONFIG)]: absent,
+    [inspect(REPO_CONFIG)]: absent,
+    [inspect(JOURNAL)]: absent,
     [`orca worktree rm --worktree id:${ID} --json`]: answer({ removed: true }),
   });
   const removing = { repo: "app", branch: B, force: false };
@@ -120,7 +124,7 @@ describe("remove", () => {
     const ws = workspaceOf(
       {
         ...removable,
-        [`test -f ${JOURNAL}`]: ok(),
+        [inspect(JOURNAL)]: isFile,
         [`cat ${JOURNAL}`]: journalOf(finding),
       },
       "box",
@@ -136,7 +140,7 @@ describe("remove", () => {
     const ws = workspaceOf(
       {
         ...removable,
-        [`test -f ${JOURNAL}`]: ok(),
+        [inspect(JOURNAL)]: isFile,
         [`cat ${JOURNAL}`]: journalOf(finding, contributed),
       },
       "box",
@@ -153,11 +157,11 @@ describe("remove", () => {
     const ws = workspaceOf(
       {
         ...removable,
-        [`test -f ${REPO_CONFIG}`]: ok(),
+        [inspect(REPO_CONFIG)]: isFile,
         [`cat ${REPO_CONFIG}`]: ok(
           "reflection:\n  enabled: false\n  journal: .context/reflection.jsonl\n",
         ),
-        [`test -f ${configured}`]: ok(),
+        [inspect(configured)]: isFile,
         [`cat ${configured}`]: journalOf(finding),
       },
       "box",
@@ -166,7 +170,7 @@ describe("remove", () => {
     await expect(removeWorkspace(ws, removing)).rejects.toThrow(
       `${WT} has 1 unsent reflection finding(s) in ${configured}`,
     );
-    expect(ws.ctx.calls).not.toContain(`test -f ${JOURNAL}`);
+    expect(ws.ctx.calls).not.toContain(inspect(JOURNAL));
     expect(ws.ctx.calls).not.toContain(rm);
   });
 
@@ -174,39 +178,37 @@ describe("remove", () => {
     const ws = workspaceOf(
       {
         ...removable,
-        [`test -f ${USER_CONFIG}`]: ok(),
+        [inspect(USER_CONFIG)]: isFile,
         [`cat ${USER_CONFIG}`]: ok(
           "reflection:\n  journal: ~/journals/app.jsonl\n",
         ),
-        [hostHome]: ok("/home/me\n"),
-        "test -f /home/me/journals/app.jsonl": fail(1),
+        [inspect("/home/me/journals/app.jsonl")]: absent,
       },
       "box",
       "box",
     );
     expect(await removeWorkspace(ws, removing)).toBe(WT);
-    expect(ws.ctx.calls).toContain("test -f /home/me/journals/app.jsonl");
-    expect(ws.ctx.calls).not.toContain(`test -f ${JOURNAL}`);
+    expect(ws.ctx.calls).toContain(inspect("/home/me/journals/app.jsonl"));
+    expect(ws.ctx.calls).not.toContain(inspect(JOURNAL));
     // The worktree's own setting is laid over the user's.
     const over = workspaceOf(
       {
         ...removable,
-        [`test -f ${USER_CONFIG}`]: ok(),
+        [inspect(USER_CONFIG)]: isFile,
         [`cat ${USER_CONFIG}`]: ok(
           "reflection:\n  journal: ~/journals/app.jsonl\n",
         ),
-        [`test -f ${REPO_CONFIG}`]: ok(),
+        [inspect(REPO_CONFIG)]: isFile,
         [`cat ${REPO_CONFIG}`]: ok(
           "reflection:\n  journal: /srv/journals/app.jsonl\n",
         ),
-        "test -f /srv/journals/app.jsonl": fail(1),
+        [inspect("/srv/journals/app.jsonl")]: absent,
       },
       "box",
       "box",
     );
     expect(await removeWorkspace(over, removing)).toBe(WT);
-    expect(over.ctx.calls).toContain("test -f /srv/journals/app.jsonl");
-    expect(over.ctx.calls).not.toContain(hostHome);
+    expect(over.ctx.calls).toContain(inspect("/srv/journals/app.jsonl"));
   });
 
   test("on a server refuses while it cannot tell where the journal is", async () => {
@@ -220,14 +222,14 @@ describe("remove", () => {
       const ws = workspaceOf(
         {
           ...removable,
-          [`test -f ${REPO_CONFIG}`]: ok(),
+          [inspect(REPO_CONFIG)]: isFile,
           [`cat ${REPO_CONFIG}`]: config,
         },
         "box",
         "box",
       );
       await expect(removeWorkspace(ws, removing)).rejects.toThrow(message);
-      expect(ws.ctx.calls).not.toContain(`test -f ${JOURNAL}`);
+      expect(ws.ctx.calls).not.toContain(inspect(JOURNAL));
       expect(ws.ctx.calls).not.toContain(rm);
     }
   });
@@ -236,7 +238,7 @@ describe("remove", () => {
     const ws = workspaceOf(
       {
         ...removable,
-        [`test -f ${JOURNAL}`]: ok(),
+        [inspect(JOURNAL)]: isFile,
         [`cat ${JOURNAL}`]: fail(1, "Permission denied"),
       },
       "box",
@@ -246,6 +248,143 @@ describe("remove", () => {
       `cannot read ${JOURNAL} on box`,
     );
     expect(ws.ctx.calls).not.toContain(rm);
+  });
+
+  test("on a server leaves the user's layer out under JIG_USER_LAYER=off and reads the file JIG_OVERLAY names as the worktree's", async () => {
+    const overlay = "/etc/jig/app.yaml";
+    const ws = workspaceOf(
+      {
+        ...removable,
+        [hostEnv]: hostEnvOf({
+          HOME: "/home/me",
+          JIG_USER_LAYER: "off",
+          JIG_OVERLAY: overlay,
+        }),
+        [inspect(overlay)]: isFile,
+        [`cat ${overlay}`]: ok(
+          "reflection:\n  journal: /srv/journals/app.jsonl\n",
+        ),
+        [inspect("/srv/journals/app.jsonl")]: absent,
+      },
+      "box",
+      "box",
+    );
+    expect(await removeWorkspace(ws, removing)).toBe(WT);
+    expect(ws.ctx.calls).toContain(inspect("/srv/journals/app.jsonl"));
+    expect(ws.ctx.calls).not.toContain(inspect(USER_CONFIG));
+    expect(ws.ctx.calls).not.toContain(inspect(REPO_CONFIG));
+    expect(ws.ctx.calls).not.toContain(inspect(JOURNAL));
+  });
+
+  test("on a server reads the user's configuration where JIG_HOME puts it, and expands a path setting as the reflect skill does", async () => {
+    // `~\` names the home directory too, on every operating system.
+    const ws = workspaceOf(
+      {
+        ...removable,
+        [hostEnv]: hostEnvOf({ HOME: "/home/me", JIG_HOME: "/opt/jig" }),
+        [inspect("/opt/jig/jig.yaml")]: isFile,
+        "cat /opt/jig/jig.yaml": ok(
+          "reflection:\n  journal: '~\\journals/app.jsonl'\n",
+        ),
+        [inspect("/home/me/journals/app.jsonl")]: absent,
+      },
+      "box",
+      "box",
+    );
+    expect(await removeWorkspace(ws, removing)).toBe(WT);
+    expect(ws.ctx.calls).toContain(inspect("/home/me/journals/app.jsonl"));
+    expect(ws.ctx.calls).not.toContain(inspect(USER_CONFIG));
+    expect(ws.ctx.calls).not.toContain(inspect(JOURNAL));
+  });
+
+  test("on a server refuses while the host's environment leaves the layers in doubt", async () => {
+    const cases: [RunResult, string][] = [
+      [
+        hostEnvOf({ HOME: "/home/me", JIG_HOME: "jig" }),
+        'JIG_HOME on box is the relative path "jig"',
+      ],
+      [
+        hostEnvOf({ HOME: "/home/me", JIG_OVERLAY: ".config/other.yaml" }),
+        'JIG_OVERLAY on box is the relative path ".config/other.yaml"',
+      ],
+      [
+        hostEnvOf({ HOME: "/home/me", JIG_USER_LAYER: "maybe" }),
+        "JIG_USER_LAYER must be off or unset",
+      ],
+      [hostEnvOf({}), "the home directory on box"],
+      [ok("/home/me\0"), "cannot read the environment of box"],
+      [fail(1, "sh: not found"), "cannot read the environment of box"],
+    ];
+    for (const [environment, message] of cases) {
+      const ws = workspaceOf(
+        { ...removable, [hostEnv]: environment },
+        "box",
+        "box",
+      );
+      await expect(removeWorkspace(ws, removing)).rejects.toThrow(message);
+      await expect(removeWorkspace(ws, removing)).rejects.toThrow(
+        "so the worktree is not removed",
+      );
+      expect(ws.ctx.calls.some((c) => c.startsWith("env LC_ALL=C ls"))).toBe(
+        false,
+      );
+      expect(ws.ctx.calls).not.toContain(rm);
+    }
+  });
+
+  test("on a server refuses while it cannot tell what is at a configuration file or the journal", async () => {
+    const denied = fail(2, "ls: cannot access 'x': Permission denied\n");
+    const cases: [Record<string, Answer>, string][] = [
+      [
+        { [inspect(REPO_CONFIG)]: denied },
+        `cannot tell what is at ${REPO_CONFIG}`,
+      ],
+      [
+        { [inspect(USER_CONFIG)]: denied },
+        `cannot tell what is at ${USER_CONFIG}`,
+      ],
+      [{ [inspect(JOURNAL)]: denied }, `cannot tell what is at ${JOURNAL}`],
+      [
+        { [inspect(JOURNAL)]: fail(1, "") },
+        `cannot tell what is at ${JOURNAL}`,
+      ],
+      [
+        { [inspect(REPO_CONFIG)]: isDir },
+        `${REPO_CONFIG} on box is a directory, not a configuration file`,
+      ],
+      [
+        { [inspect(JOURNAL)]: isDir },
+        `${JOURNAL} on box is a directory, not a reflection journal`,
+      ],
+      [
+        {
+          [inspect(JOURNAL)]: ok("srw-rw-rw-  1 me  staff  0 Jan  1 00:00 x\n"),
+        },
+        `${JOURNAL} on box is a special file, not a reflection journal`,
+      ],
+    ];
+    for (const [answers, message] of cases) {
+      const ws = workspaceOf({ ...removable, ...answers }, "box", "box");
+      await expect(removeWorkspace(ws, removing)).rejects.toThrow(message);
+      expect(ws.ctx.calls).not.toContain(rm);
+      expect(ws.ctx.calls).not.toContain(`cat ${JOURNAL}`);
+    }
+  });
+
+  test("on a server reads a journal path that runs through a file as no journal", async () => {
+    const ws = workspaceOf(
+      {
+        ...removable,
+        [inspect(JOURNAL)]: fail(
+          2,
+          `ls: cannot access '${JOURNAL}': Not a directory\n`,
+        ),
+      },
+      "box",
+      "box",
+    );
+    expect(await removeWorkspace(ws, removing)).toBe(WT);
+    expect(ws.ctx.calls).toContain(rm);
   });
 
   test("refuses a worktree with uncommitted changes unless forced", async () => {
@@ -371,10 +510,10 @@ describe("Orca's command", () => {
           [commonDir(WT)]: ok("/repo/.git\n"),
           [list]: answer({ worktrees: [row(B)] }),
           [`test -x ${WT}/.config/worktree-hooks/remove`]: fail(1),
-          [userConfigPath]: ok(USER_CONFIG),
-          [`test -f ${USER_CONFIG}`]: fail(1),
-          [`test -f ${REPO_CONFIG}`]: fail(1),
-          [`test -f ${JOURNAL}`]: fail(1),
+          [hostEnv]: hostEnvOf(),
+          [inspect(USER_CONFIG)]: absent,
+          [inspect(REPO_CONFIG)]: absent,
+          [inspect(JOURNAL)]: absent,
         }),
         [`orca worktree rm --worktree id:${ID} --environment box --json`]:
           ok('{"ok":false}'),

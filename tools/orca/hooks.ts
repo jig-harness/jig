@@ -8,9 +8,11 @@ import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import {
   mergeLayers,
+  nonEmpty,
   OVERLAY_RELPATH,
   parseConfigText,
   USER_CONFIG_FILE,
+  userLayerEnabled,
   valueAt,
 } from "../../plugin/shared/config-layers.ts";
 import { DEFAULT_JOURNAL_IN_GIT_DIR } from "../../plugin/skills/reflect/scripts/lib/context.ts";
@@ -18,6 +20,7 @@ import {
   readJournal,
   unsent,
 } from "../../plugin/skills/reflect/scripts/lib/journal.ts";
+import { expandPathWith } from "../../plugin/skills/reflect/scripts/lib/settings.ts";
 import { HOOK_TIMEOUT_MS, HOOKS_DIR } from "../herdr/lifecycle.ts";
 import { shellQuote } from "../herdr/remote.ts";
 import { budget, output } from "../herdr/runner.ts";
@@ -32,16 +35,45 @@ export const CREATE_HOOK_MARK = "jig-orca-create-hook";
  */
 export const CREATE_HOOK_CLAIM = `${CREATE_HOOK_MARK}.claim`;
 
-/** Whether `file` passes `test <flag>` on the host; any answer but yes or no is an error. */
+/** What is at a path on the host, or that nothing is. */
+export type PathKind = "file" | "directory" | "other" | "absent";
+
+/** The command that lists one path on the host, as `inspectPath` reads it. */
+export function inspectCommand(file: string): string[] {
+  return ["env", "LC_ALL=C", "ls", "-ldL", "--", file];
+}
+
+/** The messages a listing fails with when nothing is at the path (`ENOENT`), or the path runs through a file (`ENOTDIR`). */
+const NOTHING_THERE = /No such file or directory|Not a directory/;
+
+/**
+ * What is at `file` on the host. The entry is listed (`ls -ldL`, following a
+ * symbolic link, under the C locale so the messages read alike everywhere),
+ * and the first character of the listing says what it is. A listing that
+ * fails means absence only when its message says nothing is there, never by
+ * its exit status alone: `test -f` answers no alike for a path that is
+ * absent, a parent that cannot be searched and a filesystem error, and a
+ * removal that read the second or third as the first would delete findings
+ * it never saw. Any other failure is an error.
+ */
+export function inspectPath(ws: Workspace, file: string): PathKind {
+  const listed = ws.host.run(inspectCommand(file));
+  if (listed.status === 0) {
+    const type = listed.stdout.trimStart().charAt(0);
+    if (type === "-") return "file";
+    if (type === "d") return "directory";
+    if (/^[a-z]$/i.test(type)) return "other";
+  } else if (NOTHING_THERE.test(listed.stderr)) return "absent";
+  throw new OrcaError(`cannot tell what is at ${file}: ${output(listed)}`);
+}
+
+/** Whether a regular file (`-f`) or a directory (`-d`) is at `file` on the host; something else, or nothing, is no. */
 export function exists(
   ws: Workspace,
   flag: "-f" | "-d",
   file: string,
 ): boolean {
-  const test = ws.host.run(["test", flag, file]);
-  if (test.status === 0) return true;
-  if (test.status === 1) return false;
-  throw new OrcaError(`cannot tell whether ${file} exists: ${output(test)}`);
+  return inspectPath(ws, file) === (flag === "-f" ? "file" : "directory");
 }
 
 /** The worktree's executable hook of `kind`, or null when it has none. */
@@ -202,43 +234,118 @@ export function ensureCreateHook(ws: Workspace, path: string): boolean {
   return true;
 }
 
-/** One value the host's shell prints for `script`; a failure, or nothing, is an error naming `what`. */
-function hostShellValue(
-  ws: Workspace,
-  script: string,
-  what: string,
+/** Why a removal stops when the journal's place is in doubt; every refusal below ends with it. */
+const REFUSED =
+  "where the reflection journal is cannot be told, so the worktree is not removed";
+
+/** The variables that choose the configuration layers, and the home directory `~` names, read from the host's shell. */
+const HOST_VARIABLES = [
+  "HOME",
+  "JIG_HOME",
+  "JIG_OVERLAY",
+  "JIG_USER_LAYER",
+] as const;
+type HostEnvironment = Record<
+  (typeof HOST_VARIABLES)[number],
+  string | undefined
+>;
+
+/** The shell script that prints each of `HOST_VARIABLES`, NUL-terminated, so a value holds anything. */
+export const HOST_ENVIRONMENT_SCRIPT = HOST_VARIABLES.map(
+  (name) => `printf '%s\\0' "\${${name}-}"`,
+).join(" && ");
+
+/**
+ * The host's layer-selection variables and home directory, as its
+ * non-interactive shell has them; an unset one is undefined, as a blank one
+ * is to the shared reader (`nonEmpty`).
+ */
+function hostEnvironment(ws: Workspace, host: string): HostEnvironment {
+  const done = ws.host.run(["sh", "-c", HOST_ENVIRONMENT_SCRIPT]);
+  const values = done.stdout.split("\0");
+  if (
+    done.status !== 0 ||
+    values.length !== HOST_VARIABLES.length + 1 ||
+    values[HOST_VARIABLES.length] !== ""
+  )
+    throw new OrcaError(
+      `cannot read the environment of ${host}: ${output(done)}; ${REFUSED}`,
+    );
+  return Object.fromEntries(
+    HOST_VARIABLES.map((name, at) => [name, nonEmpty(values[at])]),
+  ) as HostEnvironment;
+}
+
+/**
+ * The configuration files the reflect skill reads on the host, chosen as the
+ * shared reader chooses them from a process's environment, from the host's:
+ * the user's `$JIG_HOME/jig.yaml`, else `~/.jig/jig.yaml`, and none under
+ * `JIG_USER_LAYER=off`; the worktree's `.config/jig.yaml`, or the file
+ * `JIG_OVERLAY` names instead. The shared reader resolves a relative
+ * `JIG_HOME` or `JIG_OVERLAY` against its own working directory, which a
+ * session on the host has and this tool does not, so one refuses, as does a
+ * `JIG_USER_LAYER` the reader would refuse.
+ */
+function hostLayerFiles(
+  path: string,
+  env: HostEnvironment,
+  home: string,
   host: string,
-): string {
-  const done = ws.host.run(["sh", "-c", script]);
-  const value = done.stdout.trim();
-  if (done.status !== 0 || value === "")
-    throw new OrcaError(`cannot read ${what} on ${host}: ${output(done)}`);
-  return value;
+): { user: string | null; repository: string } {
+  const absolute = (name: "JIG_HOME" | "JIG_OVERLAY"): string | undefined => {
+    const value = env[name];
+    if (value !== undefined && !posix.isAbsolute(value))
+      throw new OrcaError(
+        `${name} on ${host} is the relative path ${JSON.stringify(value)}, which a session there resolves against its own directory; ${REFUSED}`,
+      );
+    return value;
+  };
+  let userLayer: boolean;
+  try {
+    userLayer = userLayerEnabled(env);
+  } catch (error) {
+    throw new OrcaError(
+      `${error instanceof Error ? error.message : String(error)} on ${host}; ${REFUSED}`,
+    );
+  }
+  return {
+    user: userLayer
+      ? posix.join(
+          absolute("JIG_HOME") ?? posix.join(home, ".jig"),
+          USER_CONFIG_FILE,
+        )
+      : null,
+    repository: absolute("JIG_OVERLAY") ?? posix.join(path, OVERLAY_RELPATH),
+  };
 }
 
 /**
  * One configuration layer's file on the host, parsed as the shared reader
- * parses it; null when the host has no such file. One that cannot be read
- * or parsed refuses, since where the journal is cannot then be told.
+ * parses it; null when nothing is at its path. One that is not a regular
+ * file, or cannot be read or parsed, refuses, since where the journal is
+ * cannot then be told.
  */
 function hostConfigLayer(
   ws: Workspace,
   file: string,
   host: string,
 ): Record<string, unknown> | null {
-  if (!exists(ws, "-f", file)) return null;
+  const kind = inspectPath(ws, file);
+  if (kind === "absent") return null;
+  if (kind !== "file")
+    throw new OrcaError(
+      `${file} on ${host} is a ${kind === "directory" ? "directory" : "special file"}, not a configuration file; ${REFUSED}`,
+    );
   const read = ws.host.run(["cat", file]);
-  const refused =
-    "where the reflection journal is cannot be told, so the worktree is not removed";
   if (read.status !== 0)
     throw new OrcaError(
-      `cannot read ${file} on ${host}: ${output(read)}; ${refused}`,
+      `cannot read ${file} on ${host}: ${output(read)}; ${REFUSED}`,
     );
   try {
     return parseConfigText(read.stdout, `${file} on ${host}`);
   } catch (error) {
     throw new OrcaError(
-      `${error instanceof Error ? error.message : String(error)}; ${refused}`,
+      `${error instanceof Error ? error.message : String(error)}; ${REFUSED}`,
     );
   }
 }
@@ -246,28 +353,30 @@ function hostConfigLayer(
 /**
  * Where the worktree's reflection journal is on the host, as the reflect
  * skill resolves it there: `reflection.journal` from the configuration
- * layers that are files on the host, the user's (`$JIG_HOME/jig.yaml`, else
- * `~/.jig/jig.yaml`) under the worktree's (`.config/jig.yaml`), with `~`
- * read as the host's home directory and a relative path from the worktree;
- * the journal's default place in the worktree's git directory when neither
- * sets it. A setting that is not a path refuses, as the skill refuses it.
- * The environment layer (`JIG__…` variables) belongs to a session on the
- * host, which the tool cannot see from here.
+ * files the host's environment selects (`hostLayerFiles`), the user's under
+ * the worktree's, expanded as the skill expands a path setting
+ * (`expandPathWith`: `~` is the host's home directory, a relative path the
+ * worktree's); the journal's default place in the worktree's git directory
+ * when neither sets it. A setting that is not a path refuses, as the skill
+ * refuses it. The selection variables come from the host's non-interactive
+ * shell; the `JIG__…` environment layer, which a session on the host sets,
+ * is not read.
  */
 export function hostJournalPath(
   ws: Workspace,
   path: string,
   host: string,
 ): string {
-  const userFile = hostShellValue(
-    ws,
-    `printf %s "\${JIG_HOME:-$HOME/.jig}/${USER_CONFIG_FILE}"`,
-    "where the user's Jig configuration is",
-    host,
-  );
+  const env = hostEnvironment(ws, host);
+  const home = env.HOME;
+  if (home === undefined || !posix.isAbsolute(home))
+    throw new OrcaError(
+      `the home directory on ${host} (HOME=${JSON.stringify(home ?? "")}) is not an absolute path; ${REFUSED}`,
+    );
+  const files = hostLayerFiles(path, env, home, host);
   const merged = mergeLayers(
-    hostConfigLayer(ws, userFile, host) ?? {},
-    hostConfigLayer(ws, `${path}/${OVERLAY_RELPATH}`, host) ?? {},
+    files.user === null ? {} : (hostConfigLayer(ws, files.user, host) ?? {}),
+    hostConfigLayer(ws, files.repository, host) ?? {},
   );
   const configured = valueAt(merged, ["reflection", "journal"]);
   if (configured === undefined)
@@ -276,14 +385,7 @@ export function hostJournalPath(
     throw new OrcaError(
       `reflection.journal in the Jig configuration on ${host} must be a path; fix it there, then remove the worktree again`,
     );
-  if (configured === "~" || configured.startsWith("~/"))
-    return posix.join(
-      hostShellValue(ws, 'printf %s "$HOME"', "the home directory", host),
-      configured.slice(2),
-    );
-  return posix.isAbsolute(configured)
-    ? configured
-    : posix.join(path, configured);
+  return expandPathWith(configured, path, home, posix);
 }
 
 /**
@@ -299,12 +401,17 @@ export function assertNoUnsentFindings(
   host: string,
 ): void {
   const journal = hostJournalPath(ws, path, host);
-  if (!exists(ws, "-f", journal)) {
+  const kind = inspectPath(ws, journal);
+  if (kind === "absent") {
     ws.host.log(
       `↺ ${path} has no reflection journal; nothing to park on ${host}`,
     );
     return;
   }
+  if (kind !== "file")
+    throw new OrcaError(
+      `${journal} on ${host} is a ${kind === "directory" ? "directory" : "special file"}, not a reflection journal; ${REFUSED}`,
+    );
   const read = ws.host.run(["cat", journal]);
   if (read.status !== 0)
     throw new OrcaError(

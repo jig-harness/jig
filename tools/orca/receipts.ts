@@ -7,7 +7,12 @@
  * is unknown is never repeated without a person looking first. Every change
  * to the file is made under something only one open can do (a hard link into
  * a name that must not exist); what an open read before that is a hint, and
- * the file is read again under it.
+ * the file is read again under it. What an open learns about a receipt's
+ * worktree is acted on where it is learned, never carried to a later step:
+ * an open that finds the branch in no worktree sets the receipt aside
+ * before it creates one (`retireBeforeCreate`), so no step after the
+ * creation, this process ending included, can leave it for the next open to
+ * read as the new worktree's own.
  */
 import {
   linkSync,
@@ -46,16 +51,17 @@ export interface Receipt {
 }
 
 /**
- * A name as one path segment: anything but letters, digits, `.`, `_` and
- * `-` is percent-encoded, so a name Orca or a caller chose neither escapes
- * its directory nor collides with another's.
+ * A name as one path segment: anything but letters, digits, `_` and `-` is
+ * percent-encoded, `.` included, so a name Orca or a caller chose neither
+ * escapes its directory nor collides with another's, and a `.` in a file
+ * name is only ever the one between its segments: `ENG-1.a` with agent `b`
+ * and `ENG-1` with agent `a.b` are two files, not one (`receiptPath`).
  */
 export function fileSegment(text: string): string {
-  const encoded = encodeURIComponent(text).replace(
-    /[!'()*~]/g,
+  return encodeURIComponent(text).replace(
+    /[!'()*~.]/g,
     (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
   );
-  return /^\.{1,2}$/.test(encoded) ? encoded.replaceAll(".", "%2E") : encoded;
 }
 
 /** The directory of the receipts for a repository's worktrees in one Orca: this machine's, or a server's. */
@@ -73,7 +79,9 @@ function receiptDir(ws: Workspace, repoId: string): string {
 /**
  * Where the start of `key`'s agent is recorded: per Orca, repository and
  * agent, outside every worktree, so the same key in two repositories, or
- * two agents on one key, are two starts.
+ * two agents on one key, are two starts. The key and the agent are each one
+ * segment with no `.` of its own (`fileSegment`), so the name reads back as
+ * exactly one pair.
  */
 export function receiptPath(
   ws: Workspace,
@@ -177,8 +185,11 @@ function retireReceipt(file: string): void {
   }
 }
 
+/** The start a receipt records, as a path is chosen for it: the key, the repository, the agent and the Orca. */
+export type Launch = Pick<Receipt, "key" | "repoId" | "agent" | "environment">;
+
 /** Refuse a receipt at this launch's path that records another launch: nothing this tool wrote lands there. */
-function assertReceiptFor(file: string, found: Receipt, wanted: Receipt): void {
+function assertReceiptFor(file: string, found: Receipt, wanted: Launch): void {
   if (
     found.key !== wanted.key ||
     found.repoId !== wanted.repoId ||
@@ -190,28 +201,17 @@ function assertReceiptFor(file: string, found: Receipt, wanted: Receipt): void {
     );
 }
 
-/** Whether two receipts record the same start: the same content, read at two moments. */
-function sameStart(a: Receipt, b: Receipt): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
 /**
  * Whether a sent receipt is the record of this worktree's own agent, so the
  * start stands. One naming another worktree records an agent in a checkout
- * that no longer holds the branch. `predating`, the receipt that was there
- * before this open created the worktree, records an agent in the worktree
- * that stood at this path before; a receipt another open wrote since, for
- * this worktree, records a start in it, and stands.
+ * that no longer holds the branch. One naming a worktree that stood at this
+ * path before, which Orca gives the same path-derived id, never reaches
+ * this question: the open that created the worktree set it aside first
+ * (`retireBeforeCreate`), so a receipt naming this worktree's id was written
+ * for this worktree.
  */
-function standsFor(
-  earlier: Receipt,
-  receipt: Receipt,
-  predating: Receipt | null,
-): boolean {
-  return (
-    earlier.worktreeId === receipt.worktreeId &&
-    (predating === null || !sameStart(earlier, predating))
-  );
+function standsFor(earlier: Receipt, receipt: Receipt): boolean {
+  return earlier.worktreeId === receipt.worktreeId;
 }
 
 /** Where a stale receipt is set aside: beside it, under the start it records. */
@@ -232,21 +232,61 @@ function replaceStale(
   file: string,
   earlier: Receipt,
   receipt: Receipt,
-  predating: Receipt | null,
 ): boolean {
+  if (!setAside(file, earlier)) return false;
+  writeReceipt(file, receipt);
+  ws.orca.log(
+    `↺ ${receipt.key}'s agent was started in ${earlier.worktreeId} on ${earlier.at}, a worktree that is gone; starting one in ${receipt.worktreeId}`,
+  );
+  return true;
+}
+
+/**
+ * Link the stale receipt under its retired name, which succeeds for the first
+ * open to do it and fails for every other: the one thing that makes setting a
+ * receipt aside the act of exactly one open. False when another open did it
+ * first, or the receipt is gone.
+ */
+function setAside(file: string, earlier: Receipt): boolean {
   try {
     linkSync(file, retiredName(file, earlier));
+    return true;
   } catch (error) {
     const code = errnoCode(error);
     if (code === "EEXIST" || code === "ENOENT") return false;
     throw error;
   }
-  writeReceipt(file, receipt);
-  const replaced = predating !== null && sameStart(earlier, predating);
+}
+
+/**
+ * Set aside the sent receipt at `file` before this open creates the
+ * worktree, when no worktree holds the branch: the start it records was in
+ * a worktree that is gone, or that no longer holds the branch, and the one
+ * created next, which Orca may give the same path-derived id, must not read
+ * it as its own. It is set aside now, and not once the worktree exists, so
+ * that nothing a creation runs afterwards (a check, the create hook, this
+ * process ending) can leave it in place for a reattaching open to accept:
+ * what this open knows about the receipt's worktree does not have to
+ * survive the creation. The record is kept under the retired name
+ * (`setAside`, so exactly one open does it; one another open set aside, or
+ * that is gone, is fine), and the file removed, so the open that reaches the
+ * agent's start first, this one or one that reattached meanwhile, takes a
+ * fresh receipt. A pending receipt is left for `claimReceipt` to judge, and
+ * a receipt of another launch is refused as it is there.
+ */
+export function retireBeforeCreate(
+  ws: Workspace,
+  file: string,
+  launch: Launch,
+): void {
+  const earlier = readReceipt(file);
+  if (earlier === null) return;
+  assertReceiptFor(file, earlier, launch);
+  if (earlier.status === "pending" || !setAside(file, earlier)) return;
+  rmSync(file, { force: true });
   ws.orca.log(
-    `↺ ${receipt.key}'s agent was started in ${earlier.worktreeId} on ${earlier.at}, a worktree that is gone${replaced ? " (this open created its replacement)" : ""}; starting one in ${receipt.worktreeId}`,
+    `↺ ${earlier.key}'s agent was started in ${earlier.worktreeId} on ${earlier.at}, a worktree that no longer holds the branch; the record is set aside, and the agent is started in the worktree created next`,
   );
-  return true;
 }
 
 /**
@@ -313,14 +353,12 @@ function awaitStart(
  * replace it (`replaceStale`). False when an earlier start stands
  * (`standsFor`). A pending receipt whose open still runs on this machine is
  * waited for, up to `CLAIM_WAIT_MS` (`awaitStart`), and so is another open's
- * replacement of a stale receipt (`awaitReplacement`). `predating` is the
- * receipt that was there before this open created the worktree, or null.
+ * replacement of a stale receipt (`awaitReplacement`).
  */
 export function claimReceipt(
   ws: Workspace,
   file: string,
   receipt: Receipt,
-  predating: Receipt | null,
 ): boolean {
   const deadline = Date.now() + budget(ws.orca, CLAIM_WAIT_MS);
   let waitedStart = false;
@@ -334,13 +372,13 @@ export function claimReceipt(
       waitedStart = awaitStart(ws, file, earlier, deadline, waitedStart);
       continue;
     }
-    if (standsFor(earlier, receipt, predating)) {
+    if (standsFor(earlier, receipt)) {
       ws.orca.log(
         `↺ ${receipt.key}'s agent was started in ${earlier.worktreeId} on ${earlier.at}; not starting it again (delete ${file} to start it again)`,
       );
       return false;
     }
-    if (replaceStale(ws, file, earlier, receipt, predating)) return true;
+    if (replaceStale(ws, file, earlier, receipt)) return true;
     waitedReplacement = awaitReplacement(
       ws,
       file,

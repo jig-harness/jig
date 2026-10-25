@@ -3,6 +3,7 @@
  * spawning anything.
  */
 import { describe, expect, it } from "bun:test";
+import { posix } from "node:path";
 import {
   detectHarness,
   issueFromBranch,
@@ -25,7 +26,11 @@ import {
   parseEvent,
   recurrence,
 } from "../scripts/lib/events.ts";
-import { parseReflection, splitWords } from "../scripts/lib/settings.ts";
+import {
+  expandPathWith,
+  parseReflection,
+  splitWords,
+} from "../scripts/lib/settings.ts";
 import {
   numberKeys,
   teamKeys,
@@ -218,6 +223,20 @@ describe("computed state", () => {
 });
 
 describe("settings", () => {
+  it("expands a path setting for a given home directory and path rules", () => {
+    // The rules a reader for another machine (the Orca tool, over SSH) uses
+    // to expand a setting exactly as this skill does on that machine.
+    const on = (raw: string) =>
+      expandPathWith(raw, "/w/app", "/home/me", posix);
+    expect(on("~")).toBe("/home/me");
+    expect(on("~/j.jsonl")).toBe("/home/me/j.jsonl");
+    expect(on("~\\dev/app/j.jsonl")).toBe("/home/me/dev/app/j.jsonl");
+    expect(on(".context/j.jsonl")).toBe("/w/app/.context/j.jsonl");
+    expect(on("../j.jsonl")).toBe("/w/j.jsonl");
+    expect(on("/srv/j.jsonl")).toBe("/srv/j.jsonl");
+    expect(on("~x/j.jsonl")).toBe("/w/app/~x/j.jsonl");
+  });
+
   it("is off without the section, and when it says enabled: false", () => {
     expect(parseReflection(undefined, "/repo").on).toBe(false);
     expect(

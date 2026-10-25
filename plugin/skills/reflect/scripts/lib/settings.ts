@@ -6,7 +6,7 @@
  * instructions.
  */
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, type posix, resolve } from "node:path";
 import {
   consumerRoot,
   readConfig,
@@ -64,12 +64,31 @@ const DEFAULTS = {
   mode: "quick" as Mode,
 };
 
-/** `~` and `~/…` name the home directory; a relative path is the repository's. */
-export function expandPath(raw: string, root = consumerRoot()): string {
-  if (raw === "~") return homedir();
+/** The path rules a path setting is expanded under: this machine's, or another machine's where its setting is read from here. */
+export type PathRules = Pick<typeof posix, "isAbsolute" | "join" | "resolve">;
+
+/**
+ * `~`, `~/…` and `~\…` name `home`; a relative path is `root`'s; `rules`
+ * are the path rules of the machine the path is on. The one statement of
+ * how a path setting is read, so a reader that resolves a setting for
+ * another machine (the Orca workspace tool, for a worktree on a server's
+ * host) expands it exactly as this skill does there.
+ */
+export function expandPathWith(
+  raw: string,
+  root: string,
+  home: string,
+  rules: PathRules = { isAbsolute, join, resolve },
+): string {
+  if (raw === "~") return home;
   if (raw.startsWith("~/") || raw.startsWith("~\\"))
-    return join(homedir(), raw.slice(2));
-  return isAbsolute(raw) ? raw : resolve(root, raw);
+    return rules.join(home, raw.slice(2));
+  return rules.isAbsolute(raw) ? raw : rules.resolve(root, raw);
+}
+
+/** `expandPathWith` for this machine: its home directory and path rules. */
+export function expandPath(raw: string, root = consumerRoot()): string {
+  return expandPathWith(raw, root, homedir());
 }
 
 /**

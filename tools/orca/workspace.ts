@@ -71,9 +71,9 @@ import { assertNoUnsentFindings, ensureCreateHook, hookOf } from "./hooks.ts";
 import {
   claimReceipt,
   clearReceipt,
-  readReceipt,
   type Receipt,
   receiptPath,
+  retireBeforeCreate,
   retireReceiptsOf,
   writeReceipt,
 } from "./receipts.ts";
@@ -461,16 +461,13 @@ function linkIssue(ws: Workspace, worktree: OrcaWorktree, issue: string): void {
  * started (an agent Orca does not have, say) clears the receipt, so the next
  * open starts the agent once the cause is fixed; a call that got no answer
  * leaves it pending, so a start whose outcome is unknown is never repeated
- * by a later open without a person looking first. `predating` is the
- * receipt found before this open created the worktree (receipts.ts,
- * `standsFor`), or null.
+ * by a later open without a person looking first.
  */
 function launchAgent(
   ws: Workspace,
   repo: OrcaRepo,
   worktree: OrcaWorktree,
   options: OpenOptions,
-  predating: Receipt | null,
 ): Pick<Opened, "agentLaunched" | "kickoff"> {
   const key = options.key;
   const file =
@@ -485,7 +482,7 @@ function launchAgent(
     at: new Date().toISOString(),
     ...(file === null ? {} : { owner: ownerLine(ws.orca).trim() }),
   };
-  if (file !== null && !claimReceipt(ws, file, receipt, predating))
+  if (file !== null && !claimReceipt(ws, file, receipt))
     return { agentLaunched: false, kickoff: "already-sent" };
   const prompt =
     options.prompt === undefined ? [] : ["--prompt", options.prompt];
@@ -534,13 +531,23 @@ export function openWorkspace(ws: Workspace, requested: OpenOptions): Opened {
   );
   if (branch !== requested.branch) assertBranchName(ws.host, branch);
   const found = existingWorktree(ws, repo, branch);
-  // A receipt found before the worktree exists records a start in the one
-  // that stood at this path before; one found after it was created records
-  // a start in it, by another open (receipts.ts, `standsFor`).
-  const predating =
-    found === null && !requested.noAgent && requested.key !== undefined
-      ? readReceipt(receiptPath(ws, repo.id, requested.key, requested.agent))
-      : null;
+  // No worktree holds the branch, so a receipt of the key's agent records a
+  // start in one that stood before. It is set aside now, before anything is
+  // created: a step that fails after the creation, or this process ending
+  // then, must not leave it for the next open, which reattaches, to read as
+  // the new worktree's own (receipts.ts). Whether this open starts an agent
+  // does not matter to that: the next open with one would read it alike.
+  if (found === null && requested.key !== undefined)
+    retireBeforeCreate(
+      ws,
+      receiptPath(ws, repo.id, requested.key, requested.agent),
+      {
+        key: requested.key,
+        repoId: repo.id,
+        agent: requested.agent,
+        environment: ws.target.environment ?? null,
+      },
+    );
   const worktree = found ?? createWorktree(ws, repo, requested, branch);
   // On every path, reattaching included: a tracking repair an earlier open
   // could not finish is made now (the helper's own contract), and a link
@@ -559,10 +566,7 @@ export function openWorkspace(ws: Workspace, requested: OpenOptions): Opened {
     kickoff: "none",
   };
   if (requested.noAgent) return opened;
-  return {
-    ...opened,
-    ...launchAgent(ws, repo, worktree, requested, predating),
-  };
+  return { ...opened, ...launchAgent(ws, repo, worktree, requested) };
 }
 
 export interface RemoveOptions {
