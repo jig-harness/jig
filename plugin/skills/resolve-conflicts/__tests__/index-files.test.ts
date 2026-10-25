@@ -4,7 +4,8 @@
  * separator.
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { rmSync, symlinkSync } from "node:fs";
+import { rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { readIndexFile } from "../scripts/lib/index-files.ts";
 import { CONFIG_BASE, mergeConflict, Scratch } from "./scratch.ts";
 
@@ -100,7 +101,10 @@ describe("readIndexFile", () => {
 
   it("refuses a link that leaves the repository, loops, or reaches no regular file", () => {
     s.commit("Add a file", { "a.txt": "x\n" });
-    symlinkSync("/etc/hosts", `${s.root}/abs`);
+    // An absolute target that exists on every platform, outside the repository.
+    const outside = join(s.home, "outside.txt");
+    writeFileSync(outside, "outside\n");
+    symlinkSync(outside, `${s.root}/abs`);
     symlinkSync("../outside", `${s.root}/up`);
     symlinkSync("loop2", `${s.root}/loop1`);
     symlinkSync("loop1", `${s.root}/loop2`);

@@ -99,11 +99,15 @@ import { load } from "../../../shared/yaml.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
 import { taxonomyFindings } from "./lib/taxonomy-fit.ts";
 import {
+  configuredAt,
   ghJson,
+  trackedNeeds,
   newerInstalledVersion,
+  onDisk,
   packageScripts,
   pluginVersion,
   run,
+  runsDirectly,
   skillDir,
   today,
   trackedFiles,
@@ -445,7 +449,7 @@ interface Context {
  * tracked (a fresh clone lacks it), or, run directly on POSIX, not executable.
  */
 function fileProblems(name: string, ctx: Context, direct: boolean): Problem[] {
-  const path = isAbsolute(name) ? name : join(ctx.root, name);
+  const path = onDisk(ctx.root, name);
   if (!existsSync(path))
     return [{ severity: "error", message: `${name} does not exist` }];
   const stat = statSync(path);
@@ -453,21 +457,20 @@ function fileProblems(name: string, ctx: Context, direct: boolean): Problem[] {
     return [{ severity: "error", message: `${name} is not a file` }];
   if (direct && process.platform !== "win32" && (stat.mode & 0o111) === 0)
     return [{ severity: "error", message: `${name} is not executable` }];
-  const relative = isAbsolute(name)
-    ? null
-    : normalize(name).replaceAll("\\", "/");
-  if (
-    relative !== null &&
-    !relative.startsWith("..") &&
-    !ctx.tracked.has(relative)
-  )
-    return [
-      {
-        severity: "warning",
-        message: `${name} is not tracked, so a fresh clone lacks it`,
-      },
-    ];
-  return [];
+  if (isAbsolute(name)) return [];
+  const { untracked, unsure } = trackedNeeds(ctx.root, name, ctx.tracked);
+  const which = untracked.map((reached) => reached.join(" or ")).join(", ");
+  const messages = unsure.map(
+    ({ reached, held }) =>
+      `${name} reaches one of ${reached.join(" or ")}, the same file, and only ${held.join(" or ")} is tracked; which name the lookup took cannot be told, so a fresh clone may lack it`,
+  );
+  if (untracked.length > 0)
+    messages.unshift(
+      which === normalize(name).replaceAll("\\", "/")
+        ? `${name} is not tracked, so a fresh clone lacks it`
+        : `${name} reaches ${which}, which is not tracked, so a fresh clone lacks it`,
+    );
+  return messages.map((message) => ({ severity: "warning", message }));
 }
 
 /** What a missing package script costs: `target` is the script's name. */
@@ -661,7 +664,7 @@ function pathFindings(field: Field, value: unknown, root: string): Finding[] {
   if (typeof value !== "string" || value.trim() === "" || !field.exists)
     return [];
   if (value.startsWith("~")) return [];
-  if (existsSync(isAbsolute(value) ? value : join(root, value))) return [];
+  if (existsSync(configuredAt(root, value))) return [];
   const required = field.exists === "required";
   return [
     {
@@ -1657,7 +1660,7 @@ function scriptFileGates(
       swallow(error, `${file} is tracked but missing from the working tree`);
       return [];
     }
-    const executable = process.platform === "win32" || (mode & 0o111) !== 0;
+    const executable = runsDirectly(root, file, mode);
     if (!executable && !/\.(sh|bash)$/.test(file)) return [];
     const { runBy, settled, unsettled } = ciSettlement(
       jobs.flatMap((job) =>
@@ -2391,7 +2394,7 @@ interface RunFile {
 
 /** The text of a file a command runs, when it is a readable file of modest size. */
 function runFileText(root: string, name: string): RunFile[] {
-  const path = isAbsolute(name) ? name : join(root, name);
+  const path = onDisk(root, name);
   const stat = statSync(path, { throwIfNoEntry: false });
   return stat?.isFile() && stat.size < 1_000_000
     ? [{ name, text: readFileSync(path, "utf8") }]

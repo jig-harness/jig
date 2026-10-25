@@ -342,7 +342,10 @@ async function browserEndpoint(
         )[0] || undefined
       );
     } catch (error) {
-      if (errnoCode(error) !== "ENOENT") throw error;
+      // Windows refuses the read (EBUSY) while Chromium still holds the file
+      // open to write it.
+      const code = errnoCode(error);
+      if (code !== "ENOENT" && code !== "EBUSY") throw error;
       swallow(error, "Chromium has not written its debugging endpoint yet");
       return undefined;
     }

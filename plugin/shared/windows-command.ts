@@ -196,6 +196,31 @@ function expandedShimLength(
   );
 }
 
+/**
+ * `cmd.exe /d /s /c <command line>`, a configured shell command run through
+ * the platform shell: the command line is cmd's own syntax, so it reaches cmd
+ * as written, inside the one pair of quotes `/s` strips. The argv quoting
+ * native programs get would escape its quotes with backslashes, which cmd
+ * does not read. Null for any other cmd.exe argv.
+ */
+function cmdCommandLine(command: string, args: string[]): Command | null {
+  if (!/^cmd(\.exe)?$/i.test(win32.basename(command))) return null;
+  const switches = args.slice(0, -1);
+  const line = args.at(-1);
+  if (
+    line === undefined ||
+    !switches.every((arg) => /^\/[a-z](:[a-z]+)?$/i.test(arg)) ||
+    !/^\/c$/i.test(switches.at(-1) ?? "") ||
+    !switches.some((arg) => /^\/s$/i.test(arg))
+  )
+    return null;
+  return {
+    command,
+    args: [...switches, `"${line}"`],
+    windowsVerbatimArguments: true,
+  };
+}
+
 /** Native binaries stay shell-free; only .cmd/.bat files enter cmd.exe. */
 export function windowsCommand(
   argv: string[],
@@ -203,6 +228,8 @@ export function windowsCommand(
 ): Command {
   const command = resolveWindowsCommand(argv[0] ?? "", options);
   const args = argv.slice(1);
+  const commandLine = cmdCommandLine(command, args);
+  if (commandLine !== null) return commandLine;
   if (!/\.(cmd|bat)$/i.test(command)) return { command, args };
   if ([command, ...args].some((value) => /[\r\n\0]/.test(value))) {
     throw new WindowsCommandError(

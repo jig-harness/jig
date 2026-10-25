@@ -14,8 +14,24 @@ import {
   pluginVersion,
 } from "../../../../shared/plugin-version.ts";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
+import {
+  dirname,
+  isAbsolute,
+  join,
+  parse,
+  relative,
+  sep,
+  win32,
+} from "node:path";
 
 export { trackedFiles } from "../../../adr/scripts/locate.ts";
 export { pluginVersion };
@@ -197,4 +213,161 @@ export function newerInstalledVersion(
     )
     .sort(compareVersions);
   return newer.at(-1) ?? null;
+}
+
+/**
+ * Whether a shell runs the tracked `file` (of stat `mode`) directly. Windows'
+ * file system has no executable bit, so there the index's is read: the one a
+ * checkout elsewhere takes.
+ */
+export function runsDirectly(
+  root: string,
+  file: string,
+  mode: number,
+): boolean {
+  if (process.platform !== "win32") return (mode & 0o111) !== 0;
+  const listed = run("git", ["ls-files", "-s", "--", `:(top,literal)${file}`], {
+    cwd: root,
+  });
+  return listed.code === 0 && listed.stdout.startsWith("100755 ");
+}
+
+/**
+ * The file a configured setting names from `root`: absolute as written,
+ * relative joined to the root, the way the scripts reading a setting
+ * resolve it (`join` collapses `link/..` by text).
+ */
+export function configuredAt(root: string, path: string): string {
+  return isAbsolute(path) ? path : join(root, path);
+}
+
+/**
+ * The file a command-named `path` reaches from `root`, without normalizing
+ * it: a shell running the command from the root follows `link` before `..`.
+ */
+export function onDisk(root: string, path: string): string {
+  return isAbsolute(path) ? path : `${root}${sep}${path}`;
+}
+
+/** A repository-relative name for `path`, or null outside the repository. */
+function inRepo(realRoot: string, path: string): string | null {
+  const name = relative(realRoot, path).replaceAll("\\", "/");
+  return name === "" ||
+    name === ".." ||
+    name.startsWith("../") ||
+    isAbsolute(name)
+    ? null
+    : name;
+}
+
+/**
+ * `segment` of the real directory `dir` as the directory itself spells it:
+ * on a case-insensitive file system `CHECK.ts` reaches the entry
+ * `check.ts`, and the tracked name is the entry's. The file system names
+ * the entry its own lookup chose (`realpath`), so no comparison is
+ * emulated here. A symbolic link cannot be asked without following it, so
+ * it is named by its exact spelling, else by every entry here of the same
+ * file: hard links of one link are indistinguishable without comparing
+ * names, and any of them may be the one the lookup chose.
+ */
+function spelled(dir: string, segment: string, link: boolean): string[] {
+  const entry = join(dir, segment);
+  if (!link) return [realpathSync.native(entry)];
+  const names = readdirSync(dir);
+  if (names.includes(segment)) return [entry];
+  const own = lstatSync(entry, { bigint: true });
+  if (own.ino === 0n) return [entry];
+  const same = names.filter((name) => {
+    const other = lstatSync(join(dir, name), {
+      bigint: true,
+      throwIfNoEntry: false,
+    });
+    return other?.ino === own.ino && other.dev === own.dev;
+  });
+  // Directory order is unspecified; sorted, the alternatives read the same
+  // on every file system.
+  return same.length === 0
+    ? [entry]
+    : same.sort().map((name) => join(dir, name));
+}
+
+/** Links a resolution expands before giving up, as the kernel's SYMLOOP limit does. */
+const MAX_LINKS = 40;
+
+/** The components of `path` in order, after its root when it has one. */
+function components(path: string): string[] {
+  return path
+    .slice(parse(path).root.length)
+    .split(process.platform === "win32" ? /[\\/]/ : "/")
+    .filter((part) => part !== "" && part !== ".");
+}
+
+/**
+ * The repository names a fresh clone needs for the relative `name` to reach
+ * from `root` the file it reaches here: every link the resolution passes
+ * through, by its own location, including links inside another link's
+ * target, and the file it lands on, by its real location. Resolved the way
+ * the platform resolves it: on POSIX component by component, so `..` climbs
+ * out of where a link led; on Windows `..` is collapsed by text first.
+ * Every name is the file system's spelling of what it reaches, never the
+ * command's. Each need is a list of alternatives, the names the entry
+ * reached may have: a link with several names here may be any of them
+ * (`spelled`), and which one cannot be told. Inside the repository only; a
+ * path that does not resolve, or loops, needs nothing.
+ */
+export function namesReached(root: string, name: string): string[][] {
+  const realRoot = realpathSync.native(root);
+  const pending = components(
+    process.platform === "win32" ? win32.normalize(name) : name,
+  );
+  const names: string[][] = [];
+  let real = realRoot;
+  let links = 0;
+  for (
+    let segment = pending.shift();
+    segment !== undefined;
+    segment = pending.shift()
+  ) {
+    if (segment === "..") {
+      real = dirname(real);
+      continue;
+    }
+    const stat = lstatSync(join(real, segment), { throwIfNoEntry: false });
+    if (stat === undefined) return [];
+    const entries = spelled(real, segment, stat.isSymbolicLink());
+    if (!stat.isSymbolicLink()) {
+      real = entries[0] as string;
+      continue;
+    }
+    if (++links > MAX_LINKS) return [];
+    const link = entries.flatMap((entry) => inRepo(realRoot, entry) ?? []);
+    if (link.length > 0) names.push(link);
+    const target = readlinkSync(join(real, segment));
+    if (isAbsolute(target)) real = parse(target).root;
+    pending.unshift(...components(target));
+  }
+  const file = inRepo(realRoot, real);
+  if (file !== null) names.push([file]);
+  return names;
+}
+
+/**
+ * The needs of `namesReached` a fresh clone holding `tracked` lacks: none
+ * of the names tracked, or, for a need with several names, only some. The
+ * lookup took one of those and cannot be asked which, so the tracked name
+ * may not be the one it took.
+ */
+export function trackedNeeds(
+  root: string,
+  name: string,
+  tracked: Set<string>,
+): { untracked: string[][]; unsure: { reached: string[]; held: string[] }[] } {
+  const untracked: string[][] = [];
+  const unsure: { reached: string[]; held: string[] }[] = [];
+  for (const reached of namesReached(root, name)) {
+    const held = reached.filter((alternative) => tracked.has(alternative));
+    if (held.length === 0) untracked.push(reached);
+    else if (held.length < reached.length) unsure.push({ reached, held });
+  }
+  return { untracked, unsure };
 }

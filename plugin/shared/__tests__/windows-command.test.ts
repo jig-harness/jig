@@ -327,6 +327,23 @@ describe("Windows command launch", () => {
     expect(launch(npmShim("%dp0%\\node.exe")).args[4]).toContain("agent.cmd");
   });
 
+  test("a cmd.exe /s /c command line reaches cmd as written, inside the quotes /s strips", () => {
+    const options = { cwd: "C:\\repo", env: {}, isFile: () => false };
+    const line = '"C:\\b in\\bun.exe" "x.ts" & echo "done"';
+    expect(
+      windowsCommand(["cmd.exe", "/d", "/s", "/c", line], options),
+    ).toEqual({
+      command: "cmd.exe",
+      args: ["/d", "/s", "/c", `"${line}"`],
+      windowsVerbatimArguments: true,
+    });
+    // Without /s, cmd's quote handling differs, so the argv is left alone.
+    expect(windowsCommand(["cmd.exe", "/c", line], options)).toEqual({
+      command: "cmd.exe",
+      args: ["/c", line],
+    });
+  });
+
   test("batch line breaks are refused rather than interpreted as commands", () => {
     expect(() =>
       windowsCommand(["agent.cmd", "one\nwhoami"], {
@@ -340,18 +357,22 @@ describe("Windows command launch", () => {
   test.skipIf(process.platform !== "win32")(
     "both process runners preserve batch argument boundaries and shell characters",
     async () => {
+      // A batch file whose own path holds shell characters. npm's shim cannot
+      // live in such a directory (its unquoted `SET dp0=%~dp0` splits at the
+      // `&`), so the shim and its script get a plain one.
       const scratch = mkdtempSync(
         join(tmpdir(), "batch launcher & %PATH% ! caret ^ "),
       );
+      const shims = mkdtempSync(join(tmpdir(), "batch-shim-"));
       try {
-        const reader = join(scratch, "reader.js");
+        const reader = join(shims, "reader.js");
         writeFileSync(
           reader,
           "console.log(JSON.stringify(process.argv.slice(2)));\n",
         );
         // npm shims forward arguments with %*, causing a second cmd parse.
         writeFileSync(
-          join(scratch, "agent.cmd"),
+          join(shims, "agent.cmd"),
           npmShim(process.execPath, "reader.js"),
         );
         const values = [
@@ -373,7 +394,7 @@ describe("Windows command launch", () => {
         writeFileSync(join(scratch, "direct.bat"), "@echo off\r\necho %1\r\n");
         const env = {
           ...process.env,
-          PATH: `${scratch};${process.env.PATH ?? ""}`,
+          PATH: `${shims};${process.env.PATH ?? ""}`,
           PATHEXT: ".EXE;.CMD;.BAT",
         };
         for (const runner of [run, driveRun]) {
@@ -392,6 +413,7 @@ describe("Windows command launch", () => {
         }
       } finally {
         rmSync(scratch, { recursive: true, force: true });
+        rmSync(shims, { recursive: true, force: true });
       }
     },
   );

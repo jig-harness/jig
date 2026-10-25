@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import {
   LEAKY_GIT_ENV,
   spawnSync,
@@ -406,7 +407,12 @@ describe("could not check", () => {
     expectSpawnExit(run(repo(), ["--base", "nope", "--head", "main"]), 2);
   });
 
-  test("a git diff killed by a signal is exit 2, not an empty change", () => {
+  test.skipIf(
+    skipsOnWindows(
+      "process-lifecycle",
+      "the stand-in git is a /bin/sh script that kills itself with a POSIX signal",
+    ),
+  )("a git diff killed by a signal is exit 2, not an empty change", () => {
     const realGit = Bun.which("git");
     if (!realGit) throw new Error("git is not on PATH");
     const bin = join(scratch, `bin-${counter++}`);

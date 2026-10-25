@@ -104,10 +104,18 @@ export function temporary(prefix = "changelog-"): string {
   return dir;
 }
 
+/**
+ * The `git clone` option that checks files out as committed. Git for Windows
+ * turns core.autocrlf on machine-wide, which would write every checked-out
+ * text file with CRLF line endings and change the bytes the tests compare.
+ */
+export const KEEP_LF = ["-c", "core.autocrlf=false"];
+
 /** A git repository on `main` holding `files`, committed as `base`. */
 export function repository(files: Record<string, string>): string {
   const root = temporary();
   git(root, "init", "-q", "-b", "main");
+  git(root, "config", "core.autocrlf", "false");
   for (const [path, text] of Object.entries(files)) write(root, path, text);
   git(root, "add", "-A");
   git(root, "commit", "-qm", "base");

@@ -152,7 +152,7 @@ describe("--eligibility", () => {
     const run = runCli(broken, ["--eligibility"], "[]");
     expectSpawnExit(run, 1, "size points that do not price every size");
     expect(run.stderr.toString()).toContain("work_batch.size_points");
-    expect(run.stderr.toString()).toContain(".config/jig.yaml");
+    expect(run.stderr.toString()).toContain(join(".config", "jig.yaml"));
   });
 
   it("fails when the declared catalog cannot be read, rather than reading no flags (exit 1)", () => {

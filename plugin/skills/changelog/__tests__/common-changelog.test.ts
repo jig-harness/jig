@@ -14,6 +14,7 @@ import { release } from "../scripts/release.ts";
 import {
   COMMON_CHANGELOG,
   commit,
+  KEEP_LF,
   git,
   gitAt,
   repository,
@@ -450,7 +451,16 @@ describe("release in Common Changelog", () => {
       "Fix it (#2)",
     );
     const shallow = temporary("changelog-shallow-");
-    git(shallow, "clone", "-q", "--depth", "1", `file://${root}`, ".");
+    git(
+      shallow,
+      "clone",
+      "-q",
+      ...KEEP_LF,
+      "--depth",
+      "1",
+      `file://${root}`,
+      ".",
+    );
     git(shallow, "remote", "set-url", "origin", "https://github.com/o/r.git");
     await expect(run(shallow)).rejects.toThrow("git fetch --unshallow");
     expect(existsSync(join(shallow, "changes/a.md"))).toBe(true);
