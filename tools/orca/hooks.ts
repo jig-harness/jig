@@ -5,7 +5,14 @@
  */
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix } from "node:path";
+import {
+  mergeLayers,
+  OVERLAY_RELPATH,
+  parseConfigText,
+  USER_CONFIG_FILE,
+  valueAt,
+} from "../../plugin/shared/config-layers.ts";
 import { DEFAULT_JOURNAL_IN_GIT_DIR } from "../../plugin/skills/reflect/scripts/lib/context.ts";
 import {
   readJournal,
@@ -86,10 +93,42 @@ function releaseHookClaim(ws: Workspace, claim: string): void {
 }
 
 /**
+ * The mark, read under the claim this open just took. A mark not seen before
+ * the claim is judged only here, since the holder writes the mark before
+ * giving the claim back. True when the mark is there, so the hook has run,
+ * and the claim is given back; false when there is none and this open did
+ * not wait, so it keeps the claim and runs the hook. No mark after a wait
+ * means the run this open waited for ended without one, so it failed: the
+ * claim is given back and the open stops.
+ */
+function markUnderClaim(
+  ws: Workspace,
+  hook: string,
+  mark: string,
+  claim: string,
+  waited: boolean,
+): boolean {
+  let marked: boolean;
+  try {
+    marked = exists(ws, "-f", mark);
+  } catch (error) {
+    releaseHookClaim(ws, claim);
+    throw error;
+  }
+  if (!marked && !waited) return false;
+  releaseHookClaim(ws, claim);
+  if (marked) return true;
+  throw new OrcaError(
+    `the run of ${hook} this open waited for ended without leaving its mark, so it failed; fix the hook and open the workspace again, which runs it again`,
+  );
+}
+
+/**
  * Take the create hook's claim, or wait for the open that holds it, up to
- * the hook's limit. True when the mark appeared, so the hook has run; false
- * once this open holds the claim. An open that waited stops when the run it
- * waited for ended without a mark, or when the limit passes.
+ * the hook's limit. True when the mark is there, so the hook has run; false
+ * once this open holds the claim with no mark under it (`markUnderClaim`).
+ * A mark seen is final, so it is trusted at once. The limit passing stops a
+ * wait.
  */
 function awaitHookClaim(
   ws: Workspace,
@@ -101,11 +140,8 @@ function awaitHookClaim(
   let waited = false;
   for (;;) {
     if (exists(ws, "-f", mark)) return true;
-    if (waited && !exists(ws, "-d", claim))
-      throw new OrcaError(
-        `the run of ${hook} this open waited for ended without leaving its mark, so it failed; fix the hook and open the workspace again, which runs it again`,
-      );
-    if (takeHookClaim(ws, claim)) return false;
+    if (takeHookClaim(ws, claim))
+      return markUnderClaim(ws, hook, mark, claim, waited);
     if (!waited)
       ws.host.log(
         `… waiting for ${HOOKS_DIR}/create, which another open is running`,
@@ -147,9 +183,10 @@ function runClaimedHook(
 /**
  * Run the repository's create hook once per worktree, however many opens
  * reach it at once. The open that creates the claim directory beside the
- * mark runs the hook; every other open waits for the mark. A run that
- * succeeded leaves the mark and gives the claim back; one that failed gives
- * the claim back and leaves no mark, so the next open runs the hook again.
+ * mark, and finds no mark under it, runs the hook; every other open waits
+ * for the mark. A run that succeeded leaves the mark and gives the claim
+ * back; one that failed gives the claim back and leaves no mark, so the
+ * next open runs the hook again.
  * On this machine the hook runs under the Herdr tool's supervisor, which
  * ends it and its children when it fails or outlives its limit. True when
  * this run ran it.
@@ -165,20 +202,103 @@ export function ensureCreateHook(ws: Workspace, path: string): boolean {
   return true;
 }
 
+/** One value the host's shell prints for `script`; a failure, or nothing, is an error naming `what`. */
+function hostShellValue(
+  ws: Workspace,
+  script: string,
+  what: string,
+  host: string,
+): string {
+  const done = ws.host.run(["sh", "-c", script]);
+  const value = done.stdout.trim();
+  if (done.status !== 0 || value === "")
+    throw new OrcaError(`cannot read ${what} on ${host}: ${output(done)}`);
+  return value;
+}
+
+/**
+ * One configuration layer's file on the host, parsed as the shared reader
+ * parses it; null when the host has no such file. One that cannot be read
+ * or parsed refuses, since where the journal is cannot then be told.
+ */
+function hostConfigLayer(
+  ws: Workspace,
+  file: string,
+  host: string,
+): Record<string, unknown> | null {
+  if (!exists(ws, "-f", file)) return null;
+  const read = ws.host.run(["cat", file]);
+  const refused =
+    "where the reflection journal is cannot be told, so the worktree is not removed";
+  if (read.status !== 0)
+    throw new OrcaError(
+      `cannot read ${file} on ${host}: ${output(read)}; ${refused}`,
+    );
+  try {
+    return parseConfigText(read.stdout, `${file} on ${host}`);
+  } catch (error) {
+    throw new OrcaError(
+      `${error instanceof Error ? error.message : String(error)}; ${refused}`,
+    );
+  }
+}
+
+/**
+ * Where the worktree's reflection journal is on the host, as the reflect
+ * skill resolves it there: `reflection.journal` from the configuration
+ * layers that are files on the host, the user's (`$JIG_HOME/jig.yaml`, else
+ * `~/.jig/jig.yaml`) under the worktree's (`.config/jig.yaml`), with `~`
+ * read as the host's home directory and a relative path from the worktree;
+ * the journal's default place in the worktree's git directory when neither
+ * sets it. A setting that is not a path refuses, as the skill refuses it.
+ * The environment layer (`JIG__…` variables) belongs to a session on the
+ * host, which the tool cannot see from here.
+ */
+export function hostJournalPath(
+  ws: Workspace,
+  path: string,
+  host: string,
+): string {
+  const userFile = hostShellValue(
+    ws,
+    `printf %s "\${JIG_HOME:-$HOME/.jig}/${USER_CONFIG_FILE}"`,
+    "where the user's Jig configuration is",
+    host,
+  );
+  const merged = mergeLayers(
+    hostConfigLayer(ws, userFile, host) ?? {},
+    hostConfigLayer(ws, `${path}/${OVERLAY_RELPATH}`, host) ?? {},
+  );
+  const configured = valueAt(merged, ["reflection", "journal"]);
+  if (configured === undefined)
+    return `${gitDirOf(ws, path)}/${DEFAULT_JOURNAL_IN_GIT_DIR}`;
+  if (typeof configured !== "string" || configured.trim() === "")
+    throw new OrcaError(
+      `reflection.journal in the Jig configuration on ${host} must be a path; fix it there, then remove the worktree again`,
+    );
+  if (configured === "~" || configured.startsWith("~/"))
+    return posix.join(
+      hostShellValue(ws, 'printf %s "$HOME"', "the home directory", host),
+      configured.slice(2),
+    );
+  return posix.isAbsolute(configured)
+    ? configured
+    : posix.join(path, configured);
+}
+
 /**
  * Refuse to remove a worktree on a server's host while its reflection
- * journal holds unsent findings: the journal is in the worktree's git
- * directory, which the removal deletes, and the host has nothing from Jig to
- * park them with. The journal is read over SSH and judged here with the
- * reflect skill's own reader. Only the journal's default place is looked at:
- * the repository's `reflection.journal` setting is read where the skill runs.
+ * journal holds unsent findings: the host has nothing from Jig to park them
+ * with, and a journal kept in the worktree goes with it. The journal is
+ * looked for where the host's configuration puts it (`hostJournalPath`),
+ * read over SSH and judged here with the reflect skill's own reader.
  */
 export function assertNoUnsentFindings(
   ws: Workspace,
   path: string,
   host: string,
 ): void {
-  const journal = `${gitDirOf(ws, path)}/${DEFAULT_JOURNAL_IN_GIT_DIR}`;
+  const journal = hostJournalPath(ws, path, host);
   if (!exists(ws, "-f", journal)) {
     ws.host.log(
       `↺ ${path} has no reflection journal; nothing to park on ${host}`,

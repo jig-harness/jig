@@ -189,7 +189,8 @@ export function parseOpened(text: string): Opened {
     typeof parsed.reattached !== "boolean" ||
     typeof parsed.hookRan !== "boolean" ||
     typeof parsed.agentLaunched !== "boolean" ||
-    !KICKOFFS.has(String(parsed.kickoff))
+    typeof parsed.kickoff !== "string" ||
+    !KICKOFFS.has(parsed.kickoff)
   )
     throw new OrcaError(
       `the Orca workspace tool answered with something other than what it opened: ${text.trim() || "nothing"}`,

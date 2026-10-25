@@ -71,10 +71,11 @@ import { assertNoUnsentFindings, ensureCreateHook, hookOf } from "./hooks.ts";
 import {
   claimReceipt,
   clearReceipt,
-  completeReceipt,
+  readReceipt,
   type Receipt,
   receiptPath,
   retireReceiptsOf,
+  writeReceipt,
 } from "./receipts.ts";
 import { OrcaError, type Workspace, workspace } from "./runner.ts";
 
@@ -89,9 +90,10 @@ export const USAGE = `usage:
 
 /**
  * The calls around the hook: git probes, fetches and the clone checks, Orca's
- * list, create, link and launch, the hook's claim and mark, the journal read.
+ * list, create, link and launch, the hook's claim and mark, where the
+ * journal is and its read.
  */
-const COMMAND_ALLOWANCE = 22;
+const COMMAND_ALLOWANCE = 26;
 /** The time `open` may take: the create hook, waiting for another open's start of the agent, and the calls around them. */
 export const OPEN_LIMIT_MS =
   HOOK_TIMEOUT_MS + CLAIM_WAIT_MS + COMMAND_ALLOWANCE * COMMAND_TIMEOUT_MS;
@@ -459,14 +461,16 @@ function linkIssue(ws: Workspace, worktree: OrcaWorktree, issue: string): void {
  * started (an agent Orca does not have, say) clears the receipt, so the next
  * open starts the agent once the cause is fixed; a call that got no answer
  * leaves it pending, so a start whose outcome is unknown is never repeated
- * by a later open without a person looking first.
+ * by a later open without a person looking first. `predating` is the
+ * receipt found before this open created the worktree (receipts.ts,
+ * `standsFor`), or null.
  */
 function launchAgent(
   ws: Workspace,
   repo: OrcaRepo,
   worktree: OrcaWorktree,
   options: OpenOptions,
-  created: boolean,
+  predating: Receipt | null,
 ): Pick<Opened, "agentLaunched" | "kickoff"> {
   const key = options.key;
   const file =
@@ -481,7 +485,7 @@ function launchAgent(
     at: new Date().toISOString(),
     ...(file === null ? {} : { owner: ownerLine(ws.orca).trim() }),
   };
-  if (file !== null && !claimReceipt(ws, file, receipt, created))
+  if (file !== null && !claimReceipt(ws, file, receipt, predating))
     return { agentLaunched: false, kickoff: "already-sent" };
   const prompt =
     options.prompt === undefined ? [] : ["--prompt", options.prompt];
@@ -507,7 +511,7 @@ function launchAgent(
   }
   if (file !== null) {
     const { owner: _owner, ...started } = receipt;
-    completeReceipt(file, {
+    writeReceipt(file, {
       ...started,
       status: "sent",
       launch: envelope.result,
@@ -530,6 +534,13 @@ export function openWorkspace(ws: Workspace, requested: OpenOptions): Opened {
   );
   if (branch !== requested.branch) assertBranchName(ws.host, branch);
   const found = existingWorktree(ws, repo, branch);
+  // A receipt found before the worktree exists records a start in the one
+  // that stood at this path before; one found after it was created records
+  // a start in it, by another open (receipts.ts, `standsFor`).
+  const predating =
+    found === null && !requested.noAgent && requested.key !== undefined
+      ? readReceipt(receiptPath(ws, repo.id, requested.key, requested.agent))
+      : null;
   const worktree = found ?? createWorktree(ws, repo, requested, branch);
   // On every path, reattaching included: a tracking repair an earlier open
   // could not finish is made now (the helper's own contract), and a link
@@ -550,7 +561,7 @@ export function openWorkspace(ws: Workspace, requested: OpenOptions): Opened {
   if (requested.noAgent) return opened;
   return {
     ...opened,
-    ...launchAgent(ws, repo, worktree, requested, found === null),
+    ...launchAgent(ws, repo, worktree, requested, predating),
   };
 }
 

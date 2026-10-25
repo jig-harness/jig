@@ -68,12 +68,16 @@ Then:
    [M12](../../modules/M12-parallel-agent-ergonomics/README.md)) inside the
    worktree, once, however many opens reach it at the same time: the open
    that creates the claim directory in the worktree's git directory
-   (`jig-orca-create-hook.claim`) runs the hook, and the others wait for its
-   mark (`jig-orca-create-hook`), up to the hook's limit. A run that
-   succeeded leaves the mark and gives the claim back; one that failed gives
-   the claim back and leaves no mark, so the next open runs the hook again,
-   and an open that waited for it stops. A claim left by a run that was
-   killed is named in the message, for a person to remove. The hook runs
+   (`jig-orca-create-hook.claim`) and finds no mark (`jig-orca-create-hook`)
+   under it runs the hook, and the others wait for the mark, up to the
+   hook's limit. The mark is read again under the claim, since the holder
+   writes it before giving the claim back: an open that takes the claim as
+   another finishes neither runs the hook again nor, having waited, reports
+   a failure. A run that succeeded leaves the mark and gives the claim back;
+   one that failed gives the claim back and leaves no mark, so the next open
+   runs the hook again, and an open that waited for it stops. A claim left
+   by a run that was killed is named in the message, for a person to
+   remove. The hook runs
    after the branch has its name, since a hook may read it. On this machine
    it runs under the [Herdr workspace tool](../herdr/README.md)'s
    supervisor, which ends the hook and every process it started when it
@@ -94,13 +98,18 @@ uncommitted changes, which Orca refuses otherwise. Orca also deletes the
 worktree's local branch when it can tell the branch is merged, and keeps it
 otherwise. Parking runs the reflection journal in this process, so it
 happens only when the clone is on this machine. On a server's host the tool
-reads the worktree's journal over SSH, at its default place in the
-worktree's git directory, and refuses the removal while unsent findings are
-in it, since removing the worktree would delete them: run `/jig:reflect` in
-the worktree there, or park them there with the reflect skill's `journal.ts
-park`, and remove it again. Once the worktree is gone, the receipts of the
-agents started in it are set aside (below), so the next open of their keys
-starts an agent again.
+reads the worktree's journal over SSH, where the configuration on the host
+puts it: `reflection.journal` in the worktree's `.config/jig.yaml`, else in
+the host user's `~/.jig/jig.yaml` (`JIG_HOME` moves it), else the journal's
+default place in the worktree's git directory; a `JIG__…` variable of a
+session on the host is not seen. It refuses the removal while unsent
+findings are in the journal, since removing the worktree would delete them:
+run `/jig:reflect` in the worktree there, or park them there with the
+reflect skill's `journal.ts park`, and remove it again. It refuses as well
+while it cannot tell where the journal is: a configuration file on the host
+it cannot read or parse, or a `reflection.journal` that is not a path. Once
+the worktree is gone, the receipts of the agents started in it are set aside
+(below), so the next open of their keys starts an agent again.
 
 **`--environment`** names a paired Orca server (`orca environment list`), so
 Orca's tool runs here and reaches the server, and the worktree is created on
@@ -145,11 +154,21 @@ two repositories is two starts, and so are two agents on one key.
   one. An answer from Orca that nothing started (an agent it does not have,
   say) clears the receipt, so the next open starts the agent once that is
   fixed.
-- A receipt for a worktree that is gone is set aside under a dated name
-  beside it, and the start recorded anew: `remove` sets aside the receipts
-  of the worktree it removed, and an open that had to create the worktree,
-  or found the branch in another checkout, treats a receipt naming the old
-  one as the record of an agent that no longer works on the branch.
+- A receipt for a worktree that is gone is set aside beside it, and the
+  start recorded anew. `remove` sets aside the receipts of the worktree it
+  removed, under a dated name. An open that found the branch in another
+  checkout sets aside a receipt naming a different worktree; one that had
+  to create the worktree sets aside the receipt it found before creating
+  it, which records an agent in the worktree that stood at that path
+  before, while a receipt another open wrote since, for the new worktree,
+  records a start in it and stands. Setting a receipt aside succeeds for
+  exactly one open: the stale receipt is linked under a name carrying the
+  start it records, which only the first open to try can do, and that
+  open's pending receipt then takes its place without the file being absent
+  in between. A second open that read the same stale receipt waits for the
+  replacement (2 minutes at most), then finds the start made; the message
+  past that names the copy to remove when the open that made it never
+  finished.
 - A receipt that is not whole, or names another launch, is refused rather
   than read as any outcome; the message says to move it away.
 - An open without `--key` starts the agent every time; `--no-agent` starts

@@ -2,9 +2,12 @@
  * Kickoff receipts: the record that a key's agent was started in a worktree,
  * kept on the machine the tool runs on, outside every worktree. A receipt is
  * taken as pending by exactly one open at a time, completed once Orca
- * answered, and set aside once its worktree is gone, so an agent is started
- * once per key and agent and a start whose outcome is unknown is never
- * repeated without a person looking first.
+ * answered, and set aside, by exactly one open, once its worktree is gone,
+ * so an agent is started once per key and agent and a start whose outcome
+ * is unknown is never repeated without a person looking first. Every change
+ * to the file is made under something only one open can do (a hard link into
+ * a name that must not exist); what an open read before that is a hint, and
+ * the file is read again under it.
  */
 import {
   linkSync,
@@ -113,7 +116,7 @@ function isReceipt(value: unknown): value is Receipt {
  * whole receipt this tool writes is refused rather than read as any
  * outcome: damaged evidence of a start is not evidence of none.
  */
-function readReceipt(file: string): Receipt | null {
+export function readReceipt(file: string): Receipt | null {
   let text: string;
   try {
     text = readFileSync(file, "utf8");
@@ -154,14 +157,18 @@ function createReceipt(file: string, receipt: Receipt): boolean {
   }
 }
 
-/** Replace the receipt this open holds, whole, with the start recorded. */
-export function completeReceipt(file: string, receipt: Receipt): void {
+/**
+ * Write the receipt whole in place of what is at `file`: the start this open
+ * holds as pending, completed, or a pending start over a stale record this
+ * open alone set aside (`replaceStale`).
+ */
+export function writeReceipt(file: string, receipt: Receipt): void {
   const temporary = `${file}.tmp.${process.pid}`;
   writeFileSync(temporary, `${JSON.stringify(receipt)}\n`, { mode: 0o600 });
   renameSync(temporary, file);
 }
 
-/** Set a receipt aside under a dated name, keeping the record; a receipt already gone is fine. */
+/** Set the receipt of a removed worktree aside under a dated name, keeping the record; a receipt already gone is fine. */
 function retireReceipt(file: string): void {
   try {
     renameSync(file, `${file}.retired-${Date.now()}`);
@@ -183,31 +190,89 @@ function assertReceiptFor(file: string, found: Receipt, wanted: Receipt): void {
     );
 }
 
+/** Whether two receipts record the same start: the same content, read at two moments. */
+function sameStart(a: Receipt, b: Receipt): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 /**
  * Whether a sent receipt is the record of this worktree's own agent, so the
- * start stands. One for a worktree this open did not just create, or for
- * another worktree, records an agent in a checkout that no longer holds the
- * branch: it is set aside, and the start is recorded anew.
+ * start stands. One naming another worktree records an agent in a checkout
+ * that no longer holds the branch. `predating`, the receipt that was there
+ * before this open created the worktree, records an agent in the worktree
+ * that stood at this path before; a receipt another open wrote since, for
+ * this worktree, records a start in it, and stands.
  */
 function standsFor(
+  earlier: Receipt,
+  receipt: Receipt,
+  predating: Receipt | null,
+): boolean {
+  return (
+    earlier.worktreeId === receipt.worktreeId &&
+    (predating === null || !sameStart(earlier, predating))
+  );
+}
+
+/** Where a stale receipt is set aside: beside it, under the start it records. */
+function retiredName(file: string, earlier: Receipt): string {
+  return `${file}.retired-${fileSegment(earlier.at)}`;
+}
+
+/**
+ * Set the stale receipt aside and take its place with this open's pending
+ * receipt, for exactly one open: the stale receipt is linked under its
+ * retired name, which succeeds for the first open to do it, and the pending
+ * receipt then replaces it in place, so the file is never absent and no other
+ * open creates one in between. False when another open set it aside first,
+ * or it is gone.
+ */
+function replaceStale(
   ws: Workspace,
   file: string,
   earlier: Receipt,
   receipt: Receipt,
-  created: boolean,
+  predating: Receipt | null,
 ): boolean {
-  const key = receipt.key;
-  if (!created && earlier.worktreeId === receipt.worktreeId) {
-    ws.orca.log(
-      `↺ ${key}'s agent was started in ${earlier.worktreeId} on ${earlier.at}; not starting it again (delete ${file} to start it again)`,
-    );
-    return true;
+  try {
+    linkSync(file, retiredName(file, earlier));
+  } catch (error) {
+    const code = errnoCode(error);
+    if (code === "EEXIST" || code === "ENOENT") return false;
+    throw error;
   }
+  writeReceipt(file, receipt);
+  const replaced = predating !== null && sameStart(earlier, predating);
   ws.orca.log(
-    `↺ ${key}'s agent was started in ${earlier.worktreeId} on ${earlier.at}, a worktree that is gone${created ? " (this open created its replacement)" : ""}; starting one in ${receipt.worktreeId}`,
+    `↺ ${receipt.key}'s agent was started in ${earlier.worktreeId} on ${earlier.at}, a worktree that is gone${replaced ? " (this open created its replacement)" : ""}; starting one in ${receipt.worktreeId}`,
   );
-  retireReceipt(file);
-  return false;
+  return true;
+}
+
+/**
+ * Wait one poll for the open that set the stale receipt aside to replace it,
+ * while the deadline has not passed. A stale receipt still in place past it
+ * was set aside by an open that did not finish: the message names the copy
+ * to remove. Returns true, for the caller's record that it waited.
+ */
+function awaitReplacement(
+  ws: Workspace,
+  file: string,
+  earlier: Receipt,
+  deadline: number,
+  waited: boolean,
+): true {
+  const retired = retiredName(file, earlier);
+  if (Date.now() >= deadline)
+    throw new OrcaError(
+      `another open set aside the record of ${earlier.key}'s agent (${retired}) and did not replace ${file} within ${Math.round(CLAIM_WAIT_MS / 1000)}s; if no open is running, remove ${retired} and open the workspace again`,
+    );
+  if (!waited)
+    ws.orca.log(
+      `… waiting for another open that is setting aside the record of ${earlier.key}'s agent`,
+    );
+  ws.orca.sleep(WAIT_POLL_MS);
+  return true;
 }
 
 /**
@@ -244,26 +309,45 @@ function awaitStart(
 /**
  * Take the key's receipt for this open, written as pending, which succeeds
  * for exactly one open at a time: two opens that both find no receipt cannot
- * both start the agent. False when an earlier start stands (`standsFor`). A
- * pending receipt whose open still runs on this machine is waited for, up to
- * `CLAIM_WAIT_MS` (`awaitStart`).
+ * both start the agent, and two that both find a stale one cannot both
+ * replace it (`replaceStale`). False when an earlier start stands
+ * (`standsFor`). A pending receipt whose open still runs on this machine is
+ * waited for, up to `CLAIM_WAIT_MS` (`awaitStart`), and so is another open's
+ * replacement of a stale receipt (`awaitReplacement`). `predating` is the
+ * receipt that was there before this open created the worktree, or null.
  */
 export function claimReceipt(
   ws: Workspace,
   file: string,
   receipt: Receipt,
-  created: boolean,
+  predating: Receipt | null,
 ): boolean {
   const deadline = Date.now() + budget(ws.orca, CLAIM_WAIT_MS);
-  let waited = false;
+  let waitedStart = false;
+  let waitedReplacement = false;
   for (;;) {
     if (createReceipt(file, receipt)) return true;
     const earlier = readReceipt(file);
     if (earlier === null) continue;
     assertReceiptFor(file, earlier, receipt);
-    if (earlier.status === "pending")
-      waited = awaitStart(ws, file, earlier, deadline, waited);
-    else if (standsFor(ws, file, earlier, receipt, created)) return false;
+    if (earlier.status === "pending") {
+      waitedStart = awaitStart(ws, file, earlier, deadline, waitedStart);
+      continue;
+    }
+    if (standsFor(earlier, receipt, predating)) {
+      ws.orca.log(
+        `↺ ${receipt.key}'s agent was started in ${earlier.worktreeId} on ${earlier.at}; not starting it again (delete ${file} to start it again)`,
+      );
+      return false;
+    }
+    if (replaceStale(ws, file, earlier, receipt, predating)) return true;
+    waitedReplacement = awaitReplacement(
+      ws,
+      file,
+      earlier,
+      deadline,
+      waitedReplacement,
+    );
   }
 }
 

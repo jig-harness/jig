@@ -231,6 +231,8 @@ describe("the tool's answer", () => {
       "not json",
       '{"path":"/ws/app/x"}',
       JSON.stringify({ ...answer, kickoff: "maybe" }),
+      // An array of one allowed word reads as that word once coerced.
+      JSON.stringify({ ...answer, kickoff: ["already-sent"] }),
       JSON.stringify({ ...answer, reattached: "no" }),
     ])
       expect(() => parseOpened(text)).toThrow(

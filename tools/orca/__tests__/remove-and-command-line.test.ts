@@ -23,6 +23,7 @@ import {
   GIT_DIR,
   gitDir,
   gitList,
+  hostHome,
   ID,
   JOURNAL,
   list,
@@ -32,11 +33,14 @@ import {
   porcelain,
   R,
   receiptOf,
+  REPO_CONFIG,
   retiredBeside,
   RID,
   row,
   sentReceipt,
   show,
+  USER_CONFIG,
+  userConfigPath,
   workspaceOf,
   writeReceiptFile,
   WT,
@@ -53,6 +57,10 @@ describe("remove", () => {
     [commonDir(WT)]: ok("/repo/.git\n"),
     [list]: answer({ worktrees: [row(B)] }),
     [`test -x ${WT}/.config/worktree-hooks/remove`]: fail(1),
+    // The host's configuration names no journal, so the default is looked at.
+    [userConfigPath]: ok(USER_CONFIG),
+    [`test -f ${USER_CONFIG}`]: fail(1),
+    [`test -f ${REPO_CONFIG}`]: fail(1),
     [`test -f ${JOURNAL}`]: fail(1),
     [`orca worktree rm --worktree id:${ID} --json`]: answer({ removed: true }),
   });
@@ -138,6 +146,90 @@ describe("remove", () => {
     expect(
       ws.ctx.lines.some((l) => l.includes("has no unsent reflection findings")),
     ).toBe(true);
+  });
+
+  test("on a server looks for the journal where the worktree's configuration puts it, reflection on or off", async () => {
+    const configured = `${WT}/.context/reflection.jsonl`;
+    const ws = workspaceOf(
+      {
+        ...removable,
+        [`test -f ${REPO_CONFIG}`]: ok(),
+        [`cat ${REPO_CONFIG}`]: ok(
+          "reflection:\n  enabled: false\n  journal: .context/reflection.jsonl\n",
+        ),
+        [`test -f ${configured}`]: ok(),
+        [`cat ${configured}`]: journalOf(finding),
+      },
+      "box",
+      "box",
+    );
+    await expect(removeWorkspace(ws, removing)).rejects.toThrow(
+      `${WT} has 1 unsent reflection finding(s) in ${configured}`,
+    );
+    expect(ws.ctx.calls).not.toContain(`test -f ${JOURNAL}`);
+    expect(ws.ctx.calls).not.toContain(rm);
+  });
+
+  test("on a server reads the host user's configuration under the worktree's, and ~ as the host's home", async () => {
+    const ws = workspaceOf(
+      {
+        ...removable,
+        [`test -f ${USER_CONFIG}`]: ok(),
+        [`cat ${USER_CONFIG}`]: ok(
+          "reflection:\n  journal: ~/journals/app.jsonl\n",
+        ),
+        [hostHome]: ok("/home/me\n"),
+        "test -f /home/me/journals/app.jsonl": fail(1),
+      },
+      "box",
+      "box",
+    );
+    expect(await removeWorkspace(ws, removing)).toBe(WT);
+    expect(ws.ctx.calls).toContain("test -f /home/me/journals/app.jsonl");
+    expect(ws.ctx.calls).not.toContain(`test -f ${JOURNAL}`);
+    // The worktree's own setting is laid over the user's.
+    const over = workspaceOf(
+      {
+        ...removable,
+        [`test -f ${USER_CONFIG}`]: ok(),
+        [`cat ${USER_CONFIG}`]: ok(
+          "reflection:\n  journal: ~/journals/app.jsonl\n",
+        ),
+        [`test -f ${REPO_CONFIG}`]: ok(),
+        [`cat ${REPO_CONFIG}`]: ok(
+          "reflection:\n  journal: /srv/journals/app.jsonl\n",
+        ),
+        "test -f /srv/journals/app.jsonl": fail(1),
+      },
+      "box",
+      "box",
+    );
+    expect(await removeWorkspace(over, removing)).toBe(WT);
+    expect(over.ctx.calls).toContain("test -f /srv/journals/app.jsonl");
+    expect(over.ctx.calls).not.toContain(hostHome);
+  });
+
+  test("on a server refuses while it cannot tell where the journal is", async () => {
+    const cases: [Answer, string][] = [
+      [fail(1, "Permission denied"), `cannot read ${REPO_CONFIG} on box`],
+      [ok("reflection: ["), "could not be parsed"],
+      [ok("reflection:\n  journal: 3\n"), "must be a path"],
+      [ok("reflection:\n  journal: ''\n"), "must be a path"],
+    ];
+    for (const [config, message] of cases) {
+      const ws = workspaceOf(
+        {
+          ...removable,
+          [`test -f ${REPO_CONFIG}`]: ok(),
+          [`cat ${REPO_CONFIG}`]: config,
+        },
+        "box",
+        "box",
+      );
+      await expect(removeWorkspace(ws, removing)).rejects.toThrow(message);
+      expect(ws.ctx.calls).not.toContain(`test -f ${JOURNAL}`);
+      expect(ws.ctx.calls).not.toContain(rm);
+    }
   });
 
   test("on a server refuses a journal it cannot read, naming the host", async () => {
@@ -279,6 +371,9 @@ describe("Orca's command", () => {
           [commonDir(WT)]: ok("/repo/.git\n"),
           [list]: answer({ worktrees: [row(B)] }),
           [`test -x ${WT}/.config/worktree-hooks/remove`]: fail(1),
+          [userConfigPath]: ok(USER_CONFIG),
+          [`test -f ${USER_CONFIG}`]: fail(1),
+          [`test -f ${REPO_CONFIG}`]: fail(1),
           [`test -f ${JOURNAL}`]: fail(1),
         }),
         [`orca worktree rm --worktree id:${ID} --environment box --json`]:

@@ -39,6 +39,7 @@ import {
   releaseClaim,
   remoteRef,
   rename,
+  retiredAs,
   retiredBeside,
   RID,
   row,
@@ -209,18 +210,69 @@ describe("a branch no checkout holds", () => {
     // The worktree was removed in the Orca app, which set no receipt aside;
     // Orca gives the replacement the same path-derived id.
     const file = receiptOf(ws);
-    writeReceiptFile(file, sentReceipt());
+    const old = sentReceipt();
+    writeReceiptFile(file, old);
     expect(openWorkspace(ws, options)).toMatchObject({
       reattached: false,
       agentLaunched: true,
       kickoff: "sent",
     });
     expect(ws.ctx.calls).toContain(launch);
-    expect(retiredBeside(file)).toHaveLength(1);
+    expect(retiredBeside(file)).toEqual([
+      retiredAs(file, old).slice(file.lastIndexOf("/") + 1),
+    ]);
     expect(JSON.parse(readFileSync(file, "utf8")).status).toBe("sent");
     expect(
       ws.ctx.lines.some((l) => l.includes("this open created its replacement")),
     ).toBe(true);
+  });
+
+  test("created while another open reattached to it and started the agent does not start a second one", () => {
+    // The other open finds the worktree once the branch has its name and
+    // writes its receipt before this open, which created the worktree,
+    // reaches its own: the link step is where the table lets it happen.
+    let file = "";
+    const ws = workspaceOf({
+      ...fresh,
+      [link]: () => {
+        writeReceiptFile(file, sentReceipt());
+        return orcaError("linear_not_connected");
+      },
+    });
+    file = receiptOf(ws);
+    expect(openWorkspace(ws, options)).toMatchObject({
+      reattached: false,
+      agentLaunched: false,
+      kickoff: "already-sent",
+    });
+    expect(ws.ctx.calls).not.toContain(launch);
+    expect(retiredBeside(file)).toHaveLength(0);
+    expect(ws.ctx.lines.some((l) => l.includes("not starting it again"))).toBe(
+      true,
+    );
+  });
+
+  test("created again after its worktree went sets aside only the receipt it found before creating it", () => {
+    let file = "";
+    const ws = workspaceOf({
+      ...fresh,
+      [link]: () => {
+        // Another open reattached to the new worktree and started the agent.
+        writeReceiptFile(file, sentReceipt());
+        return orcaError("linear_not_connected");
+      },
+    });
+    file = receiptOf(ws);
+    writeReceiptFile(file, { ...sentReceipt(), at: "2025-12-31T00:00:00Z" });
+    expect(openWorkspace(ws, options)).toMatchObject({
+      agentLaunched: false,
+      kickoff: "already-sent",
+    });
+    expect(ws.ctx.calls).not.toContain(launch);
+    expect(retiredBeside(file)).toHaveLength(0);
+    expect(JSON.parse(readFileSync(file, "utf8")).at).toBe(
+      "2026-01-01T00:00:00Z",
+    );
   });
 });
 
@@ -286,16 +338,53 @@ describe("the repository's create hook", () => {
   });
 
   test("whose run another open waited for ended without a mark stops that open", () => {
+    // The claim comes free with no mark under it: the run failed. The open
+    // gives the claim back rather than running the hook over the failure.
     const ws = workspaceOf({
       ...hooked,
-      [takeClaim]: fail(1),
-      [`test -d ${CLAIM}`]: [ok(), fail(1)],
+      [takeClaim]: [fail(1), ok()],
+      [`test -d ${CLAIM}`]: ok(),
     });
     expect(() => openWorkspace(ws, options)).toThrow(
       "ended without leaving its mark, so it failed",
     );
     expect(ws.ctx.calls).not.toContain(HOOK);
     expect(ws.ctx.calls).not.toContain(launch);
+    expect(ws.ctx.calls).toContain(releaseClaim);
+    expect(ws.ctx.slept).toEqual([1000]);
+  });
+
+  test("is not run again when its mark appears as this open takes the claim", () => {
+    // Another open wrote the mark and gave the claim back between this
+    // open's look at the mark and its claim.
+    const ws = workspaceOf({
+      ...hooked,
+      [`test -f ${MARK}`]: [fail(1), ok()],
+    });
+    expect(openWorkspace(ws, options)).toMatchObject({
+      hookRan: false,
+      agentLaunched: true,
+    });
+    expect(ws.ctx.calls).not.toContain(HOOK);
+    expect(ws.ctx.calls).toContain(takeClaim);
+    expect(ws.ctx.calls).toContain(releaseClaim);
+  });
+
+  test("that another open finishes as this open's wait ends is not reported as failed", () => {
+    // The mark is absent at the look before the claim, present under it.
+    const ws = workspaceOf({
+      ...hooked,
+      [`test -f ${MARK}`]: [fail(1), fail(1), ok()],
+      [takeClaim]: [fail(1), ok()],
+      [`test -d ${CLAIM}`]: ok(),
+    });
+    expect(openWorkspace(ws, options)).toMatchObject({
+      hookRan: false,
+      agentLaunched: true,
+    });
+    expect(ws.ctx.calls).not.toContain(HOOK);
+    expect(ws.ctx.calls).toContain(releaseClaim);
+    expect(ws.ctx.slept).toEqual([1000]);
   });
 
   test("that another open holds past the hook's limit stops the wait and names the claim", () => {
@@ -373,14 +462,61 @@ describe("a branch a checkout already holds", () => {
   test("whose agent was started in a worktree that no longer holds the branch gets one here", () => {
     const ws = workspaceOf(held);
     const file = receiptOf(ws);
-    writeReceiptFile(file, sentReceipt(`${RID}::/ws/repo/elsewhere`));
+    const elsewhere = sentReceipt(`${RID}::/ws/repo/elsewhere`);
+    writeReceiptFile(file, elsewhere);
     expect(openWorkspace(ws, options)).toMatchObject({
       reattached: true,
       agentLaunched: true,
       kickoff: "sent",
     });
     expect(retiredBeside(file)).toHaveLength(1);
+    expect(
+      JSON.parse(readFileSync(retiredAs(file, elsewhere), "utf8")),
+    ).toEqual(elsewhere);
     expect(JSON.parse(readFileSync(file, "utf8")).worktreeId).toBe(ID);
+  });
+
+  test("whose stale receipt another open is setting aside waits for that open's start, then does not repeat it", () => {
+    const ws = workspaceOf(held);
+    const file = receiptOf(ws);
+    const elsewhere = sentReceipt(`${RID}::/ws/repo/elsewhere`);
+    writeReceiptFile(file, elsewhere);
+    // The other open linked the stale receipt under its retired name and
+    // has not replaced it yet; it finishes while this one waits.
+    writeReceiptFile(retiredAs(file, elsewhere), elsewhere);
+    ws.orca = {
+      ...ws.ctx,
+      sleep: (ms) => {
+        ws.ctx.slept.push(ms);
+        writeReceiptFile(file, sentReceipt());
+      },
+    };
+    expect(openWorkspace(ws, options)).toMatchObject({
+      agentLaunched: false,
+      kickoff: "already-sent",
+    });
+    expect(ws.ctx.calls).not.toContain(launch);
+    expect(ws.ctx.slept).toEqual([1000]);
+    expect(retiredBeside(file)).toHaveLength(1);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(sentReceipt());
+    expect(
+      ws.ctx.lines.some((l) => l.includes("setting aside the record")),
+    ).toBe(true);
+  });
+
+  test("whose stale receipt another open set aside and never replaced stops, naming the copy to remove", () => {
+    const ws = workspaceOf(held);
+    const file = receiptOf(ws);
+    const elsewhere = sentReceipt(`${RID}::/ws/repo/elsewhere`);
+    writeReceiptFile(file, elsewhere);
+    writeReceiptFile(retiredAs(file, elsewhere), elsewhere);
+    // No time left for the wait: the deadline is now.
+    ws.orca = { ...ws.ctx, budget: () => 0 };
+    expect(() => openWorkspace(ws, options)).toThrow(
+      `remove ${retiredAs(file, elsewhere)} and open the workspace again`,
+    );
+    expect(ws.ctx.calls).not.toContain(launch);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(elsewhere);
   });
 
   test("with a receipt that is not whole is refused rather than read as a start", () => {

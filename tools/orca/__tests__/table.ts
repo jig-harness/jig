@@ -18,7 +18,7 @@ import {
 } from "../../herdr/__tests__/fake.ts";
 import type { RunResult } from "../../herdr/runner.ts";
 import { CREATE_HOOK_CLAIM, CREATE_HOOK_MARK } from "../hooks.ts";
-import { type Receipt, receiptPath } from "../receipts.ts";
+import { fileSegment, type Receipt, receiptPath } from "../receipts.ts";
 import { remoteHook, type Workspace } from "../runner.ts";
 import type { OpenOptions } from "../workspace.ts";
 
@@ -33,6 +33,12 @@ export const GIT_DIR = "/repo/.git/worktrees/feat-x";
 export const MARK = `${GIT_DIR}/${CREATE_HOOK_MARK}`;
 export const CLAIM = `${GIT_DIR}/${CREATE_HOOK_CLAIM}`;
 export const JOURNAL = `${GIT_DIR}/${DEFAULT_JOURNAL_IN_GIT_DIR}`;
+/** The worktree's own Jig configuration on the host. */
+export const REPO_CONFIG = `${WT}/.config/jig.yaml`;
+/** The host user's Jig configuration, where the host's shell says it is. */
+export const USER_CONFIG = "/home/me/.jig/jig.yaml";
+export const userConfigPath = `sh -c printf %s "\${JIG_HOME:-$HOME/.jig}/jig.yaml"`;
+export const hostHome = 'sh -c printf %s "$HOME"';
 
 /** An Orca success envelope. */
 export const answer = (result: unknown): RunResult =>
@@ -193,6 +199,10 @@ export const sentReceipt = (worktreeId = ID): Receipt => ({
   environment: null,
   at: "2026-01-01T00:00:00Z",
 });
+
+/** Where an open sets a stale receipt aside: beside it, under the start it records. */
+export const retiredAs = (file: string, receipt: Receipt): string =>
+  `${file}.retired-${fileSegment(receipt.at)}`;
 
 /** The files set aside beside a receipt. */
 export const retiredBeside = (file: string): string[] =>
