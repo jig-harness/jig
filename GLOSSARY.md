@@ -760,6 +760,13 @@ make, use the entry's term instead.
   closed vocabulary and checked before an issue is written
   ([M9](modules/M9-tasks-memory/README.md);
   [file-issue](plugin/skills/file-issue/README.md#the-label-taxonomy)).
+- **Work type** — the kind of work an item is (bug, feature, improvement,
+  task, spike), derived from its type label, the tracker's own issue type or
+  its title prefix, with one question asked only in an interactive session
+  where none of those identifies it; it sets how much each delivery station
+  does for the item, never which stations exist, and never lowers a depth a
+  *flag label*, a catalog review or a gate raises
+  ([design](design/work-types.md)).
 - **Label group** — a family of a *label taxonomy* an issue carries at most
   one label of, such as a size or a repository; a required group, exactly
   one.
@@ -983,6 +990,19 @@ make, use the entry's term instead.
   failure), and a failed fetch is never read as a pass
   ([M14](modules/M14-testing-strategy/README.md); `fix-ci` ships it as
   `probe-base.ts`).
+- **Evidence record** — the kept proof that a check ran: the command, the
+  working tree it ran against (every tracked file, with its staged and
+  unstaged changes, and every untracked file Git does not ignore), its exit
+  code, the test counts from the
+  runner's own report, and the start and end of its output. An edit to the
+  tree after the run makes the record stop applying, so "the tests pass"
+  points at a run rather than a sentence
+  ([design](design/verify-and-debug.md)).
+- **Hypothesis ledger** — the written list of guesses tried while debugging
+  one failure: each guess, the change made to test it, the *evidence record*
+  of the result and whether it held, written before the change is made. It
+  is what a bounded debugging attempt hands over when its budget runs out
+  ([design](design/verify-and-debug.md)).
 - **Behaviour pin** — a test that asserts the defective behaviour of a
   dependency that a workaround compensates for, run against the real
   dependency and named for the workaround. It fails on the release that
