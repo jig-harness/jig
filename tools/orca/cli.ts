@@ -64,13 +64,17 @@ export function orcaArgv(target: OrcaTarget, args: string[]): string[] {
   ];
 }
 
-export interface OrcaEnvelope<T> {
-  ok?: boolean;
-  result?: T;
-  error?: { code?: string; message?: string };
-}
+/**
+ * What a command answers: a result, or an error. Anything else that comes
+ * back, `{ ok: false }` with no error or a result with no `ok`, is not an
+ * answer this tool acts on, so a malformed response never passes as a
+ * success or as a named failure.
+ */
+export type OrcaEnvelope<T> =
+  | { ok: true; result: T | undefined }
+  | { ok: false; error: { code?: string; message?: string } };
 
-/** The envelope in a command's output, or null when the output holds none. */
+/** The well-formed envelope in a command's output, or null when it holds none. */
 export function parseOrcaEnvelope<T>(text: string): OrcaEnvelope<T> | null {
   const trimmed = text.trim();
   if (!trimmed.startsWith("{")) return null;
@@ -81,7 +85,19 @@ export function parseOrcaEnvelope<T>(text: string): OrcaEnvelope<T> | null {
     swallow(error, "orca output that starts like JSON but is not: no envelope");
     return null;
   }
-  return isRecord(parsed) ? (parsed as OrcaEnvelope<T>) : null;
+  if (!isRecord(parsed)) return null;
+  if (parsed.ok === true) return { ok: true, result: parsed.result as T };
+  if (parsed.ok === false && isRecord(parsed.error)) {
+    const { code, message } = parsed.error;
+    return {
+      ok: false,
+      error: {
+        ...(typeof code === "string" ? { code } : {}),
+        ...(typeof message === "string" ? { message } : {}),
+      },
+    };
+  }
+  return null;
 }
 
 /**
@@ -99,7 +115,7 @@ export function orcaCall<T>(
     timeoutMs === undefined ? undefined : { timeoutMs },
   );
   const envelope = parseOrcaEnvelope<T>(result.stdout);
-  if (envelope?.error) return envelope;
+  if (envelope !== null && !envelope.ok) return envelope;
   if (result.status !== 0)
     throw new OrcaError(
       `${what} failed (exit ${result.status}): ${output(result)}`,
@@ -128,9 +144,9 @@ export function orcaJson<T>(
   timeoutMs?: number,
 ): T {
   const envelope = orcaCall<T>(ws, args, what, timeoutMs);
-  if (envelope.error)
+  if (!envelope.ok)
     throw new OrcaError(`${what}: ${orcaErrorText(envelope.error)}`);
-  if (envelope.ok === false || envelope.result === undefined)
+  if (envelope.result === undefined)
     throw new OrcaError(`${what}: empty result`);
   return envelope.result;
 }

@@ -13,6 +13,11 @@
  * and the issue's cache file is copied to the same place under the host
  * user's home first; the prompt names that copy.
  *
+ * The tool runs as a process of its own, as the Herdr provider runs its tool:
+ * its steps are synchronous calls, which in this process would hold the
+ * event loop and with it the launcher's deadline, so a child is what the
+ * deadline can end.
+ *
  * Settings per repository (`repos.<label>.orca`):
  *   repo         the repository's name in Orca (`orca repo list`), on the
  *                machine Orca runs on
@@ -29,18 +34,17 @@
  * An issue that is not routed to a repository is refused: Orca has several
  * repositories and nothing in the issue picks one.
  */
+import { join } from "node:path";
 import { isRecord } from "../../../lib/record.ts";
 import { TRANSPORT_MS } from "../../herdr/limits.ts";
 import { assertHost } from "../../herdr/remote.ts";
 import { HerdrError } from "../../herdr/runner.ts";
-import { resolveOrcaCommand } from "../../orca/cli.ts";
-import { OrcaError, workspace } from "../../orca/runner.ts";
+import { OrcaError } from "../../orca/runner.ts";
 import {
-  limitWorkspace,
   OPEN_LIMIT_MS,
   type Opened,
   type OpenOptions,
-  openWorkspace,
+  openArgs,
 } from "../../orca/workspace.ts";
 import { copyCacheOverSsh } from "../cache-copy.ts";
 import type { OpenRequest, Provider } from "../provider.ts";
@@ -48,6 +52,7 @@ import {
   branchFor,
   loginShellPath,
   parseBranchNaming,
+  repoMapping,
   type SettingText,
   settingText,
   type SlugKind,
@@ -55,6 +60,8 @@ import {
 
 /** The tool's own limit for `open`, which it holds itself to, plus the copy and the connection around it. */
 export const ORCA_OPEN_BUDGET_MS = OPEN_LIMIT_MS + TRANSPORT_MS;
+
+const TOOL = join(import.meta.dir, "..", "..", "orca", "workspace.ts");
 
 const KEYS = new Set([
   "repo",
@@ -101,17 +108,14 @@ function parseServer(
 
 export function parseRepo(settings: unknown, label: string): OrcaRepo {
   const where = `repos.${label}.orca`;
-  if (typeof settings === "string") settings = { repo: settings };
-  if (!isRecord(settings))
-    throw new HerdrError(
-      `${where} must be the repository's name in Orca or a mapping with ${[...KEYS].join(", ")}`,
-    );
-  for (const key of Object.keys(settings))
-    if (!KEYS.has(key))
-      throw new HerdrError(
-        `${where}: unknown key ${key} (known: ${[...KEYS].join(", ")})`,
-      );
-  const text = settingText(settings, where);
+  const mapping = repoMapping(
+    settings,
+    where,
+    KEYS,
+    "repo",
+    "the repository's name in Orca",
+  );
+  const text = settingText(mapping, where);
   const repo = text("repo");
   if (repo === undefined) throw new HerdrError(`${where}.repo is required`);
   const agent = text("agent");
@@ -157,31 +161,90 @@ export interface OrcaDeps {
     file: string,
     signal: AbortSignal,
   ) => Promise<string>;
-  /** Run the workspace tool's `open` for the repository. */
-  open: (repo: OrcaRepo, options: OpenOptions) => Opened;
+  /** Run the workspace tool's `open` for the repository; ends it when `signal` aborts. */
+  open: (
+    repo: OrcaRepo,
+    options: OpenOptions,
+    signal: AbortSignal,
+  ) => Promise<Opened>;
+}
+
+const KICKOFFS = new Set(["sent", "already-sent", "none"]);
+
+/** What the tool printed with `--json`, read back as what it opened; anything else is an error, never a result. */
+export function parseOpened(text: string): Opened {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.trim());
+  } catch {
+    parsed = null;
+  }
+  const filled = (value: unknown): value is string =>
+    typeof value === "string" && value !== "";
+  if (
+    !isRecord(parsed) ||
+    !filled(parsed.path) ||
+    !filled(parsed.branch) ||
+    !filled(parsed.worktreeId) ||
+    typeof parsed.reattached !== "boolean" ||
+    typeof parsed.hookRan !== "boolean" ||
+    typeof parsed.agentLaunched !== "boolean" ||
+    !KICKOFFS.has(String(parsed.kickoff))
+  )
+    throw new OrcaError(
+      `the Orca workspace tool answered with something other than what it opened: ${text.trim() || "nothing"}`,
+    );
+  return parsed as unknown as Opened;
 }
 
 /**
- * Open through Orca's tool on this machine, with the login shell's `PATH`:
- * the tracker starts the launcher without the shell profile, so `git` and
- * Orca's command installed where only the profile adds them are found.
+ * Open through Orca's tool as a process of its own, with the login shell's
+ * `PATH`: the tracker starts the launcher without the shell profile, so `git`
+ * and Orca's command installed where only the profile adds them are found.
+ * The tool's progress goes to this process's stderr as it arrives; its
+ * `--json` answer is read back. An abort ends the child.
  */
-function openHere(repo: OrcaRepo, options: OpenOptions): Opened {
+async function openHere(
+  repo: OrcaRepo,
+  options: OpenOptions,
+  signal: AbortSignal,
+): Promise<Opened> {
   const path = loginShellPath();
-  const env = { ...process.env, ...(path === undefined ? {} : { PATH: path }) };
-  const ws = limitWorkspace(
-    workspace(
-      {
-        command: resolveOrcaCommand(env),
-        ...(repo.environment === undefined
-          ? {}
-          : { environment: repo.environment }),
-      },
-      { env, ...(repo.ssh === undefined ? {} : { ssh: repo.ssh }) },
-    ),
-    OPEN_LIMIT_MS,
+  const target = {
+    ...(repo.environment === undefined
+      ? {}
+      : { environment: repo.environment }),
+    ...(repo.ssh === undefined ? {} : { ssh: repo.ssh }),
+  };
+  const proc = Bun.spawn(
+    [process.execPath, TOOL, "open", ...openArgs(options, target), "--json"],
+    {
+      env: { ...process.env, ...(path === undefined ? {} : { PATH: path }) },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+      signal,
+    },
   );
-  return openWorkspace(ws, options);
+  const decoder = new TextDecoder();
+  const relayed = (async () => {
+    for await (const chunk of proc.stderr)
+      process.stderr.write(decoder.decode(chunk, { stream: true }));
+  })();
+  const [status, stdout] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout).text(),
+    relayed,
+  ]);
+  if (signal.aborted)
+    throw new OrcaError(
+      "the Orca workspace tool did not finish before the launcher's deadline and was ended",
+    );
+  if (status !== 0)
+    throw new OrcaError(
+      `the Orca workspace tool failed (exit ${status}); its output is above`,
+    );
+  return parseOpened(stdout);
 }
 
 const defaultDeps: OrcaDeps = {
@@ -220,7 +283,11 @@ export function orcaProvider(deps: Partial<OrcaDeps> = {}): Provider {
           await copyCache(repo.ssh, request.cacheFile, request.signal),
         );
       }
-      const opened = open(repo, openOptions(repo, request, prompt));
+      const opened = await open(
+        repo,
+        openOptions(repo, request, prompt),
+        request.signal,
+      );
       console.error(
         `[launcher] ${request.issue}: ${opened.reattached ? "reattached to" : "opened"} ${opened.path} (${opened.branch})${opened.agentLaunched ? `; ${repo.agent ?? "claude"} started` : opened.kickoff === "already-sent" ? "; its agent was already started" : ""}`,
       );

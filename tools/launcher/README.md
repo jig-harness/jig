@@ -269,13 +269,15 @@ server, Orca's tool runs here and reaches the server, while git and the
 hooks run on the server's host over SSH, so `ssh` must name it (as
 `environment` does when the two names agree); the issue's cache file is
 copied there first, as for Herdr, and the prompt names that copy. The
-agent's start is recorded once per issue and server in
+agent's start is recorded once per issue, repository, agent and server in
 `~/.jig/orca/kickoff/`, so a second launch of the same issue reattaches and
-starts nothing. An unrouted issue is refused: Orca has several repositories
-and nothing in the issue picks one. The provider's budget is the Orca tool's
-own limit for `open` (sized for the create hook) plus the connection around
-it. How to run Orca's server on a host, and what the tool relies on in Orca,
-are in its [README](../orca/README.md).
+starts nothing, and two launches at once start it once. An unrouted issue is
+refused: Orca has several repositories and nothing in the issue picks one.
+The tool runs as a process of its own, as the Herdr tool does, so the
+launcher's deadline ends it; the provider's budget is the Orca tool's own
+limit for `open` (sized for the create hook and a wait on another launch)
+plus the connection around it. How to run Orca's server on a host, and what
+the tool relies on in Orca, are in its [README](../orca/README.md).
 
 To add a provider, add `providers/<name>.ts` exporting a `Provider`, register it
 in `providers/index.ts`, and document its `repos.<label>.<name>` settings here.

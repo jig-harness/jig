@@ -50,25 +50,41 @@ Then:
    commits origin lacks stops the run: a person decides which side wins.
    Every git check that cannot answer is an error, never read as "absent".
 3. It creates the worktree with `orca worktree create`, from that starting
-   point, with Orca's own setup hook skipped, and then **names the branch**:
-   Orca names a new branch after the worktree under its own prefix
-   (`<git user>/feature-eng-12-fix-the-login` for a worktree named
+   point, with Orca's own setup hook skipped, checks that the worktree Orca
+   reports is a linked worktree of the repository's own clone (a stale or
+   wrong answer must not have branches renamed elsewhere), and then **names
+   the branch**: Orca names a new branch after the worktree under its own
+   prefix (`<git user>/feature-eng-12-fix-the-login` for a worktree named
    `feature/ENG-12-fix-the-login`), so the tool renames a fresh branch, or
-   checks out the existing one and deletes Orca's, and sets the branch to
-   track its origin copy. Orca reads the branch from git, so it follows, and
-   `--worktree branch:<name>` selects the worktree from then on.
-4. It runs the repository's create hook (`.config/worktree-hooks/create`,
+   checks out the existing one and deletes Orca's. Orca reads the branch
+   from git, so it follows, and `--worktree branch:<name>` selects the
+   worktree from then on.
+4. On every open, reattaching included, it sets the branch to track its
+   origin copy when origin has one (a repair an earlier open could not
+   finish is made now), and `--linear-issue` links the issue to the worktree
+   in Orca's Linear integration; when that integration is not connected the
+   link only warns, and the next open tries again.
+5. It runs the repository's create hook (`.config/worktree-hooks/create`,
    [M12](../../modules/M12-parallel-agent-ergonomics/README.md)) inside the
-   worktree, once: a run that succeeded leaves a mark in the worktree's git
-   directory (`jig-orca-create-hook`), and one that failed stops the open
-   and leaves none, so the next open runs the hook again. The hook runs after
-   the branch has its name, since a hook may read it.
-5. It starts the agent (`claude` unless `--agent` names another Orca agent
+   worktree, once, however many opens reach it at the same time: the open
+   that creates the claim directory in the worktree's git directory
+   (`jig-orca-create-hook.claim`) runs the hook, and the others wait for its
+   mark (`jig-orca-create-hook`), up to the hook's limit. A run that
+   succeeded leaves the mark and gives the claim back; one that failed gives
+   the claim back and leaves no mark, so the next open runs the hook again,
+   and an open that waited for it stops. A claim left by a run that was
+   killed is named in the message, for a person to remove. The hook runs
+   after the branch has its name, since a hook may read it. On this machine
+   it runs under the [Herdr workspace tool](../herdr/README.md)'s
+   supervisor, which ends the hook and every process it started when it
+   fails, outlives its limit, or the tool has gone; on a server's host it
+   runs as one SSH command under the call's deadline, and a hook that
+   outlives it, or a child it leaves behind, is left to the host
+   ([what is left](../../ROADMAP.md)).
+6. It starts the agent (`claude` unless `--agent` names another Orca agent
    id) in the worktree with `--prompt` as its first prompt, once per
-   `--key`, as below. `--linear-issue` links the issue to the worktree in
-   Orca's Linear integration; when that integration is not connected the
-   link only warns. `--comment` is kept in Orca's metadata, and `--activate`
-   reveals the new worktree in the app.
+   `--key` and agent, as below. `--comment` is kept in Orca's metadata, and
+   `--activate` reveals the new worktree in the app.
 
 **`remove`** runs the repository's remove hook inside the worktree, parks the
 worktree's unsent [reflection](../../plugin/skills/reflect/README.md)
@@ -77,22 +93,29 @@ When either step fails the worktree stays. `--force` removes a worktree with
 uncommitted changes, which Orca refuses otherwise. Orca also deletes the
 worktree's local branch when it can tell the branch is merged, and keeps it
 otherwise. Parking runs the reflection journal in this process, so it
-happens only when the clone is on this machine: on a server's host, the tool
-says so, and the findings are parked by running `/jig:reflect` there first.
+happens only when the clone is on this machine. On a server's host the tool
+reads the worktree's journal over SSH, at its default place in the
+worktree's git directory, and refuses the removal while unsent findings are
+in it, since removing the worktree would delete them: run `/jig:reflect` in
+the worktree there, or park them there with the reflect skill's `journal.ts
+park`, and remove it again. Once the worktree is gone, the receipts of the
+agents started in it are set aside (below), so the next open of their keys
+starts an agent again.
 
 **`--environment`** names a paired Orca server (`orca environment list`), so
 Orca's tool runs here and reaches the server, and the worktree is created on
 the server's machine. Git and the hooks must run where the clone is, so
-`--ssh` names that machine's SSH destination, which needs `git` on the
-`PATH` of a non-interactive SSH session and an SSH key the caller can use
-without a prompt, and nothing from Jig. A path Orca reports is a path on the
-server.
+`--ssh` names that machine's SSH destination, which needs `git` and a POSIX
+shell (`sh`, `test`, `mkdir`, `rm`, `cat`) on the `PATH` of a
+non-interactive SSH session and an SSH key the caller can use without a
+prompt, and nothing from Jig. A path Orca reports is a path on the server.
 
 Each command holds itself to a time limit: every git and Orca call and hook
 run is cut to the time left, so a run ends at its limit, saying so, however
 many steps it took. `open` allows for the create hook (15 minutes, since a
-dependency install is slow) and the calls around it; the launcher's budget
-is that limit plus the connection around it.
+dependency install is slow), a wait on another open's start of the agent,
+and the calls around them; the launcher's budget is that limit plus the
+connection around it.
 
 Exit codes: 0 done; 1 a step failed, and the message says what to do; 2
 usage.
@@ -100,19 +123,35 @@ usage.
 ## Starting the agent once
 
 Orca does not say whether an agent in a worktree already received a prompt,
-so the tool keeps its own record, a **receipt** in
-`~/.jig/orca/kickoff/<server>/<key>.json` (`local` for Orca on this
-machine; `JIG_HOME` moves `~/.jig`), written on the machine the tool runs
-on:
+so the tool keeps its own record, a **receipt** per key and agent, in
+`~/.jig/orca/kickoff/local/<repository id>/<key>.<agent>.json` for Orca on
+this machine and `~/.jig/orca/kickoff/server/<name>/<repository id>/…` for
+a paired server (`JIG_HOME` moves `~/.jig`; a name is percent-encoded where
+it holds anything but letters, digits, `.`, `_` and `-`), written on the
+machine the tool runs on. The repository id is Orca's, so the same key in
+two repositories is two starts, and so are two agents on one key.
 
-- An open with a `--key` and no receipt writes one as pending, starts the
-  agent, and completes it with Orca's answer. The next open of the same key
-  finds it and starts nothing, whether it created the worktree or
-  reattached, and says where the agent was started.
-- A pending receipt means an earlier open started the agent and never
-  learned the outcome (the launch was cut short). The tool stops and says to
-  look at the worktree in Orca and delete the file if the agent never
-  started, rather than start a second one.
+- An open with a `--key` and no receipt creates one as pending, which
+  succeeds for exactly one open at a time, starts the agent, and completes
+  the receipt with Orca's answer. The next open of the same key finds it and
+  starts nothing, whether it reattached or not, and says where the agent
+  was started. A second open at the same moment finds the pending receipt
+  of an open still running on this machine, waits for it (2 minutes at
+  most), and then reports the start as already made.
+- A pending receipt whose open has ended, or that another machine's open
+  wrote, records a start whose outcome was never learned (the launch was
+  cut short). The tool stops and says to look at the worktree in Orca and
+  delete the file if the agent never started, rather than start a second
+  one. An answer from Orca that nothing started (an agent it does not have,
+  say) clears the receipt, so the next open starts the agent once that is
+  fixed.
+- A receipt for a worktree that is gone is set aside under a dated name
+  beside it, and the start recorded anew: `remove` sets aside the receipts
+  of the worktree it removed, and an open that had to create the worktree,
+  or found the branch in another checkout, treats a receipt naming the old
+  one as the record of an agent that no longer works on the branch.
+- A receipt that is not whole, or names another launch, is refused rather
+  than read as any outcome; the message says to move it away.
 - An open without `--key` starts the agent every time; `--no-agent` starts
   none.
 

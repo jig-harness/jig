@@ -180,19 +180,41 @@ export function parseBranchNaming(
   };
 }
 
-export function parseRepo(settings: unknown, label: string): HerdrRepo {
-  const where = `repos.${label}.herdr`;
-  if (typeof settings === "string") settings = { path: settings };
+/**
+ * A provider's settings for a repository as a mapping with known keys: a
+ * bare text stands for `textKey` (`shape` says what it is in a message), and
+ * an unknown key is refused, naming the known ones.
+ */
+export function repoMapping(
+  settings: unknown,
+  where: string,
+  keys: ReadonlySet<string>,
+  textKey: string,
+  shape: string,
+): Record<string, unknown> {
+  if (typeof settings === "string") settings = { [textKey]: settings };
   if (!isRecord(settings))
     throw new HerdrError(
-      `${where} must be the clone's path or a mapping with ${[...KEYS].join(", ")}`,
+      `${where} must be ${shape} or a mapping with ${[...keys].join(", ")}`,
     );
   for (const key of Object.keys(settings))
-    if (!KEYS.has(key))
+    if (!keys.has(key))
       throw new HerdrError(
-        `${where}: unknown key ${key} (known: ${[...KEYS].join(", ")})`,
+        `${where}: unknown key ${key} (known: ${[...keys].join(", ")})`,
       );
-  const text = settingText(settings, where);
+  return settings;
+}
+
+export function parseRepo(settings: unknown, label: string): HerdrRepo {
+  const where = `repos.${label}.herdr`;
+  const mapping = repoMapping(
+    settings,
+    where,
+    KEYS,
+    "path",
+    "the clone's path",
+  );
+  const text = settingText(mapping, where);
   const path = text("path");
   if (path === undefined) throw new HerdrError(`${where}.path is required`);
   const host = text("host");

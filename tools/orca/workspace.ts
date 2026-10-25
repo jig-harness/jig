@@ -13,13 +13,14 @@
  * checkout that already holds the branch, names the branch as asked (Orca
  * names a new branch after the worktree, under its own prefix), runs the
  * repository's create hook once, and starts the agent with the prompt once
- * per `--key`. With `--reuse-prefix`, the one existing branch whose name
- * starts with it is opened instead of `--branch`. `--json` prints what was
- * opened; progress goes to stderr.
+ * per `--key` and agent. With `--reuse-prefix`, the one existing branch whose
+ * name starts with it is opened instead of `--branch`. `--json` prints what
+ * was opened; progress goes to stderr.
  *
  * `remove` runs the repository's remove hook in the worktree, parks its
- * reflection findings when the clone is on this machine, and removes the
- * worktree through Orca, refusing when a step fails.
+ * reflection findings when the clone is on this machine (and refuses while a
+ * worktree on a server's host holds unsent ones), and removes the worktree
+ * through Orca, refusing when a step fails.
  *
  * `--environment` names a paired Orca server (`orca environment list`); Orca's
  * tool runs here and reaches the server, while git and the hooks run on the
@@ -29,10 +30,7 @@
  * Exit codes: 0 done; 1 the step failed (the message says what to do);
  * 2 usage.
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { cli, strictOptions } from "../../lib/cli.ts";
-import { errnoCode } from "../../plugin/shared/errors.ts";
 import {
   assertBranchName,
   assertLinkedWorktree,
@@ -45,7 +43,7 @@ import {
   probeBranch,
   refreshBaseRef,
 } from "../herdr/git.ts";
-import { KICKOFF_KEY } from "../herdr/kickoff.ts";
+import { CLAIM_WAIT_MS, KICKOFF_KEY } from "../herdr/kickoff.ts";
 import {
   HOOK_TIMEOUT_MS,
   HOOKS_DIR,
@@ -53,9 +51,8 @@ import {
   parkJournal,
 } from "../herdr/lifecycle.ts";
 import { UsageError } from "../herdr/options.ts";
-import { shellQuote } from "../herdr/remote.ts";
+import { ownerLine } from "../herdr/owner.ts";
 import {
-  budget,
   COMMAND_TIMEOUT_MS,
   type Context,
   output,
@@ -70,7 +67,19 @@ import {
   resolveOrcaCommand,
   textOf,
 } from "./cli.ts";
+import { assertNoUnsentFindings, ensureCreateHook, hookOf } from "./hooks.ts";
+import {
+  claimReceipt,
+  clearReceipt,
+  completeReceipt,
+  type Receipt,
+  receiptPath,
+  retireReceiptsOf,
+} from "./receipts.ts";
 import { OrcaError, type Workspace, workspace } from "./runner.ts";
+
+export { CREATE_HOOK_CLAIM, CREATE_HOOK_MARK } from "./hooks.ts";
+export { fileSegment, type Receipt, receiptPath } from "./receipts.ts";
 
 export const USAGE = `usage:
   workspace.ts open --repo <name> --branch <name> [--environment <name> --ssh <host>] [--reuse-prefix <text>]
@@ -78,16 +87,17 @@ export const USAGE = `usage:
       [--linear-issue <key>] [--activate] [--json]
   workspace.ts remove --repo <name> --branch <name> [--environment <name> --ssh <host>] [--force]`;
 
-/** The calls around the hook: git probes and fetches, Orca's list, create, link and launch. */
-const COMMAND_ALLOWANCE = 14;
-/** The time `open` may take: the create hook, and the calls around it. */
+/**
+ * The calls around the hook: git probes, fetches and the clone checks, Orca's
+ * list, create, link and launch, the hook's claim and mark, the journal read.
+ */
+const COMMAND_ALLOWANCE = 22;
+/** The time `open` may take: the create hook, waiting for another open's start of the agent, and the calls around them. */
 export const OPEN_LIMIT_MS =
-  HOOK_TIMEOUT_MS + COMMAND_ALLOWANCE * COMMAND_TIMEOUT_MS;
+  HOOK_TIMEOUT_MS + CLAIM_WAIT_MS + COMMAND_ALLOWANCE * COMMAND_TIMEOUT_MS;
 /** The time `remove` may take: the remove hook, parking, and the calls around them. */
 export const REMOVE_LIMIT_MS =
   HOOK_TIMEOUT_MS + PARK_TIMEOUT_MS + COMMAND_ALLOWANCE * COMMAND_TIMEOUT_MS;
-/** The file in a worktree's git directory that records its create hook succeeded. */
-export const CREATE_HOOK_MARK = "jig-orca-create-hook";
 
 export interface OpenOptions {
   /** The repository's name in Orca (`orca repo list`). */
@@ -157,7 +167,7 @@ function repoOf(ws: Workspace, name: string): OrcaRepo {
     ["repo", "show", "--repo", `name:${name}`],
     what,
   );
-  if (envelope.error) {
+  if (!envelope.ok) {
     if (envelope.error.code === "repo_not_found")
       throw new OrcaError(
         `Orca${onServer(ws.target)} has no repository named ${name}; add the clone there with orca repo add --path <clone>, or name one of orca repo list`,
@@ -195,6 +205,44 @@ function checkedOutBranch(ws: Workspace, path: string, what: string): string {
       `${what} left ${path} with no branch checked out: ${output(head)}`,
     );
   return head.stdout.trim();
+}
+
+/** The git common directory of the checkout at `path`, as the host reports it. */
+function commonDirOf(ws: Workspace, path: string): string {
+  const dir = ws.host.run([
+    "git",
+    "-C",
+    path,
+    "rev-parse",
+    "--path-format=absolute",
+    "--git-common-dir",
+  ]);
+  if (dir.status !== 0 || dir.stdout.trim() === "")
+    throw new OrcaError(
+      `cannot read the git common directory of ${path}: ${output(dir)}`,
+    );
+  return dir.stdout.trim();
+}
+
+/**
+ * Refuse a path that is not a worktree of the repository's own clone before
+ * anything mutates a branch in it: a linked worktree of another clone passes
+ * the linked-worktree check, and a stale or wrong answer from Orca must not
+ * have this tool rename or delete branches in a repository it was not asked
+ * about.
+ */
+function assertWorktreeOf(
+  ws: Workspace,
+  repo: OrcaRepo,
+  path: string,
+  what: string,
+): void {
+  const clone = commonDirOf(ws, repo.path);
+  const own = commonDirOf(ws, path);
+  if (!sameText(clone, own))
+    throw new OrcaError(
+      `${what} reported a worktree at ${path}, which belongs to the clone at ${own}, not to ${repo.path}'s (${clone}); not touching it`,
+    );
 }
 
 /** Orca's row for the checkout at `path`, or null when Orca does not list it. */
@@ -354,20 +402,21 @@ function createWorktree(
     what,
   );
   // What Orca says it created is checked like any other path before
-  // anything acts on it, and the branch it gave is read from git, not from
-  // the answer, since the branch is what is renamed next.
+  // anything acts on it: a linked worktree, and one of this repository's
+  // clone. The branch it gave is read from git, not from the answer, since
+  // the branch is what is renamed next.
   assertLinkedWorktree(
     ws.host,
     created.path,
     `use the new worktree for ${branch}`,
   );
+  assertWorktreeOf(ws, repo, created.path, what);
   nameBranch(
     ws,
     { ...created, branch: checkedOutBranch(ws, created.path, what) },
     branch,
     action.kind,
   );
-  ensureUpstreamTracking(ws.host, repo.path, branch);
   const listed = findGitWorktree(ws.host, repo.path, branch);
   if (listed === null || !sameText(listed, created.path))
     throw new OrcaError(
@@ -394,7 +443,7 @@ function linkIssue(ws: Workspace, worktree: OrcaWorktree, issue: string): void {
       ],
       what,
     );
-    if (!envelope.error) return;
+    if (envelope.ok) return;
     reason = orcaErrorText(envelope.error);
   } catch (error) {
     reason = error instanceof Error ? error.message : String(error);
@@ -404,176 +453,40 @@ function linkIssue(ws: Workspace, worktree: OrcaWorktree, issue: string): void {
   );
 }
 
-/** The worktree's executable hook of `kind`, or null when it has none. */
-function hookOf(
-  ws: Workspace,
-  path: string,
-  kind: "create" | "remove",
-): string | null {
-  const file = `${path}/${HOOKS_DIR}/${kind}`;
-  const test = ws.host.run(["test", "-x", file]);
-  if (test.status === 0) return file;
-  if (test.status === 1) return null;
-  throw new OrcaError(`cannot tell whether ${file} exists: ${output(test)}`);
-}
-
-/** Run a hook in its worktree; its output goes to the log; throws when it fails. */
-function runHookAt(ws: Workspace, path: string, hook: string): void {
-  ws.host.log(`… running ${hook.slice(path.length + 1)}`);
-  const done = ws.host.run([hook], {
-    cwd: path,
-    timeoutMs: budget(ws.host, HOOK_TIMEOUT_MS),
-  });
-  for (const stream of [done.stdout, done.stderr])
-    for (const line of stream.split("\n")) if (line !== "") ws.host.log(line);
-  if (done.status !== 0)
-    throw new OrcaError(`${hook} failed (exit ${done.status})`);
-}
-
-/** The file that records the worktree's create hook succeeded, in its git directory. */
-function createHookMark(ws: Workspace, path: string): string {
-  const dir = ws.host.run([
-    "git",
-    "-C",
-    path,
-    "rev-parse",
-    "--absolute-git-dir",
-  ]);
-  if (dir.status !== 0 || dir.stdout.trim() === "")
-    throw new OrcaError(
-      `cannot read the git directory of ${path}: ${output(dir)}`,
-    );
-  return `${dir.stdout.trim()}/${CREATE_HOOK_MARK}`;
-}
-
 /**
- * Run the repository's create hook once per worktree: a run that succeeded
- * leaves a mark the next open reads, and one that failed leaves none, so the
- * next open runs the hook again. True when this run ran it.
- */
-function ensureCreateHook(ws: Workspace, path: string): boolean {
-  const hook = hookOf(ws, path, "create");
-  if (hook === null) return false;
-  const mark = createHookMark(ws, path);
-  const marked = ws.host.run(["test", "-f", mark]);
-  if (marked.status === 0) return false;
-  if (marked.status !== 1)
-    throw new OrcaError(
-      `cannot tell whether ${mark} exists: ${output(marked)}`,
-    );
-  try {
-    runHookAt(ws, path, hook);
-  } catch (error) {
-    throw new OrcaError(
-      `${error instanceof Error ? error.message : String(error)}; fix the hook and open the workspace again, which runs it again`,
-    );
-  }
-  const written = ws.host.run(["sh", "-c", `printf ok > ${shellQuote(mark)}`]);
-  if (written.status !== 0)
-    throw new OrcaError(
-      `could not record that the create hook ran (${mark}): ${output(written)}`,
-    );
-  return true;
-}
-
-export interface Receipt {
-  key: string;
-  status: "pending" | "sent";
-  worktreeId: string;
-  agent: string;
-  /** The paired server, or null for Orca on this machine. */
-  environment: string | null;
-  at: string;
-  /** Orca's answer to the launch, once it answered. */
-  launch?: unknown;
-}
-
-/** Where an agent's start under `key` is recorded: per server, outside every worktree. */
-export function receiptPath(ws: Workspace, key: string): string {
-  return join(
-    ws.orca.stateDir,
-    "kickoff",
-    ws.target.environment ?? "local",
-    `${key}.json`,
-  );
-}
-
-function readReceipt(file: string): Receipt | null {
-  let text: string;
-  try {
-    text = readFileSync(file, "utf8");
-  } catch (error) {
-    if (errnoCode(error) === "ENOENT") return null;
-    throw error;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    parsed = null;
-  }
-  const receipt = parsed as Receipt | null;
-  if (
-    receipt === null ||
-    typeof receipt !== "object" ||
-    (receipt.status !== "pending" && receipt.status !== "sent")
-  )
-    throw new OrcaError(
-      `${file} is not a kickoff receipt this tool wrote; move it away and open the workspace again`,
-    );
-  return receipt;
-}
-
-function writeReceipt(file: string, receipt: Receipt): void {
-  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-  const temporary = `${file}.tmp.${process.pid}`;
-  writeFileSync(temporary, `${JSON.stringify(receipt)}\n`, { mode: 0o600 });
-  renameSync(temporary, file);
-}
-
-/**
- * Whether an earlier open already started the key's agent, from its receipt.
- * A start with no outcome recorded stops the open: a person looks first.
- */
-function alreadyStarted(ws: Workspace, file: string, key: string): boolean {
-  const earlier = readReceipt(file);
-  if (earlier === null) return false;
-  if (earlier.status === "pending")
-    throw new OrcaError(
-      `an earlier open's start of ${key}'s agent has no outcome recorded (${file}): check the worktree in Orca, then delete the file if the agent never started`,
-    );
-  ws.orca.log(
-    `↺ ${key}'s agent was started in ${earlier.worktreeId} on ${earlier.at}; not starting it again (delete ${file} to start it again)`,
-  );
-  return true;
-}
-
-/**
- * Start the agent, once per key. A receipt is written as pending before the
- * launch and completed once Orca answered, so a launch whose outcome is
- * unknown is never repeated by a later open without a person looking first.
+ * Start the agent, once per key and agent. The receipt is taken as pending
+ * before the launch and completed once Orca answered. An answer that nothing
+ * started (an agent Orca does not have, say) clears the receipt, so the next
+ * open starts the agent once the cause is fixed; a call that got no answer
+ * leaves it pending, so a start whose outcome is unknown is never repeated
+ * by a later open without a person looking first.
  */
 function launchAgent(
   ws: Workspace,
+  repo: OrcaRepo,
   worktree: OrcaWorktree,
   options: OpenOptions,
+  created: boolean,
 ): Pick<Opened, "agentLaunched" | "kickoff"> {
   const key = options.key;
-  const file = key === undefined ? null : receiptPath(ws, key);
-  if (file !== null && alreadyStarted(ws, file, key ?? ""))
-    return { agentLaunched: false, kickoff: "already-sent" };
+  const file =
+    key === undefined ? null : receiptPath(ws, repo.id, key, options.agent);
   const receipt: Receipt = {
     key: key ?? "",
     status: "pending",
+    repoId: repo.id,
     worktreeId: worktree.id,
     agent: options.agent,
     environment: ws.target.environment ?? null,
     at: new Date().toISOString(),
+    ...(file === null ? {} : { owner: ownerLine(ws.orca).trim() }),
   };
-  if (file !== null) writeReceipt(file, receipt);
+  if (file !== null && !claimReceipt(ws, file, receipt, created))
+    return { agentLaunched: false, kickoff: "already-sent" };
   const prompt =
     options.prompt === undefined ? [] : ["--prompt", options.prompt];
-  const launch = orcaJson(
+  const what = "orca agent launch";
+  const envelope = orcaCall(
     ws,
     [
       "agent",
@@ -584,9 +497,22 @@ function launchAgent(
       `id:${worktree.id}`,
       ...prompt,
     ],
-    "orca agent launch",
+    what,
   );
-  if (file !== null) writeReceipt(file, { ...receipt, status: "sent", launch });
+  if (!envelope.ok) {
+    if (file !== null) clearReceipt(file);
+    throw new OrcaError(
+      `${what}: ${orcaErrorText(envelope.error)}; nothing was started, so the next open starts the agent once that is fixed`,
+    );
+  }
+  if (file !== null) {
+    const { owner: _owner, ...started } = receipt;
+    completeReceipt(file, {
+      ...started,
+      status: "sent",
+      launch: envelope.result,
+    });
+  }
   ws.orca.log(
     `✓ ${options.agent} started in ${worktree.path}${prompt.length === 0 ? "" : " with its first prompt"}`,
   );
@@ -605,7 +531,11 @@ export function openWorkspace(ws: Workspace, requested: OpenOptions): Opened {
   if (branch !== requested.branch) assertBranchName(ws.host, branch);
   const found = existingWorktree(ws, repo, branch);
   const worktree = found ?? createWorktree(ws, repo, requested, branch);
-  if (found === null && requested.linearIssue !== undefined)
+  // On every path, reattaching included: a tracking repair an earlier open
+  // could not finish is made now (the helper's own contract), and a link
+  // that failed then (the integration not yet connected) is tried again.
+  ensureUpstreamTracking(ws.host, repo.path, branch);
+  if (requested.linearIssue !== undefined)
     linkIssue(ws, worktree, requested.linearIssue);
   const hookRan = ensureCreateHook(ws, worktree.path);
   const opened: Opened = {
@@ -618,7 +548,10 @@ export function openWorkspace(ws: Workspace, requested: OpenOptions): Opened {
     kickoff: "none",
   };
   if (requested.noAgent) return opened;
-  return { ...opened, ...launchAgent(ws, worktree, requested) };
+  return {
+    ...opened,
+    ...launchAgent(ws, repo, worktree, requested, found === null),
+  };
 }
 
 export interface RemoveOptions {
@@ -632,7 +565,10 @@ export interface RemoveOptions {
  * Remove a branch's worktree the way M12 asks: run the repository's remove
  * hook inside it, park its reflection findings, and remove it through Orca
  * only when both succeeded. Parking runs the reflection journal in this
- * process, so it happens only when the clone is on this machine.
+ * process, so it happens only when the clone is on this machine; a worktree
+ * on a server's host is removed only once its journal is seen to hold no
+ * unsent findings. The receipts of agents started in the worktree are set
+ * aside once it is gone.
  */
 export async function removeWorkspace(
   ws: Workspace,
@@ -655,12 +591,12 @@ export async function removeWorkspace(
       `${options.branch} is checked out at ${path}, which Orca${onServer(ws.target)} does not list; remove that checkout with git worktree remove`,
     );
   const hook = hookOf(ws, path, "remove");
-  if (hook !== null) runHookAt(ws, path, hook);
+  if (hook !== null) {
+    ws.host.log(`… running ${HOOKS_DIR}/remove`);
+    ws.runHook(ws.host, path, hook);
+  }
   if (ws.ssh === undefined) await parkJournal(ws.host, path);
-  else
-    ws.host.log(
-      `⚠ the reflection findings of ${path} are not parked on ${ws.ssh}; run /jig:reflect there first when some are unsent`,
-    );
+  else assertNoUnsentFindings(ws, path, ws.ssh);
   const what = "orca worktree rm";
   const envelope = orcaCall(
     ws,
@@ -673,11 +609,12 @@ export async function removeWorkspace(
     ],
     what,
   );
-  if (envelope.error)
+  if (!envelope.ok)
     throw new OrcaError(
       `${what}: ${orcaErrorText(envelope.error)}${options.force ? "" : " (uncommitted changes: commit them, or pass --force to discard them)"}`,
     );
   ws.host.log(`✓ removed ${path}`);
+  retireReceiptsOf(ws, repo.id, row.id);
   return path;
 }
 
@@ -691,7 +628,8 @@ export function limitWorkspace(ws: Workspace, limitMs: number): Workspace {
   };
 }
 
-interface Target {
+/** A paired server and the host its clone is on; Orca on this machine when both are absent. */
+export interface Target {
   environment?: string;
   ssh?: string;
 }
@@ -710,6 +648,34 @@ function parseTarget(values: { environment?: string; ssh?: string }): Target {
       : { environment: values.environment }),
     ...(values.ssh === undefined ? {} : { ssh: values.ssh }),
   };
+}
+
+/**
+ * The `open` command line for these options and target, as `parseOpen` reads
+ * it back: what a caller that runs this tool as a process (the launcher's
+ * Orca provider) hands it.
+ */
+export function openArgs(options: OpenOptions, target: Target = {}): string[] {
+  const optional = (flag: string, value: string | undefined) =>
+    value === undefined ? [] : [flag, value];
+  return [
+    "--repo",
+    options.repo,
+    "--branch",
+    options.branch,
+    ...optional("--environment", target.environment),
+    ...optional("--ssh", target.ssh),
+    ...optional("--reuse-prefix", options.reusePrefix),
+    ...optional("--base", options.base),
+    "--agent",
+    options.agent,
+    ...(options.noAgent ? ["--no-agent"] : []),
+    ...optional("--prompt", options.prompt),
+    ...optional("--key", options.key),
+    ...optional("--comment", options.comment),
+    ...optional("--linear-issue", options.linearIssue),
+    ...(options.activate ? ["--activate"] : []),
+  ];
 }
 
 export function parseOpen(
@@ -746,6 +712,8 @@ export function parseOpen(
     throw new UsageError(`--branch must start with --reuse-prefix\n${USAGE}`);
   if (values.key !== undefined && !KICKOFF_KEY.test(values.key))
     throw new UsageError(`--key must match ${KICKOFF_KEY}\n${USAGE}`);
+  if (values.agent !== undefined && values.agent.trim() === "")
+    throw new UsageError(`--agent needs an Orca agent id\n${USAGE}`);
   if (values.prompt !== undefined && values["no-agent"])
     throw new UsageError(`--prompt needs an agent; drop --no-agent\n${USAGE}`);
   const optional = (value: string | undefined, key: string) =>

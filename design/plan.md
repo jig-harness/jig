@@ -441,8 +441,17 @@ unless the repository's effective CI policy requires that check.
     does on its host, once Orca offers a place to keep it or the tool runs
     there;
   - `remove` parks reflection findings only when the clone is on this
-    machine; on a server's host it says so and leaves them. Run the journal
-    there, as the Herdr tool runs on its host;
+    machine; on a server's host it reads the worktree's journal over SSH
+    and refuses while unsent findings are in it, leaving the parking to a
+    reflection run there. Run the journal there, as the Herdr tool runs on
+    its host;
+  - a hook on a server's host runs as one SSH command under the call's
+    deadline, with nothing from Jig there to supervise it: a hook that
+    outlives the deadline, or starts a child that outlives it, is left to
+    the host, where on a machine the Herdr tool's supervisor ends the hook's
+    whole process group. Supervise it there too, once what the host must
+    provide is decided: `bun` for the shared supervisor, as the Herdr tool
+    asks of its hosts, or a supervisor in the host's own shell;
   - `do-item` and `drive-pr` could show their state on Orca's workspace
     board (`orca worktree set --workspace-status`) and link the pull request
     to the worktree (`orca reference add`), and the tracker's GitHub issues

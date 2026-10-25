@@ -9,6 +9,7 @@ import {
   type OrcaRepo,
   openOptions,
   orcaProvider,
+  parseOpened,
   parseRepo,
 } from "./providers/orca.ts";
 import { openRequest } from "./test-request.ts";
@@ -110,18 +111,24 @@ describe("open", () => {
     );
   });
 
-  test("passes the branch, the prompt, the key and the issue to the tool", async () => {
-    const seen: Array<{ repo: OrcaRepo; options: OpenOptions }> = [];
+  test("passes the branch, the prompt, the key, the issue and the launch's deadline to the tool", async () => {
+    const seen: Array<{
+      repo: OrcaRepo;
+      options: OpenOptions;
+      signal: AbortSignal;
+    }> = [];
     const provider = orcaProvider({
-      open: (repo, options) => {
-        seen.push({ repo, options });
+      open: async (repo, options, signal) => {
+        seen.push({ repo, options, signal });
         return opened(options);
       },
     });
-    await provider.open({
+    const asked = {
       ...request({ repo: "app", branch: "feature/{key}-{slug}" }),
       title: "Fix login",
-    });
+    };
+    await provider.open(asked);
+    expect(seen[0]?.signal).toBe(asked.signal);
     expect(seen[0]?.options).toEqual({
       repo: "app",
       branch: "feature/ENG-1-fix-login",
@@ -162,7 +169,7 @@ describe("open", () => {
         copies.push(`${host}:${file}`);
         return "/home/u/.cache/conductor-linear/ENG-1.json";
       },
-      open: (_repo, options) => {
+      open: async (_repo, options) => {
         prompts.push(options.prompt ?? "");
         return opened(options);
       },
@@ -180,7 +187,7 @@ describe("open", () => {
       copyCache: async () => {
         throw new Error("must not copy");
       },
-      open: (_repo, options) => {
+      open: async (_repo, options) => {
         prompts.push(options.prompt ?? "");
         return opened(options);
       },
@@ -194,7 +201,7 @@ describe("open", () => {
   test("on a server, refuses when this launch did not write the cache", async () => {
     const provider = orcaProvider({
       copyCache: async () => "/elsewhere",
-      open: () => {
+      open: async () => {
         throw new Error("must not open");
       },
     });
@@ -210,5 +217,24 @@ describe("open", () => {
         cacheFile: join(tmpdir(), "no-such-cache-file.json"),
       }),
     ).rejects.toThrow("was not written by this launch");
+  });
+});
+
+describe("the tool's answer", () => {
+  test("is what it opened, and anything else is an error", () => {
+    const answer = opened({
+      ...openOptions({ repo: "app" }, request("app"), "p"),
+    });
+    expect(parseOpened(`${JSON.stringify(answer)}\n`)).toEqual(answer);
+    for (const text of [
+      "",
+      "not json",
+      '{"path":"/ws/app/x"}',
+      JSON.stringify({ ...answer, kickoff: "maybe" }),
+      JSON.stringify({ ...answer, reattached: "no" }),
+    ])
+      expect(() => parseOpened(text)).toThrow(
+        "answered with something other than what it opened",
+      );
   });
 });

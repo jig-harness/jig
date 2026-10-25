@@ -167,6 +167,16 @@ export function gitDir(root = consumerRoot()): string {
 }
 
 /**
+ * Where the journal lives by default, under the worktree's own git
+ * directory, as a relative path, so a tool that removes worktrees on another
+ * machine (the Orca workspace tool) can look for it without running git here.
+ */
+export const DEFAULT_JOURNAL_IN_GIT_DIR = join(
+  "jig",
+  "reflection-journal.jsonl",
+);
+
+/**
  * The worktree's journal. The default lives in the worktree's own git
  * directory, which git never tracks and which goes when the worktree goes.
  * A configured path that git would track is refused.
@@ -176,7 +186,7 @@ export function journalPath(
   root = consumerRoot(),
 ): string {
   if (configured === null)
-    return join(gitDir(root), "jig", "reflection-journal.jsonl");
+    return join(gitDir(root), DEFAULT_JOURNAL_IN_GIT_DIR);
   const top = git(["rev-parse", "--show-toplevel"], root);
   if (top !== null) {
     const inside = relative(resolve(top), configured);
