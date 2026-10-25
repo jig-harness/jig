@@ -73,7 +73,8 @@ function linkComponents(
     };
   const target = readBlob(root, entry.blob);
   if (target === "") return { problem: `${at} is a link with no target` };
-  return target.startsWith("/")
+  // Absolute: a POSIX path, or a drive path as Git for Windows records one.
+  return /^(\/|[A-Za-z]:[\\/])/.test(target)
     ? { problem: `${at} links outside the repository` }
     : components(target);
 }

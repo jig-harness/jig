@@ -11,9 +11,10 @@
  * configured file that does not exist.
  */
 import { existsSync, readFileSync } from "node:fs";
-import { basename, isAbsolute, join, normalize } from "node:path";
+import { basename, posix } from "node:path";
 import { isMapping } from "../../../../shared/config-layers.ts";
 import { load } from "../../../../shared/yaml.ts";
+import { taxonomyAt } from "../../../file-issue/scripts/lib/config.ts";
 import { compileOpenPattern } from "../../../file-issue/scripts/lib/taxonomy.ts";
 import { probedFiles } from "./criteria.ts";
 import { at, type Finding } from "./schema.ts";
@@ -103,11 +104,8 @@ function openPattern(value: unknown, prefix: string): RegExp | null {
   }
 }
 
-const resolveIn = (root: string, path: string) =>
-  isAbsolute(path) ? path : join(root, path);
-
 function parseTaxonomy(root: string, path: string): Taxonomy {
-  const parsed: unknown = load(readFileSync(resolveIn(root, path), "utf8"));
+  const parsed: unknown = load(readFileSync(taxonomyAt(root, path), "utf8"));
   if (!isMapping(parsed)) unreadable("it is not a mapping");
   const groups = families(parsed, "groups");
   const categories = families(parsed, "categories");
@@ -257,8 +255,16 @@ export function taxonomyFindings(
 ): Finding[] {
   const configured = at(config, "issue_tracker.taxonomy");
   if (typeof configured === "string" && configured.trim() !== "") {
-    if (!existsSync(resolveIn(root, configured))) return [];
-    return checkAgainst(config, root, normalize(configured));
+    if (!existsSync(taxonomyAt(root, configured))) return [];
+    // Read the file the file-issue skill reads; only its name in a finding is
+    // spelled with forward slashes. A backslash separates only on Windows,
+    // elsewhere it is part of a name, and normalizing the path that is read
+    // would turn a Windows network or extended-length path into another one.
+    const named =
+      process.platform === "win32"
+        ? configured.replaceAll("\\", "/")
+        : configured;
+    return checkAgainst(config, root, configured, posix.normalize(named));
   }
   const found = probedFiles(tracked).filter((f) =>
     TAXONOMY_NAMES.has(basename(f)),
@@ -276,15 +282,19 @@ export function taxonomyFindings(
   return checkAgainst(config, root, path);
 }
 
-/** The findings against the taxonomy at `path`, relative to `root`. */
+/**
+ * The findings against the taxonomy read from `file`, relative to `root`,
+ * named `path` in each finding.
+ */
 function checkAgainst(
   config: Record<string, unknown>,
   root: string,
-  path: string,
+  file: string,
+  path = file,
 ): Finding[] {
   let taxonomy: Taxonomy;
   try {
-    taxonomy = parseTaxonomy(root, path);
+    taxonomy = parseTaxonomy(root, file);
   } catch (e) {
     return [
       {
