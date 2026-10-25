@@ -49,6 +49,7 @@ import {
 } from "../../changelog/scripts/config.ts";
 import { FORMAT_IDS } from "../../changelog/scripts/formats.ts";
 import { DEFAULT_TAXONOMY } from "../../file-issue/scripts/lib/config.ts";
+import { SAFE_KEY_COMPONENT_PATTERN } from "../../resolve-review-comments/scripts/lib/batch-description.ts";
 import {
   DEFAULT_AREA as CODE_STATS_DEFAULT_AREA,
   FIELDS as CODE_STATS_FIELDS,
@@ -276,6 +277,40 @@ describe("the reading skills", () => {
     ]);
   });
 
+  test("refuse the batch-key labels the deferral helper refuses", () => {
+    const itemPattern = (path: string) => {
+      const items = field(path)?.items;
+      return typeof items === "object" && "pattern" in items
+        ? items.pattern
+        : undefined;
+    };
+    expect(field("review.repo_label")?.pattern).toBe(
+      SAFE_KEY_COMPONENT_PATTERN,
+    );
+    expect(itemPattern("review.taxonomy.repos")).toBe(
+      SAFE_KEY_COMPONENT_PATTERN,
+    );
+    expect(itemPattern("review.taxonomy.types")).toBe(
+      SAFE_KEY_COMPONENT_PATTERN,
+    );
+    const messages = checkConfig(
+      {
+        review: {
+          repo_label: "my repo",
+          taxonomy: { types: ["bug", "tech debt"], repos: ["web"] },
+        },
+      },
+      schema,
+    ).map((f) => f.message);
+    expect(messages.some((m) => m.startsWith("review.repo_label"))).toBe(true);
+    expect(messages).toContain(
+      `review.taxonomy.types entry 2 must match ${SAFE_KEY_COMPONENT_PATTERN}`,
+    );
+    expect(messages.some((m) => m.startsWith("review.taxonomy.repos"))).toBe(
+      false,
+    );
+  });
+
   test("read the fields the schema lists in their strict maps", () => {
     expect(under("pull_requests").sort()).toEqual([...KNOWN_KEYS].sort());
     expect(under("issue_tracker.labels").sort()).toEqual(
@@ -365,6 +400,30 @@ describe("the schema's own format", () => {
     expect(() =>
       parseSchema(withField({ type: "list", items: { type: "list" } })),
     ).toThrow("a list needs items");
+  });
+  test("a pattern constrains only a text type, at any depth", () => {
+    for (const type of ["integer", "boolean", "enum", "list", "map", "any"])
+      expect(() =>
+        parseSchema(
+          withField({ type, values: ["a"], items: "string", pattern: "^1$" }),
+        ),
+      ).toThrow("pattern applies only to string, command and path");
+    for (const type of ["integer", "boolean", "list", "map", "any"])
+      expect(() =>
+        parseSchema(
+          withField({
+            type: "list",
+            items: { type, items: "string", pattern: "^1$" },
+          }),
+        ),
+      ).toThrow("a list needs items");
+    const nested = parseSchema(
+      withField({ type: "list", items: { type: "path", pattern: "^1$" } }),
+    );
+    expect(checkConfig({ a: { b: ["1"] } }, nested)).toEqual([]);
+    expect(checkConfig({ a: { b: ["2"] } }, nested).map((f) => f.id)).toEqual([
+      "type:a.b",
+    ]);
   });
   test("a default is a value the field accepts", () => {
     expect(() =>

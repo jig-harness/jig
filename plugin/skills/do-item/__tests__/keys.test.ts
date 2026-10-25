@@ -58,10 +58,15 @@ describe("issue key shapes", () => {
   });
 
   it("follows the configured adapter, and is unknown for Linear without a team", () => {
-    expect(issueKeysOf(parseTrackerConfig({}))).toBeNull();
     expect(
-      issueKeysOf(parseTrackerConfig({ issue_tracker: { team: "ENG" } }))
-        ?.example,
+      issueKeysOf(parseTrackerConfig({ issue_tracker: { adapter: "linear" } })),
+    ).toBeNull();
+    expect(
+      issueKeysOf(
+        parseTrackerConfig({
+          issue_tracker: { adapter: "linear", team: "ENG" },
+        }),
+      )?.example,
     ).toBe("ENG-123");
     expect(
       issueKeysOf(parseTrackerConfig({ issue_tracker: { adapter: "github" } }))

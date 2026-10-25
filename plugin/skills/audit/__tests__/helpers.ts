@@ -100,7 +100,8 @@ export function runScript(
 /**
  * A fake `gh` that answers from `answers`: the first key that the joined
  * arguments contain wins; its value is printed, or, when it starts with
- * `!`, written to stderr with exit 1. Unknown calls fail.
+ * `!`, written to stderr with exit 1. Unknown calls fail, as does every
+ * call to the `linear` client it installs beside it.
  */
 export function fakeGh(dir: string, answers: Record<string, string>): string {
   const bin = join(dir, "fake-bin");
@@ -119,6 +120,12 @@ console.log(answer);
 `,
   );
   chmodSync(join(bin, "gh"), 0o755);
+  // A Linear client that never answers, so no test reaches a real one.
+  writeFileSync(
+    join(bin, "linear"),
+    "#!/bin/sh\necho 'fake linear: no answer' >&2\nexit 1\n",
+  );
+  chmodSync(join(bin, "linear"), 0o755);
   return bin;
 }
 

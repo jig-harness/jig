@@ -63,6 +63,7 @@ describe("loadConfig", () => {
     overlay(
       [
         "issue_tracker:",
+        "  adapter: linear",
         "  team: ENG",
         "review:",
         "  taxonomy:",
@@ -109,7 +110,7 @@ describe("loadConfig", () => {
       delete process.env.JIG_CONSUMER_ROOT;
       const path = join(repo, ".config", "fleet-health.yaml");
       copyFileSync(FIXTURE, path);
-      overlay("issue_tracker:\n  team: OPS\n");
+      overlay("issue_tracker:\n  adapter: linear\n  team: OPS\n");
       expect(loadConfig(path).keys?.example).toBe("OPS-123");
     } finally {
       rmSync(elsewhere, { recursive: true, force: true });
@@ -146,7 +147,7 @@ describe("loadConfig", () => {
     );
     expect(loadConfig().labels.epic).toBe("Initiative");
     expect(loadConfig().labels.followup).toBe("review-fu");
-    overlay("issue_tracker:\n  team: OPS\n");
+    overlay("issue_tracker:\n  adapter: linear\n  team: OPS\n");
     expect(loadConfig().labels.followup).toBeNull();
     overlay(
       "issue_tracker:\n  labels:\n    epic: Epic\nreview:\n  taxonomy:\n    epic_label: Initiative\n",

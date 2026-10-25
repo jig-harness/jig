@@ -3,7 +3,8 @@
 # repository, as the release workflow's key-holding jobs do (ADR-0004): the
 # key never shares a runner with repository code. A second job, which holds no
 # key, judges those observations and uses the workflow token only to reconcile
-# one GitHub issue. Neither identity changes host settings.
+# one GitHub issue. Neither identity changes host settings. To run it on
+# demand: gh workflow run external-preconditions.yml --ref main
 name: external-preconditions
 on:
   schedule:

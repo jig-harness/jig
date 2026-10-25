@@ -323,6 +323,52 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.85.0] - 2026-10-23
+
+### Changed
+
+- **Breaking.** `resolve-review-comments`' deferral batches are now looked up
+  by a marker in the issue **description** — `<!-- defer-batch-key: repo=…
+  pr=… type=… -->`, written as the description's first line — instead of by
+  the issue title. The title becomes display-only, so a batch can be retitled
+  to say what it actually contains; previously the title *was* the key, matched
+  by exact equality with create-on-miss, so renaming a batch whose pull request
+  could still run a round minted a duplicate. The key now carries the
+  repository as well, so another consumer's pull request of the same number and
+  Type no longer collides: the `repoVerdict` Repo-label triage that used to
+  disambiguate them is gone, and the Repo label is reconciled like Type and
+  Size instead — absent is repaired, a label contradicting the marker is
+  refused rather than restamped.
+
+  **What a consumer changes:** any batch issue that is still *live* — its pull
+  request still open, so a later round will look it up — needs the marker added
+  as the first line of its description, or that round files a second issue beside it.
+  Batches on merged pull requests need nothing: no round will look them up
+  again. Only the first line counts: a marker anywhere else in a description
+  is ignored, so an issue that merely quotes one is never appended to. The marker is exactly
+  `<!-- defer-batch-key: repo=<your repo label> pr=<number> type=<type> -->`,
+  with the repository label and Type as they appear in
+  `review.taxonomy.repos` / `.types`. Once added, stop editing that line:
+  rewriting or deleting it makes the batch unfindable, and so does blanking the
+  description.
+
+  Repo and Type labels used in the key must now match
+  `letters, digits, . _ : @ + / -` with no whitespace — a label that cannot be
+  embedded in an HTML comment on one line is refused before anything is
+  written, rather than producing a malformed key. Rename any such label in
+  `review.taxonomy`. The audit's configuration check flags such a label in
+  `review.repo_label`, `review.taxonomy.repos` or `review.taxonomy.types`.
+
+## [0.84.0] - 2026-10-23
+
+GitHub Issues is now the tracker the skills use when a repository does not choose one; Linear stays one setting away.
+
+### Changed
+
+- **Breaking:** `issue_tracker.adapter` defaults to `github` instead of `linear`. A repository that uses Linear and leaves the adapter out must add `adapter: linear` under `issue_tracker` in `.config/jig.yaml`; until then the skills refuse its configuration, naming the field, rather than reading `issue_tracker.team` and ignoring it. A repository on GitHub Issues needs no `issue_tracker` section at all: the tracker is the `origin` remote's repository, and the skills use the signed-in `gh` client.
+- The audit's starter configuration offers `issue_tracker.adapter: linear` along with the team it finds in a repository's history (an empty `adapter:` counts as unset, and the draft says to replace that line rather than add a second), and its tracker-unreachable finding names GitHub when no adapter is set. The audit probes the tracker the skills select in every configured repository, the default one included (the repository's file merged with the machine's user file and `JIG__*` environment, as the skills read it, so configuration layers the skills refuse, an adapter included, are an error rather than an unchecked tracker, and the audit's user-file and environment facts say the tracker check reads them), by asking whether its team or repository answers rather than reading an issue, and derives a GitHub repository from the audited repository's `origin` remote rather than the working directory's; every other skill derives it from the repository it reads its configuration from (`JIG_CONSUMER_ROOT` when set).
+- The review skill's deferral step still files through Linear only ([EXTENDING.md](plugin/EXTENDING.md#issue-tracker) lists what still assumes Linear), so deferring a review finding on the default tracker waits for the roadmap's item 10.
+
 ## [0.83.2] - 2026-10-23
 
 ### Added
@@ -3559,7 +3605,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.83.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.85.0...HEAD
+[0.85.0]: https://github.com/jig-harness/jig/compare/v0.84.0...v0.85.0
+[0.84.0]: https://github.com/jig-harness/jig/compare/v0.83.2...v0.84.0
 [0.83.2]: https://github.com/jig-harness/jig/compare/v0.83.1...v0.83.2
 [0.83.1]: https://github.com/jig-harness/jig/compare/v0.83.0...v0.83.1
 [0.83.0]: https://github.com/jig-harness/jig/compare/v0.82.0...v0.83.0

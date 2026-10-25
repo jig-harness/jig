@@ -101,8 +101,15 @@ function fakeGh(f: FakeGh): void {
   writeFakeProgram(join(bin, "gh"), `${script}\n`);
 }
 
+/** The repository's policy; keys are Linear's (`ENG-1`) unless the text names a tracker. */
 function overlay(text: string): void {
-  writeFileSync(overlayFile, `repository:\n  base_branch: main\n${text}`);
+  const tracker = text.includes("issue_tracker:")
+    ? ""
+    : "issue_tracker:\n  adapter: linear\n";
+  writeFileSync(
+    overlayFile,
+    `repository:\n  base_branch: main\n${tracker}${text}`,
+  );
 }
 
 function git(...args: string[]): string {
@@ -241,7 +248,7 @@ describe("pr-plan.ts branch", () => {
   });
 
   it("reads a key of the configured team in any case", () => {
-    overlay("issue_tracker:\n  team: ENG\n");
+    overlay("issue_tracker:\n  adapter: linear\n  team: ENG\n");
     expect(plan("branch", "--issue", "eng-7", "--title", "x").stdout).toBe(
       "eng-7-x\n",
     );

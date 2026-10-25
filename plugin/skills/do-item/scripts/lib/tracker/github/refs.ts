@@ -90,13 +90,15 @@ export function repoFromRemote(url: string): Repo | null {
 }
 
 /**
- * The `origin` remote's address in the working directory, or `null` when
- * there is none (git exits 1) or git cannot run: either way the repository
- * is not derivable, and `homeRepo` names the field to set.
+ * The `origin` remote's address in the repository at `cwd` (the working
+ * directory when omitted), or `null` when there is none (git exits 1) or git
+ * cannot run: either way the repository is not derivable, and `homeRepo`
+ * names the field to set.
  */
-export function originUrl(): string | null {
+export function originUrl(cwd?: string): string | null {
   try {
     const r = Bun.spawnSync(["git", "config", "--get", "remote.origin.url"], {
+      ...(cwd === undefined ? {} : { cwd }),
       stdout: "pipe",
       stderr: "pipe",
     });

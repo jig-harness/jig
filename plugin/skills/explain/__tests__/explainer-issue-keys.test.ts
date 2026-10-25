@@ -57,9 +57,11 @@ describe("citing a GitHub issue as #<n>", () => {
   });
 
   it("names nothing under a team-keyed tracker", () => {
-    expect(citationProblems("issue_tracker:\n  team: ENG\n").join()).toContain(
-      '"#123" is not a repository path',
-    );
+    expect(
+      citationProblems(
+        "issue_tracker:\n  adapter: linear\n  team: ENG\n",
+      ).join(),
+    ).toContain('"#123" is not a repository path');
   });
 });
 

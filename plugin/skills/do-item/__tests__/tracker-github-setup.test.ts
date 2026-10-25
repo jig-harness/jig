@@ -4,6 +4,10 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { parseTrackerConfig } from "../scripts/lib/tracker/config.ts";
 import { openTracker } from "../scripts/lib/tracker/index.ts";
+import { linearTracker } from "../scripts/lib/tracker/linear.ts";
+import { gitHubClient } from "../scripts/lib/tracker/github/client.ts";
+import { gitHubModel } from "../scripts/lib/tracker/github/model.ts";
+import { gitHubTracker } from "../scripts/lib/tracker/github/tracker.ts";
 import {
   homeRepo,
   parseRef,
@@ -126,9 +130,99 @@ describe("issue_tracker.github", () => {
     );
     expect(github.adapter).toBe("github");
     expect(github.team).toBe("acme/app");
-    expect(() => openTracker(parseTrackerConfig({}))).toThrow(
-      "issue_tracker.team",
+    expect(() =>
+      openTracker(parseTrackerConfig({ issue_tracker: { adapter: "linear" } })),
+    ).toThrow("issue_tracker.team");
+  });
+
+  it("derives the repository from the consumer root, not the working directory", () => {
+    const base = mkdtempSync(join(tmpdir(), "tracker-root-"));
+    try {
+      const repo = (name: string, origin: string): string => {
+        const path = join(base, name);
+        for (const args of [
+          ["init", "-q", path],
+          ["-C", path, "remote", "add", "origin", origin],
+        ]) {
+          const r = Bun.spawnSync(["git", ...args], {
+            stdout: "pipe",
+            stderr: "pipe",
+          });
+          expectSpawnExit(
+            {
+              exitCode: r.exitCode,
+              stdout: r.stdout.toString(),
+              stderr: r.stderr.toString(),
+            },
+            0,
+          );
+        }
+        return path;
+      };
+      const cwd = repo("cwd", "https://github.com/acme/cwd.git");
+      const consumer = repo("consumer", "https://github.com/acme/consumer.git");
+      const modules = join(import.meta.dir, "..", "scripts", "lib", "tracker");
+      const r = Bun.spawnSync(
+        [
+          process.execPath,
+          "-e",
+          `import { parseTrackerConfig } from ${JSON.stringify(join(modules, "config.ts"))};
+           import { openTracker } from ${JSON.stringify(join(modules, "index.ts"))};
+           console.log(openTracker(parseTrackerConfig({ issue_tracker: { adapter: "github" } })).team);`,
+        ],
+        {
+          cwd,
+          env: { ...process.env, JIG_CONSUMER_ROOT: consumer },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      const stdout = r.stdout.toString();
+      expectSpawnExit(
+        { exitCode: r.exitCode, stdout, stderr: r.stderr.toString() },
+        0,
+      );
+      expect(stdout.trim()).toBe("acme/consumer");
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the reachability probe", () => {
+  it("hands its signal to the request it makes, on either adapter", async () => {
+    const config = parseTrackerConfig({
+      issue_tracker: { adapter: "github", github: { repository: "acme/app" } },
+    });
+    const seen: Array<AbortSignal | undefined> = [];
+    const github = gitHubTracker(
+      gitHubClient({
+        home: HOME,
+        model: gitHubModel(config.states, config.github),
+        settings: config.github,
+        transport: async (_q, _v, signal) => {
+          seen.push(signal);
+          if (signal?.aborted === true) throw new Error("aborted");
+          return { repository: { id: "R_1" } };
+        },
+      }),
     );
+    const linear = linearTracker({
+      team: "ENG",
+      states: config.states,
+      transport: async (_q, _v, signal) => {
+        seen.push(signal);
+        throw new Error("aborted");
+      },
+    });
+    const deadline = new AbortController();
+    deadline.abort();
+    await expect(github.reach(deadline.signal)).rejects.toThrow("aborted");
+    await expect(linear.reach(deadline.signal)).rejects.toThrow("aborted");
+    expect(seen).toEqual([deadline.signal, deadline.signal]);
+    // An aborted probe leaves nothing behind for the next caller.
+    await github.reach();
+    expect(seen).toHaveLength(3);
   });
 });
 
