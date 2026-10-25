@@ -44,6 +44,9 @@ export function scratchRepo(files: Record<string, string>): string {
   const env = cleanEnv();
   for (const args of [
     ["init", "-q", "-b", "main"],
+    // Git for Windows turns core.autocrlf on machine-wide; a checkout of
+    // another revision would then write CRLF where the files hold LF.
+    ["config", "core.autocrlf", "false"],
     ["add", "-A"],
     ["commit", "-q", "--allow-empty", "-m", "scratch"],
   ]) {

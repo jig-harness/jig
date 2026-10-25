@@ -18,12 +18,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { BrowserWindow, Element } from "happy-dom";
-import {
-  type Browser,
-  type BrowserContext,
-  chromium,
-  type Page,
-} from "playwright-core";
+import type { Browser, BrowserContext, Page } from "playwright-core";
+import { launchChrome } from "../../../../lib/test-helpers/chrome.ts";
 import { feedbackText } from "../scripts/report/feedback-text.ts";
 import { renderReportHtml } from "../scripts/report/html.ts";
 import { reportFingerprint } from "../scripts/report/source.ts";
@@ -72,7 +68,7 @@ const URL_ = pathToFileURL(file).href;
 let browser: Browser | undefined;
 let missing = "";
 try {
-  browser = await chromium.launch({ channel: "chrome", headless: true });
+  browser = await launchChrome();
 } catch (err) {
   missing = (err as Error).message.split("\n")[0] ?? "Chrome did not start";
 }

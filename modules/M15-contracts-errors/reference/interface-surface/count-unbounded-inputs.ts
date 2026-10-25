@@ -872,12 +872,12 @@ export function contractAtBase(
     ["rev-parse", "--show-toplevel"],
     `--repo is not a git repository: ${repo}`,
   ).trim();
-  // Both real paths: a repository reached through a link (a temporary
-  // directory, a mounted volume) must still resolve its own files inside it.
-  const full = realpathSync(
+  // Both real paths: a repository reached through a link or a Windows 8.3
+  // short name must still resolve its own files inside it.
+  const full = realpathSync.native(
     isAbsolute(contract) ? contract : resolve(repo, contract),
   );
-  const path = relative(realpathSync(top), full).replaceAll("\\", "/");
+  const path = relative(realpathSync.native(top), full).replaceAll("\\", "/");
   if (path.startsWith("..") || isAbsolute(path))
     throw new InputError(
       `the contract lies outside the repository: ${contract}`,

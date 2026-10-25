@@ -386,6 +386,19 @@ Open, each its own pull request:
    renderer, and the home page and the adoption page embed it with a caption
    naming that run. It rests inert so the page keeps its scroll, usable
    after a click, in full screen or in its own tab.
+6. **The problem first.** The home page opens with what goes wrong for a
+   team that builds with agents and no scaffolding, in two or three plain
+   sentences before the model, and the evaluator's path continues with a
+   recorded walkthrough of one item from pickup to merge, so a reader sees
+   the loop run before reading how it is built. The copy comes from the
+   README's opening, which gains that statement first.
+7. **A comparison page.** One page that sets Jig beside the other
+   frameworks a team evaluating it will have met, on the dimensions the
+   [spec ecosystems](spec-ecosystems-research.md) note uses, says plainly
+   where Jig is behind (time to first value, the product-facing layer,
+   tracker breadth) and where it is not, and carries the date and the
+   versions it was checked against. It is rendered from a document in the
+   repository like every other page, so it is checked and dated with them.
 
 ## Left out
 

@@ -323,6 +323,55 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.85.1] - 2026-10-25
+
+### Fixed
+
+- On Windows, `jig gc` no longer fails every run with `EPERM` when it writes a
+  collection receipt. Windows refuses to flush a directory, so there a
+  receipt's directory entry is not flushed: a power loss just after a receipt
+  is written or updated can lose that write.
+- On Windows, a configured shell command (`code_stats.classify_command`,
+  `resolve_conflicts` obligation commands, the changelog's `after_version`)
+  reaches `cmd.exe` as written, so a quoted program path such as
+  `"C:\Program Files\tool.exe" args` runs instead of failing as an unknown
+  command.
+- On Windows, a repository reached through an 8.3 short path (such as
+  `C:\Users\RUNNER~1\…`) is recognized as the repository git reports: the
+  migration-immutability and interface-surface gates, the deferral check's
+  `--config` and `--states`, `/jig:reflect`'s journal check, `/jig:decide`'s
+  other-repository clones and `resolve-conflicts`' `record.ts` no longer
+  call a path inside it outside.
+- `resolve-conflicts` treats a staged link to an absolute Windows path
+  (`C:/…`) as leaving the repository, as it treats one to `/…`.
+- On Windows, the audit's configuration fit reads a gate script's executable
+  bit from the git index, so a shell script the index does not mark
+  executable is suggested as `bash <path>`, as on other platforms, rather
+  than as `./<path>`.
+- The audit's label-taxonomy finding names the configured file with forward
+  slashes on every platform, and the audit reads the taxonomy the way
+  `/jig:file-issue` does, so a Windows network share path
+  (`\\server\share\…`) is checked rather than reported unreadable.
+- The audit's configuration fit reads a file a configured command names the
+  way the platform resolves it: on POSIX it follows a link before a `..`,
+  on Windows it collapses `..` first. It warns that a fresh clone lacks the
+  file unless both the file it reaches and every link on the way, including
+  a link inside another link's target, are tracked. On a case-insensitive
+  file system, a command that spells a tracked file in another case
+  (`scripts/CHECK.ts` for `scripts/check.ts`) counts as tracked, and a hard
+  link of another name never stands in for the entry the command reaches.
+  The tracked name is the one the file system itself reports for the entry
+  its lookup reached, so any spelling it treats as the same name (final
+  sigma `ς` for `σ`, for one) counts, and the audit never compares names by
+  hand. A symbolic link with several names in one directory (hard links of
+  the link itself) cannot be asked which name the lookup reached: it counts
+  as tracked when every name is, and when only some are, the audit warns
+  that it cannot tell whether a fresh clone holds the one reached.
+- A relative `JIG_TRACE_FILE` now records the spans of the process that set
+  it on Windows too.
+- The design-brief renderer waits for Chromium's debugging endpoint while
+  Windows still holds the file open, instead of failing with `EBUSY`.
+
 ## [0.85.0] - 2026-10-23
 
 ### Changed
@@ -3605,7 +3654,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.85.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.85.1...HEAD
+[0.85.1]: https://github.com/jig-harness/jig/compare/v0.85.0...v0.85.1
 [0.85.0]: https://github.com/jig-harness/jig/compare/v0.84.0...v0.85.0
 [0.84.0]: https://github.com/jig-harness/jig/compare/v0.83.2...v0.84.0
 [0.83.2]: https://github.com/jig-harness/jig/compare/v0.83.1...v0.83.2

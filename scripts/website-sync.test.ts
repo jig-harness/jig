@@ -220,8 +220,38 @@ test("the plan lists the commits after the record, oldest first, with kind and s
 });
 
 test("a path with a tab keeps its area in a real repository", () => {
-  const { root, commit } = scratch("odd-paths");
-  commit("docs: odd names", { "a\tb.md": "x\n", 'q"uote.md': "y\n" });
+  const { root, git } = scratch("odd-paths");
+  // Staged straight into the index: Windows allows neither a tab nor a
+  // double quote in a file name, while git stores and quotes both, once
+  // core.protectNTFS lets it take a name Windows could not check out.
+  writeFileSync(join(root, "content"), "x\n");
+  const blob = git("hash-object", "-w", "content");
+  rmSync(join(root, "content"));
+  for (const path of ["a\tb.md", 'q"uote.md'])
+    git(
+      "-c",
+      "core.protectNTFS=false",
+      "update-index",
+      "--add",
+      "--cacheinfo",
+      `100644,${blob},${path}`,
+    );
+  git(
+    "-c",
+    "core.protectNTFS=false",
+    "-c",
+    "user.email=test@example.com",
+    "-c",
+    "user.name=Test",
+    "-c",
+    "commit.gpgsign=false",
+    "commit",
+    "-q",
+    "--no-verify",
+    "-m",
+    "docs: odd names",
+  );
+  git("update-ref", "refs/remotes/origin/main", "refs/heads/main");
   const [c] = plan(root, "main").commits;
   expect(c?.areas).toEqual(["docs"]);
   expect(c?.kind).toBe("content");

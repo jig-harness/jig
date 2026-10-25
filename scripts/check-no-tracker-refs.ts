@@ -29,7 +29,7 @@
 // slug with no owner, a notice with no copyright line or no name on it), or
 // an unknown `{{name}}`, makes the gate exit 2.
 import { readFileSync, realpathSync, lstatSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { cli, ere } from "../lib/cli.ts";
 import { repoFiles } from "../lib/files.ts";
 import {
@@ -178,7 +178,8 @@ function source<T>(path: string, parse: (raw: string) => T): () => T {
  * under `root` are read on the first line that needs each.
  */
 function placeholderFiller(root: string, patterns: string) {
-  const config = join(root, CONFIG);
+  // Named with forward slashes on every platform, as the gate names its files.
+  const config = join(root, CONFIG).replaceAll(sep, "/");
   const sources: Sources = {
     config: source(config, (raw) => {
       try {

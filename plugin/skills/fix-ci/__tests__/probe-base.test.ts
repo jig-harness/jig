@@ -107,7 +107,9 @@ const CHECK_COMMAND = ["--expect", EXPECTED, "--", process.execPath, CHECK];
 
 beforeEach(() => {
   scratch = mkdtempSync(join(tmpdir(), "probe-base-"));
-  writeFileSync(join(scratch, "gitconfig"), "");
+  // Tracked links check out as links, as on POSIX: Git for Windows writes
+  // them as plain files unless core.symlinks says otherwise.
+  writeFileSync(join(scratch, "gitconfig"), "[core]\n\tsymlinks = true\n");
   remote = join(scratch, "remote.git");
   seed = join(scratch, "seed");
   clone = join(scratch, "clone");

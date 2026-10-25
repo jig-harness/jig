@@ -3,7 +3,7 @@
  * spawning anything.
  */
 import { describe, expect, it } from "bun:test";
-import { posix } from "node:path";
+import { posix, resolve } from "node:path";
 import {
   detectHarness,
   issueFromBranch,
@@ -245,7 +245,7 @@ describe("settings", () => {
     // Parking still has to find a configured journal.
     expect(
       parseReflection({ enabled: false, journal: "scratch/j.jsonl" }, "/repo"),
-    ).toEqual({ on: false, journal: "/repo/scratch/j.jsonl" });
+    ).toEqual({ on: false, journal: resolve("/repo", "scratch/j.jsonl") });
   });
 
   it("fills the defaults when the section is present", () => {

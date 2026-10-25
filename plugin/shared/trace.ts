@@ -81,13 +81,15 @@ export async function span<T>(
     throw error;
   } finally {
     try {
-      const file =
-        process.env.JIG_TRACE_FILE ||
-        join(
-          traceDirectory(),
-          start.toISOString().slice(0, 10),
-          `${current.traceId}.jsonl`,
-        );
+      // Resolved, so a relative file's directory is a real path: Windows
+      // refuses to create ".", even recursively.
+      const file = process.env.JIG_TRACE_FILE
+        ? resolve(process.env.JIG_TRACE_FILE)
+        : join(
+            traceDirectory(),
+            start.toISOString().slice(0, 10),
+            `${current.traceId}.jsonl`,
+          );
       mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
       appendFileSync(
         file,

@@ -398,7 +398,7 @@ function cloneProblem(name: string, root: string): string | undefined {
   // A folder inside another repository would answer for that repository.
   if (
     top.status !== 0 ||
-    realpathSync(top.stdout.trim()) !== realpathSync(root)
+    realpathSync.native(top.stdout.trim()) !== realpathSync.native(root)
   )
     return `repository "${name}" is configured at ${root}, which is not the top of a git clone`;
   return undefined;

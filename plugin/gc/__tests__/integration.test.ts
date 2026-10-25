@@ -652,7 +652,7 @@ test("worktree reports detect untracked content even when Git hides it by defaul
   expectSpawnExit(result, 0);
   const receipt = JSON.parse(result.stdout.toString());
   expect(receipt.resources[0]).toMatchObject({
-    resource: realpathSync(tree),
+    resource: realpathSync.native(tree),
     outcome: "refused",
     reason: "uncommitted or untracked changes",
   });

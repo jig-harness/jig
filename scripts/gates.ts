@@ -80,16 +80,49 @@ export function skippedSuites(
 }
 
 /**
+ * The share of the test files this run takes, as `bun test --shard` reads it
+ * (`2/4`: the second of four parts). A CI job sets it where one machine
+ * cannot run the whole suite within the job's budget: the Windows gate job of
+ * the nightly workflow, which runs test files one at a time.
+ */
+export const TEST_SHARD_ENV = "JIG_GATES_TEST_SHARD";
+
+/** A test shard the environment names in a form `bun test` cannot take. */
+class ShardError extends Error {}
+
+/** The `--shard` argument `env` asks for: none when unset; a malformed one throws. */
+export function shardArgs(env: Record<string, string | undefined>): string[] {
+  const value = env[TEST_SHARD_ENV];
+  if (value === undefined || value === "") return [];
+  const [index, count] = value.split("/").map(Number);
+  if (
+    !/^[1-9]\d*\/[1-9]\d*$/.test(value) ||
+    index === undefined ||
+    count === undefined ||
+    index > count
+  )
+    throw new ShardError(
+      `${TEST_SHARD_ENV} must name one part of several, as 2/4, not ${JSON.stringify(value)}`,
+    );
+  return [`--shard=${value}`];
+}
+
+/**
  * The `bun run test` arguments. Bun's `--path-ignore-patterns` replaces the
  * `bunfig.toml` list rather than adding to it, so the configured patterns are
- * passed along with the skipped suites.
+ * passed along with the skipped suites. `shard` comes last.
  */
-export function testArgs(skipped: string[], configured: string[]): string[] {
-  if (!skipped.length) return ["run", "test"];
+export function testArgs(
+  skipped: string[],
+  configured: string[],
+  shard: string[] = [],
+): string[] {
+  if (!skipped.length) return ["run", "test", ...shard];
   return [
     "run",
     "test",
     ...[...configured, ...skipped].map((p) => `--path-ignore-patterns=${p}`),
+    ...shard,
   ];
 }
 
@@ -162,13 +195,20 @@ export const CHECKS: Stage[] = [
 
 /**
  * The test stage. The configured ignore patterns are read only when suites
- * are skipped, and a read that fails becomes this stage's could-not-check
- * when the stage runs, so it never stops the stages before or after it.
+ * are skipped; a read that fails, or a malformed shard, becomes this stage's
+ * could-not-check when the stage runs, so it never stops the stages before
+ * or after it.
  */
-export function testStage(skipped: string[], ignores: () => string[]): Stage {
+export function testStage(
+  skipped: string[],
+  ignores: () => string[],
+  shard: () => string[] = () => [],
+): Stage {
   let configured: string[] = [];
+  let part: string[];
   try {
     if (skipped.length) configured = ignores();
+    part = shard();
   } catch (error: unknown) {
     return {
       name: command("run", "test").name,
@@ -177,7 +217,7 @@ export function testStage(skipped: string[], ignores: () => string[]): Stage {
       },
     };
   }
-  return command(...testArgs(skipped, configured));
+  return command(...testArgs(skipped, configured, part));
 }
 
 /** The stages `--fast` leaves out: the ones that take minutes. */
@@ -284,7 +324,10 @@ async function gates(fast: boolean): Promise<number> {
   if (skipped.length)
     console.log(`test step skips (see scripts/gates.ts): ${skipped.join(" ")}`);
   const outcomes = await runStages(
-    plan(fast, testStage(skipped, configuredIgnores)),
+    plan(
+      fast,
+      testStage(skipped, configuredIgnores, () => shardArgs(process.env)),
+    ),
     root,
   );
   const status = verdict(outcomes);

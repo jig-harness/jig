@@ -14,6 +14,7 @@ import {
   git,
   gitAt,
   KEEP_CHANGELOG,
+  KEEP_LF,
   MANIFEST,
   repository,
   resolvedFor,
@@ -245,7 +246,16 @@ describe("release", () => {
     commit(root, { "changes/b.md": "### Fixed\n\n- b\n" }, "b");
     commit(root, { "changes/a.md": "### Fixed\n\n- a\n" }, "a");
     const shallow = temporary("changelog-shallow-");
-    git(shallow, "clone", "-q", "--depth", "1", `file://${root}`, ".");
+    git(
+      shallow,
+      "clone",
+      "-q",
+      ...KEEP_LF,
+      "--depth",
+      "1",
+      `file://${root}`,
+      ".",
+    );
     await expect(release(resolvedFor(shallow, VERSION_FILES))).rejects.toThrow(
       "git fetch --unshallow",
     );

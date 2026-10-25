@@ -81,11 +81,14 @@ test("required check names come from consumer policy", () => {
 test("a skill reads the configuration layers through layeredConfig, never the loader itself", () => {
   const plugin = join(import.meta.dir, "..", "..");
   const allowed = new Set(["shared/config-layers.ts", "shared/consumer.ts"]);
-  const callers = [...new Bun.Glob("**/*.ts").scanSync(plugin)].filter(
-    (file) =>
-      !file.includes("__tests__/") &&
-      !allowed.has(file) &&
-      readFileSync(join(plugin, file), "utf8").includes("loadLayeredConfig"),
-  );
+  // Bun.Glob yields native separators; compared with forward slashes.
+  const callers = [...new Bun.Glob("**/*.ts").scanSync(plugin)]
+    .map((file) => file.replaceAll("\\", "/"))
+    .filter(
+      (file) =>
+        !file.includes("__tests__/") &&
+        !allowed.has(file) &&
+        readFileSync(join(plugin, file), "utf8").includes("loadLayeredConfig"),
+    );
   expect(callers).toEqual([]);
 });
