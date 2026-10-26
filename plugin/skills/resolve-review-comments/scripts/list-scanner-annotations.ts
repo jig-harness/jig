@@ -8,14 +8,16 @@
  * and no code scanning alert, so `list-unresolved-threads.ts` never shows
  * them. This lists them for the loop to triage; see `lib/scanner-annotations.ts`.
  *
- * Each line: { app, checkRunId, path, line, startLine, level, title, message,
+ * Each line: { app, checkRunIds, path, locations, level, title, message,
  *              url, fingerprint }
+ *   - one line per app, file and text: annotations sharing them, in any run
+ *     of the app, are one finding, and `locations` lists each place
+ *     ({ line, startLine }) in line order, a place reported twice once.
  *   - level → `warning` or `failure`; `notice` annotations are left out.
  *   - message → the annotation's message where it says more than the title.
  *   - url → the first https link in the message, as the annotation wrote it.
- *   - fingerprint → stable across heads (file and text, not line, with
- *     same-text findings in one file numbered in line order) and
- *     marker-safe: a deferral's `--fingerprint`.
+ *   - fingerprint → stable across heads (app, file and text, never line,
+ *     order or run) and marker-safe: a deferral's `--fingerprint`.
  *
  * Usage: bun list-scanner-annotations.ts [PR_NUMBER]
  *   PR_NUMBER defaults to the PR for the current branch.
@@ -46,6 +48,7 @@ import {
   exitFor,
   findingsOf,
   flatten,
+  merged,
   type Read,
   type ScannerFinding,
   type ScannerRun,
@@ -158,18 +161,25 @@ async function annotationsOf(
   return items.ok ? findingsOf(run, items.value) : items;
 }
 
-/** Prints the findings of each run that may carry annotations, stopping at the first that cannot be read. */
+/**
+ * Prints the findings of every run that may carry annotations, merged across
+ * runs so a finding two runs report is one; nothing when a run cannot be read.
+ */
 async function printFindings(
   slug: string,
   runs: ScannerRun[],
 ): Promise<Read<ScannerRun[]>> {
+  const all: ScannerFinding[] = [];
   for (const run of runs.filter((r) => r.annotations !== 0)) {
     const found = await annotationsOf(slug, run);
     if (!found.ok) return found;
-    process.stdout.write(
-      found.value.map((f) => `${JSON.stringify(f)}\n`).join(""),
-    );
+    all.push(...found.value);
   }
+  process.stdout.write(
+    merged(all)
+      .map((f) => `${JSON.stringify(f)}\n`)
+      .join(""),
+  );
   return { ok: true, value: runs };
 }
 

@@ -13,6 +13,7 @@ import {
   findingsOf,
   flatten,
   LISTED_SUITES,
+  merged,
   type ScannerRun,
   scannerRuns,
   suitesCovered,
@@ -174,10 +175,9 @@ describe("findingsOf", () => {
     expect(found).toEqual([
       {
         app: "sonarqubecloud",
-        checkRunId: 9,
+        checkRunIds: [9],
         path: "a/b.ts",
-        line: 81,
-        startLine: null,
+        locations: [{ line: 81, startLine: null }],
         level: "warning",
         title: "Do not use an object literal as default for parameter `rules`.",
         message:
@@ -217,8 +217,7 @@ describe("findingsOf", () => {
         },
       ]),
     );
-    expect(f?.line).toBe(5);
-    expect(f?.startLine).toBe(3);
+    expect(f?.locations).toEqual([{ line: 5, startLine: 3 }]);
     expect(f?.message).toBeNull();
   });
 
@@ -242,21 +241,43 @@ describe("findingsOf", () => {
     expect(new Set([x, otherText, otherFile]).size).toBe(3);
   });
 
-  it("gives each same-text finding in one file its own fingerprint, kept when an edit moves them", () => {
-    const at = (line: number) => ({
+  describe("same-text findings in one file", () => {
+    const at = (line: number, level = "warning") => ({
       path: "a.ts",
       start_line: line,
       end_line: line,
-      annotation_level: "warning",
+      annotation_level: level,
       title: "t",
     });
-    const fingerprints = (annotations: unknown[]) =>
-      value(findingsOf(r, annotations)).map((f) => f.fingerprint);
-    const [alone] = fingerprints([at(10)]);
-    const [later, first] = fingerprints([at(40), at(10)]);
-    expect(first).toBe(alone);
-    expect(later).toBe(`${alone}-2`);
-    expect(fingerprints([at(12), at(55)])).toEqual([`${alone}`, `${alone}-2`]);
+    const read = (run: ScannerRun, annotations: unknown[]) =>
+      value(findingsOf(run, annotations));
+
+    it("are one finding naming every place, its identity kept when one place is fixed", () => {
+      const [both] = read(r, [at(40), at(10)]);
+      expect(read(r, [at(40), at(10)])).toHaveLength(1);
+      expect(both?.locations).toEqual([
+        { line: 10, startLine: null },
+        { line: 40, startLine: null },
+      ]);
+      const [rest] = read(r, [at(40)]);
+      expect(rest?.fingerprint).toBe(both?.fingerprint);
+      expect(read(r, [at(5), at(10), at(40)])[0]?.fingerprint).toBe(
+        both?.fingerprint,
+      );
+    });
+
+    it("are one finding across the app's runs, a place two runs report listed once", () => {
+      const other = { ...r, id: 10 };
+      const [joined, ...more] = merged([
+        ...read(other, [at(40, "failure"), at(10)]),
+        ...read(r, [at(10)]),
+      ]);
+      expect(more).toEqual([]);
+      expect(joined?.checkRunIds).toEqual([9, 10]);
+      expect(joined?.level).toBe("failure");
+      expect(joined?.locations.map((l) => l.line)).toEqual([10, 40]);
+      expect(joined?.fingerprint).toBe(read(r, [at(10)])[0]?.fingerprint);
+    });
   });
 
   it("drops notices", () => {
@@ -446,7 +467,10 @@ describe("list-scanner-annotations.ts", () => {
     const fix = scanned({
       runs: [run("sonarqubecloud", 7, "completed", 2), run("other", 8)],
       annotations: {
-        7: [[warning], [{ ...warning, start_line: 9, end_line: 9 }]],
+        7: [
+          [warning],
+          [{ ...warning, start_line: 9, end_line: 9, title: "other" }],
+        ],
       },
     });
     const r = list(fix);
@@ -455,10 +479,33 @@ describe("list-scanner-annotations.ts", () => {
       .trim()
       .split("\n")
       .map((l) => JSON.parse(l));
-    expect(lines.map((f) => [f.app, f.checkRunId, f.line])).toEqual([
-      ["sonarqubecloud", 7, 4],
-      ["sonarqubecloud", 7, 9],
+    expect(
+      lines.map((f) => [f.app, f.checkRunIds, f.locations, f.title]),
+    ).toEqual([
+      ["sonarqubecloud", [7], [{ line: 4, startLine: null }], warning.title],
+      ["sonarqubecloud", [7], [{ line: 9, startLine: null }], "other"],
     ]);
+  });
+
+  it("prints a finding two runs report as one line naming both places", () => {
+    const r = list(
+      scanned({
+        runs: [
+          run("sonarqubecloud", 7, "completed", 1),
+          run("sonarqubecloud", 8, "completed", 1),
+        ],
+        annotations: {
+          7: [[warning]],
+          8: [[{ ...warning, start_line: 9, end_line: 9 }]],
+        },
+      }),
+    );
+    exits(r, 0);
+    const [only, ...more] = r.stdout.trim().split("\n");
+    expect(more).toEqual([]);
+    const f = JSON.parse(only ?? "");
+    expect(f.checkRunIds).toEqual([7, 8]);
+    expect(f.locations.map((l: { line: number }) => l.line)).toEqual([4, 9]);
   });
 
   it("exits 0 with nothing printed where the default scanner does not run", () => {

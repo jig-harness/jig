@@ -38,14 +38,25 @@ const FINDING_LEVELS = new Set(["warning", "failure"]);
 /** Check-run conclusions under which the app analysed the head. */
 const ANALYSED = new Set(["success", "failure", "neutral"]);
 
-/** One scanner annotation, as listed. */
+/** Where a finding is reported: its last line and, for a range, its first. */
+export interface ScannerLocation {
+  line: number;
+  startLine: number | null;
+}
+
+/**
+ * One scanner finding, as listed: every annotation of one app with the same
+ * file and text, wherever and in whichever of the app's runs it is reported.
+ */
 export interface ScannerFinding {
   /** The app's slug (`sonarqubecloud`). */
   app: string;
-  checkRunId: number;
+  /** The runs that report it, in ascending order. */
+  checkRunIds: number[];
   path: string;
-  line: number;
-  startLine: number | null;
+  /** Each place it is reported, in line order; a place reported twice is listed once. */
+  locations: ScannerLocation[];
+  /** `failure` when any of its annotations is one. */
   level: "warning" | "failure";
   /** The annotation's title: the rule's message for SonarQube Cloud. */
   title: string;
@@ -196,7 +207,7 @@ function linkOf(message: string | null): string | null {
  * A hash of what identifies the finding across heads: its file and text, the
  * message included, since it carries the tool's issue key where the tool links
  * one. The line is left out, so the identity survives an edit that moves the
- * finding.
+ * finding; annotations that share file and text are one finding (`merged`).
  */
 function fingerprintOf(app: string, path: string, text: string): string {
   const digest = createHash("sha256")
@@ -206,28 +217,42 @@ function fingerprintOf(app: string, path: string, text: string): string {
   return `${app}-${digest}`;
 }
 
-/**
- * The findings with one fingerprint per occurrence. Findings that share file
- * and text are told apart by their order in the file: the first keeps the
- * hash, the n-th takes `-n`, so each is answered on its own, and an edit that
- * moves them without reordering them keeps every identity.
- */
-function byOccurrence(findings: ScannerFinding[]): ScannerFinding[] {
-  const seen = new Map<string, number>();
-  const ordered = [...findings].sort(
-    (a, b) =>
-      a.line - b.line || (a.startLine ?? a.line) - (b.startLine ?? b.line),
+const byPlace = (a: ScannerLocation, b: ScannerLocation): number =>
+  a.line - b.line || (a.startLine ?? a.line) - (b.startLine ?? b.line);
+
+/** Two findings with one fingerprint as one, their places and runs joined. */
+function join(a: ScannerFinding, b: ScannerFinding): ScannerFinding {
+  const places = new Map(
+    [...a.locations, ...b.locations].map((l) => [
+      `${l.line}:${l.startLine}`,
+      l,
+    ]),
   );
-  const nth = new Map<ScannerFinding, number>();
-  for (const f of ordered) {
-    const n = (seen.get(f.fingerprint) ?? 0) + 1;
-    seen.set(f.fingerprint, n);
-    nth.set(f, n);
+  return {
+    ...a,
+    checkRunIds: [...new Set([...a.checkRunIds, ...b.checkRunIds])].sort(
+      (x, y) => x - y,
+    ),
+    locations: [...places.values()].sort(byPlace),
+    level:
+      a.level === "failure" || b.level === "failure" ? "failure" : "warning",
+  };
+}
+
+/**
+ * The findings of a whole listing, one per fingerprint: annotations of one app
+ * with the same file and text are one finding with every place listed, however
+ * many places and runs report it. Its identity then depends on no line, order
+ * or run, so it is the same on every head that still reports the finding, and
+ * an answer to it covers every place it names.
+ */
+export function merged(findings: readonly ScannerFinding[]): ScannerFinding[] {
+  const byFingerprint = new Map<string, ScannerFinding>();
+  for (const f of findings) {
+    const seen = byFingerprint.get(f.fingerprint);
+    byFingerprint.set(f.fingerprint, join(seen ?? f, f));
   }
-  return findings.map((f) => {
-    const n = nth.get(f) ?? 1;
-    return n === 1 ? f : { ...f, fingerprint: `${f.fingerprint}-${n}` };
-  });
+  return [...byFingerprint.values()];
 }
 
 /** An annotation's level when it is a finding; `null` for a `notice`. */
@@ -248,7 +273,7 @@ function levelOf(
 function linesOf(
   raw: Record<string, unknown>,
   where: string,
-): Read<Pick<ScannerFinding, "line" | "startLine">> {
+): Read<ScannerLocation> {
   const start = lineNo(raw.start_line);
   const end = lineNo(raw.end_line);
   if (start === null || end === null)
@@ -282,9 +307,9 @@ function findingOf(
     return `${where} is a ${level.value} with no path or text`;
   return {
     app: run.app,
-    checkRunId: run.id,
+    checkRunIds: [run.id],
     path,
-    ...lines.value,
+    locations: [lines.value],
     level: level.value,
     title: text.title,
     message: text.message,
@@ -338,7 +363,7 @@ export function findingsOf(
     `check run ${run.id}'s annotations`,
     (raw, i) => findingOf(run, raw, i),
   );
-  return found.ok ? ok(byOccurrence(found.value)) : found;
+  return found.ok ? ok(merged(found.value)) : found;
 }
 
 /** GitHub lists a commit's check runs from its most recent check suites only, this many. */
