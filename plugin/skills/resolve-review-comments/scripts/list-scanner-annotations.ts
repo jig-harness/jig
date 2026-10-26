@@ -13,7 +13,8 @@
  *   - level → `warning` or `failure`; `notice` annotations are left out.
  *   - message → the annotation's message where it says more than the title.
  *   - url → the first https link in the message, as the annotation wrote it.
- *   - fingerprint → stable and marker-safe: a deferral's `--fingerprint`.
+ *   - fingerprint → stable across heads (file and text, not line) and
+ *     marker-safe: a deferral's `--fingerprint`.
  *
  * Usage: bun list-scanner-annotations.ts [PR_NUMBER]
  *   PR_NUMBER defaults to the PR for the current branch.
@@ -31,7 +32,8 @@
  * analysing the head (cancelled, skipped, timed out, …), so its findings are
  * unknown: re-run that check; 1 a response could not be read or contradicts
  * itself (an annotation list that does not hold the count its completed run
- * reports, a value GitHub does not define), or the head has more check suites
+ * reports, a check-run listing that does not hold the total it reports, a
+ * value GitHub does not define), or the head has more check suites
  * than GitHub lists check runs from; anything else is a failed `gh` call.
  */
 
@@ -53,15 +55,18 @@ import {
 
 const LABEL = "list-scanner-annotations";
 
+/** What is wrong with the arguments, `null` when nothing is. */
+function usageError(args: string[]): string | null {
+  const bad = args.find((a) => a.startsWith("--"));
+  if (bad !== undefined) return `unknown flag: ${bad}`;
+  return args.length > 1 ? `one PR at most (got ${args.join(" ")})` : null;
+}
+
 /** The PR argument, else the current branch's; `null` after a usage error. */
 async function targetPr(args: string[]): Promise<string | null> {
-  const bad = args.find((a) => a.startsWith("--"));
-  if (bad !== undefined) {
-    console.error(`${LABEL}: unknown flag: ${bad}`);
-    return null;
-  }
-  if (args.length > 1) {
-    console.error(`${LABEL}: one PR at most (got ${args.join(" ")})`);
+  const usage = usageError(args);
+  if (usage !== null) {
+    console.error(`${LABEL}: ${usage}`);
     return null;
   }
   const pr =
@@ -152,6 +157,21 @@ async function annotationsOf(
   return items.ok ? findingsOf(run, items.value) : items;
 }
 
+/** Prints the findings of each run that may carry annotations, stopping at the first that cannot be read. */
+async function printFindings(
+  slug: string,
+  runs: ScannerRun[],
+): Promise<Read<ScannerRun[]>> {
+  for (const run of runs.filter((r) => r.annotations !== 0)) {
+    const found = await annotationsOf(slug, run);
+    if (!found.ok) return found;
+    process.stdout.write(
+      found.value.map((f) => `${JSON.stringify(f)}\n`).join(""),
+    );
+  }
+  return { ok: true, value: runs };
+}
+
 /** The scanner runs on `head`, printing the findings of each that may carry annotations. */
 async function listFindings(
   slug: string,
@@ -159,14 +179,7 @@ async function listFindings(
   apps: readonly string[],
 ): Promise<Read<ScannerRun[]>> {
   const runs = await runsOn(slug, head, apps);
-  if (!runs.ok) return runs;
-  for (const run of runs.value.filter((r) => r.annotations !== 0)) {
-    const found = await annotationsOf(slug, run);
-    if (!found.ok) return found;
-    for (const finding of found.value)
-      process.stdout.write(`${JSON.stringify(finding)}\n`);
-  }
-  return runs;
+  return runs.ok ? printFindings(slug, runs.value) : runs;
 }
 
 /** The exit for runs listed on `head`, once the head is read again. */

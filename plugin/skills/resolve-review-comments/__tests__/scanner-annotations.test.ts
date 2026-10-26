@@ -6,6 +6,7 @@
 import { describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import {
   DEFAULT_SCANNER_APPS,
   exitFor,
@@ -221,22 +222,24 @@ describe("findingsOf", () => {
     expect(f?.message).toBeNull();
   });
 
-  it("gives the same finding the same fingerprint, and another a different one", () => {
+  it("keeps a finding's fingerprint on a later run and a moved line, and gives another a different one", () => {
     const a = {
       path: "a.ts",
       start_line: 1,
       annotation_level: "warning",
       title: "t",
     };
-    const [x] = value(findingsOf(r, [a]));
-    const [y] = value(findingsOf({ ...r, id: 10 }, [a]));
-    const [z] = value(findingsOf(r, [{ ...a, start_line: 2 }]));
-    const [w] = value(
-      findingsOf(r, [{ ...a, message: "https://x.example/issue=2" }]),
-    );
-    expect(x?.fingerprint).toBe(y?.fingerprint ?? "");
-    expect(x?.fingerprint).not.toBe(z?.fingerprint ?? "");
-    expect(x?.fingerprint).not.toBe(w?.fingerprint ?? "");
+    const fingerprints = (run: ScannerRun, annotations: unknown[]) =>
+      value(findingsOf(run, annotations)).map((f) => f.fingerprint);
+    const [x, moved, otherText, otherFile] = fingerprints(r, [
+      a,
+      { ...a, start_line: 2, end_line: 2 },
+      { ...a, message: "https://x.example/issue=2" },
+      { ...a, path: "b.ts" },
+    ]);
+    expect(fingerprints({ ...r, id: 10 }, [a])).toEqual(fingerprints(r, [a]));
+    expect(moved).toBe(x);
+    expect(new Set([x, otherText, otherFile]).size).toBe(3);
   });
 
   it("drops notices", () => {
@@ -331,8 +334,17 @@ describe("exitFor", () => {
 describe("flatten", () => {
   it("joins every page's list", () => {
     expect(
-      value(flatten('[{"check_runs":[1]},{"check_runs":[2]}]', "check_runs")),
+      value(
+        flatten(
+          '[{"total_count":2,"check_runs":[1]},{"total_count":2,"check_runs":[2]}]',
+          "check_runs",
+        ),
+      ),
     ).toEqual([1, 2]);
+    expect(
+      value(flatten('[{"total_count":0,"check_runs":[]}]', "check_runs")),
+    ).toEqual([]);
+    expect(value(flatten("[[]]"))).toEqual([]);
     expect(value(flatten("[[1],[2,3]]"))).toEqual([1, 2, 3]);
   });
 
@@ -343,6 +355,22 @@ describe("flatten", () => {
     expect(flatten('[{"message":"x"}]').ok).toBe(false);
     expect(flatten('{"check_runs":[]}', "check_runs").ok).toBe(false);
     expect(flatten("not json").ok).toBe(false);
+  });
+
+  it("refuses a result with no page, rather than reading it as an empty listing", () => {
+    expect(flatten("[]", "check_runs").ok).toBe(false);
+    expect(flatten("[]").ok).toBe(false);
+  });
+
+  it("refuses an envelope whose total is missing, differs between pages or is not what the pages hold", () => {
+    for (const raw of [
+      '[{"check_runs":[]}]',
+      '[{"total_count":"1","check_runs":[1]}]',
+      '[{"total_count":1,"check_runs":[]}]',
+      '[{"total_count":1,"check_runs":[1,2]}]',
+      '[{"total_count":2,"check_runs":[1]},{"total_count":3,"check_runs":[2]}]',
+    ])
+      expect(flatten(raw, "check_runs").ok).toBe(false);
   });
 });
 
@@ -361,11 +389,17 @@ describe("list-scanner-annotations.ts", () => {
     annotations?: Record<number, unknown[][]>;
     heads?: string[];
     suites?: string;
+    /** The check-run listing's pages, when not one page holding `runs`. */
+    envelope?: unknown[];
   }) {
     const fix = writeFixture({});
     writeFileSync(
       join(fix.dir, "scanner-runs.json"),
-      JSON.stringify([{ check_runs: opts.runs }]),
+      JSON.stringify(
+        opts.envelope ?? [
+          { total_count: opts.runs.length, check_runs: opts.runs },
+        ],
+      ),
     );
     for (const [id, pages] of Object.entries(opts.annotations ?? {}))
       writeFileSync(
@@ -384,6 +418,13 @@ describe("list-scanner-annotations.ts", () => {
   const list = (fix: ReturnType<typeof scanned>, args = [fix.pr]) =>
     runScript("list-scanner-annotations.ts", args, fix);
 
+  /** Asserts the listing's exit, with its output in the report on a mismatch. */
+  const exits = (r: ReturnType<typeof list>, code: number) =>
+    expectSpawnExit(
+      { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
+      code,
+    );
+
   it("prints every finding across pages and exits 0 once the scanner analysed the head", () => {
     const fix = scanned({
       runs: [run("sonarqubecloud", 7, "completed", 2), run("other", 8)],
@@ -392,7 +433,7 @@ describe("list-scanner-annotations.ts", () => {
       },
     });
     const r = list(fix);
-    expect(r.code).toBe(0);
+    exits(r, 0);
     const lines = r.stdout
       .trim()
       .split("\n")
@@ -405,14 +446,15 @@ describe("list-scanner-annotations.ts", () => {
 
   it("exits 0 with nothing printed where the default scanner does not run", () => {
     const r = list(scanned({ runs: [run("other", 8)] }));
-    expect([r.code, r.stdout]).toEqual([0, ""]);
+    exits(r, 0);
+    expect(r.stdout).toBe("");
   });
 
   it("exits 3 while the scanner is still running", () => {
     const r = list(
       scanned({ runs: [run("sonarqubecloud", 7, "in_progress", 0)] }),
     );
-    expect(r.code).toBe(3);
+    exits(r, 3);
     expect(r.stderr).toContain("has not completed");
   });
 
@@ -423,7 +465,7 @@ describe("list-scanner-annotations.ts", () => {
         heads: [HEAD_A, HEAD_B],
       }),
     );
-    expect(r.code).toBe(3);
+    exits(r, 3);
     expect(r.stderr).toContain("the head moved");
   });
 
@@ -433,7 +475,7 @@ describe("list-scanner-annotations.ts", () => {
         runs: [run("sonarqubecloud", 7, "completed", 0, "cancelled")],
       }),
     );
-    expect(r.code).toBe(4);
+    exits(r, 4);
   });
 
   it("exits 1 when the annotations do not hold the count the run reports", () => {
@@ -443,19 +485,33 @@ describe("list-scanner-annotations.ts", () => {
         annotations: { 7: [[warning]] },
       }),
     );
-    expect(r.code).toBe(1);
+    exits(r, 1);
     expect(r.stderr).toContain("reports 3 annotation(s) but lists 1");
   });
 
   it("exits 1 when the head has more check suites than the listing covers", () => {
     const r = list(scanned({ runs: [], suites: String(LISTED_SUITES + 1) }));
-    expect(r.code).toBe(1);
+    exits(r, 1);
     expect(r.stderr).toContain("check suites");
   });
 
   it("refuses a second PR and an unknown flag as usage errors", () => {
     const fix = scanned({ runs: [] });
-    expect(list(fix, [fix.pr, "34"]).code).toBe(2);
-    expect(list(fix, ["--all"]).code).toBe(2);
+    exits(list(fix, [fix.pr, "34"]), 2);
+    exits(list(fix, ["--all"]), 2);
+  });
+
+  it("exits 1 when the check-run listing does not hold the total it reports", () => {
+    const r = list(
+      scanned({ runs: [], envelope: [{ total_count: 1, check_runs: [] }] }),
+    );
+    exits(r, 1);
+    expect(r.stderr).toContain("reports 1 'check_runs' but holds 0");
+  });
+
+  it("exits 1 when the check-run listing holds no page", () => {
+    const r = list(scanned({ runs: [], envelope: [] }));
+    exits(r, 1);
+    expect(r.stderr).toContain("holds no page");
   });
 });

@@ -17,7 +17,9 @@
  * it can take, and one outside them makes the response an error rather than
  * something to skip: a run whose app cannot be read is not another app's, a
  * level GitHub does not define is not a notice, and an annotation list shorter
- * or longer than the count the completed run reports is not complete. A run
+ * or longer than the count the completed run reports is not complete, nor is a
+ * check-run listing with no page or one whose pages do not hold the total they
+ * report. A run
  * whose annotation count is unreadable has its annotations fetched anyway, and
  * a run that completed without analysing the head is reported as such.
  */
@@ -104,28 +106,45 @@ function collect<T>(
   return { ok: true, value: values };
 }
 
+const ok = <T>(value: T): Read<T> => ({ ok: true, value });
+
+const fail = (error: string): { ok: false; error: string } => ({
+  ok: false,
+  error,
+});
+
+/** A wanted check run's id, whether it completed, and its conclusion once it has. */
+function stateOf(
+  raw: Record<string, unknown>,
+  app: string,
+  i: number,
+): Read<Pick<ScannerRun, "id" | "completed" | "conclusion">> {
+  const id = num(raw.id);
+  const status = str(raw.status);
+  if (id === null || status === null)
+    return fail(`the ${app} check run ${i} has no id or status`);
+  const completed = status === "completed";
+  const conclusion = completed ? str(raw.conclusion) : null;
+  if (completed && conclusion === null)
+    return fail(`the ${app} check run ${id} completed with no conclusion`);
+  return ok({ id, completed, conclusion });
+}
+
 /** One check run, when it is one of `wanted`'s. */
 function runOf(
   raw: unknown,
   i: number,
   wanted: ReadonlySet<string>,
 ): ScannerRun | null | string {
-  if (!isRecord(raw) || !isRecord(raw.app)) return `check run ${i} has no app`;
-  const slug = str(raw.app.slug);
+  if (!isRecord(raw)) return `check run ${i} is not an object`;
+  const slug = isRecord(raw.app) ? str(raw.app.slug) : null;
   if (slug === null) return `check run ${i}'s app has no slug`;
   const app = slug.toLowerCase();
   if (!wanted.has(app)) return null;
-  const id = num(raw.id);
-  const status = str(raw.status);
-  if (id === null || status === null)
-    return `the ${app} check run ${i} has no id or status`;
-  const completed = status === "completed";
-  const conclusion = completed ? str(raw.conclusion) : null;
-  if (completed && conclusion === null)
-    return `the ${app} check run ${id} completed with no conclusion`;
+  const state = stateOf(raw, app, i);
+  if (!state.ok) return state.error;
   const output = isRecord(raw.output) ? raw.output : {};
-  const annotations = num(output.annotations_count);
-  return { id, app, completed, conclusion, annotations };
+  return { ...state.value, app, annotations: num(output.annotations_count) };
 }
 
 /** The check runs of `apps` (slugs, case-insensitive) among a commit's check runs. */
@@ -173,18 +192,52 @@ function linkOf(message: string | null): string | null {
   return m === null || m === undefined ? null : m[0];
 }
 
-/** A hash of what identifies the finding: the message too, since it carries the tool's issue key where the tool links one. */
-function fingerprintOf(
-  app: string,
-  path: string,
-  line: number,
-  text: string,
-): string {
+/**
+ * A hash of what identifies the finding across heads: its file and text, the
+ * message included, since it carries the tool's issue key where the tool links
+ * one. The line is left out, so the identity survives an edit that moves the
+ * finding; two findings with the same text in one file share it, and one
+ * answer covers both.
+ */
+function fingerprintOf(app: string, path: string, text: string): string {
   const digest = createHash("sha256")
-    .update(`${path}\0${line}\0${text}`)
+    .update(`${path}\0${text}`)
     .digest("hex")
     .slice(0, 16);
   return `${app}-${digest}`;
+}
+
+/** An annotation's level when it is a finding; `null` for a `notice`. */
+function levelOf(
+  raw: Record<string, unknown>,
+  where: string,
+): Read<ScannerFinding["level"] | null> {
+  const level = str(raw.annotation_level);
+  if (level === null) return fail(`${where} has no level`);
+  if (!LEVELS.has(level))
+    return fail(`${where} has an unknown level '${level}'`);
+  return ok(
+    FINDING_LEVELS.has(level) ? (level as ScannerFinding["level"]) : null,
+  );
+}
+
+/** An annotation's last line and, for a range, its first. */
+function linesOf(
+  raw: Record<string, unknown>,
+  where: string,
+): Read<Pick<ScannerFinding, "line" | "startLine">> {
+  const start = lineNo(raw.start_line);
+  const end = lineNo(raw.end_line);
+  if (start === null || end === null)
+    return fail(`${where} has a line that is not a whole number from 1`);
+  const line = end ?? start;
+  if (line === undefined) return fail(`${where} has no line`);
+  if (start !== undefined && start > line)
+    return fail(`${where} ends on line ${line}, before it starts (${start})`);
+  return ok({
+    line,
+    startLine: start === undefined || start === line ? null : start,
+  });
 }
 
 /** One annotation as a finding; `null` for a `notice`. */
@@ -195,33 +248,46 @@ function findingOf(
 ): ScannerFinding | null | string {
   const where = `check run ${run.id}'s annotation ${i}`;
   if (!isRecord(raw)) return `${where} is not an object`;
-  const level = str(raw.annotation_level);
-  if (level === null) return `${where} has no level`;
-  if (!LEVELS.has(level)) return `${where} has an unknown level '${level}'`;
-  if (!FINDING_LEVELS.has(level)) return null;
+  const level = levelOf(raw, where);
+  if (!level.ok) return level.error;
+  if (level.value === null) return null;
+  const lines = linesOf(raw, where);
+  if (!lines.ok) return lines.error;
   const path = str(raw.path);
-  const start = lineNo(raw.start_line);
-  const end = lineNo(raw.end_line);
-  if (start === null || end === null)
-    return `${where} has a line that is not a whole number from 1`;
-  const line = end ?? start;
-  const message = str(raw.message);
-  const title = str(raw.title) ?? message;
-  if (path === null || line === undefined || title === null)
-    return `${where} is a ${level} with no path, line or text`;
-  if (start !== undefined && start > line)
-    return `${where} ends on line ${line}, before it starts (${start})`;
+  const text = textOf(raw);
+  if (path === null || text === null)
+    return `${where} is a ${level.value} with no path or text`;
   return {
     app: run.app,
     checkRunId: run.id,
     path,
-    line,
-    startLine: start === undefined || start === line ? null : start,
-    level: level as ScannerFinding["level"],
+    ...lines.value,
+    level: level.value,
+    title: text.title,
+    message: text.message,
+    url: text.url,
+    fingerprint: fingerprintOf(run.app, path, text.identity),
+  };
+}
+
+/**
+ * An annotation's title (its message where it has none), its message where it
+ * says more, the link in it, and the text that identifies it.
+ */
+function textOf(raw: Record<string, unknown>): {
+  title: string;
+  message: string | null;
+  url: string | null;
+  identity: string;
+} | null {
+  const message = str(raw.message);
+  const title = str(raw.title) ?? message;
+  if (title === null) return null;
+  return {
     title,
     message: message?.trim() === title ? null : message,
     url: linkOf(message),
-    fingerprint: fingerprintOf(run.app, path, line, `${title}\0${message}`),
+    identity: `${title}\0${message}`,
   };
 }
 
@@ -282,25 +348,68 @@ export function exitFor(reasons: {
   return reasons.unanalysed.length > 0 ? 4 : 0;
 }
 
-/** Every element of a `gh api --paginate --slurp` result, pages flattened. */
+/**
+ * Every element of a `gh api --paginate --slurp` result, pages flattened. A
+ * result with no page received nothing. With `key`, each page is GitHub's
+ * envelope: its list under `key` and the listing's `total_count`, which every
+ * page must report alike and the pages together must hold exactly.
+ */
 export function flatten(raw: string, key?: string): Read<unknown[]> {
+  const pages = pagesOf(raw);
+  if (!pages.ok) return pages;
+  const items: unknown[] = [];
+  const totals = new Set<number | null>();
+  for (const page of pages.value) {
+    const read = pageOf(page, key);
+    if (!read.ok) return read;
+    items.push(...read.value.items);
+    totals.add(read.value.total);
+  }
+  return whole(items, [...totals], key);
+}
+
+/** The pages of a `--slurp` result: at least one. */
+function pagesOf(raw: string): Read<unknown[]> {
   let pages: unknown;
   try {
     pages = JSON.parse(raw);
   } catch {
-    return { ok: false, error: "the response is not JSON" };
+    return fail("the response is not JSON");
   }
-  if (!Array.isArray(pages))
-    return { ok: false, error: "the response is not a list of pages" };
-  const items: unknown[] = [];
-  for (const page of pages) {
-    const part = key === undefined ? page : isRecord(page) ? page[key] : null;
-    if (!Array.isArray(part))
-      return {
-        ok: false,
-        error: `a page has no ${key === undefined ? "list" : `'${key}' list`}`,
-      };
-    items.push(...part);
-  }
-  return { ok: true, value: items };
+  if (!Array.isArray(pages)) return fail("the response is not a list of pages");
+  return pages.length === 0 ? fail("the response holds no page") : ok(pages);
+}
+
+/** One page's list and, under `key`, the total its envelope reports. */
+function pageOf(
+  page: unknown,
+  key: string | undefined,
+): Read<{ items: unknown[]; total: number | null }> {
+  if (key === undefined)
+    return Array.isArray(page)
+      ? ok({ items: page, total: null })
+      : fail("a page has no list");
+  const items = isRecord(page) ? page[key] : null;
+  if (!isRecord(page) || !Array.isArray(items))
+    return fail(`a page has no '${key}' list`);
+  const total = num(page.total_count);
+  return total === null
+    ? fail("a page has no readable 'total_count'")
+    : ok({ items, total });
+}
+
+/** The listing, once its pages agree on one total and hold exactly that many. */
+function whole(
+  items: unknown[],
+  totals: (number | null)[],
+  key: string | undefined,
+): Read<unknown[]> {
+  if (totals.length > 1)
+    return fail(`the pages report different totals (${totals.join(", ")})`);
+  const total = totals[0] ?? null;
+  if (total !== null && items.length !== total)
+    return fail(
+      `the listing reports ${total} '${key}' but holds ${items.length}`,
+    );
+  return ok(items);
 }
