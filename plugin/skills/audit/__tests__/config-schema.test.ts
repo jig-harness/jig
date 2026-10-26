@@ -31,6 +31,7 @@ import {
 } from "../../do-item/scripts/lib/tracker/github/settings.ts";
 import { DEFAULT_MAX_ROUNDS } from "../../drive-pr/scripts/lib/overlay.ts";
 import { DEFAULT_HOTSPOT_MIN_MERGES } from "../../resolve-conflicts/scripts/lib/classify.ts";
+import { DEFAULT_SCANNER_APPS } from "../../resolve-review-comments/scripts/lib/scanner-annotations.ts";
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
 import {
   CANONICAL_STATES,
@@ -263,6 +264,7 @@ describe("the reading skills", () => {
       "work_batch.ranking.provenance": DEFAULT_RANKING.provenance,
       "work_batch.ranking.shared_area_label": DEFAULT_RANKING.sharedAreaLabel,
       "resolve_conflicts.hotspot_min_merges": DEFAULT_HOTSPOT_MIN_MERGES,
+      "review.scanner_apps": DEFAULT_SCANNER_APPS,
     });
   });
 

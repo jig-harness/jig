@@ -267,7 +267,17 @@ case "$1 $2" in
     printf '%s\n' "$@" > "$FIX/dismiss-args.log"
     [ -f "$FIX/dismiss-forbidden" ] && { echo 'gh: Resource not accessible by integration (HTTP 403)' >&2; exit 1; }
     echo dismissed ;;
+  'api repos/'*'/check-suites'*)
+    # list-scanner-annotations.ts's check suite count (-q .total_count).
+    if [ -f "$FIX/suite-count" ]; then cat "$FIX/suite-count"; else echo 1; fi ;;
   'api repos/'*'/pulls/'*)
+    # list-scanner-annotations.ts's head reads (-q .head.sha): one line of
+    # heads per read, the last repeating.
+    if [ -f "$FIX/heads" ]; then
+      head -n 1 "$FIX/heads"
+      [ "$(wc -l < "$FIX/heads")" -gt 1 ] && sed -i.bak 1d "$FIX/heads"
+      exit 0
+    fi
     # The pull request code-scanning.ts reads its revision from, pull.json in
     # the fixture; absent, a 403.
     echo "pull" >> "$FIX/alert-calls.log"
@@ -295,6 +305,15 @@ case "$1 $2" in
         [ -f "$FIX/instances-forbidden" ] && { echo 'gh: Resource not accessible by integration (HTTP 403)' >&2; exit 1; }
         f="$FIX/instances-$n-$(printf '%s' "$ref" | tr / _).json"
         if [ -f "$f" ]; then cat "$f"; else echo '[[]]'; fi ;;
+      *"/check-runs/"*"/annotations"*)
+        # A scanner run's annotations, as --slurp pages, from
+        # annotations-<run id>.json.
+        path="\${4:-$3}"
+        id="\${path%/annotations*}"; id="\${id##*/}"
+        cat "$FIX/annotations-$id.json" ;;
+      *"/commits/"*"/check-runs"*)
+        # A commit's check runs, as --slurp pages, from scanner-runs.json.
+        cat "$FIX/scanner-runs.json" ;;
       *"/issues/"*"/comments"*)
         if [ -f "$FIX/issue-comments.json" ]; then cat "$FIX/issue-comments.json"
         else echo '[[]]'; fi ;;

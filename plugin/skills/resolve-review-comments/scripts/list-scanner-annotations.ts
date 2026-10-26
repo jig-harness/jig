@@ -29,8 +29,10 @@
  * still running, or the head moved while listing), so the lines printed may
  * be partial: wait and list again; 4 a scanner check completed without
  * analysing the head (cancelled, skipped, timed out, …), so its findings are
- * unknown: re-run that check; 1 a response could not be read; anything else
- * is a failed `gh` call.
+ * unknown: re-run that check; 1 a response could not be read or contradicts
+ * itself (an annotation list that does not hold the count its completed run
+ * reports, a value GitHub does not define), or the head has more check suites
+ * than GitHub lists check runs from; anything else is a failed `gh` call.
  */
 
 import { runMain } from "../../../shared/cli.ts";
@@ -45,6 +47,7 @@ import {
   type ScannerFinding,
   type ScannerRun,
   scannerRuns,
+  suitesCovered,
   unsettled,
 } from "./lib/scanner-annotations.ts";
 
@@ -55,6 +58,10 @@ async function targetPr(args: string[]): Promise<string | null> {
   const bad = args.find((a) => a.startsWith("--"));
   if (bad !== undefined) {
     console.error(`${LABEL}: unknown flag: ${bad}`);
+    return null;
+  }
+  if (args.length > 1) {
+    console.error(`${LABEL}: one PR at most (got ${args.join(" ")})`);
     return null;
   }
   const pr =
@@ -78,12 +85,21 @@ async function headOf(slug: string, pr: string): Promise<string> {
   ).trim();
 }
 
-/** The scanner check runs on `head`. */
+/** The scanner check runs on `head`, once the listing is known to cover all of its check suites. */
 async function runsOn(
   slug: string,
   head: string,
   apps: readonly string[],
 ): Promise<Read<ScannerRun[]>> {
+  const suites = suitesCovered(
+    await ghOrExit(LABEL, [
+      "api",
+      `repos/${slug}/commits/${head}/check-suites?per_page=1`,
+      "-q",
+      ".total_count",
+    ]),
+  );
+  if (!suites.ok) return suites;
   const listed = flatten(
     await ghOrExit(
       LABEL,

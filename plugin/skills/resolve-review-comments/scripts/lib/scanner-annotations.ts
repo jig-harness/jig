@@ -11,16 +11,24 @@
  * summary. A tool that also uploads to code scanning shows up as threads, which
  * `code-scanning.ts` handles; the two do not overlap.
  *
- * Evidence that cannot be read is never read as a clean scan: a malformed
- * response is an error, a run whose annotation count is unreadable has its
- * annotations fetched anyway, and a run that completed without analysing the
- * head is reported as such.
+ * Evidence that cannot be read is never read as a clean scan. Every field that
+ * decides whether something is a finding (a run's app, an annotation's level,
+ * its lines, how many annotations a run holds) is checked against the values
+ * it can take, and one outside them makes the response an error rather than
+ * something to skip: a run whose app cannot be read is not another app's, a
+ * level GitHub does not define is not a notice, and an annotation list shorter
+ * or longer than the count the completed run reports is not complete. A run
+ * whose annotation count is unreadable has its annotations fetched anyway, and
+ * a run that completed without analysing the head is reported as such.
  */
 import { createHash } from "node:crypto";
 import { isRecord } from "../../../../shared/guards.ts";
 
 /** The app whose annotations are read when `review.scanner_apps` is unset. */
 export const DEFAULT_SCANNER_APPS: readonly string[] = ["sonarqubecloud"];
+
+/** The annotation levels GitHub defines. */
+const LEVELS = new Set(["notice", "warning", "failure"]);
 
 /** Annotation levels that are findings; `notice` is information. */
 const FINDING_LEVELS = new Set(["warning", "failure"]);
@@ -67,6 +75,14 @@ const str = (v: unknown): string | null =>
 const num = (v: unknown): number | null =>
   typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : null;
 
+/** A line number, which starts at 1: `undefined` when absent, `null` when malformed. */
+const lineNo = (v: unknown): number | null | undefined =>
+  v === undefined || v === null
+    ? undefined
+    : typeof v === "number" && Number.isSafeInteger(v) && v >= 1
+      ? v
+      : null;
+
 /**
  * Each element of `items` read by `read`, which returns the value, `null` to
  * leave the element out, or the reason it cannot be read; the first reason
@@ -95,8 +111,10 @@ function runOf(
   wanted: ReadonlySet<string>,
 ): ScannerRun | null | string {
   if (!isRecord(raw) || !isRecord(raw.app)) return `check run ${i} has no app`;
-  const app = str(raw.app.slug)?.toLowerCase();
-  if (app === undefined || !wanted.has(app)) return null;
+  const slug = str(raw.app.slug);
+  if (slug === null) return `check run ${i}'s app has no slug`;
+  const app = slug.toLowerCase();
+  if (!wanted.has(app)) return null;
   const id = num(raw.id);
   const status = str(raw.status);
   if (id === null || status === null)
@@ -179,19 +197,26 @@ function findingOf(
   if (!isRecord(raw)) return `${where} is not an object`;
   const level = str(raw.annotation_level);
   if (level === null) return `${where} has no level`;
+  if (!LEVELS.has(level)) return `${where} has an unknown level '${level}'`;
   if (!FINDING_LEVELS.has(level)) return null;
   const path = str(raw.path);
-  const line = num(raw.end_line) ?? num(raw.start_line);
+  const start = lineNo(raw.start_line);
+  const end = lineNo(raw.end_line);
+  if (start === null || end === null)
+    return `${where} has a line that is not a whole number from 1`;
+  const line = end ?? start;
   const message = str(raw.message);
   const title = str(raw.title) ?? message;
-  if (path === null || line === null || title === null)
+  if (path === null || line === undefined || title === null)
     return `${where} is a ${level} with no path, line or text`;
+  if (start !== undefined && start > line)
+    return `${where} ends on line ${line}, before it starts (${start})`;
   return {
     app: run.app,
     checkRunId: run.id,
     path,
     line,
-    startLine: startOf(num(raw.start_line), line),
+    startLine: start === undefined || start === line ? null : start,
     level: level as ScannerFinding["level"],
     title,
     message: message?.trim() === title ? null : message,
@@ -200,18 +225,52 @@ function findingOf(
   };
 }
 
-/** The first line of a range, when it differs from the last. */
-const startOf = (start: number | null, line: number): number | null =>
-  start === line ? null : start;
-
-/** The findings among one run's annotations; `notice` annotations drop out. */
+/**
+ * The findings among one run's annotations; `notice` annotations drop out. A
+ * completed run's list must hold exactly the count the run reports, notices
+ * included; a running one's may still grow, and its listing is pending anyway.
+ */
 export function findingsOf(
   run: ScannerRun,
   annotations: unknown,
 ): Read<ScannerFinding[]> {
+  if (
+    run.completed &&
+    run.annotations !== null &&
+    Array.isArray(annotations) &&
+    annotations.length !== run.annotations
+  )
+    return {
+      ok: false,
+      error: `check run ${run.id} reports ${run.annotations} annotation(s) but lists ${annotations.length}`,
+    };
   return collect(annotations, `check run ${run.id}'s annotations`, (raw, i) =>
     findingOf(run, raw, i),
   );
+}
+
+/** GitHub lists a commit's check runs from its most recent check suites only, this many. */
+export const LISTED_SUITES = 1000;
+
+/**
+ * The head's check suite count, read from `total_count`, when the check-run
+ * listing covers every suite; past the bound a scanner's run may be missing
+ * from the listing, which would read as the default app not running here.
+ */
+export function suitesCovered(raw: string): Read<number> {
+  const text = raw.trim();
+  const n = /^[0-9]+$/.test(text) ? num(Number(text)) : null;
+  if (n === null)
+    return {
+      ok: false,
+      error: `the check suite count '${text}' is not a number`,
+    };
+  if (n > LISTED_SUITES)
+    return {
+      ok: false,
+      error: `the head has ${n} check suites, and GitHub lists check runs from the ${LISTED_SUITES} most recent only`,
+    };
+  return { ok: true, value: n };
 }
 
 /** The exit a listing ends with: 3 while unsettled, 4 when a run did not analyse, else 0. */

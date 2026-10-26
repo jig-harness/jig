@@ -110,6 +110,7 @@ fields:
     distinct: true
     nonempty: true
     read_by: [resolve-review-comments]
+    default: [sonarqubecloud]
     since: next
   review.deferral_team:
     type: string

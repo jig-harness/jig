@@ -272,7 +272,9 @@ report. Nothing can be replied to, resolved or dismissed from here, and the app
 clears an annotation itself when it analyses a head without the finding. The
 listing says so when it cannot vouch for a complete answer: a scanner still
 running, a configured one that has not reported, a check that did not analyse
-the head, or a head that moved. The drive does not yet wait for these findings
+the head, a head that moved, a response that contradicts itself (fewer or more
+annotations than the check reports), or a head with more check suites than
+GitHub lists runs from. The drive does not yet wait for these findings
 before it converges.
 
 ## Platform support
