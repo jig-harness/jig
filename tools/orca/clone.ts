@@ -162,6 +162,35 @@ function unfinished(ws: Workspace, status: number): boolean {
   return status === -1 || (ws.ssh !== undefined && status === SSH_FAILED);
 }
 
+/**
+ * The settings under which a clone cannot wait on a person: the clone's
+ * terminal may be no one's, and a prompt there or in a window would hold the
+ * clone until its deadline. An empty `GIT_ASKPASS` stops git at its first
+ * askpass choice, so neither `core.askPass` nor `SSH_ASKPASS` runs, and
+ * `GIT_TERMINAL_PROMPT=0` then refuses the terminal; `GCM_INTERACTIVE=never`
+ * keeps Git Credential Manager from opening a window; SSH's batch mode asks
+ * for no password or passphrase. A key, an SSH agent or a credential helper
+ * still answers without a person (`~/.ssh/config` still applies, and
+ * replaces a `core.sshCommand`).
+ */
+export const NO_PROMPT_ENV = [
+  "GIT_TERMINAL_PROMPT=0",
+  "GIT_ASKPASS=",
+  "GCM_INTERACTIVE=never",
+  "GIT_SSH_COMMAND=ssh -o BatchMode=yes",
+];
+
+/** The command that clones `url` into `path` with no prompt. */
+export const cloneCommand = (url: string, path: string): string[] => [
+  "env",
+  ...NO_PROMPT_ENV,
+  "git",
+  "clone",
+  "--",
+  url,
+  path,
+];
+
 /** Clone `source` to `path` unless a clone of it is there; refuse anything else there. */
 function ensureClone(
   ws: Workspace,
@@ -182,12 +211,9 @@ function ensureClone(
       `${path} is there but is not a directory; move it away and open again`,
     );
   ws.host.log(`… cloning ${shownUrl} into ${path}`);
-  // No prompt for credentials: the clone's terminal may be no one's, and a
-  // prompt there would hold the clone until its deadline.
-  const cloned = ws.host.run(
-    ["env", "GIT_TERMINAL_PROMPT=0", "git", "clone", "--", source.url, path],
-    { timeoutMs: budget(ws.host, CLONE_TIMEOUT_MS) },
-  );
+  const cloned = ws.host.run(cloneCommand(source.url, path), {
+    timeoutMs: budget(ws.host, CLONE_TIMEOUT_MS),
+  });
   const said = output(cloned).replaceAll(source.url, () => shownUrl);
   if (unfinished(ws, cloned.status))
     throw new CloneUnfinished(

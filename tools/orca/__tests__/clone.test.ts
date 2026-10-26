@@ -8,6 +8,7 @@ import { type Answer, fail, ok } from "../../herdr/__tests__/fake.ts";
 import type { RunResult } from "../../herdr/runner.ts";
 import {
   CLONE_TIMEOUT_MS,
+  cloneCommand,
   cloneMissingRepo,
   HOME_SCRIPT,
   redactUrl,
@@ -41,9 +42,8 @@ const home = `sh -c ${HOME_SCRIPT}`;
 const makeRoot = `mkdir -p ${ROOT}`;
 const takeClaim = `mkdir ${CLAIM}`;
 const releaseClaim = `rm -rf ${CLAIM}`;
-/** The clone of `url` into the clone's path, with git's prompts off. */
-const cloneOf = (url: string): string =>
-  `env GIT_TERMINAL_PROMPT=0 git clone -- ${url} ${CLONE}`;
+/** The clone of `url` into the clone's path, with its prompts off. */
+const cloneOf = (url: string): string => cloneCommand(url, CLONE).join(" ");
 const gitClone = cloneOf(URL);
 const origin = `git -C ${CLONE} remote get-url origin`;
 const prefix = `git -C ${CLONE} rev-parse --show-prefix`;

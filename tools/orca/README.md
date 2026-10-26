@@ -160,9 +160,12 @@ available first, on the machine the clone goes on (this one, or `--ssh`'s):
    top of a clone whose `origin` is that URL, and anything else there stops
    the run for a person to look at. The URL must be `https://`, `ssh://` or
    `git://` with a host and a path, an SSH `user@host:path`, or an absolute
-   path; messages show it with any `user:secret@` hidden. The clone runs
-   without a terminal, so the machine needs credentials for the URL that ask
-   nothing (an SSH key, a credential helper). A clone that does not end on
+   path; messages show it with any `user:secret@` hidden. The clone can
+   prompt no one: no terminal prompt, no askpass program, no Git Credential
+   Manager window, and SSH in batch mode (its `ssh -o BatchMode=yes` takes
+   the place of a `core.sshCommand`; `~/.ssh/config` still applies). So the
+   machine needs credentials for the URL that ask nothing (an SSH key or
+   agent, a credential helper). A clone that does not end on
    its own (its limit, a lost SSH session) keeps the claim, since git may
    still be writing there; the message names what to remove once it is not.
 3. It adds the clone to Orca (`orca repo add --path`), which names the
