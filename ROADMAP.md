@@ -185,7 +185,16 @@ criterion: met with evidence, deferred to a filed item, or not applicable.
 The delivery loop writes no spec and dictates no format; the tools that
 write specs well are recommended beside the adapter that reads each.
 
-### 30. Routing work to an agent, a model and an effort
+### 30. Scanner findings block convergence
+
+A static-analysis app that reports to the pull request as annotations rather
+than review threads (SonarQube Cloud does) has its findings worked by the
+review loop, but they do not yet hold the drive back from converging. They
+will count as open work beside threads and summary findings, a finding that
+stands can be recorded as such, and the tool's own dismissal is made where
+the tool offers one.
+
+### 31. Routing work to an agent, a model and an effort
 
 Every launch and delegation runs whichever agent, model and effort was
 configured once, whatever the work. Routing would choose them from the work's

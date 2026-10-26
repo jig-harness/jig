@@ -1048,6 +1048,12 @@ make, use the entry's term instead.
 - **Tiered review** — a review that runs cheap pattern checks first, contract
   checks second, and an expensive semantic review last; each tier can block
   or warn, and a change only pays for the tiers its file types need.
+- **Scanner annotation** — a finding a static-analysis tool reports on a pull
+  request as a note pinned to a changed line of its check run (a check-run
+  annotation), as SonarQube Cloud does. It is neither a review thread, which
+  can be replied to and resolved, nor a code scanning alert, which can be
+  dismissed: the only answers are a fix, which the tool sees on its next
+  analysis, or a recorded reason the finding stands.
 - **Miss→lens flywheel** — the improvement loop: an external reviewer or human
   catches what the automated reviewer missed → the miss is classified, filed,
   and reconstructed as an *eval fixture* → a new *lens* is added → validated →

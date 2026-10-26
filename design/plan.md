@@ -510,7 +510,23 @@ reaches its pull request with every acceptance criterion accounted for,
 one with none stops, saying so, before any code is written, and the stance (a work
 item links its requirements; the delivery loop writes no spec) is a decision record.
 
-### 30. Routing work to an agent, a model and an effort
+### 30. Scanner findings block convergence
+
+`resolve-review-comments` lists the findings a static-analysis app reports as
+check-run annotations (`review.scanner_apps`), and `drive-pr` tells the agent
+to work them, but the drive's verdict reads threads and summary comments
+only, so a drive can still end `CONVERGED` over an annotation. What it will
+build: the annotation listing as a third source of open work beside threads
+and summary findings, read by `drive-status`, `round-plan` and `converge`,
+so the verdict withholds `CONVERGED` while a scanner check is running on the
+head or lists a finding no round has answered; a way to record a finding
+that stands (rejected, won't fix, deferred) against the head so it stops
+counting; and the dismissal in the tool for the apps that expose one
+(SonarQube Cloud's issue transitions), as an adapter beside the listing.
+Done when a pull request whose scanner check holds a warning does not
+converge until a round fixes it or records why it stands.
+
+### 31. Routing work to an agent, a model and an effort
 
 Every launch and every delegation runs the agent, model and effort someone
 configured once, whatever the work. A bug fix in one file and an epic's
