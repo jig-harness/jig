@@ -161,24 +161,30 @@ describe("the setup tab's script", () => {
 
   test("runs the hook once when a second tab starts while the first is running it", async () => {
     const { root, runs, argv, claim, mark } = scene();
-    writeFileSync(join(root, "hold"), "");
+    const hold = join(root, "hold");
+    writeFileSync(hold, "");
     const first = Bun.spawn(argv(claim, mark), {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const deadline = Date.now() + 10_000;
-    while (runs() === 0) {
-      if (Date.now() > deadline)
-        throw new Error("the first tab never entered the hook");
-      await Bun.sleep(20);
+    try {
+      const deadline = Date.now() + 10_000;
+      while (runs() === 0) {
+        if (Date.now() > deadline)
+          throw new Error("the first tab never entered the hook");
+        await Bun.sleep(20);
+      }
+      const second = Bun.spawnSync(argv(claim, mark), {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expectSpawnExit(second, 0, "second tab");
+      expect(second.stdout.toString()).toContain("another open is running it");
+    } finally {
+      // Releasing the hook lets the first tab end, whatever failed above.
+      rmSync(hold, { force: true });
+      await first.exited;
     }
-    const second = Bun.spawnSync(argv(claim, mark), {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    expectSpawnExit(second, 0, "second tab");
-    expect(second.stdout.toString()).toContain("another open is running it");
-    rmSync(join(root, "hold"));
     const exitCode = await first.exited;
     expectSpawnExit(
       {

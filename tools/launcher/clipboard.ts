@@ -40,6 +40,11 @@ export type CopyRunner = (
  * output streams, so the runner pipes none of them: a pipe would stay open
  * until the clipboard changes hands. A command's reason for refusing (no
  * display for `xclip`, say) goes to the launcher's own stderr.
+ *
+ * The wait ends when the command exits or when `signal` or the command's own
+ * timeout fires, whichever is first, so a command that ignores its ending
+ * cannot hold the launch. Ending it is `SIGKILL`: a clipboard command has no
+ * cleanup to run, and `SIGTERM` can be ignored.
  */
 export function copyRunner(path: string | undefined): CopyRunner {
   return async (argv, text, signal) => {
@@ -49,14 +54,24 @@ export function copyRunner(path: string | undefined): CopyRunner {
         ? null
         : Bun.which(name, path === undefined ? {} : { PATH: path });
     if (found === null) return false;
+    const ended = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(COPY_TIMEOUT_MS),
+    ]);
     try {
       const proc = Bun.spawn([found, ...args], {
         stdin: new Blob([text]),
         stdout: "ignore",
         stderr: "inherit",
-        signal: AbortSignal.any([signal, AbortSignal.timeout(COPY_TIMEOUT_MS)]),
+        signal: ended,
+        killSignal: "SIGKILL",
       });
-      return (await proc.exited) === 0;
+      const gaveUp = new Promise<null>((resolve) => {
+        if (ended.aborted) resolve(null);
+        else
+          ended.addEventListener("abort", () => resolve(null), { once: true });
+      });
+      return (await Promise.race([proc.exited, gaveUp])) === 0;
     } catch (error) {
       swallow(error, `${name} could not be started: the next command is tried`);
       return false;
