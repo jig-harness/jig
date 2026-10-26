@@ -181,8 +181,12 @@ repositories is two starts, and so are two agents on one key.
   fails. An open whose receipt carries another token sets it aside and
   records the start anew, whether it reattached or created the worktree:
   the stale receipt is linked under a name carrying the start it records,
-  which only the first open to try can do, and the pending receipt takes its
-  place without the file being absent in between. A second open that read
+  which only the first open to try can do, and is read again under that
+  name, since what the open read before is a hint: when the file holds
+  another receipt by then (the one read was cleared by its open and one
+  created anew), the link is removed and the file is read again; otherwise
+  the pending receipt takes its place without the file being absent in
+  between. A second open that read
   the same stale receipt waits for the replacement (2 minutes at most), then
   finds the start made; the message past that names the copy to remove when
   the open that made it never finished. `remove` leaves the receipts of the

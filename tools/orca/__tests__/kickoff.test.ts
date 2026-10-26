@@ -6,12 +6,17 @@
  * workspace.test.ts.
  */
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { hostname } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fail, ok } from "../../herdr/__tests__/fake.ts";
 import { ownerLine } from "../../herdr/owner.ts";
-import { fileSegment, type Receipt, receiptPath } from "../receipts.ts";
+import {
+  fileSegment,
+  type Receipt,
+  receiptPath,
+  replaceStale,
+} from "../receipts.ts";
 import { openWorkspace } from "../workspace.ts";
 import {
   absent,
@@ -603,6 +608,74 @@ describe("a branch a checkout already holds, where the agent starts", () => {
     const receipt = JSON.parse(readFileSync(receiptOf(ws), "utf8"));
     expect(receipt.status).toBe("pending");
     expect(receipt.owner).toBe(ownerLine(ws.ctx).trim());
+  });
+});
+
+describe("a stale receipt's replacement", () => {
+  // What an open read before the link is a hint: judging the receipt's
+  // owner takes a moment, and the link names whatever is at the file when
+  // it is made. The linked copy is read again under the retired name, and
+  // must be what was read.
+  const read: Receipt = {
+    ...sentReceipt(ID, "tok-0"),
+    status: "pending",
+    owner: endedOwner(),
+  };
+  const pendingOf = (ws: ReturnType<typeof workspaceOf>): Receipt => ({
+    ...sentReceipt(),
+    status: "pending",
+    owner: ownerLine(ws.ctx).trim(),
+    at: "2026-01-01T00:00:01Z",
+  });
+
+  test("is not made over a receipt created anew after the one read was cleared, and sends the open back to the file", () => {
+    // The open that was starting the agent in the worktree that stood here
+    // before had Orca refuse the start, cleared its receipt and ended; a
+    // third open then created the receipt of a start in this worktree,
+    // which it is still making. The link under the first receipt's retired
+    // name catches the third's, which is not what was read: it is not set
+    // aside, nothing is written over it, and the open reads the file again,
+    // where it finds that start to wait for rather than making a second.
+    const ws = workspaceOf({});
+    const file = receiptOf(ws);
+    const current: Receipt = {
+      ...pendingOf(ws),
+      at: "2026-01-01T00:00:02Z",
+    };
+    writeReceiptFile(file, current);
+    expect(replaceStale(ws, file, read, pendingOf(ws))).toBe("changed");
+    expect(readdirSync(dirname(file))).toEqual([basename(file)]);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(current);
+    expect(ws.ctx.lines).toEqual([]);
+  });
+
+  test("is not made when the receipt read is gone, and sends the open back to the file", () => {
+    // Its open had Orca refuse the start and cleared it: the next read
+    // finds no receipt, and the open creates its own.
+    const ws = workspaceOf({});
+    const file = receiptOf(ws);
+    mkdirSync(dirname(file), { recursive: true });
+    expect(replaceStale(ws, file, read, pendingOf(ws))).toBe("changed");
+    expect(existsSync(file)).toBe(false);
+    expect(readdirSync(dirname(file))).toEqual([]);
+    expect(ws.ctx.lines).toEqual([]);
+  });
+
+  test("is made over the receipt read, set aside under its retired name, by the first open to link it", () => {
+    const ws = workspaceOf({});
+    const file = receiptOf(ws);
+    writeReceiptFile(file, read);
+    const pending = pendingOf(ws);
+    expect(replaceStale(ws, file, read, pending)).toBe("replaced");
+    expect(JSON.parse(readFileSync(retiredAs(file, read), "utf8"))).toEqual(
+      read,
+    );
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(pending);
+    expect(ws.ctx.lines).toHaveLength(1);
+    // A second open that read the same receipt finds it set aside.
+    expect(replaceStale(ws, file, read, pending)).toBe("taken");
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(pending);
+    expect(ws.ctx.lines).toHaveLength(1);
   });
 });
 
