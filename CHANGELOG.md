@@ -323,6 +323,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.87.0] - 2026-10-26
+
+### Added
+
+- `resolve-review-comments` and `drive-pr` now see the findings a static-analysis app reports as check-run annotations rather than review threads, as SonarQube Cloud's pull request decoration does. `list-scanner-annotations.ts` lists the warnings and failures on the head commit, and the round triages each as a finding. The apps read are `review.scanner_apps`, default `sonarqubecloud`. Annotations with the same text in one file, from any of the app's runs, are one finding that lists every place it is reported, and its fingerprint stays the same when an edit moves or removes one of those places, so a deferred finding keeps one backlog entry, which names it by file, title and message rather than by line.
+
 ## [0.86.0] - 2026-10-26
 
 ### Added
@@ -3705,7 +3711,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.86.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.87.0...HEAD
+[0.87.0]: https://github.com/jig-harness/jig/compare/v0.86.0...v0.87.0
 [0.86.0]: https://github.com/jig-harness/jig/compare/v0.85.3...v0.86.0
 [0.85.3]: https://github.com/jig-harness/jig/compare/v0.85.2...v0.85.3
 [0.85.2]: https://github.com/jig-harness/jig/compare/v0.85.1...v0.85.2
