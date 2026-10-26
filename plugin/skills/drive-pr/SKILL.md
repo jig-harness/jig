@@ -1127,6 +1127,20 @@ line. When the comment's text does not match what is at or near its anchor
 line, treat `false` as suspect and cross-check with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git blame -L "<line>,<line>" -- "<path>"` on the line the
 comment is actually about before trusting it.
 
+**Scanner annotations are open work too.** A static-analysis app that
+decorates the pull request with check-run annotations instead of threads
+(SonarQube Cloud) creates neither a thread nor a summary finding. List them
+every round with
+`bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/list-scanner-annotations.ts" <PR>` and work each
+as `/jig:resolve-review-comments` § 3 "Scanner annotations" says: fix the ones
+accepted in the same commit as the round's other fixes, and report the rest in
+§ 8. Only exit `0` reads the scanner's findings as complete: report the
+scanner clean once a listing exits `0` and every finding it printed is fixed
+or named with its outcome in a round report. The listing runs only in a round
+the gate (§ 1) lets start: the gate does not count annotations, so a drive
+whose only open findings are annotations converges without one (roadmap
+item 30).
+
 ### 3. Triage and act
 
 **judgment** — Evaluate each finding against the rubric, scope, and code evidence. The script calls and disposition protocol marked exact below remain binding.

@@ -258,6 +258,25 @@ a thread, and the loop does not read it; a quality gate that fails on
 something other than its alerts, such as coverage, is a failing check for
 the person or the drive that owns CI.
 
+## Scanner annotations
+
+Some tools report to the pull request as
+[scanner annotations](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+(check-run annotations) rather than as review threads or code scanning alerts:
+SonarQube Cloud's pull request decoration is one. They appear as warnings on
+the changed lines, and nothing in the thread listing shows them.
+`scripts/list-scanner-annotations.ts` lists the warnings and failures of the
+apps named in `review.scanner_apps` (default `sonarqubecloud`) on the head
+commit, and the skill works each as a finding: a fix, or a line in the round's
+report. Nothing can be replied to, resolved or dismissed from here, and the app
+clears an annotation itself when it analyses a head without the finding. The
+listing says so when it cannot vouch for a complete answer: a scanner still
+running, a configured one that has not reported, a check that did not analyse
+the head, a head that moved, a response that contradicts itself (fewer or more
+annotations than the check reports), or a head with more check suites than
+GitHub lists runs from. The drive does not yet wait for these findings
+before it converges.
+
 ## Platform support
 
 The skill is tested end to end on macOS and Linux. On Windows its scripts'
