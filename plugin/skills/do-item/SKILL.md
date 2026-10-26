@@ -482,6 +482,14 @@ routing below remain **exact**.
    (**judgment** — native, Linear:
    `mcp__linear__save_issue({ id: issue.id, state: "<mapped name>", assignee: "me" })`.)
 
+   Then show the start on Orca's workspace board. In a worktree of
+   [Orca](https://www.onorca.dev) this moves the worktree's card to In
+   progress; anywhere else it does nothing, and it never fails the step:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/orca-board.ts" in-progress
+   ```
+
 2. **exact** — **Determine the agent and scouts**:
 
    ```bash
@@ -824,6 +832,14 @@ routing below remain **exact**.
    well: mandatory for `manual-ops` issues, with an explicit empty block and
    a stated reason when the label turns out over-applied (then remove the
    label with a comment explaining why).
+
+   **Show the pull request on Orca's board** (exact), as in item 1: in an
+   Orca worktree the card moves to In review and links the pull request;
+   elsewhere nothing happens.
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/orca-board.ts" in-review --pr <PR>
+   ```
 
    **Arm the drive (terminal step, immediately after the PR opens):**
 
