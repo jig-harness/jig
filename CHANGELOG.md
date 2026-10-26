@@ -323,6 +323,21 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.85.2] - 2026-10-26
+
+### Added
+
+- **Orca as a workspace runtime.** The [workspace launcher](tools/launcher/README.md)
+  gains an `orca` provider: a tracker issue opens as an
+  [Orca](https://www.onorca.dev) worktree, in Orca on this machine or on a
+  paired Orca server, with the issue's branch named as the repository names
+  it, the repository's create hook run once, and the agent started with its
+  first prompt once per issue. The [Orca workspace tool](tools/orca/README.md)
+  behind it also opens and removes such worktrees by hand, and says how to run
+  Orca's headless server on a host.
+- `reflect` records Orca as the session's wrapper when Orca started the
+  harness (`ORCA_…` in the environment), as it does Herdr and Conductor.
+
 ## [0.85.1] - 2026-10-25
 
 ### Fixed
@@ -3654,7 +3669,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.85.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.85.2...HEAD
+[0.85.2]: https://github.com/jig-harness/jig/compare/v0.85.1...v0.85.2
 [0.85.1]: https://github.com/jig-harness/jig/compare/v0.85.0...v0.85.1
 [0.85.0]: https://github.com/jig-harness/jig/compare/v0.84.0...v0.85.0
 [0.84.0]: https://github.com/jig-harness/jig/compare/v0.83.2...v0.84.0
