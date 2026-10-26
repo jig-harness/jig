@@ -6,18 +6,18 @@
 // moves it. Stricter than the audit itself: the configuration file must exist,
 // and a key Jig does not know inside one of its sections fails, since the
 // skills would ignore it and a misspelt field keeps its default; a top-level
-// section Jig does not own is left alone. The record's commit must be in the
-// checkout's history: a record that names a branch commit a squash merge
-// replaced fails on the integration branch, where it would otherwise rot
+// section Jig does not own is left alone. The record's commit must be a full
+// SHA in the checkout's history: a record that names a branch commit a squash
+// merge replaced fails on the integration branch, where it would otherwise rot
 // until the next audit refused it. Offline: the repository host and
-// tracker are not read. Exit 1 on a mismatch; 2 when a file cannot be read or
-// there is no criterion to score against.
+// tracker are not read. Exit 1 on a mismatch; 2 when a file cannot be read,
+// git cannot check the commit, or there is no criterion to score against.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
 import {
-  LEAKY_GIT_ENV,
   spawnSync,
+  withoutLeakyGitEnv,
 } from "../plugin/shared/guarded-git-spawn.ts";
 import { configFit } from "../plugin/skills/audit/scripts/config-fit.ts";
 import { loadModules } from "../plugin/skills/audit/scripts/lib/criteria.ts";
@@ -47,10 +47,12 @@ export async function checkAuditFit(
       criteriaDir === undefined ? loadProfiles(modules) : undefined;
     for (const p of checkRecord(record, modules, profiles))
       problems.push(`${RECORD_RELPATH}: ${p}`);
-    if (!inHistory(root, record.commit))
-      problems.push(
-        `${RECORD_RELPATH}: commit ${record.commit} is not in HEAD's history; point it at the integration-branch commit the audit scored`,
-      );
+    const commit = commitCheck(root, record.commit);
+    if (commit.unreadable) {
+      console.error(`${RECORD_RELPATH}: ${commit.unreadable}`);
+      return 2;
+    }
+    if (commit.problem) problems.push(`${RECORD_RELPATH}: ${commit.problem}`);
     const report = await configFit({
       root,
       file: join(root, ".config/jig.yaml"),
@@ -85,20 +87,49 @@ export async function checkAuditFit(
   return 1;
 }
 
-/** Whether `commit` is HEAD or one of its ancestors in the checkout at `root`. */
-function inHistory(root: string, commit: string): boolean {
-  const env = Object.fromEntries(
-    Object.entries(process.env).filter(
-      ([key]) =>
-        !(LEAKY_GIT_ENV as readonly string[]).includes(key.toUpperCase()),
-    ),
-  );
-  const result = spawnSync(
-    "git",
-    ["-C", root, "merge-base", "--is-ancestor", commit, "HEAD"],
-    { env },
-  );
-  return result.status === 0;
+/**
+ * What is wrong with the record's commit, or why git could not tell, which the
+ * caller reports as unable to check rather than as a mismatch.
+ */
+function commitCheck(
+  root: string,
+  commit: string,
+): { problem?: string; unreadable?: string } {
+  // A ref name or revision expression (`HEAD`, a branch) would follow the
+  // checkout and describe a different tree on every run.
+  if (!/^[0-9a-f]{40}$/.test(commit))
+    return {
+      problem: `commit ${commit} is not a full commit SHA; name the audited commit by its 40-character id`,
+    };
+  const history = inHistory(root, commit);
+  if (typeof history === "string") return { unreadable: history };
+  return history
+    ? {}
+    : {
+        problem: `commit ${commit} is not in HEAD's history; point it at the integration-branch commit the audit scored`,
+      };
+}
+
+/**
+ * Whether the full SHA `commit` is HEAD or one of its ancestors in the
+ * checkout at `root`, or why git could not answer.
+ */
+function inHistory(root: string, commit: string): boolean | string {
+  const env = withoutLeakyGitEnv();
+  const git = (...args: string[]) =>
+    spawnSync("git", ["-C", root, ...args], { env });
+  const failure = (result: ReturnType<typeof git>) =>
+    `git could not check commit ${commit}: ${(result.error?.message ?? result.stderr ?? "").trim() || `exit ${result.status}`}`;
+  // rev-parse --verify --quiet exits 1, silently, only for a missing object.
+  const exists = git("rev-parse", "--verify", "--quiet", `${commit}^{commit}`);
+  if (exists.status === 1 && !exists.error && !exists.stderr.trim())
+    return false;
+  if (exists.status !== 0) return failure(exists);
+  // --is-ancestor exits 1 for "no"; any other non-zero is an error.
+  const ancestor = git("merge-base", "--is-ancestor", commit, "HEAD");
+  if (ancestor.status === 0 || ancestor.status === 1)
+    return ancestor.status === 0;
+  return failure(ancestor);
 }
 
 if (import.meta.main) cli(() => checkAuditFit());

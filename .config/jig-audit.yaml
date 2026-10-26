@@ -927,7 +927,7 @@ criteria:
   M13/ci-hold-fails-held-heads:   # standard, requires mechanical
     # Where a hold label suppresses CI on intermediate heads, a required check fails on every held head from the instant the label is applied, every workflow that honours the label runs on its application and its removal, and only the pull request's own hold label, never the kind of label event, skips work.
     score: expected-absent
-    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: .config/jig.yaml sets no ci.hold_label, so no head is held; gates.yml triggers on pull_request with the default types and runs every job in full on each push"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: .config/jig.yaml sets no ci.hold_label, so no head is held; gates.yml triggers on pull_request with the default types and selects its jobs from the change areas a push touches, never from a label"
   M13/ci-hold-shape-linted:   # strict, requires mechanical
     # Where a hold label is configured, the CI-configuration lint fails a workflow of the hold that misses a label event, a skipped job whose condition is not a negated test of the pull request's labels for the exact hold label, and a hold with no step that fails a required check while the label is present.
     score: expected-absent

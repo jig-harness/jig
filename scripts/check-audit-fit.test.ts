@@ -37,12 +37,17 @@ function git(dir: string, ...args: string[]) {
   return { ...result, exitCode: result.status };
 }
 
-test("check-audit-fit passes on Jig and fails until a new criterion is scored", async () => {
-  expect(await checkAuditFit(root)).toBe(0);
+const identity = ["-c", "user.name=t", "-c", "user.email=t@t"];
+const a = '  M1/a: { score: convention, evidence: "AGENTS.md" }\n';
+
+/** A scratch repository with one commit, one criterion, and a record writer. */
+function scratch() {
   const dir = temp();
   expectSpawnExit(git(dir, "init", "-q"), 0);
-  const commit = ["-c", "user.name=t", "-c", "user.email=t@t", "commit"];
-  expectSpawnExit(git(dir, ...commit, "-q", "--allow-empty", "-m", "a"), 0);
+  expectSpawnExit(
+    git(dir, ...identity, "commit", "-q", "--allow-empty", "-m", "a"),
+    0,
+  );
   const head = git(dir, "rev-parse", "HEAD").stdout.toString().trim();
   const criteria = join(dir, "criteria");
   mkdirSync(join(dir, ".config"), { recursive: true });
@@ -53,19 +58,16 @@ test("check-audit-fit passes on Jig and fails until a new criterion is scored", 
   );
   const record = (criteria: string, commit = head) =>
     `version: 1\nplugin_version: 0.0.0\ndate: "2026-01-01"\ncommit: ${commit}\nshape: library\ncriteria:\n${criteria}`;
-  const a = '  M1/a: { score: convention, evidence: "AGENTS.md" }\n';
+  return { dir, criteria, record };
+}
+
+test("check-audit-fit passes on Jig and fails until a new criterion is scored", async () => {
+  expect(await checkAuditFit(root)).toBe(0);
+  const { dir, criteria, record } = scratch();
   writeFileSync(join(dir, ".config/jig-audit.yaml"), record(a));
   expect(await checkAuditFit(dir, criteria)).toBe(1);
   writeFileSync(join(dir, ".config/jig.yaml"), "other_tool:\n  key: 1\n");
   expect(await checkAuditFit(dir, criteria)).toBe(0);
-  // A commit the history does not hold, as a squash merge leaves the
-  // branch commit a record named, fails.
-  writeFileSync(
-    join(dir, ".config/jig-audit.yaml"),
-    record(a, "0123456789abcdef0123456789abcdef01234567"),
-  );
-  expect(await checkAuditFit(dir, criteria)).toBe(1);
-  writeFileSync(join(dir, ".config/jig-audit.yaml"), record(a));
 
   writeFileSync(
     join(criteria, "M1-gates.yaml"),
@@ -106,5 +108,34 @@ test("check-audit-fit passes on Jig and fails until a new criterion is scored", 
   expect(await checkAuditFit(dir, criteria)).toBe(1);
 
   rmSync(join(dir, ".config/jig-audit.yaml"));
+  expect(await checkAuditFit(dir, criteria)).toBe(2);
+});
+
+test("check-audit-fit holds the record's commit to a full SHA in HEAD's history", async () => {
+  const { dir, criteria, record } = scratch();
+  writeFileSync(join(dir, ".config/jig.yaml"), "other_tool:\n  key: 1\n");
+  // A commit the repository holds but HEAD's history does not, as a squash
+  // merge leaves the branch commit a record named, fails; so does one the
+  // repository does not hold at all, and a ref name that follows HEAD.
+  const orphan = git(dir, ...identity, "commit-tree", "HEAD^{tree}", "-m", "s");
+  expectSpawnExit(orphan, 0);
+  const side = orphan.stdout.toString().trim();
+  expectSpawnExit(git(dir, "cat-file", "-e", `${side}^{commit}`), 0);
+  for (const named of [side, "0123456789abcdef0123456789abcdef01234567"]) {
+    writeFileSync(join(dir, ".config/jig-audit.yaml"), record(a, named));
+    expect(await checkAuditFit(dir, criteria)).toBe(1);
+  }
+  writeFileSync(join(dir, ".config/jig-audit.yaml"), record(a, "HEAD"));
+  expect(await checkAuditFit(dir, criteria)).toBe(1);
+  // An ancestor of HEAD passes once HEAD has moved on.
+  expectSpawnExit(
+    git(dir, ...identity, "commit", "-q", "--allow-empty", "-m", "b"),
+    0,
+  );
+  writeFileSync(join(dir, ".config/jig-audit.yaml"), record(a));
+  expect(await checkAuditFit(dir, criteria)).toBe(0);
+  // A repository git cannot read is an inability to check, not a mismatch.
+  rmSync(join(dir, ".git"), { recursive: true });
+  writeFileSync(join(dir, ".git"), "gitdir: /nonexistent\n");
   expect(await checkAuditFit(dir, criteria)).toBe(2);
 });
