@@ -156,10 +156,15 @@ available first, on the machine the clone goes on (this one, or `--ssh`'s):
    the claim is given back without it.
 2. Under the claim it asks Orca again, since an open that held the claim
    before may have added it. Otherwise it clones the URL into
-   `<root>/<repo>`; a directory already there is used only when its `origin`
-   is that URL, and anything else there stops the run for a person to look
-   at. The clone runs without a terminal, so the machine needs credentials
-   for the URL that ask nothing (an SSH key, a credential helper).
+   `<root>/<repo>`; a directory already there is used only when it is the
+   top of a clone whose `origin` is that URL, and anything else there stops
+   the run for a person to look at. The URL must be `https://`, `ssh://` or
+   `git://` with a host and a path, an SSH `user@host:path`, or an absolute
+   path; messages show it with any `user:secret@` hidden. The clone runs
+   without a terminal, so the machine needs credentials for the URL that ask
+   nothing (an SSH key, a credential helper). A clone that does not end on
+   its own (its limit, a lost SSH session) keeps the claim, since git may
+   still be writing there; the message names what to remove once it is not.
 3. It adds the clone to Orca (`orca repo add --path`), which names the
    repository after its directory, gives the claim back, and goes on with
    the open. A new branch is cut from the clone's `origin/HEAD` unless

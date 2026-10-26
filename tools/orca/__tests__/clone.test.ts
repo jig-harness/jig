@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import { type Answer, fail, ok } from "../../herdr/__tests__/fake.ts";
 import type { RunResult } from "../../herdr/runner.ts";
-import { HOME_SCRIPT } from "../clone.ts";
+import { CLONE_TIMEOUT_MS, cloneMissingRepo, HOME_SCRIPT } from "../clone.ts";
 import { openArgs, openWorkspace, parseOpen } from "../workspace.ts";
 import {
   absent,
@@ -37,6 +37,7 @@ const takeClaim = `mkdir ${CLAIM}`;
 const releaseClaim = `rm -rf ${CLAIM}`;
 const gitClone = `git clone -- ${URL} ${CLONE}`;
 const origin = `git -C ${CLONE} remote get-url origin`;
+const prefix = `git -C ${CLONE} rev-parse --show-prefix`;
 const add = `orca repo add --path ${CLONE} --json`;
 
 /** A fresh branch of a repository Orca has only once `show` has answered `answers` in turn. */
@@ -64,6 +65,8 @@ describe("a repository Orca does not have", () => {
     );
     openWorkspace(ws, cloning);
     const at = (call: string) => ws.ctx.calls.indexOf(call);
+    for (const call of [takeClaim, gitClone, add, releaseClaim])
+      expect(ws.ctx.calls).toContain(call);
     expect(at(takeClaim)).toBeLessThan(at(gitClone));
     expect(at(gitClone)).toBeLessThan(at(add));
     expect(at(add)).toBeLessThan(at(releaseClaim));
@@ -74,6 +77,7 @@ describe("a repository Orca does not have", () => {
     const ws = workspaceOf(
       table([missing, missing, found], {
         [inspect(CLONE)]: isDir,
+        [prefix]: ok("\n"),
         [origin]: ok(`${URL}\n`),
         [add]: answer({ repo: { id: RID, path: CLONE } }),
       }),
@@ -81,6 +85,97 @@ describe("a repository Orca does not have", () => {
     openWorkspace(ws, cloning);
     expect(ws.ctx.calls).not.toContain(gitClone);
     expect(ws.ctx.calls).toContain(add);
+  });
+
+  test("whose path is only a directory inside a clone of the source is not taken for its clone", () => {
+    const ws = workspaceOf(
+      table([missing, missing], {
+        [inspect(CLONE)]: isDir,
+        [prefix]: ok("app/\n"),
+        [origin]: ok(`${URL}\n`),
+      }),
+    );
+    expect(() => openWorkspace(ws, cloning)).toThrow(
+      `${CLONE} is there but is not a clone of ${URL}`,
+    );
+    expect(ws.ctx.calls).not.toContain(add);
+  });
+
+  test("whose clone did not end on its own keeps the claim, for a clone that may still run", () => {
+    const ws = workspaceOf(
+      table([missing, missing], {
+        [inspect(CLONE)]: absent,
+        [gitClone]: fail(-1, "spawnSync ssh ETIMEDOUT"),
+      }),
+    );
+    expect(() => openWorkspace(ws, cloning)).toThrow(
+      `so the claim ${CLAIM} stays`,
+    );
+    expect(ws.ctx.calls).not.toContain(releaseClaim);
+  });
+
+  test("shows its source with the credentials hidden, in progress and failure alike", () => {
+    const secret = "https://user:s3cret@example.com/acme/app.git";
+    const ws = workspaceOf(
+      table([missing, missing], {
+        [inspect(CLONE)]: absent,
+        [`git clone -- ${secret} ${CLONE}`]: fail(
+          128,
+          `fatal: unable to access '${secret}/': 403`,
+        ),
+      }),
+    );
+    let message = "";
+    try {
+      openWorkspace(ws, { ...options, clone: { url: secret, root: "~/dev" } });
+    } catch (error) {
+      message = String(error);
+    }
+    expect(message).toContain("https://***@example.com/acme/app.git");
+    expect(message).not.toContain("s3cret");
+    expect(ws.ctx.lines.join("\n")).not.toContain("s3cret");
+    expect(ws.ctx.lines.join("\n")).toContain("***@example.com");
+  });
+
+  test("whose source is not a URL, an SSH path or an absolute path is refused before git runs", () => {
+    for (const url of [
+      "ext::sh -c touch% /tmp/x",
+      "--upload-pack=touch /tmp/x",
+      "app",
+      "file://example.com/x",
+    ]) {
+      const ws = workspaceOf(table([missing], {}));
+      expect(() =>
+        openWorkspace(ws, { ...options, clone: { url, root: "~/dev" } }),
+      ).toThrow("is not an https://, ssh:// or git:// URL");
+      expect(ws.ctx.calls.some((call) => call.startsWith("git clone"))).toBe(
+        false,
+      );
+    }
+  });
+
+  test("is waited for no longer than the clone's limit, however slow each look is", () => {
+    let clock = 0;
+    const ws = workspaceOf(
+      table([missing], {
+        [takeClaim]: fail(
+          1,
+          `mkdir: cannot create directory '${CLAIM}': File exists\n`,
+        ),
+        [inspect(CLAIM)]: isDir,
+      }),
+    );
+    expect(() =>
+      cloneMissingRepo(
+        ws,
+        "app",
+        { url: URL, root: "~/dev" },
+        () => (clock += 90_000),
+      ),
+    ).toThrow("was still being cloned after 10 minutes");
+    // Each look takes 90 s of the clock, so ten minutes hold only a few.
+    const looks = ws.ctx.calls.filter((call) => call === show).length;
+    expect(looks).toBeLessThanOrEqual(CLONE_TIMEOUT_MS / 90_000);
   });
 
   test("is not cloned when another open added it before this one took the claim", () => {
@@ -94,6 +189,7 @@ describe("a repository Orca does not have", () => {
     const ws = workspaceOf(
       table([missing, missing], {
         [inspect(CLONE)]: isDir,
+        [prefix]: ok("\n"),
         [origin]: ok("git@example.com:other/app.git\n"),
       }),
     );

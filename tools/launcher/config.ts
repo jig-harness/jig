@@ -189,15 +189,49 @@ function parseDefaults(
   return Object.assign(defaults, value);
 }
 
-/** `value` with `{label}` in every string it holds read as `label`. */
-function withLabel(value: unknown, label: string): unknown {
-  if (typeof value === "string") return value.replaceAll("{label}", label);
-  if (Array.isArray(value)) return value.map((item) => withLabel(item, label));
-  if (!isRecord(value)) return value;
+/**
+ * `value` with `{label}` in every string it holds read as `label`, literally.
+ * A value that contains itself (a YAML alias inside its own anchor) is
+ * refused rather than walked forever.
+ */
+function withLabel(
+  value: unknown,
+  label: string,
+  within: ReadonlySet<unknown> = new Set(),
+): unknown {
+  if (typeof value === "string")
+    return value.replaceAll("{label}", () => label);
+  if (!Array.isArray(value) && !isRecord(value)) return value;
+  if (within.has(value))
+    throw new LauncherConfigError(
+      "defaults: a value contains itself (a YAML alias inside its own anchor)",
+    );
+  const inner = new Set(within).add(value);
+  if (Array.isArray(value))
+    return value.map((item) => withLabel(item, label, inner));
   const filled: Record<string, unknown> = Object.create(null);
   for (const [key, item] of Object.entries(value))
-    filled[key] = withLabel(item, label);
+    filled[key] = withLabel(item, label, inner);
   return filled;
+}
+
+/**
+ * What a label with no entry must look like to fill `{label}`: a repository
+ * name's letters, digits, `.`, `_` and `-`, starting with a letter or digit.
+ * Such a label comes from the tracker, not from this file, so it may not
+ * carry a separator, credentials or an option into a path, URL or command.
+ */
+const UNLISTED_LABEL = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/** The defaults per provider as a label would have them, `{label}` read as it. */
+function defaultsFor(
+  defaults: LauncherConfig["defaults"],
+  label: string,
+): Record<string, unknown> {
+  const settings: Record<string, unknown> = Object.create(null);
+  for (const [provider, value] of Object.entries(defaults))
+    settings[provider] = withLabel(value, label);
+  return settings;
 }
 
 /**
@@ -205,8 +239,9 @@ function withLabel(value: unknown, label: string): unknown {
  * `repos` over `defaults`. For each provider, a mapping in the entry
  * overrides the default's keys one by one, and anything else in the entry
  * (a provider's short form, a name) replaces the default whole. A label with
- * no entry has the defaults alone, so it is routed whenever there are any;
- * undefined when it has neither.
+ * no entry has the defaults alone, so it is routed whenever there are any,
+ * provided it looks like a repository name (`UNLISTED_LABEL`); undefined
+ * when it has neither.
  */
 export function settingsFor(
   config: Pick<LauncherConfig, "repos" | "defaults">,
@@ -215,9 +250,11 @@ export function settingsFor(
   const entry = config.repos[label];
   if (entry === undefined && Object.keys(config.defaults).length === 0)
     return undefined;
-  const settings: Record<string, unknown> = Object.create(null);
-  for (const [provider, value] of Object.entries(config.defaults))
-    settings[provider] = withLabel(value, label);
+  if (entry === undefined && !UNLISTED_LABEL.test(label))
+    throw new LauncherConfigError(
+      `the repository label ${JSON.stringify(label)} has no entry in repos, and only a label of letters, digits, ".", "_" and "-" opens with the defaults; give it an entry`,
+    );
+  const settings = defaultsFor(config.defaults, label);
   for (const [provider, value] of Object.entries(entry ?? {})) {
     const base = settings[provider];
     settings[provider] =
@@ -226,12 +263,16 @@ export function settingsFor(
   return settings;
 }
 
-/** What `{label}` stands for when the defaults are checked as an unlisted label would have them. */
-export const ANY_LABEL = "{label}";
+/**
+ * The label the defaults are checked with, as an unlisted label would have
+ * them: an ordinary repository name, so every value resolves as it will at a
+ * launch.
+ */
+export const SAMPLE_LABEL = "sample-repo";
 
 /**
  * Check every provider's settings as launches will resolve them: each listed
- * label's, and the defaults as an unlisted label would have them, so a
+ * label's, and the defaults alone as an unlisted label would have them, so a
  * mistake in either is found before the one launch whose label reaches it.
  */
 export function validateRoutes(
@@ -241,11 +282,16 @@ export function validateRoutes(
     validateRepo(settings: unknown, label: string): void;
   }[],
 ): void {
-  for (const provider of providers)
-    for (const label of [...Object.keys(config.repos), ANY_LABEL]) {
+  const defaults = defaultsFor(config.defaults, SAMPLE_LABEL);
+  for (const provider of providers) {
+    for (const label of Object.keys(config.repos)) {
       const settings = settingsFor(config, label)?.[provider.name];
       if (settings !== undefined) provider.validateRepo(settings, label);
     }
+    // A message names the defaults' settings as `repos.{label}.<provider>`.
+    const settings = defaults[provider.name];
+    if (settings !== undefined) provider.validateRepo(settings, "{label}");
+  }
 }
 
 /** Read the configuration, or the defaults when the file does not exist. */

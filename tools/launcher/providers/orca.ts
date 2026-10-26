@@ -114,7 +114,7 @@ function parseClone(
     throw new HerdrError(`${at} needs both url and root`);
   if (!root.startsWith("/") && root !== "~" && !root.startsWith("~/"))
     throw new HerdrError(`${at}.root must be absolute or start with ~/`);
-  return { url: url.replaceAll("{repo}", repo), root };
+  return { url: url.replaceAll("{repo}", () => repo), root };
 }
 
 /** `environment` and `ssh`: the server, and the host git runs on for it. */

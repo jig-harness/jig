@@ -145,13 +145,21 @@ function takeHookClaim(ws: Workspace, claim: string): boolean {
   );
 }
 
-/** Give the create hook's claim back; a claim that stays would make the next open wait for it. */
-function releaseHookClaim(ws: Workspace, claim: string): void {
+/**
+ * Give a claim (`what`: whose it is) back; a claim that stays would make the
+ * next open wait for it, so one that cannot be removed is named.
+ */
+export function releaseClaim(ws: Workspace, claim: string, what: string): void {
   const removed = ws.host.run(["rm", "-rf", claim]);
   if (removed.status !== 0)
     ws.host.log(
-      `⚠ could not remove the create hook's claim ${claim} (${output(removed)}); remove it before opening the workspace again`,
+      `⚠ could not remove ${what} claim ${claim} (${output(removed)}); remove it before opening again`,
     );
+}
+
+/** Give the create hook's claim back. */
+function releaseHookClaim(ws: Workspace, claim: string): void {
+  releaseClaim(ws, claim, "the create hook's");
 }
 
 /**
@@ -383,6 +391,19 @@ function hostConfigLayer(
   }
 }
 
+/** The host's home directory from its environment; refused unless absolute. */
+function hostHome(
+  env: Record<string, string | undefined>,
+  host: string,
+): string {
+  const home = env.HOME;
+  if (home === undefined || !posix.isAbsolute(home))
+    throw new OrcaError(
+      `the home directory on ${host} (HOME=${JSON.stringify(home ?? "")}) is not an absolute path; ${REFUSED}`,
+    );
+  return home;
+}
+
 /**
  * Where the worktree's reflection journal is on the host, as the reflect
  * skill resolves it there: `reflection.journal` from the configuration
@@ -401,11 +422,7 @@ export function hostJournalPath(
   host: string,
 ): string {
   const env = hostEnvironment(ws, host);
-  const home = env.HOME;
-  if (home === undefined || !posix.isAbsolute(home))
-    throw new OrcaError(
-      `the home directory on ${host} (HOME=${JSON.stringify(home ?? "")}) is not an absolute path; ${REFUSED}`,
-    );
+  const home = hostHome(env, host);
   const files = hostLayerFiles(path, env, home, host);
   const merged = mergeLayers(
     files.user === null ? {} : (hostConfigLayer(ws, files.user, host) ?? {}),

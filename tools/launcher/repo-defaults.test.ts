@@ -7,7 +7,12 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LauncherConfigError, parseConfig, settingsFor } from "./config.ts";
+import {
+  LauncherConfigError,
+  parseConfig,
+  settingsFor,
+  validateRoutes,
+} from "./config.ts";
 import { launch } from "./launch.ts";
 import type { Provider } from "./provider.ts";
 import { getProvider } from "./providers/index.ts";
@@ -69,6 +74,32 @@ describe("settings for a label", () => {
     ).toBeUndefined();
   });
 
+  test("a label fills {label} literally, $& and all", () => {
+    const listed = parseConfig(
+      "defaults:\n  orca: {repo: 'x-{label}'}\nrepos:\n  cash$&:\n    conductor: c\n",
+      "c.yaml",
+    );
+    expect(settingsFor(listed, "cash$&")?.orca).toEqual({ repo: "x-cash$&" });
+  });
+
+  test("an unlisted label that is not a repository name is refused", () => {
+    for (const label of ["127.0.0.1/evil", "a b", "-o", ".hidden", "u@h:x"])
+      expect(() => settingsFor(config, label)).toThrow(LauncherConfigError);
+    expect(settingsFor(config, "app_2.x")?.orca).toMatchObject({
+      repo: "app_2.x",
+    });
+  });
+
+  test("defaults that contain themselves are refused, not walked forever", () => {
+    const cyclic = parseConfig(
+      "defaults:\n  orca: &self {repo: app, clone: *self}\n",
+      "c.yaml",
+    );
+    expect(() => settingsFor(cyclic, "docket")).toThrow(
+      "a value contains itself",
+    );
+  });
+
   test("defaults that are not a mapping are refused", () => {
     expect(() => parseConfig("defaults: [orca]\n", "c.yaml")).toThrow(
       "defaults must map a provider name to its settings",
@@ -117,6 +148,27 @@ async function launchWith(yaml: string, repoLabel: string | null) {
     rmSync(home, { recursive: true, force: true });
   }
 }
+
+describe("checking the defaults", () => {
+  const check = (yaml: string) =>
+    validateRoutes(parseConfig(yaml, "c.yaml"), [getProvider("orca")]);
+
+  test("checks them as a real label resolves them, {label} in a branch included", () => {
+    expect(() =>
+      check(
+        "defaults:\n  orca: {repo: '{label}', branch: 'feature/{label}/{key}-{slug}'}\n",
+      ),
+    ).not.toThrow();
+  });
+
+  test("checks them on their own, whatever an entry named {label} supplies", () => {
+    expect(() =>
+      check(
+        "defaults:\n  orca: {environment: box}\nrepos:\n  '{label}':\n    orca: {repo: app}\n",
+      ),
+    ).toThrow("repos.{label}.orca.repo is required");
+  });
+});
 
 describe("a launch with defaults", () => {
   test("routes a label with no entry to the defaults' provider", async () => {

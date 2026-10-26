@@ -96,8 +96,12 @@ label with no entry opens with the defaults, `{label}` in any of their
 values read as the label, and a label with an entry has, for each provider,
 its own mapping laid over the default's keys one by one. An entry that is not
 a mapping (a provider's short form, such as `orca: my-tool`) replaces the
-default whole. The defaults are checked as an unlisted label would have them
-on every launch, as the entries are:
+default whole. A label with no entry comes from the tracker, so it opens
+with the defaults only when it looks like a repository name (letters,
+digits, `.`, `_` and `-`, starting with a letter or digit); `{label}` is
+filled with it literally. The defaults are checked on their own, with a
+repository name standing for the label, on every launch, as the entries
+are:
 
 ```yaml
 provider: [orca, conductor]

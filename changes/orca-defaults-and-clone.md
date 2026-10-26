@@ -18,4 +18,4 @@ release: minor
   board when it runs in an Orca worktree: the card moves to In progress at
   pickup, and to In review with the pull request linked once the pull
   request opens. Outside Orca nothing changes and no Orca call is made
-  ([plugin/shared/orca-board.ts](../plugin/shared/orca-board.ts)).
+  ([plugin/skills/do-item/scripts/orca-board.ts](../plugin/skills/do-item/scripts/orca-board.ts)).

@@ -19,9 +19,9 @@
  * is 0; only a malformed command line exits 2.
  */
 import { join } from "node:path";
-import { fail, isDigits, runMain } from "./cli.ts";
-import { swallow } from "./errors.ts";
-import { run } from "./proc.ts";
+import { fail, isDigits, runMain } from "../../../shared/cli.ts";
+import { swallow } from "../../../shared/errors.ts";
+import { run } from "../../../shared/proc.ts";
 
 /** Seconds one Orca call may take. */
 const ORCA_CALL_TIMEOUT_SEC = 20;
@@ -45,14 +45,19 @@ export type OrcaRunner = (
 const runOrca: OrcaRunner = (command, args) =>
   run([command, ...args], { timeoutSec: ORCA_CALL_TIMEOUT_SEC });
 
-/** Orca's command when this session runs in a terminal Orca opened; null otherwise. */
+/**
+ * Orca's command when this session runs in a terminal Orca opened; null
+ * otherwise. From the directory alone, the command is the one Orca installs
+ * there: `orca-ide` on Linux, `orca` elsewhere.
+ */
 export function orcaCommand(
   env: Record<string, string | undefined>,
+  platform: NodeJS.Platform = process.platform,
 ): string | null {
   const command = env.ORCA_CLI_COMMAND?.trim();
   if (command) return command;
   const dir = env.ORCA_CLI_BIN_DIR?.trim();
-  return dir ? join(dir, "orca") : null;
+  return dir ? join(dir, platform === "linux" ? "orca-ide" : "orca") : null;
 }
 
 export function parseArgs(args: string[]): BoardUpdate {
@@ -65,14 +70,25 @@ export function parseArgs(args: string[]): BoardUpdate {
   return { status, pr };
 }
 
-/** The `result` of a well-formed successful Orca envelope; null for anything else. */
-function resultOf(stdout: string): Record<string, unknown> | null {
+/** The error code Orca answers with when no worktree contains the directory. */
+const NOT_A_WORKTREE = "selector_not_found";
+
+type Envelope =
+  | { ok: true; result: Record<string, unknown> }
+  | { ok: false; code: string | null };
+
+interface RawEnvelope {
+  ok?: unknown;
+  result?: unknown;
+  error?: { code?: unknown };
+}
+
+/** `stdout` parsed as a JSON object; null when it is not one. */
+function parsedObject(stdout: string): RawEnvelope | null {
   try {
     const parsed: unknown = JSON.parse(stdout);
-    if (typeof parsed !== "object" || parsed === null) return null;
-    const { ok, result } = parsed as { ok?: unknown; result?: unknown };
-    return ok === true && typeof result === "object" && result !== null
-      ? (result as Record<string, unknown>)
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as RawEnvelope)
       : null;
   } catch (error) {
     swallow(error, "orca output that is not JSON: no envelope");
@@ -80,18 +96,48 @@ function resultOf(stdout: string): Record<string, unknown> | null {
   }
 }
 
-/** The Orca worktree id of the working directory; null when Orca does not know it. */
+/** Orca's JSON envelope in `stdout`; null when there is none. */
+function envelopeOf(stdout: string): Envelope | null {
+  const raw = parsedObject(stdout);
+  if (raw?.ok === true && typeof raw.result === "object" && raw.result !== null)
+    return { ok: true, result: raw.result as Record<string, unknown> };
+  if (raw?.ok !== false) return null;
+  const code = raw.error?.code;
+  return { ok: false, code: typeof code === "string" ? code : null };
+}
+
+/** The `result` of a call that exited 0 with a successful envelope; null for anything else. */
+function resultOf(done: {
+  code: number;
+  stdout: string;
+}): Record<string, unknown> | null {
+  const envelope = envelopeOf(done.stdout);
+  return done.code === 0 && envelope?.ok === true ? envelope.result : null;
+}
+
+/** A failed call's exit code and first output, for a warning. */
+function failure(done: { code: number; stdout: string; stderr: string }) {
+  return `(exit ${done.code}): ${(done.stdout || done.stderr).trim().slice(0, 300)}`;
+}
+
+/**
+ * The Orca worktree id of the working directory: `none` when Orca answers
+ * that no worktree contains it, a warning when the lookup itself failed (no command, a timeout, an answer that is not Orca's).
+ */
 async function currentWorktree(
   command: string,
   runner: OrcaRunner,
-): Promise<string | null> {
+): Promise<{ id: string } | "none" | { warning: string }> {
   const done = await runner(command, ["worktree", "current", "--json"]);
-  const worktree = resultOf(done.stdout)?.worktree as
-    | { id?: unknown }
-    | undefined;
-  return typeof worktree?.id === "string" && worktree.id !== ""
-    ? worktree.id
-    : null;
+  const result = resultOf(done);
+  const worktree = result?.worktree as { id?: unknown } | undefined;
+  if (typeof worktree?.id === "string" && worktree.id !== "")
+    return { id: worktree.id };
+  const envelope = envelopeOf(done.stdout);
+  if (envelope?.ok === false && envelope.code === NOT_A_WORKTREE) return "none";
+  return {
+    warning: `orca-board: ⚠ could not ask Orca which worktree this is ${failure(done)}`,
+  };
 }
 
 /**
@@ -105,9 +151,11 @@ export async function updateBoard(
 ): Promise<string> {
   const command = orcaCommand(env);
   if (command === null) return "orca-board: not in Orca; nothing to do";
-  const id = await currentWorktree(command, runner);
-  if (id === null)
+  const current = await currentWorktree(command, runner);
+  if (current === "none")
     return "orca-board: Orca does not list this directory as a worktree; nothing to do";
+  if ("warning" in current) return current.warning;
+  const id = current.id;
   const done = await runner(command, [
     "worktree",
     "set",
@@ -118,8 +166,8 @@ export async function updateBoard(
     ...(update.pr === undefined ? [] : ["--pr", update.pr]),
     "--json",
   ]);
-  if (resultOf(done.stdout) === null)
-    return `orca-board: ⚠ could not set the board status (exit ${done.code}): ${(done.stdout || done.stderr).trim().slice(0, 300)}`;
+  if (resultOf(done) === null)
+    return `orca-board: ⚠ could not set the board status ${failure(done)}`;
   return `orca-board: ${update.status}${update.pr === undefined ? "" : `, PR #${update.pr} linked`}`;
 }
 

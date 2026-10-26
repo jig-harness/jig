@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { ExitError } from "../cli.ts";
+import { ExitError } from "../../../shared/cli.ts";
 import {
   type OrcaRunner,
   orcaCommand,
   parseArgs,
   updateBoard,
-} from "../orca-board.ts";
+} from "../scripts/orca-board.ts";
 
 const ORCA = { ORCA_CLI_COMMAND: "/opt/orca/bin/orca" };
 const ID = "repo-1::/ws/app/feat-x";
@@ -46,8 +46,11 @@ describe("outside Orca", () => {
 
   test("Orca's command comes from its terminal's environment only", () => {
     expect(orcaCommand({})).toBeNull();
-    expect(orcaCommand({ ORCA_CLI_BIN_DIR: "/opt/orca/bin" })).toBe(
+    expect(orcaCommand({ ORCA_CLI_BIN_DIR: "/opt/orca/bin" }, "darwin")).toBe(
       "/opt/orca/bin/orca",
+    );
+    expect(orcaCommand({ ORCA_CLI_BIN_DIR: "/opt/orca/bin" }, "linux")).toBe(
+      "/opt/orca/bin/orca-ide",
     );
     expect(orcaCommand({ ...ORCA, ORCA_CLI_BIN_DIR: "/elsewhere" })).toBe(
       "/opt/orca/bin/orca",
@@ -74,13 +77,43 @@ describe("in an Orca terminal", () => {
     const { calls, runner } = orcaAnswering({
       "worktree current --json": JSON.stringify({
         ok: false,
-        error: { code: "worktree_not_found" },
+        error: { code: "selector_not_found" },
       }),
     });
     expect(
       await updateBoard({ status: "in-progress" }, ORCA, runner),
     ).toContain("does not list this directory");
     expect(calls).toHaveLength(1);
+  });
+
+  test("warns, without updating, when the worktree lookup itself fails", async () => {
+    for (const done of [
+      { code: 127, stdout: "", stderr: "orca: command not found" },
+      { code: 124, stdout: current, stderr: "" },
+      { code: 1, stdout: "", stderr: "runtime unavailable" },
+    ]) {
+      const calls: string[] = [];
+      const runner: OrcaRunner = async (_command, args) => {
+        calls.push(args.join(" "));
+        return done;
+      };
+      expect(
+        await updateBoard({ status: "in-progress" }, ORCA, runner),
+      ).toContain(
+        `⚠ could not ask Orca which worktree this is (exit ${done.code})`,
+      );
+      expect(calls).toEqual(["worktree current --json"]);
+    }
+  });
+
+  test("warns when the update prints success but exits non-zero", async () => {
+    const runner: OrcaRunner = async (_command, args) =>
+      args[1] === "current"
+        ? { code: 0, stdout: current, stderr: "" }
+        : { code: 124, stdout: set, stderr: "" };
+    expect(await updateBoard({ status: "in-review" }, ORCA, runner)).toContain(
+      "⚠ could not set the board status (exit 124)",
+    );
   });
 
   test("only warns when Orca refuses the update", async () => {

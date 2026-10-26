@@ -487,7 +487,7 @@ routing below remain **exact**.
    progress; anywhere else it does nothing, and it never fails the step:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" in-progress
+   bun "${CLAUDE_SKILL_DIR}/scripts/orca-board.ts" in-progress
    ```
 
 2. **exact** — **Determine the agent and scouts**:
@@ -838,7 +838,7 @@ routing below remain **exact**.
    elsewhere nothing happens.
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/../../shared/orca-board.ts" in-review --pr <PR>
+   bun "${CLAUDE_SKILL_DIR}/scripts/orca-board.ts" in-review --pr <PR>
    ```
 
    **Arm the drive (terminal step, immediately after the PR opens):**

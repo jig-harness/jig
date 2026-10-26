@@ -13,13 +13,16 @@
  * made under a claim, as the create hook is run (hooks.ts): the open whose
  * `mkdir` creates `<root>/.<name>.jig-orca-clone` clones and adds it, and the
  * others wait until Orca has the repository. A directory already at the
- * clone's path is added only when it is a clone of the same source; anything
- * else there stops the open, for a person to look at.
+ * clone's path is added only when it is the top of a clone of the same
+ * source; anything else there stops the open, for a person to look at. A
+ * clone that did not end on its own keeps its claim, since git may still be
+ * writing on the clone's machine. Messages show the source with its
+ * credentials hidden.
  */
 import { posix } from "node:path";
-import { budget, output } from "../herdr/runner.ts";
+import { budget, output, withLimit } from "../herdr/runner.ts";
 import { onServer, orcaCall, orcaErrorText } from "./cli.ts";
-import { failureReason, inspectPath } from "./hooks.ts";
+import { failureReason, inspectPath, releaseClaim } from "./hooks.ts";
 import { OrcaError, WAIT_POLL_MS, type Workspace } from "./runner.ts";
 
 /** Where a missing repository is cloned from, and the directory its clone goes in. */
@@ -69,8 +72,39 @@ function shown(ws: Workspace, name: string): unknown {
   throw new OrcaError(`${what}: ${orcaErrorText(envelope.error)}`);
 }
 
-/** Whether `path` on the clone's machine is a clone of `url`, read from its `origin`. */
+/**
+ * The forms of clone source taken: `https://`, `ssh://` or `git://` with a
+ * host and a path, an SSH `user@host:path`, or an absolute path on the
+ * clone's machine. Anything else (another transport, an option, a bare word)
+ * is refused before git sees it.
+ */
+const CLONE_URL_FORMS = [
+  /^(https|ssh|git):\/\/([^/@\s]+@)?[A-Za-z0-9.-]+(:\d+)?\/[^\s]+$/,
+  /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[^\s/-][^\s]*$/,
+  /^\/[^\s]+$/,
+];
+
+/** `url` with the credentials of a `scheme://user:secret@host` source hidden, for a message. */
+export function redactUrl(url: string): string {
+  return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/i, "$1***@");
+}
+
+/** Refuse a clone source that is not one of `CLONE_URL_FORMS`. */
+function assertCloneUrl(url: string): void {
+  if (!CLONE_URL_FORMS.some((form) => form.test(url)))
+    throw new OrcaError(
+      `the clone source ${redactUrl(url)} is not an https://, ssh:// or git:// URL, a user@host:path, or an absolute path`,
+    );
+}
+
+/**
+ * Whether `path` on the clone's machine is the top of a clone of `url`, read
+ * from its `origin`. Git finds a repository in a parent directory too, so a
+ * directory inside another clone of `url` is not taken for one.
+ */
 function isCloneOf(ws: Workspace, path: string, url: string): boolean {
+  const prefix = ws.host.run(["git", "-C", path, "rev-parse", "--show-prefix"]);
+  if (prefix.status !== 0 || prefix.stdout.trim() !== "") return false;
   const remote = ws.host.run([
     "git",
     "-C",
@@ -82,26 +116,43 @@ function isCloneOf(ws: Workspace, path: string, url: string): boolean {
   return remote.status === 0 && remote.stdout.trim() === url;
 }
 
+/**
+ * A clone that did not end on its own (its deadline, or a lost SSH session):
+ * git may still be writing on the clone's machine, so its claim is kept.
+ */
+class CloneUnfinished extends OrcaError {}
+
 /** Clone `source` to `path` unless a clone of it is there; refuse anything else there. */
-function ensureClone(ws: Workspace, source: CloneSource, path: string): void {
+function ensureClone(
+  ws: Workspace,
+  source: CloneSource,
+  path: string,
+  claim: string,
+): void {
+  const shownUrl = redactUrl(source.url);
   const kind = inspectPath(ws, path);
   if (kind === "directory") {
     if (isCloneOf(ws, path, source.url)) return;
     throw new OrcaError(
-      `${path} is there but is not a clone of ${source.url}; move it away, or add it to Orca with orca repo add --path ${path}`,
+      `${path} is there but is not a clone of ${shownUrl}; move it away, or add it to Orca with orca repo add --path ${path}`,
     );
   }
   if (kind !== "absent")
     throw new OrcaError(
       `${path} is there but is not a directory; move it away and open again`,
     );
-  ws.host.log(`… cloning ${source.url} into ${path}`);
+  ws.host.log(`… cloning ${shownUrl} into ${path}`);
   const cloned = ws.host.run(["git", "clone", "--", source.url, path], {
     timeoutMs: budget(ws.host, CLONE_TIMEOUT_MS),
   });
+  const said = output(cloned).replaceAll(source.url, () => shownUrl);
+  if (cloned.status === -1)
+    throw new CloneUnfinished(
+      `git clone ${shownUrl} ${path} did not finish (${said || "stopped"}); it may still be running on the clone's machine, so the claim ${claim} stays. Once no git clone of it runs there, remove ${path} and ${claim} and open again`,
+    );
   if (cloned.status !== 0)
     throw new OrcaError(
-      `git clone ${source.url} ${path} failed: ${output(cloned)}; check that the machine can reach it without a prompt (an SSH key, a credential helper)`,
+      `git clone ${shownUrl} ${path} failed: ${said}; check that the machine can reach it without a prompt (an SSH key, a credential helper)`,
     );
 }
 
@@ -124,11 +175,13 @@ export function cloneMissingRepo(
   ws: Workspace,
   name: string,
   source: CloneSource,
+  now: () => number = Date.now,
 ): unknown {
   if (name === "" || name === "." || name === ".." || name.includes("/"))
     throw new OrcaError(
       `the repository name ${name} cannot name a directory under the clone root`,
     );
+  assertCloneUrl(source.url);
   const root = absoluteRoot(ws, source.root);
   const path = posix.join(root, name);
   const claim = posix.join(root, cloneClaimName(name));
@@ -143,22 +196,24 @@ export function cloneMissingRepo(
       throw new OrcaError(
         `could not take the clone's claim ${claim}: ${output(taken)}`,
       );
-    return awaitClone(ws, name, claim);
+    return awaitClone(ws, name, claim, now);
   }
+  let already: unknown;
   try {
     // Read again under the claim: an open that held it before may have
     // added the repository between this open's first look and its claim.
-    const already = shown(ws, name);
-    if (already !== null) return already;
-    ensureClone(ws, source, path);
-    addToOrca(ws, path);
-  } finally {
-    const removed = ws.host.run(["rm", "-rf", claim]);
-    if (removed.status !== 0)
-      ws.host.log(
-        `⚠ could not remove the clone's claim ${claim} (${output(removed)}); remove it before opening the repository again`,
-      );
+    already = shown(ws, name);
+    if (already === null) {
+      ensureClone(ws, source, path, claim);
+      addToOrca(ws, path);
+    }
+  } catch (error) {
+    if (!(error instanceof CloneUnfinished))
+      releaseClaim(ws, claim, "the clone's");
+    throw error;
   }
+  releaseClaim(ws, claim, "the clone's");
+  if (already !== null) return already;
   const added = shown(ws, name);
   if (added === null)
     throw new OrcaError(
@@ -167,21 +222,40 @@ export function cloneMissingRepo(
   return added;
 }
 
-/** Wait for the open that holds the claim until Orca has the repository. */
-function awaitClone(ws: Workspace, name: string, claim: string): unknown {
+/**
+ * Wait for the open that holds the claim until Orca has the repository, for
+ * the clone's time limit at most: every look and pause is cut to what is
+ * left of it, so slow looks cannot stretch the wait past it.
+ */
+function awaitClone(
+  ws: Workspace,
+  name: string,
+  claim: string,
+  now: () => number,
+): unknown {
   ws.host.log(`… another open is cloning ${name}; waiting for it`);
-  for (let turn = 0; turn < CLONE_TIMEOUT_MS / WAIT_POLL_MS; turn++) {
-    ws.host.sleep(budget(ws.host, WAIT_POLL_MS));
-    const repo = shown(ws, name);
-    if (repo !== null) return repo;
-    if (inspectPath(ws, claim) !== "absent") continue;
-    // The holder adds the repository before it gives the claim back, so a
-    // claim gone since the look above may still have left it in Orca.
-    const late = shown(ws, name);
-    if (late !== null) return late;
-    throw new OrcaError(
-      `the open that was cloning ${name} ended without adding it to Orca${onServer(ws.target)}; its output says why. Open again to retry`,
-    );
+  const deadline = now() + CLONE_TIMEOUT_MS;
+  const waiting: Workspace = {
+    ...ws,
+    orca: withLimit(ws.orca, CLONE_TIMEOUT_MS, now),
+    host: withLimit(ws.host, CLONE_TIMEOUT_MS, now),
+  };
+  try {
+    for (;;) {
+      waiting.host.sleep(WAIT_POLL_MS);
+      const repo = shown(waiting, name);
+      if (repo !== null) return repo;
+      if (inspectPath(waiting, claim) !== "absent") continue;
+      // The holder adds the repository before it gives the claim back, so a
+      // claim gone since the look above may still have left it in Orca.
+      const late = shown(waiting, name);
+      if (late !== null) return late;
+      throw new OrcaError(
+        `the open that was cloning ${name} ended without adding it to Orca${onServer(ws.target)}; its output says why. Open again to retry`,
+      );
+    }
+  } catch (error) {
+    if (now() < deadline) throw error;
   }
   throw new OrcaError(
     `${name} was still being cloned after ${CLONE_TIMEOUT_MS / 60_000} minutes; if no open is cloning it, remove ${claim} and open again`,
