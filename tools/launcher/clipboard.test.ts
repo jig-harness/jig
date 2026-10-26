@@ -2,7 +2,11 @@ import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { identityOf, reapIdentities } from "../../lib/test-reap-children.ts";
+import {
+  type Identity,
+  identityOf,
+  reapOwnedIdentities,
+} from "../../lib/test-reap-children.ts";
 import { clipboardCommands, copyRunner, copyToClipboard } from "./clipboard.ts";
 
 const live = () => new AbortController().signal;
@@ -48,16 +52,22 @@ async function writtenPid(pidFile: string): Promise<number> {
 }
 
 /**
- * Ends the process `pidFile` names, with its descendants, and witnesses it
- * gone by the process table, which counts a zombie as gone.
+ * The identity of the process `pidFile` names, taken as soon as the process
+ * has named itself and is still running its 30-second sleep, so the pid names
+ * the fixture and no process that reused it. Teardown reaps this identity
+ * rather than reading the pid again.
  */
-async function reap(pidFile: string) {
-  if (!existsSync(pidFile)) return;
-  const identity = await identityOf(await writtenPid(pidFile));
-  if (identity === null) return;
-  const report = await reapIdentities([identity]);
-  if (report === null || report.survived.length > 0)
-    throw new Error(`process ${identity.pid} was not witnessed gone`);
+async function ownedIdentity(pidFile: string) {
+  const pid = await writtenPid(pidFile);
+  const identity = await identityOf(pid);
+  if (identity === null)
+    throw new Error(`process ${pid} ended before its identity was taken`);
+  return identity;
+}
+
+/** Ends the owned process, with its descendants, or fails the test. */
+async function reap(identity: Identity | null) {
+  if (identity !== null) await reapOwnedIdentities([identity]);
 }
 
 test("the runner returns at the command's exit while a child it forked keeps its streams", async () => {
@@ -65,12 +75,16 @@ test("the runner returns at the command's exit while a child it forked keeps its
   const { bin } = fakeCopier(
     'sleep 30 &\necho $! > "$(dirname "$0")/child"\nexit 0',
   );
+  let child: Identity | null = null;
   try {
     const started = Date.now();
-    expect(await copyRunner(bin)(["wl-copy"], "x", live())).toBe(true);
-    expect(Date.now() - started).toBeLessThan(2_000);
+    const took = await copyRunner(bin)(["wl-copy"], "x", live());
+    const elapsed = Date.now() - started;
+    child = await ownedIdentity(join(bin, "child"));
+    expect(took).toBe(true);
+    expect(elapsed).toBeLessThan(2_000);
   } finally {
-    await reap(join(bin, "child"));
+    await reap(child);
   }
 });
 
@@ -79,15 +93,16 @@ test("the runner returns once its signal aborts, from a command that ignores SIG
     'trap \'\' TERM\necho $$ > "$(dirname "$0")/pid"\nexec sleep 30',
   );
   const launch = new AbortController();
+  let command: Identity | null = null;
   try {
     const started = Date.now();
     const copying = copyRunner(bin)(["wl-copy"], "x", launch.signal);
-    await writtenPid(join(bin, "pid"));
+    command = await ownedIdentity(join(bin, "pid"));
     launch.abort();
     expect(await copying).toBe(false);
     expect(Date.now() - started).toBeLessThan(4_000);
   } finally {
-    await reap(join(bin, "pid"));
+    await reap(command);
   }
 });
 

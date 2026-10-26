@@ -21,6 +21,7 @@ import {
   captureDescendants,
   identityOf,
   reapIdentities,
+  reapOwnedIdentities,
   recordDescendants,
   reapSurvivingDescendants,
 } from "./test-reap-children.ts";
@@ -153,7 +154,31 @@ test("a reap of named identities kills each live one with its descendants, and n
   expect(killed.map(([pid]) => pid)).toEqual([301, 300]);
 });
 
-test("an identity is read only from a live row with a readable start", async () => {
+for (const order of [
+  [301, 300],
+  [300, 301],
+]) {
+  test(`overlapping named identities are killed deepest first, named in the order ${order.join(", ")}`, async () => {
+    const { killed, deps } = killable([
+      row(1, 0),
+      row(300, 1),
+      row(301, 300),
+      row(302, 301),
+    ]);
+    const report = await reapIdentities(
+      order.map((pid) => ({ pid, start: `start-${pid}` })),
+      deps,
+    );
+    expect(report).toEqual({
+      signalled: [302, 301, 300],
+      unreadable: [],
+      survived: [],
+    });
+    expect(killed.map(([pid]) => pid)).toEqual([302, 301, 300]);
+  });
+}
+
+test("an identity is read from a live row; no live row is null, and an unreadable one throws", async () => {
   const table = async () => [
     row(100, 1),
     { ...row(101, 1), stat: "Z" },
@@ -164,9 +189,38 @@ test("an identity is read only from a live row with a readable start", async () 
     start: "start-100",
   });
   expect(await identityOf(101, table)).toBeNull();
-  expect(await identityOf(102, table)).toBeNull();
   expect(await identityOf(103, table)).toBeNull();
-  expect(await identityOf(100, async () => null)).toBeNull();
+  await expect(identityOf(102, table)).rejects.toThrow(
+    "creation identity of pid 102",
+  );
+  await expect(identityOf(100, async () => null)).rejects.toThrow(
+    "process table could not be read",
+  );
+});
+
+test("a reap of owned identities fails unless every process is witnessed gone", async () => {
+  const { deps } = killable([row(1, 0), row(300, 1), row(301, 300)]);
+  expect(
+    await reapOwnedIdentities([{ pid: 300, start: "start-300" }], deps),
+  ).toEqual({ signalled: [301, 300], unreadable: [], survived: [] });
+  await expect(
+    reapOwnedIdentities([{ pid: 300, start: "start-300" }], {
+      table: async () => null,
+    }),
+  ).rejects.toThrow("process table could not be read");
+  const unreadable = killable([row(1, 0), row(300, 1), row(301, 300, "")]);
+  await expect(
+    reapOwnedIdentities([{ pid: 300, start: "start-300" }], unreadable.deps),
+  ).rejects.toThrow("unreadable [301]");
+  const rows = [row(1, 0), row(300, 1)];
+  await expect(
+    reapOwnedIdentities([{ pid: 300, start: "start-300" }], {
+      table: async () => rows,
+      kill: () => undefined,
+      timeoutMs: 50,
+      pause: async () => undefined,
+    }),
+  ).rejects.toThrow("survived [300]");
 });
 
 test("a captured identity whose row has become unreadable is reported, not dropped, and not signalled", async () => {
