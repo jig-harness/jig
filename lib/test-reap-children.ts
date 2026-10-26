@@ -227,24 +227,29 @@ function collectTargets(
   captured: readonly Identity[],
 ): { targets: ProcessRow[]; unreadable: number[] } {
   const targets: ProcessRow[] = [];
-  const unreadable: number[] = [];
-  const seen = new Set<number>(pid === null ? [] : [pid]);
+  const taken = new Set<number>(pid === null ? [] : [pid]);
+  // A pid is unreadable until some root's partition binds it: a captured
+  // identity below an unreadable ancestor is still its own readable root.
+  const unknown = new Set<number>();
   const take = (root: number) => {
     const tree = partitionProcessTree(root, rows);
-    for (const row of [...tree.targets, ...tree.uncertain]) {
-      if (seen.has(row.pid)) continue;
-      seen.add(row.pid);
-      if (tree.targets.includes(row)) targets.push(row);
-      else unreadable.push(row.pid);
+    for (const row of tree.targets) {
+      if (taken.has(row.pid)) continue;
+      taken.add(row.pid);
+      unknown.delete(row.pid);
+      targets.push(row);
     }
+    for (const row of tree.uncertain)
+      if (!taken.has(row.pid)) unknown.add(row.pid);
   };
   if (pid !== null) take(pid);
   // A captured identity whose row is now unreadable is taken too: its
   // partition reports it, and what it started, as unreadable.
   for (const identity of captured) {
     const row = liveOrUnreadable(rows, identity);
-    if (row && !seen.has(row.pid)) take(row.pid);
+    if (row && !taken.has(row.pid)) take(row.pid);
   }
+  const unreadable = [...unknown];
   // Roots that overlap — a captured process and its own captured ancestor —
   // are collected in the order they were named, so the set is ordered by
   // ancestry: the signal walks it backwards, and each descendant then dies

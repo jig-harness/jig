@@ -178,6 +178,28 @@ for (const order of [
   });
 }
 
+test("a named identity below an unreadable named ancestor is still killed, with its descendants", async () => {
+  const { killed, deps } = killable([
+    row(1, 0),
+    row(300, 1, ""),
+    row(301, 300),
+    row(302, 301),
+  ]);
+  const report = await reapIdentities(
+    [
+      { pid: 300, start: "start-300" },
+      { pid: 301, start: "start-301" },
+    ],
+    deps,
+  );
+  expect(report).toEqual({
+    signalled: [302, 301],
+    unreadable: [300],
+    survived: [],
+  });
+  expect(killed.map(([pid]) => pid)).toEqual([302, 301]);
+});
+
 test("an identity is read from a live row; no live row is null, and an unreadable one throws", async () => {
   const table = async () => [
     row(100, 1),
