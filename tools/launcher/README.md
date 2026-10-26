@@ -11,7 +11,10 @@ a workspace for the agent. With the Herdr provider a routed issue opens as a
 Herdr worktree workspace, on this machine or on a remote host, with the
 agent started and given the prompt. With the Orca provider a routed issue
 opens as an Orca worktree, in Orca on this machine or on a paired Orca
-server, with the agent started and given the prompt. With the Conductor
+server, with no agent started: the prompt is on your clipboard and in the
+worktree's comment, and you open an agent tab with the agent, model and
+effort you choose and paste it (an `agent` setting starts one for you
+instead). With the Conductor
 provider a routed issue opens Conductor's new-workspace composer with the
 prompt filled in, and the agent starts when you click **Create**; an
 unrouted issue creates (or reopens) its workspace directly.

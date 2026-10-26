@@ -62,7 +62,7 @@ import {
   openArgs,
 } from "../../orca/workspace.ts";
 import { copyCacheOverSsh } from "../cache-copy.ts";
-import { copyToClipboard } from "../clipboard.ts";
+import { copyRunner, copyToClipboard } from "../clipboard.ts";
 import type { OpenRequest, Provider } from "../provider.ts";
 import {
   branchFor,
@@ -298,6 +298,8 @@ export function parseOpened(text: string): Opened {
     typeof parsed.reattached !== "boolean" ||
     typeof parsed.hookRan !== "boolean" ||
     typeof parsed.agentLaunched !== "boolean" ||
+    (parsed.setupInTab !== undefined &&
+      typeof parsed.setupInTab !== "boolean") ||
     typeof parsed.kickoff !== "string" ||
     !KICKOFFS.has(parsed.kickoff)
   )
@@ -359,7 +361,13 @@ async function openHere(
 
 const defaultDeps: OrcaDeps = {
   copyCache: copyCacheOverSsh,
-  copy: (text, signal) => copyToClipboard(text, signal),
+  copy: (text, signal) =>
+    copyToClipboard(
+      text,
+      signal,
+      process.platform,
+      copyRunner(loginShellPath()),
+    ),
   open: openHere,
 };
 

@@ -32,26 +32,37 @@ export type CopyRunner = (
   signal: AbortSignal,
 ) => Promise<boolean>;
 
-const runCopy: CopyRunner = async (argv, text, signal) => {
-  try {
-    const proc = Bun.spawn(argv, {
-      stdin: new Blob([text]),
-      stdout: "ignore",
-      stderr: "pipe",
-      signal: AbortSignal.any([signal, AbortSignal.timeout(COPY_TIMEOUT_MS)]),
-    });
-    // A command that refuses (no display for xclip, say) says why on stderr;
-    // read it so the pipe drains, and let the next command be tried.
-    const [status] = await Promise.all([
-      proc.exited,
-      new Response(proc.stderr).text(),
-    ]);
-    return status === 0;
-  } catch (error) {
-    swallow(error, `${argv[0]} is not installed: the next command is tried`);
-    return false;
-  }
-};
+/**
+ * The runner that finds each command on `path` (the login shell's `PATH`,
+ * since the tracker starts the launcher without the shell profile; this
+ * process's own when undefined) and waits for its exit alone. `wl-copy` and
+ * `xclip` fork a child that serves the clipboard and keeps the parent's
+ * output streams, so the runner pipes none of them: a pipe would stay open
+ * until the clipboard changes hands. A command's reason for refusing (no
+ * display for `xclip`, say) goes to the launcher's own stderr.
+ */
+export function copyRunner(path: string | undefined): CopyRunner {
+  return async (argv, text, signal) => {
+    const [name, ...args] = argv;
+    const found =
+      name === undefined
+        ? null
+        : Bun.which(name, path === undefined ? {} : { PATH: path });
+    if (found === null) return false;
+    try {
+      const proc = Bun.spawn([found, ...args], {
+        stdin: new Blob([text]),
+        stdout: "ignore",
+        stderr: "inherit",
+        signal: AbortSignal.any([signal, AbortSignal.timeout(COPY_TIMEOUT_MS)]),
+      });
+      return (await proc.exited) === 0;
+    } catch (error) {
+      swallow(error, `${name} could not be started: the next command is tried`);
+      return false;
+    }
+  };
+}
 
 /**
  * Copy `text`; the command that took it, or null when none could. Once
@@ -62,7 +73,7 @@ export async function copyToClipboard(
   text: string,
   signal: AbortSignal,
   platform: NodeJS.Platform = process.platform,
-  run: CopyRunner = runCopy,
+  run: CopyRunner = copyRunner(process.env.PATH),
 ): Promise<string | null> {
   for (const argv of clipboardCommands(platform)) {
     if (signal.aborted) return null;

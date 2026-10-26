@@ -391,6 +391,7 @@ describe("the tool's answer", () => {
       // An array of one allowed word reads as that word once coerced.
       JSON.stringify({ ...answer, kickoff: ["already-sent"] }),
       JSON.stringify({ ...answer, reattached: "no" }),
+      JSON.stringify({ ...answer, setupInTab: "false" }),
     ])
       expect(() => parseOpened(text)).toThrow(
         "answered with something other than what it opened",

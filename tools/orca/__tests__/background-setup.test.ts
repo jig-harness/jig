@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { ok } from "../../herdr/__tests__/fake.ts";
+import { shellQuote } from "../../herdr/remote.ts";
 import { backgroundSetupCommand } from "../hooks.ts";
 import { openArgs, openWorkspace, parseOpen } from "../workspace.ts";
 import {
@@ -110,14 +111,15 @@ describe("the setup tab's script", () => {
 
   /** A worktree, and a hook that counts its runs, fails while `fail` exists and holds while `hold` does. */
   function scene() {
-    const root = mkdtempSync(join(tmpdir(), "setup-tab-"));
+    // A space in every path, as a temporary directory may have.
+    const root = mkdtempSync(join(tmpdir(), "setup tab-"));
     const wt = join(root, "wt");
     mkdirSync(wt);
     const hook = join(root, "hook.sh");
     const count = join(root, "count");
     writeFileSync(
       hook,
-      `#!/bin/sh\necho x >> ${count}\nwhile [ -f ${root}/hold ]; do sleep 0.05; done\n[ -f ${root}/fail ] && exit 3\nexit 0\n`,
+      `#!/bin/sh\necho x >> ${shellQuote(count)}\nwhile [ -f ${shellQuote(join(root, "hold"))} ]; do sleep 0.05; done\n[ -f ${shellQuote(join(root, "fail"))} ] && exit 3\nexit 0\n`,
       { mode: 0o755 },
     );
     const runs = () =>
