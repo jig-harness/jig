@@ -6,7 +6,12 @@
 import { describe, expect, test } from "bun:test";
 import { type Answer, fail, ok } from "../../herdr/__tests__/fake.ts";
 import type { RunResult } from "../../herdr/runner.ts";
-import { CLONE_TIMEOUT_MS, cloneMissingRepo, HOME_SCRIPT } from "../clone.ts";
+import {
+  CLONE_TIMEOUT_MS,
+  cloneMissingRepo,
+  HOME_SCRIPT,
+  redactUrl,
+} from "../clone.ts";
 import { openArgs, openWorkspace, parseOpen } from "../workspace.ts";
 import {
   absent,
@@ -36,7 +41,10 @@ const home = `sh -c ${HOME_SCRIPT}`;
 const makeRoot = `mkdir -p ${ROOT}`;
 const takeClaim = `mkdir ${CLAIM}`;
 const releaseClaim = `rm -rf ${CLAIM}`;
-const gitClone = `git clone -- ${URL} ${CLONE}`;
+/** The clone of `url` into the clone's path, with git's prompts off. */
+const cloneOf = (url: string): string =>
+  `env GIT_TERMINAL_PROMPT=0 git clone -- ${url} ${CLONE}`;
+const gitClone = cloneOf(URL);
 const origin = `git -C ${CLONE} remote get-url origin`;
 const prefix = `git -C ${CLONE} rev-parse --show-prefix`;
 const add = `orca repo add --path ${CLONE} --json`;
@@ -148,12 +156,25 @@ describe("a repository Orca does not have", () => {
     const ws = workspaceOf(
       table([missing, missing, found], {
         [inspect(CLONE)]: absent,
-        [`git clone -- ${source} ${CLONE}`]: ok(),
+        [cloneOf(source)]: ok(),
         [add]: answer({ repo: { id: RID, path: CLONE } }),
       }),
     );
     openWorkspace(ws, { ...options, clone: { url: source, root: "~/dev" } });
-    expect(ws.ctx.calls).toContain(`git clone -- ${source} ${CLONE}`);
+    expect(ws.ctx.calls).toContain(cloneOf(source));
+  });
+
+  test("from an SSH source with an absolute path is cloned", () => {
+    const source = "git@example.com:/srv/git/app.git";
+    const ws = workspaceOf(
+      table([missing, missing, found], {
+        [inspect(CLONE)]: absent,
+        [cloneOf(source)]: ok(),
+        [add]: answer({ repo: { id: RID, path: CLONE } }),
+      }),
+    );
+    openWorkspace(ws, { ...options, clone: { url: source, root: "~/dev" } });
+    expect(ws.ctx.calls).toContain(cloneOf(source));
   });
 
   test("shows its source with the credentials hidden, in progress and failure alike", () => {
@@ -161,7 +182,7 @@ describe("a repository Orca does not have", () => {
     const ws = workspaceOf(
       table([missing, missing], {
         [inspect(CLONE)]: absent,
-        [`git clone -- ${secret} ${CLONE}`]: fail(
+        [cloneOf(secret)]: fail(
           128,
           `fatal: unable to access '${secret}/': 403`,
         ),
@@ -191,10 +212,37 @@ describe("a repository Orca does not have", () => {
       expect(() =>
         openWorkspace(ws, { ...options, clone: { url, root: "~/dev" } }),
       ).toThrow("is not an https://, ssh:// or git:// URL");
-      expect(ws.ctx.calls.some((call) => call.startsWith("git clone"))).toBe(
+      expect(ws.ctx.calls.some((call) => call.includes("git clone"))).toBe(
         false,
       );
     }
+  });
+
+  test("whose refused source carries credentials it cannot split shows none of them", () => {
+    for (const url of [
+      "https://user:pa@ss@example.com/app.git",
+      "https://user:p/ss@example.com/app.git",
+    ]) {
+      const ws = workspaceOf(table([missing], {}));
+      let message = "";
+      try {
+        openWorkspace(ws, { ...options, clone: { url, root: "~/dev" } });
+      } catch (error) {
+        message = String(error);
+      }
+      expect(message).toContain("the clone source https://*** is not");
+      expect(message).not.toContain("user:p");
+      expect(message).not.toContain("ss@");
+    }
+  });
+
+  test("shows a taken source whose path holds an @ unchanged", () => {
+    expect(redactUrl("https://example.com/acme/app@v2.git")).toBe(
+      "https://example.com/acme/app@v2.git",
+    );
+    expect(redactUrl("https://u:s@example.com/acme/app@v2.git")).toBe(
+      "https://***@example.com/acme/app@v2.git",
+    );
   });
 
   test("is waited for no longer than the clone's limit, however slow each look is", () => {

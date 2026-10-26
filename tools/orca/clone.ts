@@ -73,14 +73,16 @@ function shown(ws: Workspace, name: string): unknown {
 }
 
 /**
- * The network forms of clone source taken: `https://`, `ssh://` or `git://`
- * with a host and a path, or an SSH `user@host:path`. An absolute path on the
- * clone's machine is taken too (`isLocalPath`). Anything else (another
- * transport, an option, a bare word) is refused before git sees it.
+ * The network forms of clone source taken, as git's documentation lists them
+ * for these transports: `https://`, `ssh://` or `git://` with a host and a
+ * path, or an SSH `user@host:path`, whose path may be absolute
+ * (`user@host:/srv/git/app.git`). An absolute path on the clone's machine is
+ * taken too (`isLocalPath`). Anything else (another transport, an option, a
+ * bare word) is refused before git sees it.
  */
 const CLONE_URL_FORMS = [
   /^(https|ssh|git):\/\/([^/@\s]+@)?[A-Za-z0-9.-]+(:\d+)?\/[^\s]+$/,
-  /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[^\s/-][^\s]*$/,
+  /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[^\s-][^\s]*$/,
 ];
 
 /**
@@ -98,8 +100,16 @@ function isLocalPath(url: string): boolean {
   );
 }
 
-/** `url` with the credentials of a `scheme://user:secret@host` source hidden, for a message. */
+/**
+ * `url` with the credentials of a `scheme://user:secret@host` source hidden,
+ * for a message. A `scheme://` source that is none of `CLONE_URL_FORMS` (a
+ * raw `@` or `/` in its credentials, say) cannot be split where they end, so
+ * all of it after the scheme is hidden.
+ */
 export function redactUrl(url: string): string {
+  const scheme = /^[a-z][a-z0-9+.-]*:\/\//i.exec(url)?.[0];
+  if (scheme === undefined) return url;
+  if (!CLONE_URL_FORMS.some((form) => form.test(url))) return `${scheme}***`;
   return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/i, "$1***@");
 }
 
@@ -172,9 +182,12 @@ function ensureClone(
       `${path} is there but is not a directory; move it away and open again`,
     );
   ws.host.log(`… cloning ${shownUrl} into ${path}`);
-  const cloned = ws.host.run(["git", "clone", "--", source.url, path], {
-    timeoutMs: budget(ws.host, CLONE_TIMEOUT_MS),
-  });
+  // No prompt for credentials: the clone's terminal may be no one's, and a
+  // prompt there would hold the clone until its deadline.
+  const cloned = ws.host.run(
+    ["env", "GIT_TERMINAL_PROMPT=0", "git", "clone", "--", source.url, path],
+    { timeoutMs: budget(ws.host, CLONE_TIMEOUT_MS) },
+  );
   const said = output(cloned).replaceAll(source.url, () => shownUrl);
   if (unfinished(ws, cloned.status))
     throw new CloneUnfinished(

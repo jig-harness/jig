@@ -276,8 +276,8 @@ the launcher's `orca` settings (`environment`, `ssh`) do the same.
 
 The tool reads these commands and answers of Orca's command-line tool, each
 with `--json`, and `--environment <name>` for a server: `repo show` (the
-repository's `id` and `path`), `repo add --path <clone>` (with
-`--clone-url`), `worktree list --repo id:<id>` (`worktrees[]`
+repository's `id` and `path`), `repo add --path <clone>` (only when
+`--clone-url` is given), `worktree list --repo id:<id>` (`worktrees[]`
 with `id`, `path`, `branch`), `worktree create --repo id:<id> --name <name>
 --base-branch <ref> --no-parent --setup skip [--comment] [--activate]`
 (the created `worktree`), `worktree set --worktree id:<id> --linear-issue

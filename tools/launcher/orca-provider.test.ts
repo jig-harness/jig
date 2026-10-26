@@ -139,6 +139,15 @@ describe("clone", () => {
         "app",
       ).clone?.url,
     ).toBe("/srv/Source Repos/app");
+    expect(
+      parseRepo(
+        {
+          repo: "app",
+          clone: { url: "git@example.com:/srv/git/{repo}.git", root: "~" },
+        },
+        "app",
+      ).clone?.url,
+    ).toBe("git@example.com:/srv/git/app.git");
   });
 });
 

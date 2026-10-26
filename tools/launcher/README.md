@@ -99,7 +99,9 @@ a mapping (a provider's short form, such as `orca: my-tool`) replaces the
 default whole. A label with no entry comes from the tracker, so it opens
 with the defaults only when it looks like a repository name (letters,
 digits, `.`, `_` and `-`, starting with a letter or digit); `{label}` is
-filled with it literally. The defaults are checked on their own, with a
+filled with it literally. Any other label with no entry refuses the
+launch, before a workspace opens, until it has an entry in `repos`. The
+defaults are checked on their own, with a
 repository name standing for the label, on every launch, as the entries
 are:
 

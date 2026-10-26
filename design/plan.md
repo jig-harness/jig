@@ -581,7 +581,7 @@ item links its requirements; the delivery loop writes no spec) is a decision rec
     provide is decided: `bun` for the shared supervisor, as the Herdr tool
     asks of its hosts, or a supervisor in the host's own shell;
   - `do-item` shows pickup and the opened pull request on Orca's
-    workspace board (`plugin/shared/orca-board.ts`); the review and merge
+    workspace board (`plugin/skills/do-item/scripts/orca-board.ts`); the review and merge
     stages are not shown yet (`drive-pr` converged, the merge's follow-up
     moving the card to `completed`), and the tracker's GitHub issues could
     be linked with `--issue`;
