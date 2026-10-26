@@ -231,15 +231,32 @@ describe("findingsOf", () => {
     };
     const fingerprints = (run: ScannerRun, annotations: unknown[]) =>
       value(findingsOf(run, annotations)).map((f) => f.fingerprint);
-    const [x, moved, otherText, otherFile] = fingerprints(r, [
+    const [x, otherText, otherFile] = fingerprints(r, [
       a,
-      { ...a, start_line: 2, end_line: 2 },
       { ...a, message: "https://x.example/issue=2" },
       { ...a, path: "b.ts" },
     ]);
+    const [moved] = fingerprints(r, [{ ...a, start_line: 2, end_line: 2 }]);
     expect(fingerprints({ ...r, id: 10 }, [a])).toEqual(fingerprints(r, [a]));
     expect(moved).toBe(x);
     expect(new Set([x, otherText, otherFile]).size).toBe(3);
+  });
+
+  it("gives each same-text finding in one file its own fingerprint, kept when an edit moves them", () => {
+    const at = (line: number) => ({
+      path: "a.ts",
+      start_line: line,
+      end_line: line,
+      annotation_level: "warning",
+      title: "t",
+    });
+    const fingerprints = (annotations: unknown[]) =>
+      value(findingsOf(r, annotations)).map((f) => f.fingerprint);
+    const [alone] = fingerprints([at(10)]);
+    const [later, first] = fingerprints([at(40), at(10)]);
+    expect(first).toBe(alone);
+    expect(later).toBe(`${alone}-2`);
+    expect(fingerprints([at(12), at(55)])).toEqual([`${alone}`, `${alone}-2`]);
   });
 
   it("drops notices", () => {

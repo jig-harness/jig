@@ -196,8 +196,7 @@ function linkOf(message: string | null): string | null {
  * A hash of what identifies the finding across heads: its file and text, the
  * message included, since it carries the tool's issue key where the tool links
  * one. The line is left out, so the identity survives an edit that moves the
- * finding; two findings with the same text in one file share it, and one
- * answer covers both.
+ * finding.
  */
 function fingerprintOf(app: string, path: string, text: string): string {
   const digest = createHash("sha256")
@@ -205,6 +204,30 @@ function fingerprintOf(app: string, path: string, text: string): string {
     .digest("hex")
     .slice(0, 16);
   return `${app}-${digest}`;
+}
+
+/**
+ * The findings with one fingerprint per occurrence. Findings that share file
+ * and text are told apart by their order in the file: the first keeps the
+ * hash, the n-th takes `-n`, so each is answered on its own, and an edit that
+ * moves them without reordering them keeps every identity.
+ */
+function byOccurrence(findings: ScannerFinding[]): ScannerFinding[] {
+  const seen = new Map<string, number>();
+  const ordered = [...findings].sort(
+    (a, b) =>
+      a.line - b.line || (a.startLine ?? a.line) - (b.startLine ?? b.line),
+  );
+  const nth = new Map<ScannerFinding, number>();
+  for (const f of ordered) {
+    const n = (seen.get(f.fingerprint) ?? 0) + 1;
+    seen.set(f.fingerprint, n);
+    nth.set(f, n);
+  }
+  return findings.map((f) => {
+    const n = nth.get(f) ?? 1;
+    return n === 1 ? f : { ...f, fingerprint: `${f.fingerprint}-${n}` };
+  });
 }
 
 /** An annotation's level when it is a finding; `null` for a `notice`. */
@@ -310,9 +333,12 @@ export function findingsOf(
       ok: false,
       error: `check run ${run.id} reports ${run.annotations} annotation(s) but lists ${annotations.length}`,
     };
-  return collect(annotations, `check run ${run.id}'s annotations`, (raw, i) =>
-    findingOf(run, raw, i),
+  const found = collect(
+    annotations,
+    `check run ${run.id}'s annotations`,
+    (raw, i) => findingOf(run, raw, i),
   );
+  return found.ok ? ok(byOccurrence(found.value)) : found;
 }
 
 /** GitHub lists a commit's check runs from its most recent check suites only, this many. */

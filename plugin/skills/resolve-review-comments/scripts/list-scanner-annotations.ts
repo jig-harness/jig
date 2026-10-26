@@ -13,7 +13,8 @@
  *   - level → `warning` or `failure`; `notice` annotations are left out.
  *   - message → the annotation's message where it says more than the title.
  *   - url → the first https link in the message, as the annotation wrote it.
- *   - fingerprint → stable across heads (file and text, not line) and
+ *   - fingerprint → stable across heads (file and text, not line, with
+ *     same-text findings in one file numbered in line order) and
  *     marker-safe: a deferral's `--fingerprint`.
  *
  * Usage: bun list-scanner-annotations.ts [PR_NUMBER]

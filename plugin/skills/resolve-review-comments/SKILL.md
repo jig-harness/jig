@@ -732,7 +732,8 @@ One [scanner annotation](https://github.com/jig-harness/jig/blob/main/GLOSSARY.m
 (where it says more than the title), `url` (the first link in the message)
 and `fingerprint`, which names the finding by its file and text, never its
 line, so it stays the same when an edit moves the finding; findings with the
-same text in one file share it and take one answer. The apps read are `review.scanner_apps` (default
+same text in one file are numbered in line order (`-2`, `-3`, …), and each
+takes its own answer. The apps read are `review.scanner_apps` (default
 `sonarqubecloud`). The exit says how far the listing can be trusted:
 
 | Exit | Means |
