@@ -510,6 +510,29 @@ reaches its pull request with every acceptance criterion accounted for,
 one with none stops, saying so, before any code is written, and the stance (a work
 item links its requirements; the delivery loop writes no spec) is a decision record.
 
+### 30. Routing work to an agent, a model and an effort
+
+Every launch and every delegation runs the agent, model and effort someone
+configured once, whatever the work. A bug fix in one file and an epic's
+architecture spike get the same model; a person picks by hand, or the
+workspace launcher starts its default. The launcher now hands the start to
+the person by default, and starts an agent only where its settings name one
+([tools/launcher](../tools/launcher/README.md)); routing is what would
+let it, and `do-item`'s delegation, choose. Open questions before a design:
+
+- the inputs: the work type (item 27), size and the area's sensitivity flags
+  from the change-area catalog, the repository's history of what each
+  agent and model converged on, and what the machine and the subscription
+  have left;
+- where the decision is made: a router a capable model runs before pickup,
+  or rules as data a repository overrides, with the reason recorded so it
+  can be checked against how the work went (M11);
+- the output every runtime can take: agent, model and effort for a launch
+  (`orca agent launch --model --effort`), for `do-item`'s subagents and for
+  a drive's passes, with the person's choice always able to override it.
+
+Done when the design is written and decided; the build is its own epic.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** Move an operated reconciler onto the

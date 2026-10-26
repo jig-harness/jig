@@ -176,7 +176,11 @@ describe("open", () => {
       },
     });
     const asked = {
-      ...request({ repo: "app", branch: "feature/{key}-{slug}" }),
+      ...request({
+        repo: "app",
+        agent: "claude",
+        branch: "feature/{key}-{slug}",
+      }),
       title: "Fix login",
     };
     await provider.open(asked);
@@ -226,7 +230,9 @@ describe("open", () => {
         return opened(options);
       },
     });
-    await provider.open(request({ repo: "app", environment: "box" }));
+    await provider.open(
+      request({ repo: "app", environment: "box", agent: "claude" }),
+    );
     expect(copies).toEqual([`box:${cacheFile}`]);
     expect(prompts[0]).toBe(
       "/jig:do-item ENG-1\nLauncher context: /home/u/.cache/conductor-linear/ENG-1.json",
@@ -244,7 +250,7 @@ describe("open", () => {
         return opened(options);
       },
     });
-    await provider.open(request("app"));
+    await provider.open(request({ repo: "app", agent: "claude" }));
     expect(prompts[0]).toBe(
       `/jig:do-item ENG-1\nLauncher context: ${cacheFile}`,
     );
@@ -269,6 +275,86 @@ describe("open", () => {
         cacheFile: join(tmpdir(), "no-such-cache-file.json"),
       }),
     ).rejects.toThrow("was not written by this launch");
+  });
+});
+
+describe("with no agent named", () => {
+  test("starts none, puts the prompt in the comment and on the clipboard", async () => {
+    const seen: OpenOptions[] = [];
+    const copied: string[] = [];
+    const provider = orcaProvider({
+      copy: async (text) => {
+        copied.push(text);
+        return "pbcopy";
+      },
+      open: async (_repo, options) => {
+        seen.push(options);
+        return { ...opened(options), agentLaunched: false, kickoff: "none" };
+      },
+    });
+    await provider.open({ ...request("app"), title: "Fix login" });
+    const prompt = `/jig:do-item ENG-1\nLauncher context: ${cacheFile}`;
+    expect(seen[0]).toMatchObject({
+      noAgent: true,
+      comment: `ENG-1: Fix login\n\n${prompt}`,
+    });
+    expect(seen[0]?.prompt).toBeUndefined();
+    expect(seen[0]?.key).toBeUndefined();
+    expect(copied).toEqual([prompt]);
+  });
+
+  test("prints the prompt when no clipboard takes it", async () => {
+    const lines: string[] = [];
+    const original = console.error;
+    console.error = (line: string) => lines.push(line);
+    try {
+      await orcaProvider({
+        copy: async () => null,
+        open: async (_repo, options) => ({
+          ...opened(options),
+          agentLaunched: false,
+        }),
+      }).open(request("app"));
+    } finally {
+      console.error = original;
+    }
+    expect(lines.join("\n")).toContain(
+      `paste the prompt, which is below and in the worktree's comment:\n/jig:do-item ENG-1`,
+    );
+  });
+});
+
+describe("an agent's model, effort and surface", () => {
+  test("are passed to the tool with the agent", () => {
+    const repo = parseRepo(
+      {
+        repo: "app",
+        agent: "codex",
+        model: "gpt-x",
+        effort: "high",
+        surface: "chat",
+      },
+      "app",
+    );
+    expect(openOptions(repo, request("app"), "p")).toMatchObject({
+      agent: "codex",
+      model: "gpt-x",
+      effort: "high",
+      surface: "chat",
+      noAgent: false,
+    });
+  });
+
+  test("need an agent, effort needs a model, and a surface is chat or terminal", () => {
+    expect(() => parseRepo({ repo: "app", model: "m" }, "app")).toThrow(
+      "repos.app.orca.model shapes the start of an agent, so it needs repos.app.orca.agent",
+    );
+    expect(() =>
+      parseRepo({ repo: "app", agent: "claude", effort: "high" }, "app"),
+    ).toThrow("repos.app.orca.effort needs repos.app.orca.model");
+    expect(() =>
+      parseRepo({ repo: "app", agent: "claude", surface: "web" }, "app"),
+    ).toThrow("repos.app.orca.surface is chat or terminal");
   });
 });
 

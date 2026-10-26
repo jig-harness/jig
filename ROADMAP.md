@@ -185,6 +185,14 @@ criterion: met with evidence, deferred to a filed item, or not applicable.
 The delivery loop writes no spec and dictates no format; the tools that
 write specs well are recommended beside the adapter that reads each.
 
+### 30. Routing work to an agent, a model and an effort
+
+Every launch and delegation runs whichever agent, model and effort was
+configured once, whatever the work. Routing would choose them from the work's
+type, size and sensitivity and from what converged before, with the reason
+recorded and a person's choice always able to override it. The workspace
+launcher hands the agent's start to the person until then.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** A reusable reconciler for

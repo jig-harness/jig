@@ -26,6 +26,7 @@ import { expandPathWith } from "../../plugin/skills/reflect/scripts/lib/settings
 import { HOOK_TIMEOUT_MS, HOOKS_DIR } from "../herdr/lifecycle.ts";
 import { shellQuote } from "../herdr/remote.ts";
 import { budget, output } from "../herdr/runner.ts";
+import { orcaJson } from "./cli.ts";
 import { OrcaError, WAIT_POLL_MS, type Workspace } from "./runner.ts";
 
 /** The file in a worktree's git directory that records its create hook succeeded. */
@@ -273,6 +274,80 @@ export function ensureCreateHook(
   if (awaitHookClaim(ws, hook, mark, claim)) return false;
   runClaimedHook(ws, path, hook, mark, claim);
   return true;
+}
+
+/**
+ * The script a background setup tab runs, as `sh -c <script> sh <claim>
+ * <mark> <hook> <worktree>`: the same claim and mark as `ensureCreateHook`,
+ * so the hook still runs once per worktree whichever way an open started it.
+ */
+export const BACKGROUND_SETUP_SCRIPT = [
+  'mkdir "$1" 2>/dev/null || { echo "setup: another open is running it"; exit 0; }',
+  'if [ -f "$2" ]; then rm -rf "$1"; echo "setup: already done"; exit 0; fi',
+  'cd "$4" && "$3"; s=$?',
+  'if [ "$s" -eq 0 ]; then printf ok > "$2" && echo "✓ setup done"; else echo "✗ setup failed (exit $s); open the issue again to run it again"; fi',
+  'rm -rf "$1"; exit "$s"',
+].join("\n");
+
+/** The command line a background setup tab is started with. */
+export function backgroundSetupCommand(
+  claim: string,
+  mark: string,
+  hook: string,
+  worktree: string,
+): string {
+  return [
+    "sh",
+    "-c",
+    BACKGROUND_SETUP_SCRIPT,
+    "sh",
+    claim,
+    mark,
+    hook,
+    worktree,
+  ]
+    .map(shellQuote)
+    .join(" ");
+}
+
+/** What `startCreateHook` did: started a tab, found the hook done or running, or found no hook. */
+export type BackgroundSetup = "started" | "done" | "running" | "none";
+
+/**
+ * Start the repository's create hook in an Orca terminal tab named `setup`
+ * and return at once, for an open that starts no agent: the person watches
+ * the tab and starts an agent when it is done. Nothing is started when the
+ * mark says the hook ran, or a claim says an open is running it; two opens
+ * that both start a tab still run the hook once, since the tab's script
+ * takes the claim itself (`BACKGROUND_SETUP_SCRIPT`).
+ */
+export function startCreateHook(
+  ws: Workspace,
+  worktree: { id: string; path: string },
+  dir: string,
+): BackgroundSetup {
+  const hook = hookOf(ws, worktree.path, "create");
+  if (hook === null) return "none";
+  const mark = `${dir}/${CREATE_HOOK_MARK}`;
+  const claim = `${dir}/${CREATE_HOOK_CLAIM}`;
+  if (exists(ws, "-f", mark)) return "done";
+  if (inspectPath(ws, claim) !== "absent") return "running";
+  orcaJson(
+    ws,
+    [
+      "terminal",
+      "create",
+      "--worktree",
+      `id:${worktree.id}`,
+      "--title",
+      "setup",
+      "--command",
+      backgroundSetupCommand(claim, mark, hook, worktree.path),
+    ],
+    "orca terminal create",
+  );
+  ws.host.log(`… ${HOOKS_DIR}/create is running in the worktree's "setup" tab`);
+  return "started";
 }
 
 /** Why a removal stops when the journal's place is in doubt; every refusal below ends with it. */

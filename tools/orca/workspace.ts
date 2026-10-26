@@ -6,7 +6,8 @@
  * Usage:
  *   bun tools/orca/workspace.ts open --repo <name> --branch <name> [--environment <name> --ssh <host>]
  *       [--reuse-prefix <text>] [--base <ref>] [--agent <id>] [--no-agent] [--prompt <text>] [--key <key>]
- *       [--comment <text>] [--linear-issue <key>] [--activate] [--clone-url <url> --clone-root <dir>] [--json]
+ *       [--comment <text>] [--linear-issue <key>] [--activate] [--clone-url <url> --clone-root <dir>]
+ *       [--model <id> [--effort <level>]] [--surface chat|terminal] [--json]
  *   bun tools/orca/workspace.ts remove --repo <name> --branch <name> [--environment <name> --ssh <host>] [--force]
  *
  * `open` creates the branch's worktree through Orca, or reattaches to the
@@ -16,7 +17,9 @@
  * per `--key` and agent. With `--reuse-prefix`, the one existing branch whose
  * name starts with it is opened instead of `--branch`. With `--clone-url`
  * and `--clone-root`, a repository Orca does not have is cloned into
- * `<root>/<repo>` and added to Orca first (clone.ts). `--json` prints what
+ * `<root>/<repo>` and added to Orca first (clone.ts). With `--no-agent` the
+ * create hook runs in the worktree's `setup` tab and `open` returns without
+ * waiting for it; an agent it starts waits for the hook. `--json` prints what
  * was opened; progress goes to stderr.
  *
  * `remove` runs the repository's remove hook in the worktree, parks its
@@ -75,6 +78,7 @@ import {
   cloneMissingRepo,
 } from "./clone.ts";
 import {
+  startCreateHook,
   assertNoUnsentFindings,
   ensureCreateHook,
   gitDirOf,
@@ -96,7 +100,8 @@ export { fileSegment, type Receipt, receiptPath } from "./receipts.ts";
 export const USAGE = `usage:
   workspace.ts open --repo <name> --branch <name> [--environment <name> --ssh <host>] [--reuse-prefix <text>]
       [--base <ref>] [--agent <id>] [--no-agent] [--prompt <text>] [--key <key>] [--comment <text>]
-      [--linear-issue <key>] [--activate] [--clone-url <url> --clone-root <dir>] [--json]
+      [--linear-issue <key>] [--activate] [--clone-url <url> --clone-root <dir>]
+      [--model <id> [--effort <level>]] [--surface chat|terminal] [--json]
   workspace.ts remove --repo <name> --branch <name> [--environment <name> --ssh <host>] [--force]`;
 
 /**
@@ -143,6 +148,12 @@ export interface OpenOptions {
   activate: boolean;
   /** Clone the repository from here and add it to Orca when Orca does not have it. */
   clone?: CloneSource;
+  /** The agent's model, as Orca's provider names it; the agent's default when absent. */
+  model?: string;
+  /** The model's reasoning effort; needs `model`. */
+  effort?: string;
+  /** Start the agent as a chat or in a terminal; Orca's Chat UI setting when absent. */
+  surface?: "chat" | "terminal";
 }
 
 export interface Opened {
@@ -152,8 +163,10 @@ export interface Opened {
   worktreeId: string;
   /** The worktree already existed. */
   reattached: boolean;
-  /** This run ran the repository's create hook. */
+  /** This run ran the repository's create hook, or started it in the worktree's `setup` tab. */
   hookRan: boolean;
+  /** The create hook runs in the worktree's `setup` tab rather than before this run returned. */
+  setupInTab?: boolean;
   /** This run started the agent. */
   agentLaunched: boolean;
   /** The agent's start under `key`: by this run, by an earlier one, or not recorded. */
@@ -536,6 +549,9 @@ function launchAgent(
       "--worktree",
       `id:${worktree.id}`,
       ...prompt,
+      ...(options.model === undefined ? [] : ["--model", options.model]),
+      ...(options.effort === undefined ? [] : ["--effort", options.effort]),
+      ...(options.surface === undefined ? [] : ["--surface", options.surface]),
     ],
     what,
   );
@@ -582,17 +598,26 @@ export function openWorkspace(ws: Workspace, requested: OpenOptions): Opened {
   // its path before (worktree-token.ts), which a receipt of the key's agent
   // is read against when the agent is started and nowhere earlier.
   const dir = gitDirOf(ws, worktree.path);
-  const hookRan = ensureCreateHook(ws, worktree.path, dir);
   const opened: Opened = {
     path: worktree.path,
     branch,
     worktreeId: worktree.id,
     reattached: found !== null,
-    hookRan,
+    hookRan: false,
     agentLaunched: false,
     kickoff: "none",
   };
-  if (requested.noAgent) return opened;
+  // With no agent to start, nothing waits for the hook: it runs in a tab the
+  // person watches. An agent started here reads the tree, so it waits.
+  if (requested.noAgent) {
+    const setup = startCreateHook(ws, worktree, dir);
+    return {
+      ...opened,
+      hookRan: setup === "started",
+      setupInTab: setup === "started" || setup === "running",
+    };
+  }
+  opened.hookRan = ensureCreateHook(ws, worktree.path, dir);
   return { ...opened, ...launchAgent(ws, repo, worktree, dir, requested) };
 }
 
@@ -721,7 +746,36 @@ export function openArgs(options: OpenOptions, target: Target = {}): string[] {
     ...(options.activate ? ["--activate"] : []),
     ...optional("--clone-url", options.clone?.url),
     ...optional("--clone-root", options.clone?.root),
+    ...optional("--model", options.model),
+    ...optional("--effort", options.effort),
+    ...optional("--surface", options.surface),
   ];
+}
+
+/** `--model`, `--effort` and `--surface`, which shape an agent's start, so they need one. */
+function parseAgentFlags(values: {
+  model?: string;
+  effort?: string;
+  surface?: string;
+  "no-agent"?: boolean;
+}): Pick<OpenOptions, "model" | "effort" | "surface"> {
+  const { model, effort, surface } = values;
+  if (
+    values["no-agent"] &&
+    (model !== undefined || effort !== undefined || surface !== undefined)
+  )
+    throw new UsageError(
+      `--model, --effort and --surface shape an agent's start; drop --no-agent\n${USAGE}`,
+    );
+  if (effort !== undefined && model === undefined)
+    throw new UsageError(`--effort needs --model\n${USAGE}`);
+  if (surface !== undefined && surface !== "chat" && surface !== "terminal")
+    throw new UsageError(`--surface is chat or terminal\n${USAGE}`);
+  return {
+    ...(model === undefined ? {} : { model }),
+    ...(effort === undefined ? {} : { effort }),
+    ...(surface === undefined ? {} : { surface }),
+  };
 }
 
 /** `--clone-url` and `--clone-root`, which go together. */
@@ -757,6 +811,9 @@ export function parseOpen(
         activate: { type: "boolean" },
         "clone-url": { type: "string" },
         "clone-root": { type: "string" },
+        model: { type: "string" },
+        effort: { type: "string" },
+        surface: { type: "string" },
         json: { type: "boolean" },
       },
     },
@@ -791,6 +848,7 @@ export function parseOpen(
     ...optional(values["linear-issue"], "linearIssue"),
     activate: values.activate ?? false,
     ...parseCloneFlags(values["clone-url"], values["clone-root"]),
+    ...parseAgentFlags(values),
     json: values.json ?? false,
   };
 }

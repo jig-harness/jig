@@ -208,7 +208,7 @@ A provider performs the last step and nothing else; see
 |----------|------------------------|--------|
 | `conductor` | A `conductor://` deep link. A routed issue uses `prompt=…&path=<repository root>`; an unrouted one uses `linear_id=<key>`, which makes Conductor guess the repository. The root comes from Conductor's own database, read-only. | shipped |
 | `herdr` | The [Herdr workspace tool](../herdr/README.md)'s `open`, on this machine or on the host the repository's settings name: the issue's branch as a worktree workspace (reattached when it exists), the agent started and the prompt sent once per issue. A routed issue only. | shipped |
-| `orca` | The [Orca workspace tool](../orca/README.md)'s `open`, in Orca on this machine or on the paired Orca server the repository's settings name: the issue's branch as an Orca worktree (reattached when it exists), named as the repository names its branches, the repository's create hook run once, the agent started with the prompt once per issue, and the issue linked in Orca. A routed issue only. | shipped |
+| `orca` | The [Orca workspace tool](../orca/README.md)'s `open`, in Orca on this machine or on the paired Orca server the repository's settings name: the issue's branch as an Orca worktree (reattached when it exists), named as the repository names its branches, the repository's create hook run once, and the issue linked in Orca; the prompt handed to the person to start the agent they choose, or the agent the settings name started with it once per issue. A routed issue only. | shipped |
 
 Conductor reads `repos.<label>.conductor` as a repository name. Its database is
 Conductor's private storage, not a documented interface; when it cannot be read
@@ -280,7 +280,10 @@ repos:
       repo: my-service         # the repository's name in Orca
       environment: build-box   # a paired Orca server; Orca on this machine when absent
       ssh: build-box           # the server's host over SSH; the environment's name when absent
-      agent: codex             # Orca agent id; claude when absent
+      agent: codex             # start this Orca agent; none when absent (below)
+      model: gpt-x             # the agent's model; its default when absent (needs agent)
+      effort: high             # the model's reasoning effort (needs model)
+      surface: chat            # chat or terminal; Orca's Chat UI setting when absent (needs agent)
       base: origin/main        # base of a new branch; the clone's origin/HEAD when absent
       branch: feature/{key}-{slug}   # how the repository names an issue's branch
       slug: ascii              # {slug} in a-z and 0-9 only; any (every script) when absent
@@ -288,6 +291,17 @@ repos:
         url: git@github.com:acme/{repo}.git   # {repo} is the repository's name above
         root: ~/dev            # on the machine the clone goes on: absolute, or under ~/
 ```
+
+**Without `agent`, the launcher starts no agent.** The issue carries nothing
+that picks an agent, a model or an effort, so the person does, as in
+Conductor's composer. The worktree opens in Orca, the repository's create
+hook runs in its `setup` tab without holding the launch, and the first prompt
+goes onto this machine's clipboard (`pbcopy`, `wl-copy`, `xclip`, `xsel` or
+`clip`; printed when there is none) and into the worktree's Orca comment,
+which any device shows. Open an agent tab in Orca with the agent, model and
+effort you choose, paste the prompt and add to it. With `agent`, the launcher
+starts that agent with the prompt, after the create hook has run, since an
+agent reading a half-provisioned tree goes wrong.
 
 `branch` and `slug` name the branch exactly as they do for Herdr, above, and
 a branch already started for the issue is reused by the same rule. Orca
@@ -298,8 +312,8 @@ and the agent starts; Orca reads the branch from git and follows. On a
 server, Orca's tool runs here and reaches the server, while git and the
 hooks run on the server's host over SSH, so `ssh` must name it (as
 `environment` does when the two names agree); the issue's cache file is
-copied there first, as for Herdr, and the prompt names that copy. The
-agent's start is recorded once per issue, repository, agent and server in
+copied there first, as for Herdr, and the prompt names that copy. A
+started agent's start is recorded once per issue, repository, agent and server in
 `~/.jig/orca/kickoff/`, so a second launch of the same issue reattaches and
 starts nothing, and two launches at once start it once. An unrouted issue is
 refused: Orca has several repositories and nothing in the issue picks one.

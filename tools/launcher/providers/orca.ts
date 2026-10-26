@@ -1,14 +1,21 @@
 /**
- * The Orca provider: open the issue as an Orca worktree, with the agent
- * started and given the prompt, in Orca on this machine or on a paired Orca
- * server.
+ * The Orca provider: open the issue as an Orca worktree, in Orca on this
+ * machine or on a paired Orca server, and hand the agent's start to the
+ * person, or start the agent the settings name.
  *
  * The work is the Orca workspace tool's `open` (tools/orca/README.md): it
  * creates the issue's branch as a worktree through Orca, or reattaches to the
  * checkout that has it, names the branch as the repository does, runs the
  * repository's create hook once, and starts the agent with the prompt once
  * per issue, so opening the same issue again neither duplicates the worktree
- * nor prompts a working agent twice. On a server, Orca's tool runs here and
+ * nor prompts a working agent twice.
+ *
+ * Without an `agent` setting nothing is started: the issue carries nothing
+ * that picks an agent, a model or an effort, so the person does. The create
+ * hook then runs in the worktree's `setup` tab, the first prompt goes onto
+ * this machine's clipboard and into the worktree's Orca comment (which any
+ * device shows), and the worktree is revealed in Orca, where the person opens
+ * an agent tab and pastes the prompt. On a server, Orca's tool runs here and
  * reaches the server, git and the hooks run on the server's host over SSH,
  * and the issue's cache file is copied to the same place under the host
  * user's home first; the prompt names that copy.
@@ -25,7 +32,11 @@
  *                Orca on this machine when absent
  *   ssh          the SSH destination of the server's host, where git and the
  *                hooks run; the environment's name when absent
- *   agent        the Orca agent id to start; `claude` when absent
+ *   agent        the Orca agent id to start (`claude`, `codex`); none when
+ *                absent, and the person starts one
+ *   model        the agent's model; its default when absent (needs agent)
+ *   effort       the model's reasoning effort (needs model)
+ *   surface      `chat` or `terminal`; Orca's Chat UI setting when absent
  *   base         what a new branch is cut from; the clone's `origin/HEAD`
  *                when absent
  *   branch, slug how the repository names an issue's branch, as for the
@@ -51,6 +62,7 @@ import {
   openArgs,
 } from "../../orca/workspace.ts";
 import { copyCacheOverSsh } from "../cache-copy.ts";
+import { copyToClipboard } from "../clipboard.ts";
 import type { OpenRequest, Provider } from "../provider.ts";
 import {
   branchFor,
@@ -76,6 +88,9 @@ const KEYS = new Set([
   "branch",
   "slug",
   "clone",
+  "model",
+  "effort",
+  "surface",
 ]);
 
 export interface OrcaRepo {
@@ -87,6 +102,38 @@ export interface OrcaRepo {
   branch?: string;
   slug?: SlugKind;
   clone?: CloneSource;
+  model?: string;
+  effort?: string;
+  surface?: "chat" | "terminal";
+}
+
+/** `model`, `effort` and `surface`, which shape the start of an agent `agent` names. */
+function parseAgentStart(
+  text: SettingText,
+  agent: string | undefined,
+  where: string,
+): Pick<OrcaRepo, "model" | "effort" | "surface"> {
+  const model = text("model");
+  const effort = text("effort");
+  const surface = text("surface");
+  for (const [key, value] of [
+    ["model", model],
+    ["effort", effort],
+    ["surface", surface],
+  ] as const)
+    if (value !== undefined && agent === undefined)
+      throw new HerdrError(
+        `${where}.${key} shapes the start of an agent, so it needs ${where}.agent`,
+      );
+  if (effort !== undefined && model === undefined)
+    throw new HerdrError(`${where}.effort needs ${where}.model`);
+  if (surface !== undefined && surface !== "chat" && surface !== "terminal")
+    throw new HerdrError(`${where}.surface is chat or terminal`);
+  return {
+    ...(model === undefined ? {} : { model }),
+    ...(effort === undefined ? {} : { effort }),
+    ...(surface === undefined ? {} : { surface }),
+  };
 }
 
 /** `clone` as a mapping of `url` and `root` and nothing else. */
@@ -168,6 +215,7 @@ export function parseRepo(settings: unknown, label: string): OrcaRepo {
     ...(clone === undefined ? {} : { clone }),
     ...parseServer(text, where),
     ...(agent === undefined ? {} : { agent }),
+    ...parseAgentStart(text, agent, where),
     ...(base === undefined ? {} : { base }),
     ...parseBranchNaming(text, where),
   };
@@ -180,22 +228,36 @@ export function openOptions(
   prompt: string,
 ): OpenOptions {
   const { branch, reusePrefix } = branchFor(repo, request);
-  return {
+  const heading =
+    request.title === "" ? request.issue : `${request.issue}: ${request.title}`;
+  const common = {
     repo: repo.repo,
     branch,
     ...(reusePrefix === undefined ? {} : { reusePrefix }),
     ...(repo.base === undefined ? {} : { base: repo.base }),
-    agent: repo.agent ?? "claude",
-    noAgent: false,
-    prompt,
-    key: request.issue,
-    comment:
-      request.title === ""
-        ? request.issue
-        : `${request.issue}: ${request.title}`,
     linearIssue: request.issue,
     activate: true,
     ...(repo.clone === undefined ? {} : { clone: repo.clone }),
+  };
+  // No agent named: the person starts one, so the comment carries the
+  // prompt for them to copy on whichever device they open the worktree.
+  if (repo.agent === undefined)
+    return {
+      ...common,
+      agent: "claude",
+      noAgent: true,
+      comment: `${heading}\n\n${prompt}`,
+    };
+  return {
+    ...common,
+    agent: repo.agent,
+    ...(repo.model === undefined ? {} : { model: repo.model }),
+    ...(repo.effort === undefined ? {} : { effort: repo.effort }),
+    ...(repo.surface === undefined ? {} : { surface: repo.surface }),
+    noAgent: false,
+    prompt,
+    key: request.issue,
+    comment: heading,
   };
 }
 
@@ -206,6 +268,8 @@ export interface OrcaDeps {
     file: string,
     signal: AbortSignal,
   ) => Promise<string>;
+  /** Put the prompt on this machine's clipboard; the command that took it, or null. */
+  copy: (text: string) => Promise<string | null>;
   /** Run the workspace tool's `open` for the repository; ends it when `signal` aborts. */
   open: (
     repo: OrcaRepo,
@@ -295,11 +359,30 @@ async function openHere(
 
 const defaultDeps: OrcaDeps = {
   copyCache: copyCacheOverSsh,
+  copy: (text) => copyToClipboard(text),
   open: openHere,
 };
 
+/** What the launch says it did, after the worktree's path and branch. */
+async function outcome(
+  repo: OrcaRepo,
+  opened: Opened,
+  prompt: string,
+  copy: OrcaDeps["copy"],
+): Promise<string> {
+  if (repo.agent !== undefined)
+    return opened.agentLaunched
+      ? `; ${repo.agent} started`
+      : opened.kickoff === "already-sent"
+        ? "; its agent was already started"
+        : "";
+  const setup = opened.setupInTab ? '; setup runs in its "setup" tab' : "";
+  const copied = await copy(prompt);
+  return `${setup}; no agent started: open an agent tab in Orca and paste the prompt, which is ${copied === null ? "below" : "on the clipboard"} and in the worktree's comment${copied === null ? `:\n${prompt}` : ""}`;
+}
+
 export function orcaProvider(deps: Partial<OrcaDeps> = {}): Provider {
-  const { copyCache, open } = { ...defaultDeps, ...deps };
+  const { copyCache, copy, open } = { ...defaultDeps, ...deps };
   return {
     name: "orca",
     openBudgetMs: ORCA_OPEN_BUDGET_MS,
@@ -335,7 +418,7 @@ export function orcaProvider(deps: Partial<OrcaDeps> = {}): Provider {
         request.signal,
       );
       console.error(
-        `[launcher] ${request.issue}: ${opened.reattached ? "reattached to" : "opened"} ${opened.path} (${opened.branch})${opened.agentLaunched ? `; ${repo.agent ?? "claude"} started` : opened.kickoff === "already-sent" ? "; its agent was already started" : ""}`,
+        `[launcher] ${request.issue}: ${opened.reattached ? "reattached to" : "opened"} ${opened.path} (${opened.branch})${await outcome(repo, opened, prompt, copy)}`,
       );
     },
   };
