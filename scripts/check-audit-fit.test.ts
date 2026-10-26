@@ -1,0 +1,167 @@
+import { afterAll, expect, test } from "bun:test";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expectSpawnExit } from "../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  LEAKY_GIT_ENV,
+  spawnSync,
+} from "../plugin/shared/guarded-git-spawn.ts";
+import { checkAuditFit } from "./check-audit-fit.ts";
+
+const root = join(import.meta.dir, "..");
+const temporary: string[] = [];
+afterAll(() => {
+  for (const path of temporary) rmSync(path, { recursive: true, force: true });
+});
+function temp(): string {
+  const path = mkdtempSync(join(tmpdir(), "jig-audit-fit-"));
+  temporary.push(path);
+  return path;
+}
+/** git in a scratch repository, without the caller's git environment. */
+function git(dir: string, ...args: string[]) {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) =>
+        !(LEAKY_GIT_ENV as readonly string[]).includes(key.toUpperCase()),
+    ),
+  );
+  const result = spawnSync("git", ["-C", dir, ...args], { env });
+  return { ...result, exitCode: result.status };
+}
+
+const identity = [
+  "-c",
+  "user.name=t",
+  "-c",
+  "user.email=t@t",
+  "-c",
+  "commit.gpgSign=false",
+];
+const a = '  M1/a: { score: convention, evidence: "AGENTS.md" }\n';
+
+/** A scratch repository with one commit, one criterion, and a record writer. */
+function scratch() {
+  const dir = temp();
+  expectSpawnExit(git(dir, "init", "-q"), 0);
+  expectSpawnExit(
+    git(dir, ...identity, "commit", "-q", "--allow-empty", "-m", "a"),
+    0,
+  );
+  const head = git(dir, "rev-parse", "HEAD").stdout.toString().trim();
+  const criteria = join(dir, "criteria");
+  mkdirSync(join(dir, ".config"), { recursive: true });
+  mkdirSync(criteria);
+  writeFileSync(
+    join(criteria, "M1-gates.yaml"),
+    "module: M1\nname: gates\npurpose: P.\ncriteria:\n  - { id: a, level: lite, requires: convention, statement: A., observe: [a] }\n",
+  );
+  const record = (criteria: string, commit = head) =>
+    `version: 1\nplugin_version: 0.0.0\ndate: "2026-01-01"\ncommit: ${commit}\nshape: library\ncriteria:\n${criteria}`;
+  return { dir, criteria, record };
+}
+
+test("check-audit-fit passes on Jig and fails until a new criterion is scored", async () => {
+  expect(await checkAuditFit(root)).toBe(0);
+  const { dir, criteria, record } = scratch();
+  writeFileSync(join(dir, ".config/jig-audit.yaml"), record(a));
+  expect(await checkAuditFit(dir, criteria)).toBe(1);
+  writeFileSync(join(dir, ".config/jig.yaml"), "other_tool:\n  key: 1\n");
+  expect(await checkAuditFit(dir, criteria)).toBe(0);
+
+  writeFileSync(
+    join(criteria, "M1-gates.yaml"),
+    `${readFileSync(join(criteria, "M1-gates.yaml"), "utf8")}  - { id: b, level: lite, requires: convention, statement: B., observe: [b] }\n`,
+  );
+  expect(await checkAuditFit(dir, criteria)).toBe(1);
+  writeFileSync(
+    join(dir, ".config/jig-audit.yaml"),
+    record(`${a}  M1/b: { score: absent, evidence: "none" }\n`),
+  );
+  expect(await checkAuditFit(dir, criteria)).toBe(0);
+
+  writeFileSync(join(dir, "package.json"), '{"scripts": {"gates": "x"}}');
+  writeFileSync(
+    join(dir, ".config/jig.yaml"),
+    "gates:\n  comand: npm run gates\n",
+  );
+  expect(await checkAuditFit(dir, criteria)).toBe(1);
+  writeFileSync(
+    join(dir, ".config/jig.yaml"),
+    "gates:\n  command: npm run missing\n",
+  );
+  expect(await checkAuditFit(dir, criteria)).toBe(1);
+  writeFileSync(
+    join(dir, ".config/jig-audit.yaml"),
+    `${record(`${a}  M1/b: { score: absent, evidence: "none" }\n`)}declined:\n  - refs: ["config/derivation:gates.command"]\n    reason: Not now.\n    revisit_when: Later.\n`,
+  );
+  expect(await checkAuditFit(dir, criteria)).toBe(1);
+  // Declining an unknown field does not get it past the gate.
+  writeFileSync(
+    join(dir, ".config/jig.yaml"),
+    "gates:\n  comand: npm run gates\n",
+  );
+  writeFileSync(
+    join(dir, ".config/jig-audit.yaml"),
+    `${record(`${a}  M1/b: { score: absent, evidence: "none" }\n`)}declined:\n  - refs: ["config/unknown:gates.comand"]\n    reason: Not now.\n    revisit_when: Later.\n`,
+  );
+  expect(await checkAuditFit(dir, criteria)).toBe(1);
+
+  rmSync(join(dir, ".config/jig-audit.yaml"));
+  expect(await checkAuditFit(dir, criteria)).toBe(2);
+});
+
+test("check-audit-fit holds the record's commit to a full SHA in HEAD's history", async () => {
+  const { dir, criteria, record } = scratch();
+  writeFileSync(join(dir, ".config/jig.yaml"), "other_tool:\n  key: 1\n");
+  // A commit the repository holds but HEAD's history does not, as a squash
+  // merge leaves the branch commit a record named, fails; so does one the
+  // repository does not hold at all, and a ref name that follows HEAD.
+  const orphan = git(dir, ...identity, "commit-tree", "HEAD^{tree}", "-m", "s");
+  expectSpawnExit(orphan, 0);
+  const side = orphan.stdout.toString().trim();
+  expectSpawnExit(git(dir, "cat-file", "-e", `${side}^{commit}`), 0);
+  for (const named of [side, "0123456789abcdef0123456789abcdef01234567"]) {
+    writeFileSync(join(dir, ".config/jig-audit.yaml"), record(a, named));
+    expect(await checkAuditFit(dir, criteria)).toBe(1);
+  }
+  writeFileSync(join(dir, ".config/jig-audit.yaml"), record(a, "HEAD"));
+  expect(await checkAuditFit(dir, criteria)).toBe(1);
+  // An ancestor of HEAD passes once HEAD has moved on.
+  expectSpawnExit(
+    git(dir, ...identity, "commit", "-q", "--allow-empty", "-m", "b"),
+    0,
+  );
+  writeFileSync(join(dir, ".config/jig-audit.yaml"), record(a));
+  expect(await checkAuditFit(dir, criteria)).toBe(0);
+  // A shallow clone cannot show a commit is outside the history: a commit
+  // past its depth, or one it never fetched, is an inability to check.
+  const shallow = temp();
+  expectSpawnExit(
+    git(shallow, "clone", "-q", "--depth", "1", `file://${dir}`, "."),
+    0,
+  );
+  const tip = git(shallow, "rev-parse", "HEAD").stdout.toString().trim();
+  mkdirSync(join(shallow, ".config"));
+  writeFileSync(join(shallow, ".config/jig.yaml"), "other_tool:\n  key: 1\n");
+  for (const named of [
+    git(dir, "rev-parse", "HEAD~1").stdout.toString().trim(),
+    side,
+  ]) {
+    writeFileSync(join(shallow, ".config/jig-audit.yaml"), record(a, named));
+    expect(await checkAuditFit(shallow, criteria)).toBe(2);
+  }
+  writeFileSync(join(shallow, ".config/jig-audit.yaml"), record(a, tip));
+  expect(await checkAuditFit(shallow, criteria)).toBe(0);
+  // A repository git cannot read is an inability to check, not a mismatch.
+  rmSync(join(dir, ".git"), { recursive: true });
+  writeFileSync(join(dir, ".git"), "gitdir: /nonexistent\n");
+  expect(await checkAuditFit(dir, criteria)).toBe(2);
+});

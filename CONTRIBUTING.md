@@ -446,8 +446,9 @@ or removes a criterion is the exception: it updates the record's entries for
 those criteria in the same change, scoring a new or renamed one against the
 commit the record already audited and dropping a removed one. The gates
 enforce the mechanical half: such a change fails until the record matches the
-criteria, and Jig's configuration must fit the schema; the rest is this
-review.
+criteria, the record's commit must be in the history (a squash merge
+replaces a branch commit, so audit a commit of `main`), and Jig's
+configuration must fit the schema; the rest is this review.
 
 ## Licences
 
