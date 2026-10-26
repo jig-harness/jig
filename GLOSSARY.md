@@ -1601,7 +1601,7 @@ make, use the entry's term instead.
 - **Workspace runtime** — the app or terminal tool that creates an agent's
   workspace, usually a git *worktree*, and runs the agent session in it.
   Jig's practices name none; its tooling targets Herdr first and also
-  supports others, Conductor among them
+  supports others, Orca and Conductor among them
   ([ADR-0005](docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)).
 - **SSH (Secure Shell)** — the standard way to log in to another machine
   and run commands there over an encrypted connection; a *workspace runtime*

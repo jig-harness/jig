@@ -167,6 +167,16 @@ export function gitDir(root = consumerRoot()): string {
 }
 
 /**
+ * Where the journal lives by default, under the worktree's own git
+ * directory, as a relative path, so a tool that removes worktrees on another
+ * machine (the Orca workspace tool) can look for it without running git here.
+ */
+export const DEFAULT_JOURNAL_IN_GIT_DIR = join(
+  "jig",
+  "reflection-journal.jsonl",
+);
+
+/**
  * `path` as the file system spells it: its nearest existing ancestor with
  * links resolved and, on Windows, 8.3 short names expanded, as git spells the
  * top level; the part that does not exist yet as given.
@@ -193,7 +203,7 @@ export function journalPath(
   root = consumerRoot(),
 ): string {
   if (configured === null)
-    return join(gitDir(root), "jig", "reflection-journal.jsonl");
+    return join(gitDir(root), DEFAULT_JOURNAL_IN_GIT_DIR);
   const top = git(["rev-parse", "--show-toplevel"], root);
   if (top !== null) {
     const inside = relative(spelled(resolve(top)), spelled(configured));
@@ -258,7 +268,7 @@ type Env = Record<string, string | undefined>;
  * The harness, from the variables it sets: Claude Code sets `CLAUDECODE` and
  * `CLAUDE_CODE_ENTRYPOINT`; Codex sets variables named `CODEX_…`; a wrapper
  * that runs the harness adds its own (Herdr's `HERDR_ENV=1`, Conductor's
- * `CONDUCTOR_…`). `null` when nothing identifies one.
+ * `CONDUCTOR_…`, Orca's `ORCA_…`). `null` when nothing identifies one.
  */
 export function detectHarness(env: Env = process.env): Harness | null {
   const names = Object.keys(env);
@@ -269,6 +279,7 @@ export function detectHarness(env: Env = process.env): Harness | null {
   if (env.HERDR_ENV === "1") wrapper = "herdr";
   else if (names.some((key) => key.startsWith("CONDUCTOR_")))
     wrapper = "conductor";
+  else if (names.some((key) => key.startsWith("ORCA_"))) wrapper = "orca";
   if (name === null && wrapper === null) return null;
   return {
     name,

@@ -34,7 +34,7 @@ import { load } from "./yaml.ts";
 export const OVERLAY_RELPATH = ".config/jig.yaml";
 
 /** The user layer's file name, inside the Jig home directory. */
-const USER_CONFIG_FILE = "jig.yaml";
+export const USER_CONFIG_FILE = "jig.yaml";
 
 /** The prefix of an environment-layer variable; `__` separates the levels. */
 export const ENV_PREFIX = "JIG__";
@@ -113,7 +113,13 @@ export function isMapping(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-function nonEmpty(value: string | undefined): string | undefined {
+/**
+ * A layer-selection variable's value, or undefined when it is unset or
+ * blank: how every such variable (`JIG_HOME`, `JIG_OVERLAY`,
+ * `JIG_USER_LAYER`) is read, here and by a reader that selects the layers of
+ * another machine from that machine's environment.
+ */
+export function nonEmpty(value: string | undefined): string | undefined {
   return value === undefined || value.trim() === "" ? undefined : value;
 }
 
@@ -260,7 +266,10 @@ export function readConfigFile(path: string): Record<string, unknown> | null {
 }
 
 /** One layer's text, parsed as `readConfigFile` parses a file; `path` names it in errors. */
-function parseConfigText(text: string, path: string): Record<string, unknown> {
+export function parseConfigText(
+  text: string,
+  path: string,
+): Record<string, unknown> {
   let parsed: unknown;
   try {
     parsed = load(text);
