@@ -37,7 +37,14 @@ function git(dir: string, ...args: string[]) {
   return { ...result, exitCode: result.status };
 }
 
-const identity = ["-c", "user.name=t", "-c", "user.email=t@t"];
+const identity = [
+  "-c",
+  "user.name=t",
+  "-c",
+  "user.email=t@t",
+  "-c",
+  "commit.gpgSign=false",
+];
 const a = '  M1/a: { score: convention, evidence: "AGENTS.md" }\n';
 
 /** A scratch repository with one commit, one criterion, and a record writer. */
