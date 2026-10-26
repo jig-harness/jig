@@ -1134,8 +1134,12 @@ every round with
 `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/list-scanner-annotations.ts" <PR>` and work each
 as `/jig:resolve-review-comments` § 3 "Scanner annotations" says: fix the ones
 accepted in the same commit as the round's other fixes, and report the rest in
-§ 8. Exit `3` means the scanner has not finished the head: do not report the PR
-clean until a later listing exits `0` with nothing printed.
+§ 8. Only exit `0` reads the scanner's findings as complete: report the
+scanner clean once a listing exits `0` and every finding it printed is fixed
+or named with its outcome in a round report. The listing runs only in a round
+the gate (§ 1) lets start: the gate does not count annotations, so a drive
+whose only open findings are annotations converges without one (roadmap
+item 30).
 
 ### 3. Triage and act
 

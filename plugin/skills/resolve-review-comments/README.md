@@ -260,15 +260,20 @@ the person or the drive that owns CI.
 
 ## Scanner annotations
 
-Some tools report to the pull request as check-run annotations rather than as
-review threads or code scanning alerts: SonarQube Cloud's pull request
-decoration is one. They appear as warnings on the changed lines, and nothing
-in the thread listing shows them. `scripts/list-scanner-annotations.ts` lists
-the warnings and failures of the apps named in `review.scanner_apps` (default
-`sonarqubecloud`) on the head commit, and the skill works each as a finding:
-a fix, or a line in the round's report. Nothing can be replied to, resolved or
-dismissed from here, and the app clears an annotation itself when it analyses a
-head without the finding.
+Some tools report to the pull request as
+[scanner annotations](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+(check-run annotations) rather than as review threads or code scanning alerts:
+SonarQube Cloud's pull request decoration is one. They appear as warnings on
+the changed lines, and nothing in the thread listing shows them.
+`scripts/list-scanner-annotations.ts` lists the warnings and failures of the
+apps named in `review.scanner_apps` (default `sonarqubecloud`) on the head
+commit, and the skill works each as a finding: a fix, or a line in the round's
+report. Nothing can be replied to, resolved or dismissed from here, and the app
+clears an annotation itself when it analyses a head without the finding. The
+listing says so when it cannot vouch for a complete answer: a scanner still
+running, a configured one that has not reported, a check that did not analyse
+the head, or a head that moved. The drive does not yet wait for these findings
+before it converges.
 
 ## Platform support
 
