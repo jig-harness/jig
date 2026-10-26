@@ -115,10 +115,46 @@ function liveOrUnreadable(
  * process table itself could not be read, in which case nothing was
  * signalled.
  */
-export async function reapSurvivingDescendants(
+export function reapSurvivingDescendants(
   pid: number,
   deps: ReapDeps = {},
   captured: readonly Identity[] = [],
+): Promise<ReapReport | null> {
+  return reap(pid, deps, captured);
+}
+
+/**
+ * Kill every identity in `captured` that is still alive, with its own
+ * descendants, and witness them gone: the reap of `reapSurvivingDescendants`
+ * for processes a test named itself rather than found under its own pid.
+ */
+export function reapIdentities(
+  captured: readonly Identity[],
+  deps: ReapDeps = {},
+): Promise<ReapReport | null> {
+  return reap(null, deps, captured);
+}
+
+/**
+ * The identity of the process `pid` names now, when the process table shows
+ * it alive with a readable creation identity; null otherwise, and when the
+ * table could not be read.
+ */
+export async function identityOf(
+  pid: number,
+  table: Table = processTable,
+): Promise<Identity | null> {
+  const rows = await table();
+  const row = rows?.find(
+    (row) => row.pid === pid && !row.stat.startsWith("Z") && row.start !== "",
+  );
+  return row ? { pid: row.pid, start: row.start } : null;
+}
+
+async function reap(
+  pid: number | null,
+  deps: ReapDeps,
+  captured: readonly Identity[],
 ): Promise<ReapReport | null> {
   const deadline = Date.now() + (deps.timeoutMs ?? 10_000);
   const remaining = () => Math.max(0, deadline - Date.now());
@@ -147,17 +183,18 @@ export async function reapSurvivingDescendants(
 }
 
 /**
- * `pid`'s descendants and every captured identity's live process with its
- * descendants, split into the readable targets and the unreadable pids.
+ * `pid`'s descendants, when there is a `pid`, and every captured identity's
+ * live process with its descendants, split into the readable targets and the
+ * unreadable pids.
  */
 function collectTargets(
-  pid: number,
+  pid: number | null,
   rows: readonly ProcessRow[],
   captured: readonly Identity[],
 ): { targets: ProcessRow[]; unreadable: number[] } {
   const targets: ProcessRow[] = [];
   const unreadable: number[] = [];
-  const seen = new Set<number>([pid]);
+  const seen = new Set<number>(pid === null ? [] : [pid]);
   const take = (root: number) => {
     const tree = partitionProcessTree(root, rows);
     for (const row of [...tree.targets, ...tree.uncertain]) {
@@ -167,7 +204,7 @@ function collectTargets(
       else unreadable.push(row.pid);
     }
   };
-  take(pid);
+  if (pid !== null) take(pid);
   // A captured identity whose row is now unreadable is taken too: its
   // partition reports it, and what it started, as unreadable.
   for (const identity of captured) {

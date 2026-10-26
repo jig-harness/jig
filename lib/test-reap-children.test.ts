@@ -19,6 +19,8 @@ import { expectSpawnExit } from "./test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "./test-helpers/windows-skip.ts";
 import {
   captureDescendants,
+  identityOf,
+  reapIdentities,
   recordDescendants,
   reapSurvivingDescendants,
 } from "./test-reap-children.ts";
@@ -126,6 +128,45 @@ test("a captured descendant init adopted is killed with its own descendants; a r
     survived: [],
   });
   expect(killed.map(([pid]) => pid)).toEqual([301, 300]);
+});
+
+test("a reap of named identities kills each live one with its descendants, and no process it was not named", async () => {
+  const { killed, deps } = killable([
+    row(1, 0),
+    row(300, 1),
+    row(301, 300),
+    row(400, 1, "start-reused"),
+    row(500, 1),
+  ]);
+  const report = await reapIdentities(
+    [
+      { pid: 300, start: "start-300" },
+      { pid: 400, start: "start-400" },
+    ],
+    deps,
+  );
+  expect(report).toEqual({
+    signalled: [301, 300],
+    unreadable: [],
+    survived: [],
+  });
+  expect(killed.map(([pid]) => pid)).toEqual([301, 300]);
+});
+
+test("an identity is read only from a live row with a readable start", async () => {
+  const table = async () => [
+    row(100, 1),
+    { ...row(101, 1), stat: "Z" },
+    row(102, 1, ""),
+  ];
+  expect(await identityOf(100, table)).toEqual({
+    pid: 100,
+    start: "start-100",
+  });
+  expect(await identityOf(101, table)).toBeNull();
+  expect(await identityOf(102, table)).toBeNull();
+  expect(await identityOf(103, table)).toBeNull();
+  expect(await identityOf(100, async () => null)).toBeNull();
 });
 
 test("a captured identity whose row has become unreadable is reported, not dropped, and not signalled", async () => {
