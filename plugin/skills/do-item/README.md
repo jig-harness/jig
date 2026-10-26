@@ -42,3 +42,12 @@ snapshot. An issue with children selects one eligible child at a time; human
 checkpoints remain in force. Once a pull request exists, the drive owns its
 review rounds. See [the drive's README](../drive-pr/README.md) for inspecting
 or stopping it.
+
+## In Orca
+
+Run in a worktree of [Orca](https://www.onorca.dev), the skill also moves
+the worktree's card on Orca's workspace board, which the desktop app and
+Orca Mobile show: to In progress when it starts the issue, and to In review,
+with the pull request linked, once the pull request opens. Nothing turns
+this on and nothing in another runtime changes: outside Orca it makes no
+call, and an Orca call that fails only warns.

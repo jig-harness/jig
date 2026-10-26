@@ -46,6 +46,7 @@ import {
   configStep,
   DEFAULT_PROVIDER,
   parseConfig,
+  validateRoutes,
 } from "./config.ts";
 import { writeFileAtomic } from "./files.ts";
 import { conductorDbPath } from "./providers/conductor.ts";
@@ -360,13 +361,10 @@ function checkConfigFile(
     );
     configStep(config, () => {
       getTracker(parsed.tracker, { home, env });
-      for (const provider of parsed.providers.map(getProvider))
-        for (const [label, settings] of Object.entries(parsed.repos))
-          if (settings[provider.name] !== undefined)
-            provider.validateRepo(settings[provider.name], label);
+      validateRoutes(parsed, parsed.providers.map(getProvider));
     });
     plan.good(
-      `${config}: tracker ${parsed.tracker}, provider ${parsed.providers.join(", ")}, ${Object.keys(parsed.repos).length} routed repositories`,
+      `${config}: tracker ${parsed.tracker}, provider ${parsed.providers.join(", ")}, ${Object.keys(parsed.repos).length} routed repositories${Object.keys(parsed.defaults).length === 0 ? "" : `, defaults for ${Object.keys(parsed.defaults).join(", ")}`}`,
     );
   } catch (error) {
     plan.problem(error instanceof Error ? error.message : String(error));

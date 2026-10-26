@@ -596,11 +596,11 @@ converge until a round fixes it or records why it stands.
     whole process group. Supervise it there too, once what the host must
     provide is decided: `bun` for the shared supervisor, as the Herdr tool
     asks of its hosts, or a supervisor in the host's own shell;
-  - `do-item` and `drive-pr` could show their state on Orca's workspace
-    board (`orca worktree set --workspace-status`) and link the pull request
-    to the worktree (`orca reference add`), and the tracker's GitHub issues
-    could be linked with `--issue`; bring these in once a consumer runs its
-    work in Orca and wants them;
+  - `do-item` shows pickup and the opened pull request on Orca's
+    workspace board (`plugin/skills/do-item/scripts/orca-board.ts`); the review and merge
+    stages are not shown yet (`drive-pr` converged, the merge's follow-up
+    moving the card to `completed`), and the tracker's GitHub issues could
+    be linked with `--issue`;
   - a worktree created in the Orca app gets Orca's branch name and Orca's
     own setup hook, not the repository's convention and create hook; say in
     M12's mappings how a repository's `orca.yaml` setup script and Orca's

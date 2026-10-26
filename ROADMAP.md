@@ -230,9 +230,9 @@ the tool offers one.
   on the server rather than on the launching machine, so two machines never
   start it twice; reflection findings parked on a server's host before a
   removal, which today refuses while unsent ones are there; hooks on a
-  server's host supervised as they are on a machine; the delivery skills
-  showing their state on Orca's workspace board
-  and linking the pull request to the worktree; the drive, pickup and
+  server's host supervised as they are on a machine; the review and merge
+  stages shown on Orca's workspace board, beside the pickup and pull
+  request stages it shows today; the drive, pickup and
   review skills checked inside Orca worktrees on a server, as item 19 does
   for Herdr; and the tool and the launcher's Orca provider on Windows, where
   the tool's host steps (`sh`, `test`, `mkdir`) need the host's own shell
