@@ -463,31 +463,51 @@ function createWorktree(
   return { ...created, branch };
 }
 
-/** Link the issue in Orca's Linear integration; a failure only warns, since the link is a convenience. */
-function linkIssue(ws: Workspace, worktree: OrcaWorktree, issue: string): void {
+/** Set one of the worktree's Orca metadata fields; the reason it failed, or null. */
+function setWorktree(
+  ws: Workspace,
+  worktree: OrcaWorktree,
+  flag: string,
+  value: string,
+): string | null {
   const what = "orca worktree set";
-  let reason: string;
   try {
     const envelope = orcaCall(
       ws,
-      [
-        "worktree",
-        "set",
-        "--worktree",
-        `id:${worktree.id}`,
-        "--linear-issue",
-        issue,
-      ],
+      ["worktree", "set", "--worktree", `id:${worktree.id}`, flag, value],
       what,
     );
-    if (envelope.ok) return;
-    reason = orcaErrorText(envelope.error);
+    return envelope.ok ? null : orcaErrorText(envelope.error);
   } catch (error) {
-    reason = error instanceof Error ? error.message : String(error);
+    return error instanceof Error ? error.message : String(error);
   }
-  ws.orca.log(
-    `⚠ could not link ${issue} to the worktree in Orca (${reason}); connect Orca's Linear integration to have it linked`,
-  );
+}
+
+/** Link the issue in Orca's Linear integration; a failure only warns, since the link is a convenience. */
+function linkIssue(ws: Workspace, worktree: OrcaWorktree, issue: string): void {
+  const reason = setWorktree(ws, worktree, "--linear-issue", issue);
+  if (reason !== null)
+    ws.orca.log(
+      `⚠ could not link ${issue} to the worktree in Orca (${reason}); connect Orca's Linear integration to have it linked`,
+    );
+}
+
+/**
+ * Bring a reattached worktree's comment up to date. Creation set the comment
+ * an earlier open asked for; with no agent to start, the comment carries the
+ * prompt the person pastes on another device, so it is replaced. A failure
+ * only warns: the prompt is on this machine's clipboard or printed too.
+ */
+function updateComment(
+  ws: Workspace,
+  worktree: OrcaWorktree,
+  comment: string,
+): void {
+  const reason = setWorktree(ws, worktree, "--comment", comment);
+  if (reason !== null)
+    ws.orca.log(
+      `⚠ could not update the worktree's comment in Orca (${reason}); it may hold an earlier prompt`,
+    );
 }
 
 /** The receipt an open takes before it starts the agent; recorded only when `file` is. */
@@ -593,6 +613,8 @@ export function openWorkspace(ws: Workspace, requested: OpenOptions): Opened {
   ensureUpstreamTracking(ws.host, repo.path, branch);
   if (requested.linearIssue !== undefined)
     linkIssue(ws, worktree, requested.linearIssue);
+  if (found !== null && requested.noAgent && requested.comment !== undefined)
+    updateComment(ws, worktree, requested.comment);
   // The worktree's own git directory: where the create hook's mark and claim
   // are kept, and the token that tells this worktree from one that stood at
   // its path before (worktree-token.ts), which a receipt of the key's agent

@@ -322,6 +322,25 @@ describe("with no agent named", () => {
       `paste the prompt, which is below and in the worktree's comment:\n/jig:do-item ENG-1`,
     );
   });
+
+  test("hands the launch's signal to the clipboard, and a cancelled launch fails", async () => {
+    const launch = new AbortController();
+    const signals: AbortSignal[] = [];
+    await expect(
+      orcaProvider({
+        copy: async (_text, signal) => {
+          signals.push(signal);
+          launch.abort();
+          return null;
+        },
+        open: async (_repo, options) => ({
+          ...opened(options),
+          agentLaunched: false,
+        }),
+      }).open({ ...request("app"), signal: launch.signal }),
+    ).rejects.toThrow("cancelled");
+    expect(signals).toEqual([launch.signal]);
+  });
 });
 
 describe("an agent's model, effort and surface", () => {

@@ -280,12 +280,20 @@ export function ensureCreateHook(
  * The script a background setup tab runs, as `sh -c <script> sh <claim>
  * <mark> <hook> <worktree>`: the same claim and mark as `ensureCreateHook`,
  * so the hook still runs once per worktree whichever way an open started it.
+ * A claim another open holds is told from any other `mkdir` failure by the
+ * reason it gives, as `takeHookClaim` tells it; a mark that cannot be written
+ * fails the run, as `runClaimedHook` fails it.
  */
 export const BACKGROUND_SETUP_SCRIPT = [
-  'mkdir "$1" 2>/dev/null || { echo "setup: another open is running it"; exit 0; }',
+  'if ! e=$(LC_ALL=C mkdir "$1" 2>&1); then',
+  '  case "$e" in *": File exists") echo "setup: another open is running it"; exit 0 ;; esac',
+  '  echo "✗ setup could not take its claim: $e"; exit 1',
+  "fi",
   'if [ -f "$2" ]; then rm -rf "$1"; echo "setup: already done"; exit 0; fi',
   'cd "$4" && "$3"; s=$?',
-  'if [ "$s" -eq 0 ]; then printf ok > "$2" && echo "✓ setup done"; else echo "✗ setup failed (exit $s); open the issue again to run it again"; fi',
+  'if [ "$s" -ne 0 ]; then echo "✗ setup failed (exit $s); open the issue again to run it again"',
+  'elif printf ok > "$2"; then echo "✓ setup done"',
+  'else s=1; echo "✗ setup ran, but its mark $2 could not be written; open the issue again to run it again"; fi',
   'rm -rf "$1"; exit "$s"',
 ].join("\n");
 
@@ -319,7 +327,10 @@ export type BackgroundSetup = "started" | "done" | "running" | "none";
  * the tab and starts an agent when it is done. Nothing is started when the
  * mark says the hook ran, or a claim says an open is running it; two opens
  * that both start a tab still run the hook once, since the tab's script
- * takes the claim itself (`BACKGROUND_SETUP_SCRIPT`).
+ * takes the claim itself (`BACKGROUND_SETUP_SCRIPT`). A claim the tab never
+ * gave back, its tab closed before the hook ended, reads as running, so the
+ * open names it and how to clear it; anything but a directory at the claim's
+ * path is refused.
  */
 export function startCreateHook(
   ws: Workspace,
@@ -331,7 +342,17 @@ export function startCreateHook(
   const mark = `${dir}/${CREATE_HOOK_MARK}`;
   const claim = `${dir}/${CREATE_HOOK_CLAIM}`;
   if (exists(ws, "-f", mark)) return "done";
-  if (inspectPath(ws, claim) !== "absent") return "running";
+  const held = inspectPath(ws, claim);
+  if (held === "directory") {
+    ws.host.log(
+      `… ${HOOKS_DIR}/create is already running for this worktree (claim ${claim}); if no "setup" tab is running it, remove ${claim} and open the issue again, which runs it again`,
+    );
+    return "running";
+  }
+  if (held !== "absent")
+    throw new OrcaError(
+      `${claim} is a ${held === "file" ? "file" : "special file"}, not the create hook's claim; remove it and open the issue again`,
+    );
   orcaJson(
     ws,
     [

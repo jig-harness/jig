@@ -101,9 +101,12 @@ leaves the same mark (`sh -c` with `mkdir`, the hook in the worktree, then
 `printf ok` into the mark), so the hook still runs once per worktree: an
 open that finds the mark starts no tab, one that finds the claim held starts
 no second one, and a failed run leaves no mark, so the next open runs it
-again. The tab is a terminal on the machine the clone is on, so nothing from
+again. A claim whose tab was closed before the hook ended stays; an open
+that finds it names it, and removing it lets the next open run the hook. The
+tab is a terminal on the machine the clone is on, so nothing from
 Jig supervises it there; a person watches it. `--json` reports `setupInTab`
-when the hook runs, or still runs, in that tab.
+when the hook runs, or still runs, in that tab. On a worktree that already
+existed, `--comment` replaces its comment, which carries the prompt to paste.
 
 **`remove`** runs the repository's remove hook inside the worktree, parks the
 worktree's unsent [reflection](../../plugin/skills/reflect/README.md)
@@ -298,7 +301,7 @@ repository's `id` and `path`), `repo add --path <clone>` (only when
 with `id`, `path`, `branch`), `worktree create --repo id:<id> --name <name>
 --base-branch <ref> --no-parent --setup skip [--comment] [--activate]`
 (the created `worktree`), `worktree set --worktree id:<id> --linear-issue
-<key>`, `agent launch --agent <id> --worktree id:<id> [--prompt] [--model]
+<key>` and `--comment <text>` (the latter on reattaching with `--no-agent`), `agent launch --agent <id> --worktree id:<id> [--prompt] [--model]
 [--effort] [--surface]`, `terminal create --worktree id:<id> --title setup
 --command <text>` (with `--no-agent`), and
 `worktree rm --worktree id:<id> [--force]`. An error comes back as

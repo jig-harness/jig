@@ -25,16 +25,20 @@ export function clipboardCommands(platform: NodeJS.Platform): string[][] {
   ];
 }
 
-/** Runs `argv` with `text` on stdin; true when it exited 0. The seam tests replace. */
-export type CopyRunner = (argv: string[], text: string) => Promise<boolean>;
+/** Runs `argv` with `text` on stdin, ended when `signal` aborts; true when it exited 0. The seam tests replace. */
+export type CopyRunner = (
+  argv: string[],
+  text: string,
+  signal: AbortSignal,
+) => Promise<boolean>;
 
-const runCopy: CopyRunner = async (argv, text) => {
+const runCopy: CopyRunner = async (argv, text, signal) => {
   try {
     const proc = Bun.spawn(argv, {
       stdin: new Blob([text]),
       stdout: "ignore",
       stderr: "pipe",
-      signal: AbortSignal.timeout(COPY_TIMEOUT_MS),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(COPY_TIMEOUT_MS)]),
     });
     // A command that refuses (no display for xclip, say) says why on stderr;
     // read it so the pipe drains, and let the next command be tried.
@@ -49,13 +53,20 @@ const runCopy: CopyRunner = async (argv, text) => {
   }
 };
 
-/** Copy `text`; the command that took it, or null when none could. */
+/**
+ * Copy `text`; the command that took it, or null when none could. Once
+ * `signal` aborts, no further command is tried and the running one is ended,
+ * so a cancelled launch leaves the clipboard alone.
+ */
 export async function copyToClipboard(
   text: string,
+  signal: AbortSignal,
   platform: NodeJS.Platform = process.platform,
   run: CopyRunner = runCopy,
 ): Promise<string | null> {
-  for (const argv of clipboardCommands(platform))
-    if (await run(argv, text)) return argv[0] ?? null;
+  for (const argv of clipboardCommands(platform)) {
+    if (signal.aborted) return null;
+    if (await run(argv, text, signal)) return argv[0] ?? null;
+  }
   return null;
 }

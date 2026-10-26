@@ -528,13 +528,18 @@ converge until a round fixes it or records why it stands.
 
 ### 31. Routing work to an agent, a model and an effort
 
-Every launch and every delegation runs the agent, model and effort someone
-configured once, whatever the work. A bug fix in one file and an epic's
+`do-item` already chooses which agent implements an issue, from the
+change-area catalog, the issue's labels and its title
+(`determine_agent.ts`), but nothing chooses the model or the effort, and
+nothing learns from how the work went. A bug fix in one file and an epic's
 architecture spike get the same model; a person picks by hand, or the
-workspace launcher starts its default. The launcher now hands the start to
-the person by default, and starts an agent only where its settings name one
-([tools/launcher](../tools/launcher/README.md)); routing is what would
-let it, and `do-item`'s delegation, choose. Open questions before a design:
+workspace launcher starts its default. The launcher's Orca provider now
+hands the start to the person by default, and starts an agent only where
+its settings name one; the Herdr provider still starts `claude` unless its
+settings name another ([tools/launcher](../tools/launcher/README.md)).
+Routing is what would let the launcher, and `do-item`'s delegation, choose
+the model and the effort too, building on the agent selection that exists
+rather than replacing it. Open questions before a design:
 
 - the inputs: the work type (item 27), size and the area's sensitivity flags
   from the change-area catalog, the repository's history of what each

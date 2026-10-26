@@ -268,8 +268,8 @@ export interface OrcaDeps {
     file: string,
     signal: AbortSignal,
   ) => Promise<string>;
-  /** Put the prompt on this machine's clipboard; the command that took it, or null. */
-  copy: (text: string) => Promise<string | null>;
+  /** Put the prompt on this machine's clipboard; the command that took it, or null. Stops when `signal` aborts. */
+  copy: (text: string, signal: AbortSignal) => Promise<string | null>;
   /** Run the workspace tool's `open` for the repository; ends it when `signal` aborts. */
   open: (
     repo: OrcaRepo,
@@ -359,7 +359,7 @@ async function openHere(
 
 const defaultDeps: OrcaDeps = {
   copyCache: copyCacheOverSsh,
-  copy: (text) => copyToClipboard(text),
+  copy: (text, signal) => copyToClipboard(text, signal),
   open: openHere,
 };
 
@@ -369,6 +369,7 @@ async function outcome(
   opened: Opened,
   prompt: string,
   copy: OrcaDeps["copy"],
+  signal: AbortSignal,
 ): Promise<string> {
   if (repo.agent !== undefined)
     return opened.agentLaunched
@@ -377,7 +378,11 @@ async function outcome(
         ? "; its agent was already started"
         : "";
   const setup = opened.setupInTab ? '; setup runs in its "setup" tab' : "";
-  const copied = await copy(prompt);
+  const copied = await copy(prompt, signal);
+  if (signal.aborted)
+    throw new OrcaError(
+      "the launch was cancelled before the prompt was handed over",
+    );
   return `${setup}; no agent started: open an agent tab in Orca and paste the prompt, which is ${copied === null ? "below" : "on the clipboard"} and in the worktree's comment${copied === null ? `:\n${prompt}` : ""}`;
 }
 
@@ -418,7 +423,7 @@ export function orcaProvider(deps: Partial<OrcaDeps> = {}): Provider {
         request.signal,
       );
       console.error(
-        `[launcher] ${request.issue}: ${opened.reattached ? "reattached to" : "opened"} ${opened.path} (${opened.branch})${await outcome(repo, opened, prompt, copy)}`,
+        `[launcher] ${request.issue}: ${opened.reattached ? "reattached to" : "opened"} ${opened.path} (${opened.branch})${await outcome(repo, opened, prompt, copy, request.signal)}`,
       );
     },
   };
