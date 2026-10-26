@@ -52,10 +52,21 @@ async function writtenPid(pidFile: string): Promise<number> {
 }
 
 /**
+ * Shell that waits until the fixture's directory holds a `release` file or is
+ * gone, for 30 seconds at most. A fixture process runs this rather than a
+ * plain sleep, so the test can end it by writing one file: that needs no pid
+ * and no identity, and still works when taking the identity failed. The
+ * directory's removal ends it too, because the run's temporary root can be
+ * removed before the loop next looks for the file.
+ */
+const untilReleased =
+  'd=$(dirname "$0"); n=0; while [ -d "$d" ] && [ ! -e "$d/release" ] && [ "$n" -lt 300 ]; do sleep 0.1; n=$((n + 1)); done';
+
+/**
  * The identity of the process `pidFile` names, taken as soon as the process
- * has named itself and is still running its 30-second sleep, so the pid names
- * the fixture and no process that reused it. Teardown reaps this identity
- * rather than reading the pid again.
+ * has named itself and is still waiting for its release, so the pid names the
+ * fixture and no process that reused it. Teardown reaps this identity rather
+ * than reading the pid again.
  */
 async function ownedIdentity(pidFile: string) {
   const pid = await writtenPid(pidFile);
@@ -65,15 +76,28 @@ async function ownedIdentity(pidFile: string) {
   return identity;
 }
 
-/** Ends the owned process, with its descendants, or fails the test. */
-async function reap(identity: Identity | null) {
-  if (identity !== null) await reapOwnedIdentities([identity]);
+/**
+ * Ends the fixture's processes: releases them first, which needs nothing the
+ * test may have failed to take, gives the owned process 2 seconds to leave on
+ * its own, then reaps it, with its descendants, and fails the test unless
+ * every one is witnessed gone.
+ */
+async function release(bin: string, identity: Identity | null) {
+  writeFileSync(join(bin, "release"), "");
+  if (identity === null) return;
+  const deadline = Date.now() + 2_000;
+  while (
+    Date.now() < deadline &&
+    (await identityOf(identity.pid))?.start === identity.start
+  )
+    await Bun.sleep(20);
+  await reapOwnedIdentities([identity]);
 }
 
 test("the runner returns at the command's exit while a child it forked keeps its streams", async () => {
   // wl-copy and xclip fork a child that serves the clipboard.
   const { bin } = fakeCopier(
-    'sleep 30 &\necho $! > "$(dirname "$0")/child"\nexit 0',
+    `(${untilReleased}) &\necho $! > "$(dirname "$0")/child"\nexit 0`,
   );
   let child: Identity | null = null;
   try {
@@ -84,13 +108,13 @@ test("the runner returns at the command's exit while a child it forked keeps its
     expect(took).toBe(true);
     expect(elapsed).toBeLessThan(2_000);
   } finally {
-    await reap(child);
+    await release(bin, child);
   }
 });
 
 test("the runner returns once its signal aborts, from a command that ignores SIGTERM", async () => {
   const { bin } = fakeCopier(
-    'trap \'\' TERM\necho $$ > "$(dirname "$0")/pid"\nexec sleep 30',
+    `trap '' TERM\necho $$ > "$(dirname "$0")/pid"\n${untilReleased}`,
   );
   const launch = new AbortController();
   let command: Identity | null = null;
@@ -102,7 +126,8 @@ test("the runner returns once its signal aborts, from a command that ignores SIG
     expect(await copying).toBe(false);
     expect(Date.now() - started).toBeLessThan(4_000);
   } finally {
-    await reap(command);
+    launch.abort();
+    await release(bin, command);
   }
 });
 
