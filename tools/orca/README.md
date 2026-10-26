@@ -25,7 +25,7 @@ Orca is supported through the same interfaces, as Conductor is.
 ```sh
 bun tools/orca/workspace.ts open --repo <name> --branch <name> [--environment <name> --ssh <host>] \
     [--reuse-prefix <text>] [--base <ref>] [--agent <id>] [--no-agent] [--prompt <text>] [--key <key>] \
-    [--comment <text>] [--linear-issue <key>] [--activate] [--json]
+    [--comment <text>] [--linear-issue <key>] [--activate] [--clone-url <url> --clone-root <dir>] [--json]
 bun tools/orca/workspace.ts remove --repo <name> --branch <name> [--environment <name> --ssh <host>] [--force]
 ```
 
@@ -36,7 +36,9 @@ reattaches to the checkout that already has the branch. With
 branch: the one existing branch, local or on origin, whose name starts with
 it is opened instead of `--branch`, so work started under an earlier name
 keeps its branch; several stop the run unless `--branch` is one of them.
-Then:
+When Orca has no repository by that name and `--clone-url` and
+`--clone-root` are given, it is cloned and added to Orca first
+([below](#a-repository-orca-does-not-have)). Then:
 
 1. It looks for a checkout of the branch in the clone's own `git worktree
    list`. One that Orca lists is reattached. One Orca does not list (a
@@ -139,6 +141,35 @@ connection around it.
 Exit codes: 0 done; 1 a step failed, and the message says what to do; 2
 usage.
 
+## A repository Orca does not have
+
+A machine meant to hold every repository of an organization, such as an
+always-on Orca server, is rarely kept complete by hand. With `--clone-url`
+and `--clone-root`, an `open` of a repository Orca does not have makes it
+available first, on the machine the clone goes on (this one, or `--ssh`'s):
+
+1. It reads the root, absolute or under `~/` (the home directory that
+   machine's shell reports), creates it if needed, and takes a claim beside
+   the clone's path (`<root>/.<repo>.jig-orca-clone`, which `mkdir` creates
+   for exactly one open). An open that finds the claim held waits, up to the
+   clone's limit (10 minutes), until Orca has the repository, and stops when
+   the claim is given back without it.
+2. Under the claim it asks Orca again, since an open that held the claim
+   before may have added it. Otherwise it clones the URL into
+   `<root>/<repo>`; a directory already there is used only when its `origin`
+   is that URL, and anything else there stops the run for a person to look
+   at. The clone runs without a terminal, so the machine needs credentials
+   for the URL that ask nothing (an SSH key, a credential helper).
+3. It adds the clone to Orca (`orca repo add --path`), which names the
+   repository after its directory, gives the claim back, and goes on with
+   the open. A new branch is cut from the clone's `origin/HEAD` unless
+   `--base` says otherwise.
+
+Orca's own `orca project setup-clone` clones onto a host too; the tool uses
+plain `git clone` and `repo add` so the clone has the same name, path and
+credentials on a machine as over SSH, and so a clone of the same URL that
+is already there is reused.
+
 ## Starting the agent once
 
 Orca does not say whether an agent in a worktree already received a prompt,
@@ -240,7 +271,8 @@ the launcher's `orca` settings (`environment`, `ssh`) do the same.
 
 The tool reads these commands and answers of Orca's command-line tool, each
 with `--json`, and `--environment <name>` for a server: `repo show` (the
-repository's `id` and `path`), `worktree list --repo id:<id>` (`worktrees[]`
+repository's `id` and `path`), `repo add --path <clone>` (with
+`--clone-url`), `worktree list --repo id:<id>` (`worktrees[]`
 with `id`, `path`, `branch`), `worktree create --repo id:<id> --name <name>
 --base-branch <ref> --no-parent --setup skip [--comment] [--activate]`
 (the created `worktree`), `worktree set --worktree id:<id> --linear-issue

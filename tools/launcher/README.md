@@ -76,6 +76,7 @@ because the tracker starts the launcher before any repository is known.
 | `skill` | `/jig:do-item` | The slash command the first prompt starts with; the issue key follows it. |
 | `repo_label_group` | `Repo` | The tracker label group whose value names the repository. |
 | `repos` | none | Repository label → that repository's settings, one entry per provider. |
+| `defaults` | none | Provider → the settings every repository label starts from; `{label}` in them is the label. |
 
 ```yaml
 provider: conductor
@@ -86,9 +87,29 @@ repos:
     conductor: Website
 ```
 
-An issue whose label has no entry, that carries no label in the group, or whose
-labels could not be read in full, is not routed; the provider then detects the
-repository itself.
+An issue whose label has no entry (and no `defaults` apply), that carries no
+label in the group, or whose labels could not be read in full, is not
+routed; the provider then detects the repository itself.
+
+`defaults` serves a machine that opens every repository the same way: a
+label with no entry opens with the defaults, `{label}` in any of their
+values read as the label, and a label with an entry has, for each provider,
+its own mapping laid over the default's keys one by one. An entry that is not
+a mapping (a provider's short form, such as `orca: my-tool`) replaces the
+default whole. The defaults are checked as an unlisted label would have them
+on every launch, as the entries are:
+
+```yaml
+provider: [orca, conductor]
+defaults:
+  orca:
+    repo: "{label}"                 # the label names the repository
+    environment: build-box
+    clone: {url: "git@github.com:acme/{repo}.git", root: ~/dev}
+repos:
+  website:
+    orca: {repo: acme-website}      # the one label that differs from its repository
+```
 
 With a list, an issue opens with the first provider its repository has an
 entry for, and an unrouted issue, or one whose repository has an entry for
@@ -257,6 +278,9 @@ repos:
       base: origin/main        # base of a new branch; the clone's origin/HEAD when absent
       branch: feature/{key}-{slug}   # how the repository names an issue's branch
       slug: ascii              # {slug} in a-z and 0-9 only; any (every script) when absent
+      clone:                   # when Orca has no such repository: clone it, add it, then open
+        url: git@github.com:acme/{repo}.git   # {repo} is the repository's name above
+        root: ~/dev            # on the machine the clone goes on: absolute, or under ~/
 ```
 
 `branch` and `slug` name the branch exactly as they do for Herdr, above, and
@@ -275,7 +299,7 @@ starts nothing, and two launches at once start it once. An unrouted issue is
 refused: Orca has several repositories and nothing in the issue picks one.
 The tool runs as a process of its own, as the Herdr tool does, so the
 launcher's deadline ends it; the provider's budget is the Orca tool's own
-limit for `open` (sized for the create hook and a wait on another launch)
+limit for `open` (sized for a clone, the create hook and a wait on another launch)
 plus the connection around it. How to run Orca's server on a host, and what
 the tool relies on in Orca, are in its [README](../orca/README.md).
 

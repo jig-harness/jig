@@ -6,7 +6,7 @@
  * Usage:
  *   bun tools/orca/workspace.ts open --repo <name> --branch <name> [--environment <name> --ssh <host>]
  *       [--reuse-prefix <text>] [--base <ref>] [--agent <id>] [--no-agent] [--prompt <text>] [--key <key>]
- *       [--comment <text>] [--linear-issue <key>] [--activate] [--json]
+ *       [--comment <text>] [--linear-issue <key>] [--activate] [--clone-url <url> --clone-root <dir>] [--json]
  *   bun tools/orca/workspace.ts remove --repo <name> --branch <name> [--environment <name> --ssh <host>] [--force]
  *
  * `open` creates the branch's worktree through Orca, or reattaches to the
@@ -14,7 +14,9 @@
  * names a new branch after the worktree, under its own prefix), runs the
  * repository's create hook once, and starts the agent with the prompt once
  * per `--key` and agent. With `--reuse-prefix`, the one existing branch whose
- * name starts with it is opened instead of `--branch`. `--json` prints what
+ * name starts with it is opened instead of `--branch`. With `--clone-url`
+ * and `--clone-root`, a repository Orca does not have is cloned into
+ * `<root>/<repo>` and added to Orca first (clone.ts). `--json` prints what
  * was opened; progress goes to stderr.
  *
  * `remove` runs the repository's remove hook in the worktree, parks its
@@ -68,6 +70,11 @@ import {
   textOf,
 } from "./cli.ts";
 import {
+  CLONE_TIMEOUT_MS,
+  type CloneSource,
+  cloneMissingRepo,
+} from "./clone.ts";
+import {
   assertNoUnsentFindings,
   ensureCreateHook,
   gitDirOf,
@@ -89,7 +96,7 @@ export { fileSegment, type Receipt, receiptPath } from "./receipts.ts";
 export const USAGE = `usage:
   workspace.ts open --repo <name> --branch <name> [--environment <name> --ssh <host>] [--reuse-prefix <text>]
       [--base <ref>] [--agent <id>] [--no-agent] [--prompt <text>] [--key <key>] [--comment <text>]
-      [--linear-issue <key>] [--activate] [--json]
+      [--linear-issue <key>] [--activate] [--clone-url <url> --clone-root <dir>] [--json]
   workspace.ts remove --repo <name> --branch <name> [--environment <name> --ssh <host>] [--force]`;
 
 /**
@@ -98,9 +105,12 @@ export const USAGE = `usage:
  * claim and mark, the worktree's token, where the journal is and its read.
  */
 const COMMAND_ALLOWANCE = 30;
-/** The time `open` may take: the create hook, waiting for another open's start of the agent, and the calls around them. */
+/** The time `open` may take: a clone, the create hook, waiting for another open's start of the agent, and the calls around them. */
 export const OPEN_LIMIT_MS =
-  HOOK_TIMEOUT_MS + CLAIM_WAIT_MS + COMMAND_ALLOWANCE * COMMAND_TIMEOUT_MS;
+  CLONE_TIMEOUT_MS +
+  HOOK_TIMEOUT_MS +
+  CLAIM_WAIT_MS +
+  COMMAND_ALLOWANCE * COMMAND_TIMEOUT_MS;
 /** The time `remove` may take: the remove hook, parking, and the calls around them. */
 export const REMOVE_LIMIT_MS =
   HOOK_TIMEOUT_MS + PARK_TIMEOUT_MS + COMMAND_ALLOWANCE * COMMAND_TIMEOUT_MS;
@@ -131,6 +141,8 @@ export interface OpenOptions {
   linearIssue?: string;
   /** Reveal a new worktree in the Orca app. */
   activate: boolean;
+  /** Clone the repository from here and add it to Orca when Orca does not have it. */
+  clone?: CloneSource;
 }
 
 export interface Opened {
@@ -165,22 +177,28 @@ function sameText(a: string, b: string): boolean {
   return a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
 }
 
-/** The repository Orca knows by `name`: its id and its clone's path on Orca's machine. */
-function repoOf(ws: Workspace, name: string): OrcaRepo {
+/**
+ * The repository Orca knows by `name`: its id and its clone's path on Orca's
+ * machine. With `clone`, a repository Orca does not have is cloned and added
+ * first.
+ */
+function repoOf(ws: Workspace, name: string, clone?: CloneSource): OrcaRepo {
   const what = `orca repo show ${name}`;
   const envelope = orcaCall<{ repo?: unknown }>(
     ws,
     ["repo", "show", "--repo", `name:${name}`],
     what,
   );
-  if (!envelope.ok) {
-    if (envelope.error.code === "repo_not_found")
-      throw new OrcaError(
-        `Orca${onServer(ws.target)} has no repository named ${name}; add the clone there with orca repo add --path <clone>, or name one of orca repo list`,
-      );
+  let found: unknown;
+  if (envelope.ok) found = envelope.result?.repo;
+  else if (envelope.error.code !== "repo_not_found")
     throw new OrcaError(`${what}: ${orcaErrorText(envelope.error)}`);
-  }
-  const repo = recordOf(envelope.result?.repo, what);
+  else if (clone !== undefined) found = cloneMissingRepo(ws, name, clone);
+  else
+    throw new OrcaError(
+      `Orca${onServer(ws.target)} has no repository named ${name}; add the clone there with orca repo add --path <clone>, or name one of orca repo list`,
+    );
+  const repo = recordOf(found, what);
   return { id: textOf(repo, "id", what), path: textOf(repo, "path", what) };
 }
 
@@ -459,6 +477,29 @@ function linkIssue(ws: Workspace, worktree: OrcaWorktree, issue: string): void {
   );
 }
 
+/** The receipt an open takes before it starts the agent; recorded only when `file` is. */
+function pendingReceipt(
+  ws: Workspace,
+  repo: OrcaRepo,
+  worktree: OrcaWorktree,
+  dir: string,
+  options: OpenOptions,
+  file: string | null,
+): Receipt {
+  const recorded = file !== null;
+  return {
+    key: options.key ?? "",
+    status: "pending",
+    repoId: repo.id,
+    worktreeId: worktree.id,
+    worktreeToken: recorded ? worktreeToken(ws, dir) : "",
+    agent: options.agent,
+    environment: ws.target.environment ?? null,
+    at: new Date().toISOString(),
+    ...(recorded ? { owner: ownerLine(ws.orca).trim() } : {}),
+  };
+}
+
 /**
  * Start the agent, once per key and agent. The receipt carries the
  * worktree's token, read from its git directory `dir` (and published there
@@ -479,17 +520,7 @@ function launchAgent(
   const key = options.key;
   const file =
     key === undefined ? null : receiptPath(ws, repo.id, key, options.agent);
-  const receipt: Receipt = {
-    key: key ?? "",
-    status: "pending",
-    repoId: repo.id,
-    worktreeId: worktree.id,
-    worktreeToken: file === null ? "" : worktreeToken(ws, dir),
-    agent: options.agent,
-    environment: ws.target.environment ?? null,
-    at: new Date().toISOString(),
-    ...(file === null ? {} : { owner: ownerLine(ws.orca).trim() }),
-  };
+  const receipt = pendingReceipt(ws, repo, worktree, dir, options, file);
   if (file !== null && !claimReceipt(ws, file, receipt))
     return { agentLaunched: false, kickoff: "already-sent" };
   const prompt =
@@ -530,7 +561,7 @@ function launchAgent(
 
 export function openWorkspace(ws: Workspace, requested: OpenOptions): Opened {
   assertBranchName(ws.host, requested.branch);
-  const repo = repoOf(ws, requested.repo);
+  const repo = repoOf(ws, requested.repo, requested.clone);
   const branch = chooseBranch(
     ws,
     repo.path,
@@ -688,7 +719,20 @@ export function openArgs(options: OpenOptions, target: Target = {}): string[] {
     ...optional("--comment", options.comment),
     ...optional("--linear-issue", options.linearIssue),
     ...(options.activate ? ["--activate"] : []),
+    ...optional("--clone-url", options.clone?.url),
+    ...optional("--clone-root", options.clone?.root),
   ];
+}
+
+/** `--clone-url` and `--clone-root`, which go together. */
+function parseCloneFlags(
+  url: string | undefined,
+  root: string | undefined,
+): { clone?: CloneSource } {
+  if (url === undefined && root === undefined) return {};
+  if (url === undefined || root === undefined)
+    throw new UsageError(`--clone-url and --clone-root go together\n${USAGE}`);
+  return { clone: { url, root } };
 }
 
 export function parseOpen(
@@ -711,6 +755,8 @@ export function parseOpen(
         comment: { type: "string" },
         "linear-issue": { type: "string" },
         activate: { type: "boolean" },
+        "clone-url": { type: "string" },
+        "clone-root": { type: "string" },
         json: { type: "boolean" },
       },
     },
@@ -744,6 +790,7 @@ export function parseOpen(
     ...optional(values.comment, "comment"),
     ...optional(values["linear-issue"], "linearIssue"),
     activate: values.activate ?? false,
+    ...parseCloneFlags(values["clone-url"], values["clone-root"]),
     json: values.json ?? false,
   };
 }

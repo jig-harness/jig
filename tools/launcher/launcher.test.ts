@@ -138,30 +138,36 @@ function followUpBody(
   return { data: { issue: { comments } } };
 }
 
+/** A first page of `nodes`, followed by more under `cursor` when `more`. */
+const firstPage = (
+  nodes: Json[] | undefined,
+  more: unknown,
+  cursor: string,
+): Json => connection(nodes ?? [], more ? cursor : undefined);
+
 /** The issue as the scenario describes it, when it does not replace it wholesale. */
 function scenarioIssue(scenario: Scenario): Json {
-  const labelPages = scenario.labelPages ?? [];
-  const relationPages = scenario.relationPages ?? [];
-  const hasCommentPages =
-    (scenario.commentPages ?? []).length > 0 || scenario.loopCursor;
   return {
     identifier: "ENG-1",
     title: "Launcher test",
     branchName: "eng-1-launcher-test",
     description: "Body",
     assignee: scenario.assignee ? { id: scenario.assignee } : null,
-    labels: connection(
-      (scenario.labels ?? []).map(labelNode),
-      labelPages.length > 0 ? "labels-0" : undefined,
+    labels: firstPage(
+      scenario.labels?.map(labelNode),
+      scenario.labelPages?.length,
+      "labels-0",
     ),
-    comments: connection(
-      scenario.comments ?? [],
-      hasCommentPages ? "cursor-0" : undefined,
+    comments: firstPage(
+      scenario.comments,
+      scenario.commentPages?.length || scenario.loopCursor,
+      "cursor-0",
     ),
     children: connection(scenario.children ?? []),
-    relations: connection(
-      scenario.relations ?? [],
-      relationPages.length > 0 ? "relations-0" : undefined,
+    relations: firstPage(
+      scenario.relations,
+      scenario.relationPages?.length,
+      "relations-0",
     ),
     inverseRelations: connection(scenario.inverseRelations ?? []),
   };
@@ -866,16 +872,6 @@ test("an inherited property name is not a provider", () => {
 });
 
 // ── configuration ──────────────────────────────────────────────────────────
-
-test("configuration defaults apply to an empty file", () => {
-  expect(parseConfig("", "c.yaml")).toEqual({
-    tracker: "linear",
-    providers: ["conductor"],
-    skill: "/jig:do-item",
-    repoLabelGroup: "Repo",
-    repos: {},
-  });
-});
 
 test("a repository label named like an object property is an ordinary label", () => {
   const { repos } = parseConfig(

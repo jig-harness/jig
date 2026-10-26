@@ -38,7 +38,13 @@ import {
   fallbackCache,
   writeCache,
 } from "./cache.ts";
-import { configPath, configStep, loadConfig } from "./config.ts";
+import {
+  configPath,
+  configStep,
+  loadConfig,
+  settingsFor,
+  validateRoutes,
+} from "./config.ts";
 import type { Provider } from "./provider.ts";
 import { getProvider } from "./providers/index.ts";
 import type { ReadRequest, Tracker } from "./tracker.ts";
@@ -195,10 +201,7 @@ export async function launch(
     const resolved: [Provider, ...Provider[]] = deps.provider
       ? [deps.provider]
       : [named(first), ...rest.map(named)];
-    for (const provider of resolved)
-      for (const [label, settings] of Object.entries(config.repos))
-        if (settings[provider.name] !== undefined)
-          provider.validateRepo(settings[provider.name], label);
+    validateRoutes(config, resolved);
     return {
       tracker: deps.tracker ?? getTracker(config.tracker, { home, env }),
       providers: resolved,
@@ -234,7 +237,8 @@ export async function launch(
   const title = fresh?.title ?? titleOf(file, warn);
   const promptFor = (cacheFile: string): string =>
     buildPrompt({ skill: config.skill, issue, title, branch, cacheFile });
-  const settings = repoLabel === null ? undefined : config.repos[repoLabel];
+  const settings =
+    repoLabel === null ? undefined : settingsFor(config, repoLabel);
   const provider = chooseProvider(providers, settings);
   const repo = settings?.[provider.name] ?? null;
   await provider.open({

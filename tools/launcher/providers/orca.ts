@@ -30,6 +30,9 @@
  *                when absent
  *   branch, slug how the repository names an issue's branch, as for the
  *                Herdr provider (providers/herdr.ts)
+ *   clone        `{url, root}`: when Orca has no such repository, clone
+ *                `url` (its `{repo}` read as `repo`) into `<root>/<repo>`
+ *                where the clone goes, and add it to Orca (tools/orca/clone.ts)
  *
  * An issue that is not routed to a repository is refused: Orca has several
  * repositories and nothing in the issue picks one.
@@ -39,6 +42,7 @@ import { isRecord } from "../../../lib/record.ts";
 import { TRANSPORT_MS } from "../../herdr/limits.ts";
 import { assertHost } from "../../herdr/remote.ts";
 import { HerdrError } from "../../herdr/runner.ts";
+import type { CloneSource } from "../../orca/clone.ts";
 import { OrcaError } from "../../orca/runner.ts";
 import {
   OPEN_LIMIT_MS,
@@ -71,6 +75,7 @@ const KEYS = new Set([
   "base",
   "branch",
   "slug",
+  "clone",
 ]);
 
 export interface OrcaRepo {
@@ -81,6 +86,35 @@ export interface OrcaRepo {
   base?: string;
   branch?: string;
   slug?: SlugKind;
+  clone?: CloneSource;
+}
+
+/** `clone` as a mapping of `url` and `root` and nothing else. */
+function cloneMapping(value: unknown, at: string): Record<string, unknown> {
+  if (!isRecord(value))
+    throw new HerdrError(`${at} must be a mapping of url and root`);
+  for (const key of Object.keys(value))
+    if (key !== "url" && key !== "root")
+      throw new HerdrError(`${at}: unknown key ${key} (known: url, root)`);
+  return value;
+}
+
+/** `clone`: a mapping of `url` and `root`, both text, `{repo}` in the URL filled in. */
+function parseClone(
+  value: unknown,
+  repo: string,
+  where: string,
+): CloneSource | undefined {
+  if (value === undefined) return undefined;
+  const at = `${where}.clone`;
+  const text = settingText(cloneMapping(value, at), at);
+  const url = text("url");
+  const root = text("root");
+  if (url === undefined || root === undefined)
+    throw new HerdrError(`${at} needs both url and root`);
+  if (!root.startsWith("/") && root !== "~" && !root.startsWith("~/"))
+    throw new HerdrError(`${at}.root must be absolute or start with ~/`);
+  return { url: url.replaceAll("{repo}", repo), root };
 }
 
 /** `environment` and `ssh`: the server, and the host git runs on for it. */
@@ -120,8 +154,10 @@ export function parseRepo(settings: unknown, label: string): OrcaRepo {
   if (repo === undefined) throw new HerdrError(`${where}.repo is required`);
   const agent = text("agent");
   const base = text("base");
+  const clone = parseClone(mapping.clone, repo, where);
   return {
     repo,
+    ...(clone === undefined ? {} : { clone }),
     ...parseServer(text, where),
     ...(agent === undefined ? {} : { agent }),
     ...(base === undefined ? {} : { base }),
@@ -151,6 +187,7 @@ export function openOptions(
         : `${request.issue}: ${request.title}`,
     linearIssue: request.issue,
     activate: true,
+    ...(repo.clone === undefined ? {} : { clone: repo.clone }),
   };
 }
 
@@ -264,7 +301,7 @@ export function orcaProvider(deps: Partial<OrcaDeps> = {}): Provider {
     async open(request) {
       if (request.repo === null)
         throw new OrcaError(
-          `${request.issue} is not routed to a repository; give it a repository label with a repos.<label>.orca entry in the launcher configuration`,
+          `${request.issue} is not routed to a repository; give it a repository label, with a repos.<label>.orca entry or defaults.orca in the launcher configuration`,
         );
       const repo = parseRepo(request.repo, "<label>");
       let prompt = request.prompt;

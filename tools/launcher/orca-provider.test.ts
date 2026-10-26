@@ -99,6 +99,33 @@ describe("settings", () => {
   });
 });
 
+describe("clone", () => {
+  test("fills {repo} in the URL and is handed to the tool", () => {
+    const repo = parseRepo(
+      {
+        repo: "docket",
+        clone: { url: "git@example.com:acme/{repo}.git", root: "~/dev" },
+      },
+      "docket",
+    );
+    expect(repo.clone).toEqual({
+      url: "git@example.com:acme/docket.git",
+      root: "~/dev",
+    });
+    expect(openOptions(repo, request(null), "p").clone).toEqual(repo.clone);
+  });
+
+  test("needs a URL and a root that names a place on its own", () => {
+    for (const [clone, message] of [
+      ["x", "repos.app.orca.clone must be a mapping of url and root"],
+      [{ url: "u" }, "repos.app.orca.clone needs both url and root"],
+      [{ url: "u", root: "dev" }, "root must be absolute or start with ~/"],
+      [{ url: "u", root: "/d", depth: 1 }, "unknown key depth"],
+    ] as const)
+      expect(() => parseRepo({ repo: "app", clone }, "app")).toThrow(message);
+  });
+});
+
 describe("open", () => {
   test("is registered under its name", () => {
     expect(providerNames()).toContain("orca");
