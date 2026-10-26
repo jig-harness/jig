@@ -14,6 +14,7 @@ import {
   answer,
   B,
   CLAIM,
+  claimHeld,
   commonDir,
   create,
   fetchBase,
@@ -24,7 +25,6 @@ import {
   HOOK,
   ID,
   inspect,
-  isDir,
   isFile,
   launch,
   link,
@@ -38,6 +38,7 @@ import {
   ORCA_BRANCH,
   orcaError,
   porcelain,
+  publishToken,
   R,
   receiptOf,
   releaseClaim,
@@ -50,6 +51,8 @@ import {
   sentReceipt,
   takeClaim,
   testHook,
+  TOK,
+  TOKEN,
   workspaceOf,
   writeReceiptFile,
   WT,
@@ -85,6 +88,7 @@ describe("a branch no checkout holds", () => {
       status: "sent",
       repoId: RID,
       worktreeId: ID,
+      worktreeToken: TOK,
       agent: "claude",
       environment: null,
     });
@@ -209,17 +213,19 @@ describe("a branch no checkout holds", () => {
     );
   });
 
-  test("created again after its worktree went sets the old receipt aside before creating, and starts the agent anew", () => {
+  test("created again after its worktree went sets the old receipt aside by its token where the agent starts, and starts it anew", () => {
     // The worktree was removed in the Orca app, which set no receipt aside;
-    // Orca gives the replacement the same path-derived id.
+    // Orca gives the replacement the same path-derived id. Nothing is set
+    // aside before the creation: the receipt is judged where the agent is
+    // started, against the token the worktree standing then holds, which
+    // this open publishes in the new git directory first.
     let file = "";
-    const old = sentReceipt();
+    const old = sentReceipt(ID, "tok-0");
     const ws = workspaceOf({
       ...fresh,
       [create("origin/main")]: () => {
-        // By the time Orca creates the worktree, the receipt is set aside.
-        expect(existsSync(file)).toBe(false);
-        expect(retiredBeside(file)).toHaveLength(1);
+        expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(old);
+        expect(retiredBeside(file)).toHaveLength(0);
         return answer({ worktree: row(ORCA_BRANCH) });
       },
     });
@@ -230,26 +236,35 @@ describe("a branch no checkout holds", () => {
       agentLaunched: true,
       kickoff: "sent",
     });
-    expect(ws.ctx.calls).toContain(launch);
+    const calls = ws.ctx.calls;
+    expect(calls.indexOf(publishToken)).toBeGreaterThan(
+      calls.indexOf(create("origin/main")),
+    );
+    expect(calls.indexOf(publishToken)).toBeLessThan(calls.indexOf(launch));
     expect(retiredBeside(file)).toEqual([
       retiredAs(file, old).slice(file.lastIndexOf("/") + 1),
     ]);
     expect(JSON.parse(readFileSync(retiredAs(file, old), "utf8"))).toEqual(old);
-    expect(JSON.parse(readFileSync(file, "utf8")).status).toBe("sent");
+    expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({
+      status: "sent",
+      worktreeToken: TOK,
+    });
     expect(
       ws.ctx.lines.some((l) =>
-        l.includes("a worktree that no longer holds the branch"),
+        l.includes(`a worktree that stood at ${ID} before this one`),
       ),
     ).toBe(true);
   });
 
-  test("whose creation fails after Orca made the worktree leaves no stale receipt, so the next open starts the agent", () => {
-    // The reviewer's case: the old worktree went in the Orca app, the
-    // replacement's create hook fails, and the next open reattaches to a
-    // worktree with the old one's id. The old receipt must not stand for it.
+  test("whose creation fails after Orca made the worktree leaves the old receipt, which does not stand for the new worktree", () => {
+    // The old worktree went in the Orca app, the replacement's create hook
+    // fails, and the next open reattaches to a worktree with the old one's
+    // id. The old receipt carries the old worktree's token and the new git
+    // directory holds none, so the next open publishes one and starts the
+    // agent; nothing had to happen before or after the creation for that.
     const file = receiptOf(workspaceOf({}));
     const stateDir = file.slice(0, file.indexOf("/kickoff/"));
-    const old = sentReceipt();
+    const old = sentReceipt(ID, "tok-0");
     writeReceiptFile(file, old);
     const failing = workspaceOf(
       {
@@ -268,10 +283,9 @@ describe("a branch no checkout holds", () => {
       "fix the hook and open the workspace again",
     );
     expect(failing.ctx.calls).not.toContain(launch);
-    expect(existsSync(file)).toBe(false);
-    expect(retiredBeside(file)).toEqual([
-      retiredAs(file, old).slice(file.lastIndexOf("/") + 1),
-    ]);
+    expect(failing.ctx.calls).not.toContain(publishToken);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(old);
+    expect(retiredBeside(file)).toHaveLength(0);
     const next = workspaceOf(
       {
         ...held,
@@ -281,6 +295,8 @@ describe("a branch no checkout holds", () => {
         [HOOK]: ok(),
         [markWrite]: ok(),
         [releaseClaim]: ok(),
+        [inspect(TOKEN)]: absent,
+        [publishToken]: ok(),
       },
       undefined,
       undefined,
@@ -293,13 +309,20 @@ describe("a branch no checkout holds", () => {
       kickoff: "sent",
     });
     expect(next.ctx.calls).toContain(launch);
-    expect(JSON.parse(readFileSync(file, "utf8")).status).toBe("sent");
+    expect(retiredBeside(file)).toEqual([
+      retiredAs(file, old).slice(file.lastIndexOf("/") + 1),
+    ]);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({
+      status: "sent",
+      worktreeToken: TOK,
+    });
   });
 
   test("created while another open reattached to it and started the agent does not start a second one", () => {
-    // The other open finds the worktree once the branch has its name and
-    // writes its receipt before this open, which created the worktree,
-    // reaches its own: the link step is where the table lets it happen.
+    // The other open finds the worktree once the branch has its name,
+    // publishes the token and writes its receipt before this open, which
+    // created the worktree, reaches its own: the link step is where the
+    // table lets it happen.
     let file = "";
     const ws = workspaceOf({
       ...fresh,
@@ -307,6 +330,7 @@ describe("a branch no checkout holds", () => {
         writeReceiptFile(file, sentReceipt());
         return orcaError("linear_not_connected");
       },
+      [inspect(TOKEN)]: isFile,
     });
     file = receiptOf(ws);
     expect(openWorkspace(ws, options)).toMatchObject({
@@ -315,48 +339,66 @@ describe("a branch no checkout holds", () => {
       kickoff: "already-sent",
     });
     expect(ws.ctx.calls).not.toContain(launch);
+    expect(ws.ctx.calls).not.toContain(publishToken);
     expect(retiredBeside(file)).toHaveLength(0);
     expect(ws.ctx.lines.some((l) => l.includes("not starting it again"))).toBe(
       true,
     );
   });
 
-  test("created again after its worktree went sets aside the receipt it found before creating it, not one another open wrote since", () => {
-    let file = "";
+  test("whose worktree another open created and started the agent in after this open found none is left as that open made it", () => {
+    // This open read the clone before the other open created the worktree
+    // and wrote its receipt. Its own creation fails, since the branch is
+    // taken, and the receipt is not touched: nothing is set aside before a
+    // creation, so the next open reattaches and does not start a second
+    // agent.
     const ws = workspaceOf({
       ...fresh,
-      [link]: () => {
-        // Another open reattached to the new worktree and started the agent.
-        writeReceiptFile(file, sentReceipt());
-        return orcaError("linear_not_connected");
-      },
+      [create("origin/main")]: orcaError(
+        "branch_exists",
+        `${B} is checked out`,
+      ),
     });
-    file = receiptOf(ws);
-    const old = { ...sentReceipt(), at: "2025-12-31T00:00:00Z" };
-    writeReceiptFile(file, old);
-    expect(openWorkspace(ws, options)).toMatchObject({
+    const file = receiptOf(ws);
+    const made = sentReceipt();
+    writeReceiptFile(file, made);
+    expect(() => openWorkspace(ws, options)).toThrow("orca worktree create");
+    expect(ws.ctx.calls).not.toContain(launch);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(made);
+    expect(retiredBeside(file)).toHaveLength(0);
+    const next = workspaceOf(held, undefined, undefined, ws.ctx.stateDir);
+    expect(openWorkspace(next, options)).toMatchObject({
+      reattached: true,
       agentLaunched: false,
       kickoff: "already-sent",
     });
-    expect(ws.ctx.calls).not.toContain(launch);
-    expect(retiredBeside(file)).toEqual([
-      retiredAs(file, old).slice(file.lastIndexOf("/") + 1),
-    ]);
-    expect(JSON.parse(readFileSync(file, "utf8")).at).toBe(
-      "2026-01-01T00:00:00Z",
-    );
+    expect(next.ctx.calls).not.toContain(launch);
   });
 
-  test("created again with --no-agent sets the old receipt aside too, so the next open with an agent starts it", () => {
+  test("created again with --no-agent leaves the old receipt, which the next open with an agent sets aside by its token", () => {
     const ws = workspaceOf(fresh);
     const file = receiptOf(ws);
-    writeReceiptFile(file, sentReceipt());
+    const old = sentReceipt(ID, "tok-0");
+    writeReceiptFile(file, old);
     expect(openWorkspace(ws, { ...options, noAgent: true })).toMatchObject({
       agentLaunched: false,
       kickoff: "none",
     });
-    expect(existsSync(file)).toBe(false);
+    expect(ws.ctx.calls).not.toContain(publishToken);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(old);
+    expect(retiredBeside(file)).toHaveLength(0);
+    const next = workspaceOf(
+      { ...held, [inspect(TOKEN)]: absent, [publishToken]: ok() },
+      undefined,
+      undefined,
+      ws.ctx.stateDir,
+    );
+    expect(openWorkspace(next, options)).toMatchObject({
+      agentLaunched: true,
+      kickoff: "sent",
+    });
     expect(retiredBeside(file)).toHaveLength(1);
+    expect(JSON.parse(readFileSync(file, "utf8")).worktreeToken).toBe(TOK);
   });
 
   test("created again over a pending receipt leaves it for the start to judge", () => {
@@ -365,19 +407,23 @@ describe("a branch no checkout holds", () => {
     const pending = { ...sentReceipt(), status: "pending", owner: "box 1 0" };
     writeReceiptFile(file, pending);
     expect(() => openWorkspace(ws, options)).toThrow("has no outcome recorded");
+    expect(ws.ctx.calls).toContain(create("origin/main"));
+    expect(ws.ctx.calls).not.toContain(launch);
     expect(retiredBeside(file)).toHaveLength(0);
     expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(pending);
   });
 
-  test("created again over a receipt of another launch at its path is refused before anything is created", () => {
+  test("created again over a receipt of another launch at its path is refused where the agent starts, and nothing is started", () => {
     const ws = workspaceOf(fresh);
     const file = receiptOf(ws);
-    writeReceiptFile(file, { ...sentReceipt(), agent: "codex" });
+    const other = { ...sentReceipt(), agent: "codex" };
+    writeReceiptFile(file, other);
     expect(() => openWorkspace(ws, options)).toThrow(
       "records the start of ENG-1's codex",
     );
-    expect(ws.ctx.calls).not.toContain(create("origin/main"));
+    expect(ws.ctx.calls).not.toContain(launch);
     expect(retiredBeside(file)).toHaveLength(0);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(other);
   });
 });
 
@@ -425,17 +471,21 @@ describe("the repository's create hook", () => {
   });
 
   test("that another open is running is waited for, and not run again once its mark appears", () => {
+    // Whether the claim is held is read from mkdir's own reason: by the
+    // time a second look at the claim would be taken, the other open may
+    // have left its mark and given the claim back, and the next turn of the
+    // wait is what reads the mark.
     const ws = workspaceOf({
       ...hooked,
       [inspect(MARK)]: [absent, isFile],
-      [takeClaim]: fail(1),
-      [inspect(CLAIM)]: isDir,
+      [takeClaim]: claimHeld,
     });
     expect(openWorkspace(ws, options)).toMatchObject({
       hookRan: false,
       agentLaunched: true,
     });
     expect(ws.ctx.calls).not.toContain(HOOK);
+    expect(ws.ctx.calls).not.toContain(inspect(CLAIM));
     expect(ws.ctx.slept).toEqual([1000]);
     expect(
       ws.ctx.lines.some((l) => l.includes("which another open is running")),
@@ -447,8 +497,7 @@ describe("the repository's create hook", () => {
     // gives the claim back rather than running the hook over the failure.
     const ws = workspaceOf({
       ...hooked,
-      [takeClaim]: [fail(1), ok()],
-      [inspect(CLAIM)]: isDir,
+      [takeClaim]: [claimHeld, ok()],
     });
     expect(() => openWorkspace(ws, options)).toThrow(
       "ended without leaving its mark, so it failed",
@@ -480,8 +529,7 @@ describe("the repository's create hook", () => {
     const ws = workspaceOf({
       ...hooked,
       [inspect(MARK)]: [absent, absent, isFile],
-      [takeClaim]: [fail(1), ok()],
-      [inspect(CLAIM)]: isDir,
+      [takeClaim]: [claimHeld, ok()],
     });
     expect(openWorkspace(ws, options)).toMatchObject({
       hookRan: false,
@@ -495,8 +543,7 @@ describe("the repository's create hook", () => {
   test("that another open holds past the hook's limit stops the wait and names the claim", () => {
     const ws = workspaceOf({
       ...hooked,
-      [takeClaim]: fail(1),
-      [inspect(CLAIM)]: isDir,
+      [takeClaim]: fail(1, `mkdir: ${CLAIM}: File exists\n`),
     });
     // No time left for the wait: the deadline is now.
     ws.host = { ...ws.ctx, budget: () => 0 };
@@ -504,6 +551,23 @@ describe("the repository's create hook", () => {
       `if no process is still running it, remove ${CLAIM}`,
     );
     expect(ws.ctx.calls).not.toContain(HOOK);
+  });
+
+  test("whose claim cannot be taken for a reason other than another open holding it stops the open with that reason", () => {
+    const ws = workspaceOf({
+      ...hooked,
+      [takeClaim]: fail(
+        1,
+        `mkdir: cannot create directory '${CLAIM}': Permission denied\n`,
+      ),
+    });
+    expect(() => openWorkspace(ws, options)).toThrow(
+      `could not take the create hook's claim ${CLAIM}`,
+    );
+    expect(ws.ctx.calls).not.toContain(inspect(CLAIM));
+    expect(ws.ctx.calls).not.toContain(HOOK);
+    expect(ws.ctx.calls).not.toContain(launch);
+    expect(ws.ctx.slept).toEqual([]);
   });
 });
 
@@ -567,7 +631,7 @@ describe("a branch a checkout already holds", () => {
   test("whose agent was started in a worktree that no longer holds the branch gets one here", () => {
     const ws = workspaceOf(held);
     const file = receiptOf(ws);
-    const elsewhere = sentReceipt(`${RID}::/ws/repo/elsewhere`);
+    const elsewhere = sentReceipt(`${RID}::/ws/repo/elsewhere`, "tok-0");
     writeReceiptFile(file, elsewhere);
     expect(openWorkspace(ws, options)).toMatchObject({
       reattached: true,
@@ -578,13 +642,54 @@ describe("a branch a checkout already holds", () => {
     expect(
       JSON.parse(readFileSync(retiredAs(file, elsewhere), "utf8")),
     ).toEqual(elsewhere);
-    expect(JSON.parse(readFileSync(file, "utf8")).worktreeId).toBe(ID);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({
+      worktreeId: ID,
+      worktreeToken: TOK,
+    });
+    expect(
+      ws.ctx.lines.some((l) =>
+        l.includes(
+          `${elsewhere.worktreeId}, a worktree that no longer holds the branch`,
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  test("whose receipt for another agent names the worktree that stood at this path before gets that agent here", () => {
+    // Both agents were started for the key, the worktree was deleted in the
+    // Orca app and created again at the same path, with the same id, and
+    // claude was started again there. codex's receipt still carries the old
+    // worktree's token, which the new git directory does not hold, so it
+    // does not stand, whatever its key or agent.
+    const launchCodex = launch.replace("--agent claude", "--agent codex");
+    const ws = workspaceOf({ ...held, [launchCodex]: answer({}) });
+    const file = receiptOf(ws, "ENG-1", "codex");
+    const old = { ...sentReceipt(ID, "tok-0"), agent: "codex" };
+    writeReceiptFile(file, old);
+    writeReceiptFile(receiptOf(ws), sentReceipt());
+    expect(openWorkspace(ws, { ...options, agent: "codex" })).toMatchObject({
+      reattached: true,
+      agentLaunched: true,
+      kickoff: "sent",
+    });
+    expect(ws.ctx.calls).toContain(launchCodex);
+    expect(retiredBeside(file)).toEqual([
+      retiredAs(file, old).slice(file.lastIndexOf("/") + 1),
+    ]);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({
+      agent: "codex",
+      status: "sent",
+      worktreeToken: TOK,
+    });
+    expect(JSON.parse(readFileSync(receiptOf(ws), "utf8"))).toEqual(
+      sentReceipt(),
+    );
   });
 
   test("whose stale receipt another open is setting aside waits for that open's start, then does not repeat it", () => {
     const ws = workspaceOf(held);
     const file = receiptOf(ws);
-    const elsewhere = sentReceipt(`${RID}::/ws/repo/elsewhere`);
+    const elsewhere = sentReceipt(`${RID}::/ws/repo/elsewhere`, "tok-0");
     writeReceiptFile(file, elsewhere);
     // The other open linked the stale receipt under its retired name and
     // has not replaced it yet; it finishes while this one waits.
@@ -612,7 +717,7 @@ describe("a branch a checkout already holds", () => {
   test("whose stale receipt another open set aside and never replaced stops, naming the copy to remove", () => {
     const ws = workspaceOf(held);
     const file = receiptOf(ws);
-    const elsewhere = sentReceipt(`${RID}::/ws/repo/elsewhere`);
+    const elsewhere = sentReceipt(`${RID}::/ws/repo/elsewhere`, "tok-0");
     writeReceiptFile(file, elsewhere);
     writeReceiptFile(retiredAs(file, elsewhere), elsewhere);
     // No time left for the wait: the deadline is now.
@@ -622,6 +727,24 @@ describe("a branch a checkout already holds", () => {
     );
     expect(ws.ctx.calls).not.toContain(launch);
     expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(elsewhere);
+  });
+
+  test("whose receipt of the worktree that stood here before was set aside and never replaced stops too, naming the copy", () => {
+    // Both names hold the old receipt: the open that set it aside ended
+    // between the link and the replacement. The receipt names this
+    // worktree's id but not its token, so the old start is not accepted;
+    // the copy is named, as for any set-aside that was never finished.
+    const ws = workspaceOf(held);
+    const file = receiptOf(ws);
+    const old = sentReceipt(ID, "tok-0");
+    writeReceiptFile(file, old);
+    writeReceiptFile(retiredAs(file, old), old);
+    ws.orca = { ...ws.ctx, budget: () => 0 };
+    expect(() => openWorkspace(ws, options)).toThrow(
+      `remove ${retiredAs(file, old)} and open the workspace again`,
+    );
+    expect(ws.ctx.calls).not.toContain(launch);
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(old);
   });
 
   test("with a receipt that is not whole is refused rather than read as a start", () => {

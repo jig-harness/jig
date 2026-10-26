@@ -2,17 +2,18 @@
  * Kickoff receipts: the record that a key's agent was started in a worktree,
  * kept on the machine the tool runs on, outside every worktree. A receipt is
  * taken as pending by exactly one open at a time, completed once Orca
- * answered, and set aside, by exactly one open, once its worktree is gone,
- * so an agent is started once per key and agent and a start whose outcome
- * is unknown is never repeated without a person looking first. Every change
- * to the file is made under something only one open can do (a hard link into
- * a name that must not exist); what an open read before that is a hint, and
- * the file is read again under it. What an open learns about a receipt's
- * worktree is acted on where it is learned, never carried to a later step:
- * an open that finds the branch in no worktree sets the receipt aside
- * before it creates one (`retireBeforeCreate`), so no step after the
- * creation, this process ending included, can leave it for the next open to
- * read as the new worktree's own.
+ * answered, and set aside, by exactly one open, once the worktree it names
+ * is not the one the branch is in, so an agent is started once per key and
+ * agent and a start whose outcome is unknown is never repeated without a
+ * person looking first. Every change to the file is made under something
+ * only one open can do (a hard link into a name that must not exist); what
+ * an open read before that is a hint, and the file is read again under it.
+ * Which worktree a receipt stands for is read from the worktree itself: the
+ * receipt carries the token the worktree's git directory holds
+ * (worktree-token.ts), and a worktree created later at the same path, which
+ * Orca gives the same id, has none or another, so no receipt of an earlier
+ * one is read as its own, for any key or agent, and nothing has to be set
+ * aside before a worktree is created or carried from one step to the next.
  */
 import {
   linkSync,
@@ -36,7 +37,14 @@ export interface Receipt {
   status: "pending" | "sent";
   /** The repository in Orca whose worktree the agent runs in. */
   repoId: string;
+  /** What Orca calls the worktree, kept for the record and the log. */
   worktreeId: string;
+  /**
+   * The token the worktree's git directory held when the agent was started
+   * (worktree-token.ts): what tells the worktree from one that stood at its
+   * path before, or stands there after it.
+   */
+  worktreeToken: string;
   agent: string;
   /** The paired server, or null for Orca on this machine. */
   environment: string | null;
@@ -104,6 +112,7 @@ const RECEIPT_FIELDS: Record<string, (value: unknown) => boolean> = {
   status: (value) => value === "pending" || value === "sent",
   repoId: isText,
   worktreeId: isText,
+  worktreeToken: isText,
   agent: isText,
   environment: (value) => value === null || isText(value),
   at: isText,
@@ -203,15 +212,14 @@ function assertReceiptFor(file: string, found: Receipt, wanted: Launch): void {
 
 /**
  * Whether a sent receipt is the record of this worktree's own agent, so the
- * start stands. One naming another worktree records an agent in a checkout
- * that no longer holds the branch. One naming a worktree that stood at this
- * path before, which Orca gives the same path-derived id, never reaches
- * this question: the open that created the worktree set it aside first
- * (`retireBeforeCreate`), so a receipt naming this worktree's id was written
- * for this worktree.
+ * start stands: it carries this worktree's token, read from its git
+ * directory. One carrying another token records an agent in a worktree that
+ * no longer holds the branch, or in one that stood at this path before and
+ * is gone, which Orca gives the same path-derived id; the id is not what
+ * tells them apart, so it is not compared.
  */
 function standsFor(earlier: Receipt, receipt: Receipt): boolean {
-  return earlier.worktreeId === receipt.worktreeId;
+  return earlier.worktreeToken === receipt.worktreeToken;
 }
 
 /** Where a stale receipt is set aside: beside it, under the start it records. */
@@ -235,8 +243,12 @@ function replaceStale(
 ): boolean {
   if (!setAside(file, earlier)) return false;
   writeReceipt(file, receipt);
+  const where =
+    earlier.worktreeId === receipt.worktreeId
+      ? `a worktree that stood at ${receipt.worktreeId} before this one`
+      : `${earlier.worktreeId}, a worktree that no longer holds the branch`;
   ws.orca.log(
-    `↺ ${receipt.key}'s agent was started in ${earlier.worktreeId} on ${earlier.at}, a worktree that is gone; starting one in ${receipt.worktreeId}`,
+    `↺ ${receipt.key}'s agent was started on ${earlier.at} in ${where}; starting one in ${receipt.worktreeId}`,
   );
   return true;
 }
@@ -256,37 +268,6 @@ function setAside(file: string, earlier: Receipt): boolean {
     if (code === "EEXIST" || code === "ENOENT") return false;
     throw error;
   }
-}
-
-/**
- * Set aside the sent receipt at `file` before this open creates the
- * worktree, when no worktree holds the branch: the start it records was in
- * a worktree that is gone, or that no longer holds the branch, and the one
- * created next, which Orca may give the same path-derived id, must not read
- * it as its own. It is set aside now, and not once the worktree exists, so
- * that nothing a creation runs afterwards (a check, the create hook, this
- * process ending) can leave it in place for a reattaching open to accept:
- * what this open knows about the receipt's worktree does not have to
- * survive the creation. The record is kept under the retired name
- * (`setAside`, so exactly one open does it; one another open set aside, or
- * that is gone, is fine), and the file removed, so the open that reaches the
- * agent's start first, this one or one that reattached meanwhile, takes a
- * fresh receipt. A pending receipt is left for `claimReceipt` to judge, and
- * a receipt of another launch is refused as it is there.
- */
-export function retireBeforeCreate(
-  ws: Workspace,
-  file: string,
-  launch: Launch,
-): void {
-  const earlier = readReceipt(file);
-  if (earlier === null) return;
-  assertReceiptFor(file, earlier, launch);
-  if (earlier.status === "pending" || !setAside(file, earlier)) return;
-  rmSync(file, { force: true });
-  ws.orca.log(
-    `↺ ${earlier.key}'s agent was started in ${earlier.worktreeId} on ${earlier.at}, a worktree that no longer holds the branch; the record is set aside, and the agent is started in the worktree created next`,
-  );
 }
 
 /**

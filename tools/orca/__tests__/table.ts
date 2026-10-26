@@ -26,6 +26,7 @@ import {
 import { fileSegment, type Receipt, receiptPath } from "../receipts.ts";
 import { remoteHook, type Workspace } from "../runner.ts";
 import type { OpenOptions } from "../workspace.ts";
+import { PUBLISH_TOKEN_SCRIPT, WORKTREE_TOKEN } from "../worktree-token.ts";
 
 export const R = "/repo";
 export const B = "feat/x";
@@ -37,6 +38,9 @@ export const HOOK = `${WT}/.config/worktree-hooks/create`;
 export const GIT_DIR = "/repo/.git/worktrees/feat-x";
 export const MARK = `${GIT_DIR}/${CREATE_HOOK_MARK}`;
 export const CLAIM = `${GIT_DIR}/${CREATE_HOOK_CLAIM}`;
+export const TOKEN = `${GIT_DIR}/${WORKTREE_TOKEN}`;
+/** The token the worktree's git directory holds, once an open published it. */
+export const TOK = "tok-1";
 export const JOURNAL = `${GIT_DIR}/${DEFAULT_JOURNAL_IN_GIT_DIR}`;
 /** The worktree's own Jig configuration on the host. */
 export const REPO_CONFIG = `${WT}/.config/jig.yaml`;
@@ -62,6 +66,14 @@ export const isDir = ok("drwxr-xr-x  3 me  staff  96 Jan  1 00:00 x\n");
 export const absent = fail(
   2,
   "ls: cannot access 'x': No such file or directory\n",
+);
+/** The host asked to publish a token in the worktree's git directory, and to read it. */
+export const publishToken = `sh -c ${PUBLISH_TOKEN_SCRIPT} sh ${TOKEN}`;
+export const readToken = `cat ${TOKEN}`;
+/** The host's answer to `mkdir` while another open holds the create hook's claim. */
+export const claimHeld = fail(
+  1,
+  `mkdir: cannot create directory '${CLAIM}': File exists\n`,
 );
 
 /** An Orca success envelope. */
@@ -161,6 +173,9 @@ export const fresh: Record<string, Answer> = {
   }),
   [`git -C ${WT} symbolic-ref --short HEAD`]: ok(`${ORCA_BRANCH}\n`),
   [rename]: ok(),
+  [inspect(TOKEN)]: absent,
+  [publishToken]: ok(),
+  [readToken]: ok(`${TOK}\n`),
   [launch]: answer({ launch: { outcome: { kind: "terminal" } } }),
 };
 
@@ -172,6 +187,8 @@ export const held: Record<string, Answer> = {
     [WT, B],
   ]),
   [list]: answer({ worktrees: [row(B)] }),
+  [inspect(TOKEN)]: isFile,
+  [readToken]: ok(`${TOK}\n`),
   [launch]: answer({}),
 };
 
@@ -215,11 +232,12 @@ export function writeReceiptFile(file: string, receipt: object): void {
   writeFileSync(file, JSON.stringify(receipt));
 }
 
-export const sentReceipt = (worktreeId = ID): Receipt => ({
+export const sentReceipt = (worktreeId = ID, worktreeToken = TOK): Receipt => ({
   key: "ENG-1",
   status: "sent",
   repoId: RID,
   worktreeId,
+  worktreeToken,
   agent: "claude",
   environment: null,
   at: "2026-01-01T00:00:00Z",

@@ -67,17 +67,22 @@ import {
   resolveOrcaCommand,
   textOf,
 } from "./cli.ts";
-import { assertNoUnsentFindings, ensureCreateHook, hookOf } from "./hooks.ts";
+import {
+  assertNoUnsentFindings,
+  ensureCreateHook,
+  gitDirOf,
+  hookOf,
+} from "./hooks.ts";
 import {
   claimReceipt,
   clearReceipt,
   type Receipt,
   receiptPath,
-  retireBeforeCreate,
   retireReceiptsOf,
   writeReceipt,
 } from "./receipts.ts";
 import { OrcaError, type Workspace, workspace } from "./runner.ts";
+import { worktreeToken } from "./worktree-token.ts";
 
 export { CREATE_HOOK_CLAIM, CREATE_HOOK_MARK } from "./hooks.ts";
 export { fileSegment, type Receipt, receiptPath } from "./receipts.ts";
@@ -90,10 +95,10 @@ export const USAGE = `usage:
 
 /**
  * The calls around the hook: git probes, fetches and the clone checks, Orca's
- * list, create, link and launch, the hook's claim and mark, where the
- * journal is and its read.
+ * list, create, link and launch, the worktree's git directory, the hook's
+ * claim and mark, the worktree's token, where the journal is and its read.
  */
-const COMMAND_ALLOWANCE = 26;
+const COMMAND_ALLOWANCE = 30;
 /** The time `open` may take: the create hook, waiting for another open's start of the agent, and the calls around them. */
 export const OPEN_LIMIT_MS =
   HOOK_TIMEOUT_MS + CLAIM_WAIT_MS + COMMAND_ALLOWANCE * COMMAND_TIMEOUT_MS;
@@ -456,10 +461,12 @@ function linkIssue(ws: Workspace, worktree: OrcaWorktree, issue: string): void {
 }
 
 /**
- * Start the agent, once per key and agent. The receipt is taken as pending
- * before the launch and completed once Orca answered. An answer that nothing
- * started (an agent Orca does not have, say) clears the receipt, so the next
- * open starts the agent once the cause is fixed; a call that got no answer
+ * Start the agent, once per key and agent. The receipt carries the
+ * worktree's token, read from its git directory `dir` (and published there
+ * first by this open when there is none), is taken as pending before the
+ * launch and completed once Orca answered. An answer that nothing started
+ * (an agent Orca does not have, say) clears the receipt, so the next open
+ * starts the agent once the cause is fixed; a call that got no answer
  * leaves it pending, so a start whose outcome is unknown is never repeated
  * by a later open without a person looking first.
  */
@@ -467,6 +474,7 @@ function launchAgent(
   ws: Workspace,
   repo: OrcaRepo,
   worktree: OrcaWorktree,
+  dir: string,
   options: OpenOptions,
 ): Pick<Opened, "agentLaunched" | "kickoff"> {
   const key = options.key;
@@ -477,6 +485,7 @@ function launchAgent(
     status: "pending",
     repoId: repo.id,
     worktreeId: worktree.id,
+    worktreeToken: file === null ? "" : worktreeToken(ws, dir),
     agent: options.agent,
     environment: ws.target.environment ?? null,
     at: new Date().toISOString(),
@@ -531,23 +540,6 @@ export function openWorkspace(ws: Workspace, requested: OpenOptions): Opened {
   );
   if (branch !== requested.branch) assertBranchName(ws.host, branch);
   const found = existingWorktree(ws, repo, branch);
-  // No worktree holds the branch, so a receipt of the key's agent records a
-  // start in one that stood before. It is set aside now, before anything is
-  // created: a step that fails after the creation, or this process ending
-  // then, must not leave it for the next open, which reattaches, to read as
-  // the new worktree's own (receipts.ts). Whether this open starts an agent
-  // does not matter to that: the next open with one would read it alike.
-  if (found === null && requested.key !== undefined)
-    retireBeforeCreate(
-      ws,
-      receiptPath(ws, repo.id, requested.key, requested.agent),
-      {
-        key: requested.key,
-        repoId: repo.id,
-        agent: requested.agent,
-        environment: ws.target.environment ?? null,
-      },
-    );
   const worktree = found ?? createWorktree(ws, repo, requested, branch);
   // On every path, reattaching included: a tracking repair an earlier open
   // could not finish is made now (the helper's own contract), and a link
@@ -555,7 +547,12 @@ export function openWorkspace(ws: Workspace, requested: OpenOptions): Opened {
   ensureUpstreamTracking(ws.host, repo.path, branch);
   if (requested.linearIssue !== undefined)
     linkIssue(ws, worktree, requested.linearIssue);
-  const hookRan = ensureCreateHook(ws, worktree.path);
+  // The worktree's own git directory: where the create hook's mark and claim
+  // are kept, and the token that tells this worktree from one that stood at
+  // its path before (worktree-token.ts), which a receipt of the key's agent
+  // is read against when the agent is started and nowhere earlier.
+  const dir = gitDirOf(ws, worktree.path);
+  const hookRan = ensureCreateHook(ws, worktree.path, dir);
   const opened: Opened = {
     path: worktree.path,
     branch,
@@ -566,7 +563,7 @@ export function openWorkspace(ws: Workspace, requested: OpenOptions): Opened {
     kickoff: "none",
   };
   if (requested.noAgent) return opened;
-  return { ...opened, ...launchAgent(ws, repo, worktree, requested) };
+  return { ...opened, ...launchAgent(ws, repo, worktree, dir, requested) };
 }
 
 export interface RemoveOptions {

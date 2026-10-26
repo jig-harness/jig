@@ -124,9 +124,9 @@ are set aside (below), so the next open of their keys starts an agent again.
 Orca's tool runs here and reaches the server, and the worktree is created on
 the server's machine. Git and the hooks must run where the clone is, so
 `--ssh` names that machine's SSH destination, which needs `git` and a POSIX
-shell (`sh`, `test`, `mkdir`, `rm`, `cat`, `ls`, `env`) on the `PATH` of a
-non-interactive SSH session and an SSH key the caller can use without a
-prompt, and nothing from Jig. A path Orca reports is a path on the server.
+shell (`sh`, `test`, `mkdir`, `rm`, `cat`, `ls`, `ln`, `od`, `tr`, `env`,
+and `/dev/urandom`) on the `PATH` of a non-interactive SSH session and an
+SSH key the caller can use without a prompt, and nothing from Jig. A path Orca reports is a path on the server.
 
 Each command holds itself to a time limit: every git and Orca call and hook
 run is cut to the time left, so a run ends at its limit, saying so, however
@@ -165,23 +165,23 @@ repositories is two starts, and so are two agents on one key.
   one. An answer from Orca that nothing started (an agent it does not have,
   say) clears the receipt, so the next open starts the agent once that is
   fixed.
-- A receipt for a worktree that is gone is set aside beside it, and the
-  start recorded anew. `remove` sets aside the receipts of the worktree it
-  removed, under a dated name. An open that finds the branch in no worktree
-  sets aside the key's receipt, which records an agent in a worktree that is
-  gone or no longer holds the branch, *before* it creates one: Orca gives a
-  worktree at the same path the same id, and a step that fails after the
-  creation (the create hook, say, or the open's process ending) must not
-  leave the old receipt for the next open, which reattaches, to read as the
-  new worktree's own. An open that found the branch in another checkout sets
-  aside a receipt naming a different worktree, and its pending receipt takes
-  the stale one's place without the file being absent in between. Setting a
-  receipt aside succeeds for exactly one open: the stale receipt is linked
-  under a name carrying the start it records, which only the first open to
-  try can do. A second open that read the same stale receipt waits for the
-  replacement (2 minutes at most), then finds the start made; the message
-  past that names the copy to remove when the open that made it never
-  finished.
+- A receipt stands for the worktree its agent was started in and no other.
+  The first open that starts an agent in a worktree writes a token into the
+  worktree's git directory (`jig-orca-worktree`, for exactly one open: a
+  second open that finds none reads the first's), and the receipt carries
+  it. A worktree created later at the same path, which Orca gives the same
+  id, has a git directory of its own with no token or another, so no receipt
+  of the earlier one reads as its own, for any key or agent, and nothing has
+  to be set aside before a worktree is created, or after a creation that
+  fails. An open whose receipt carries another token sets it aside and
+  records the start anew, whether it reattached or created the worktree:
+  the stale receipt is linked under a name carrying the start it records,
+  which only the first open to try can do, and the pending receipt takes its
+  place without the file being absent in between. A second open that read
+  the same stale receipt waits for the replacement (2 minutes at most), then
+  finds the start made; the message past that names the copy to remove when
+  the open that made it never finished. `remove` sets aside the receipts of
+  the worktree it removed, under a dated name.
 - A receipt that is not whole, or names another launch, is refused rather
   than read as any outcome; the message says to move it away.
 - An open without `--key` starts the agent every time; `--no-agent` starts

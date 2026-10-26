@@ -1,7 +1,9 @@
 /**
  * The repository's worktree hooks and the worktree's reflection journal, as
  * the Orca workspace tool reaches them on the clone's host: through the
- * host context, so the same step runs on this machine and over SSH.
+ * host context, so the same step runs on this machine and over SSH. What is
+ * at a path on the host is read here too (`inspectPath`), with the host's
+ * answer taken from the reason it gives and nowhere else.
  */
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -43,18 +45,36 @@ export function inspectCommand(file: string): string[] {
   return ["env", "LC_ALL=C", "ls", "-ldL", "--", file];
 }
 
-/** The messages a listing fails with when nothing is at the path (`ENOENT`), or the path runs through a file (`ENOTDIR`). */
-const NOTHING_THERE = /No such file or directory|Not a directory/;
+/**
+ * Why a command on the host failed, as its diagnostic ends: the text after
+ * the last `: ` of the diagnostic's last line, which is where `ls`, `mkdir`
+ * and the other utilities put the reason, after their own name and the path
+ * (quoted or not). Read there, a path that happens to contain a reason's
+ * words, as a directory named for one would, is never read as that reason.
+ * Null when the diagnostic ends with no such line.
+ */
+export function failureReason(stderr: string): string | null {
+  const line = stderr.trimEnd().split("\n").at(-1) ?? "";
+  const at = line.lastIndexOf(": ");
+  return at === -1 ? null : line.slice(at + 2).trim();
+}
+
+/** The reasons a listing fails for when nothing is at the path (`ENOENT`), or the path runs through a file (`ENOTDIR`). */
+const ABSENT_REASONS = new Set([
+  "No such file or directory",
+  "Not a directory",
+]);
 
 /**
  * What is at `file` on the host. The entry is listed (`ls -ldL`, following a
  * symbolic link, under the C locale so the messages read alike everywhere),
  * and the first character of the listing says what it is. A listing that
- * fails means absence only when its message says nothing is there, never by
- * its exit status alone: `test -f` answers no alike for a path that is
- * absent, a parent that cannot be searched and a filesystem error, and a
- * removal that read the second or third as the first would delete findings
- * it never saw. Any other failure is an error.
+ * fails means absence only when the reason it gives (`failureReason`) is
+ * that nothing is there, never by its exit status alone, and never by those
+ * words anywhere else in its message: `test -f` answers no alike for a path
+ * that is absent, a parent that cannot be searched and a filesystem error,
+ * and a removal that read the second or third as the first would delete
+ * findings it never saw. Any other failure is an error.
  */
 export function inspectPath(ws: Workspace, file: string): PathKind {
   const listed = ws.host.run(inspectCommand(file));
@@ -63,7 +83,9 @@ export function inspectPath(ws: Workspace, file: string): PathKind {
     if (type === "-") return "file";
     if (type === "d") return "directory";
     if (/^[a-z]$/i.test(type)) return "other";
-  } else if (NOTHING_THERE.test(listed.stderr)) return "absent";
+  } else if (ABSENT_REASONS.has(failureReason(listed.stderr) ?? "")) {
+    return "absent";
+  }
   throw new OrcaError(`cannot tell what is at ${file}: ${output(listed)}`);
 }
 
@@ -105,11 +127,19 @@ export function gitDirOf(ws: Workspace, path: string): string {
   return dir.stdout.trim();
 }
 
-/** Take the create hook's claim on the host; false when another open holds it. */
+/**
+ * Take the create hook's claim on the host, which `mkdir` does for exactly
+ * one open. False when another open holds it, read from the reason the
+ * `mkdir` failed for (`failureReason`) and not from a second look at the
+ * claim: by then the holder may have left its mark and given the claim
+ * back, and that look would read a claim that was held as one that could
+ * not be taken, where the next turn of the wait reads the mark. Any other
+ * failure is an error.
+ */
 function takeHookClaim(ws: Workspace, claim: string): boolean {
   const made = ws.host.run(["mkdir", claim]);
   if (made.status === 0) return true;
-  if (exists(ws, "-d", claim)) return false;
+  if (failureReason(made.stderr) === "File exists") return false;
   throw new OrcaError(
     `could not take the create hook's claim ${claim}: ${output(made)}`,
   );
@@ -215,18 +245,21 @@ function runClaimedHook(
 /**
  * Run the repository's create hook once per worktree, however many opens
  * reach it at once. The open that creates the claim directory beside the
- * mark, and finds no mark under it, runs the hook; every other open waits
- * for the mark. A run that succeeded leaves the mark and gives the claim
- * back; one that failed gives the claim back and leaves no mark, so the
- * next open runs the hook again.
+ * mark, in the worktree's git directory `dir`, and finds no mark under it,
+ * runs the hook; every other open waits for the mark. A run that succeeded
+ * leaves the mark and gives the claim back; one that failed gives the claim
+ * back and leaves no mark, so the next open runs the hook again.
  * On this machine the hook runs under the Herdr tool's supervisor, which
  * ends it and its children when it fails or outlives its limit. True when
  * this run ran it.
  */
-export function ensureCreateHook(ws: Workspace, path: string): boolean {
+export function ensureCreateHook(
+  ws: Workspace,
+  path: string,
+  dir: string,
+): boolean {
   const hook = hookOf(ws, path, "create");
   if (hook === null) return false;
-  const dir = gitDirOf(ws, path);
   const mark = `${dir}/${CREATE_HOOK_MARK}`;
   const claim = `${dir}/${CREATE_HOOK_CLAIM}`;
   if (awaitHookClaim(ws, hook, mark, claim)) return false;
