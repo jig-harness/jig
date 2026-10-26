@@ -134,6 +134,25 @@ test("check-audit-fit holds the record's commit to a full SHA in HEAD's history"
   );
   writeFileSync(join(dir, ".config/jig-audit.yaml"), record(a));
   expect(await checkAuditFit(dir, criteria)).toBe(0);
+  // A shallow clone cannot show a commit is outside the history: a commit
+  // past its depth, or one it never fetched, is an inability to check.
+  const shallow = temp();
+  expectSpawnExit(
+    git(shallow, "clone", "-q", "--depth", "1", `file://${dir}`, "."),
+    0,
+  );
+  const tip = git(shallow, "rev-parse", "HEAD").stdout.toString().trim();
+  mkdirSync(join(shallow, ".config"));
+  writeFileSync(join(shallow, ".config/jig.yaml"), "other_tool:\n  key: 1\n");
+  for (const named of [
+    git(dir, "rev-parse", "HEAD~1").stdout.toString().trim(),
+    side,
+  ]) {
+    writeFileSync(join(shallow, ".config/jig-audit.yaml"), record(a, named));
+    expect(await checkAuditFit(shallow, criteria)).toBe(2);
+  }
+  writeFileSync(join(shallow, ".config/jig-audit.yaml"), record(a, tip));
+  expect(await checkAuditFit(shallow, criteria)).toBe(0);
   // A repository git cannot read is an inability to check, not a mismatch.
   rmSync(join(dir, ".git"), { recursive: true });
   writeFileSync(join(dir, ".git"), "gitdir: /nonexistent\n");

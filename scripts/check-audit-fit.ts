@@ -11,7 +11,8 @@
 // merge replaced fails on the integration branch, where it would otherwise rot
 // until the next audit refused it. Offline: the repository host and
 // tracker are not read. Exit 1 on a mismatch; 2 when a file cannot be read,
-// git cannot check the commit, or there is no criterion to score against.
+// git cannot check the commit (a shallow clone cannot show a commit is outside
+// the history), or there is no criterion to score against.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cli } from "../lib/cli.ts";
@@ -112,7 +113,9 @@ function commitCheck(
 
 /**
  * Whether the full SHA `commit` is HEAD or one of its ancestors in the
- * checkout at `root`, or why git could not answer.
+ * checkout at `root`, or why git could not answer. `false` only when the
+ * checkout holds HEAD's complete history: in a shallow clone a missing object
+ * or a negative ancestry answer may be the truncation, not the record.
  */
 function inHistory(root: string, commit: string): boolean | string {
   const env = withoutLeakyGitEnv();
@@ -120,15 +123,22 @@ function inHistory(root: string, commit: string): boolean | string {
     spawnSync("git", ["-C", root, ...args], { env });
   const failure = (result: ReturnType<typeof git>) =>
     `git could not check commit ${commit}: ${(result.error?.message ?? result.stderr ?? "").trim() || `exit ${result.status}`}`;
+  const absent = (): false | string => {
+    const shallow = git("rev-parse", "--is-shallow-repository");
+    if (shallow.status !== 0) return failure(shallow);
+    return shallow.stdout.trim() === "false"
+      ? false
+      : `git could not check commit ${commit}: the checkout's history is shallow; fetch the full history (git fetch --unshallow) and re-run`;
+  };
   // rev-parse --verify --quiet exits 1, silently, only for a missing object.
   const exists = git("rev-parse", "--verify", "--quiet", `${commit}^{commit}`);
   if (exists.status === 1 && !exists.error && !exists.stderr.trim())
-    return false;
+    return absent();
   if (exists.status !== 0) return failure(exists);
   // --is-ancestor exits 1 for "no"; any other non-zero is an error.
   const ancestor = git("merge-base", "--is-ancestor", commit, "HEAD");
-  if (ancestor.status === 0 || ancestor.status === 1)
-    return ancestor.status === 0;
+  if (ancestor.status === 0) return true;
+  if (ancestor.status === 1) return absent();
   return failure(ancestor);
 }
 
