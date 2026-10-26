@@ -117,8 +117,9 @@ a relative `JIG_HOME` or `JIG_OVERLAY` (a session there resolves one against
 its own directory), a path it cannot inspect (a parent it may not search, a
 filesystem error), or a directory or special file where a configuration file
 or the journal should be. Only a path the host reports nothing at counts as
-absent. Once the worktree is gone, the receipts of the agents started in it
-are set aside (below), so the next open of their keys starts an agent again.
+absent. The receipts of the agents started in the worktree stay (below):
+the next open of their keys tells them from the worktree standing at the
+path then, by its token, and starts an agent again.
 
 **`--environment`** names a paired Orca server (`orca environment list`), so
 Orca's tool runs here and reaches the server, and the worktree is created on
@@ -180,8 +181,11 @@ repositories is two starts, and so are two agents on one key.
   place without the file being absent in between. A second open that read
   the same stale receipt waits for the replacement (2 minutes at most), then
   finds the start made; the message past that names the copy to remove when
-  the open that made it never finished. `remove` sets aside the receipts of
-  the worktree it removed, under a dated name.
+  the open that made it never finished. `remove` leaves the receipts of the
+  worktree it removed in place: a worktree created at its path afterwards,
+  which Orca gives the same id, is told from it by its token, and an open
+  may have created one, and started an agent in it, before `remove` could
+  look, so `remove` decides nothing by the id.
 - A receipt that is not whole, or names another launch, is refused rather
   than read as any outcome; the message says to move it away.
 - An open without `--key` starts the agent every time; `--no-agent` starts

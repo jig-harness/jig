@@ -195,6 +195,15 @@ natively under the pinned Bun runtime. That version has one source,
 `bun run pins` (in the gates) fails when one differs
 ([M2](modules/M2-generated-artifact-freshness/README.md#one-version-source)).
 
+The [Orca workspace tool](tools/orca/README.md) and the launcher's `orca`
+provider run only on POSIX hosts: the tool drives the host it works on, this
+machine or a paired Orca server's, with `sh`, `test` and `mkdir`, and its
+hooks run under the supervisor it shares with the Herdr tool, which reads
+`/proc` or `ps`. Its suites are POSIX-only in CI (`POSIX_ONLY_SUITES` in
+[scripts/gates.ts](scripts/gates.ts); § Adding or changing a plugin skill
+says how a suite gets there), and Windows support is deferred: the plan's
+"Orca: what is left" item in [design/plan.md](design/plan.md) lists it.
+
 ## Quality gates
 
 Dogfooded [M1](modules/M1-gates-enforcement-ladder/README.md), tiny by
@@ -572,7 +581,9 @@ work as part of the plugin:
   `tools/plugin/plugin.test.ts` when the skill reads consumer files. A suite
   that can only run on a POSIX system is listed in `POSIX_ONLY_SUITES` in
   [scripts/gates.ts](scripts/gates.ts), with the reason, so Windows CI
-  leaves it out; a suite too long for the gate job goes in `SEPARATE_SUITES`
+  leaves it out (the launcher's, the Herdr tool's and the Orca tool's suites
+  today; § Toolchain says why the Orca tool's are); a suite too long for the
+  gate job goes in `SEPARATE_SUITES`
   and gets its own sharded job in
   [the gates workflow](.github/workflows/gates.yml) and
   [the nightly workflow](.github/workflows/nightly.yml), which also runs it on

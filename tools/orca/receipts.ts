@@ -13,12 +13,12 @@
  * (worktree-token.ts), and a worktree created later at the same path, which
  * Orca gives the same id, has none or another, so no receipt of an earlier
  * one is read as its own, for any key or agent, and nothing has to be set
- * aside before a worktree is created or carried from one step to the next.
+ * aside before a worktree is created or after one is removed, or carried
+ * from one step to the next.
  */
 import {
   linkSync,
   mkdirSync,
-  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -183,15 +183,6 @@ export function writeReceipt(file: string, receipt: Receipt): void {
   const temporary = `${file}.tmp.${process.pid}`;
   writeFileSync(temporary, `${JSON.stringify(receipt)}\n`, { mode: 0o600 });
   renameSync(temporary, file);
-}
-
-/** Set the receipt of a removed worktree aside under a dated name, keeping the record; a receipt already gone is fine. */
-function retireReceipt(file: string): void {
-  try {
-    renameSync(file, `${file}.retired-${Date.now()}`);
-  } catch (error) {
-    if (errnoCode(error) !== "ENOENT") throw error;
-  }
 }
 
 /** The start a receipt records, as a path is chosen for it: the key, the repository, the agent and the Orca. */
@@ -366,44 +357,6 @@ export function claimReceipt(
       earlier,
       deadline,
       waitedReplacement,
-    );
-  }
-}
-
-/**
- * Set aside the receipts of agents started in a worktree that is gone, so
- * the next open of their keys starts an agent in the worktree that replaces
- * it. A file in the directory that is not a receipt is left alone.
- */
-export function retireReceiptsOf(
-  ws: Workspace,
-  repoId: string,
-  worktreeId: string,
-): void {
-  const dir = receiptDir(ws, repoId);
-  let names: string[];
-  try {
-    names = readdirSync(dir);
-  } catch (error) {
-    if (errnoCode(error) === "ENOENT") return;
-    throw error;
-  }
-  for (const name of names) {
-    if (!name.endsWith(".json")) continue;
-    const file = join(dir, name);
-    let receipt: Receipt | null;
-    try {
-      receipt = readReceipt(file);
-    } catch (error) {
-      ws.orca.log(
-        `⚠ ${error instanceof Error ? error.message : String(error)}`,
-      );
-      continue;
-    }
-    if (receipt === null || receipt.worktreeId !== worktreeId) continue;
-    retireReceipt(file);
-    ws.orca.log(
-      `✓ set aside the record that ${receipt.key}'s ${receipt.agent} was started in ${worktreeId}; the next open of ${receipt.key} starts it again`,
     );
   }
 }

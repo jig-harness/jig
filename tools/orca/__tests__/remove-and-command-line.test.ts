@@ -3,8 +3,7 @@
  * host's commands and the command line, against the table in table.ts.
  */
 import { describe, expect, test } from "bun:test";
-import { existsSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
 import { eventProblems } from "../../../plugin/skills/reflect/scripts/lib/events.ts";
 import { type Answer, fail, ok } from "../../herdr/__tests__/fake.ts";
 import type { RunResult } from "../../herdr/runner.ts";
@@ -399,28 +398,42 @@ describe("remove", () => {
     await expect(removeWorkspace(ws, removing)).rejects.toThrow("pass --force");
   });
 
-  test("sets aside the receipts of agents started in the removed worktree, and nothing else", async () => {
-    const ws = workspaceOf(removable, "box", "box");
+  test("leaves the receipts of agents started in the removed worktree, and one an open wrote at its id meanwhile, for the token to judge", async () => {
+    // Orca gives a worktree created later at the same path the same id, and
+    // one can be created, and its agent started, between Orca's deletion and
+    // anything this command does afterwards. A receipt is told from the
+    // removed worktree's by its token where the agent starts (receipts.ts),
+    // so nothing is set aside here: not by the id, and not at all.
+    let replacement = "";
+    const ws = workspaceOf(
+      {
+        ...removable,
+        [rm]: () => {
+          writeReceiptFile(replacement, {
+            ...sentReceipt(ID, "tok-2"),
+            key: "ENG-2",
+            environment: "box",
+          });
+          return answer({ removed: true });
+        },
+      },
+      "box",
+      "box",
+    );
     const gone = receiptOf(ws);
-    const elsewhere = receiptOf(ws, "ENG-2");
-    const notes = join(dirname(gone), "notes.txt");
-    writeReceiptFile(gone, { ...sentReceipt(), environment: "box" });
-    writeReceiptFile(elsewhere, {
-      ...sentReceipt(`${RID}::/ws/repo/eng-2`),
+    replacement = receiptOf(ws, "ENG-2");
+    const old = { ...sentReceipt(), environment: "box" };
+    writeReceiptFile(gone, old);
+    expect(await removeWorkspace(ws, removing)).toBe(WT);
+    expect(JSON.parse(readFileSync(gone, "utf8"))).toEqual(old);
+    expect(JSON.parse(readFileSync(replacement, "utf8"))).toMatchObject({
       key: "ENG-2",
-      environment: "box",
+      worktreeId: ID,
+      worktreeToken: "tok-2",
     });
-    writeFileSync(notes, "not a receipt");
-    await removeWorkspace(ws, removing);
-    expect(existsSync(gone)).toBe(false);
-    expect(retiredBeside(gone)).toHaveLength(1);
-    expect(existsSync(elsewhere)).toBe(true);
-    expect(existsSync(notes)).toBe(true);
-    expect(
-      ws.ctx.lines.some((l) =>
-        l.includes("the next open of ENG-1 starts it again"),
-      ),
-    ).toBe(true);
+    expect(retiredBeside(gone)).toHaveLength(0);
+    expect(retiredBeside(replacement)).toHaveLength(0);
+    expect(ws.ctx.lines.some((l) => l.includes("set aside"))).toBe(false);
   });
 });
 

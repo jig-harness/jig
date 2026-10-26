@@ -78,7 +78,6 @@ import {
   clearReceipt,
   type Receipt,
   receiptPath,
-  retireReceiptsOf,
   writeReceipt,
 } from "./receipts.ts";
 import { OrcaError, type Workspace, workspace } from "./runner.ts";
@@ -579,8 +578,11 @@ export interface RemoveOptions {
  * only when both succeeded. Parking runs the reflection journal in this
  * process, so it happens only when the clone is on this machine; a worktree
  * on a server's host is removed only once its journal is seen to hold no
- * unsent findings. The receipts of agents started in the worktree are set
- * aside once it is gone.
+ * unsent findings. The receipts of agents started in the worktree stay
+ * where they are: a worktree created at its path afterwards, which Orca
+ * gives the same id, is told from it by its token where an agent is started
+ * (receipts.ts), and one may have been created, and its agent started,
+ * before this command could look, so nothing here decides by the id.
  */
 export async function removeWorkspace(
   ws: Workspace,
@@ -626,7 +628,6 @@ export async function removeWorkspace(
       `${what}: ${orcaErrorText(envelope.error)}${options.force ? "" : " (uncommitted changes: commit them, or pass --force to discard them)"}`,
     );
   ws.host.log(`✓ removed ${path}`);
-  retireReceiptsOf(ws, repo.id, row.id);
   return path;
 }
 

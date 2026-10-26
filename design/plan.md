@@ -590,8 +590,12 @@ item links its requirements; the delivery loop writes no spec) is a decision rec
     M12's mappings how a repository's `orca.yaml` setup script and Orca's
     branch-prefix setting approximate them, once validated in a consumer;
   - the drive, pickup and review skills checked inside Orca worktrees on a
-    server, as item 19 does for Herdr, and the launcher's Orca provider
-    tried on Windows.
+    server, as item 19 does for Herdr;
+  - the tool and the launcher's Orca provider on Windows: the tool drives
+    its host with `sh`, `test` and `mkdir` and supervises its hooks through
+    `/proc` or `ps` ([CONTRIBUTING.md § Toolchain](../CONTRIBUTING.md#toolchain)
+    records the gap), so a Windows host needs those steps in its own shell
+    first, and the provider tried there once it has them.
 - **Change-area consumer lint.** The `lint-consumers` check moves into the
   [change-areas skill](../plugin/skills/change-areas/README.md): the path
   lists in agent rules, hook configuration and CI workflow triggers checked
