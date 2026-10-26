@@ -73,25 +73,43 @@ function shown(ws: Workspace, name: string): unknown {
 }
 
 /**
- * The forms of clone source taken: `https://`, `ssh://` or `git://` with a
- * host and a path, an SSH `user@host:path`, or an absolute path on the
- * clone's machine. Anything else (another transport, an option, a bare word)
- * is refused before git sees it.
+ * The network forms of clone source taken: `https://`, `ssh://` or `git://`
+ * with a host and a path, or an SSH `user@host:path`. An absolute path on the
+ * clone's machine is taken too (`isLocalPath`). Anything else (another
+ * transport, an option, a bare word) is refused before git sees it.
  */
 const CLONE_URL_FORMS = [
   /^(https|ssh|git):\/\/([^/@\s]+@)?[A-Za-z0-9.-]+(:\d+)?\/[^\s]+$/,
   /^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[^\s/-][^\s]*$/,
-  /^\/[^\s]+$/,
 ];
+
+/**
+ * An absolute path on the clone's machine, spaces allowed: git gets it as one
+ * argument here and one quoted word over SSH. A control character (a line
+ * break, say) is not a path anyone means.
+ */
+function isLocalPath(url: string): boolean {
+  return (
+    url.length > 1 &&
+    url.startsWith("/") &&
+    ![...url].some(
+      (char) => (char.codePointAt(0) ?? 0) < 0x20 || char === "\x7f",
+    )
+  );
+}
 
 /** `url` with the credentials of a `scheme://user:secret@host` source hidden, for a message. */
 export function redactUrl(url: string): string {
   return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/i, "$1***@");
 }
 
-/** Refuse a clone source that is not one of `CLONE_URL_FORMS`. */
-function assertCloneUrl(url: string): void {
-  if (!CLONE_URL_FORMS.some((form) => form.test(url)))
+/**
+ * Refuse a clone source that is neither one of `CLONE_URL_FORMS` nor a local
+ * path. The launcher checks its configuration with this too, so a source the
+ * clone would refuse is refused when the configuration is checked.
+ */
+export function assertCloneUrl(url: string): void {
+  if (!isLocalPath(url) && !CLONE_URL_FORMS.some((form) => form.test(url)))
     throw new OrcaError(
       `the clone source ${redactUrl(url)} is not an https://, ssh:// or git:// URL, a user@host:path, or an absolute path`,
     );
@@ -122,6 +140,18 @@ function isCloneOf(ws: Workspace, path: string, url: string): boolean {
  */
 class CloneUnfinished extends OrcaError {}
 
+/** SSH's own exit status for a session it lost or could not hold, whatever ran in it. */
+const SSH_FAILED = 255;
+
+/**
+ * Whether a clone's `status` leaves its end unknown: it was stopped (its
+ * deadline), or, on a host reached over SSH, the session ended without the
+ * remote git's status. Git itself exits 128 when it fails.
+ */
+function unfinished(ws: Workspace, status: number): boolean {
+  return status === -1 || (ws.ssh !== undefined && status === SSH_FAILED);
+}
+
 /** Clone `source` to `path` unless a clone of it is there; refuse anything else there. */
 function ensureClone(
   ws: Workspace,
@@ -146,7 +176,7 @@ function ensureClone(
     timeoutMs: budget(ws.host, CLONE_TIMEOUT_MS),
   });
   const said = output(cloned).replaceAll(source.url, () => shownUrl);
-  if (cloned.status === -1)
+  if (unfinished(ws, cloned.status))
     throw new CloneUnfinished(
       `git clone ${shownUrl} ${path} did not finish (${said || "stopped"}); it may still be running on the clone's machine, so the claim ${claim} stays. Once no git clone of it runs there, remove ${path} and ${claim} and open again`,
     );

@@ -15,6 +15,7 @@ import {
   fresh,
   inspect,
   isDir,
+  onBox,
   options,
   orcaError,
   R,
@@ -114,6 +115,47 @@ describe("a repository Orca does not have", () => {
     expect(ws.ctx.calls).not.toContain(releaseClaim);
   });
 
+  test("whose SSH session to the clone's machine was lost keeps the claim, for a clone that may still run", () => {
+    const ws = workspaceOf(
+      onBox(
+        table([missing], {
+          [inspect(CLONE)]: absent,
+          [gitClone]: fail(255, "Connection to box closed by remote host."),
+        }),
+      ),
+      "box",
+      "box",
+    );
+    expect(() =>
+      cloneMissingRepo(ws, "app", { url: URL, root: "~/dev" }),
+    ).toThrow(`so the claim ${CLAIM} stays`);
+    expect(ws.ctx.calls).not.toContain(releaseClaim);
+  });
+
+  test("whose clone on this machine exits 255 fails as any failed clone does", () => {
+    const ws = workspaceOf(
+      table([missing, missing], {
+        [inspect(CLONE)]: absent,
+        [gitClone]: fail(255, "fatal: something"),
+      }),
+    );
+    expect(() => openWorkspace(ws, cloning)).toThrow("failed:");
+    expect(ws.ctx.calls).toContain(releaseClaim);
+  });
+
+  test("from an absolute path with spaces is cloned", () => {
+    const source = "/srv/Source Repositories/app";
+    const ws = workspaceOf(
+      table([missing, missing, found], {
+        [inspect(CLONE)]: absent,
+        [`git clone -- ${source} ${CLONE}`]: ok(),
+        [add]: answer({ repo: { id: RID, path: CLONE } }),
+      }),
+    );
+    openWorkspace(ws, { ...options, clone: { url: source, root: "~/dev" } });
+    expect(ws.ctx.calls).toContain(`git clone -- ${source} ${CLONE}`);
+  });
+
   test("shows its source with the credentials hidden, in progress and failure alike", () => {
     const secret = "https://user:s3cret@example.com/acme/app.git";
     const ws = workspaceOf(
@@ -143,6 +185,7 @@ describe("a repository Orca does not have", () => {
       "--upload-pack=touch /tmp/x",
       "app",
       "file://example.com/x",
+      "/srv/app\n--upload-pack=x",
     ]) {
       const ws = workspaceOf(table([missing], {}));
       expect(() =>

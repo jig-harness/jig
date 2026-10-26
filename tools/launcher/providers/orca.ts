@@ -42,7 +42,7 @@ import { isRecord } from "../../../lib/record.ts";
 import { TRANSPORT_MS } from "../../herdr/limits.ts";
 import { assertHost } from "../../herdr/remote.ts";
 import { HerdrError } from "../../herdr/runner.ts";
-import type { CloneSource } from "../../orca/clone.ts";
+import { assertCloneUrl, type CloneSource } from "../../orca/clone.ts";
 import { OrcaError } from "../../orca/runner.ts";
 import {
   OPEN_LIMIT_MS,
@@ -114,7 +114,15 @@ function parseClone(
     throw new HerdrError(`${at} needs both url and root`);
   if (!root.startsWith("/") && root !== "~" && !root.startsWith("~/"))
     throw new HerdrError(`${at}.root must be absolute or start with ~/`);
-  return { url: url.replaceAll("{repo}", () => repo), root };
+  const source = url.replaceAll("{repo}", () => repo);
+  try {
+    assertCloneUrl(source);
+  } catch (error) {
+    throw new HerdrError(
+      `${at}.url: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  return { url: source, root };
 }
 
 /** `environment` and `ssh`: the server, and the host git runs on for it. */

@@ -124,6 +124,22 @@ describe("clone", () => {
     ] as const)
       expect(() => parseRepo({ repo: "app", clone }, "app")).toThrow(message);
   });
+
+  test("refuses, when the configuration is checked, a source the clone would refuse", () => {
+    for (const url of ["x", "{repo}", "--upload-pack=touch /tmp/x"])
+      expect(() =>
+        orcaProvider().validateRepo(
+          { repo: "app", clone: { url, root: "/srv/repos" } },
+          "app",
+        ),
+      ).toThrow("repos.app.orca.clone.url: the clone source");
+    expect(
+      parseRepo(
+        { repo: "app", clone: { url: "/srv/Source Repos/{repo}", root: "~" } },
+        "app",
+      ).clone?.url,
+    ).toBe("/srv/Source Repos/app");
+  });
 });
 
 describe("open", () => {
