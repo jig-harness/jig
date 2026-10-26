@@ -169,7 +169,10 @@ function unfinished(ws: Workspace, status: number): boolean {
  * askpass choice, so neither `core.askPass` nor `SSH_ASKPASS` runs, and
  * `GIT_TERMINAL_PROMPT=0` then refuses the terminal; `GCM_INTERACTIVE=never`
  * keeps Git Credential Manager from opening a window; SSH's batch mode asks
- * for no password or passphrase. A key, an SSH agent or a credential helper
+ * for no password or passphrase. `GIT_SSH_VARIANT=ssh` makes git pass that
+ * command OpenSSH's arguments, since a variant the machine names
+ * (`GIT_SSH_VARIANT`, `ssh.variant`) outranks the command's own name, and
+ * `GIT_SSH_COMMAND` outranks `GIT_SSH` and `core.sshCommand`. A key, an SSH agent or a credential helper
  * still answers without a person (`~/.ssh/config` still applies, and
  * replaces a `core.sshCommand`).
  */
@@ -178,6 +181,7 @@ export const NO_PROMPT_ENV = [
   "GIT_ASKPASS=",
   "GCM_INTERACTIVE=never",
   "GIT_SSH_COMMAND=ssh -o BatchMode=yes",
+  "GIT_SSH_VARIANT=ssh",
 ];
 
 /** The command that clones `url` into `path` with no prompt. */

@@ -163,7 +163,8 @@ available first, on the machine the clone goes on (this one, or `--ssh`'s):
    path; messages show it with any `user:secret@` hidden. The clone can
    prompt no one: no terminal prompt, no askpass program, no Git Credential
    Manager window, and SSH in batch mode (its `ssh -o BatchMode=yes` takes
-   the place of a `core.sshCommand`; `~/.ssh/config` still applies). So the
+   the place of a `core.sshCommand`, and git passes it `ssh`'s own arguments
+   whatever `ssh.variant` says; `~/.ssh/config` still applies). So the
    machine needs credentials for the URL that ask nothing (an SSH key or
    agent, a credential helper). A clone that does not end on
    its own (its limit, a lost SSH session) keeps the claim, since git may

@@ -1,7 +1,8 @@
 /**
  * The clone's command, run by real git: whatever askpass the machine has
  * configured, a source that asks for credentials gets no prompt, while a
- * credential helper is still asked; and SSH runs in batch mode.
+ * credential helper is still asked; and SSH runs in batch mode, with
+ * OpenSSH's arguments whatever SSH variant the machine names.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -120,19 +121,41 @@ describe("the clone's command", () => {
     expect(readFileSync(marker, "utf8")).toContain("get");
   });
 
-  test("runs SSH in batch mode, so it asks for no password or passphrase", async () => {
-    const marker = join(dir, "ssh-args");
-    const bin = join(dir, "bin");
-    await Bun.$`mkdir -p ${bin}`.quiet();
-    await writeFile(
-      join(bin, "ssh"),
-      `#!/bin/sh\necho "$@" >> '${marker}'\nexit 255\n`,
-    );
-    await chmod(join(bin, "ssh"), 0o755);
-    await run(
-      cloneCommand("ssh://git@example.invalid/acme/app.git", join(dir, "ssh")),
-      { PATH: `${bin}:${process.env.PATH ?? ""}` },
-    );
-    expect(readFileSync(marker, "utf8")).toContain("-o BatchMode=yes");
-  });
+  /** Each way a machine can name an SSH variant other than OpenSSH's. */
+  const variantBy: Record<string, Record<string, string>> = {
+    none: {},
+    GIT_SSH_VARIANT: { GIT_SSH_VARIANT: "simple" },
+    "ssh.variant": {
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "ssh.variant",
+      GIT_CONFIG_VALUE_0: "plink",
+    },
+  };
+
+  for (const [by, variant] of Object.entries(variantBy)) {
+    test(`runs SSH in batch mode with OpenSSH's arguments, whatever variant ${by} names`, async () => {
+      const marker = join(dir, `ssh-args-${by}`);
+      const bin = join(dir, "bin");
+      await Bun.$`mkdir -p ${bin}`.quiet();
+      await writeFile(
+        join(bin, "ssh"),
+        `#!/bin/sh\necho "$@" >> "$SSH_MARKER"\nexit 255\n`,
+      );
+      await chmod(join(bin, "ssh"), 0o755);
+      await run(
+        cloneCommand(
+          "ssh://git@example.invalid:2222/acme/app.git",
+          join(dir, `ssh-${by}`),
+        ),
+        {
+          PATH: `${bin}:${process.env.PATH ?? ""}`,
+          SSH_MARKER: marker,
+          ...variant,
+        },
+      );
+      const args = readFileSync(marker, "utf8");
+      expect(args).toContain("-o BatchMode=yes");
+      expect(args).toContain("-p 2222");
+    });
+  }
 });
