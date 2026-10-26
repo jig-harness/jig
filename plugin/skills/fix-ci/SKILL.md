@@ -166,11 +166,14 @@ text in its output; a failure without it cannot decide (exit 2).
 The worktree starts with nothing installed (no `node_modules`, no virtual
 environment, no `vendor/`): `--setup` names the repository's install
 command (`install_command` from Step 0's configuration), run through the
-shell in the worktree before the command; a setup that fails is no answer
+Bun shell (`bun exec`) in the worktree before the command; a setup that fails is no answer
 (exit 2). Install into the worktree itself: an install that links the
 package to the working checkout (an editable install, a workspace link)
 runs the change's code against the base's test and gets the verdict
-backwards. The setup runs in a shell of its own, so the command must find
+backwards. Setup uses Bun's built-in shell on every platform and needs no
+Git Bash installation. The configured install command must use syntax and
+programs available in that environment. The setup runs in a shell of its own,
+so the command must find
 what it installed without activation: `uv run pytest`, `.venv/bin/python -m
 pytest`, `bundle exec rspec`, never a bare `pytest` that resolves from the
 caller's environment.
@@ -195,23 +198,23 @@ commit probed, the expected text, the `evidence` the verdict rests on
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/consumer-config.ts"
-bun "${CLAUDE_SKILL_DIR}/scripts/parse-ci-log.ts" $ARGUMENTS
+bun "${CLAUDE_SKILL_DIR}/scripts/parse-ci-log.ts" <run-id-or-options>
 ```
 
 Read the JSON. If `errors_found` is 0:
 
 - `"error": "no_failed_runs"`: report that no failed run was found.
 - The run failed but no error was parsed: fetch the raw log with
-  `gh run view <RUN_ID> --log-failed` and investigate.
+  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run view <RUN_ID> --log-failed` and investigate.
 
 > **Cancelled, not broken?** Check the run's conclusion and its jobs'
 > annotations before analyzing code. A job's ID is also the ID of its check
 > run, which holds the annotations:
 >
 > ```bash
-> gh run view <RUN_ID> --json conclusion --jq '.conclusion'
-> gh run view <RUN_ID> --json jobs --jq '.jobs[] | select(.conclusion!="success") | {databaseId, name, conclusion}'
-> gh api repos/{owner}/{repo}/check-runs/<JOB_ID>/annotations --jq '.[].message'
+> bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run view <RUN_ID> --json conclusion --jq '.conclusion'
+> bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run view <RUN_ID> --json jobs --jq '.jobs[] | select(.conclusion!="success") | {databaseId, name, conclusion}'
+> bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh api "repos/{owner}/{repo}/check-runs/<JOB_ID>/annotations" --jq '.[].message'
 > ```
 >
 > `Canceling since a higher priority waiting request exists` or
@@ -228,10 +231,10 @@ Read the JSON. If `errors_found` is 0:
 >
 > ```bash
 > # Find the failing job, then pull its FULL log (not --log-failed)
-> gh run view <RUN_ID> --json jobs --jq '.jobs[] | select(.conclusion=="failure") | {databaseId, name}'
-> gh run view --job <JOB_ID> --log | grep -E 'FATAL|UnhandledRejection|Error:|verification failed' -B2 -A20
+> bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run view <RUN_ID> --json jobs --jq '.jobs[] | select(.conclusion=="failure") | {databaseId, name}'
+> bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file job.log -- gh run view --job <JOB_ID> --log
 > # Only when a run actually uploaded a log artifact (rare):
-> gh api repos/{owner}/{repo}/actions/runs/<RUN_ID>/artifacts --jq '.artifacts[].name'
+> bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh api "repos/{owner}/{repo}/actions/runs/<RUN_ID>/artifacts" --jq '.artifacts[].name'
 > ```
 >
 > The root cause of an integration failure usually sits deeper in the job log
@@ -245,15 +248,15 @@ Read the JSON. If `errors_found` is 0:
 > without the failing test's output:
 >
 > ```bash
-> gh run view <RUN_ID> --json jobs --jq '.jobs[] | select(.conclusion=="failure") | {databaseId, name}'
-> gh run view --job <JOB_ID> --log | grep -E '<failing-package>|FAIL|Error:' -B 2 -A 20
+> bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run view <RUN_ID> --json jobs --jq '.jobs[] | select(.conclusion=="failure") | {databaseId, name}'
+> bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file job.log -- gh run view --job <JOB_ID> --log
 > ```
 >
 > **CI never started after a push?** Check the pull request's merge state
 > first:
 >
 > ```bash
-> gh api repos/{owner}/{repo}/pulls/<PR_NUMBER> --jq '.mergeable_state'
+> bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh api "repos/{owner}/{repo}/pulls/<PR_NUMBER>" --jq '.mergeable_state'
 > ```
 >
 > - `dirty`: merge conflicts block CI. Resolve them, then push.
@@ -268,7 +271,8 @@ Read the JSON. If `errors_found` is 0:
 
 From the parsed JSON, list every error with its file, its type or code, a
 short description and the planned fix. With five or more errors, track them in
-the harness's task list (Claude Code: `TaskCreate`).
+the harness's task list (Claude Code: `TaskCreate`), or a checklist in your
+status message where it has none.
 
 ## Step 2: Fix all errors, in priority order
 
@@ -326,7 +330,7 @@ preference, not an either-or.
 **Attribute before you fix.** Where the failing test, the file it tests or
 their directory is not in the branch's diff, do not assume the change broke
 it: run the fresh-base probe on that one file, with the base the pull
-request merges into (`gh pr view --json baseRefName --jq .baseRefName`, or
+request merges into (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view --json baseRefName --jq .baseRefName`, or
 the repository's default branch).
 
 ```bash
@@ -442,7 +446,7 @@ plan does not run the tests, run them too.
 
 If any check fails:
 
-- run `parse-ci-log.ts --log <saved output>` on the failing output, or read it
+- run `bun "${CLAUDE_SKILL_DIR}/scripts/parse-ci-log.ts" --log "<saved output>"` on the failing output, or read it
   directly, to categorize what remains;
 - fix it;
 - verify again;
@@ -454,31 +458,24 @@ here errors were parsed but the local checks do not show them.
 
 ## Step 4: Commit and push
 
-Once every check passes, write the commit message to a file first (the Write
-tool, or a quoted heredoc: `<<'EOF'`, never `<<EOF`) rather than
-interpolating the generated summary into `-m "..."`. Inside double quotes the
-shell expands backticks and `$(...)`, so a message that quotes code can run
-it.
+Once every check passes, write the commit message to `ci-fix-message.txt`
+with the file-writing tool. Include the run ID, what changed and which local
+checks passed. Keep generated summaries as literal file content.
 
 Stage only the files this repair changed or regenerated, by name. Never
-`git add -A` or `git add .`: they would also commit unrelated work in the
-checkout. Check `git status --short` afterwards for anything left out.
+stage the whole checkout with `git add` using `-A` or the `.` path: that
+would also commit unrelated work in the
+checkout. Check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` afterwards for anything left out.
 
 ```bash
-git add -- <each file this repair changed or regenerated>
-commit_message_file=$(mktemp)
-trap 'rm -f "$commit_message_file"' EXIT
-cat > "$commit_message_file" <<'EOF'
-fix: resolve CI errors from run #<RUN_ID>
-
-- Fixed: <summary of categories and counts>
-- Verified: <the checks that passed locally>
-EOF
-
-git commit -F "$commit_message_file" && rm -f "$commit_message_file"
-
-git push
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git add -- <each file this repair changed or regenerated>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git commit -F ci-fix-message.txt
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- ci-fix-message.txt
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push
 ```
+
+Remove the message file only after the commit succeeds, so a refused commit
+can be retried with it; left behind, it makes the worktree dirty.
 
 Add the co-author trailer your repository uses for agent commits, if any.
 

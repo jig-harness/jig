@@ -43,8 +43,15 @@ import {
   type Regenerate,
   regenerateFor,
 } from "./lib/classify.ts";
-import { git, readBlob, splitNul, topLevel } from "./lib/git.ts";
-import { parseHunks } from "./lib/markers.ts";
+import { indexAttributesGit } from "./lib/attributes.ts";
+import { git, isBinaryBlob, splitNul, topLevel } from "./lib/git.ts";
+import {
+  attributionOf,
+  concludedCommit,
+  keepPending,
+  recordConcluded,
+} from "./lib/events.ts";
+import { parseHunks, writtenMarkerSize } from "./lib/markers.ts";
 import {
   detectOperation,
   NoOperation,
@@ -52,6 +59,7 @@ import {
   type SideName,
 } from "./lib/operation.ts";
 import {
+  describeOperation,
   emptyResolution,
   type Intent,
   type IntentCommit,
@@ -97,19 +105,37 @@ export function unmergedPaths(root: string): Map<string, Unmerged> {
   return byPath;
 }
 
-/** `git check-attr` values for the attributes the map reads, per path. */
+/** Where `attributes` reads `.gitattributes` from. */
+type AttributeSource = "index" | "merge";
+
+/**
+ * `git check-attr` values for `names`, per path. From the `index`: the
+ * attributes the commit carries and nothing else (lib/attributes.ts), which
+ * classify a path.
+ * As the `merge` read them: the working tree's files first, then the
+ * index's, which is how git found the marker size it wrote.
+ */
 function attributes(
   root: string,
   paths: string[],
+  source: AttributeSource,
+  names: readonly string[],
 ): Map<string, Record<string, string>> {
   const result = new Map<string, Record<string, string>>();
   if (paths.length === 0) return result;
+  const args = ["check-attr", "-z", "--stdin", ...names];
+  const input = `${paths.join("\0")}\0`;
   const out = splitNul(
-    git(
-      root,
-      ["check-attr", "-z", "--stdin", "diff", "merge", "conflict-marker-size"],
-      `${paths.join("\0")}\0`,
-    ),
+    source === "index"
+      ? indexAttributesGit(root, (run) => {
+          const r = run(args, input);
+          if (r.code !== 0)
+            throw new Error(
+              `git --attr-source check-attr exited ${r.code} (Git 2.41 or newer is required): ${r.stderr.trim()}`,
+            );
+          return r.stdout;
+        })
+      : git(root, args, input),
   );
   for (let i = 0; i + 2 < out.length; i += 3) {
     const path = out[i] as string;
@@ -118,6 +144,12 @@ function attributes(
     result.set(path, values);
   }
   return result;
+}
+
+/** A `conflict-marker-size` value as a size, the default when unset or invalid. */
+function markerSizeOf(attrs: Record<string, string> | undefined): number {
+  const size = Number(attrs?.["conflict-marker-size"]);
+  return Number.isInteger(size) && size > 0 ? size : DEFAULT_MARKER_SIZE;
 }
 
 function isBinary(
@@ -131,7 +163,7 @@ function isBinary(
     if (stage === null) continue;
     // A submodule entry is a commit, not file content.
     if (stage.mode === "160000") return true;
-    if (readBlob(root, stage.blob).slice(0, 8000).includes("\0")) return true;
+    if (isBinaryBlob(root, stage.blob)) return true;
   }
   return false;
 }
@@ -252,13 +284,15 @@ export function classifyPaths(
   stagesByPath: ReadonlyMap<string, Unmerged>,
   entries: readonly GeneratedEntry[],
 ): Map<string, Classification> {
-  const attrs = attributes(root, [...stagesByPath.keys()]);
+  const attrs = attributes(root, [...stagesByPath.keys()], "index", [
+    "diff",
+    "merge",
+    "conflict-marker-size",
+  ]);
   const result = new Map<string, Classification>();
   for (const [path, stages] of stagesByPath) {
     const pathAttrs = attrs.get(path) ?? {};
-    const size = Number(pathAttrs["conflict-marker-size"]);
-    const markerSize =
-      Number.isInteger(size) && size > 0 ? size : DEFAULT_MARKER_SIZE;
+    const markerSize = markerSizeOf(pathAttrs);
     const derived = regenerateFor(path, entries);
     result.set(path, {
       class: derived
@@ -274,11 +308,33 @@ export function classifyPaths(
 }
 
 /**
+ * The marker size git writes each path's markers with: the
+ * `conflict-marker-size` a merge reads, the working tree's files before the
+ * index's. It can differ from the size the index declares (an untracked
+ * `.gitattributes`), and only finding the markers depends on it.
+ */
+export function writtenSizes(
+  root: string,
+  paths: string[],
+): Map<string, number> {
+  const attrs = attributes(root, paths, "merge", ["conflict-marker-size"]);
+  return new Map(paths.map((path) => [path, markerSizeOf(attrs.get(path))]));
+}
+
+/** The `conflict-marker-size` the attributes the commit carries give each path. */
+export function indexSizes(root: string, paths: string[]): Map<string, number> {
+  const attrs = attributes(root, paths, "index", ["conflict-marker-size"]);
+  return new Map(paths.map((path) => [path, markerSizeOf(attrs.get(path))]));
+}
+
+/**
  * Map every unmerged path of the operation in progress, or the paths given in
- * `unmerged` with their stages. `recordedSizes` holds the marker size an
- * earlier map of the same operation recorded for a path: git wrote that
- * path's markers when the operation stopped, so a `conflict-marker-size`
- * changed since does not describe them.
+ * `unmerged` with their stages. A path's marker size is the one git wrote its
+ * markers with: the size of the markers in the file, else the size an earlier
+ * map of the same operation recorded (`recordedSizes`), else the size the
+ * merge reads; a `conflict-marker-size` changed or removed since the
+ * operation stopped does not describe them, and neither does a size recorded
+ * before the operation was started again.
  */
 export function mapConflicts(
   root: string,
@@ -289,6 +345,10 @@ export function mapConflicts(
 ): Record<string, PathEntry> {
   const paths = [...unmerged.keys()].sort();
   const classes = classifyPaths(root, unmerged, derivedEntries(catalog));
+  const written = writtenSizes(
+    root,
+    paths.filter((path) => !recordedSizes.has(path)),
+  );
   const intent = intentReader(root, op);
   // Keyed by git paths, so `__proto__` is an ordinary path: no prototype.
   const mapped: Record<string, PathEntry> = Object.create(null);
@@ -297,12 +357,16 @@ export function mapConflicts(
     const kind = kindOf(stages);
     const classified = classes.get(path) as Classification;
     const { class: cls, regenerate } = classified;
-    const markerSize = recordedSizes.get(path) ?? classified.markerSize;
     const file = join(root, path);
+    const content =
+      cls !== "binary" && existsSync(file) ? readFileSync(file, "utf8") : null;
+    const expected =
+      recordedSizes.get(path) ?? written.get(path) ?? classified.markerSize;
+    const markerSize =
+      (content === null ? null : writtenMarkerSize(content, expected)) ??
+      expected;
     const hunks =
-      cls === "text" && existsSync(file)
-        ? parseHunks(readFileSync(file, "utf8"), markerSize)
-        : [];
+      cls === "text" && content !== null ? parseHunks(content, markerSize) : [];
     mapped[path] = {
       kind,
       class: cls,
@@ -385,13 +449,28 @@ export function mergeSnapshot(
   }
   for (const [path, entry] of Object.entries(fresh.paths))
     if (!Object.hasOwn(paths, path)) paths[path] = entry;
+  const attribution = previous.attribution ?? fresh.attribution;
+  return {
+    snapshot: {
+      ...fresh,
+      ...(attribution === undefined ? {} : { attribution }),
+      paths,
+    },
+    note: updateNote(paths, cleared),
+  };
+}
+
+/** How many recorded decisions an update kept, and which it cleared. */
+function updateNote(
+  paths: Record<string, PathEntry>,
+  cleared: string[],
+): string {
   const kept = Object.values(paths).filter(
     (entry) => entry.resolution.decision,
   ).length;
-  return {
-    snapshot: { ...fresh, paths },
-    note: `updated: kept ${kept} recorded decision${kept === 1 ? "" : "s"}${cleared.length === 0 ? "" : `; cleared the decision for ${cleared.sort().join(", ")}, whose class or regeneration command changed: record it again`}`,
-  };
+  const keptPart = `updated: kept ${kept} recorded decision${kept === 1 ? "" : "s"}`;
+  if (cleared.length === 0) return keptPart;
+  return `${keptPart}; cleared the decision for ${cleared.sort().join(", ")}, whose class or regeneration command changed: record it again`;
 }
 
 function shortSha(sha: string): string {
@@ -503,12 +582,39 @@ function recordedSizes(
   return sizes;
 }
 
+/**
+ * An earlier operation's snapshot is about to be overwritten: keep its events
+ * if it concluded and nobody recorded them (each stop of a rebase is a new
+ * operation, and `events.ts` runs once, after the last). When the record
+ * cannot be written, the snapshot is kept as pending, with the commit it
+ * concluded with, for `events.ts` to record later. Never stops the map.
+ */
+function recordBeforeReplacing(root: string, previous: Snapshot): void {
+  let commit: string | null = null;
+  try {
+    commit = concludedCommit(root, previous);
+    if (commit === null) return;
+    const done = recordConcluded(root, previous, process.env, commit);
+    if (done.written > 0)
+      console.error(
+        `conflict-map: recorded ${done.written} merge_conflict event${done.written === 1 ? "" : "s"} of the ${describeOperation(previous.operation)} before replacing its snapshot`,
+      );
+  } catch (err) {
+    const kept = keepPending(root, previous, commit);
+    console.error(
+      `conflict-map: could not record the events of the ${describeOperation(previous.operation)}: ${err instanceof Error ? err.message : err}. ${kept === null ? "Its snapshot could not be kept either; its events are lost." : `Its snapshot is kept in ${kept}; events.ts records it once the record can be written.`}`,
+    );
+  }
+}
+
 function usage(): never {
   fail(2, "usage: conflict-map.ts [--json] [--integration ours|theirs]");
 }
 
-async function main(): Promise<number> {
-  const args = process.argv.slice(2);
+function parseArgs(args: readonly string[]): {
+  json: boolean;
+  integration: SideName | undefined;
+} {
   let json = false;
   let integration: SideName | undefined;
   for (let i = 0; i < args.length; i++) {
@@ -520,16 +626,28 @@ async function main(): Promise<number> {
       integration = value;
     } else usage();
   }
-  const root = topLevel();
-  if (root === null) fail(2, "conflict-map: not inside a git work tree.");
-  let op: Operation;
+  return { json, integration };
+}
+
+/** The operation in progress at `root`; exit 3 when there is none. */
+function operationOrExit(
+  root: string,
+  integration: SideName | undefined,
+): Operation {
   try {
-    op = detectOperation(root, integration);
+    return detectOperation(root, integration);
   } catch (err) {
     if (err instanceof NoOperation)
       fail(3, `conflict-map: ${err.message} Nothing to map.`);
     throw err;
   }
+}
+
+async function main(): Promise<number> {
+  const { json, integration } = parseArgs(process.argv.slice(2));
+  const root = topLevel();
+  if (root === null) fail(2, "conflict-map: not inside a git work tree.");
+  const op = operationOrExit(root, integration);
   const previous = storedSnapshot(root);
   const catalog = catalogGeneratedEntries();
   const paths = mapConflicts(root, op, catalog, recordedSizes(previous, op));
@@ -550,6 +668,7 @@ async function main(): Promise<number> {
     warning: warningOf(op.warning, catalog),
     catalogIncomplete: catalog.incomplete,
     mappedAt: new Date().toISOString(),
+    attribution: attributionOf(process.env),
     paths,
   };
   const { snapshot, note } = mergeSnapshot(
@@ -557,12 +676,15 @@ async function main(): Promise<number> {
     fresh,
     classifyPaths(root, stagedSince(previous, fresh), derivedEntries(catalog)),
   );
+  if (previous !== null && !sameOperation(previous, op))
+    recordBeforeReplacing(root, previous);
   const file = saveSnapshot(root, snapshot);
-  if (json) console.log(JSON.stringify(snapshot, null, 2));
-  else {
+  if (!json) {
     console.log(summary(snapshot, Object.keys(paths), file, note));
+    return 0;
   }
-  if (json && snapshot.warning) console.error(`WARNING: ${snapshot.warning}`);
+  console.log(JSON.stringify(snapshot, null, 2));
+  if (snapshot.warning) console.error(`WARNING: ${snapshot.warning}`);
   return 0;
 }
 

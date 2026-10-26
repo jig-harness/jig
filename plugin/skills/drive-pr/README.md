@@ -38,6 +38,28 @@ Commands on this page write the skill's directory as `<skill-dir>`: the
 substitutes it as `${CLAUDE_SKILL_DIR}` in the skill itself). Run every
 command from the root of the repository whose PR is being driven.
 
+Windows requires Git for Windows. Commands run in native PowerShell and
+POSIX shells. The authenticated end-to-end smoke — picking an item, opening a
+draft PR, arming a drive, completing a round, and stopping it — is pending.
+Native Windows validation also excludes named multi-round and long-CI
+driver fixtures and the large post-retirement census fixture until their
+startup and filesystem work fit the existing test budgets. Other tests of
+these behaviors continue to run.
+
+For Windows `.cmd` or `.bat` pass launchers, arguments cannot contain carriage
+returns, newlines or null bytes. Supply multiline
+prompts through a file or standard input using the agent CLI's input options.
+Batch wrappers that forward all arguments are supported only in npm's generated
+`_prog` form, with or without the interpreter arguments npm copies from the
+entry point's first line. Those arguments must be plain words: one containing
+a quote or a cmd character (`%`, `^`, `&`, `|`, `<`, `>`, `(`, `)`, `!`), such
+as `--title="x"`, is refused. A wrapper that also sets environment variables,
+or any other forwarding wrapper, is refused too. In each case, launch the
+underlying executable and its JavaScript entry point directly. A launch whose
+command line would exceed cmd.exe's 8,191-character limit, either as escaped
+or once the npm wrapper expands its own variables, is refused as well; pass
+long input through a file or standard input.
+
 ## Consumer configuration
 
 Each repository keeps its values in `.config/jig.yaml`, the
@@ -55,7 +77,7 @@ the drive reads best-effort and replaces with the default when mistyped.
 | `review.sticky_marker` | Text that identifies the reviewer's sticky summary comment. Read only when a reviewer is expected. `DRIVE_PR_STICKY_MARKER` overrides it | `<!-- ai-code-review -->` |
 | `review.reviewed_sha_marker` | Marker the reviewer stamps the commit it reviewed with, inside that comment. Read only when a reviewer is expected. `DRIVE_PR_SHA_MARKER` overrides it | `ai-reviewed-sha` |
 | `review.severity_formats` | How a reviewer writes a finding's severity, which the decline ladder and the `severity` line of the loop-economy report read: a list of `{login, shape, severities}`, one entry per login, tried before the built-in formats and read only on comments that login posted ([severity formats](../../EXTENDING.md#severity-formats), [fields](../../CONFIGURATION.md#review)) | None: the built-in formats only |
-| `repository.base_branch` | The integration branch. A round diffs against its pull request's own base (`origin/<base>`), so a stacked layer's plan and change set cover that layer alone; it diffs against this branch only on a branch known to have no pull request (a detached HEAD has to name its pull request). A pull request whose base cannot be read or fetched, or whose repository is not `origin`'s, is refused rather than diffed against another branch. A walk down a stack for its required checks stops here. `DRIVE_PR_BASE_BRANCH` overrides it | Derived: the clone's `origin/HEAD` when it has one, else `gh repo view --json defaultBranchRef`, cached per process |
+| `repository.base_branch` | The integration branch. A round diffs against its pull request's own base (`origin/<base>`), so a stacked layer's plan and change set cover that layer alone; it diffs against this branch only on a branch known to have no pull request (a detached HEAD has to name its pull request). A pull request whose base cannot be read or fetched, or whose repository is not `origin`'s, is refused rather than diffed against another branch. A walk down a stack for its required checks stops here. `DRIVE_PR_BASE_BRANCH` overrides it | Derived: the clone's `origin/HEAD` when it has one, else the `defaultBranchRef` field from `gh repo view`, cached per process |
 | `drive.validation_plan_command` | A command that reads the changed files (one per line) on stdin and prints the validation plan as JSON on stdout: `{validation: {localChecks: [...], verificationChecks: [...], testbox: {required, command, warmupCommand, requiredBy}}, reviewSkills: [...]}`. `round-plan.ts` runs it through the shell from the repository root | Unset: the plan is the single local check `gates.command` |
 | `drive.load_guard_command` | A command `round-plan.ts` runs (in text mode) before printing the plan, which waits until the machine's load allows heavy checks | Unset: no load guard |
 | `drive.change_areas_catalog` | Path, relative to the repository root or absolute, to a [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): YAML whose `areas:` map holds area key → `{paths: [globs], ...}`. `verification-fit.ts` validates `--area` against its keys, and refuses (exit 2, naming the field) a catalog whose `paths`, `generated[].source`, `labels` or `tracker` fields are malformed; the rest of the catalog schema is not checked | Unset: `--area` is recorded unchecked and the script reports the catalog as not configured |
@@ -146,9 +168,17 @@ configuration, because they describe one machine's layout:
 
 | Variable | What it does | Default |
 |----------|--------------|---------|
-| `DRIVE_PR_STATE_DIR` | The drive's state directory (see § Where its state lives) | `~/.local/state/jig/drive-pr/<clone-key>/` |
+| `DRIVE_PR_STATE_DIR` | State root; each clone uses `<root>/<clone-key>/` (an inherited resolved leaf is also accepted) | Root: `~/.local/state/jig/drive-pr/` |
 | `JIG_VERIFICATION_FIT_LOG` | Where `verification-fit.ts` appends its verdicts | `~/.local/state/jig/verification-fit.jsonl` |
-| `DRIVE_PR_REAPER_LAUNCHD_LABEL`, `DRIVE_PR_REAPER_CRONTAB_MARKER` | Name a scheduled `reap-state.ts --delete` job, so `migrate-state-dir.ts` refuses while it is enabled | Unset: no schedule is checked |
+| `DRIVE_PR_REAPER_LAUNCHD_LABEL`, `DRIVE_PR_REAPER_CRONTAB_MARKER` | Name a scheduled `bun "<skill-dir>/scripts/reap-state.ts" --delete` job, so `migrate-state-dir.ts` refuses while it is enabled | Unset: no schedule is checked |
+
+`drives.ts` identifies each drive's repository in both human listings and
+JSON rows (`repository`): the origin's owner/repository, or the clone's Git
+common directory when origin is unavailable or its URL yields no plain
+owner/repository pair. The origin URL itself is never printed, so a credential
+in it stays out of listings. This label is read locally and does not contact
+the hosting service. State, logs and leases for the same PR
+number in different clones stay in separate clone directories.
 
 ### CI hold
 
@@ -191,14 +221,14 @@ behind; see [§ The exit states](#the-exit-states--what-you-do-now) for the reco
 ### Push hold
 
 `guarded-push.ts` refuses to push while an orchestrator has sent the PR a
-`hold-push` directive (`mailbox.ts send`). A hold sent while the push's own
+`hold-push` directive (`bun "<skill-dir>/scripts/mailbox.ts" send`). A hold sent while the push's own
 pre-push hooks are already running lands after that check, so a repository
 that wants those holds honoured too runs `push-hold-recheck.ts` as its last
 pre-push hook command. `guarded-push.ts` arms it by exporting
-`DRIVE_PR_HOLD_RECHECK_PR`; an ordinary push skips it before `bun` starts:
+`DRIVE_PR_HOLD_RECHECK_PR`. This hook starts Bun on every push; when that
+variable is unset, the script exits successfully before reading the mailbox:
 
 ```sh
-[ -z "${DRIVE_PR_HOLD_RECHECK_PR+x}" ] && exit 0
 bun "<skill-dir>/scripts/push-hold-recheck.ts"
 ```
 
@@ -217,13 +247,13 @@ legitimate step keeps hitting it, rather than removing it.
 | `DRIVE_PR_CONFLICT_REPAIR_ROUNDS` | Conflict-resolution passes when the PR conflicts with its base and nothing else is left (`0`: stop at once) | `1` |
 | `DRIVE_PR_FINAL_CI_WITNESS_POLLS` | How long to wait for the required checks to report on the final commit, in 10-second polls (`0`: wait forever) | `180` (30 minutes) |
 | `DRIVE_PR_STALL_ROUNDS` | Consecutive rounds that change nothing before the drive stops with exit `14` (`0`: off) | `2` |
-| `DRIVE_PR_PASS_TIMEOUT` | One round's agent pass, in seconds; also `drive.ts --pass-timeout` (`0`: off) | `5400` (90 minutes) |
+| `DRIVE_PR_PASS_TIMEOUT` | One round's agent pass, in seconds; also `bun "<skill-dir>/scripts/drive.ts" --pass-timeout` (`0`: off) | `5400` (90 minutes) |
 | `DRIVE_PR_QUOTA_MAX_SLEEP_SEC` | The longest usage-limit reset the drive sleeps through rather than stopping with exit `16` | `21600` (6 hours) |
 | `DRIVE_PR_PAUSE_MAX_SEC` | How long a mailbox `pause` may last before exit `19` | `1800` (30 minutes) |
 | `DRIVE_PR_PUSH_TIMEOUT` | One `git push`, pre-push hooks included, in seconds | `3600` |
 | `DRIVE_PR_HELPER_TIMEOUT` | One helper script the drive spawns, in seconds | `120` |
 | `GH_CALL_TIMEOUT` | One `gh` call, in seconds | `30` |
-| `DRIVE_PR_STALL_MIN` | Minutes without progress before `drives.ts --doctor` calls a live drive wedged (never below the default) | `240` |
+| `DRIVE_PR_STALL_MIN` | Minutes without progress before `bun "<skill-dir>/scripts/drives.ts" --doctor` calls a live drive wedged (never below the default) | `240` |
 
 The remaining `DRIVE_PR_*` variables (lock and lease timing, and the ones
 `drive.ts` sets for its own passes) are documented where they act, in
@@ -248,8 +278,8 @@ limit, partway through a round, with no exit state of its own.
 Stopping the driver stops its pass, and the pass's agent context is lost;
 nothing else is rolled back. Edits in the worktree, local commits not yet
 pushed, and anything already pushed or posted stay where they are. Before
-re-arming, check `git status --short` for uncommitted work and
-`git rev-list --count @{u}..HEAD` for unpushed commits, and finish or discard
+re-arming, check `bun "<skill-dir>/../../shared/command.ts" -- git status --short` for uncommitted work and
+`bun "<skill-dir>/../../shared/command.ts" -- git rev-list --count '@{u}..HEAD'` for unpushed commits, and finish or discard
 them. The next drive recovers the stale locks and resumes at the same round
 from the saved state, and a Ready mark already made stays made.
 
@@ -270,10 +300,10 @@ between passes, and a long `--max-rounds` adds 90 minutes a round, so such a
 drive is stopped at 8 hours all the same. Re-arm it after the checks above;
 it resumes where it stopped. A drive likely to run past the ceiling is better
 started outside the harness (a terminal or terminal-multiplexer pane of its
-own, or a launch in a new session, such as a detached `spawn` or `setsid`,
-with its output redirected): the harness stops the whole process group of a
-background command at its ceiling whatever the driver is doing, and `nohup`
-alone leaves the command in that group.
+own). Run the same `bun` command there, redirecting output to a file if
+needed, and stop it with `bun "<skill-dir>/scripts/drives.ts" --stop <PR>`.
+The stop command checks the driver's identity and cancels its active pass
+before releasing locks.
 
 Both variables are read when a session starts, so a drive already running
 keeps its old limit, and a harness other than Claude Code has its own. Claude
@@ -288,10 +318,10 @@ Code needs version 2.1.285 or later for them to take effect.
 ## How to start it
 
 ```bash
-bun <skill-dir>/scripts/drive.ts <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
+bun "<skill-dir>/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
 ```
 
-The `bun` prefix and the single line are both deliberate, so don't "tidy" them: running the `.ts` file directly relies on its shebang and works on macOS/Linux only, and a `\` continuation works only in a POSIX shell — this form also runs on PowerShell and `cmd.exe`. It is the same command `/jig:do-item` emits and spawns when it arms the drive for you, and the one `/jig:drive-pr` spawns from a session. The agent tells "a session asking for a drive" from "a pass the driver spawned" by `$DRIVE_PR_TARGET`, which only `drive.ts` sets — so a driver's own passes never arm another driver.
+The `bun` prefix and the single line are deliberate: every TypeScript command explicitly names its runtime. On Windows, run it in PowerShell after installing Git for Windows. It is the same command `/jig:do-item` emits and spawns when it arms the drive for you, and the one `/jig:drive-pr` spawns from a session. The agent tells "a session asking for a drive" from "a pass the driver spawned" by `$DRIVE_PR_TARGET`, which only `drive.ts` sets — so a driver's own passes never arm another driver.
 
 `--bots-only` keeps it off human-authored threads (recommended for unattended runs). `--keep-draft` stops it marking the PR Ready (`pull_requests.mark_ready: never` does the same for every drive). `--max-rounds N` bounds the loop (default `drive.max_rounds`, else 10). `--dry-run` reports what each round would do and never invokes the pass. Starting it twice **in the same clone** is safe — see exit `11`. That is the exact reach: the lock lives in the per-clone state dir described below, so it covers this clone and its linked worktrees and nothing further. A separate clone — another machine, a CI checkout — takes its own lock and can drive the same PR at the same time.
 
@@ -299,25 +329,25 @@ The `bun` prefix and the single line are both deliberate, so don't "tidy" them: 
 
 | Exit | State | What you do |
 |------|-------|-------------|
-| `0` | **`CONVERGED`** | The exact head is reviewer-clean, the worktree is clean, the CI hold label (if the repository has one) is absent, and full non-reviewer CI is green with a fresh exact-head witness from the required checks. The merge decision is yours. **One caveat that is not optional:** if this drive marked the PR Ready, convergence is against the draft-reviewing AI reviewer **only** — marking Ready is what summons the reviewers that skip drafts, so anything they post lands *after* the drive ends. The drive says so on stderr; re-run it once they settle. `drive.ts` does **not** post the merge-ready announcement itself — run `bun <skill-dir>/scripts/announce-merge-ready.ts <PR>` if you want one on the PR. It re-checks convergence, non-reviewer CI, the absent hold, and a clean worktree before posting. `--dry-run` never invokes a pass, so a `0` from it is either this same convergence (the gate reached it first) or simply the command it *would* have run — the printed output says which. |
-| `5` | **PR not open** (`PR_NOT_OPEN`) | The PR merged or closed while driving. Usually nothing to do — but if it happened *mid-round*, `guarded-push.ts` refused the push and **this round's commits are still local**, deliberately, so the work stays visible instead of landing on an orphaned branch. Check `git log origin/<branch>..HEAD` and either port those commits somewhere that will merge or discard them on purpose. |
+| `0` | **`CONVERGED`** | The exact head is reviewer-clean, the worktree is clean, the CI hold label (if the repository has one) is absent, and full non-reviewer CI is green with a fresh exact-head witness from the required checks. The merge decision is yours. **One caveat that is not optional:** if this drive marked the PR Ready, convergence is against the draft-reviewing AI reviewer **only** — marking Ready is what summons the reviewers that skip drafts, so anything they post lands *after* the drive ends. The drive says so on stderr; re-run it once they settle. `drive.ts` does **not** post the merge-ready announcement itself — run `bun "<skill-dir>/scripts/announce-merge-ready.ts" <PR>` if you want one on the PR. It re-checks convergence, non-reviewer CI, the absent hold, and a clean worktree before posting. `--dry-run` never invokes a pass, so a `0` from it is either this same convergence (the gate reached it first) or simply the command it *would* have run — the printed output says which. |
+| `5` | **PR not open** (`PR_NOT_OPEN`) | The PR merged or closed while driving. Usually nothing to do — but if it happened *mid-round*, `guarded-push.ts` refused the push and **this round's commits are still local**, deliberately, so the work stays visible instead of landing on an orphaned branch. Check `bun "<skill-dir>/../../shared/command.ts" -- git log 'origin/<branch>..HEAD'` and either port those commits somewhere that will merge or discard them on purpose. |
 | `8` | **HITL-parked** (`HITL_PARKED`) | Everything left needs a human call — arbiter escalations, human threads, parked summary findings. Read the round report / the `.context/pr-drive-<PR>.md` handoff, decide the parked items, then re-run the same command. It will **not** re-arm itself. |
-| `9` | **Conflicting, nothing to work, and the repair budget is spent** (`PR_CONFLICTING`) | Either the drive spent the conflict-repair budget (`DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1) trying to resolve it and could not, or no repair pass ran at all — the budget is `0`/disabled, or the PR's base ref could not be read. Either way, merge the PR's **own base** in — not necessarily the default branch, since a release or stacked PR has a different one. The drive prints the exact command (`git fetch origin && git merge origin/<base>`) rather than guessing; use that. Then resolve, run the emitted validation plan, push, re-run. (A conflicting PR gets zero `pull_request` CI until you do.) |
+| `9` | **Conflicting, nothing to work, and the repair budget is spent** (`PR_CONFLICTING`) | Either the drive spent the conflict-repair budget (`DRIVE_PR_CONFLICT_REPAIR_ROUNDS`, default 1) trying to resolve it and could not, or no repair pass ran at all — the budget is `0`/disabled, or the PR's base ref could not be read. Either way, merge the PR's **own base** in — not necessarily the default branch, since a release or stacked PR has a different one. The drive prints the exact command (`bun "<skill-dir>/../../shared/command.ts" -- git fetch origin`, followed on success by `bun "<skill-dir>/../../shared/command.ts" -- git merge origin/<base>`) rather than guessing; use that. Then resolve, run the emitted validation plan, push, re-run. (A conflicting PR gets zero `pull_request` CI until you do.) |
 | `12` | **Converged, but the tree is not clean** | The convergence is real; something local is unshipped. The causes and their fixes: uncommitted edits → commit or discard; an unconcluded merge/cherry-pick/revert/rebase/am → resolve or abort it; a local `HEAD` no longer matching the reviewed head → push it or reset. The last two leave `git status` **clean**, so don't stop there — the drive names which probe failed, and [`terminal-states.md`](references/terminal-states.md) lists them all. Then re-run. |
 | `4` | Timed out / Ready-lease held elsewhere / no fresh CI witness (`NOT_SETTLED`) | Usually a reviewer that never answered, or another worktree's driver holds the Ready-mark lease. Check the reviewer check-run on the PR; re-run, or find the other driver. A third cause: the review converged and nothing is failing, but no fresh exact-head required-check witness showed up within `DRIVE_PR_FINAL_CI_WITNESS_POLLS` (default 30 minutes) — a required check whose fresh run completed **skipped** can never resolve this by waiting, so re-run the required checks on this head (a fresh run, not `gh run rerun` of the old one) and re-arm. |
 | `6` | Max rounds | The bound fired before convergence — often a finding the agent cannot fix, or a reviewer past its own round ceiling. Read the last round report before re-arming with a higher bound. |
 | `7` | Reviewer check failed (`REVIEWER_FAILED`) | The reviewer's check-run did not pass, so a "zero threads" read would be meaningless. Look at the check on the PR. |
 | `10` | — | Reserved; never returned. |
 | `11` | **Another driver is live** | The drive is already armed — in this worktree or another of this clone. Do nothing; do not kill the other driver. |
-| `13` | `DRIVE_HELD_BY_OTHER_WORKTREE` | Another live *working tree* is mutating this PR's drive state, possibly through an interactive pass rather than another driver — a case not covered by `11` when the other session is not itself holding `drive.ts`'s PR/worktree locks. Inspect with `drive-state.ts lease <PR> --all`; wait for the holder, or take over with `drive-state.ts clear-lease <PR> --all` once you have confirmed it is dead. |
+| `13` | `DRIVE_HELD_BY_OTHER_WORKTREE` | Another live *working tree* is mutating this PR's drive state, possibly through an interactive pass rather than another driver — a case not covered by `11` when the other session is not itself holding `drive.ts`'s PR/worktree locks. Inspect with `bun "<skill-dir>/scripts/drive-state.ts" lease <PR> --all`; wait for the holder, or take over with `bun "<skill-dir>/scripts/drive-state.ts" clear-lease <PR> --all` once you have confirmed it is dead. |
 | `14` | **Stalled** | `$DRIVE_PR_STALL_ROUNDS` (default 2) consecutive passes changed nothing this loop can observe — the reviewed head, local head, and every unresolved-thread/summary-finding/parked-key set all came back identical. The usual cause is a pass exiting 0 without acting (for example, standing down against its own parent driver) while the round headers still look healthy. First check what the driven worktree still holds — the stop prints it, and a pass can make correct edits and stall before committing them. Then read the pass output for what it decided, fix why it did not act, then re-arm the same command. |
-| `15` | **Pass deadline** | One round's agent pass ran longer than `DRIVE_PR_PASS_TIMEOUT` (default 90 minutes) and was killed. Nothing was rolled back: check `git status --short` for an uncommitted fix and `git rev-list --count @{u}..HEAD` for a committed but unpushed one, keep or discard that work, then re-arm. If a legitimate round needs longer, raise the deadline; if not, look for what hung. |
+| `15` | **Pass deadline** | One round's agent pass ran longer than `DRIVE_PR_PASS_TIMEOUT` (default 90 minutes) and was killed. Nothing was rolled back: check `bun "<skill-dir>/../../shared/command.ts" -- git status --short` for an uncommitted fix and `bun "<skill-dir>/../../shared/command.ts" -- git rev-list --count '@{u}..HEAD'` for a committed but unpushed one, keep or discard that work, then re-arm. If a legitimate round needs longer, raise the deadline; if not, look for what hung. |
 | `16` | **Quota-parked** | The agent hit a subscription usage limit that will not reset within `DRIVE_PR_QUOTA_MAX_SLEEP_SEC` (default 6 hours) — a weekly limit, or one whose reset could not be read. A short limit never reaches this exit: the drive sleeps through it. Nothing is wrong with the PR. Run the same two `git` checks as for `15`, then re-arm once the limit has reset; starting another session now only hits the same limit. |
 | `18` | `MAILBOX_STOPPED` | A mailbox `stop` ended the drive after any active pass and its Ready transition finished. Send `resume --target stop` before re-arming. |
 | `19` | `MAILBOX_PAUSE_TIMEOUT` | A mailbox `pause` stayed active for `$DRIVE_PR_PAUSE_MAX_SEC` (default 30 minutes). Send `resume --target pause`, then re-arm. The driver releases its locks on this exit. |
 | `1` / `2` | Pass failed / usage error / **CI still red** | Operational. Read stderr; `2` usually means the command line itself is wrong, but can also mean `UNSUPPORTED_CLI` — a `gh` too old to report a required PR field such as draft state or mergeability. For that case, upgrade `gh`; it is not a CI-repair matter. `1` is also the CI stop: the review converged but full CI on the converged head is red and the repair budget (`DRIVE_PR_CI_REPAIR_ROUNDS`, default 2) is exhausted or disabled (`0` skips repair entirely and stops on the first red), or the verdict was unreadable rather than a named failure. Repair CI by hand, then re-arm. |
 
-One red-CI cause is worth ruling out before you repair anything in a repository with a [CI hold](#ci-hold): a drive that **died** mid-round leaves its hold label behind, and the repository's held-head check then fails a required check on a perfectly healthy PR. Check `gh pr view <PR> --json labels` first. If it is there, push whatever the dead drive stranded, then `gh pr edit <PR> --remove-label "<ci.hold_label>"` — the removal itself retriggers CI. Do **not** `gh run rerun` the old run: it replays the original event payload, which still carries the label, so it fails on the hold step again.
+One red-CI cause is worth ruling out before you repair anything in a repository with a [CI hold](#ci-hold): a drive that **died** mid-round leaves its hold label behind, and the repository's held-head check then fails a required check on a perfectly healthy PR. Check `bun "<skill-dir>/../../shared/command.ts" -- gh pr view <PR> --json labels` first. If it is there, push whatever the dead drive stranded, then `bun "<skill-dir>/../../shared/command.ts" -- gh pr edit <PR> --remove-label "<ci.hold_label>"` — the removal itself retriggers CI. Do **not** `gh run rerun` the old run: it replays the original event payload, which still carries the label, so it fails on the hold step again.
 
 Where the repository turned on the [`changelog`](../changelog/README.md) skill
 (`changelog.file` in the `.config/jig.yaml` its base branch holds), a round whose accepted fix
@@ -335,7 +365,7 @@ round. A repository that did not is never asked for one.
 
 ## Where its state lives
 
-- **The per-clone state dir** — `~/.local/state/jig/drive-pr/<clone-key>/` by default (`resolveStateDir()` in `<skill-dir>/scripts/lib/state/store.ts`; `$DRIVE_PR_STATE_DIR` overrides it — § Relocating the state dir) — the drive state (rounds, attempts, verified commit, parked/held items, Ready-mark round), the round counter, the locks, the leases. Clone-wide by design, *not* worktree-local: every linked worktree driving this PR shares one round budget, one parked set and one held batch, so a second worktree cannot silently re-arm an escalation the first one parked. The locks answer different questions, and only the PR-keyed one bears on "can this PR be driven twice":
+- **The per-clone state dir** — `~/.local/state/jig/drive-pr/<clone-key>/` by default (`resolveStateDir()` in `<skill-dir>/scripts/lib/state/store.ts`; `$DRIVE_PR_STATE_DIR` relocates its root — § Relocating the state dir) — the drive state (rounds, attempts, verified commit, parked/held items, Ready-mark round), the locks, the leases. Clone-wide by design, *not* worktree-local: every linked worktree driving this PR shares one round budget, one parked set and one held batch, so a second worktree cannot silently re-arm an escalation the first one parked. The locks answer different questions, and only the PR-keyed one bears on "can this PR be driven twice":
   - `pr-drive-<PR>.lock`, keyed by **PR** — refuses a second drive of *this PR* anywhere in the clone (exit `11`).
   - `pr-drive-worktree-<key>.lock`, keyed by **working tree** (the filesystem canonical path of `--show-toplevel`, including Windows path aliases) — stops two drivers colliding over one checkout's files even when they drive *different* PRs. Separate worktrees are meant to run concurrently, so this key deliberately does not gate them.
 
@@ -343,11 +373,14 @@ round. A repository that did not is never asked for one.
 - **`.context/pr-drive-<PR>.md`** — the human-readable handoff: where the drive stands and how to resume.
 - **GitHub** — the shared truth: threads and their resolution state, outcome replies, the drive's announce comments, the reviewer check-runs.
 
-The state dir grows with every lock generation. `bun <skill-dir>/scripts/reap-state.ts`
+The state dir grows with every lock generation. `bun "<skill-dir>/scripts/reap-state.ts"`
 (dry-run by default, `--delete` to act) compacts what is still in use on POSIX
 systems, retains nonempty [directory fences](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on Windows, and
-deletes the files of merged PRs and removed worktrees; run it weekly from the
-machine's own scheduler if you drive many PRs. [`SKILL.md`](SKILL.md) § Running
+deletes the files of merged PRs and removed worktrees; run it with `--delete`
+weekly from the machine's own scheduler if you drive many PRs.
+[Resource collection](../../gc/README.md)'s `tool-state` kind, once listed in
+`gc.kinds`, adds per-family receipts across configured clones but only
+reports, so it does not replace that schedule. [`SKILL.md`](SKILL.md) § Running
 it (the *State reaping* entry) explains what it may and may not delete.
 On Windows, the sweep upgrades older empty file fences by atomically publishing
 a complete directory fence. Failed publication retains its staging until a real
@@ -374,7 +407,7 @@ run from a worktree, unset `DRIVE_PR_WORKTREE` or set it explicitly to that
 intended tree; an inherited value overrides the current directory.
 
 1. **Inventory and finish held work with the old version.** Run
-   `bun <old-skill-dir>/scripts/drives.ts --doctor --json` for its health view
+   `bun "<old-skill-dir>/scripts/drives.ts" --doctor --json` for its health view
    and reported `stateDir`; its rows omit some held-only and lease-only work.
    Enumerate that actual directory. Include every `drive-pr-<PR>.json`,
    `pr-drive-lease-<PR>-<actor>.json` and `drive-tree-lease-<actor>.json`,
@@ -383,9 +416,9 @@ intended tree; an inherited value overrides the current directory.
    `pr-drive-worktree-<key>.lock`. Defer on any unreadable or unaccounted record.
    For every inventoried PR, finish pending replies and resolutions through
    the old resolver. Confirm
-   `bun <old-skill-dir>/scripts/drive-state.ts held <PR>` returns `[]`.
+   `bun "<old-skill-dir>/scripts/drive-state.ts" held <PR>` returns `[]`.
 2. **Stop all old participants and repeat the inventory.** Run
-   `bun <old-skill-dir>/scripts/drives.ts --stop <PR>` for each live drive,
+   `bun "<old-skill-dir>/scripts/drives.ts" --stop <PR>` for each live drive,
    stop interactive and sessionless resolvers, and disable hooks and scheduled
    reapers that can access this clone's state. Confirm the stop commands
    succeed and the old `drives.ts` listing has no live drivers. Repeat the full
@@ -394,12 +427,12 @@ intended tree; an inherited value overrides the current directory.
    repeat shutdown and inventory.
 3. **Clear old ownership from each worktree.** Verify each lease's actor and
    recorded worktree match the intended stopped tree. Run
-   `bun <old-skill-dir>/scripts/drive-state.ts clear-lease <PR>` from that
+   `bun "<old-skill-dir>/scripts/drive-state.ts" clear-lease <PR>` from that
    worktree, using its state-directory configuration and intended tree anchor,
    for every PR it used. The plain command clears both its old-key per-PR lease
    and its tree lease; `clear-lease --all` does not replace this step. Confirm
    the inventoried per-PR and tree lease files were removed; then check
-   `bun <old-skill-dir>/scripts/drive-state.ts lease <PR> --all` returns `[]`
+   `bun "<old-skill-dir>/scripts/drive-state.ts" lease <PR> --all` returns `[]`
    for every affected PR, and check the old `drives.ts` listing again.
    The live-lease listing alone does not prove old lease files were removed.
 4. **Upgrade together, then resume.** Update every participant before
@@ -411,14 +444,61 @@ intended tree; an inherited value overrides the current directory.
 
 ## Relocating the state dir
 
-`$DRIVE_PR_STATE_DIR` overrides the default state directory
-(`~/.local/state/jig/drive-pr/<clone-key>/`) outright and skips the
-legacy-location migration guard. The override does not move existing state:
-migrate it using the procedure below **before** exporting the new path, or the
-drive can start with an empty round and lease history. The same procedure moves
-state left in an older default location into the current one. A legitimate
-use: a machine that cannot afford the default location — an IDE or backup
-tool watching the whole home directory, say.
+`$DRIVE_PR_STATE_DIR` relocates the state root. With an override of
+`/absolute/shared-state`, each clone uses
+`/absolute/shared-state/<clone-key>/`. The default is
+`~/.local/state/jig/drive-pr/<clone-key>/`. The key is the first 16 hexadecimal
+characters of SHA-256 over a [universally unique identifier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (UUID) persisted as `drive-pr-clone-id` in Git's
+common directory (the path `git rev-parse` prints for `--git-common-dir`). It survives a clone move,
+is shared by linked worktrees, and differs between separate clones, including
+clones of the same remote repository. Remote owner/name is not the key. Commands that resolve state, including the
+reaper, need the owning clone as their Git context; an override path alone
+outside Git no longer identifies a state directory.
+
+Within that clone directory, `drive-pr-<N>.json`, its `.lock` mutex family,
+`pr-drive-<N>.lock` (the driver lock), `drive-pr-<N>.log`, held claims, and
+remote-mutation locks are keyed by PR number. PR leases add the worktree key;
+worktree locks and tree leases use the canonical checkout path's key. The
+intent-chain pin stays at `.context/intent-chain/pr.<N>.md` in the worktree
+(unless the separate `DRIVE_PR_INTENT_CHAIN_DIR` override relocates it);
+`await-round.ts`'s separate `resolve-review-rounds-<N>` counter and `.head`
+file stay in that worktree's Git directory. Neither uses the override.
+
+The driver exports its resolved clone directory to its passes. A path whose
+last component equals this clone's key is already resolved and is not nested
+again. A pass must keep that inherited path. The mutation fence checks the
+inherited directory identity before trusting leases. An unchanged device/inode
+pair retains its original meaning; birth time is not assumed reliable on every
+filesystem. Only a device mismatch requires the extra drift proof: matching
+inode, nonzero directory birth time and canonical target path. On macOS the arm also captures the
+stable volume UUID with deadlined `df` and `diskutil` reads. A changed device number is allowed
+only when those stronger fields agree, birth time is nonzero, and a fresh
+volume lookup confirms the same UUID on the live writable volume. Snapshot
+views supply no proof, even when they share a UUID with that volume. Another volume refuses even if it copied
+the directory's inode and birth time. If volume proof is unavailable, device
+comparison stays strict. Older baselines without a volume UUID remain strict. A new inode or an unreadable directory always refuses. A device mismatch also
+refuses if birth time, canonical target or volume proof does not agree.
+No pass changes the baseline; each check can recognize the same benign device
+drift independently. A driver armed before this upgrade needs a fresh arm to
+export the stronger baseline.
+
+**Upgrading a flat override:** any drive-shaped artifact directly in an
+unscoped override root causes a refusal naming the artifact and current clone.
+The old state format has no repository binding, so its owner is reported as
+unknown. The tool neither adopts it nor starts a fresh history beside it, and
+never automatically moves, quarantines or rewrites it. Stop all participants,
+identify which clone owns each artifact, and explicitly relocate each complete
+population into that clone's `<root>/<clone-key>/` using the procedure below.
+The refusal names this clone's expected leaf; use it as the destination only
+after confirming ownership. A file already mixed by multiple repositories needs human reconciliation
+against the PRs and their CI-hold events before relocation; a filename or a
+stored commit alone cannot establish ownership. Retain a backup. Relocation is
+reversible while participants remain stopped by moving the same population
+back with the migration command. Do not run old and new drivers together.
+
+The override skips the older Git-common-directory migration guard; it does
+not move existing default state either. Migrate before exporting the new root.
+A legitimate use is choosing a volume outside an IDE or backup tool's watch.
 
 **The invariant is that every participant in one clone resolves the same
 directory.** Two drivers that disagree do not share the lease mutex: each mints a
@@ -432,22 +512,24 @@ and need it in that tool's settings (Claude Code:
 file and need it written into their own configuration as an absolute path.
 
 1. **Quiesce every participant.** Stop every live `drive.ts`
-   (`bun <skill-dir>/scripts/drives.ts --stop <PR>` per PR, or wait
+   (`bun "<skill-dir>/scripts/drives.ts" --stop <PR>` per PR; for an old flat
+   override use the version that armed the driver, since the upgraded resolver
+   refuses that root; or wait
    for each to reach a terminal state) and disable any scheduled
-   `reap-state.ts --delete` job (`launchctl unload`, or comment out the
+   `bun "<skill-dir>/scripts/reap-state.ts" --delete` job (`launchctl unload`, or comment out the
    `crontab -e` entry) — nothing may read or write the state directory during
    the move.
 2. **Migrate.** Move a whole state root (one subdirectory per clone), or one
    clone's directory, into the current root:
 
    ```bash
-   bun <skill-dir>/scripts/migrate-state-dir.ts --from <old dir> [--to <new root>]
+   bun "<skill-dir>/scripts/migrate-state-dir.ts" --from <old dir> [--to <new root>]
    ```
 
    `--to` defaults to the current state root
    (`~/.local/state/jig/drive-pr`); `~` is expanded. To move one clone's
    directory to an exact destination instead, pass both absolute paths:
-   `migrate-state-dir.ts /absolute/current/state-dir /absolute/new/state-dir`.
+   `bun "<skill-dir>/scripts/migrate-state-dir.ts" /absolute/current/state-dir /absolute/new-root/<clone-key>`; replace `<clone-key>` with the key from this clone's current default directory. The exact destination must end with that key.
 
    It refuses unless every source-named driver lock is stale and, when
    `DRIVE_PR_REAPER_LAUNCHD_LABEL` or `DRIVE_PR_REAPER_CRONTAB_MARKER` names a
@@ -462,30 +544,30 @@ file and need it written into their own configuration as an absolute path.
    removes the sources. Success reports every moved name and family after
    verifying that the source has no classified artifacts left and the
    destination has the full population.
-3. **Only after that success, export** `$DRIVE_PR_STATE_DIR` at the new path
-   (when the destination is not the default) for every participant at once —
+3. **Only after that success, export** `$DRIVE_PR_STATE_DIR` at the new root
+   (or its resolved `<clone-key>` directory, when the destination is not the default) for every participant at once —
    the shell profile and the agent tool's settings. Exporting before the
    migration makes participants mint a fresh state universe at the destination
    while the real record remains at the source. Leave a scheduled job's own
    configuration untouched until this point: re-enabling it before the move is
    confirmed would point the reaper at the old location.
 4. **Verify, re-arm and re-enable.** From a fresh shell, run
-   `bun <skill-dir>/scripts/drives.ts` and confirm that no drives
+   `bun "<skill-dir>/scripts/drives.ts"` and confirm that no drives
    remain live from before the move and that the new directory holds the moved
    files. Then re-arm the stopped drives, and update and re-enable any
    scheduled reaper so it picks up the new path.
 
-A machine-wide export reaches every clone on that machine equally, and state
-files and locks key only by PR number, never by clone or fork — so one shared
-export is safe only on a machine with a **single** clone. A machine running
-several independent clones, where the same PR number could name unrelated work
-in each, needs distinct, clone-specific values.
+A machine-wide export reaches every clone on that machine equally, and that is
+safe however many clones the machine runs: each clone resolves its own
+`<root>/<clone-key>/` leaf, so the same PR number in two independent clones
+names two separate state files, locks and logs. Export the root, not one
+clone's leaf, when several clones share it.
 
 ## Stopping and resuming safely
 
-- **Stop:** `drives.ts --stop <PR>` requests shutdown after verifying the driver's process identity. The driver stops the active pass before releasing its locks. On Windows, a polled stop request lets cleanup run without POSIX signals; process snapshots come from PowerShell. Confirmed cleanup publishes a completion receipt for that acquisition before releasing claims. The stop command requires the matching receipt and disappearance of its captured process identities when a temporary shutdown marker made the registry uncertain. Ctrl-C also cancels the active work. Locks a dead driver leaves behind are recovered automatically by the next driver.
+- **Stop:** `bun "<skill-dir>/scripts/drives.ts" --stop <PR>` requests shutdown after verifying the driver's process identity. The driver stops the active pass before releasing its locks. On Windows, a polled stop request lets cleanup run without POSIX signals; process snapshots come from PowerShell. Confirmed cleanup publishes a completion receipt for that acquisition before releasing claims. The stop command requires the matching receipt and disappearance of its captured process identities when a temporary shutdown marker made the registry uncertain. Ctrl-C also cancels the active work. Locks a dead driver leaves behind are recovered automatically by the next driver.
 - **Resume:** run the same command again. The durable state means it continues rather than restarts, and threads already answered are reconciled rather than re-answered (`reconcile-replied-threads.ts` runs from the gate). A retry against an unchanged head is not a new *reviewed-head* round, but it does spend one of the durable **attempts**; within one uninterrupted drive, consecutive observable no-op passes trip exit `14` (default 2), while retries spread across driver restarts reset that in-memory stall streak and can still exhaust `--max-rounds` with exit `6`.
-- **Inspect without touching:** `bun <skill-dir>/scripts/drive-status.ts <PR> --json --once --no-count` answers "what would the drive do now" without doing it. `--no-count` is what makes that true — without it the probe *counts* its own evaluation as a round on this head, moving the durable counter that a later drive's `--max-rounds` bound and reflection nudge both read.
+- **Inspect without touching:** `bun "<skill-dir>/scripts/drive-status.ts" <PR> --json --once --no-count` answers "what would the drive do now" without doing it. `--no-count` is what makes that true — without it the probe *counts* its own evaluation as a round on this head, moving the durable counter that a later drive's `--max-rounds` bound and reflection nudge both read.
 
 If a drive died mid-round hours ago, just re-arm — recovery is the designed path, not an exception.
 
@@ -514,6 +596,20 @@ Read [`references/consistency.md`](references/consistency.md) first. The
 tests live in `__tests__/` and run from the Jig repository root with
 `bun test plugin/skills/drive-pr` (the root `bunfig.toml` supplies the test
 preloads); they never run from the plugin cache.
-`__tests__/terminal-states-consistency.test.ts` checks that every terminal
+The `__tests__/terminal-states*.test.ts` suites check that every terminal
 state's exit code agrees across `scripts/`, `SKILL.md`, this page and
 `references/terminal-states.md`.
+
+The cross-PR scoreboard (`scripts/fractal-metrics.ts`) also measures the share
+of merged pull requests that met a conflict. It combines the sibling
+`resolve-conflicts` history report with this clone’s live events and prints
+conflicted, observed-clean and unknown counts over the forge’s merged PR
+cohort. A clean observation requires replayed PR ancestry and no forge-recorded
+force-push. The replay covers merges committed since the cohort's earliest
+sampled commit, pull-request opening or merge; a pull request whose ancestry
+holds an older merge stays unknown. A partial clone with git
+before 2.45 leaves ancestry unknown rather than risk a fetch. The fleet-health file’s `merge_conflicts.coverage_floor` (default
+`0.9`) and `baselines.merge_conflict_share.value` govern its verdict; the
+whole-cohort bounds must agree too. Missing heads, rewritten branches and
+resolutions in other clones limit coverage. A capped forge cohort has no
+verdict. The report includes coverage and bounds in JSON and terminal output.

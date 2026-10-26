@@ -107,6 +107,23 @@ export function parseCatalog(raw: unknown): Map<string, CatalogArea> {
   return out;
 }
 
+/**
+ * Validate a catalog's `text`; `label` names it in errors. Throws with the
+ * label and the reason.
+ */
+export function loadCatalogText(
+  text: string,
+  label: string,
+): Map<string, CatalogArea> {
+  try {
+    return parseCatalog(loadYaml(text));
+  } catch (err) {
+    throw new Error(
+      `the change-area catalog ${label} is not valid: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
 /** Read and validate the consumer's catalog. Throws with the path and the reason. */
 export function loadCatalogFile(path: string): Map<string, CatalogArea> {
   let text: string;
@@ -117,13 +134,7 @@ export function loadCatalogFile(path: string): Map<string, CatalogArea> {
       `the change-area catalog ${path} could not be read (${err instanceof Error ? err.message : String(err)})`,
     );
   }
-  try {
-    return parseCatalog(loadYaml(text));
-  } catch (err) {
-    throw new Error(
-      `the change-area catalog ${path} is not valid: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
+  return loadCatalogText(text, path);
 }
 
 const globCache = new Map<string, RegExp>();

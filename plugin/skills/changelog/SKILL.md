@@ -86,8 +86,8 @@ a released section the reviewer reads the diff.
 2. **Create one file in the notes folder** (`changelog.notes_dir`, `changes`
    by default), named after the branch: its name with every character other
    than a letter, a digit, `.`, `_` or `-` replaced by `-` and cut to its first
-   64 characters, then `-` and the first eight hexadecimal digits of the SHA-256 of the branch's full name
-   (`printf %s "$branch" | shasum -a 256 | cut -c1-8`). The digits keep
+   64 characters, then `-` and the first eight hexadecimal digits of the SHA-256
+   of the branch's full name. The digits keep
    `feat/x` and `feat-x` apart. Only Markdown files directly in the folder are
    notes; its `README.md` is not one. If the branch already has a note, edit it.
 
@@ -223,8 +223,7 @@ with a command that could: print what to change, with the exact values (or the
 check. Writing files in the working tree (steps 1 and 4) is yours; commit them
 on a branch and open a pull request like any change.
 
-Before step 1 read where the repository stands: `gh repo view --json
-nameWithOwner,visibility,defaultBranchRef`, and the integration branch
+Before step 1 read where the repository stands: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh repo view --json "nameWithOwner,visibility,defaultBranchRef"`, and the integration branch
 (`repository.base_branch`, else the default branch). The integration branch
 should be the default branch: GitHub runs the workflow's tag jobs from the
 default branch. Stop and explain when the repository is private and its plan
@@ -271,7 +270,7 @@ the release's key could not be kept to the integration branch.
    App's registration when exchanged within one hour. The person exchanges
    it, printing only what identifies the App, never the key and secrets the
    answer also carries:
-   `gh api -X POST app-manifests/<code>/conversions --jq '{id, slug, client_id}'`.
+   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh api -X POST app-manifests/<code>/conversions --jq '{id, slug, client_id}'`.
    The person then, by hand:
    - installs the App on **this repository only** (the App's page → Install
      App → Only select repositories);
@@ -281,14 +280,14 @@ the release's key could not be kept to the integration branch.
    - stores the App's client ID there as the variable
      `CHANGELOG_APP_CLIENT_ID` and the private key as the secret
      `CHANGELOG_APP_PRIVATE_KEY`
-     (`gh variable set CHANGELOG_APP_CLIENT_ID --env changelog-release --body <client-id>`,
-     `gh secret set CHANGELOG_APP_PRIVATE_KEY --env changelog-release < <key>.pem`),
+     (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh variable set CHANGELOG_APP_CLIENT_ID --env changelog-release --body <client-id>`,
+     `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file <key>.pem -- gh secret set CHANGELOG_APP_PRIVATE_KEY --env changelog-release`),
      then deletes the downloaded key file.
 
-   Check: `gh api repos/<owner>/<repository>/environments/changelog-release/deployment-branch-policies`
+   Check: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh api repos/<owner>/<repository>/environments/changelog-release/deployment-branch-policies`
    lists the integration branch and nothing else;
-   `gh variable list --env changelog-release` and `gh secret list --env changelog-release`
-   name the two values; `gh api apps/<app-slug> --jq .permissions` shows
+   `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh variable list --env changelog-release` and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh secret list --env changelog-release`
+   name the two values; `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh api apps/<app-slug> --jq .permissions` shows
    `contents: write` (with `pull_requests: write` in `pull-request` mode) and
    no `workflows`. Ask the person to confirm the installation covers this
    repository only: the person's login cannot read it.
@@ -321,9 +320,9 @@ the release's key could not be kept to the integration branch.
      a ruleset that covers that branch with a creation, update or force-push
      rule must leave it out or let the App past.
 
-   In both modes, a ruleset on tags (`gh api "repos/<owner>/<repository>/rulesets?targets=tag&includes_parents=true"`)
+   In both modes, a ruleset on tags (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh api "repos/<owner>/<repository>/rulesets?targets=tag&includes_parents=true"`)
    that restricts creating tags matching `<tag_prefix>*` must let the App
-   past, or no tag can be made. Check: `release-access.ts --app <app-slug>`
+   past, or no tag can be made. Check: `bun "${CLAUDE_SKILL_DIR}/scripts/release-access.ts" --app <app-slug>`
    exits 0. Exit 1 prints each requirement that fails, with its reasons: fix
    and run it again. Exit 3 means GitHub withheld something from the login
    that read it: a repository administrator runs the command and reads the
@@ -342,7 +341,7 @@ the release's key could not be kept to the integration branch.
    - `0000000000000000000000000000000000000000 # v0.0.0`: the full commit
      hash of the tag of the plugin version the commands print, with that
      version as the comment
-     (`gh api repos/<jig-owner>/jig/commits/v<version> --jq .sha`), on every
+     (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh api repos/<jig-owner>/jig/commits/v<version> --jq .sha`), on every
      `uses:` of the action;
    - `<integration-branch>`: the integration branch, everywhere it appears;
    - `<workflow that reports a required check>`: the `name:` of each workflow
@@ -363,10 +362,9 @@ the release's key could not be kept to the integration branch.
    the repository's organization (Jig's Settings → Actions → Access). Check:
    on the setup pull request, the `check` job runs and passes.
 
-5. **The pull requests already open.** List them (`gh pr list --base
-   <integration-branch> --state open`). For each, in a worktree of its
+5. **The pull requests already open.** List them (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr list --base <integration-branch> --state open`). For each, in a worktree of its
    branch, run `check.ts`; where it says the branch edited the changelog or
-   the version, run `convert.ts --dry-run` and give the result to the pull
+   the version, run `bun "${CLAUDE_SKILL_DIR}/scripts/convert.ts" --dry-run` and give the result to the pull
    request's owner. Convert a branch ([§ Converting a branch](#converting-a-branch))
    only when its owner asks, and leave the result uncommitted for them to
    review. Check: `check.ts` passes on each converted branch.
@@ -379,7 +377,7 @@ untagged history stays untagged; the person confirms the list, or tags the
 newest released version by hand first so that nothing older is owed. Once the
 setup pull request merges, the first push runs the release; read `status.ts`
 afterwards: its release run and its tags say whether the App could push and
-tag. In `pull-request` mode, run `release-access.ts --app <app-slug>` again
+tag. In `pull-request` mode, run `bun "${CLAUDE_SKILL_DIR}/scripts/release-access.ts" --app <app-slug>` again
 once that run has made the release branch: it now reads the branch's classic
 protection, and exits 0.
 
@@ -390,12 +388,12 @@ root, and prints the plugin version it ran as.
 
 | Command | What it does |
 |---------|--------------|
-| `check.ts [--base <ref>] [--head-ref <name>]` | The branch check. Every note reads as the release step will read it; the branch leaves the version and the changelog's open and release sections to the release step; a branch touching a release path carries a note that asks for a release, and one touching a note path carries a note; in Common Changelog also the format's rules (breaking entries, one-line entries, entries that read the same with their reference appended, one notice, authors). The base is `--base`, else the base of the pull request in a CI job, else the hosting service's default branch. A **release pull request** (where the base's section sets `release.push: pull-request`, its head branch is the base's `release.branch`) passes instead when the release step, re-run on its merge base with the date of its one new release heading and without `after_version`, writes exactly its change; a file the release step does not own may differ only when the base sets `after_version`, and then only line for line by the old version becoming the new one (a whole version, not part of a longer one or of a name), and a file that is not valid UTF-8 text not at all; any other line, an added one naming the version included, is a finding. The head branch is `--head-ref`, else the pull request's in a CI job, else the checked-out branch. It needs the full history. Exit 0 clean or `not configured`, 1 findings (a base that cannot be found included), 2 a usage error. |
-| `status.ts [--json]` | The notes waiting, the version they would make, the notes that wait for a release, and on GitHub whether the last release run on the integration branch succeeded, a release run still going answering first (read through `gh`; without `gh`, or on another host, it says it could not read it). It also lists each released version still waiting for its tag, with its state (`tag.ts`'s plan); without `gh` or `origin` that part says `unknown`. Exit 1 when a note is unreadable, the version files disagree, the last release run failed (a push or manual run of the workflow named `release` or `changelog`; its tag and branch-check runs are not release runs) or a releasing commit failed its required checks. |
-| `convert.ts [--base <ref>] [--dry-run] [--json]` | Turns a branch that edited the changelog or the version itself into one with a note ([§ Converting a branch](#converting-a-branch)). Exit 0 converted, nothing to convert or `not configured`; 1 a refusal; 2 a usage error. |
-| `tag.ts [--json] [--rerun]` | The tag plan: each version owed a tag (a release heading, no tag on `origin`, and newer than the newest `<tag_prefix>x.y.z` tag there; with no such tag, only the newest heading), its **releasing commit** (the first commit on the integration branch's first-parent line whose changelog has its heading) and its state: `ready` (every required check on that commit passed, and no older owed version is `pending` or `rerun`: versions are tagged oldest first), `pending` (a check has not finished, or the version waits for an older one), `rerun` (a check was cancelled and its workflow run not yet run again), `failed` (left for a person, a re-run GitHub refused included; it holds no newer version back, and once a newer one is tagged it is no longer owed a tag nor listed) or `imported` (its heading came in one commit with others, so it is tagged by hand if at all). The required checks are `ci.required_checks` in the integration branch's own `.config/jig.yaml`, else the branch's rules. A neutral or skipped check run passes only when its workflow run succeeded (skipped in a cancelled run is cancelled), or when no workflow run reported it. It never makes a tag; `--rerun` re-runs the `rerun` entries' workflow runs once. Exit 0 a plan (nothing owed and `not configured` included), 1 a version failed, a refused re-run included (the plan, `ready` list included, is still printed), 2 a usage error, a shallow clone, no required checks known, or git or GitHub could not answer. |
-| `release-access.ts (--app <slug> \| --app-id <id>) [--repo <owner/repo>] [--json]` | Whether the release App can reach the integration branch in the configured mode, and force pushes and deletion stay blocked for it ([§ Setup](#setup)). Reads rulesets (every page) and classic protection; changes nothing. Exit 0 every requirement holds (or `not configured`), 1 one fails, 3 none fails but one is unknown (GitHub withheld a bypass list: a repository administrator must run it), 2 a usage error or GitHub could not be read. |
-| `release.ts [--dry-run] [--json] [--date YYYY-MM-DD]` | The release step: writes the waiting notes into the changelog, moves the version, fills the placeholders, runs `after_version`, deletes the notes. Writes files only; it never commits, tags or pushes. CI runs it after a merge; run it yourself only with `--dry-run` to preview. Exit 1 for a malformed note or a step that failed (version files that disagree, `after_version`, no `origin` for Common Changelog links); 2 for a usage error, an invalid configuration or an unreadable file. |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/check.ts"` | Options: `--base <ref>` and `--head-ref <name>`. The branch check. Every note reads as the release step will read it; the branch leaves the version and the changelog's open and release sections to the release step; a branch touching a release path carries a note that asks for a release, and one touching a note path carries a note; in Common Changelog also the format's rules (breaking entries, one-line entries, entries that read the same with their reference appended, one notice, authors). The base is `--base`, else the base of the pull request in a CI job, else the hosting service's default branch. A **release pull request** (where the base's section sets `release.push: pull-request`, its head branch is the base's `release.branch`) passes instead when the release step, re-run on its merge base with the date of its one new release heading and without `after_version`, writes exactly its change; a file the release step does not own may differ only when the base sets `after_version`, and then only line for line by the old version becoming the new one (a whole version, not part of a longer one or of a name), and a file that is not valid UTF-8 text not at all; any other line, an added one naming the version included, is a finding. The head branch is `--head-ref`, else the pull request's in a CI job, else the checked-out branch. It needs the full history. Exit 0 clean or `not configured`, 1 findings (a base that cannot be found included), 2 a usage error. |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/status.ts"` | Options: `--json`. The notes waiting, the version they would make, the notes that wait for a release, and on GitHub whether the last release run on the integration branch succeeded, a release run still going answering first (read through `gh`; without `gh`, or on another host, it says it could not read it). It also lists each released version still waiting for its tag, with its state (`tag.ts`'s plan); without `gh` or `origin` that part says `unknown`. Exit 1 when a note is unreadable, the version files disagree, the last release run failed (a push or manual run of the workflow named `release` or `changelog`; its tag and branch-check runs are not release runs) or a releasing commit failed its required checks. |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/convert.ts" --dry-run` | Options: `--base <ref>`, `--dry-run` and `--json`. Turns a branch that edited the changelog or the version itself into one with a note ([§ Converting a branch](#converting-a-branch)). Exit 0 converted, nothing to convert or `not configured`; 1 a refusal; 2 a usage error. |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/tag.ts"` | Options: `--json` and `--rerun`. The tag plan: each version owed a tag (a release heading, no tag on `origin`, and newer than the newest `<tag_prefix>x.y.z` tag there; with no such tag, only the newest heading), its **releasing commit** (the first commit on the integration branch's first-parent line whose changelog has its heading) and its state: `ready` (every required check on that commit passed, and no older owed version is `pending` or `rerun`: versions are tagged oldest first), `pending` (a check has not finished, or the version waits for an older one), `rerun` (a check was cancelled and its workflow run not yet run again), `failed` (left for a person, a re-run GitHub refused included; it holds no newer version back, and once a newer one is tagged it is no longer owed a tag nor listed) or `imported` (its heading came in one commit with others, so it is tagged by hand if at all). The required checks are `ci.required_checks` in the integration branch's own `.config/jig.yaml`, else the branch's rules. A neutral or skipped check run passes only when its workflow run succeeded (skipped in a cancelled run is cancelled), or when no workflow run reported it. It never makes a tag; `--rerun` re-runs the `rerun` entries' workflow runs once. Exit 0 a plan (nothing owed and `not configured` included), 1 a version failed, a refused re-run included (the plan, `ready` list included, is still printed), 2 a usage error, a shallow clone, no required checks known, or git or GitHub could not answer. |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/release-access.ts" --app <slug>` | Options: `--app <slug>` or `--app-id <id>`, plus `--repo <owner/repo>` and `--json`. Whether the release App can reach the integration branch in the configured mode, and force pushes and deletion stay blocked for it ([§ Setup](#setup)). Reads rulesets (every page) and classic protection; changes nothing. Exit 0 every requirement holds (or `not configured`), 1 one fails, 3 none fails but one is unknown (GitHub withheld a bypass list: a repository administrator must run it), 2 a usage error or GitHub could not be read. |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/release.ts" --dry-run` | Options: `--dry-run`, `--json` and `--date YYYY-MM-DD`. The release step: writes the waiting notes into the changelog, moves the version, fills the placeholders, runs `after_version`, deletes the notes. Writes files only; it never commits, tags or pushes. CI runs it after a merge; run it yourself only with `--dry-run` to preview. Exit 1 for a malformed note or a step that failed (version files that disagree, `after_version`, no `origin` for Common Changelog links); 2 for a usage error, an invalid configuration or an unreadable file. |
 
 The check holds a branch to the `changelog:` section **as the base holds it**,
 not as the branch has it, so a pull request cannot weaken its own check. A

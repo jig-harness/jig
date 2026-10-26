@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
+import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Fetch every comment on an issue through the consumer's tracker.
  *
  * Type: Discovery
- * Input: an issue key (e.g. ENG-123)
+ * Input: an issue key in the configured tracker's shape (`ENG-123`, `#123`)
  * Output: JSON array of `{ body, createdAt }`, oldest first, which feeds
  *   straight into `select_scout_finding.ts --current-hash <hash>` on stdin.
  *
@@ -18,6 +19,7 @@
 
 import { parseArgs, runEntry } from "./lib/cli.ts";
 import { openTracker } from "./lib/tracker/index.ts";
+import { issueKeysOrNull } from "./lib/tracker/keys.ts";
 import type { IssueComment, Tracker } from "./lib/tracker/port.ts";
 
 /** Every comment, or `null` (with the reason on stderr) when it cannot be read in full. */
@@ -28,7 +30,7 @@ export async function listComments(
   try {
     return (await tracker.listComments(issueId)).map((c) => ({
       body: c.body,
-      createdAt: c.createdAt,
+      ...definedFields({ createdAt: c.createdAt }),
     }));
   } catch (err) {
     console.error(
@@ -36,6 +38,11 @@ export async function listComments(
     );
     return null;
   }
+}
+
+/** The key as a person may give it, canonical when the key shape reads it. */
+function keyOf(input: string): string {
+  return issueKeysOrNull()?.normalize(input) ?? input;
 }
 
 async function main(): Promise<number> {
@@ -55,7 +62,7 @@ async function main(): Promise<number> {
     console.error(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
     return 1;
   }
-  const comments = await listComments(parsed.args.positional, tracker);
+  const comments = await listComments(keyOf(parsed.args.positional), tracker);
   if (comments === null) return 1;
   console.log(JSON.stringify(comments));
   return 0;

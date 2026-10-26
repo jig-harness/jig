@@ -18,14 +18,71 @@ import {
 import { consumerRoot, readConfig } from "../../../../shared/consumer.ts";
 import { jigHome } from "../../../../shared/config-layers.ts";
 import {
+  type IssueKeys,
+  issueKeysOrNull,
+  keyFromBranch,
+} from "../../../do-item/scripts/lib/tracker/keys.ts";
+import { DEFAULT_BRANCH_PATTERN } from "../../../drive-pr/scripts/lib/pr-policy.ts";
+import {
   type Change,
   type Harness,
   parseObject,
   type Session,
 } from "./events.ts";
 
+/**
+ * The longest one git call may take. A call stalled on the repository's
+ * storage throws rather than reading as "no answer", which could name
+ * another repository or journal.
+ */
+const GIT_TIMEOUT_MS = 60_000;
+
+/** A git call that did not finish within `GIT_TIMEOUT_MS`. */
+export class GitTimeoutError extends Error {
+  override name = "GitTimeoutError";
+  readonly code = "git-timeout";
+}
+
+/** When every git call must have finished, in epoch milliseconds; null for none. */
+let gitDeadline: number | null = null;
+
+/**
+ * Run `fn` with every git call cut to the time left before `deadline` (epoch
+ * milliseconds), for a caller that holds itself to a limit of its own. A call
+ * asked for once none is left throws `GitTimeoutError` without starting.
+ */
+export async function withGitDeadline<T>(
+  deadline: number,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const previous = gitDeadline;
+  gitDeadline = deadline;
+  try {
+    return await fn();
+  } finally {
+    gitDeadline = previous;
+  }
+}
+
+function runGit(args: string[], cwd: string) {
+  const timeout =
+    gitDeadline === null
+      ? GIT_TIMEOUT_MS
+      : Math.min(GIT_TIMEOUT_MS, gitDeadline - Date.now());
+  if (timeout <= 0)
+    throw new GitTimeoutError(
+      `git ${args.join(" ")} was not started: the caller's time limit has passed`,
+    );
+  const r = spawnSync("git", args, { cwd, encoding: "utf8", timeout });
+  if ((r.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT")
+    throw new GitTimeoutError(
+      `git ${args.join(" ")} did not finish within ${Math.ceil(timeout / 1000)} seconds`,
+    );
+  return r;
+}
+
 function git(args: string[], cwd = consumerRoot()): string | null {
-  const r = spawnSync("git", args, { cwd, encoding: "utf8" });
+  const r = runGit(args, cwd);
   if (r.status !== 0) return null;
   return r.stdout.trim();
 }
@@ -65,25 +122,27 @@ export function repositoryId(root = consumerRoot()): string {
   return `local/${basename(folder)}-${path.slice(0, 12)}`;
 }
 
-/** The issue key a branch name carries, for the tracker's team key. */
+/**
+ * The issue key a branch name carries, in the tracker's key shape, or `null`
+ * when the shape is unknown. It is read where the branch-name pattern
+ * (`pull_requests.branch_name`) puts it, by the parser the drive's handoff
+ * uses, so both name the same issue for one branch.
+ */
 export function issueFromBranch(
   branch: string,
-  team: string | null,
+  keys: IssueKeys | null,
+  pattern: string = DEFAULT_BRANCH_PATTERN,
 ): string | null {
-  if (team === null || team === "") return null;
-  const escaped = team.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(
-    `(?:^|[^A-Za-z0-9])(${escaped}-\\d+)(?![0-9])`,
-    "i",
-  ).exec(branch);
-  return match === null ? null : (match[1] as string).toUpperCase();
+  return keys === null ? null : keyFromBranch(branch, keys, pattern);
 }
 
-function trackerTeam(): string | null {
-  const tracker = readConfig().issue_tracker as
+/** The configured branch-name pattern, or the default. */
+function branchPattern(): string {
+  const section = readConfig().pull_requests as
     | Record<string, unknown>
     | undefined;
-  return typeof tracker?.team === "string" ? tracker.team : null;
+  const pattern = section?.branch_name;
+  return typeof pattern === "string" ? pattern : DEFAULT_BRANCH_PATTERN;
 }
 
 /** The change a finding is about, as far as git can tell. */
@@ -93,7 +152,10 @@ export function currentChange(root = consumerRoot()): Change {
     repository: repositoryId(root),
     branch,
     pull_request: null,
-    issue: branch === null ? null : issueFromBranch(branch, trackerTeam()),
+    issue:
+      branch === null
+        ? null
+        : issueFromBranch(branch, issueKeysOrNull(), branchPattern()),
   };
 }
 
@@ -123,22 +185,15 @@ export function journalPath(
     const segments = inside.split(/[\\/]/);
     const within = inside !== "" && segments[0] !== ".." && !isAbsolute(inside);
     if (within && !segments.includes(".git")) {
-      const ignored = spawnSync(
-        "git",
-        ["check-ignore", "-q", "--no-index", inside],
-        {
-          cwd: top,
-        },
-      );
+      const ignored = runGit(["check-ignore", "-q", "--no-index", inside], top);
       if (ignored.status !== 0)
         throw new Error(
           `reflection.journal (${configured}) is a path git would track; choose a path the repository ignores`,
         );
       // An ignore rule does not untrack a file already committed.
-      const tracked = spawnSync(
-        "git",
+      const tracked = runGit(
         ["ls-files", "--error-unmatch", "--", inside],
-        { cwd: top },
+        top,
       );
       if (tracked.status === 0)
         throw new Error(

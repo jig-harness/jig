@@ -1,3 +1,5 @@
+import { armProcessDeadline } from "./process-deadline.ts";
+import { spawnCommand } from "./windows-command.ts";
 export {
   lastBytes,
   MAX_BUFFER_BYTES,
@@ -45,7 +47,7 @@ import { registerSignalHandler, shutdownRequested } from "./cleanup.ts";
  * rejected rather than quietly floored.
  */
 
-import { type SpawnOptions, spawn } from "node:child_process";
+import type { SpawnOptions } from "node:child_process";
 import { traceEnv, traceGhRunner, traceRunner } from "./trace.ts";
 import { fail } from "./cli.ts";
 import { errnoCode } from "./errors.ts";
@@ -107,6 +109,8 @@ export function ghCallTimeoutSeconds(): number {
 export interface RunResult {
   /** The child's exit code; 124 when the deadline killed it (GNU timeout's code). */
   code: number;
+  /** The terminating signal when the runtime reports one; absent for a numeric exit. */
+  signal?: NodeJS.Signals;
   stdout: string;
   stderr: string;
   timedOut: boolean;
@@ -447,8 +451,8 @@ if (!cancellation.handlerRegistered) {
 }
 
 /**
- * Spawn `argv` directly — never through a shell — and resolve with its
- * captured output. The deadline, when given, kills the child with SIGTERM,
+ * Spawn `argv` directly, or through cmd for Windows batch shims, and resolve
+ * with its captured output. The deadline, when given, kills the child with SIGTERM,
  * escalates to SIGKILL two seconds later, and then resolves on its own
  * authority rather than waiting for 'close' (a surviving grandchild holds the
  * pipes open and would defeat the deadline entirely). Either way the result
@@ -482,7 +486,7 @@ export const ghCall = traceGhRunner<RunResult, RunOptions>(
 function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
   return new Promise((resolve) => {
     if (shutdownRequested()) return;
-    const [cmd, ...args] = argv;
+    const cmd = argv[0];
     if (!cmd) {
       resolve({
         code: 127,
@@ -527,9 +531,9 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
         opts.stderr ?? "pipe",
       ],
     };
-    let child: ReturnType<typeof spawn>;
+    let child: ReturnType<typeof spawnCommand>;
     try {
-      child = spawn(cmd, args, spawnOpts);
+      child = spawnCommand(argv, spawnOpts);
     } catch (e) {
       windows.dispose();
       const message = e instanceof Error ? e.message : String(e);
@@ -558,6 +562,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     let timedOut = false;
     let spawnFailed = false;
     let groupSurvived = false;
+    let terminationSignal: NodeJS.Signals | undefined;
 
     const timers: ProcessTimers = {};
     const output = captureProcessOutput(child, opts, {
@@ -583,6 +588,7 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
           timedOut,
           bufferExceeded: output.bufferExceeded,
           spawnFailed,
+          ...(terminationSignal ? { signal: terminationSignal } : {}),
           stderrTail:
             code === 0 ? "" : lastBytes(output.tail || (extraErr ?? "")),
           ...(opts.reapGroup
@@ -602,31 +608,17 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     const signalTree = (sig: NodeJS.Signals) =>
       windows.signal(child, detached, sig);
 
-    if (opts.timeoutSec !== undefined) {
-      timers.kill = setTimeout(() => {
+    armProcessDeadline(
+      child,
+      timers,
+      opts.timeoutSec,
+      deadlineGraceMs,
+      () => {
         timedOut = true;
-        signalTree("SIGTERM");
-        timers.escalate = setTimeout(() => {
-          signalTree("SIGKILL");
-          // Settle on the DEADLINE's terms, not on 'close'.
-          //
-          // 'close' waits for the stdio streams as well as the exit, and every
-          // descendant inherited those streams — so it does not fire while any
-          // of them lives, and the deadline that just fired would go on
-          // waiting for a grandchild. That is the very hang this timer exists
-          // to bound, so it must not be reachable through it. Measured in the
-          // drive-pr copy.
-          //
-          // Destroying our ends of the pipes is what lets the runtime exit
-          // afterwards — an orphaned grandchild holding a live handle would
-          // otherwise keep the event loop alive past the resolved promise.
-          child.stdout?.destroy();
-          child.stderr?.destroy();
-          child.unref();
-          settle(124);
-        }, deadlineGraceMs());
-      }, opts.timeoutSec * 1000);
-    }
+      },
+      signalTree,
+      settle,
+    );
 
     // Set BEFORE `settle`, exactly as `timedOut` and `output.bufferExceeded` are, so
     // the flag is on the result this handler produces.
@@ -647,7 +639,8 @@ function runProcess(argv: string[], opts: RunOptions): Promise<RunResult> {
     // pipes, which a background descendant inherited and holds open, so on
     // 'close' that descendant has already done its work (and usually gone).
     // Killing the group here closes those pipes, and 'close' then settles.
-    child.on("exit", () => {
+    child.on("exit", (_code, signal) => {
+      terminationSignal = signal ?? undefined;
       if (timedOut || output.bufferExceeded) return;
       if (opts.reapGroup && windows.enabled) {
         windows.reap(child.pid);

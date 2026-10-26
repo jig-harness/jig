@@ -105,15 +105,13 @@ export function detectQuotaBlock(
 ): QuotaBlock | null {
   let best: QuotaBlock | null = null;
   for (const adapter of ADAPTERS) {
+    const truncated =
+      truncatedByVendor?.get(adapter.vendor) ??
+      opts.preexistingSessionsTruncated;
     const vendorOpts: DetectOpts =
-      truncatedByVendor === undefined
+      truncated === undefined
         ? opts
-        : {
-            ...opts,
-            preexistingSessionsTruncated:
-              truncatedByVendor.get(adapter.vendor) ??
-              opts.preexistingSessionsTruncated,
-          };
+        : { ...opts, preexistingSessionsTruncated: truncated };
     let found: QuotaBlock | null;
     try {
       found = adapter.detect(vendorOpts);

@@ -49,12 +49,14 @@ directory containing this `SKILL.md`. Claude Code fills it in. In any other
 harness, replace it with that path yourself before running a command: a shell
 would expand the unset variable to an empty string.
 
-Git 2.40 or newer is required to reconstruct the automatic merge result
-without trusting already staged content. Cherry-picking or reverting a merge
-commit with `-m` is unsupported: Git does not reliably retain the selected
-parent for reconstruction. The mapper refuses it before writing a snapshot;
-resolve and validate that operation manually. Merges recreated by
-`git rebase --rebase-merges` are supported through their replayed parents.
+Git 2.41 or newer is required: to reconstruct the automatic merge result
+without trusting already staged content, and to read every attribute from
+the staged `.gitattributes` files alone (Git's `--attr-source` option).
+Cherry-picking or reverting a merge commit with `-m` is unsupported: Git
+does not reliably retain the selected parent for reconstruction. The mapper
+refuses it before writing a snapshot; resolve and validate that operation
+manually. Merges recreated by
+a rebase using `--rebase-merges` are supported through their replayed parents.
 
 Run every command from the root of the repository with the conflicts. Never
 `cd` into the skill directory: the scripts find the repository, its
@@ -89,9 +91,10 @@ from this side before they are regenerated.
 
 | Script | What it does | Exit codes |
 |--------|--------------|------------|
-| `scripts/conflict-map.ts [--json] [--integration ours\|theirs]` | Maps the stopped operation and writes the snapshot. Read-only otherwise | 0 mapped; 2 usage, not in a git work tree, or invalid configuration; 3 nothing in progress, or the stored snapshot is unreadable (it is never replaced) |
-| `scripts/record.ts <path> <decision> [--reason "…"] [--command "…"] [--dropped "…"]` | Records one path's decision in the snapshot | 0 recorded; 2 usage (unknown path or decision, missing reason, no known regeneration command, or `regenerated` for a path that is not a lockfile or generated file); 3 nothing in progress, or no snapshot for this operation |
-| `scripts/check-resolution.ts [--json \| --message \| --commit-message]` | Verifies the resolution; prints the commit-message section | 0 passes; 1 problems; 2 usage or invalid configuration; 3 nothing in progress, or no snapshot for this operation; 4 needs a human (wins over 1) |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/conflict-map.ts" [--json] [--integration <side>]` | Maps the stopped operation and writes the snapshot. The integration side is `ours` or `theirs`; read-only otherwise | 0 mapped; 2 usage, not in a git work tree, or invalid configuration; 3 nothing in progress, or the stored snapshot is unreadable (it is never replaced) |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" "<path>" <decision> [--reason "<reason>"] [--command "<command>"] [--dropped "<reason>"]` | Records one path's decision in the snapshot | 0 recorded; 2 usage (unknown path or decision, missing reason, no known regeneration command, or `regenerated` for a path that is not a lockfile or generated file); 3 nothing in progress, or no snapshot for this operation |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/check-resolution.ts" [<output-option>]` | Verifies the resolution; prints the commit-message section. Output options are `--json`, `--message` and `--commit-message` | 0 passes; 1 problems; 2 usage or invalid configuration; 3 nothing in progress, or no snapshot for this operation; 4 needs a human (wins over 1) |
+| `bun "${CLAUDE_SKILL_DIR}/scripts/events.ts" [--json]` | Records the conflicts of the operation just concluded in the [live record](#the-live-record) | 0 recorded, already recorded, or nothing to record; 1 the record could not be written (the conclusion stands); 2 usage or not in a git work tree; 3 the operation is still in progress |
 
 ## Step 1: Start or find the operation
 
@@ -104,7 +107,7 @@ configuration as the base holds it, so a branch forked before the repository
 adopted the skill is covered too:
 
 ```bash
-git fetch origin <base>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git fetch origin <base>
 bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base origin/<base> --dry-run
 ```
 
@@ -116,8 +119,8 @@ another file is thrown away:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/convert.ts" --base origin/<base>
-git add -A
-git commit -m "chore(changelog): move the branch's changelog edits into a change note"
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git add -A
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git commit -m "chore(changelog): move the branch's changelog edits into a change note"
 ```
 
 `convert.ts` refuses on uncommitted changes, so commit or set aside anything
@@ -129,8 +132,8 @@ To bring a branch up to date with its base (the `conflict-resolve` round of
 in, with a base section in the markers:
 
 ```bash
-git fetch origin <base>
-git -c merge.conflictStyle=zdiff3 merge origin/<base>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git fetch origin <base>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git -c merge.conflictStyle=zdiff3 merge origin/<base>
 ```
 
 Never rebase or force-push a branch that has an open pull request under a
@@ -163,21 +166,21 @@ upstream. If the merge guessed the integration side wrong (two feature
 branches, say), run it again with `--integration ours` or `--integration
 theirs`.
 
-Inspect `git diff --cached` before resolving. Every staged path must belong
+Inspect the output of `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git diff --cached` before resolving. Every staged path must belong
 to this operation, and every staged hunk outside your recorded decisions
 must match what git merged automatically. Keep unrelated staged work out of
 the operation without discarding it; do not conclude while it is present.
 
 Then read the intent behind every path: the commit messages it lists, and for
 a commit whose subject names a pull request, the pull request itself
-(`gh pr view <number>`). You are looking for *why* each side changed the code,
+(`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view <number>`). You are looking for *why* each side changed the code,
 which decides the resolution.
 
 Markers without a base section hide what each side changed. While a path is
 still unmerged and before you edit it, re-create its markers with one:
 
 ```bash
-git checkout --conflict=zdiff3 -- <path>
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git checkout --conflict=zdiff3 -- <path>
 ```
 
 `--json` prints the full map, including each region's ours, base and theirs
@@ -188,13 +191,15 @@ text.
 Decide from the intents, never from which side "looks newer".
 
 - **Lockfile or generated file.** Take the integration side
-  (`git checkout --ours|--theirs -- <path>` for that side), resolve the
+  with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git checkout <side-option> -- "<path>"`,
+  substituting `--ours` or `--theirs` for `<side-option>` as the map requires. Resolve the
   sources it is built from first, then run the regeneration command the map
   printed (in the directory it names) and stage the result. Never edit a
   derived file by hand.
 - **Deleted on one side, changed on the other.** Find where the code went:
   `renamedTo`, or a search for the changed symbol. Carry the change there, or
-  record why it no longer applies, then `git rm` the old path (decision
+  record why it no longer applies, then remove the old path with
+  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rm -- "<path>"` (decision
   `deleted`) or keep it (decision `ours`, `theirs` or `combined`).
 - **Text.** Combine both changes where both intents still hold (`combined`).
   Keep one side only when the other change is superseded by it or already
@@ -209,7 +214,8 @@ Then look beyond the markers. A clean textual merge can still break a caller
 on the other side: search for uses of anything either side renamed, removed
 or changed the signature of, and fix them as part of the resolution.
 
-Stage every resolved path: `git add <path>` (or `git rm <path>`).
+Stage every resolved path with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git add -- "<path>"`,
+or record its removal with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rm -- "<path>"`.
 
 ## Step 4: Record each decision
 
@@ -236,8 +242,7 @@ was lost.
 [references/decisions.md](references/decisions.md) has a worked example of
 each decision.
 
-The record lives in the snapshot, `$(git rev-parse --git-path
-jig/conflicts.json)`, which is never committed. Its shape:
+The record lives in the Git-path snapshot `jig/conflicts.json`, which is never committed. Its shape:
 
 ```json
 {
@@ -284,8 +289,9 @@ edit it by hand to the same shape. `regenerate` is
 `{ "command", "cwd", "source": "built-in" | "configuration" | "catalog" }` for
 a derived file, and `null` for a `generated` path whose catalog entry declares
 no command (then `record.ts` needs `--command`). `catalogIncomplete` says why
-the change-area catalog's generated files could not all be read when the map
-was written (the catalog could not be read, or an entry's `outputs` are
+the generated files the configuration and the change-area catalog declare
+could not all be read when the map was written (the configuration was
+unmerged, the catalog could not be read, or an entry's `outputs` are
 malformed), and keeps the check refusing until a map that reads them all
 clears it. `dropped` is `{ "why": "…", "lines": [{ "side": "theirs", "text": "…" }] }`.
 
@@ -313,13 +319,27 @@ It fails (exit 1), listing each problem with its file and line, when:
 1. a path is still unmerged;
 2. conflict markers remain in a mapped path, or in any other staged change;
 3. a mapped path has no decision, an unknown one, or lacks a required reason;
-4. what is staged for a mapped path differs from the working tree, or the
-   configuration, the change-area catalog (or any symbolic link, file or
-   directory, that reading either passes through, or the file it finally
-   reads) or a `.gitattributes` file differs between the working tree and the
-   index, whatever its assume-unchanged or skip-worktree flag, ignored or not:
-   the check classifies paths by the working tree, and the commit carries what
-   is staged;
+4. what is staged for a mapped path differs from the working tree. The
+   configuration, the change-area catalog (read through the symbolic links the
+   index holds; a link whose target leaves the repository is refused, never
+   read from disk) and the `.gitattributes` files are read from the index, as the
+   commit carries them: a change to one of them takes effect once it is staged,
+   and a working-tree change that is not staged, an untracked file, an ignored
+   one, a staged link named `.gitattributes`, `$GIT_DIR/info/attributes`, the
+   file `core.attributesFile` names or the system's attributes file decides
+   nothing. Git's automatic result is reconstructed under no configuration
+   but the repository's rename-detection settings (`merge.renames`,
+   `merge.directoryRenames`, `merge.renameLimit`, `diff.renames`,
+   `diff.renameLimit`), its renormalization (`merge.renormalize`,
+   `core.autocrlf`) and `core.useReplaceRefs`, so a merge driver
+   configured for the repository, the user, the system or the environment
+   does not run. Everything else in the repository's git directory is read
+   as it stands: its references (replace refs among them), `HEAD`, the
+   index, `shallow`, `info/grafts` and the `modules` directory, in a linked
+   worktree too, so a submodule git fast-forwarded is not reported as a
+   conflict, whether or not `.gitmodules` is in the working tree. Conflict markers are looked for at the size git wrote them with as
+   well, and in other staged changes on every added line, whatever an
+   attribute says the file is;
 5. a lockfile or generated file is not recorded as `regenerated`, or any
    other path is;
 6. a staged path is outside the operation's changed-file set, or its staged
@@ -331,20 +351,21 @@ It fails (exit 1), listing each problem with its file and line, when:
    so: the other side's lines under `ours` or `theirs`; anything under
    `rewritten` or `deleted` (reported, not failed; a deleted path reports
    every line either side added); and under `combined`, only lines
-   acknowledged with `record.ts <path> combined --dropped "<why>"`, which
+   acknowledged with `bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" "<path>" combined --dropped "<why>"`, which
    records the lines missing at that moment. An acknowledgement edited by
    hand counts only with a nonempty `why`. A side's own lines under
    its own decision always fail.
 
 Fix what it reports and run it again. Exit 4 means a path is recorded as
 `escalate`: go to Step 8. Exit 3 means the snapshot is missing or belongs to
-another operation: run `conflict-map.ts`, then record again.
+another operation: run `bun "${CLAUDE_SKILL_DIR}/scripts/conflict-map.ts"`,
+then record again.
 
 ## Step 6: Validate
 
 Read every `resolve_conflicts.obligations` entry reported by
 `check-resolution.ts`. Check its `check` text against the **whole staged
-diff** (`git diff --cached`), including conflict-free files and hunks git
+diff** (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git diff --cached`), including conflict-free files and hunks git
 merged automatically. Record the evidence and outcome for each obligation
 in the resolution report. An optional command supplements this review; a
 passing command does not establish that its prose obligation is satisfied.
@@ -370,25 +391,62 @@ plus the recorded section. `--commit-message` runs the check again and prints
 nothing unless it passes:
 
 ```bash
-message=$(mktemp)
-bun "${CLAUDE_SKILL_DIR}/scripts/check-resolution.ts" --commit-message > "$message" && git commit -F "$message"
-rm -f "$message"
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file conflict-message.txt -- bun "${CLAUDE_SKILL_DIR}/scripts/check-resolution.ts" --commit-message
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git commit -F conflict-message.txt
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- conflict-message.txt
+bun "${CLAUDE_SKILL_DIR}/scripts/events.ts"
 ```
 
-The section reads:
+Run these commands in order, starting the next only after the preceding
+command exits `0`. Before the first, confirm that no `conflict-message.txt`
+exists in the worktree: if one does, it is not this run's, so stop and report
+it rather than overwrite it and then clean it away. The message file is written only on success and removed
+once the commit has used it, so the worktree is left clean; record the
+events only after the commit succeeds. If event recording fails, the committed
+resolution stands: report the failure and retry recording. The section reads:
 
 ```
 Conflicts resolved:
-- src/a.ts: combined — kept the retry limit from main and this branch's new timeout option.
-- src/b.ts: theirs — main already renamed the helper this branch edited; the edit moved to src/c.ts.
-- bun.lock: regenerated (bun install)
+- src/a.ts: combined [cause: overlap] — kept the retry limit from main and this branch's new timeout option.
+- src/b.ts: theirs [cause: adjacent] — main already renamed the helper this branch edited; the edit moved to src/c.ts.
+- bun.lock: regenerated [cause: derived] (bun install)
 ```
 
-For a rebase, save the section (`check-resolution.ts --message`) and run
-`git rebase --continue`, which keeps the replayed commit's own message. Every
+The cause is why the path conflicted, from the same rules as the
+[history report](#where-past-merges-conflicted-the-history-report) (the
+path's most telling cause when its regions have several). A path whose cause
+cannot be told is written without one.
+
+For a rebase, save each stop's section to a file of its own, numbered from
+`1` in stop order, so a later stop cannot replace an earlier one's:
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file conflict-section-1.txt -- bun "${CLAUDE_SKILL_DIR}/scripts/check-resolution.ts" --message`
+for the first stop, `conflict-section-2.txt` for the second, and so on.
+Before writing each one, confirm that no file of that name exists yet: if one
+does, it is not this run's, so stop and report it rather than overwrite it and
+later clean it away.
+After that command succeeds, run `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --env GIT_EDITOR true -- git rebase --continue`,
+which keeps the replayed commit's own message without opening an editor the
+wrapper gives no terminal. Every
 further stop is a new operation: map, resolve, record and check it again.
-When the rebase is done, post the saved sections on the pull request, or
-report them to the user when there is none.
+When the rebase is done, post every saved section on the pull request, in
+stop order, or report them to the user when there is none, then remove each
+file with
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git clean -f -- conflict-section-1.txt`
+and its numbered siblings.
+
+The concluding sequence above records merges, cherry-picks and reverts.
+For a rebase, run the recorder once its last stop has been continued:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/events.ts"
+```
+
+It appends one event per conflicted path to the [live record](#the-live-record).
+Run it again and it adds nothing; run it before the operation has concluded
+and it exits 3. A failure to write the record (exit 1) leaves the conclusion
+standing: say so in your report. Mapping the next stop of a rebase records the
+earlier stop first, so a rebase that stops several times leaves its events
+even when only the last one is recorded by hand.
 
 Inside a drive, carry on with the drive's own steps (validation and push)
 after concluding.
@@ -401,17 +459,75 @@ each question.
 - **Interactive session:** put each question to the user with the options
   you see (keep ours, keep theirs, a combination you describe), then record
   their answer as the decision and continue from Step 5.
-- **Unattended (a drive's repair round):** abort the operation
-  (`git merge --abort`, `git rebase --abort`, `git cherry-pick --abort` or
-  `git revert --abort`), then verify the tree is clean: `git status --porcelain
-  --untracked-files=no` prints nothing and `git rev-parse -q --verify
-  MERGE_HEAD` fails. Print the questions on stderr and exit non-zero. That is
+- **Unattended (a drive's repair round):** abort with
+  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git <operation> --abort`, substituting the stopped operation
+  (`merge`, `rebase`, `cherry-pick` or `revert`). Then verify the tree is clean:
+  `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --porcelain --untracked-files=no` must print nothing,
+  and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse -q --verify MERGE_HEAD` must exit non-zero.
+  Print the questions on stderr and exit non-zero. That is
   how drive-pr's `conflict-resolve` round hands a conflict to a human.
+
+## The live record
+
+`events.ts` keeps the [live conflict record](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), what the replay cannot see: the rebases, cherry-picks and
+reverts, and the resolutions themselves. It appends one JSON line per
+conflicted path to `jig/conflict-events.jsonl` under Git's common directory,
+which every worktree of the clone shares and nothing commits. The file holds
+this clone's events only: an operation resolved in another clone, or in a
+workspace since discarded, leaves none here.
+
+An operation counts as concluded when a commit on `HEAD`'s first-parent line
+sits directly on the commit the operation stopped at and is what the
+operation makes: a merge commit with the merged commit as its second parent,
+the picked or replayed commit with its author and date (the merge a
+`--rebase-merges` rebase recreates, with the rebased side as its second
+parent), the revert with its `This reverts commit` line. A `fixup!` or
+`squash!` commit that conflicted is folded into the commit before it, so its
+conclusion stands beside the stopped commit instead of above it, and counts
+too, also when the rebase replayed further commits after it. An aborted operation leaves its snapshot behind, and the next ordinary
+commit is not taken for its conclusion. One conflict is one record,
+identified by that commit and the path, or by the operation (its kind, its two
+sides and the commit it applied) and the path, so a commit amended afterwards, or a rebase stop run
+again after an abort, counts once. A path the operation merged cleanly, mapped
+only because `record.ts` recorded a decision for an adjustment to it, has no
+event and no cause in the `Conflicts resolved:` section.
+
+When `conflict-map.ts` replaces the snapshot of an operation whose events
+cannot be written, it keeps that snapshot as pending in
+the worktree's Git directory under `jig/pending/`, with the commit the operation
+concluded with, so the next `events.ts` records it from any checkout. It
+removes a pending snapshot only once its events are recorded, and exits 1
+while one still cannot be recorded. A pending snapshot without its commit
+stays until that commit is found above `HEAD`.
+
+Each line is an event of type `merge_conflict`:
+
+| Field | Meaning |
+|-------|---------|
+| `type`, `ts` | `merge_conflict`; when the operation concluded (the committer date) |
+| `operation` | `merge`, `rebase`, `cherry-pick` or `revert` |
+| `path` | the conflicted path |
+| `cause`, `causes`, `regions` | the cause that stands for the path (`overlap` or `structural` when it has one, else the cause of most regions), all its causes, and how many conflicting regions it had; `null`, empty and `null` when the cause could not be derived |
+| `decision`, `reason` | what `record.ts` stored for the path |
+| `resolution_ms` | from the last `conflict-map.ts` run to the conclusion |
+| `source` | `drive-pr` when `$DRIVE_PR_ROUND_TASK` was `conflict-resolve` (a drive's conflict-resolve round) when `conflict-map.ts` first mapped the operation, else `session` |
+| `pr` | the pull request being driven (`$DRIVE_PR_TARGET`) when `source` is `drive-pr`, else null |
+| `commit`, `branch` | the concluding commit, and the branch the operation ran on |
+| `ours_commit`, `ours_ref`, `theirs_commit`, `theirs_ref` | the two sides as git names them for the operation (in a rebase, `ours` is the upstream) |
+| `incoming_commit` | the commit the operation applied: the one merged, picked, replayed or reverted (a revert's `theirs_commit` is its parent) |
+
+The regions are found again from the path's three versions with
+`git merge-file` and the histogram diff `git merge` uses (Git before 2.44
+cannot choose the diff, so there the default diff is used and region
+boundaries can differ), not read from the snapshot's hunks, and run through
+the replay's cause rules. A repository's
+merge drivers and renormalization do not apply to that second merge, so a
+cause is derived from the three versions, not read from git's own run.
 
 ## What this skill never does
 
 - Force-push, or rebase a branch with an open pull request under a drive.
-- Take one side's whole text file (`git checkout --ours` or `--theirs`)
+- Take one side's whole text file with `git checkout` using `--ours` or `--theirs`
   without recording that decision and its reason.
 - Edit a lockfile or generated file by hand.
 - Conclude with conflict markers left, or before `check-resolution.ts`
@@ -507,10 +623,11 @@ that directory:
   kept but reformatted counts as dropped (record `rewritten`, or acknowledge
   it); a removed line that also exists elsewhere in the file is not noticed.
   The semantic search in Step 3 is still yours to do.
-- The conflict-marker size comes from the path's `conflict-marker-size`
-  attribute (default 7) when the path is first mapped, and stays that size
-  for the operation, since git wrote the markers then; the check also looks
-  for markers of the size the attribute gives at check time.
+- The conflict-marker size is the size of the markers git wrote into the
+  path when it is first mapped (the `conflict-marker-size` attribute, default
+  7, when no complete region is found in the file), and stays that size for
+  the operation; the check also looks for markers of the size the attributes
+  give at check time. Map before editing a conflicted file.
 - A `git am` session is not mapped.
 
 ## Where past merges conflicted: the history report
@@ -534,7 +651,7 @@ It [replays](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) every mer
 (fetched pull-request heads such as `refs/pull/*/head` included; the stash
 and a forge's synthetic `refs/pull/*/merge` commits, under `refs/remotes/`
 too, left out): it merges the
-merge's two parents again with `git merge-tree --write-tree`, which needs no
+merge's two parents again with `git merge-tree` using `--write-tree`, which needs no
 working tree, in diff3 style so every conflicting region carries its
 [merge base](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). Git's
 new objects go to a temporary object directory, removed afterwards, so no
@@ -590,8 +707,9 @@ regions was checked by hand
 ([references/cause-accuracy.json](references/cause-accuracy.json)); and its
 limits. It sees only merge commits that still exist: a conflict resolved
 during a rebase, a cherry-pick or a revert, or on a branch deleted after a
-squash merge, leaves nothing to replay, and a conflict met again in a later
-merge counts again.
+squash merge, leaves nothing to replay (the [live record](#the-live-record)
+keeps those, from the day `events.ts` runs), and a conflict met again in a
+later merge counts again.
 
 `--json` prints the same as a `merge-conflicts/v1` object: `range`,
 `shallow`, `totals`, `causes`, `paths`, `hotspots`, `weeks` (every week of the
@@ -614,6 +732,8 @@ its `Conflicts resolved:` section recorded).
 
 - [`/jig:drive-pr`](../drive-pr/SKILL.md) runs this skill in its
   `conflict-resolve` round and when its `base-sync.ts` reports a conflict
-  (exit 9).
+  (exit 9). The round's environment (`$DRIVE_PR_ROUND_TASK`, `$DRIVE_PR_TARGET`)
+  is how the [live record](#the-live-record) marks a resolution the drive
+  started.
 - [`/jig:fix-ci`](../fix-ci/SKILL.md) for checks that fail after the
   merge for reasons the resolution did not cause.

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Verify a conflict resolution before the operation is concluded: after every
  * path is resolved, recorded and staged, before `git commit`,
@@ -18,10 +19,10 @@
  * differs from the working tree for a mapped path; when a lockfile or
  * generated file was not regenerated; when the configuration and change-area
  * catalog as they stand now classify a mapped path differently from the map
- * (its decision answered another requirement), or the catalog cannot be read;
- * when the configuration, the catalog or a `.gitattributes` file differs
- * between the working tree and the index (the check classifies by the one,
- * the commit carries the other);
+ * (its decision answered another requirement), or the catalog cannot be read.
+ * Both, and the attributes, are read from the index, as the commit carries
+ * them (lib/staged-config.ts), so a file changed on disk and not staged
+ * decides nothing;
  * and when a side's change is dropped
  * without that being the recorded decision (the dropped-change check; see
  * lib/drops.ts). Every staged change must belong to the operation and match
@@ -39,42 +40,34 @@
 import {
   copyFileSync,
   existsSync,
-  lstatSync,
   mkdtempSync,
   readFileSync,
-  readlinkSync,
-  realpathSync,
   rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import {
-  dirname,
-  isAbsolute,
-  join,
-  parse,
-  posix,
-  relative,
-  sep,
-} from "node:path";
+import { join } from "node:path";
 import { fail, runMain } from "../../../shared/cli.ts";
+import { type PathCauses, snapshotCauses } from "./lib/live-causes.ts";
 import {
   type Classification,
   classifyPaths,
   derivedEntries,
+  indexSizes,
   sameRequirement,
   unmergedPaths,
+  writtenSizes,
 } from "./conflict-map.ts";
 import {
   type CatalogGenerated,
   catalogGeneratedEntries,
-  declarationFiles,
 } from "./lib/classify.ts";
+import { THROWAWAY_INDEX_CONFIG } from "./lib/attributes.ts";
 import { droppedLines } from "./lib/drops.ts";
 import {
   git,
   gitPath,
-  gitRaw,
   indexBlob,
+  isBinaryBlob,
   readBlob,
   splitNul,
   topLevel,
@@ -113,196 +106,68 @@ function unstaged(root: string, path: string): boolean {
   return git(root, ["diff", "--name-only", "-z", "--", path]) !== "";
 }
 
-/** `file`'s path relative to `root`, or `null` when it lies outside. */
-function inside(root: string, file: string): string | null {
-  const rel = relative(root, file).replaceAll("\\", "/");
-  return rel === "" || rel === ".." || rel.startsWith("../") || isAbsolute(rel)
-    ? null
-    : rel;
-}
-
-/** Hops after which a chain of symbolic links counts as a loop. */
-const MAX_LINK_HOPS = 40;
-
 /**
- * Every path the file system passes through to open `file`: each symbolic
- * link on the way (a file or a directory, at any hop of a chain) and the file
- * finally read, all as absolute paths whose directories hold no link.
- *
- * Components are taken in the order the system takes them, and a `..` steps
- * out of the directory reached so far, which holds no link. Nothing is
- * normalized as text first: `cfg/..` is the parent of wherever `cfg` leads,
- * not the directory holding `cfg`.
+ * The lines `diff` adds to the new side, by line number. A context line moves
+ * the new side on too, in case a hunk carries one.
  */
-function traversedPaths(file: string): string[] {
-  const seen: string[] = [];
-  const pending: string[] = [];
-  // Continues at `path`, read from `from`: from its root when absolute.
-  const restart = (path: string, from: string): string => {
-    const { root } = parse(path);
-    pending.unshift(...path.slice(root.length).split(/[\\/]/));
-    return root === "" ? from : root;
-  };
-  let current = restart(
-    isAbsolute(file) ? file : `${process.cwd()}${sep}${file}`,
-    "",
-  );
-  for (let hops = 0; pending.length > 0; ) {
-    const name = pending.shift() as string;
-    if (name === "" || name === ".") continue;
-    if (name === "..") {
-      current = dirname(current);
-      continue;
-    }
-    const candidate = join(current, name);
-    let link: string | null = null;
-    try {
-      if (lstatSync(candidate).isSymbolicLink()) link = readlinkSync(candidate);
-    } catch {
-      // A missing component: what follows cannot be read either.
-    }
-    if (link === null) {
-      current = candidate;
-      continue;
-    }
-    seen.push(candidate);
-    if (++hops > MAX_LINK_HOPS) return seen;
-    current = restart(link, current);
+function addedLines(diff: string): Map<number, string> {
+  const added = new Map<number, string>();
+  let next: number | null = null;
+  for (const line of diff.split("\n")) {
+    const hunk = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunk) next = Number(hunk[1]);
+    else if (next !== null && line.startsWith("+"))
+      added.set(next++, line.slice(1));
+    else if (next !== null && line.startsWith(" ")) next++;
   }
-  seen.push(current);
-  return seen;
-}
-
-/** The file a read of `file` opens, or `null` when no file is there. */
-function finalTarget(file: string): string | null {
-  return existsSync(file) ? realpathSync(file) : null;
+  return added;
 }
 
 /**
- * The configuration and the catalog inside `root`, each also as every
- * symbolic link a read of it passes through and the file it finally reads.
+ * Conflict markers on the lines staged changes add outside the mapped paths,
+ * at the size the commit's attributes give each path and the size a merge
+ * reads. `--text` and `--no-textconv` keep any attribute from hiding a
+ * file's lines; only content git would call binary (a zero byte in its
+ * first 8000 bytes) is skipped.
  */
-function declarationFilePaths(root: string): string[] {
-  const realRoot = realpathSync(root);
-  return declarationFiles()
-    .flatMap((file) => {
-      const target = finalTarget(file);
-      return [
-        inside(root, file),
-        ...traversedPaths(file).map((path) => inside(realRoot, path)),
-        target === null ? null : inside(realRoot, target),
-      ];
-    })
-    .filter((path): path is string => path !== null);
-}
-
-/** The `.gitattributes` of `path`'s directory and of each one above it. */
-function attributeFiles(path: string): string[] {
-  const files: string[] = [];
-  let dir = posix.dirname(path);
-  for (; dir !== "."; dir = posix.dirname(dir))
-    files.push(`${dir}/.gitattributes`);
-  files.push(".gitattributes");
-  return files;
-}
-
-/**
- * The repository-relative paths of the files that decide how the mapped paths
- * are classified: the configuration, the catalog, and the `.gitattributes` of
- * every directory holding a mapped path.
- */
-function declarationPaths(root: string, mapped: Iterable<string>): Set<string> {
-  return new Set([
-    ...declarationFilePaths(root),
-    ...[...mapped].flatMap(attributeFiles),
-  ]);
-}
-
-const DECLARATION_DIFFERS =
-  "decides how the mapped paths are classified, and the working tree differs from what is staged: the check reads the working tree, the commit takes what is staged. git add it, or restore it from the index, then run this again";
-const FLAGGED_DECLARATION_DIFFERS = `${DECLARATION_DIFFERS}. It is marked assume-unchanged or skip-worktree: clear the flag first (git update-index --no-assume-unchanged --no-skip-worktree -- <path>)`;
-
-/**
- * Tracked declarations (and any tracked `.gitattributes`) whose file on disk
- * differs from the index, compared as differingPaths compares them, so an
- * assume-unchanged or skip-worktree flag hides nothing.
- */
-function differingDeclarations(
-  root: string,
-  declarations: ReadonlySet<string>,
-  unmerged: ReadonlyMap<string, unknown>,
-): Finding[] {
-  const found: Finding[] = [];
-  for (const { path, message } of differingPaths(root)) {
-    const attributes = posix.basename(path) === ".gitattributes";
-    if ((!declarations.has(path) && !attributes) || unmerged.has(path))
-      continue;
-    const flagged = message === SKIPPED_DIFFERS;
-    // Git reads the index's copy of an attributes file a sparse checkout
-    // left out, so it decides nothing the commit does not carry.
-    if (flagged && attributes && !existsSync(join(root, path))) continue;
-    found.push({
-      path,
-      message: flagged ? FLAGGED_DECLARATION_DIFFERS : DECLARATION_DIFFERS,
-    });
-  }
-  return found;
-}
-
-/**
- * Declaration files (see declarationPaths; any tracked `.gitattributes` too)
- * whose working tree differs from the index. The check reads them from the
- * working tree, but the commit carries what is staged, so a difference would
- * certify a requirement the commit does not have. A declaration on disk that
- * the index lacks is found by its path, so an ignore rule hides nothing.
- * Mapped paths are checked too: a mapped declaration recorded deleted and
- * recreated unstaged is checked nowhere else. Unmerged paths are reported as
- * unmerged.
- */
-function unstagedDeclarations(
-  root: string,
-  snapshot: Snapshot,
-  unmerged: ReadonlyMap<string, unknown>,
-): Finding[] {
-  const declarations = declarationPaths(root, Object.keys(snapshot.paths));
-  const found = differingDeclarations(root, declarations, unmerged);
-  const tracked = new Set(splitNul(git(root, ["ls-files", "-z"])));
-  const reported = new Set(found.map((f) => f.path));
-  // Untracked attributes files anywhere, ignored ones included: one governing
-  // only unmapped staged files still decides their conflict-marker check. A
-  // wholly untracked directory is listed as itself, since an attributes file
-  // in it governs nothing staged.
-  const untrackedAttributes = splitNul(
-    git(root, ["ls-files", "-z", "--others", "--directory"]),
-  ).filter((path) => posix.basename(path) === ".gitattributes");
-  for (const path of new Set([...declarations, ...untrackedAttributes]))
-    if (
-      !tracked.has(path) &&
-      !reported.has(path) &&
-      existsSync(join(root, path))
-    )
-      found.push({ path, message: DECLARATION_DIFFERS });
-  return found.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-}
-
-/** Conflict markers in staged changes outside the mapped paths. */
 function stagedMarkers(root: string, mapped: Snapshot["paths"]): Finding[] {
-  // Exit 2 means it found something (whitespace errors count too); only the
-  // marker lines matter here.
-  const r = gitRaw(root, ["diff", "--cached", "--check", "--no-ext-diff"]);
-  if (r.code !== 0 && r.code !== 2)
-    throw new Error(
-      `git diff --cached --check exited ${r.code}: ${r.stderr.trim()}`,
-    );
+  const paths = splitNul(
+    git(root, ["diff", "--cached", "--name-only", "--no-renames", "-z"]),
+  ).filter((path) => !Object.hasOwn(mapped, path));
+  // Regular files only: a link's target and a submodule's commit are not lines.
+  const files = new Map<string, string>();
+  for (const record of splitNul(git(root, ["ls-files", "--stage", "-z"]))) {
+    const match = record.match(/^100(?:644|755) ([0-9a-f]+) 0\t(.*)$/s);
+    if (match) files.set(match[2] as string, match[1] as string);
+  }
+  const scanned = paths.filter((path) => {
+    const blob = files.get(path);
+    return blob !== undefined && !isBinaryBlob(root, blob);
+  });
+  const committed = indexSizes(root, scanned);
+  const written = writtenSizes(root, scanned);
   const found: Finding[] = [];
-  for (const line of r.stdout.split("\n")) {
-    const match = line.match(/^(.*):(\d+): leftover conflict marker$/);
-    if (!match || Object.hasOwn(mapped, match[1] as string)) continue;
-    found.push({
-      path: match[1] as string,
-      line: Number(match[2]),
-      message: "conflict marker in a staged file",
-    });
+  for (const path of scanned) {
+    const sizes = new Set([
+      committed.get(path) as number,
+      written.get(path) as number,
+    ]);
+    const diff = git(root, [
+      "diff",
+      "--cached",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--no-renames",
+      "--text",
+      "--no-color",
+      "-U0",
+      "--inter-hunk-context=0",
+      "--",
+      path,
+    ]);
+    for (const [line, text] of addedLines(diff))
+      if ([...sizes].some((size) => markerLines(text, size).length > 0))
+        found.push({ path, line, message: "conflict marker in a staged file" });
   }
   return found;
 }
@@ -312,13 +177,21 @@ function checkPath(
   path: string,
   entry: PathEntry,
   stillUnmerged: boolean,
-  currentMarkerSize: number,
+  currentMarkerSizes: readonly number[],
   result: CheckResult,
 ): void {
   const problem = (message: string, line?: number) =>
-    result.problems.push({ path, line, message });
+    result.problems.push({
+      path,
+      ...definedFields({ line }),
+      message,
+    });
   const note = (message: string, line?: number) =>
-    result.notes.push({ path, line, message });
+    result.notes.push({
+      path,
+      ...definedFields({ line }),
+      message,
+    });
   const { decision, reason, command, dropped } = entry.resolution;
 
   if (decision === null || decision === undefined) {
@@ -383,9 +256,12 @@ function checkPath(
   if (entry.class === "binary") return;
   const text = readBlob(root, blob);
   // The markers git wrote have the mapped size; markers rewritten since
-  // (git checkout --conflict) have the size the attribute gives now.
+  // (git checkout --conflict), or written by the same operation started
+  // again, have a size the attributes give now: the index's, or the one a
+  // merge reads, the working tree's files first. Looking for more sizes can
+  // only find more markers.
   const lines = new Set(
-    [...new Set([entry.markerSize, currentMarkerSize])].flatMap((size) =>
+    [...new Set([entry.markerSize, ...currentMarkerSizes])].flatMap((size) =>
       markerLines(text, size),
     ),
   );
@@ -423,27 +299,28 @@ function checkPath(
 }
 
 /**
- * A catalog whose generated declarations could not all be honoured, when the
- * conflicts were mapped or now, may leave a generated file classified as text.
+ * Generated declarations (the configuration's or the catalog's) that could not
+ * all be honoured, when the conflicts were mapped or now, may leave a
+ * generated file classified as text.
  */
 function incompleteCatalog(
   snapshot: Snapshot,
   catalog: CatalogGenerated,
 ): Finding[] {
   const fix =
-    "so a file it declares generated may be classified as text: resolve or correct the catalog, then run conflict-map.ts again";
+    "so a file they declare generated may be classified as text: resolve or correct them, then run conflict-map.ts again";
   if (snapshot.catalogIncomplete)
     return [
       {
         path: "(conflict map)",
-        message: `the change-area catalog's generated files could not all be read when the conflicts were mapped (${snapshot.catalogIncomplete}), ${fix}`,
+        message: `the generated files the configuration and change-area catalog declare could not all be read when the conflicts were mapped (${snapshot.catalogIncomplete}), ${fix}`,
       },
     ];
   if (catalog.incomplete)
     return [
       {
         path: "(conflict map)",
-        message: `the change-area catalog's generated files cannot all be read now (${catalog.incomplete}), ${fix}`,
+        message: `the generated files the configuration and change-area catalog declare cannot all be read now (${catalog.incomplete}), ${fix}`,
       },
     ];
   return [];
@@ -503,7 +380,6 @@ export function checkResolution(
   if (incomplete.length === 0)
     result.problems.push(...changedRequirements(snapshot, now));
   const unmerged = unmergedPaths(root);
-  result.problems.push(...unstagedDeclarations(root, snapshot, unmerged));
   for (const path of [...unmerged.keys()].sort()) {
     const entry = Object.hasOwn(snapshot.paths, path)
       ? snapshot.paths[path]
@@ -517,13 +393,20 @@ export function checkResolution(
           : "still unmerged: resolve it, then git add it (or git rm it)",
     });
   }
-  for (const path of Object.keys(snapshot.paths).sort())
+  const mapped = Object.keys(snapshot.paths).sort((a, b) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+  const written = writtenSizes(root, mapped);
+  for (const path of mapped)
     checkPath(
       root,
       path,
       snapshot.paths[path] as PathEntry,
       unmerged.has(path),
-      (now.get(path) as Classification).markerSize,
+      [
+        (now.get(path) as Classification).markerSize,
+        written.get(path) as number,
+      ],
       result,
     );
   result.problems.push(...stagedMarkers(root, snapshot.paths));
@@ -535,14 +418,23 @@ export function checkResolution(
   return result;
 }
 
-/** The "Conflicts resolved:" section for the commit message. */
-export function messageSection(snapshot: Snapshot): string {
+/**
+ * The "Conflicts resolved:" section for the commit message: each path's
+ * decision, then its cause when `causes` has one, then the command and the
+ * reason.
+ */
+export function messageSection(
+  snapshot: Snapshot,
+  causes: ReadonlyMap<string, PathCauses> = new Map(),
+): string {
   const lines = ["Conflicts resolved:"];
   for (const path of Object.keys(snapshot.paths).sort()) {
     const { decision, reason, command, dropped } = (
       snapshot.paths[path] as PathEntry
     ).resolution;
     let line = `- ${path}: ${decision}`;
+    const cause = causes.get(path)?.cause;
+    if (cause) line += ` [cause: ${cause}]`;
     if (decision === "regenerated" && command) line += ` (${command})`;
     if (reason) line += ` — ${reason}`;
     if (dropped) line += ` Dropped on purpose: ${dropped.why}`;
@@ -577,13 +469,6 @@ const DIFFERS =
   "differs from the staged tree: obligation commands check files on disk, so stage or discard it first";
 const SKIPPED_DIFFERS =
   "is marked assume-unchanged or skip-worktree, so git does not compare it, and its file on disk differs from the staged tree: clear the flag (git update-index --no-assume-unchanged --no-skip-worktree -- <path>), then stage or discard it";
-
-const THROWAWAY_INDEX_CONFIG = [
-  "-c",
-  "core.splitIndex=false",
-  "-c",
-  "core.ignorestat=false",
-];
 
 /**
  * Tracked paths whose file on disk differs from the staged tree, as git itself
@@ -758,15 +643,41 @@ function reportObligations(
   }
 }
 
-async function main(): Promise<number> {
-  const args = process.argv.slice(2);
+/** The one output mode the command line names, or "" for the plain report. */
+function parseMode(args: readonly string[]): string {
   const known = ["--json", "--message", "--commit-message"];
   if (args.length > 1 || args.some((a) => !known.includes(a)))
     fail(
       2,
       "usage: check-resolution.ts [--json | --message | --commit-message]",
     );
-  const mode = args[0] ?? "";
+  return args[0] ?? "";
+}
+
+/** Every problem, escalation, note and obligation, one line each. */
+function reportResult(
+  result: CheckResult,
+  obligations: readonly ObligationResult[],
+  write: (line: string) => void,
+): void {
+  for (const f of result.problems) write(`PROBLEM ${render(f)}`);
+  for (const e of result.escalations)
+    write(`NEEDS A HUMAN ${e.path}: ${e.question}`);
+  for (const f of result.notes) write(`note ${render(f)}`);
+  reportObligations(obligations, write);
+}
+
+/** The closing line of the plain report: what to do next. */
+function verdictLine(result: CheckResult): string {
+  if (result.exit === 0)
+    return "check-resolution: the resolution passes. Validate it, then conclude the operation.";
+  if (result.exit === 4)
+    return `check-resolution: ${result.escalations.length} path(s) need a human; do not conclude the operation.`;
+  return `check-resolution: ${result.problems.length} problem(s); fix them and run this again.`;
+}
+
+async function main(): Promise<number> {
+  const mode = parseMode(process.argv.slice(2));
   const root = topLevel();
   if (root === null) fail(2, "check-resolution: not inside a git work tree.");
   const { operation, snapshot } = currentSnapshot("check-resolution", root);
@@ -781,6 +692,10 @@ async function main(): Promise<number> {
     catalogGeneratedEntries(),
   );
 
+  const causes =
+    mode !== "" && result.exit === 0
+      ? snapshotCauses(root, snapshot.paths)
+      : new Map<string, PathCauses>();
   if (mode === "--json") {
     console.log(
       JSON.stringify(
@@ -788,7 +703,7 @@ async function main(): Promise<number> {
           ...result,
           operation: snapshot.operation,
           obligations,
-          message: result.exit === 0 ? messageSection(snapshot) : null,
+          message: result.exit === 0 ? messageSection(snapshot, causes) : null,
         },
         null,
         2,
@@ -796,31 +711,20 @@ async function main(): Promise<number> {
     );
     return result.exit;
   }
-  const report = (write: (line: string) => void) => {
-    for (const f of result.problems) write(`PROBLEM ${render(f)}`);
-    for (const e of result.escalations)
-      write(`NEEDS A HUMAN ${e.path}: ${e.question}`);
-    for (const f of result.notes) write(`note ${render(f)}`);
-    reportObligations(obligations, write);
-  };
+  const report = (write: (line: string) => void) =>
+    reportResult(result, obligations, write);
   if (mode === "--message" || mode === "--commit-message") {
     report((line) => console.error(line));
     if (result.exit !== 0) return result.exit;
     console.log(
       mode === "--message"
-        ? messageSection(snapshot)
-        : `${preparedMessage(root)}\n\n${messageSection(snapshot)}`,
+        ? messageSection(snapshot, causes)
+        : `${preparedMessage(root)}\n\n${messageSection(snapshot, causes)}`,
     );
     return 0;
   }
   report((line) => console.log(line));
-  console.log(
-    result.exit === 0
-      ? "check-resolution: the resolution passes. Validate it, then conclude the operation."
-      : result.exit === 4
-        ? `check-resolution: ${result.escalations.length} path(s) need a human; do not conclude the operation.`
-        : `check-resolution: ${result.problems.length} problem(s); fix them and run this again.`,
-  );
+  console.log(verdictLine(result));
   return result.exit;
 }
 

@@ -3,7 +3,7 @@
 One example per decision in [SKILL.md § Step 4](../SKILL.md#step-4-record-each-decision).
 The code is invented for illustration. In every example the branch
 `feature` merges `main` in, so `ours` is `feature` and `theirs` is `main`.
-Commands are written as `record.ts`; run them as
+Decision commands use the installed skill's script path:
 `bun "<skill-dir>/scripts/record.ts" …`.
 
 ## `combined`: both changes still apply
@@ -29,7 +29,7 @@ Both intents hold, so the result keeps both:
 ```
 
 ```bash
-record.ts src/config.ts combined --reason "kept the retry limit from main and this branch's timeout override"
+bun "<skill-dir>/scripts/record.ts" src/config.ts combined --reason "kept the retry limit from main and this branch's timeout override"
 ```
 
 ## `ours` or `theirs`: one side already contains the other
@@ -39,7 +39,7 @@ with a new one whose message is already correct. The typo fix has nothing
 left to apply to.
 
 ```bash
-record.ts src/report.ts theirs --reason "main replaced formatTotal with renderTotal, whose message is already correct; this branch's typo fix is no longer needed"
+bun "<skill-dir>/scripts/record.ts" src/report.ts theirs --reason "main replaced formatTotal with renderTotal, whose message is already correct; this branch's typo fix is no longer needed"
 ```
 
 The check then reports the dropped `feature` line as a note, not a failure.
@@ -56,7 +56,7 @@ result is new code:
 ```
 
 ```bash
-record.ts src/lookup.ts rewritten --reason "combined this branch's case-insensitive lookup with main's fallback instead of throwing"
+bun "<skill-dir>/scripts/record.ts" src/lookup.ts rewritten --reason "combined this branch's case-insensitive lookup with main's fallback instead of throwing"
 ```
 
 ## `regenerated`: a derived file
@@ -66,11 +66,11 @@ integration side, resolve `package.json` first (keep both dependencies), then
 rebuild and stage the lockfile:
 
 ```bash
-git checkout --theirs -- bun.lock
+bun "<skill-dir>/../../shared/command.ts" -- git checkout --theirs -- bun.lock
 bun install
-git add package.json bun.lock
-record.ts package.json combined --reason "kept both new dependencies"
-record.ts bun.lock regenerated
+bun "<skill-dir>/../../shared/command.ts" -- git add package.json bun.lock
+bun "<skill-dir>/scripts/record.ts" package.json combined --reason "kept both new dependencies"
+bun "<skill-dir>/scripts/record.ts" bun.lock regenerated
 ```
 
 ## `deleted`: the deletion wins
@@ -80,8 +80,8 @@ bug in the old file. The map shows `renamedTo: src/parse/index.ts` on the
 `theirs` side. Apply the fix to the new file, then remove the old path:
 
 ```bash
-git rm src/legacy/parse.ts
-record.ts src/legacy/parse.ts deleted --reason "main moved the parser to src/parse/index.ts; this branch's fix for empty input is applied there"
+bun "<skill-dir>/../../shared/command.ts" -- git rm src/legacy/parse.ts
+bun "<skill-dir>/scripts/record.ts" src/legacy/parse.ts deleted --reason "main moved the parser to src/parse/index.ts; this branch's fix for empty input is applied there"
 ```
 
 ## `escalate`: a product decision
@@ -90,7 +90,7 @@ record.ts src/legacy/parse.ts deleted --reason "main moved the parser to src/par
 owners. The code cannot say which policy is intended.
 
 ```bash
-record.ts src/export/policy.ts escalate --reason "Should guests still be able to export reports now that main restricts exports to account owners?"
+bun "<skill-dir>/scripts/record.ts" src/export/policy.ts escalate --reason "Should guests still be able to export reports now that main restricts exports to account owners?"
 ```
 
 ## Acknowledging a dropped line under `combined`
@@ -100,7 +100,7 @@ sides added a log statement at the same place, and one is enough. After
 resolving and staging:
 
 ```bash
-record.ts src/sync.ts combined --reason "kept both changes to the sync loop" --dropped "both sides added the same progress log; one copy is kept"
+bun "<skill-dir>/scripts/record.ts" src/sync.ts combined --reason "kept both changes to the sync loop" --dropped "both sides added the same progress log; one copy is kept"
 ```
 
 `--dropped` records exactly the lines missing at that moment; a line that goes

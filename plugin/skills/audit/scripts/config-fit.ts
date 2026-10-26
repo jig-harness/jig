@@ -8,8 +8,7 @@
  *   - what the skills' own validation rejects;
  *   - derivations that fail: a command whose program or script does not
  *     exist, a configured path that is missing, an integration branch that
- *     cannot be found, a required check that never runs, a tracker that
- *     cannot be reached;
+ *     cannot be found, a required check that never runs, an unreachable tracker;
  *   - declared values the repository contradicts, such as `stacking: none`
  *     with stacked pull requests open, or an AI reviewer named that posted on
  *     no recent pull request (or one that ran while none is named);
@@ -21,8 +20,8 @@
  *     commands CI runs that the gate command does not appear to (a
  *     heuristic), and a gate program the Claude Code settings do not allow;
  *   - configured tracker labels that the repository's label taxonomy
- *     (`label-taxonomy.yaml`) does not define, and a `review.taxonomy.types`
- *     that differs from the taxonomy's types;
+ *     (`issue_tracker.taxonomy`, else `label-taxonomy.yaml`) does not
+ *     define, and a `review.taxonomy.types` that differs from its types;
  *   - settings the repository's shape suggests but does not use;
  *   - the facts a profile suggestion rests on (`lib/profile-facts.ts`):
  *     contributors, deploy signals in CI and in tracked deploy
@@ -53,6 +52,8 @@
  * Exit codes: 0 no errors; 1 at least one error; 2 usage or an unreadable
  * configuration file.
  */
+import { changelogValidation } from "./lib/section-validation.ts";
+import { parseDeclaration } from "../../../gc/config.ts";
 import {
   ENV_PREFIX,
   isMapping as isRecord,
@@ -64,24 +65,21 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize, relative } from "node:path";
 import {
   consumerRoot,
+  layeredConfig,
   OVERLAY_RELPATH,
   overlayPath,
   parseReviewConfig,
   reviewerSelection,
 } from "../../../shared/consumer.ts";
 import { adrConfig } from "../../adr/scripts/locate.ts";
-import {
-  parseChangelogSection,
-  resolve as resolveChangelog,
-} from "../../changelog/scripts/config.ts";
-import { workingTree } from "../../changelog/scripts/notes-dir.ts";
+import { sheetRepositories } from "../../decide/scripts/lib/overlay.ts";
 import { parseCodeStatsConfig } from "../../code-stats/scripts/lib/config.ts";
-import { releasableVersion } from "../../changelog/scripts/versions.ts";
 import { parsePrPolicy } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { parseSeverityFormats } from "../../drive-pr/scripts/lib/severity-formats.ts";
 import { refuseRenamedSection } from "../../do-item/scripts/lib/overlay.ts";
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
+import { trackerProbeable } from "./lib/tracker-probe.ts";
 import { detectPackageManager } from "../../fix-ci/scripts/consumer-config.ts";
 import { journalPath } from "../../reflect/scripts/lib/context.ts";
 import { parseObligations } from "../../resolve-conflicts/scripts/lib/obligations.ts";
@@ -91,7 +89,12 @@ import {
   sizePointsMismatch,
 } from "../../work-batch/scripts/lib/policy.ts";
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
+import { ExitError } from "../../../shared/cli.ts";
 import { swallow } from "../../../shared/errors.ts";
+import {
+  settingsRequirement,
+  validSettings,
+} from "../../design-brief-builder/scripts/contracts.ts";
 import { load } from "../../../shared/yaml.ts";
 import { type AuditRecord, parseRecord, RECORD_RELPATH } from "./lib/record.ts";
 import { taxonomyFindings } from "./lib/taxonomy-fit.ts";
@@ -798,6 +801,7 @@ function batchSizesOf(config: Config): string[] | null {
  * points are set.
  */
 function sizePointsFindings(config: Config): Finding[] {
+  // The size points are the cross-field rule's to report.
   const batchSizes = batchSizesOf(config);
   if (batchSizes === null) return [];
   const points = at(config, "work_batch.size_points");
@@ -847,12 +851,18 @@ function skillValidation(
       parseSeverityFormats((review as Config).severity_formats);
   });
   attempt("adr", () => adrConfig(path));
+  attempt("decide, explain (sheets)", () => sheetRepositories(config, root));
   attempt("changelog", () => changelogValidation(config, root));
   attempt("resolve-conflicts", () =>
     parseObligations(config.resolve_conflicts),
   );
   attempt("code-stats", () => parseCodeStatsConfig(config.code_stats));
-  // The size points are the cross-field rule's to report.
+  attempt("gc", () => parseDeclaration(config.gc, root));
+  attempt("design-brief-builder (handback)", () => {
+    const handback = at(config, "design_brief.handback");
+    if (handback !== undefined && !validSettings(handback))
+      throw new ExitError(2, settingsRequirement);
+  });
   const batchSizes = batchSizesOf(config);
   if (batchSizes !== null && sizePointsFindings(config).length === 0)
     attempt("work-batch", () => parseWorkBatchSection(config, batchSizes));
@@ -862,27 +872,6 @@ function skillValidation(
     if (journal !== null) journalPath(journal, root);
   });
   return findings;
-}
-
-/**
- * The changelog section resolved against the audited repository as the
- * skill's commands resolve it: the changelog and its format, the version
- * source set or derived from the manifests, and, from version files, the one
- * version they all hold, checked as one the release can move in every file.
- */
-function changelogValidation(config: Config, root: string): void {
-  const section = parseChangelogSection(config.changelog);
-  if (section === null) return;
-  const read = workingTree(root);
-  const resolved = resolveChangelog(root, section, read);
-  if (resolved.version.kind === "files")
-    releasableVersion(resolved.version, {
-      read,
-      format: resolved.format,
-      tagPrefix: resolved.tagPrefix,
-      changelog: read(resolved.changelog) ?? "",
-      tags: () => [],
-    });
 }
 
 /** A newer plugin installed than this session runs: the audit would judge with old criteria. */
@@ -909,8 +898,8 @@ function leafFields(config: Config, prefix = ""): string[] {
 
 /**
  * What the configuration layers of the machine running the audit add: the
- * audit judges the repository's file alone, but the skills on this machine
- * also read the user file and the environment.
+ * audit judges the repository's file alone, but the skills on this machine,
+ * and `trackerCheck`, also read the user file and the environment.
  */
 function machineLayers(config: Config, schema: Schema): Finding[] {
   const findings: Finding[] = [];
@@ -940,7 +929,7 @@ function machineLayers(config: Config, schema: Schema): Finding[] {
     findings.push({
       id: "fact:user-layer",
       severity: "info",
-      message: `on this machine ${path} sets ${filled.join(", ")}, which the repository's file leaves unset: the skills here use those values, others get the defaults. The audit judged the repository's file alone`,
+      message: `on this machine ${path} sets ${filled.join(", ")}, which the repository's file leaves unset: the skills here use those values, others get the defaults. The audit judged the repository's file alone, except for the tracker check, which reads the configuration as the skills here do`,
     });
   const variables = Object.keys(process.env).filter((k) =>
     k.startsWith(ENV_PREFIX),
@@ -949,7 +938,7 @@ function machineLayers(config: Config, schema: Schema): Finding[] {
     findings.push({
       id: "fact:environment-layer",
       severity: "info",
-      message: `${variables.join(", ")} set values for this run only; the audit ignored them`,
+      message: `${variables.join(", ")} set values for this run only; the audit ignored them, except for the tracker check, which reads the configuration as the skills here do`,
     });
   return findings;
 }
@@ -1480,26 +1469,46 @@ function forgeChecks(
   ];
 }
 
-async function trackerCheck(config: Config): Promise<Finding[]> {
-  const team = at(config, "issue_tracker.team");
-  if (typeof team !== "string") return [];
+/**
+ * Ask the tracker the configuration selects whether it answers for the
+ * audited repository: its credential and its team or repository, never an
+ * issue, whose contents are no part of reachability. The configuration is
+ * `file` merged with this machine's user file and environment, as the skills
+ * read it; one that sets no `issue_tracker` section is probed too: it runs on
+ * the default adapter, which derives its repository from `root`'s `origin`.
+ */
+async function trackerCheck(
+  file: string,
+  configured: boolean,
+  root: string,
+): Promise<Finding[]> {
+  if (!configured) return [];
+  let config: Config | undefined;
   try {
-    const tracker = openTracker(parseTrackerConfig(config));
-    const probe = tracker.getIssue(`${team}-1`);
+    const text = readFileSync(file, "utf8");
+    config = layeredConfig(root, process.env, text).values;
+    const trackerConfig = parseTrackerConfig(config);
+    if (!trackerProbeable(trackerConfig)) return [];
+    const deadline = new AbortController();
+    const probe = openTracker(trackerConfig, root).reach(deadline.signal);
     const timeout = new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error("no answer within 30 seconds")),
-        30_000,
-      ).unref(),
+      setTimeout(() => {
+        reject(new Error("no answer within 30 seconds"));
+        deadline.abort();
+      }, 30_000).unref(),
     );
     await Promise.race([probe, timeout]);
     return [];
   } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
     return [
       {
         id: "derivation:issue_tracker",
         severity: "error",
-        message: `the ${String(at(config, "issue_tracker.adapter") ?? "linear")} tracker cannot be reached: ${e instanceof Error ? e.message : String(e)}`,
+        message:
+          config === undefined
+            ? `the tracker is unchecked: the configuration the skills read cannot be loaded, so every skill here refuses to run (${reason})`
+            : `the ${String(at(config, "issue_tracker.adapter") ?? "github")} tracker cannot be reached: ${reason}`,
       },
     ];
   }
@@ -3217,7 +3226,9 @@ export async function configFit(opts: {
   const state: ForgeState = { required: null, pulls: null };
   if (!opts.offline) {
     report.findings.push(...forgeChecks(config, opts.root, report, state));
-    report.findings.push(...(await trackerCheck(config)));
+    report.findings.push(
+      ...(await trackerCheck(opts.file, report.configured, opts.root)),
+    );
   } else
     report.findings.push({
       id: "unchecked:offline",

@@ -12,12 +12,8 @@
  * nested connections silently, so every nested read carries its `pageInfo`.
  */
 
-import {
-  type RunHandle,
-  type RunResult,
-  run,
-} from "../../../../drive-pr/scripts/lib/proc.ts";
-import { registerCancellationGroup } from "../../../../../shared/proc.ts";
+import { type RunResult, run } from "../../../../drive-pr/scripts/lib/proc.ts";
+import { pager, postGraphQL, runClient } from "./graphql.ts";
 import {
   CLOSED_STATE_TYPES,
   type CanonicalState,
@@ -27,6 +23,8 @@ import {
   type IssueComment,
   type IssueComments,
   type IssueFact,
+  type IssuePatch,
+  type IssueRelation,
   type IssueState,
   type IssueSummary,
   type LabelledIssueState,
@@ -35,9 +33,17 @@ import {
   type PoolQuery,
   type StartedIssueActivity,
   type Tracker,
+  type TrackerLabel,
+  TrackerRequestError,
   type WindowSpec,
 } from "./port.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
+import {
+  checkPatch,
+  checkPriority,
+  checkRelation,
+  requireTitle,
+} from "./requests.ts";
 
 export const LINEAR_API = "https://api.linear.app/graphql";
 export const LINEAR_TIMEOUT_MS = 30_000;
@@ -117,16 +123,15 @@ export function httpTransport(
 ): LinearTransport {
   return async (query, variables, signal) => {
     if (cancelled(signal)) throw abortedError(signal);
-    const timeout = AbortSignal.timeout(LINEAR_TIMEOUT_MS);
     let res: Response;
     try {
-      res = await fetchImpl(LINEAR_API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: token },
-        body: JSON.stringify({ query, variables }),
-        signal:
-          signal === undefined ? timeout : AbortSignal.any([timeout, signal]),
-      });
+      res = await postGraphQL(
+        fetchImpl,
+        LINEAR_API,
+        token,
+        { query, variables },
+        { timeoutMs: LINEAR_TIMEOUT_MS, signal },
+      );
     } catch (err) {
       if (cancelled(signal)) throw abortedError(signal);
       throw new LinearApiError(
@@ -156,37 +161,14 @@ export function httpTransport(
 }
 
 /**
- * Runs the client through the shared runner, which puts it in its own process
- * group, ends that whole group at `LINEAR_TIMEOUT_MS` or when `signal` aborts,
- * settles without waiting for pipes a descendant holds, and bounds the output
- * it captures. Taking the run's handle makes ending the group this caller's
- * job, so the group is also registered with the shared signal forwarder while
- * it runs: a SIGINT, SIGTERM or SIGHUP to this process ends the client too.
+ * Runs the client through the shared runner (`runClient`), ended at
+ * `LINEAR_TIMEOUT_MS` or when `signal` aborts.
  */
-async function runCli(
+function runCli(
   argv: string[],
   signal: AbortSignal | undefined,
 ): Promise<RunResult> {
-  let handle: RunHandle | undefined;
-  let release: (() => void) | undefined;
-  const stop = () => void handle?.stop();
-  signal?.addEventListener("abort", stop, { once: true });
-  try {
-    return await run(argv, {
-      timeoutSec: LINEAR_TIMEOUT_MS / 1000,
-      onSpawn: (spawned) => {
-        handle = spawned;
-        if (spawned.pid !== undefined)
-          release = registerCancellationGroup(spawned.pid, undefined, () =>
-            spawned.stop(),
-          );
-        if (cancelled(signal)) stop();
-      },
-    });
-  } finally {
-    release?.();
-    signal?.removeEventListener("abort", stop);
-  }
+  return runClient(run, argv, { timeoutMs: LINEAR_TIMEOUT_MS, signal });
 }
 
 /** Why a finished client run cannot be read as a response, if it cannot. */
@@ -313,52 +295,13 @@ function stateOf(v: unknown, where: string): IssueState {
 }
 
 /**
- * Read every page of one connection. `pick` finds the connection in a page's
- * data. A cursor seen twice, or an issue repeated across pages (the list moved
- * under the read), is an incomplete read, not a result. An aborted `signal`
- * ends the read in flight and starts no further page.
+ * Read every page of one connection (`pager`): a node is told apart by its
+ * key, else its id.
  */
-export async function pageAll(
-  transport: LinearTransport,
-  query: string,
-  variables: Record<string, unknown>,
-  pick: (data: Record<string, unknown>) => unknown,
-  where: string,
-  signal?: AbortSignal,
-): Promise<unknown[]> {
-  const out: unknown[] = [];
-  const seen = new Set<string>();
-  const ids = new Set<string>();
-  let after: string | null = null;
-  for (;;) {
-    const data = await transport(query, { ...variables, after }, signal);
-    if (!isRecord(data))
-      throw new ShapeError(`${where}: response is not an object`);
-    const conn = pick(data);
-    if (
-      !isRecord(conn) ||
-      !Array.isArray(conn.nodes) ||
-      !isRecord(conn.pageInfo)
-    )
-      throw new ShapeError(`${where}: unexpected connection shape`);
-    for (const node of conn.nodes) {
-      const id = isRecord(node) ? (node.identifier ?? node.id) : undefined;
-      if (typeof id !== "string") continue;
-      if (ids.has(id))
-        throw new ShapeError(`${where}: ${id} repeated across pages`);
-      ids.add(id);
-    }
-    out.push(...conn.nodes);
-    if (typeof conn.pageInfo.hasNextPage !== "boolean")
-      throw new ShapeError(`${where}: pageInfo.hasNextPage is not a boolean`);
-    if (!conn.pageInfo.hasNextPage) return out;
-    const cursor = conn.pageInfo.endCursor;
-    if (typeof cursor !== "string" || seen.has(cursor))
-      throw new ShapeError(`${where}: pagination cursor missing or repeated`);
-    seen.add(cursor);
-    after = cursor;
-  }
-}
+export const pageAll = pager({
+  idOf: (node) => node.identifier ?? node.id,
+  fail: (message) => new ShapeError(message),
+});
 
 // ── Issue pickup ───────────────────────────────────────────────────────────
 
@@ -911,6 +854,161 @@ export function parsePoolIssue(raw: unknown): PoolIssue {
   };
 }
 
+// ── Filing and planning ────────────────────────────────────────────────────
+
+const TEAM_QUERY = `
+query TrackerTeam($key: String!) {
+  teams(first: 10, filter: { key: { eq: $key } }) {
+    pageInfo { hasNextPage }
+    nodes { id key }
+  }
+}`;
+
+const LABELS_QUERY = `
+query TrackerLabels($filter: IssueLabelFilter!, $after: String) {
+  issueLabels(first: 250, after: $after, filter: $filter) {
+    pageInfo { hasNextPage endCursor }
+    nodes { id name isGroup parent { name } }
+  }
+}`;
+
+const PROJECT_QUERY = `
+query TrackerProject($name: String!) {
+  projects(first: 10, filter: { name: { eq: $name } }) {
+    pageInfo { hasNextPage }
+    nodes { id name }
+  }
+}`;
+
+const CREATE_MUTATION = `
+mutation TrackerCreate($input: IssueCreateInput!) {
+  issueCreate(input: $input) { success issue { identifier url } }
+}`;
+
+// `includeArchived`: the tracker archives completed issues, so a search that
+// asks for closed issues must ask for archived ones too.
+const SEARCH_QUERY = `
+query TrackerSearch($filter: IssueFilter!, $includeArchived: Boolean!, $after: String) {
+  issues(first: 100, after: $after, filter: $filter, includeArchived: $includeArchived) {
+    pageInfo { hasNextPage endCursor }
+    nodes { identifier title state { name type } ${LABELS} }
+  }
+}`;
+
+const RELATIONS_QUERY = `
+query TrackerRelations($id: String!, $after: String) {
+  issue(id: $id) {
+    relations(first: 100, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id type relatedIssue { identifier } }
+    }
+  }
+}`;
+
+const INVERSE_RELATIONS_QUERY = `
+query TrackerInverseRelations($id: String!, $after: String) {
+  issue(id: $id) {
+    inverseRelations(first: 100, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id type issue { identifier } }
+    }
+  }
+}`;
+
+const RELATE_MUTATION = `
+mutation TrackerRelate($input: IssueRelationCreateInput!) {
+  issueRelationCreate(input: $input) { success }
+}`;
+
+/**
+ * Linear's relation type that records no decision: a relation the tracker
+ * suggests by likeness, which the port has no counterpart for.
+ */
+const SUGGESTED_RELATION = "similar";
+
+/** A label as Linear lists it, with its id. */
+interface LinearLabel extends TrackerLabel {
+  id: string;
+}
+
+/** Parse one label node; a group's own label is marked by `isGroup`. */
+function parseLabel(
+  raw: unknown,
+  where: string,
+): LinearLabel & { isGroup: boolean } {
+  const n = record(raw, where);
+  if (typeof n.isGroup !== "boolean")
+    throw new ShapeError(`${where}.isGroup: expected a boolean`);
+  return {
+    id: str(n.id, `${where}.id`),
+    name: str(n.name, `${where}.name`),
+    isGroup: n.isGroup,
+    group:
+      n.parent === null || n.parent === undefined
+        ? null
+        : str(record(n.parent, `${where}.parent`).name, `${where}.parent.name`),
+  };
+}
+
+/**
+ * The one node of a lookup connection whose `name` is `wanted`. A partial
+ * page, or a name matching none or several, throws: a write must not land on
+ * a guess.
+ */
+function onlyMatch(
+  conn: unknown,
+  wanted: string,
+  field: "name" | "key",
+  what: string,
+): Record<string, unknown> {
+  const c = record(conn, what);
+  if (!complete(c) || !Array.isArray(c.nodes))
+    throw new ShapeError(
+      `${what}: more than one page of matches; refusing to resolve it from a partial view`,
+    );
+  const matches = c.nodes.filter((n) => isRecord(n) && n[field] === wanted);
+  if (matches.length !== 1)
+    throw new TrackerRequestError(
+      "unresolved",
+      `${what} matched ${matches.length} resources in the tracker, expected exactly 1`,
+    );
+  return record(matches[0], what);
+}
+
+/** The fields of a patch Linear takes as they are. */
+function plainFields(patch: IssuePatch): Record<string, unknown> {
+  const input: Record<string, unknown> = {};
+  for (const f of ["title", "description", "priority"] as const)
+    if (patch[f] !== undefined) input[f] = patch[f];
+  return input;
+}
+
+/** One relation node, seen from the issue read; `[]` for a suggestion. */
+function parseRelation(
+  raw: unknown,
+  where: string,
+  other: "relatedIssue" | "issue",
+): IssueRelation[] {
+  const n = record(raw, where);
+  const type = str(n.type, `${where}.type`);
+  const issue = str(
+    record(n[other], `${where}.${other}`).identifier,
+    `${where}.${other}.identifier`,
+  );
+  if (type === SUGGESTED_RELATION) return [];
+  const outgoing = other === "relatedIssue";
+  if (type === "blocks")
+    return [{ type: outgoing ? "blocks" : "blocked_by", issue }];
+  // Linear's `duplicate` marks the relation's `issue` as the duplicate of its
+  // `relatedIssue`.
+  if (type === "duplicate")
+    return [{ type: outgoing ? "duplicate" : "duplicated_by", issue }];
+  if (type === "related") return [{ type, issue }];
+  // A relation this port cannot name could be the one that blocks the issue,
+  // so it fails the read rather than vanishing from it.
+  throw new ShapeError(`${where}: unknown relation type '${type}'`);
+}
+
 function isoRange(w: WindowSpec): { gte: string; lt: string } {
   return {
     gte: new Date(w.sinceMs).toISOString(),
@@ -953,10 +1051,75 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     };
   }
 
+  /** The labels an issue of this team can carry: the workspace's and the team's. */
+  async function assignableLabels(): Promise<LinearLabel[]> {
+    const nodes = await pageAll(
+      transport,
+      LABELS_QUERY,
+      {
+        filter: {
+          or: [{ team: { key: { eq: team } } }, { team: { null: true } }],
+        },
+      },
+      (d) => d.issueLabels,
+      `labels of ${team}`,
+    );
+    return nodes
+      .map((n, i) => parseLabel(n, `labels of ${team}[${i}]`))
+      .filter((l) => !l.isGroup)
+      .map(({ id, name, group }) => ({ id, name, group }));
+  }
+
+  /**
+   * Label names to ids. Every name must match exactly one label this team's
+   * issues can carry; the error names each that matches none or several.
+   */
+  async function labelIds(names: string[]): Promise<Map<string, string>> {
+    const ids = new Map<string, string>();
+    if (names.length === 0) return ids;
+    const labels = await assignableLabels();
+    const problems: string[] = [];
+    for (const name of new Set(names)) {
+      const matches = labels.filter((l) => l.name === name);
+      if (matches.length === 1) ids.set(name, (matches[0] as LinearLabel).id);
+      else
+        problems.push(
+          matches.length === 0
+            ? `'${name}' matches no label`
+            : `'${name}' matches ${matches.length} labels`,
+        );
+    }
+    if (problems.length > 0)
+      throw new TrackerRequestError(
+        "unresolved",
+        `labels do not resolve to one label of ${team} each: ${problems.join("; ")}`,
+      );
+    return ids;
+  }
+
+  async function teamId(signal?: AbortSignal): Promise<string> {
+    const data = record(
+      await transport(TEAM_QUERY, { key: team }, signal),
+      "data",
+    );
+    const node = onlyMatch(data.teams, team, "key", `team '${team}'`);
+    return str(node.id, `team '${team}'.id`);
+  }
+
+  async function projectId(name: string): Promise<string> {
+    const data = record(await transport(PROJECT_QUERY, { name }), "data");
+    const node = onlyMatch(data.projects, name, "name", `project '${name}'`);
+    return str(node.id, `project '${name}'.id`);
+  }
+
   const tracker: Tracker = {
     adapter: "linear",
     team,
     stateName: (state) => states[state],
+
+    async reach(signal) {
+      await teamId(signal);
+    },
 
     async getIssue(key) {
       let data: unknown;
@@ -1317,6 +1480,144 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
       }
       const issue = record(data, "data").issue;
       return issue === null ? null : parsePoolIssue(issue);
+    },
+
+    async createIssue(issue) {
+      requireTitle(issue.title);
+      checkPriority(issue.priority);
+      const input: Record<string, unknown> = {
+        teamId: await teamId(),
+        title: issue.title,
+        description: issue.description,
+      };
+      const ids = await labelIds(issue.labels);
+      if (ids.size > 0) input.labelIds = [...new Set(ids.values())];
+      if (issue.priority !== undefined) input.priority = issue.priority;
+      if (issue.parent !== undefined)
+        input.parentId = (await issueIdAndTeam(issue.parent)).id;
+      if (issue.project !== undefined)
+        input.projectId = await projectId(issue.project);
+      const data = record(await transport(CREATE_MUTATION, { input }), "data");
+      assertMutationOk(data.issueCreate, `filing '${issue.title}'`);
+      const created = record(
+        record(data.issueCreate, "issueCreate").issue,
+        "issueCreate.issue",
+      );
+      return {
+        identifier: str(created.identifier, "issueCreate.issue.identifier"),
+        url: optStr(created.url, "issueCreate.issue.url"),
+      };
+    },
+
+    async updateIssue(key, patch) {
+      checkPatch(key, patch);
+      const add = patch.addLabels ?? [];
+      const remove = patch.removeLabels ?? [];
+      const input = plainFields(patch);
+      if (patch.parent !== undefined)
+        input.parentId =
+          patch.parent === null
+            ? null
+            : (await issueIdAndTeam(patch.parent)).id;
+      if (patch.project !== undefined)
+        input.projectId = await projectId(patch.project);
+      // Labels change by id, added and removed, so a label another writer
+      // set since this caller last read the issue is never dropped.
+      if (add.length > 0 || remove.length > 0) {
+        const ids = await labelIds([...add, ...remove]);
+        const idsOf = (names: string[]) => [
+          ...new Set(names.map((l) => ids.get(l) as string)),
+        ];
+        if (add.length > 0) input.addedLabelIds = idsOf(add);
+        if (remove.length > 0) input.removedLabelIds = idsOf(remove);
+      }
+      const { id } = await issueIdAndTeam(key);
+      const result = record(
+        await transport(UPDATE_MUTATION, { id, input }),
+        "data",
+      );
+      assertMutationOk(result.issueUpdate, `the update of ${key}`);
+    },
+
+    async listLabels() {
+      return (await assignableLabels())
+        .map(({ name, group }) => ({ name, group }))
+        .sort(
+          (a, b) =>
+            (a.group ?? "").localeCompare(b.group ?? "") ||
+            a.name.localeCompare(b.name),
+        );
+    },
+
+    async searchIssues(text, opts = {}) {
+      if (text.trim() === "")
+        throw new TrackerRequestError(
+          "invalid",
+          "a search needs non-empty text; empty text would read every issue",
+        );
+      const nodes = await pageAll(
+        transport,
+        SEARCH_QUERY,
+        {
+          filter: {
+            and: [
+              { team: { key: { eq: team } } },
+              {
+                or: [
+                  { title: { containsIgnoreCase: text } },
+                  { description: { containsIgnoreCase: text } },
+                ],
+              },
+              ...(opts.includeClosed === true ? [] : [OPEN]),
+            ],
+          },
+          includeArchived: opts.includeClosed === true,
+        },
+        (d) => d.issues,
+        `issues containing '${text}'`,
+      );
+      return nodes.map((n, i) =>
+        summaryOf(n, `issues containing '${text}'[${i}]`),
+      );
+    },
+
+    async listRelations(key) {
+      const read = async (
+        query: string,
+        field: "relations" | "inverseRelations",
+        other: "relatedIssue" | "issue",
+      ) =>
+        (
+          await pageAll(
+            transport,
+            query,
+            { id: key },
+            (d) => record(d.issue, `issue ${key}`)[field],
+            `${field} of ${key}`,
+          )
+        ).flatMap((raw, i) =>
+          parseRelation(raw, `${field} of ${key}[${i}]`, other),
+        );
+      return [
+        ...(await read(RELATIONS_QUERY, "relations", "relatedIssue")),
+        ...(await read(INVERSE_RELATIONS_QUERY, "inverseRelations", "issue")),
+      ];
+    },
+
+    async relate(key, type, target) {
+      checkRelation(key, type, target);
+      const issueId = (await issueIdAndTeam(key)).id;
+      const relatedIssueId = (await issueIdAndTeam(target)).id;
+      const data = record(
+        await transport(RELATE_MUTATION, {
+          input: { issueId, relatedIssueId, type },
+        }),
+        "data",
+      );
+      assertMutationOk(
+        data.issueRelationCreate,
+        `recording that ${key} ${type} ${target}`,
+      );
     },
   };
   return tracker;

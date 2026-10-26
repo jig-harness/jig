@@ -17,6 +17,7 @@ import {
   Checker as KitChecker,
   type SourcedClaim,
 } from "../sheet-kit/source.ts";
+import { claimSources } from "./freshness.ts";
 import { refProblems } from "./refs.ts";
 
 export type { GlossaryEntry, SourcedClaim };
@@ -117,7 +118,12 @@ export interface DecisionSource {
   owners: StakeholderFacet[];
   priority: string;
   reversibility: string;
-  verifiedAt: { date: string; commit: string };
+  /** `repositories` holds the commit for each other repository a citation names (`other:ADR-0002`). */
+  verifiedAt: {
+    date: string;
+    commit: string;
+    repositories?: Record<string, string>;
+  };
   question: string;
   currentBehaviour: SourcedClaim[];
   settled?: SourcedClaim[];
@@ -338,7 +344,7 @@ export function parseSource(value: unknown): DecisionSource {
     throw new SourceError(c.problems);
   if (value.schema !== SOURCE_SCHEMA)
     c.fail("$.schema", `must be "${SOURCE_SCHEMA}"`);
-  c.pattern(value.id, ISSUE_ID, "$.id", "an issue key such as ENG-123");
+  c.pattern(value.id, ISSUE_ID, "$.id", "an issue key such as ENG-123 or #123");
   c.url(value.url, "$.url");
   for (const key of [
     "title",
@@ -383,9 +389,14 @@ export function parseSource(value: unknown): DecisionSource {
 
   // Reference tokens name calls and options, so they are checked once the
   // structure holds: an unknown id is a problem only against a valid id set.
-  if (c.problems.length === 0)
+  if (c.problems.length === 0) {
     for (const p of refProblems(value as unknown as DecisionSource))
       c.fail(p.path, p.message);
+    c.qualifiedCitations(
+      claimSources(value as unknown as DecisionSource),
+      value.verifiedAt,
+    );
+  }
 
   if (c.problems.length > 0) throw new SourceError(c.problems);
   return value as unknown as DecisionSource;

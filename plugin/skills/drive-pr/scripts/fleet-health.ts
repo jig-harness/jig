@@ -49,6 +49,7 @@ import { calendarDate } from "./defect-escape.ts";
 import { fail, isDigits, runMain } from "./lib/cli.ts";
 import {
   buildReport,
+  inWindow,
   type CommentFact,
   type DepthResult,
   DISPOSITIONS,
@@ -200,12 +201,6 @@ function roundTimes(sample: PrSample): string[] {
   return out;
 }
 
-function inWindow(iso: string | null, w: WindowSpec): boolean {
-  if (iso === null) return false;
-  const ms = Date.parse(iso);
-  return Number.isFinite(ms) && ms >= w.sinceMs && ms < w.untilMs;
-}
-
 /**
  * Everything `main()` does after argv parsing — its own injectable function so
  * a test (and the dashboard collector) exercises the REAL composition rather
@@ -304,7 +299,7 @@ export async function runFleetHealth(
             title: l.title,
             state: l.state,
             mergedAt: l.mergedAt,
-            issueRefs: parseIssueRefs(l.body, cfg.teamKey),
+            issueRefs: parseIssueRefs(l.body, cfg.keys),
             rounds: [],
             postReviewShare: null,
             postReviewAdditions: 0,
@@ -365,7 +360,7 @@ export async function runFleetHealth(
           title: l.title,
           state: l.state,
           mergedAt: l.mergedAt,
-          issueRefs: parseIssueRefs(l.body, cfg.teamKey),
+          issueRefs: parseIssueRefs(l.body, cfg.keys),
           rounds,
           postReviewShare: pastEnd ? null : m.postReviewShare,
           postReviewAdditions: m.postReview.additions,
@@ -506,7 +501,7 @@ export async function runFleetHealth(
   ): Promise<{ issues: IssueFact[]; complete: boolean } | null> => {
     const body = await bodyOf(pr);
     if (body === null) return null;
-    const refs = parseIssueRefs(body, cfg.teamKey);
+    const refs = parseIssueRefs(body, cfg.keys);
     const missing = refs.filter(
       (r) => !issueCache.has(r) && !unresolvable.has(r),
     );
@@ -545,7 +540,7 @@ export async function runFleetHealth(
         if (deps.signal?.aborted === true) throw new Error(DEADLINE_MESSAGE);
         const d = await followupDepth(
           f.number,
-          { issuesOfPr, followupLabel },
+          { issuesOfPr, followupLabel, keys: cfg.keys },
           cfg.signals.followupDepth.maxWalk,
           depthMemo,
         );

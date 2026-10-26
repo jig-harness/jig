@@ -64,6 +64,39 @@ criteria:
       - "a check fails a scheduled workflow that the registry does not list"
       - "a scheduled workflow classifies each job's runs against its cadence and exits non-zero for stale and for red"
 
+  - id: scheduled-failures-reconciled-per-cause
+    level: standard
+    requires: mechanical
+    since: 0.80.0
+    statement: >-
+      Scheduled-check test jobs produce evidence without tracker or model
+      calls; separate triage classifies findings as regression, intended
+      change, flake or environment and maintains one issue per stable cause
+      fingerprint, updating recurrences and closing only on confirmed
+      recovery covering that cause (expected-absent with no scheduled check).
+    observe:
+      - "test job commands only collect evidence; tracker and optional model calls occur in separate triage"
+      - "triage records each classification, uses stable fingerprints excluding volatile run data, and updates or reopens the same issue"
+      - "closure requires complete evidence covering the cause; missing, skipped, cancelled, partial or blocked checks leave it open"
+      - "durable state and coordinated writes prevent replay or overlapping runs from duplicating issues or comments, and reject stale recovery"
+
+  - id: scheduled-failure-flood-breaker
+    level: standard
+    requires: mechanical
+    since: 0.80.0
+    statement: >-
+      Each scheduled-failure cause has a durable breaker that announces
+      suppression after a declared positive N consecutive failures, bounds
+      further recurrence comments while retaining evidence and an open issue,
+      and re-arms on confirmed recovery; unknown evidence does not reset it
+      and other causes report independently (expected-absent with no scheduled
+      check).
+    observe:
+      - "a reviewed threshold N governs each cause's failure streak and a durable per-cause breaker suppresses subsequent comments"
+      - "the Nth failure announces suppression, including at opening for N = 1; collection and failed verdicts continue"
+      - "confirmed recovery comments, closes and clears suppression; silence, restarts, unknown observations and manual closure do not re-arm it"
+      - "replayed observations do not advance streaks, and one cause's breaker does not suppress another"
+
   - id: observability-gates-self-tested
     level: strict
     requires: mechanical
@@ -156,3 +189,17 @@ criteria:
     observe:
       - "the watcher's workflow sends a report to an external monitor after the verdict, with a success form and a failure form"
       - "the monitor's expected period matches the watcher's cadence and it alerts on a missing report"
+
+  - id: external-preconditions-issue-reconciled
+    level: standard
+    requires: mechanical
+    since: 0.71.0
+    statement: >-
+      Each external-precondition registry maintains exactly one current tracker
+      issue while anything is unresolved, updates it after each observation,
+      and closes it automatically only after a complete healthy observation.
+    observe:
+      - "a stable registry marker identifies the issue, among only the issues the reconciling identity opened; every page of open issues is read and failed or malformed listings fail without writing"
+      - "runs that reconcile the same marker are serialized; duplicate open markers fail for manual reconciliation"
+      - "failed, unknown and pending entries keep the issue open with owners and recovery actions; a fully healthy report or valid visible waivers closes it"
+      - "invalid registries and unavailable reader credentials are red observations, never an empty green report; tracker failures fail the run"

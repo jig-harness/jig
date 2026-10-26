@@ -54,7 +54,7 @@ configuration is invalid: report the message and stop. Do not guess values.
 ## Arguments
 
 `$ARGUMENTS` — optional PR number. Omitted → the PR for the current branch
-(`gh pr view --json number`).
+(resolved by the Bun command in Step 1).
 
 Flags:
 
@@ -70,7 +70,7 @@ Flags:
 Thread resolution state (`isResolved`) and the resolve action exist **only** in
 GitHub's GraphQL API — the Representational State Transfer
 ([REST](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) reviews API can neither read nor set them.
-`gh pr view --comments` shows top-level conversation only and will not show you
+`gh pr view` with `--comments` shows top-level conversation only and will not show you
 the inline threads where nearly all review feedback lives.
 
 The fiddly parts (paginated thread query, resolve mutation, in-thread reply) are
@@ -97,10 +97,10 @@ An explicit PR number — the first bare all-digits token in `$ARGUMENTS` — ta
 precedence; the branch lookup is the fallback. Strip flags first so a flag is
 never mistaken for the PR.
 
+Use the explicit number when supplied. Otherwise read the number from:
+
 ```bash
-PR=""
-for a in $ARGUMENTS; do case "$a" in ''|--*) ;; *[!0-9]*) ;; *) PR="$a"; break;; esac; done
-PR="${PR:-$(gh pr view --json number -q .number)}"
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view --json number -q .number
 ```
 
 Bail politely if there is no PR.
@@ -112,7 +112,7 @@ settled and at least one unresolved thread. Run `await-round.ts` before
 enumerating so each pass waits for the current round to be ready.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/await-round.ts" [PR] [--bots-only] --once || exit
+bun "${CLAUDE_SKILL_DIR}/scripts/await-round.ts" [PR] [--bots-only] --once
 ```
 
 Exit `0` means proceed; anything else means wait or stop — see
@@ -123,46 +123,18 @@ Then enumerate, labelling each thread's self-inflicted status in the same
 pass — step 3's decline ladder requires it:
 
 ```bash
-set -o pipefail
-DRIVE_PR=.claude/skills/drive-pr
-[ -e "$DRIVE_PR" ] || [ -L "$DRIVE_PR" ] || DRIVE_PR="${CLAUDE_SKILL_DIR}/../drive-pr"
-bun "${CLAUDE_SKILL_DIR}/scripts/list-unresolved-threads.ts" [PR] [--bots-only] \
-  | if [ -e "$DRIVE_PR" ] || [ -L "$DRIVE_PR" ]; then
-      bun "$DRIVE_PR/scripts/self-inflicted.ts" [PR]
-    else
-      cat
-    fi
+bun "${CLAUDE_SKILL_DIR}/scripts/enumerate-threads.ts" [PR] [--bots-only]
 ```
 
-`set -o pipefail` matters here: `self-inflicted.ts` treats an empty stdin as a
-legitimate zero-thread stream and exits 0, which is right when the enumerator
-found nothing and wrong when it crashed after printing nothing — without
-`pipefail` the pipeline's own exit code is the filter's `0` either way.
+`enumerate-threads.ts` first collects the entire thread stream. Only a successful
+enumeration is passed to `self-inflicted.ts`, with literal standard input and
+a deadline on both commands. A failed producer or labeler fails the whole command
+without publishing a partial stream. Make Bun available available to the command tool before running it.
 
-Make Bun available **before** starting the pipeline. Environment changes inside
-its left-hand subshell do not reach the right-hand subshell. In a shell where
-Bun is not on `PATH`, put whatever makes it available (for example
-`eval "$(mise activate bash)"`) in its own preceding statement.
-
-`DRIVE_PR` names the sibling `drive-pr` skill the same way the scripts'
-sibling lookup does: the repository's own `.claude/skills/drive-pr` when one
-is present, else the `drive-pr` skill beside this one in the plugin. The
-`[ -e "$DRIVE_PR" ] || [ -L "$DRIVE_PR" ]` guard is
-the standalone-install case, same policy as § "One refusal you may meet" below:
-no `/drive-pr` installed at all means every record simply lacks
-`selfInflicted`/`selfInflictedCommit`, which step 3 already treats as
-`unknown` — a supported degrade, not an error. `-e` alone is not enough to
-detect "installed": it follows symlinks and reports false for a dangling one,
-so a broken `drive-pr` symlink (target moved or removed) would
-silently take the `cat` branch — indistinguishable from a clean standalone
-install even though it is the half-installed case below, not that one. `-L`
-catches it: true for a symlink whether or not its target resolves, so a
-dangling link still routes into the `bun` branch. A `/drive-pr` that is
-installed but with `self-inflicted.ts` itself missing is the *other* case
-that section names — "a half-installed sibling skill is a broken integration,
-not a licence to skip" — and the guard deliberately does not paper over it:
-`bun` fails loudly on the missing file, `pipefail` carries
-that failure out, and the pipeline errors instead of silently degrading.
+The helper finds the repository's own `drive-pr` skill first, then the plugin
+sibling. A genuinely absent drive skill leaves `selfInflicted` and related fields
+absent, which step 3 treats as `unknown`. An unreadable skill, a dangling symlink,
+an absent parent directory or a present skill with missing scripts fails.
 
 Emits **newline-delimited JSON ([NDJSON](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)), one unresolved thread per line**, already filtered and
 paginated:
@@ -205,12 +177,14 @@ paginated:
   decline a finding whose real category should have admitted it.
 
   Both `severity` and `category` are appended only by `self-inflicted.ts` —
-  a standalone install (the `[ -e "$DRIVE_PR" ] || [ -L …]` `cat`
-  branch above) never runs it, so a record from that path carries **neither**
+  a standalone install without a drive skill never runs it, so a record from that path carries **neither**
   field at all, not `unknown`. `--severity` and `--category` are both
   required flags that refuse an omission outright, so pass `unknown`
   explicitly for whichever one is absent — the same supported degrade
-  `selfInflicted` already gets above, extended to these two.
+  `selfInflicted` already gets above, extended to these two. A
+  code-scanning thread (`codeScanning`, below) is the exception: pass its
+  `codeScanning.severity` and `codeScanning.category`, which the listing
+  reads from the alert on that path too.
 - `comments` is the thread's replies — the finding plus any back-and-forth —
   which is what you need to make the call. It is capped at 100 and **not**
   paginated: `commentsTruncated` is `true` when replies were omitted. Treat a
@@ -218,6 +192,24 @@ paginated:
   reply you are answering may not be the last one and an outcome may already
   have been posted.
 - `url` deep-links to the comment; it is what a deferred follow-up records.
+- `codeScanning` — present only on a **code-scanning thread**, one GitHub
+  opened for a code scanning alert: `{ number, state, tool, rule, severity,
+  category }`, read from the alert, which also supplies the thread's
+  `severity` and `category` (a security rule's category is `security`).
+  `state` is the alert's state on this pull request: `dismissed` once anyone
+  dismissed it, else what its instances analysed at the pull request's
+  current revision say, on the merge ref, the head ref and, for a branch of
+  this repository, the source branch: `open` when any is open (an alert can
+  be fixed on the default branch, or in one analysis configuration, and
+  still open here), `fixed` or `closed` only when every analysis
+  configuration has an instance at the current revision and all of them are;
+  `null`, with `stateUnknown` saying why, when that cannot be established,
+  including when no current instance is open and a configuration was
+  analysed only at an earlier revision. A current open instance settles
+  `open` whatever the other configurations' instances say.
+  `unreadable`
+  names why the alert could not be read; the severity is then `unknown`. Such a thread follows
+  [Code-scanning threads](#code-scanning-threads) as well as this step.
 - `--include-resolved` widens the stream to resolved threads as well, each line
   carrying `isResolved`. Use it only for the reversal check in the
   [triage rubric](references/triage-rubric.md) § Contradictory findings — once
@@ -271,9 +263,7 @@ accept bar, and one that does not becomes `wont-fix` (or `deferred`, when the
 work is obligatory) with the ladder's own reply. The bar is read mechanically —
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/triage-ladder.ts" \
-  --severity <sev> --tier <1-4> --category <cat|unknown> --self-inflicted <true|false|unknown> \
-  [--pr N] [--obligatory]
+bun "${CLAUDE_SKILL_DIR}/scripts/triage-ladder.ts" --severity <sev> --tier <tier> --category <cat|unknown> --self-inflicted <true|false|unknown> [--pr N] [--obligatory]
 ```
 
 — run from the repository root with Bun available.
@@ -444,7 +434,7 @@ and batch genuine policy or scope questions for the human at round end.
 >   is checked at the boundary it created: what did the move newly exclude,
 >   and does any gate now derive its trigger from the thing it validates?
 > - If the finding anchors to code the previous round's commit touched
->   (`git show --stat` the last pushed commit), say so in the reply —
+>   (inspect it with `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git show --stat "<last-pushed-commit>"`), say so in the reply —
 >   regression or adjacent hole — and generalize the fix instead of patching
 >   the newest variant.
 > - **Follow the fixed code's own pointers.** If the changed function or
@@ -613,30 +603,16 @@ on a case-insensitive filesystem (macOS default) ids differing only in letter
 case collapse into one file and the wrong rationale gets posted. Use ordinal
 names plus one mapping file.
 
-**The body always arrives via stdin, never as a shell argument.** A backtick,
-`$(...)`, or `$VAR` in reviewer-authored text gets shell-evaluated and silently
-corrupts or drops words before the API ever sees them. Use a **quoted heredoc**:
+**Write the body with the file-writing tool and pass `--body-file`.** Keep
+reviewer text verbatim in the file; generated text must never become shell source.
+A file may contain backticks, dollar signs, quotes and delimiter-like lines safely.
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/reply-to-thread.ts" "$THREAD_ID" <<'REPLY_EOF'
-**accepted** — added an explicit empty-body check; not yet pushed.
-REPLY_EOF
+bun "${CLAUDE_SKILL_DIR}/scripts/reply-to-thread.ts" <thread-node-id> --body-file reply-001.md
 ```
 
-A pre-composed `REPLY="..."` variable does **not** solve this — a double-quoted
-assignment expands the same metacharacters at assignment time, moving the
-corruption one step earlier. When the body must interpolate a computed value
-alongside quoted reviewer text, build it with `printf '%s'`, passing the
-untrusted text as its own argument so it is substituted verbatim:
-
-```bash
-REPLY=$(printf '**accepted** — not yet pushed; your example `%s` now passes.' "$FINDING")
-printf '%s' "$REPLY" | bun "${CLAUDE_SKILL_DIR}/scripts/reply-to-thread.ts" "$THREAD_ID"
-```
-
-The danger is specifically the double-quoted *assignment of untrusted text*.
-Once a value is safely held, `printf '%s' "$REPLY" | ...` is fine — quoted
-expansion does not re-evaluate contents.
+The script also accepts standard input for programmatic callers. Its outcome
+validation and lease fence apply to both input forms.
 
 **One refusal you may meet that is not about the body.** If
 a sibling `drive-pr` skill is present (the repository's own or the plugin's), `reply-to-thread.ts` checks that
@@ -645,7 +621,7 @@ live agent session in the same working tree holds it. Two sessions in one tree
 put two outcome replies on every thread, which cannot be repaired once posted
  — so the refusal comes *before* the mutation rather than after it.
 It names the holder's pid, a command to check whether that process is still
-alive, and `drive-state.ts clear-lease <PR>`; the right response is almost
+alive, and the `clear-lease` operation of `drive-state.ts`; the right response is almost
 always to **stop**, not to clear the lease. With no `/drive-pr`
 installed, no lease file, or a lease whose owner is gone, the reply posts
 normally — absence of a lease is never itself a refusal.
@@ -664,14 +640,14 @@ outcome can still be invalidated by something downstream:
 
 | Outcome | Reply | Resolve |
 |---------|-------|---------|
-| `rejected`, `wont-fix`, `deferred` | now | **now** — no code changed, so nothing can invalidate it |
+| `rejected`, `wont-fix`, `deferred` | now | **now** — no code changed, so nothing can invalidate it; a code-scanning thread once its alert is dismissed |
 | `moot` — superseded by an already-pushed commit | now | **now** — nothing left downstream can invalidate it |
 | `moot` — superseded by an `accepted` fix from this same, unpushed round | now | **not here** — step 5, alongside that fix |
 | `accepted` | now | **not here** — step 5, after the gates pass |
 
 ```bash
 # rejected / wont-fix / deferred / moot-already-pushed only, at this point:
-bun "${CLAUDE_SKILL_DIR}/scripts/resolve-thread.ts" "$THREAD_ID"
+bun "${CLAUDE_SKILL_DIR}/scripts/resolve-thread.ts" <thread-node-id>
 ```
 
 An accepted fix that fails formatting, types, tests, or build is not a fix yet.
@@ -684,8 +660,61 @@ step 5.
 
 If a thread was resolved prematurely — before its reply posted, or before its
 fix's push landed — reverse it with
-`bun "${CLAUDE_SKILL_DIR}/scripts/unresolve-thread.ts" "$THREAD_ID"` and let the normal order finish,
+`bun "${CLAUDE_SKILL_DIR}/scripts/unresolve-thread.ts" <thread-node-id>` and let the normal order finish,
 rather than leaving the audit trail out of sequence.
+
+#### Code-scanning threads
+
+A thread whose record carries `codeScanning` is GitHub's view of a code
+scanning alert raised by the tool it names (CodeQL, SonarQube Cloud, or any
+other that uploads to GitHub code scanning). The alert, not the thread, keeps
+that tool's check failing and reopens on the default branch after the merge,
+so an outcome that leaves the code as it is must reach the alert as well.
+Triage it like any other thread, then:
+
+| Outcome | The alert |
+|---------|-----------|
+| `accepted` | Nothing: the tool closes it when it next analyses the pushed fix. Resolve in step 5 as usual |
+| `rejected` | Dismiss it as a false positive, or `--used-in-tests` when only tests run the code |
+| `wont-fix` | Dismiss it as won't fix |
+| `deferred` | Dismiss it as won't fix, with the follow-up issue's link in the comment |
+| `moot` | Nothing: the record's `state` must already be `fixed`, `closed` or `dismissed`; while it is `open`, the finding still stands and is not moot. `dismissed` is a person, or an earlier interrupted pass, having settled the alert already: reply `moot`, naming the dismissal, and resolve |
+
+Dismiss after the reply is posted and before the thread is resolved. Write
+a comment of at most 280 characters to `dismissal-comment.txt` with the
+file-writing tool, then supply that file as literal standard input:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file dismissal-comment.txt -- bun "${CLAUDE_SKILL_DIR}/scripts/dismiss-alert.ts" <thread-node-id> --outcome rejected
+```
+
+For example, the comment may say: "The path comes from the repository's own
+registry file, not from the agent."
+
+It finds the alert from the thread itself, by the comment's one details link,
+and refuses a thread GitHub's code scanning account did not open, or whose
+comment carries no single details link (exit `2`). It reads the alert's state
+on the pull request: exit `3` means the alert is already fixed there, so the
+outcome is `accepted` or `moot`, not a dismissal; exit `5` means the pull
+request closed, as for the other thread helpers. Exit `1` is a failed read, an
+alert whose state at the pull request's current revision is unknown (a scan
+still running after a push in one of its analysis configurations, say, while
+no other holds it open), or a refused dismissal: GitHub
+refuses a token that may not write security events. Then leave the thread
+**open**, and report the alert for a person to dismiss: a resolved thread over
+an open alert hides a finding nobody answered.
+
+Under `/jig:drive-pr`, `triage-thread.ts` resolves a merit outcome in the
+same call that posts it, which leaves no point to dismiss in between. Post the
+reply with `reply-to-thread.ts`, dismiss, then dispatch with `triage-thread.ts`,
+which finds the posted reply and resolves. The drive's replied-thread sweep
+does not read alerts, so a thread left open after a refused dismissal is
+resolved by the next sweep: report that alert in the round's summary.
+
+A dismissal reaches the tool: SonarQube Cloud, for one, records a false
+positive as False Positive and the other reasons as Accept. A security
+finding's severity comes from the alert, so the decline ladder treats it like
+any other finding of that severity.
 
 ### 4. Verify and push
 
@@ -710,7 +739,7 @@ Then commit with a conventional message referencing the PR. Push liveness
 belongs to the caller that performs the push. When `/drive-pr` is installed,
 use its `guarded-push.ts` procedure, which rechecks liveness immediately before
 pushing; do not replace it with a bare push. A standalone pass must freshly
-read `gh pr view "$PR" --json state -q .state` immediately before its push and
+read `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view <PR> --json state -q .state` immediately before its push and
 proceed only for `OPEN`. A failed read or any other state stops the pass, with
 no follow-up push. An earlier round check or successful thread write is not
 push authorization. The state read and Git push are also separate operations,
@@ -730,7 +759,7 @@ gates green → commit → push → resolve held batch
 ```
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/resolve-thread.ts" "$THREAD_ID"
+bun "${CLAUDE_SKILL_DIR}/scripts/resolve-thread.ts" <thread-node-id>
 ```
 
 If the gates failed, leave every one of them **open**. That is an accurate
@@ -875,8 +904,8 @@ directory is given, so a suite that forgets to isolate itself runs uncached
 rather than reading another test's answer.
 
 Diagnosing a spent bucket: read the `X-RateLimit-*` **response headers** of a
-real call (`gh api -i graphql -f query='{viewer{login}}'`). Do not use
-`gh api rate_limit` — it reported a fresh bucket while the enforced headers
+real call (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh api -i graphql -f "query={viewer{login}}"`). Do not use
+the REST rate-limit endpoint as evidence — it reported a fresh bucket while the enforced headers
 showed one nearly exhausted.
 
 ### A long review is a scaffolding signal

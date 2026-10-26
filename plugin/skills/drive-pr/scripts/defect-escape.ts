@@ -110,7 +110,7 @@
  *              this script is the instrument, and an instrument carrying its own
  *              stale readings is how the corrected result acquires a second,
  *              contradictory home.
- *   FOLLOW-UP  an issue key of the consumer's team (`issue_tracker.team`)
+ *   FOLLOW-UP  an issue key of the consumer's tracker (`issue_tracker`)
  *              anywhere in the decline's FULL settling reply — not
  *              just its first line, since the deferral protocol permits the
  *              issue link to sit further down (`ThreadSample.settledBody`).
@@ -136,7 +136,11 @@
  *   2  usage error
  */
 
-import { teamKeyOrNull } from "../../do-item/scripts/lib/tracker/config.ts";
+import {
+  ANY_KEY_SOURCE,
+  type IssueKeys,
+  issueKeysOrNull,
+} from "../../do-item/scripts/lib/tracker/keys.ts";
 import { fail, runMain } from "./lib/cli.ts";
 import {
   anchorLine,
@@ -193,23 +197,11 @@ export interface Decline {
 const REASON_DISPLAY_CHARS = 180;
 
 /**
- * An issue key of `teamKey` (the consumer's `issue_tracker.team`), or of any
- * team when none is configured.
+ * An issue key of the consumer's tracker (`keys`), or of any tracker when
+ * its key shape cannot be known.
  */
-export function followUpPattern(teamKey: string | null): RegExp {
-  const team =
-    teamKey === null
-      ? "[A-Z][A-Z0-9]*"
-      : teamKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`\\b${team}-[0-9]{1,6}\\b`, "g");
-}
-
-function consumerTeamKey(): string | null {
-  try {
-    return teamKeyOrNull();
-  } catch {
-    return null;
-  }
+export function followUpPattern(keys: IssueKeys | null): RegExp {
+  return new RegExp(keys?.source ?? ANY_KEY_SOURCE, "g");
 }
 
 /**
@@ -2017,7 +2009,7 @@ async function main(): Promise<number> {
   }
 
   const repo = await resolveRepo();
-  const followUp = followUpPattern(consumerTeamKey());
+  const followUp = followUpPattern(issueKeysOrNull());
   // One MORE than asked for, so "the cap bound" is witnessed by an extra result
   // rather than inferred from `length === limit` — a window holding exactly
   // `limit` PRs is complete, and reporting it as truncated tells a reader to

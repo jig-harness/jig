@@ -31,6 +31,12 @@ Each repository supplies its own values in `.config/jig.yaml`
 (see [Consumer configuration](#consumer-configuration)); the repository's own
 instructions supply its policy, label taxonomy and validation commands.
 
+The human's page is [README.md](README.md). Run these commands in Bash or
+PowerShell with Bun, Git and GitHub CLI available to the command tool. Lead
+every TypeScript script command with `bun`, including siblings.
+Write generated bodies and JSON through the file-writing tool, then pass their
+paths as arguments; no shell utility is needed.
+
 ### Paths and working directory
 
 `${CLAUDE_SKILL_DIR}` in the commands below stands for the absolute path of the
@@ -53,13 +59,13 @@ configuration from the working directory.
 
 ### Consumer configuration
 
-Every field except `issue_tracker.team` is optional. The skill reads them at
-run time from `.config/jig.yaml`:
+Every field is optional except `issue_tracker.team` on the Linear adapter (`issue_tracker.adapter: linear`).
+The skill reads them at run time from `.config/jig.yaml`:
 
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
-| `issue_tracker.adapter` | Which tracker adapter the scripts use (`linear` is the adapter built so far; Jira and a plan file kept in the repository are planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters); credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client) | `linear` |
-| `issue_tracker.team` | The tracker team or project the repository files into, as the key its issue identifiers carry (`ENG` for `ENG-123`) | Required: the tracker scripts stop with a message naming this field |
+| `issue_tracker.adapter` | Which tracker adapter the scripts use: `github` for GitHub Issues (the logged-in `gh` command-line client; its settings are under `issue_tracker.github`, [configuration reference](../../CONFIGURATION.md#issue_tracker)) or `linear` (credentials from `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, else a logged-in `linear` command-line client). Jira and a plan file kept in the repository are planned, [ROADMAP item 12](https://github.com/jig-harness/jig/blob/main/ROADMAP.md#12-more-tracker-adapters) | `github` |
+| `issue_tracker.team` | Linear only: the team the repository files into, as the prefix its issue keys carry (`ENG` for `ENG-123`) | Required on Linear: the tracker scripts stop with a message naming this field. Not used on GitHub Issues. A file that sets it without naming `issue_tracker.adapter` is refused, since the default adapter has no team: add `adapter: linear` |
 | `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress" |
 | `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
 | `issue_tracker.labels` | The repository's label for each role the skill acts on (see the table below) | The default names below |
@@ -70,7 +76,7 @@ run time from `.config/jig.yaml`:
 | `drive.change_areas_catalog` | Path to the repository's [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (areas, their agents, validation plan and mandatory review skills) | No catalog: validate with the repository's gate command |
 | `repository.base_branch` | The integration branch pull requests land on | The repository's default branch |
 | `drive.reviews_drafts` | `false` makes new pull requests open Ready, since the reviewer would not review a draft | Pull requests open as drafts |
-| `pull_requests.*` | How pull requests are opened and stacked: `stacking`, `max_stack_depth`, `open_as`, `mark_ready`, `branch_name`, `issue_link`, `size_budget`, `labels`, `title_format` (see [Pull-request policy](#pull-request-policy)) | One pull request per change against the integration branch, branch `{key_lower}-{slug}` (the lowercased key, then the title as at most 40 lowercase characters), draft, `Closes <key>`, marked Ready after the first review round; a human merges |
+| `pull_requests.*` | How pull requests are opened and stacked: `stacking`, `max_stack_depth`, `open_as`, `mark_ready`, `branch_name`, `issue_link`, `size_budget`, `labels`, `title_format` (see [Pull-request policy](#pull-request-policy)) | One pull request per change against the integration branch, branch `{key_lower}-{slug}` (the key as a branch carries it, lowercased: `eng-123`, or `123` for `#123`; then the title as at most 40 lowercase characters), draft, `Closes <KEY>`, marked Ready after the first review round; a human merges |
 
 Every field, its type and its default are in the plugin's
 [configuration reference](../../CONFIGURATION.md).
@@ -108,8 +114,8 @@ sized. `scripts/pr-plan.ts` applies the repository's policy (`pull_requests`
 and the facts derived from the repository) and prints what to do:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch --issue <KEY> --title "<issue title>"
-bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue <KEY> [--stack-on <branch>] [--accept-oversize "<reason>"] [--json]
+bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch --issue "<KEY>" --title "<issue title>"
+bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" [--stack-on <branch>] [--accept-oversize "<reason>"] [--json]
 ```
 
 - `branch` prints the branch name for the issue. Create the working branch
@@ -126,7 +132,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue <KEY> [--stack-on <bra
   merged, and warnings. Then open it with exactly those arguments:
 
   ```bash
-  gh pr create <createArgs...> --title "<title in the planned convention>" --body-file <body.md>
+  bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr create <createArgs...> --title "<title in the planned convention>" --body-file <body.md>
   ```
 
   Fill the body from the planned template when there is one, put the
@@ -162,26 +168,39 @@ deleted (GitHub then does not retarget the layer above).
 
 The scripts reach the tracker through the tracker port in
 `${CLAUDE_SKILL_DIR}/scripts/lib/tracker/`, whose adapter the overlay's
-`issue_tracker.adapter` selects. A harness with a native integration for the
-same tracker may use it instead; the Linear forms, through Linear's Model
-Context Protocol ([MCP](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) tools, are given as the adapter example.
+`issue_tracker.adapter` selects (`linear` or `github`). Use the script
+forms: they work on every adapter and map the workflow states for you. A
+harness with a native integration for the same tracker may use it instead;
+the native forms are given per adapter: Linear's Model Context Protocol
+([MCP](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) tools, and
+the `gh` command line for GitHub Issues. Where a later step names only a
+Linear tool, the GitHub form is the row of this table it belongs to.
 
-| Operation | Script form | Adapter example: Linear (MCP) |
-|-----------|-------------|-------------------------------|
-| Get issue (labels, state, parent, children, sub-issue analysis) | `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" <KEY>` | `mcp__linear__get_issue` (no children field) |
-| List comments | `bun "${CLAUDE_SKILL_DIR}/scripts/list_comments.ts" <KEY>` | `mcp__linear__list_comments` |
-| List children | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" children <KEY>` | `mcp__linear__list_issues` with a parent filter |
-| Transition state | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition <KEY> <canonical-state>` | `mcp__linear__save_issue` with `state: <mapped name>` |
-| Post comment | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment <KEY> < body.md` | `mcp__linear__save_comment` |
-| File a new issue | The consumer's `issue_tracker.file_command` | — |
+| Operation | Script form | Native: Linear (MCP) | Native: GitHub Issues (`gh`) |
+|-----------|-------------|----------------------|------------------------------|
+| Get issue (labels, state, parent, children, sub-issue analysis) | `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "<KEY>"` | `mcp__linear__get_issue` (no children field) | `gh issue view` with its JSON fields `number`, `title`, `body`, `labels`, `state`, `stateReason` and `url` (no sub-issues field) |
+| List comments | `bun "${CLAUDE_SKILL_DIR}/scripts/list_comments.ts" "<KEY>"` | `mcp__linear__list_comments` | `gh issue view` with the JSON field `comments` |
+| List children | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" children "<KEY>"` | `mcp__linear__list_issues` with a parent filter | `gh api` on the issue's `sub_issues` endpoint |
+| Transition state | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <canonical-state>` | `mcp__linear__save_issue` with `state: <mapped name>` | The script form: a state is a label or a board option plus open or closed, which only the script maps |
+| Post comment | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment "<KEY>" --body-file body.md` | `mcp__linear__save_comment` | `gh issue comment` with the body from a file |
+| File a new issue | The consumer's `issue_tracker.file_command` | — | — |
 
-Issue keys in this document look like `ENG-123`.
+An issue key is `ENG-123` on Linear, where `issue_tracker.team` names the
+prefix, and `#123` on GitHub Issues, an issue of the configured repository;
+a person may also give a GitHub issue as `123` or as its web address, which
+the scripts read as `#123`. This document writes a key as `<KEY>`. Quote it
+on a command line (`"<KEY>"`): an unquoted `#` starts a shell comment. A file
+or directory named after an issue uses the key's file name: the key itself
+on Linear, `issue-123` for `#123`.
 
 ### Asking the user
 
-Where this skill says "ask the user", use `AskUserQuestion` under Claude Code;
-in any other interactive harness, ask a plain-text numbered question and end
-the turn. Never pick on the user's behalf.
+Where this skill says "ask the user", use `AskUserQuestion` under Claude Code
+where the session can use it; in any interactive harness where it cannot
+(another harness, or a permission mode that denies the tool), ask a
+plain-text numbered question and end the turn; under a [headless runner](#headless-runners), raise it through the
+runner. With nobody to answer and no runner, stop and state the question.
+Never pick on the user's behalf.
 
 ## In the delivery loop
 
@@ -199,7 +218,8 @@ the turn. Never pick on the user's behalf.
 
 ### Step 1: Fetch the issue
 
-**exact** — `$ARGUMENTS` is the issue key.
+**exact** — `$ARGUMENTS` is the issue key, in any form the scripts accept
+([Tracker operations](#tracker-operations)); pass it to them quoted.
 
 **Renamed configuration section.** If the configuration the scripts read has
 a top-level `do_issue` section, stop before doing anything else and tell the
@@ -227,14 +247,14 @@ fetch labels, state and parent below: launcher context never carries them.
 Fetch the issue with the script form:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "$ARGUMENTS"
+bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "<KEY>"
 ```
 
 It works for every adapter and also returns `sub_issue_analysis`. If it
 stops on the renamed `do_issue` section, stop as above. If it
 cannot run here (for example no tracker credential in this environment) and
 the harness has a native integration for the tracker, use that instead
-(**judgment** — Linear: `mcp__linear__get_issue({ id: "$ARGUMENTS" })`).
+(**judgment** — Linear: `mcp__linear__get_issue({ id: <KEY> })`).
 
 Record which one succeeded as `trackerTransport` (`"script"` or `"native"`).
 Every later tracker call branches on this recorded value rather than
@@ -252,10 +272,10 @@ Comments are already in hand only when launcher context carried
 `comments_cached: true`. Otherwise fetch them on the recorded transport:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/list_comments.ts" "$ARGUMENTS"
+bun "${CLAUDE_SKILL_DIR}/scripts/list_comments.ts" "<KEY>"
 ```
 
-(**judgment** — native, Linear: `mcp__linear__list_comments({ issueId: "$ARGUMENTS" })`.)
+(**judgment** — native, Linear: `mcp__linear__list_comments({ issueId: <KEY> })`.)
 
 Exit `0` prints a JSON array of `{ body, createdAt }`; an empty array is a
 legitimate "no comments yet". A non-zero exit means the tracker is
@@ -266,10 +286,11 @@ A long-running issue can carry several **Scout Findings** comments. Choosing
 the newest and judging its freshness is a tested script, not hand-run prose:
 
 ```bash
-echo "$COMMENTS_JSON" | bun "${CLAUDE_SKILL_DIR}/scripts/select_scout_finding.ts" --current-hash "$(git rev-parse --short HEAD)"
+bun "${CLAUDE_SKILL_DIR}/scripts/select_scout_finding.ts" --input comments.json --git-head
 ```
 
-Pass the comment array through verbatim; each comment needs `body` plus
+Write the comment array verbatim to `comments.json` with the file-writing tool;
+`--git-head` reads the current short hash internally. Pass each comment through verbatim; each comment needs `body` plus
 whichever of `created_at` or `createdAt` it carries. The script keeps comments
 whose body opens with `## Scout Findings` and returns
 `{"action", "selectedIndex", "selectedHash", "reason"}`:
@@ -299,7 +320,8 @@ epic's intent, the issue's scope and acceptance criteria — that
 [Refocus](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) puts
 back in front of an agent after its context is compacted, and at the top of
 every review round. Every invocation, first pickup and resume alike, writes
-`.context/intent-chain/<identifier>.md`.
+the issue's snapshot to `.context/intent-chain/`, named by the key's file
+name (`ENG-123.md`, `issue-123.md`).
 
 Snapshot publication retries temporary Windows sharing errors. Pickup records
 must be regular files: the reader checks the path before opening it and checks
@@ -351,15 +373,11 @@ get-issue call) when it has one:
   issue. Step 4b rewrites it with the selected sub-issue added as `subIssue`.
 
 Each entry is `{ identifier, title, updatedAt, description }`, copied verbatim
-from the tracker. Serialize the object as **one line** of compact JSON (every
-newline inside a description becomes an escaped `\n`) and pass it on stdin
-through a quoted heredoc. A one-line JSON body can never equal the heredoc's
-delimiter line, so tracker text cannot end the heredoc early:
+from the tracker. Use the file-writing tool to serialize the object to
+`intent-chain-input.json`, then pass its path:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/intent-chain.ts" <<'INTENT_CHAIN_JSON'
-{"epic":{"identifier":"ENG-100",…},"issue":{"identifier":"ENG-123",…}}
-INTENT_CHAIN_JSON
+bun "${CLAUDE_SKILL_DIR}/scripts/intent-chain.ts" --input intent-chain-input.json
 ```
 
 The script prints `{ path, sessionPath, pickupId, chars, arm, truncated, pointerErrors }`.
@@ -387,7 +405,8 @@ so, since Refocus will keep injecting it.
 yet trusted): if the arm is `on`, re-read the writer's `sessionPath` after
 every compaction and before each review round, and answer its questions
 before your next step. Alongside each read, refresh the copy's retention
-clock (`touch <sessionPath> 2>/dev/null || true`, best effort): the writer
+clock with `bun "${CLAUDE_SKILL_DIR}/scripts/read-session.ts" <sessionPath>`
+(the retention refresh is best effort): the writer
 prunes session copies untouched for 14 days, and a plain read does not update
 that time. If the copy is missing, or `sessionPath` is null or its write
 failed, preserve the tracker context fetched for this invocation in your
@@ -409,10 +428,10 @@ routing below remain **exact**.
 > proposal for this issue; it reads the tracker and changes nothing:
 >
 > ```bash
-> bun "${CLAUDE_SKILL_DIR}/../work-batch/scripts/candidates.ts" <KEY> [--claimed <KEY>]
+> bun "${CLAUDE_SKILL_DIR}/../work-batch/scripts/candidates.ts" "<KEY>" [--claimed "<KEY>"]
 > ```
 >
-> Pass `--claimed <KEY>` when Step 1 shows the issue is already assigned to
+> Pass `--claimed "<KEY>"` when Step 1 shows the issue is already assigned to
 > you; otherwise the proposal reads the anchor issue itself as someone
 > else's work and refuses it. If it proposes three or more coherent
 > siblings, **suggest** the batch, naming the keys, and let the
@@ -457,7 +476,7 @@ routing below remain **exact**.
    it to `in_progress` and assign it to yourself.
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "$ARGUMENTS" in_progress
+   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" in_progress
    ```
 
    (**judgment** — native, Linear:
@@ -500,26 +519,18 @@ routing below remain **exact**.
 
 3. **exact** — **Persist the findings to the tracker**: post a comment whose
    first line is exactly `## Scout Findings (<hash>)`, where `<hash>` is
-   `git rev-parse --short HEAD`. That heading is the exact shape
+   the output of `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-parse --short HEAD`. That heading is the exact shape
    `select_scout_finding.ts` parses in Step 2; any other wording makes the
    hash unreadable on the next pass. The tracker is the store because the
    findings must survive worktree deletion and be readable by a different
    harness.
 
-   Scout findings are free-form generated text, so the body must never be
-   spliced into shell source — not in a double-quoted string, and not in a
-   heredoc with a fixed delimiter: a heredoc closes on any line equal to its
-   delimiter, so a body containing that line would end it early and run the
-   rest as shell. Pick a long, freshly invented random delimiter (never a
-   fixed string), confirm the body contains no line equal to it, and pipe the
-   body into the comment operation in one command:
+   Write the complete findings body with the file-writing tool to
+   `scout-findings.md`, starting with `## Scout Findings (<hash>)`. Pass the
+   file path so generated text reaches the tracker verbatim:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment "$ARGUMENTS" <<'<RANDOM_DELIMITER>'
-   ## Scout Findings (<hash>)
-
-   <findings body>
-   <RANDOM_DELIMITER>
+   bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" comment "<KEY>" --body-file scout-findings.md
    ```
 
    (**judgment** — native, Linear: `mcp__linear__save_comment` with the same
@@ -529,10 +540,12 @@ routing below remain **exact**.
    with delegation anyway. The findings still live in this session for the
    delegation prompt.
 
-4. **judgment** — **Delegate to the agent**: use the Task tool with
-   `subagent_type` set to the `primary_agent` that `determine_agent.ts`
-   printed. First create the working
-   branch named by `pr-plan.ts branch` (**exact**; see
+4. **judgment** — **Delegate to the agent**: use the harness's subagent
+   tool (Claude Code: the Task tool with `subagent_type` set to the
+   `primary_agent` that `determine_agent.ts` printed; elsewhere, its own
+   subagent tool briefed with that agent's definition, or this session,
+   following the same prompt, where there is none). First create the working
+   branch named by `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch` (**exact**; see
    [Pull-request policy](#pull-request-policy)), from the integration branch,
    or from the predecessor's branch when this change builds on an unmerged
    pull request and `pull_requests.stacking` allows it.
@@ -646,17 +659,16 @@ routing below remain **exact**.
    command otherwise; do not substitute a fixed command list. `<base>` below
    is the branch the PR will target, as `origin/<base>`: the integration
    branch, or the predecessor's branch for a stacked PR (the `base` that
-   `pr-plan.ts open` prints).
+   `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` prints).
 
    **Skip condition — fewer than 20 non-test lines changed (Tiers 1–3 only):**
 
    ```bash
-   git diff <base>...HEAD -- \
-     ':!*.test.ts' ':!*.spec.ts' ':!*.test.tsx' ':!*.spec.tsx' ':!**/__tests__/**' \
-     | grep -c '^[+-][^+-]'
+   bun "${CLAUDE_SKILL_DIR}/scripts/changed-lines.ts" <base>
    ```
 
-   Adjust the test-file patterns to the repository's languages. If the count
+   Pass additional excluded git pathspecs after the base to replace the default
+   TypeScript test patterns for the repository's languages. If the count
    is under 20 (or zero), skip Tiers 1–3 and log
    `"Pre-PR review skipped: N non-test lines changed (threshold: 20)."` The
    skip does **not** extend to the catalog's `reviewSkills` or the runbook pass
@@ -674,7 +686,7 @@ routing below remain **exact**.
    and the 20-line skip does not apply, since a five-line edit to a
    production step is exactly the change that most needs a reader. Run
    `shellcheck` over the extracted shell blocks and fix what it reports;
-   install it first if `command -v shellcheck` finds nothing. Check:
+   install it first when it is unavailable. Check:
 
    - **Network calls (`curl`, `wget`, …)**: are the scheme and host checked
      against an allowlist tied to the intended target? A size- and
@@ -701,7 +713,7 @@ routing below remain **exact**.
    them — a stale approval does not cover the code the PR now ships.
 
    **Tier 1 — Pattern checks (fast scout):** give a fast, inexpensive model
-   `git diff <base>...HEAD` (non-test files) and the repository's documented
+   the output of `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git diff "<base>...HEAD"` (non-test files) and the repository's documented
    coding rules (its agent instructions and any machine-readable rules file).
    `CRITICAL` violations **block**: fix before proceeding.
 
@@ -752,9 +764,9 @@ routing below remain **exact**.
 
    - **`APPROVED WITH WARNINGS`**: put the Tier 2 warnings verbatim under
      `## Review Notes` in the PR body, then push.
-   - **`APPROVED`**: `git push -u origin <branch>`.
+   - **`APPROVED`**: `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --timeout-seconds 3600 -- git push -u origin "<branch>"`.
 
-   Then run `pr-plan.ts open` and open the PR exactly as it plans
+   Then run `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open` and open the PR exactly as it plans
    ([Pull-request policy](#pull-request-policy)). An exit `3` is a policy
    refusal: follow its remedy before opening anything.
 
@@ -765,7 +777,7 @@ routing below remain **exact**.
       list.
    2. **judgment** — Classify each error:
       - **Related**: a file, symbol or test this branch touches
-        (`git diff --name-only <base>...HEAD`), or a consumer of a changed
+        (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git diff --name-only "<base>...HEAD"`), or a consumer of a changed
         export. Fix it.
       - **Unrelated**: a failure already on `<base>`, a flaky test, an
         environment problem (network, missing secret, service not running,
@@ -854,8 +866,8 @@ routing below remain **exact**.
       path before acquiring either lock and writes the log best effort, so
       neither the arm outcome nor the printed path proves the log exists.
       Never post a template such as `<state dir>` as a path. Include the
-      fleet commands too: `drives.ts` lists live drives, and `drives.ts --stop
-      <PR>` stops this one (the process probe uses `ps` on POSIX and
+      fleet commands too: `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts"` lists live drives, and
+      `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/drives.ts" --stop <PR>` stops this one (the process probe uses `ps` on POSIX and
       PowerShell on Windows). These are what a human reaches for when the
       background drive is an agent they have no window into.
 
@@ -963,7 +975,7 @@ snapshot mapping are **exact**.
    - `sub_issue_analysis.all_complete` → Step 5a.
    - Otherwise, if every remaining incomplete sub-issue carries a label in
      the repository's `extractable_tails` list (by default `hitl:legal`,
-     `hitl:tactical`, `manual-ops` and `pr-followup`; `tracker.ts labels`
+     `hitl:tactical`, `manual-ops` and `pr-followup`; `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" labels`
      prints the list in effect) → also Step 5a, which re-verifies eligibility under
      the extract-and-close rule before acting. Otherwise an epic whose only
      open work is a tail would pick that tail and work it as ordinary code.
@@ -979,10 +991,11 @@ snapshot mapping are **exact**.
    `execution-plan-v1`). The Markdown around it is for humans; never parse
    its steps, blockers or overrides as machine facts.
 
-   Run the selector with one JSON object on stdin:
+   Write the selection object to `selection-input.json` through the file-writing
+   tool and pass its path:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/select_execution_issue.ts" < selection-input.json
+   bun "${CLAUDE_SKILL_DIR}/scripts/select_execution_issue.ts" --input selection-input.json
    ```
 
    The input is `{ description, epic, live, mergedConflictEdges }`:
@@ -1010,7 +1023,7 @@ snapshot mapping are **exact**.
    b. Verify each `mergeConflicts` edge's delivering PR against its recorded
       `conflictFiles`. Find the PRs in the predecessor's description and
       comments; check issue reference, scope and changed files with
-      `gh pr view <URL> --json body,files,baseRefName,mergedAt`. Require it
+      `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view "<URL>" --json "body,files,baseRefName,mergedAt"`. Require it
       to target the integration branch and have `mergedAt` set. A merged PR
       for earlier work on the same issue does not clear a later open one.
       Ambiguous or unreadable evidence keeps the pair out; `ops_pending`,
@@ -1071,7 +1084,7 @@ snapshot mapping are **exact**.
    none` (the default), do not start it on top of that branch; wait for the
    sibling to merge, or ask the user to choose another eligible sub-issue.
    With `native` or `branch`, branch from the sibling's head branch and open
-   with `pr-plan.ts open --stack-on <that branch>`.
+   with `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --stack-on <that branch>`.
 
 ### Step 5a: All sub-issues complete
 
@@ -1163,7 +1176,7 @@ data flow, not an executable harness API.
      // `null` are all a failed listing, never a crash.
      let parent
      try {
-       parent = JSON.parse(run(`bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" ${issue.identifier}`))
+       parent = JSON.parse(run(`bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "${issue.identifier}"`))
      } catch (err) {
        parent = { found: false }
      }
@@ -1179,8 +1192,8 @@ data flow, not an executable harness API.
        // must not go undetected.
        //
        // PHASE A — an agent action, not a script. For every child whose key
-       // matches /^[A-Za-z][A-Za-z0-9]*-\d+$/ (defense in depth before it
-       // reaches a command line), issue `get_issue.ts <key>` as its OWN Bash
+       // matches /^(?:[A-Za-z][A-Za-z0-9]*-\d+|#[1-9]\d*)$/ (defense in depth before it
+       // reaches a command line), issue `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "<key>"` as its OWN command-tool
        // call, all in the SAME turn (parallel tool calls), never one at a
        // time: each call may take up to 30 seconds. Build `childFetchResults`,
        // a Map from the REQUESTED key to the parsed stdout; omit any call that
@@ -1213,11 +1226,12 @@ data flow, not an executable harness API.
    }
    ```
 
-   Pipe `listing` (compact JSON) to the reconciler and parse its stdout as
+   Write `listing` as `reconcile-input.json` through the file-writing tool;
+   pass that file to the reconciler and parse its stdout as
    `decision`:
 
    ```bash
-   bun "${CLAUDE_SKILL_DIR}/scripts/reconcile_parent_status.ts" < reconcile-input.json
+   bun "${CLAUDE_SKILL_DIR}/scripts/reconcile_parent_status.ts" --input reconcile-input.json
    ```
 
 2. **exact** — **Act on `decision.verdict`**. `decision.parentState` is the
@@ -1232,7 +1246,7 @@ data flow, not an executable harness API.
    | `listing_failed` | **Stop**: report that the tracker refresh failed or was incomplete; do not change the parent's status |
    | `keep_in_progress` | Go to Step 4b |
    | `extract_and_close_eligible` | Verify the epic's closing authorization (below); if it has one, extract and close per the rule above (see the `manual-ops` note below when the parent carries that label). Otherwise **stop**: report that every remaining sub-issue is an extractable tail but the epic has no accepting verdict or waiver yet |
-   | `set_status` | When `decision.parentState` is `done` and the parent is an epic (`listing.parentLabels` carries the configured epic label), verify its closing authorization (below) first; without one, transition it to `in_review` instead and report that it waits for an accepting verdict or a waiver. Transition the parent: `tracker.ts transition <KEY> <canonical-state>` on the script transport; Linear native: `mcp__linear__save_issue({ id: issue.id, state: <mapped name> })` |
+   | `set_status` | When `decision.parentState` is `done` and the parent is an epic (`listing.parentLabels` carries the configured epic label), verify its closing authorization (below) first; without one, transition it to `in_review` instead and report that it waits for an accepting verdict or a waiver. Transition the parent: `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <canonical-state>` on the script transport; Linear native: `mcp__linear__save_issue({ id: issue.id, state: <mapped name> })` |
 
    **Closing authorization.** An epic may close only when its newest verdict
    from the repository's epic acceptance review accepts it, or when a person
@@ -1270,7 +1284,7 @@ data flow, not an executable harness API.
    ```markdown
    ## 🎉 All Sub-Issues Complete!
 
-   **Issue**: [ENG-123](https://tracker.example/ENG-123)
+   **Issue**: [<KEY>](<issue URL>)
    **Progress**: {completed}/{total - abandoned} complete ✅ ({progress_percent}%)
    **Abandoned**: {abandoned} cancelled/duplicate (excluded from the count above)  <!-- omit when abandoned is 0 -->
 
@@ -1292,9 +1306,9 @@ Without such a runner, ask as in [Asking the user](#asking-the-user).
 
 | Error | Solution |
 |-------|----------|
-| Issue not found | Check the key format; list the team's issues in the tracker (Linear: `linear issue list --team <issue_tracker.team>`) |
+| Issue not found | Check the key against the tracker's form ([Tracker operations](#tracker-operations)); list the tracker's issues (Linear: `linear issue list --team <issue_tracker.team>`; GitHub Issues: `gh issue list` on the configured repository) |
 | Tracker unreachable on one transport | Use the other transport recorded in Step 1 |
-| Missing tracker credential | Set the adapter's credential (Linear: `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or log in to the `linear` command-line client), or use the harness's native integration |
+| Missing tracker credential | Set the adapter's credential (Linear: `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or log in to the `linear` command-line client; GitHub Issues: sign in with `gh auth login`, and add the `project` scope with `gh auth refresh` when the states are on a board), or use the harness's native integration |
 
 ## Scripts reference
 
@@ -1302,10 +1316,10 @@ Without such a runner, ask as in [Asking the user](#asking-the-user).
 |--------|---------|-------|--------|
 | `get_issue.ts` | Fetch an issue | Issue key | JSON with details and sub-issue analysis |
 | `list_comments.ts` | Fetch an issue's comments | Issue key | JSON array of `{ body, createdAt }` |
-| `tracker.ts` | Tracker operations: `children`, `transition`, `comment`, and the configured `states` and `labels` | Operation, issue key, and a canonical state or a body on stdin | Operation result |
+| `tracker.ts` | Tracker operations: `children`, `transition`, `comment`, and the configured `states` and `labels` | Operation, issue key, and a canonical state or a body from `--body-file` (stdin also supported) | Operation result |
 | `determine_agent.ts` | Route an issue to an agent and its scouts | Issue JSON (path or `-`) | JSON with agent and scouts |
-| `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (stdin) and `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
-| `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
-| `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (stdin) | JSON decision (`verdict`, `parentState`, `parentStateName`, `reason`) |
-| `pr-plan.ts` | Apply the pull-request policy: a branch name, or the plan for opening the current branch's PR | `branch --issue <KEY> --title <title>`, or `open [--issue <KEY>] [--stack-on <branch>] [--accept-oversize <reason>]` | Branch name, or the plan (text or `--json`); exit `3` when the policy refuses |
+| `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (`--input` or stdin), `--git-head` or `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
+| `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (`--input` or stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
+| `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (`--input` or stdin) | JSON decision (`verdict`, `parentState`, `parentStateName`, `reason`) |
+| `pr-plan.ts` | Apply the pull-request policy: a branch name, or the plan for opening the current branch's PR | `branch --issue "<KEY>" --title <title>`, or `open [--issue "<KEY>"] [--stack-on <branch>] [--accept-oversize <reason>]` | Branch name, or the plan (text or `--json`); exit `3` when the policy refuses |
 | `intent-chain.ts` | Write the Refocus intent-chain snapshot (Step 3.5); `--clear-session` removes this session's copy | `IntentChainInput` JSON (stdin or `--input`); nothing with `--clear-session` | Snapshot files and a JSON summary (`path`, `sessionPath`, `pickupId`, `chars`, `arm`, `truncated`, `pointerErrors`); with `--clear-session`, `{ sessionPath, removed }` |

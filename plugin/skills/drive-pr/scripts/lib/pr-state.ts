@@ -1,3 +1,4 @@
+import { definedFields } from "../../../../shared/defined-fields.ts";
 /**
  * A PR's lifecycle state (`OPEN` / `CLOSED` / `MERGED`) for the state-ONLY
  * liveness reads.
@@ -48,10 +49,7 @@ export async function readPrState(
   opts: { timeoutSec?: number; caller?: string } = {},
 ): Promise<PrStateRead> {
   if (/^\d+$/.test(pr)) {
-    const r = await readPrLiveness(pr, {
-      timeoutSec: opts.timeoutSec,
-      caller: opts.caller,
-    });
+    const r = await readPrLiveness(pr, opts);
     return r.ok ? { ok: true, state: r.state } : r;
   }
   // A spent budget starts no call: `ghCall` clamps a tightening timeout to a
@@ -63,7 +61,7 @@ export async function readPrState(
     ["pr", "view", pr, "--json", "state", "-q", ".state"],
     {
       stderr: "ignore",
-      timeoutSec: opts.timeoutSec,
+      ...definedFields({ timeoutSec: opts.timeoutSec }),
     },
   );
   const state = r.code === 0 ? r.stdout.trim() : "";

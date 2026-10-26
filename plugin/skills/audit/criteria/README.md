@@ -47,7 +47,7 @@ scores sit off the ladder:
   `advisory`.
 - `not-examined`, which meets no bar and is never a gap: the audit chose not
   to examine a criterion beyond the profile's target. Only
-  `score.ts --draft --profile <id>` writes it, with the evidence
+  `score.ts`, with `--draft` and `--profile`, writes it, with the evidence
   `not examined: beyond the <profile name> target`; never score a criterion
   inside the target with it.
 
@@ -126,7 +126,7 @@ hook), its absence rules out only the enforced rung. Write that search as a
 rung's probe, `mechanical: <probe>`: when it does not hold, the criterion is
 not scored but left open with the comment `# probe capped: <search>; at most
 advisory` and the field `at_most: advisory`, and the agent scores what it
-observes up to that rung: `record.ts fill`, `merge` and `check` refuse a
+observes up to that rung: `record.ts`’s `fill` operation, `merge` and `check` refuse a
 score above it. A
 criterion about the other practice itself (CI runs the gates on every pull
 request, a lint over the CI configuration) keeps a plain probe: without CI

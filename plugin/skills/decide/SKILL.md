@@ -60,12 +60,13 @@ time. Every one is optional.
 | Field | What it sets | When absent |
 |-------|--------------|-------------|
 | `adr.directory` | The directory holding the ADRs, named `ADR-NNNN-<slug>.md` (Jig module M5, ADR practice); shared with `/jig:adr` | Detected as `/jig:adr` does (`docs/adr`, `doc/adr`, `docs/decisions`, …), else `docs/adr` |
+| `sheets.repositories` | Clones of the other repositories a sheet cites (`beta:ADR-0002`): a map from repository name to a path, relative to the repository root or absolute | None: a qualified citation is refused |
 | `decide.policy_files` | Instruction files whose `##` sections are standing policy | `[AGENTS.md]` |
 | `decide.rules_directory` | A directory of conditional rule files, one rule per `.md` file | `.claude/rules`, Claude Code's rules folder; a repository using another agent tool sets its own |
 | `decide.glossary_file` | The canonical vocabulary, as `**Term**:` lines each followed by an `_Avoid_:` line of aliases | `CONTEXT.md` |
 | `decide.architect_agent` | The subagent that rules in phase 3; a name your agent tool does not know (for example a Claude Code agent under Codex) falls back to the default | A fresh general-purpose subagent, briefed with the [architect mandate](#the-architect-mandate) |
 | `decide.escalation_labels` | Labels added to an issue alongside `hitl` and its `hitl:<stakeholder>` facets when a call is escalated (for example the label that routes it to an architect) | None |
-| `issue_tracker.*` | The issue tracker, as `/jig:do-item` reads it (adapter, team key, `file_command`, and the `hitl` label in `labels.hitl`) | No tracker: outcomes land in the reply only |
+| `issue_tracker.*` | The issue tracker, as `/jig:do-item` reads it (adapter, the team on Linear, `file_command`, and the `hitl` label in `labels.hitl`) | No tracker: outcomes land in the reply only |
 
 ### Tracker operations
 
@@ -76,15 +77,17 @@ Linear forms are given as the adapter example.
 
 | Operation | Script form | Adapter example: Linear (MCP) |
 |-----------|-------------|-------------------------------|
-| Get issue | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" <KEY>` | `mcp__linear__get_issue` |
-| List comments | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/list_comments.ts" <KEY>` | `mcp__linear__list_comments` |
-| Post comment | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" comment <KEY> < body.md` | `mcp__linear__save_comment` |
+| Get issue | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" "<KEY>"` | `mcp__linear__get_issue` |
+| List comments | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/list_comments.ts" "<KEY>"` | `mcp__linear__list_comments` |
+| Post comment | `bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" comment "<KEY>" --body-file body.md` | `mcp__linear__save_comment` |
 | Search open issues | — | `mcp__linear__list_issues` with a query |
 | Add labels | — | `mcp__linear__save_issue` with `addLabels` |
 | File a new issue | The consumer's `issue_tracker.file_command` | — |
 | Attach a sheet | — | see [`references/decision-sheet.md`](references/decision-sheet.md#post-the-sheet) |
 
-Issue keys in this document look like `ENG-123`.
+An issue key is `ENG-123` on Linear and `#123` on GitHub Issues, an issue of
+the configured repository; this document writes it as `<KEY>`. Quote it on a
+command line: an unquoted `#` starts a shell comment.
 
 ## The phases
 
@@ -339,7 +342,7 @@ Run its advisory linter on the draft before you post it:
 
 ```bash
 bun "${CLAUDE_SKILL_DIR}/scripts/ste-lint/ste-lint.ts" draft.md
-# or: cat draft.md | bun "${CLAUDE_SKILL_DIR}/scripts/ste-lint/ste-lint.ts" --json
+# Add --json for machine-readable output.
 ```
 
 **The ADR bar.** Mint an ADR only when the decision **constrains future code

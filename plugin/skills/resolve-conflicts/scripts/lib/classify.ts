@@ -23,25 +23,22 @@
  * The section's other key, `hotspot_min_merges`, is read here too, so one
  * reader validates the whole section: the history report's hotspot threshold.
  */
-import { posix, resolve } from "node:path";
+import { posix } from "node:path";
 import {
   globProblem,
-  loadCatalogFile,
   matchesGlob,
 } from "../../../drive-pr/scripts/lib/change-areas-catalog.ts";
 import { OUTPUT_PATH_RE } from "../../../change-areas/scripts/lib/catalog.ts";
 import { catalogPathFromOverlay } from "../../../do-item/scripts/determine_agent.ts";
 import { fail } from "../../../../shared/cli.ts";
-import {
-  fieldInMessage,
-  repositoryConfigPath,
-} from "../../../../shared/config-layers.ts";
-import {
-  consumerRoot,
-  readConfig,
-  sourceIn,
-} from "../../../../shared/consumer.ts";
+import { fieldInMessage } from "../../../../shared/config-layers.ts";
+import { readConfig, sourceIn } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
+import {
+  stagedCatalog,
+  stagedConfig,
+  UnmergedDeclarationError,
+} from "./staged-config.ts";
 
 export type PathClass = "lockfile" | "generated" | "binary" | "text";
 
@@ -98,16 +95,34 @@ export const DEFAULT_HOTSPOT_MIN_MERGES = 3;
 type Bad = (what: string) => never;
 
 /**
- * The `resolve_conflicts` section, its keys checked, with the reporter of a
- * malformed field; null when the configuration has no such section.
+/**
+ * The merged configuration, or why the repository's own file cannot be read
+ * yet because it is unmerged. The map still runs then, so the file's conflict
+ * is recorded; nothing it declares is honoured, and the map says so.
  */
-function readSection(): { section: Record<string, unknown>; bad: Bad } | null {
-  let overlay: Record<string, unknown>;
+function mapConfiguration(): {
+  values: Record<string, unknown>;
+  unmerged: string | null;
+} {
   try {
-    overlay = readConfig();
+    return { values: stagedConfig(), unmerged: null };
   } catch (err) {
-    fail(2, `resolve-conflicts: ${err instanceof Error ? err.message : err}`);
+    if (err instanceof UnmergedDeclarationError)
+      return { values: {}, unmerged: err.message };
+    return fail(
+      2,
+      `resolve-conflicts: ${err instanceof Error ? err.message : err}`,
+    );
   }
+}
+
+/**
+ * The `resolve_conflicts` section of `overlay`, its keys checked, with the
+ * reporter of a malformed field; null when it has no such section.
+ */
+function readSection(
+  overlay: Record<string, unknown>,
+): { section: Record<string, unknown>; bad: Bad } | null {
   const section = overlay[SECTION];
   if (section === undefined || section === null) return null;
   const bad: Bad = (what) =>
@@ -127,11 +142,12 @@ function readSection(): { section: Record<string, unknown>; bad: Bad } | null {
 
 /**
  * The `resolve_conflicts.generated` entries, validated. A repository without
- * the configuration file or the section gets an empty list; a malformed
+ * the configuration file or the section gets an empty list, and so does one
+ * whose file is unmerged (`catalogGeneratedEntries` reports it); a malformed
  * section stops the script with exit 2 and the exact field at fault.
  */
 export function generatedEntries(): GeneratedEntry[] {
-  const read = readSection();
+  const read = readSection(mapConfiguration().values);
   if (read === null) return [];
   const { section, bad } = read;
   const generated = section.generated;
@@ -166,11 +182,18 @@ export function generatedEntries(): GeneratedEntry[] {
 
 /**
  * `resolve_conflicts.hotspot_min_merges`: a path that conflicted in at least
- * this many merges of the report's range is a hotspot. A malformed value
- * stops the script with exit 2.
+ * this many merges of the report's range is a hotspot. The history report
+ * certifies no commit, so it reads the configuration as it stands, not the
+ * index. A malformed value stops the script with exit 2.
  */
 export function hotspotMinMerges(): number {
-  const read = readSection();
+  let overlay: Record<string, unknown>;
+  try {
+    overlay = readConfig();
+  } catch (err) {
+    fail(2, `resolve-conflicts: ${err instanceof Error ? err.message : err}`);
+  }
+  const read = readSection(overlay);
   const value = read?.section.hotspot_min_merges;
   if (value === undefined) return DEFAULT_HOTSPOT_MIN_MERGES;
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
@@ -195,16 +218,17 @@ export interface CatalogGenerated {
   incomplete: string | null;
 }
 
-/** The catalog path `drive.change_areas_catalog` names, or `null` when unset. */
-function configuredCatalogPath(): string | null {
-  let overlay: Record<string, unknown>;
+/**
+ * The catalog path `drive.change_areas_catalog` names, as written (absolute,
+ * or relative to the repository), or `null` when unset.
+ */
+function configuredCatalogPath(
+  overlay: Record<string, unknown>,
+): string | null {
   try {
-    overlay = readConfig();
-  } catch (err) {
-    fail(2, `resolve-conflicts: ${err instanceof Error ? err.message : err}`);
-  }
-  try {
-    return catalogPathFromOverlay(overlay);
+    if (catalogPathFromOverlay(overlay) === null) return null;
+    return (overlay.drive as Record<string, unknown>)
+      .change_areas_catalog as string;
   } catch (err) {
     const what = err instanceof Error ? err.message : String(err);
     return fail(
@@ -212,18 +236,6 @@ function configuredCatalogPath(): string | null {
       `resolve-conflicts: ${what} in ${sourceIn(overlay, fieldInMessage(what, "drive"))}`,
     );
   }
-}
-
-/**
- * The files whose content declares which paths are generated: the repository
- * configuration and, when one is configured, the change-area catalog, as
- * absolute paths.
- */
-export function declarationFiles(): string[] {
-  const catalog = configuredCatalogPath();
-  const files = [resolve(repositoryConfigPath(consumerRoot()))];
-  if (catalog !== null) files.push(resolve(catalog));
-  return files;
 }
 
 /** One catalog `generated[]` entry as a derived-file entry, or why it is not one. */
@@ -266,8 +278,9 @@ function catalogEntry(
 /**
  * The generated entries of the change-area catalog the repository declares in
  * `drive.change_areas_catalog`: each area's `generated[].outputs` with that
- * entry's `command`. No catalog configured gives an empty result. A catalog
- * that cannot be read, or an entry whose `outputs` are malformed, is reported
+ * entry's `command`. No catalog configured gives an empty result. An unmerged
+ * configuration, a catalog that cannot be read, or an entry whose `outputs`
+ * are malformed, is reported
  * and marks the map incomplete, not fatal: the catalog may be among the
  * conflicted paths, and the map must still run so it can be resolved first.
  * An entry without a `command` still claims its outputs, so a derived file is
@@ -279,11 +292,19 @@ export function catalogGeneratedEntries(): CatalogGenerated {
     problems: [],
     incomplete: null,
   };
-  const path = configuredCatalogPath();
+  const config = mapConfiguration();
+  if (config.unmerged !== null) {
+    result.incomplete = config.unmerged;
+    result.problems.push(
+      `${config.unmerged}. Files it or its change-area catalog declares as generated are classified by the other rules until it is staged; resolve and stage it, then run conflict-map.ts again (check-resolution.ts refuses until then).`,
+    );
+    return result;
+  }
+  const path = configuredCatalogPath(config.values);
   if (path === null) return result;
-  let areas: ReturnType<typeof loadCatalogFile>;
+  let areas: ReturnType<typeof stagedCatalog>;
   try {
-    areas = loadCatalogFile(path);
+    areas = stagedCatalog(path);
   } catch (err) {
     result.incomplete = err instanceof Error ? err.message : String(err);
     result.problems.push(

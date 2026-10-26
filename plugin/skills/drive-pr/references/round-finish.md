@@ -27,10 +27,10 @@ passes: everything below treats a successful push as evidence that the
 validated tree is on the PR.
 
 **The untriaged-thread refusal.** SKILL.md's documented round loop
-is gate → enumerate → triage *each* thread via `triage-thread.ts` → validate →
+is gate → enumerate → triage *each* thread via `bun "<skill-dir>/scripts/triage-thread.ts"` → validate →
 commit → `finish-round.ts`. A driver commonly fixes every finding's
 underlying code instead and goes straight from "fixes applied" to
-`finish-round.ts`, never once calling `triage-thread.ts`. Without this guard
+`finish-round.ts`, never once calling `bun "<skill-dir>/scripts/triage-thread.ts"`. Without this guard
 nothing refuses that: no thread is held either way, so the round pushes,
 stamps, and reports "0 held item(s) drained" — a report
 **indistinguishable**
@@ -60,7 +60,7 @@ The guard (`checkUntriagedThreads` in `finish-round.ts`) refuses only when
   the fresh comment with no outcome reply ever posted.
 - **(b) at least one unresolved review thread is anchored to a file this
   round's own local non-merge commits touch.** "This round's own non-merge
-  commits" means since the last verified SHA (`drive-state.ts verified`) when
+  commits" means since the last verified SHA (`bun "<skill-dir>/scripts/drive-state.ts" verified`) when
   one validates, else the cumulative merge-base against `origin/<base>` (the
   configured base branch) — `roundBase()` in `scripts/lib/round-delta.ts`, the
   *same* fail-closed base resolution `round-plan.ts` shares (though
@@ -103,7 +103,7 @@ The guard (`checkUntriagedThreads` in `finish-round.ts`) refuses only when
   `triage-thread.ts`'s own reconciliation still finds the older outcome —
   that divergence is intentional, not a residual bug.
 
-  **That divergence has a non-obvious consequence for the remedy**: running plain `triage-thread.ts` on a thread this
+  **That divergence has a non-obvious consequence for the remedy**: running plain `bun "<skill-dir>/scripts/triage-thread.ts"` on a thread this
   guard refused for a *stale* reply/hold does NOT fix anything — its
   reconciliation rule treats the older qualifying reply as "the answer"
   regardless of the newer comment, so it silently re-confirms the stale
@@ -111,8 +111,8 @@ The guard (`checkUntriagedThreads` in `finish-round.ts`) refuses only when
   converges. The refusal's own message distinguishes the two cases and names
   the correct remedy for each: a genuinely never-triaged thread names plain
   `triage-thread.ts`; a stale one names the documented supersession path
-  instead — post a fresh reply via `reply-to-thread.ts` directly (which
-  becomes the new latest comment), then `triage-thread.ts` to complete the
+  instead — post a fresh reply via `bun "<skill-dir>/../resolve-review-comments/scripts/reply-to-thread.ts"` directly (which
+  becomes the new latest comment), then `bun "<skill-dir>/scripts/triage-thread.ts"` to complete the
   disposition (it will find that fresh reply, not the stale one, since it
   scans from the latest comment backward).
 
@@ -134,16 +134,16 @@ The guard (`checkUntriagedThreads` in `finish-round.ts`) refuses only when
   `triage-thread.ts` crashing between the reply and the resolve, the same
   shape of gap as the accepted/moot one, just on the other side of the
   fork. The *one* way a merit reply (or an unmarked moot) legitimately stays
-  unresolved forever is the LEAVE_OPEN marker — `triage-thread.ts
+  unresolved forever is the LEAVE_OPEN marker — `bun "<skill-dir>/scripts/triage-thread.ts"
   --leave-open` works identically across every non-hold outcome (its own
   header), not only `moot`, so this check does too. Either crash's remedy is
-  the same *shape*, naming the correct missing half: re-run `triage-thread.ts`
+  the same *shape*, naming the correct missing half: re-run `bun "<skill-dir>/scripts/triage-thread.ts"`
   on the *same* thread with *any* valid outcome body on stdin (not an empty
   one: `triage-thread.ts` refuses *empty* stdin outright, before it ever
   fetches or reconciles the thread). Its self-reconciliation
   will find the already-posted reply and win over whatever this
   invocation's own body said, completing whichever half — a hold, or a
-  resolve — never happened. Posting via `reply-to-thread.ts` again here
+  resolve — never happened. Posting via `bun "<skill-dir>/../resolve-review-comments/scripts/reply-to-thread.ts"` again here
   would double-post.
 
   **A current hold's own url matching is also not enough by itself**: GitHub preserves a comment's permalink when it is
@@ -170,7 +170,7 @@ The guard (`checkUntriagedThreads` in `finish-round.ts`) refuses only when
   "Draining a `kind: thread`") documents; without either, an edited reply
   would sail past this guard and only get caught by the drain check *after*
   the irreversible push already landed.
-- **(d) that thread is NOT currently parked** (`drive-state.ts park` /
+- **(d) that thread is NOT currently parked** (`bun "<skill-dir>/scripts/drive-state.ts" park` /
   `parked-keys`). A parked thread is a recorded human decision — often
   precisely *because* `triage-thread.ts` itself refuses to reply to it (e.g. a
   `commentsTruncated` thread, which `triage-thread.ts` tells the operator to
@@ -184,7 +184,7 @@ round. A round that genuinely rejected/wont-fixed/deferred everything has
 already posted qualifying replies, and an ordinary merit reply also
 **resolves** the thread — dropping it out of (b)'s unresolved population — so
 the one place (b) can still be true for a legitimate round is
-`triage-thread.ts --leave-open` (SKILL.md's human-thread exception), which
+`bun "<skill-dir>/scripts/triage-thread.ts" --leave-open` (SKILL.md's human-thread exception), which
 posts the qualifying reply but deliberately leaves the thread open, or a
 thread a human explicitly parked. That is exactly why (c) and (d) are each
 checked independently of (b) rather than folded into it: the reply exists, so
@@ -219,7 +219,7 @@ Once both pre-push refusals above have cleared, `finish-round.ts` pushes
 through the guard, never with a bare `git push`:
 
 ```bash
-<skill-dir>/scripts/guarded-push.ts [PR]
+bun "<skill-dir>/scripts/guarded-push.ts" [PR]
 ```
 
 `drive.ts` checked liveness before handing you the round, but that was before
@@ -252,7 +252,7 @@ therefore run
 already prescribes — step 3 holds, step 6 pushes:
 
 ```bash
-<skill-dir>/scripts/drive-state.ts stamp-held [PR] --sha "$(git rev-parse HEAD)"
+bun "<skill-dir>/scripts/portable.ts" stamp-held [PR]
 ```
 
 ## 3. The head-sync wait
@@ -261,11 +261,11 @@ Then — **before** trusting anything the API says about this round — wait for
 PR head it reports to equal local HEAD:
 
 ```bash
-<skill-dir>/scripts/drive-status.ts [PR] --json --no-count
+bun "<skill-dir>/scripts/drive-status.ts" [PR] --json --no-count
 ```
 
-Seconds after a push, `gh pr view --json headRefOid` still returns the
-**previous** SHA, where everything was settled and resolved. `drive-status.ts`
+Seconds after a push, `gh pr view` can still report the **previous** SHA in
+`headRefOid`, where everything was settled and resolved. `drive-status.ts`
 blocks on that mismatch rather than judging the stale head.
 
 **`--no-count` here is load-bearing, not cosmetic.** This call's job
@@ -287,7 +287,7 @@ from memory**, because after a compaction your recollection of it is the one
 witness that may be incomplete:
 
 ```bash
-<skill-dir>/scripts/drive-state.ts held [PR]
+bun "<skill-dir>/scripts/drive-state.ts" held [PR]
 ```
 
 Process it **one item at a time from a fresh read, releasing each key the
@@ -299,14 +299,13 @@ idempotency:
 
 ### Draining a `kind: thread`
 
-**`kind: thread`** — resolved with `resolve-held-thread.ts --key K --pushed-sha
-"$(git rev-parse HEAD)"`, never with `resolve-thread.ts` directly: the raw
+**`kind: thread`** — resolved with `bun "<skill-dir>/scripts/portable.ts" resolve-held-thread [PR] --key K`, never with `resolve-thread.ts` directly: the raw
 mutation is unconditional and has no notion of which push justifies it. The wrapper checks the following before it calls that mutation at
 all: `--pushed-sha` is the PR's live head *and* this worktree's clean HEAD
 (the same ordering `answer-summary-finding.ts` enforces below), **and**,
-atomically together (`drive-state.ts claim-held --kind thread`), the round `hold` recorded at reply time still equals the
+atomically together (`bun "<skill-dir>/scripts/drive-state.ts" claim-held --kind thread`), the round `hold` recorded at reply time still equals the
 current round **and** `--pushed-sha` equals **this hold's own recorded
-`verifiedSha`** (`drive-state.ts stamp-held`, § 2 above — the marker a real
+`verifiedSha`** (`bun "<skill-dir>/scripts/drive-state.ts" stamp-held`, § 2 above — the marker a real
 `guarded-push.ts` leaves behind). Round equality alone is not enough: it only
 advances when a *counting* `drive-status.ts` gate runs, so a push that lands
 without ever going through one — an intervening push, a bypassed step 6 —
@@ -331,7 +330,7 @@ means go back to step 3 and reconcile
 (re-hold if the reply still stands, resolve under whatever outcome actually
 applies if it does not), then retry. Once the mutation is actually called, it
 is idempotent, so a retry after a crash is harmless — and a failure calling it
-(not a refusal to claim) restores the item to `held` via `drive-state.ts
+(not a refusal to claim) restores the item to `held` via `bun "<skill-dir>/scripts/drive-state.ts"
 restore-held`, carrying every field back *exactly* as `claim-held` printed it
 — never re-derived and never "now". The round, because a concurrent driver's
 `bump-round` can move `.rounds` on while the network call is in flight and
@@ -366,7 +365,7 @@ So provenance is recorded **per hold**, and reads as these facts on the item
 itself:
 
 - **`actor`** — which working tree made the promise, stamped by `hold`. It is
-  derived from `git rev-parse --show-toplevel` and is not settable by `hold` or
+  derived from the working-tree root reported by `git rev-parse` and is not settable by `hold` or
   `stamp-held` (`restore-held` only carries back the value printed by
   `claim-held`): `drive.ts` holds a single-instance lock keyed by the same
   tree, so "one tree" and "one driver" are the same thing, and a managed
@@ -423,8 +422,8 @@ you do need to know:
   (`$DRIVE_PR_LEASE_STALE_MIN`, default 360m). A crashed driver never wedges a
   PR.
 - If you are refused and you know the named session is gone or must be taken
-  over: `drive-state.ts clear-lease [PR]`. It reports the record it dropped.
-  `drive-state.ts lease [PR]` reads it without changing anything.
+  over: `bun "<skill-dir>/scripts/drive-state.ts" clear-lease [PR]`. It reports the record it dropped.
+  `bun "<skill-dir>/scripts/drive-state.ts" lease [PR]` reads it without changing anything.
 
 **Two sessions in one tree, different PRs: the tree lease.** The
 lease above is scoped to *(working tree, PR)*, which is exactly right for two
@@ -482,7 +481,7 @@ So a claim answers two questions, and a refusal tells you which it is:
   `parked-keys`, `verified`, `rounds`, `lease`) **and every other PR.** What it
   may not do is mutate *this* PR's drive state, which is the same thing as
   posting outcome replies to it.
-- **`drive-state.ts lease [PR] --all`** is the detection surface: every live
+- **`bun "<skill-dir>/scripts/drive-state.ts" lease [PR] --all`** is the detection surface: every live
   lease on the PR from any tree, each with its worktree path, its `holder`
   (`session` or `worktree` — see below), its `pid` field (`0` for a `worktree`
   holder, which has no session to name) and a `self` flag; `[]` when nobody
@@ -490,7 +489,7 @@ So a claim answers two questions, and a refusal tells you which it is:
   durable `actor` looks like one and is not — a hold deliberately outlives its
   driver (see the provenance block above), so a foreign `actor` proves a hold
   was made elsewhere, never that anyone is still driving.
-- **`drive-state.ts clear-lease [PR] --all`** is the takeover path, and the only
+- **`bun "<skill-dir>/scripts/drive-state.ts" clear-lease [PR] --all`** is the takeover path, and the only
   one that reaches a tree you are not standing in — one that was deleted, or
   lives on another machine. It drops every tree's lease on the PR, live ones
   included, and prints each record it overrode.
@@ -660,24 +659,13 @@ satisfies perfectly, and its dispatch is not idempotent, so a wrong answer is a
 permanent standing claim on the PR that no later round undoes.
 
 ```bash
-if TOKEN=$(<skill-dir>/scripts/drive-state.ts claim-held [PR] --key K --kind finding --pushed-sha "$(git rev-parse HEAD)"); then
-  echo "dispatch (answer-summary-finding.ts), then release:"
-  echo '  drive-state.ts release-held [PR] --key K --token "$TOKEN"'
-else
-  rc=$?   # captured in the `else`, NOT after `if !` — negating the condition
-          # with `!` also overwrites `$?` with the NEGATED status by the time
-          # a `then` branch runs, so `rc` there would always read 0
-  echo "do NOT dispatch (rc=$rc) — see below for what rc means"
-fi
+bun "<skill-dir>/scripts/portable.ts" claim-held [PR] --key K --kind finding
 ```
 
-This block deliberately has no `case`/no dummy per-branch bodies: a
-placeholder like `1) : ;;` looks like it enforces something but is a no-op —
-a literal caller falls straight past it and can dispatch anyway on exits that
-were supposed to forbid it, which is exactly the mistake an earlier version of
-this doc made. The `if`/`else` shape above is the only thing that has to be
-correct, and it is: dispatch code exists *only* inside the `then` branch, so
-there is nothing on the `else` side for a reader to fall through into.
+Read the exit status before dispatching anything. Save the token printed on
+success as literal data; pass it back with `--token <printed-token>` when
+releasing or unclaiming. The wrapper computes local HEAD internally and leaves
+the claim's per-hold provenance checks and exit codes intact.
 
 Exit `0` means you hold it: proceed to dispatch, then release. Every non-zero
 exit means **do not dispatch** — skip the key without touching GitHub — but the
@@ -692,7 +680,7 @@ acquired (breaking a stale claim, or confirming a fresh one), which is a
 rather than assuming it is
 always safe to shrug off: if it recurs across several different keys in the
 same pass, that pattern — not the exit code alone — is what should make you
-stop and inspect (`drive-state.ts get [PR]`) rather than keep skipping through
+stop and inspect (`bun "<skill-dir>/scripts/drive-state.ts" get [PR]`) rather than keep skipping through
 an entire batch one silently-failing key at a time. `4` means the snapshot
 you're iterating is stale, so re-read `held` before trusting anything else in
 it — do not assume the key is "already finished" without checking; `3` means
@@ -741,11 +729,10 @@ Then dispatch and **release the instant the external operation succeeds,
 passing the token back**:
 
 ```bash
-<skill-dir>/scripts/drive-state.ts release-held [PR] --key K --token "$TOKEN"
+bun "<skill-dir>/scripts/drive-state.ts" release-held [PR] --key K --token <printed-token>
 ```
 
-A `finding` is answered with `answer-summary-finding.ts --pushed-sha
-"$(git rev-parse HEAD)"`, piping the item's own `.reason` field **verbatim** —
+A `finding` is answered with `bun "<skill-dir>/../../shared/command.ts" --stdin-file .context/held-reason.md -- bun "<skill-dir>/scripts/portable.ts" answer-summary-finding [PR] --outcome <outcome> --fingerprint <key>`, after writing the item's own `.reason` field **verbatim** to `.context/held-reason.md` with the file editor —
 never re-composed or re-derived from memory, which is exactly the recollection
 this batch exists not to depend on. `--pushed-sha` must be the PR's live head
 and this worktree's clean HEAD, so the marker cannot precede the push; it does
@@ -769,7 +756,7 @@ If the dispatch itself fails (a transient API error, not a crash), give the
 claim back immediately rather than leaving it to expire on its own:
 
 ```bash
-<skill-dir>/scripts/drive-state.ts unclaim-held [PR] --key K --token "$TOKEN"
+bun "<skill-dir>/scripts/drive-state.ts" unclaim-held [PR] --key K --token <printed-token>
 ```
 
 so a retry — this round or the next — is not blocked behind the staleness

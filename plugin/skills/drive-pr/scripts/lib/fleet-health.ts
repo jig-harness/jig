@@ -30,6 +30,10 @@ import {
   type StartedIssueActivity,
   type WindowSpec,
 } from "../../../do-item/scripts/lib/tracker/port.ts";
+import {
+  ANY_KEY_SOURCE,
+  type IssueKeys,
+} from "../../../do-item/scripts/lib/tracker/keys.ts";
 import type { FleetHealthConfig } from "./fleet-health-config.ts";
 
 /** The tracker facts the sensor reads, as the tracker port defines them. */
@@ -117,17 +121,7 @@ export const DEFAULT_FOLLOWUP_LABEL = "follow-up";
 /** The default epic label, when a caller names none. */
 export const DEFAULT_EPIC_LABEL = "epic";
 
-function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/** One issue key: of `teamKey`, or of any team when it is `null`. */
-function keySource(teamKey: string | null): string {
-  return teamKey === null ? "[A-Z][A-Z0-9]*-\\d+" : `${escapeRe(teamKey)}-\\d+`;
-}
-
-function trailerPattern(teamKey: string | null): RegExp {
-  const key = keySource(teamKey);
+function trailerPattern(key: string): RegExp {
   return new RegExp(
     `\\b(?:closes?|closed|fix(?:es|ed)?|resolves?|resolved|references?|refs?)\\b:?\\s+((?:${key})(?:(?:\\s*(?:,|&|\\band\\b)\\s*|\\s+)${key})*)`,
     "gi",
@@ -135,22 +129,21 @@ function trailerPattern(teamKey: string | null): RegExp {
 }
 
 /**
- * Issue keys named by Closes/References trailers anywhere in `text` (of
- * `teamKey`, or of any team when it is `null`). Anywhere,
+ * Issue keys named by Closes/References trailers anywhere in `text`, in
+ * canonical form (of the `keys` shape, or of any tracker when `null`). Anywhere,
  * not line-start: the batch PRs this sensor most needs to read put the trailer
  * in a table cell (`| Closes ENG-123 | …`), and a start-anchored pattern would
  * attribute them to no epic at all.
  */
 export function parseIssueRefs(
   text: string,
-  teamKey: string | null = null,
+  keys: IssueKeys | null = null,
 ): string[] {
   const out = new Set<string>();
-  const key = new RegExp(keySource(teamKey), "gi");
-  for (const m of text.matchAll(trailerPattern(teamKey))) {
-    for (const id of (m[1] as string).matchAll(key)) {
-      out.add(id[0].toUpperCase());
-    }
+  const source = keys?.source ?? ANY_KEY_SOURCE;
+  for (const m of text.matchAll(trailerPattern(source))) {
+    for (const id of (m[1] as string).matchAll(new RegExp(source, "gi")))
+      out.add(keys?.normalize(id[0]) ?? id[0].toUpperCase());
   }
   return [...out];
 }
@@ -158,6 +151,11 @@ export function parseIssueRefs(
 const PR_IN_TITLE = /^PR #(\d{1,7})\s/;
 const PR_IN_BODY =
   /(?:\/pull\/|\bPR\s+(?:[\w.-]+\/[\w.-]+)?#|\bpull request\s+(?:[\w.-]+\/[\w.-]+)?#|[\w.-]+\/[\w.-]+#)(\d{3,7})\b/i;
+// Issues and pull requests share one number space in a GitHub repository: where
+// keys are those numbers, only a word marks a number a pull request's (`PR #n`,
+// `pull request #n`, `/pull/n`); any other `#n` is an issue's (`parseIssueRefs`).
+const PR_MARKED_IN_BODY =
+  /(?:\/pull\/|\bPR\s+(?:[\w.-]+\/[\w.-]+)?#|\bpull request\s+(?:[\w.-]+\/[\w.-]+)?#)(\d{3,7})\b/i;
 
 /**
  * The PR a follow-up issue was raised on. The deferral protocol batches
@@ -165,12 +163,12 @@ const PR_IN_BODY =
  * durable key); a substantive one carries its origin in its description.
  * `null` when neither says.
  */
-export function originPrOf(issue: {
-  title: string;
-  description: string;
-}): number | null {
-  const t = PR_IN_TITLE.exec(issue.title);
-  const m = t ?? PR_IN_BODY.exec(issue.description);
+export function originPrOf(
+  issue: { title: string; description: string },
+  keys: IssueKeys | null = null,
+): number | null {
+  const body = keys?.sharesPullRequestNumbers ? PR_MARKED_IN_BODY : PR_IN_BODY;
+  const m = PR_IN_TITLE.exec(issue.title) ?? body.exec(issue.description);
   if (m === null) return null;
   const n = Number.parseInt(m[1] as string, 10);
   return Number.isSafeInteger(n) && n > 0 ? n : null;
@@ -229,7 +227,7 @@ export interface UnitsInput {
   acceptedEpics: ReadonlySet<string>;
 }
 
-function inWindow(iso: string | null, w: WindowSpec): boolean {
+export function inWindow(iso: string | null, w: WindowSpec): boolean {
   if (iso === null) return false;
   const ms = Date.parse(iso);
   return Number.isFinite(ms) && ms >= w.sinceMs && ms < w.untilMs;
@@ -522,6 +520,8 @@ export interface DepthDeps {
   ): Promise<{ issues: IssueFact[]; complete: boolean } | null>;
   /** The label a follow-up issue carries; default `follow-up`. */
   followupLabel?: string;
+  /** The tracker's key shape, which says how an origin PR is named. */
+  keys?: IssueKeys | null;
 }
 
 /**
@@ -577,7 +577,7 @@ export async function followupDepth(
     for (const issue of read.issues) {
       if (!issue.labels.includes(deps.followupLabel ?? DEFAULT_FOLLOWUP_LABEL))
         continue;
-      const origin = originPrOf(issue);
+      const origin = originPrOf(issue, deps.keys);
       if (origin === null) {
         originless = true;
         continue;

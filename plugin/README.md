@@ -14,14 +14,19 @@ step at all. Each repository keeps only its own values (its gate command,
 reviewer names, issue team) in one configuration file, which the skills read
 when they run.
 
-The skills come in groups, each in the order its skills are used. The
+The skills come in groups, each in the order its skills are used. The groups
+say what a skill is; for the order work takes through them, from steering to a
+closed epic, with the skill that owns each stage and the artifact it hands on,
+see the [lifecycle map](https://github.com/jig-harness/jig/blob/main/modules/M6-feature-delivery-pipeline/README.md#the-lifecycle-map),
+whose template a repository fills with its own owners. The
 last column says how a skill connects to the others: what starts it, what it
 runs, what it hands over to.
 
-**Deliver a change.** One item of work, from the tracker to a merged pull request. `do-item` opens the pull request and arms `drive-pr`, and `work-batch` does the same for several small issues closed in one pull request; `drive-pr` runs one `resolve-review-comments` pass per review round, works a conflict through `resolve-conflicts`, and repairs red CI in its own repair round; `fix-ci` is the repair by hand when no drive runs or its budget is spent. Each also works by hand.
+**Deliver a change.** One item of work, from the tracker to a merged pull request. `file-issue` puts the item on the tracker, labelled by the repository's label taxonomy; `do-item` opens the pull request and arms `drive-pr`, and `work-batch` does the same for several small issues closed in one pull request; `drive-pr` runs one `resolve-review-comments` pass per review round, works a conflict through `resolve-conflicts`, and repairs red CI in its own repair round; `fix-ci` is the repair by hand when no drive runs or its budget is spent. Each also works by hand.
 
 | Skill | What it does | Invoke as | Works with |
 |-------|--------------|-----------|------------|
+| [file-issue](skills/file-issue/README.md) | Files a new tracker issue from a discussion, or plans an existing one (re-labels it, splits it into sub-issues, records its relations): writes a durable issue body, derives the labels from the change's areas or its description, checks them against the repository's label taxonomy, and searches for a duplicate before anything is written | `/jig:file-issue` | Writes through [do-item](skills/do-item/SKILL.md)'s tracker scripts, and files what do-item and [work-batch](skills/work-batch/README.md) later pick up; derives labels from [change-areas](skills/change-areas/README.md); holds the label-taxonomy lint and the label validator |
 | [do-item](skills/do-item/SKILL.md) | Picks up one work item from whatever the tracker adapter reads (an issue tracker today, a plan file in future), routes it to the right agent, implements it, opens a pull request as the repository's pull-request policy says and starts `drive-pr` on it | `/jig:do-item` | Starts [drive-pr](skills/drive-pr/README.md) on the pull request it opens; runs its own pre-pull-request review in the same tiers as [review](skills/review/SKILL.md), plus each review skill its declared gates name; escalates a dilemma to [decide](skills/decide/SKILL.md) |
 | [work-batch](skills/work-batch/README.md) | Groups several small, independent issues from one area of the code into one pull request, one commit each: proposes a ranked batch within a point budget, holds back every issue a sensitivity flag makes solo-only, claims the batch, opens the pull request and drives it once; after the merge, closes out every issue in it | `/jig:work-batch` | The batched form of [do-item](skills/do-item/SKILL.md), whose batch check suggests it; opens the pull request under do-item's pull-request policy and starts [drive-pr](skills/drive-pr/README.md) on it |
 | [drive-pr](skills/drive-pr/README.md) | Runs a pull request's review rounds unattended until it reaches one named end state (converged, waiting on a human, conflicting, …); each round is a fresh agent process, so a long drive never depends on one session surviving | `/jig:drive-pr` | Started by [do-item](skills/do-item/SKILL.md); runs [resolve-review-comments](skills/resolve-review-comments/README.md) every review round; calls [resolve-conflicts](skills/resolve-conflicts/SKILL.md) when the branch conflicts; repairs red CI in its own repair round, with the repository's CI-repair skill if it has one |
@@ -44,7 +49,7 @@ runs, what it hands over to.
 | [explain](skills/explain/SKILL.md) | Writes a cited, commit-dated explainer sheet (HTML and Markdown) of how part of the system works today | `/jig:explain` | Comes before [decide](skills/decide/SKILL.md) and shares its sheet kit; cites the records [adr](skills/adr/SKILL.md) keeps |
 | [decide](skills/decide/SKILL.md) | Settles a technical dilemma: searches the repository's precedent first, then rules or escalates to a human with a cited decision sheet | `/jig:decide` | Called by [do-item](skills/do-item/SKILL.md) and [resolve-review-comments](skills/resolve-review-comments/README.md) when a call is architectural; routes an outcome that clears the bar to [adr](skills/adr/SKILL.md) |
 | [adr](skills/adr/SKILL.md) | Creates, updates and checks architecture decision records and the machine-readable rules derived from them | `/jig:adr` | Records what [decide](skills/decide/SKILL.md) rules; its rules are what [review](skills/review/SKILL.md) checks against |
-| [design-brief-builder](skills/design-brief-builder/SKILL.md) | Assembles the numbered brief bundle for a session with an external design tool (Claude Design, so far), grounded in the repository's real schema and code | `/jig:design-brief-builder` | Stands alone: the design-prototype station, ahead of the delivery skills |
+| [design-brief-builder](skills/design-brief-builder/SKILL.md) | Assembles the numbered brief bundle for an external design session (Claude Design, so far), then merges and checks the returned bundle | `/jig:design-brief-builder` | Stands alone: the design-prototype station, ahead of the delivery skills |
 
 **Learn from the work.** What a session learned about the scaffolding goes into a shared store; a person approves what changes; lasting lessons end up in the repository's own documents.
 
@@ -72,6 +77,7 @@ that a skill hands a narrow job to):
 | [review-arbiter](agents/review-arbiter.md) | Rules on contested review findings the triage rubric cannot settle (fix now, reject, won't fix, defer or escalate to a human); reads code, never edits | `jig:review-arbiter` (Claude Code; see [Codex notes](#codex-notes)) |
 
 Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
+[machine resource collection](#machine-resource-collection) ·
 [requirements](#requirements) ·
 [install](#install-the-plugin) · [use](#use-a-skill) ·
 [configure a repository](#configure-a-repository) ·
@@ -85,6 +91,22 @@ Contents: [set up from an agent session](#set-up-from-an-agent-session) ·
 [release](#releases) ·
 [moving from the `groundwork` plugin](#moving-from-the-groundwork-plugin) ·
 [moving off the per-worktree installer](#moving-off-the-per-worktree-installer)
+
+## Machine resource collection
+
+The plugin also ships `jig gc`, a command-line tool that reports registered
+machine-local leftovers and writes a receipt. Run it with trusted Bun startup:
+
+```sh
+bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts gc
+```
+
+Replace `<plugin>` with the absolute installed plugin path. `gc install`
+previews the repository bounds and daily scheduler; `--yes` confirms them.
+Collecting runs use the install-recorded base declaration and stay within
+the confirmed bounds. See [resource collection](gc/README.md) for supported
+kinds and collection limits, and [configuration](CONFIGURATION.md#gc) for
+both configuration layers.
 
 ## Set up from an agent session
 
@@ -142,21 +164,25 @@ the new session, run the audit: `/jig:audit` in Claude Code, or ask for the
 |------|---------|------------|
 | **Claude Code** and/or a **Codex CLI** with plugin support | Claude Code 2.1.292 or later for the one-step install below (older: the two-step install), and 2.1.285 or later for a drive's [long background commands](skills/drive-pr/README.md#the-background-time-limit). Codex: tested with 0.159 | Every skill. Either tool is enough; install for each one you use |
 | **[Bun](https://bun.sh)** on `PATH` | The version in [mise.toml](https://github.com/jig-harness/jig/blob/main/mise.toml), which Jig tests; an older Bun may lack an API a script uses | Every skill's scripts, which are TypeScript run by Bun. The repository being worked on needs no Bun of its own |
-| **git** | 2.36 or later (`--path-format` for absolute paths and `git worktree list -z`; `resolve-conflicts` needs 2.40 to reconstruct automatic merge results, and its history report 2.43, or 2.45 in a partial clone) | Every skill that reads the repository |
+| **git** | 2.36 or later (`--path-format` for absolute paths and `git worktree list -z`; `resolve-conflicts` needs 2.41, to reconstruct automatic merge results and read attributes from the index with `--attr-source`, and its history report 2.43, or 2.45 in a partial clone) | Every skill that reads the repository |
 | **GitHub CLI** (`gh`), signed in with access to the repositories you work on | 2.48 or later (`gh api --slurp`) | Every skill that works on pull requests. Jig supports GitHub as its only forge ([extending](EXTENDING.md#forge-github)) |
 | **The `gh-stack` extension** | Any | Only `pull_requests.stacking: native` |
-| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in |
+| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the default GitHub adapter, the signed-in `gh` above and nothing more. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in |
 
 Most skills do not check these versions when they run: an older tool fails
 on the command it lacks. The `resolve-conflicts` history report is the
 exception: it checks git's version first, and refuses an older git, or a
 partial clone on a git that cannot be kept from fetching.
 
-- **macOS or Linux for `drive-pr` and `do-item`.** The driver supervises
-  agent processes through [POSIX](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) process groups and
-  signals, so it does not run on Windows, and `do-item` is not tested there.
-  The other skills run on all three systems
-  ([operating systems](EXTENDING.md#operating-systems)).
+- **macOS, Linux and Windows, including PowerShell.** Skill commands use
+  Bun with plain arguments. Shell composition and generated input are handled
+  inside scripts; commands that read generated text take a file argument.
+  Git Bash is optional for the skills' own commands. A consumer's configured
+  setup or check command still needs its own runtime and tools. Native Windows
+  tests run in CI, but the complete authenticated
+  pickup → draft pull request → drive round → stop smoke test, under Claude
+  Code and under Codex with PowerShell, is still pending. See [drive-pr](skills/drive-pr/README.md) and
+  [do-item](skills/do-item/README.md) for the current validation limits.
 
 ## Install the plugin
 
@@ -347,7 +373,10 @@ plugin's. Delete such a copy when you adopt the plugin's version.
 
 `drive-pr` and `do-item` read the same configuration file as the review
 skill. Every field below has a default except `issue_tracker.team`, which the
-tracker scripts require. A drive does not need an AI reviewer: without one it
+tracker scripts require on Linear (`issue_tracker.adapter: linear`); on GitHub
+Issues, the default, the key is the repository's own
+(`issue_tracker.github.repository`, by default the `origin` remote's), so no
+team is set. A drive does not need an AI reviewer: without one it
 converges on review threads and CI alone. A repository that has one names it
 with `review.reviewer_app` (or `review.reviewer_check_pattern`), and the drive
 then also waits for the check run, sticky comment and reviewed-commit marker
@@ -380,9 +409,10 @@ ci:
   required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires
   hold_label: ci:hold         # label your workflows honour to skip heavy jobs between review rounds; default: none (every push runs full CI)
 issue_tracker:
-  team: ENG                   # issue-tracker team key; required by the tracker scripts
-  adapter: linear             # which tracker adapter to use; Linear is the only one today
-  file_command: "linear issue create"   # how an agent files an issue by hand
+  adapter: github             # which tracker adapter to use: github (GitHub Issues, the default) or linear
+  # team: ENG                 # Linear only: its team key, required by the Linear adapter
+  file_command: /jig:file-issue   # how an agent files an issue by hand
+  taxonomy: label-taxonomy.yaml   # the label taxonomy file-issue validates against; default label-taxonomy.yaml
   states:                     # the tracker's own names for the workflow states
     backlog: Backlog
     todo: Todo
@@ -432,7 +462,9 @@ review rounds (see the [drive-pr README](skills/drive-pr/README.md#ci-hold)).
 leases (a [lease](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is a short-lived claim that one session owns the pull
 request's threads) outside the repository, in a per-clone folder:
 `~/.local/state/jig/drive-pr/<clone>/` by default. Set
-`DRIVE_PR_STATE_DIR` to move it; to move existing state into another folder,
+`DRIVE_PR_STATE_DIR` to relocate its parent root, retaining one `<clone>/`
+subdirectory per clone. Existing flat overrides refuse until their artifacts'
+owners are established and their state explicitly relocated. To move existing state into another folder,
 run `bun <skill-dir>/scripts/migrate-state-dir.ts --from <old-dir>` (see the
 [drive-pr README](skills/drive-pr/README.md#relocating-the-state-dir)). The
 [verification-fit](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) log (the agent's recorded verdicts on whether each round's
@@ -443,9 +475,11 @@ folder too; `JIG_VERIFICATION_FIT_LOG` overrides it.
 the tracker only through a small [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (read an issue with its
 comments, list its children, change its state, post a comment, run the
 reports' queries). An *adapter* implements that interface for one tracker;
-`issue_tracker.adapter` chooses it, and Linear is the only adapter today.
+`issue_tracker.adapter` chooses it: `github` for GitHub Issues (the default), or `linear`.
 `issue_tracker.states` translates the skills' state names (`in_progress`,
-`done`, …) into the tracker's own. Supporting another tracker means adding an
+`done`, …) into the tracker's own; on GitHub Issues an open state is a label
+or a Projects board's option, and a closed one the reason the issue was
+closed ([`issue_tracker.github`](CONFIGURATION.md#issue_tracker)). Supporting another tracker means adding an
 adapter, not changing the skills.
 
 The remaining knobs are environment variables named `DRIVE_PR_*` (round
@@ -811,7 +845,9 @@ ignored without a notice, so each of them has to be moved by hand:
    `codex plugin marketplace remove groundwork`.
 3. To keep the history of the drives' state, move it:
    `bun <drive-pr skill>/scripts/migrate-state-dir.ts --from ~/.local/state/groundwork/drive-pr`.
-   A machine that sets `DRIVE_PR_STATE_DIR` has nothing to move.
+   An override already containing per-clone directories needs no move for this
+   rename. A flat `DRIVE_PR_STATE_DIR` still needs the explicit relocation in
+   the [drive-pr README](skills/drive-pr/README.md#relocating-the-state-dir).
 4. Rename any `GROUNDWORK_*` variables in shell profiles, launch agents and
    CI configuration to `JIG_*`.
 

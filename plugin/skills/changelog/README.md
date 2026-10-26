@@ -223,8 +223,7 @@ lists; setup does both with you.
 
 Only where the repository turned the skill on, as its integration branch holds
 the configuration: each asks first through a command that reads the base's
-configuration rather than the branch's own (`check.ts`, or `convert.ts
---dry-run` for `resolve-conflicts`, which converts before merging), so a
+configuration rather than the branch's own (`check.ts`, or `bun "<skill-dir>/scripts/convert.ts" --dry-run` for `resolve-conflicts`, which converts before merging), so a
 branch that predates the adoption is asked too.
 `do-item` writes the note before it opens the pull request and runs the check
 with the other gates; `drive-pr` and `resolve-review-comments` update the note in

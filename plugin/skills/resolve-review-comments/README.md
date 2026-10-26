@@ -1,5 +1,10 @@
 # Resolve review comments
 
+Run these commands in Bash or PowerShell with Bun and GitHub CLI available
+to the command tool. The thread enumerator collects and labels results
+internally, stopping on either failure. Write reply bodies to files and pass
+`--body-file`; the script preserves their text verbatim.
+
 Review feedback should end in a clear decision, with fixes verified before a
 thread closes. Without a shared procedure, agents can reply to the wrong thread,
 close a finding before its fix reaches the pull request, or stop while a reviewer
@@ -217,6 +222,41 @@ present but unreadable or incomplete sibling integration fails visibly. Without
 that sibling's summary parser, convergence covers inline review threads and
 reviewer checks; inspect reviewer summary comments before declaring the entire
 PR ready. No convergence exit marks a PR ready or merges it.
+
+## Code scanning alerts
+
+A static-analysis tool that reports to GitHub code scanning (CodeQL,
+SonarQube Cloud through its GitHub integration, Semgrep and others) shows its
+findings on a pull request as review threads, which the loop works like any
+reviewer's. Each such thread stands for a
+[code scanning alert](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md),
+and resolving the thread does not close the alert: an open alert keeps the
+tool's check failing and reopens on the default branch after the merge. So
+the listing attaches the alert to its thread, its severity and whether it is
+a security finding included, and an outcome that leaves the code as it is
+dismisses the alert with the matching reason (`scripts/dismiss-alert.ts`):
+`rejected` as a false positive or as used in tests, `wont-fix` and
+`deferred` as won't fix. A fix needs no dismissal: the tool closes the alert
+when it next analyses the pushed head. The tool's own record follows the
+dismissal where it syncs with GitHub, as SonarQube Cloud does.
+
+Dismissing needs a token allowed to write security events; reading the alert
+needs one allowed to read them. Without the first, the thread is answered and
+left open, and the alert is reported for a person to dismiss; under
+`drive-pr`, whose replied-thread sweep does not read alerts, the next sweep
+resolves that thread, so the report is the alert's only trace. Without the
+second, the thread still lists, with an unknown severity. The alert's state is
+read on the pull request, from every analysis of its current revision, since an
+alert fixed on the default branch, or in one of several analysis
+configurations, can still be open there. One configuration's analysis of the
+latest push that still finds the alert is enough to read it as open and
+dismiss it; reading it as fixed or closed takes an analysis of the latest
+push from every configuration, and until there is one of either, the state is
+unknown and nothing is dismissed. A summary comment a
+tool posts beside its alerts (SonarQube Cloud's quality gate, for one) is not
+a thread, and the loop does not read it; a quality gate that fails on
+something other than its alerts, such as coverage, is a failing check for
+the person or the drive that owns CI.
 
 ## Platform support
 

@@ -43,7 +43,7 @@ applies the rule, so do not judge it by eye. `<skill-dir>` is the directory of
 the `decide` skill (`${CLAUDE_SKILL_DIR}` in `SKILL.md`):
 
 ```bash
-bun <skill-dir>/scripts/decision-sheet/decision-sheet.ts trigger --facets technical,product --options 4
+bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" trigger --facets technical,product --options 4
 # {"sheet":true,"reasons":["2 stakeholder facets","a call with 4 options"]}
 ```
 
@@ -60,10 +60,11 @@ subagent tokens and 30 to 45 minutes. That cost is why the threshold exists.
 ## The decision source
 
 Write the source as JSON with `"schema": "decision-sheet/v1"`. Keep the
-working copy in `.context/decide/<issue-key>/decision.json` (keep `.context/`
-out of version control). The rendered sheet
-embeds the source, so the attachment is the durable copy. The typed shape is
-`scripts/decision-sheet/source.ts`. Its validator rejects unknown fields, so
+working copy in `.context/decide/<stem>/decision.json` (keep `.context/`
+out of version control), where `<stem>` is the issue key's file name: the
+key itself on Linear (`ENG-123`), `issue-123` for `#123` on GitHub Issues.
+The rendered sheet embeds the source, so the attachment is the durable
+copy. The typed shape is `scripts/decision-sheet/source.ts`. Its validator rejects unknown fields, so
 a misspelt field fails loudly instead of dropping a claim.
 
 | Field | What it holds |
@@ -71,7 +72,7 @@ a misspelt field fails loudly instead of dropping a claim.
 | `id`, `url`, `title` | The issue key and URL of the issue that carries the call, and the question as a title |
 | `owners` | The `hitl:<stakeholder>` facets, without the prefix (`technical`, `product`) |
 | `priority`, `reversibility` | Title-block fields. Reversibility says what can be undone and what cannot |
-| `verifiedAt` | `{ date, commit }`: the day and the commit at which the facts were checked |
+| `verifiedAt` | `{ date, commit, repositories? }`: the day and the commit at which the facts were checked. `repositories` maps the name of each other repository the sheet cites to the commit its facts were checked at (see [Cite another repository](#cite-another-repository)) |
 | `question` | The question in canonical vocabulary |
 | `currentBehaviour` | What the system does now. Each claim has a `source`: a repository-rooted path (`path#symbol`, `path:12-40`), an issue or an ADR |
 | `settled` | Optional. Ground that is already decided and is not reopened |
@@ -133,10 +134,12 @@ start a sentence with it.
   title, a name, a tag, a label, a citation, a glossary term or meaning, the
   priority or the reversibility. In a source with one call, `{call:c}` has no
   target, so it is rejected too: use `{opt:N}`.
-- An issue key with the sheet's own team prefix (`ENG-123` on a sheet whose
-  `id` is `ENG-…`) is still found by its pattern, because that shape is
-  unambiguous. It links to the issue on the document sheet, built from the
-  sheet's `url` (a tracker URL whose path holds `/issue/<KEY>`).
+- An issue key of the sheet's own tracker is still found by its pattern,
+  because that shape is unambiguous: on Linear a key with the sheet's team
+  prefix (`ENG-123` on a sheet whose `id` is `ENG-…`), on GitHub Issues a
+  `#123` of the sheet's repository. It links to the issue on the document
+  sheet, built from the sheet's `url`: a tracker URL whose path holds
+  `/issue/<KEY>`, or a GitHub issue's `https://github.com/<owner>/<name>/issues/<n>`.
 - A source without tokens still renders. It has no option links.
 
 ## Choose the layout
@@ -164,15 +167,15 @@ pick for a ruled call.
 ## Render and check
 
 ```bash
-bun <skill-dir>/scripts/decision-sheet/decision-sheet.ts render .context/decide/ENG-123/decision.json --require-fresh
-bun <skill-dir>/scripts/ste-lint/ste-lint.ts .context/decide/ENG-123/ENG-123-comment.md .context/decide/ENG-123/ENG-123-elaboration.md
+bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" render .context/decide/<stem>/decision.json --require-fresh
+bun "<skill-dir>/scripts/ste-lint/ste-lint.ts" .context/decide/<stem>/<stem>-comment.md .context/decide/<stem>/<stem>-elaboration.md
 ```
 
 `render` takes `--template compact|document` and defaults to `document`.
-It writes three files: `<id>-decision-sheet.html`, `<id>-comment.md` and
-`<id>-elaboration.md`. They go to
-`.context/decide/<id>/` at the repository root, where `<id>` is the source's
-`id`, or to the directory that `--out` names. It prints a summary with the
+It writes three files: `<stem>-decision-sheet.html`, `<stem>-comment.md` and
+`<stem>-elaboration.md`. They go to
+`.context/decide/<stem>/` at the repository root, where `<stem>` is the file
+name of the source's `id`, or to the directory that `--out` names. It prints a summary with the
 template, the trigger result, the freshness result and the attachment fields to
 upload.
 
@@ -199,6 +202,58 @@ Re-verify each claim that cites a changed file, update `verifiedAt`, and
 render again. The guard knows that a file changed. It cannot know whether a
 claim is still true. Only a reader can check that.
 
+### Cite another repository
+
+A sheet whose facts span several repositories qualifies each citation of
+another repository with that repository's name: `beta:apps/api/auth.ts#check`,
+`beta:apps/api/auth.ts:12-40` or `beta:ADR-0002`. The name is lowercase
+(letters, digits, `-` and `_`, starting with a letter) and is followed by a
+colon and then a path or an ADR, never an issue key. A path may start with a
+digit (`beta:2026/auth.ts`, `beta:2026.10/auth.ts`); a number alone after the colon is a line suffix
+(`file.ts:12`), never a qualifier. In backticks the name goes inside
+them, and the path there may contain spaces, even in a first segment
+that starts with a digit:
+`` `beta:.run/Backend Dev.run.xml` ``, `` `beta:2026 Auth.ts` ``. An unqualified citation always
+means the repository the guard runs in, so two repositories that both number
+their ADRs from `ADR-0001` never read each other's file.
+
+Each qualified name needs two things, or the source is refused:
+
+- A commit in `verifiedAt.repositories`, because a commit of this repository
+  says nothing about another one's history:
+
+  ```json
+  "verifiedAt": {
+    "date": "2026-10-20",
+    "commit": "4f2a9c1",
+    "repositories": { "beta": "9be01d7" }
+  }
+  ```
+
+- A clone, configured in `.config/jig.yaml` under `sheets.repositories`
+  ([CONFIGURATION.md](../../../CONFIGURATION.md#procedure-skills)), as a path
+  relative to this repository's root or absolute. The clone must hold the
+  recorded commit and be current, since the guard compares each cited file
+  at that commit with the clone's working tree.
+
+  ```yaml
+  sheets:
+    repositories:
+      beta: ../beta
+  ```
+
+A qualified citation whose name has no recorded commit, and a `name:` placed
+like a qualifier that the rules above do not accept (`Beta:ADR-0002`,
+`beta:ENG-123`, `beta:` outside the backticks), make the source invalid:
+`validate` and `render` both refuse it with exit code `1`, as for any other
+source error. A name with no configured clone, a clone that is missing or is
+not the top of a git clone, and a recorded commit the clone lacks fail
+`validate` (it checks the clone only inside a git checkout) and make
+`render --require-fresh` exit `3`. Changed and unresolved files of another
+repository are listed with their qualifier. An unqualified path that is not in
+this repository stays unresolved and blocks `--require-fresh`; qualify it, or
+cite it by name in the prose, which the guard does not check.
+
 Fix each linter flag in the source, not in the rendered file, and render
 again.
 
@@ -215,9 +270,9 @@ order and the checks and use its equivalent calls.
 
 1. Call `mcp__linear__prepare_attachment_upload` with `issue`, `filename`,
    `contentType`, `size`, `title` and `subtitle`.
-2. Upload the bytes within 60 seconds. Send every header in
-   `uploadRequest.headers` exactly as it was returned:
-   `curl -sSf -X PUT --data-binary @<sheet.html> -H '<name>: <value>' … '<uploadRequest.url>'`.
+2. Upload the bytes to `uploadRequest.url` within 60 seconds, using the
+   harness's HTTP client with method `PUT`. Send every header in
+   `uploadRequest.headers` exactly as it was returned.
 3. Call `mcp__linear__create_attachment_from_upload` with `issue`,
    `assetUrl`, `title` and `subtitle`. Note the new attachment id. If the
    call fails, for example with a 502, call `mcp__linear__get_issue` first.
@@ -225,10 +280,10 @@ order and the checks and use its equivalent calls.
    `assetUrl`: a retry with the same `assetUrl` has succeeded after a 502.
 4. Call `mcp__linear__get_issue` for the issue. Write its result to a file
    and pass it to
-   `bun <skill-dir>/scripts/decision-sheet/decision-sheet.ts stale-attachments --keep <new-id> < issue.json`.
+   `bun "<skill-dir>/../../shared/command.ts" --stdin-file issue.json -- bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" stale-attachments --keep <new-id>`.
    Delete each id that it prints with `mcp__linear__delete_attachment`. The
    script refuses if the new attachment is not on the issue.
-5. Post `<id>-comment.md` as a comment on the issue (`SKILL.md` § Tracker
+5. Post `<stem>-comment.md` as a comment on the issue (`SKILL.md` § Tracker
    operations).
 
 A tracker such as Linear serves an attachment as a download. The comment
@@ -244,19 +299,18 @@ example, as above):
 1. Call `mcp__linear__get_issue` and find the attachment whose title starts
    with `Decision sheet: `. Call `mcp__linear__get_attachment` with its `id`
    and `format: "url"`. The URL is signed for five minutes. Download it at
-   once: `curl -sSfL -o current.html '<url>'`.
-2. Recover its source and its layout. Create the directory first: a fresh
-   session has no `.context/decide/<issue-key>/`, and the shell opens the
-   redirect target before `extract` runs:
-   `mkdir -p .context/decide/ENG-123 && bun <skill-dir>/scripts/decision-sheet/decision-sheet.ts extract current.html > .context/decide/ENG-123/decision.json`.
+   once with the harness's download tool, saving it as `current.html`.
+2. Recover its source and its layout. Create `.context/decide/<stem>/`
+   with the file-writing tool first, then save the extracted source:
+   `bun "<skill-dir>/../../shared/command.ts" --stdout-file .context/decide/<stem>/decision.json -- bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" extract current.html`.
    Then read the layout of the posted sheet:
-   `bun <skill-dir>/scripts/decision-sheet/decision-sheet.ts template current.html`.
+   `bun "<skill-dir>/scripts/decision-sheet/decision-sheet.ts" template current.html`.
    It prints `compact` or `document`.
 3. Add `ruling` to the call that was decided:
    `{ "option": "<id>", "recordUrl": "<link to the human-decided comment>", "ruledAt": "YYYY-MM-DD" }`.
    Do not change the other calls. Open calls stay open.
 4. Render with `--require-fresh` and the same `--template` that step 2 printed
-   (`--template "$(bun <skill-dir>/scripts/decision-sheet/decision-sheet.ts template current.html)"`),
+   (`--template <layout>`, substituting the printed `compact` or `document`),
    and post as in [Post the sheet](#post-the-sheet), but skip step 5. The
    `human-decided` record is the comment for this change. Attachment
    replacement finds the old sheet by its title, so it works whatever layout

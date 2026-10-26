@@ -60,14 +60,15 @@ hook or the interface instead.
 | --- | --- | --- | --- |
 | Local checks, generators, lints | Any command | [A command](#commands-a-repository-supplies) | — |
 | Review skills, implementing agents, scouts | The repository's own | [Configuration](#the-repositorys-own-skills-and-agents) | — |
-| Issue tracker | Linear | [A tracker adapter](#issue-tracker) in Jig | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12 |
-| Reflection store | A folder of files, a Notion database, or any command | [A store command](#reflection-stores), no change to Jig | Jira: roadmap, later |
-| AI reviewer | Any bot, by login, app and check name; finding severities from CodeRabbit, Greptile, the Codex connector, Jig's own finding format, or any reviewer [configured](#severity-formats) | [Configuration](#ai-reviewers) | — |
+| Issue tracker | GitHub Issues (the default); Linear | [A tracker adapter](#issue-tracker) in Jig | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12 |
+| Reflection store | A folder of files, a Notion database, a GitHub repository's issues, or any command | [A store command](#reflection-stores), no change to Jig | Jira: roadmap, later |
+| AI reviewer | Any bot, by login, app and check name; finding severities from CodeRabbit, Greptile, the Codex connector, Jig's own finding format, or any reviewer [configured](#severity-formats); GitHub code scanning alerts from any tool, SonarQube Cloud's included | [Configuration](#ai-reviewers) | — |
 | Forge (where pull requests live) | GitHub, through the `gh` command | — | [No forge interface yet](#forge-github): roadmap, later |
 | CI system | Any CI that reports checks to GitHub | `ci.required_checks`; `fix-ci --log` | [Log download and workflow review](#ci-system) are GitHub Actions only |
 | Git remote | `origin` | — | Roadmap item 10 |
 | Agent tool | Claude Code, Codex | [Copying the skills](#agent-tools) for any other | — |
-| Workspace launcher | Linear and Conductor, on macOS | [A provider](#workspace-launcher) in Jig | Herdr provider, the primary target: roadmap item 19 |
+| Workspace launcher | Linear; Herdr (the primary target) on macOS and Linux, locally or on a host over SSH; Conductor on macOS | [A provider](#workspace-launcher) in Jig | — |
+| Workspace runtime | Herdr, through the [workspace tool](https://github.com/jig-harness/jig/blob/main/tools/herdr/README.md) and its plugin; any runtime that creates worktrees and starts sessions, for the skills | M12's [hook points](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md) | — |
 | Operating system | macOS and Linux; Windows for most skills | — | [`drive-pr`, `do-item` and the launcher](#operating-systems) |
 | The repository's language and stack | Any | Practice mappings; Bun runs Jig's tools only | — |
 
@@ -122,58 +123,107 @@ named in configuration:
 **Interface.** The skills reach the tracker through the
 [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), defined in
 [`do-item/scripts/lib/tracker/port.ts`](skills/do-item/scripts/lib/tracker/port.ts):
-read an issue with its comments and children, move it to a workflow state,
-comment, and the reads that delivery metrics and batch proposals need. States
+check that the tracker answers for the team or repository (the audit's
+reachability probe, which reads no issue), read an issue with its comments and children, move it to a workflow state,
+comment, file an issue, change its fields and labels, search this team's
+issues, read and add relations between issues, list the labels an issue can
+carry, read whether an item is open (`tracker.ts issue-states`, which M4's
+scheduled [deferral check](https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/reference/deferral-references/README.md)
+uses), and the reads that delivery metrics and batch proposals need. Labels
+and projects are given by name and a parent by its key; the adapter resolves
+each to exactly one tracker resource or refuses before writing. A skill's
+procedure runs the issue operations as commands of
+[`do-item/scripts/tracker.ts`](skills/do-item/scripts/tracker.ts). States
 are named by canonical keys (`in_progress`, `in_review`, …) that
 `issue_tracker.states` maps to the tracker's own names.
 
-**Implementations.** Linear
-([`linear.ts`](skills/do-item/scripts/lib/tracker/linear.ts)), the default
-for `issue_tracker.adapter`. It reads `LINEAR_API_KEY` or
-`LINEAR_API_TOKEN`, or uses a signed-in `linear` command.
+**Implementations.**
+
+- **GitHub Issues** (`github`, the default for `issue_tracker.adapter`;
+  [`github/`](skills/do-item/scripts/lib/tracker/github/tracker.ts)), the
+  issues of one repository (`issue_tracker.github.repository`, else the
+  `origin` remote's). It uses the signed-in `gh` command-line client. Keys
+  are `#<n>`; a key of another repository (a sub-issue or a blocker may live
+  elsewhere) is `owner/name#<n>`. How the interface's vocabulary maps onto
+  GitHub:
+  - closed states are the reason an issue was closed: completed is `done`,
+    not planned is `canceled`, duplicate is `duplicate`; open states are a
+    label per state (`issue_tracker.github.states_from: labels`, the
+    default) or the option of a Projects board's single-select field
+    (`project`); `todo` is the state with no label;
+  - priority is a label per level (`issue_tracker.github.priority_labels`),
+    and a project is a milestone;
+  - parent and children are sub-issues, `blocks` is GitHub's issue
+    dependency, `duplicate` closes the issue as a duplicate of the other;
+    GitHub has no `related` link, so each issue gets a comment naming the
+    other, with a marker the adapter reads back from comments by people who
+    can write to the repository (the same rule makes a comment trusted);
+  - the reports read the repository's issue list rather than GitHub's
+    search, which returns at most 1,000 matches; text search for duplicates
+    uses the search and refuses a result it cannot return in full. GitHub
+    does not record when an issue started, so the stuck-epic census dates it
+    no earlier than its real start (the time its state label was added, or
+    its board item last changed).
+
+- **Linear** ([`linear.ts`](skills/do-item/scripts/lib/tracker/linear.ts)),
+  the adapter `issue_tracker.adapter: linear` selects. It reads `LINEAR_API_KEY` or
+  `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client.
+  Keys are `<TEAM>-<n>`, with the team from `issue_tracker.team`.
 
 **To add one.** Implement the `Tracker` interface in a module beside
 `linear.ts`, register it in `ADAPTERS` in
-[`index.ts`](skills/do-item/scripts/lib/tracker/index.ts), add its name to
-`issue_tracker.adapter`'s values in the audit's
+[`index.ts`](skills/do-item/scripts/lib/tracker/index.ts), give its key
+shape an entry in [`keys.ts`](skills/do-item/scripts/lib/tracker/keys.ts),
+add its name to `issue_tracker.adapter`'s values in the audit's
 [configuration schema](skills/audit/config-schema.yaml) and in
 [CONFIGURATION.md](CONFIGURATION.md#issue_tracker), and test it as
-`tracker.test.ts` tests the Linear adapter, against a fake of the tracker's
-interface. Callers do not change. The interface's vocabulary was shaped
-by Linear, so an adapter maps its tracker onto it:
+`tracker.test.ts` and `tracker-github.test.ts` test the built adapters,
+against a fake of the tracker's interface. Callers do not change. An
+adapter maps its tracker onto the interface's vocabulary:
 
-- issue keys are `<TEAM>-<number>`, with the team from `issue_tracker.team`;
+- an issue key has the shape the adapter's `keys.ts` entry defines; every
+  caller that finds a key in text, reads one from a branch name or names a
+  file after one goes through that entry;
 - priority is a number from 0 (none) to 4 (low);
+- relations are directed and read from each issue's side: `relate A blocks
+  B` makes B wait for A, and B reads it as `blocked_by` A; `relate A
+  duplicate B` records A as the duplicate of B (the tracker may close A),
+  and B reads it as `duplicated_by` A; `related` has no direction;
 - a finished issue's workflow state belongs to one of the closed categories
   the metrics count (completed, canceled, duplicate); active states such as
   `in_progress` and `in_review` belong to none of them.
-
-A tracker whose identifiers have no team part (GitHub Issues' `#123`) needs
-the key format opened up first.
 
 **What still assumes Linear.** These bypass the interface today, so a
 second adapter does not yet reach them:
 
 - **Deferring review findings.** `resolve-review-comments` files deferred
   findings through its own Linear client (`defer-batch.ts`), with fixed type
-  and repository label groups.
-- **Operations the interface does not have.** Creating an issue, searching
-  open issues, adding labels and attaching a file. Where a skill needs one
-  (`decide` escalating, `decide` and `explain` attaching a sheet, `do-item`
-  where no script covers a step), its instructions name the Linear MCP
-  tools or the `linear` command.
-- **Response shapes.** `do-item`'s parent-status reconciliation reads the
-  shape of Linear's own answers.
+  and repository label groups; with GitHub Issues as the tracker, the
+  default, deferred findings cannot be filed yet.
+- **Operations the interface does not have.** Attaching a file. Where a
+  skill needs it (`decide` and `explain` attaching a sheet), its
+  instructions name the Linear MCP tools or the `linear` command.
+- **Skill instructions not yet moved.** `decide` escalating and `do-item`
+  where no script covers a step still name the Linear MCP tools in their
+  instructions as the native form; the script forms work on every adapter.
+- **Response shapes.** `do-item`'s parent-status reconciliation, on its
+  native path, reads the shape of Linear's own answers; its script path
+  works on every adapter.
 - **Names.** The review-triage file's `severity_mapping.<severity>.linear_priority`;
   `fractal-metrics.ts --skip-linear`; the change-area catalog still accepts
   the older `linear:` block beside `tracker:`.
 - **The launcher**, which has a tracker interface of its own
-  ([below](#workspace-launcher)).
+  ([below](#workspace-launcher)), and opens Linear issues only.
 
-Fixing it means adding the missing operations to the interface, moving the
+A repository gate (`scripts/check-tracker-boundary.ts` in Jig's own
+repository) keeps the rest of the plugin's code, and the planning skills'
+procedures, from reaching Linear except through the interface; the deferral
+step is the one file it still allows.
+
+Fixing it means adding file attachment to the interface, moving the
 deferral step and the skills' instructions onto it, and renaming the
 Linear-named fields with their old names still read. Roadmap item 10 holds
-the deferral step and the names; item 12 holds the operations and the next
+the deferral step and the names; item 12 holds the next
 adapters (Jira, and a plan file kept in the repository), behind open
 decisions: the plan file's format, and whether an adapter may leave out the
 reporting operations.
@@ -189,7 +239,8 @@ machine, or a whole team, writes to
   [JSONL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) on standard input, writes it on standard output,
   and exits 0 (done), 1 (failed), 2 (usage) or 3 (unavailable).
 - **The stores.** `filesystem`, a folder of files and the default;
-  `notion`, a Notion database people browse and filter; and `command`, any
+  `notion`, a Notion database people browse and filter; `github`, one issue
+  per change in a GitHub repository the team chooses; and `command`, any
   command that keeps the contract. A Jira store is planned for later.
 - **To add one.** Write a command in any language that keeps the contract,
   run the conformance suite (`store-contract.ts`) against it, and choose it
@@ -207,6 +258,15 @@ comment are the reviewer's evidence ([fields](CONFIGURATION.md#review)). The
 drive expects a reviewer only where `review.reviewer_app` or
 `review.reviewer_check_pattern` is set; a repository with neither converges on
 threads and CI alone.
+
+Static-analysis tools that report to GitHub code scanning (CodeQL,
+SonarQube Cloud, Semgrep, any tool that uploads results) need no
+configuration: the review loop recognises a thread GitHub opened for a
+code scanning alert, reads the finding's severity from the alert, and
+dismisses the alert when it declines the finding
+([code scanning alerts](skills/resolve-review-comments/README.md#code-scanning-alerts)).
+A tool that reports only through a check's annotations, or only in a summary
+comment, raises no thread, so the loop does not see its findings.
 
 ### Severity formats
 
@@ -300,9 +360,9 @@ its `glab` command, is the nearest). In `drive-pr`,
 two helpers that add timeouts and caching, which is where the interface
 starts; `fix-ci`, the audit and `descar` start `gh` through runners of their
 own, and some skills tell the agent to run `gh` itself. The shared runtime
-kernel (roadmap item 5) gathers the calls further. It is
-listed under the roadmap's later work, to be built when a team on another
-forge needs it.
+kernel gathers common timeout and cancellation behavior in `shared/`. A forge
+interface is listed under the roadmap's later work, to be built when a team
+on another forge needs it.
 
 ## CI system
 
@@ -358,14 +418,14 @@ interfaces of its own, each with one implementation chosen in
 
 - a **tracker** ([`tracker.ts`](https://github.com/jig-harness/jig/blob/main/tools/launcher/tracker.ts)): Linear;
 - a **workspace provider** ([`provider.ts`](https://github.com/jig-harness/jig/blob/main/tools/launcher/provider.ts)):
-  Conductor, which runs on macOS only.
+  Herdr, the workspace runtime Jig's tooling targets first
+  ([ADR-0005](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)),
+  on macOS and Linux and on a remote host; and Conductor, which runs on
+  macOS only.
 
 A new provider is a module in `tools/launcher/providers/` that validates its
 per-repository settings and opens the workspace, registered in `index.ts`
-there; a tracker is added the same way under `trackers/`. A Herdr provider
-is next: Herdr is the workspace runtime Jig's tooling targets first
-([ADR-0005](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md),
-[ROADMAP.md](https://github.com/jig-harness/jig/blob/main/ROADMAP.md) item 19).
+there; a tracker is added the same way under `trackers/`.
 
 ## Operating systems
 
@@ -377,22 +437,23 @@ every night, where Windows leaves out only the suites listed in
 
 | Part | macOS | Linux | Windows | Why |
 | --- | --- | --- | --- | --- |
-| `drive-pr` | yes | yes | no | Its state, locks and paths are not yet hardened for Windows file systems, and its instructions assume a [POSIX](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) shell; its suite runs on Windows every night, with the tests that need that work skipped |
-| `do-item` | yes | yes | no | Its pickup record uses hard links and owner-only file modes; its suite runs on Windows every night, with the tests that need that work skipped |
-| The launcher | yes | no | no | Its one provider, Conductor, is a macOS app |
+| `drive-pr` | yes | yes | PowerShell or Git Bash; authenticated smoke pending | Bun commands use plain arguments |
+| `do-item` | yes | yes | PowerShell or Git Bash; authenticated smoke pending | Bun commands use plain arguments |
+| The launcher | yes | yes, with the Herdr provider | no | Conductor is a macOS app; Herdr runs on macOS and Linux |
+| The Herdr workspace tool | yes | yes | no | Herdr's Windows support is in beta and not yet a target |
 | Every other skill | yes | yes | yes | — |
-| Developing Jig (`bun run gates`) | yes | yes | yes, without the launcher's suite | — |
+| Developing Jig (`bun run gates`) | yes | yes | yes, without the launcher's and the Herdr tool's suites | — |
 
-The supervision code already has Windows branches (it finds and stops a
-pass's processes from native process snapshots and a polled stop request, and
-runs commands through `cmd.exe`); what is left is state and locks that hold up
-on Windows file systems, and the skills' instructions under Git Bash. On every
-system, Jig keeps its
+The supervision code finds and stops Windows processes from native snapshots
+and a polled stop request. Batch command shims run through `cmd.exe`; skill
+instructions use Bun commands with plain arguments. The `fix-ci` setup command
+runs through Bun's native shell; its external tools belong to the consumer.
+The complete authenticated pickup, draft pull request, drive round and stop
+smoke test on Windows, under Claude Code and under Codex with PowerShell,
+remains pending. See the [requirements](README.md#requirements) for
+the current platform boundary. On every system, Jig keeps its
 state under `~/.local/state/jig` and `~/.cache/jig` in the home folder,
-rather than in each system's own application-data folder. Windows support
-for the drive and `do-item` is listed under the roadmap's later work; until
-then, run them in WSL (the Windows Subsystem for Linux), which is a Linux
-system.
+rather than in each system's own application-data folder.
 
 ## Practice mappings
 

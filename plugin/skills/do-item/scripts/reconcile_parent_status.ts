@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Decide what a parent (epic) issue's Linear status should become, given its
+ * Decide what a parent (epic) issue's tracker status should become, given its
  * sub-issues' current states — SKILL.md Step 5a's "parent-status decision",
  * as a tested callsite rather than inline pseudocode.
  *
@@ -8,13 +8,13 @@
  * Input: JSON on stdin — see `ReconcileInput` below. The caller (SKILL.md
  *   Step 5a) is responsible for fetching and, for the MCP transport, fully
  *   paginating the child list before invoking this script; a script cannot
- *   itself issue `mcp__linear__*` tool calls. Fetching or pagination that
+ *   itself call the harness's tracker tools. Fetching or pagination that
  *   did not complete must be reported via `found`/`truncated`, never by
  *   silently handing over a partial `children` array.
  * Output: JSON `ReconcileDecision` on stdout.
  *
  * Usage:
- *     echo "$RECONCILE_INPUT_JSON" | bun reconcile_parent_status.ts
+ *     bun reconcile_parent_status.ts --input reconcile-input.json
  *
  * Exit codes: 0 decided, 2 usage, 1 unreadable/invalid stdin or a missing/
  * invalid consumer overlay (the state names and labels come from it).
@@ -31,6 +31,10 @@ import {
 } from "./get_issue.ts";
 import { defaultStateName, ownTrackerConfig } from "./lib/tracker/config.ts";
 import { CANONICAL_STATES, type CanonicalState } from "./lib/tracker/port.ts";
+import {
+  readJsonInput,
+  INVALID_JSON_INPUT,
+} from "../../../shared/json-input.ts";
 import { parseArgs, runEntry } from "./lib/cli.ts";
 
 /** A label as either transport supplies it: a flat string (MCP, get_issue.ts) or `{ name }`. */
@@ -51,8 +55,9 @@ export interface ReconcileInput {
   found?: boolean;
   /**
    * True when pagination could not confirm it reached every child — e.g. a
-   * `mcp__linear__list_issues` page fetch threw partway through the
-   * `hasNextPage` loop, or a page came back with an unreadable `pageInfo`.
+   * page fetch through the harness's issue-listing tool threw partway
+   * through the `hasNextPage` loop, or a page came back with an unreadable
+   * `pageInfo`.
    * Defaults to false. A truncated listing must not be reconciled against as
    * if it were the complete set.
    */
@@ -207,10 +212,10 @@ export function reconcileParentStatus(
   // A missing `labels` field on a still-open child used to fail the whole
   // listing closed here, on the premise that both transports always request
   // labels and return a real array on success. That premise is false for
-  // the CLI transport: `linear issue view --json`'s own `children`
-  // connection carries only `identifier`/`title`/`state` for every child,
-  // never `labels` — measured against real linear-cli 2.6.0 output (a live
-  // multi-child epic; also pinned by
+  // the CLI transport: the client's `issue view --json` output has its own
+  // `children` connection, which carries only `identifier`/`title`/`state`
+  // for every child, never `labels` — measured against real linear-cli 2.6.0
+  // output (a live multi-child epic; also pinned by
   // `scripts.test.ts`'s "reads linear-cli 2.6.0 connection envelopes"
   // fixture, whose children never carry a `labels` key at all). So the gate
   // that used to sit here made every still-open child fetched via CLI read
@@ -521,37 +526,22 @@ function readStdin(): Promise<string> {
 async function main(): Promise<number> {
   const parsed = parseArgs(process.argv.slice(2), {
     flags: [],
-    values: [],
+    values: ["input"],
     noPositional: true,
-    usage: "Usage: reconcile_parent_status.ts  (ReconcileInput JSON on stdin)",
+    usage:
+      "Usage: reconcile_parent_status.ts [--input <file>] (otherwise ReconcileInput JSON on stdin)",
   });
   if (!parsed.ok) {
     console.error(parsed.message);
     return 2;
   }
 
-  let raw: string;
-  try {
-    raw = await readStdin();
-  } catch (err) {
-    console.error(
-      `failed to read stdin: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return 1;
-  }
+  const input = await readJsonInput(parsed.args.values.get("input"), readStdin);
+  if (input === INVALID_JSON_INPUT) return 1;
 
-  let input: unknown;
-  try {
-    input = JSON.parse(raw);
-  } catch (err) {
-    console.error(
-      `stdin is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return 1;
-  }
   if (!isReconcileInputShape(input)) {
     console.error(
-      "stdin is not a valid ReconcileInput: expected { found?, truncated?, parentLabels: [], children: [{ state?, labels? }] }",
+      "input is not a valid ReconcileInput: expected { found?, truncated?, parentLabels: [], children: [{ state?, labels? }] }",
     );
     return 1;
   }

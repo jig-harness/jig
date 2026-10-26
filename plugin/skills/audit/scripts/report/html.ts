@@ -671,7 +671,7 @@ function sections(input: ReportInput): [string, string, string][] {
     input,
     targets,
     rows: mapRows(input, targets),
-    inline: createInline({ glossary: input.source.terms ?? [], teamKey: "" }),
+    inline: createInline({ glossary: input.source.terms ?? [] }),
     marks: createMarks(input.modules),
   };
   const comparison = sinceLast(input);

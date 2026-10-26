@@ -25,7 +25,7 @@ Contents: [the file](#the-file) ·
 [`work_batch`](#work_batch) ·
 [`fleet_health`](#fleet_health) ·
 [`reflection`](#reflection) · [`changelog`](#changelog) ·
-[`code_stats`](#code_stats) ·
+[`code_stats`](#code_stats) · [`gc`](#gc) ·
 [procedure skills](#procedure-skills) ·
 [environment variables](#environment-variables) ·
 [complete example](#complete-example)
@@ -245,7 +245,7 @@ issue on merge, merged by a human.
 | `pull_requests.max_stack_depth` | whole number ≥ 1 | no cap | Most pull requests one stack may hold, the new one included. Needs `stacking` other than `none` |
 | `pull_requests.open_as` | `draft`, `ready` | `ready` when `drive.reviews_drafts` is `false`, else `draft` | How a new pull request opens |
 | `pull_requests.mark_ready` | whole number ≥ 1, `converged`, `never` | `1` | When `drive-pr` marks a draft Ready for review: after round N completes, only once the draft-reviewing reviewer has nothing left (`converged`), or never (a person marks it). A draft that converges before round N is marked at convergence, since reviewers that skip drafts would otherwise never see it. Marking Ready summons those reviewers, so a later number spends their review on a cleaner head |
-| `pull_requests.branch_name` | pattern | `{key_lower}-{slug}` | Branch name for an issue. Placeholders: `{key}` (`ENG-12`), `{key_lower}` (`eng-12`), `{slug}` (the issue title in lowercase words joined by `-`, at most 40 characters). Must contain `{key}` or `{key_lower}`: the issue key in the branch name is what links the pull request to its issue. Example: `feature/{key_lower}-{slug}` |
+| `pull_requests.branch_name` | pattern | `{key_lower}-{slug}` | Branch name for an issue. Placeholders: `{key}` (`ENG-12`), `{key_lower}` (`eng-12`), `{slug}` (the issue title in lowercase words joined by `-`, at most 40 characters). Must contain `{key}` or `{key_lower}`: the issue key in the branch name is what links the pull request to its issue. Placeholders must be separated by at least one character, the key must not have a digit beside it, and `{slug}` may appear once, or the key cannot be read back from a branch. Example: `feature/{key_lower}-{slug}` |
 | `pull_requests.issue_link` | `closes`, `refs`, `none` | `closes` | The line linking the pull request to its issue: `Closes ENG-12` (merging closes the issue), `Refs ENG-12` (linked, left open), or none |
 | `pull_requests.size_budget` | whole number ≥ 1 | no budget | Most changed lines (added plus deleted, against the pull request's base) one pull request may carry; the audit record `.config/jig-audit.yaml`, which every audit rewrites whole, is not counted, and `pr-plan.ts` names it beside the size. Over it, `pr-plan.ts` refuses: split the change (into a stack when stacking is allowed), or state why it cannot be split with `--accept-oversize <reason>` and put the reason in the body |
 | `pull_requests.labels` | list of label names | none | Labels added when the pull request opens, such as `agent-authored`. Each must already exist in the repository |
@@ -322,9 +322,14 @@ not resolve it either.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `issue_tracker.adapter` | adapter name | `linear` | do-item, drive-pr, decide, work-batch | Which [tracker adapter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) answers. `linear` is the only one today; it reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client |
-| `issue_tracker.team` | team key such as `ENG` | **Required by the tracker scripts**; elsewhere issue keys are not recognised | do-item, drive-pr, review, work-batch | The key issue identifiers carry (`ENG` for `ENG-123`) |
-| `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read), work-batch | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate` |
+| `issue_tracker.adapter` | adapter name | `github` | do-item, drive-pr, decide, work-batch | Which [tracker adapter](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) answers: `github` or `linear`. `github` (GitHub Issues) uses the signed-in `gh` command-line client, which also reads `GH_TOKEN` or `GITHUB_TOKEN`; with `JIG_GITHUB_GRAPHQL_URL` set it sends requests to that GraphQL endpoint (a GitHub Enterprise Server) with the token from `GH_TOKEN` or `GITHUB_TOKEN`. `linear` reads `LINEAR_API_KEY` or `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client. A file that sets `issue_tracker.team` without `issue_tracker.adapter` (or with it empty) is refused, since the default adapter has no team: add `adapter: linear` |
+| `issue_tracker.team` | team key such as `ENG` | **Required by the Linear adapter**; refused unless `issue_tracker.adapter` is set too | do-item, drive-pr, review, work-batch | Linear only: the key issue identifiers carry (`ENG` for `ENG-123`). GitHub Issues keys are `#123`, of the repository `issue_tracker.github.repository` names |
+| `issue_tracker.states` | map from state key to the tracker's name | Each key title-cased (`in_progress` → `In Progress`) | do-item (status moves, which sub-issue states count as parked, and how a sub-issue state with no category is read), work-batch | The tracker's own names for the workflow states. Keys: `triage`, `backlog`, `todo`, `in_progress`, `in_review`, `ops_pending`, `done`, `canceled`, `duplicate`; any other key is an error. Each state needs its own name, except that `triage`, `backlog` and `todo` may share one, and so may `in_review` and `ops_pending` (a tracker with no operations state holds a merged issue in review), and `canceled` and `duplicate`. On GitHub Issues, `done`, `canceled` and `duplicate` are an issue closed as completed, not planned or duplicate, and each open state is the label (or, with `issue_tracker.github.states_from: project`, the board option) of that name; `todo` carries no label, so a new issue is in `todo` |
+| `issue_tracker.github.repository` | `owner/name` | The repository the `origin` remote points to on github.com | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the repository whose issues the skills work on |
+| `issue_tracker.github.states_from` | `labels` or `project` | `labels` | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: where an open issue's workflow state is kept. `labels`: a label per state, named by `issue_tracker.states`. `project`: the option of a Projects board's single-select field; an open issue with no option is in `todo`, and one whose option names no open state is refused; the token then needs the `project` scope (`gh auth refresh -s project`) |
+| `issue_tracker.github.project` | a board's web address, `https://github.com/orgs/<org>/projects/<n>` or `https://github.com/users/<user>/projects/<n>` | **Required when `states_from` is `project`** | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the board whose field holds the state. Moving an issue to an open state adds it to the board when it is not there |
+| `issue_tracker.github.status_field` | field name | `Status` | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the board's single-select field that holds the state |
+| `issue_tracker.github.priority_labels` | map from `urgent`, `high`, `medium`, `low` to a label | `priority: urgent`, `priority: high`, `priority: medium`, `priority: low` | do-item, drive-pr, file-issue, reflect, work-batch | GitHub Issues only: the label that carries each priority (1 to 4); an issue with none has no priority. Each priority needs its own label, which with `states_from: labels` is also no state's label |
 | `issue_tracker.labels.epic` | label | `review.taxonomy.epic_label`, else `epic` | do-item, resolve-review-comments, drive-pr (fleet health), work-batch | Marks an issue whose sub-issues are worked one at a time |
 | `issue_tracker.labels.hitl` | label | `hitl` | do-item, decide, work-batch | The human-in-the-loop flag; its facets are `<hitl>:<stakeholder>` |
 | `issue_tracker.labels.manual_ops` | label | `manual-ops` | do-item, work-batch | A step a person performs outside the code; caps an epic at `ops_pending` |
@@ -333,7 +338,8 @@ not resolve it either.
 | `issue_tracker.labels.pattern_prefix` | text | `pattern:` | do-item, reflect, review-reflections | A recurring pattern's label is `<prefix><slug>`; a reflection class's issue is `<prefix><class>` |
 | `issue_tracker.labels.batch_sizes` | list of labels | `[xs, small, medium]` | do-item, work-batch | Sizes whose issues the batch check may group into one pull request |
 | `issue_tracker.labels.extractable_tails` | list of labels | `<hitl>:legal`, `<hitl>:tactical`, `<manual_ops>`, `<followup>` | do-item | Open sub-issues an epic may hand off instead of finishing |
-| `issue_tracker.file_command` | text | Ask the user to file the issue | do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections | How an agent files a new issue by hand, such as a slash command |
+| `issue_tracker.file_command` | text | Ask the user to file the issue | do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections | How an agent files a new issue by hand, such as a slash command. `/jig:file-issue` files it through the tracker scripts, with its labels checked against the label taxonomy |
+| `issue_tracker.taxonomy` | path, relative to the root or absolute | `label-taxonomy.yaml` | file-issue | The repository's [label taxonomy](https://github.com/jig-harness/jig/blob/main/modules/M9-tasks-memory/README.md): every label an issue may carry, in families, with the rules between them. `file-issue` checks each issue's labels against it before writing, and refuses to file while it is missing or fails its lint |
 
 ## `do_item`
 
@@ -432,8 +438,11 @@ below marked required must be present, and an unknown key is an error.
 | `ledger.label` | label, or `null` | no; default `labels.followup` | Label of the debt ledger `fractal-metrics.ts` reports |
 | `ledger.project` | tracker project, or `null` | no | A project whose issues also belong to the ledger |
 | `ledger.closed_state_types` | non-empty list of state types | no; default `[completed, canceled, duplicate]` | Tracker state types that close a ledger issue |
+| `merge_conflicts.coverage_floor` | number 0–1 | no; default `0.9` | Minimum observed share of the scoreboard’s forge-listed merged PR cohort before `drive-pr` judges `merge_conflict_share`; unknown PRs must also leave both whole-cohort bounds at the same verdict |
 | `baselines.<metric>.value` | number | per baseline | A recorded baseline for one scoreboard metric |
 | `baselines.<metric>.source` | `{file, needle}` | no | The document recording that number and a substring that must still appear in it, so a stale baseline is caught |
+
+`baselines.merge_conflict_share.value` records the share of observed merged pull requests that met a conflict, using the scoreboard’s PR window. Replay of the PR’s own merge ancestry and this clone’s live events establish conflicts. A clean observation additionally needs complete replay coverage and a forge timeline without force-pushes; silence in the live record does not establish it. The report states the unknown share and whole-cohort bounds, and withholds a verdict when their endpoints disagree. The default coverage floor keeps older fleet-health files readable.
 
 Beside `stuck-epic` the sensor reports an **epic census** of the started epics,
 read-only and never commented on an epic: `finished-but-open` (every child
@@ -469,10 +478,11 @@ reflection:
 |-------|------|-------------|---------|--------------|
 | `reflection` | mapping | Reflection is off | reflect, review-reflections, drive-pr, resolve-review-comments, do-item | Its presence turns reflection on |
 | `reflection.enabled` | `true`, `false` | `true` when the section exists | reflect, review-reflections, drive-pr, resolve-review-comments | `false` turns reflection off: in a repository's file for that repository, or `JIG__REFLECTION__ENABLED=false` for one run |
-| `reflection.store` | `filesystem`, `notion`, `command` | `filesystem` | reflect, review-reflections | Which store answers: the [filesystem store](skills/reflect/README.md#filesystem-store), the [Notion store](skills/reflect/README.md#notion-store), or `reflection.command` |
+| `reflection.store` | `filesystem`, `notion`, `github`, `command` | `filesystem` | reflect, review-reflections | Which store answers: the [filesystem store](skills/reflect/README.md#filesystem-store), the [Notion store](skills/reflect/README.md#notion-store), the [GitHub store](skills/reflect/README.md#github-store), or `reflection.command` |
 | `reflection.path` | folder; `~` is the home directory, a relative path is the repository's | `~/.jig/reflections` (under `JIG_HOME`) | reflect, review-reflections | The filesystem store's folder |
 | `reflection.command` | a command line, or a list of words | **Required** with `store: command` | reflect, review-reflections | The store command; the operation is appended to it. No shell runs it |
 | `reflection.notion.database` | a Notion database id, or a link to it | **Required** with `store: notion` | reflect, review-reflections | The database `notion-store.ts init` created. The integration's secret is read from the `NOTION_TOKEN` environment variable, never from a file |
+| `reflection.github.repository` | `owner/name` | **Required** with `store: github` | reflect, review-reflections | The repository whose issues hold the reflections, often a private one kept for them. Requests go through `gh`, signed in as it is; the account needs write access, and the repository a `jig-reflection` label (`check` names the command that creates it) |
 | `reflection.journal` | file path | `<git-dir>/jig/reflection-journal.jsonl` | reflect, resolve-review-comments | The worktree's journal; a path git would track, or a file it already tracks, is refused. Parking still uses it when the section says `enabled: false` |
 | `reflection.escalate_after` | whole number, at least 1 | `3` | reflect, review-reflections | The recurrence count at which a class is escalated to one tracker issue |
 | `reflection.timeout_sec` | whole number of seconds, at most 86400 | `120` | reflect, review-reflections | The deadline for one store operation; `list` and `diagnose` get five times as long |
@@ -595,13 +605,19 @@ own; `audit` checks all the others.
 | `promote_memory.lint_command` | shell command; `{dir}` and `{file}` stand for the memory folder and file | none: the check is done by hand | promote-memory | Checks one agent memory against the repository; exit 0 means clean |
 | `promote_memory.target_dir` | folder, relative to the root | `docs/retrospection` | promote-memory | Where promoted pages go, in `YYYY/MM/` below it |
 | `fix_ci.regenerate_commands` | list of shell commands | none: the agent finds the command | fix-ci | Commands that regenerate committed generated files a CI check compares |
-| `resolve_conflicts.generated` | list of `{paths: [globs relative to the root], command: shell command}`; globs match as the change-area catalog's do (`**`, `*`, `?`, `{a,b}`, `[...]`) | none: the change-area catalog's `generated[].outputs` (when `drive.change_areas_catalog` is set), then the built-in lockfile table apply | resolve-conflicts | Files that are regenerated, never hand-merged, when they conflict, and the command that rebuilds them (run from the root). For files the change-area catalog does not declare: the catalog's `generated[].outputs` (literal file paths, matched exactly) and `command` are read as entries of this list, so a generator declared there needs no copy here. A path is classified by the first match of this list, then the catalog, then the built-in lockfile table, so an entry here overrides both. Unknown keys are refused |
+| `resolve_conflicts.generated` | list of `{paths: [globs relative to the root], command: shell command}`; globs match as the change-area catalog's do (`**`, `*`, `?`, `{a,b}`, `[...]`) | none: the change-area catalog's `generated[].outputs` (when `drive.change_areas_catalog` is set), then the built-in lockfile table apply | resolve-conflicts | Files that are regenerated, never hand-merged, when they conflict, and the command that rebuilds them (run from the root). The repository's `.config/jig.yaml` and the catalog are read from the git index, as the commit carries them, so a change to either takes effect once it is staged (a file `JIG_OVERLAY` names is read the same way when it lies inside the repository; the user and environment layers and a configured path outside the repository are read as they are; an index link whose target leaves the repository is refused, never read from disk). For files the change-area catalog does not declare: the catalog's `generated[].outputs` (literal file paths, matched exactly) and `command` are read as entries of this list, so a generator declared there needs no copy here. A path is classified by the first match of this list, then the catalog, then the built-in lockfile table, so an entry here overrides both. Unknown keys are refused |
 | `resolve_conflicts.hotspot_min_merges` | whole number, 1 or more | `3` | resolve-conflicts | The history report (`history.ts`) names a path a conflict hotspot when it conflicted in at least this many of the merges it replayed in its range |
 | `resolve_conflicts.obligations` | list of `{check: nonempty text, command?: nonempty shell command}` | none | resolve-conflicts | Checks the agent applies to the entire resolved staged diff, including auto-merged hunks. Optional commands run from the repository root during validation, only while every tracked file matches the staged tree; failure, or a command changing the staged tree or a tracked file (which also stops the commands after it), blocks completion and is included in the report. Text still requires agent inspection when a command passes. Unknown keys are refused. Each command has a 120-second deadline, overridden by the positive whole-second `RESOLVE_CONFLICTS_COMMAND_TIMEOUT` environment variable |
 | `github_actions.conventions_doc` | path, relative to the root | Searched for in the instructions and docs; else generic guidance | github-actions | The document describing the repository's workflows and their conventions |
 | `design_brief.kit` | folder, relative to the root | Detected: a tracked folder ending in `design-kit` or `design_kit` | design-brief-builder | The design kit: voice, colours and type, rubric, component previews, logo |
 | `design_brief.design_language` | path, relative to the root | Detected: the first tracked `*design-language*.md` or `*design-system*.md` | design-brief-builder | The written design canon |
 | `design_brief.prototypes` | folder, relative to the root | none: the agent asks | design-brief-builder | Where finished design bundles land, one folder per flow |
+| `design_brief.handback.forbidden_terms` | list of literal strings | `[]` | design-brief-builder | Forbidden or retired text; the bundle README may extend it. Matching is case-insensitive |
+| `design_brief.handback.widths` | nonempty list of distinct positive integer widths in pixels | required for handback | design-brief-builder | Viewport widths at which every bundle scenario is rendered and checked for horizontal overflow |
+| `design_brief.handback.rubric` | path, relative to the root | required for handback | design-brief-builder | The consumer's scoring rubric; must exist |
+| `design_brief.handback.scorecard` | path, relative to the root | required for handback | design-brief-builder | The review scorecard; must exist, state one bar outcome and name the export base it reviewed |
+| `design_brief.handback.browser_executable` | executable path, relative to the root or absolute | required for handback | design-brief-builder | Installed Chrome or Chromium used for headless rendering; a missing browser fails the checklist |
+| `sheets.repositories` | map of repository name to folder, relative to the root or absolute; names are lowercase letters, digits, `-` and `_`, starting with a letter | none: a citation qualified with a repository name (`beta:ADR-0002`) is refused | decide, explain | The clones of the other repositories a sheet cites. A sheet qualifies such a citation with the name (`beta:apps/api/auth.ts`, `beta:ADR-0002`) and records the commit its facts were checked at in `verifiedAt.repositories`; the freshness guard compares the cited file at that commit with the clone's working tree, finds that repository's ADRs in the clone as it finds this repository's when `adr.directory` is not set (the first candidate folder that exists, else `docs/adr`), and refuses a name with no entry here, no recorded commit, or a folder that is not the top of a git clone. A bare `ADR-NNNN` always means this repository. Where the clones sit differently on each machine, leave the name out of the repository file and set it in the user layer (`~/.jig/jig.yaml`, absolute paths): a name the repository file sets overrides the user layer's |
 | `decide.policy_files` | list of paths, relative to the root | `[AGENTS.md]` | decide | Instruction files whose `##` sections are standing policy |
 | `decide.rules_directory` | folder, relative to the root | `.claude/rules` | decide | Conditional rules, one rule per `.md` file |
 | `decide.glossary_file` | path, relative to the root | `CONTEXT.md` | decide, explain | The canonical vocabulary, as `**Term**:` lines each followed by an `_Avoid_:` line |
@@ -627,7 +643,7 @@ These are set per machine or per run, not committed:
 | `JIG__<SECTION>__<FIELD>` | Sets one field for this run, over every file (see [configuration layers](#configuration-layers)) |
 | `LINEAR_API_KEY`, `LINEAR_API_TOKEN` | Credentials for the Linear adapter |
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
-| `DRIVE_PR_STATE_DIR` | Where a drive keeps its rounds, locks and leases |
+| `DRIVE_PR_STATE_DIR` | State root; rounds, locks and leases live in its `<clone-key>/` subdirectory. An inherited resolved leaf is also accepted. Flat legacy state refuses until explicitly relocated. |
 | `JIG_VERIFICATION_FIT_LOG` | Where verification-fit verdicts are logged |
 | `DEV_DASHBOARD_DIR` | Overrides `fleet_health.snapshot_dir` |
 | `JIG_REVIEW_TRIAGE_CONFIG` | The [review-triage file](#the-review-triage-file) to read instead of `.config/review-triage.yaml` |
@@ -647,12 +663,67 @@ These are set per machine or per run, not committed:
 | `DRIVE_PR_*` (others) | Round limits, timeouts and repair budgets; listed in the [drive-pr README](skills/drive-pr/README.md) |
 | Others | A few knobs of a single skill, such as `REFLECT_THRESHOLD` of `resolve-review-comments`, are described where that skill's `SKILL.md` uses them |
 
+## `gc`
+
+The resource collector reads repository declarations separately from machine
+policy. The audit uses the same declaration validator as `jig gc`. No shell
+command can be registered as a collection kind.
+
+| Field | Type | Default / meaning | Read by |
+|-------|------|-------------------|---------|
+| `gc.kinds` | distinct string list | Empty; supported repository kinds: `tool-state`, `scratch`, `worktrees` | audit, gc |
+| `gc.worktree_roots` | distinct path list | Empty; roots containing the tool's worktrees, relative to the repository or absolute | audit, gc |
+| `gc.scratch_prefixes` | distinct path list | Empty; path prefixes of scratch directory names, relative to the repository or absolute; a filesystem root is refused | audit, gc |
+
+A collecting run fetches `.config/jig.yaml` from the remote URL and base branch
+recorded at install. It intersects that declaration with the confirmed kinds,
+roots and prefixes. Changes in a checkout, environment overrides, a changed
+remote URL, and newly widened base declarations cannot grant deletion authority.
+A report reads the checkout and names that source. An uninstalled repository
+can be reported but cannot be collected.
+
+### The machine's collection policy
+
+These settings live only in the user file (`$JIG_HOME/jig.yaml`, default
+`~/.jig/jig.yaml`); they cannot be set by a repository or environment override.
+Run `bun --no-env-file --config=<plugin>/gc/bunfig.toml <plugin>/jig.ts gc install` to review the proposed entry, then repeat
+with `--yes` to confirm it and install the scheduler. Installation must run
+from the installed plugin copy, outside a Git checkout.
+
+| Setting in the user file's `gc` section | Default / meaning |
+|----------------------------------------|-------------------|
+| `repositories` | Empty; installer-written entries containing `path`, `remote`, `remote_url`, `base_branch`, and `bounds` (the confirmed declaration) |
+| `disabled` | Empty; kinds the machine will skip; cannot enable undeclared repository kinds |
+| `idle_days` | Mapping of repository kind to idle guard, default 7 days; allowed range 7–365, so machine policy can only tighten the default |
+| `receipts` | `false`; enable collection of old receipts |
+| `receipts_days` | 30; positive days to retain receipts; each kind's latest receipt is always kept |
+| `hour` | 4; local hour (0–23) for the daily scheduled run |
+| `collect_day` | 0; local weekday (Sunday 0 through Saturday 6) on which the daily run collects |
+| `min_free_bytes` | 0, disabled; collect on other days when available space in the home filesystem falls below this threshold |
+
+The job records Bun's executable, the installed command's path, `HOME`,
+`PATH`, `JIG_HOME`, and any explicit `TMPDIR`, `LOCK_ROOT` or `LOCK_NAME`.
+Collection uses the same machine-wide heavy-run lock as gate runs. Scheduled
+and child Bun invocations use the plugin's trusted configuration and disable
+checkout environment files and preloads.
+Report-only runs also write receipts, under
+`~/.local/state/jig/gc/<date>/<run-id>.json`. `gc receipts` lists them;
+`gc receipts <date>` lists a day and `gc receipts <run-id>` prints a run.
+Use `gc --json` for the receipt schema on standard output.
+
+The available collectors and remaining rollout work are in
+[the collector's README](gc/README.md).
+
 ## Complete example
 
 Every section, with values a typical repository might set. Copy only what
 differs from the defaults.
 
 ```yaml
+gc:
+  kinds: [tool-state]
+  worktree_roots: [../worktrees]
+  scratch_prefixes: [/tmp/example-test.]
 gates:
   command: make check                    # required by resolve-review-comments
 review:
@@ -702,9 +773,10 @@ ci:
   required_checks: [build, test]
   hold_label: ci:hold
 issue_tracker:
-  adapter: linear
-  team: ENG                              # required by the tracker scripts
-  file_command: "linear issue create"
+  adapter: linear                        # or github, the default
+  team: ENG                              # Linear only: required by the Linear adapter
+  file_command: /jig:file-issue
+  taxonomy: docs/label-taxonomy.yaml
   states:
     triage: Triage
     backlog: Backlog
@@ -724,6 +796,16 @@ issue_tracker:
     pattern_prefix: "pattern:"
     batch_sizes: [xs, small, medium]
     extractable_tails: [hitl:legal, hitl:tactical, manual-ops, pr-followup]
+  github:                                # read by the github adapter only
+    repository: acme/app                 # default: the origin remote's
+    states_from: project                 # default: labels
+    project: https://github.com/orgs/acme/projects/1
+    status_field: Status
+    priority_labels:
+      urgent: "priority: urgent"
+      high: "priority: high"
+      medium: "priority: medium"
+      low: "priority: low"
 do_item:
   agents:
     default: general-purpose
@@ -753,6 +835,9 @@ fleet_health:
 adr:
   directory: docs/adr
   rules_file: docs/adr/rules.yaml
+sheets:
+  repositories:
+    beta: ../beta
 descar:
   lint_command: "bun scripts/check-descarring-scars.ts"
 promote_memory:
@@ -776,6 +861,12 @@ design_brief:
   kit: docs/design-kit
   design_language: docs/design.md
   prototypes: design/prototypes
+  handback:
+    forbidden_terms: [Retired Example]
+    widths: [390, 768, 1440]
+    rubric: docs/design-kit/rubric.md
+    scorecard: design/prototypes/review-scorecard.md
+    browser_executable: /usr/bin/chromium
 decide:
   policy_files: [AGENTS.md]
   rules_directory: .claude/rules
@@ -791,6 +882,8 @@ reflection:
   command: "<your store command>"
   notion:
     database: 0123456789abcdef0123456789abcdef   # the id init printed, or a link
+  github:
+    repository: example/reflections      # owner/name
   journal: .scratch/reflection-journal.jsonl
   escalate_after: 3
   timeout_sec: 120

@@ -320,3 +320,27 @@ export function changedFilesFromGit(
   const parents = mergeParentFiles(head, git);
   return parents.length ? [...new Set([...base, ...parents])] : base;
 }
+
+/** Resolve the complete workspace change, including new files, without shell pipelines. */
+export function changedFilesFromWorktree(
+  base: string,
+  git: GitRunner = defaultGitRunner,
+): string[] {
+  if (!base.trim() || base.startsWith("-") || /[\r\n\0]/.test(base))
+    throw new GitContextError(
+      "--worktree needs a base revision, not an option",
+    );
+  const ancestor = git(["merge-base", base, "HEAD"]).trim();
+  if (!ancestor || ancestor.startsWith("-") || /\s/.test(ancestor))
+    throw new GitError("git merge-base returned no usable revision");
+  const tracked = git([
+    "diff",
+    "-z",
+    "--no-renames",
+    "--name-only",
+    ancestor,
+    "--",
+  ]);
+  const untracked = git(["ls-files", "-z", "--others", "--exclude-standard"]);
+  return [...new Set([...splitPaths(tracked), ...splitPaths(untracked)])];
+}

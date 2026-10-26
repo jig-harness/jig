@@ -13,12 +13,16 @@
  * or a malformed one, is an error.
  */
 
-import { citedPaths } from "../../../decide/scripts/sheet-kit/freshness.ts";
+import {
+  citedPaths,
+  LEADING_QUALIFIER,
+} from "../../../decide/scripts/sheet-kit/freshness.ts";
 import type { GlossaryEntry } from "../../../decide/scripts/sheet-kit/inline.ts";
 import {
   Checker,
   type SourcedClaim,
 } from "../../../decide/scripts/sheet-kit/source.ts";
+import { issueKeysOrNull } from "../../../do-item/scripts/lib/tracker/keys.ts";
 import { LABEL } from "./labels.ts";
 
 export type { GlossaryEntry, SourcedClaim };
@@ -59,7 +63,12 @@ export interface ExplainerSource {
   title: string;
   /** The issue the explainer serves. Issue ids in the text link to its tracker. */
   url?: string;
-  verifiedAt: { date: string; commit: string };
+  /** `repositories` holds the commit for each other repository a citation names (`other:ADR-0002`). */
+  verifiedAt: {
+    date: string;
+    commit: string;
+    repositories?: Record<string, string>;
+  };
   summary: string;
   scope: { covers: string[]; excludes?: string[] };
   flow?: FlowStep[];
@@ -100,6 +109,17 @@ const CITATION_FILE =
 const CITATION_SYMBOL = /^(?:#[\w.$@-]+|:\d+(?:-\d+)?)$/;
 /** An ADR, or an issue key such as `ENG-123` (any tracker key but `ADR`). */
 const CITATION_ID = /^(?:ADR-\d{3,4}|(?!ADR-)[A-Z][A-Z0-9]*-\d+)$/;
+/**
+ * A GitHub issue key, `#123`. A whole segment `#<n>` is never a symbol (a
+ * symbol follows the path it is in), so it reads as an issue where issues
+ * are numbers: under a tracker keyed by number, or one whose shape is
+ * unknown. A team-keyed tracker's repository refuses it, since there it names
+ * no issue the sheet's reader could look up.
+ */
+const NUMBER_ID = /^#[1-9]\d*$/;
+let numberKeyed: boolean | undefined;
+const citesNumberKeys = (): boolean =>
+  (numberKeyed ??= issueKeysOrNull()?.sharesPullRequestNumbers ?? true);
 
 /** A trailing ` (note)`: display text, not part of what is cited. */
 const NOTE = /\s+\([^()]*\)$/;
@@ -119,13 +139,34 @@ const referenceOf = (segment: string): string => segment.replace(NOTE, "");
  * The problem with one citation segment, or undefined when it is a documented
  * form: a repository path (optionally `#symbol` or `:12-40`, optionally
  * backtick-quoted, and only then may it contain spaces), `ADR-NNNN` or an
- * issue key (`ENG-123`), each optionally followed by a ` (note)`. Prose such as
- * "trust me" names nothing the freshness guard could check, so it is refused
+ * issue key (`ENG-123`, `#123`), each optionally followed by a ` (note)`.
+ * Prose such as "trust me" names nothing the freshness guard could check, so it is refused
  * here instead of passing as a sheet with no checkable citation.
  */
 function segmentProblem(segment: string): string | undefined {
-  const reference = referenceOf(segment);
-  if (CITATION_ID.test(reference)) return undefined;
+  // `other:` names another repository; what follows is checked as in this
+  // one, except that only a path or an ADR is qualified, never an issue key.
+  const unqualified = referenceOf(segment);
+  const reference = unqualified.replace(LEADING_QUALIFIER, "$1");
+  if (citesId(reference))
+    return reference === unqualified || reference.startsWith("ADR-")
+      ? undefined
+      : `${JSON.stringify(segment)} qualifies an issue key; a repository qualifier names a path or an ADR`;
+  return isPathCitation(reference)
+    ? undefined
+    : `${JSON.stringify(segment)} is not a repository path, ADR-NNNN or issue key`;
+}
+
+/** Does `reference` cite an ADR or an issue key? */
+function citesId(reference: string): boolean {
+  return (
+    CITATION_ID.test(reference) ||
+    (NUMBER_ID.test(reference) && citesNumberKeys())
+  );
+}
+
+/** Does `reference` cite a repository path, optionally with a symbol or lines? */
+function isPathCitation(reference: string): boolean {
   const quoted = /^`([^`\n]+)`$/.exec(reference);
   const ref = quoted ? (quoted[1] as string).trim() : reference;
   const at = ref.search(/[#:]/);
@@ -133,13 +174,11 @@ function segmentProblem(segment: string): string | undefined {
   const suffix = at === -1 ? "" : ref.slice(at);
   // Spaces are legal only inside a quoted path; the shape check treats them as word characters.
   const shape = quoted ? file.replace(/ /g, "_") : file;
-  if (
-    !CITATION_FILE.test(shape) ||
-    (suffix !== "" && !CITATION_SYMBOL.test(suffix)) ||
-    citedPaths([quoted ? `\`${ref}\`` : file]).length === 0
-  )
-    return `${JSON.stringify(segment)} is not a repository path, ADR-NNNN or issue key`;
-  return undefined;
+  return (
+    CITATION_FILE.test(shape) &&
+    (suffix === "" || CITATION_SYMBOL.test(suffix)) &&
+    citedPaths([quoted ? `\`${ref}\`` : file]).length > 0
+  );
 }
 
 /** Every problem with a citation string: segments are separated by `;`, and each must be a documented form. */
@@ -348,8 +387,13 @@ export function parseSource(value: unknown): ExplainerSource {
     });
 
   // Tokens name flow steps, so they are checked once the structure holds.
-  if (c.problems.length === 0)
+  if (c.problems.length === 0) {
     checkTokens(c, value as unknown as ExplainerSource);
+    c.qualifiedCitations(
+      citations(value as unknown as ExplainerSource),
+      value.verifiedAt,
+    );
+  }
 
   if (c.problems.length > 0) throw new SourceError(c.problems);
   return value as unknown as ExplainerSource;

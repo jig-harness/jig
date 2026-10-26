@@ -18,7 +18,7 @@
  *   baselines:     # fractal-metrics' recorded baselines, by metric id
  *     rounds_median: { value: 4, source: { file: docs/metrics.md, needle: "4 rounds" } }
  *
- * The team key comes from `issue_tracker.team` and the change-area catalog
+ * The issue-key shape comes from `issue_tracker` and the change-area catalog
  * from `drive.change_areas_catalog`.
  *
  * FAILS CLOSED: a default threshold nobody configured is a confident answer
@@ -45,6 +45,11 @@ import {
   type TrackerLabels,
 } from "../../../../shared/tracker-labels.ts";
 import { load as loadYaml } from "../../../../shared/yaml.ts";
+import { trackerConfigFrom } from "../../../do-item/scripts/lib/tracker/config.ts";
+import {
+  type IssueKeys,
+  issueKeysOf,
+} from "../../../do-item/scripts/lib/tracker/keys.ts";
 
 /** Repo-relative default — also the config's display label in errors. */
 export const CONFIG_RELPATH = ".config/fleet-health.yaml";
@@ -53,8 +58,8 @@ export const CONFIG_RELPATH = ".config/fleet-health.yaml";
 export interface ConfigContext {
   /** The consumer repository the paths below resolve against. */
   root: string | null;
-  /** `issue_tracker.team`. */
-  teamKey: string | null;
+  /** The tracker's key shape (`issue_tracker`); `null` when it cannot be known. */
+  keys: IssueKeys | null;
   /** `review.taxonomy.epic_label`. */
   epicLabel: string | null;
   /** `review.taxonomy.provenance_label`. */
@@ -69,7 +74,7 @@ export interface ConfigContext {
 
 export const EMPTY_CONTEXT: ConfigContext = {
   root: null,
-  teamKey: null,
+  keys: null,
   epicLabel: null,
   followupLabel: null,
   repositoryLabels: [],
@@ -109,6 +114,17 @@ function repositoryLabelsOf(config: LayeredConfig): string[] {
   return cur as string[];
 }
 
+/** The tracker's key shape; an invalid tracker section is a configuration error. */
+function keysOf(overlay: Record<string, unknown>): IssueKeys | null {
+  try {
+    return issueKeysOf(trackerConfigFrom(overlay));
+  } catch (err) {
+    throw new FleetHealthConfigError(
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
 /**
  * The overlay's contribution for the repository at `root`. A missing overlay
  * is an empty context (the sensor then reports what it cannot measure); an
@@ -141,7 +157,7 @@ export function overlayContext(root: string): ConfigContext {
     p === null ? null : isAbsolute(p) ? p : join(root, p);
   return {
     root,
-    teamKey: stringAt(overlay, "issue_tracker", "team"),
+    keys: keysOf(overlay),
     // Only a label the consumer named counts: an unnamed follow-up label
     // means follow-ups are not measured, not that the default is measured.
     epicLabel: labels.declared.has("epic") ? labels.epic : null,
@@ -199,8 +215,8 @@ export interface FleetHealthConfig {
     };
   };
   lifecycle: { cooldownDays: number };
-  /** The team key issue identifiers carry; `null` = any key. */
-  teamKey: string | null;
+  /** The tracker's key shape; `null` = a key of any tracker. */
+  keys: IssueKeys | null;
   labels: {
     epic: string;
     /** `null`: follow-ups are not measured. */
@@ -216,6 +232,7 @@ export interface FleetHealthConfig {
     project: string | null;
     closedStateTypes: string[];
   };
+  mergeConflicts: { coverageFloor: number };
   baselines: Record<string, MetricBaseline>;
   /** The consumer repository this configuration belongs to, when known. */
   root: string | null;
@@ -406,9 +423,15 @@ export function parseConfig(
     labels: rawLabels,
     ledger: rawLedger,
     baselines: rawBaselines,
+    merge_conflicts: rawMergeConflicts,
     ...root
   } = whole;
   const labels = parseLabels(rawLabels, ctx);
+  const conflicts =
+    rawMergeConflicts === undefined
+      ? { coverage_floor: 0.9 }
+      : record(rawMergeConflicts, "merge_conflicts");
+  exactKeys(conflicts, "merge_conflicts", ["coverage_floor"]);
   exactKeys(root, "config", [
     "version",
     "window",
@@ -617,9 +640,15 @@ export function parseConfig(
         integer: true,
       }),
     },
-    teamKey: ctx.teamKey,
+    keys: ctx.keys,
     labels,
     ledger: parseLedger(rawLedger, labels),
+    mergeConflicts: {
+      coverageFloor: num(conflicts, "coverage_floor", "merge_conflicts", {
+        min: 0,
+        max: 1,
+      }),
+    },
     baselines: parseBaselines(rawBaselines),
     root: ctx.root,
     catalogPath: ctx.catalogPath,

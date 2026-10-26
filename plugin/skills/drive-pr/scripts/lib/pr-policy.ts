@@ -18,6 +18,10 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { withSource } from "../../../../shared/consumer.ts";
+import {
+  branchPatternAmbiguity,
+  tidyBranchName,
+} from "../../../do-item/scripts/lib/tracker/keys.ts";
 import { readOptionalOverlay } from "./overlay.ts";
 import { ghCall, git } from "./proc.ts";
 import { isRecord } from "../../../../shared/guards.ts";
@@ -117,6 +121,11 @@ export function validateBranchPattern(pattern: string): void {
   if (/[{}]/.test(pattern.replace(/\{[a-z_]+\}/g, "")))
     throw new Error(
       `pull_requests.branch_name has an unbalanced brace: ${JSON.stringify(pattern)}`,
+    );
+  const ambiguity = branchPatternAmbiguity(tidyBranchName(pattern));
+  if (ambiguity !== null)
+    throw new Error(
+      `pull_requests.branch_name ${ambiguity}: ${JSON.stringify(pattern)}; put a separator such as \`-\` or \`/\` between placeholders and beside the key, and {slug} in once, or the key cannot be read back from a branch`,
     );
 }
 
@@ -243,19 +252,22 @@ export function slugify(title: string): string {
   return (lastDash > 0 ? cut.slice(0, lastDash) : cut).replace(/-+$/, "");
 }
 
-/** The branch name for an issue under `pattern`. */
+/**
+ * The branch name for an issue under `pattern`. `branchKey` is the key as a
+ * branch carries it (`IssueKeys.toBranch`: `ENG-123`, `123` for `#123`).
+ */
 export function renderBranchName(
   pattern: string,
-  key: string,
+  branchKey: string,
   title: string,
 ): string {
   const slug = slugify(title);
-  return pattern
-    .replaceAll("{key_lower}", key.toLowerCase())
-    .replaceAll("{key}", key)
-    .replaceAll("{slug}", slug)
-    .replace(/-{2,}/g, "-")
-    .replace(/[-/]+$/, "");
+  return tidyBranchName(
+    pattern
+      .replaceAll("{key_lower}", branchKey.toLowerCase())
+      .replaceAll("{key}", branchKey)
+      .replaceAll("{slug}", slug),
+  );
 }
 
 /** The line that links the pull request to its issue, or `null` for `none`. */

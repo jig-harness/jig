@@ -57,7 +57,7 @@ Find these once, at the start:
   `bun "${CLAUDE_SKILL_DIR}/../resolve-review-comments/scripts/jig-config.ts" descar.lint_command`
   (every layer, `.config/jig.yaml` among them; exit 2 means no layer sets
   it), a command that takes document paths as arguments. When it is absent, look for the lint the repository adopted from
-  M4 (`git ls-files '*check-descarring-scars*'`) and run it with `bun` (or the
+  M4 (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git ls-files '*check-descarring-scars*'`) and run it with `bun` (or the
   interpreter its extension implies). When there is none, there is no lint:
   inventory S1 to S3 by hand as well as S4, and say so in the report.
 - **Lint exemptions**: the paths the lint leaves out (M4's lint reads them
@@ -112,14 +112,13 @@ S1, S2 and S3 shapes it does not detect. Do not write a second copy of the
 lint's patterns**: a second recognizer drifts from the first, and the gate
 stops meaning anything.
 
-```bash
-<lint command> docs/path/to/doc.md                    # one or more named documents
-<lint command>                                        # M4's lint with no arguments: every promoted document
-<lint command> $(git diff --name-only "<base>...HEAD" -- 'docs/*.md')   # what the branch changed
-```
+Run the repository’s lint on the named documents, or without arguments for every promoted document. For a branch review, list the changed paths with
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git diff --name-only "<base>...HEAD"`
+and pass the Markdown ones to the lint as separate arguments; do not splice a
+generated list into shell source.
 
 `<base>` is `repository.base_branch` from the overlay, or the repository's
-default branch (`gh repo view --json defaultBranchRef -q .defaultBranchRef.name`).
+default branch (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh repo view --json defaultBranchRef -q .defaultBranchRef.name`).
 
 A lint only partly covers S1, S2 and S3 (the "Detectable" column of the scar
 classes). Read the lint to see which shapes it matches. M4's reference lint,
@@ -228,7 +227,7 @@ any other, so the freeze rule above applies to it too.
 2. **Stage only the paths this pass touched**, by name: the rewritten
    documents; the activity log only if this pass wrote to it (the freeze may
    have stopped it); any relocation destination; and the regenerated files if
-   step 1 changed them. Never `git add -A`: a frontmatter hook that checks the
+   step 1 changed them. Never use `git add` with `-A`: a frontmatter hook that checks the
    staged diff would then check unrelated changes already in the working tree,
    and the commit would mix them in.
 3. **Run the repository's frontmatter check**, if it has one (M4's
@@ -280,8 +279,7 @@ time rather than trusting an earlier ranking, because the ranking is a
 measurement and the corpus moves:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/corpus-order.ts" --docs-dir docs \
-  --allow <each path the lint exempts> --promoted <each promoted status>
+bun "${CLAUDE_SKILL_DIR}/scripts/corpus-order.ts" --docs-dir docs --allow <each path the lint exempts> --promoted <each promoted status>
 ```
 
 It ranks every top-level folder of the docs root, plus `(root)` for the

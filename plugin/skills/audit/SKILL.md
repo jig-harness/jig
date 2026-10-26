@@ -39,17 +39,17 @@ The draft record, the fit report and the report source are written to a
 folder outside the repository's tracked files, made for this audit alone:
 
 ```bash
-scratch=$(mktemp -d)
+bun "${CLAUDE_SKILL_DIR}/scripts/scratch.ts"
 ```
 
 In an agent workspace that keeps a gitignored `.context/` folder, make it
 there instead, so the files outlive the session, still one per run:
 
 ```bash
-mkdir -p .context/jig-audit && scratch=$(mktemp -d .context/jig-audit/run-XXXXXX)
+bun "${CLAUDE_SKILL_DIR}/scripts/scratch.ts" --directory .context/jig-audit
 ```
 
-Never a fixed path, shared (`/tmp/jigaudit`) or per checkout
+Use the printed path for `<scratch>` below. Never a fixed path, shared (`/tmp/jigaudit`) or per checkout
 (`.context/jig-audit/` itself): two audits would overwrite each other's
 files. The tools refuse a record whose commit the repository does not hold,
 and a report for another repository, but not two audits of one repository.
@@ -66,11 +66,10 @@ The record names one commit, so settle what the audit should describe first:
 3. Install the repository's dependencies, so the hooks the audit finds
    configured can run. On macOS `/tmp` is a symlink to `/private/tmp` and
    some install scripts refuse a symlinked path, so make any worktree under
-   its real path (`pwd -P`). The temporary worktree `--at` makes already is.
-
-`score.ts --draft` refuses a checkout whose tracked files differ from the
-commit; `--at HEAD` scores the commit from a temporary worktree instead,
-which stays for the whole audit (§ Score).
+   its resolved filesystem path; the temporary worktree that `--at` makes
+   already uses one. `score.ts` in `--draft` mode refuses a checkout whose
+   tracked files differ from the commit; `--at HEAD` scores the commit from
+   a temporary worktree instead, which stays for the whole audit (§ Score).
 
 ### Unattended runs
 
@@ -102,9 +101,10 @@ configuration schema (`${CLAUDE_SKILL_DIR}/config-schema.yaml`) and against the
 repository: unknown, refused and deprecated fields, wrong types, what the
 skills' own validation rejects, commands and paths that do not exist, required
 checks that never run, a tracker that cannot be reached, declared values the
-repository contradicts, tracker labels its label taxonomy
-(`label-taxonomy.yaml`) does not define or a `review.taxonomy.types` that
-differs from it (`taxonomy:<field>`), and settings its shape suggests. Each finding has an id
+repository contradicts, tracker labels that the label taxonomy
+(`issue_tracker.taxonomy`, or `label-taxonomy.yaml` when that is unset) does
+not define, a `review.taxonomy.types` that differs from that taxonomy
+(`taxonomy:<field>`), and settings its shape suggests. Each finding has an id
 (`config/<id>`). Exit 1 means at least one error; it is a finding, not a reason
 to stop. Without network access or `gh`, add `--offline`; the forge and
 tracker questions are then reported as unchecked, never as passing.
@@ -113,7 +113,9 @@ It judges the repository's file alone: the user file (`~/.jig/jig.yaml`) and
 `JIG__*` variables belong to whoever runs the audit. What they add on this
 machine is reported as facts (`fact:user-layer`, `fact:environment-layer`),
 and a user file that sets a field only a repository may set is a warning
-(`fact:user-layer-refused`).
+(`fact:user-layer-refused`). The tracker check is the exception: it probes the
+tracker the skills here select, so it reads all three layers, and layers that
+cannot be loaded are an error, since every skill here refuses them too.
 
 If it warns `fact:newer-plugin-installed`, stop and tell the user: this
 session runs an older plugin than the one installed, and a session keeps the
@@ -131,27 +133,52 @@ compliance regime; and the `suggested_profile` they support, with an
 another, regulated-strict when compliance documents sit beside
 team-standard; also as `profile_facts` in the `--json` output) are what step 3 suggests a
 profile from. Save its `--json` output to
-the scratch folder as well (`config-fit.ts --json > <scratch>/fit.json`): the
-audit sheet shows it. When the repository has no configuration file, or the
+the scratch folder as well (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file <scratch>/fit.json --stdout-exit-code 1 -- bun "${CLAUDE_SKILL_DIR}/scripts/config-fit.ts" --json`): the
+audit sheet shows it. `--stdout-exit-code 1` also saves the complete report
+when configuration findings produce exit 1; the command still returns that
+status. When the repository has no configuration file, or the
 check suggests settings, the report includes a starter configuration
-(`config-fit.ts --draft` prints it alone). Render the sheet from an online
+(the `--draft` mode of `config-fit.ts` prints it alone). Render the sheet from an online
 fit report where the forge can be read: an `--offline` one makes the sheet
 show branch protection and the other host settings as unchecked.
 
 ## 2. Surveys and stack
 
-Write the draft record first (step 3's `score.ts --draft`): the surveys
+Write the draft record first (step 3): the surveys
 score into copies of it. Run the survey prompts in
 `${CLAUDE_SKILL_DIR}/references/survey-prompts/` as read-only surveys, each
 with `00-shared-preamble.md` prepended and given `<scratch>/fit.json` (the
 host facts step 1 read, so no survey queries the host again) and the draft.
 Each returns its synthesis and answers for its own modules' open criteria,
-in the format `record.ts fill` reads. Run them in parallel subagents where
+in the format `record.ts`’s `fill` operation reads. Run them in parallel subagents where
 the harness has them; otherwise one after another, with the same evidence
 rules. A repository of under about 300 tracked files needs no subagents:
 survey it yourself, prompt by prompt. Parallel surveys of a mature
 repository take a few hundred thousand tokens in all; say so before
 starting when the user may not expect it.
+
+For M12's merge-conflict evidence where work runs in parallel, run the
+sibling skill's read-only replay once from the target repository:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file <scratch>/merge-conflicts.json -- bun "${CLAUDE_SKILL_DIR}/../resolve-conflicts/scripts/history.ts" --days 30 --json
+```
+
+Give survey 3 this report with the draft. Keep the window, recurrence
+threshold, reachable-ref scope, skipped merges and cause-accuracy statement in the synthesis. The replay never
+fetches and writes its temporary objects outside the repository; do not
+fetch pull-request heads just for the audit. If git is unsupported or the
+report fails, record the command and error as unchecked evidence; never
+turn a failed or empty report into a clean history. The audit's run shows
+current conflicts, not that the repository already practices measurement:
+score `M12/merge-conflict-hotspots-measured` from its retained reports and
+hotspot remedies or keep decisions. The history report does not read live
+events: if retained live-event evidence is supplied separately, state its
+clone-local coverage; its silence never proves a clean branch. Do not write conflict events, reflection
+findings or tracker issues during the read-only audit. For a historical
+snapshot, current refs and this clone's live events describe a different
+population: mark the replay inapplicable to that snapshot and score from
+its recorded evidence instead.
 
 Then run the drift pass yourself, once, as `references/methodology.md` says:
 drift crosses modules, and surveys that each look for it report the same
@@ -185,7 +212,8 @@ Add `--at <rev>` when the checkout has uncommitted changes. `score.ts` checks
 the commit out into a temporary worktree and keeps it: the draft's first
 line, `# snapshot: <dir>`, names it. Every survey reads the repository's
 files there, not the checkout's, so pass that folder to the surveys. When the
-record is done, remove it with `git worktree remove --force <dir>`.
+record is done, remove it with
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git worktree remove --force <dir>`.
 
 The draft holds one entry per criterion of every module, with the criterion
 and its pass bar as comments and the prior audit's answer when there is one
@@ -194,8 +222,7 @@ Criteria whose probe found the precondition missing are already scored
 `absent`; a probe that could not read a file is marked unchecked and left for
 you. A criterion commented `# probe capped: …; at most <rung>` lacks only what
 a higher rung needs (usually CI): it is left for you; score what you observe,
-no higher than that rung. Its entry carries `at_most: <rung>`, and `record.ts
-fill`, `merge` and `check` refuse a score above it. The format of criteria and probes is in
+no higher than that rung. Its entry carries `at_most: <rung>`, and `record.ts`’s `fill` operation, `merge` and `check` refuse a score above it. The format of criteria and probes is in
 `${CLAUDE_SKILL_DIR}/criteria/README.md`.
 
 Fill every `score: null` with `absent`, `convention`, `advisory`,
@@ -225,7 +252,7 @@ defensible.
 
 Set `profile`, the maturity the team aims for (`${CLAUDE_SKILL_DIR}/profiles.yaml`:
 `solo-lite`, `team-standard`, `regulated-strict`). Keep the prior record's
-(or pass `score.ts --declare`).
+(or pass the `--declare` option of `score.ts`).
 The record holds the team's choice only; a suggestion goes in the report
 source, never in both. On a first audit ask the user, without blocking: when
 nobody can answer, or they do not know, leave it `null` and
@@ -254,8 +281,7 @@ bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" check <scratch>/jig-audit.next.yaml
 Repeat until it reports the record complete. It also warns of evidence
 naming a path or line the audited commit does not have. Code identifiers,
 the audit's scratch files, files the evidence proposes or says are missing,
-and the plugin's own scripts named as the plugin's are not read as paths. `record.ts summary
-<record> --profile <id>` shows the targets and gaps under a profile without
+and the plugin's own scripts named as the plugin's are not read as paths. `bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" summary <record> --profile <id>` shows the targets and gaps under a profile without
 changing the record, to explore a suggestion.
 
 ## 4. Compare with the last audit
@@ -267,7 +293,7 @@ comparison or render after it would compare the record with itself. Read it
 at the audited commit, `<commit>` below (`HEAD`, or the `--at` revision):
 
 ```bash
-git show <commit>:.config/jig-audit.yaml > <scratch>/jig-audit.prior.yaml
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file <scratch>/jig-audit.prior.yaml -- git show <commit>:.config/jig-audit.yaml
 bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" compare <scratch>/jig-audit.prior.yaml <scratch>/jig-audit.next.yaml
 ```
 
@@ -278,14 +304,14 @@ declined recommendation as **held** (do not recommend it again; check its
 `revisit_after` to today in the draft record and say why in the summary: that
 makes it due, and the sheet accepts the recommendation; when the entry
 names a `config/` finding, also save the fit report again against the draft,
-`config-fit.ts --json --record <scratch>/jig-audit.next.yaml > <scratch>/fit.json`
+`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file <scratch>/fit.json --stdout-exit-code 1 -- bun "${CLAUDE_SKILL_DIR}/scripts/config-fit.ts" --json --record <scratch>/jig-audit.next.yaml`
 (with `--offline` if step 1 used it), since step 1's report still holds that finding back), **due** (its revisit date has passed: recommend it again), **resolved**
 (every criterion it names now passes, and it names no configuration finding:
 drop the entry) or **stale** (a criterion it names no longer exists: ask the
 user). It reports a criterion that moved into or out of `not-examined` apart, as
 examined since or no longer examined, never as fixed or regressed. Against a prior record that examined every
 criterion, the criteria a narrower profile leaves unexamined are counted in
-one line; their prior scores stay as comments in the draft. The comparison refuses a draft that `record.ts check` finds incomplete.
+one line; their prior scores stay as comments in the draft. The comparison refuses a draft that `record.ts`’s `check` operation finds incomplete.
 `config-fit.ts` already leaves out the configuration findings the record
 declines, except errors, which no decline hides.
 
@@ -297,7 +323,7 @@ was examined and what could not be checked, the stack, the recommendations
 (each with an id, the refs the record would use to decline it, the finding,
 the action in the repository's own tools, evidence, leverage and effort), the
 drift findings and the terms a newcomer needs. Rank recommendations by
-leverage × effort; `record.ts summary <scratch>/jig-audit.next.yaml` gives
+leverage × effort; `bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" summary <scratch>/jig-audit.next.yaml` gives
 each module's level and, with a profile, its target and gap. Recommend toward
 the target: the sheet groups what lies beyond it as *as you grow* (needed for
 `heading_to`) or *optional*, so write those only where they are worth knowing
@@ -305,7 +331,7 @@ about. Give a recommendation a `lighter` option wherever a lighter way gets
 most of the benefit, usually writing the rule down before building a gate.
 Every gap within the target (a criterion there that does not meet its bar)
 should be moved by some recommendation's refs or left on purpose:
-`report.ts validate <scratch>/jig-audit.json --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json`
+`bun "${CLAUDE_SKILL_DIR}/scripts/report.ts" validate <scratch>/jig-audit.json --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json`
 warns of each gap neither covers, and the sheet lists them. Add a
 recommendation for each, or list it under the source's `left_on_purpose`
 with the reason and when to revisit it. Mark a recommendation only a
@@ -319,17 +345,14 @@ commit back, and write the record at each but the most recent, which is the
 prior step 4 saved:
 
 ```bash
-git log --format=%H <commit> -- .config/jig-audit.yaml
-git show <sha>:.config/jig-audit.yaml > <scratch>/jig-audit.<sha>.yaml
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git log --format=%H <commit> -- .config/jig-audit.yaml
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file <scratch>/jig-audit.<sha>.yaml -- git show <sha>:.config/jig-audit.yaml
 ```
 
 Then:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/report.ts" render <scratch>/jig-audit.json \
-  --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json \
-  [--prior <scratch>/jig-audit.prior.yaml [--history <scratch>/jig-audit.<sha>.yaml]…] \
-  --out <folder>
+bun "${CLAUDE_SKILL_DIR}/scripts/report.ts" render <scratch>/jig-audit.json --record <scratch>/jig-audit.next.yaml --fit <scratch>/fit.json [--prior <scratch>/jig-audit.prior.yaml [--history <scratch>/jig-audit.<sha>.yaml]…] --out <folder>
 ```
 
 It refuses a recommendation whose refs the record does not know or the team
@@ -356,8 +379,7 @@ When the user pastes an `audit_feedback:` block, save it to the scratch
 folder and run:
 
 ```bash
-bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" apply-feedback <scratch>/decisions.yaml \
-  --report <scratch>/jig-audit.json
+bun "${CLAUDE_SKILL_DIR}/scripts/record.ts" apply-feedback <scratch>/decisions.yaml --report <scratch>/jig-audit.json
 ```
 
 (`--dry-run` shows the plan without writing.) It refuses a block written for
@@ -389,7 +411,7 @@ Applying is a separate step, never part of an audit. For `apply <ref> …`,
 or a request that asks for the changes in the same session as the audit:
 
 1. Read each recommendation from this session's report source, or from a
-   saved sheet the user names (`report.ts extract <sheet.html>`). The record
+   saved sheet the user names (`bun "${CLAUDE_SKILL_DIR}/scripts/report.ts" extract <sheet.html>`). The record
    holds scores and declined recommendations, not the recommendations
    themselves, so without a report run the audit first (steps 1–5).
 2. Group them into as few pull requests as possible: one, unless part of

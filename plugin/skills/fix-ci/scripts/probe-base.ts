@@ -350,7 +350,12 @@ interface Limits {
 
 /** Run the setup command through the shell in the worktree; a setup that fails is no answer. */
 function runSetup(setup: string, where: string, limits: Limits): void {
-  const s = asRun(spawnSync(setup, { ...limits, shell: true }));
+  const s = asRun(
+    spawnSync(process.execPath, ["exec", setup], {
+      ...limits,
+      shell: false,
+    }),
+  );
   reportOutput(`setup ${where}`, s);
   const status = completedStatus("the setup command", s, limits.timeout / 1000);
   if (status !== 0)

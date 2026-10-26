@@ -14,6 +14,20 @@ purpose: >-
   Several agents can work one repository in parallel without colliding over
   ports, heavy runs or branches.
 criteria:
+  - id: resource-kinds-declared
+    level: standard
+    requires: convention
+    since: 0.83.0
+    statement: >-
+      A repository whose tools leave machine-local resources declares their
+      kinds and ownership boundaries, so a sweep reports its lifecycle proof
+      before collecting and keeps unregistered or unverified resources.
+    observe:
+      - "the repository declares the resource kinds its tools mint, their roots or prefixes where needed, and the owner records each predicate requires"
+      - "the repository's instructions or configuration name the collector that sweeps those kinds, one that reports before removing, records receipts and keeps an unknown lifecycle or an unregistered resource"
+      - "with Jig: .config/jig.yaml sets gc.kinds to the shipped kinds it mints, with gc.worktree_roots and gc.scratch_prefixes where those kinds need them (the machine's installation and its confirmed bounds live outside the repository and are not scored)"
+      - "expected-absent only where the repository's tooling leaves no machine-local resources between runs"
+
   - id: branch-reuse-and-footgun-bans-written
     level: lite
     requires: convention
@@ -76,6 +90,7 @@ criteria:
     observe:
       - "a create hook allocates/prints the worktree's port slot"
       - "a remove hook prints a reflection nudge (non-blocking)"
+      - "in Herdr: executable `.config/worktree-hooks/create` and `remove` count as wired only when the repository also tracks how both are reached: creation through a setup script or documented install step that installs Jig's Herdr plugin (tools/herdr/plugin), or through commands or launcher configuration that open worktrees with tools/herdr's `open`, which runs the create hook itself where no plugin is installed; and removal through commands or launcher configuration that remove worktrees with tools/herdr's `remove`; the hook files alone are configured, not wired, since an installed plugin and a habit of opening or removing through the tool are not facts the repository shows"
 
   - id: worktree-namespaces-keyed-and-reaped
     level: standard
@@ -250,3 +265,18 @@ criteria:
       - "the gate runner (a script, a task runner, a wrapper around each part) prints one line per part naming it and its outcome"
       - "a rule where agents read it says that a missing verdict line means the part did not run"
       - "expected-absent when the gate set is one command with one outcome"
+
+  - id: merge-conflict-hotspots-measured
+    level: standard
+    requires: convention
+    since: 0.77.0
+    statement: >-
+      A repository working in parallel measures where its merges conflict,
+      and each conflict hotspot is removed at its cause or kept by a recorded
+      decision with a reason and a condition for revisiting it.
+    observe:
+      - "dated reports rank conflicted paths with causes and state the time window, recurrence threshold and coverage limits"
+      - "each reported hotspot links to a change that removes its cause, work to make that change, or a recorded keep decision with its reason and revisit condition"
+      - "reports after a remedy compare like windows to check whether its cause stopped recurring"
+      - "the audit's own replay supplies current conflict evidence but does not establish that the repository already measures or acts on hotspots"
+      - "expected-absent only where neither people nor agents work in parallel; an empty history or a clone with no live events does not establish this"
