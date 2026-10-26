@@ -4,8 +4,11 @@
  * taken as pending by exactly one open at a time, completed once Orca
  * answered, and set aside, by exactly one open, once the worktree it names
  * is not the one the branch is in, so an agent is started once per key and
- * agent and a start whose outcome is unknown is never repeated without a
- * person looking first. Every change to the file is made under something
+ * agent, and a start whose outcome is unknown is never repeated in the
+ * worktree it was made in without a person looking first; one made in a
+ * worktree that is gone, or no longer holds the branch, by an open that has
+ * since ended is set aside like a completed receipt of such a worktree.
+ * Every change to the file is made under something
  * only one open can do (a hard link into a name that must not exist); what
  * an open read before that is a hint, and the file is read again under it.
  * Which worktree a receipt stands for is read from the worktree itself: the
@@ -28,7 +31,7 @@ import { dirname, join } from "node:path";
 import { isRecord } from "../../lib/record.ts";
 import { errnoCode } from "../../plugin/shared/errors.ts";
 import { CLAIM_WAIT_MS } from "../herdr/kickoff.ts";
-import { localOwner, ownerAlive } from "../herdr/owner.ts";
+import { localOwner, type Owner, ownerAlive } from "../herdr/owner.ts";
 import { budget } from "../herdr/runner.ts";
 import { OrcaError, WAIT_POLL_MS, type Workspace } from "./runner.ts";
 
@@ -219,8 +222,9 @@ function retiredName(file: string, earlier: Receipt): string {
 }
 
 /**
- * Set the stale receipt aside and take its place with this open's pending
- * receipt, for exactly one open: the stale receipt is linked under its
+ * Set the stale receipt, completed or left pending by an open that has
+ * ended, aside and take its place with this open's pending receipt, for
+ * exactly one open: the stale receipt is linked under its
  * retired name, which succeeds for the first open to do it, and the pending
  * receipt then replaces it in place, so the file is never absent and no other
  * open creates one in between. False when another open set it aside first,
@@ -238,9 +242,11 @@ function replaceStale(
     earlier.worktreeId === receipt.worktreeId
       ? `a worktree that stood at ${receipt.worktreeId} before this one`
       : `${earlier.worktreeId}, a worktree that no longer holds the branch`;
-  ws.orca.log(
-    `↺ ${receipt.key}'s agent was started on ${earlier.at} in ${where}; starting one in ${receipt.worktreeId}`,
-  );
+  const start =
+    earlier.status === "sent"
+      ? `${receipt.key}'s agent was started on ${earlier.at} in ${where}`
+      : `an open that has since ended was starting ${receipt.key}'s agent on ${earlier.at} in ${where}, with no outcome recorded`;
+  ws.orca.log(`↺ ${start}; starting one in ${receipt.worktreeId}`);
   return true;
 }
 
@@ -287,25 +293,49 @@ function awaitReplacement(
   return true;
 }
 
+/** A start whose outcome was never learned, and that a person must look at first. */
+function noOutcome(file: string, earlier: Receipt): OrcaError {
+  return new OrcaError(
+    `an earlier open's start of ${earlier.key}'s agent has no outcome recorded (${file}): check the worktree in Orca, then delete the file if the agent never started`,
+  );
+}
+
 /**
- * Wait one poll for the open whose pending receipt this is, while it still
- * runs on this machine and the deadline has not passed. A pending receipt
- * whose open has ended, or that cannot be told, stops this open: a person
- * looks first. Returns true, for the caller's record that it waited.
+ * The open still starting the agent a pending receipt records, while it
+ * runs on this machine, for the caller to wait for. Null once that open has
+ * ended and the receipt carries another worktree's token (`standsFor`): the
+ * worktree the agent was being started in is gone, or no longer holds the
+ * branch, so the receipt is stale, like a completed one of such a worktree.
+ * An open that ended in this worktree, or one that cannot be told (another
+ * host's, or none recorded), stops this open: the agent may have started
+ * here, and a person looks first.
+ */
+function runningStarter(
+  ws: Workspace,
+  file: string,
+  earlier: Receipt,
+  receipt: Receipt,
+): Owner | null {
+  const holder = earlier.owner === undefined ? null : localOwner(earlier.owner);
+  if (holder !== null && ownerAlive(ws.orca, holder)) return holder;
+  if (holder === null || standsFor(earlier, receipt))
+    throw noOutcome(file, earlier);
+  return null;
+}
+
+/**
+ * Wait one poll for `holder`, the open whose pending receipt this is, while
+ * the deadline has not passed. Returns true, for the caller's record that
+ * it waited.
  */
 function awaitStart(
   ws: Workspace,
-  file: string,
+  holder: Owner,
   earlier: Receipt,
   deadline: number,
   waited: boolean,
 ): true {
   const key = earlier.key;
-  const holder = earlier.owner === undefined ? null : localOwner(earlier.owner);
-  if (holder === null || !ownerAlive(ws.orca, holder))
-    throw new OrcaError(
-      `an earlier open's start of ${key}'s agent has no outcome recorded (${file}): check the worktree in Orca, then delete the file if the agent never started`,
-    );
   if (Date.now() >= deadline)
     throw new OrcaError(
       `another open (process ${holder.pid}) is starting ${key}'s agent and did not finish within ${Math.round(CLAIM_WAIT_MS / 1000)}s; let it finish and open the workspace again`,
@@ -325,7 +355,10 @@ function awaitStart(
  * replace it (`replaceStale`). False when an earlier start stands
  * (`standsFor`). A pending receipt whose open still runs on this machine is
  * waited for, up to `CLAIM_WAIT_MS` (`awaitStart`), and so is another open's
- * replacement of a stale receipt (`awaitReplacement`).
+ * replacement of a stale receipt (`awaitReplacement`). A pending receipt
+ * whose open has ended is judged by its token like a completed one
+ * (`runningStarter`): stale when it names another worktree, a person's to
+ * look at when it names this one.
  */
 export function claimReceipt(
   ws: Workspace,
@@ -340,11 +373,15 @@ export function claimReceipt(
     const earlier = readReceipt(file);
     if (earlier === null) continue;
     assertReceiptFor(file, earlier, receipt);
-    if (earlier.status === "pending") {
-      waitedStart = awaitStart(ws, file, earlier, deadline, waitedStart);
+    const starter =
+      earlier.status === "pending"
+        ? runningStarter(ws, file, earlier, receipt)
+        : null;
+    if (starter !== null) {
+      waitedStart = awaitStart(ws, starter, earlier, deadline, waitedStart);
       continue;
     }
-    if (standsFor(earlier, receipt)) {
+    if (earlier.status === "sent" && standsFor(earlier, receipt)) {
       ws.orca.log(
         `↺ ${receipt.key}'s agent was started in ${earlier.worktreeId} on ${earlier.at}; not starting it again (delete ${file} to start it again)`,
       );

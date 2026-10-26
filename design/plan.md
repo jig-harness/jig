@@ -592,10 +592,11 @@ item links its requirements; the delivery loop writes no spec) is a decision rec
   - the drive, pickup and review skills checked inside Orca worktrees on a
     server, as item 19 does for Herdr;
   - the tool and the launcher's Orca provider on Windows: the tool drives
-    its host with `sh`, `test` and `mkdir` and supervises its hooks through
-    `/proc` or `ps` ([CONTRIBUTING.md § Toolchain](../CONTRIBUTING.md#toolchain)
-    records the gap), so a Windows host needs those steps in its own shell
-    first, and the provider tried there once it has them.
+    its host with `sh`, `test` and `mkdir` and, on this machine, supervises
+    its hooks through `/proc` or `ps`
+    ([CONTRIBUTING.md § Toolchain](../CONTRIBUTING.md#toolchain) records
+    the gap), so a Windows host needs those steps in its own shell first,
+    and the provider tried there once it has them.
 - **Change-area consumer lint.** The `lint-consumers` check moves into the
   [change-areas skill](../plugin/skills/change-areas/README.md): the path
   lists in agent rules, hook configuration and CI workflow triggers checked

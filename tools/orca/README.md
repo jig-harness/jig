@@ -161,11 +161,15 @@ repositories is two starts, and so are two agents on one key.
   most), and then reports the start as already made.
 - A pending receipt whose open has ended, or that another machine's open
   wrote, records a start whose outcome was never learned (the launch was
-  cut short). The tool stops and says to look at the worktree in Orca and
-  delete the file if the agent never started, rather than start a second
-  one. An answer from Orca that nothing started (an agent it does not have,
-  say) clears the receipt, so the next open starts the agent once that is
-  fixed.
+  cut short). When it carries this worktree's token (below), or another
+  machine's open wrote it, the tool stops and says to look at the worktree
+  in Orca and delete the file if the agent never started, rather than start
+  a second one. When its open ended on this machine and it carries another
+  token, the worktree the agent was being started in is gone or no longer
+  holds the branch, so the receipt is set aside like a completed one of
+  such a worktree, and the agent is started here. An answer from Orca that
+  nothing started (an agent it does not have, say) clears the receipt, so
+  the next open starts the agent once that is fixed.
 - A receipt stands for the worktree its agent was started in and no other.
   The first open that starts an agent in a worktree writes a token into the
   worktree's git directory (`jig-orca-worktree`, for exactly one open: a

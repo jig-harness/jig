@@ -197,12 +197,16 @@ natively under the pinned Bun runtime. That version has one source,
 
 The [Orca workspace tool](tools/orca/README.md) and the launcher's `orca`
 provider run only on POSIX hosts: the tool drives the host it works on, this
-machine or a paired Orca server's, with `sh`, `test` and `mkdir`, and its
-hooks run under the supervisor it shares with the Herdr tool, which reads
-`/proc` or `ps`. Its suites are POSIX-only in CI (`POSIX_ONLY_SUITES` in
+machine or a paired Orca server's, with `sh`, `test` and `mkdir`. A hook on
+this machine runs under the supervisor it shares with the Herdr tool, which
+reads `/proc` or `ps`; one on a server's host runs as one SSH command under
+the call's deadline, with nothing from Jig there to supervise it, so a hook
+that outlives the deadline, or a child it leaves behind, is left to the
+host. Its suites are POSIX-only in CI (`POSIX_ONLY_SUITES` in
 [scripts/gates.ts](scripts/gates.ts); § Adding or changing a plugin skill
-says how a suite gets there), and Windows support is deferred: the plan's
-"Orca: what is left" item in [design/plan.md](design/plan.md) lists it.
+says how a suite gets there), and Windows support is deferred, as is the
+supervision of a hook on a server's host: the plan's "Orca: what is left"
+item in [design/plan.md](design/plan.md) lists both.
 
 ## Quality gates
 

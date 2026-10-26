@@ -398,12 +398,13 @@ describe("remove", () => {
     await expect(removeWorkspace(ws, removing)).rejects.toThrow("pass --force");
   });
 
-  test("leaves the receipts of agents started in the removed worktree, and one an open wrote at its id meanwhile, for the token to judge", async () => {
+  test("leaves the receipts of agents started, or being started, in the removed worktree, and one an open wrote at its id meanwhile, for the token to judge", async () => {
     // Orca gives a worktree created later at the same path the same id, and
     // one can be created, and its agent started, between Orca's deletion and
     // anything this command does afterwards. A receipt is told from the
     // removed worktree's by its token where the agent starts (receipts.ts),
-    // so nothing is set aside here: not by the id, and not at all.
+    // a pending one left by a launch cut short included, so nothing is set
+    // aside here: not by the id, and not at all.
     let replacement = "";
     const ws = workspaceOf(
       {
@@ -421,11 +422,21 @@ describe("remove", () => {
       "box",
     );
     const gone = receiptOf(ws);
+    const cutShort = receiptOf(ws, "ENG-3");
     replacement = receiptOf(ws, "ENG-2");
     const old = { ...sentReceipt(), environment: "box" };
+    const pending = {
+      ...old,
+      key: "ENG-3",
+      status: "pending",
+      owner: "box 1 0",
+    };
     writeReceiptFile(gone, old);
+    writeReceiptFile(cutShort, pending);
     expect(await removeWorkspace(ws, removing)).toBe(WT);
     expect(JSON.parse(readFileSync(gone, "utf8"))).toEqual(old);
+    expect(JSON.parse(readFileSync(cutShort, "utf8"))).toEqual(pending);
+    expect(retiredBeside(cutShort)).toHaveLength(0);
     expect(JSON.parse(readFileSync(replacement, "utf8"))).toMatchObject({
       key: "ENG-2",
       worktreeId: ID,
