@@ -21,6 +21,9 @@
  *          writes it, `{slug}` the title's first words in lower case joined
  *          by hyphens; the tracker's suggestion, else the issue key in lower
  *          case, when absent
+ *   slug   which letters `{slug}` keeps: `any` (the default) keeps letters of
+ *          any script; `ascii` keeps only `a-z` and `0-9`, for a repository
+ *          that accepts nothing else in a branch name
  *
  * With `{slug}` in the name, an issue whose branch was started under an
  * earlier title keeps that branch: the tool opens the one existing branch
@@ -34,16 +37,12 @@
  * with the login shell's `PATH`, which finds a `git` or `herdr` the tracker's
  * own environment does not.
  */
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { isRecord } from "../../../lib/record.ts";
-import {
-  assertHost,
-  runToolOnHost,
-  shellQuote,
-  ssh,
-} from "../../herdr/remote.ts";
+import { assertHost, runToolOnHost } from "../../herdr/remote.ts";
 import { openLimitMs, TRANSPORT_MS } from "../../herdr/limits.ts";
 import { HerdrError } from "../../herdr/runner.ts";
+import { copyCacheOverSsh } from "../cache-copy.ts";
 import type { OpenRequest, Provider } from "../provider.ts";
 
 /**
@@ -53,7 +52,11 @@ import type { OpenRequest, Provider } from "../provider.ts";
 export const HERDR_OPEN_BUDGET_MS = openLimitMs() + TRANSPORT_MS;
 
 const TOOL = join(import.meta.dir, "..", "..", "herdr", "workspace.ts");
-const KEYS = new Set(["path", "host", "agent", "base", "branch"]);
+const KEYS = new Set(["path", "host", "agent", "base", "branch", "slug"]);
+
+/** Which letters `{slug}` keeps; see `slugOf`. */
+export const SLUG_KINDS = ["any", "ascii"] as const;
+export type SlugKind = (typeof SLUG_KINDS)[number];
 
 /** How many of the title's words `{slug}` keeps. */
 export const SLUG_WORDS = 4;
@@ -73,6 +76,7 @@ export interface HerdrRepo {
   agent?: string;
   base?: string;
   branch?: string;
+  slug?: SlugKind;
 }
 
 /**
@@ -113,51 +117,121 @@ export function assertBranchTemplate(template: string, where: string): void {
  * A word is a run of letters, the marks combined with them, and digits, in
  * any script, after canonical composition, holding at least one letter or
  * digit: marks with nothing to combine with are not a word.
+ *
+ * With `ascii`, each word is folded to the letters `a-z` and digits `0-9`
+ * first: compatibility decomposition splits an accented letter into its
+ * base and marks, the marks are dropped and `ß` becomes `ss` (`Über` is
+ * `uber`, `Straße` is `strasse`); any other letter is dropped, and a word
+ * left with nothing is skipped, so a title in another script has no slug.
  */
-export function slugOf(title: string): string {
-  return title
+export function slugOf(title: string, kind: SlugKind = "any"): string {
+  const words = title
     .normalize("NFC")
     .toLowerCase()
     .split(/[^\p{L}\p{M}\p{N}]+/u)
-    .filter((word) => /[\p{L}\p{N}]/u.test(word))
-    .slice(0, SLUG_WORDS)
-    .join("-");
+    .filter((word) => /[\p{L}\p{N}]/u.test(word));
+  const kept = kind === "any" ? words : words.map(asciiOf).filter(Boolean);
+  return kept.slice(0, SLUG_WORDS).join("-");
 }
 
-export function parseRepo(settings: unknown, label: string): HerdrRepo {
-  const where = `repos.${label}.herdr`;
-  if (typeof settings === "string") settings = { path: settings };
-  if (!isRecord(settings))
-    throw new HerdrError(
-      `${where} must be the clone's path or a mapping with path, host, agent, base, branch`,
-    );
-  for (const key of Object.keys(settings))
-    if (!KEYS.has(key))
-      throw new HerdrError(
-        `${where}: unknown key ${key} (known: ${[...KEYS].join(", ")})`,
-      );
-  const text = (key: string): string | undefined => {
+function asciiOf(word: string): string {
+  return word
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .replaceAll("ß", "ss")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/** A reader of a repository entry's string fields; a value that is not a non-empty string is refused. */
+export type SettingText = (key: string) => string | undefined;
+
+export function settingText(
+  settings: Record<string, unknown>,
+  where: string,
+): SettingText {
+  return (key) => {
     const value = settings[key];
     if (value === undefined) return undefined;
     if (typeof value !== "string" || value.trim() === "")
       throw new HerdrError(`${where}.${key} must be a non-empty string`);
     return value.trim();
   };
+}
+
+/**
+ * `branch` and `slug`: how the repository names an issue's branch. The
+ * Orca provider reads the same two fields with the same meaning.
+ */
+export function parseBranchNaming(
+  text: SettingText,
+  where: string,
+): Pick<HerdrRepo, "branch" | "slug"> {
+  const branch = text("branch");
+  if (branch !== undefined) assertBranchTemplate(branch, `${where}.branch`);
+  const slug = text("slug");
+  if (slug !== undefined && !isSlugKind(slug))
+    throw new HerdrError(
+      `${where}.slug: unknown value ${slug} (known: ${SLUG_KINDS.join(", ")})`,
+    );
+  return {
+    ...(branch === undefined ? {} : { branch }),
+    ...(slug === undefined ? {} : { slug }),
+  };
+}
+
+/**
+ * A provider's settings for a repository as a mapping with known keys: a
+ * bare text stands for `textKey` (`shape` says what it is in a message), and
+ * an unknown key is refused, naming the known ones.
+ */
+export function repoMapping(
+  settings: unknown,
+  where: string,
+  keys: ReadonlySet<string>,
+  textKey: string,
+  shape: string,
+): Record<string, unknown> {
+  if (typeof settings === "string") settings = { [textKey]: settings };
+  if (!isRecord(settings))
+    throw new HerdrError(
+      `${where} must be ${shape} or a mapping with ${[...keys].join(", ")}`,
+    );
+  for (const key of Object.keys(settings))
+    if (!keys.has(key))
+      throw new HerdrError(
+        `${where}: unknown key ${key} (known: ${[...keys].join(", ")})`,
+      );
+  return settings;
+}
+
+export function parseRepo(settings: unknown, label: string): HerdrRepo {
+  const where = `repos.${label}.herdr`;
+  const mapping = repoMapping(
+    settings,
+    where,
+    KEYS,
+    "path",
+    "the clone's path",
+  );
+  const text = settingText(mapping, where);
   const path = text("path");
   if (path === undefined) throw new HerdrError(`${where}.path is required`);
   const host = text("host");
   if (host !== undefined) assertHost(host);
   const agent = text("agent");
   const base = text("base");
-  const branch = text("branch");
-  if (branch !== undefined) assertBranchTemplate(branch, `${where}.branch`);
   return {
     path,
     ...(host === undefined ? {} : { host }),
     ...(agent === undefined ? {} : { agent }),
     ...(base === undefined ? {} : { base }),
-    ...(branch === undefined ? {} : { branch }),
+    ...parseBranchNaming(text, where),
   };
+}
+
+function isSlugKind(value: string): value is SlugKind {
+  return (SLUG_KINDS as readonly string[]).includes(value);
 }
 
 export interface BranchChoice {
@@ -171,7 +245,7 @@ export interface BranchChoice {
  * tracker's suggestion, else the issue key.
  */
 export function branchFor(
-  repo: Pick<HerdrRepo, "branch">,
+  repo: Pick<HerdrRepo, "branch" | "slug">,
   request: Pick<OpenRequest, "issue" | "branch" | "title">,
 ): BranchChoice {
   if (repo.branch === undefined)
@@ -183,10 +257,14 @@ export function branchFor(
     throw new HerdrError(
       `${request.issue} is not a key of the form TEAM-123, so a branch named by ${repo.branch} could not be told from another issue's`,
     );
-  const slug = slugOf(request.title);
-  if (slug === "")
+  if (slugOf(request.title) === "")
     throw new HerdrError(
       `${request.issue} has no title to name its branch by (${repo.branch}); open it again once the tracker can be read`,
+    );
+  const slug = slugOf(request.title, repo.slug);
+  if (slug === "")
+    throw new HerdrError(
+      `${request.issue}'s title has no ASCII letters or digits to name its branch by (${repo.branch}, slug: ascii); give the issue such a title, or set slug: any for the repository if its branch names may hold other letters`,
     );
   return {
     branch: named.replace("{slug}", slug),
@@ -232,36 +310,6 @@ export interface HerdrDeps {
     args: string[],
     signal: AbortSignal,
   ) => Promise<{ status: number; stderr: string }>;
-}
-
-/**
- * Write the cache file to the same path under the host user's home, whole
- * and private, and return where it went.
- */
-async function copyCacheOverSsh(
-  host: string,
-  file: string,
-  signal: AbortSignal,
-): Promise<string> {
-  const home = process.env.HOME ?? "";
-  const rel = relative(home, file);
-  if (home === "" || rel.startsWith(".."))
-    throw new HerdrError(`the cache file ${file} is not under ${home}`);
-  const target = `"$HOME"/${shellQuote(rel)}`;
-  const command = [
-    "umask 077",
-    `mkdir -p "$(dirname ${target})"`,
-    `cat > ${target}.tmp.$$`,
-    `mv ${target}.tmp.$$ ${target}`,
-    `printf %s ${target}`,
-  ].join(" && ");
-  const content = await Bun.file(file).text();
-  const done = await ssh(host, command, content, signal);
-  if (done.status !== 0)
-    throw new HerdrError(
-      `could not copy ${file} to ${host}: ${done.stderr.trim()}`,
-    );
-  return done.stdout.trim();
 }
 
 /**

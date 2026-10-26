@@ -167,7 +167,7 @@ the new session, run the audit: `/jig:audit` in Claude Code, or ask for the
 | **git** | 2.36 or later (`--path-format` for absolute paths and `git worktree list -z`; `resolve-conflicts` needs 2.41, to reconstruct automatic merge results and read attributes from the index with `--attr-source`, and its history report 2.43, or 2.45 in a partial clone) | Every skill that reads the repository |
 | **GitHub CLI** (`gh`), signed in with access to the repositories you work on | 2.48 or later (`gh api --slurp`) | Every skill that works on pull requests. Jig supports GitHub as its only forge ([extending](EXTENDING.md#forge-github)) |
 | **The `gh-stack` extension** | Any | Only `pull_requests.stacking: native` |
-| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in |
+| **Issue-tracker access** | — | `do-item`, and `drive-pr`'s tracker reads. With the default GitHub adapter, the signed-in `gh` above and nothing more. With the Linear adapter: `LINEAR_API_KEY` or `LINEAR_API_TOKEN` in the environment, or the Linear MCP server or `linear` command line tool signed in |
 
 Most skills do not check these versions when they run: an older tool fails
 on the command it lacks. The `resolve-conflicts` history report is the
@@ -373,9 +373,10 @@ plugin's. Delete such a copy when you adopt the plugin's version.
 
 `drive-pr` and `do-item` read the same configuration file as the review
 skill. Every field below has a default except `issue_tracker.team`, which the
-tracker scripts require on Linear; on GitHub Issues the key is the
-repository's own (`issue_tracker.github.repository`, by default the `origin`
-remote's), so no team is set. A drive does not need an AI reviewer: without one it
+tracker scripts require on Linear (`issue_tracker.adapter: linear`); on GitHub
+Issues, the default, the key is the repository's own
+(`issue_tracker.github.repository`, by default the `origin` remote's), so no
+team is set. A drive does not need an AI reviewer: without one it
 converges on review threads and CI alone. A repository that has one names it
 with `review.reviewer_app` (or `review.reviewer_check_pattern`), and the drive
 then also waits for the check run, sticky comment and reviewed-commit marker
@@ -408,8 +409,8 @@ ci:
   required_checks: [build, test]   # check runs that must complete on the final head; default: what the base branch's protection requires
   hold_label: ci:hold         # label your workflows honour to skip heavy jobs between review rounds; default: none (every push runs full CI)
 issue_tracker:
-  adapter: linear             # which tracker adapter to use: linear or github (GitHub Issues)
-  team: ENG                   # Linear's team key; required by the Linear adapter
+  adapter: github             # which tracker adapter to use: github (GitHub Issues, the default) or linear
+  # team: ENG                 # Linear only: its team key, required by the Linear adapter
   file_command: /jig:file-issue   # how an agent files an issue by hand
   taxonomy: label-taxonomy.yaml   # the label taxonomy file-issue validates against; default label-taxonomy.yaml
   states:                     # the tracker's own names for the workflow states
@@ -474,7 +475,7 @@ folder too; `JIG_VERIFICATION_FIT_LOG` overrides it.
 the tracker only through a small [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (read an issue with its
 comments, list its children, change its state, post a comment, run the
 reports' queries). An *adapter* implements that interface for one tracker;
-`issue_tracker.adapter` chooses it: `linear`, or `github` for GitHub Issues.
+`issue_tracker.adapter` chooses it: `github` for GitHub Issues (the default), or `linear`.
 `issue_tracker.states` translates the skills' state names (`in_progress`,
 `done`, …) into the tracker's own; on GitHub Issues an open state is a label
 or a Projects board's option, and a closed one the reason the issue was
@@ -709,7 +710,7 @@ runs as you:
 | Where | What to do |
 |-------|------------|
 | A terminal session in any clone or worktree | Nothing beyond the one-time install |
-| Herdr, Conductor, or any tool that creates worktrees and starts sessions | Nothing: new workspaces are ordinary directories on a machine that has the plugin |
+| Herdr, Orca, Conductor, or any tool that creates worktrees and starts sessions | Nothing: new workspaces are ordinary directories on a machine that has the plugin |
 | `claude -p`, `codex exec`, scripts and loops | Nothing; plugins load in headless runs too |
 | A container image or CI runner that runs an agent | Install at image build: run the install commands with git credentials available. For Claude Code, build a read-only *seed* with `CLAUDE_CODE_PLUGIN_CACHE_DIR=/opt/claude-seed claude plugin install jig --marketplace https://github.com/jig-harness/jig.git#stable`, set `CLAUDE_CODE_PLUGIN_SEED_DIR=/opt/claude-seed` at run time, and enable it with `enabledPlugins` ([details](https://code.claude.com/docs/en/plugins/org#seed-containers-and-ci)). For Codex, run the two install commands in the image, or copy `plugin/skills/*` to `/etc/codex/skills/` and `plugin/shared/` to `/etc/codex/shared/`: the scripts import the shared code from the folder beside the skills folder |
 | CI jobs that only run tests and gates | Nothing: they do not need the skills |

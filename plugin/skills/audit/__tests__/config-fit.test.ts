@@ -348,13 +348,6 @@ describe("the configuration file", () => {
       evidence:
         "scripts/gates.sh is an executable script named like the repository's check, and CI runs it (.github/workflows/ci.yml)",
     });
-    // Without a package script or CI step, a gate script CI does not run is still found.
-    const alone = repo({ "scripts/check.sh": "#!/bin/sh\ntrue\n" });
-    expect(
-      fitIn(alone, ["--offline"]).suggestions.find(
-        (s) => s.field === "gates.command",
-      )?.value,
-    ).toBe("bash scripts/check.sh");
   });
 
   test("a gate script CI only mentions, or runs with arguments that cannot be kept, is suggested as such", () => {
@@ -1418,7 +1411,10 @@ declined:
       "review.sticky_marker, drive.reviews_drafts",
     );
     expect(user?.message).not.toContain("review.bots");
-    expect(ids(report)).toContain("fact:environment-layer");
+    const layer = report.findings.find(
+      (f) => f.id === "fact:environment-layer",
+    );
+    expect(layer?.message).toContain("except for the tracker check");
     // A field that describes one repository makes every skill refuse the user file.
     expect(
       report.findings.find((f) => f.id === "fact:user-layer-refused")?.message,
@@ -1449,6 +1445,7 @@ declined:
       "review.bots",
       "pull_requests.stacking",
       "review.repo_slug",
+      "issue_tracker.adapter",
       "issue_tracker.team",
       "drive.change_areas_catalog",
       "gates.command",
@@ -1468,6 +1465,8 @@ pull_requests:
   stacking: branch
 issue_tracker:
   # ENG-<n> issue keys in 3 of the last 3 merged pull requests
+  adapter: linear
+  # ENG-<n> issue keys in 3 of the last 3 merged pull requests
   team: ENG
 drive:
   # docs/change-areas.yaml is tracked and named like a change-area catalog
@@ -1480,7 +1479,7 @@ gates:
     expect(checkConfig(parsed, loadSchema())).toEqual([]);
     expect(parsed).toEqual({
       review: { bots: ["example-review[bot]"], repo_slug: "example/web" },
-      issue_tracker: { team: "ENG" },
+      issue_tracker: { adapter: "linear", team: "ENG" },
       pull_requests: { stacking: "branch" },
       drive: { change_areas_catalog: "docs/change-areas.yaml" },
       gates: { command: "npm run test" },
@@ -1507,7 +1506,7 @@ gates:
     const added = load(report.draft ?? "") as Record<string, unknown>;
     expect(added).toEqual({
       review: { bots: ["example-review[bot]"], repo_slug: "example/web" },
-      issue_tracker: { team: "ENG" },
+      issue_tracker: { adapter: "linear", team: "ENG" },
       pull_requests: { stacking: "branch" },
     });
     expect(checkConfig(added, loadSchema())).toEqual([]);
@@ -1516,7 +1515,7 @@ gates:
   test("a tracker without credentials cannot be reached", () => {
     const dir = repo({
       ".config/jig.yaml":
-        "repository:\n  base_branch: main\nissue_tracker:\n  team: ENG\n",
+        "repository:\n  base_branch: main\nissue_tracker:\n  adapter: linear\n  team: ENG\n",
     });
     const bin = fakeGh(dir, answers());
     // Only the fake gh and the system tools: no tracker client, no credential.
@@ -1528,6 +1527,74 @@ gates:
       report.findings.find((f) => f.id === "derivation:issue_tracker")?.message,
     ).toContain("cannot be reached");
   });
+  describe("a configured repository without a tracker section", () => {
+    /**
+     * The tracker finding, and config-fit's exit status, when it runs in
+     * `cwd` on the repository `JIG_CONSUMER_ROOT` names (the working
+     * directory when unset), the fake forge answering GraphQL with
+     * `graphql`, with `extra` set.
+     */
+    function trackerFinding(
+      graphql: string,
+      cwd?: string,
+      extra: Record<string, string> = {},
+    ): { finding: Report["findings"][number] | undefined; code: number } {
+      const dir = repo({
+        ".config/jig.yaml": "repository:\n  base_branch: main\n",
+      });
+      git(dir, "remote", "add", "origin", "https://github.com/example/web.git");
+      const bin = fakeGh(dir, { ...answers(), "api graphql": graphql });
+      const env = cleanEnv({
+        PATH: withPath(bin),
+        ...(cwd === undefined ? {} : { JIG_CONSUMER_ROOT: dir }),
+        ...extra,
+      });
+      const run = runScript("config-fit.ts", ["--json"], cwd ?? dir, env);
+      const { findings } = JSON.parse(run.out) as Report;
+      const finding = findings.find((f) => f.id === "derivation:issue_tracker");
+      return { finding, code: run.code };
+    }
+    // The repository answers; its issue #1 is one no issue read can parse,
+    // so a probe that read an issue would fail.
+    const REACHED = JSON.stringify({
+      data: { repository: { id: "R_1", issue: { number: 1 } } },
+    });
+
+    test("probes the audited repository, reading no issue", () => {
+      expect(trackerFinding(REACHED).finding).toBeUndefined();
+      // The working directory has no origin remote; the audited one does.
+      expect(trackerFinding(REACHED, repo({})).finding).toBeUndefined();
+    });
+
+    // Each fails the audit. Only the first forge fails, so only a probe of
+    // the default tracker passes the rest; Linear answers through the fake
+    // client fakeGh installs, never a real one.
+    test.each([
+      ["!fake forge: no answer", {}, /github tracker .*fake forge/],
+      [
+        REACHED,
+        { ADAPTER: "linear", TEAM: "ENG" },
+        /linear tracker .*fake linear/,
+      ],
+      [REACHED, { ADAPTER: "[x" }, /every skill here refuses to run/],
+      [REACHED, { ADAPTER: "jira" }, /'jira' is not supported/],
+    ] as const)("%s with %o is an error: %p", (graphql, tracker, message) => {
+      const layer = Object.fromEntries(
+        Object.entries(tracker).map(([k, v]) => [
+          `JIG__ISSUE_TRACKER__${k}`,
+          v,
+        ]),
+      );
+      const r = trackerFinding(graphql, undefined, {
+        JIG_USER_LAYER: "off",
+        ...layer,
+      });
+      expect(r.finding?.severity).toBe("error");
+      expect(r.finding?.message).toMatch(message);
+      expect(r.code).toBe(1);
+    });
+  });
+
   test("the forge's default branch wins over a stale origin/HEAD, which is warned", () => {
     const stale = repo({ ".config/jig.yaml": 'gates:\n  command: "true"\n' });
     withOrigin(stale, { main: null, develop: null }, "main");

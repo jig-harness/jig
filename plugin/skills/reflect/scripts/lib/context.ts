@@ -6,7 +6,7 @@
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import {
   basename,
   dirname,
@@ -167,6 +167,33 @@ export function gitDir(root = consumerRoot()): string {
 }
 
 /**
+ * Where the journal lives by default, under the worktree's own git
+ * directory, as a relative path, so a tool that removes worktrees on another
+ * machine (the Orca workspace tool) can look for it without running git here.
+ */
+export const DEFAULT_JOURNAL_IN_GIT_DIR = join(
+  "jig",
+  "reflection-journal.jsonl",
+);
+
+/**
+ * `path` as the file system spells it: its nearest existing ancestor with
+ * links resolved and, on Windows, 8.3 short names expanded, as git spells the
+ * top level; the part that does not exist yet as given.
+ */
+function spelled(path: string): string {
+  const rest: string[] = [];
+  let head = path;
+  while (!existsSync(head)) {
+    const parent = dirname(head);
+    if (parent === head) return path;
+    rest.unshift(basename(head));
+    head = parent;
+  }
+  return join(realpathSync.native(head), ...rest);
+}
+
+/**
  * The worktree's journal. The default lives in the worktree's own git
  * directory, which git never tracks and which goes when the worktree goes.
  * A configured path that git would track is refused.
@@ -176,10 +203,10 @@ export function journalPath(
   root = consumerRoot(),
 ): string {
   if (configured === null)
-    return join(gitDir(root), "jig", "reflection-journal.jsonl");
+    return join(gitDir(root), DEFAULT_JOURNAL_IN_GIT_DIR);
   const top = git(["rev-parse", "--show-toplevel"], root);
   if (top !== null) {
-    const inside = relative(resolve(top), configured);
+    const inside = relative(spelled(resolve(top)), spelled(configured));
     // Outside the repository only when its first segment is `..`: a name
     // such as `..notes` is a directory inside it.
     const segments = inside.split(/[\\/]/);
@@ -241,7 +268,7 @@ type Env = Record<string, string | undefined>;
  * The harness, from the variables it sets: Claude Code sets `CLAUDECODE` and
  * `CLAUDE_CODE_ENTRYPOINT`; Codex sets variables named `CODEX_…`; a wrapper
  * that runs the harness adds its own (Herdr's `HERDR_ENV=1`, Conductor's
- * `CONDUCTOR_…`). `null` when nothing identifies one.
+ * `CONDUCTOR_…`, Orca's `ORCA_…`). `null` when nothing identifies one.
  */
 export function detectHarness(env: Env = process.env): Harness | null {
   const names = Object.keys(env);
@@ -252,6 +279,7 @@ export function detectHarness(env: Env = process.env): Harness | null {
   if (env.HERDR_ENV === "1") wrapper = "herdr";
   else if (names.some((key) => key.startsWith("CONDUCTOR_")))
     wrapper = "conductor";
+  else if (names.some((key) => key.startsWith("ORCA_"))) wrapper = "orca";
   if (name === null && wrapper === null) return null;
   return {
     name,

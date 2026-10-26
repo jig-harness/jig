@@ -3,6 +3,7 @@
  * spawning anything.
  */
 import { describe, expect, it } from "bun:test";
+import { posix, resolve } from "node:path";
 import {
   detectHarness,
   issueFromBranch,
@@ -25,7 +26,11 @@ import {
   parseEvent,
   recurrence,
 } from "../scripts/lib/events.ts";
-import { parseReflection, splitWords } from "../scripts/lib/settings.ts";
+import {
+  expandPathWith,
+  parseReflection,
+  splitWords,
+} from "../scripts/lib/settings.ts";
 import {
   numberKeys,
   teamKeys,
@@ -218,6 +223,20 @@ describe("computed state", () => {
 });
 
 describe("settings", () => {
+  it("expands a path setting for a given home directory and path rules", () => {
+    // The rules a reader for another machine (the Orca tool, over SSH) uses
+    // to expand a setting exactly as this skill does on that machine.
+    const on = (raw: string) =>
+      expandPathWith(raw, "/w/app", "/home/me", posix);
+    expect(on("~")).toBe("/home/me");
+    expect(on("~/j.jsonl")).toBe("/home/me/j.jsonl");
+    expect(on("~\\dev/app/j.jsonl")).toBe("/home/me/dev/app/j.jsonl");
+    expect(on(".context/j.jsonl")).toBe("/w/app/.context/j.jsonl");
+    expect(on("../j.jsonl")).toBe("/w/j.jsonl");
+    expect(on("/srv/j.jsonl")).toBe("/srv/j.jsonl");
+    expect(on("~x/j.jsonl")).toBe("/w/app/~x/j.jsonl");
+  });
+
   it("is off without the section, and when it says enabled: false", () => {
     expect(parseReflection(undefined, "/repo").on).toBe(false);
     expect(
@@ -226,7 +245,7 @@ describe("settings", () => {
     // Parking still has to find a configured journal.
     expect(
       parseReflection({ enabled: false, journal: "scratch/j.jsonl" }, "/repo"),
-    ).toEqual({ on: false, journal: "/repo/scratch/j.jsonl" });
+    ).toEqual({ on: false, journal: resolve("/repo", "scratch/j.jsonl") });
   });
 
   it("fills the defaults when the section is present", () => {
@@ -369,6 +388,20 @@ describe("context", () => {
       version: null,
       entrypoint: null,
       wrapper: "herdr",
+    });
+    expect(
+      detectHarness({ CLAUDECODE: "1", ORCA_WORKTREE_ID: "r::/w" }),
+    ).toEqual({
+      name: "claude-code",
+      version: null,
+      entrypoint: null,
+      wrapper: "orca",
+    });
+    expect(detectHarness({ ORCA_PANE_KEY: "t:p" })).toEqual({
+      name: null,
+      version: null,
+      entrypoint: null,
+      wrapper: "orca",
     });
     expect(detectHarness({ HERDR_ENV: "0" })).toBeNull();
     expect(detectHarness({ PATH: "/bin" })).toBeNull();

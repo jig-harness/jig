@@ -291,6 +291,12 @@ export interface Tracker {
   readonly team: string;
   /** The tracker's own name for a canonical state. */
   stateName(state: CanonicalState): string;
+  /**
+   * Resolves when the tracker answers for this team: the credential works and
+   * the team (Linear) or repository (GitHub) exists. Reads no issue. An
+   * aborted `signal` ends the request in flight.
+   */
+  reach(signal?: AbortSignal): Promise<void>;
 
   // ── Issue pickup ──
   /** One issue with its labels and children; `null` when it does not exist. */

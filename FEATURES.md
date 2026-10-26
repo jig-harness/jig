@@ -208,10 +208,15 @@ tooling targets first, on macOS, Linux and remote hosts: the
 [Herdr workspace tool](tools/herdr/README.md) opens an issue's branch as a
 worktree workspace with its agent started and its first prompt sent once,
 reattaches instead of duplicating either, and runs the repository's
-worktree create and remove hooks. On a machine where
-the plugin is installed, it needs no setup per workspace in Herdr, Conductor
-or any tool that creates worktrees and starts sessions with your agent
-configuration; a remote host, a container or an isolated configuration
+worktree create and remove hooks. Orca, the desktop and remote agent
+environment, is supported the same way: the
+[Orca workspace tool](tools/orca/README.md) opens an issue's branch as an
+Orca worktree, in Orca on this machine or on a paired Orca server, named as
+the repository names its branches, with the create hook run and the agent
+started once. On a machine where
+the plugin is installed, it needs no setup per workspace in Herdr, Orca,
+Conductor or any tool that creates worktrees and starts sessions with your
+agent configuration; a remote host, a container or an isolated configuration
 directory needs its own install
 ([where it works](plugin/README.md#where-it-works)).
 

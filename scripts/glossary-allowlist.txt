@@ -110,3 +110,8 @@ SIGTERM
 # units of data size, not terms of art
 MiB
 KiB
+
+# Product names of spec-driven frameworks the spec ecosystems research note
+# and the spec link design compare; names, not terms of art.
+BMAD
+GSD

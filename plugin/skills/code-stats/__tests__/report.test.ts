@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { symlinkSync } from "node:fs";
 import { join } from "node:path";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import { jsonReport, total, unclassified } from "../scripts/lib/aggregate.ts";
 import {
   analyzeFile,
@@ -199,7 +200,12 @@ describe("analyzeFile", () => {
     );
   });
 
-  test("fails loudly on a lookup error other than a missing path", async () => {
+  test.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "Windows reports a file used as a directory as missing (ENOENT), not ENOTDIR",
+    ),
+  )("fails loudly on a lookup error other than a missing path", async () => {
     // ENOTDIR: a path component is a regular file.
     await expect(analyzeFile("dir/big.ts/child", ctx)).rejects.toThrow();
   });

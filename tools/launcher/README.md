@@ -9,10 +9,12 @@ opened it, writes the whole issue (description, comments, sub-issues, links) to
 a file the agent reads, picks the repository from the issue's label, and opens
 a workspace for the agent. With the Herdr provider a routed issue opens as a
 Herdr worktree workspace, on this machine or on a remote host, with the
-agent started and given the prompt. With the Conductor provider a routed
-issue opens Conductor's new-workspace composer with the prompt filled in,
-and the agent starts when you click **Create**; an unrouted issue creates
-(or reopens) its workspace directly.
+agent started and given the prompt. With the Orca provider a routed issue
+opens as an Orca worktree, in Orca on this machine or on a paired Orca
+server, with the agent started and given the prompt. With the Conductor
+provider a routed issue opens Conductor's new-workspace composer with the
+prompt filled in, and the agent starts when you click **Create**; an
+unrouted issue creates (or reopens) its workspace directly.
 
 It is machine tooling, not an agent skill. The tracker runs it, not a session,
 so it lives here and runs from a checkout of this repository rather than from
@@ -70,7 +72,7 @@ because the tracker starts the launcher before any repository is known.
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `tracker` | `linear` | Which issue tracker the issue is read from. |
-| `provider` | `conductor` | Which workspace provider opens the issue. |
+| `provider` | `conductor` | Which workspace provider opens the issue: one name, or a list in order of preference. |
 | `skill` | `/jig:do-item` | The slash command the first prompt starts with; the issue key follows it. |
 | `repo_label_group` | `Repo` | The tracker label group whose value names the repository. |
 | `repos` | none | Repository label → that repository's settings, one entry per provider. |
@@ -88,6 +90,38 @@ An issue whose label has no entry, that carries no label in the group, or whose
 labels could not be read in full, is not routed; the provider then detects the
 repository itself.
 
+With a list, an issue opens with the first provider its repository has an
+entry for, and an unrouted issue, or one whose repository has an entry for
+none of them, with the first provider in the list. So
+`provider: [herdr, conductor]` opens a repository with a `herdr` entry in
+Herdr, one with only a `conductor` entry in Conductor, and anything else in
+Herdr, which refuses an issue it has no repository for. Putting `conductor`
+first instead sends those to Conductor, which detects the repository itself.
+For example:
+
+```yaml
+provider: [herdr, conductor]
+repos:
+  my-service:
+    herdr: {path: ~/dev/my-service, host: build-box}
+    conductor: my-service
+  my-website:
+    conductor: Website         # no herdr entry: opens in Conductor
+```
+
+Changing the first line to `provider: conductor` sends every issue to
+Conductor without touching the entries. A repository with an `orca` entry
+opens in Orca the same way once `orca` is in the list:
+
+```yaml
+provider: [orca, herdr, conductor]
+repos:
+  my-service:
+    orca: {repo: my-service, environment: build-box}   # on a paired Orca server
+  my-tool:
+    orca: my-tool                                      # in Orca on this machine
+```
+
 ## What happens on launch
 
 1. Read the issue from the tracker. Linear's reader follows every connection's
@@ -99,7 +133,8 @@ repository itself.
    reader sees a partial file). The directory name is historical: it predates a
    second launcher and every launcher shares it so the issue-pickup skill needs
    no per-launcher branch.
-4. Choose the repository from the label, and hand the prompt to the provider,
+4. Choose the repository from the label and the provider from the
+   repository's entries, and hand the prompt to the provider,
    which has 30 seconds to open the workspace unless it sets its own budget
    (Herdr's is derived from its tool's own limits).
 
@@ -146,6 +181,7 @@ A provider performs the last step and nothing else; see
 |----------|------------------------|--------|
 | `conductor` | A `conductor://` deep link. A routed issue uses `prompt=…&path=<repository root>`; an unrouted one uses `linear_id=<key>`, which makes Conductor guess the repository. The root comes from Conductor's own database, read-only. | shipped |
 | `herdr` | The [Herdr workspace tool](../herdr/README.md)'s `open`, on this machine or on the host the repository's settings name: the issue's branch as a worktree workspace (reattached when it exists), the agent started and the prompt sent once per issue. A routed issue only. | shipped |
+| `orca` | The [Orca workspace tool](../orca/README.md)'s `open`, in Orca on this machine or on the paired Orca server the repository's settings name: the issue's branch as an Orca worktree (reattached when it exists), named as the repository names its branches, the repository's create hook run once, the agent started with the prompt once per issue, and the issue linked in Orca. A routed issue only. | shipped |
 
 Conductor reads `repos.<label>.conductor` as a repository name. Its database is
 Conductor's private storage, not a documented interface; when it cannot be read
@@ -164,6 +200,7 @@ repos:
       agent: codex             # Herdr agent kind; claude when absent
       base: origin/main        # base of a new branch; the clone's origin/HEAD when absent
       branch: feature/{key}-{slug}   # how the repository names an issue's branch
+      slug: ascii              # {slug} in a-z and 0-9 only; any (every script) when absent
 ```
 
 The branch is the one the launch names, else the one the tracker suggests
@@ -172,7 +209,13 @@ repository names its branches with `branch`. There, `{key}` is the issue key
 as the tracker writes it and `{slug}` the title's
 [slug](../../GLOSSARY.md): its first four words in lower case, joined by
 hyphens: `feature/{key}-{slug}` opens `ENG-12` as
-`feature/ENG-12-fix-the-login-page`. A branch already started for the issue
+`feature/ENG-12-fix-the-login-page`. The slug keeps letters of any script,
+unless `slug: ascii` keeps only `a-z` and `0-9`, for a repository that
+accepts nothing else in a branch name: accents are dropped and `ß` becomes
+`ss` (`Über-Export` is `uber-export`), other letters are dropped, a word left
+empty is skipped so the slug is the first four words that remain
+(`修复 login 页面 page now ok` is `login-page-now-ok`), and a title left with
+none is refused. A branch already started for the issue
 is kept even after its title changed: the tool opens the one existing branch,
 local or on origin, that starts with the name's part before `{slug}`
 (`feature/ENG-12-`). When there are several, it opens the one the launch
@@ -198,6 +241,43 @@ that outlasts the cache file's 30 minutes still starts the work: the skill
 then reads the issue from the tracker instead.
 The host's requirements and what the tool keeps are in its
 [README](../herdr/README.md).
+
+Orca reads `repos.<label>.orca` as the repository's name in Orca (`orca repo
+list`), or as a mapping:
+
+```yaml
+provider: orca
+repos:
+  my-service:
+    orca:
+      repo: my-service         # the repository's name in Orca
+      environment: build-box   # a paired Orca server; Orca on this machine when absent
+      ssh: build-box           # the server's host over SSH; the environment's name when absent
+      agent: codex             # Orca agent id; claude when absent
+      base: origin/main        # base of a new branch; the clone's origin/HEAD when absent
+      branch: feature/{key}-{slug}   # how the repository names an issue's branch
+      slug: ascii              # {slug} in a-z and 0-9 only; any (every script) when absent
+```
+
+`branch` and `slug` name the branch exactly as they do for Herdr, above, and
+a branch already started for the issue is reused by the same rule. Orca
+itself names a new branch after the worktree under a prefix of its own and
+its command line cannot name one, so the tool creates the worktree through
+Orca and then renames the branch, before the repository's create hook runs
+and the agent starts; Orca reads the branch from git and follows. On a
+server, Orca's tool runs here and reaches the server, while git and the
+hooks run on the server's host over SSH, so `ssh` must name it (as
+`environment` does when the two names agree); the issue's cache file is
+copied there first, as for Herdr, and the prompt names that copy. The
+agent's start is recorded once per issue, repository, agent and server in
+`~/.jig/orca/kickoff/`, so a second launch of the same issue reattaches and
+starts nothing, and two launches at once start it once. An unrouted issue is
+refused: Orca has several repositories and nothing in the issue picks one.
+The tool runs as a process of its own, as the Herdr tool does, so the
+launcher's deadline ends it; the provider's budget is the Orca tool's own
+limit for `open` (sized for the create hook and a wait on another launch)
+plus the connection around it. How to run Orca's server on a host, and what
+the tool relies on in Orca, are in its [README](../orca/README.md).
 
 To add a provider, add `providers/<name>.ts` exporting a `Provider`, register it
 in `providers/index.ts`, and document its `repos.<label>.<name>` settings here.

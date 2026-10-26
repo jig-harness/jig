@@ -1097,8 +1097,11 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     return ids;
   }
 
-  async function teamId(): Promise<string> {
-    const data = record(await transport(TEAM_QUERY, { key: team }), "data");
+  async function teamId(signal?: AbortSignal): Promise<string> {
+    const data = record(
+      await transport(TEAM_QUERY, { key: team }, signal),
+      "data",
+    );
     const node = onlyMatch(data.teams, team, "key", `team '${team}'`);
     return str(node.id, `team '${team}'.id`);
   }
@@ -1113,6 +1116,10 @@ export function linearTracker(opts: LinearTrackerOptions): Tracker {
     adapter: "linear",
     team,
     stateName: (state) => states[state],
+
+    async reach(signal) {
+      await teamId(signal);
+    },
 
     async getIssue(key) {
       let data: unknown;

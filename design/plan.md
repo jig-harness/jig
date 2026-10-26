@@ -35,9 +35,15 @@ rollout:
   ([the module contract](../modules/AGENTS.md#the-module-contract)); the
   NOTICE entries move with them.
 - **`red-team`**: adversarial review of a requirements or architecture
-  document by persona (critical chief technology officer, security auditor, performance engineer,
-  cost optimizer), in a fresh session; the runnable form of M6's per-stage
-  adversarial review.
+  document by persona, in a fresh session; the runnable form of M6's
+  per-stage adversarial review. The engineering personas (critical chief
+  technology officer, security auditor, performance engineer, cost
+  optimizer) read both documents; a requirements document is also read by
+  personas standing for the people who will use and approve it: a reader
+  who knows no engineering terms, one who cuts the scope to the smallest
+  release that still delivers the outcome, one who asks of each outcome how
+  it would be tested, and one who walks the user's day and names the
+  moments the document leaves out.
 - **Plan review**, folded into `review`, which already accepts a plan
   document: dependencies and critical path, completeness, simplification and
   effort checks.
@@ -130,8 +136,8 @@ Move into configuration when a consumer needs them:
 
 - the review skill's deferral step (`defer-batch.ts`) calls Linear directly,
   with fixed label groups, instead of going through the
-  [tracker interface](../GLOSSARY.md), so a repository on GitHub Issues
-  cannot defer a finding. Moving it onto the interface makes it work on
+  [tracker interface](../GLOSSARY.md), so a repository on GitHub Issues,
+  the default tracker, cannot defer a finding. Moving it onto the interface makes it work on
   every adapter; revisit for GitHub Issues what the step relies on that
   GitHub lacks or spells differently: label groups (GitHub labels have none,
   so the type and repository groups become configured label lists), its
@@ -382,6 +388,128 @@ severity answers it as a finding, a report with scores and no alert adds none,
 and a failing reporter check with no alert does not hold the drive back,
 unless the repository's effective CI policy requires that check.
 
+### 26. `init`: setting a repository up for Jig
+
+A repository adopts Jig by hand today: read the configuration reference,
+write `.config/jig.yaml`, or copy the audit's starter configuration out of
+the sheet. [design/init.md](init.md) has how it works: one detector shared
+with the audit's configuration fit, a run that derives every value the
+repository states, asks at most five questions for the rest, writes the
+overlay with its evidence, enables the plugin for everyone who clones, and
+checks the result the way the audit will; the audit measures, init writes.
+What it will build, one pull request per step:
+
+- **The shared detector**: `config-fit.ts`'s detection and draft move to
+  `plugin/shared/detect.ts` with their tests, the audit unchanged.
+- **The skill**: `plugin/skills/init/` with `init.ts` (derive, ask, write,
+  check), refresh mode after a plugin release, tests from a plugin copy
+  against fixture repositories with and without a configuration, the
+  lifecycle-map row and the README table row.
+- **The pointers**: the adoption pages, setup's next step, the audit's
+  `remedy: init` marker and the sheet's command.
+- **Project-level enablement** in the host settings files.
+
+Done when a fresh clone with no configuration runs `/jig:init`, commits
+what it wrote, the audit's configuration fit reports no finding about a
+field init derived or wrote, every other finding is reported with its
+remedy, and the brownfield and greenfield pages send a new repository
+there first.
+
+### 27. Work types: depth by kind of work
+
+Every item runs the same stations at the same depth, and the kinds of work
+Jig already knows (`labels.bug`, `batch_sizes`, `hitl`, the taxonomy's
+closed `types` list) are read in scattered places or not at all.
+[design/work-types.md](work-types.md) has how it works: the type derived
+from the taxonomy's types family, the tracker's own type or a conventional
+title prefix, never asked when derivable; one depth table per type with
+defaults a repository overrides field by field; a type lowering depth only
+where no flag, catalog review or gate raises it; an unknown type getting
+the strictest value of every field. What it will build, one pull request per step:
+
+- **The derivation**: `determine_type.ts`, `issue_tracker.types`, the
+  defaults table as data with its tests, in CONFIGURATION.md; `do-item`
+  prints the type and changes nothing yet.
+- **`do-item` reads the row**: the pattern pre-scout, the review tiers and
+  skip threshold, the change note, the body sections and the spike's `hitl`
+  default move to the table, with a `task` fixture showing the lighter path.
+- **`work-batch` and `file-issue`**: batchability from the row; the type
+  written at filing.
+- **The required check** that refuses a pull request whose item is
+  of type `unknown` or links no item, reading its script and the type mapping from
+  the base branch rather than the head, with a workflow template and the
+  setup that makes it required.
+- **The lifecycle map's column and M9's audit criterion.**
+
+Done when a task-typed issue reaches its pull request with the depth its
+row gives, a feature keeps every gate it has today, and the three former
+conditions have no reader outside the table.
+
+### 28. `verify` and `debug`: evidence before claims, and a bounded debugging protocol
+
+A claim that the tests pass points at nothing, and a failure whose cause is
+not named gets a fix, then another. [design/verify-and-debug.md](verify-and-debug.md)
+has how it works: an evidence record tied to the tree hash, with the test
+counts from the runner's report and an expected-failure mode for M14's
+seen-to-fail; a `verify` skill that records and a pull-request policy that
+refuses a push without a record; a `debug` skill that reproduces,
+attributes on a fresh base, narrows, keeps a hypothesis ledger, fixes, and
+stops after a budget with the ledger posted where the work is tracked.
+What it will build, one pull request per step:
+
+- **The record**: `shared/evidence.ts` with its tests, run from a plugin copy.
+- **`verify`**: the skill, its README, the lifecycle row, the M14 link.
+- **`do-item` and `fix-ci` record and require**: the policy refusal, the
+  body's evidence section, the seen-to-fail requirement by work type (item 27).
+- **`debug`**: the skill, the ledger, the budget, the hand-off from
+  `fix-ci`, tests with a fixture whose failure needs attribution and one
+  whose budget runs out.
+
+Done when a pull request `do-item` opens carries an evidence section for
+the pushed tree, `fix-ci` hands a surviving test failure to `debug`, and a
+drive's repair round ends with a posted ledger when the budget runs out.
+
+### 29. The spec a work item links
+
+A work item carries or links its requirements, and the link is prose:
+`do-item` hands the agent the body, the reviewer is told to check "the
+acceptance criteria" wherever they are, and the pull request never says
+which were met. [design/spec-link.md](spec-link.md) has how it works, on
+the [spec ecosystems research note](spec-ecosystems-research.md): a
+read-only resolver with one adapter per layout (the item's own body first,
+then the common repository layouts by convention, then the tracker's
+attachments once the interface has them) that returns requirements,
+acceptance criteria and tasks with their ids; the result handed to the
+implementing agent and the reviewer; a pull-request section accounting for
+every criterion as met with an evidence record (item 28), deferred to a
+filed item, or not applicable. The delivery loop writes no spec and
+dictates no format.
+What it will build, one pull request per step:
+
+- **The resolver and the `body` adapter**, with the conformance test every
+  adapter passes and the pull-request section; `do-item` prints the result
+  and changes nothing else.
+- **The repository adapters**, two or three layouts per pull request, each
+  with its fixture folder; M6's audit criterion with the last of them.
+- **`do-item` reads and requires**: the `spec` pre-scout by work type
+  (item 27), the delegation prompt and the reviewer's list, the policy
+  refusal for an unaccounted criterion, the recommended-skills page naming
+  the spec-writing tools with the adapter that reads each.
+- **The required check** that refuses an unlinked pull request or an
+  unaccounted criterion, honouring an exception only when a member of
+  `specs.exception_approvers` other than the author and the implementing
+  agent's identity applied its label after the exception record `do-item` writes (the references, each source's revision and the exception lines) last changed, the record still matches, and the label is
+  still on, reading its script and policy from the base branch rather than
+  the head, with a workflow template and the setup that makes it required.
+- **`review` in plan mode, `file-issue`, `/followup` and the epic close.**
+- **The tracker source**, once the tracker interface has attachments
+  (item 12).
+
+Done when a feature whose body links a spec in any supported layout
+reaches its pull request with every acceptance criterion accounted for,
+one with none stops, saying so, before any code is written, and the stance (a work
+item links its requirements; the delivery loop writes no spec) is a decision record.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** Move an operated reconciler onto the
@@ -428,7 +556,47 @@ unless the repository's effective CI policy requires that check.
 - **Gates and workspace infrastructure.** Cross-worktree locks and
   test infrastructure, remote gates, and a runnable form of
   [M12](../modules/M12-parallel-agent-ergonomics/README.md)'s workspace lifecycle
-  for runtimes other than Herdr, which has [one](../tools/herdr/README.md#the-worktree-hooks).
+  for runtimes other than Herdr and Orca, which have one
+  ([Herdr](../tools/herdr/README.md#the-worktree-hooks),
+  [Orca](../tools/orca/README.md)).
+- **Orca: what is left.** The [Orca workspace tool](../tools/orca/README.md)
+  and the launcher's `orca` provider open an issue's branch as an Orca
+  worktree, on a machine or on a paired Orca server, with the create hook
+  run and the agent started once per issue. Still open:
+  - the agent's start is recorded on the launching machine
+    (`~/.jig/orca/kickoff/`), so two machines opening one issue on the same
+    server each start an agent; record it on the server, as the Herdr tool
+    does on its host, once Orca offers a place to keep it or the tool runs
+    there;
+  - `remove` parks reflection findings only when the clone is on this
+    machine; on a server's host it reads the worktree's journal over SSH
+    and refuses while unsent findings are in it, leaving the parking to a
+    reflection run there. Run the journal there, as the Herdr tool runs on
+    its host;
+  - a hook on a server's host runs as one SSH command under the call's
+    deadline, with nothing from Jig there to supervise it: a hook that
+    outlives the deadline, or starts a child that outlives it, is left to
+    the host, where on a machine the Herdr tool's supervisor ends the hook's
+    whole process group. Supervise it there too, once what the host must
+    provide is decided: `bun` for the shared supervisor, as the Herdr tool
+    asks of its hosts, or a supervisor in the host's own shell;
+  - `do-item` and `drive-pr` could show their state on Orca's workspace
+    board (`orca worktree set --workspace-status`) and link the pull request
+    to the worktree (`orca reference add`), and the tracker's GitHub issues
+    could be linked with `--issue`; bring these in once a consumer runs its
+    work in Orca and wants them;
+  - a worktree created in the Orca app gets Orca's branch name and Orca's
+    own setup hook, not the repository's convention and create hook; say in
+    M12's mappings how a repository's `orca.yaml` setup script and Orca's
+    branch-prefix setting approximate them, once validated in a consumer;
+  - the drive, pickup and review skills checked inside Orca worktrees on a
+    server, as item 19 does for Herdr;
+  - the tool and the launcher's Orca provider on Windows: the tool drives
+    its host with `sh`, `test` and `mkdir` and, on this machine, supervises
+    its hooks through `/proc` or `ps`
+    ([CONTRIBUTING.md § Toolchain](../CONTRIBUTING.md#toolchain) records
+    the gap), so a Windows host needs those steps in its own shell first,
+    and the provider tried there once it has them.
 - **Change-area consumer lint.** The `lint-consumers` check moves into the
   [change-areas skill](../plugin/skills/change-areas/README.md): the path
   lists in agent rules, hook configuration and CI workflow triggers checked

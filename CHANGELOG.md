@@ -323,6 +323,132 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.85.3] - 2026-10-26
+
+### Fixed
+
+- The tests of the plugin's conditional GitHub reads, of drive-pr's
+  single-instance lock and of
+  [M10](modules/M10-environments-deploy/README.md)'s external
+  preconditions deadline no longer fail on a slow or loaded machine. The
+  deadline tests give a request a budget no stall can use up and wait for
+  the deadline to pass when it must; the lock tests wait for a drive's pass to
+  start for as long as native Windows needs, and keep the pass running until
+  the test has finished what it does while the pass is active; and the
+  conditional-read tests start a throwaway child process first, because Bun's
+  test runner can lose the events of the first child process a test file
+  starts.
+
+## [0.85.2] - 2026-10-26
+
+### Added
+
+- **Orca as a workspace runtime.** The [workspace launcher](tools/launcher/README.md)
+  gains an `orca` provider: a tracker issue opens as an
+  [Orca](https://www.onorca.dev) worktree, in Orca on this machine or on a
+  paired Orca server, with the issue's branch named as the repository names
+  it, the repository's create hook run once, and the agent started with its
+  first prompt once per issue. The [Orca workspace tool](tools/orca/README.md)
+  behind it also opens and removes such worktrees by hand, and says how to run
+  Orca's headless server on a host.
+- `reflect` records Orca as the session's wrapper when Orca started the
+  harness (`ORCA_…` in the environment), as it does Herdr and Conductor.
+
+## [0.85.1] - 2026-10-25
+
+### Fixed
+
+- On Windows, `jig gc` no longer fails every run with `EPERM` when it writes a
+  collection receipt. Windows refuses to flush a directory, so there a
+  receipt's directory entry is not flushed: a power loss just after a receipt
+  is written or updated can lose that write.
+- On Windows, a configured shell command (`code_stats.classify_command`,
+  `resolve_conflicts` obligation commands, the changelog's `after_version`)
+  reaches `cmd.exe` as written, so a quoted program path such as
+  `"C:\Program Files\tool.exe" args` runs instead of failing as an unknown
+  command.
+- On Windows, a repository reached through an 8.3 short path (such as
+  `C:\Users\RUNNER~1\…`) is recognized as the repository git reports: the
+  migration-immutability and interface-surface gates, the deferral check's
+  `--config` and `--states`, `/jig:reflect`'s journal check, `/jig:decide`'s
+  other-repository clones and `resolve-conflicts`' `record.ts` no longer
+  call a path inside it outside.
+- `resolve-conflicts` treats a staged link to an absolute Windows path
+  (`C:/…`) as leaving the repository, as it treats one to `/…`.
+- On Windows, the audit's configuration fit reads a gate script's executable
+  bit from the git index, so a shell script the index does not mark
+  executable is suggested as `bash <path>`, as on other platforms, rather
+  than as `./<path>`.
+- The audit's label-taxonomy finding names the configured file with forward
+  slashes on every platform, and the audit reads the taxonomy the way
+  `/jig:file-issue` does, so a Windows network share path
+  (`\\server\share\…`) is checked rather than reported unreadable.
+- The audit's configuration fit reads a file a configured command names the
+  way the platform resolves it: on POSIX it follows a link before a `..`,
+  on Windows it collapses `..` first. It warns that a fresh clone lacks the
+  file unless both the file it reaches and every link on the way, including
+  a link inside another link's target, are tracked. On a case-insensitive
+  file system, a command that spells a tracked file in another case
+  (`scripts/CHECK.ts` for `scripts/check.ts`) counts as tracked, and a hard
+  link of another name never stands in for the entry the command reaches.
+  The tracked name is the one the file system itself reports for the entry
+  its lookup reached, so any spelling it treats as the same name (final
+  sigma `ς` for `σ`, for one) counts, and the audit never compares names by
+  hand. A symbolic link with several names in one directory (hard links of
+  the link itself) cannot be asked which name the lookup reached: it counts
+  as tracked when every name is, and when only some are, the audit warns
+  that it cannot tell whether a fresh clone holds the one reached.
+- A relative `JIG_TRACE_FILE` now records the spans of the process that set
+  it on Windows too.
+- The design-brief renderer waits for Chromium's debugging endpoint while
+  Windows still holds the file open, instead of failing with `EBUSY`.
+
+## [0.85.0] - 2026-10-23
+
+### Changed
+
+- **Breaking.** `resolve-review-comments`' deferral batches are now looked up
+  by a marker in the issue **description** — `<!-- defer-batch-key: repo=…
+  pr=… type=… -->`, written as the description's first line — instead of by
+  the issue title. The title becomes display-only, so a batch can be retitled
+  to say what it actually contains; previously the title *was* the key, matched
+  by exact equality with create-on-miss, so renaming a batch whose pull request
+  could still run a round minted a duplicate. The key now carries the
+  repository as well, so another consumer's pull request of the same number and
+  Type no longer collides: the `repoVerdict` Repo-label triage that used to
+  disambiguate them is gone, and the Repo label is reconciled like Type and
+  Size instead — absent is repaired, a label contradicting the marker is
+  refused rather than restamped.
+
+  **What a consumer changes:** any batch issue that is still *live* — its pull
+  request still open, so a later round will look it up — needs the marker added
+  as the first line of its description, or that round files a second issue beside it.
+  Batches on merged pull requests need nothing: no round will look them up
+  again. Only the first line counts: a marker anywhere else in a description
+  is ignored, so an issue that merely quotes one is never appended to. The marker is exactly
+  `<!-- defer-batch-key: repo=<your repo label> pr=<number> type=<type> -->`,
+  with the repository label and Type as they appear in
+  `review.taxonomy.repos` / `.types`. Once added, stop editing that line:
+  rewriting or deleting it makes the batch unfindable, and so does blanking the
+  description.
+
+  Repo and Type labels used in the key must now match
+  `letters, digits, . _ : @ + / -` with no whitespace — a label that cannot be
+  embedded in an HTML comment on one line is refused before anything is
+  written, rather than producing a malformed key. Rename any such label in
+  `review.taxonomy`. The audit's configuration check flags such a label in
+  `review.repo_label`, `review.taxonomy.repos` or `review.taxonomy.types`.
+
+## [0.84.0] - 2026-10-23
+
+GitHub Issues is now the tracker the skills use when a repository does not choose one; Linear stays one setting away.
+
+### Changed
+
+- **Breaking:** `issue_tracker.adapter` defaults to `github` instead of `linear`. A repository that uses Linear and leaves the adapter out must add `adapter: linear` under `issue_tracker` in `.config/jig.yaml`; until then the skills refuse its configuration, naming the field, rather than reading `issue_tracker.team` and ignoring it. A repository on GitHub Issues needs no `issue_tracker` section at all: the tracker is the `origin` remote's repository, and the skills use the signed-in `gh` client.
+- The audit's starter configuration offers `issue_tracker.adapter: linear` along with the team it finds in a repository's history (an empty `adapter:` counts as unset, and the draft says to replace that line rather than add a second), and its tracker-unreachable finding names GitHub when no adapter is set. The audit probes the tracker the skills select in every configured repository, the default one included (the repository's file merged with the machine's user file and `JIG__*` environment, as the skills read it, so configuration layers the skills refuse, an adapter included, are an error rather than an unchecked tracker, and the audit's user-file and environment facts say the tracker check reads them), by asking whether its team or repository answers rather than reading an issue, and derives a GitHub repository from the audited repository's `origin` remote rather than the working directory's; every other skill derives it from the repository it reads its configuration from (`JIG_CONSUMER_ROOT` when set).
+- The review skill's deferral step still files through Linear only ([EXTENDING.md](plugin/EXTENDING.md#issue-tracker) lists what still assumes Linear), so deferring a review finding on the default tracker waits for the roadmap's item 10.
+
 ## [0.83.2] - 2026-10-23
 
 ### Added
@@ -3559,7 +3685,12 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.83.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.85.3...HEAD
+[0.85.3]: https://github.com/jig-harness/jig/compare/v0.85.2...v0.85.3
+[0.85.2]: https://github.com/jig-harness/jig/compare/v0.85.1...v0.85.2
+[0.85.1]: https://github.com/jig-harness/jig/compare/v0.85.0...v0.85.1
+[0.85.0]: https://github.com/jig-harness/jig/compare/v0.84.0...v0.85.0
+[0.84.0]: https://github.com/jig-harness/jig/compare/v0.83.2...v0.84.0
 [0.83.2]: https://github.com/jig-harness/jig/compare/v0.83.1...v0.83.2
 [0.83.1]: https://github.com/jig-harness/jig/compare/v0.83.0...v0.83.1
 [0.83.0]: https://github.com/jig-harness/jig/compare/v0.82.0...v0.83.0

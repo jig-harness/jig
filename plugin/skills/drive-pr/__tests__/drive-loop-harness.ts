@@ -27,6 +27,7 @@ import {
   writeFixture,
 } from "./drive-pr-harness.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
+import { shellQuote } from "../../../shared/cli.ts";
 
 import {
   byPlatform,
@@ -50,6 +51,24 @@ export async function awaitFixtureMarker(marker: string): Promise<boolean> {
   const deadline = Date.now() + budgetMs;
   while (!existsSync(marker) && Date.now() < deadline) await Bun.sleep(25);
   return existsSync(marker);
+}
+
+/**
+ * Shell commands for a pass that announces itself at `started` and then stays
+ * running until the test creates `release`, so a test's operations against
+ * the active pass cannot race the pass's exit however the test is scheduled.
+ * The wait is bounded (about 60 s) so a test that fails before releasing
+ * never leaves the pass behind; the test's own timeout is longer. Both paths
+ * are single-quoted, so a temporary directory whose name holds `$` or a
+ * backtick is read as the same literal path the test checks.
+ */
+export function blockedPassScript(started: string, release: string): string {
+  return [
+    `: > ${shellQuote(started)}`,
+    "i=0",
+    `while [ ! -e ${shellQuote(release)} ] && [ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done`,
+    "exit 0",
+  ].join("\n");
 }
 
 /**

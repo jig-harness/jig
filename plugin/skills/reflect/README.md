@@ -145,10 +145,10 @@ Every event, finding and decision alike, carries the session that wrote it:
 - **`jig_version`** is read from the plugin's own manifest.
 - **`harness`** is read from the environment the harness sets: Claude Code
   sets `CLAUDECODE` and `CLAUDE_CODE_ENTRYPOINT`, Codex sets variables named
-  `CODEX_…`. A wrapper that runs the harness adds its own variables; the two
-  recognised so far are Herdr (`HERDR_ENV=1`) and Conductor (`CONDUCTOR_…`),
-  and under any other `wrapper` is `null`. A harness that sets none is
-  stated by the agent.
+  `CODEX_…`. A wrapper that runs the harness adds its own variables; the
+  recognised ones are Herdr (`HERDR_ENV=1`), Conductor (`CONDUCTOR_…`) and
+  Orca (`ORCA_…`), and under any other `wrapper` is `null`. A harness that
+  sets none is stated by the agent.
 - **`model`** is stated by the agent: no harness exposes it to a script.
 - **`skills`** are the skills the session used, as the agent knows them; a
   skill that writes to the journal itself adds its own name.

@@ -60,15 +60,15 @@ hook or the interface instead.
 | --- | --- | --- | --- |
 | Local checks, generators, lints | Any command | [A command](#commands-a-repository-supplies) | — |
 | Review skills, implementing agents, scouts | The repository's own | [Configuration](#the-repositorys-own-skills-and-agents) | — |
-| Issue tracker | Linear; GitHub Issues | [A tracker adapter](#issue-tracker) in Jig | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12 |
+| Issue tracker | GitHub Issues (the default); Linear | [A tracker adapter](#issue-tracker) in Jig | The deferral step and a few operations still call Linear directly: roadmap items 10 and 12 |
 | Reflection store | A folder of files, a Notion database, a GitHub repository's issues, or any command | [A store command](#reflection-stores), no change to Jig | Jira: roadmap, later |
 | AI reviewer | Any bot, by login, app and check name; finding severities from CodeRabbit, Greptile, the Codex connector, Jig's own finding format, or any reviewer [configured](#severity-formats); GitHub code scanning alerts from any tool, SonarQube Cloud's included | [Configuration](#ai-reviewers) | — |
 | Forge (where pull requests live) | GitHub, through the `gh` command | — | [No forge interface yet](#forge-github): roadmap, later |
 | CI system | Any CI that reports checks to GitHub | `ci.required_checks`; `fix-ci --log` | [Log download and workflow review](#ci-system) are GitHub Actions only |
 | Git remote | `origin` | — | Roadmap item 10 |
 | Agent tool | Claude Code, Codex | [Copying the skills](#agent-tools) for any other | — |
-| Workspace launcher | Linear; Herdr (the primary target) on macOS and Linux, locally or on a host over SSH; Conductor on macOS | [A provider](#workspace-launcher) in Jig | — |
-| Workspace runtime | Herdr, through the [workspace tool](https://github.com/jig-harness/jig/blob/main/tools/herdr/README.md) and its plugin; any runtime that creates worktrees and starts sessions, for the skills | M12's [hook points](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md) | — |
+| Workspace launcher | Linear; Herdr (the primary target) on macOS and Linux, locally or on a host over SSH; Orca on macOS and Linux, locally or on a paired Orca server; Conductor on macOS | [A provider](#workspace-launcher) in Jig | — |
+| Workspace runtime | Herdr, through the [workspace tool](https://github.com/jig-harness/jig/blob/main/tools/herdr/README.md) and its plugin; Orca, through [its workspace tool](https://github.com/jig-harness/jig/blob/main/tools/orca/README.md); any runtime that creates worktrees and starts sessions, for the skills | M12's [hook points](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/mappings.md) | — |
 | Operating system | macOS and Linux; Windows for most skills | — | [`drive-pr`, `do-item` and the launcher](#operating-systems) |
 | The repository's language and stack | Any | Practice mappings; Bun runs Jig's tools only | — |
 
@@ -123,7 +123,8 @@ named in configuration:
 **Interface.** The skills reach the tracker through the
 [tracker interface](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), defined in
 [`do-item/scripts/lib/tracker/port.ts`](skills/do-item/scripts/lib/tracker/port.ts):
-read an issue with its comments and children, move it to a workflow state,
+check that the tracker answers for the team or repository (the audit's
+reachability probe, which reads no issue), read an issue with its comments and children, move it to a workflow state,
 comment, file an issue, change its fields and labels, search this team's
 issues, read and add relations between issues, list the labels an issue can
 carry, read whether an item is open (`tracker.ts issue-states`, which M4's
@@ -138,11 +139,7 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
 
 **Implementations.**
 
-- **Linear** ([`linear.ts`](skills/do-item/scripts/lib/tracker/linear.ts)),
-  the default for `issue_tracker.adapter`. It reads `LINEAR_API_KEY` or
-  `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client.
-  Keys are `<TEAM>-<n>`, with the team from `issue_tracker.team`.
-- **GitHub Issues** (`github`,
+- **GitHub Issues** (`github`, the default for `issue_tracker.adapter`;
   [`github/`](skills/do-item/scripts/lib/tracker/github/tracker.ts)), the
   issues of one repository (`issue_tracker.github.repository`, else the
   `origin` remote's). It uses the signed-in `gh` command-line client. Keys
@@ -167,6 +164,11 @@ are named by canonical keys (`in_progress`, `in_review`, …) that
     does not record when an issue started, so the stuck-epic census dates it
     no earlier than its real start (the time its state label was added, or
     its board item last changed).
+
+- **Linear** ([`linear.ts`](skills/do-item/scripts/lib/tracker/linear.ts)),
+  the adapter `issue_tracker.adapter: linear` selects. It reads `LINEAR_API_KEY` or
+  `LINEAR_API_TOKEN`, or uses a signed-in `linear` command-line client.
+  Keys are `<TEAM>-<n>`, with the team from `issue_tracker.team`.
 
 **To add one.** Implement the `Tracker` interface in a module beside
 `linear.ts`, register it in `ADAPTERS` in
@@ -196,8 +198,8 @@ second adapter does not yet reach them:
 
 - **Deferring review findings.** `resolve-review-comments` files deferred
   findings through its own Linear client (`defer-batch.ts`), with fixed type
-  and repository label groups; with GitHub Issues as the tracker, deferred
-  findings cannot be filed yet.
+  and repository label groups; with GitHub Issues as the tracker, the
+  default, deferred findings cannot be filed yet.
 - **Operations the interface does not have.** Attaching a file. Where a
   skill needs it (`decide` and `explain` attaching a sheet), its
   instructions name the Linear MCP tools or the `linear` command.
@@ -418,8 +420,8 @@ interfaces of its own, each with one implementation chosen in
 - a **workspace provider** ([`provider.ts`](https://github.com/jig-harness/jig/blob/main/tools/launcher/provider.ts)):
   Herdr, the workspace runtime Jig's tooling targets first
   ([ADR-0005](https://github.com/jig-harness/jig/blob/main/docs/adr/ADR-0005-herdr-is-the-primary-workspace-runtime.md)),
-  on macOS and Linux and on a remote host; and Conductor, which runs on
-  macOS only.
+  on macOS and Linux and on a remote host; Orca, on macOS and Linux and on
+  a paired Orca server; and Conductor, which runs on macOS only.
 
 A new provider is a module in `tools/launcher/providers/` that validates its
 per-repository settings and opens the workspace, registered in `index.ts`
@@ -437,10 +439,11 @@ every night, where Windows leaves out only the suites listed in
 | --- | --- | --- | --- | --- |
 | `drive-pr` | yes | yes | PowerShell or Git Bash; authenticated smoke pending | Bun commands use plain arguments |
 | `do-item` | yes | yes | PowerShell or Git Bash; authenticated smoke pending | Bun commands use plain arguments |
-| The launcher | yes | yes, with the Herdr provider | no | Conductor is a macOS app; Herdr runs on macOS and Linux |
+| The launcher | yes | yes, with the Herdr or Orca provider | no | Conductor is a macOS app; Herdr runs on macOS and Linux; the Orca provider is not tested on Windows |
 | The Herdr workspace tool | yes | yes | no | Herdr's Windows support is in beta and not yet a target |
+| The Orca workspace tool | yes | yes | not tested | Orca runs on Windows, but the tool's hook and SSH steps are POSIX shell |
 | Every other skill | yes | yes | yes | — |
-| Developing Jig (`bun run gates`) | yes | yes | yes, without the launcher's and the Herdr tool's suites | — |
+| Developing Jig (`bun run gates`) | yes | yes | yes, without the launcher's, the Herdr tool's and the Orca tool's suites | — |
 
 The supervision code finds and stops Windows processes from native snapshots
 and a polled stop request. Batch command shims run through `cmd.exe`; skill

@@ -61,7 +61,7 @@ keeps a person merging ([ADR-0003](docs/adr/ADR-0003-a-person-merges.md)).
 A few values are still fixed in the skills rather than read from
 [configuration](plugin/CONFIGURATION.md): the review skill's follow-up step
 calls Linear directly with fixed label groups, so a repository on GitHub
-Issues cannot yet defer a review finding, and the drive assumes a git remote
+Issues, the default tracker, cannot yet defer a review finding, and the drive assumes a git remote
 named `origin`. They move into configuration, and the follow-up step onto
 the tracker interface, so it files on every tracker Jig supports.
 
@@ -144,6 +144,47 @@ their scores without acting on them. A failing check of such a tool will not
 stop a pull request by itself, unless the repository requires that check; its
 alerts will.
 
+### 26. `init`: setting a repository up for Jig
+
+One command in a fresh clone that derives the values the repository already
+states (gate command, integration branch, reviewers, issue-key prefix,
+catalog, changelog), asks only what it cannot derive, writes
+`.config/jig.yaml` with the evidence beside each value, enables the plugin
+for everyone who clones, and checks the result the way the audit will. The
+audit stays the measurement; init is the setup, and the audit's remedy for a
+fixable configuration finding.
+
+### 27. Work types: depth by kind of work
+
+An item's type (bug, feature, improvement, task, spike) derived from the
+tracker's label taxonomy, its own issue type or a conventional title prefix,
+and one table saying what each type changes: pre-scouts, test-first, review
+tiers, the change note, batchability, autonomy. A type lightens the work
+only where no flag label, catalog review or gate asks for more, and an item
+whose type is unknown gets the deepest treatment.
+
+### 28. `verify` and `debug`: evidence before claims, and a bounded debugging protocol
+
+`verify` runs a check and keeps the proof: the command, the tree it ran
+against, its exit code, the test counts from the runner's own report, and
+the output's head and tail, so a pull request's "tests pass" points at a
+record and a new test's failing run is recorded before its passing one.
+`debug` works one failure whose cause is not obvious through a fixed
+protocol: reproduce, attribute on a fresh base, narrow, write down each
+hypothesis, fix, and stop after a stated budget with the ledger posted where
+the work is tracked, instead of a fourth guess.
+
+### 29. The spec a work item links
+
+A work item names where its requirements and acceptance criteria live, in
+its own body or in whatever spec framework the repository already uses, and
+Jig resolves that reference read-only, through an adapter per layout, into
+requirements, acceptance criteria and tasks with their ids. The implementing
+agent and the reviewer get the list, and the pull request accounts for every
+criterion: met with evidence, deferred to a filed item, or not applicable.
+The delivery loop writes no spec and dictates no format; the tools that
+write specs well are recommended beside the adapter that reads each.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** A reusable reconciler for
@@ -173,7 +214,20 @@ alerts will.
 - **Gates and workspace infrastructure.** Locks shared across
   worktrees, remote gates, and a runnable form of
   [M12](modules/M12-parallel-agent-ergonomics/README.md)'s workspace
-  lifecycle for runtimes other than Herdr.
+  lifecycle for runtimes other than Herdr and Orca.
+- **Orca: what is left.** The [Orca workspace tool](tools/orca/README.md)
+  opens and removes worktrees and the launcher opens issues in Orca, on a
+  machine or on a paired Orca server. Still open: an agent's start recorded
+  on the server rather than on the launching machine, so two machines never
+  start it twice; reflection findings parked on a server's host before a
+  removal, which today refuses while unsent ones are there; hooks on a
+  server's host supervised as they are on a machine; the delivery skills
+  showing their state on Orca's workspace board
+  and linking the pull request to the worktree; the drive, pickup and
+  review skills checked inside Orca worktrees on a server, as item 19 does
+  for Herdr; and the tool and the launcher's Orca provider on Windows, where
+  the tool's host steps (`sh`, `test`, `mkdir`) need the host's own shell
+  first.
 - **Change-area consumer lint.** The
   [change-areas skill](plugin/skills/change-areas/README.md) checks the path
   lists in agent rules, hook configuration and CI workflow triggers against

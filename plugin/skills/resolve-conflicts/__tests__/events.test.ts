@@ -255,120 +255,143 @@ function twoStops(): void {
   s.git("checkout", "-q", "feature");
 }
 
+/**
+ * A rebase through both stops runs some thirty git and script processes,
+ * which a Windows runner, slow to start processes, takes past the suite's
+ * 30-second default to finish.
+ */
+const REBASE_TIMEOUT = 90_000;
+
 describe("a rebase", () => {
-  it("records every stop, the earlier ones when the next map would overwrite their snapshot", () => {
-    twoStops();
-    expect(s.gitTry("rebase", "main").code).not.toBe(0);
-    resolve("one.md", BOTH);
-    // Continuing stops again, on the second commit.
-    expect(s.gitTry("rebase", "--continue").code).not.toBe(0);
-    // The second stop: mapping it records the first stop's events first.
-    const map = s.script("conflict-map.ts");
-    ok(map);
-    expect(map.stderr).toContain("recorded 1 merge_conflict event");
-    expect(events().map((e) => e.path)).toEqual(["one.md"]);
-    s.write("two.md", BOTH);
-    s.git("add", "two.md");
-    ok(s.script("record.ts", ["two.md", "combined", "--reason", "both"]));
-    ok(s.script("check-resolution.ts"));
-    s.git("rebase", "--continue");
-    ok(s.script("events.ts"));
-    const recorded = events();
-    expect(recorded.map((e) => [e.operation, e.path, e.branch])).toEqual([
-      ["rebase", "one.md", "feature"],
-      ["rebase", "two.md", "feature"],
-    ]);
-    const heads = s
-      .git("rev-list", "--reverse", "main..feature")
-      .trim()
-      .split("\n");
-    expect(recorded.map((e) => e.commit)).toEqual(heads);
-  });
+  it(
+    "records every stop, the earlier ones when the next map would overwrite their snapshot",
+    () => {
+      twoStops();
+      ok(s.gitTry("rebase", "main"), 1);
+      resolve("one.md", BOTH);
+      // Continuing stops again, on the second commit.
+      ok(s.gitTry("rebase", "--continue"), 1);
+      // The second stop: mapping it records the first stop's events first.
+      const map = s.script("conflict-map.ts");
+      ok(map);
+      expect(map.stderr).toContain("recorded 1 merge_conflict event");
+      expect(events().map((e) => e.path)).toEqual(["one.md"]);
+      s.write("two.md", BOTH);
+      s.git("add", "two.md");
+      ok(s.script("record.ts", ["two.md", "combined", "--reason", "both"]));
+      ok(s.script("check-resolution.ts"));
+      s.git("rebase", "--continue");
+      ok(s.script("events.ts"));
+      const recorded = events();
+      expect(recorded.map((e) => [e.operation, e.path, e.branch])).toEqual([
+        ["rebase", "one.md", "feature"],
+        ["rebase", "two.md", "feature"],
+      ]);
+      const heads = s
+        .git("rev-list", "--reverse", "main..feature")
+        .trim()
+        .split("\n");
+      expect(recorded.map((e) => e.commit)).toEqual(heads);
+    },
+    REBASE_TIMEOUT,
+  );
 });
 
 describe("a record that cannot be written when the next map replaces the snapshot", () => {
-  it("keeps the snapshot pending, and events.ts records it once it can", () => {
-    twoStops();
-    expect(s.gitTry("rebase", "main").code).not.toBe(0);
-    resolve("one.md", BOTH);
-    expect(s.gitTry("rebase", "--continue").code).not.toBe(0);
-    const file = eventsFile();
-    symlinkSync(`${s.home}/nowhere`, file);
-    const map = s.script("conflict-map.ts");
-    ok(map);
-    expect(map.stderr).toContain("is kept in");
-    const pending = `${s.git("rev-parse", "--path-format=absolute", "--git-path", "jig").trim()}/pending`;
-    expect(readdirSync(pending)).toHaveLength(1);
+  it(
+    "keeps the snapshot pending, and events.ts records it once it can",
+    () => {
+      twoStops();
+      ok(s.gitTry("rebase", "main"), 1);
+      resolve("one.md", BOTH);
+      ok(s.gitTry("rebase", "--continue"), 1);
+      const file = eventsFile();
+      symlinkSync(`${s.home}/nowhere`, file);
+      const map = s.script("conflict-map.ts");
+      ok(map);
+      expect(map.stderr).toContain("is kept in");
+      const pending = `${s.git("rev-parse", "--path-format=absolute", "--git-path", "jig").trim()}/pending`;
+      expect(readdirSync(pending)).toHaveLength(1);
 
-    const blocked = s.script("events.ts");
-    ok(blocked, 3);
-    rmSync(file);
-    s.write("two.md", BOTH);
-    s.git("add", "two.md");
-    ok(s.script("record.ts", ["two.md", "combined", "--reason", "both"]));
-    ok(s.script("check-resolution.ts"));
-    s.git("rebase", "--continue");
-    ok(s.script("events.ts"));
-    expect(events().map((e) => e.path)).toEqual(["one.md", "two.md"]);
-    expect(readdirSync(pending)).toEqual([]);
-  });
+      const blocked = s.script("events.ts");
+      ok(blocked, 3);
+      rmSync(file);
+      s.write("two.md", BOTH);
+      s.git("add", "two.md");
+      ok(s.script("record.ts", ["two.md", "combined", "--reason", "both"]));
+      ok(s.script("check-resolution.ts"));
+      s.git("rebase", "--continue");
+      ok(s.script("events.ts"));
+      expect(events().map((e) => e.path)).toEqual(["one.md", "two.md"]);
+      expect(readdirSync(pending)).toEqual([]);
+    },
+    REBASE_TIMEOUT,
+  );
 
-  it("records it from a checkout where its conclusion is not above HEAD", () => {
-    twoStops();
-    expect(s.gitTry("rebase", "main").code).not.toBe(0);
-    resolve("one.md", BOTH);
-    expect(s.gitTry("rebase", "--continue").code).not.toBe(0);
-    const file = eventsFile();
-    symlinkSync(`${s.home}/nowhere`, file);
-    ok(s.script("conflict-map.ts"));
-    const pending = `${s.git("rev-parse", "--path-format=absolute", "--git-path", "jig").trim()}/pending`;
-    expect(readdirSync(pending)).toHaveLength(1);
-    rmSync(file);
-    s.write("two.md", BOTH);
-    s.git("add", "two.md");
-    ok(s.script("record.ts", ["two.md", "combined", "--reason", "both"]));
-    ok(s.script("check-resolution.ts"));
-    s.git("rebase", "--continue");
-    const [first] = s
-      .git("rev-list", "--reverse", "main..feature")
-      .trim()
-      .split("\n");
-    s.git("checkout", "-q", "main");
-    ok(s.script("events.ts"));
-    expect(events()).toMatchObject([{ path: "one.md", commit: first }]);
-    expect(events()).toHaveLength(1);
-    expect(readdirSync(pending)).toEqual([]);
-  });
+  it(
+    "records it from a checkout where its conclusion is not above HEAD",
+    () => {
+      twoStops();
+      ok(s.gitTry("rebase", "main"), 1);
+      resolve("one.md", BOTH);
+      ok(s.gitTry("rebase", "--continue"), 1);
+      const file = eventsFile();
+      symlinkSync(`${s.home}/nowhere`, file);
+      ok(s.script("conflict-map.ts"));
+      const pending = `${s.git("rev-parse", "--path-format=absolute", "--git-path", "jig").trim()}/pending`;
+      expect(readdirSync(pending)).toHaveLength(1);
+      rmSync(file);
+      s.write("two.md", BOTH);
+      s.git("add", "two.md");
+      ok(s.script("record.ts", ["two.md", "combined", "--reason", "both"]));
+      ok(s.script("check-resolution.ts"));
+      s.git("rebase", "--continue");
+      const [first] = s
+        .git("rev-list", "--reverse", "main..feature")
+        .trim()
+        .split("\n");
+      s.git("checkout", "-q", "main");
+      ok(s.script("events.ts"));
+      expect(events()).toMatchObject([{ path: "one.md", commit: first }]);
+      expect(events()).toHaveLength(1);
+      expect(readdirSync(pending)).toEqual([]);
+    },
+    REBASE_TIMEOUT,
+  );
 
-  it("records it though the current snapshot is unreadable", () => {
-    twoStops();
-    expect(s.gitTry("rebase", "main").code).not.toBe(0);
-    resolve("one.md", BOTH);
-    expect(s.gitTry("rebase", "--continue").code).not.toBe(0);
-    const file = eventsFile();
-    symlinkSync(`${s.home}/nowhere`, file);
-    ok(s.script("conflict-map.ts"));
-    const jig = s
-      .git("rev-parse", "--path-format=absolute", "--git-path", "jig")
-      .trim();
-    expect(readdirSync(`${jig}/pending`)).toHaveLength(1);
-    rmSync(file);
-    s.write("two.md", BOTH);
-    s.git("add", "two.md");
-    ok(s.script("record.ts", ["two.md", "combined", "--reason", "both"]));
-    ok(s.script("check-resolution.ts"));
-    s.git("rebase", "--continue");
-    writeFileSync(`${jig}/conflicts.json`, "{ truncated");
-    const run = s.script("events.ts");
-    ok(run, 1);
-    expect(run.stderr).toContain("the conflict snapshot is unreadable");
-    expect(events().map((e) => e.path)).toEqual(["one.md"]);
-    expect(readdirSync(`${jig}/pending`)).toEqual([]);
-  });
+  it(
+    "records it though the current snapshot is unreadable",
+    () => {
+      twoStops();
+      ok(s.gitTry("rebase", "main"), 1);
+      resolve("one.md", BOTH);
+      ok(s.gitTry("rebase", "--continue"), 1);
+      const file = eventsFile();
+      symlinkSync(`${s.home}/nowhere`, file);
+      ok(s.script("conflict-map.ts"));
+      const jig = s
+        .git("rev-parse", "--path-format=absolute", "--git-path", "jig")
+        .trim();
+      expect(readdirSync(`${jig}/pending`)).toHaveLength(1);
+      rmSync(file);
+      s.write("two.md", BOTH);
+      s.git("add", "two.md");
+      ok(s.script("record.ts", ["two.md", "combined", "--reason", "both"]));
+      ok(s.script("check-resolution.ts"));
+      s.git("rebase", "--continue");
+      writeFileSync(`${jig}/conflicts.json`, "{ truncated");
+      const run = s.script("events.ts");
+      ok(run, 1);
+      expect(run.stderr).toContain("the conflict snapshot is unreadable");
+      expect(events().map((e) => e.path)).toEqual(["one.md"]);
+      expect(readdirSync(`${jig}/pending`)).toEqual([]);
+    },
+    REBASE_TIMEOUT,
+  );
 
   it("stays pending while its conclusion is neither kept nor found", () => {
     twoStops();
-    expect(s.gitTry("rebase", "main").code).not.toBe(0);
+    ok(s.gitTry("rebase", "main"), 1);
     ok(s.script("conflict-map.ts"));
     const jig = s
       .git("rev-parse", "--path-format=absolute", "--git-path", "jig")
