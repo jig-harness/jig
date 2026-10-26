@@ -27,6 +27,7 @@ export interface ReviewConfig {
   bots?: string[];
   job_pattern?: string;
   required_checks?: string[];
+  scanner_apps?: string[];
   deferral_team?: string;
   repo_label?: string;
   repo_slug?: string;
@@ -277,6 +278,12 @@ export function isDistinctNonEmptyList(value: unknown): boolean {
   );
 }
 
+/** The `review` fields that are lists of distinct names, and what they name. */
+const DISTINCT_LISTS: Record<string, string> = {
+  required_checks: "check names",
+  scanner_apps: "GitHub App slugs",
+};
+
 function checkReviewField(key: string, value: unknown): void {
   if (
     key === "bots" &&
@@ -289,9 +296,9 @@ function checkReviewField(key: string, value: unknown): void {
     typeof value !== "string"
   )
     throw new Error(`review.${key} must be a string`);
-  if (key === "required_checks" && !isDistinctNonEmptyList(value))
+  if (Object.hasOwn(DISTINCT_LISTS, key) && !isDistinctNonEmptyList(value))
     throw new Error(
-      "review.required_checks must contain distinct nonempty check names",
+      `review.${key} must contain distinct nonempty ${DISTINCT_LISTS[key]}`,
     );
   if (key === "taxonomy") checkTaxonomy(value);
 }

@@ -716,6 +716,38 @@ positive as False Positive and the other reasons as Accept. A security
 finding's severity comes from the alert, so the decline ladder treats it like
 any other finding of that severity.
 
+#### Scanner annotations
+
+A static-analysis app that decorates the pull request instead of opening
+review threads (SonarQube Cloud does: "Check warning on line R81" in the Files
+changed tab) leaves findings no thread listing shows. List them once per pass,
+beside the threads:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/list-scanner-annotations.ts" <PR>
+```
+
+One finding per line: `path`, `line`, `level`, `title` (the rule's message)
+and `url` (the tool's page, with the rule's rationale). Exit `3` means a
+scanner check is still running on the head, so the list may be partial: wait
+for it and list again before calling the PR clean. The apps read are
+`review.scanner_apps` (default `sonarqubecloud`).
+
+Triage each finding like a thread, with the tool's rule as the finding. A
+finding has no thread to reply to or resolve and no alert to dismiss, so:
+
+| Outcome | What to do |
+|---------|-----------|
+| `accepted` | Fix it with the other accepted fixes. The app clears the annotation when it analyses the pushed head |
+| `rejected`, `wont-fix` | Leave the code; name the finding (`path:line`, rule, `url`) and the reason in the round's report (step 6). Mark it in the tool (False Positive, Accept) if the person has granted access; that cannot be done from here |
+| `deferred` | File the follow-up as for a thread and name it in the report |
+
+Read the rule behind `url` before deciding: a rule that names a language
+feature, a regular expression's cost or a parameter default is usually a real
+defect or a one-line change, and a fix is cheaper than a reply. After the
+push, list again once the scanner check has completed: an annotation still
+present on the new head was not fixed.
+
 ### 4. Verify and push
 
 **The change note — only where the repository has opted in.** If
