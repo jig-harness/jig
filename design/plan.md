@@ -572,7 +572,47 @@ converge until a round fixes it or records why it stands.
 - **Gates and workspace infrastructure.** Cross-worktree locks and
   test infrastructure, remote gates, and a runnable form of
   [M12](../modules/M12-parallel-agent-ergonomics/README.md)'s workspace lifecycle
-  for runtimes other than Herdr, which has [one](../tools/herdr/README.md#the-worktree-hooks).
+  for runtimes other than Herdr and Orca, which have one
+  ([Herdr](../tools/herdr/README.md#the-worktree-hooks),
+  [Orca](../tools/orca/README.md)).
+- **Orca: what is left.** The [Orca workspace tool](../tools/orca/README.md)
+  and the launcher's `orca` provider open an issue's branch as an Orca
+  worktree, on a machine or on a paired Orca server, with the create hook
+  run and the agent started once per issue. Still open:
+  - the agent's start is recorded on the launching machine
+    (`~/.jig/orca/kickoff/`), so two machines opening one issue on the same
+    server each start an agent; record it on the server, as the Herdr tool
+    does on its host, once Orca offers a place to keep it or the tool runs
+    there;
+  - `remove` parks reflection findings only when the clone is on this
+    machine; on a server's host it reads the worktree's journal over SSH
+    and refuses while unsent findings are in it, leaving the parking to a
+    reflection run there. Run the journal there, as the Herdr tool runs on
+    its host;
+  - a hook on a server's host runs as one SSH command under the call's
+    deadline, with nothing from Jig there to supervise it: a hook that
+    outlives the deadline, or starts a child that outlives it, is left to
+    the host, where on a machine the Herdr tool's supervisor ends the hook's
+    whole process group. Supervise it there too, once what the host must
+    provide is decided: `bun` for the shared supervisor, as the Herdr tool
+    asks of its hosts, or a supervisor in the host's own shell;
+  - `do-item` and `drive-pr` could show their state on Orca's workspace
+    board (`orca worktree set --workspace-status`) and link the pull request
+    to the worktree (`orca reference add`), and the tracker's GitHub issues
+    could be linked with `--issue`; bring these in once a consumer runs its
+    work in Orca and wants them;
+  - a worktree created in the Orca app gets Orca's branch name and Orca's
+    own setup hook, not the repository's convention and create hook; say in
+    M12's mappings how a repository's `orca.yaml` setup script and Orca's
+    branch-prefix setting approximate them, once validated in a consumer;
+  - the drive, pickup and review skills checked inside Orca worktrees on a
+    server, as item 19 does for Herdr;
+  - the tool and the launcher's Orca provider on Windows: the tool drives
+    its host with `sh`, `test` and `mkdir` and, on this machine, supervises
+    its hooks through `/proc` or `ps`
+    ([CONTRIBUTING.md § Toolchain](../CONTRIBUTING.md#toolchain) records
+    the gap), so a Windows host needs those steps in its own shell first,
+    and the provider tried there once it has them.
 - **Change-area consumer lint.** The `lint-consumers` check moves into the
   [change-areas skill](../plugin/skills/change-areas/README.md): the path
   lists in agent rules, hook configuration and CI workflow triggers checked

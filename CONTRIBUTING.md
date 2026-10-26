@@ -195,6 +195,19 @@ natively under the pinned Bun runtime. That version has one source,
 `bun run pins` (in the gates) fails when one differs
 ([M2](modules/M2-generated-artifact-freshness/README.md#one-version-source)).
 
+The [Orca workspace tool](tools/orca/README.md) and the launcher's `orca`
+provider run only on POSIX hosts: the tool drives the host it works on, this
+machine or a paired Orca server's, with `sh`, `test` and `mkdir`. A hook on
+this machine runs under the supervisor it shares with the Herdr tool, which
+reads `/proc` or `ps`; one on a server's host runs as one SSH command under
+the call's deadline, with nothing from Jig there to supervise it, so a hook
+that outlives the deadline, or a child it leaves behind, is left to the
+host. Its suites are POSIX-only in CI (`POSIX_ONLY_SUITES` in
+[scripts/gates.ts](scripts/gates.ts); § Adding or changing a plugin skill
+says how a suite gets there), and Windows support is deferred, as is the
+supervision of a hook on a server's host: the plan's "Orca: what is left"
+item in [design/plan.md](design/plan.md) lists both.
+
 ## Quality gates
 
 Dogfooded [M1](modules/M1-gates-enforcement-ladder/README.md), tiny by
@@ -433,8 +446,9 @@ or removes a criterion is the exception: it updates the record's entries for
 those criteria in the same change, scoring a new or renamed one against the
 commit the record already audited and dropping a removed one. The gates
 enforce the mechanical half: such a change fails until the record matches the
-criteria, and Jig's configuration must fit the schema; the rest is this
-review.
+criteria, the record's commit must be in the history (a squash merge
+replaces a branch commit, so audit a commit of `main`), and Jig's
+configuration must fit the schema; the rest is this review.
 
 ## Licences
 
@@ -572,7 +586,9 @@ work as part of the plugin:
   `tools/plugin/plugin.test.ts` when the skill reads consumer files. A suite
   that can only run on a POSIX system is listed in `POSIX_ONLY_SUITES` in
   [scripts/gates.ts](scripts/gates.ts), with the reason, so Windows CI
-  leaves it out; a suite too long for the gate job goes in `SEPARATE_SUITES`
+  leaves it out (the launcher's, the Herdr tool's and the Orca tool's suites
+  today; § Toolchain says why the Orca tool's are); a suite too long for the
+  gate job goes in `SEPARATE_SUITES`
   and gets its own sharded job in
   [the gates workflow](.github/workflows/gates.yml) and
   [the nightly workflow](.github/workflows/nightly.yml), which also runs it on

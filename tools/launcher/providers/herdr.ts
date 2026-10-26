@@ -37,16 +37,12 @@
  * with the login shell's `PATH`, which finds a `git` or `herdr` the tracker's
  * own environment does not.
  */
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { isRecord } from "../../../lib/record.ts";
-import {
-  assertHost,
-  runToolOnHost,
-  shellQuote,
-  ssh,
-} from "../../herdr/remote.ts";
+import { assertHost, runToolOnHost } from "../../herdr/remote.ts";
 import { openLimitMs, TRANSPORT_MS } from "../../herdr/limits.ts";
 import { HerdrError } from "../../herdr/runner.ts";
+import { copyCacheOverSsh } from "../cache-copy.ts";
 import type { OpenRequest, Provider } from "../provider.ts";
 
 /**
@@ -147,31 +143,30 @@ function asciiOf(word: string): string {
     .replace(/[^a-z0-9]/g, "");
 }
 
-export function parseRepo(settings: unknown, label: string): HerdrRepo {
-  const where = `repos.${label}.herdr`;
-  if (typeof settings === "string") settings = { path: settings };
-  if (!isRecord(settings))
-    throw new HerdrError(
-      `${where} must be the clone's path or a mapping with ${[...KEYS].join(", ")}`,
-    );
-  for (const key of Object.keys(settings))
-    if (!KEYS.has(key))
-      throw new HerdrError(
-        `${where}: unknown key ${key} (known: ${[...KEYS].join(", ")})`,
-      );
-  const text = (key: string): string | undefined => {
+/** A reader of a repository entry's string fields; a value that is not a non-empty string is refused. */
+export type SettingText = (key: string) => string | undefined;
+
+export function settingText(
+  settings: Record<string, unknown>,
+  where: string,
+): SettingText {
+  return (key) => {
     const value = settings[key];
     if (value === undefined) return undefined;
     if (typeof value !== "string" || value.trim() === "")
       throw new HerdrError(`${where}.${key} must be a non-empty string`);
     return value.trim();
   };
-  const path = text("path");
-  if (path === undefined) throw new HerdrError(`${where}.path is required`);
-  const host = text("host");
-  if (host !== undefined) assertHost(host);
-  const agent = text("agent");
-  const base = text("base");
+}
+
+/**
+ * `branch` and `slug`: how the repository names an issue's branch. The
+ * Orca provider reads the same two fields with the same meaning.
+ */
+export function parseBranchNaming(
+  text: SettingText,
+  where: string,
+): Pick<HerdrRepo, "branch" | "slug"> {
   const branch = text("branch");
   if (branch !== undefined) assertBranchTemplate(branch, `${where}.branch`);
   const slug = text("slug");
@@ -180,12 +175,58 @@ export function parseRepo(settings: unknown, label: string): HerdrRepo {
       `${where}.slug: unknown value ${slug} (known: ${SLUG_KINDS.join(", ")})`,
     );
   return {
+    ...(branch === undefined ? {} : { branch }),
+    ...(slug === undefined ? {} : { slug }),
+  };
+}
+
+/**
+ * A provider's settings for a repository as a mapping with known keys: a
+ * bare text stands for `textKey` (`shape` says what it is in a message), and
+ * an unknown key is refused, naming the known ones.
+ */
+export function repoMapping(
+  settings: unknown,
+  where: string,
+  keys: ReadonlySet<string>,
+  textKey: string,
+  shape: string,
+): Record<string, unknown> {
+  if (typeof settings === "string") settings = { [textKey]: settings };
+  if (!isRecord(settings))
+    throw new HerdrError(
+      `${where} must be ${shape} or a mapping with ${[...keys].join(", ")}`,
+    );
+  for (const key of Object.keys(settings))
+    if (!keys.has(key))
+      throw new HerdrError(
+        `${where}: unknown key ${key} (known: ${[...keys].join(", ")})`,
+      );
+  return settings;
+}
+
+export function parseRepo(settings: unknown, label: string): HerdrRepo {
+  const where = `repos.${label}.herdr`;
+  const mapping = repoMapping(
+    settings,
+    where,
+    KEYS,
+    "path",
+    "the clone's path",
+  );
+  const text = settingText(mapping, where);
+  const path = text("path");
+  if (path === undefined) throw new HerdrError(`${where}.path is required`);
+  const host = text("host");
+  if (host !== undefined) assertHost(host);
+  const agent = text("agent");
+  const base = text("base");
+  return {
     path,
     ...(host === undefined ? {} : { host }),
     ...(agent === undefined ? {} : { agent }),
     ...(base === undefined ? {} : { base }),
-    ...(branch === undefined ? {} : { branch }),
-    ...(slug === undefined ? {} : { slug }),
+    ...parseBranchNaming(text, where),
   };
 }
 
@@ -269,36 +310,6 @@ export interface HerdrDeps {
     args: string[],
     signal: AbortSignal,
   ) => Promise<{ status: number; stderr: string }>;
-}
-
-/**
- * Write the cache file to the same path under the host user's home, whole
- * and private, and return where it went.
- */
-async function copyCacheOverSsh(
-  host: string,
-  file: string,
-  signal: AbortSignal,
-): Promise<string> {
-  const home = process.env.HOME ?? "";
-  const rel = relative(home, file);
-  if (home === "" || rel.startsWith(".."))
-    throw new HerdrError(`the cache file ${file} is not under ${home}`);
-  const target = `"$HOME"/${shellQuote(rel)}`;
-  const command = [
-    "umask 077",
-    `mkdir -p "$(dirname ${target})"`,
-    `cat > ${target}.tmp.$$`,
-    `mv ${target}.tmp.$$ ${target}`,
-    `printf %s ${target}`,
-  ].join(" && ");
-  const content = await Bun.file(file).text();
-  const done = await ssh(host, command, content, signal);
-  if (done.status !== 0)
-    throw new HerdrError(
-      `could not copy ${file} to ${host}: ${done.stderr.trim()}`,
-    );
-  return done.stdout.trim();
 }
 
 /**

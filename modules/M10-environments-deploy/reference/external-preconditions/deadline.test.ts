@@ -14,10 +14,18 @@ const error = (message: string) => new Error(message);
 const ok = { ok: true, stdout: "{}", stderr: "" };
 
 describe("withinDeadline", () => {
+  // These tests read the real clock, and a loaded machine can stall this
+  // process for hundreds of milliseconds at any point. So no assertion
+  // depends on how long a step took: a budget a request must fit in is far
+  // longer than any stall, and the step that must run out of budget waits
+  // until it has.
   test("bounds each request by the operation's remaining budget", async () => {
+    const budgetMs = 10_000;
+    const pauseMs = 20;
+    expect(budgetMs).toBeLessThan(GH_REQUEST_MS);
     const timeouts: number[] = [];
     await withDeadline(
-      40,
+      budgetMs,
       "read",
       (signal) => {
         const gh = withinDeadline(
@@ -29,13 +37,16 @@ describe("withinDeadline", () => {
           error,
         );
         gh(["first"]);
-        Bun.sleepSync(20);
+        Bun.sleepSync(pauseMs);
         gh(["second"]);
       },
       error,
-    ).catch(() => undefined);
-    expect(timeouts[0]).toBeLessThanOrEqual(40);
-    expect(timeouts[1]).toBeLessThanOrEqual(20);
+    );
+    const [first = NaN, second = NaN] = timeouts;
+    expect(timeouts).toHaveLength(2);
+    expect(first).toBeLessThanOrEqual(budgetMs);
+    expect(second).toBeGreaterThanOrEqual(1);
+    expect(second).toBeLessThanOrEqual(first - pauseMs);
   });
   test("starts no request once the deadline has passed", async () => {
     const calls: string[][] = [];
@@ -52,14 +63,16 @@ describe("withinDeadline", () => {
             signal,
             error,
           );
-          gh(["first"]);
-          Bun.sleepSync(30);
-          gh(["second"]);
+          // Synchronous work holds the timer back, so the signal has not
+          // aborted when the deadline passes; only the clock says it has.
+          while (remainingMs(signal) >= 1) Bun.sleepSync(5);
+          expect(signal.aborted).toBe(false);
+          gh(["late"]);
         },
         error,
       ),
-    ).rejects.toThrow("second not requested");
-    expect(calls).toEqual([["first"]]);
+    ).rejects.toThrow("late not requested");
+    expect(calls).toEqual([]);
   });
   test("a signal from no operation leaves only the request ceiling", () => {
     expect(remainingMs(new AbortController().signal)).toBe(Infinity);
@@ -77,7 +90,7 @@ describe("withinDeadline", () => {
   test("hands each request a whole number of milliseconds", async () => {
     const timeouts: number[] = [];
     await withDeadline(
-      40.5,
+      10_000.5,
       "read",
       (signal) =>
         withinDeadline(
@@ -124,7 +137,7 @@ describe.skipIf(process.platform === "win32")("ghProcess", () => {
       writeFileSync(gh, "#!/bin/sh\necho '{\"ok\":true}'\n");
       chmodSync(gh, 0o755);
       const result = await withDeadline(
-        5_000.5,
+        20_000.5,
         "read",
         (signal) =>
           withinDeadline(

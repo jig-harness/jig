@@ -3,7 +3,7 @@
 version: 1
 plugin_version: 0.17.0
 date: "2026-10-13"
-commit: a66ee2269e50bdb33434f8c3f741ac337ec86a65
+commit: b14469664fb17700b76e6c8091ff5a923c14bd48
 shape: "toolkit"   # library | application | service | monorepo | documentation | …
 profile: team-standard   # solo-lite | team-standard | regulated-strict; null when the team has not chosen
 profile_conditions: [M3, M12]
@@ -46,7 +46,7 @@ criteria:
   M0/load-model-recorded:   # standard, requires convention
     # What each agent runtime the team uses actually loads is recorded in one place, with the date it was observed and a procedure to check it again, and which instruction file wins when two disagree is written as an authoring convention, not assumed runtime behaviour.
     score: absent
-    evidence: "At a66ee22 modules/M0-instruction-architecture/mappings.md has the per-runtime layer table but no observed load model: no dates of observation and no procedure to check one again"
+    evidence: "At b144696 modules/M0-instruction-architecture/mappings.md has the per-runtime layer table but no observed load model: no dates of observation and no procedure to check one again"
   M0/dispositions-with-flip-conditions:   # standard, requires convention
     # Behavioral defaults (dispositions) are written down, and every disposition states the condition under which it flips.
     # prior: absent: git grep -il disposition outside templates/reference/fixtures hits only module docs, GLOSSARY.md, criteria yaml; no dispositions doc of Jig's own, none linked from AGENTS.md
@@ -55,27 +55,27 @@ criteria:
   M0/model-pins-are-family-aliases:   # standard, requires mechanical
     # Every model tier an agent or skill declares lives in its metadata (or, for a judgment pass inside a skill, in that skill's configuration) as a family alias, never a versioned model id (where the runtime has no family aliases, the vendor's most general model name, or one central name mapped to a release in a single place), a CI check over that metadata enforces it, and any committed roster of the assignments is generated from the metadata and drift-checked (expected-absent for a repository whose agents and skills pin no model, in metadata or at invocation).
     score: expected-absent
-    evidence: "No agent or skill pins a model: at a66ee22 git grep for model: front matter in plugin/ and .claude/ finds none, plugin/agents/review-arbiter.md states that none is pinned and a consumer pins it in its own definition, no skill configuration carries a model setting, no skill or script passes a model at invocation (no --model flag or subagent model parameter in plugin/skills or plugin/agents), so there is no Judgment-tier assignment needing a baseline, and no roster file is tracked"
+    evidence: "No agent or skill pins a model: at b144696 git grep for model: front matter in plugin/ and .claude/ finds none, plugin/agents/review-arbiter.md states that none is pinned and a consumer pins it in its own definition, no skill configuration carries a model setting, no skill or script passes a model at invocation (no --model flag or subagent model parameter in plugin/skills or plugin/agents), so there is no Judgment-tier assignment needing a baseline, and no roster file is tracked"
   M0/runtime-capabilities-name-fallbacks:   # standard, requires convention
     # Every instruction and skill step that relies on a runtime-specific capability (a slash command for a skill outside a plugin, a built-in tool such as a question tool, a tool the host injects) names its portable fallback or the equivalent in each runtime the team uses, and no gate, hook, script or skill step depends on a host-injected tool.
     score: absent
-    evidence: "Scored by hand at a504398, main's last commit dated 2026-10-13, this record's date, because the criterion postdates the audit and neither this checkout nor origin serves a66ee22. No rule asked for fallbacks. plugin/skills/do-item/SKILL.md § Asking the user named AskUserQuestion with a plain-text fallback, and plugin/skills/resolve-review-comments/SKILL.md enumerated threads through its GraphQL scripts, not the workspace app's diff-comment tool; but do-item Step 4a delegated with 'the Task tool' and no fallback for another harness, and the question fallback had no branch for a run with nobody to answer"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit. No rule asked for fallbacks. plugin/skills/do-item/SKILL.md § Asking the user named AskUserQuestion with a plain-text fallback, and plugin/skills/resolve-review-comments/SKILL.md enumerated threads through its GraphQL scripts, not the workspace app's diff-comment tool; but do-item Step 4a delegated with 'the Task tool' and no fallback for another harness, and the question fallback had no branch for a run with nobody to answer"
   M0/deny-lists-per-runtime:   # standard, requires convention
     # Where the team forbids agents commands through a runtime's permission rules, each runtime it uses has its own deny list in that runtime's format, and each file's header names the written policy it mirrors and the command forms it cannot match.
     score: expected-absent
-    evidence: "At a504398 (see M0/runtime-capabilities-name-fallbacks) git ls-files had no .claude/settings.json and no .codex/rules/ file: Jig keeps no deny list for any runtime, so there is none to keep in step"
+    evidence: "At b144696 git ls-files had no .claude/settings.json and no .codex/rules/ file: Jig keeps no deny list for any runtime, so there is none to keep in step"
   M0/standards-declare-scope:   # standard, requires convention
     # Each written standard (a coding rule, a lint policy, a review lens) states the classes of artifact it governs: runtime code, one-shot command-line tools, tests, prose instruction files.
     score: absent
-    evidence: "At a504398 (see M0/runtime-capabilities-name-fallbacks) AGENTS.md, CONTRIBUTING.md and .config/ai-review.yaml scoped their rules by path (each check's header comment, the reviewer rules' paths:) but no standard named the artifact classes it governs, and nothing mapped standards to runtime code, one-shot tools, tests and instruction files"
+    evidence: "At b144696 AGENTS.md, CONTRIBUTING.md and .config/ai-review.yaml scoped their rules by path (each check's header comment, the reviewer rules' paths:) but no standard named the artifact classes it governs, and nothing mapped standards to runtime code, one-shot tools, tests and instruction files"
   M0/review-stances-are-pointers:   # standard, requires convention
     # Every stance reviewers must treat as settled policy is written in one place, and the instructions and reviewer configuration that mention it point to that source rather than restate it.
     score: absent
-    evidence: "At a504398 (see M0/runtime-capabilities-name-fallbacks) .config/ai-review.yaml architecture_invariants restated AGENTS.md's rules in its own words (origin references, the module contract, de-scarring, plugin versioning) rather than pointing to them; plugin/skills/resolve-review-comments/references/triage-rubric.md § Standing rejections closes a contradicting finding as rejected with a link to the canonical rule"
+    evidence: "At b144696 .config/ai-review.yaml architecture_invariants restated AGENTS.md's rules in its own words (origin references, the module contract, de-scarring, plugin versioning) rather than pointing to them; plugin/skills/resolve-review-comments/references/triage-rubric.md § Standing rejections closes a contradicting finding as rejected with a link to the canonical rule"
   M0/skill-authoring-rules:   # standard, requires convention
     # Where the repository maintains agent skills, written authoring rules say how a skill is put together for the moment each part is read: a description that leads with the distinguishing trigger and carries its negative triggers, references named directly by the skill's entry file, contents sections in long references, no incident history or time-sensitive phrasing in instruction bodies, and discovery controls used for what they do (expected-absent where the repository keeps no skills).
     score: absent
-    evidence: "At a66ee22 plugin/skills holds the plugin's skills, and plugin/AGENTS.md states how a skill is packaged and versioned but no authoring rules for descriptions, references, history or discovery controls; tools/plugin/plugin.test.ts checks only that a description exists"
+    evidence: "At b144696 plugin/skills holds the plugin's skills, and plugin/AGENTS.md states how a skill is packaged and versioned but no authoring rules for descriptions, references, history or discovery controls; tools/plugin/plugin.test.ts checks only that a description exists"
   M0/instruction-freshness-checked:   # strict, requires mechanical
     # Countable facts and referenced paths in instruction files are verified against reality by a CI check that fails on drift.
     # prior: convention: scripts/check-md-links.ts in `bun run gates` (required check 'gates') fails on broken Markdown links, but nothing re-derives countable facts such as AGENTS.md's ordered gate list against scripts/gates.ts, so the mechanical bar is not met
@@ -90,15 +90,15 @@ criteria:
     # CI measures the always-loaded context against the smallest budget of every runtime and reviewer that reads it (the cumulative root-to-directory instruction chain, each skill and agent description, and the aggregate skill listing) in a step that runs before dependencies are installed, and fails when any is over.
     # probe found: .github/workflows/gates.yml
     score: absent
-    evidence: "At a66ee22 .github/workflows/gates.yml has no step measuring an always-loaded budget, and scripts/gates.ts runs no such check"
+    evidence: "At b144696 .github/workflows/gates.yml has no step measuring an always-loaded budget, and scripts/gates.ts runs no such check"
   M0/skill-invocation-fallback-gated:   # strict, requires mechanical
     # A CI check fails every slash command for one of the repository's own skills that names no fallback for that skill beside it (expected-absent for a repository with no skill of its own).
     score: absent
-    evidence: "At a504398 (see M0/runtime-capabilities-name-fallbacks) Jig had skills of its own under plugin/skills, but scripts/gates.ts ran no check that reads slash commands for a fallback beside them"
+    evidence: "At b144696 Jig had skills of its own under plugin/skills, but scripts/gates.ts ran no check that reads slash commands for a fallback beside them"
   M0/skill-authoring-ratcheted:   # strict, requires mechanical
     # A structural check counts the skill-authoring rules a script can see (references the entry file does not name, long references without a table of contents, issue-id density, time-sensitive phrasing, negative triggers only in the body) per rule and per skill file, and CI fails a change that adds to any file's count, compared against the merge base or a baseline that may only fall (expected-absent where the repository keeps no skills).
     score: absent
-    evidence: "At a66ee22 no check counts structural rules over plugin/skills; tools/quality/ratchet.jsonc has no counter for skill files and tools/plugin/plugin.test.ts checks only that a description exists"
+    evidence: "At b144696 no check counts structural rules over plugin/skills; tools/quality/ratchet.jsonc has no counter for skill files and tools/plugin/plugin.test.ts checks only that a description exists"
   # M1 gates-enforcement-ladder
   M1/gate-set-documented:   # lite, requires convention
     # An ordered gate set (format, lint, types, tests, build) is stated in one canonical place and runnable with a single command.
@@ -201,7 +201,7 @@ criteria:
   M1/retries-classify-errors:   # strict, requires mechanical
     # Every retry in the pipeline's steps and in the gates and scripts it runs retries only an error a classifier marks transient, aborts at once on any other with the command's own message and status, and the classifier is tested against messages recorded from the real tool.
     score: convention
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no step of .github/workflows/gates.yml retries; the one retry loop in the gates the pipeline runs, the reflection lock in lib/module-gates.ts, retries only a closed set of error codes (TRANSIENT_LOCK_ERRORS: ENOENT, EPERM, EBUSY, EACCES), the platform's own enumeration rather than guessed wording, and returns any other error with its message at once; the classifier is not tested as the criterion asks: lib/module-gates.test.ts feeds it no recorded message and asserts no answer of it, exercising only one live condition from the set (a lock left unreadable by chmod 0, which the loop retries and then gives up on with its own message), and no test shows a code outside the set aborting at once, so the rule holds in the code alone"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no step of .github/workflows/gates.yml retries; the one retry loop in the gates the pipeline runs, the reflection lock in lib/module-gates.ts, retries only a closed set of error codes (TRANSIENT_LOCK_ERRORS: ENOENT, EPERM, EBUSY, EACCES), the platform's own enumeration rather than guessed wording, and returns any other error with its message at once; the classifier is not tested as the criterion asks: lib/module-gates.test.ts feeds it no recorded message and asserts no answer of it, exercising only one live condition from the set (a lock left unreadable by chmod 0, which the loop retries and then gives up on with its own message), and no test shows a code outside the set aborting at once, so the rule holds in the code alone"
   # M2 generated-artifact-freshness
   M2/derived-inventory-exists:   # lite, requires convention
     # Every committed derived file is listed in one canonical place together with the command that regenerates it.
@@ -230,7 +230,7 @@ criteria:
   M2/toolchain-pins-one-source:   # standard, requires mechanical
     # Each toolchain version (the runtime, the compiler, the package manager) is declared in one source file; every other place that repeats it (CI setup steps, container build arguments, package-manager fields, a type package that tracks the runtime) is checked in CI to equal it; and a pin that differs on purpose is registered as an exception with a reason.
     score: absent
-    evidence: "At a66ee22 the Bun version was repeated in mise.toml (1.4.3), package.json's packageManager (bun@1.4.3) and its @types/bun (1.4.2, a patch behind), and nothing compared them: no declaration named the source and its pin sites, and no check in scripts/gates.ts or the workflows read them; the workflows install Bun through mise, so they repeat no pin"
+    evidence: "At b144696 the Bun version was repeated in mise.toml (1.4.3), package.json's packageManager (bun@1.4.3) and its @types/bun (1.4.2, a patch behind), and nothing compared them: no declaration named the source and its pin sites, and no check in scripts/gates.ts or the workflows read them; the workflows install Bun through mise, so they repeat no pin"
   M2/prose-facts-ci-checked:   # strict, requires mechanical
     # Derivable facts stated in prose (counts, rosters) are re-derived and compared by a CI check that commits no generated file.
     # prior: convention: Some facts are re-derived in CI without a committed cache (manifest versions in scripts/check-changelog.ts, the 13-module count in plugin/skills/audit/__tests__/score.test.ts), but there is no registry of stated facts and README.md's counts are unchecked
@@ -750,7 +750,7 @@ criteria:
   M10/pipeline-index-derived-or-gated:   # standard, requires mechanical
     # Where the repository keeps a page listing its pipelines, that page is generated from the pipeline files or a check fails when a pipeline is missing from it or it names one that no longer exists; a hand-kept page with no check does not count.
     score: expected-absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: .github/workflows/ holds one workflow (gates.yml) and no page lists the pipelines (no .github/workflows/README.md, no docs page naming them); the provider's list is the index"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: .github/workflows/ holds one workflow (gates.yml) and no page lists the pipelines (no .github/workflows/README.md, no docs page naming them); the provider's list is the index"
   # M11 process-observability
   M11/process-events-documented:   # lite, requires convention
     # The process events the team measures (review outcome + cost, gate pass/fail + duration, cycle times) are named and documented as a closed set, distinct from product analytics.
@@ -775,15 +775,15 @@ criteria:
   M11/scheduled-jobs-staleness-watched:   # standard, requires mechanical
     # Every scheduled job is declared in a cadence registry with the interval it must produce a result at, a check fails a scheduled workflow missing from it, and a scheduled watcher classifies each job's run history and fails for a job that is stale (no result inside its cadence plus grace) or red, so a schedule that stopped running never reads as green (expected-absent for a repository with no scheduled job).
     score: expected-absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: .github/workflows/gates.yml is the only workflow and has no schedule: trigger, so no scheduled job existed to declare or watch"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: .github/workflows/gates.yml is the only workflow and has no schedule: trigger, so no scheduled job existed to declare or watch"
   M11/scheduled-failures-reconciled-per-cause:   # standard, requires mechanical
     # Separate evidence-only tests and classified triage maintain one issue per stable cause, closed only on confirmed recovery.
     score: expected-absent
-    evidence: "Inherited evidence for this record's commit a66ee2269e50bdb33434f8c3f741ac337ec86a65: M11/scheduled-jobs-staleness-watched records gates.yml as the only workflow with no schedule. The commit is unavailable locally and the remote refused fetching it; no scheduled check existed according to that recorded evidence"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: .github/workflows/gates.yml is the only workflow and has no schedule: trigger, so no scheduled check existed"
   M11/scheduled-failure-flood-breaker:   # standard, requires mechanical
     # An announced per-cause breaker bounds repeated comments after N failures and re-arms only on confirmed recovery.
     score: expected-absent
-    evidence: "Inherited evidence for this record's commit a66ee2269e50bdb33434f8c3f741ac337ec86a65: M11/scheduled-jobs-staleness-watched records no scheduled job. The commit is unavailable locally and the remote refused fetching it; no scheduled-failure reporting needed a breaker according to that recorded evidence"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: .github/workflows/gates.yml is the only workflow and has no schedule: trigger, so no scheduled-failure reporting needed a breaker"
   M11/observability-gates-self-tested:   # strict, requires mechanical
     # The no-dark-instruments gate and the event-schema lint each ship a self-test that runs in CI, so a broken observability gate fails loudly.
     # prior: absent: These gates are not applied to Jig; module reference self-tests cover examples only
@@ -802,7 +802,7 @@ criteria:
   M11/heartbeat-reports-to-external-monitor:   # strict, requires mechanical
     # The heartbeat watcher reports to a monitor outside the system it watches on both outcomes, a success when no job is red or stale and a failure otherwise, and the monitor raises an incident when a report does not arrive, so a watcher that itself stopped is an incident (expected-absent for a repository with no scheduled job).
     score: expected-absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no scheduled job existed, so there was no watcher to report to a monitor"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no scheduled job existed, so there was no watcher to report to a monitor"
   # M12 parallel-agent-ergonomics
   M12/resource-kinds-declared:
     score: absent
@@ -866,23 +866,23 @@ criteria:
   M12/gate-quiet-invocation-named:   # lite, requires convention
     # The gate commands name a quiet invocation for agents (a reporter flag or a script), with the rule that no filter in a pipe stands between a gate and its exit status.
     score: absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: AGENTS.md, CONTRIBUTING.md and package.json name no quiet form of `bun run gates` or its parts, and no written rule forbids piping a gate through a filter"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: AGENTS.md, CONTRIBUTING.md and package.json name no quiet form of `bun run gates` or its parts, and no written rule forbids piping a gate through a filter"
   M12/gate-output-quiet-on-green:   # standard, requires mechanical
     # Each gate command an agent runs has a quiet form that prints a summary on success and the full output on failure, and exits with the gate's own status rather than a filter's.
     score: absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: scripts/gates.ts runs each step with inherited output and ends with one line, all gates passed; package.json has no quiet script and no reporter flag on test or lint; no agent-runtime hook is tracked"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: scripts/gates.ts runs each step with inherited output and ends with one line, all gates passed; package.json has no quiet script and no reporter flag on test or lint; no agent-runtime hook is tracked"
   M12/quiet-wrapper-self-tested:   # strict, requires mechanical
     # The quiet wrapper ships a self-test, run in CI, proving that a failing run keeps its status and prints in full, and the agent runtime applies the quiet form by itself where it has a hook for that.
     score: absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no quiet wrapper is tracked (M12/gate-output-quiet-on-green scores it absent), so there is none to self-test, and no agent-runtime hook is tracked"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no quiet wrapper is tracked (M12/gate-output-quiet-on-green scores it absent), so there is none to self-test, and no agent-runtime hook is tracked"
   M12/verdict-line-per-part:   # standard, requires convention
     # A gate run with several parts ends each part with one named verdict line, and its reader treats a part without one as not run, never as passed.
     score: absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: scripts/gates.ts prints no line per step, stops at the first failing step and prints all gates passed only when every step passed; no rule in AGENTS.md or CONTRIBUTING.md reads a missing verdict as not run"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: scripts/gates.ts prints no line per step, stops at the first failing step and prints all gates passed only when every step passed; no rule in AGENTS.md or CONTRIBUTING.md reads a missing verdict as not run"
   M12/merge-conflict-hotspots-measured:   # standard, requires convention
     # A repository working in parallel measures where its merges conflict, and each conflict hotspot is removed at its cause or kept by a recorded decision with a reason and a condition for revisiting it.
     score: absent
-    evidence: "Scored by hand at a504398, main's last commit dated 2026-10-13, this record's date, because the criterion postdates the audit and neither this checkout nor origin serves a66ee22: resolve-conflicts records the decisions of the one operation in progress (conflict-map.ts, record.ts) and reports nothing across merges, no file lists conflicted paths over a window, and the one hotspot mention, in ROADMAP.md, is about code complexity; no hotspot carries a removal or a keep decision"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: resolve-conflicts records the decisions of the one operation in progress (conflict-map.ts, record.ts) and reports nothing across merges, no file lists conflicted paths over a window, and the one hotspot mention, in ROADMAP.md, is about code complexity; no hotspot carries a removal or a keep decision"
   # M13 pipeline-economy
   M13/superseded-pr-runs-cancelled:   # lite, requires mechanical
     # A new push to a pull request cancels that pull request's runs for the older head, so CI is not spent on a head no one will merge.
@@ -927,47 +927,47 @@ criteria:
   M13/ci-hold-fails-held-heads:   # standard, requires mechanical
     # Where a hold label suppresses CI on intermediate heads, a required check fails on every held head from the instant the label is applied, every workflow that honours the label runs on its application and its removal, and only the pull request's own hold label, never the kind of label event, skips work.
     score: expected-absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: .config/jig.yaml sets no ci.hold_label, so no head is held; gates.yml triggers on pull_request with the default types and runs every job in full on each push"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: .config/jig.yaml sets no ci.hold_label, so no head is held; gates.yml triggers on pull_request with the default types and selects its jobs from the change areas a push touches, never from a label"
   M13/ci-hold-shape-linted:   # strict, requires mechanical
     # Where a hold label is configured, the CI-configuration lint fails a workflow of the hold that misses a label event, a skipped job whose condition is not a negated test of the pull request's labels for the exact hold label, and a hold with no step that fails a required check while the label is present.
     score: expected-absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: .config/jig.yaml sets no ci.hold_label, so there is no hold whose shape a lint could check, and no workflow of the one tracked (.github/workflows/gates.yml) reads a label"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: .config/jig.yaml sets no ci.hold_label, so there is no hold whose shape a lint could check, and no workflow of the one tracked (.github/workflows/gates.yml) reads a label"
   M13/cache-keys-complete:   # standard, requires convention
     # Every cache the pipeline uses has a written key scheme naming every input that changes its output, the values of the environment variables the task reads included, and no workflow carries a standing cache bypass in place of a complete key.
     score: absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: the one cache is the tool cache of jdx/mise-action in gates.yml, the only workflow, on by that action's default, keyed by the action itself (its prefix and version, the platform, the mise configuration's hash); no page in the repository names the cache or what its key covers; no step forces a rerun or disables it"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: the one cache is the tool cache of jdx/mise-action in gates.yml, the only workflow, on by that action's default, keyed by the action itself (its prefix and version, the platform, the mise configuration's hash); no page in the repository names the cache or what its key covers; no step forces a rerun or disables it"
   M13/cache-one-namespace:   # standard, requires mechanical
     # Pipelines that share a cache produce an identical key-affecting environment, checked by a lint, and a job whose cache credential is empty fails before its first task rather than running apart from the shared cache.
     score: expected-absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: the mise-action tool cache's key takes no environment variable and no credential from the workflow, so there is no key-affecting environment to compare and no credential to require; no job of gates.yml runs a task runner with a remote cache, so no two jobs share a cache"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: the mise-action tool cache's key takes no environment variable and no credential from the workflow, so there is no key-affecting environment to compare and no credential to require; no job of gates.yml runs a task runner with a remote cache, so no two jobs share a cache"
   M13/cache-hit-rate-reported:   # standard, requires mechanical
     # Every run that uses a cache reports its hit rate (hits and misses) in the run's summary, and the rate is a registered process metric.
     score: absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no step reads mise-action's cache-hit output or writes it to the job summary, and the repository keeps no metric registry (M11/metrics-registry-no-dark-instruments scores it absent)"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no step reads mise-action's cache-hit output or writes it to the job summary, and the repository keeps no metric registry (M11/metrics-registry-no-dark-instruments scores it absent)"
   M13/cache-retention-bounded:   # strict, requires mechanical
     # Every cache has a retention bound that a scheduled prune or the store's own eviction enforces, with the window written beside its key scheme, and a declared cache that stores nothing is detected.
     score: absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: the provider evicts a cache entry unused for 7 days, but no page records the tool cache or its bound, and nothing reads the repository's cache usage or alarms on a run that never hits"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: the provider evicts a cache entry unused for 7 days, but no page records the tool cache or its bound, and nothing reads the repository's cache usage or alarms on a run that never hits"
   M13/cache-wiring-checked:   # strict, requires mechanical
     # A gate fails a cache wired on some steps and not on others: in a container build, every step that invokes the package manager in a stage whose store is on a cache mount carries the mount, and no step pins the store with a per-command flag.
     score: expected-absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no tracked file is a Dockerfile and no workflow builds a container image, so no build keeps a store on a cache mount"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no tracked file is a Dockerfile and no workflow builds a container image, so no build keeps a store on a cache mount"
   M13/cache-trust-boundary:   # strict, requires mechanical
     # Only trusted contexts write to a shared cache, its entries are signed or verified on read, and an untrusted run (a pull request from a fork) gets no cache credentials and runs uncached rather than under a namespace of its own.
     score: expected-absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no cache is shared through credentials; the mise-action tool cache is the provider's own, scoped by branch by the provider, and gates.yml runs on pull_request, never pull_request_target, so a fork's run gets no secrets"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no cache is shared through credentials; the mise-action tool cache is the provider's own, scoped by branch by the provider, and gates.yml runs on pull_request, never pull_request_target, so a fork's run gets no secrets"
   M13/runner-class-follows-work:   # standard, requires convention
     # Each CI job's runner class is written down with the measurement behind it, the jobs that only decide or report (the resolver, the aggregator, an echo job) run on the smallest class, and a machine's parallelism is set once as a product, the task runner's package concurrency times the workers per package, at or below its cores.
     score: absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: gates.yml runs every job on the provider's hosted default class, areas (the resolver) and gates (the aggregator) on ubuntu-latest and platform-gates on a matrix of three operating systems (ubuntu-latest, macos-latest, windows-latest) of that one class, and no page or comment records a measurement behind a class; no task runner runs packages in parallel (bun test is one process per run), so there is no parallelism product to cap"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: gates.yml runs every job on the provider's hosted default class, areas (the resolver) and gates (the aggregator) on ubuntu-latest and platform-gates on a matrix of three operating systems (ubuntu-latest, macos-latest, windows-latest) of that one class, and no page or comment records a measurement behind a class; no task runner runs packages in parallel (bun test is one process per run), so there is no parallelism product to cap"
   M13/one-authoritative-leg:   # standard, requires convention
     # CI is the single authority for every check: the written record says so and that skipping a hook never changes what merges, each leg before CI (a hook, a remote sandbox) selects no more work than CI does for the same change, and a leg that holds a machine beyond CI is an opt-in recorded with the failure class it catches that CI cannot and a checkable reopen condition in each direction.
     score: expected-absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no hook configuration is tracked (no lefthook.yml, .husky/ or .pre-commit-config.yaml; modules/M1's hook file is a template) and no remote sandbox exists, so no leg runs before CI and gates.yml is the only leg; AGENTS.md at that commit states no authority rule and nothing about skipping a hook, which becomes the criterion's question once a hook exists"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no hook configuration is tracked (no lefthook.yml, .husky/ or .pre-commit-config.yaml; modules/M1's hook file is a template) and no remote sandbox exists, so no leg runs before CI and gates.yml is the only leg; AGENTS.md at that commit states no authority rule and nothing about skipping a hook, which becomes the criterion's question once a hook exists"
   M13/cost-decisions-reopenable:   # strict, requires mechanical
     # Every decision that changed what the pipeline spends (a runner resized, a leg narrowed or added, a suite moved, a cache turned on) is in a cost ledger with its measurement before and after in one unit, or a due date for the after, and a reopen condition naming a registered metric, a comparator, a threshold and a window; a gate fails an entry without them.
     score: absent
-    evidence: "Scored by hand at a66ee22, this record's commit, because the criterion postdates the audit: no cost ledger exists and no decision about what CI spends (the runner classes in gates.yml included) is recorded with a measurement or a reopen condition, and nothing checks for one"
+    evidence: "Scored by hand at b144696, this record's commit, because the criterion postdates the audit: no cost ledger exists and no decision about what CI spends (the runner classes in gates.yml included) is recorded with a measurement or a reopen condition, and nothing checks for one"
   # M14 testing-strategy
   M14/test-tiers-declared:   # lite, requires convention
     # Every test suite has a written tier (unit, integration, end-to-end or the repository's own names) with the trigger that runs it and its time budget.
@@ -980,7 +980,7 @@ criteria:
   M14/stale-test-triage-written:   # lite, requires convention
     # The procedure for a test failure the change did not cause is written where agents and people read it: the failure is reproduced on a freshly fetched base in a throwaway worktree before it is attributed, never with a stash, and a failed fetch is no answer; a test that fails on the base too is fixed inline when cheap or deleted with a tracker item recording what it covered; a test is regenerated only when its premise is obsolete and the new test asserts what the old one protected.
     score: absent
-    evidence: "At a66ee22 AGENTS.md § Rules for every change states the testing rules but no procedure for a failure the change did not cause, and plugin/skills/fix-ci/SKILL.md § test_failure deferred to 'the repository's own stale-test triage procedure, if it has one', which Jig had none of: nothing named a fresh-base reproduction, a throwaway worktree, or what a deleted test owes"
+    evidence: "At b144696 AGENTS.md § Rules for every change states the testing rules but no procedure for a failure the change did not cause, and plugin/skills/fix-ci/SKILL.md § test_failure deferred to 'the repository's own stale-test triage procedure, if it has one', which Jig had none of: nothing named a fresh-base reproduction, a throwaway worktree, or what a deleted test owes"
   M14/tier-budgets-enforced:   # standard, requires mechanical
     # Every CI job that runs tests has an enforced budget on the suite's elapsed time: a job timeout, a timeout on the command that runs the suite, or a step that fails when the suite runs over its tier's budget. A per-test timeout alone does not count: it bounds one test, not the suite.
     score: mechanical
@@ -996,7 +996,7 @@ criteria:
   M14/spawn-exit-assertions-print-output:   # standard, requires convention
     # A test that asserts a spawned process's exit status asserts it through a helper that prints the child's captured output when the assertion fails, and the rule is written where agents and people read it (expected-absent where no test spawns a process).
     score: absent
-    evidence: "At a66ee22 lib/test-helpers/expect-spawn-exit.ts existed and 9 test files used it, but no instruction file or testing doc named it as the rule (git grep expect-spawn-exit a66ee22 -- '*.md' finds nothing) and no lint rule flagged the bare shape: 1,067 lines of exitCode).toBe-style assertions remained in test files, 994 of them in the drive-pr suite"
+    evidence: "At b144696 lib/test-helpers/expect-spawn-exit.ts existed and 9 test files used it, but no instruction file or testing doc named it as the rule (git grep expect-spawn-exit b144696 -- '*.md' finds nothing) and no lint rule flagged the bare shape: 1,067 lines of exitCode).toBe-style assertions remained in test files, 994 of them in the drive-pr suite"
   M14/tests-come-with-changes:   # standard, requires mechanical
     # A CI check fails a change whose changed source file has no test, unless the file is listed in a registered exemption with a reason, and a pre-push hook runs the same check before the push.
     score: absent
@@ -1008,11 +1008,11 @@ criteria:
   M14/provisioned-suites-executed:   # standard, requires mechanical
     # Every CI job that exists for a suite that can run nothing (a job that provisions a database, a queue, a browser or a credential the suite skips itself without; a shard or path selection of one suite) fails when that suite executed zero tests, counted from the runner's machine-readable report as the test cases not skipped, and fails when the report is missing (expected-absent where no job exists for such a suite).
     score: absent
-    evidence: "At a66ee22 .github/workflows/gates.yml runs the drive-pr suite in four shard jobs (bun run test --shard=N/4 ./plugin/skills/drive-pr/) with Bun's default reporter, and no step reads an executed count; bun test exits 0 and writes no report when a shard or path filter matches no file, so a shard that ran nothing would pass. No job provisions a dependency"
+    evidence: "At b144696 .github/workflows/gates.yml runs the drive-pr suite in four shard jobs (bun run test --shard=N/4 ./plugin/skills/drive-pr/) with Bun's default reporter, and no step reads an executed count; bun test exits 0 and writes no report when a shard or path filter matches no file, so a shard that ran nothing would pass. No job provisions a dependency"
   M14/dependency-workarounds-pinned:   # standard, requires convention
     # Every workaround for a defect in a dependency has a test beside it that asserts the defective behaviour against the real dependency and names the workaround, and the written rule is that a pin failing after an upgrade retires or adapts the workaround rather than updating the assertion (expected-absent where the repository has no such workaround).
     score: expected-absent
-    evidence: "At a66ee22 nothing in lib/, scripts/, tools/ or plugin/ compensates for a defect in a dependency (git grep -il workaround a66ee22 -- '*.ts' finds nothing); the vendored js-yaml copies are a packaging choice, not a workaround, so there is no premise to pin"
+    evidence: "At b144696 nothing in lib/, scripts/, tools/ or plugin/ compensates for a defect in a dependency (git grep -il workaround b144696 -- '*.ts' finds nothing); the vendored js-yaml copies are a packaging choice, not a workaround, so there is no premise to pin"
   M14/clock-reads-linted:   # strict, requires mechanical
     # A lint rule rejects direct wall-clock reads in runtime code outside the one system-clock adapter, so runtime code gets the current time from an injected clock.
     score: absent
@@ -1036,7 +1036,7 @@ criteria:
   M14/next-release-canary:   # strict, requires mechanical
     # A scheduled workflow with no per-change trigger, which is not a required check, runs the suites with behaviour pins and the integration tier with its dependencies provisioned, and a compiled-binary smoke test where the product ships a binary, against the next release of the runtime or a driver, and records the build it used.
     score: absent
-    evidence: "At a66ee22 the only workflow, gates.yml, installs Bun through mise at mise.toml's pin (1.4.3) on pull_request and push; no workflow ran on a schedule, none installed a next-release channel, none recorded a build, and no compiled binary is shipped"
+    evidence: "At b144696 the only workflow, gates.yml, installs Bun through mise at mise.toml's pin (1.4.3) on pull_request and push; no workflow ran on a schedule, none installed a next-release channel, none recorded a build, and no compiled binary is shipped"
   # M15 contracts-errors
   M15/error-contract-written:   # lite, requires convention
     # The error contract is written where agents and people read it: the three failure channels and which situation takes which, never swallow and keep the cause, branch on type or code and never on message text, a failure inside a transaction aborts it (rolls it back, by the path the transaction tool rolls back on), and errors reach callers only through one boundary.
@@ -1157,10 +1157,10 @@ criteria:
     evidence: "No automation writes a release to main: the version moves in the pull request that changes plugin/, and a person merges it under main's branch protection, which requires the gates check (.github/workflows/gates.yml)."
   M10/external-preconditions-live-checked:   # standard, requires mechanical
     score: absent
-    evidence: "At audited commit a66ee2269e50bdb33434f8c3f741ac337ec86a65, no external-precondition registry or scheduled runner is declared."
+    evidence: "At audited commit b14469664fb17700b76e6c8091ff5a923c14bd48, no external-precondition registry or scheduled runner is declared."
   M11/external-preconditions-issue-reconciled:   # standard, requires mechanical
     score: absent
-    evidence: "At audited commit a66ee2269e50bdb33434f8c3f741ac337ec86a65, no external-registry issue reconciler runs on a schedule."
+    evidence: "At audited commit b14469664fb17700b76e6c8091ff5a923c14bd48, no external-registry issue reconciler runs on a schedule."
 
 declined:
   - refs: ["M9/taxonomy-documented", "M9/memory-location-designated"]
