@@ -284,6 +284,9 @@ function iconFieldsWord(
   return lead.match(severity)?.[1] ?? null;
 }
 
+/** The leading HTML comments `headerOf` strips, by how their text opens. */
+const STRIPPED_MARKERS = ["ai-review-", "coderabbit-ai-generated"] as const;
+
 /**
  * The block a finding's severity and category are read from: leading
  * `<!-- ai-review-* -->` comments (Jig's finding format's own markers) and
@@ -291,14 +294,22 @@ function iconFieldsWord(
  * stripped, then everything up to the first blank line. A matcher reading
  * the whole comment would take a severity quoted as an example in the body.
  * Only those markers are stripped: stripping any leading HTML comment would
- * expose whatever paragraph follows it as the header.
+ * expose whatever paragraph follows it as the header. A scan rather than one
+ * repeated regular expression, whose overlapping whitespace and lazy body
+ * a reviewer's comment could make backtrack.
  */
 export function headerOf(text: string): string {
-  const withoutLeadingComments = text.replace(
-    /^(?:\s*<!--\s*(?:ai-review-|coderabbit-ai-generated)[\s\S]*?-->\s*)+/,
-    "",
-  );
-  return withoutLeadingComments.split(/\n\s*\n/, 1)[0] ?? "";
+  let rest = text;
+  for (;;) {
+    const next = rest.trimStart();
+    if (!next.startsWith("<!--")) break;
+    const inner = next.slice(4).trimStart();
+    if (!STRIPPED_MARKERS.some((marker) => inner.startsWith(marker))) break;
+    const end = next.indexOf("-->", 4);
+    if (end < 0) break;
+    rest = next.slice(end + 3).trimStart();
+  }
+  return rest.split(/\n\s*\n/, 1)[0] ?? "";
 }
 
 /** The reviewer's word in `header` under `shape`, or `null`. */

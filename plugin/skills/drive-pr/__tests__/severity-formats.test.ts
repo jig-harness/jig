@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   BUILTIN_FORMATS,
+  headerOf,
   jigFormats,
   jigSeverityOf,
   normalizeLogin,
@@ -196,6 +197,26 @@ describe("jigSeverityOf", () => {
     );
     expect(jigSeverityOf("![P1 Badge](…) title")).toBe("unknown");
     expect(jigSeverityOf("Fix the **blocker** token")).toBe("unknown");
+  });
+});
+
+describe("headerOf", () => {
+  it("strips the known leading markers, then keeps the first paragraph", () => {
+    expect(
+      headerOf(
+        " \n<!-- ai-review-fp: a -->\n<!--coderabbit-ai-generated:v1-->\n\nHead\nline\n\nbody",
+      ),
+    ).toBe("Head\nline");
+    expect(headerOf("<!-- ai-review-a -->Head")).toBe("Head");
+  });
+
+  it("keeps a foreign comment and an unclosed marker", () => {
+    expect(headerOf("<!-- other -->\n**Major**\n\nx")).toBe(
+      "<!-- other -->\n**Major**",
+    );
+    expect(headerOf("<!-- ai-review-a -->\n<!-- ai-review-b\nHead")).toBe(
+      "<!-- ai-review-b\nHead",
+    );
   });
 });
 
