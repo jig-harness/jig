@@ -60,6 +60,24 @@ describe("severityOf", () => {
     ).toBe("high");
   });
 
+  it("reads CodeRabbit's icon-led layout, with or without an effort field", () => {
+    const icon =
+      '<picture><img src="https://x.invalid/major-16.svg" width="16" alt=""></picture>';
+    const read = (body: string) =>
+      severityOf(body, "coderabbitai[bot]", BUILTIN_FORMATS);
+    expect(
+      read(`**${icon} Major** · **Stability** · **Heavy lift**\n\nx`),
+    ).toBe("high");
+    expect(read(`**${icon} Trivial** · **Security & Privacy**\n\nx`)).toBe(
+      "low",
+    );
+    expect(read(`**${icon} Minor** · **Quality** · **Quick win**`)).toBe("low");
+    expect(read("**Major** · prose, not a field")).toBe("unknown");
+    expect(
+      severityOf(`**${icon} Major** · **A**`, "someone-else", BUILTIN_FORMATS),
+    ).toBe("unknown");
+  });
+
   it("reads each shape with a configured vocabulary", () => {
     const badge: SeverityFormat = {
       login: "badge-bot",
