@@ -42,9 +42,11 @@ implementer is derived by rules as data, as
 row per work type gives the base, a closed list of raises moves the effort
 up and never the tier, the strictest value wins on every conflict, an
 underivable type takes the strictest row, an agent whose definition pins a
-model keeps its pin, and a person's choice always wins. The route's reason,
-source and whether it was applied are written on the pull request, where
-the review loop's report joins them to how the work went. Routing is
+model keeps its pin against the rules, and a person's choice always wins,
+field by field and forwarded explicitly so a pin cannot override it. The
+route's reason, source and whether it was applied are written on the pull
+request, the proposed route apart from the effective one, where the review
+loop's report joins the effective route to how the work went. Routing is
 opt-in: a repository that declares no rules has its routes derived and
 recorded, and nothing applied.
 
@@ -93,7 +95,7 @@ layers a pickup runs are never routed down with its implementer.
 ## Extraction (decisions-become-checks)
 
 The configuration loader refuses a `routing` value outside the closed
-lists and an alias outside the known families for a runtime that has
-them, from one families list in `plugin/shared/` that the policy's
-mappings link. The audit's M0 criterion reads the `## Route` section of
+lists, an alias outside the known families for a runtime that has them,
+and a tier mapped to a family the list gives another tier, from one
+families list in `plugin/shared/` that the policy's mappings link. The audit's M0 criterion reads the `## Route` section of
 recent pull requests as evidence beside the score.

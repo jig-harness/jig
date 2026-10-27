@@ -78,8 +78,9 @@ it is configuration a check reads.
 
 `plugin/skills/do-item/scripts/determine_route.ts` reads the issue JSON
 `get_issue.ts` returns, runs `determine_agent.ts` for the agent and
-`determine_type.ts` (item 27) for the type, and prints
-`{agent, tier, effort, model, reasons, source, applied}`:
+`determine_type.ts` (item 27) for the type, and prints the proposed route
+`{agent, tier, effort, model, reasons}` and, per field, its effective
+value, source and whether it was applied:
 
 1. **The agent**, exactly as today: the catalog area's `agent`, then the
    label map, then the title keywords, then the default. Routing changes
@@ -100,9 +101,10 @@ it is configuration a check reads.
    - a seeded area with a **mandatory review**: an area the item's labels
      select through `do_item.agents.codearea_areas` whose `review.skills`
      names at least one skill;
-   - a **size label** in `routing.raise.sizes` (default `[large]`, the
-     taxonomy's largest default size; the labels `batch_sizes` names never
-     raise);
+   - a **size label** in `routing.raise.sizes`; by default, every size
+     `work_batch.sizes` names outside `issue_tracker.labels.batch_sizes`
+     (the sizes too large to batch), and `[large]` where it names none (the
+     labels `batch_sizes` names never raise);
    - the human-in-the-loop label, `issue_tracker.labels.hitl`, counted
      once even where the catalog also lists it as a flag.
 4. **The cap.** An effort raised past `max` stays at `max`; the tier never
@@ -110,11 +112,22 @@ it is configuration a check reads.
    escalate, and that an Execution task which keeps needing the maximum
    effort belongs on the Strategic tier: that is a row a person moves with
    the records showing it, not a step the derivation takes per item.
-5. **The pinned agent.** An agent whose definition pins a model (Claude
-   Code: `model:` in `.claude/agents/<name>.md`, other than `inherit`)
-   keeps its pin: the repository decided that agent's tier explicitly, and
-   M0 puts the decision in that metadata. The route then supplies the
-   effort only, and the reasons say `tier: pinned by agent`.
+5. **The pinned agent.** An agent whose definition pins a model or an
+   effort (Claude Code: `model:` other than `inherit`, or `effort:`, in the
+   agent's definition) keeps its pin against the rules: the repository
+   decided that agent's tier explicitly, and M0 puts the decision in that
+   metadata. The route then supplies only the fields the definition leaves
+   open, and the reasons say `tier: pinned by agent`. `determine_agent.ts`
+   prints the name the agent is invoked by, not a definition file, so the
+   definition is resolved by a per-runtime resolver in `plugin/shared/`
+   that reads every scope the runtime loads definitions from (for Claude
+   Code: the managed, project, user and plugin scopes, matched on the
+   definition's `name:` field, not its file name) in the runtime's own
+   precedence order. Where the resolver cannot find exactly one effective
+   definition, or a scope it cannot read could hold one (a definition
+   passed on the command line), the rules forward no model and no effort,
+   and the reasons say `tier: pin unknown`: a missed pin overwritten by a
+   rule is the failure this step exists to prevent.
 6. **The translation**: the tier to the runtime's family alias through
    `routing.models.<runtime>`, the effort through
    `routing.efforts.<runtime>`. The runtime is derived from the environment
@@ -147,23 +160,42 @@ applied.
 
 ### Sources and overrides
 
-A route's `source` is `rules`, `person` or `settings`, and a person's choice
-wins:
+A route's `source` is `rules`, `person`, `settings` or `pin`, recorded per
+field,
+and a person's choice wins. Overrides apply **field by field**: a choice
+of the model leaves the effort to the rules, and a choice of the effort
+leaves the model to them. The precedence, for each of the model and the
+effort, is: a value the person names, then a value the settings name, then
+the agent definition's pin, then the rules.
 
-- **The person in the session.** The launcher's first prompt carries one
-  line, `route: yours`, when it handed the agent's start to the person (the
-  Orca provider without an `agent` setting): the person chose the session's
-  model and effort for this work. On that line, or when the person says in
-  the session which model or effort to use, `do-item` delegates with no
-  model and no effort, so the implementer inherits the person's choice, and
-  records `source: person`, `applied: inherited`. The source is declared
-  by the prompt and the person, not verified: no runtime exposes the
-  session's model to a script.
+- **The person names a value.** When the person says in the session which
+  model or effort to use, `do-item` forwards that value explicitly, as it
+  would a rule's, and records `source: person` for that field. Explicit,
+  not omitted: omitting a field leaves the implementer on the agent
+  definition's pin where there is one (Claude Code also lets a
+  definition's `effort:` take precedence over the session's), so a choice
+  carried by omission would be overridden by the very pin it was meant to
+  beat. Where the runtime's tool cannot forward the field, it is recorded
+  `applied: no` with the reason, never as applied.
+- **The person chose the session.** The launcher's first prompt carries
+  one line, `route: yours`, when it handed the agent's start to the person
+  (the Orca provider without an `agent` setting): the person chose the
+  session's model and effort for this work, without naming them to
+  `do-item`. On that line `do-item` forwards neither field, so the
+  implementer inherits the session's values except where the agent
+  definition pins one, and records `source: person`, `applied: inherited`
+  for each field the definition leaves open and `source: pin` for each it
+  pins. The source is declared by the prompt and the person, not
+  verified: no runtime exposes the session's model to a script, so the
+  effective value of an inherited field is recorded as unknown
+  ([the record](#where-it-is-read)).
 - **The machine's settings.** When the launcher's `repos.<label>.<provider>`
   settings name a model or an effort, the first prompt says so
-  (`route: settings model=<alias> effort=<level>`), and `do-item` delegates
-  the same way, recording `source: settings`. A setting that names only
-  the agent chooses nothing about the model, and the rules apply.
+  (`route: settings model=<alias> effort=<level>`, naming only the fields
+  set), and `do-item` forwards each named value explicitly, recording
+  `source: settings` for it; a field the settings leave out is derived by
+  the rules. A setting that names only the agent chooses nothing about the
+  model or the effort, and the rules apply to both.
 - **Nobody there and no line.** The rules decide, and an unattended run
   never stops to ask for a route: the strictest value is always a safe
   answer for the work, if not the cheapest.
@@ -182,19 +214,35 @@ is policy, not an override, and the reasons name the rule that fired.
   effort to the subagent tool where the runtime takes them (Claude Code's
   agent tool takes both); where the runtime's tool takes neither, the
   implementer runs as today and the route is recorded with `applied: no`
-  and the reason. The route is never put in the delegation prompt: a
+  and the reason. A tool that takes the values does not prove they were
+  used: a runtime can override an invocation's model or effort from its
+  environment (Claude Code: `CLAUDE_CODE_SUBAGENT_MODEL` forces every
+  subagent's model, and `CLAUDE_CODE_EFFORT_LEVEL` sets the effort over
+  the invocation's). Each runtime's row in `plugin/shared/` lists the
+  variables that override a forwarded field; when one is set,
+  `determine_route.ts` records that field `applied: no (overridden by
+  <variable>)` with the variable's value as the effective one, and only a
+  field forwarded with no such override set is recorded `applied: yes`.
+  The route is never put in the delegation prompt: a
   prompt cannot change a model, and M0 forbids a tier in prose. The fix
   loop after the review delegates to the same agent with the same route.
   Where `routing` is absent, the route is derived and recorded with
   `applied: no (routing not declared)` and nothing is forwarded, so a
   repository sees what the rules would do before it opts in.
-- **The pull request's description** gets a `## Route` section, one line in
-  a fixed form, written and parsed by `plugin/shared/route.ts` so a
-  reviewer's edit elsewhere in the body leaves it readable:
-  `agent=<name> tier=<tier> effort=<effort> model=<alias or none>
-  source=<rules|person|settings> applied=<yes|no|inherited>`, followed by
-  the reasons. It survives the worktree and is read by any harness, as the
-  type's body sections are.
+- **The pull request's description** gets a `## Route` section in a fixed
+  form, written and parsed by `plugin/shared/route.ts` so a reviewer's
+  edit elsewhere in the body leaves it readable. It keeps the **proposed**
+  route, what the rules derived, apart from the **effective** one, what the
+  implementer ran on, so an override never passes for the rules' answer:
+  `proposed: agent=<name> tier=<tier> effort=<effort>
+  model=<alias or none>`, then `effective: tier=<tier or unknown>
+  effort=<effort or unknown> model=<alias or unknown>`, then per field
+  `source=<rules|person|settings|pin> applied=<yes|no|inherited>`,
+  followed by the reasons. An effective value is the one forwarded, named
+  by the person or the settings, pinned, or read from an overriding
+  variable; an inherited value no script can read is `unknown`, never the
+  proposed value in its place. It survives the worktree and is read by any
+  harness, as the type's body sections are.
 - **`work-batch`** takes one route for the batch: the strictest tier and
   effort across its items, each item's reasons kept. An epic whose issue
   routes to more than two agents keeps its integrator on the session's
@@ -202,8 +250,11 @@ is policy, not an override, and the reasons name the rule that fired.
 - **`drive-pr`'s loop-cost report** (`loop-metrics.ts`,
   [M11](../modules/M11-process-observability/README.md)) adds the
   description to what it reads of a pull request, and prints the route
-  beside the rounds and threads to convergence, counting only routes with
-  `applied: yes` or `inherited`, so one report shows rounds per route.
+  beside the rounds and threads to convergence, so one report shows rounds
+  per route. It groups by the **effective** route, never the proposed one,
+  and a comparison per model or per effort leaves out every pull request
+  whose effective value for that field is `unknown`: two people inheriting
+  different models under one proposed route are not one route.
   That report measures rounds, not cost. A tier move still needs the
   comparison M0 asks for, comparable tasks under both tiers with what was
   billed; the person's overrides and the rules' defaults, read from the
@@ -214,9 +265,19 @@ is policy, not an override, and the reasons name the rule that fired.
   repository's configuration (`routing.models`), beside agent and skill
   metadata. The policy's invariant, its table and the audit's
   `model-pins-are-family-aliases` criterion say so, and the configuration
-  loader is the check: one list of known families per runtime in
-  `plugin/shared/`, which M0's mappings link, refuses an alias outside it
-  for a runtime that has aliases, and takes any name for one that has none.
+  loader is the check. One list of known families per runtime in
+  `plugin/shared/`, which M0's mappings link, records the tier M0's
+  mappings give each family (for Claude Code: `sonnet` execution, `opus`
+  strategic). The loader refuses an alias outside the list, and a
+  `routing.models` row that maps a tier to a family the list gives another
+  tier: `execution: opus` with `strategic: sonnet` would make the
+  strictest tier the cheaper family, the declared tier contradicting the
+  model's that M0's policy rejects. A repository whose mapping
+  legitimately differs (a provider whose alias resolves to another family)
+  declares the family's tier in `routing.family_tiers.<runtime>.<family>`
+  with a `reason`, which the loader reads in place of the list's tier for
+  that family and refuses without the reason; the audit reports each one.
+  A runtime with no list takes any name.
 
 ### The audit
 
@@ -241,19 +302,24 @@ rules, the share a person chose and the share recorded and not applied.
 | `routing.types.<type>.tier` | `execution` or `strategic` | the table above | `determine_route.ts` |
 | `routing.types.<type>.effort` | `low`, `medium`, `high`, `max` | the table above | `determine_route.ts` |
 | `routing.raise.flags` | list of labels, or `catalog` | `catalog`: every flag the catalog's areas declare | `determine_route.ts` |
-| `routing.raise.sizes` | list of labels | `[large]` | `determine_route.ts` |
+| `routing.raise.sizes` | list of labels | the sizes `work_batch.sizes` names outside `batch_sizes`; `[large]` where it names none | `determine_route.ts` |
 | `routing.raise.reviews` | `true`, `false` | `true` | `determine_route.ts` |
 | `routing.models.<runtime>.<tier>` | the runtime's family alias | `claude-code: {execution: sonnet, strategic: opus}` | `determine_route.ts`, the configuration loader |
 | `routing.efforts.<runtime>.<effort>` | the runtime's own level name | unchanged | `determine_route.ts` |
+| `routing.family_tiers.<runtime>.<family>` | `{tier, reason}` | none: the tier the known-families list gives | the configuration loader, the audit |
 
 Loading the configuration refuses, with the field at fault: a type row for
 a type outside the effective type set, or a type in the set with no
 complete row where the repository renamed it (the
 [work-types rule](work-types.md#configuration)); a tier or effort outside
 the closed lists; an alias outside the known families for a runtime that
-has them; and, where the repository has a label taxonomy
-(`issue_tracker.taxonomy`), a raise list naming a label it does not
-declare. A refused `routing` section stops `do-item` and says why, as a
+has them; a `routing.models` row mapping a tier to a family whose tier
+(from the list, or from `routing.family_tiers`) is another; a
+`family_tiers` entry with no reason; and, where the repository has a label taxonomy
+(`issue_tracker.taxonomy`), a raise list the repository declares naming a
+label the taxonomy does not declare. A default list is never refused: a
+default label the taxonomy does not declare raises nothing, since no item
+carries it. A refused `routing` section stops `do-item` and says why, as a
 refused `do_item` section does today; it is never read as absent.
 
 ## Build order
@@ -265,19 +331,25 @@ refused `do_item` section does today; it is never read as absent.
    and changes nothing yet. Waits on item 27's first step, the type
    derivation.
 2. **The record.** `plugin/shared/route.ts` writes and parses the `## Route`
-   section; `do-item` writes it with `applied: no`; the loop-cost report
-   reads the description and prints the route. Recording comes before any
+   section, proposed and effective routes apart; `do-item` writes it with
+   `applied: no`; the loop-cost report reads the description and prints
+   the route, grouped by the effective one. Recording comes before any
    forwarding, so the first routes applied are already measured.
 3. **M0's declaration point.** The policy's invariant and table, the
-   criterion's statement, the known-families list in `plugin/shared/` and
-   the loader's check; M0's mappings link the list.
+   criterion's statement, the known-families list with each family's tier
+   in `plugin/shared/`, `routing.family_tiers`, and the loader's alias and
+   tier checks; M0's mappings link the list.
 4. **`do-item` forwards.** Behind a declared `routing` section: the
    delegation passes the model and effort where the runtime's tool takes
-   them and records `applied`; the pinned agent keeps its pin; the fix loop
-   reuses the route; the launcher's first prompt carries the `route:` line
-   and `do-item` honours it. A fixture shows a flagged bug delegated on a
-   higher effort than an unflagged one, the `## Route` section saying why,
-   and a `route: yours` prompt delegating with nothing forwarded.
+   them, field by field, and records `applied`, reading the runtime's
+   overriding variables first; the definition resolver keeps a pinned
+   agent's pin and forwards nothing where it cannot resolve one; the fix
+   loop reuses the route; the launcher's first prompt carries the `route:`
+   line and `do-item` honours it. Fixtures show a flagged bug delegated on
+   a higher effort than an unflagged one, the `## Route` section saying
+   why; a `route: yours` prompt delegating with nothing forwarded; a person
+   naming only the model, with the effort still derived; and a set
+   overriding variable recorded as not applied.
 5. **`work-batch` and the audit criterion.**
 
 ## Left out
@@ -329,4 +401,4 @@ refused `do_item` section does today; it is never read as absent.
 
 Reviewed on 2026-10-28 at commit `8cd255d`, by a fresh-context agent
 session acting as an adversary, before the first pull request that builds
-it; every finding is settled in the text above.
+it.
