@@ -237,6 +237,35 @@ function parseField<K extends keyof DepthRow>(
   return parsers[key]() as DepthRow[K];
 }
 
+/** The labels of one `issue_tracker.types` entry, its name checked. */
+function typeEntry(type: string, list: unknown): string[] {
+  const field = `issue_tracker.types.${formatField([type])}`;
+  if (type === UNKNOWN_TYPE)
+    throw new WorkTypesError(
+      `${field}: unknown is not a type a repository declares; it is what an item gets when nothing identifies its type`,
+    );
+  if (!TYPE_NAME.test(type))
+    throw new WorkTypesError(
+      `${field}: a type name is lowercase letters, digits, - and _, starting with a letter`,
+    );
+  return distinctList(list, field, "nonempty label names", nonEmptyText);
+}
+
+/** Refuse `bug` named differently here and in `issue_tracker.labels.bug`. */
+function refuseBugMismatch(
+  bug: string[] | undefined,
+  trackerLabels: ReturnType<typeof parseTrackerLabels>,
+): void {
+  if (
+    bug !== undefined &&
+    trackerLabels.declared.has("bug") &&
+    !sameLabels(bug, trackerLabels.bug)
+  )
+    throw new WorkTypesError(
+      `issue_tracker.types.bug (${bug.join(", ")}) and issue_tracker.labels.bug (${trackerLabels.bug.join(", ")}) name different labels; keep one, or make them agree`,
+    );
+}
+
 /** The type → labels map, before the rows: `issue_tracker.types` or the defaults. */
 function parseTypeLabels(
   overlay: Record<string, unknown>,
@@ -254,32 +283,9 @@ function parseTypeLabels(
     throw new WorkTypesError(
       "issue_tracker.types must map at least one type to the labels that mark it",
     );
-  for (const [type, list] of Object.entries(raw)) {
-    const field = `issue_tracker.types.${formatField([type])}`;
-    if (type === UNKNOWN_TYPE)
-      throw new WorkTypesError(
-        `${field}: unknown is not a type a repository declares; it is what an item gets when nothing identifies its type`,
-      );
-    if (!TYPE_NAME.test(type))
-      throw new WorkTypesError(
-        `${field}: a type name is lowercase letters, digits, - and _, starting with a letter`,
-      );
-    labels[type] = distinctList(
-      list,
-      field,
-      "nonempty label names",
-      nonEmptyText,
-    );
-  }
-  const bug = labels.bug;
-  if (
-    bug !== undefined &&
-    trackerLabels.declared.has("bug") &&
-    !sameLabels(bug, trackerLabels.bug)
-  )
-    throw new WorkTypesError(
-      `issue_tracker.types.bug (${bug.join(", ")}) and issue_tracker.labels.bug (${trackerLabels.bug.join(", ")}) name different labels; keep one, or make them agree`,
-    );
+  for (const [type, list] of Object.entries(raw))
+    labels[type] = typeEntry(type, list);
+  refuseBugMismatch(labels.bug, trackerLabels);
   return labels;
 }
 
@@ -305,6 +311,34 @@ function refuseSharedLabels(labels: Record<string, string[]>): void {
     }
 }
 
+/** One `do_item.work_types` entry, checked against the type set. */
+function overrideEntry(
+  type: string,
+  entry: unknown,
+  types: string[],
+): Partial<DepthRow> {
+  const at = `do_item.work_types.${formatField([type])}`;
+  if (type === UNKNOWN_TYPE)
+    throw new WorkTypesError(
+      `${at}: the unknown type's row is computed from the others, as the strictest value of each field, and cannot be set`,
+    );
+  if (!types.includes(type))
+    throw new WorkTypesError(
+      `${at}: ${type} is not a type of this repository (${types.join(", ")}); add it to issue_tracker.types or remove the entry`,
+    );
+  if (!isRecord(entry))
+    throw new WorkTypesError(`${at} must be a mapping of depth-table fields`);
+  const row: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(entry)) {
+    if (!(DEPTH_FIELDS as readonly string[]).includes(key))
+      throw new WorkTypesError(
+        `${at}.${formatField([key])} is not a depth-table field (${DEPTH_FIELDS.join(", ")})`,
+      );
+    row[key] = parseField(key as keyof DepthRow, value, `${at}.${key}`);
+  }
+  return row as Partial<DepthRow>;
+}
+
 /** `do_item.work_types`, each entry checked against the type set. */
 function parseOverrides(
   overlay: Record<string, unknown>,
@@ -320,33 +354,8 @@ function parseOverrides(
     throw new WorkTypesError(
       "do_item.work_types must map a type to the fields of its row",
     );
-  for (const [type, entry] of Object.entries(raw)) {
-    const at = `do_item.work_types.${formatField([type])}`;
-    if (type === UNKNOWN_TYPE)
-      throw new WorkTypesError(
-        `${at}: the unknown type's row is computed from the others, as the strictest value of each field, and cannot be set`,
-      );
-    if (!types.includes(type))
-      throw new WorkTypesError(
-        `${at}: ${type} is not a type of this repository (${types.join(", ")}); add it to issue_tracker.types or remove the entry`,
-      );
-    if (!isRecord(entry))
-      throw new WorkTypesError(`${at} must be a mapping of depth-table fields`);
-    const row: Partial<DepthRow> = {};
-    for (const [key, value] of Object.entries(entry)) {
-      if (!(DEPTH_FIELDS as readonly string[]).includes(key))
-        throw new WorkTypesError(
-          `${at}.${formatField([key])} is not a depth-table field (${DEPTH_FIELDS.join(", ")})`,
-        );
-      const k = key as keyof DepthRow;
-      (row as Record<string, unknown>)[k] = parseField(
-        k,
-        value,
-        `${at}.${key}`,
-      );
-    }
-    out[type] = row;
-  }
+  for (const [type, entry] of Object.entries(raw))
+    out[type] = overrideEntry(type, entry, types);
   return out;
 }
 
