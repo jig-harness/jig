@@ -335,6 +335,15 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.87.2] - 2026-10-27
+
+### Fixed
+
+- drive-pr and resolve-review-comments now read the severity in CodeRabbit's
+  newer comment layout (`**<icon> Major** · **Category** · **Effort**`), which
+  was reported as `unknown`. The new `icon-fields` shape is also available in
+  `review.severity_formats`.
+
 ## [0.87.1] - 2026-10-27
 
 ### Changed
@@ -3731,7 +3740,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.87.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.87.2...HEAD
+[0.87.2]: https://github.com/jig-harness/jig/compare/v0.87.1...v0.87.2
 [0.87.1]: https://github.com/jig-harness/jig/compare/v0.87.0...v0.87.1
 [0.87.0]: https://github.com/jig-harness/jig/compare/v0.86.0...v0.87.0
 [0.86.0]: https://github.com/jig-harness/jig/compare/v0.85.3...v0.86.0
