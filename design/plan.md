@@ -273,13 +273,6 @@ repository with one released artifact. What is left:
   choice (Unreleased, or none). Done when a monorepo with two packages
   releases them independently through the action, and the single-artifact
   configuration keeps working unchanged.
-- **A whole-changelog check**, against the rules of the detected format
-  rather than a union of both: structure, category names and order, dates
-  written year-month-day, link references, and release coverage. Each rule,
-  its conditions and its exemptions are taken from the format's own
-  specification, cited where the check enforces them. Of the whole file,
-  Jig's own `scripts/check-changelog.ts` checks only that the version files
-  agree and that the current version has a heading.
 - **Other CI providers' templates** beside GitHub's workflow template, when
   a repository needs one.
 

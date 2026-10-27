@@ -92,7 +92,7 @@ test("change-note commands run from the plugin cache and read the repository's c
       env,
     });
   // Without the field in the repository's own file nothing is asked of it.
-  for (const command of ["check.ts", "release.ts", "status.ts"]) {
+  for (const command of ["check.ts", "lint.ts", "release.ts", "status.ts"]) {
     const off = run(command, []);
     expectSpawnExit({ ...off, exitCode: off.status }, 0);
     expect(off.stdout).toContain("not configured");
@@ -115,7 +115,17 @@ test("change-note commands run from the plugin cache and read the repository's c
   const status = run("status.ts", ["--json"]);
   expectSpawnExit({ ...status, exitCode: status.status }, 0);
   expect(JSON.parse(status.stdout).next).toBe("1.0.1");
-  for (const command of ["check.ts", "release.ts", "status.ts"]) {
+  // The changelog names no versioning scheme and links no version.
+  const lint = run("lint.ts", ["--json"]);
+  expectSpawnExit({ ...lint, exitCode: lint.status }, 1);
+  expect(JSON.parse(lint.stdout)).toMatchObject({
+    format: "keep-a-changelog",
+    file: "CHANGELOG.md",
+  });
+  expect(
+    JSON.parse(lint.stdout).findings.map((f: { rule: string }) => f.rule),
+  ).toContain("keep-a-changelog/version-link");
+  for (const command of ["check.ts", "lint.ts", "release.ts", "status.ts"]) {
     const unknown = run(command, ["--unknown"]);
     expectSpawnExit({ ...unknown, exitCode: unknown.status }, 2);
   }
@@ -126,6 +136,9 @@ test("change-note commands run from the plugin cache and read the repository's c
   const unreadable = run("release.ts", []);
   expectSpawnExit({ ...unreadable, exitCode: unreadable.status }, 2);
   expect(unreadable.stderr).toContain("MISSING.md does not exist");
+  const unlinted = run("lint.ts", []);
+  expectSpawnExit({ ...unlinted, exitCode: unlinted.status }, 2);
+  expect(unlinted.stderr).toContain("MISSING.md does not exist");
 });
 
 /**

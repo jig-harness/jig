@@ -1,6 +1,7 @@
 # The changelog scripts
 
 The commands behind [`/jig:changelog`](../README.md): the branch check, the
+whole-changelog check, the
 release step, the conversion of a branch, the status report, the tag plan and
 the release-access check. They read the repository's `changelog:`
 section of `.config/jig.yaml` ([the configuration
@@ -210,6 +211,45 @@ the head of the pull request that started the CI job (from the event, then
 the merge base it was written on, so a move of the base does not fail the
 check; every push to the integration branch regenerates the release branch on
 the new tip, and the check runs again on it.
+
+## The whole-changelog check
+
+```sh
+bun lint.ts [--root <dir>] [--json]
+```
+
+The whole changelog against the rules of its format, and of no other: the
+format is `changelog.format`, else the one the file names (`formats.ts`), and
+`lint.ts` runs that format's rules alone. Three modules beside it:
+
+- `lint-structure.ts` reads the file into what the rules look at: its lines
+  with their numbers, the title, the text above the first `##` section, each
+  section with its `###` groups, and the link reference definitions, with
+  headings inside fenced code blocks left out. It also holds the date rule
+  (year-month-day, a day that exists) and Semantic Versioning precedence.
+- `lint-keep-a-changelog.ts` holds Keep a Changelog 1.1.0's rules.
+- `lint-common-changelog.ts` holds Common Changelog's.
+
+Each rule is an entry `{ id, section, url }`, its id `<format>/<rule>`, with a
+comment quoting the specification where the rule is defined; the
+[skill's README](../README.md#checking-the-whole-changelog) lists them. A
+finding is `{ rule, file, line, problem, remedy }`, the remedy ending with the
+section and its address. Release coverage compares the release headings with
+the version the version files hold, where the version lives in files (a
+Common Changelog check only where it is stable), and with each tag
+`<tag_prefix><version>` that names a Semantic Versioning version and sits
+in the checkout's history (`git tag --merged HEAD`: a tag made after the
+branch forked names a release its changelog cannot have yet; a shallow CI
+checkout needs `fetch-depth: 0` to have the tags).
+
+Findings go to standard error as `<file>:<line>: [<rule>] <problem>` then
+`  fix: <remedy>`, and in a GitHub Actions job (`GITHUB_ACTIONS=true`) also as
+`::error` annotations on standard output. `--json` prints `{ "plugin",
+"configured", "format", "file", "findings", "unchecked" }`, `unchecked` saying
+why coverage against the version files could not be checked (they disagree),
+or null. Exit 0 clean or `not configured`; 1 findings; 2 a usage error, an
+invalid configuration, an unreadable changelog, or `unchecked` with no
+finding.
 
 ## Converting a branch
 
