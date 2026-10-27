@@ -471,7 +471,10 @@ async function runCommand(args: RunArgs, clock: Clock): Promise<number> {
     endedAt: new Date(endedMs).toISOString(),
     durationMs: endedMs - startedMs,
     timeoutMinutes,
-    exit: result.spawnFailed || result.timedOut ? null : result.code,
+    // No exit code where the child did not exit on its own: it never
+    // started, was ended at the deadline or for its output, or by a signal.
+    exit:
+      ran === "pass" || (ran === "fail" && !result.signal) ? result.code : null,
     signal: result.signal ?? null,
     outcome: expectFail ? expected : ran,
     expectFail,

@@ -214,8 +214,14 @@ export function readReport(
       status: "stale",
       problem: `written ${new Date(mtimeMs).toISOString()}, before the run began`,
     };
+  let text: string;
   try {
-    return summarize(readFileSync(file, "utf8"), shown);
+    text = readFileSync(file, "utf8");
+  } catch (error) {
+    return { path: shown, status: "unreadable", problem: String(error) };
+  }
+  try {
+    return summarize(text, shown);
   } catch (error) {
     if (!(error instanceof JunitReportError)) throw error;
     return { path: shown, status: "unreadable", problem: error.message };
