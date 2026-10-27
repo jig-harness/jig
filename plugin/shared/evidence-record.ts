@@ -1,0 +1,417 @@
+/**
+ * The evidence record's shape and what is read from it: the `verify`
+ * settings, the counts from a run's JUnit report, whether a record vouches
+ * for its run, the block that may travel, and lookup by tree and command.
+ * `evidence.ts` runs the command and writes the record; see its header.
+ */
+
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+import { errnoCode } from "./errors.ts";
+import { decodeJson, isRecord } from "./guards.ts";
+import { JunitReportError, parseJunitReport } from "./junit-report.ts";
+
+export const DEFAULT_OUTPUT_LINES = 60;
+export const DEFAULT_TIMEOUT_MINUTES = 30;
+export const DEFAULT_RETENTION_DAYS = 30;
+const VERIFY_FIELDS = [
+  "store",
+  "output_lines",
+  "timeout_minutes",
+  "retention_days",
+] as const;
+
+/** A configuration or store problem the command line reports and exits on. */
+export class EvidenceError extends Error {
+  override name = "EvidenceError";
+}
+
+/** The `verify` section, resolved. */
+export interface VerifySettings {
+  store: string;
+  outputLines: number;
+  timeoutMinutes: number;
+  /** Read and checked here; records past it are collected by the resource collection runner. */
+  retentionDays: number;
+}
+
+export type Outcome =
+  | "pass"
+  | "fail"
+  | "timed-out"
+  | "could-not-start"
+  | "killed-for-output"
+  | "seen-to-fail"
+  | "expectation-failed";
+
+type CaseResult = "passed" | "failed" | "skipped";
+interface CaseId {
+  classname: string;
+  name: string;
+}
+
+export interface ReportSummary {
+  /** The report's path, relative to the repository root. */
+  path: string;
+  status: "read" | "no report" | "stale" | "unreadable";
+  problem?: string;
+  executed?: number;
+  skipped?: number;
+  suites?: {
+    name: string;
+    depth: number;
+    run: number;
+    skipped: number;
+    /** A top-level suite that ran no case, as M14's skip tripwire marks it. */
+    tripwire: boolean;
+  }[];
+  failed?: CaseId[];
+  cases?: (CaseId & { result: CaseResult })[];
+  /** The report ran no case, or a top-level suite in it ran none. */
+  tripwire?: boolean;
+  /** Where a report found at the path before the run was moved. */
+  movedAside?: string;
+}
+
+export interface EvidenceRecord {
+  schema: "jig-evidence/v1";
+  id: string;
+  repository: string;
+  tree: string;
+  treeAfter: string;
+  treeChanged: boolean;
+  scope: string;
+  command: { hash: string; display: string; argv: string[]; cwd: string };
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  timeoutMinutes: number;
+  exit: number | null;
+  signal: string | null;
+  outcome: Outcome;
+  expectFail: {
+    case: string | null;
+    met: boolean;
+    reason: string;
+    failedCases: string[];
+  } | null;
+  junit: ReportSummary | null;
+  output: { lines: number; head: string[]; tail: string[]; file: string };
+}
+
+// ---------------------------------------------------------------- settings
+
+function wholeNumber(value: unknown, field: string, fallback: number): number {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
+    throw new EvidenceError(`verify.${field} must be a whole number ≥ 1`);
+  return value;
+}
+
+function storePath(value: unknown, root: string): string {
+  if (value === undefined || value === null)
+    return join(homedir(), ".local", "state", "jig", "evidence");
+  if (typeof value !== "string" || value.trim() === "")
+    throw new EvidenceError("verify.store must be a nonempty path");
+  if (value === "~") return homedir();
+  if (value.startsWith("~/") || value.startsWith("~\\"))
+    return join(homedir(), value.slice(2));
+  return resolve(root, value);
+}
+
+/**
+ * The `verify` section of the merged configuration. A key it does not know
+ * is refused, since a misspelt one would silently keep the default it was
+ * written to change; the message opens with the field at fault.
+ */
+export function verifySettings(section: unknown, root: string): VerifySettings {
+  if (section !== undefined && section !== null) {
+    if (typeof section !== "object" || Array.isArray(section))
+      throw new EvidenceError("verify must be a mapping");
+    for (const key of Object.keys(section))
+      if (!(VERIFY_FIELDS as readonly string[]).includes(key))
+        throw new EvidenceError(
+          `verify.${key} is not a field of verify (${VERIFY_FIELDS.join(", ")})`,
+        );
+  }
+  const v = (section ?? {}) as Record<string, unknown>;
+  return {
+    store: storePath(v.store, root),
+    outputLines: wholeNumber(
+      v.output_lines,
+      "output_lines",
+      DEFAULT_OUTPUT_LINES,
+    ),
+    timeoutMinutes: wholeNumber(
+      v.timeout_minutes,
+      "timeout_minutes",
+      DEFAULT_TIMEOUT_MINUTES,
+    ),
+    retentionDays: wholeNumber(
+      v.retention_days,
+      "retention_days",
+      DEFAULT_RETENTION_DAYS,
+    ),
+  };
+}
+
+// ---------------------------------------------------------------- the report
+
+const caseKey = (c: CaseId) => `${c.classname}::${c.name}`;
+
+/** A report that was read: its counts per suite and each case's result. */
+function summarize(text: string, path: string): ReportSummary {
+  const report = parseJunitReport(text);
+  const suites = report.suites.map((s) => ({
+    name: s.name,
+    depth: s.depth,
+    run: s.executed,
+    skipped: s.skipped,
+    tripwire: s.depth === 0 && s.executed === 0,
+  }));
+  const skipped = report.cases.filter((c) => c.skipped).length;
+  const executed = report.cases.length - skipped;
+  return {
+    path,
+    status: "read",
+    executed,
+    skipped,
+    suites,
+    failed: report.cases
+      .filter((c) => c.failed)
+      .map(({ classname, name }) => ({ classname, name })),
+    cases: report.cases.map((c) => ({
+      classname: c.classname,
+      name: c.name,
+      result: c.failed ? "failed" : c.skipped ? "skipped" : "passed",
+    })),
+    tripwire: executed === 0 || suites.some((s) => s.tripwire),
+  };
+}
+
+/**
+ * The report at `file`, read only when it was written after `startedMs`:
+ * its modification time at or after the start, to the whole second a coarse
+ * file system keeps. `shown` is the path the record names.
+ */
+export function readReport(
+  file: string,
+  shown: string,
+  startedMs: number,
+): ReportSummary {
+  let mtimeMs: number;
+  try {
+    mtimeMs = statSync(file).mtimeMs;
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT")
+      return { path: shown, status: "no report" };
+    return { path: shown, status: "unreadable", problem: String(error) };
+  }
+  if (mtimeMs < Math.floor(startedMs / 1000) * 1000)
+    return {
+      path: shown,
+      status: "stale",
+      problem: `written ${new Date(mtimeMs).toISOString()}, before the run began`,
+    };
+  try {
+    return summarize(readFileSync(file, "utf8"), shown);
+  } catch (error) {
+    if (!(error instanceof JunitReportError)) throw error;
+    return { path: shown, status: "unreadable", problem: error.message };
+  }
+}
+
+// ---------------------------------------------------------------- outcome
+
+const NOT_RUN: readonly Outcome[] = [
+  "timed-out",
+  "could-not-start",
+  "killed-for-output",
+];
+
+/**
+ * Whether a run under `--expect-fail` failed as expected: a non-zero exit
+ * and, when a case is named (its `name` or `<classname>::<name>`), every
+ * case of that name failed in this run's report.
+ */
+export function judgeExpectation(
+  wanted: { case: string | null },
+  outcome: Outcome,
+  junit: ReportSummary | null,
+): NonNullable<EvidenceRecord["expectFail"]> {
+  const base = {
+    case: wanted.case,
+    failedCases: (junit?.failed ?? []).map(caseKey),
+  };
+  const no = (reason: string) => ({ ...base, met: false, reason });
+  if (NOT_RUN.includes(outcome))
+    return no(`the run ${outcome.replaceAll("-", " ")}`);
+  if (outcome === "pass") return no("the command passed");
+  if (wanted.case === null)
+    return { ...base, met: true, reason: "the command failed" };
+  if (junit?.status !== "read")
+    return no(`the report gave no result (${junit?.status ?? "no report"})`);
+  const named = (junit.cases ?? []).filter(
+    (c) => c.name === wanted.case || caseKey(c) === wanted.case,
+  );
+  if (named.length === 0) return no(`no case ${wanted.case} in the report`);
+  if (named.some((c) => c.result !== "failed"))
+    return no(`case ${wanted.case} did not fail`);
+  return {
+    ...base,
+    failedCases: named.map(caseKey),
+    met: true,
+    reason: `case ${wanted.case} failed`,
+  };
+}
+
+/**
+ * Whether the record vouches for what its run asked, on a tree that did not
+ * change and, when a report was named, from a fresh one: a pass in whose
+ * report every top-level suite ran a case, or with `--expect-fail` a
+ * seen-to-fail.
+ */
+export function vouches(record: EvidenceRecord): boolean {
+  if (record.treeChanged) return false;
+  if (record.junit && record.junit.status !== "read") return false;
+  if (record.outcome === "seen-to-fail") return true;
+  return record.outcome === "pass" && !record.junit?.tripwire;
+}
+
+// ---------------------------------------------------------------- the block
+
+function duration(ms: number): string {
+  const s = ms / 1000;
+  if (s < 10) return `${s.toFixed(1)}s`;
+  if (s < 60) return `${Math.round(s)}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m${String(Math.round(s % 60)).padStart(2, "0")}s`;
+  return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}m`;
+}
+
+function counts(junit: ReportSummary): string {
+  if (junit.status !== "read")
+    return `${junit.status}${junit.problem ? `: ${junit.problem}` : ""} (junit: ${junit.path})`;
+  const tripped = (junit.suites ?? [])
+    .filter((s) => s.tripwire)
+    .map((s) => s.name);
+  const failed = junit.failed?.length ? `, ${junit.failed.length} failed` : "";
+  const trip = junit.tripwire
+    ? `  ·  ran zero cases: ${tripped.length ? tripped.join(", ") : "the whole report"}`
+    : "";
+  return `${junit.executed} cases ran, ${junit.skipped} skipped${failed} (junit: ${junit.path})${trip}`;
+}
+
+function status(record: EvidenceRecord): string {
+  const exit =
+    record.exit === null
+      ? `signal ${record.signal ?? "?"}`
+      : `exit ${record.exit}`;
+  switch (record.outcome) {
+    case "timed-out":
+      return `timed out at ${record.timeoutMinutes}m`;
+    case "could-not-start":
+      return "could not start";
+    case "killed-for-output":
+      return "killed for too much output";
+    case "seen-to-fail":
+      return `${exit} (seen to fail: ${record.expectFail?.failedCases.join(", ") || "expected"})`;
+    case "expectation-failed":
+      return `${exit} (expected to fail: ${record.expectFail?.reason})`;
+    default:
+      return exit;
+  }
+}
+
+function underHome(path: string): string {
+  const h = homedir();
+  return path === h || path.startsWith(`${h}/`) || path.startsWith(`${h}\\`)
+    ? `~${path.slice(h.length)}`
+    : path;
+}
+
+/**
+ * The block that may travel to a pull request or an issue: the tree, the
+ * display name, the exit, the counts and where the record is. Never the
+ * command's arguments or its output, which can carry credentials.
+ */
+export function formatBlock(
+  record: EvidenceRecord,
+  recordPath: string,
+): string {
+  const tree = record.treeChanged
+    ? `tree ${record.tree.slice(0, 7)} -> ${record.treeAfter.slice(0, 7)} (tree-changed: vouches for no tree)`
+    : `tree ${record.tree.slice(0, 7)}`;
+  const parts = [status(record), duration(record.durationMs)];
+  if (record.junit) parts.push(counts(record.junit));
+  return [
+    `EVIDENCE  ${tree}  ${record.command.display}`,
+    parts.join("  ·  "),
+    `record ${underHome(recordPath)}`,
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------- lookup
+
+function entries(dir: string): string[] {
+  try {
+    return readdirSync(dir);
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return [];
+    throw error;
+  }
+}
+
+function isEvidenceRecord(value: unknown): value is EvidenceRecord {
+  return (
+    isRecord(value) &&
+    value.schema === "jig-evidence/v1" &&
+    typeof value.id === "string" &&
+    typeof value.startedAt === "string" &&
+    typeof value.treeChanged === "boolean" &&
+    isRecord(value.command) &&
+    typeof value.command.display === "string"
+  );
+}
+
+function readRecord(path: string): EvidenceRecord {
+  return decodeJson(readFileSync(path, "utf8"), isEvidenceRecord, path);
+}
+
+function newestFirst(a: EvidenceRecord, b: EvidenceRecord): number {
+  return b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id);
+}
+
+/** Every record of one tree and command directory, newest first. */
+function runsIn(dir: string): { record: EvidenceRecord; path: string }[] {
+  return entries(dir)
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => ({ path: join(dir, f), record: readRecord(join(dir, f)) }))
+    .sort((a, b) => newestFirst(a.record, b.record));
+}
+
+/**
+ * The records under `repositoryDir` whose tree hash starts with `tree` and
+ * whose command hash starts with `command`: per command the newest that
+ * vouches for its tree (never a `tree-changed` one), or with `all` every
+ * record, newest first.
+ */
+export function lookup(
+  repositoryDir: string,
+  tree: string,
+  options: { command?: string; all?: boolean } = {},
+): { record: EvidenceRecord; path: string }[] {
+  const found: { record: EvidenceRecord; path: string }[] = [];
+  for (const t of entries(repositoryDir).filter((t) => t.startsWith(tree)))
+    for (const c of entries(join(repositoryDir, t)).filter((c) =>
+      c.startsWith(options.command ?? ""),
+    )) {
+      const runs = runsIn(join(repositoryDir, t, c));
+      const kept = options.all
+        ? runs
+        : runs.filter((r) => !r.record.treeChanged).slice(0, 1);
+      found.push(...kept);
+    }
+  return found.sort((a, b) => newestFirst(a.record, b.record));
+}

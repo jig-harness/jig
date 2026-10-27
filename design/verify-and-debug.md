@@ -15,8 +15,11 @@ and a failure whose cause is not obvious is worked through one protocol that
 stops and hands over after a stated budget.
 
 This is the design of [plan.md](plan.md) item 28: two skills, `verify` and
-`debug`, and the evidence record they share. Nothing of it is built; `fix-ci`'s `probe-base.ts` and
-`shared/junit-report.ts` are the parts that exist.
+`debug`, and the evidence record they share. The record (step 1 of the
+build order) is built: `plugin/shared/evidence.ts`, with its settings in the
+[`verify` section](../plugin/CONFIGURATION.md#verify) of the configuration.
+The two skills remain open; `fix-ci`'s `probe-base.ts` is the other part
+that exists.
 
 ## The rule
 
@@ -35,14 +38,14 @@ This is the design of [plan.md](plan.md) item 28: two skills, `verify` and
 
 `plugin/shared/evidence.ts` runs a command and writes one record to the
 [machine-local store](../GLOSSARY.md)
-(`~/.local/share/jig/evidence/<repository>/<tree-hash>/<command-hash>/<run-id>.json`,
+(`~/.local/state/jig/evidence/<repository>/<tree-hash>/<command-hash>/<run-id>.json`,
 under the same root the fleet-health snapshots use), and prints a short
 block:
 
 ```
 EVIDENCE  tree 3f9c2a1  gates
 exit 0  ·  2m14s  ·  412 cases ran, 0 skipped (junit: .reports/junit.xml)
-record ~/.local/share/jig/evidence/example-web/3f9c2a1/8e1d/20261023T141502-4b7e.json
+record ~/.local/state/jig/evidence/example-web/3f9c2a1…/8e1d…/20261023T141502-4b7e.json
 ```
 
 - **The tree, not the commit.** The tree hash of the working tree Git

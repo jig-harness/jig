@@ -225,6 +225,12 @@ export interface RunOptions {
   stdout?: "pipe" | "inherit" | "ignore";
   /** 'inherit' hands the child this process's stdin (the pass command again). */
   stdinInherit?: boolean;
+  /**
+   * Called with each captured chunk of output as it arrives, so a caller can
+   * keep both streams in the order the child wrote them; output past the
+   * buffer cap is not passed on.
+   */
+  onOutput?: (stream: "stdout" | "stderr", text: string) => void;
   /** Overrides `MAX_BUFFER_BYTES` — a test knob, not a per-caller tuning lever. */
   maxBufferBytes?: number;
   /**

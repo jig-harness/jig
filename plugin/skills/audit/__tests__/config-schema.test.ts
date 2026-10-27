@@ -39,6 +39,12 @@ import {
 } from "../../do-item/scripts/lib/tracker/index.ts";
 import { checkConfig, loadSchema, parseSchema } from "../scripts/lib/schema.ts";
 import {
+  DEFAULT_OUTPUT_LINES,
+  DEFAULT_RETENTION_DAYS,
+  DEFAULT_TIMEOUT_MINUTES,
+  verifySettings,
+} from "../../../shared/evidence-record.ts";
+import {
   MODES,
   parseReflection,
   STORE_KINDS,
@@ -180,6 +186,12 @@ test("its complete example's code_stats section passes the skill", () => {
   ).not.toThrow();
 });
 
+test("its complete example's verify section passes the evidence record", () => {
+  expect(() =>
+    verifySettings(completeExample().verify, repoRoot),
+  ).not.toThrow();
+});
+
 test("its complete example's work_batch section passes the skill", () => {
   const example = completeExample();
   const { batchSizes } = parseTrackerConfig(example).labels;
@@ -265,6 +277,9 @@ describe("the reading skills", () => {
       "work_batch.ranking.shared_area_label": DEFAULT_RANKING.sharedAreaLabel,
       "resolve_conflicts.hotspot_min_merges": DEFAULT_HOTSPOT_MIN_MERGES,
       "review.scanner_apps": DEFAULT_SCANNER_APPS,
+      "verify.output_lines": DEFAULT_OUTPUT_LINES,
+      "verify.timeout_minutes": DEFAULT_TIMEOUT_MINUTES,
+      "verify.retention_days": DEFAULT_RETENTION_DAYS,
     });
   });
 
@@ -344,7 +359,9 @@ describe("the reading skills", () => {
           existsSync(
             skill === "gc"
               ? join(plugin, "jig.ts")
-              : join(plugin, "skills", skill, "SKILL.md"),
+              : skill === "evidence"
+                ? join(plugin, "shared", "evidence.ts")
+                : join(plugin, "skills", skill, "SKILL.md"),
           ),
         ]).toEqual([f.path, skill, true]);
   });

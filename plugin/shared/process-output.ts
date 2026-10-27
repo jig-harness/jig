@@ -24,6 +24,7 @@ export interface ProcessTimers {
 }
 interface OutputOptions {
   maxBufferBytes?: number;
+  onOutput?: (stream: "stdout" | "stderr", text: string) => void;
   onChunk?: (
     stream: "stdout" | "stderr",
     bytes: number,
@@ -69,6 +70,7 @@ export function captureProcessOutput(
       if (stream === "stdout") stdout += text;
       else stderr += text;
       bytes += length;
+      options.onOutput?.(stream, text);
     }
     options.onChunk?.(stream, length, captured);
     if (bytes > (options.maxBufferBytes ?? MAX_BUFFER_BYTES)) overflow();
