@@ -15,7 +15,7 @@ owner's own document, not here. The last stage feeds the first.
 | Stage | Owner | Hands on | Detail |
 |-------|-------|----------|--------|
 | steer | [the plan](../design/plan.md), with the proposals of `/jig:audit` and `/jig:review-reflections` | a ranked list of open work | [design/README.md](../design/README.md) |
-| spec | [the design skeleton](../design/README.md#starting-a-design), `/jig:explain`, `/jig:decide`, `/jig:adr` and `/jig:design-brief-builder` | a reviewed design and the decision records it settles | [M6](../modules/M6-feature-delivery-pipeline/README.md), [M5](../modules/M5-adr-practice/README.md) |
+| spec | [the design skeleton](../design/README.md#starting-a-design), `/jig:explain`, `/jig:decide`, `/jig:adr`, `/jig:red-team` and `/jig:design-brief-builder` | a reviewed design and the decision records it settles | [M6](../modules/M6-feature-delivery-pipeline/README.md), [M5](../modules/M5-adr-practice/README.md) |
 | file | `/jig:file-issue` | a labelled tracker issue | [M9](../modules/M9-tasks-memory/README.md) |
 | plan the epic | `/jig:file-issue` | an epic of ordered, labelled sub-issues | [M9](../modules/M9-tasks-memory/README.md) |
 | pick up | `/jig:do-item`, or `/jig:work-batch` for several small issues from one area | a started issue and a working branch | [do-item](../plugin/skills/do-item/README.md) |

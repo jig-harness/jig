@@ -141,16 +141,21 @@ The feature pipeline runs from research through requirements and
 architecture to a design loop and an [epic](GLOSSARY.md) of planned work
 items, with a template for each stage
 ([PIPELINE.md](modules/M6-feature-delivery-pipeline/templates/PIPELINE.md)).
+`red-team` reviews a requirements or architecture document adversarially:
+personas, from a critical chief technology officer to a reader who knows no
+engineering terms, each read it in fresh context and report the passage, the
+risk and the question the author must answer, in one report.
 `design-brief-builder` assembles the brief bundle for an external design
 session from the repository's real schema and code, and audits it for
 prescriptions before it leaves. `review` checks each stage's plan or document
 against the repository's decisions.
 
-- **Skills:** [`design-brief-builder`](plugin/skills/design-brief-builder/SKILL.md),
+- **Skills:** [`red-team`](plugin/skills/red-team/SKILL.md),
+  [`design-brief-builder`](plugin/skills/design-brief-builder/SKILL.md),
   [`review`](plugin/skills/review/SKILL.md)
 - **Practice:** [M6](modules/M6-feature-delivery-pipeline/)
-- **On the roadmap:** the greenfield kickoff as skills and an adversarial
-  reviewer (roadmap item 3); epic planning on the tracker (Later)
+- **On the roadmap:** the greenfield kickoff as skills (roadmap item 3); epic
+  planning on the tracker (Later)
 
 ## Gates that ship with their tests, each on a named rung
 

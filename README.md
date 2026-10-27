@@ -43,7 +43,7 @@ adapter); the exceptions still open are listed in [ROADMAP.md](ROADMAP.md)
 item 10. On top of the
 scaffolding, the plugin's skills run the factory's stations at two levels:
 **design and planning** (a feature or an epic: `explain`, `decide`, `adr`,
-`design-brief-builder`, `review`) and **execution** (one work item:
+`red-team`, `design-brief-builder`, `review`) and **execution** (one work item:
 `do-item` picks it up, `drive-pr` runs its review rounds unattended, a person
 merges, follow-ups go back to the tracker). [FACTORY.md](FACTORY.md) maps
 it all, including what is on the roadmap and what stays your own platform.

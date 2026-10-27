@@ -1,0 +1,205 @@
+/**
+ * A review's plan: the document, its kind, the personas that read it and
+ * where each one's brief and findings live. `plan` writes it into the
+ * review's folder; every later step reads it from there.
+ */
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { join, relative, resolve } from "node:path";
+import { renderBrief } from "./brief.ts";
+import {
+  type Detected,
+  detectKind,
+  type Kind,
+  sha256,
+  slugFor,
+  titleOf,
+} from "./document.ts";
+import { type Persona, loadPersonas, personasFor } from "./personas.ts";
+
+export const PLAN_FILE = "plan.json";
+export const REPORT_FILE = "report.md";
+
+export interface PlannedPersona {
+  id: string;
+  name: string;
+  /** The brief the persona follows. */
+  brief: string;
+  /** Where the persona writes its findings when it can write files. */
+  output: string;
+  /** Where its printed reply is kept when it cannot. */
+  reply: string;
+  /** The checked findings, written by `collect`. */
+  findings: string;
+}
+
+export interface Plan {
+  document: string;
+  display: string;
+  title: string;
+  kind: Kind;
+  kindFrom: string;
+  companion?: string;
+  sha256: string;
+  date: string;
+  directory: string;
+  report: string;
+  personas: PlannedPersona[];
+}
+
+export interface PlanOptions {
+  root: string;
+  document: string;
+  kind?: Kind | undefined;
+  companion?: string | undefined;
+  out?: string | undefined;
+  date: string;
+}
+
+/** A step that cannot go on; `code` is the exit code it ends with. */
+export class PlanError extends Error {
+  readonly code: 1 | 2;
+  constructor(message: string, code: 1 | 2 = 2) {
+    super(message);
+    this.code = code;
+  }
+}
+
+function files(directory: string, id: string) {
+  return {
+    brief: join(directory, `${id}.brief.md`),
+    output: join(directory, `${id}.json`),
+    reply: join(directory, `${id}.reply.md`),
+    findings: join(directory, `${id}.findings.json`),
+  };
+}
+
+/** Remove what an earlier review of the same document left in the folder. */
+function clear(directory: string, all: Persona[]): void {
+  for (const persona of all)
+    for (const file of Object.values(files(directory, persona.id)))
+      rmSync(file, { force: true });
+  rmSync(join(directory, PLAN_FILE), { force: true });
+  rmSync(join(directory, REPORT_FILE), { force: true });
+}
+
+function readDocument(path: string): string {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    throw new PlanError(`cannot read the document: ${path}`);
+  }
+}
+
+function kindFor(text: string, kind: Kind | undefined): Detected {
+  if (kind) return { kind, from: "--kind" };
+  const detected = detectKind(text);
+  if (!detected)
+    throw new PlanError(
+      "cannot tell whether this is a requirements or an architecture document: it has no frontmatter type: naming one and too few of M6's template headings; pass --kind requirements or --kind architecture",
+    );
+  return detected;
+}
+
+/** Make the plan and the briefs, replacing any earlier review's files. */
+export function makePlan(options: PlanOptions): Plan {
+  const document = resolve(options.document);
+  const text = readDocument(document);
+  const { kind, from } = kindFor(text, options.kind);
+  const companion = options.companion ? resolve(options.companion) : undefined;
+  if (companion) readDocument(companion);
+  const display = relative(options.root, document) || document;
+  const directory = resolve(
+    options.out ??
+      join(
+        options.root,
+        ".context",
+        "red-team",
+        slugFor(document, options.root),
+      ),
+  );
+  const all = loadPersonas();
+  mkdirSync(directory, { recursive: true });
+  clear(directory, all);
+  const plan: Plan = {
+    document,
+    display,
+    title: titleOf(text, display),
+    kind,
+    kindFrom: from,
+    ...(companion ? { companion } : {}),
+    sha256: sha256(text),
+    date: options.date,
+    directory,
+    report: join(directory, REPORT_FILE),
+    personas: personasFor(kind, all).map((persona) => ({
+      id: persona.id,
+      name: persona.name,
+      ...files(directory, persona.id),
+    })),
+  };
+  for (const persona of personasFor(kind, all)) {
+    const planned = plan.personas.find((p) => p.id === persona.id);
+    if (planned)
+      writeFileSync(planned.brief, renderBrief(plan, persona, planned));
+  }
+  writeFileSync(
+    join(directory, PLAN_FILE),
+    `${JSON.stringify(plan, null, 2)}\n`,
+  );
+  return plan;
+}
+
+export function readPlan(directory: string): Plan {
+  const path = join(resolve(directory), PLAN_FILE);
+  if (!existsSync(path))
+    throw new PlanError(
+      `no ${PLAN_FILE} in ${directory}: run the plan step first`,
+    );
+  const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+  if (!isPlan(value))
+    throw new PlanError(`${path} is not a plan this script wrote`);
+  return value;
+}
+
+function isPlan(value: unknown): value is Plan {
+  if (!value || typeof value !== "object") return false;
+  const plan = value as Record<string, unknown>;
+  const strings = ["document", "display", "title", "kind", "kindFrom"];
+  return (
+    strings.every((key) => typeof plan[key] === "string") &&
+    ["sha256", "date", "directory", "report"].every(
+      (key) => typeof plan[key] === "string",
+    ) &&
+    Array.isArray(plan.personas) &&
+    plan.personas.every(
+      (p: unknown) =>
+        typeof p === "object" &&
+        p !== null &&
+        ["id", "name", "brief", "output", "reply", "findings"].every(
+          (key) => typeof (p as Record<string, unknown>)[key] === "string",
+        ),
+    )
+  );
+}
+
+/** The document as it is now, refused when it changed since the plan. */
+export function unchangedDocument(plan: Plan): string {
+  const text = readDocument(plan.document);
+  if (sha256(text) !== plan.sha256)
+    throw new PlanError(
+      `the document changed since the plan (${plan.display}): the personas' quotations may no longer hold; run the plan step again and repeat the review`,
+      1,
+    );
+  return text;
+}
+
+/** The prompt that starts a persona: a pointer to its brief. */
+export function promptFor(persona: PlannedPersona): string {
+  return `Read the red-team brief at ${persona.brief} and follow it exactly.`;
+}
