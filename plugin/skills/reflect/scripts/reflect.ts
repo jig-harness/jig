@@ -367,8 +367,8 @@ const OPERATIONS: Record<
   status: { options: [], run: status },
   gather: { options: ["mode"], run: gather },
   plan: { options: [], run: plan },
-  contribute: { options: ["issue", "session"], run: contribute },
   hotspots: { options: [], positional: 1, run: hotspots },
+  contribute: { options: ["issue", "session"], run: contribute },
 };
 
 export async function main(argv: string[]): Promise<number> {

@@ -55,60 +55,95 @@ function isCause(value: unknown): value is Cause {
   return (CAUSES as readonly unknown[]).includes(value);
 }
 
+function isText(value: unknown): boolean {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function isCount(value: unknown): boolean {
+  return Number.isSafeInteger(value) && (value as number) >= 1;
+}
+
+/** A field, the check its value must pass, and what to say when it fails. */
+type Check = [field: string, ok: (value: unknown) => boolean, problem: string];
+
+const REPORT_CHECKS: readonly Check[] = [
+  ["schema", (value) => value === SCHEMA, `its schema is not ${SCHEMA}`],
+  [
+    "range",
+    (value) => isRecord(value) && typeof value.label === "string",
+    "range is missing",
+  ],
+  [
+    "totals",
+    (value) => isRecord(value) && Number.isSafeInteger(value.merges),
+    "totals is missing",
+  ],
+  ["hotspotMinMerges", isCount, "hotspotMinMerges is missing"],
+  ["paths", Array.isArray, "paths is missing"],
+  ["hotspots", Array.isArray, "hotspots is missing"],
+];
+
+const PATH_CHECKS: readonly Check[] = [
+  ["merges", isCount, "merges is not a count"],
+  ["topCause", isCause, "topCause is not a cause"],
+  ["remedy", isText, "remedy is missing"],
+  ["causes", isRecord, "causes is missing"],
+  ["lastConflict", isText, "lastConflict is missing"],
+];
+
+function firstProblem(
+  value: Record<string, unknown>,
+  checks: readonly Check[],
+): string | null {
+  const failed = checks.find(([field, ok]) => !ok(value[field]));
+  return failed === undefined ? null : failed[2];
+}
+
 function pathProblem(entry: unknown): string | null {
-  if (!isRecord(entry)) return "a path entry is not an object";
-  if (typeof entry.path !== "string" || entry.path === "")
+  if (!isRecord(entry) || !isText(entry.path))
     return "a path entry has no path";
-  if (!Number.isSafeInteger(entry.merges) || (entry.merges as number) < 1)
-    return `${entry.path}: merges is not a count`;
-  if (!isCause(entry.topCause)) return `${entry.path}: topCause is not a cause`;
-  if (typeof entry.remedy !== "string" || entry.remedy.trim() === "")
-    return `${entry.path}: remedy is missing`;
-  if (!isRecord(entry.causes)) return `${entry.path}: causes is missing`;
-  if (typeof entry.lastConflict !== "string")
-    return `${entry.path}: lastConflict is missing`;
+  const problem = firstProblem(entry, PATH_CHECKS);
+  return problem === null ? null : `${entry.path}: ${problem}`;
+}
+
+function reportProblem(value: unknown): string | null {
+  if (!isRecord(value)) return "not a JSON object";
+  const problem = firstProblem(value, REPORT_CHECKS);
+  if (problem !== null) return problem;
+  for (const entry of value.paths as unknown[]) {
+    const pathFault = pathProblem(entry);
+    if (pathFault !== null) return pathFault;
+  }
   return null;
 }
 
-/** Read and check the report; throws naming what is wrong. */
-export function readHotspotReport(file: string): HotspotReport {
-  let value: unknown;
+function parsedFile(file: string): unknown {
   try {
-    value = JSON.parse(readFileSync(file, "utf8"));
+    return JSON.parse(readFileSync(file, "utf8"));
   } catch (error) {
     throw badReport(
       file,
       error instanceof Error ? error.message : String(error),
     );
   }
-  if (!isRecord(value)) throw badReport(file, "not a JSON object");
-  if (value.schema !== SCHEMA)
-    throw badReport(file, `its schema is ${JSON.stringify(value.schema)}`);
-  const { range, totals, paths, hotspots } = value;
-  if (!isRecord(range) || typeof range.label !== "string")
-    throw badReport(file, "range is missing");
-  if (!isRecord(totals) || !Number.isSafeInteger(totals.merges))
-    throw badReport(file, "totals is missing");
-  if (!Number.isSafeInteger(value.hotspotMinMerges))
-    throw badReport(file, "hotspotMinMerges is missing");
-  if (!Array.isArray(paths) || !Array.isArray(hotspots))
-    throw badReport(file, "paths or hotspots is missing");
-  for (const entry of paths) {
-    const problem = pathProblem(entry);
-    if (problem !== null) throw badReport(file, problem);
-  }
-  const byPath = new Map(
-    (paths as PathSummary[]).map((entry) => [entry.path, entry]),
-  );
+}
+
+/** Read and check the report; throws naming what is wrong. */
+export function readHotspotReport(file: string): HotspotReport {
+  const value = parsedFile(file);
+  const problem = reportProblem(value);
+  if (problem !== null) throw badReport(file, problem);
+  const report = value as unknown as Report;
+  const byPath = new Map(report.paths.map((entry) => [entry.path, entry]));
   return {
     range: {
-      since: typeof range.since === "string" ? range.since : null,
-      label: range.label,
+      since: typeof report.range.since === "string" ? report.range.since : null,
+      label: report.range.label,
     },
-    hotspotMinMerges: value.hotspotMinMerges as number,
-    shallow: value.shallow === true,
-    totalMerges: totals.merges as number,
-    hotspots: hotspots.map((path: unknown) => {
+    hotspotMinMerges: report.hotspotMinMerges,
+    shallow: report.shallow === true,
+    totalMerges: report.totals.merges,
+    hotspots: (report.hotspots as unknown[]).map((path) => {
       const entry = typeof path === "string" ? byPath.get(path) : undefined;
       if (entry === undefined)
         throw badReport(file, `hotspot ${String(path)} has no path entry`);

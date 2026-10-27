@@ -30,7 +30,7 @@ Contents: [the loop](#the-loop) · [turning it on](#turning-it-on) ·
 1. **Capture.** While a session works, a finding goes into the session's
    [journal](#the-journal), a file in its own worktree. A skill can write one
    itself (the review loop records a review that took many rounds, and
-   `reflect.ts hotspots` notes the conflict hotspots a merge-conflict report
+   the `hotspots` operation of `reflect.ts` notes the conflict hotspots a merge-conflict report
    measured); the agent writes one when something goes wrong.
 2. **Reflect.** At a natural end (a converged drive, an addressed review, the
    end of a session, before a worktree is removed), `reflect` reads the
@@ -594,7 +594,7 @@ Only when reflection is on; when it is off nothing below happens.
 |-------|--------------|
 | [`drive-pr`](../drive-pr/README.md) | `drive-status.ts` reports `reflectDue`, and `drive.ts` arms `$DRIVE_PR_REFLECT_DUE`, when the review rounds since the last reflection pass the threshold; the pass runs `/jig:reflect` and records it with the `set-reflected` operation of `drive-state.ts` |
 | [`resolve-review-comments`](../resolve-review-comments/README.md) | `await-round.ts`, at wind-down after a pull request took more than `REFLECT_THRESHOLD` rounds, notes the round count in the journal (a `review-took-many-rounds` finding with an id derived from the pull request) and asks for `/jig:reflect`; the drive's rounds pass through it too |
-| [`resolve-conflicts`](../resolve-conflicts/README.md) | `reflect.ts hotspots <report.json>` reads the history report's JSON (`history.ts --json`, `merge-conflicts/v1`) and notes one finding per conflict hotspot: the path as its target, its most frequent cause as its class, the report's remedy as its fix. A hotspot the journal still holds is revised to the new count; one the store already records gets no second finding, unless its fix is `implemented` and the report's range starts after that decision. `plan` and `contribute` then escalate and store them like any finding |
+| [`resolve-conflicts`](../resolve-conflicts/README.md) | The `hotspots` operation of `reflect.ts`, given the file the history report wrote as JSON (`merge-conflicts/v1`), reads it and notes one finding per conflict hotspot: the path as its target, its most frequent cause as its class, the report's remedy as its fix. A hotspot the journal still holds is revised to the new count; one the store already records gets no second finding, unless its fix is `implemented` and the report's range starts after that decision. `plan` and `contribute` then escalate and store them like any finding |
 | [`do-item`](../do-item/SKILL.md) | Asks for `/jig:reflect` when a recurring pattern scout finds a class of problem |
 | [M12 worktree removal](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/templates/worktree-hooks.md) | The removal hook asks for `/jig:reflect` and runs `journal.ts`’s `park` operation, refusing the removal when parking fails |
 
