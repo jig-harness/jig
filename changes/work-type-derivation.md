@@ -18,8 +18,9 @@ release: minor
   `<type>` or `type:<type>` for the others), and `do_item.work_types`
   overrides single fields of the depth table: how much each delivery station
   does for each type, with `unknown` always taking the strictest value of
-  every field. A type outside the default list needs a complete row, and a
-  label listed under two types is refused. Both fields are in the
+  every field. A type outside the default list needs a complete row. A
+  label listed under two types is refused, and so is a label the GitHub
+  adapter uses for a workflow state or a priority. Both fields are in the
   [configuration reference](../plugin/CONFIGURATION.md#the-depth-table), and
   the audit's configuration check refuses what `do-item` refuses and reports
   a type's labels that the label taxonomy does not define.

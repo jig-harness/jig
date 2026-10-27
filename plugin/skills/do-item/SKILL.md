@@ -267,7 +267,8 @@ native integration, or the reverse.
 
 **exact** — **Type the item.** Write the issue JSON to `issue.json` with the
 file-writing tool (from the native transport: its `title`, its label names
-as `labels`, and `"nativeType": null`), then derive its
+as `labels`, and its own issue type's name as `nativeType`, or `null` when
+it reports none), then derive its
 [work type](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
 
 ```bash

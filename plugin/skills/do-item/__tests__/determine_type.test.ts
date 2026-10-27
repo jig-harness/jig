@@ -1,5 +1,5 @@
 /**
- * determine_type.ts: the work-type derivation's four steps and their order,
+ * determine_type.ts: the work-type derivation's steps and their order,
  * the depth table's defaults and overrides, the computed `unknown` row, and
  * every configuration the loading rules refuse.
  */
@@ -165,6 +165,8 @@ describe("the derivation's order", () => {
     );
     expect(v.type).toBe("unknown");
     expect(v.evidence.summary).toContain("more than one type");
+    expect(v.evidence.summary).toContain("removing or correcting");
+    expect(v.evidence.summary).not.toContain("a type label clears it");
   });
 
   it("answers unknown, with the strictest depth, when nothing identifies the type", async () => {
@@ -237,6 +239,20 @@ describe("the depth table", () => {
       autonomy: "hitl",
     });
     expect(row.pr_body_sections).toContain("rollout");
+  });
+
+  it("keeps a default row's list entries in unknown when an override shortens them", () => {
+    const row = unknownRow(
+      parseWorkTypes({
+        do_item: {
+          work_types: { bug: { pre_scouts: [], pr_body_sections: ["fix"] } },
+        },
+      }),
+    );
+    expect(row.pre_scouts).toContain("pattern");
+    expect(row.pr_body_sections).toEqual(
+      expect.arrayContaining(["reproduction", "cause"]),
+    );
   });
 
   it("drops a default type left out of issue_tracker.types with its row", () => {
@@ -352,12 +368,28 @@ describe("the loading rules refuse", () => {
       { do_item: { work_types: { bug: { pre_scouts: ["fuzz"] } } } },
       "do_item.work_types.bug.pre_scouts",
     ],
+    [
+      "a type label the GitHub adapter reads as a state",
+      { issue_tracker: { types: { task: ["In Progress"] } } },
+      "issue_tracker.types.task lists the label 'In Progress', which the GitHub adapter reads as a workflow state or a priority",
+    ],
     ["the renamed do_issue section", { do_issue: {} }, "now called do_item"],
   ];
   for (const [what, config, message] of refusals)
     it(what, () => {
       expect(() => parseWorkTypes(config)).toThrow(message);
     });
+
+  it("leaves a state's name free as a type label outside the GitHub adapter", () => {
+    const config = {
+      issue_tracker: {
+        adapter: "linear",
+        team: "ENG",
+        types: { task: ["In Progress"] },
+      },
+    };
+    expect(parseWorkTypes(config).labels.task).toEqual(["In Progress"]);
+  });
 });
 
 describe("issue input", () => {

@@ -218,12 +218,16 @@ function unknown(
     (unanswered.length === 0
       ? "no type label, tracker type or title prefix"
       : unanswered.map((u) => u.reason).join("; "));
+  const remedy =
+    conflict === null
+      ? "a type label clears it"
+      : "removing or correcting the conflicting labels clears it";
   return {
     type: UNKNOWN_TYPE,
     evidence: {
       step: "none",
       matched: null,
-      summary: `nothing identifies the type: ${why}; the strictest depth applies, and a type label clears it`,
+      summary: `nothing identifies the type: ${why}; the strictest depth applies, and ${remedy}`,
       unanswered,
     },
     depth: depthOf(workTypes, UNKNOWN_TYPE),

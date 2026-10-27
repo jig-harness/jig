@@ -108,7 +108,7 @@ union of the body sections, and autonomy `hitl`: failing to derive a type
 does not show the item is not a spike. An unattended run therefore stops
 on an `unknown` item and states the gap, as it does on a `hitl` label, and
 a type label clears it. An override that lightens one type's row cannot
-lighten `unknown`.
+lighten `unknown`: its lists also take in each default type's default row.
 
 These columns never appear: which agent implements (that is routing by label
 and catalog area, which stays as it is) and which catalog review skills run

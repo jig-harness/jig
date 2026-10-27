@@ -24,6 +24,8 @@ import { isRecord } from "../../../../shared/guards.ts";
 import { parseTrackerLabels } from "../../../../shared/tracker-labels.ts";
 import { formatField } from "../../../../shared/config-layers.ts";
 import { doItemSection } from "./overlay.ts";
+import { parseTrackerConfig } from "./tracker/config.ts";
+import { gitHubModel } from "./tracker/github/model.ts";
 
 /** The types every repository has unless `issue_tracker.types` says otherwise. */
 export const DEFAULT_TYPES = [
@@ -311,6 +313,32 @@ function refuseSharedLabels(labels: Record<string, string[]>): void {
     }
 }
 
+/**
+ * Refuse a type label the GitHub adapter reads as a workflow state or a
+ * priority: it removes those from an issue's labels, so the label step would
+ * never see it. A tracker configuration that does not load is left to the
+ * tracker's own refusal.
+ */
+function refuseReservedLabels(
+  overlay: Record<string, unknown>,
+  labels: Record<string, string[]>,
+): void {
+  let config: ReturnType<typeof parseTrackerConfig>;
+  try {
+    config = parseTrackerConfig(overlay);
+  } catch {
+    return;
+  }
+  if (config.adapter !== "github") return;
+  const model = gitHubModel(config.states, config.github);
+  for (const [type, list] of Object.entries(labels))
+    for (const label of list)
+      if (model.isReserved(label))
+        throw new WorkTypesError(
+          `issue_tracker.types.${formatField([type])} lists the label '${label}', which the GitHub adapter reads as a workflow state or a priority and removes from an issue's labels; a type needs a label of its own`,
+        );
+}
+
 /** One `do_item.work_types` entry, checked against the type set. */
 function overrideEntry(
   type: string,
@@ -363,13 +391,15 @@ function parseOverrides(
  * The repository's work types from a parsed overlay. Throws, naming the
  * field, on a type with no complete row, a `do_item.work_types` entry for a
  * type outside the set, `unknown` as a key, a label listed under two types,
- * and any value of the wrong shape.
+ * a label the GitHub adapter reserves for a state or a priority, and any
+ * value of the wrong shape.
  */
 export function parseWorkTypes(overlay: Record<string, unknown>): WorkTypes {
   const labels = parseTypeLabels(overlay);
   const types = Object.keys(labels);
   const overrides = parseOverrides(overlay, types);
   refuseSharedLabels(labels);
+  refuseReservedLabels(overlay, labels);
   const rows: Record<string, DepthRow> = Object.create(null);
   for (const type of types) {
     const own = overrides[type] ?? {};
@@ -400,10 +430,14 @@ function union<T>(lists: T[][]): T[] {
  * field, and failing to derive a type does not show the item is not a spike,
  * so autonomy is `hitl`. An override that lightens one type cannot lighten
  * this row: the constant fields are the strictest values there are, and the
- * lists are unions.
+ * lists are unions over the effective rows and each default type's default
+ * row, so an override that shortens a list leaves its entries here.
  */
 export function unknownRow(workTypes: WorkTypes): DepthRow {
-  const rows = workTypes.types.map((t) => workTypes.rows[t] as DepthRow);
+  const rows = [
+    ...workTypes.types.map((t) => workTypes.rows[t] as DepthRow),
+    ...workTypes.types.filter(isDefaultType).map((t) => DEFAULT_ROWS[t]),
+  ];
   return {
     pre_scouts: union(rows.map((r) => r.pre_scouts)),
     test_first: "required",
