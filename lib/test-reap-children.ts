@@ -33,8 +33,11 @@ import {
 import { signalIdentityTargets } from "../plugin/shared/process-tree.ts";
 import { partitionProcessTree } from "../plugin/shared/process-uncertainty.ts";
 
-type Identity = Pick<ProcessRow, "pid" | "start">;
+export type Identity = Pick<ProcessRow, "pid" | "start">;
 type Table = (timeoutSec?: number) => Promise<ProcessRow[] | null>;
+
+/** A reap, or the identity lookup it depends on, that could not be confirmed. */
+class ReapError extends Error {}
 
 export interface ReapDeps {
   table?: Table;
@@ -115,10 +118,77 @@ function liveOrUnreadable(
  * process table itself could not be read, in which case nothing was
  * signalled.
  */
-export async function reapSurvivingDescendants(
+export function reapSurvivingDescendants(
   pid: number,
   deps: ReapDeps = {},
   captured: readonly Identity[] = [],
+): Promise<ReapReport | null> {
+  return reap(pid, deps, captured);
+}
+
+/**
+ * Kill every identity in `captured` that is still alive, with its own
+ * descendants, and witness them gone: the reap of `reapSurvivingDescendants`
+ * for processes a test named itself rather than found under its own pid.
+ */
+export function reapIdentities(
+  captured: readonly Identity[],
+  deps: ReapDeps = {},
+): Promise<ReapReport | null> {
+  return reap(null, deps, captured);
+}
+
+/**
+ * Kill every identity in `captured`, as `reapIdentities` does, and throw
+ * unless each one and every descendant it had is witnessed gone: a process
+ * table that could not be read, a process whose identity could not be read,
+ * and a target still alive at the deadline all fail the reap.
+ */
+export async function reapOwnedIdentities(
+  captured: readonly Identity[],
+  deps: ReapDeps = {},
+): Promise<ReapReport> {
+  const report = await reapIdentities(captured, deps);
+  const named = captured.map((identity) => identity.pid).join(", ");
+  if (report === null)
+    throw new ReapError(`the process table could not be read to reap ${named}`);
+  if (report.unreadable.length > 0 || report.survived.length > 0)
+    throw new ReapError(
+      `the reap of ${named} did not witness every process gone: ` +
+        `unreadable ${JSON.stringify(report.unreadable)}, ` +
+        `survived ${JSON.stringify(report.survived)}`,
+    );
+  return report;
+}
+
+/**
+ * The identity of the process `pid` names now, read while the caller still
+ * knows that process is its own: take it when the process has just announced
+ * itself, never at teardown, when its pid may name a different process. Null
+ * when the process table shows no live process under `pid` (absent, or a
+ * zombie); throws when that cannot be told, because the table or the row's
+ * creation identity could not be read.
+ */
+export async function identityOf(
+  pid: number,
+  table: Table = processTable,
+): Promise<Identity | null> {
+  const rows = await table();
+  if (rows === null)
+    throw new ReapError(`the process table could not be read for pid ${pid}`);
+  const row = rows.find((row) => row.pid === pid && !row.stat.startsWith("Z"));
+  if (!row) return null;
+  if (row.start === "")
+    throw new ReapError(
+      `the creation identity of pid ${pid} could not be read`,
+    );
+  return { pid: row.pid, start: row.start };
+}
+
+async function reap(
+  pid: number | null,
+  deps: ReapDeps,
+  captured: readonly Identity[],
 ): Promise<ReapReport | null> {
   const deadline = Date.now() + (deps.timeoutMs ?? 10_000);
   const remaining = () => Math.max(0, deadline - Date.now());
@@ -147,34 +217,60 @@ export async function reapSurvivingDescendants(
 }
 
 /**
- * `pid`'s descendants and every captured identity's live process with its
- * descendants, split into the readable targets and the unreadable pids.
+ * `pid`'s descendants, when there is a `pid`, and every captured identity's
+ * live process with its descendants, split into the readable targets and the
+ * unreadable pids.
  */
 function collectTargets(
-  pid: number,
+  pid: number | null,
   rows: readonly ProcessRow[],
   captured: readonly Identity[],
 ): { targets: ProcessRow[]; unreadable: number[] } {
   const targets: ProcessRow[] = [];
-  const unreadable: number[] = [];
-  const seen = new Set<number>([pid]);
+  const taken = new Set<number>(pid === null ? [] : [pid]);
+  // A pid is unreadable until some root's partition binds it: a captured
+  // identity below an unreadable ancestor is still its own readable root.
+  const unknown = new Set<number>();
   const take = (root: number) => {
     const tree = partitionProcessTree(root, rows);
-    for (const row of [...tree.targets, ...tree.uncertain]) {
-      if (seen.has(row.pid)) continue;
-      seen.add(row.pid);
-      if (tree.targets.includes(row)) targets.push(row);
-      else unreadable.push(row.pid);
+    for (const row of tree.targets) {
+      if (taken.has(row.pid)) continue;
+      taken.add(row.pid);
+      unknown.delete(row.pid);
+      targets.push(row);
     }
+    for (const row of tree.uncertain)
+      if (!taken.has(row.pid)) unknown.add(row.pid);
   };
-  take(pid);
+  if (pid !== null) take(pid);
   // A captured identity whose row is now unreadable is taken too: its
   // partition reports it, and what it started, as unreadable.
   for (const identity of captured) {
     const row = liveOrUnreadable(rows, identity);
-    if (row && !seen.has(row.pid)) take(row.pid);
+    if (row && !taken.has(row.pid)) take(row.pid);
   }
+  const unreadable = [...unknown];
+  // Roots that overlap — a captured process and its own captured ancestor —
+  // are collected in the order they were named, so the set is ordered by
+  // ancestry: the signal walks it backwards, and each descendant then dies
+  // before its ancestor.
+  const depth = depthsIn(rows);
+  targets.sort((a, b) => depth(a.pid) - depth(b.pid));
   return { targets, unreadable };
+}
+
+/** How many ancestors each pid has in `rows`. */
+function depthsIn(rows: readonly ProcessRow[]): (pid: number) => number {
+  const byPid = new Map(rows.map((row) => [row.pid, row]));
+  return (pid) => {
+    const seen = new Set<number>();
+    let row = byPid.get(pid);
+    while (row && !seen.has(row.pid)) {
+      seen.add(row.pid);
+      row = byPid.get(row.ppid);
+    }
+    return seen.size;
+  };
 }
 
 /** The targets not witnessed gone by the time `remaining` runs out. */

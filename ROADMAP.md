@@ -194,6 +194,16 @@ will count as open work beside threads and summary findings, a finding that
 stands can be recorded as such, and the tool's own dismissal is made where
 the tool offers one.
 
+### 31. Routing work to an agent, a model and an effort
+
+Delegation already picks an agent from the issue's change areas, labels and
+title, but every launch and delegation runs whichever model and effort was
+configured once, whatever the work. Routing would choose them from the
+work's type, size and sensitivity and from what converged before, with the
+reason recorded and a person's choice always able to override it. Until
+then, the workspace launcher's Orca provider hands the agent's start to the
+person; its Herdr provider starts the configured agent.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** A reusable reconciler for

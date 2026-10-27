@@ -526,6 +526,34 @@ counting; and the dismissal in the tool for the apps that expose one
 Done when a pull request whose scanner check holds a warning does not
 converge until a round fixes it or records why it stands.
 
+### 31. Routing work to an agent, a model and an effort
+
+`do-item` already chooses which agent implements an issue, from the
+change-area catalog, the issue's labels and its title
+(`determine_agent.ts`), but nothing chooses the model or the effort, and
+nothing learns from how the work went. A bug fix in one file and an epic's
+architecture spike get the same model; a person picks by hand, or the
+workspace launcher starts its default. The launcher's Orca provider now
+hands the start to the person by default, and starts an agent only where
+its settings name one; the Herdr provider still starts `claude` unless its
+settings name another ([tools/launcher](../tools/launcher/README.md)).
+Routing is what would let the launcher, and `do-item`'s delegation, choose
+the model and the effort too, building on the agent selection that exists
+rather than replacing it. Open questions before a design:
+
+- the inputs: the work type (item 27), size and the area's sensitivity flags
+  from the change-area catalog, the repository's history of what each
+  agent and model converged on, and what the machine and the subscription
+  have left;
+- where the decision is made: a router a capable model runs before pickup,
+  or rules as data a repository overrides, with the reason recorded so it
+  can be checked against how the work went (M11);
+- the output every runtime can take: agent, model and effort for a launch
+  (`orca agent launch --model --effort`), for `do-item`'s subagents and for
+  a drive's passes, with the person's choice always able to override it.
+
+Done when the design is written and decided; the build is its own epic.
+
 ## Later
 
 - **Scheduled-failure reconciliation.** Move an operated reconciler onto the

@@ -6,7 +6,8 @@
  * Usage:
  *   bun tools/orca/workspace.ts open --repo <name> --branch <name> [--environment <name> --ssh <host>]
  *       [--reuse-prefix <text>] [--base <ref>] [--agent <id>] [--no-agent] [--prompt <text>] [--key <key>]
- *       [--comment <text>] [--linear-issue <key>] [--activate] [--clone-url <url> --clone-root <dir>] [--json]
+ *       [--comment <text>] [--linear-issue <key>] [--activate] [--clone-url <url> --clone-root <dir>]
+ *       [--model <id> [--effort <level>]] [--surface chat|terminal] [--json]
  *   bun tools/orca/workspace.ts remove --repo <name> --branch <name> [--environment <name> --ssh <host>] [--force]
  *
  * `open` creates the branch's worktree through Orca, or reattaches to the
@@ -16,7 +17,9 @@
  * per `--key` and agent. With `--reuse-prefix`, the one existing branch whose
  * name starts with it is opened instead of `--branch`. With `--clone-url`
  * and `--clone-root`, a repository Orca does not have is cloned into
- * `<root>/<repo>` and added to Orca first (clone.ts). `--json` prints what
+ * `<root>/<repo>` and added to Orca first (clone.ts). With `--no-agent` the
+ * create hook runs in the worktree's `setup` tab and `open` returns without
+ * waiting for it; an agent it starts waits for the hook. `--json` prints what
  * was opened; progress goes to stderr.
  *
  * `remove` runs the repository's remove hook in the worktree, parks its
@@ -75,6 +78,7 @@ import {
   cloneMissingRepo,
 } from "./clone.ts";
 import {
+  startCreateHook,
   assertNoUnsentFindings,
   ensureCreateHook,
   gitDirOf,
@@ -96,7 +100,8 @@ export { fileSegment, type Receipt, receiptPath } from "./receipts.ts";
 export const USAGE = `usage:
   workspace.ts open --repo <name> --branch <name> [--environment <name> --ssh <host>] [--reuse-prefix <text>]
       [--base <ref>] [--agent <id>] [--no-agent] [--prompt <text>] [--key <key>] [--comment <text>]
-      [--linear-issue <key>] [--activate] [--clone-url <url> --clone-root <dir>] [--json]
+      [--linear-issue <key>] [--activate] [--clone-url <url> --clone-root <dir>]
+      [--model <id> [--effort <level>]] [--surface chat|terminal] [--json]
   workspace.ts remove --repo <name> --branch <name> [--environment <name> --ssh <host>] [--force]`;
 
 /**
@@ -143,6 +148,12 @@ export interface OpenOptions {
   activate: boolean;
   /** Clone the repository from here and add it to Orca when Orca does not have it. */
   clone?: CloneSource;
+  /** The agent's model, as Orca's provider names it; the agent's default when absent. */
+  model?: string;
+  /** The model's reasoning effort; needs `model`. */
+  effort?: string;
+  /** Start the agent as a chat or in a terminal; Orca's Chat UI setting when absent. */
+  surface?: "chat" | "terminal";
 }
 
 export interface Opened {
@@ -152,8 +163,10 @@ export interface Opened {
   worktreeId: string;
   /** The worktree already existed. */
   reattached: boolean;
-  /** This run ran the repository's create hook. */
+  /** This run ran the repository's create hook, or started it in the worktree's `setup` tab. */
   hookRan: boolean;
+  /** The create hook runs in the worktree's `setup` tab rather than before this run returned. */
+  setupInTab?: boolean;
   /** This run started the agent. */
   agentLaunched: boolean;
   /** The agent's start under `key`: by this run, by an earlier one, or not recorded. */
@@ -450,31 +463,51 @@ function createWorktree(
   return { ...created, branch };
 }
 
-/** Link the issue in Orca's Linear integration; a failure only warns, since the link is a convenience. */
-function linkIssue(ws: Workspace, worktree: OrcaWorktree, issue: string): void {
+/** Set one of the worktree's Orca metadata fields; the reason it failed, or null. */
+function setWorktree(
+  ws: Workspace,
+  worktree: OrcaWorktree,
+  flag: string,
+  value: string,
+): string | null {
   const what = "orca worktree set";
-  let reason: string;
   try {
     const envelope = orcaCall(
       ws,
-      [
-        "worktree",
-        "set",
-        "--worktree",
-        `id:${worktree.id}`,
-        "--linear-issue",
-        issue,
-      ],
+      ["worktree", "set", "--worktree", `id:${worktree.id}`, flag, value],
       what,
     );
-    if (envelope.ok) return;
-    reason = orcaErrorText(envelope.error);
+    return envelope.ok ? null : orcaErrorText(envelope.error);
   } catch (error) {
-    reason = error instanceof Error ? error.message : String(error);
+    return error instanceof Error ? error.message : String(error);
   }
-  ws.orca.log(
-    `⚠ could not link ${issue} to the worktree in Orca (${reason}); connect Orca's Linear integration to have it linked`,
-  );
+}
+
+/** Link the issue in Orca's Linear integration; a failure only warns, since the link is a convenience. */
+function linkIssue(ws: Workspace, worktree: OrcaWorktree, issue: string): void {
+  const reason = setWorktree(ws, worktree, "--linear-issue", issue);
+  if (reason !== null)
+    ws.orca.log(
+      `⚠ could not link ${issue} to the worktree in Orca (${reason}); connect Orca's Linear integration to have it linked`,
+    );
+}
+
+/**
+ * Bring a reattached worktree's comment up to date. Creation set the comment
+ * an earlier open asked for; with no agent to start, the comment carries the
+ * prompt the person pastes on another device, so it is replaced. A failure
+ * only warns: the prompt is on this machine's clipboard or printed too.
+ */
+function updateComment(
+  ws: Workspace,
+  worktree: OrcaWorktree,
+  comment: string,
+): void {
+  const reason = setWorktree(ws, worktree, "--comment", comment);
+  if (reason !== null)
+    ws.orca.log(
+      `⚠ could not update the worktree's comment in Orca (${reason}); it may hold an earlier prompt`,
+    );
 }
 
 /** The receipt an open takes before it starts the agent; recorded only when `file` is. */
@@ -536,6 +569,9 @@ function launchAgent(
       "--worktree",
       `id:${worktree.id}`,
       ...prompt,
+      ...(options.model === undefined ? [] : ["--model", options.model]),
+      ...(options.effort === undefined ? [] : ["--effort", options.effort]),
+      ...(options.surface === undefined ? [] : ["--surface", options.surface]),
     ],
     what,
   );
@@ -577,22 +613,33 @@ export function openWorkspace(ws: Workspace, requested: OpenOptions): Opened {
   ensureUpstreamTracking(ws.host, repo.path, branch);
   if (requested.linearIssue !== undefined)
     linkIssue(ws, worktree, requested.linearIssue);
+  if (found !== null && requested.noAgent && requested.comment !== undefined)
+    updateComment(ws, worktree, requested.comment);
   // The worktree's own git directory: where the create hook's mark and claim
   // are kept, and the token that tells this worktree from one that stood at
   // its path before (worktree-token.ts), which a receipt of the key's agent
   // is read against when the agent is started and nowhere earlier.
   const dir = gitDirOf(ws, worktree.path);
-  const hookRan = ensureCreateHook(ws, worktree.path, dir);
   const opened: Opened = {
     path: worktree.path,
     branch,
     worktreeId: worktree.id,
     reattached: found !== null,
-    hookRan,
+    hookRan: false,
     agentLaunched: false,
     kickoff: "none",
   };
-  if (requested.noAgent) return opened;
+  // With no agent to start, nothing waits for the hook: it runs in a tab the
+  // person watches. An agent started here reads the tree, so it waits.
+  if (requested.noAgent) {
+    const setup = startCreateHook(ws, worktree, dir);
+    return {
+      ...opened,
+      hookRan: setup === "started",
+      setupInTab: setup === "started" || setup === "running",
+    };
+  }
+  opened.hookRan = ensureCreateHook(ws, worktree.path, dir);
   return { ...opened, ...launchAgent(ws, repo, worktree, dir, requested) };
 }
 
@@ -721,7 +768,36 @@ export function openArgs(options: OpenOptions, target: Target = {}): string[] {
     ...(options.activate ? ["--activate"] : []),
     ...optional("--clone-url", options.clone?.url),
     ...optional("--clone-root", options.clone?.root),
+    ...optional("--model", options.model),
+    ...optional("--effort", options.effort),
+    ...optional("--surface", options.surface),
   ];
+}
+
+/** `--model`, `--effort` and `--surface`, which shape an agent's start, so they need one. */
+function parseAgentFlags(values: {
+  model?: string;
+  effort?: string;
+  surface?: string;
+  "no-agent"?: boolean;
+}): Pick<OpenOptions, "model" | "effort" | "surface"> {
+  const { model, effort, surface } = values;
+  if (
+    values["no-agent"] &&
+    (model !== undefined || effort !== undefined || surface !== undefined)
+  )
+    throw new UsageError(
+      `--model, --effort and --surface shape an agent's start; drop --no-agent\n${USAGE}`,
+    );
+  if (effort !== undefined && model === undefined)
+    throw new UsageError(`--effort needs --model\n${USAGE}`);
+  if (surface !== undefined && surface !== "chat" && surface !== "terminal")
+    throw new UsageError(`--surface is chat or terminal\n${USAGE}`);
+  return {
+    ...(model === undefined ? {} : { model }),
+    ...(effort === undefined ? {} : { effort }),
+    ...(surface === undefined ? {} : { surface }),
+  };
 }
 
 /** `--clone-url` and `--clone-root`, which go together. */
@@ -757,6 +833,9 @@ export function parseOpen(
         activate: { type: "boolean" },
         "clone-url": { type: "string" },
         "clone-root": { type: "string" },
+        model: { type: "string" },
+        effort: { type: "string" },
+        surface: { type: "string" },
         json: { type: "boolean" },
       },
     },
@@ -791,6 +870,7 @@ export function parseOpen(
     ...optional(values["linear-issue"], "linearIssue"),
     activate: values.activate ?? false,
     ...parseCloneFlags(values["clone-url"], values["clone-root"]),
+    ...parseAgentFlags(values),
     json: values.json ?? false,
   };
 }

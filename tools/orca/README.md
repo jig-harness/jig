@@ -25,7 +25,8 @@ Orca is supported through the same interfaces, as Conductor is.
 ```sh
 bun tools/orca/workspace.ts open --repo <name> --branch <name> [--environment <name> --ssh <host>] \
     [--reuse-prefix <text>] [--base <ref>] [--agent <id>] [--no-agent] [--prompt <text>] [--key <key>] \
-    [--comment <text>] [--linear-issue <key>] [--activate] [--clone-url <url> --clone-root <dir>] [--json]
+    [--comment <text>] [--linear-issue <key>] [--activate] [--clone-url <url> --clone-root <dir>] \
+    [--model <id> [--effort <level>]] [--surface chat|terminal] [--json]
 bun tools/orca/workspace.ts remove --repo <name> --branch <name> [--environment <name> --ssh <host>] [--force]
 ```
 
@@ -89,8 +90,23 @@ When Orca has no repository by that name and `--clone-url` and
    ([what is left](../../ROADMAP.md)).
 6. It starts the agent (`claude` unless `--agent` names another Orca agent
    id) in the worktree with `--prompt` as its first prompt, once per
-   `--key` and agent, as below. `--comment` is kept in Orca's metadata, and
+   `--key` and agent, as below; `--model`, `--effort` and `--surface` are
+   passed to Orca's start. `--comment` is kept in Orca's metadata, and
    `--activate` reveals the new worktree in the app.
+
+With `--no-agent` nothing waits for the create hook: instead of step 5, the
+hook runs in an Orca terminal tab of the worktree named `setup`, and `open`
+returns once the tab is started. The tab's script takes the same claim and
+leaves the same mark (`sh -c` with `mkdir`, the hook in the worktree, then
+`printf ok` into the mark), so the hook still runs once per worktree: an
+open that finds the mark starts no tab, one that finds the claim held starts
+no second one, and a failed run leaves no mark, so the next open runs it
+again. A claim whose tab was closed before the hook ended stays; an open
+that finds it names it, and removing it lets the next open run the hook. The
+tab is a terminal on the machine the clone is on, so nothing from
+Jig supervises it there; a person watches it. `--json` reports `setupInTab`
+when the hook runs, or still runs, in that tab. On a worktree that already
+existed, `--comment` replaces its comment, which carries the prompt to paste.
 
 **`remove`** runs the repository's remove hook inside the worktree, parks the
 worktree's unsent [reflection](../../plugin/skills/reflect/README.md)
@@ -285,7 +301,9 @@ repository's `id` and `path`), `repo add --path <clone>` (only when
 with `id`, `path`, `branch`), `worktree create --repo id:<id> --name <name>
 --base-branch <ref> --no-parent --setup skip [--comment] [--activate]`
 (the created `worktree`), `worktree set --worktree id:<id> --linear-issue
-<key>`, `agent launch --agent <id> --worktree id:<id> [--prompt]`, and
+<key>` and `--comment <text>` (the latter on reattaching with `--no-agent`), `agent launch --agent <id> --worktree id:<id> [--prompt] [--model]
+[--effort] [--surface]`, `terminal create --worktree id:<id> --title setup
+--command <text>` (with `--no-agent`), and
 `worktree rm --worktree id:<id> [--force]`. An error comes back as
 `{ ok: false, error: { code, message } }`; `repo_not_found` is read by
 name. Orca's command is the one of the terminal Orca opened
