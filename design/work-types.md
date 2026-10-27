@@ -15,7 +15,14 @@ fact, one table says what each type changes, and depth shrinks for light
 work without ever removing a gate a flag or the catalog demands.
 
 This is the design of [plan.md](plan.md) item 27, a change to `do-item`,
-`work-batch` and `file-issue`. Nothing of it is built.
+`work-batch` and `file-issue`. The derivation (step 1 of the build order) is
+built: `determine_type.ts` and the depth table as data in the
+[`do-item` skill](../plugin/skills/do-item/SKILL.md#step-1-fetch-the-issue),
+`issue_tracker.types` and `do_item.work_types` in the
+[configuration reference](../plugin/CONFIGURATION.md#the-depth-table), and
+the tracker interface's `nativeType`; `do-item` prints the type and changes
+nothing else. Reading the row, `work-batch` and `file-issue`, the required
+check, the map column and the audit criterion remain open.
 
 ## The rule
 
@@ -69,8 +76,11 @@ mapping below; it does not add stations.
    in its status line. In an interactive session `do-item` may ask one
    question; it never asks when a step above answered.
 
-The evidence names which step decided. `file-issue` sets the type label at
-filing time, so for an item Jig filed the first step always answers.
+The evidence names which step decided, and each earlier step that saw a
+value but did not answer. Labels of two types on one item are a choice
+someone must make, not one a weaker signal settles: the item is `unknown`.
+`file-issue` sets the type label at filing time, so for an item Jig filed
+the first step always answers.
 
 ### The depth table
 
