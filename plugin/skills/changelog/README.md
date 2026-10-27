@@ -107,10 +107,10 @@ an existing changelog, after a correction to an earlier release, and whenever
 a person wants to know the file is well formed:
 
 ```sh
-bun <skill-dir>/scripts/lint.ts [--json]
+bun "<skill-dir>/scripts/lint.ts"
 ```
 
-Each finding names the file, the line, the rule and what to change, ending
+`--json` prints the findings as JSON instead. Each finding names the file, the line, the rule and what to change, ending
 with the section of the format's specification that states the rule:
 
 ```text

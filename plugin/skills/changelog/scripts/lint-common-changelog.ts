@@ -187,10 +187,11 @@ function fileFindings(changelog: Changelog): Finding[] {
   return findings;
 }
 
-/** The release a `##` heading names, or the finding that it does not read as one. */
-function releaseOf(changelog: Changelog, section: Section): Release | Finding {
-  const fail = (problem: string, remedy: string) =>
-    finding(COMMON_RULES.heading, changelog, section.line, problem, remedy);
+/** The finding for a heading the format has no place for: Unreleased, or a `[YANKED]` release. */
+function refusedHeading(
+  changelog: Changelog,
+  section: Section,
+): Finding | null {
   if (/^\[?Unreleased\]?$/i.test(section.title))
     return finding(
       COMMON_RULES.unreleased,
@@ -200,13 +201,26 @@ function releaseOf(changelog: Changelog, section: Section): Release | Finding {
       "remove it, and list its changes in the release that ships them",
     );
   if (/\[YANKED\]\s*$/i.test(section.title))
-    return fail(
+    return finding(
+      COMMON_RULES.heading,
+      changelog,
+      section.line,
       `"## ${section.title}" marks a yanked release with [YANKED], which the format does not use`,
       "drop [YANKED] and give the release a notice saying it was yanked (6.4. What about yanked releases?)",
     );
-  const m = /^(?:\[([^\]]+)\]|(\S+))\s+-\s+(\S+)$/.exec(section.title);
-  const version = m?.[1] ?? m?.[2];
-  if (!m || version === undefined || m[3] === undefined)
+  return null;
+}
+
+/** The release a `##` heading names, or the finding that it does not read as one. */
+function releaseOf(changelog: Changelog, section: Section): Release | Finding {
+  const refused = refusedHeading(changelog, section);
+  if (refused) return refused;
+  const fail = (problem: string, remedy: string) =>
+    finding(COMMON_RULES.heading, changelog, section.line, problem, remedy);
+  const [, linked, plain, date] =
+    /^(?:\[([^\]]+)\]|(\S+))\s+-\s+(\S+)$/.exec(section.title) ?? [];
+  const version = linked ?? plain;
+  if (version === undefined || date === undefined)
     return fail(
       `"## ${section.title}" is not a release heading`,
       "write it as `## [VERSION] - YYYY-MM-DD` (or `## VERSION - YYYY-MM-DD`)",
@@ -216,7 +230,7 @@ function releaseOf(changelog: Changelog, section: Section): Release | Finding {
       `"${version}" is not a Semantic Versioning version${/^v\d/.test(version) ? ": it carries a v prefix" : ""}`,
       "write the version as Semantic Versioning has it, without a v prefix (the tag may keep one)",
     );
-  return { section, version, date: m[3], linked: m[1] !== undefined };
+  return { section, version, date, linked: linked !== undefined };
 }
 
 function dateAndOrderFindings(

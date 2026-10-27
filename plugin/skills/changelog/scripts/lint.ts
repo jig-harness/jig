@@ -173,19 +173,25 @@ export function runLint(
   return result.unchecked ? 2 : 0;
 }
 
+/** The command line's options: the repository's root and whether to print JSON. */
+function options(): { root: string; json: boolean } {
+  const { values } = parseArgs({
+    options: {
+      json: { type: "boolean", default: false },
+      root: { type: "string" },
+    },
+  });
+  return {
+    root: values.root === undefined ? consumerRoot() : resolve(values.root),
+    json: values.json,
+  };
+}
+
 if (import.meta.main)
   runMain("lint", async () => {
     try {
-      const { values } = parseArgs({
-        options: {
-          root: { type: "string" },
-          json: { type: "boolean", default: false },
-        },
-      });
-      return runLint(
-        values.root ? resolve(values.root) : consumerRoot(),
-        values.json,
-      );
+      const { root, json } = options();
+      return runLint(root, json);
     } catch (error) {
       fail(2, error instanceof Error ? error.message : String(error));
     }

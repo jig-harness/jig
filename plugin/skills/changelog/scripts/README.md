@@ -238,7 +238,7 @@ section and its address. Release coverage compares the release headings with
 the version the version files hold, where the version lives in files (a
 Common Changelog check only where it is stable), and with each tag
 `<tag_prefix><version>` that names a Semantic Versioning version and sits
-in the checkout's history (`git tag --merged HEAD`: a tag made after the
+in the checkout's history (the tags git lists as merged into `HEAD`: a tag made after the
 branch forked names a release its changelog cannot have yet; a shallow CI
 checkout needs `fetch-depth: 0` to have the tags).
 

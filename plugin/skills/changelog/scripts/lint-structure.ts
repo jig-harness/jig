@@ -76,6 +76,49 @@ export const isDefinition = (line: Line): boolean =>
 export const content = (lines: Line[]): Line[] =>
   lines.filter((l) => l.text.trim() !== "" && !isDefinition(l));
 
+/** The link reference definitions of `lines`, the first of each label winning as in Markdown. */
+function definitionsOf(lines: Line[]): Changelog["definitions"] {
+  const definitions: Changelog["definitions"] = new Map();
+  for (const line of lines) {
+    const match = line.inFence ? null : LINK_REF.exec(line.text);
+    const [, name, url] = match ?? [];
+    if (name && url && !definitions.has(label(name)))
+      definitions.set(label(name), { line: line.n, url });
+  }
+  return definitions;
+}
+
+/** Where a line goes when it is a heading of level 1 or 2: a title, or a new section. */
+function placeTop(
+  changelog: Changelog,
+  line: Line,
+  level: number,
+  title: string,
+): void {
+  if (level === 1) changelog.titles.push(line);
+  else changelog.sections.push({ line: line.n, title, lead: [], groups: [] });
+}
+
+/** Where a line under a section goes: a new group, or the text of the group or lead it is in. */
+function placeUnder(
+  section: Section,
+  line: Line,
+  groupTitle: string | null,
+): void {
+  if (groupTitle !== null)
+    section.groups.push({ line: line.n, title: groupTitle, body: [] });
+  else (section.groups.at(-1)?.body ?? section.lead).push(line);
+}
+
+/** Put `line` where it belongs: a title, a section or group heading, or the text under one. */
+function place(changelog: Changelog, line: Line): void {
+  const h = line.inFence ? null : heading(line.text);
+  const section = changelog.sections.at(-1);
+  if (h !== null && h.level <= 2) placeTop(changelog, line, h.level, h.title);
+  else if (section) placeUnder(section, line, h?.level === 3 ? h.title : null);
+  else if (line !== changelog.first) changelog.preamble.push(line);
+}
+
 /** The changelog at `file` read from `text`. */
 export function readChangelog(file: string, text: string): Changelog {
   const lines: Line[] = fenced(text.replace(/\r\n/g, "\n")).map((l, i) => ({
@@ -83,34 +126,17 @@ export function readChangelog(file: string, text: string): Changelog {
     text: l.line,
     inFence: l.inFence,
   }));
-  const first = lines.find((l) => l.text.trim() !== "") ?? null;
-  const titles: Line[] = [];
-  const preamble: Line[] = [];
-  const sections: Section[] = [];
-  const definitions = new Map<string, { line: number; url: string }>();
-  for (const line of lines) {
-    const match = line.inFence ? null : LINK_REF.exec(line.text);
-    if (match?.[1] && match[2] && !definitions.has(label(match[1])))
-      definitions.set(label(match[1]), { line: line.n, url: match[2] });
-    const h = line.inFence ? null : heading(line.text);
-    const section = sections.at(-1);
-    if (h?.level === 1) titles.push(line);
-    if (h !== null && h.level <= 2) {
-      if (h.level === 2)
-        sections.push({ line: line.n, title: h.title, lead: [], groups: [] });
-      continue;
-    }
-    if (h?.level === 3 && section) {
-      section.groups.push({ line: line.n, title: h.title, body: [] });
-      continue;
-    }
-    if (!section) {
-      if (line !== first) preamble.push(line);
-      continue;
-    }
-    (section.groups.at(-1)?.body ?? section.lead).push(line);
-  }
-  return { file, lines, first, titles, preamble, sections, definitions };
+  const changelog: Changelog = {
+    file,
+    lines,
+    first: lines.find((l) => l.text.trim() !== "") ?? null,
+    titles: [],
+    preamble: [],
+    sections: [],
+    definitions: definitionsOf(lines),
+  };
+  for (const line of lines) place(changelog, line);
+  return changelog;
 }
 
 /** Text split into the runs of lines between blank lines. */
@@ -165,19 +191,23 @@ function compareIdentifiers(a: string, b: string): number {
 export function precedence(a: string, b: string): number {
   const [x, y] = [SEMVER.exec(a), SEMVER.exec(b)];
   if (!x || !y) throw new Defect(`not a semantic version: ${x ? b : a}`);
-  for (let i = 1; i <= 3; i++) {
-    const d = Number(x[i]) - Number(y[i]);
-    if (d) return d;
-  }
-  const [p, q] = [x[4], y[4]];
+  const core = [1, 2, 3]
+    .map((i) => Number(x[i]) - Number(y[i]))
+    .find((d) => d !== 0);
+  return core ?? comparePrereleases(x[4], y[4]);
+}
+
+/** Two pre-release parts by precedence; a version without one ranks above one with. */
+function comparePrereleases(p?: string, q?: string): number {
   if (p === undefined || q === undefined)
-    return p === q ? 0 : p === undefined ? 1 : -1;
+    return (p === undefined ? 1 : 0) - (q === undefined ? 1 : 0);
   const [ps, qs] = [p.split("."), q.split(".")];
-  for (let i = 0; i < Math.min(ps.length, qs.length); i++) {
-    const d = compareIdentifiers(ps[i] ?? "", qs[i] ?? "");
-    if (d) return d;
-  }
-  return ps.length - qs.length;
+  const length = Math.min(ps.length, qs.length);
+  const differ = ps
+    .slice(0, length)
+    .map((id, i) => compareIdentifiers(id, qs[i] ?? ""))
+    .find((d) => d !== 0);
+  return differ ?? ps.length - qs.length;
 }
 
 /** A finding of `rule` at `line`, its remedy ending with where the format says so. */
