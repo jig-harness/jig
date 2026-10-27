@@ -42,7 +42,8 @@ pointer waits for them ([M10](https://github.com/jig-harness/jig/blob/main/modul
    which has a hard deadline and names what it waited for. A fixed delay is
    allowed only for local timing (retry back-off, an abort deadline, the
    pause between polls) and carries `fixed-delay: <reason>` on the same line
-   or the line above; `<sleep gate>` rejects any other.
+   or the line above; `<sleep gate>` rejects any other, and a token with no
+   delay on its line or the line below.
 4. **Predicates are proven where they run.** Tenant scope, soft delete and
    authorization are tested against `<the real database / policy engine>`,
    with a second tenant's data or a deleted record that would leak if the
@@ -93,7 +94,8 @@ pointer waits for them ([M10](https://github.com/jig-harness/jig/blob/main/modul
 
 `<exemptions file>` lists the paths that need no test, one per line, as
 `<glob> <reason>`. Every line is a place the rule does not reach, so each is
-reviewed like code.
+reviewed like code, and `<tests-with-changes gate>` fails a line whose glob
+matches no file: delete it in the change that removes what it excused.
 
 ```text
 src/generated/** Generated from the schema; the generator has its own tests.
@@ -111,7 +113,7 @@ merge is blocked on a per-file coverage number.
 Register these in the suppression-token registry
 ([M1 template](https://github.com/jig-harness/jig/blob/main/modules/M1-gates-enforcement-ladder/templates/suppression-registry.md)):
 
-| Token | Suppresses (gate) | Placement | Justification required |
-|-------|-------------------|-----------|------------------------|
-| `fixed-delay: <reason>` | `<sleep gate>` | same line as the delay, or the line above | non-empty reason |
-| `<exemptions file>` entry | `<tests-with-changes gate>` | one line per path pattern | non-empty reason |
+| Token | Suppresses (gate) | Placement | Justification required | Stale when |
+|-------|-------------------|-----------|------------------------|------------|
+| `fixed-delay: <reason>` | `<sleep gate>` | same line as the delay, or the line above | non-empty reason | no delay on its line or the line below |
+| `<exemptions file>` entry | `<tests-with-changes gate>` | one line per path pattern | non-empty reason | its glob matches no file |

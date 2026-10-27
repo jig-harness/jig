@@ -168,11 +168,13 @@ criteria:
     statement: >-
       A CI check fails a change whose changed source file has no test,
       unless the file is listed in a registered exemption with a reason, and
-      a pre-push hook runs the same check before the push.
+      fails an exemption that matches no file; a pre-push hook runs the same
+      check before the push.
     observe:
       - "a CI job maps each changed source file to its test path and fails when none exists"
       - "the pre-push hook configuration runs the same check"
       - "exemptions live in a reviewed file or list, each with a reason"
+      - "the check fails an exemption that matches no file in the tree it reads (M14's tests-with-changes reference does), so an exemption leaves with the code it excused; a check that passes a stale exemption scores what that half reaches, convention at most"
     probe:
       all:
         - mechanical:
@@ -220,10 +222,12 @@ criteria:
     since: 0.27.0
     statement: >-
       A gate rejects fixed sleeps in test and tooling code, except those
-      carrying a suppression token registered for local timing; waits for
-      external state poll with a deadline.
+      carrying a suppression token registered for local timing, with a
+      reason; it fails a token with an empty reason or with no delay beside
+      it; waits for external state poll with a deadline.
     observe:
       - "a lint rule or grep gate run in CI flags sleep / setTimeout / time.sleep / Thread.sleep in tests"
+      - "it fails a token without a reason, and a token with no delay on its line or the line below (M14's fixed-delay reference does both); a gate that passes a stale token scores what that half reaches, convention at most"
       - "its suppression token is listed in the suppression-token registry"
 
   - id: provisioned-suites-executed

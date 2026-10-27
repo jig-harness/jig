@@ -72,13 +72,6 @@ Issues. The [tracker interface](GLOSSARY.md) first gains attaching a file,
 the one operation the skills need that the interface does not have yet, and
 the workspace launcher learns to open GitHub issues.
 
-### 15. M14 Testing strategy: the rest
-
-[M14](modules/M14-testing-strategy/README.md) gains exception lists that prune
-themselves: the tests-with-changes gate failing on an exemption that matches no
-file, and a `fixed-delay:` token gate that fails on a token with no delay
-beside it.
-
 ### 17. Corrected designs for the existing modules
 
 Practices working repositories validated, added to the modules that exist:
