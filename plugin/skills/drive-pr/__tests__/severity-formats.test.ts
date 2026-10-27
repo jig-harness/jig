@@ -73,6 +73,14 @@ describe("severityOf", () => {
     );
     expect(read(`**${icon} Minor** · **Quality** · **Quick win**`)).toBe("low");
     expect(read("**Major** · prose, not a field")).toBe("unknown");
+    // Its comments open with a marker the severity follows.
+    const marker = "<!-- coderabbit-ai-generated:v1 -->";
+    expect(
+      read(`${marker}\n**${icon} Major** · **Stability** · **Quick win**\n\nx`),
+    ).toBe("high");
+    expect(read(`${marker}\n\nThanks, the guard covers it now.`)).toBe(
+      "unknown",
+    );
     expect(
       severityOf(`**${icon} Major** · **A**`, "someone-else", BUILTIN_FORMATS),
     ).toBe("unknown");
