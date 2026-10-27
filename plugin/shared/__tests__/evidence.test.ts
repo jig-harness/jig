@@ -20,6 +20,8 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { ExitError } from "../cli.ts";
+import { parseListArgs, parseRunArgs } from "../evidence.ts";
 import type { EvidenceRecord } from "../evidence-record.ts";
 import { LEAKY_GIT_ENV, spawnSync } from "../guarded-git-spawn.ts";
 
@@ -410,5 +412,71 @@ describe("the printed block", () => {
 
     const named = evidence(["run", "--name", "gates", "--", ...PASS]);
     expect(named.stdout.split("\n")[0]).toEndWith("  gates");
+  });
+});
+
+describe("the command line", () => {
+  /** The exit code a usage error throws, or null when it parses. */
+  const refused = (parse: () => unknown): number | null => {
+    try {
+      parse();
+      return null;
+    } catch (error) {
+      if (error instanceof ExitError) return error.code;
+      throw error;
+    }
+  };
+
+  test("run takes its flags before -- and the command after it", () => {
+    expect(
+      parseRunArgs([
+        "--timeout",
+        "0.5",
+        "--expect-fail",
+        "--json",
+        "--",
+        "bun",
+        "--expect-fail",
+      ]),
+    ).toEqual({
+      timeoutMinutes: 0.5,
+      junit: undefined,
+      name: undefined,
+      expectFail: { case: null },
+      json: true,
+      command: ["bun", "--expect-fail"],
+    });
+    expect(
+      parseRunArgs(["--expect-fail", "a::b", "--junit", "r.xml", "--", "x"])
+        .expectFail,
+    ).toEqual({ case: "a::b" });
+  });
+
+  test("run refuses what it cannot use", () => {
+    for (const argv of [
+      ["--", "x"].slice(0, 1),
+      ["--timeout", "0", "--", "x"],
+      ["--timeout", "-1", "--", "x"],
+      ["--timeout", "--", "x"],
+      ["--junit"],
+      ["--shell", "--", "x"],
+      ["toString", "--", "x"],
+    ])
+      expect([argv, refused(() => parseRunArgs(argv))]).toEqual([argv, 2]);
+  });
+
+  test("list takes a tree and a command hash or their prefixes", () => {
+    expect(parseListArgs(["--tree", "3f9c", "--all"])).toEqual({
+      tree: "3f9c",
+      command: undefined,
+      all: true,
+      json: false,
+    });
+    for (const argv of [
+      ["--tree", "3f9"],
+      ["--command", "XYZW"],
+      ["--", "x"],
+    ])
+      expect([argv, refused(() => parseListArgs(argv))]).toEqual([argv, 2]);
   });
 });

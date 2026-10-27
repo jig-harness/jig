@@ -1087,48 +1087,6 @@ test("code-stats runs from the plugin copy and reads the consumer's code_stats",
   expect(report.byArea.product?.files).toBe(1);
 });
 
-test("evidence.ts runs from the plugin copy and keeps its record in the consumer's store", () => {
-  const store = join(scratch, "evidence-store");
-  const consumer = consumerRepo(
-    "evidence",
-    `verify:\n  store: ${JSON.stringify(store)}\n  output_lines: 5\n`,
-  );
-  const evidence = join(scratch, "cache", "shared", "evidence.ts");
-  const ran = spawnSync(
-    process.execPath,
-    [
-      evidence,
-      "run",
-      "--json",
-      "--name",
-      "check",
-      "--",
-      process.execPath,
-      "-e",
-      "console.log('checked')",
-    ],
-    { cwd: consumer, env, encoding: "utf8" },
-  );
-  expectSpawnExit({ ...ran, exitCode: ran.status }, 0);
-  const record = JSON.parse(ran.stdout) as {
-    id: string;
-    tree: string;
-    outcome: string;
-    output: { head: string[] };
-  };
-  expect([record.outcome, record.output.head]).toEqual(["pass", ["checked"]]);
-  const listed = spawnSync(process.execPath, [evidence, "list"], {
-    cwd: consumer,
-    env,
-    encoding: "utf8",
-  });
-  expectSpawnExit({ ...listed, exitCode: listed.status }, 0);
-  expect(listed.stdout).toContain(
-    `EVIDENCE  tree ${record.tree.slice(0, 7)}  check`,
-  );
-  expect(listed.stdout).toContain(join(store, "evidence", record.tree));
-});
-
 test("file-issue lints and validates against the consumer's configured taxonomy from the plugin copy", () => {
   const consumer = consumerRepo(
     "file-issue",

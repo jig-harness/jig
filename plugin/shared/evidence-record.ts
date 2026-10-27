@@ -230,46 +230,87 @@ export function readReport(
 
 // ---------------------------------------------------------------- outcome
 
-const NOT_RUN: readonly Outcome[] = [
-  "timed-out",
-  "could-not-start",
-  "killed-for-output",
-];
+/** What a finished child left, as `proc.ts`'s `run` reports it. */
+interface Finished {
+  code: number;
+  signal?: string;
+  timedOut: boolean;
+  spawnFailed: boolean;
+  bufferExceeded: boolean;
+}
+
+/** How the command ended, before any expectation is applied. */
+function ended(r: Finished): Outcome {
+  if (r.spawnFailed) return "could-not-start";
+  if (r.timedOut) return "timed-out";
+  if (r.bufferExceeded) return "killed-for-output";
+  return r.code === 0 ? "pass" : "fail";
+}
+
+type Expectation = NonNullable<EvidenceRecord["expectFail"]>;
+
+/** Whether every case named `wanted` failed in this run's report. */
+function caseFailed(
+  wanted: string,
+  junit: ReportSummary | null,
+  base: Omit<Expectation, "met" | "reason">,
+): Expectation {
+  const no = (reason: string) => ({ ...base, met: false, reason });
+  if (junit?.status !== "read")
+    return no(`the report gave no result (${junit?.status ?? "no report"})`);
+  const named = (junit.cases ?? []).filter(
+    (c) => c.name === wanted || caseKey(c) === wanted,
+  );
+  if (named.length === 0) return no(`no case ${wanted} in the report`);
+  if (named.some((c) => c.result !== "failed"))
+    return no(`case ${wanted} did not fail`);
+  const failedCases = named.map(caseKey);
+  return { ...base, failedCases, met: true, reason: `case ${wanted} failed` };
+}
 
 /**
  * Whether a run under `--expect-fail` failed as expected: a non-zero exit
  * and, when a case is named (its `name` or `<classname>::<name>`), every
  * case of that name failed in this run's report.
  */
-export function judgeExpectation(
+function judgeExpectation(
   wanted: { case: string | null },
   outcome: Outcome,
   junit: ReportSummary | null,
-): NonNullable<EvidenceRecord["expectFail"]> {
-  const base = {
-    case: wanted.case,
-    failedCases: (junit?.failed ?? []).map(caseKey),
-  };
-  const no = (reason: string) => ({ ...base, met: false, reason });
-  if (NOT_RUN.includes(outcome))
-    return no(`the run ${outcome.replaceAll("-", " ")}`);
-  if (outcome === "pass") return no("the command passed");
+): Expectation {
+  const failedCases = (junit?.failed ?? []).map(caseKey);
+  const base = { case: wanted.case, failedCases };
+  if (outcome === "pass")
+    return { ...base, met: false, reason: "the command passed" };
+  if (outcome !== "fail")
+    return {
+      ...base,
+      met: false,
+      reason: `the run ${outcome.replaceAll("-", " ")}`,
+    };
   if (wanted.case === null)
     return { ...base, met: true, reason: "the command failed" };
-  if (junit?.status !== "read")
-    return no(`the report gave no result (${junit?.status ?? "no report"})`);
-  const named = (junit.cases ?? []).filter(
-    (c) => c.name === wanted.case || caseKey(c) === wanted.case,
-  );
-  if (named.length === 0) return no(`no case ${wanted.case} in the report`);
-  if (named.some((c) => c.result !== "failed"))
-    return no(`case ${wanted.case} did not fail`);
-  return {
-    ...base,
-    failedCases: named.map(caseKey),
-    met: true,
-    reason: `case ${wanted.case} failed`,
-  };
+  return caseFailed(wanted.case, junit, base);
+}
+
+/**
+ * The outcome, exit code and expectation of a finished run. The exit code is
+ * kept only where the child exited on its own: not where it never started,
+ * was ended at the deadline or for its output, or by a signal.
+ */
+export function settle(
+  r: Finished,
+  expectFail: { case: string | null } | null,
+  junit: ReportSummary | null,
+): Pick<EvidenceRecord, "outcome" | "exit" | "signal" | "expectFail"> {
+  const ran = ended(r);
+  const exited = ran === "pass" || (ran === "fail" && !r.signal);
+  const exit = exited ? r.code : null;
+  const signal = r.signal ?? null;
+  if (!expectFail) return { outcome: ran, exit, signal, expectFail: null };
+  const judged = judgeExpectation(expectFail, ran, junit);
+  const outcome = judged.met ? "seen-to-fail" : "expectation-failed";
+  return { outcome, exit, signal, expectFail: judged };
 }
 
 /**
@@ -309,25 +350,25 @@ function counts(junit: ReportSummary): string {
   return `${junit.executed} cases ran, ${junit.skipped} skipped${failed} (junit: ${junit.path})${trip}`;
 }
 
+/** The status words of an outcome other than a plain exit. */
+const STATUS: Partial<
+  Record<Outcome, (record: EvidenceRecord, exit: string) => string>
+> = {
+  "timed-out": (r) => `timed out at ${r.timeoutMinutes}m`,
+  "could-not-start": () => "could not start",
+  "killed-for-output": () => "killed for too much output",
+  "seen-to-fail": (r, exit) =>
+    `${exit} (seen to fail: ${r.expectFail?.failedCases.join(", ") || "expected"})`,
+  "expectation-failed": (r, exit) =>
+    `${exit} (expected to fail: ${r.expectFail?.reason})`,
+};
+
 function status(record: EvidenceRecord): string {
   const exit =
     record.exit === null
       ? `signal ${record.signal ?? "?"}`
       : `exit ${record.exit}`;
-  switch (record.outcome) {
-    case "timed-out":
-      return `timed out at ${record.timeoutMinutes}m`;
-    case "could-not-start":
-      return "could not start";
-    case "killed-for-output":
-      return "killed for too much output";
-    case "seen-to-fail":
-      return `${exit} (seen to fail: ${record.expectFail?.failedCases.join(", ") || "expected"})`;
-    case "expectation-failed":
-      return `${exit} (expected to fail: ${record.expectFail?.reason})`;
-    default:
-      return exit;
-  }
+  return STATUS[record.outcome]?.(record, exit) ?? exit;
 }
 
 function underHome(path: string): string {

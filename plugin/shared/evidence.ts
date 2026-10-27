@@ -90,10 +90,10 @@ import {
   type EvidenceRecord,
   EvidenceError,
   formatBlock,
-  judgeExpectation,
   lookup,
-  type Outcome,
   readReport,
+  type ReportSummary,
+  settle,
   type VerifySettings,
   verifySettings,
   vouches,
@@ -132,6 +132,24 @@ function readSettings(root: string): VerifySettings {
 
 // ---------------------------------------------------------------- arguments
 
+/** A flag takes a value, takes none, or takes one when the next word is not a flag. */
+type FlagKind = "value" | "switch" | "optional";
+type Flags = Map<string, string | true>;
+
+const RUN_FLAGS: Record<string, FlagKind> = {
+  "--timeout": "value",
+  "--junit": "value",
+  "--name": "value",
+  "--expect-fail": "optional",
+  "--json": "switch",
+};
+const LIST_FLAGS: Record<string, FlagKind> = {
+  "--tree": "value",
+  "--command": "value",
+  "--all": "switch",
+  "--json": "switch",
+};
+
 interface RunArgs {
   timeoutMinutes: number | undefined;
   junit: string | undefined;
@@ -148,61 +166,75 @@ interface ListArgs {
   json: boolean;
 }
 
-function value(argv: string[], i: number, flag: string): string {
-  const next = argv[i + 1];
-  if (next === undefined || next.startsWith("--"))
-    fail(2, `evidence: ${flag} needs a value`, ...USAGE);
-  return next;
-}
-
-function minutes(raw: string): number {
-  const n = Number(raw);
-  if (!/^[0-9]*\.?[0-9]+$/.test(raw) || !(n > 0) || n > MAX_TIMEOUT_MINUTES)
-    fail(
-      2,
-      `evidence: --timeout takes a positive number of minutes up to ${MAX_TIMEOUT_MINUTES}, got ${raw}`,
-      ...USAGE,
-    );
-  return n;
-}
-
-/** The option of `run` at `argv[i]`; returns how many arguments it took. */
-function runOption(argv: string[], i: number, args: RunArgs): number {
+/** The flag at `argv[i]`: its value and how many words it took. */
+function takeFlag(
+  argv: string[],
+  i: number,
+  spec: Record<string, FlagKind>,
+): { value: string | true; width: number } {
   const arg = argv[i] as string;
-  if (arg === "--json") {
-    args.json = true;
-    return 1;
-  }
-  if (arg === "--expect-fail") {
-    const next = argv[i + 1];
-    const named = next !== undefined && !next.startsWith("--");
-    args.expectFail = { case: named ? next : null };
-    return named ? 2 : 1;
-  }
-  if (arg === "--timeout") args.timeoutMinutes = minutes(value(argv, i, arg));
-  else if (arg === "--junit") args.junit = value(argv, i, arg);
-  else if (arg === "--name") args.name = value(argv, i, arg);
-  else
-    fail(
-      2,
-      `evidence: unknown argument ${arg}; the command goes after --`,
-      ...USAGE,
-    );
-  return 2;
+  const kind = Object.hasOwn(spec, arg) ? spec[arg] : undefined;
+  const next = argv[i + 1];
+  const hasValue = next !== undefined && !next.startsWith("--");
+  if (kind === "switch" || (kind === "optional" && !hasValue))
+    return { value: true, width: 1 };
+  if (kind !== undefined && hasValue) return { value: next, width: 2 };
+  const problem = kind ? `${arg} needs a value` : `unknown argument ${arg}`;
+  fail(2, `evidence: ${problem}`, ...USAGE);
 }
 
-function parseRunArgs(argv: string[]): RunArgs {
-  const args: RunArgs = {
-    timeoutMinutes: undefined,
-    junit: undefined,
-    name: undefined,
-    expectFail: null,
-    json: false,
-    command: [],
-  };
+/** The flags before `--` (or the end), and the index where they stop. */
+function readFlags(
+  argv: string[],
+  spec: Record<string, FlagKind>,
+): { flags: Flags; end: number } {
+  const flags: Flags = new Map();
   let i = 0;
-  while (i < argv.length && argv[i] !== "--") i += runOption(argv, i, args);
-  args.command = argv.slice(i + 1);
+  while (i < argv.length && argv[i] !== "--") {
+    const { value, width } = takeFlag(argv, i, spec);
+    flags.set(argv[i] as string, value);
+    i += width;
+  }
+  return { flags, end: i };
+}
+
+const text = (value: string | true | undefined) =>
+  typeof value === "string" ? value : undefined;
+
+function minutes(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (/^[0-9]*\.?[0-9]+$/.test(raw) && n > 0 && n <= MAX_TIMEOUT_MINUTES)
+    return n;
+  fail(
+    2,
+    `evidence: --timeout takes a positive number of minutes up to ${MAX_TIMEOUT_MINUTES}, got ${raw}`,
+    ...USAGE,
+  );
+}
+
+function hashPrefix(raw: string | undefined, flag: string): string | undefined {
+  if (raw === undefined || /^[0-9a-f]{4,64}$/.test(raw)) return raw;
+  fail(
+    2,
+    `evidence: ${flag} takes a hexadecimal hash or a prefix of at least 4 characters, got ${raw}`,
+    ...USAGE,
+  );
+}
+
+/** `run`'s arguments; a usage error exits 2. */
+export function parseRunArgs(argv: string[]): RunArgs {
+  const { flags, end } = readFlags(argv, RUN_FLAGS);
+  const expectFail = flags.get("--expect-fail");
+  const args: RunArgs = {
+    timeoutMinutes: minutes(text(flags.get("--timeout"))),
+    junit: text(flags.get("--junit")),
+    name: text(flags.get("--name")),
+    expectFail:
+      expectFail === undefined ? null : { case: text(expectFail) ?? null },
+    json: flags.has("--json"),
+    command: argv.slice(end + 1),
+  };
   if (args.command.length === 0)
     fail(2, "evidence: no command given after --", ...USAGE);
   if (args.expectFail?.case && args.junit === undefined)
@@ -214,33 +246,16 @@ function parseRunArgs(argv: string[]): RunArgs {
   return args;
 }
 
-function hashPrefix(raw: string, flag: string): string {
-  if (!/^[0-9a-f]{4,64}$/.test(raw))
-    fail(
-      2,
-      `evidence: ${flag} takes a hexadecimal hash or a prefix of at least 4 characters, got ${raw}`,
-      ...USAGE,
-    );
-  return raw;
-}
-
-function parseListArgs(argv: string[]): ListArgs {
-  const args: ListArgs = {
-    tree: undefined,
-    command: undefined,
-    all: false,
-    json: false,
+/** `list`'s arguments; a usage error exits 2. */
+export function parseListArgs(argv: string[]): ListArgs {
+  const { flags, end } = readFlags(argv, LIST_FLAGS);
+  if (end < argv.length) fail(2, "evidence: list takes no command", ...USAGE);
+  return {
+    tree: hashPrefix(text(flags.get("--tree")), "--tree"),
+    command: hashPrefix(text(flags.get("--command")), "--command"),
+    all: flags.has("--all"),
+    json: flags.has("--json"),
   };
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i] as string;
-    if (arg === "--tree") args.tree = hashPrefix(value(argv, i++, arg), arg);
-    else if (arg === "--command")
-      args.command = hashPrefix(value(argv, i++, arg), arg);
-    else if (arg === "--all") args.all = true;
-    else if (arg === "--json") args.json = true;
-    else fail(2, `evidence: unknown argument ${arg}`, ...USAGE);
-  }
-  return args;
 }
 
 // ---------------------------------------------------------------- the tree
@@ -250,16 +265,16 @@ function gitEnv(): Record<string, string> {
   return { ...withoutLeakyGitEnv(), GIT_TERMINAL_PROMPT: "0" };
 }
 
+function gitRun(root: string, args: string[], env: Record<string, string>) {
+  return run(["git", ...args], { cwd: root, env, timeoutSec: GIT_TIMEOUT_SEC });
+}
+
 async function git(
   root: string,
   args: string[],
   env: Record<string, string> = gitEnv(),
 ): Promise<string> {
-  const r = await run(["git", ...args], {
-    cwd: root,
-    env,
-    timeoutSec: GIT_TIMEOUT_SEC,
-  });
+  const r = await gitRun(root, args, env);
   if (r.code !== 0)
     throw new EvidenceError(`git ${args.join(" ")} failed: ${r.stderr.trim()}`);
   return r.stdout.trim();
@@ -278,13 +293,12 @@ async function treeIdentity(root: string): Promise<string> {
   );
   const env = { ...gitEnv(), GIT_INDEX_FILE: index };
   try {
-    const head = await run(["git", "rev-parse", "--verify", "-q", "HEAD"], {
-      cwd: root,
+    const head = await gitRun(
+      root,
+      ["rev-parse", "--verify", "-q", "HEAD"],
       env,
-      timeoutSec: GIT_TIMEOUT_SEC,
-    });
-    const start = head.code === 0 ? "HEAD" : "--empty";
-    await git(root, ["read-tree", start], env);
+    );
+    await git(root, ["read-tree", head.code === 0 ? "HEAD" : "--empty"], env);
     await git(root, ["add", "-A"], env);
     return await git(root, ["write-tree"], env);
   } finally {
@@ -352,10 +366,10 @@ function reserve(dir: string, clock: Clock): { id: string; fd: number } {
 
 /** The first and last `n` lines of the output, without overlap. */
 function headAndTail(
-  text: string,
+  output: string,
   n: number,
 ): Omit<EvidenceRecord["output"], "file"> {
-  const lines = text.split(/\r?\n/);
+  const lines = output.split(/\r?\n/);
   if (lines.at(-1) === "") lines.pop();
   return {
     lines: lines.length,
@@ -372,13 +386,6 @@ function commandHash(argv: string[], cwd: string): string {
     .slice(0, 12);
 }
 
-function baseOutcome(r: RunResult): Outcome {
-  if (r.spawnFailed) return "could-not-start";
-  if (r.timedOut) return "timed-out";
-  if (r.bufferExceeded) return "killed-for-output";
-  return r.code === 0 ? "pass" : "fail";
-}
-
 const posix = (path: string) => path.split("\\").join("/");
 
 interface Report {
@@ -387,77 +394,86 @@ interface Report {
   movedAside: string | undefined;
 }
 
+/** The report path, with any report already there moved beside the record. */
+function prepareReport(
+  junit: string | undefined,
+  root: string,
+  aside: string,
+): Report | undefined {
+  if (junit === undefined) return undefined;
+  const file = resolve(junit);
+  return {
+    file,
+    shown: posix(relative(root, file)),
+    movedAside: moveAside(file, aside),
+  };
+}
+
 /** Where the run is, what it is called and where its record goes. */
 async function prepare(args: RunArgs, clock: Clock) {
   const root = consumerRoot();
   const settings = readSettings(root);
-  const cwd = process.cwd();
-  const cwdRel = posix(relative(root, cwd)) || ".";
-  const hash = commandHash(args.command, cwdRel);
-  const program = basename(args.command[0] as string).replace(
-    /\.(exe|cmd|bat)$/i,
-    "",
-  );
+  const cwd = posix(relative(root, process.cwd())) || ".";
+  const hash = commandHash(args.command, cwd);
+  const program = basename(args.command[0] as string);
   const tree = await identityOrFail(root);
   const repository = await repositoryName(root);
   const dir = join(settings.store, repository, tree, hash);
   const { id, fd } = reserve(dir, clock);
-  let report: Report | undefined;
-  if (args.junit !== undefined) {
-    const file = resolve(cwd, args.junit);
-    report = {
-      file,
-      shown: posix(relative(root, file)),
-      movedAside: moveAside(file, join(dir, `${id}.previous-report`)),
-    };
-  }
+  const aside = join(dir, `${id}.previous-report`);
   const command = {
     hash,
-    display: args.name ?? `${program} ${hash}`,
+    display: args.name ?? `${program.replace(/\.(exe|cmd|bat)$/i, "")} ${hash}`,
     argv: args.command,
-    cwd: cwdRel,
-  };
-  return {
-    root,
-    settings,
     cwd,
-    tree,
-    repository,
-    dir,
-    id,
-    fd,
-    report,
-    command,
   };
+  const report = prepareReport(args.junit, root, aside);
+  return { root, settings, tree, repository, dir, id, fd, report, command };
+}
+
+/** Run the command under its deadline, keeping its output in arrival order. */
+async function execute(
+  command: string[],
+  timeoutMinutes: number,
+  clock: Clock,
+) {
+  let output = "";
+  const startedMs = clock.now();
+  const result: RunResult = await run(command, {
+    env: process.env,
+    timeoutSec: timeoutMinutes * 60,
+    onOutput: (_stream, chunk) => {
+      output += chunk;
+    },
+  });
+  return { result, output, startedMs, endedMs: clock.now() };
+}
+
+function reportOf(
+  report: Report | undefined,
+  startedMs: number,
+): ReportSummary | null {
+  if (!report) return null;
+  const read = readReport(report.file, report.shown, startedMs);
+  return report.movedAside ? { ...read, movedAside: report.movedAside } : read;
+}
+
+/** Write the record beside its output, whole or not at all. */
+function writeRecord(dir: string, record: EvidenceRecord): string {
+  const path = join(dir, `${record.id}.json`);
+  writeFileSync(`${path}.tmp`, `${JSON.stringify(record, null, 2)}\n`);
+  renameSync(`${path}.tmp`, path);
+  return path;
 }
 
 async function runCommand(args: RunArgs, clock: Clock): Promise<number> {
   const p = await prepare(args, clock);
   const timeoutMinutes = args.timeoutMinutes ?? p.settings.timeoutMinutes;
-  let output = "";
-  const startedMs = clock.now();
-  const result = await run(args.command, {
-    cwd: p.cwd,
-    env: process.env,
-    timeoutSec: timeoutMinutes * 60,
-    onOutput: (_stream, text) => {
-      output += text;
-    },
-  });
-  const endedMs = clock.now();
-  writeFileSync(p.fd, output);
+  const ran = await execute(args.command, timeoutMinutes, clock);
+  writeFileSync(p.fd, ran.output);
   closeSync(p.fd);
   const treeAfter = await identityOrFail(p.root);
-  const junit = p.report
-    ? {
-        ...readReport(p.report.file, p.report.shown, startedMs),
-        ...(p.report.movedAside ? { movedAside: p.report.movedAside } : {}),
-      }
-    : null;
-  const ran = baseOutcome(result);
-  const expectFail =
-    args.expectFail && judgeExpectation(args.expectFail, ran, junit);
-  const expected = expectFail?.met ? "seen-to-fail" : "expectation-failed";
+  const junit = reportOf(p.report, ran.startedMs);
   const record: EvidenceRecord = {
     schema: "jig-evidence/v1",
     id: p.id,
@@ -467,26 +483,18 @@ async function runCommand(args: RunArgs, clock: Clock): Promise<number> {
     treeChanged: p.tree !== treeAfter,
     scope: SCOPE,
     command: p.command,
-    startedAt: new Date(startedMs).toISOString(),
-    endedAt: new Date(endedMs).toISOString(),
-    durationMs: endedMs - startedMs,
+    startedAt: new Date(ran.startedMs).toISOString(),
+    endedAt: new Date(ran.endedMs).toISOString(),
+    durationMs: ran.endedMs - ran.startedMs,
     timeoutMinutes,
-    // No exit code where the child did not exit on its own: it never
-    // started, was ended at the deadline or for its output, or by a signal.
-    exit:
-      ran === "pass" || (ran === "fail" && !result.signal) ? result.code : null,
-    signal: result.signal ?? null,
-    outcome: expectFail ? expected : ran,
-    expectFail,
+    ...settle(ran.result, args.expectFail, junit),
     junit,
     output: {
-      ...headAndTail(output, p.settings.outputLines),
+      ...headAndTail(ran.output, p.settings.outputLines),
       file: `${p.id}.log`,
     },
   };
-  const path = join(p.dir, `${p.id}.json`);
-  writeFileSync(`${path}.tmp`, `${JSON.stringify(record, null, 2)}\n`);
-  renameSync(`${path}.tmp`, path);
+  const path = writeRecord(p.dir, record);
   console.log(
     args.json ? JSON.stringify(record, null, 2) : formatBlock(record, path),
   );
@@ -495,21 +503,10 @@ async function runCommand(args: RunArgs, clock: Clock): Promise<number> {
 
 // ---------------------------------------------------------------- lookup
 
-async function listRecords(args: ListArgs): Promise<number> {
-  const root = consumerRoot();
-  const settings = readSettings(root);
-  const tree = args.tree ?? (await identityOrFail(root));
-  const repository = await repositoryName(root);
-  let found: ReturnType<typeof lookup>;
-  try {
-    found = lookup(join(settings.store, repository), tree, {
-      ...(args.command ? { command: args.command } : {}),
-      all: args.all,
-    });
-  } catch (error) {
-    fail(2, `evidence: ${message(error)}`);
-  }
-  if (args.json)
+type Found = ReturnType<typeof lookup>;
+
+function print(found: Found, tree: string, json: boolean): void {
+  if (json)
     console.log(
       JSON.stringify(
         found.map((f) => ({ ...f.record, path: f.path })),
@@ -521,15 +518,36 @@ async function listRecords(args: ListArgs): Promise<number> {
     console.log(`no evidence record for tree ${tree.slice(0, 7)}`);
   else
     console.log(found.map((f) => formatBlock(f.record, f.path)).join("\n\n"));
+}
+
+async function listRecords(args: ListArgs): Promise<number> {
+  const root = consumerRoot();
+  const settings = readSettings(root);
+  const tree = args.tree ?? (await identityOrFail(root));
+  const dir = join(settings.store, await repositoryName(root));
+  let found: Found;
+  try {
+    found = lookup(dir, tree, { command: args.command ?? "", all: args.all });
+  } catch (error) {
+    fail(2, `evidence: ${message(error)}`);
+  }
+  print(found, tree, args.json);
   return 0;
 }
 
+const VERBS: Record<string, (rest: string[], clock: Clock) => Promise<number>> =
+  {
+    run: (rest, clock) => runCommand(parseRunArgs(rest), clock),
+    list: (rest) => listRecords(parseListArgs(rest)),
+  };
+
 async function main(argv: string[], clock: Clock): Promise<number> {
-  const [verb, ...rest] = argv;
-  if (verb === "run") return runCommand(parseRunArgs(rest), clock);
-  if (verb === "list") return listRecords(parseListArgs(rest));
+  const [verb = "", ...rest] = argv;
   if (verb === "-h" || verb === "--help") fail(0, ...USAGE);
-  fail(2, `evidence: unknown command ${verb ?? "(none)"}`, ...USAGE);
+  const handler = Object.hasOwn(VERBS, verb) ? VERBS[verb] : undefined;
+  if (!handler)
+    fail(2, `evidence: unknown command ${verb || "(none)"}`, ...USAGE);
+  return handler(rest, clock);
 }
 
 if (import.meta.main)
