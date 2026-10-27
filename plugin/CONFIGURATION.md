@@ -22,7 +22,7 @@ Contents: [the file](#the-file) ·
 [`gates`](#gates) · [`review`](#review) · [`repository`](#repository) ·
 [`pull_requests`](#pull_requests) · [`drive`](#drive) · [`ci`](#ci) ·
 [`issue_tracker`](#issue_tracker) · [`do_item`](#do_item) ·
-[`work_batch`](#work_batch) ·
+[`specs`](#specs) · [`work_batch`](#work_batch) ·
 [`fleet_health`](#fleet_health) ·
 [`reflection`](#reflection) · [`changelog`](#changelog) ·
 [`code_stats`](#code_stats) · [`gc`](#gc) ·
@@ -47,7 +47,7 @@ Contents: [the file](#the-file) ·
   was written to change, so it is an error. They are `pull_requests`,
   `issue_tracker.states` (keys are canonical states),
   `issue_tracker.labels` (keys are label roles), `resolve_conflicts`
-  (including each `generated` entry), `reflection` and `code_stats`
+  (including each `generated` entry), `reflection`, `specs` and `code_stats`
   (including each `areas` entry, and `kinds`, whose keys are kinds). In `review.taxonomy` every
   key other than `provenance_label` and `epic_label` is read as a list of
   distinct, nonempty strings, so an unrelated key there is an error too.
@@ -118,8 +118,8 @@ Command-line flags, where a script has them, override all three.
   all three layers.
 - **Fields only a repository sets.** `gates.command`,
   `repository.base_branch`, `issue_tracker.team`, `review.repo_slug`,
-  `review.repo_label`, `ci.required_checks`, every `changelog` field and
-  every `code_stats` field describe one repository. Set in the user file
+  `review.repo_label`, `ci.required_checks`, every `changelog`, `code_stats`
+  and `specs` field describe one repository. Set in the user file
   they would apply to every repository on the machine, so the user file
   refuses them with an error naming the field. An environment variable may still override them for one run,
   except the `changelog` fields, which the `changelog` skill reads from the
@@ -362,6 +362,20 @@ same), rather than running without the repository's routing and gates.
 
 The routing order and the gates are explained in
 [do-item's SKILL.md](skills/do-item/SKILL.md).
+
+## `specs`
+
+Where a repository keeps the requirements and acceptance criteria its work
+items link, read by the spec resolver (`shared/spec/resolve.ts`), which
+`do-item` runs after it fetches an item. The resolver reads, never writes,
+through one adapter per layout; the `body` adapter, which reads the item's
+own body, is the one built so far. Every field is repository-only, and an
+unknown key is refused.
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `specs.adapters` | list of adapter names, in order: `body` | Every adapter whose layout the repository holds, then `body` | do-item | Orders or restricts the adapters: only those listed run, in this order, and the first whose path patterns claim a referenced path reads it. Leaving `body` out stops the item's own sections from being read |
+| `specs.body_section` | heading text, without the `#` | `Spec` | do-item | The heading of the body section that names the item's spec, by link or path, and may carry its requirements, criteria and tasks inline. Matched at any heading level, ignoring case and a trailing colon. `Requirements` and `Acceptance criteria` sections are read beside it |
 
 ## `work_batch`
 
@@ -923,4 +937,7 @@ code_stats:
     test: ["scripts/smoke-*.sh"]
   modules: ["apps/*", "packages/*"]      # default: from the workspace manifests
   classify_command: "<your classify command>"   # paths on stdin, JSON lines on stdout
+specs:
+  adapters: [body]                       # default: every layout present, then body
+  body_section: Spec
 ```

@@ -65,6 +65,12 @@ import {
   WORK_BATCH_FIELDS,
   parseWorkBatchSection,
 } from "../../work-batch/scripts/lib/policy.ts";
+import {
+  DEFAULT_BODY_SECTION,
+  parseSpecsConfig,
+  SPECS_FIELDS,
+} from "../../../shared/spec/config.ts";
+import { ADAPTERS } from "../../../shared/spec/registry.ts";
 import { runScript } from "./helpers.ts";
 
 const plugin = join(import.meta.dir, "..", "..", "..");
@@ -162,6 +168,12 @@ describe("CONFIGURATION.md", () => {
     expect(() => parseTrackerConfig(example)).not.toThrow();
     expect(() => parseReflection(example.reflection, repoRoot)).not.toThrow();
     expect(parseChangelogSection(example.changelog)).not.toBeNull();
+    expect(() =>
+      parseSpecsConfig(
+        example.specs,
+        ADAPTERS.map((a) => a.name),
+      ),
+    ).not.toThrow();
     const set = (path: string) =>
       path
         .split(".")
@@ -201,6 +213,12 @@ describe("the reading skills", () => {
     expect(field("reflection.store")?.values).toEqual([...STORE_KINDS]);
     expect(field("reflection.mode")?.values).toEqual([...MODES]);
     expect(field("changelog.format")?.values).toEqual([...FORMAT_IDS]);
+    const adapters = field("specs.adapters")?.items;
+    expect(
+      typeof adapters === "object" && "values" in adapters
+        ? adapters.values
+        : null,
+    ).toEqual(ADAPTERS.map((a) => a.name));
   });
 
   test("accept the GitHub adapter's value sets the schema lists", () => {
@@ -265,6 +283,7 @@ describe("the reading skills", () => {
       "work_batch.ranking.shared_area_label": DEFAULT_RANKING.sharedAreaLabel,
       "resolve_conflicts.hotspot_min_merges": DEFAULT_HOTSPOT_MIN_MERGES,
       "review.scanner_apps": DEFAULT_SCANNER_APPS,
+      "specs.body_section": DEFAULT_BODY_SECTION,
     });
   });
 
@@ -318,6 +337,7 @@ describe("the reading skills", () => {
     expect(under("issue_tracker.labels").sort()).toEqual(
       [...LABEL_ROLES].sort(),
     );
+    expect(under("specs").sort()).toEqual([...SPECS_FIELDS].sort());
     expect(under("work_batch.ranking").sort()).toEqual(
       [...RANKING_FIELDS].sort(),
     );
@@ -424,6 +444,23 @@ describe("the schema's own format", () => {
     );
     expect(checkConfig({ a: { b: ["1"] } }, nested)).toEqual([]);
     expect(checkConfig({ a: { b: ["2"] } }, nested).map((f) => f.id)).toEqual([
+      "type:a.b",
+    ]);
+  });
+  test("a nested enum lists its values, and only an enum does", () => {
+    expect(() =>
+      parseSchema(withField({ type: "list", items: { type: "enum" } })),
+    ).toThrow("a list needs items");
+    expect(() =>
+      parseSchema(
+        withField({ type: "list", items: { type: "string", values: ["a"] } }),
+      ),
+    ).toThrow("a list needs items");
+    const nested = parseSchema(
+      withField({ type: "list", items: { type: "enum", values: ["a"] } }),
+    );
+    expect(checkConfig({ a: { b: ["a"] } }, nested)).toEqual([]);
+    expect(checkConfig({ a: { b: ["z"] } }, nested).map((f) => f.id)).toEqual([
       "type:a.b",
     ]);
   });

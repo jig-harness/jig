@@ -35,6 +35,8 @@ export type TypeSpec =
       items?: Items;
       values_type?: TypeSpec;
       pattern?: string;
+      /** enum: the allowed values. */
+      values?: string[];
     };
 
 /** A list's entries: one type for all, or mappings with a type per key. */
@@ -107,7 +109,13 @@ function stringList(v: unknown): v is string[] {
 
 type Entry = Record<string, unknown>;
 
-const SPEC_KEYS = new Set(["type", "items", "values_type", "pattern"]);
+const SPEC_KEYS = new Set([
+  "type",
+  "items",
+  "values_type",
+  "pattern",
+  "values",
+]);
 
 /** Whether `spec` is a type name, or a list or map spec with typed entries. */
 function validSpec(spec: unknown): boolean {
@@ -117,6 +125,10 @@ function validSpec(spec: unknown): boolean {
   if (spec.type === "list" ? !validItems(spec.items) : spec.items !== undefined)
     return false;
   if (!validSpecPattern(spec.type, spec.pattern)) return false;
+  if (
+    spec.type === "enum" ? !stringList(spec.values) : spec.values !== undefined
+  )
+    return false;
   return spec.values_type === undefined
     ? true
     : spec.type === "map" && validSpec(spec.values_type);
