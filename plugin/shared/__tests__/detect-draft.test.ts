@@ -3,22 +3,21 @@
  * what it writes always parses back into a configuration the schema accepts.
  */
 import { describe, expect, test } from "bun:test";
-import { load } from "../../../shared/yaml.ts";
 import {
-  draftConfig,
-  type Suggestion,
-  suggestionId,
-} from "../scripts/lib/draft.ts";
-import { checkConfig, loadSchema, parseSchema } from "../scripts/lib/schema.ts";
+  checkConfig,
+  loadSchema,
+  parseSchema,
+} from "../../skills/audit/scripts/lib/schema.ts";
+import { draftConfig, type Fact } from "../detect.ts";
+import { load } from "../yaml.ts";
 
+/** The audit's configuration schema, the one a draft is checked against. */
 const schema = loadSchema();
 
-const suggest = (field: string, value: unknown, key?: string): Suggestion => ({
+const fact = (field: string, value: unknown): Fact => ({
   field,
   value,
-  evidence: `seen: ${field}`,
-  message: `set ${field}`,
-  ...(key === undefined ? {} : { key }),
+  evidence: [`seen: ${field}`],
 });
 
 /** Parse a draft back and check it as the audit checks a repository's file. */
@@ -32,9 +31,9 @@ describe("the starter configuration", () => {
   test("nests each field under its section with its evidence above it", () => {
     const draft = draftConfig(
       [
-        suggest("review.bots", ["a-review"], "a-review"),
-        suggest("gates.command", "make check"),
-        suggest("review.bots", ["b-review", "a-review"], "b-review"),
+        fact("review.bots", ["a-review"]),
+        fact("gates.command", "make check"),
+        fact("review.bots", ["b-review", "a-review"]),
       ],
       schema,
       null,
@@ -65,10 +64,7 @@ gates:
       "ai-review[bot]",
     ];
     const draft = draftConfig(
-      [
-        suggest("review.bots", values),
-        suggest("repository.base_branch", "1.10"),
-      ],
+      [fact("review.bots", values), fact("repository.base_branch", "1.10")],
       schema,
       null,
     );
@@ -79,18 +75,18 @@ gates:
   });
 
   test("leaves out defaults, unknown fields and fields the file already sets", () => {
-    const suggestions = [
-      suggest("pull_requests.stacking", "none"),
-      suggest("pull_requests.mark_ready", 1),
-      suggest("pull_requests.issue_link", "refs"),
-      suggest("gates.comand", "make check"),
-      suggest("gates.command", "make check"),
+    const facts = [
+      fact("pull_requests.stacking", "none"),
+      fact("pull_requests.mark_ready", 1),
+      fact("pull_requests.issue_link", "refs"),
+      fact("gates.comand", "make check"),
+      fact("gates.command", "make check"),
     ];
-    expect(reread(draftConfig(suggestions, schema, null))).toEqual({
+    expect(reread(draftConfig(facts, schema, null))).toEqual({
       pull_requests: { issue_link: "refs" },
       gates: { command: "make check" },
     });
-    const additions = draftConfig(suggestions, schema, {
+    const additions = draftConfig(facts, schema, {
       gates: { command: "bun run gates" },
     });
     expect(additions).toBe(
@@ -99,7 +95,7 @@ gates:
     // An empty value sets nothing, so the draft still offers the field, as a
     // replacement of the null line: a second `command:` would be a duplicate.
     const replacing =
-      draftConfig([suggest("gates.command", "make check")], schema, {
+      draftConfig([fact("gates.command", "make check")], schema, {
         gates: { command: null },
       }) ?? "";
     expect(replacing).toContain(
@@ -108,12 +104,12 @@ gates:
     expect(load(replacing)).toEqual({ gates: { command: "make check" } });
     // A field the file does not have at all is an addition, with no note.
     expect(
-      draftConfig([suggest("gates.command", "make check")], schema, {
+      draftConfig([fact("gates.command", "make check")], schema, {
         gates: {},
       }),
     ).not.toContain("replace that line");
     expect(
-      draftConfig([suggest("pull_requests.stacking", "none")], schema, null),
+      draftConfig([fact("pull_requests.stacking", "none")], schema, null),
     ).toBeUndefined();
   });
 
@@ -130,8 +126,8 @@ gates:
     const additions =
       draftConfig(
         [
-          suggest("gates.command", "make check"),
-          suggest("review.bots", ["example-review[bot]"]),
+          fact("gates.command", "make check"),
+          fact("review.bots", ["example-review[bot]"]),
         ],
         schema,
         { review: { sticky_marker: "x" } },
@@ -144,29 +140,6 @@ gates:
     expect(load(additions)).toEqual({
       review: { bots: ["example-review[bot]"] },
       gates: { command: "make check" },
-    });
-  });
-
-  test("a value that answers another finding takes that finding's id", () => {
-    const stacking: Suggestion = {
-      ...suggest("pull_requests.stacking", "branch"),
-      id: "contradiction:pull_requests.stacking",
-    };
-    expect(suggestionId(stacking)).toBe("contradiction:pull_requests.stacking");
-    expect(suggestionId(suggest("review.bots", ["a"], "a"))).toBe(
-      "suggestion:review.bots:a",
-    );
-    expect(
-      reread(
-        draftConfig(
-          [stacking, suggest("review.repo_slug", "example/web")],
-          schema,
-          null,
-        ),
-      ),
-    ).toEqual({
-      pull_requests: { stacking: "branch" },
-      review: { repo_slug: "example/web" },
     });
   });
 });

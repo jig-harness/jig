@@ -1,7 +1,7 @@
 /**
- * The starter configuration `config-fit.ts --draft` prints: each value the
- * repository already implies, nested under its section, with the fact it
- * came from as a comment above it.
+ * A starter configuration from detected facts: each value the repository
+ * already implies, nested under its section, with the evidence it came from
+ * as comments above it.
  *
  * A repository without `.config/jig.yaml` gets a whole file; one with a file
  * gets only the fields it does not set yet. A value equal to the field's
@@ -11,39 +11,19 @@
  * every skill refuses. A field the file sets to null is offered as a
  * replacement of that line, for the same reason.
  */
-import { isMapping } from "../../../../shared/config-layers.ts";
-import { at, type Field, type Schema } from "./schema.ts";
+import { isMapping, valueAt } from "../config-layers.ts";
+import type { Fact } from "./fact.ts";
 
-/** A value the repository implies for one field, and the fact that shows it. */
-export interface Suggestion {
-  /** The dotted field, such as `review.bots`. */
-  field: string;
-  /** The value to set. A list's suggestions for one field add up. */
-  value: unknown;
-  /** The observable fact the value comes from. */
-  evidence: string;
-  /** What the audit reports. */
-  message: string;
-  /** Tells several suggestions for one field apart in their finding ids. */
-  key?: string;
-  /**
-   * The finding's id when the value answers a finding of another kind, such
-   * as a contradiction the unset field leaves open; otherwise the id is
-   * `suggestion:<field>[:<key>]`.
-   */
-  id?: string;
+/** What the draft reads of the configuration schema: each field's path and default. */
+interface DraftSchema {
+  fields: { path: string; default?: unknown }[];
 }
 
-/** The stable id of a suggestion's finding. */
-export function suggestionId(s: Suggestion): string {
-  return (
-    s.id ?? `suggestion:${s.field}${s.key === undefined ? "" : `:${s.key}`}`
-  );
-}
+type DraftField = DraftSchema["fields"][number];
 
 /** One field of the draft: its value and every fact behind it. */
 interface Entry {
-  field: Field;
+  field: DraftField;
   value: unknown;
   evidence: string[];
   /** The file already has this key, set to null: the line replaces it. */
@@ -86,40 +66,40 @@ function flow(value: unknown): string {
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
 
-/** Add one suggestion to its field's entry: a list's values add up, distinct. */
-function merge(entry: Entry, s: Suggestion): void {
-  entry.evidence.push(s.evidence);
+/** Add one fact to its field's entry: a list's values add up, distinct. */
+function merge(entry: Entry, fact: Fact): void {
+  entry.evidence.push(...fact.evidence);
   const current = entry.value;
-  if (Array.isArray(current) && Array.isArray(s.value))
+  if (Array.isArray(current) && Array.isArray(fact.value))
     entry.value = [
       ...current,
-      ...s.value.filter((v) => !current.some((e) => same(e, v))),
+      ...fact.value.filter((v) => !current.some((e) => same(e, v))),
     ];
 }
 
 /**
- * The fields the draft writes, in the order first suggested: known to the
+ * The fields the draft writes, in the order first found: known to the
  * schema, not set by the repository's file (an empty value, null, sets
  * nothing), and not equal to the default.
  */
 function entries(
-  suggestions: Suggestion[],
-  schema: Schema,
+  facts: Fact[],
+  schema: DraftSchema,
   existing: Record<string, unknown>,
 ): Entry[] {
   const byPath = new Map(schema.fields.map((f) => [f.path, f]));
   const found = new Map<string, Entry>();
-  for (const s of suggestions) {
-    const field = byPath.get(s.field);
-    const current = at(existing, s.field);
+  for (const fact of facts) {
+    const field = byPath.get(fact.field);
+    const current = valueAt(existing, fact.field);
     if (field === undefined || current != null) continue;
-    const entry = found.get(s.field);
-    if (entry) merge(entry, s);
+    const entry = found.get(fact.field);
+    if (entry) merge(entry, fact);
     else
-      found.set(s.field, {
+      found.set(fact.field, {
         field,
-        value: s.value,
-        evidence: [s.evidence],
+        value: fact.value,
+        evidence: [...fact.evidence],
         replaces: current === null,
       });
   }
@@ -163,16 +143,15 @@ function lines(node: Tree, indent = ""): string[] {
 }
 
 /**
- * The starter configuration for `suggestions`, or undefined when there is
- * nothing to write. `existing` is the repository's file, or null when it has
- * none.
+ * The starter configuration for `facts`, or undefined when there is nothing
+ * to write. `existing` is the repository's file, or null when it has none.
  */
 export function draftConfig(
-  suggestions: Suggestion[],
-  schema: Schema,
+  facts: Fact[],
+  schema: DraftSchema,
   existing: Record<string, unknown> | null,
 ): string | undefined {
-  const fields = entries(suggestions, schema, existing ?? {});
+  const fields = entries(facts, schema, existing ?? {});
   if (fields.length === 0) return undefined;
   const body = lines(tree(fields));
   if (existing === null)

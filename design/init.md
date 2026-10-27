@@ -13,10 +13,11 @@ built, one command in a fresh clone leaves behind a checked configuration
 ready to commit and says what to run next; the audit stays the measurement it
 is.
 
-This is the design of [plan.md](plan.md) item 26. Nothing of it is built. The
-detection it rests on exists inside the audit's configuration-fit script
-(`plugin/skills/audit/scripts/config-fit.ts`, with the draft in its `lib/draft.ts`),
-which prints a starter configuration and never writes one.
+This is the design of [plan.md](plan.md) item 26. The shared detector it
+rests on (step 1 of the build order) is built:
+[`plugin/shared/detect.ts`](../plugin/shared/detect.ts), which the audit's
+configuration fit calls to print a starter configuration, never writing one.
+The skill itself, its pointers and the project-level enablement remain open.
 
 ## Where it ends and the audit begins
 
@@ -36,16 +37,22 @@ The boundary rule: **init derives and writes the [consumer overlay](../GLOSSARY.
 
 ### One detector, shared
 
-The detection in `config-fit.ts` (gate command from the package scripts or
-the instruction file, review bots from recent pull-request comments, the
-issue-key prefix from branch names and commit subjects, the change-area
-catalog, the changelog file, the label taxonomy, the integration branch, the
-title convention) moves to `plugin/shared/detect.ts` with its tests, and
-both skills call it. Each fact comes back with its evidence
-(`{field, value, evidence: [path or command]}`), the shape the audit's
-report source already uses for its stack table. Moved, not copied
-([plugin/AGENTS.md](../plugin/AGENTS.md)): a detector that lives twice drifts
-the day one skill learns a new lockfile.
+The detection lives in `plugin/shared/detect.ts` with its tests, and both
+skills call it: the gate command (a gate script CI runs, a package script
+with the lockfile's package manager, or a make target), review bots from
+recent pull-request reviews and comments, the repository the forge names,
+stacked open pull requests, the issue-key prefix from pull-request titles,
+branch names and commit subjects, the change-area catalog, the integration
+branch, and the starter configuration drafted from them. Each fact comes back
+with its evidence (`{field, value, evidence: [observation]}`, each
+observation naming the path or command it was read from), the shape the
+audit's report source already uses for its stack table. The audit keeps only
+what it says about a fact: whether the configuration contradicts it, and the
+finding that offers it. The changelog file, the label taxonomy and the title
+convention are not derived yet; they join the detector with the skill
+(step 2), so the audit's configuration fit suggests them too. Moved, not
+copied ([plugin/AGENTS.md](../plugin/AGENTS.md)): a detector that lives twice
+drifts the day one skill learns a new lockfile.
 
 ### The run
 
@@ -141,7 +148,8 @@ Init reads every field and adds none of its own.
    unchanged and its tests prove it.
 2. **The skill.** `plugin/skills/init/`: `SKILL.md`, `README.md`,
    `scripts/init.ts` (derive, ask, write, check, and refresh from the
-   schema's `since` entries), tests that run it from a
+   schema's `since` entries), the changelog file, label taxonomy and title
+   convention added to the detector, tests that run it from a
    plugin copy against fixture repositories with and without a configuration,
    the lifecycle-map row, the README table row.
 3. **The pointers.** Adoption pages, setup's next step, the audit's remedy
