@@ -51,3 +51,7 @@ Orca Mobile show: to In progress when it starts the issue, and to In review,
 with the pull request linked, once the pull request opens. Nothing turns
 this on and nothing in another runtime changes: outside Orca it makes no
 call, and an Orca call that fails only warns.
+
+Orca's own Linear skill (`orca-linear`) has a completion flow of its own.
+Inside this skill the ticket's comments and transitions stay with `do-item`,
+so that flow is not run beside it.

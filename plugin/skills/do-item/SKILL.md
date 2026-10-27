@@ -841,6 +841,12 @@ routing below remain **exact**.
    bun "${CLAUDE_SKILL_DIR}/scripts/orca-board.ts" in-review --pr <PR>
    ```
 
+   Orca also ships its own Linear skill (`orca-linear`) whose completion
+   flow attaches the pull request, posts one comment and moves the ticket.
+   This skill already owns the ticket's transitions and comments, so do not
+   run that flow as well: it would post a second comment and move the ticket
+   twice.
+
    **Arm the drive (terminal step, immediately after the PR opens):**
 
    First capture the `pickupId` retained from Step 3.5 with the command
