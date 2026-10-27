@@ -335,6 +335,14 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.87.1] - 2026-10-27
+
+### Changed
+
+- `/jig:do-item` tells an agent in an Orca worktree not to run Orca's own
+  Linear completion flow beside it, which would post a second comment and
+  move the ticket twice.
+
 ## [0.87.0] - 2026-10-26
 
 ### Added
@@ -3723,7 +3731,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.87.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.87.1...HEAD
+[0.87.1]: https://github.com/jig-harness/jig/compare/v0.87.0...v0.87.1
 [0.87.0]: https://github.com/jig-harness/jig/compare/v0.86.0...v0.87.0
 [0.86.0]: https://github.com/jig-harness/jig/compare/v0.85.3...v0.86.0
 [0.85.3]: https://github.com/jig-harness/jig/compare/v0.85.2...v0.85.3
