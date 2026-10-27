@@ -530,39 +530,38 @@ converge until a round fixes it or records why it stands.
 
 `do-item` chooses which agent implements an issue, from the change-area
 catalog, the issue's labels and its title (`determine_agent.ts`), but
-nothing chooses the model or the effort, and nothing records why: a bug fix
-in one file and an epic's architecture spike get the model the machine was
-configured with once, or the one a person picks by hand. The launcher's
-Orca provider hands the start to the person by default, and starts an
-agent only where its settings name one; the Herdr provider starts `claude`
-unless its settings name another
-([tools/launcher](../tools/launcher/README.md)).
-[design/agent-routing.md](agent-routing.md) has how it works: a route
-(agent, model tier, effort) derived from the work type (item 27), the size
-and flag labels and the catalog's review risk, by rules as data with
-defaults a repository overrides; raises that only move effort up and carry
-into the tier past the highest effort; the strictest value on every
-conflict; the reason and the source on the pull request, where the drive's
-loop-cost report joins them to the outcome; a person's choice always
-winning; no model asked to route. What it will build, one pull request per
-step, after item 27's type derivation:
+nothing chooses the model or the effort that agent runs on, and nothing
+records why: a bug fix in one file and an epic's architecture spike are
+implemented on whatever model the session runs, the one the launcher's
+settings or a person picked. [design/agent-routing.md](agent-routing.md)
+has how it works, decided in
+[ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md): a
+route (agent, model tier, effort) for the implementer, derived from the
+work type (item 27), the size and flag labels and the catalog's flags and
+mandatory reviews, by rules as data with defaults a repository overrides;
+raises that only move the effort up; the strictest value on every
+conflict; a pinned agent keeping its pin; the reason, the source and
+whether it was applied on the pull request, where the drive's loop-cost
+report joins them to the outcome; a person's choice always winning; opt-in
+until a repository declares its rules; no model asked to route. What it
+will build, one pull request per step, after item 27's type derivation:
 
 - **The derivation**: `determine_route.ts`, the `routing` section and its
   defaults as data with their tests, in CONFIGURATION.md; `do-item` prints
   the route and changes nothing yet.
-- **`do-item` reads the route**: the delegation forwards the model and
-  effort where the runtime takes them, the `Route:` line in the pull
-  request's description, the drive armed with the route's pass.
-- **The launcher**: `--runtime` on the script; Herdr starts with the route,
-  Orca suggests it; the machine's settings win part by part.
-- **The join and the check**: the loop-cost report prints the route; M0's
-  metadata check reads `routing.models`.
-- **The audit criterion** at M0 Standard.
+- **The record**: the `## Route` section written and parsed from
+  `plugin/shared/`, and the loop-cost report reading it.
+- **M0's declaration point**: the policy, the criterion and the loader's
+  families check.
+- **`do-item` forwards**, behind a declared `routing` section: the model
+  and effort to the subagent tool, the launcher's `route:` prompt line
+  honoured, the pinned agent kept.
+- **`work-batch` and the audit criterion** at M0 Standard.
 
-Done when a flagged bug reaches its pull request on a higher effort than an
-unflagged one with the `Route:` line saying why, the launcher starts or
-suggests the route for a routed issue, and a loop-cost report shows the
-route beside the verdict.
+Done when a flagged bug is delegated on a higher effort than an unflagged
+one with the `## Route` section saying why, a `route: yours` prompt
+delegates with nothing forwarded, and a loop-cost report shows the route
+beside the rounds.
 
 ## Later
 

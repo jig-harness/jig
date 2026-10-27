@@ -2,104 +2,126 @@
 
 **What problem this solves.** `do-item` chooses which agent implements an
 issue, from the change-area catalog, the issue's labels and its title, but
-nothing chooses the model or the reasoning effort, and nothing records why a
-choice was made. A one-line copy fix and an epic's architecture spike run on
-whatever model and effort the machine was configured with once: the
-workspace launcher's Herdr provider starts the agent its settings name, its
-Orca provider hands the start to the person, and `do-item`'s delegation
-inherits the orchestrating session's model. The policy that says how to
-choose exists ([M0's model routing policy](../modules/M0-instruction-architecture/reference/model-routing-policy.md):
+nothing chooses the model or the reasoning effort that agent runs on, and
+nothing records why a choice was made. A one-line copy fix and an epic's
+architecture spike are implemented on whatever model the session happens to
+run: the workspace launcher's Herdr provider starts the agent its settings
+name, its Orca provider hands the start to the person, and `do-item`'s
+delegation inherits the orchestrating session's model. The policy that says
+how to choose exists
+([M0's model routing policy](../modules/M0-instruction-architecture/reference/model-routing-policy.md):
 the tiers, the effort rule, the judgment-tier admission test), but it is
-prose a person applies by hand. With this built, every pickup, launch and
-drive pass gets one [route](../GLOSSARY.md): an agent, a
+prose a person applies by hand. With this built, the implementer of every
+item picked up gets one [route](../GLOSSARY.md): an agent, a
 [model tier](../GLOSSARY.md) and an effort, derived from facts the
-repository already states, with the reason written where the outcome can be
-checked against it, and a person's choice always able to override it.
+repository already states by rules it declares, with the reason, the source
+and whether it was applied written on the pull request, where the review
+loop's report joins it to how the work went; and a person's choice always
+wins.
 
-This is the design of [plan.md](plan.md) item 31, a change to `do-item`,
-the [workspace launcher](../tools/launcher/README.md) and `drive-pr`'s arming.
-Nothing of it is built. It builds on the agent selection that exists
+This is the design of [plan.md](plan.md) item 31, a change to `do-item` and
+`work-batch`, with one line added to the
+[workspace launcher](../tools/launcher/README.md)'s first prompt. Nothing
+of it is built. It builds on the agent selection that exists
 (`plugin/skills/do-item/scripts/determine_agent.ts`) and on the
 [work type](../GLOSSARY.md) derivation of item 27
-([work-types.md](work-types.md)), which it waits on.
+([work-types.md](work-types.md)), which it waits on. The standing decision
+is [ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md).
 
 ## The rule
 
-> A route is **derived**, from the item's work type, size and labels, the
-> change-area catalog's flags and review risk for the areas the item seeds,
-> and the repository's routing rules, and never asked when it can be
-> derived. The rules are **data with defaults**: one table per work type
-> gives the base tier and effort, and a closed list of **raises** moves the
-> effort up one step each, never down; a raise past the highest effort moves
-> the **tier** up instead, since an Execution task that keeps needing the
-> maximum effort belongs on the Strategic tier (M0). The **strictest value
-> wins** on every conflict, and an item whose type cannot be derived takes the
-> strictest route. The route carries its **reason** (which rule gave each
-> part) and its **source** (the rules, or the person who overrode them), and
-> both go where the work's outcome lands, so a rule can be moved on a
-> measurement rather than an argument. **A person's choice always wins**,
-> and is recorded as the source.
+> A route is **derived** from the item's work type, size and labels, the
+> change-area catalog's flags and mandatory reviews for the areas the item
+> seeds, and the repository's routing rules, and never asked when it can be
+> derived. The rules are **data with defaults**: one row per work type gives
+> the base tier and effort, and a closed list of **raises** moves the effort
+> up one step each, never down and never past the highest effort. The
+> **strictest value wins** on every conflict, and an item whose type cannot
+> be derived takes the strictest row. The route carries its **reason** (which
+> rule gave each part), its **source** (the rules, or the person who chose
+> instead) and whether it was **applied**, and all three go where the work's
+> outcome lands, so a rule is moved on a measurement rather than an
+> argument. **A person's choice always wins** and is recorded as the source.
+> Routing is **opt-in**: a repository that declares no `routing` section has
+> its routes derived and recorded, and nothing applied.
 
 No model is asked to route. M0's boundary principle, mechanize the routine
 and escalate genuine judgment, admits a judgment pass only downstream of a
-mechanical path that ran and failed to settle the call; with the strictest
-value winning, the rules settle every call, so there is no residue to
-escalate until the route records show a class of item the rules mis-route
-([Left out](#left-out)).
+mechanical path that ran and failed to settle the call, at low volume; with
+the strictest value winning, the rules settle every call, so there is no
+residue to escalate until the route records show a class of item the rules
+mis-route ([Left out](#left-out)).
+
+The route is for the **implementer**: the agent `do-item` delegates to, and
+the fixes that follow the review inside the same pickup. The orchestrating
+session, the scouts, the review tiers and the drive's passes keep the model
+they have today ([Left out](#left-out)).
 
 ## How it works
 
-### The three parts of a route
+### The parts of a route
 
 | Part | Values | Who takes it |
 |---|---|---|
-| `agent` | the repository's agent names, as `determine_agent.ts` prints them today | `do-item`'s delegation (the subagent type); the launcher (the Orca or Herdr agent to start, where its id maps to one) |
-| `tier` | `scout`, `execution`, `strategic`, `judgment` (M0's tiers, as roles) | translated to a runtime's family alias through `routing.models` before any runtime sees it |
-| `effort` | `low`, `medium`, `high`, `max` | translated through `routing.efforts` where a runtime spells a level differently (`max` is `xhigh` in one runtime) |
+| `agent` | the repository's agent names, as `determine_agent.ts` prints them today | `do-item`'s delegation, as the subagent type |
+| `tier` | `execution` or `strategic` (M0's tiers, as roles) | translated to the runtime's [family alias](../GLOSSARY.md) through `routing.models` before the runtime sees it |
+| `effort` | `low`, `medium`, `high`, `max` | translated through `routing.efforts` where a runtime spells a level differently |
 
-The tier is a role and never a model id, as M0 requires: the route's
-translation to an alias is the only place a model name appears, and that
-place is configuration a check can read. The route is therefore one of M0's
-declaration points, "an explicit model setting in that skill's
-configuration": a caller that forwards it to a subagent tool or a `--model`
-flag forwards a declared value and declares nothing new.
+Only two tiers can be routed to. An implementer writes, so the Scout tier,
+which M0 keeps read-only, is refused for it; the Judgment tier is admitted
+per decision layer with a named baseline, never by a rule that fires on
+every item of a type, so it is refused too. The tier is a role and never a
+model id: the translation table is the only place a model name appears, and
+it is configuration a check reads.
 
 ### Derivation
 
 `plugin/skills/do-item/scripts/determine_route.ts` reads the issue JSON
 `get_issue.ts` returns, runs `determine_agent.ts` for the agent and
 `determine_type.ts` (item 27) for the type, and prints
-`{agent, tier, effort, reasons, source}`:
+`{agent, tier, effort, model, reasons, source, applied}`:
 
 1. **The agent**, exactly as today: the catalog area's `agent`, then the
    label map, then the title keywords, then the default. Routing changes
-   nothing here; two routes for one choice would disagree
-   ([work-types.md § Left out](work-types.md#left-out)).
+   nothing here; a second way to pick the agent would disagree with the
+   first ([work-types.md § Left out](work-types.md#left-out)).
 2. **The base**, from the work type's row of `routing.types` (defaults
    below). `unknown` takes the strictest row computed field by field: the
-   highest tier and the highest effort any row names.
-3. **The raises**, each moving the effort up one step, applied in this
-   order so the reasons read the same way every time:
+   highest tier and the highest effort any row names. An unattended run
+   stops on an `unknown` item anyway ([work-types.md](work-types.md#the-depth-table)),
+   so that route is taken only in a session where a person can override it.
+3. **The raises**, each class moving the effort up one step at most once,
+   however many labels of the class the item carries, applied in this order
+   so the reasons read the same way every time:
    - a **flag label** the item carries that is in `routing.raise.flags`; by
      default, every flag the catalog's areas declare under `tracker.flags`
      (a flag is a lasting claim on the record that drives process, so it
      drives this too);
-   - a seeded area with **`reviewRisk: high`**: the areas the item's labels
-     select through `do_item.agents.codearea_areas`;
+   - a seeded area with a **mandatory review**: an area the item's labels
+     select through `do_item.agents.codearea_areas` whose `review.skills`
+     names at least one skill;
    - a **size label** in `routing.raise.sizes` (default `[large]`, the
      taxonomy's largest default size; the labels `batch_sizes` names never
      raise);
-   - the **`hitl` label**.
-4. **The carry**: an effort raised past `max` stays at `max` and moves the
-   tier up one step instead, at most once per route; a route already on
-   `strategic` stays there. Nothing routes to `judgment` by derivation: that
-   tier is admitted per decision layer with a named baseline (M0), never
-   by a rule that fires on every item.
-5. **The translation**: tier to the runtime's family alias through
-   `routing.models.<runtime>`, effort through `routing.efforts.<runtime>`.
-   The runtime is `--runtime <name>` where the caller knows what it will
-   start (the launcher), otherwise derived from the environment the way
-   [`reflect`](../plugin/skills/reflect/README.md) derives the harness.
+   - the human-in-the-loop label, `issue_tracker.labels.hitl`, counted
+     once even where the catalog also lists it as a flag.
+4. **The cap.** An effort raised past `max` stays at `max`; the tier never
+   moves on a raise. M0 says to choose the cheaper tier and let it
+   escalate, and that an Execution task which keeps needing the maximum
+   effort belongs on the Strategic tier: that is a row a person moves with
+   the records showing it, not a step the derivation takes per item.
+5. **The pinned agent.** An agent whose definition pins a model (Claude
+   Code: `model:` in `.claude/agents/<name>.md`, other than `inherit`)
+   keeps its pin: the repository decided that agent's tier explicitly, and
+   M0 puts the decision in that metadata. The route then supplies the
+   effort only, and the reasons say `tier: pinned by agent`.
+6. **The translation**: the tier to the runtime's family alias through
+   `routing.models.<runtime>`, the effort through
+   `routing.efforts.<runtime>`. The runtime is derived from the environment
+   the way [`reflect`](../plugin/skills/reflect/README.md) derives the
+   harness (that reader moves to `plugin/shared/`, since two skills use it).
+   A runtime with no row in `routing.models` gets a route recorded with
+   `applied: no` and the reason `no model for <runtime>`.
 
 Nothing lowers below the type's row: a type lowers depth only where nothing
 else raises it, the same rule as [work types](work-types.md#the-rule). The
@@ -116,121 +138,147 @@ work; a spike's deliverable is a decision, which is novel reasoning):
 | `tier` | `execution` | `execution` | `execution` | `execution` | `strategic` |
 | `effort` | `medium` | `high` | `medium` | `low` | `high` |
 
-The default translation, from [M0's mappings](../modules/M0-instruction-architecture/mappings.md#model-tiers-per-vendor);
-a repository on another runtime adds a row, and a repository whose runtime
-resolves an alias differently overrides one cell:
+The default translation has one row, for the runtime whose aliases
+[M0's mappings](../modules/M0-instruction-architecture/mappings.md#family-aliases-and-pins-in-claude-code)
+record: `claude-code` maps `execution` to `sonnet` and `strategic` to
+`opus`. A repository on another runtime declares that runtime's row with
+the names the runtime takes; until it does, its routes are recorded and not
+applied.
 
-| Runtime | `scout` | `execution` | `strategic` | `judgment` |
-|---|---|---|---|---|
-| `claude-code` | `haiku` | `sonnet` | `opus` | `fable` |
-| `codex` | the vendor's `*-mini` name | the mid-tier name | the flagship name | the flagship's top reasoning tier |
+### Sources and overrides
 
-### Overrides
+A route's `source` is `rules`, `person` or `settings`, and a person's choice
+wins:
 
-A person's choice wins and becomes the route's `source`:
-
-- **In the session.** A person who says which model or effort to use, or
-  who opens the agent tab in Orca and picks them, has routed the item;
-  `do-item` records `source: person` and forwards what they chose. With
-  nobody there, the rules decide: an unattended run never stops to ask
-  for a route, since the strictest value is always a safe answer.
-- **On the machine.** The launcher's `repos.<label>.<provider>` settings
-  (`agent`, `model`, `effort`) stay a standing choice for that repository
-  on that machine and win over the route, part by part: a setting that
-  names only the agent leaves the model and effort to the route.
+- **The person in the session.** The launcher's first prompt carries one
+  line, `route: yours`, when it handed the agent's start to the person (the
+  Orca provider without an `agent` setting): the person chose the session's
+  model and effort for this work. On that line, or when the person says in
+  the session which model or effort to use, `do-item` delegates with no
+  model and no effort, so the implementer inherits the person's choice, and
+  records `source: person`, `applied: inherited`. The source is declared
+  by the prompt and the person, not verified: no runtime exposes the
+  session's model to a script.
+- **The machine's settings.** When the launcher's `repos.<label>.<provider>`
+  settings name a model or an effort, the first prompt says so
+  (`route: settings model=<alias> effort=<level>`), and `do-item` delegates
+  the same way, recording `source: settings`. A setting that names only
+  the agent chooses nothing about the model, and the rules apply.
+- **Nobody there and no line.** The rules decide, and an unattended run
+  never stops to ask for a route: the strictest value is always a safe
+  answer for the work, if not the cheapest.
 - **Never on the item.** A route is not written to the issue as a label or
   a field: labels are lasting claims on the record, and a route is a
-  decision at pickup that the next pickup should take again from the facts
-  as they stand then.
+  decision at pickup that the next pickup takes again from the facts as
+  they stand then.
 
 A repository changes the rules through [configuration](#configuration); that
 is policy, not an override, and the reasons name the rule that fired.
 
 ### Where it is read
 
-- **`do-item`** runs `determine_route.ts` in its agent step and uses the
-  route three times: the delegation passes the model and effort to the
-  subagent tool where the runtime takes them (Claude Code's agent tool
-  takes a model and an effort; elsewhere, the agent's own definition
-  applies, and the route is named in the delegation prompt for the
-  runtime to honour where it can); the pull request's description gets a
-  `Route:` line (agent, tier, effort, source and the reasons) beside the
-  type's body sections, so the route survives the worktree and is read by
-  any harness; and the arming of the drive gives the pass command the
-  route's model and effort, since a pass edits the same areas under
-  review.
-- **The launcher**, for a routed issue whose settings name no agent, model
-  or effort, runs the script with `--runtime` set to the agent it will
-  start, reading `.config/jig.yaml` from the clone the provider already runs
-  git in (on this machine, or on a server's host through the same channel
-  the cache file travels). The Herdr provider starts the agent with the
-  route; the Orca provider keeps handing the start to the person and puts
-  the route in the worktree's comment and the first prompt as the
-  suggestion to pick from, so the person's choice stays the default there.
-  When the clone's rules cannot be read, the launcher does what it does
-  today and says so in the launch message.
-- **`drive-pr`'s loop-cost reports** ([M11](../modules/M11-process-observability/README.md))
-  read the `Route:` line from the description and print it beside the
-  rounds, the speed numbers and the verdict, so one report joins the route
-  to how the work went without a new store. That join is the measurement M0
-  asks for before a tier moves: a person moves a row or adds a raise with
-  the reports that show the current rule costs more per converged pull
-  request, in either direction.
-- **M0's metadata check** reads `routing.models` as a declaration point
-  beside agent and skill front matter: an alias outside the known families
-  is rejected there as it is in a `model:` field.
+- **`do-item`** runs `determine_route.ts` in its agent step. Where the
+  repository declares `routing`, the delegation passes the model and the
+  effort to the subagent tool where the runtime takes them (Claude Code's
+  agent tool takes both); where the runtime's tool takes neither, the
+  implementer runs as today and the route is recorded with `applied: no`
+  and the reason. The route is never put in the delegation prompt: a
+  prompt cannot change a model, and M0 forbids a tier in prose. The fix
+  loop after the review delegates to the same agent with the same route.
+  Where `routing` is absent, the route is derived and recorded with
+  `applied: no (routing not declared)` and nothing is forwarded, so a
+  repository sees what the rules would do before it opts in.
+- **The pull request's description** gets a `## Route` section, one line in
+  a fixed form, written and parsed by `plugin/shared/route.ts` so a
+  reviewer's edit elsewhere in the body leaves it readable:
+  `agent=<name> tier=<tier> effort=<effort> model=<alias or none>
+  source=<rules|person|settings> applied=<yes|no|inherited>`, followed by
+  the reasons. It survives the worktree and is read by any harness, as the
+  type's body sections are.
+- **`work-batch`** takes one route for the batch: the strictest tier and
+  effort across its items, each item's reasons kept. An epic whose issue
+  routes to more than two agents keeps its integrator on the session's
+  model, and each delegate gets the route.
+- **`drive-pr`'s loop-cost report** (`loop-metrics.ts`,
+  [M11](../modules/M11-process-observability/README.md)) adds the
+  description to what it reads of a pull request, and prints the route
+  beside the rounds and threads to convergence, counting only routes with
+  `applied: yes` or `inherited`, so one report shows rounds per route.
+  That report measures rounds, not cost. A tier move still needs the
+  comparison M0 asks for, comparable tasks under both tiers with what was
+  billed; the person's overrides and the rules' defaults, read from the
+  report across pull requests of one type and area, are how that
+  comparison is run, and a person moves the row with the report beside the
+  change.
+- **M0's declaration points** gain a row: the routing table in the
+  repository's configuration (`routing.models`), beside agent and skill
+  metadata. The policy's invariant, its table and the audit's
+  `model-pins-are-family-aliases` criterion say so, and the configuration
+  loader is the check: one list of known families per runtime in
+  `plugin/shared/`, which M0's mappings link, refuses an alias outside it
+  for a runtime that has aliases, and takes any name for one that has none.
 
 ### The audit
 
-M0's criteria gain one at Standard: model and effort are routed by rules
-the repository declares or inherits, and the reason reaches the pull
-request. The `convention` observation is the policy in the instructions
-(the routing policy page names the tiers and says routes are derived); the
-`advisory` observation is the pickup procedure that routes
-(`do-item` with this design built); the `mechanical` observation is the
-`Route:` line present on the pull requests the repository's recent
-history shows, which the audit reads as evidence beside the score. A
-repository whose launcher settings name a model for every repository has
-chosen by hand and scores `convention` at most.
+M0's criteria gain one at Standard: the implementer's model and effort are
+routed by rules the repository declares, and the reason reaches the pull
+request. The `convention` observation is the policy in the instructions:
+the routing policy page names the tiers and says routes are derived. The
+`advisory` observation is a `routing` section with the pickup procedure
+that routes (`do-item` with this design built). There is no `mechanical`
+observation yet: a required check that the pull request's `## Route`
+section parses and agrees with the base branch's rules is future, and until
+it exists the criterion scores `advisory` at most. Beside the score, as
+evidence, the audit reads the `## Route` section of the pull requests the
+repository's recent history shows and reports the share routed by the
+rules, the share a person chose and the share recorded and not applied.
 
 ## Configuration
 
 | Field | Type | Default | Read by |
 |---|---|---|---|
-| `routing.types.<type>.tier` | one of the four tiers | the table above | `determine_route.ts` |
+| `routing` | mapping; `{}` accepts every default | absent: routes derived and recorded, none applied | `determine_route.ts`, do-item, work-batch |
+| `routing.types.<type>.tier` | `execution` or `strategic` | the table above | `determine_route.ts` |
 | `routing.types.<type>.effort` | `low`, `medium`, `high`, `max` | the table above | `determine_route.ts` |
 | `routing.raise.flags` | list of labels, or `catalog` | `catalog`: every flag the catalog's areas declare | `determine_route.ts` |
 | `routing.raise.sizes` | list of labels | `[large]` | `determine_route.ts` |
-| `routing.raise.review_risk` | `true`, `false` | `true` | `determine_route.ts` |
-| `routing.models.<runtime>.<tier>` | the runtime's family alias | the table above | `determine_route.ts`, M0's metadata check |
-| `routing.efforts.<runtime>.<effort>` | the runtime's own level name | `codex.max: xhigh`, the rest unchanged | `determine_route.ts` |
+| `routing.raise.reviews` | `true`, `false` | `true` | `determine_route.ts` |
+| `routing.models.<runtime>.<tier>` | the runtime's family alias | `claude-code: {execution: sonnet, strategic: opus}` | `determine_route.ts`, the configuration loader |
+| `routing.efforts.<runtime>.<effort>` | the runtime's own level name | unchanged | `determine_route.ts` |
 
-A type row for a type outside the effective type set, a tier or effort
-outside the closed lists, an alias outside the known families and a raise
-list naming a label the taxonomy does not declare are refused when the
-configuration loads, with the field at fault. `routing.types` follows the
-work-types rule for renamed types: a type the repository added carries a
-complete row.
+Loading the configuration refuses, with the field at fault: a type row for
+a type outside the effective type set, or a type in the set with no
+complete row where the repository renamed it (the
+[work-types rule](work-types.md#configuration)); a tier or effort outside
+the closed lists; an alias outside the known families for a runtime that
+has them; and, where the repository has a label taxonomy
+(`issue_tracker.taxonomy`), a raise list naming a label it does not
+declare. A refused `routing` section stops `do-item` and says why, as a
+refused `do_item` section does today; it is never read as absent.
 
 ## Build order
 
-1. **The derivation.** `determine_route.ts`, the `routing` section, the
-   defaults as data with their tests (one fixture per rule, one for the
-   carry, one for `unknown`), documented in
+1. **The derivation.** `determine_route.ts`, the `routing` section and the
+   defaults as data with their tests (one fixture per rule, one for the cap,
+   one for the pinned agent, one for `unknown`), documented in
    [CONFIGURATION.md](../plugin/CONFIGURATION.md); `do-item` prints the route
    and changes nothing yet. Waits on item 27's first step, the type
    derivation.
-2. **`do-item` reads the route.** The delegation forwards the model and
-   effort where the runtime takes them and names its fallback; the
-   `Route:` line in the description; the drive armed with the route's
-   pass. A fixture shows a flagged bug reaching its pull request with a
-   higher effort than an unflagged one, and the `Route:` line saying why.
-3. **The launcher.** `--runtime` on the script; the Herdr provider starts
-   with the route, the Orca provider suggests it; the settings win part by
-   part; the launch message says when the rules could not be read.
-4. **The join and the check.** The loop-cost report prints the route; M0's
-   metadata check reads `routing.models`.
-5. **The audit criterion.**
+2. **The record.** `plugin/shared/route.ts` writes and parses the `## Route`
+   section; `do-item` writes it with `applied: no`; the loop-cost report
+   reads the description and prints the route. Recording comes before any
+   forwarding, so the first routes applied are already measured.
+3. **M0's declaration point.** The policy's invariant and table, the
+   criterion's statement, the known-families list in `plugin/shared/` and
+   the loader's check; M0's mappings link the list.
+4. **`do-item` forwards.** Behind a declared `routing` section: the
+   delegation passes the model and effort where the runtime's tool takes
+   them and records `applied`; the pinned agent keeps its pin; the fix loop
+   reuses the route; the launcher's first prompt carries the `route:` line
+   and `do-item` honours it. A fixture shows a flagged bug delegated on a
+   higher effort than an unflagged one, the `## Route` section saying why,
+   and a `route: yours` prompt delegating with nothing forwarded.
+5. **`work-batch` and the audit criterion.**
 
 ## Left out
 
@@ -245,18 +293,40 @@ complete row.
   person moves the rule, with the report beside the change, as M0 asks for
   every move between tiers. An automatic move would be a tier decided by
   a number no one checked.
+- **Routing on by default.** The default rows are M0's ladder applied, not
+  a measurement; until a working repository has validated them they stay a
+  record a repository reads before it opts in, so an upgrade changes no
+  consumer's model.
+- **The launcher computing the route.** The launcher reads the issue's
+  repository label and the cache only, through one tracker; the
+  repository's rules, catalog and taxonomy live in a clone that may be on
+  a server's host, which the launcher writes to and does not read from;
+  and the Herdr tool takes an agent kind and no model or effort. Each is a
+  change of its own, and the route is applied in the session minutes later
+  by `do-item` with every input at hand, so the launcher only says what it
+  did (the `route:` line). A Herdr `--model` and `--effort`, and a route
+  suggested in the Orca worktree's comment, are future, once the launcher
+  can read the rules where the clone is.
+- **Routing the session and the drive's passes.** The session runs the
+  review's triage, the decline ladder and the `review-arbiter`, none of
+  which the plugin pins; a session or a pass routed down for a `task`
+  would run those judgment layers on a cheaper model, which is the depth
+  inside the drive [work types left out](work-types.md#left-out) for the
+  same reason. The session's model is the person's or the launcher's
+  choice; a pass keeps the model the drive was armed with.
+- **Routing the scouts and the review tiers.** Each skill chooses them in
+  its own text (the scouts and the pattern review on a fast model, the
+  semantic review on the strongest available), the place M0 puts a skill's
+  own choice. A route is for the implementer.
 - **Routing on what the machine or the subscription has left.** The plugin
   has no reader of remaining usage: a drive learns of a usage wall only by
   hitting one, and parks (`drive-pr`'s quota-parked stop). A route that
-  guessed at a budget would be a dial no measurement set. The drive's park
-  and resume stay the answer to a wall.
-- **Routing the scouts and the review tiers.** Each is pinned where M0 puts
-  it, in its own metadata or the skill's own setting: the scouts on the
-  Scout tier at low effort, the pattern review on a fast model, the
-  semantic review on the strongest available. A route is for the work's
-  implementer, its session and its drive passes.
+  guessed at a budget would be a dial no measurement set.
 - **A type that changes the agent**, and a route written to the issue.
-  Both are above, under the derivation and the overrides.
-- **Re-routing a running drive.** A pass that stops on a wall or a deadline
-  is re-armed by the person with the same route; the next pickup derives a
-  fresh one.
+  Both are above, under the derivation and the sources.
+
+## Review
+
+Reviewed on 2026-10-28 at commit `8cd255d`, by a fresh-context agent
+session acting as an adversary, before the first pull request that builds
+it; every finding is settled in the text above.

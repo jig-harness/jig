@@ -1293,12 +1293,12 @@ make, use the entry's term instead.
   family it declares, not from how important its job sounds. See the
   [model routing policy](modules/M0-instruction-architecture/reference/model-routing-policy.md).
   *Avoid*: model level (a *maturity level* is something else).
-- **Route** — the agent, *model tier* and reasoning effort chosen for one
-  piece of work at its pickup, launch or drive pass; derived from the
-  item's *work type*, size and labels and the *change-area catalog*'s flags
-  and review risk, by rules a repository declares, with the reason and the
-  source (the rules, or the person who overrode them) recorded on the pull
-  request ([design](design/agent-routing.md)).
+- **Route** — the agent, *model tier* and reasoning effort chosen for the
+  implementer of one piece of work at its pickup; derived from the item's
+  *work type*, size and labels and the *change-area catalog*'s flags and
+  mandatory reviews, by rules a repository declares, with the reason, the
+  source (the rules, or the person who chose instead) and whether it was
+  applied recorded on the pull request ([design](design/agent-routing.md)).
 - **Judgment tier** — the narrowest *model tier*: the top reasoning model,
   admitted only for a *decision layer* that is judgment-only, low-volume and
   high-leverage, and that a mechanical rule already tried and failed to
