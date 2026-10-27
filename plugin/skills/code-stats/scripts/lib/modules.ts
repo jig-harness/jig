@@ -191,7 +191,7 @@ export function cargoMembers(text: string): MemberList {
  * blanked, `strings` every comment only, both the length of `text` with its
  * line breaks kept, so a position in one is the same position in the other.
  */
-function gradleLayers(text: string): { code: string; strings: string } {
+export function gradleLayers(text: string): { code: string; strings: string } {
   const code: string[] = [];
   const strings: string[] = [];
   const blank = (s: string) => s.replace(/[^\n]/g, " ");

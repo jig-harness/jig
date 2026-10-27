@@ -543,8 +543,10 @@ job from the event that started it; elsewhere from `origin/HEAD`, then
 
 How the [code-stats](skills/code-stats/README.md) skill classifies the
 repository's files. Every field is optional: without the section the skill
-uses its built-in detection and the default areas, and the fields fix what
-detection gets wrong. Every field is repository-only. A value the skill
+uses its built-in detection, the test files its test runners' configuration
+names ([read before this section](skills/code-stats/README.md#test-runner-configuration):
+jest, vitest, pytest, Gradle and Maven), and the default areas, and the
+fields fix what those get wrong. Every field is repository-only. A value the skill
 cannot use (an unknown kind, a malformed glob, an empty or repeated area
 name, a value of the wrong type, an unknown key) is refused with a message
 naming the field.
@@ -568,7 +570,7 @@ code_stats:
 |-------|------|-------------|---------|--------------|
 | `code_stats.areas` | list of `{name, description?, paths: [globs], content?: true or false}`; globs are relative to the root (`**`, `*`, `?`, `{a,b}`, `[...]`) | The default areas below | code-stats | What each file is for, in order: the first rule whose glob matches names a file's area. The list replaces the default areas whole. `content: true` makes YAML, JSON and other configuration files in that area count as data. A name holds no `/` |
 | `code_stats.default_area` | area name | `production` | code-stats | The area of a file no rule matches; such a file counts as unclassified |
-| `code_stats.kinds` | map of kind (`code`, `test`, `docs`, `config`, `data`, `generated`, `fixture`, `asset`, `vendored`, `other`) to a list of globs | none: built-in detection alone | code-stats | Kinds checked before built-in detection, in the order written; the first glob that matches decides |
+| `code_stats.kinds` | map of kind (`code`, `test`, `docs`, `config`, `data`, `generated`, `fixture`, `asset`, `vendored`, `other`) to a list of globs | none: built-in detection and the test runners' configuration | code-stats | Kinds checked before built-in detection and the test runners' configuration, in the order written; the first glob that matches decides |
 | `code_stats.modules` | list of globs naming module folders | Detected from the [workspace manifests](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) (pnpm, npm, Yarn or Bun workspaces, `go.work`, Cargo, Gradle, uv), else the top folders | code-stats | The module folders; a file belongs to the deepest one that holds it |
 | `code_stats.classify_command` | shell command | none | code-stats | The last layer, a [classify command](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): run once from the root with the tracked paths on standard input, one per line; prints JSON lines `{"path", "area"?, "kind"?, "language"?, "module"?}` whose values override every other layer. A non-zero exit, a line it cannot read, an untracked path, or an unknown area or kind fails the report ([contract](skills/code-stats/README.md#the-classify-command)) |
 

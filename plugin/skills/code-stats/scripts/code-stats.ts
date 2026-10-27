@@ -15,7 +15,13 @@
  * cannot be made (a failed git call or classify command, a refused
  * configuration), 2 on a command line it cannot act on.
  */
-import { existsSync, mkdirSync, realpathSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+} from "node:fs";
 import {
   basename,
   dirname,
@@ -31,7 +37,7 @@ import {
   readConfig,
   withSource,
 } from "../../../shared/consumer.ts";
-import { jsonReport, total } from "./lib/aggregate.ts";
+import { jsonReport, testRunnerSummary, total } from "./lib/aggregate.ts";
 import {
   type AnalyzedFile,
   analyzeAll,
@@ -52,6 +58,7 @@ import { listTracked, readAttributes, repositoryInfo } from "./lib/git.ts";
 import { KINDS } from "./lib/model.ts";
 import { detectModules } from "./lib/modules.ts";
 import { renderHtmlReport } from "./lib/render-html.ts";
+import { type RepoFiles, readTestRunners } from "./lib/test-runners/index.ts";
 import {
   fmt,
   fmtBytes,
@@ -188,6 +195,18 @@ function realPath(path: string): string {
   return parent === path ? path : join(realPath(parent), basename(path));
 }
 
+/** The tracked files as the test-runner readers see them: regular files read as text. */
+function repoFiles(root: string, paths: readonly string[]): RepoFiles {
+  return {
+    paths,
+    read: (path) => {
+      const abs = join(root, path);
+      const st = lstatSync(abs, { throwIfNoEntry: false });
+      return st?.isFile() ? readFileSync(abs, "utf8") : null;
+    },
+  };
+}
+
 type Ctx = Context & { paths: string[]; areas: string[] };
 
 /** Read the configuration and everything git knows that every mode needs. */
@@ -206,6 +225,7 @@ async function prepare(): Promise<Ctx> {
       )
     : new Map();
   const modules = detectModules(root, paths, config.modules);
+  const runners = readTestRunners(repoFiles(root, paths));
   return {
     root,
     config,
@@ -213,6 +233,7 @@ async function prepare(): Promise<Ctx> {
     attributes,
     submodules,
     overrides,
+    runners,
     paths,
     areas,
   };
@@ -229,8 +250,8 @@ async function explain(o: Options, ctx: Ctx): Promise<number> {
     );
   process.stdout.write(
     o.json
-      ? `${JSON.stringify(explainJson(file, o.includeVendored), null, 2)}\n`
-      : explainText(file, o.includeVendored),
+      ? `${JSON.stringify(explainJson(file, o.includeVendored, ctx.runners.unreadable), null, 2)}\n`
+      : explainText(file, o.includeVendored, ctx.runners.unreadable),
   );
   return 0;
 }
@@ -260,6 +281,7 @@ async function reportData(o: Options, ctx: Ctx) {
     vendoredExcluded,
     includeVendored: o.includeVendored,
     missing,
+    testRunners: testRunnerSummary(ctx.runners),
   };
 }
 
@@ -304,6 +326,7 @@ async function run(o: Options): Promise<number> {
     terminalReport({
       ...data,
       date: data.generatedAt.slice(0, 10),
+      unreadable: data.testRunners.unreadable,
       topModules: o.top,
       htmlCommand: `bun ${shellQuote(import.meta.path)} --html`,
       colour: useColour(process.stdout.isTTY === true),

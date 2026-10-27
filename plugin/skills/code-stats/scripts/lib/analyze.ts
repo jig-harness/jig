@@ -25,6 +25,7 @@ import {
 } from "./languages.ts";
 import type { Classification, FileStats } from "./model.ts";
 import type { ModuleMap } from "./modules.ts";
+import type { Reading } from "./test-runners/index.ts";
 
 /** Text files above this are sized but not line-counted. */
 export const MAX_LINE_COUNT_BYTES = 20 * 1024 * 1024;
@@ -71,6 +72,8 @@ export interface Context {
   attributes: Attributes;
   submodules: ReadonlySet<string>;
   overrides: ReadonlyMap<string, Override>;
+  /** What the repository's test runners' configuration says. */
+  runners: Reading;
 }
 
 export interface AnalyzedFile {
@@ -90,6 +93,7 @@ function result(
     ctx.config,
     ctx.modules,
     ctx.overrides.get(facts.path),
+    ctx.runners,
   ),
 ): AnalyzedFile {
   const { area, kind, language, module } = classification;
@@ -180,6 +184,7 @@ async function readText(
     ctx.config,
     ctx.modules,
     ctx.overrides.get(relPath),
+    ctx.runners,
   );
   const counts = whole
     ? countLines(content, lineStyle(text, classification.language.value))
