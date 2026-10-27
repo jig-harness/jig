@@ -19,8 +19,12 @@ const CONTEXT_NAME: Record<Context, string> = {
   "same-session": "this session",
 };
 
-function cell(value: string): string {
-  return value.replace(/\|/g, "\\|").replace(/\s+/g, " ");
+/** A value safe inside one Markdown table cell. */
+export function cell(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\s+/g, " ");
 }
 
 function quote(passage: string): string {

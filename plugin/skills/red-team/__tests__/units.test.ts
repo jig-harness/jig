@@ -15,6 +15,7 @@ import {
   parsePersonas,
   personasFor,
 } from "../scripts/lib/personas.ts";
+import { cell } from "../scripts/lib/report.ts";
 
 const fixture = (name: string) =>
   readFileSync(join(import.meta.dir, "fixtures", name), "utf8");
@@ -198,5 +199,17 @@ describe("a persona's findings", () => {
     expect(check({ ...valid, findings: [] }).problems).toEqual([
       "verdict revise names nothing to answer: add the findings",
     ]);
+  });
+});
+
+describe("a report table cell", () => {
+  test("escapes backslashes before pipes, so neither closes the cell", () => {
+    expect(cell("a|b")).toBe("a\\|b");
+    expect(cell("a\\|b")).toBe("a\\\\\\|b");
+    expect(cell("ends\\")).toBe("ends\\\\");
+  });
+
+  test("folds whitespace onto one line", () => {
+    expect(cell("one\n  two")).toBe("one two");
   });
 });
