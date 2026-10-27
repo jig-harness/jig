@@ -120,6 +120,9 @@ describes the shape (`instruction-missing-precondition`,
 `narrow-fix-per-round`), and its finding's description says the shape in one
 sentence. A finding a skill captured with a placeholder class (the review
 loop's `review-took-many-rounds`) gets the class of the gap it points at.
+A conflict hotspot's finding (`reflect.ts hotspots`, targeting the path)
+keeps its class: it is the cause the merge-conflict report measured, and
+the hotspots of one cause count together.
 
 ## 4. Decide what to contribute
 

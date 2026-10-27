@@ -4,7 +4,14 @@
  * such a copy, started from a consumer repository.
  */
 import { afterAll, beforeAll, expect, it } from "bun:test";
-import { cpSync, existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { finding, Machine } from "./scratch.ts";
@@ -70,4 +77,44 @@ it("notes, contributes and reviews from a copy outside this repository", () => {
   expect(groups[0]?.findings[0]?.session.jig_version).toMatch(
     /^\d+\.\d+\.\d+$/,
   );
+});
+
+it("notes a conflict hotspot from a copy, reading the cause list by sibling path", () => {
+  const reflect = join(cache, "plugin", "skills", "reflect", "scripts");
+  const repo = m.repository("api", "git@github.com:example/api.git");
+  const report = join(m.dir, "merge-conflicts.json");
+  writeFileSync(
+    report,
+    JSON.stringify({
+      schema: "merge-conflicts/v1",
+      range: { since: null, until: null, label: "all history" },
+      hotspotMinMerges: 3,
+      shallow: false,
+      totals: { merges: 9 },
+      paths: [
+        {
+          path: "CHANGELOG.md",
+          merges: 4,
+          causes: { append: 4 },
+          topCause: "append",
+          remedy: "one file per entry",
+          hotspot: true,
+          lastConflict: "2026-01-02T03:04:05Z",
+        },
+      ],
+      hotspots: ["CHANGELOG.md"],
+    }),
+  );
+  const noted = repo.script(
+    "reflect.ts",
+    ["hotspots", report],
+    undefined,
+    reflect,
+  );
+  expect(noted.stderr).toBe("");
+  expect(noted.code).toBe(0);
+  const out = JSON.parse(noted.stdout) as {
+    hotspots: Array<{ class: string; action: string }>;
+  };
+  expect(out.hotspots).toMatchObject([{ class: "append", action: "noted" }]);
 });

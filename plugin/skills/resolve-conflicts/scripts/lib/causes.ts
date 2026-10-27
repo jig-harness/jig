@@ -26,6 +26,24 @@ export const CAUSES = [
 ] as const;
 export type Cause = (typeof CAUSES)[number];
 
+/** Each cause's shape in one sentence, for a reader who has not seen the rules. */
+export const SHAPES: Readonly<Record<Cause, string>> = {
+  derived: "Both sides changed a lockfile or a generated file.",
+  structural:
+    "Git reported the conflict without text regions (a binary file, a modify/delete, a rename, a file/directory or a mode conflict).",
+  echo: "One side's edit was already in the other, as when a branch is built on another that was squash-merged beneath it.",
+  version:
+    "The sides differed only in a release version the release step writes, or in a date stamp.",
+  sequence: "Both sides added an entry with the same next ordinal.",
+  tally:
+    "Only a number differed, and each side's number counted the lines that side added to the file.",
+  append: "Both sides added lines at the same place.",
+  "packed-list": "Both sides added items to the same one-line list.",
+  adjacent: "The lines each side changed touched without overlapping.",
+  overlap:
+    "Both sides changed the same lines: two pieces of work changed the same thing.",
+};
+
 /** The change that removes each cause. */
 export const REMEDIES: Readonly<Record<Cause, string>> = {
   derived:
