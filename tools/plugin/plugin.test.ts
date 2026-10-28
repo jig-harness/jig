@@ -1192,7 +1192,7 @@ test("one change-area catalog reader serves the skills from the plugin copy", ()
   const consumer = consumerRepo(
     "catalog",
     `issue_tracker:
-  team: TASK
+  adapter: github
 do_item:
   agents:
     codearea_areas: { "codearea:api": api }

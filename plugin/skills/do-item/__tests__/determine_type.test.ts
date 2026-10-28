@@ -373,6 +373,38 @@ describe("the loading rules refuse", () => {
       { issue_tracker: { types: { task: ["In Progress"] } } },
       "issue_tracker.types.task lists the label 'In Progress', which the GitHub adapter reads as a workflow state or a priority",
     ],
+    [
+      "a type label the GitHub adapter reads as a state, padded",
+      { issue_tracker: { types: { task: [" In Progress "] } } },
+      "issue_tracker.types.task lists the label ' In Progress ', which the GitHub adapter reads as a workflow state or a priority",
+    ],
+    [
+      "a tracker configuration that does not load",
+      {
+        issue_tracker: { states: { typo: "Started" }, types: { bug: ["bug"] } },
+      },
+      "typo",
+    ],
+    [
+      "do_item as a timestamp",
+      { do_item: new Date("2026-10-28") },
+      "do_item must be a mapping",
+    ],
+    [
+      "do_item.work_types as a timestamp",
+      { do_item: { work_types: new Date("2026-10-28") } },
+      "do_item.work_types must map a type",
+    ],
+    [
+      "a type's row as a timestamp",
+      { do_item: { work_types: { task: new Date("2026-10-28") } } },
+      "do_item.work_types.task must be a mapping of depth-table fields",
+    ],
+    [
+      "issue_tracker.types as a timestamp",
+      { issue_tracker: { types: new Date("2026-10-28") } },
+      "issue_tracker.types must map at least one type",
+    ],
     ["the renamed do_issue section", { do_issue: {} }, "now called do_item"],
   ];
   for (const [what, config, message] of refusals)

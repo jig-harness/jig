@@ -20,9 +20,8 @@
  * computed from the others, field by field, as the strictest of each.
  */
 
-import { isRecord } from "../../../../shared/guards.ts";
 import { parseTrackerLabels } from "../../../../shared/tracker-labels.ts";
-import { formatField } from "../../../../shared/config-layers.ts";
+import { formatField, isMapping } from "../../../../shared/config-layers.ts";
 import { doItemSection } from "./overlay.ts";
 import { parseTrackerConfig } from "./tracker/config.ts";
 import { gitHubModel } from "./tracker/github/model.ts";
@@ -274,14 +273,14 @@ function parseTypeLabels(
 ): Record<string, string[]> {
   const trackerLabels = parseTrackerLabels(overlay);
   const tracker = overlay.issue_tracker;
-  const raw = isRecord(tracker) ? tracker.types : undefined;
+  const raw = isMapping(tracker) ? tracker.types : undefined;
   const labels: Record<string, string[]> = Object.create(null);
   if (raw === undefined || raw === null) {
     for (const t of DEFAULT_TYPES)
       labels[t] = t === "bug" ? [...trackerLabels.bug] : [t, `type:${t}`];
     return labels;
   }
-  if (!isRecord(raw) || Object.keys(raw).length === 0)
+  if (!isMapping(raw) || Object.keys(raw).length === 0)
     throw new WorkTypesError(
       "issue_tracker.types must map at least one type to the labels that mark it",
     );
@@ -316,8 +315,9 @@ function refuseSharedLabels(labels: Record<string, string[]>): void {
 /**
  * Refuse a type label the GitHub adapter reads as a workflow state or a
  * priority: it removes those from an issue's labels, so the label step would
- * never see it. A tracker configuration that does not load is left to the
- * tracker's own refusal.
+ * never see it. The tracker configuration is read to know the adapter, and a
+ * configuration that does not load is refused here too, so the derivation and
+ * the audit agree.
  */
 function refuseReservedLabels(
   overlay: Record<string, unknown>,
@@ -326,14 +326,16 @@ function refuseReservedLabels(
   let config: ReturnType<typeof parseTrackerConfig>;
   try {
     config = parseTrackerConfig(overlay);
-  } catch {
-    return;
+  } catch (error) {
+    throw new WorkTypesError(
+      error instanceof Error ? error.message : String(error),
+    );
   }
   if (config.adapter !== "github") return;
   const model = gitHubModel(config.states, config.github);
   for (const [type, list] of Object.entries(labels))
     for (const label of list)
-      if (model.isReserved(label))
+      if (model.isReserved(label.trim()))
         throw new WorkTypesError(
           `issue_tracker.types.${formatField([type])} lists the label '${label}', which the GitHub adapter reads as a workflow state or a priority and removes from an issue's labels; a type needs a label of its own`,
         );
@@ -354,7 +356,7 @@ function overrideEntry(
     throw new WorkTypesError(
       `${at}: ${type} is not a type of this repository (${types.join(", ")}); add it to issue_tracker.types or remove the entry`,
     );
-  if (!isRecord(entry))
+  if (!isMapping(entry))
     throw new WorkTypesError(`${at} must be a mapping of depth-table fields`);
   const row: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(entry)) {
@@ -373,12 +375,12 @@ function parseOverrides(
   types: string[],
 ): Record<string, Partial<DepthRow>> {
   const section = doItemSection(overlay);
-  if (section !== undefined && section !== null && !isRecord(section))
+  if (section !== undefined && section !== null && !isMapping(section))
     throw new WorkTypesError("do_item must be a mapping");
-  const raw = isRecord(section) ? section.work_types : undefined;
+  const raw = isMapping(section) ? section.work_types : undefined;
   const out: Record<string, Partial<DepthRow>> = Object.create(null);
   if (raw === undefined || raw === null) return out;
-  if (!isRecord(raw))
+  if (!isMapping(raw))
     throw new WorkTypesError(
       "do_item.work_types must map a type to the fields of its row",
     );
