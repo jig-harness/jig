@@ -59,7 +59,9 @@
  * thread.ts`'s own inline check shares — the two can never disagree about
  * what counts as a qualifying reply):
  *
- *   rejected / wont-fix / deferred  -> resolved now. These are claims about the
+ *   rejected / wont-fix / deferred  -> resolved now, except a code-scanning
+ *                                      alert must first be confirmed dismissed.
+ *                                      These are claims about the
  *                                      finding's MERIT, not fix-dependent — per
  *                                      SKILL.md § 3, "nothing else ever will
  *                                      resolve it" once replied. EXCEPT when the
@@ -125,6 +127,7 @@ import {
   qualifyingOutcome as sharedQualifyingOutcome,
 } from "./lib/outcome.ts";
 import { ghCall, readTimeoutEnv, resolvePr, run, tsArgv } from "./lib/proc.ts";
+import { mayResolveDeclinedAlert } from "./lib/scanner-sweep-guard.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -146,6 +149,7 @@ interface ThreadComment {
 interface Thread {
   threadId: string;
   path: string | null;
+  codeScanning: unknown;
   commentsTruncated: boolean;
   comments: ThreadComment[];
 }
@@ -194,6 +198,7 @@ function parseThread(line: string): Thread | null {
   return {
     threadId: t.threadId,
     path: typeof t.path === "string" ? t.path : null,
+    codeScanning: t.codeScanning,
     // Fail CLOSED, not open: a missing field, `null`, or a malformed string
     // must not read as "not truncated" — that would let the caller trust the
     // visible comments and resolve/hold a merit outcome from a record that
@@ -553,7 +558,15 @@ async function main(): Promise<number> {
           if (!cleanedUp) hadErrors = 1;
         }
       } else if (MERIT_OUTCOMES.has(outcome)) {
-        if (dryRun) {
+        if (!mayResolveDeclinedAlert(thread.codeScanning)) {
+          action = "left-open";
+          leftOpen += 1;
+          console.error(
+            `reconcile-replied-threads.ts: #${pr} thread ${thread.threadId} has an alert that is not confirmed dismissed — left open`,
+          );
+          if (!dryRun && !(await releaseStaleHoldIfSeen(pr, thread)))
+            hadErrors = 1;
+        } else if (dryRun) {
           action = "would-resolve";
           wouldResolve += 1;
         } else {

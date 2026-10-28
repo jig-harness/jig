@@ -708,8 +708,8 @@ Under `/jig:drive-pr`, `triage-thread.ts` resolves a merit outcome in the
 same call that posts it, which leaves no point to dismiss in between. Post the
 reply with `reply-to-thread.ts`, dismiss, then dispatch with `triage-thread.ts`,
 which finds the posted reply and resolves. The drive's replied-thread sweep
-does not read alerts, so a thread left open after a refused dismissal is
-resolved by the next sweep: report that alert in the round's summary.
+leaves a declined finding open until it can confirm the alert is dismissed;
+report an alert that could not be dismissed in the round's summary.
 
 A dismissal reaches the tool: SonarQube Cloud, for one, records a false
 positive as False Positive and the other reasons as Accept. A security
