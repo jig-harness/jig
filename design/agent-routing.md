@@ -31,8 +31,9 @@ is [ADR-0009](../docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md).
 ## The rule
 
 > A route is **derived** from the item's work type, size and labels, the
-> change-area catalog's flags and mandatory reviews for the areas the item
-> seeds, and the repository's routing rules, and never asked when it can be
+> change-area catalog's flags, the mandatory reviews of the areas the item
+> seeds and of every area their `impliedBy` closure reaches, and the
+> repository's routing rules, and never asked when it can be
 > derived. The rules are **data with defaults**: one row per work type gives
 > the base tier and effort, and a closed list of **raises** moves the effort
 > up one step each, never down and never past the highest effort. The
@@ -78,9 +79,12 @@ it is configuration a check reads.
 
 `plugin/skills/do-item/scripts/determine_route.ts` reads the issue JSON
 `get_issue.ts` returns, runs `determine_agent.ts` for the agent and
-`determine_type.ts` (item 27) for the type, and prints the proposed route
-`{agent, tier, effort, model, reasons}` and, per field, its effective
-value, source and whether it was applied:
+`determine_type.ts` (item 27) for the type, and prints, before the
+implementer runs, the proposed route `{agent, tier, effort, model,
+reasons}` and, per field, the requested value and its source. It prints
+no `applied` and no effective value: `do-item` sets `applied` when it
+delegates, and the effective value is what the runtime reports after the
+implementer ran ([the record](#where-it-is-read)):
 
 1. **The agent**, exactly as today: the catalog area's `agent`, then the
    label map, then the title keywords, then the default. Routing changes
@@ -98,10 +102,12 @@ value, source and whether it was applied:
      default, every flag the catalog's areas declare under `tracker.flags`
      (a flag is a lasting claim on the record that drives process, so it
      drives this too);
-   - unless `routing.raise.reviews` is `false`, a seeded area with a
-     **mandatory review**: an area the item's labels select through
-     `do_item.agents.codearea_areas` whose `review.skills` names at least
-     one skill;
+   - unless `routing.raise.reviews` is `false`, an area with a
+     **mandatory review** among the areas the item's labels seed through
+     `do_item.agents.codearea_areas` and every area their `impliedBy`
+     closure reaches, the side M3 reads mandatory reviews from (an
+     under-triggered review is a missed defect): one whose `review.skills`
+     names at least one skill;
    - a **size label** in `routing.raise.sizes`; by default, every size the
      repository knows outside `issue_tracker.labels.batch_sizes` (the sizes
      too large to batch), with the known sizes taken as `work-batch` takes
@@ -257,7 +263,7 @@ is policy, not an override, and the reasons name the rule that fired.
   `proposed: agent=<name> tier=<tier> effort=<effort>
   model=<alias or none>`, then `requested: tier=<tier or none>
   effort=<effort or none> model=<alias or none>`, then `effective:
-  tier=<tiers or unknown> effort=<effort or unknown> model=<aliases or
+  tier=<tiers or unknown> effort=<efforts or unknown> model=<aliases or
   unknown>`, then per field `source=<rules|person|settings|pin>
   applied=<yes|no|inherited>`, followed by the reasons. A requested field
   is `none` when nothing but the rules named it, and `unnamed` when the
@@ -267,12 +273,15 @@ is policy, not an override, and the reasons name the rule that fired.
   names the model of each response); a field the runtime reports nothing
   for is `unknown`, whatever was forwarded, named by the person or the
   settings, pinned or set in a variable, and never the proposed or
-  requested value in its place. The effective model is every model the
-  runtime reports across the invocation's responses, in the order first
-  seen, and the effective tier is each one's tier: a runtime can move a
-  run to another model after a request fails (Claude Code's fallback
-  model chains), and an invocation that ran on more than one model is
-  recorded with all of them and marked `mixed`. It survives the worktree
+  requested value in its place. Each effective field is every value the
+  runtime reports for it across the invocation's responses, in the order
+  first seen (the effective tier is each reported model's tier), and a
+  field with more than one value is marked `mixed`, each field on its
+  own: a runtime can move a run to another model after a request fails
+  (Claude Code's fallback model chains), and resolves the effort per
+  model, so the models a run moved between can also have run it at
+  different efforts, while two models of one tier leave the tier single.
+  It survives the worktree
   and is read by any harness, as the type's body sections are.
 - **`work-batch`** takes one route for the batch: the strictest tier and
   effort across its items, each item's reasons kept. An epic whose issue
@@ -283,11 +292,11 @@ is policy, not an override, and the reasons name the rule that fired.
   description to what it reads of a pull request, and prints the route
   beside the rounds and threads to convergence, so one report shows rounds
   per route. It groups by the **effective** route, never the proposed one,
-  and a comparison per model or per effort leaves out every pull request
-  whose effective value for that field is `unknown`, and a comparison per
-  model or per tier also every one marked `mixed`: two people inheriting
-  different models under one proposed route are not one route, and a run
-  that moved between models is not a run on either.
+  and a comparison per model, per tier or per effort leaves out every pull
+  request whose effective value for that field is `unknown` or marked
+  `mixed`: two people inheriting different models under one proposed
+  route are not one route, and a run that moved between models or
+  efforts is not a run on either.
   That report measures rounds, not cost. A tier move still needs the
   comparison M0 asks for, comparable tasks under both tiers with what was
   billed; the person's overrides and the rules' defaults, read from the
@@ -386,7 +395,8 @@ refused `do_item` section does today; it is never read as absent.
    model the runtime replaced, recorded `applied: yes` with the replacing
    model as effective; a person's model the runtime replaced, with the
    rules' answer, the person's and the runtime's all kept; an implementer
-   that moved to another model mid-run, recorded `mixed` with both; and a
+   that moved to another model mid-run and ran it at another effort,
+   recorded with both models and both efforts, each field `mixed`; and a
    field the runtime reports nothing for, recorded `unknown`.
 5. **`work-batch` and the audit criterion.**
 
