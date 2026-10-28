@@ -8,6 +8,12 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  buildReport,
+  type MergeRecord,
+  type PathRecord,
+  type Report,
+} from "../../resolve-conflicts/scripts/lib/report.ts";
 import type { FindingEvent } from "../scripts/lib/events.ts";
 import { Machine, type Repo, type Run } from "./scratch.ts";
 
@@ -451,6 +457,90 @@ describe("reflect.ts hotspots", () => {
     for (const [problem, damage] of faults) {
       const report = structuredClone(real);
       damage(report);
+      const file = join(m.dir, "damaged.json");
+      writeFileSync(file, JSON.stringify(report));
+      const r = repo.script("reflect.ts", ["hotspots", file]);
+      expectSpawnExit(
+        { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
+        2,
+        `hotspots on a report ${problem}`,
+      );
+    }
+    expect(existsSync(join(repo.root, ".git", "jig"))).toBe(false);
+  });
+
+  it("refuses merges the replay could not have written, even with the summaries derived from them", () => {
+    m.userConfig();
+    const repo = twoHotspots();
+    const real = JSON.parse(
+      readFileSync(historyReport(repo), "utf8"),
+    ) as Report;
+    const conflicted = (report: Report) =>
+      report.merges.find((merge) => merge.conflicted) as MergeRecord;
+    const firstPath = (report: Report) =>
+      conflicted(report).paths[0] as PathRecord;
+    const faults: Array<[string, (report: Report) => void]> = [
+      [
+        "with one conflicted merge three times",
+        (report) => {
+          const merge = conflicted(report);
+          report.merges = [...report.merges, merge, merge];
+        },
+      ],
+      [
+        "with one path three times in a merge",
+        (report) => {
+          const merge = conflicted(report);
+          const path = firstPath(report);
+          merge.paths = [...merge.paths, path, path];
+        },
+      ],
+      [
+        "with a conflicted path and no cause",
+        (report) => {
+          const path = firstPath(report);
+          path.causes = [];
+          path.regions = [];
+        },
+      ],
+      [
+        "with causes other than its regions'",
+        (report) => {
+          const path = firstPath(report);
+          path.causes = path.causes.includes("overlap")
+            ? ["append"]
+            : ["overlap"];
+        },
+      ],
+      [
+        "with two path-level causes and no region",
+        (report) => {
+          const path = firstPath(report);
+          path.causes = ["append", "overlap"];
+          path.regions = [];
+        },
+      ],
+      [
+        "with a clean merge carrying a conflicted path",
+        (report) => {
+          const merge = conflicted(report);
+          merge.conflicted = false;
+          merge.mechanical = null;
+        },
+      ],
+    ];
+    for (const [problem, damage] of faults) {
+      const report = structuredClone(real);
+      damage(report);
+      // The summaries agree with the damaged merges: only the merges' own
+      // shape can refuse the report.
+      const derived = buildReport(report);
+      Object.assign(report, {
+        totals: derived.totals,
+        paths: derived.paths,
+        hotspots: derived.hotspots,
+        limits: derived.limits,
+      });
       const file = join(m.dir, "damaged.json");
       writeFileSync(file, JSON.stringify(report));
       const r = repo.script("reflect.ts", ["hotspots", file]);

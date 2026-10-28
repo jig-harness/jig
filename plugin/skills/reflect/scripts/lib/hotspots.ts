@@ -19,6 +19,7 @@ import { isRecord } from "../../../../shared/guards.ts";
 import {
   CAUSES,
   type Cause,
+  ordered,
   SHAPES,
 } from "../../../resolve-conflicts/scripts/lib/causes.ts";
 import {
@@ -95,31 +96,61 @@ function isRangeEnd(value: unknown): boolean {
   );
 }
 
-function isCauseList(value: unknown): boolean {
+function isCauseList(value: unknown): value is Cause[] {
   return Array.isArray(value) && value.every(isCause);
 }
 
-/** What `buildReport` reads of a conflicted path: its name and its causes. */
-function isPathRecord(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    isText(value.path) &&
-    isCauseList(value.causes) &&
-    Array.isArray(value.regions) &&
-    value.regions.every((region) => isRecord(region) && isCause(region.cause))
-  );
+function isUnique(values: readonly unknown[]): boolean {
+  return new Set(values).size === values.length;
 }
 
-/** What `buildReport` reads of a replayed merge. */
+/**
+ * What `buildReport` reads of a conflicted path, as `pathRecord` writes it:
+ * the causes of its regions in cause order, or its one path-level cause when
+ * it has no region. A path is never recorded without a cause.
+ */
+function isPathRecord(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    !isText(value.path) ||
+    !isCauseList(value.causes) ||
+    !Array.isArray(value.regions) ||
+    !value.regions.every((region) => isRecord(region) && isCause(region.cause))
+  )
+    return false;
+  const regions = value.regions as Array<{ cause: Cause }>;
+  return regions.length > 0
+    ? isDeepStrictEqual(value.causes, ordered(regions.map((r) => r.cause)))
+    : value.causes.length === 1;
+}
+
+/**
+ * What `buildReport` reads of a replayed merge, as `history.ts` writes it:
+ * each conflicted path once, a merge with a conflicted path conflicted, and
+ * `mechanical` null exactly when the merge is clean.
+ */
 function isMergeRecord(value: unknown): boolean {
   return (
     isRecord(value) &&
     isText(value.commit) &&
     isTime(value.date) &&
     typeof value.conflicted === "boolean" &&
-    (value.mechanical === null || typeof value.mechanical === "boolean") &&
+    (value.conflicted
+      ? typeof value.mechanical === "boolean"
+      : value.mechanical === null) &&
     Array.isArray(value.paths) &&
-    value.paths.every(isPathRecord)
+    value.paths.every(isPathRecord) &&
+    (value.conflicted || value.paths.length === 0) &&
+    isUnique(value.paths.map((path) => (path as { path: string }).path))
+  );
+}
+
+/** The replayed merges, each commit once, as `git log` lists them. */
+function isMergeList(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(isMergeRecord) &&
+    isUnique(value.map((merge) => (merge as { commit: string }).commit))
   );
 }
 
@@ -186,8 +217,8 @@ const REPORT_CHECKS: readonly Check[] = [
   ["shallow", (value) => typeof value === "boolean", "shallow is missing"],
   [
     "merges",
-    (value) => Array.isArray(value) && value.every(isMergeRecord),
-    "merges is not a list of replayed merges, each dated with its offset",
+    isMergeList,
+    "merges is not a list of replayed merges, each once, dated with its offset, each conflicted path once with its causes",
   ],
   ["paths", Array.isArray, "paths is missing"],
   ["hotspots", Array.isArray, "hotspots is missing"],
