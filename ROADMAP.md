@@ -199,7 +199,8 @@ the tool offers one.
 Delegation already picks an agent from the issue's change areas, labels and
 title, but the agent runs on whichever model and effort the session was
 started with, whatever the work. Routing will choose them for the
-implementer from the work's type, size and sensitivity, by rules a
+implementer from the work's type, its size and flag labels and the
+change areas' flags and mandatory reviews, by rules a
 repository declares with defaults it overrides, opt-in, with the reason
 recorded on the pull request where the review loop's reports join it to
 the outcome, and a person's choice always able to override it. Until then,

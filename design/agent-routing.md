@@ -98,14 +98,15 @@ value, source and whether it was applied:
      default, every flag the catalog's areas declare under `tracker.flags`
      (a flag is a lasting claim on the record that drives process, so it
      drives this too);
-   - a seeded area with a **mandatory review**: an area the item's labels
-     select through `do_item.agents.codearea_areas` whose `review.skills`
-     names at least one skill;
+   - unless `routing.raise.reviews` is `false`, a seeded area with a
+     **mandatory review**: an area the item's labels select through
+     `do_item.agents.codearea_areas` whose `review.skills` names at least
+     one skill;
    - a **size label** in `routing.raise.sizes`; by default, every size the
      repository knows outside `issue_tracker.labels.batch_sizes` (the sizes
      too large to batch), with the known sizes taken as `work-batch` takes
-     them (`work_batch.sizes`, else the batchable sizes and
-     `review.taxonomy.sizes`), and `[large]` where that leaves none (the
+     them (`work_batch.sizes`, else the batchable sizes, always together
+     with `review.taxonomy.sizes`), and `[large]` where that leaves none (the
      labels `batch_sizes` names never raise);
    - the human-in-the-loop label, `issue_tracker.labels.hitl`, counted
      once even where the catalog also lists it as a flag.
@@ -248,21 +249,31 @@ is policy, not an override, and the reasons name the rule that fired.
   repository sees what the rules would do before it opts in.
 - **The pull request's description** gets a `## Route` section in a fixed
   form, written and parsed by `plugin/shared/route.ts` so a reviewer's
-  edit elsewhere in the body leaves it readable. It keeps the **proposed**
-  route, what the rules derived, apart from the **effective** one, what the
-  implementer ran on, so an override never passes for the rules' answer:
+  edit elsewhere in the body leaves it readable. Each line answers one
+  question, so no value passes for another: the **proposed** route is what
+  the rules derived; the **requested** value of a field is what the
+  person, the settings or the agent definition's pin named in their place;
+  the **effective** value is what the implementer ran on. The form:
   `proposed: agent=<name> tier=<tier> effort=<effort>
-  model=<alias or none>`, then `effective: tier=<tier or unknown>
-  effort=<effort or unknown> model=<alias or unknown>`, then per field
-  `source=<rules|person|settings|pin> applied=<yes|no|inherited>`,
-  followed by the reasons. An effective value is only one the runtime
-  reports it resolved for that invocation, read after the implementer
-  ran (Claude Code's transcript names the model of each response); a
-  field the runtime reports nothing for is `unknown`, whatever was
-  forwarded, named by the person or the settings, pinned or set in a
-  variable, and never the proposed or requested value in its place. The
-  request stays in `proposed` and `source`. It survives the worktree and
-  is read by any harness, as the type's body sections are.
+  model=<alias or none>`, then `requested: tier=<tier or none>
+  effort=<effort or none> model=<alias or none>`, then `effective:
+  tier=<tiers or unknown> effort=<effort or unknown> model=<aliases or
+  unknown>`, then per field `source=<rules|person|settings|pin>
+  applied=<yes|no|inherited>`, followed by the reasons. A requested field
+  is `none` when nothing but the rules named it, and `unnamed` when the
+  person chose the session without naming the value (`route: yours`). An
+  effective value is only one the runtime reports it resolved for that
+  invocation, read after the implementer ran (Claude Code's transcript
+  names the model of each response); a field the runtime reports nothing
+  for is `unknown`, whatever was forwarded, named by the person or the
+  settings, pinned or set in a variable, and never the proposed or
+  requested value in its place. The effective model is every model the
+  runtime reports across the invocation's responses, in the order first
+  seen, and the effective tier is each one's tier: a runtime can move a
+  run to another model after a request fails (Claude Code's fallback
+  model chains), and an invocation that ran on more than one model is
+  recorded with all of them and marked `mixed`. It survives the worktree
+  and is read by any harness, as the type's body sections are.
 - **`work-batch`** takes one route for the batch: the strictest tier and
   effort across its items, each item's reasons kept. An epic whose issue
   routes to more than two agents keeps its integrator on the session's
@@ -273,8 +284,10 @@ is policy, not an override, and the reasons name the rule that fired.
   beside the rounds and threads to convergence, so one report shows rounds
   per route. It groups by the **effective** route, never the proposed one,
   and a comparison per model or per effort leaves out every pull request
-  whose effective value for that field is `unknown`: two people inheriting
-  different models under one proposed route are not one route.
+  whose effective value for that field is `unknown`, and a comparison per
+  model or per tier also every one marked `mixed`: two people inheriting
+  different models under one proposed route are not one route, and a run
+  that moved between models is not a run on either.
   That report measures rounds, not cost. A tier move still needs the
   comparison M0 asks for, comparable tasks under both tiers with what was
   billed; the person's overrides and the rules' defaults, read from the
@@ -322,7 +335,7 @@ rules, the share a person chose and the share recorded and not applied.
 | `routing.types.<type>.tier` | `execution` or `strategic` | the table above | `determine_route.ts` |
 | `routing.types.<type>.effort` | `low`, `medium`, `high`, `max` | the table above | `determine_route.ts` |
 | `routing.raise.flags` | list of labels, or `catalog` | `catalog`: every flag the catalog's areas declare | `determine_route.ts` |
-| `routing.raise.sizes` | list of labels | the known sizes (`work_batch.sizes`, else the batchable sizes and `review.taxonomy.sizes`) outside `batch_sizes`; `[large]` where that leaves none | `determine_route.ts` |
+| `routing.raise.sizes` | list of labels | the known sizes (`work_batch.sizes`, else the batchable sizes, always with `review.taxonomy.sizes`) outside `batch_sizes`; `[large]` where that leaves none | `determine_route.ts` |
 | `routing.raise.reviews` | `true`, `false` | `true` | `determine_route.ts` |
 | `routing.models.<runtime>.<tier>` | the runtime's family alias | `claude-code: {execution: sonnet, strategic: opus}` | `determine_route.ts`, the configuration loader |
 | `routing.efforts.<runtime>.<effort>` | the runtime's own level name | unchanged | `determine_route.ts` |
@@ -351,7 +364,7 @@ refused `do_item` section does today; it is never read as absent.
    and changes nothing yet. Waits on item 27's first step, the type
    derivation.
 2. **The record.** `plugin/shared/route.ts` writes and parses the `## Route`
-   section, proposed and effective routes apart; `do-item` writes it with
+   section, proposed, requested and effective values apart; `do-item` writes it with
    `applied: no`; the loop-cost report reads the description and prints
    the route, grouped by the effective one. Recording comes before any
    forwarding, so the first routes applied are already measured.
@@ -371,8 +384,10 @@ refused `do_item` section does today; it is never read as absent.
    why; a `route: yours` prompt delegating with nothing forwarded; a person
    naming only the model, with the effort still derived; a forwarded
    model the runtime replaced, recorded `applied: yes` with the replacing
-   model as effective; and a field the runtime reports nothing for,
-   recorded `unknown`.
+   model as effective; a person's model the runtime replaced, with the
+   rules' answer, the person's and the runtime's all kept; an implementer
+   that moved to another model mid-run, recorded `mixed` with both; and a
+   field the runtime reports nothing for, recorded `unknown`.
 5. **`work-batch` and the audit criterion.**
 
 ## Left out

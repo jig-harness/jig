@@ -29,8 +29,8 @@ says how to choose (tiers by reasoning class, effort by stakes and horizon,
 the premium tier admitted one decision layer at a time with a baseline),
 but as prose a person applies.
 
-Two places could make the choice: a capable model run before pickup, given
-the issue and asked for a route; or rules as data over facts the repository
+The choice could be made by a capable model run before pickup, given
+the issue and asked for a route, or by rules as data over facts the repository
 already derives (the work type, the size and flag labels, the catalog's
 flags and mandatory reviews), with defaults a repository overrides.
 
@@ -45,8 +45,9 @@ underivable type takes the strictest row, an agent whose definition pins a
 model keeps its pin against the rules, and a person's choice always wins,
 field by field and forwarded explicitly so a pin cannot override it. The
 route's reason, source and whether it was applied are written on the pull
-request, the proposed route apart from the effective one, where the review
-loop's report joins the effective route to how the work went. Routing is
+request, the proposed route, the requested values and the effective ones
+kept apart, where the review loop's report joins the effective route to how
+the work went. Routing is
 opt-in: a repository that declares no rules has its routes derived and
 recorded, and nothing applied.
 
