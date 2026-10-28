@@ -13,16 +13,19 @@
 // Usage: bun lint.ts [--root <dir>] [--json]
 // Exit: 0 the file follows its format's rules (or the repository has not
 // turned the skill on); 1 findings; 2 a usage error, an invalid configuration,
-// an unreadable changelog, or version files that disagree (coverage could not
+// an unreadable changelog or one a link leads outside the repository root, or
+// version files that disagree (coverage could not
 // be checked) with no finding besides.
-import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { readFileSync, realpathSync } from "node:fs";
+import { resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { fail, runMain } from "../../../shared/cli.ts";
 import { consumerRoot } from "../../../shared/consumer.ts";
 import { pluginVersion } from "../../../shared/plugin-version.ts";
 import { banner } from "./banner.ts";
 import { loadResolved, type Resolved } from "./config.ts";
+import { ChangelogError } from "./errors.ts";
+import { swallow } from "../../../shared/errors.ts";
 import type { FormatId } from "./formats.ts";
 import { lintCommonChangelog } from "./lint-common-changelog.ts";
 import { lintKeepAChangelog } from "./lint-keep-a-changelog.ts";
@@ -88,16 +91,37 @@ function coverageOf(resolved: Resolved): {
       unchecked: null,
     };
   } catch (error) {
-    return {
-      coverage: { current: null, tagged },
-      unchecked: error instanceof Error ? error.message : String(error),
-    };
+    // The reason names the versions the files hold; the report says only
+    // where to see them, so nothing read from a file reaches the log.
+    swallow(error, "the version files cannot be read as one version");
+    return { coverage: { current: null, tagged }, unchecked: UNCHECKED };
   }
+}
+
+/** Why coverage could not be checked against the version files. */
+const UNCHECKED =
+  "the version files disagree or hold no readable version: run status.ts to see them";
+
+/**
+ * The changelog's real path, refused when it is not inside the repository
+ * root: `changelog.file` is relative with no `..` segment, but a link in the
+ * tree could still lead out of it.
+ */
+export function changelogPath(root: string, file: string): string {
+  const base = realpathSync(resolve(root));
+  const full = realpathSync(resolve(base, file));
+  if (full !== base && full.startsWith(base + sep)) return full;
+  throw new ChangelogError(
+    `changelog.file: ${file} resolves outside the repository root: point it at a file inside the repository`,
+  );
 }
 
 /** The changelog of the repository `resolved` describes, against its format's rules. */
 export function lintResolved(resolved: Resolved): LintResult {
-  const text = readFileSync(join(resolved.root, resolved.changelog), "utf8");
+  const text = readFileSync(
+    changelogPath(resolved.root, resolved.changelog),
+    "utf8",
+  );
   const { coverage, unchecked } = coverageOf(resolved);
   const findings = RULES[resolved.format.id](
     readChangelog(resolved.changelog, text),

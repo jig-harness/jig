@@ -248,7 +248,8 @@ Findings go to standard error as `<file>:<line>: [<rule>] <problem>` then
 "configured", "format", "file", "findings", "unchecked" }`, `unchecked` saying
 why coverage against the version files could not be checked (they disagree),
 or null. Exit 0 clean or `not configured`; 1 findings; 2 a usage error, an
-invalid configuration, an unreadable changelog, or `unchecked` with no
+invalid configuration, an unreadable changelog (or one a link leads outside
+the repository root), or `unchecked` with no
 finding.
 
 ## Converting a branch

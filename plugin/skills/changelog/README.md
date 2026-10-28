@@ -120,7 +120,8 @@ CHANGELOG.md:28: [keep-a-changelog/date] the date "2023-02-29" of 1.0.1 is not a
 
 It exits 0 when the file follows its format's rules (or the skill is off), 1
 with findings, and 2 on a usage error, an invalid configuration or an
-unreadable changelog, or when the version files disagree, so coverage could
+unreadable changelog or one a link leads outside the repository, or when the
+version files disagree, so coverage could
 not be checked, and nothing else was found. In a GitHub Actions job each
 finding is also an annotation on its line. The action runs it as
 `command: lint`; the workflow template leaves it out of the pull-request

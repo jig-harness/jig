@@ -4,9 +4,15 @@
  * command as an agent or CI runs it.
  */
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import {
+  readFileSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
 import { COMMON_RULES } from "../scripts/lint-common-changelog.ts";
 import { KEEP_RULES } from "../scripts/lint-keep-a-changelog.ts";
@@ -16,7 +22,7 @@ import {
   precedence,
   readChangelog,
 } from "../scripts/lint-structure.ts";
-import { lintResolved, RULES } from "../scripts/lint.ts";
+import { changelogPath, lintResolved, RULES } from "../scripts/lint.ts";
 import { release } from "../scripts/release.ts";
 import {
   cleanEnv,
@@ -438,7 +444,7 @@ describe("the command", () => {
     const result = lint(root);
     expectSpawnExit(result, 2);
     expect(result.stderr).toContain(
-      "release coverage not checked against the version files: the version files disagree",
+      "release coverage not checked against the version files: the version files disagree or hold no readable version: run status.ts to see them",
     );
   });
 
@@ -450,6 +456,34 @@ describe("the command", () => {
   });
 
   test("exits 2 on a usage error", () => {
-    expectSpawnExit(lint(temporary(), ["--nope"]), 2);
+    const result = lint(temporary(), ["--nope"]);
+    expectSpawnExit(result, 2);
+    expect(result.stderr).toContain("--nope");
   });
+
+  test.skipIf(
+    skipsOnWindows("file-system", "creating a link needs a privilege"),
+  )(
+    "refuses a changelog that a link leads outside the repository, and exits 2",
+    () => {
+      const outside = join(temporary(), "CHANGELOG.md");
+      writeFileSync(outside, fixture("keep-a-changelog", "clean"));
+      const root = repository({
+        "package.json": MANIFEST("1.1.0"),
+        ".config/jig.yaml": jigYaml(
+          "  file: CHANGELOG.md\n  format: keep-a-changelog",
+        ),
+      });
+      symlinkSync(outside, join(root, "CHANGELOG.md"));
+      expect(() => changelogPath(root, "CHANGELOG.md")).toThrow(
+        "resolves outside the repository root",
+      );
+      const result = lint(root);
+      expectSpawnExit(result, 2);
+      expect(result.stderr).toContain("resolves outside the repository root");
+      expect(changelogPath(root, "package.json")).toBe(
+        join(realpathSync(root), "package.json"),
+      );
+    },
+  );
 });
