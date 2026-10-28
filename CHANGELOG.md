@@ -341,6 +341,12 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.90.0] - 2026-10-28
+
+### Added
+
+- The evidence record, `shared/evidence.ts` in the plugin: `run -- <command>` runs a check under a deadline and keeps one record of it on the machine, tied to the hash of the exact tree it ran against (tracked files with their staged and unstaged changes, and untracked files Git does not ignore), with its exit, the test counts per suite from the JUnit report it wrote in this run, and the first and last lines of its output. A tree that changed during the run, a report left by an earlier run, a report that is a symbolic link, a report that failed a case, a suite that ran no case and a run that hit its deadline are each recorded as what they are, never as a pass. `--expect-fail` records a test seen to fail, and a command ended by a signal is not one. `list` finds the newest record of each command that vouches for a tree. The records are readable by their owner alone, and the short block it prints names the command without its arguments and gives the report's counts without its suite or case names. Its settings are the new `verify` section ([CONFIGURATION.md](plugin/CONFIGURATION.md#verify)): `store`, `output_lines`, `timeout_minutes` and `retention_days`.
+
 ## [0.89.0] - 2026-10-28
 
 ### Added
@@ -3785,7 +3791,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.89.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.90.0...HEAD
+[0.90.0]: https://github.com/jig-harness/jig/compare/v0.89.0...v0.90.0
 [0.89.0]: https://github.com/jig-harness/jig/compare/v0.88.0...v0.89.0
 [0.88.0]: https://github.com/jig-harness/jig/compare/v0.87.2...v0.88.0
 [0.87.2]: https://github.com/jig-harness/jig/compare/v0.87.1...v0.87.2

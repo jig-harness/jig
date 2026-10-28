@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
-import { parseJunitReport } from "../../../../plugin/shared/junit-report.ts";
+import {
+  caseResult,
+  parseJunitReport,
+} from "../../../../plugin/shared/junit-report.ts";
 import {
   namedSuiteFindings,
   parseOptions,
@@ -49,6 +52,16 @@ describe("one report", () => {
   for (const [file, code] of cases)
     test(`${file} exits ${code}`, () =>
       expectSpawnExit(run([file]), code, file));
+
+  test("a case both failed and skipped counts as skipped, as the shared case result reads it", () => {
+    const both = `<testsuites><testsuite name="s">
+  <testcase classname="s" name="x"><failure/><skipped/></testcase>
+</testsuite></testsuites>`;
+    expect(parseJunitReport(both).cases.map(caseResult)).toEqual(["skipped"]);
+    const report = parseReport(both, "both.xml");
+    expect([report.executed, report.skipped]).toEqual([0, 1]);
+    expect(reportFindingsOf("both.xml", report, false)).not.toEqual([]);
+  });
 
   test("a pass names the counts and what the check does not judge", () => {
     const r = run(["bun-healthy.xml"]);
