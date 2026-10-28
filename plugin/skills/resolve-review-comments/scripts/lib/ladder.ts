@@ -1,5 +1,4 @@
 import { consumerRoot } from "../../../../shared/consumer.ts";
-import { isRecord } from "../../../../shared/guards.ts";
 /**
  * The escalating decline ladder: load `.config/review-triage.yaml`
  * and resolve one otherwise-`accepted` finding to a stance.
@@ -33,6 +32,20 @@ import { isRecord } from "../../../../shared/guards.ts";
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { assertKnownKeys, ConfigError, mappingAt } from "./config-checks.ts";
+import {
+  parseSeverityMapping,
+  SEVERITY_UNKNOWN,
+  type SeverityMapping,
+} from "./severity-mapping.ts";
+
+export {
+  ACCEPTANCE_TIERS,
+  acceptancePriority,
+  SEVERITY_UNKNOWN,
+  type SeverityMapping,
+  type SeverityMappingEntry,
+} from "./severity-mapping.ts";
 
 /**
  * Repo-relative — the canonical config's display label. This is what the
@@ -45,7 +58,6 @@ import { join } from "node:path";
  */
 export const LADDER_CONFIG_RELPATH = ".config/review-triage.yaml";
 
-export const SEVERITY_UNKNOWN = "unknown";
 export const CATEGORY_UNKNOWN = "unknown";
 
 /**
@@ -71,39 +83,6 @@ export const CANONICAL_SEVERITIES = ["low", "medium", "high", "blocker"];
  */
 export const MIN_TIER = 1;
 export const MAX_TIER = 4;
-
-/**
- * The severity vocabulary an acceptance review classifies a gap with, weakest
- * first — one of the vocabularies `severity_mapping` binds together. Pinned
- * here, next to `CANONICAL_SEVERITIES`, for the same reason that one is: the
- * mapping has to be validated against the tiers an acceptance review actually
- * uses, not against "some string".
- */
-export const ACCEPTANCE_TIERS = ["Minor", "Major", "Blocker"];
-
-/**
- * The tracker interface's priority domain (`port.ts`): 0 none, 1 urgent,
- * 2 high, 3 medium, 4 low.
- */
-export const MIN_PRIORITY = 0;
-export const MAX_PRIORITY = 4;
-
-/**
- * The key a `severity_mapping` row names its tracker priority with, and the
- * alias also accepted for it.
- */
-const PRIORITY_KEY = "priority";
-const PRIORITY_ALIAS = "linear_priority";
-
-export interface SeverityMappingEntry {
-  /** 0-4, the tracker interface's priority numbering (0 none, 1 urgent … 4 low). */
-  priority: number;
-  /** An `ACCEPTANCE_TIERS` member, or `null` for `unknown`. */
-  acceptance: string | null;
-}
-
-/** Keyed by reviewer severity token, plus `unknown`. */
-export type SeverityMapping = Record<string, SeverityMappingEntry>;
 
 export interface AcceptClauses {
   unconditional?: boolean;
@@ -173,33 +152,6 @@ export interface LadderVerdict {
   reply: string | null;
   /** Fail-open reasons and config complaints. Never silent. */
   anomalies: string[];
-}
-
-class ConfigError extends Error {}
-
-function mappingAt(v: unknown, what: string): Record<string, unknown> {
-  if (!isRecord(v)) throw new ConfigError(`${what} must be a mapping`);
-  return v;
-}
-
-/**
- * Reject a mapping key this loader does not know about. A silently-ignored
- * key (a typo'd `min_severty`, say) is dropped without error whenever another
- * clause still admits — indistinguishable from the typo never having been
- * written — which is exactly the "read nothing, report all clear" shape a
- * gate must never take.
- */
-function assertKnownKeys(
-  obj: Record<string, unknown>,
-  allowed: readonly string[],
-  what: string,
-): void {
-  const unknown = Object.keys(obj).filter((k) => !allowed.includes(k));
-  if (unknown.length > 0) {
-    throw new ConfigError(
-      `${what} has unknown key(s): ${unknown.join(", ")} — allowed: ${allowed.join(", ")}`,
-    );
-  }
 }
 
 /** The exact placeholder tokens `render()` ever substitutes. */
@@ -457,160 +409,6 @@ function parseBand(raw: unknown, index: number): Band {
  * assert a configuration file's structure without re-implementing the parse — the
  * census that keeps "read nothing" from reading as "all clear".
  */
-/**
- * Parse and validate `severity_mapping` — the one published correspondence
- * between the reviewer severity tokens, an acceptance review's tiers, and
- * the tracker's priority. A row names its priority `priority`;
- * `linear_priority` is accepted as an alias, and a row may not set both.
- *
- * `undefined` (no block) returns `null` rather than throwing: see
- * `LadderConfig.severityMapping` for why absence must not disarm the ladder.
- * Everything else is strict, because a half-read table is how the
- * vocabularies drifted apart in the first place.
- */
-function parseSeverityMapping(
-  v: unknown,
-  severityOrder: readonly string[],
-): SeverityMapping | null {
-  if (v === undefined || v === null) return null;
-  const root = mappingAt(v, "severity_mapping");
-  // Exactly the ranked tokens plus `unknown` — no more, no fewer. A missing
-  // row makes `SEVERITY_TO_PRIORITY[token]` undefined at the one call site
-  // that consumes it, which sends no `priority` at all rather than failing.
-  const expected = [...severityOrder, SEVERITY_UNKNOWN];
-  const got = Object.keys(root);
-  const missing = expected.filter((k) => !got.includes(k));
-  const extra = got.filter((k) => !expected.includes(k));
-  if (missing.length > 0 || extra.length > 0) {
-    throw new ConfigError(
-      `severity_mapping must have exactly one row per severity_order token plus '${SEVERITY_UNKNOWN}'` +
-        (missing.length > 0 ? `; missing: ${missing.join(", ")}` : "") +
-        (extra.length > 0 ? `; unexpected: ${extra.join(", ")}` : ""),
-    );
-  }
-  const out: SeverityMapping = {};
-  for (const token of expected) {
-    const what = `severity_mapping.${token}`;
-    const row = mappingAt(root[token], what);
-    assertKnownKeys(row, [PRIORITY_KEY, PRIORITY_ALIAS, "acceptance"], what);
-    if (row[PRIORITY_KEY] !== undefined && row[PRIORITY_ALIAS] !== undefined) {
-      throw new ConfigError(
-        `${what} sets both ${PRIORITY_KEY} and ${PRIORITY_ALIAS}, its alias; keep ${PRIORITY_KEY}`,
-      );
-    }
-    const key =
-      row[PRIORITY_KEY] === undefined && row[PRIORITY_ALIAS] !== undefined
-        ? PRIORITY_ALIAS
-        : PRIORITY_KEY;
-    const priority = row[key];
-    // Token-aware, not a single shared `0-4` range: `unknown` is the
-    // ABSENCE of a severity (this file's own row comment ties it to
-    // priority 0, "none", one-to-one), so it must be EXACTLY 0 —
-    // any other value invents an urgency for a finding nothing ranked at
-    // all. Every RANKED severity is the opposite case: an unprioritized
-    // ranked follow-up is the measured failure this mapping is supposed to
-    // prevent, so it must map to an actual priority, 1-4, never 0. A single
-    // shared `0-4` bound let both `low: { priority: 0 }` (unprioritized)
-    // and `unknown: { priority: 1 }` (an unranked finding made urgent)
-    // validate.
-    const [minPriority, maxPriority] =
-      token === SEVERITY_UNKNOWN
-        ? [MIN_PRIORITY, MIN_PRIORITY]
-        : [MIN_PRIORITY + 1, MAX_PRIORITY];
-    if (
-      typeof priority !== "number" ||
-      !Number.isInteger(priority) ||
-      priority < minPriority ||
-      priority > maxPriority
-    ) {
-      throw new ConfigError(
-        minPriority === maxPriority
-          ? `${what}.${key} must be ${minPriority} (got ${JSON.stringify(priority)}) — '${SEVERITY_UNKNOWN}' is the absence of a severity, never an urgency`
-          : `${what}.${key} must be an integer ${minPriority}-${maxPriority} (got ${JSON.stringify(priority)})`,
-      );
-    }
-    let acceptance: string | null = null;
-    if (token === SEVERITY_UNKNOWN) {
-      if (row.acceptance !== undefined) {
-        throw new ConfigError(
-          `${what} must not carry an acceptance tier — '${SEVERITY_UNKNOWN}' is the absence of a severity, and an acceptance gap always has one`,
-        );
-      }
-    } else {
-      if (typeof row.acceptance !== "string") {
-        throw new ConfigError(`${what}.acceptance must be a string`);
-      }
-      if (!ACCEPTANCE_TIERS.includes(row.acceptance)) {
-        throw new ConfigError(
-          `${what}.acceptance must be one of ${ACCEPTANCE_TIERS.join(", ")} (got ${JSON.stringify(row.acceptance)})`,
-        );
-      }
-      acceptance = row.acceptance;
-    }
-    out[token] = { priority, acceptance };
-  }
-  // Monotonicity, both directions. Without it the table still parses while
-  // saying something incoherent — a `blocker` filed at a LESS urgent
-  // priority than a `low`, or ranked below it on the acceptance tier — and
-  // every consumer would faithfully reproduce the incoherence.
-  for (let i = 1; i < severityOrder.length; i++) {
-    const weaker = severityOrder[i - 1] as string;
-    const stronger = severityOrder[i] as string;
-    const wRow = out[weaker] as SeverityMappingEntry;
-    const sRow = out[stronger] as SeverityMappingEntry;
-    // Priority counts DOWN with urgency (1 urgent … 4 low), so a
-    // stronger severity must never carry a numerically larger priority.
-    if (sRow.priority > wRow.priority) {
-      throw new ConfigError(
-        `severity_mapping is not monotonic: '${stronger}' is stronger than '${weaker}' but maps to the less urgent priority ${sRow.priority} > ${wRow.priority}`,
-      );
-    }
-    const wTier = ACCEPTANCE_TIERS.indexOf(wRow.acceptance as string);
-    const sTier = ACCEPTANCE_TIERS.indexOf(sRow.acceptance as string);
-    if (sTier < wTier) {
-      throw new ConfigError(
-        `severity_mapping is not monotonic: '${stronger}' is stronger than '${weaker}' but maps to the weaker acceptance tier ${sRow.acceptance} < ${wRow.acceptance}`,
-      );
-    }
-  }
-  // Row coverage above is one-directional. Every acceptance tier must also be
-  // CARRIED by some row, or `acceptancePriority()` returns null for it and an
-  // acceptance review files that gap with no priority at all.
-  const carried = new Set(
-    Object.values(out)
-      .map((e) => e.acceptance)
-      .filter((a): a is string => a !== null),
-  );
-  const unreachable = ACCEPTANCE_TIERS.filter((t) => !carried.has(t));
-  if (unreachable.length > 0) {
-    throw new ConfigError(
-      `severity_mapping leaves acceptance tier(s) with no reviewer token behind them: ${unreachable.join(", ")} — acceptancePriority() returns null for those, and an acceptance review would file such a gap unprioritized`,
-    );
-  }
-  return out;
-}
-
-/**
- * The acceptance -> priority direction, DERIVED from `severity_mapping`
- * rather than published as a second table: the weakest (numerically largest)
- * priority among the reviewer tokens carrying that acceptance tier. That is
- * the read an acceptance review needs for a gap classified Blocker/Major/Minor
- * with no reviewer token behind it.
- *
- * Returns `null` for a tier no row carries, and for a config with no mapping.
- */
-export function acceptancePriority(
-  mapping: SeverityMapping | null,
-  tier: string,
-): number | null {
-  if (mapping === null) return null;
-  const priorities = Object.values(mapping)
-    .filter((e) => e.acceptance === tier)
-    .map((e) => e.priority);
-  if (priorities.length === 0) return null;
-  return Math.max(...priorities);
-}
-
 export function validateLadder(doc: unknown): LadderConfig {
   const root = mappingAt(doc, "review-triage.yaml");
   // `calibration` is documentation-only (never read below) — allowed but

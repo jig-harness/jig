@@ -17,6 +17,7 @@ import {
   configSource,
   consumerRoot,
   readConfig,
+  readRemoteName,
   remoteName,
 } from "../../../../shared/consumer.ts";
 import { verifyRemoteIsPrRepo } from "./base-drift.ts";
@@ -455,24 +456,23 @@ export async function prBaseRef(
   const key = `${root}\0${pr}`;
   const cached = prBaseRefCache.get(key);
   if (cached !== undefined) return cached;
-  const result = await resolvePrBaseRef(root, pr, timeoutSec);
+  const remote = readRemoteName(consumerRoot(root));
+  const result =
+    "error" in remote
+      ? remote
+      : await resolvePrBaseRef(root, remote.remote, pr, timeoutSec);
   prBaseRefCache.set(key, result);
   return result;
 }
 
 async function resolvePrBaseRef(
   root: string,
+  remote: string,
   pr: string,
   timeoutSec?: number,
 ): Promise<{ ref: string } | { error: string }> {
   const which =
     pr === "" ? "this branch's pull request" : `pull request #${pr}`;
-  let remote: string;
-  try {
-    remote = remoteName(consumerRoot(root));
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) };
-  }
   const base = await pullRequestBase(root, pr, timeoutSec);
   if (base === null) {
     if (

@@ -1,5 +1,5 @@
 /** Read driver policy and derive exit codes from the terminal-state contract. */
-import { remoteName } from "../../../../../shared/consumer.ts";
+import { readRemoteName } from "../../../../../shared/consumer.ts";
 
 import { isDigits, fail, testPacing } from "../cli.ts";
 
@@ -426,11 +426,8 @@ export function ciRepairRounds(): number {
  * the setting are what report it.
  */
 export function fixRemote(): string {
-  try {
-    return remoteName();
-  } catch {
-    return "<remote>";
-  }
+  const read = readRemoteName();
+  return "remote" in read ? read.remote : "<remote>";
 }
 
 export function conflictRepairRounds(): number {

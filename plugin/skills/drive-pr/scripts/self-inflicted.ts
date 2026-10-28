@@ -150,7 +150,7 @@
  * naming a file that does not exist establishes nothing about who wrote it.
  */
 
-import { consumerRoot, remoteName } from "../../../shared/consumer.ts";
+import { consumerRoot, readRemoteName } from "../../../shared/consumer.ts";
 import { verifyRemoteIsPrRepo } from "./lib/base-drift.ts";
 import { runMain } from "./lib/cli.ts";
 import { cachedRepoView } from "./lib/gh-conditional.ts";
@@ -693,53 +693,8 @@ async function resolveBaseRef(pr: string, repo: string): Promise<string> {
   if (r.code !== 0) return "";
   const name = r.stdout.trim();
   if (name === "") return "";
-
-  const repoView = await cachedRepoView(["--json", "owner,name"], {
-    stderr: "ignore",
-    cwd: repo,
-    env: ghRepoEnv(),
-  });
-  let expectedRepo = "";
-  if (repoView.code === 0) {
-    try {
-      const meta = JSON.parse(repoView.stdout) as {
-        owner?: { login?: string };
-        name?: string;
-      };
-      const owner = meta.owner?.login ?? "";
-      const repoName = meta.name ?? "";
-      if (owner !== "" && repoName !== "")
-        expectedRepo = `${owner}/${repoName}`;
-    } catch {
-      // Left empty — refused below, the same as an unreadable `gh repo view`.
-    }
-  }
-  let remote: string;
-  try {
-    remote = remoteName(consumerRoot(repo));
-  } catch (error) {
-    console.error(
-      `self-inflicted: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    return "";
-  }
-  if (expectedRepo === "") {
-    console.error(
-      `self-inflicted: could not resolve this repository via \`gh repo view\` — refusing to fetch the base branch from an unverified '${remote}'.`,
-    );
-    return "";
-  }
-  const remoteCheck = await verifyRemoteIsPrRepo(
-    git,
-    repo,
-    expectedRepo,
-    gitIdentityEnv(),
-    remote,
-  );
-  if (!remoteCheck.ok) {
-    console.error(`self-inflicted: ${remoteCheck.why}`);
-    return "";
-  }
+  const remote = await verifiedRemote(repo);
+  if (remote === null) return "";
 
   const fetched = await git(
     [
@@ -762,6 +717,63 @@ async function resolveBaseRef(pr: string, repo: string): Promise<string> {
     return "";
   }
   return `${remote}/${name}`;
+}
+
+/** `owner/name` of the repository `gh` resolves at `repo`, or `""`. */
+async function ghRepository(repo: string): Promise<string> {
+  const view = await cachedRepoView(["--json", "owner,name"], {
+    stderr: "ignore",
+    cwd: repo,
+    env: ghRepoEnv(),
+  });
+  let repository = "";
+  if (view.code !== 0) return repository;
+  try {
+    const meta = JSON.parse(view.stdout) as {
+      owner?: { login?: string };
+      name?: string;
+    };
+    const owner = meta.owner?.login ?? "";
+    const repoName = meta.name ?? "";
+    if (owner !== "" && repoName !== "") repository = `${owner}/${repoName}`;
+  } catch {
+    // Left empty — refused by the caller, as an unreadable `gh repo view` is.
+  }
+  return repository;
+}
+
+/**
+ * The remote of the checkout at `repo` (`repository.remote`, else `origin`)
+ * once its fetch URL is verified to name the repository `gh` resolved there,
+ * or `null` with the reason on stderr.
+ */
+async function verifiedRemote(repo: string): Promise<string | null> {
+  const remote = readRemoteName(consumerRoot(repo));
+  const why =
+    "error" in remote
+      ? remote.error
+      : await remoteMismatch(repo, remote.remote);
+  if (why === null && "remote" in remote) return remote.remote;
+  console.error(`self-inflicted: ${why}`);
+  return null;
+}
+
+/** Why `remote` cannot be trusted as the PR's repository, or `null`. */
+async function remoteMismatch(
+  repo: string,
+  remote: string,
+): Promise<string | null> {
+  const expectedRepo = await ghRepository(repo);
+  if (expectedRepo === "")
+    return `could not resolve this repository via \`gh repo view\` — refusing to fetch the base branch from an unverified '${remote}'.`;
+  const check = await verifyRemoteIsPrRepo(
+    git,
+    repo,
+    expectedRepo,
+    gitIdentityEnv(),
+    remote,
+  );
+  return check.ok ? null : check.why;
 }
 
 /**

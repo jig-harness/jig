@@ -77,7 +77,7 @@ import { Defect } from "../../../shared/errors.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { calendarDate, type MergedPr, mergedPrs } from "./defect-escape.ts";
-import { fail, isDigits, runMain } from "./lib/cli.ts";
+import { fail, positiveIntArg, runMain } from "./lib/cli.ts";
 import {
   readRecordedEscapeBaseline,
   renderEscapeAnchor,
@@ -671,25 +671,14 @@ export function makeSelfInflictedLabeler(
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
 
+/** `--skip-tracker`, and `--skip-linear`, accepted as its alias. */
+const SKIP_TRACKER_FLAGS = new Set(["--skip-tracker", "--skip-linear"]);
+
 const USAGE = [
   "usage: fractal-metrics.ts [--pr-days N] [--days N] [--until YYYY-MM-DD] [--limit N]",
   "                          [--concurrency N] [--json] [--out FILE] [--skip-prs] [--skip-tracker]",
   "                          [--skip-self-inflicted] [--no-fetch-heads]",
 ] as const;
-
-function positiveInt(
-  flag: string,
-  raw: string | undefined,
-  max: number,
-): number {
-  if (raw === undefined || !isDigits(raw))
-    fail(2, `${flag} takes a whole number`, ...USAGE);
-  const n = Number.parseInt(raw, 10);
-  if (!Number.isSafeInteger(n) || n < 1 || n > max) {
-    fail(2, `${flag} must be between 1 and ${max}`, ...USAGE);
-  }
-  return n;
-}
 
 export interface CliArgs extends RunOptions {
   json: boolean;
@@ -719,15 +708,17 @@ export function parseArgs(
     const a = argv[i] as string;
     if (a === "--json") args.json = true;
     else if (a === "--skip-prs") args.skipPrs = true;
-    else if (a === "--skip-tracker" || a === "--skip-linear")
-      args.skipTracker = true;
+    else if (SKIP_TRACKER_FLAGS.has(a)) args.skipTracker = true;
     else if (a === "--skip-self-inflicted") args.skipSelfInflicted = true;
     else if (a === "--no-fetch-heads") args.fetchHeads = false;
-    else if (a === "--days") args.days = positiveInt(a, argv[++i], 366);
-    else if (a === "--pr-days") args.prDays = positiveInt(a, argv[++i], 366);
-    else if (a === "--limit") args.limit = positiveInt(a, argv[++i], 5000);
+    else if (a === "--days")
+      args.days = positiveIntArg(a, argv[++i], 366, USAGE);
+    else if (a === "--pr-days")
+      args.prDays = positiveIntArg(a, argv[++i], 366, USAGE);
+    else if (a === "--limit")
+      args.limit = positiveIntArg(a, argv[++i], 5000, USAGE);
     else if (a === "--concurrency")
-      args.concurrency = positiveInt(a, argv[++i], 16);
+      args.concurrency = positiveIntArg(a, argv[++i], 16, USAGE);
     else if (a === "--until") {
       const d = calendarDate(argv[++i] ?? "");
       if (d === null)

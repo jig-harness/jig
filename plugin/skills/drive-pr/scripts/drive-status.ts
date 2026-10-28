@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { consumerRoot, remoteName } from "../../../shared/consumer.ts";
+import { consumerRoot, readRemoteName } from "../../../shared/consumer.ts";
 import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Decide, mechanically, which state a PR-review drive is in — and in particular
@@ -816,24 +816,18 @@ async function main(): Promise<number> {
     const root = rootRes.stdout.trim();
     // Same precondition base-sync.ts fails closed on before its own fetch:
     // `probeBaseDrift` always fetches through the drive's remote
-    // (`repository.remote`, else `origin`), which is wrong whenever that
-    // remote is not the PR's own repository (a fork clone, or a `gh`/git
-    // disagreement). This read is best-effort like the rest of
-    // `baseDrift()`, so a mismatch, or a remote setting that cannot be read,
-    // just degrades to `null` rather than failing the gate — but it must not
-    // silently measure drift off the wrong repository's history.
-    let remote: string;
-    try {
-      remote = remoteName(consumerRoot(root));
-    } catch {
-      return driftMemo;
-    }
+    // (`repository.remote`), which is wrong whenever it is not the PR's own
+    // repository (a fork clone, or a `gh`/git disagreement). This read is
+    // best-effort like the rest of `baseDrift()`, so a mismatch, or an
+    // unreadable setting, degrades to `null` rather than failing the gate.
+    const remote = readRemoteName(consumerRoot(root));
+    if ("error" in remote) return driftMemo;
     const remoteCheck = await verifyRemoteIsPrRepo(
       git,
       root,
       `${owner}/${repo}`,
       identityEnv,
-      remote,
+      remote.remote,
     );
     if (!remoteCheck.ok) return driftMemo;
     // The remote being the right REPOSITORY does not prove this WORKTREE is
@@ -866,7 +860,7 @@ async function main(): Promise<number> {
       baseBranch,
       seconds.seconds,
       identityEnv,
-      remote,
+      remote.remote,
     );
     if (probe.ok) driftMemo = probe.drift;
     return driftMemo;

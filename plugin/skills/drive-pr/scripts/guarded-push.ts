@@ -70,7 +70,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { remoteName } from "../../../shared/consumer.ts";
+import { readRemoteName } from "../../../shared/consumer.ts";
 import { fail, isDigits, isGitSha, runMain, sleep } from "./lib/cli.ts";
 import { ghCall, git, readTimeoutEnv, resolvePr } from "./lib/proc.ts";
 import { repoOfUrl } from "./lib/repo-url.ts";
@@ -142,6 +142,14 @@ function withoutHoldRecheckEnv(
     ...rest
   } = env;
   return rest;
+}
+
+/** The remote to push to; a setting that cannot be read refuses the push. */
+function pushRemote(): string {
+  const read = readRemoteName();
+  if ("error" in read)
+    fail(1, `guarded-push: ${read.error} — refusing to push.`);
+  return read.remote;
 }
 
 async function main(): Promise<number> {
@@ -305,17 +313,8 @@ async function main(): Promise<number> {
   }
 
   // The push goes through the drive's remote: `repository.remote`, else
-  // `origin` (`<remote>` below). A setting that cannot be read refuses the
-  // push rather than guessing a remote.
-  let remote: string;
-  try {
-    remote = remoteName();
-  } catch (error) {
-    fail(
-      1,
-      `guarded-push: ${error instanceof Error ? error.message : String(error)} — refusing to push.`,
-    );
-  }
+  // `origin` (`<remote>` below).
+  const remote = pushRemote();
 
   // A PR's head can live in a FORK. `<remote>` is then the wrong remote
   // entirely: the push either fails, or — worse — updates a same-named branch

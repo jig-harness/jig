@@ -63,7 +63,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { consumerRoot, remoteName } from "../../../shared/consumer.ts";
+import { consumerRoot, readRemoteName } from "../../../shared/consumer.ts";
 import { loadCatalogFile } from "./lib/change-areas-catalog.ts";
 import { readStdinAll } from "./lib/cli.ts";
 import { changeAreasCatalogPath } from "./lib/overlay.ts";
@@ -354,17 +354,17 @@ const headSha = await capture(["git", "rev-parse", "HEAD"]);
 const branch = await capture(["git", "branch", "--show-current"]);
 // The drive's remote (`repository.remote`, else `origin`); an unreadable
 // setting records no address, like an unreadable one.
-let remote: string | null = null;
-try {
-  remote = remoteName();
-} catch {
-  remote = null;
-}
+const remote = readRemoteName();
 const originUrl =
-  remote === null
+  "error" in remote
     ? null
     : sanitizeGitRemoteUrl(
-        await capture(["git", "config", "--get", `remote.${remote}.url`]),
+        await capture([
+          "git",
+          "config",
+          "--get",
+          `remote.${remote.remote}.url`,
+        ]),
       );
 // Best-effort: outside a drive (or with no state yet) this is simply null.
 const round = await capture(

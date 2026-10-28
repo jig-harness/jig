@@ -259,16 +259,35 @@ export function remoteName(
   const repository = config.values.repository;
   if (repository === undefined || repository === null) return DEFAULT_REMOTE;
   if (typeof repository !== "object" || Array.isArray(repository))
-    throw new Error(
+    throw new RemoteSettingError(
       `repository must be an object: ${sourceOf(config, "repository")}`,
     );
   const value = (repository as Record<string, unknown>).remote;
   if (value === undefined || value === null) return DEFAULT_REMOTE;
   if (typeof value !== "string" || !REMOTE_NAME.test(value))
-    throw new Error(
+    throw new RemoteSettingError(
       `repository.remote must be a git remote name (no spaces, no leading '-', no ':'), got ${JSON.stringify(value)}: ${sourceOf(config, "repository.remote")}`,
     );
   return value;
+}
+
+/** A `repository` section or `repository.remote` the skills cannot use. */
+class RemoteSettingError extends Error {
+  override readonly name = "RemoteSettingError";
+}
+
+/**
+ * `remoteName`, or why it cannot be read (the setting, or a configuration
+ * file that does not parse), for a caller that reports instead of throwing.
+ */
+export function readRemoteName(
+  root = consumerRoot(),
+): { remote: string } | { error: string } {
+  try {
+    return { remote: remoteName(root) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 export function reviewConfig(): ReviewConfig {

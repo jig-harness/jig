@@ -11,7 +11,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { consumerRoot, remoteName } from "../../../../shared/consumer.ts";
+import { consumerRoot, readRemoteName } from "../../../../shared/consumer.ts";
 import { git, gitPath, gitRaw, resolveCommit, subject } from "./git.ts";
 
 export type OperationKind = "merge" | "rebase" | "cherry-pick" | "revert";
@@ -130,16 +130,22 @@ function mergedRef(root: string): string | null {
 
 /**
  * The repository's default branch name ("main"), when its remote
- * (`repository.remote`, else `origin`) declares it.
+ * (`repository.remote`, else `origin`) declares it. A configuration that
+ * cannot be read (it may be one of the conflicted files) leaves the guess to
+ * the usual names.
  */
 function defaultBranch(root: string): string[] {
-  const r = gitRaw(root, [
-    "symbolic-ref",
-    "--quiet",
-    "--short",
-    `refs/remotes/${remoteName(consumerRoot(root))}/HEAD`,
-  ]);
-  if (r.code === 0 && r.stdout.trim() !== "")
+  const read = readRemoteName(consumerRoot(root));
+  const r =
+    "error" in read
+      ? null
+      : gitRaw(root, [
+          "symbolic-ref",
+          "--quiet",
+          "--short",
+          `refs/remotes/${read.remote}/HEAD`,
+        ]);
+  if (r !== null && r.code === 0 && r.stdout.trim() !== "")
     return [r.stdout.trim().replace(/^[^/]+\//, "")];
   return ["main", "master"];
 }
