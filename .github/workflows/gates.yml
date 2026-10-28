@@ -12,10 +12,11 @@
 #
 # The CI hold (modules/M13-pipeline-economy/README.md#7-hold): while a pull
 # request carries the `ci:hold` label (`ci.hold_label` in .config/jig.yaml),
-# every job but `gates` skips and `gates` fails, naming the label. drive-pr adds
-# the label before a review round's intermediate push and removes it at
-# convergence, which runs everything again on the head the merge waits for.
-# The label events start runs, so the workflow lists them beside the defaults.
+# every job but `gates` skips and `gates` cancels its own run, naming the
+# label. drive-pr adds the label before a review round's intermediate push and
+# removes it at convergence, which runs everything again on the head the merge
+# waits for. The label events start runs, so the workflow lists them beside
+# the defaults.
 #
 # Jobs are split no further than their work needs: the drive-pr suite has as
 # many shards as keep each under two minutes and no more, since each shard
@@ -221,16 +222,35 @@ jobs:
   # `always()`: `always()` also runs when a newer push cancelled this run, and
   # would then report a failure for a head that is already superseded. It is
   # never guarded by the hold: a skipped required check counts as passing.
+  #
+  # While held it cancels its own run rather than failing. A cancelled required
+  # check blocks the merge as a failed one does, but the drive's last push is
+  # usually held, so the released head keeps the held run beside the release's
+  # passing one: cancelled, it shows grey there instead of red. Cancelling
+  # needs `actions: write`; this job checks out and runs nothing of the
+  # repository. Where the token cannot cancel (a pull request from a fork gets
+  # a read-only one), or the cancellation does not arrive, the step fails.
   gates:
     needs: [areas, gate-set, drive-pr-suite]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-slim
     timeout-minutes: 5
+    permissions:
+      actions: write
     steps:
-      - name: Fail while the CI hold is on
+      - name: Stop while the CI hold is on
         if: ${{ contains(github.event.pull_request.labels.*.name, 'ci:hold') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.api_url }}/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           echo "::error::held: this pull request carries the ci:hold label, so its heavy jobs were skipped. Remove the label (gh pr edit <PR> --remove-label ci:hold) to run everything again; never rerun this run, which replays the labelled event."
+          if curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$RUN_URL/cancel" > /dev/null; then
+            # The cancellation ends this step; the deadline only bounds the wait.
+            deadline=$((SECONDS + 120))
+            while [ "$SECONDS" -lt "$deadline" ]; do sleep 5; done
+            echo "::error::the run's cancellation did not arrive within two minutes"
+          fi
           exit 1
       - name: Require every selected job
         env:

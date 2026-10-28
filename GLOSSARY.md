@@ -1137,17 +1137,18 @@ make, use the entry's term instead.
   person can tell from the exit alone what to do next.
 - **CI hold** — an opt-in label on a pull request that the repository's
   continuous-integration workflows honour: while it is present they skip
-  their expensive jobs and a required check fails (the *held-head check*);
-  removing it runs every required check again on the same head, and only
-  results that started after the removal count. A *PR drive loop* applies it
-  between review rounds and removes it at convergence. The practice is
+  their expensive jobs and a required check fails or is cancelled (the
+  *held-head check*); removing it runs every required check again on the
+  same head, and only results that started after the removal count. A *PR
+  drive loop* applies it between review rounds and removes it at
+  convergence. The practice is
   [M13's](modules/M13-pipeline-economy/README.md#7-hold); drive-pr's
   `ci.hold_label` is its driver side.
-- **Held-head check** — the step of a required check that fails while a
-  pull request carries the *CI hold* label, so a held head is visibly not
-  mergeable from the moment the label lands until the release; its message
-  names the label to remove. M13's workflow-convention lint accepts it in
-  one shape only.
+- **Held-head check** — the step of a required check that fails, or cancels
+  its own run, while a pull request carries the *CI hold* label, so a held
+  head is visibly not mergeable from the moment the label lands until the
+  release; its message names the label to remove. M13's workflow-convention
+  lint accepts it in one shape only.
 - **Required checks** — the continuous-integration checks a repository's
   branch protection requires to pass before a pull request may merge. A drive
   derives them from the protection settings unless the repository lists them
