@@ -521,6 +521,18 @@ describe("reflect.ts hotspots", () => {
         },
       ],
       [
+        "with a merge dated on a day the calendar lacks",
+        (report) => {
+          conflicted(report).date = "2026-02-30T00:00:00+00:00";
+        },
+      ],
+      [
+        "with a merge dated at 24:00",
+        (report) => {
+          conflicted(report).date = "2026-01-01T24:00:00+00:00";
+        },
+      ],
+      [
         "with a clean merge carrying a conflicted path",
         (report) => {
           const merge = conflicted(report);

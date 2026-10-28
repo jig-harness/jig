@@ -78,12 +78,37 @@ function isCount(value: unknown): boolean {
 
 /** An ISO 8601 time with its offset, as git's `%cI` writes a committer date. */
 const OFFSET_TIME =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-](\d{2}):(\d{2}))$/;
 
-function isTime(value: unknown): value is string {
+/** A day the calendar has: `Date` rolls February 30 over into March. */
+function isCalendarDay(year: number, month: number, day: number): boolean {
+  const date = new Date(0);
+  // setUTCFullYear, not Date.UTC, which maps years 0 to 99 onto 1900 to 1999.
+  date.setUTCFullYear(year, month - 1, day);
   return (
-    typeof value === "string" &&
-    OFFSET_TIME.test(value) &&
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+/** A clock time and an offset as git writes them: no `24:00`, no leap second. */
+function isTime(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = OFFSET_TIME.exec(value);
+  if (match === null) return false;
+  const [year, month, day, hour, minute, second] = match
+    .slice(1, 7)
+    .map(Number) as [number, number, number, number, number, number];
+  const offsetHour = match[9] === undefined ? 0 : Number(match[9]);
+  const offsetMinute = match[10] === undefined ? 0 : Number(match[10]);
+  return (
+    isCalendarDay(year, month, day) &&
+    hour <= 23 &&
+    minute <= 59 &&
+    second <= 59 &&
+    offsetHour <= 23 &&
+    offsetMinute <= 59 &&
     !Number.isNaN(Date.parse(value))
   );
 }
