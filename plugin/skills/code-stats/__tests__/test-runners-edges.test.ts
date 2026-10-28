@@ -92,8 +92,26 @@ describe("JavaScript configuration read as text", () => {
       "module.exports = { testMatch: ['a'] };\nmodule.exports.testMatch = [];",
       "module.exports = { testMatch: ['a'] };\nObject.assign(module.exports, x);",
       "module.exports = { testMatch: ['a'] };\nexports.testMatch = [];",
+      "module.exports = { testMatch: ['a'] };\nmodule['exports'].testMatch = [];",
+      "module.exports = { testMatch: ['a'] };\nthis.testMatch = [];",
+      "const c = module.exports = { testMatch: ['a'] };\nc.testMatch = [];",
+      `const c = { testMatch: ['a'] };\nconsole.log(\`\${c.testMatch = []}\`);\nmodule.exports = c;`,
     ])
       expect(() => exportedObject(text)).toThrow();
+  });
+
+  test("a type assertion ends at the type, and a runtime tail after it is unreadable", () => {
+    expect(() =>
+      exportedObject(
+        "export default { testMatch: ['a'] } as Config && makeConfig();",
+      ),
+    ).toThrow("computed when it runs");
+    for (const text of [
+      "export default { testMatch: ['a'] } as const satisfies vite.UserConfig<Env>[];",
+      "const c = { testMatch: ['a'] };\nexport default c\nexport const label = 'checks';",
+      `module.exports = { module: 'x', testMatch: ['a'], label: \`n\${'a'}\` };`,
+    ])
+      expect(exportedObject(text).entries.get("testMatch")).toEqual(["a"]);
   });
 
   test("a spread may override every entry before it, not those after", () => {
@@ -255,5 +273,27 @@ describe("Maven", () => {
     expect(claimed(reading, ["qa/Check.java", "src/test/java/T.java"])).toEqual(
       ["src/test/java/T.java"],
     );
+  });
+
+  test("a > inside a quoted attribute does not end the tag", () => {
+    const reading = readMaven(
+      repo({
+        "pom.xml": pom(
+          '<build><plugins><plugin><configuration><option value=">"/></configuration></plugin></plugins><testSourceDirectory>qa</testSourceDirectory></build>',
+        ),
+      }),
+    );
+    expect(reading.unreadable).toEqual([]);
+    expect(claimed(reading, ["qa/Check.java", "src/test/java/T.java"])).toEqual(
+      ["qa/Check.java"],
+    );
+  });
+
+  test("a closing tag that does not match the open element is unreadable", () => {
+    const reading = readMaven(
+      repo({ "pom.xml": pom("<build><testSourceDirectory>qa</build>") }),
+    );
+    expect(reading.rules).toEqual([]);
+    expect(whys(reading)[0]).toContain("closes <build>");
   });
 });

@@ -7,9 +7,9 @@
  *
  * Not read: a value inside a `<profile>`, which applies only when the
  * profile is active, and one a module inherits from a parent POM. A
- * `testSourceDirectory` built from another property (`${tests.dir}`), or a
- * comment that never closes, makes the POM unreadable, and nothing is
- * claimed from it.
+ * `testSourceDirectory` built from another property (`${tests.dir}`), a
+ * comment that never closes, or a closing tag that does not match the
+ * element open, makes the POM unreadable, and nothing is claimed from it.
  */
 import {
   folderOf,
@@ -44,11 +44,25 @@ interface Markup {
   tag: { closing: boolean; name: string; empty: boolean } | null;
 }
 
+/** The `>` ending the tag that opens at `open`, past any `>` inside a quoted attribute value; -1 when none does. */
+function tagClose(text: string, open: number): number {
+  let quote = "";
+  for (let i = open + 1; i < text.length; i++) {
+    const c = text[i] as string;
+    if (quote) quote = c === quote ? "" : quote;
+    else if (c === '"' || c === "'") quote = c;
+    else if (c === ">") return i;
+  }
+  return -1;
+}
+
 /** The markup at `open`; an `UnreadableError` when it never closes. */
 function markupAt(text: string, open: number): Markup {
   const skipped = SKIPPED.find(([o]) => text.startsWith(o, open));
   const [opener, closer, kind] = skipped ?? ["<", ">", "a tag"];
-  const close = text.indexOf(closer, open + opener.length);
+  const close = skipped
+    ? text.indexOf(closer, open + opener.length)
+    : tagClose(text, open);
   if (close === -1) throw new UnreadableError(`has ${kind} it never closes`);
   const end = close + closer.length;
   if (skipped) {
@@ -93,6 +107,10 @@ function elementValues(text: string): Values {
     at = end;
     if (!tag) continue;
     if (tag.closing) {
+      if (path[path.length - 1] !== tag.name)
+        throw new UnreadableError(
+          `closes <${tag.name}> where ${path.length ? `<${path[path.length - 1]}>` : "no element"} is open`,
+        );
       values.set(path.join("/"), value);
       path.pop();
     } else if (!tag.empty) path.push(tag.name);

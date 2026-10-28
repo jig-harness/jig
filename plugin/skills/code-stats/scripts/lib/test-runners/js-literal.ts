@@ -11,10 +11,11 @@
  *
  * A file that exports a function, the result of another call, an
  * expression that goes on after the object, or a variable it mentions again
- * after declaring it, or that changes `module.exports` after setting it, is
- * refused with an `UnreadableError` naming why: its configuration exists
- * only when it runs. Keywords and names are looked for outside strings,
- * comments and regular expressions.
+ * after declaring it, that sets its export inside another expression, or
+ * that reaches `module`, `exports` or `this` anywhere else, is refused with
+ * an `UnreadableError` naming why: its configuration exists only when it
+ * runs. Keywords and names are looked for outside strings, comments and
+ * regular expressions, but inside a template string's `${…}`, which runs.
  */
 import { closeAt } from "../count.ts";
 import { UnreadableError } from "./model.ts";
@@ -64,8 +65,11 @@ export function fromJson(value: unknown): Literal {
 const isComment = (part: string) =>
   part.startsWith("//") || part.startsWith("/*");
 
-/** `text` with each span `blanked` picks blanked, positions unchanged. */
-function blank(text: string, blanked: (part: string) => boolean): string {
+/** `part` as spaces, its line breaks kept. */
+const spaced = (part: string) => part.replace(/[^\n]/g, " ");
+
+/** `text` with each comment, string and regular expression passed through `shown`, positions unchanged. */
+function blank(text: string, shown: (part: string) => string): string {
   let out = "";
   let i = 0;
   while (i < text.length) {
@@ -75,8 +79,7 @@ function blank(text: string, blanked: (part: string) => boolean): string {
       i++;
       continue;
     }
-    const part = text.slice(i, end);
-    out += blanked(part) ? part.replace(/[^\n]/g, " ") : part;
+    out += shown(text.slice(i, end));
     i = end;
   }
   return out;
@@ -84,16 +87,41 @@ function blank(text: string, blanked: (part: string) => boolean): string {
 
 /** `text` with every comment blanked and every string kept, positions unchanged. */
 export function withoutComments(text: string): string {
-  return blank(text, isComment);
+  return blank(text, (part) => (isComment(part) ? spaced(part) : part));
 }
 
 /**
  * `text` with every comment, string and regular expression blanked,
  * positions unchanged: what is left is syntax, so a search for a keyword or
- * a name in it never matches the inside of a string.
+ * a name in it never matches the inside of a string. The `${…}`
+ * expressions of a template string stay, since they run.
  */
 function syntaxOnly(text: string): string {
-  return blank(text, () => true);
+  return blank(text, (part) =>
+    part.startsWith("`") ? templateSyntax(part) : spaced(part),
+  );
+}
+
+/** A template string with its text blanked and its `${…}` expressions kept. */
+function templateSyntax(part: string): string {
+  let out = "";
+  let depth = 0;
+  for (let i = 0; i < part.length; i++) {
+    const c = part[i] as string;
+    if (depth > 0) {
+      if (c === "{") depth++;
+      else if (c === "}") depth--;
+      out += depth === 0 ? " " : c;
+    } else if (c === "\\") {
+      out += spaced(part.slice(i, i + 2));
+      i++;
+    } else if (part.startsWith("${", i)) {
+      depth = 1;
+      out += "  ";
+      i++;
+    } else out += spaced(c);
+  }
+  return out;
 }
 
 /** The end of the comment, string or regular expression that opens at `i`, or null. */
@@ -212,7 +240,12 @@ class Reader {
     return new Computed(this.s.slice(start, this.i).trim());
   }
 
-  /** `as T`, `satisfies T` and `!` after a value: types only. */
+  /**
+   * `as T`, `satisfies T` and `!` after a value: types only. A type is read
+   * only when it is named (`const`, `Config`, `vite.UserConfig<X>[]`); one
+   * written another way is left at the reader, where it reads as an
+   * expression that goes on.
+   */
   typeSuffix(): void {
     for (;;) {
       const at = this.i;
@@ -221,13 +254,43 @@ class Reader {
         continue;
       }
       const w = this.word();
-      if (w === "as" || w === "satisfies") {
-        this.skipExpression();
-        continue;
-      }
+      if ((w === "as" || w === "satisfies") && this.typeName()) continue;
       this.i = at;
       return;
     }
+  }
+
+  /** A named type at the reader, consumed: a dotted name, type arguments and `[]`s; false when the type is written another way. */
+  typeName(): boolean {
+    if (this.word() === null) return false;
+    for (;;) {
+      const at = this.i;
+      const c = this.peek();
+      if (c === ".") {
+        this.i++;
+        if (this.word() === null) return false;
+      } else if (c === "<") {
+        if (!this.typeArguments()) return false;
+      } else if (this.s.startsWith("[]", this.i)) this.i += 2;
+      else {
+        this.i = at;
+        return true;
+      }
+    }
+  }
+
+  /** The `<…>` type arguments at the reader, consumed; false when they never close on a type. */
+  typeArguments(): boolean {
+    let depth = 0;
+    for (let j = this.i; j < this.s.length; j++) {
+      const c = this.s[j] as string;
+      if (c === "<") depth++;
+      else if (c === ">" && this.s[j - 1] !== "=" && --depth === 0) {
+        this.i = j + 1;
+        return true;
+      } else if (c === ";" || c === "\n") return false;
+    }
+    return false;
   }
 
   literal(): Literal | undefined {
@@ -395,8 +458,16 @@ interface Source {
   syntax: string;
 }
 
-/** `module.exports` or `exports` changed in place: `.key =`, `[key] =`, `Object.assign(module.exports, …)`. */
-const EXPORTS_CHANGED = /(?<![\w$.])exports\s*[.[]|\bmodule\.exports\b[^=]/;
+/**
+ * A name through which a CommonJS file reaches its exports, outside the one
+ * `module.exports =` that sets them: `module` (`module['exports']`, an alias,
+ * an argument), `exports`, or `this`, which is `module.exports` at the top
+ * of the file. A key of that name (`{ module: … }`) reaches nothing.
+ */
+const REACHES_EXPORTS = /(?<![\w$.])(?:module|exports|this)(?![\w$])(?!\s*:)/;
+
+/** The characters before an export that make it part of a larger expression (`c = module.exports = …`). */
+const OPERAND_AFTER = "=(,:?&|!+-*/%<>[";
 
 /**
  * The configuration object `text` exports; an `UnreadableError` says why
@@ -411,9 +482,14 @@ export function exportedObject(text: string): LiteralObject {
       "has no export default or module.exports to read",
     );
   const assigned = src.syntax.match(/\bmodule\.exports\s*=/g)?.length ?? 0;
-  if (assigned > 1 || EXPORTS_CHANGED.test(src.syntax.replace(EXPORT, "")))
+  if (assigned > 1 || REACHES_EXPORTS.test(src.syntax.replace(EXPORT, " ")))
     throw new UnreadableError(
       "changes module.exports after setting it, so its configuration exists only when it runs",
+    );
+  const before = src.syntax.slice(0, last.index).trimEnd();
+  if (OPERAND_AFTER.includes(before[before.length - 1] ?? ";"))
+    throw new UnreadableError(
+      "sets its export inside another expression, so its configuration may change when it runs",
     );
   return expression(src, (last.index as number) + last[0].length, 0);
 }
@@ -431,7 +507,9 @@ function expression(src: Source, at: number, depth: number): LiteralObject {
     );
   if (name === null)
     throw new UnreadableError("exports something other than an object");
+  const after = r.i;
   if (r.peek() === "(") return defined(r, src, name, depth);
+  r.i = after;
   ended(r, null);
   return variable(src, name, depth);
 }
