@@ -76,7 +76,10 @@ function markupAt(text: string, open: number): Markup {
       tag: null,
     };
   }
-  const tag = /^<(\/?)([^\s/>]+)/.exec(text.slice(open, end));
+  const markup = text.slice(open, end);
+  for (const [, double, single] of markup.matchAll(/"([^"]*)"|'([^']*)'/g))
+    characterData(double ?? single ?? "");
+  const tag = /^<(\/?)([^\s/>]+)/.exec(markup);
   return {
     end,
     adds: "",
@@ -93,7 +96,9 @@ function markupAt(text: string, open: number): Markup {
  * XML reads it: a comment adds nothing (`qa<!-- x -->/java` is `qa/java`),
  * a CDATA section adds its text, and markup inside either is not markup.
  * Markup that never closes leaves no build to read, so the file is
- * unreadable.
+ * unreadable. Every reference XML reads is checked, wherever it stands:
+ * in character data before, inside and after the root element, and in
+ * attribute values.
  */
 function elementValues(text: string): Values {
   const scan: Scan = { values: new Map(), path: [], rooted: false };
@@ -111,6 +116,7 @@ function elementValues(text: string): Values {
     onTag(scan, tag, value);
     value = "";
   }
+  characterData(text.slice(at));
   const { path } = scan;
   if (path.length)
     throw new UnreadableError(

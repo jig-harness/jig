@@ -530,6 +530,30 @@ describe("Maven", () => {
     expect(claimed(allowed, ["qa/Check.java"])).toEqual(["qa/Check.java"]);
   });
 
+  test("a reference XML forbids in an attribute value, or before or after the root element, is unreadable", () => {
+    const build =
+      "<build><testSourceDirectory>qa</testSourceDirectory></build>";
+    for (const text of [
+      `<project bad="&#0;">${build}</project>`,
+      `<project bad='a&dir;'>${build}</project>`,
+      `<project><build a="x" b="&#xFFFF;"><testSourceDirectory>qa</testSourceDirectory></build></project>`,
+      `<project>${build}</project>&#0;`,
+      `<project>${build}</project>&dir;`,
+      `&#0;<project>${build}</project>`,
+    ]) {
+      const reading = readMaven(repo({ "pom.xml": text }));
+      expect(reading.rules).toEqual([]);
+      expect(whys(reading)).toHaveLength(1);
+    }
+    const allowed = readMaven(
+      repo({
+        "pom.xml": `<?xml version="1.0"?>\n<project a="x &amp; &#x3e; '" b='"'>${build}</project>\n`,
+      }),
+    );
+    expect(allowed.unreadable).toEqual([]);
+    expect(claimed(allowed, ["qa/Check.java"])).toEqual(["qa/Check.java"]);
+  });
+
   test("a POM with an element still open at the end, or no element, is unreadable", () => {
     for (const text of [
       "<project><build><testSourceDirectory>qa</testSourceDirectory>",
