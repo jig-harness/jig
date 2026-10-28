@@ -169,10 +169,17 @@ export function jestRules(file: string, obj: LiteralObject): RunnerRule[] {
   const roots = stringsAt(obj, ["roots"]);
   if (testMatch === null && testRegex === null && roots === null) return [];
   const s = settings(file, obj);
+  // Each root's rule claims only the files under that root.
   if (testMatch === null && testRegex === null)
-    return (roots ?? []).flatMap((root) =>
-      testMatchRules(s, "roots", DEFAULT_TEST_MATCH, root),
-    );
+    return (roots ?? []).flatMap((root, i) => {
+      const own = s.roots[i] as string;
+      return testMatchRules(
+        { ...s, roots: [own], scope: own },
+        "roots",
+        DEFAULT_TEST_MATCH,
+        root,
+      );
+    });
   return [
     ...testMatchRules(s, "testMatch", testMatch ?? []),
     ...(testRegex ?? []).map((source) => testRegexRule(s, source)),

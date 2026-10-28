@@ -143,6 +143,17 @@ describe("jest testMatch order", () => {
     ).toEqual(["legacy/a.check.js", "c.check.js"]);
   });
 
+  test("with roots alone, each root's rule claims only files under that root", () => {
+    const reading = readJest(
+      repo({
+        "jest.config.js":
+          "module.exports = { roots: ['<rootDir>/a', '<rootDir>/b'] };",
+      }),
+    );
+    expect(runnerRuleFor(reading, "b/x.test.js")?.pattern).toBe("<rootDir>/b");
+    expect(runnerRuleFor(reading, "a/x.test.js")?.pattern).toBe("<rootDir>/a");
+  });
+
   test("the last positive pattern that matches is the one named", () => {
     const reading = readJest(
       repo({
@@ -199,6 +210,46 @@ describe("pytest", () => {
     expect(claimed(reading, ["check_a.py", "test_a.py"])).toEqual([
       "check_a.py",
     ]);
+  });
+
+  test("pytest.toml comes before every other source, even empty", () => {
+    const tox = "[pytest]\npython_files = verify_*.py\n";
+    const named = readPytest(
+      repo({
+        "pytest.toml": "[pytest]\npython_files = ['check_*.py']\n",
+        "tox.ini": tox,
+      }),
+    );
+    expect(named.rules[0]?.key).toBe("[pytest] python_files");
+    expect(claimed(named, ["check_a.py", "verify_a.py"])).toEqual([
+      "check_a.py",
+    ]);
+    const empty = readPytest(repo({ ".pytest.toml": "", "tox.ini": tox }));
+    expect(empty).toEqual({ rules: [], unreadable: [] });
+  });
+
+  test("pyproject.toml's native [tool.pytest] table is read", () => {
+    const reading = readPytest(
+      repo({
+        "pyproject.toml": "[tool.pytest]\npython_files = ['check_*.py']\n",
+        "setup.cfg": "[tool:pytest]\npython_files = verify_*.py\n",
+      }),
+    );
+    expect(reading.rules[0]?.key).toBe("[tool.pytest] python_files");
+    expect(claimed(reading, ["check_a.py", "verify_a.py"])).toEqual([
+      "check_a.py",
+    ]);
+  });
+
+  test("a pyproject.toml setting both [tool.pytest] and its ini_options is unreadable", () => {
+    const reading = readPytest(
+      repo({
+        "pyproject.toml":
+          "[tool.pytest]\npython_files = ['a_*.py']\n[tool.pytest.ini_options]\npython_files = 'b_*.py'\n",
+      }),
+    );
+    expect(reading.rules).toEqual([]);
+    expect(whys(reading)[0]).toContain("both");
   });
 
   test("a testpaths or python_files of another type is unreadable", () => {

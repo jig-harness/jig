@@ -1,8 +1,9 @@
 /**
- * pytest: `testpaths` and `python_files`, from the first of `pytest.ini`,
- * `.pytest.ini`, `pyproject.toml` (`[tool.pytest.ini_options]`), `tox.ini`
- * (`[pytest]`) and `setup.cfg` (`[tool:pytest]`) in a folder that holds
- * pytest's section, as pytest itself chooses. A file under a `testpaths`
+ * pytest: `testpaths` and `python_files`, from the first of `pytest.toml`,
+ * `.pytest.toml` (`[pytest]`), `pytest.ini`, `.pytest.ini`, `pyproject.toml`
+ * (`[tool.pytest]`, or `[tool.pytest.ini_options]`), `tox.ini` (`[pytest]`)
+ * and `setup.cfg` (`[tool:pytest]`) in a folder that holds pytest's
+ * section, as pytest itself chooses. A file under a `testpaths`
  * entry (relative to the configuration's folder; a glob is read as one)
  * whose name matches `python_files` (pytest's default, `test_*.py` and
  * `*_test.py`, when not set) is a test; a file a `testpaths` entry names
@@ -10,10 +11,10 @@
  * applies under the configuration's folder. A configuration that sets
  * neither claims nothing.
  *
- * Every value is static text, so nothing here is computed; a
- * `pyproject.toml` that is not valid TOML, or whose `testpaths` or
- * `python_files` is neither a string nor a list of strings, is reported
- * unreadable.
+ * Every value is static text, so nothing here is computed; a TOML file
+ * that is not valid TOML, whose `testpaths` or `python_files` is neither a
+ * string nor a list of strings, or a `pyproject.toml` that sets both
+ * `[tool.pytest]` and `[tool.pytest.ini_options]`, is reported unreadable.
  */
 import { isRecord } from "../../../../../shared/guards.ts";
 import { globRegExp, globUnder } from "./glob.ts";
@@ -36,15 +37,23 @@ const READ_KEYS = ["testpaths", "python_files"];
 
 /** Where pytest looks, in its order, and the section each must hold. */
 const SOURCES: readonly { name: string; section: string }[] = [
+  { name: "pytest.toml", section: "pytest" },
+  { name: ".pytest.toml", section: "pytest" },
   { name: "pytest.ini", section: "pytest" },
   { name: ".pytest.ini", section: "pytest" },
-  { name: "pyproject.toml", section: "tool.pytest.ini_options" },
+  { name: "pyproject.toml", section: "tool.pytest" },
   { name: "tox.ini", section: "pytest" },
   { name: "setup.cfg", section: "tool:pytest" },
 ];
 
 /** The settings of a pytest section: each key's value, split as pytest splits it. */
 type Section = Map<string, string[]>;
+
+/** A file's pytest section and the name of the section it was read from. */
+interface Found {
+  name: string;
+  section: Section;
+}
 
 /** One section of an INI file, its continuation lines joined; null when absent. */
 export function iniSection(text: string, name: string): Section | null {
@@ -121,10 +130,38 @@ function tableAt(doc: unknown, keys: readonly string[]): unknown {
   return node;
 }
 
-function tomlSection(text: string): Section | null {
-  if (!/\[\s*tool\.pytest\.ini_options\s*\]/.test(text)) return null;
-  const options = tableAt(parseToml(text), ["tool", "pytest", "ini_options"]);
-  if (!isRecord(options)) return null;
+/**
+ * A `pyproject.toml`'s pytest section: `[tool.pytest]`, pytest's native
+ * table, or `[tool.pytest.ini_options]`; null when it holds neither.
+ */
+function pyprojectSection(text: string): Found | null {
+  if (!/\[\s*tool\.pytest(?:\.ini_options)?\s*\]/.test(text)) return null;
+  const pytest = tableAt(parseToml(text), ["tool", "pytest"]);
+  if (!isRecord(pytest)) return null;
+  const { ini_options: ini, ...native } = pytest;
+  const setsNative = Object.keys(native).length > 0;
+  if (setsNative && ini !== undefined)
+    throw new UnreadableError(
+      "sets both [tool.pytest] and [tool.pytest.ini_options]",
+    );
+  if (setsNative || ini === undefined)
+    return { name: "tool.pytest", section: tomlSection(native) };
+  return isRecord(ini)
+    ? { name: "tool.pytest.ini_options", section: tomlSection(ini) }
+    : null;
+}
+
+/** A `pytest.toml`'s `[pytest]` table; the file is pytest's configuration even without it. */
+function pytestTomlSection(text: string): Found {
+  const table = tableAt(parseToml(text), ["pytest"]);
+  return {
+    name: "pytest",
+    section: isRecord(table) ? tomlSection(table) : new Map(),
+  };
+}
+
+/** The read keys of a TOML table, as strings. */
+function tomlSection(options: Record<string, unknown>): Section {
   const section: Section = new Map();
   for (const key of READ_KEYS) {
     const value = options[key];
@@ -143,23 +180,15 @@ function tomlSection(text: string): Section | null {
   return section;
 }
 
-function sectionOf(path: string, text: string): Section | null {
+function sectionOf(path: string, text: string): Found | null {
   const source = SOURCES.find((s) => s.name === nameOf(path));
   if (!source) return null;
-  if (source.name === "pyproject.toml") return tomlSection(text);
+  if (source.name === "pyproject.toml") return pyprojectSection(text);
+  if (source.name.endsWith("pytest.toml")) return pytestTomlSection(text);
   const section = iniSection(text, source.section);
   // A pytest.ini is pytest's configuration even without its section.
-  return (
-    section ??
-    (source.section === "pytest" && source.name.endsWith("pytest.ini")
-      ? new Map()
-      : null)
-  );
-}
-
-/** Where `path`'s pytest section is: `[pytest]`, or the pyproject table. */
-function sectionName(path: string): string {
-  return `[${SOURCES.find((s) => s.name === nameOf(path))?.section ?? "pytest"}]`;
+  if (section === null && !source.name.endsWith("pytest.ini")) return null;
+  return { name: source.section, section: section ?? new Map() };
 }
 
 /** A matcher for a file's name against a `python_files` pattern. */
@@ -173,7 +202,10 @@ function nameMatcher(pattern: string): (path: string) => boolean {
 }
 
 /** The rules a pytest section declares. */
-export function pytestRules(file: string, section: Section): RunnerRule[] {
+export function pytestRules(
+  file: string,
+  { name, section }: Found,
+): RunnerRule[] {
   const testpaths = section.get("testpaths");
   const pythonFiles = section.get("python_files");
   if (testpaths === undefined && pythonFiles === undefined) return [];
@@ -184,7 +216,7 @@ export function pytestRules(file: string, section: Section): RunnerRule[] {
     ...(testpaths ? ["testpaths"] : []),
     ...(pythonFiles ? ["python_files"] : []),
   ];
-  const key = `${sectionName(file)} ${keys.join(" and ")}`;
+  const key = `[${name}] ${keys.join(" and ")}`;
   const filesShown = (pythonFiles ?? DEFAULT_PYTHON_FILES).join(" ");
   const rule = (
     pattern: string,
@@ -231,9 +263,11 @@ function inOrder(candidates: readonly string[]): string[] {
 
 /** Whether a candidate holds pytest's section, by its text alone. */
 const HOLDS: Record<string, RegExp> = {
+  "pytest.toml": /^/,
+  ".pytest.toml": /^/,
   "pytest.ini": /^/,
   ".pytest.ini": /^/,
-  "pyproject.toml": /^[ \t]*\[[ \t]*tool\.pytest\.ini_options[ \t]*\]/m,
+  "pyproject.toml": /^[ \t]*\[[ \t]*tool\.pytest(?:\.ini_options)?[ \t]*\]/m,
   "tox.ini": /^[ \t]*\[pytest\]/m,
   "setup.cfg": /^[ \t]*\[tool:pytest\]/m,
 };
@@ -256,7 +290,7 @@ export function readPytest(files: RepoFiles): Reading {
   }
   const configs = [...byFolder.values()].flatMap((c) => chosen(files, c));
   return readEach(READER, files, configs, (path, text) => {
-    const section = sectionOf(path, text);
-    return section === null ? null : pytestRules(path, section);
+    const found = sectionOf(path, text);
+    return found === null ? null : pytestRules(path, found);
   });
 }
