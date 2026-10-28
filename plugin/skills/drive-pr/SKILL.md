@@ -1309,8 +1309,12 @@ reply promised.
 closes only over its alert: a declined outcome once the alert is confirmed
 dismissed, a `moot` once it is fixed, closed or dismissed. Otherwise
 `triage-thread.ts` posts or reconciles the reply, leaves the thread open and
-exits `4` (dismiss the alert with `dismiss-alert.ts`, then re-run); a thread
-whose alert cannot be identified or read stays open too. Its `moot` is never
+exits `4`. For a declined outcome, dismiss the alert with `dismiss-alert.ts`
+and re-run; for a `moot`, never dismiss the alert, since `dismiss-alert.ts`
+refuses it and a dismissal would hide a finding the fix may not have
+closed: push the fix, let the scanner analyse the pushed head, and re-run
+once the alert shows fixed or closed. A thread whose alert cannot be
+identified or read stays open too. Its `moot` is never
 held, fresh or reconciled, `--moot-pending-push` included: the alert's state,
 not a push, is its proof
 ([resolve-review-comments § Code-scanning threads](../resolve-review-comments/SKILL.md#code-scanning-threads)).
