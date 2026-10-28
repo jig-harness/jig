@@ -261,9 +261,19 @@ comment that landed after the held reply is a review bot's acknowledgement
 that asks for nothing, and the guard checks that claim against the comment
 (its author is in `review.bots`, its body carries no finding and no
 question) before resolving; `finish-round.ts` takes the same form for the
-push it verifies. A review bot's acknowledgement is recognised by the guard
-itself in the common case, so the override is for the comment it cannot
-classify.
+push it verifies.
+
+The common case needs no override at all. A review bot answers an accepted
+reply on its own thread with an acknowledgement that asks for nothing ("the
+thread stays open until the pushed change is verified", or a thanks), on
+every accepted thread, every round. To the resolve guard such a comment is
+**transparent**: a comment whose author is in `review.bots`, on a thread
+that bot opened, that carries no new finding and no question, does not
+count as a newer comment, and the held item resolves on the verified push
+as if the acknowledgement were not there. The guard classifies it by what
+the comment lacks, not by its wording, so a bot's acknowledgement that does
+embed a finding or a question stays a newer comment and is triaged as one.
+The override is for the comment the guard cannot classify.
 
 A refusal with no override, or one whose evidence the agent cannot
 establish, is a [reflection](../plugin/skills/reflect/README.md) finding
