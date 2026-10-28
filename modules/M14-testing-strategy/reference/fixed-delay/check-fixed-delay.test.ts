@@ -133,6 +133,22 @@ describe("files", () => {
       "::error file=stale/queue.test.ts,line=7,title=fixed-delay::",
     );
   });
+
+  test("files are reported in code-unit order, whatever the machine's locale", () => {
+    const root = mkdtempSync(join(tmpdir(), "fixed-delay-"));
+    try {
+      for (const name of ["a.ts", "Z.ts"])
+        writeFileSync(join(root, name), "await Bun.sleep(5);\n");
+      const r = run(["a.ts", "Z.ts"], { cwd: root });
+      expectSpawnExit(r, 1);
+      expect(r.stderr.indexOf("Z.ts:1:")).toBeGreaterThanOrEqual(0);
+      expect(r.stderr.indexOf("Z.ts:1:")).toBeLessThan(
+        r.stderr.indexOf("a.ts:1:"),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("could not check", () => {

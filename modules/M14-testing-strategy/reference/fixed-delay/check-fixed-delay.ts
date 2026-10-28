@@ -198,7 +198,7 @@ function parseOptions(argv: string[]): Options {
       if (!excludes.some((glob) => glob.match(fromRoot))) files.add(file);
     }
   }
-  return { files: [...files].sort((a, b) => a.localeCompare(b)), patterns };
+  return { files: [...files].sort(), patterns };
 }
 
 /** Workflow-command escaping for a message, and for a property. */
