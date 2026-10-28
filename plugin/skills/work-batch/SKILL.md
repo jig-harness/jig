@@ -161,7 +161,7 @@ Record, for each issue you keep, its state and assignee ids from that line:
 the release in step 4 restores them. Then, for each:
 
 1. Move it to `in_progress` and assign it to yourself, as `/jig:do-item`
-   Step 4a item 1 does:
+   Step 4a item 2 does:
 
    ```bash
    bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/tracker.ts" transition "<KEY>" in_progress

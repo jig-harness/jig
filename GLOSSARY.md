@@ -1316,6 +1316,11 @@ make, use the entry's term instead.
   out so that it alone runs on an expensive *model tier* while the evidence
   gathering and ranking around it run on cheaper ones. The unit the *Judgment
   tier* is assigned to, rather than a whole skill or agent.
+- **Route** — the agent, the *model tier* and the effort an item's
+  implementer runs on, derived from the item's *work type*, its *flag
+  labels* and size and the change areas it touches, by rules a repository
+  keeps as data, with the rule behind each part recorded; a person's choice
+  always wins ([design](design/agent-routing.md)).
 - **Family alias** — a model name that selects a model family rather than
   one release (`opus`, `sonnet`). A pin written with it ordinarily resolves to
   the family's current release, though not always: a session already on an
