@@ -527,12 +527,11 @@ conflict; a pinned agent keeping its pin; the reason, the source and
 whether it was applied on the pull request, where the drive's loop-cost
 report joins them to the outcome; a person's choice always winning; opt-in
 until a repository declares its rules; no model asked to route. The design
-is written and decided, so what stays open under this item is the build,
-its own epic, one pull request per step, after item 27's type derivation:
+is written and decided, and its first step is built: `determine_route.ts`
+derives the route from the `routing` section and its defaults, and
+`do-item` prints it and forwards nothing. What stays open is the rest of
+the build, its own epic, one pull request per step:
 
-- **The derivation**: `determine_route.ts`, the `routing` section and its
-  defaults as data with their tests, in CONFIGURATION.md; `do-item` prints
-  the route and changes nothing yet.
 - **The record**: the `## Route` section written and parsed from
   `plugin/shared/`, and the loop-cost report reading it.
 - **M0's declaration point**: the policy, the criterion and the loader's
