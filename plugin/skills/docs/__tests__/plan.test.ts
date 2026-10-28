@@ -15,6 +15,7 @@ import {
   findSchema,
   parseDocsSettings,
 } from "../scripts/lib/settings.ts";
+import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import { temporary, write } from "./helpers.ts";
 
 /** A folder holding `files`; the paths are what git would list. */
@@ -179,25 +180,49 @@ describe("the detected settings", () => {
     mkdirSync(root);
     const leading = relative(root, join(outside, "docs"));
     expect(() => parseDocsSettings({ root: leading }, root)).toThrow(
-      `docs.root names ${leading}, which leads outside the repository`,
+      `docs.root names ${canonicalPath(leading)}, which leads outside the repository`,
     );
+  });
+
+  test.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "creating a symbolic link needs Developer Mode or a privilege on Windows",
+    ),
+  )("a root linked to a folder outside the repository is refused", () => {
+    const outside = temporary();
+    mkdirSync(join(outside, "docs"));
+    const root = temporary();
     symlinkSync(join(outside, "docs"), join(root, "docs"));
     expect(() => parseDocsSettings(undefined, root)).toThrow(
       "docs.root names docs, which leads outside the repository",
     );
   });
 
-  test("a root linked to a folder inside the repository reads as that folder", () => {
-    const root = temporary();
-    write(root, "handbook/frontmatter-schema.yaml", "{}\n");
-    symlinkSync(join(root, "handbook"), join(root, "docs"));
-    const settings = parseDocsSettings(undefined, root);
-    expect(settings.root).toBe("handbook");
-    expect(settings.schema).toBe("handbook/frontmatter-schema.yaml");
-    expect(parseDocsSettings({ root: "docs" }, root).root).toBe("handbook");
-  });
+  test.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "creating a symbolic link needs Developer Mode or a privilege on Windows",
+    ),
+  )(
+    "a root linked to a folder inside the repository reads as that folder",
+    () => {
+      const root = temporary();
+      write(root, "handbook/frontmatter-schema.yaml", "{}\n");
+      symlinkSync(join(root, "handbook"), join(root, "docs"));
+      const settings = parseDocsSettings(undefined, root);
+      expect(settings.root).toBe("handbook");
+      expect(settings.schema).toBe("handbook/frontmatter-schema.yaml");
+      expect(parseDocsSettings({ root: "docs" }, root).root).toBe("handbook");
+    },
+  );
 
-  test("a schema linked to a file is found, and confined like any other", () => {
+  test.skipIf(
+    skipsOnWindows(
+      "file-system",
+      "creating a symbolic link needs Developer Mode or a privilege on Windows",
+    ),
+  )("a schema linked to a file is found, and confined like any other", () => {
     const root = temporary();
     write(root, "shared/schema.yaml", "{}\n");
     mkdirSync(join(root, "docs"));

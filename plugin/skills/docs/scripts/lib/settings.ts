@@ -32,7 +32,7 @@ export class SettingsError extends Error {}
 export interface DocsSettings {
   /** The docs tree, relative to the repository root; null when there is none. */
   root: string | null;
-  /** The frontmatter schema, relative to the root; null when there is none. */
+  /** The frontmatter schema, relative to the repository root; null when there is none. */
   schema: string | null;
   staleAfterDays: number;
   /** Which values were detected rather than configured. */
