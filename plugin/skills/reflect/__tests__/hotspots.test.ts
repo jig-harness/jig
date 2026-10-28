@@ -317,9 +317,12 @@ describe("reflect.ts hotspots", () => {
     // A merge at that same moment falls inside the range and may predate the fix.
     const boundary = JSON.parse(readFileSync(file, "utf8")) as {
       range: { since: string | null };
+      merges: Array<{ date: string }>;
       paths: Array<{ lastConflict: string }>;
     };
-    boundary.range.since = at;
+    // As history.ts --since writes it.
+    boundary.range.since = new Date(at).toISOString();
+    for (const merge of boundary.merges) merge.date = at;
     for (const entry of boundary.paths) entry.lastConflict = at;
     const same = join(m.dir, "at-the-fix.json");
     writeFileSync(same, JSON.stringify(boundary));
@@ -336,6 +339,8 @@ describe("reflect.ts hotspots", () => {
       hotspotMinMerges: number;
       range: { since: string | null; until: string | null };
       limits?: string[];
+      hotspots: string[];
+      merges: Array<{ date: string }>;
       paths: Array<{
         path: string;
         merges: number;
@@ -397,6 +402,49 @@ describe("reflect.ts hotspots", () => {
         (report) => {
           (report.paths[0] as { lastConflict: string }).lastConflict =
             "yesterday";
+        },
+      ],
+      [
+        "with its hotspots left out",
+        (report) => {
+          report.hotspots = [];
+        },
+      ],
+      [
+        "with a hotspot named twice",
+        (report) => {
+          report.hotspots = [...report.hotspots, report.hotspots[0] as string];
+        },
+      ],
+      [
+        "with a path entry twice",
+        (report) => {
+          report.paths = [...report.paths, first(report)];
+        },
+      ],
+      [
+        "with an empty list of limits",
+        (report) => {
+          report.limits = [];
+        },
+      ],
+      [
+        "from a shallow clone without its partial-coverage limit",
+        (report) => {
+          (report as { shallow?: boolean }).shallow = true;
+        },
+      ],
+      [
+        "whose range start has no time zone",
+        (report) => {
+          report.range.since = "2000-01-01T00:00:00";
+        },
+      ],
+      [
+        "whose merge is dated without a time zone",
+        (report) => {
+          const merge = report.merges[0] as { date: string };
+          merge.date = merge.date.replace(/(Z|[+-]\d{2}:\d{2})$/, "");
         },
       ],
     ];

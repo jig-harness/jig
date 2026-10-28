@@ -14,6 +14,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
+import {
+  buildReport,
+  type MergeRecord,
+} from "../../resolve-conflicts/scripts/lib/report.ts";
 import { finding, Machine } from "./scratch.ts";
 
 const plugin = join(import.meta.dir, "..", "..", "..");
@@ -83,30 +87,46 @@ it("notes a conflict hotspot from a copy, reading the cause list by sibling path
   const reflect = join(cache, "plugin", "skills", "reflect", "scripts");
   const repo = m.repository("api", "git@github.com:example/api.git");
   const report = join(m.dir, "merge-conflicts.json");
+  // Four merges that each met an append conflict in the changelog.
+  const merges = [1, 2, 3, 4].map(
+    (n) =>
+      ({
+        operation: "merge",
+        commit: `${n}`.repeat(40),
+        parents: ["a".repeat(40), "b".repeat(40)],
+        date: `2026-01-0${n}T03:04:05+00:00`,
+        subject: `Merge branch 'feature-${n}'`,
+        pullRequest: null,
+        branches: { from: `feature-${n}`, into: null },
+        parentHeads: { ours: [], theirs: [] },
+        conflicted: true,
+        mechanical: false,
+        paths: [
+          {
+            path: "CHANGELOG.md",
+            kind: null,
+            conflicts: ["contents"],
+            class: "text",
+            causes: ["append"],
+            regions: [],
+            mechanical: false,
+            resolution: null,
+          },
+        ],
+        unmatchedResolutions: [],
+      }) as unknown as MergeRecord,
+  );
   writeFileSync(
     report,
-    JSON.stringify({
-      schema: "merge-conflicts/v1",
-      range: { since: null, until: null, label: "all history" },
-      hotspotMinMerges: 3,
-      shallow: false,
-      totals: { merges: 9 },
-      paths: [
-        {
-          path: "CHANGELOG.md",
-          merges: 4,
-          causes: { append: 4 },
-          topCause: "append",
-          remedy: "one file per entry",
-          hotspot: true,
-          lastConflict: "2026-01-02T03:04:05Z",
-        },
-      ],
-      hotspots: ["CHANGELOG.md"],
-      skipped: [],
-      confidence: null,
-      limits: ["It counts a conflict once for each merge that meets it again."],
-    }),
+    JSON.stringify(
+      buildReport({
+        range: { since: null, until: null, label: "all history" },
+        hotspotMinMerges: 3,
+        merges,
+        skipped: [],
+        confidence: null,
+      }),
+    ),
   );
   const noted = repo.script(
     "reflect.ts",

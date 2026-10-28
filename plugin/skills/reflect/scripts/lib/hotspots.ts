@@ -14,6 +14,7 @@
  * after the fix: that is the cause recurring, and a finding of its own.
  */
 import { readFileSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import { isRecord } from "../../../../shared/guards.ts";
 import {
   CAUSES,
@@ -22,9 +23,8 @@ import {
 } from "../../../resolve-conflicts/scripts/lib/causes.ts";
 import {
   type Accuracy,
-  mostFrequentCause,
+  buildReport,
   type PathSummary,
-  type Range,
   type Report,
   SCHEMA,
 } from "../../../resolve-conflicts/scripts/lib/report.ts";
@@ -75,15 +75,51 @@ function isCount(value: unknown): boolean {
   return isWhole(value) && (value as number) >= 1;
 }
 
-function isDate(value: unknown): boolean {
-  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+/** An ISO 8601 time with its offset, as git's `%cI` writes a committer date. */
+const OFFSET_TIME =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+function isTime(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    OFFSET_TIME.test(value) &&
+    !Number.isNaN(Date.parse(value))
+  );
 }
 
-/** Regions per cause: each key a cause, each value a count of regions. */
-function isCauseCounts(value: unknown): boolean {
+/** A range end as the report writes it: UTC, through `toISOString()`. */
+function isRangeEnd(value: unknown): boolean {
+  return (
+    value === null ||
+    (isTime(value) && new Date(Date.parse(value)).toISOString() === value)
+  );
+}
+
+function isCauseList(value: unknown): boolean {
+  return Array.isArray(value) && value.every(isCause);
+}
+
+/** What `buildReport` reads of a conflicted path: its name and its causes. */
+function isPathRecord(value: unknown): boolean {
   return (
     isRecord(value) &&
-    Object.entries(value).every(([key, n]) => isCause(key) && isWhole(n))
+    isText(value.path) &&
+    isCauseList(value.causes) &&
+    Array.isArray(value.regions) &&
+    value.regions.every((region) => isRecord(region) && isCause(region.cause))
+  );
+}
+
+/** What `buildReport` reads of a replayed merge. */
+function isMergeRecord(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isText(value.commit) &&
+    isTime(value.date) &&
+    typeof value.conflicted === "boolean" &&
+    (value.mechanical === null || typeof value.mechanical === "boolean") &&
+    Array.isArray(value.paths) &&
+    value.paths.every(isPathRecord)
   );
 }
 
@@ -108,13 +144,13 @@ function isConfidence(value: unknown): boolean {
   );
 }
 
-/** A range's ends: each null (open) or a date, the start before the end. */
+/** A range's ends: each null (open) or a UTC time, the start before the end. */
 function isRange(value: unknown): boolean {
   if (
     !isRecord(value) ||
     typeof value.label !== "string" ||
-    !(value.since === null || isDate(value.since)) ||
-    !(value.until === null || isDate(value.until))
+    !isRangeEnd(value.since) ||
+    !isRangeEnd(value.until)
   )
     return false;
   return (
@@ -122,10 +158,6 @@ function isRange(value: unknown): boolean {
     value.until === null ||
     Date.parse(value.since as string) < Date.parse(value.until as string)
   );
-}
-
-function isTextList(value: unknown): boolean {
-  return Array.isArray(value) && value.every(isText);
 }
 
 function isSkipped(value: unknown): boolean {
@@ -151,19 +183,17 @@ const REPORT_CHECKS: readonly Check[] = [
     "totals.merges is not a count",
   ],
   ["hotspotMinMerges", isCount, "hotspotMinMerges is missing"],
+  ["shallow", (value) => typeof value === "boolean", "shallow is missing"],
+  [
+    "merges",
+    (value) => Array.isArray(value) && value.every(isMergeRecord),
+    "merges is not a list of replayed merges, each dated with its offset",
+  ],
   ["paths", Array.isArray, "paths is missing"],
   ["hotspots", Array.isArray, "hotspots is missing"],
   ["skipped", isSkipped, "skipped is not a list of skipped merges"],
   ["confidence", isConfidence, "confidence is not a hand-check"],
-  ["limits", isTextList, "limits is not a list of what the replay cannot see"],
-];
-
-const PATH_CHECKS: readonly Check[] = [
-  ["merges", isCount, "merges is not a count"],
-  ["topCause", isCause, "topCause is not a cause"],
-  ["remedy", isText, "remedy is missing"],
-  ["causes", isCauseCounts, "causes is not a count of regions per cause"],
-  ["lastConflict", isDate, "lastConflict is not a date"],
+  ["limits", Array.isArray, "limits is missing"],
 ];
 
 function firstProblem(
@@ -174,43 +204,57 @@ function firstProblem(
   return failed === undefined ? null : failed[2];
 }
 
-/**
- * What the history report derives a path's fields from, checked: its top
- * cause is the most frequent of its counted causes (ties in cause order), and
- * its last conflict is one of the merges the range selected.
- */
-function derivedProblem(entry: PathSummary, range: Range): string | null {
-  if ((entry.causes[entry.topCause] ?? 0) < 1)
-    return `topCause ${entry.topCause} has no region counted`;
-  if (mostFrequentCause(entry.causes) !== entry.topCause)
-    return `topCause ${entry.topCause} is not its most frequent cause`;
-  const last = Date.parse(entry.lastConflict);
-  if (
-    (range.since !== null && last < Date.parse(range.since)) ||
-    (range.until !== null && last >= Date.parse(range.until))
-  )
-    return "lastConflict is outside the range";
-  return null;
+function byPath<T extends { path: string }>(entries: readonly T[]): T[] {
+  return [...entries].sort((a, b) =>
+    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
+  );
 }
 
-function pathProblem(entry: unknown, range: Range): string | null {
-  if (!isRecord(entry) || !isText(entry.path))
-    return "a path entry has no path";
-  const problem =
-    firstProblem(entry, PATH_CHECKS) ??
-    derivedProblem(entry as unknown as PathSummary, range);
-  return problem === null ? null : `${entry.path}: ${problem}`;
+function sorted(values: readonly unknown[]): unknown[] {
+  return [...values].sort((a, b) =>
+    String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0,
+  );
+}
+
+/**
+ * Every value the history report derives from the merges it replayed, checked
+ * by deriving it again with the report's own `buildReport`: each merge lies in
+ * the range, and the totals, the paths, the hotspots and the limits are the
+ * ones those merges give, each path and hotspot once. Order is not compared,
+ * since the report sorts paths by the producer's locale. A report written by
+ * another version of `history.ts` can differ in wording and is refused;
+ * measuring again gives one this version accepts.
+ */
+function derivedProblem(report: Report): string | null {
+  const { since, until } = report.range;
+  const outside = report.merges.find(
+    ({ date }) =>
+      (since !== null && Date.parse(date) < Date.parse(since)) ||
+      (until !== null && Date.parse(date) >= Date.parse(until)),
+  );
+  if (outside !== undefined)
+    return `merge ${outside.commit} is outside the range`;
+  const derived = buildReport(report);
+  const mismatched: Array<[string, unknown, unknown]> = [
+    ["totals", report.totals, derived.totals],
+    ["paths", byPath(report.paths), byPath(derived.paths)],
+    ["hotspots", sorted(report.hotspots), sorted(derived.hotspots)],
+    ["limits", report.limits, derived.limits],
+  ];
+  const wrong = mismatched.find(
+    ([, given, expected]) => !isDeepStrictEqual(given, expected),
+  );
+  return wrong === undefined
+    ? null
+    : `its ${wrong[0]} are not what its merges give`;
 }
 
 function reportProblem(value: unknown): string | null {
   if (!isRecord(value)) return "not a JSON object";
-  const problem = firstProblem(value, REPORT_CHECKS);
-  if (problem !== null) return problem;
-  for (const entry of value.paths as unknown[]) {
-    const pathFault = pathProblem(entry, value.range as Range);
-    if (pathFault !== null) return pathFault;
-  }
-  return null;
+  return (
+    firstProblem(value, REPORT_CHECKS) ??
+    derivedProblem(value as unknown as Report)
+  );
 }
 
 function parsedFile(file: string): unknown {
@@ -230,7 +274,7 @@ export function readHotspotReport(file: string): HotspotReport {
   const problem = reportProblem(value);
   if (problem !== null) throw badReport(file, problem);
   const report = value as unknown as Report;
-  const byPath = new Map(report.paths.map((entry) => [entry.path, entry]));
+  const summaries = new Map(report.paths.map((entry) => [entry.path, entry]));
   const skipped: Record<string, number> = {};
   for (const { reason } of report.skipped)
     skipped[reason] = (skipped[reason] ?? 0) + 1;
@@ -239,21 +283,7 @@ export function readHotspotReport(file: string): HotspotReport {
     hotspotMinMerges: report.hotspotMinMerges,
     totalMerges: report.totals.merges,
     limits: report.limits,
-    hotspots: (report.hotspots as unknown[]).map((path) => {
-      const entry = typeof path === "string" ? byPath.get(path) : undefined;
-      if (entry === undefined)
-        throw badReport(file, `hotspot ${String(path)} has no path entry`);
-      // A hotspot is a path that conflicted in at least the threshold's merges.
-      if (
-        entry.merges < report.hotspotMinMerges ||
-        entry.merges > report.totals.merges
-      )
-        throw badReport(
-          file,
-          `hotspot ${entry.path} conflicted in ${entry.merges} merges, outside ${report.hotspotMinMerges} to ${report.totals.merges}`,
-        );
-      return entry;
-    }),
+    hotspots: report.hotspots.map((path) => summaries.get(path) as PathSummary),
     skipped,
     accuracy: report.confidence?.causes ?? null,
   };

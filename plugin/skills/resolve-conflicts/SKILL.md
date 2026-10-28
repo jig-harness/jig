@@ -753,9 +753,10 @@ store already records it, with its status). A stored hotspot gets a new
 finding only once its fix is `implemented` and the report's range starts
 after that decision, so every merge measured came after the fix. With
 reflection off it prints `{"on": false}` and writes nothing. Exit 2 means
-the file is not a `merge-conflicts/v1` report, or one whose values the
-history report could not have written (a path's `topCause` that is not its
-most frequent counted cause, or a `lastConflict` outside the range); exit 3, that the store is
+the file is not a `merge-conflicts/v1` report, or one this version of
+`history.ts` could not have written: a time without its offset, a merge
+outside the range, or totals, paths, hotspots or limits other than the ones
+its merges give; exit 3, that the store is
 unavailable; exit 1, that the store answered with something that is not its
 events. On exit 2, 3 or 1 nothing was noted.
 
