@@ -9,13 +9,15 @@ import {
   closeSync,
   constants,
   fstatSync,
+  lstatSync,
   openSync,
   readdirSync,
   readFileSync,
   readSync,
+  realpathSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { errnoCode } from "./errors.ts";
 import { decodeJson, isRecord } from "./guards.ts";
 import { parseJunitReport } from "./junit-report.ts";
@@ -188,7 +190,12 @@ export function verifySettings(section: unknown, root: string): VerifySettings {
 
 const caseKey = (c: CaseId) => `${c.classname}::${c.name}`;
 
-/** A report that was read: its counts per suite and each case's result. */
+/**
+ * A report that was read: its counts per suite and each case's result. Each
+ * case gets one result, a failure before a skip, and the report's counts
+ * are taken from those results, so they agree with the cases as the
+ * record's reader checks them.
+ */
 function summarize(text: string, path: string): ReportSummary {
   const report = parseJunitReport(text);
   const suites = report.suites.map((s) => ({
@@ -198,22 +205,27 @@ function summarize(text: string, path: string): ReportSummary {
     skipped: s.skipped,
     tripwire: s.depth === 0 && s.executed === 0,
   }));
-  const skipped = report.cases.filter((c) => c.skipped).length;
-  const executed = report.cases.length - skipped;
+  const cases = report.cases.map((c) => ({
+    classname: c.classname,
+    name: c.name,
+    result: (c.failed
+      ? "failed"
+      : c.skipped
+        ? "skipped"
+        : "passed") as CaseResult,
+  }));
+  const skipped = cases.filter((c) => c.result === "skipped").length;
+  const executed = cases.length - skipped;
   return {
     path,
     status: "read",
     executed,
     skipped,
     suites,
-    failed: report.cases
-      .filter((c) => c.failed)
+    failed: cases
+      .filter((c) => c.result === "failed")
       .map(({ classname, name }) => ({ classname, name })),
-    cases: report.cases.map((c) => ({
-      classname: c.classname,
-      name: c.name,
-      result: c.failed ? "failed" : c.skipped ? "skipped" : "passed",
-    })),
+    cases,
     tripwire: executed === 0 || suites.some((s) => s.tripwire),
   };
 }
@@ -266,14 +278,57 @@ function readBounded(fd: number): string | undefined {
   }
 }
 
+const LINKED: Pick<ReportSummary, "status" | "problem"> = {
+  status: "unreadable",
+  problem: "a symbolic link, or replaced while it was opened",
+};
+
 /**
- * The report at `file`, read only when it is a regular file of bounded size
- * written after `startedMs`: its modification time at or after the start, to
- * the whole second a coarse file system keeps. The checks and the read are
- * of one open file, so the path cannot be swapped between them. A report
- * the parser cannot get through, by its own error or any other (a nesting
- * deep enough to exhaust the stack), is recorded unreadable, so the run is
- * still recorded. `shown` is the path the record names.
+ * The report file itself open on `fd`, or why it is not: the path a link
+ * (refused at the open where the system can, `O_NOFOLLOW`), or the file
+ * opened not the one the path names without following links (the path
+ * swapped between the two looks). `file`'s folder is its resolved one, and
+ * is checked to still be, so no link anywhere on the path leads the read to
+ * another file.
+ */
+function openReport(
+  file: string,
+): { fd: number } | Pick<ReportSummary, "status" | "problem"> {
+  const before = lstatSync(file);
+  if (before.isSymbolicLink()) return LINKED;
+  let fd: number;
+  try {
+    fd = openSync(
+      file,
+      constants.O_RDONLY |
+        (constants.O_NONBLOCK ?? 0) |
+        (constants.O_NOFOLLOW ?? 0),
+    );
+  } catch (error) {
+    if (["ELOOP", "EMLINK"].includes(errnoCode(error) ?? "")) return LINKED;
+    throw error;
+  }
+  const opened = fstatSync(fd);
+  if (
+    opened.dev !== before.dev ||
+    opened.ino !== before.ino ||
+    realpathSync(dirname(file)) !== dirname(file)
+  ) {
+    closeSync(fd);
+    return LINKED;
+  }
+  return { fd };
+}
+
+/**
+ * The report at `file`, read only when it is a regular file, never a link,
+ * of bounded size written after `startedMs`: its modification time at or
+ * after the start, to the whole second a coarse file system keeps. The
+ * checks and the read are of one open file, so the path cannot be swapped
+ * between them. A report the parser cannot get through, by its own error or
+ * any other (a nesting deep enough to exhaust the stack), is recorded
+ * unreadable, so the run is still recorded. `file` is the report's path with
+ * its folder resolved; `shown` is the path the record names.
  */
 export function readReport(
   file: string,
@@ -283,7 +338,9 @@ export function readReport(
   let read: ReturnType<typeof reportText>;
   let fd: number | undefined;
   try {
-    fd = openSync(file, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+    const opened = openReport(file);
+    if (!("fd" in opened)) return { path: shown, ...opened };
+    fd = opened.fd;
     read = reportText(fd, startedMs);
   } catch (error) {
     if (errnoCode(error) === "ENOENT")

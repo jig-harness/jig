@@ -600,6 +600,42 @@ describe("the store", () => {
     },
   );
 
+  test.if(POSIX)(
+    "a report the command leaves as a link is recorded unreadable",
+    () => {
+      const outside = join(scratch, "outside.xml");
+      const r = record(
+        ["--junit", "reports/junit.xml"],
+        js(
+          `const fs = require("node:fs"); fs.writeFileSync(${JSON.stringify(outside)}, ${JSON.stringify(REPORT.replace(/<failure[^>]*\/>/, ""))}); fs.mkdirSync("reports", { recursive: true }); fs.symlinkSync(${JSON.stringify(outside)}, "reports/junit.xml");`,
+        ),
+        1,
+      );
+      expect(r.junit?.status).toBe("unreadable");
+      expect(r.junit?.problem).toContain("symbolic link");
+      expect(listed([])).toEqual([]);
+    },
+  );
+
+  test("a case both failed and skipped reads back as one failed case", () => {
+    const both = `<testsuites><testsuite name="s">
+  <testcase classname="s" name="ok"/>
+  <testcase classname="s" name="x"><failure/><skipped/></testcase>
+</testsuite></testsuites>`;
+    const r = record(["--junit", "reports/junit.xml"], writesReport(both), 1);
+    expect(r.junit).toMatchObject({
+      status: "read",
+      executed: 2,
+      skipped: 0,
+      failed: [{ classname: "s", name: "x" }],
+    });
+    const all = evidence(["list", "--all", "--json"]);
+    expectSpawnExit(all, 0, "evidence list --all");
+    expect(
+      (JSON.parse(all.stdout) as EvidenceRecord[]).map((x) => x.id),
+    ).toEqual([r.id]);
+  });
+
   test("refuses a read report missing the counts vouching reads", () => {
     const r = record([], PASS, 0);
     const forged = {
