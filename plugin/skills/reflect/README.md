@@ -29,8 +29,9 @@ Contents: [the loop](#the-loop) · [turning it on](#turning-it-on) ·
 
 1. **Capture.** While a session works, a finding goes into the session's
    [journal](#the-journal), a file in its own worktree. A skill can write one
-   itself (the review loop records a review that took many rounds); the agent
-   writes one when something goes wrong.
+   itself (the review loop records a review that took many rounds, and
+   the `hotspots` operation of `reflect.ts` notes the conflict hotspots a merge-conflict report
+   measured); the agent writes one when something goes wrong.
 2. **Reflect.** At a natural end (a converged drive, an addressed review, the
    end of a session, before a worktree is removed), `reflect` reads the
    journal, adds what the session itself observed, merges duplicates, names
@@ -113,7 +114,7 @@ the [JSONL](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) format:
 | `change` | Where the finding came from: the repository (its `origin` remote without protocol or `.git`, or, without one, `local/<folder>-<hash>`, the hash taken from the folder's path), the branch, and the pull request and issue when known. The issue is read from the branch name, under the configured tracker's key shape and `pull_requests.branch_name` (`eng-12-retry` names `ENG-12` on Linear, `12-retry` names `#12` on GitHub Issues) |
 | `kind` | `error` (something went wrong or cost time), `opportunity` (something could work better) or `unhelpful-content` ([instruction text that cost context without helping](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)) |
 | `severity` | `high`, `medium` or `low`; for an opportunity or unhelpful content, its priority on the same scale |
-| `class` | A short kebab-case name for the failure shape, not the incident: `narrow-fix-per-round`, `instruction-missing-precondition`. Findings of one class are counted together, so a class already in the store is reused when it fits |
+| `class` | A short kebab-case name for the failure shape, not the incident: `narrow-fix-per-round`, `instruction-missing-precondition`. Findings of one class are counted together, so a class already in the store is reused when it fits. A [conflict hotspot](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)'s finding takes the cause the merge-conflict history report gave it (`derived`, `structural`, `echo`, `version`, `sequence`, `tally`, `append`, `packed-list`, `adjacent` or `overlap`, as [resolve-conflicts](../resolve-conflicts/SKILL.md#where-past-merges-conflicted-the-history-report) defines them) |
 | `target` | What the finding is about: `{"scope":"repository","name":"AGENTS.md"}` for the repository's own scaffolding, `{"scope":"tool","tool":"jig","name":"drive-pr"}` for a shared tool |
 | `title`, `description`, `suggested_fix` | What happened and the concrete change that would have prevented it |
 | `time_cost_minutes` | Optional: the time the problem cost |
@@ -593,6 +594,7 @@ Only when reflection is on; when it is off nothing below happens.
 |-------|--------------|
 | [`drive-pr`](../drive-pr/README.md) | `drive-status.ts` reports `reflectDue`, and `drive.ts` arms `$DRIVE_PR_REFLECT_DUE`, when the review rounds since the last reflection pass the threshold; the pass runs `/jig:reflect` and records it with the `set-reflected` operation of `drive-state.ts` |
 | [`resolve-review-comments`](../resolve-review-comments/README.md) | `await-round.ts`, at wind-down after a pull request took more than `REFLECT_THRESHOLD` rounds, notes the round count in the journal (a `review-took-many-rounds` finding with an id derived from the pull request) and asks for `/jig:reflect`; the drive's rounds pass through it too |
+| [`resolve-conflicts`](../resolve-conflicts/README.md) | The `hotspots` operation of `reflect.ts`, given the file the history report wrote as JSON (`merge-conflicts/v1`), reads it and notes one finding per conflict hotspot: the path as its target, its most frequent cause as its class, the report's remedy as its fix. A hotspot the journal still holds is revised to the new count; one the store already records gets no second finding, unless its fix is `implemented` and the report's range starts after that decision. `plan` and `contribute` then escalate and store them like any finding |
 | [`do-item`](../do-item/SKILL.md) | Asks for `/jig:reflect` when a recurring pattern scout finds a class of problem |
 | [M12 worktree removal](https://github.com/jig-harness/jig/blob/main/modules/M12-parallel-agent-ergonomics/templates/worktree-hooks.md) | The removal hook asks for `/jig:reflect` and runs `journal.ts`’s `park` operation, refusing the removal when parking fails |
 
@@ -601,7 +603,7 @@ Only when reflection is on; when it is off nothing below happens.
 | Script | What it does |
 |--------|--------------|
 | `scripts/journal.ts` | `note`, `revise`, `drop`, `unsent`, `park`, `path`: capture in the worktree's journal |
-| `scripts/reflect.ts` | `status`, `gather`, `plan`, `contribute`: the script half of the procedure |
+| `scripts/reflect.ts` | `status`, `gather`, `plan`, `contribute`: the script half of the procedure; `hotspots`: conflict hotspots into the journal |
 | `scripts/store.ts` | One store operation against the configured store, under its deadline |
 | `scripts/filesystem-store.ts` | The filesystem store, behind the contract |
 | `scripts/notion-store.ts` | The Notion store, behind the contract, with `init` and `repair` |
