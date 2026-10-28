@@ -211,7 +211,9 @@ export async function declinedAlertOf(
  */
 export async function resolveHeldUnlessAlertOpen(
   threadId: string,
-  opening: { author: { login: string } | null; body: string | null } | undefined,
+  opening:
+    | { author: { login: string } | null; body: string | null }
+    | undefined,
   outcome: string,
   timeoutSec: number,
 ): Promise<{ code: number; stdout: string }> {
