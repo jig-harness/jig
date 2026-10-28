@@ -196,9 +196,10 @@ reviews:
 chat:
   art: false
   # A reply to a review thread is a triage decision recorded by drive-pr, and
-  # CodeRabbit's answer to it asks for nothing. Any comment after the held
-  # reply keeps drive-pr from resolving the thread, so the answer would leave
-  # every thread it follows open for a person to close.
+  # CodeRabbit's answer to it asks for nothing. drive-pr resolves a held
+  # thread over a later comment only when that comment is CodeRabbit's marked
+  # confirmation; a conversational answer is any other comment, so it would
+  # leave every thread it follows open for a person to close.
   auto_reply: false
 
 knowledge_base:
