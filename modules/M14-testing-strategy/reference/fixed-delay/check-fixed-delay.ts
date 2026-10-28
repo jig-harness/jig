@@ -37,7 +37,7 @@
 //   bun check-fixed-delay.ts 'src/**/*.test.ts' 'scripts/**/*.ts' \
 //     --exclude '**/fixtures/**'
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { posix } from "node:path";
+import { posix, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 const RULE = "fixed-delay";
@@ -51,7 +51,9 @@ const SKIPPED_DIRS = new Set([".git", "node_modules"]);
 const USAGE =
   "usage: check-fixed-delay.ts [--pattern <text>]... [--exclude <glob>]... [--root <dir>] <path|dir|glob>...";
 
-const TOKEN = /(?<![\w-])fixed-delay:(.*)$/;
+const TOKEN = /(?<![\w-])fixed-delay:/;
+// `--!>` closes an HTML comment as `-->` does.
+const BLOCK_COMMENT_END = /\*\/|--!?>/;
 const POLL =
   "wait for the state with a polling helper and a deadline; for local timing (a back-off, an abort deadline, the pause between polls) add `fixed-delay: <reason>` on the line or the line above";
 
@@ -78,13 +80,15 @@ export function delayPattern(text: string): RegExp {
 }
 
 /**
- * The token's reason: the rest of the line, ending at a block comment's
- * closing marker; null when the line has no token.
+ * The reason of every token on the line: the text after each, up to the next
+ * token or a block comment's closing marker; null when the line has none.
  */
-function tokenReason(line: string): string | null {
-  const match = TOKEN.exec(line);
-  if (!match) return null;
-  return (match[1] ?? "").split(/\*\/|-->/)[0]?.trim() ?? "";
+function tokenReasons(line: string): string[] | null {
+  const parts = line.split(TOKEN);
+  if (parts.length < 2) return null;
+  return parts
+    .slice(1)
+    .map((text) => text.split(BLOCK_COMMENT_END)[0]?.trim() ?? "");
 }
 
 /** The findings in one file's lines, and how many delays it holds. */
@@ -94,19 +98,19 @@ export function lineFindings(
   patterns: RegExp[],
 ): { findings: Finding[]; delays: number } {
   const delay = lines.map((text) => patterns.some((p) => p.test(text)));
-  const reason = lines.map(tokenReason);
+  const reason = lines.map(tokenReasons);
   const findings: Finding[] = [];
   const at = (index: number, problem: string, remedy: string) =>
     findings.push({ file, line: index + 1, problem, remedy });
-  reason.forEach((text, i) => {
-    if (text === null) return;
+  reason.forEach((texts, i) => {
+    if (texts === null) return;
     if (!delay[i] && !delay[i + 1])
       at(
         i,
         "`fixed-delay:` with no delay on its line or the line below excuses nothing",
         "delete the token, or move it onto the delay it excuses or the line above",
       );
-    else if (!text)
+    else if (texts.some((text) => !text))
       at(
         i,
         "`fixed-delay:` without a reason does not excuse the delay",
@@ -184,17 +188,17 @@ function parseOptions(argv: string[]): Options {
   if (positionals.some((arg) => !arg.trim()))
     throw new CouldNotCheck(`a file argument must not be empty\n${USAGE}`);
   const excludes = values.exclude.map((glob) => new Bun.Glob(glob));
+  const root = resolve(values.root);
   const files = new Set<string>();
   for (const arg of positionals) {
     const found = filesOf(arg, values.root);
     if (!found.length) throw new CouldNotCheck(`${arg} matches no file`);
     for (const file of found) {
-      const relative =
-        values.root === "." ? file : posix.relative(values.root, file);
-      if (!excludes.some((glob) => glob.match(relative))) files.add(file);
+      const fromRoot = relative(root, resolve(file)).replaceAll("\\", "/");
+      if (!excludes.some((glob) => glob.match(fromRoot))) files.add(file);
     }
   }
-  return { files: [...files].sort(), patterns };
+  return { files: [...files].sort((a, b) => a.localeCompare(b)), patterns };
 }
 
 /** Workflow-command escaping for a message, and for a property. */

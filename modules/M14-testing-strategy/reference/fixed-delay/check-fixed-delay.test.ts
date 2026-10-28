@@ -93,6 +93,28 @@ describe("files", () => {
     );
   });
 
+  test("--exclude matches a file named by its absolute path relative to --root", () => {
+    expectSpawnExit(
+      run([join(fixtures, "bare", "queue.test.ts"), "--exclude", "bare/**"]),
+      2,
+      "the only file named is excluded",
+    );
+    expectSpawnExit(
+      run(
+        [
+          join(fixtures, "bare", "queue.test.ts"),
+          "--root",
+          "fixtures",
+          "--exclude",
+          "bare/**",
+        ],
+        { cwd: import.meta.dir },
+      ),
+      2,
+      "the only file named is excluded",
+    );
+  });
+
   test("--pattern replaces the delay texts", () => {
     const r = run(["java", "--pattern", "Thread.sleep("]);
     expectSpawnExit(r, 1);
@@ -159,6 +181,23 @@ describe("lines", () => {
     expect(findings.map((f) => f.problem)).toEqual([
       "`fixed-delay:` without a reason does not excuse the delay",
     ]);
+    for (const closer of ["-->", "--!>"])
+      expect(
+        lines(`<!-- fixed-delay: ${closer} setTimeout(f, 1);`).findings,
+      ).toHaveLength(1);
+  });
+
+  test("every token on a line needs a reason, not only the first", () => {
+    const { findings } = lines(
+      "await sleep(1); /* fixed-delay: back-off */ /* fixed-delay: */",
+    );
+    expect(findings.map((f) => f.problem)).toEqual([
+      "`fixed-delay:` without a reason does not excuse the delay",
+    ]);
+    expect(
+      lines("await sleep(1); /* fixed-delay: back-off */ // fixed-delay: cap")
+        .findings,
+    ).toEqual([]);
   });
 
   test("a token without a reason and without a delay is reported as stale", () => {

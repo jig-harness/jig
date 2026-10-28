@@ -127,7 +127,7 @@ pass is trusted, and test files are type-checked.
 |------|------|
 | `check-tests-with-changes.ts` | the gate |
 | `check-tests-with-changes.test.ts` | self-test: list and git modes, exemptions, an exemption matching no file (in the tree, in `HEAD` though present on disk, after the change deletes its only file), `--require-changed`, usage errors, template expansion including a swapped directory, the shape of `{ext}`, a directory or link at the test path or a linked directory above it, and a link replaced by a source file |
-| `fixtures/` | a small source tree with tested, untested and generated files, and three exemption files: one that passes, one with a line missing its reason, one with a line that matches no file |
+| `fixtures/` | a small source tree with tested, untested and generated files, and exemption files: one that passes, one with a line missing its reason, one with a line that matches no file |
 
 Run the self-test with `bun test ./check-tests-with-changes.test.ts`. The gate
 imports `lib/cli.ts` from Jig's root (`../../../../lib/cli.ts`), so run it from

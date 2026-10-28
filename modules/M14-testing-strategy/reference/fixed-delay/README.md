@@ -21,7 +21,8 @@ In every text file it scans, line by line:
 
 1. a line holding a delay needs a token on the same line or the line above;
 2. a token needs a reason: text after `fixed-delay:`, ending at the end of
-   the line or at a block comment's closing marker (`*/`, `-->`);
+   the line, at the next token or at a block comment's closing marker (`*/`,
+   `-->`, `--!>`). Every token on a line needs one;
 3. a token needs a delay on its own line or the line below. A token with no
    delay beside it excuses nothing: the delay it excused was replaced by a
    poll, or moved away. It fails, so it leaves with the delay instead of
@@ -38,7 +39,7 @@ too, so reword a comment that names one.
 |----------|---------|
 | `<path, dir or glob>...` | the files to scan: a file, a directory (every file under it) or a glob read from `--root`; repeat for several. A directory or glob leaves out `.git` and `node_modules` |
 | `--pattern <text>` | a delay text, literal, not a regular expression; repeat for several. Given once, it replaces the default list; an empty text is a usage error |
-| `--exclude <glob>` | leave out the files it matches, relative to `--root`; repeat for several |
+| `--exclude <glob>` | leave out the files it matches, relative to `--root` however the file was named; repeat for several |
 | `--root <dir>` | where globs are read from, and what `--exclude` is relative to (default `.`) |
 
 Exit codes: `0` every delay carries a token with a reason and every token sits
