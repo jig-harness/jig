@@ -282,21 +282,36 @@ interface SessionFiles {
 }
 const SETUP_USAGE =
   "setup accepts --pr <number> or --base <branch>, then --files <paths...>";
+const SETUP_FLAGS: Record<string, "pr" | "base"> = {
+  "--pr": "pr",
+  "--base": "base",
+};
+/** The flags before `--files`, and the paths after it. */
+function splitFiles(args: string[]): {
+  flags: string[];
+  files: string[] | undefined;
+} {
+  const at = args.indexOf("--files");
+  return at < 0
+    ? { flags: args, files: undefined }
+    : { flags: args.slice(0, at), files: args.slice(at + 1) };
+}
+function setupFlag(
+  flag: string | undefined,
+  given: string | undefined,
+): ["pr" | "base", string] {
+  const key = SETUP_FLAGS[String(flag)];
+  const value = required(given, `${flag} value`);
+  if (key === undefined || value.startsWith("-"))
+    throw new ReviewError(SETUP_USAGE);
+  return [key, value];
+}
 function setupOptions(args: string[]): SetupOptions {
-  const fileIndex = args.indexOf("--files");
-  const flags = fileIndex < 0 ? args : args.slice(0, fileIndex);
-  const options: SetupOptions = {
-    pr: undefined,
-    base: undefined,
-    files: fileIndex < 0 ? undefined : args.slice(fileIndex + 1),
-  };
+  const { flags, files } = splitFiles(args);
+  const options: SetupOptions = { pr: undefined, base: undefined, files };
   for (let i = 0; i < flags.length; i += 2) {
-    const flag = flags[i];
-    if (flag !== "--pr" && flag !== "--base")
-      throw new ReviewError(SETUP_USAGE);
-    const value = required(flags[i + 1], `${flag} value`);
-    if (value.startsWith("-")) throw new ReviewError(SETUP_USAGE);
-    options[flag === "--pr" ? "pr" : "base"] = value;
+    const [key, value] = setupFlag(flags[i], flags[i + 1]);
+    options[key] = value;
   }
   if (options.pr !== undefined && options.base !== undefined)
     throw new ReviewError(SETUP_USAGE);

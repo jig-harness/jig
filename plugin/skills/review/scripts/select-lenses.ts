@@ -52,20 +52,15 @@ interface Options {
   forced: string[];
 }
 
-function options(args: string[]): Options {
-  const positional = args.filter((arg) => !arg.startsWith("--"));
+/** The command line, or null when it is not one this script takes. */
+export function options(args: string[]): Options | null {
+  const [files, diff, ...rest] = args.filter((arg) => !arg.startsWith("--"));
   const flags = args.filter((arg) => arg.startsWith("--"));
-  const unknown = flags.filter(
-    (flag) => flag !== "--json" && !/^--lens=.+/.test(flag),
+  const known = flags.every(
+    (flag) => flag === "--json" || /^--lens=.+/.test(flag),
   );
-  const [files, diff] = positional;
-  if (
-    positional.length !== 2 ||
-    files === undefined ||
-    diff === undefined ||
-    unknown.length
-  )
-    fail(2, USAGE);
+  if (files === undefined || diff === undefined || rest.length || !known)
+    return null;
   return {
     files,
     diff,
@@ -74,17 +69,15 @@ function options(args: string[]): Options {
   };
 }
 
+function escapes(part: string): boolean {
+  return part === ".." || part.startsWith(`..${sep}`) || isAbsolute(part);
+}
+
 /** The lens directory, which must stay inside the base snapshot. */
 function lensDir(root: string, dir: string): string {
   const absolute = resolve(root, dir);
   const real = existsSync(absolute) ? realpathSync(absolute) : absolute;
-  const part = relative(realpathSync(root), real);
-  if (
-    isAbsolute(dir) ||
-    part === ".." ||
-    part.startsWith(`..${sep}`) ||
-    isAbsolute(part)
-  )
+  if (isAbsolute(dir) || escapes(relative(realpathSync(root), real)))
     throw new LensConfigError(
       `review.lenses.dir must stay inside the repository: ${dir}`,
     );
@@ -122,7 +115,7 @@ function allLenses(root: string, config: LensConfig): Lens[] {
   return lenses;
 }
 
-function select(opts: Options): Selection {
+export function select(opts: Options): Selection {
   const files = nulSeparated(readFileSync(opts.files, "utf8"));
   const diff = diffLines(readFileSync(opts.diff, "utf8"), new Set(files));
   const review = readConfig().review;
@@ -142,23 +135,28 @@ function select(opts: Options): Selection {
   };
 }
 
-async function main(): Promise<number> {
-  const opts = options(process.argv.slice(2));
-  let selection: Selection;
+/** What a failure to select says, or null for one that is not the input's fault. */
+export function refusal(error: unknown): string | null {
+  if (error instanceof LensConfigError)
+    return `select-lenses: configuration error: ${error.message}`;
+  if (error instanceof DiffError || error instanceof EffectiveDiffError)
+    return `select-lenses: ${error.message}`;
+  return null;
+}
+
+function selectOrFail(opts: Options): Selection {
   try {
-    selection = select(opts);
+    return select(opts);
   } catch (error) {
-    if (
-      error instanceof LensConfigError ||
-      error instanceof DiffError ||
-      error instanceof EffectiveDiffError
-    )
-      fail(
-        2,
-        `select-lenses: ${error instanceof LensConfigError ? "configuration error: " : ""}${error.message}`,
-      );
+    const message = refusal(error);
+    if (message) fail(2, message);
     throw error;
   }
+}
+
+async function main(): Promise<number> {
+  const opts = options(process.argv.slice(2)) ?? fail(2, USAGE);
+  const selection = selectOrFail(opts);
   process.stdout.write(
     opts.json
       ? `${JSON.stringify(selection, null, 2)}\n`

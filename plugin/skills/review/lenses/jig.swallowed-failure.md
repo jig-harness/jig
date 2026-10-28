@@ -24,7 +24,7 @@ trigger:
     - '\|\|\s*true\b'
     - '\bset \+e\b'
     - 'SilentlyContinue'
-    - 'DEVNULL'
+    - 'stderr\s*=\s*subprocess\.'
     - '["'']ignore["'']'
     - '\bvoid\s+[\w.]+\('
     - '\.then\('

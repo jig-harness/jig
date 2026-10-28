@@ -116,7 +116,7 @@ function selection(entry: unknown): LensResult[] {
   return value.lenses as LensResult[];
 }
 
-interface Input {
+export interface Input {
   outcome: LensOutcome;
   semantic: Semantic;
   tiers: [Tier1, Tier2] | null;
@@ -155,7 +155,7 @@ function outcomeOf(input: Record<string, unknown>): LensOutcome {
   };
 }
 
-function decode(text: string): Input {
+export function decode(text: string): Input {
   const value = parsed(text, "the input");
   if (!isRecord(value)) throw new InputError("the input must be an object");
   const tier1 =
@@ -189,41 +189,51 @@ function findingLine(f: RatedFinding): string {
   return `- ${f.effective}  ${f.lens}  ${where}${notes.length ? `  (${notes.join("; ")})` : ""}\n  ${f.scenario}\n  Evidence: ${f.evidence || "(empty)"}\n  Fix: ${f.fix}\n`;
 }
 
-async function main(): Promise<number> {
-  const args = process.argv.slice(2);
-  const path = args.find((arg) => !arg.startsWith("--"));
-  if (
-    path === undefined ||
-    args.some((arg) => arg.startsWith("--") && arg !== "--json")
-  )
-    fail(2, USAGE);
-  let input: Input;
-  try {
-    input = decode(readFileSync(path, "utf8"));
-  } catch (error) {
-    if (error instanceof InputError)
-      fail(2, `summarize-lenses: ${error.message}`);
-    throw error;
-  }
+export interface Summary {
+  tier3: string;
+  lenses: string;
+  verdict: string | null;
+  findings: RatedFinding[];
+}
+
+export function summarize(input: Input): Summary {
   const state = tier3(input.semantic, input.outcome);
-  const summary = {
+  return {
     tier3: state,
     lenses: lensesLine(input.outcome),
     verdict: input.tiers ? verdict(...input.tiers, state) : null,
     findings: input.outcome.findings,
   };
-  if (args.includes("--json")) {
-    process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
-    return 0;
+}
+
+/** The summary's lines, then each lens finding with its effective severity. */
+export function renderText(summary: Summary): string {
+  const verdictLine = summary.verdict ? `VERDICT: ${summary.verdict}\n` : "";
+  const findings = summary.findings.length
+    ? `\nLens findings:\n${summary.findings.map(findingLine).join("")}`
+    : "";
+  return `Tier 3 (Semantic):      ${summary.tier3}\n${summary.lenses}\n${verdictLine}${findings}`;
+}
+
+function readInput(path: string): Input {
+  try {
+    return decode(readFileSync(path, "utf8"));
+  } catch (error) {
+    if (error instanceof InputError)
+      fail(2, `summarize-lenses: ${error.message}`);
+    throw error;
   }
+}
+
+async function main(): Promise<number> {
+  const args = process.argv.slice(2);
+  const path = args.find((arg) => !arg.startsWith("--"));
+  const json = args.includes("--json");
+  if (path === undefined || args.length !== (json ? 2 : 1)) fail(2, USAGE);
+  const summary = summarize(readInput(path));
   process.stdout.write(
-    `Tier 3 (Semantic):      ${summary.tier3}\n${summary.lenses}\n`,
+    json ? `${JSON.stringify(summary, null, 2)}\n` : renderText(summary),
   );
-  if (summary.verdict) process.stdout.write(`VERDICT: ${summary.verdict}\n`);
-  if (summary.findings.length)
-    process.stdout.write(
-      `\nLens findings:\n${summary.findings.map(findingLine).join("")}`,
-    );
   return 0;
 }
 

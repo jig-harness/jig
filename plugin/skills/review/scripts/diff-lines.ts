@@ -78,26 +78,81 @@ interface Cursor {
   at: number;
 }
 
-/** Read one hunk's lines into `file`, by the counts its header gives. */
-function readHunk(cursor: Cursor, header: string, file: FileLines): void {
+type Side = keyof FileLines;
+/** Per side, the lines the hunk still holds and the next line's number. */
+type Counts = Record<Side, { left: number; next: number }>;
+const SIDES: Record<string, Side> = { "-": "removed", "+": "added" };
+
+function hunkCounts(header: string): Counts {
   const match = HUNK.exec(header);
   if (!match) throw new DiffError(`malformed hunk header: ${header}`);
-  let removed = Number(match[2] ?? 1);
-  let added = Number(match[4] ?? 1);
-  let oldLine = Number(match[1]);
-  let newLine = Number(match[3]);
-  while (removed > 0 || added > 0) {
-    const line = cursor.lines[cursor.at++];
-    if (line === undefined) throw new DiffError("a hunk ends early");
-    if (line.startsWith("\\")) continue;
-    if (line.startsWith("-") && removed > 0) {
-      file.removed.push({ number: oldLine++, text: line.slice(1) });
-      removed--;
-    } else if (line.startsWith("+") && added > 0) {
-      file.added.push({ number: newLine++, text: line.slice(1) });
-      added--;
-    } else throw new DiffError(`unexpected line in a hunk: ${line}`);
-  }
+  return {
+    removed: { left: Number(match[2] ?? 1), next: Number(match[1]) },
+    added: { left: Number(match[4] ?? 1), next: Number(match[3]) },
+  };
+}
+
+/** The side a hunk line belongs to, or null when the hunk has no room left there. */
+function sideOf(line: string, counts: Counts): Side | null {
+  const side = SIDES[line.charAt(0)];
+  return side !== undefined && counts[side].left > 0 ? side : null;
+}
+
+function takeLine(cursor: Cursor, counts: Counts, file: FileLines): void {
+  const line = cursor.lines[cursor.at++];
+  if (line === undefined) throw new DiffError("a hunk ends early");
+  if (line.startsWith("\\")) return;
+  const side = sideOf(line, counts);
+  if (side === null) throw new DiffError(`unexpected line in a hunk: ${line}`);
+  file[side].push({ number: counts[side].next++, text: line.slice(1) });
+  counts[side].left--;
+}
+
+/** Read one hunk's lines into `file`, by the counts its header gives. */
+function readHunk(cursor: Cursor, header: string, file: FileLines): void {
+  const counts = hunkCounts(header);
+  while (counts.removed.left > 0 || counts.added.left > 0)
+    takeLine(cursor, counts, file);
+}
+
+/** Where the parse stands: the file a hunk adds to, and the old path read before it. */
+interface State {
+  files: Map<string, FileLines>;
+  known: ReadonlySet<string>;
+  current: FileLines | null;
+  oldPath: string | null;
+}
+
+function openFile(state: State, path: string | null): FileLines {
+  if (path === null || !state.known.has(path))
+    throw new DiffError(
+      `the diff names a path the effective file list does not hold: ${path}`,
+    );
+  const file = state.files.get(path) ?? { added: [], removed: [] };
+  state.files.set(path, file);
+  return file;
+}
+
+const FILE_HEADER = "diff --git ";
+
+/** A line outside any hunk: a file's first header line, or its paths. */
+function readHeader(line: string, state: State): void {
+  if (line.startsWith(FILE_HEADER)) {
+    state.current = null;
+    state.oldPath = null;
+  } else if (state.current !== null) return;
+  else if (line.startsWith("--- ")) state.oldPath = pathOf(line.slice(4), "a/");
+  else if (line.startsWith("+++ "))
+    state.current = openFile(
+      state,
+      pathOf(line.slice(4), "b/") ?? state.oldPath,
+    );
+}
+
+function hunkFile(state: State, header: string): FileLines {
+  if (state.current === null)
+    throw new DiffError(`a hunk comes before its file's header: ${header}`);
+  return state.current;
 }
 
 /**
@@ -109,30 +164,17 @@ export function diffLines(
   text: string,
   known: ReadonlySet<string>,
 ): Map<string, FileLines> {
-  const files = new Map<string, FileLines>();
+  const state: State = {
+    files: new Map(),
+    known,
+    current: null,
+    oldPath: null,
+  };
   const cursor: Cursor = { lines: text.split("\n"), at: 0 };
-  let current: FileLines | null = null;
-  let oldPath: string | null = null;
   while (cursor.at < cursor.lines.length) {
     const line = cursor.lines[cursor.at++] ?? "";
-    if (line.startsWith("diff --git ")) {
-      current = null;
-      oldPath = null;
-    } else if (current === null && line.startsWith("--- "))
-      oldPath = pathOf(line.slice(4), "a/");
-    else if (current === null && line.startsWith("+++ ")) {
-      const path = pathOf(line.slice(4), "b/") ?? oldPath;
-      if (path === null || !known.has(path))
-        throw new DiffError(
-          `the diff names a path the effective file list does not hold: ${path}`,
-        );
-      current = files.get(path) ?? { added: [], removed: [] };
-      files.set(path, current);
-    } else if (line.startsWith("@@ ")) {
-      if (current === null)
-        throw new DiffError(`a hunk comes before its file's header: ${line}`);
-      readHunk(cursor, line, current);
-    }
+    if (line.startsWith("@@ ")) readHunk(cursor, line, hunkFile(state, line));
+    else readHeader(line, state);
   }
-  return files;
+  return state.files;
 }
