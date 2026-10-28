@@ -488,29 +488,18 @@ async function main(): Promise<number> {
       // Trusted comments only, most recent first — the last one that ALSO
       // matches the grammar is the answer (SKILL.md § 3: a qualifying reply is
       // never superseded by a LATER comment that doesn't itself qualify).
-      let outcome = "";
-      let author: string | null = null;
-      let assoc: string | null = null;
-      let commentUrl: string | null = null;
-      let qualifyingBody = "";
-      for (let i = thread.comments.length - 1; i >= 0; i--) {
-        const c = thread.comments[i];
-        if (
-          c === undefined ||
-          c.authorAssociation === null ||
-          !TRUSTED_ASSOCIATIONS.has(c.authorAssociation)
-        )
-          continue;
-        const candidate = qualifyingOutcome(c.body ?? "");
-        if (candidate === "") continue;
-        outcome = candidate;
-        author = c.author;
-        assoc = c.authorAssociation;
-        commentUrl = c.url;
-        qualifyingBody = c.body ?? "";
-        break;
-      }
-      if (outcome === "") continue;
+      const reply = thread.comments.findLast(
+        (c) =>
+          c.authorAssociation !== null &&
+          TRUSTED_ASSOCIATIONS.has(c.authorAssociation) &&
+          qualifyingOutcome(c.body ?? "") !== "",
+      );
+      if (reply === undefined) continue;
+      const qualifyingBody = reply.body ?? "";
+      const outcome = qualifyingOutcome(qualifyingBody);
+      const author = reply.author;
+      const assoc = reply.authorAssociation;
+      const commentUrl = reply.url;
 
       let action: string;
       // `triage-thread.ts --leave-open` embeds LEAVE_OPEN_MARKER on a
