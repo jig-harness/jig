@@ -110,11 +110,14 @@ function guardFolder(
   const names = new Set(reserved(directory, all).map((file) => basename(file)));
   const real = realpathSync(directory);
   for (const input of inputs) {
-    const actual = realpathSync(input);
-    if (dirname(actual) === real && names.has(basename(actual)))
-      throw new PlanError(
-        `${input} would be overwritten: it has the name of a file the review keeps in ${directory}; pass another folder to --out`,
-      );
+    // Both the entry the input is named by (a symlink in the folder is
+    // replaced by the review's own file) and the file it resolves to.
+    const entry = join(realpathSync(dirname(resolve(input))), basename(input));
+    for (const actual of [entry, realpathSync(input)])
+      if (dirname(actual) === real && names.has(basename(actual)))
+        throw new PlanError(
+          `${input} would be overwritten: it has the name of a file the review keeps in ${directory}; pass another folder to --out`,
+        );
   }
   if (readdirSync(directory).length === 0) return;
   let previous: Plan | undefined;
@@ -211,9 +214,35 @@ export function readPlan(directory: string): Plan {
       `no ${PLAN_FILE} in ${directory}: run the plan step first`,
     );
   const value: unknown = JSON.parse(readFileSync(path, "utf8"));
-  if (!isPlan(value))
+  if (!isPlan(value) || !boundToFolder(value, directory))
     throw new PlanError(`${path} is not a plan this script wrote`);
   return value;
+}
+
+/**
+ * Every path the steps write or remove is the one the plan step derives from
+ * the folder and the persona, and none of them is an input; a plan edited to
+ * point a path at the document is not accepted.
+ */
+function boundToFolder(plan: Plan, directory: string): boolean {
+  if (
+    !existsSync(plan.directory) ||
+    realpathSync(plan.directory) !== realpathSync(directory)
+  )
+    return false;
+  if (plan.report !== join(plan.directory, REPORT_FILE)) return false;
+  const owned = new Set<string>([plan.report]);
+  for (const persona of plan.personas) {
+    const expected = files(plan.directory, persona.id);
+    for (const [key, path] of Object.entries(expected)) {
+      if ((persona as unknown as Record<string, unknown>)[key] !== path)
+        return false;
+      owned.add(path);
+    }
+  }
+  return ![plan.document, plan.companion].some(
+    (input) => input !== undefined && owned.has(input),
+  );
 }
 
 function isPlan(value: unknown): value is Plan {

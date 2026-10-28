@@ -151,15 +151,15 @@ function collectOne(
   context: Context,
 ): string[] {
   const document = unchangedDocument(planned);
+  // A replacement submission supersedes what was kept: if it fails its checks,
+  // or there is nothing to check, the old verdict must not stay behind.
+  rmSync(who.findings, { force: true });
+  rmSync(planned.report, { force: true });
   const source = existsSync(who.output) ? who.output : who.reply;
   if (!existsSync(source))
     return [
       `nothing to collect: neither ${who.output} nor ${who.reply} exists`,
     ];
-  // A replacement submission supersedes what was kept: if it fails its checks,
-  // the old verdict must not stay behind to be reported.
-  rmSync(who.findings, { force: true });
-  rmSync(planned.report, { force: true });
   const value = extractJson(readFileSync(source, "utf8"));
   const { findings, problems } = checkFindings(
     value,
