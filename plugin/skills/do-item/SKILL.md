@@ -556,6 +556,8 @@ routing below remain **exact**.
    message, which names the field at fault. A refused `routing` section is
    never read as absent; the repository corrects it before the item is
    picked up, which is why the route is derived before item 2 starts it.
+   Exit `2` is an `issue.json` that is missing or not an issue: stop the
+   pickup and report the input error.
 
 2. **exact** — **Mark the issue started** (if not already active): transition
    it to `in_progress` and assign it to yourself.
@@ -1149,7 +1151,7 @@ snapshot mapping are **exact**.
 
 4. **exact** — **Derive the sub-issue's route**: write the fetched
    sub-issue to `issue.json` and run `determine_route.ts` on it as Step 4a
-   item 1 does, reporting its route and stopping on exit `1` the same way,
+   item 1 does, reporting its route and stopping on exit `1` or `2` the same way,
    before item 5 starts it. The route derived for this issue in Step 4a is
    this issue's, never the sub-issue's.
 
