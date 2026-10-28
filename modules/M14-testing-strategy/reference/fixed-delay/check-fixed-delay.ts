@@ -5,7 +5,8 @@
 // A wait for external state (a job to finish, a row to appear) polls against
 // a deadline. A fixed delay is allowed only for local timing (a retry
 // back-off, an abort deadline, the pause between two polls), and says so with
-// the token on its own line or the line above. The token is an exception, so
+// the token on its own line or the line above (a line holding no delay of its
+// own, so one token never excuses two delays). The token is an exception, so
 // it prunes itself: one with no delay on its line or the line below excuses
 // nothing, and fails, so it leaves with the delay it excused instead of
 // waiting beside the next one written there.
@@ -121,8 +122,12 @@ export function lineFindings(
         "say after the token why this delay must be fixed",
       );
   });
+  // A token on the line above excuses this delay only when that line holds no
+  // delay of its own: there, the token is that delay's.
+  const coveredFromAbove = (i: number) =>
+    reason[i - 1] != null && !delay[i - 1];
   delay.forEach((isDelay, i) => {
-    if (isDelay && reason[i] == null && reason[i - 1] == null)
+    if (isDelay && reason[i] == null && !coveredFromAbove(i))
       at(i, "fixed delay without a `fixed-delay: <reason>` token", POLL);
   });
   findings.sort((a, b) => a.line - b.line);

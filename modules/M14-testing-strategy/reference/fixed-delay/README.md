@@ -19,7 +19,9 @@ is written, so a reviewer can tell a deliberate pause from a hopeful one.
 
 In every text file it scans, line by line:
 
-1. a line holding a delay needs a token on the same line or the line above;
+1. a line holding a delay needs a token on the same line or the line above.
+   A token on the line above counts only when that line holds no delay: a
+   token beside one delay does not also excuse the delay on the next line;
 2. a token needs a reason: text after `fixed-delay:`, ending at the end of
    the line, at the next token or at a block comment's closing marker (`*/`,
    `-->`, `--!>`). Every token on a line needs one;
@@ -104,7 +106,7 @@ not. A delay written in a way the texts do not name (a helper that wraps
 | File | Role |
 |------|------|
 | `check-fixed-delay.ts` | the gate |
-| `check-fixed-delay.test.ts` | self-test: justified delays on the line or the line above, a bare delay, a token without a reason, a stale token, a token two lines away, look-alike names, globs with `--root` and `--exclude`, custom texts, annotations, and every could-not-check case |
+| `check-fixed-delay.test.ts` | self-test: justified delays on the line or the line above, a bare delay, a token without a reason, a stale token, a token two lines away, one token beside two delays, look-alike names, globs with `--root` and `--exclude`, custom texts, annotations, and every could-not-check case |
 | `fixtures/` | small TypeScript, Python and Java files: `clean/` passes; `bare/`, `no-reason/`, `stale/` and `far/` each fail one way; `java/` holds a `Thread.sleep(` for the `--pattern` cases |
 
 Run the self-test with `bun test ./check-fixed-delay.test.ts`. The gate has

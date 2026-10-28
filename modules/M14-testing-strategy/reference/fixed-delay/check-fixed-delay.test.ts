@@ -187,6 +187,15 @@ describe("lines", () => {
     );
   });
 
+  test("a token on another delay's line does not excuse the delay below it", () => {
+    const { findings } = lines(
+      "await sleep(10); // fixed-delay: back-off\nawait sleep(5000);",
+    );
+    expect(findings.map((f) => [f.line, f.problem])).toEqual([
+      [2, "fixed delay without a `fixed-delay: <reason>` token"],
+    ]);
+  });
+
   test("a delay text after a name character is a look-alike, not a delay", () => {
     expect(lines("oversleep(1); mySetTimeout(f);").delays).toBe(0);
     expect(lines("await asyncio.sleep(1)").delays).toBe(1);
