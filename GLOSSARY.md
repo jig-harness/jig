@@ -1450,10 +1450,10 @@ make, use the entry's term instead.
   decisions taken unattended), so a drive in any clone, on any machine or
   account, resumes from it.
 - **Takeover** — one session replacing a drive's registered driver, admitted
-  only when that driver is dead, has stopped making progress, is parked on a
-  usage limit the successor's account does not share, or is parked on
-  decisions that have been answered; recorded in the drive state and the
-  *drive ledger*.
+  only when that driver is dead or wedged; recorded in the drive state and
+  the *drive ledger*. A drive that stopped holds no driver and is re-armed
+  instead, by a session on another account after a usage limit or once its
+  parked questions are answered.
 - **Provisional decision** — a decision an agent took under a raised
   *autonomy level* because nobody was there to ask, marked as such where it
   was taken and listed first in the morning report, so a person can reverse
