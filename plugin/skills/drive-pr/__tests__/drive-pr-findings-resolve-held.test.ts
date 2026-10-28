@@ -23,6 +23,7 @@ import {
   useDrivePrSuite,
 } from "./drive-pr-harness.ts";
 
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { scriptArgv } from "../../../../lib/test-helpers/script-argv.ts";
 
 import { createFindingsResolveHeldFixtures } from "./drive-pr-findings-resolve-held-fixtures.ts";
@@ -84,6 +85,60 @@ describe("resolve-held-thread.ts", () => {
     // that the checks above it passed.
     expect(r.stdout).toBe("true");
     expect(r.resolved.trim()).toBe("PRRT_a");
+  });
+
+  // A `moot` on a code-scanning thread is no longer held, but one held before
+  // that rule still reaches the drain: its alert, not the push, settles it.
+  it("drains a held code-scanning moot without resolving it over an unconfirmed alert", async () => {
+    const stateDir = scopedStateDir(
+      mkdtempSync(join(tmpdir(), "resolve-held-thread-scanner-moot-")),
+      scratchClean.dir,
+    );
+    await seed(stateDir, ["bump-round", "999", "--head", PREV]);
+    await seed(stateDir, [
+      "hold",
+      "999",
+      "--key",
+      "PRRT_a",
+      "--kind",
+      "thread",
+      "--outcome",
+      "moot",
+      "--comment-url",
+      ACCEPTED_COMMENT_URL,
+    ]);
+    await seed(stateDir, ["stamp-held", "999", "--sha", scratchClean.head]);
+    const r = await resolveHeld(
+      stateDir,
+      ["--key", "PRRT_a", "--pushed-sha", scratchClean.head],
+      {
+        head: scratchClean.head,
+        cwd: scratchClean.dir,
+        threads: [
+          {
+            id: "PRRT_a",
+            bot: true,
+            comments: [
+              {
+                author: "github-advanced-security",
+                authorAssociation: "NONE",
+                body: "Unsafe path.\n\n[Show more details](https://github.com/example-org/example-repo/security/code-scanning/7)",
+              },
+              {
+                author: "example-user-2",
+                authorAssociation: "OWNER",
+                body: "**moot** — the code is gone.",
+              },
+            ],
+          },
+        ],
+      },
+    );
+    expectSpawnExit(r, 0, "resolve-held-thread.ts");
+    expect(r.stdout).toBe("false");
+    expect(r.resolved).toBe("");
+    expect(r.stderr).toContain("not confirmed fixed, closed or dismissed");
+    expect(JSON.parse(await readState(stateDir, ["held", "999"]))).toEqual([]);
   });
 
   // The comment-staleness recheck. `finish-round.ts`'s own pre-push guard

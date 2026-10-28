@@ -202,6 +202,39 @@ export async function declinedAlertOf(
 }
 
 /**
+ * `resolve-held-thread.ts`'s mutation for held thread `threadId`: resolve
+ * it, unless its held `outcome` is a `moot`, GitHub's code scanning account
+ * opened it (`opening`, as the live-comments read returns it), and its alert
+ * is not fixed, closed or dismissed. Such a hold predates `mootHeld`'s rule,
+ * so the thread stays open (`code` 0, `stdout` `false`) and the
+ * replied-thread sweep closes it once the alert settles, as for a fresh one.
+ */
+export async function resolveHeldUnlessAlertOpen(
+  threadId: string,
+  opening: { author: { login: string } | null; body: string | null } | undefined,
+  outcome: string,
+  timeoutSec: number,
+): Promise<{ code: number; stdout: string }> {
+  const comment = {
+    author: opening?.author?.login ?? null,
+    body: opening?.body ?? null,
+  };
+  if (outcome === "moot" && awaitsAlert(comment, outcome)) {
+    const alert = await declinedAlertOf(threadId, comment, timeoutSec);
+    if (!mayResolveDeclinedAlert(alert, "moot", true)) {
+      console.error(
+        `resolve-held-thread.ts: thread '${threadId}''s code scanning alert is not confirmed fixed, closed or dismissed — hold drained, thread left open for the replied-thread sweep.`,
+      );
+      return { code: 0, stdout: "false\n" };
+    }
+  }
+  return run(tsArgv(resolveThread, [threadId]), {
+    timeoutSec,
+    stderr: "inherit",
+  });
+}
+
+/**
  * Resolve thread `threadId` for merit outcome `outcome`, unless it is a
  * code-scanning thread whose alert is not settled for it
  * (`mayResolveDeclinedAlert`): then it stays open and `exit` is `4`. `code` is

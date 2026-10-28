@@ -133,6 +133,7 @@ import { fileURLToPath } from "node:url";
 import { isTrustedBotConfirmation as isTrustedBotConfirmationShared } from "./lib/bot-confirmation.ts";
 import { fail, isDigits, runMain, short } from "./lib/cli.ts";
 import { qualifyingOutcome } from "./lib/outcome.ts";
+import { resolveHeldUnlessAlertOpen } from "./lib/scanner-sweep-guard.ts";
 import {
   ghCall,
   git,
@@ -145,14 +146,6 @@ import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const driveState = join(here, "drive-state.ts");
-const resolveThread = join(
-  here,
-  "..",
-  "..",
-  "resolve-review-comments",
-  "scripts",
-  "resolve-thread.ts",
-);
 
 function prefixLines(prefix: string, text: string): string {
   return text
@@ -826,10 +819,19 @@ query($id:ID!){
     return 2;
   }
 
-  const mutation = await run(tsArgv(resolveThread, [key]), {
-    timeoutSec: helperTimeoutSec,
-    stderr: "inherit",
-  });
+  // A `moot` on a thread GitHub's code scanning account opened is never held
+  // now (`mootHeld`), but a hold recorded before that rule still drains here:
+  // its alert, not the push, is what proves it. Over an unsettled alert the
+  // thread stays open with the hold drained (stdout `false`), the state
+  // `triage-thread.ts` leaves a fresh one in — `finish-round.ts` counts it
+  // triaged (`awaitsAlert`) and the replied-thread sweep closes it once the
+  // alert is fixed, closed or dismissed.
+  const mutation = await resolveHeldUnlessAlertOpen(
+    key,
+    nodes[0],
+    claimed.outcome,
+    helperTimeoutSec,
+  );
   if (mutation.code !== 0) {
     await restoreOrDie("resolveReviewThread failed or timed out");
     return mutation.code;
