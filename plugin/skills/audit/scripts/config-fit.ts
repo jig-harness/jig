@@ -76,7 +76,7 @@ import { sheetRepositories } from "../../decide/scripts/lib/overlay.ts";
 import { parseCodeStatsConfig } from "../../code-stats/scripts/lib/config.ts";
 import { parsePrPolicy } from "../../drive-pr/scripts/lib/pr-policy.ts";
 import { parseSeverityFormats } from "../../drive-pr/scripts/lib/severity-formats.ts";
-import { refuseRenamedSection } from "../../do-item/scripts/lib/overlay.ts";
+import { parseWorkTypes } from "../../do-item/scripts/lib/work-types.ts";
 import { parseTrackerConfig } from "../../do-item/scripts/lib/tracker/config.ts";
 import { openTracker } from "../../do-item/scripts/lib/tracker/index.ts";
 import { trackerProbeable } from "./lib/tracker-probe.ts";
@@ -844,7 +844,7 @@ function skillValidation(
   };
   attempt("do-item (pull-request policy)", () => parsePrPolicy(config));
   attempt("do-item (tracker)", () => {
-    refuseRenamedSection(config);
+    parseWorkTypes(config); // refuses a do_issue section before anything else
     parseTrackerConfig(config);
   });
   attempt("resolve-review-comments", () => parseReviewConfig(config.review));
