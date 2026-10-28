@@ -286,7 +286,16 @@ is policy, not an override, and the reasons name the rule that fired.
   responses and not others (an effort reported before a fallback and not
   after it) keeps the values it did report and is marked `partial`, each
   field on its own, so a value seen for part of a run never stands for
-  the whole of it.
+  the whole of it. One grammar writes every effective field, and
+  `route.ts` both writes and parses it:
+  `<field>=<value>[,<value>…][;mixed][;partial]`, each value once, in
+  the order first seen, the markers after the values in that order, and
+  `<field>=unknown` alone when the runtime reported nothing
+  (`effort=high,max;mixed;partial`). A value is a single token, a tier,
+  an effort or a model name as the runtime reports it, so nothing is
+  escaped: `route.ts` refuses to write a value holding whitespace, `,`,
+  `;` or `=`, and records the field `unknown` with the refused value in
+  the reasons.
   It survives the worktree
   and is read by any harness, as the type's body sections are.
 - **`work-batch`** takes one route for the batch: the strictest tier and
@@ -405,8 +414,10 @@ refused `do_item` section does today; it is never read as absent.
    that moved to another model mid-run and ran it at another effort,
    recorded with both models and both efforts, each field `mixed`; an
    effort the runtime reports before a fallback and not after it,
-   recorded with that effort and marked `partial`; and a field the
-   runtime reports nothing for, recorded `unknown`.
+   recorded with that effort and marked `partial`; a field the
+   runtime reports nothing for, recorded `unknown`; and each of these
+   records written by `route.ts` and parsed back to the same values and
+   markers, a reported value holding a delimiter recorded `unknown`.
 5. **`work-batch` and the audit criterion.**
 
 ## Left out
