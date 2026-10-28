@@ -170,6 +170,28 @@ const stateOf = (s: Session) =>
     fired: number;
   };
 
+test("Codex response usage records count once and a new task resets the count", () => {
+  const s = session();
+  line(s, { type: "event_msg", payload: { type: "task_started" } });
+  for (let i = 0; i < 90; i++) {
+    const record = {
+      type: "token_usage_record",
+      payload: { response_id: `resp_${i}` },
+    };
+    line(s, record);
+    line(s, record);
+    line(s, {
+      type: "response_item",
+      payload: { type: "function_call_output", output: "assistant" },
+    });
+  }
+  expect(countOf(fires(call(s), "Codex responses"))).toBe(90);
+  line(s, { type: "event_msg", payload: { type: "task_started" } });
+  line(s, { type: "token_usage_record", payload: { response_id: "resp_new" } });
+  quiet(call(s), "new Codex task");
+  expect(stateOf(s).count).toBe(1);
+});
+
 test("under the margin the hook is silent", () => {
   const s = session();
   turns(s, 80);

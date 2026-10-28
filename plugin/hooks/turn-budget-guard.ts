@@ -15,7 +15,9 @@
  * same `requestId`, so the count is the distinct request ids since the last
  * prompt: a `user` record that carries `promptSource`, which a tool result
  * (`toolUseResult`) and a compaction summary (`isCompactSummary`) do not. The
- * count is an approximation, biased early on purpose: a compaction or a resume
+ * Codex transcripts instead identify responses in token usage records and
+ * start each task with a task_started event. The count is an approximation:
+ * a compaction or a resume
  * replays earlier records, which the id set absorbs, but a resume that also
  * resets the runtime's own counter is not visible here. Leave headroom: the
  * count is an estimate, not the runtime's own counter.
@@ -214,6 +216,16 @@ export type Kind =
   | { unreadable: string }
   | undefined;
 
+function classifyCodex(type: unknown, payload: unknown): Kind {
+  if (!isRecord(payload)) return undefined;
+  if (type === "event_msg" && payload.type === "task_started") return "prompt";
+  if (type === "token_usage_record") {
+    const id = payload.response_id;
+    return typeof id === "string" && id !== "" ? { id } : "unrecognised";
+  }
+  return undefined;
+}
+
 /**
  * What one complete line is: a round-trip (its request id), a prompt, an
  * assistant record without a request id this guard reads, a line that is not
@@ -225,7 +237,9 @@ export function classify(line: string): Kind {
   if (
     !line.includes('"requestId"') &&
     !line.includes('"promptSource"') &&
-    !line.includes('"assistant"')
+    !line.includes('"assistant"') &&
+    !line.includes('"token_usage_record"') &&
+    !line.includes('"task_started"')
   )
     return undefined;
   let record: unknown;
@@ -236,6 +250,8 @@ export function classify(line: string): Kind {
   }
   if (!isRecord(record)) return undefined;
   const { type, requestId } = record;
+  const codex = classifyCodex(type, record.payload);
+  if (codex !== undefined) return codex;
   if (type === "assistant" && typeof requestId === "string" && requestId !== "")
     return { id: requestId };
   if (type === "assistant") return "unrecognised";
