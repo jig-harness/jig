@@ -86,6 +86,8 @@ is not written by the reference gate yet.
 | Exception form | Reason the gate checks | Stale when |
 |---|---|---|
 | Inline token (`todo-exempt: <reason>`) | Non-empty text after the token | The line no longer has what the rule flags (the TODO is gone, or already cites an issue) |
+| Inline token beside a line (M14's `fixed-delay: <reason>`) | Non-empty text after the token | No fixed delay on the token's line or the line below |
+| Path exemptions file (M14's tests-with-changes `<glob> <reason>` lines) | Text after the glob on the same line | The glob matches no file in the tree the gate reads |
 | Line-based allowlist (Jig's `scripts/glossary-allowlist.txt`) | Each group of entries opens with `#` lines giving its reason | No checked file uses the entry, or the rule already accepts it |
 | Allow pattern (Jig's `!` lines in `scripts/tracker-key-patterns.txt`) | `#` lines above the pattern | It matches nothing on a line the rule flags |
 | Structured list in the gate (`{ path, match, reason }`) | `reason` non-empty, checked when the list is read | No finding matches the entry in this run |

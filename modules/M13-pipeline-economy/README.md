@@ -228,18 +228,24 @@ review driver once the opening head's full run has completed and removed
 when review converges.
 
 > A pipeline may suppress expensive work on an intermediate head only while
-> a required check fails on that head, and only until a release that runs
-> everything again.
+> a required check does not pass on that head, and only until a release that
+> runs everything again.
 
 Every one of these holds, or the saving turns a failure into a pass:
 
-- **A required check fails, never skips, on every held head, from the
-  instant the hold is applied.** One step in the required job, or in a job
+- **A required check does not pass, and never skips, on every held head,
+  from the instant the hold is applied.** One step in the required job, or in a job
   it needs directly while itself running on `!cancelled()`, fails while the
   label is present: the [held-head check](../../GLOSSARY.md). The pipeline
   runs on the label's application, so the opening head's green is replaced
   at once rather than at the next push, which may never come. A held head
-  is visibly not mergeable from the first second to the release.
+  is visibly not mergeable from the first second to the release. A step in
+  the required job itself may instead cancel its own run, failing only where
+  the cancellation is refused or does not arrive: a cancelled required check
+  blocks the merge as a failed one does, and the difference shows after the
+  release (below). A step in a job the required one needs must fail: a
+  cancelled run can leave the required job unstarted and skipped, and a
+  skipped required job passes.
 - **Only the hold's own label skips work.** Each heavy job skips by testing
   whether the pull request carries the hold label, never by the kind of
   event that started the run. The pipeline now runs on every label event,
@@ -259,9 +265,16 @@ Every one of these holds, or the saving turns a failure into a pass:
   started after it; one that started in the same second is rerun.
 
 The held-head check's message says why the head failed and how to release
-it: the label's name, and that removing it runs everything again. A driver
-that dies mid-round leaves the label on, and the pull request stays red
-until someone removes it; removing it by hand is the release and reruns
+it: the label's name, and that removing it runs everything again.
+
+The drive's last push is usually a held one, since no one knows a push is
+the last until review passes it, so the head the merge waits for carries
+the held run beside the release's run. Where the provider still shows the
+held run once the release has passed, a held run that failed reads as a
+failure on a mergeable head; one that was cancelled reads as superseded
+([mappings.md](mappings.md#hold) says how each provider shows it). A driver
+that dies mid-round leaves the label on, and the pull request stays
+unmergeable until someone removes it; removing it by hand is the release and reruns
 everything. Never rerun the old run instead: a rerun replays the event that
 carried the label and fails on the same step.
 
@@ -493,8 +506,8 @@ reading it.
 - **Standard** — a resolver reading the change-area catalog drives job
   selection, failing closed; one aggregator job is the required check; slow
   suites no merge waits for run on a schedule, with a cheap per-change proxy;
-  where a CI hold is used, a required check fails on every held head from
-  the instant the hold is applied, the pipeline runs on both label
+  where a CI hold is used, a required check does not pass on any held head
+  from the instant the hold is applied, the pipeline runs on both label
   transitions, and only the hold's own label skips work; every cache has a
   written key scheme covering the inputs that change its output,
   environment values included, pipelines that share a cache produce one

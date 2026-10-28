@@ -836,6 +836,7 @@ describe("what the replay must not trust or run", () => {
 
   it("runs no filter, even where the repository asks merges to renormalize", () => {
     const marker = join(s.home, "filter-ran").replaceAll("\\", "/");
+    merge({ "a.txt": "x\n" }, { "a.txt": "y\n" }, { "a.txt": "z\n" });
     s.git("config", "merge.renormalize", "true");
     for (const kind of ["clean", "smudge"])
       s.git("config", `filter.touchy.${kind}`, `touch '${marker}'; cat`);
@@ -845,7 +846,6 @@ describe("what the replay must not trust or run", () => {
       join(s.root, ".git", "info", "attributes"),
       "*.txt filter=touchy\n",
     );
-    merge({ "a.txt": "x\n" }, { "a.txt": "y\n" }, { "a.txt": "z\n" });
     rmSync(marker, { force: true });
     const rep = report();
     expect(existsSync(marker)).toBe(false);

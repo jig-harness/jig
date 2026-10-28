@@ -264,12 +264,12 @@ criteria:
     since: 0.38.0
     statement: >-
       Where a hold label suppresses CI on intermediate heads, a required
-      check fails on every held head from the instant the label is applied,
+      check does not pass on any held head from the instant the label is applied,
       every workflow that honours the label runs on its application and its
       removal, and only the pull request's own hold label, never the kind of
       label event, skips work.
     observe:
-      - "a step in a required job, or in a job the required job needs directly while itself running on !cancelled(), fails while the hold label is present, does not continue on error, and its message names the label to remove"
+      - "a step in a required job, or in a job the required job needs directly while itself running on !cancelled(), fails while the hold label is present (cancelling its own run first counts only in the required job itself, and only when it fails where the cancellation does not happen), does not continue on error, and its message names the label to remove"
       - "every pull-request workflow with a job the hold skips, or reporting a required check, triggers on labeled and unlabeled beside opened, synchronize and reopened"
       - "each skipped job's condition tests the pull request's label set for the exact hold label, not the event's action, so an unrelated label event still runs real CI"
       - "the driver that removes the label accepts only check runs that started after the removal"
