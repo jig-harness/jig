@@ -11,11 +11,14 @@
  *
  * A file that exports a function, the result of another call, an
  * expression that goes on after the object, or a variable it mentions again
- * after declaring it, that sets its export inside another expression, or
- * that reaches `module`, `exports` or `this` anywhere else, is refused with
- * an `UnreadableError` naming why: its configuration exists only when it
- * runs. Keywords and names are looked for outside strings, comments and
- * regular expressions, but inside a template string's `${…}`, which runs.
+ * after declaring it, that sets its export or declares that variable
+ * anywhere but as an unconditional statement at the top of the file (inside
+ * another expression, a block, a function, or after `if (…)`), or that
+ * reaches `module`, `exports` or `this` anywhere else, is refused with an
+ * `UnreadableError` naming why: its configuration exists only when it runs.
+ * Keywords and names are looked for outside strings, comments and regular
+ * expressions, but inside a template string's `${…}`, which runs and is
+ * lexed as code, its own strings and templates included.
  */
 import { closeAt } from "../count.ts";
 import { UnreadableError } from "./model.ts";
@@ -104,24 +107,69 @@ function syntaxOnly(text: string): string {
 
 /** A template string with its text blanked and its `${…}` expressions kept. */
 function templateSyntax(part: string): string {
+  return templateSpan(part, 0).out;
+}
+
+/** A lexed stretch of text: its syntax view and the index it ends at. */
+interface Span {
+  out: string;
+  end: number;
+  closed: boolean;
+}
+
+/**
+ * The template string that opens at the backtick at `i`: its text blanked,
+ * and each `${…}` expression lexed as code, so a string, comment, regular
+ * expression or template inside one is read as what it is.
+ */
+function templateSpan(text: string, i: number): Span {
+  let out = " ";
+  let at = i + 1;
+  while (at < text.length) {
+    const c = text[at] as string;
+    if (c === "`") return { out: `${out} `, end: at + 1, closed: true };
+    if (c === "\\") {
+      out += spaced(text.slice(at, at + 2));
+      at += 2;
+    } else if (text.startsWith("${", at)) {
+      const inner = codeSpan(text, at + 2);
+      out += `  ${inner.out}`;
+      at = inner.end;
+      if (!inner.closed) return { out, end: at, closed: false };
+      out += " ";
+      at++;
+    } else {
+      out += spaced(c);
+      at++;
+    }
+  }
+  return { out, end: at, closed: false };
+}
+
+/**
+ * The code of a `${…}` expression from `i`, lexed: its comments, strings
+ * and regular expressions blanked, up to the `}` that closes it.
+ */
+function codeSpan(text: string, i: number): Span {
   let out = "";
   let depth = 0;
-  for (let i = 0; i < part.length; i++) {
-    const c = part[i] as string;
-    if (depth > 0) {
-      if (c === "{") depth++;
-      else if (c === "}") depth--;
-      out += depth === 0 ? " " : c;
-    } else if (c === "\\") {
-      out += spaced(part.slice(i, i + 2));
-      i++;
-    } else if (part.startsWith("${", i)) {
-      depth = 1;
-      out += "  ";
-      i++;
-    } else out += spaced(c);
+  let at = i;
+  while (at < text.length) {
+    const c = text[at] as string;
+    const end = spanEnd(text, at);
+    if (end !== null) {
+      const part = text.slice(at, end);
+      out += part.startsWith("`") ? templateSyntax(part) : spaced(part);
+      at = end;
+      continue;
+    }
+    if (c === "}" && depth === 0) return { out, end: at, closed: true };
+    if (c === "{") depth++;
+    else if (c === "}") depth--;
+    out += c;
+    at++;
   }
-  return out;
+  return { out, end: at, closed: false };
 }
 
 /** The end of the comment, string or regular expression that opens at `i`, or null. */
@@ -132,7 +180,8 @@ function spanEnd(text: string, i: number): number | null {
   if (two === "//") return orEnd(text.indexOf("\n", i), 0);
   if (two === "/*") return orEnd(text.indexOf("*/", i + 2), 2);
   const c = text[i] as string;
-  if (c === '"' || c === "'" || c === "`") {
+  if (c === "`") return templateSpan(text, i).end;
+  if (c === '"' || c === "'") {
     const end = closeAt(text, i + 1, c);
     return end === -1 ? text.length : end;
   }
@@ -332,8 +381,8 @@ class Reader {
   }
 
   template(): Literal | undefined {
-    const end = closeAt(this.s, this.i + 1, "`");
-    if (end === -1) throw new UnreadableError("has a string it never closes");
+    const { end, closed } = templateSpan(this.s, this.i);
+    if (!closed) throw new UnreadableError("has a string it never closes");
     const body = this.s.slice(this.i + 1, end - 1);
     if (/(^|[^\\])\$\{/.test(body)) return undefined;
     this.i = end;
@@ -466,8 +515,63 @@ interface Source {
  */
 const REACHES_EXPORTS = /(?<![\w$.])(?:module|exports|this)(?![\w$])(?!\s*:)/;
 
-/** The characters before an export that make it part of a larger expression (`c = module.exports = …`). */
-const OPERAND_AFTER = "=(,:?&|!+-*/%<>[";
+/** Words a statement cannot end with: what follows them is part of them, or runs only on a condition. */
+const OPENING_WORDS = new Set([
+  "await",
+  "case",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "export",
+  "in",
+  "instanceof",
+  "new",
+  "of",
+  "return",
+  "throw",
+  "typeof",
+  "void",
+  "yield",
+]);
+
+/**
+ * Whether what starts at `at` is an unconditional statement at the top of
+ * the file: outside every bracket (a function, a block, a call), and where a
+ * statement starts — at the start of the file, after a `;` or a `}`, or on
+ * a new line after a value that ends the statement before. A `)` before it
+ * may close `if (…)`, `while (…)` or `for (…)`, so it does not count; nor
+ * does an operator, which makes it an operand (`c = module.exports = …`).
+ */
+function topLevelStatement(src: Source, at: number): boolean {
+  if (bracketDepth(src.syntax, at) !== 0) return false;
+  const before = src.code.slice(0, at).trimEnd();
+  // `export const c = …` is the statement `export` starts.
+  const exported = /(?<![\w$.])export$/.exec(before);
+  if (exported) return topLevelStatement(src, exported.index);
+  const last = before[before.length - 1];
+  if (last === undefined || last === ";" || last === "}") return true;
+  return (
+    src.code.slice(before.length, at).includes("\n") && endsStatement(before)
+  );
+}
+
+/** How many brackets are open in `syntax` at `at`. */
+function bracketDepth(syntax: string, at: number): number {
+  let depth = 0;
+  for (const c of syntax.slice(0, at)) {
+    if ("([{".includes(c)) depth++;
+    else if (")]}".includes(c)) depth--;
+  }
+  return depth;
+}
+
+/** Whether `before` ends with a value that ends a statement at a line break: a name that is no keyword, a string or a `]`. */
+function endsStatement(before: string): boolean {
+  const word = /[\w$]+$/.exec(before)?.[0];
+  if (word !== undefined) return !OPENING_WORDS.has(word);
+  return /["'`\]]$/.test(before);
+}
 
 /**
  * The configuration object `text` exports; an `UnreadableError` says why
@@ -486,10 +590,9 @@ export function exportedObject(text: string): LiteralObject {
     throw new UnreadableError(
       "changes module.exports after setting it, so its configuration exists only when it runs",
     );
-  const before = src.syntax.slice(0, last.index).trimEnd();
-  if (OPERAND_AFTER.includes(before[before.length - 1] ?? ";"))
+  if (!topLevelStatement(src, last.index as number))
     throw new UnreadableError(
-      "sets its export inside another expression, so its configuration may change when it runs",
+      "sets its export inside another expression, block or function, or behind a condition, so its configuration may change when it runs",
     );
   return expression(src, (last.index as number) + last[0].length, 0);
 }
@@ -583,6 +686,12 @@ function variable(src: Source, name: string, depth: number): LiteralObject {
   if (!declaration)
     throw new UnreadableError(
       `exports ${name}, which it does not declare as an object`,
+    );
+  const keyword =
+    (declaration.index as number) + declaration[0].search(/const|let|var/);
+  if (!topLevelStatement(src, keyword))
+    throw new UnreadableError(
+      `declares ${name} inside a block or function, or behind a condition, so its configuration may change when it runs`,
     );
   const mentions = src.syntax.match(
     new RegExp(`(?<![\\w$.])${id}(?![\\w$])`, "g"),

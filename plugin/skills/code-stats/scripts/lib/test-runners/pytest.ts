@@ -11,9 +11,13 @@
  * applies under the configuration's folder. A configuration that sets
  * neither claims nothing.
  *
- * Every value is static text, so nothing here is computed; a TOML file
- * that is not valid TOML, whose `testpaths` or `python_files` is neither a
- * string nor a list of strings, or a `pyproject.toml` that sets both
+ * Whether a TOML file holds pytest's section is decided from the parsed
+ * table, as pytest decides it: an empty `[tool.pytest]` is no section, an
+ * empty `[tool.pytest.ini_options]` is one. Every value is static text, so
+ * nothing here is computed; a TOML file that is not valid TOML, a native
+ * table (`[pytest]`, `[tool.pytest]`) whose `testpaths` or `python_files`
+ * is not a list of strings, an `ini_options` one whose value is neither a
+ * string nor such a list, or a `pyproject.toml` that sets something in both
  * `[tool.pytest]` and `[tool.pytest.ini_options]`, is reported unreadable.
  */
 import { isRecord } from "../../../../../shared/guards.ts";
@@ -131,42 +135,71 @@ function tableAt(doc: unknown, keys: readonly string[]): unknown {
 }
 
 /**
- * A `pyproject.toml`'s pytest section: `[tool.pytest]`, pytest's native
- * table, or `[tool.pytest.ini_options]`; null when it holds neither.
+ * A `pyproject.toml`'s pytest section, decided from the parsed table as
+ * pytest decides it: `[tool.pytest]`, pytest's native table, when it sets
+ * anything besides `ini_options`; otherwise `[tool.pytest.ini_options]`
+ * when that table exists, even empty; otherwise none, and pytest looks on.
+ * Both setting something is a conflict pytest refuses.
  */
 function pyprojectSection(text: string): Found | null {
-  if (!/\[\s*tool\.pytest(?:\.ini_options)?\s*\]/.test(text)) return null;
-  const pytest = tableAt(parseToml(text), ["tool", "pytest"]);
-  if (!isRecord(pytest)) return null;
-  const { ini_options: ini, ...native } = pytest;
+  const tables = pyprojectTables(text);
+  if (tables === null) return null;
+  const { native, ini } = tables;
   const setsNative = Object.keys(native).length > 0;
-  if (setsNative && ini !== undefined)
+  if (setsNative && ini !== undefined && Object.keys(ini).length > 0)
     throw new UnreadableError(
       "sets both [tool.pytest] and [tool.pytest.ini_options]",
     );
-  if (setsNative || ini === undefined)
-    return { name: "tool.pytest", section: tomlSection(native) };
-  return isRecord(ini)
-    ? { name: "tool.pytest.ini_options", section: tomlSection(ini) }
-    : null;
+  if (setsNative)
+    return { name: "tool.pytest", section: tomlSection(native, "native") };
+  return ini === undefined
+    ? null
+    : { name: "tool.pytest.ini_options", section: tomlSection(ini, "ini") };
+}
+
+/** A `pyproject.toml`'s `[tool.pytest]` table split into its native settings and `ini_options`; null when there is none. */
+function pyprojectTables(text: string): {
+  native: Record<string, unknown>;
+  ini: Record<string, unknown> | undefined;
+} | null {
+  // Every spelling of the table's key holds the word; a file without it is not read.
+  if (!text.includes("pytest")) return null;
+  const pytest = tableAt(parseToml(text), ["tool", "pytest"]);
+  if (pytest === undefined) return null;
+  if (!isRecord(pytest))
+    throw new UnreadableError("tool.pytest is not a table");
+  const { ini_options: ini, ...native } = pytest;
+  if (ini !== undefined && !isRecord(ini))
+    throw new UnreadableError("tool.pytest.ini_options is not a table");
+  return { native, ini };
 }
 
 /** A `pytest.toml`'s `[pytest]` table; the file is pytest's configuration even without it. */
 function pytestTomlSection(text: string): Found {
   const table = tableAt(parseToml(text), ["pytest"]);
+  if (table !== undefined && !isRecord(table))
+    throw new UnreadableError("pytest is not a table");
   return {
     name: "pytest",
-    section: isRecord(table) ? tomlSection(table) : new Map(),
+    section: table === undefined ? new Map() : tomlSection(table, "native"),
   };
 }
 
-/** The read keys of a TOML table, as strings. */
-function tomlSection(options: Record<string, unknown>): Section {
+/**
+ * The read keys of a TOML table, as strings. pytest's native tables take
+ * each setting as a list; `ini_options` also takes a string, split as an
+ * INI value is.
+ */
+function tomlSection(
+  options: Record<string, unknown>,
+  mode: "native" | "ini",
+): Section {
   const section: Section = new Map();
   for (const key of READ_KEYS) {
     const value = options[key];
     if (value === undefined) continue;
-    if (typeof value === "string") section.set(key, splitArgs(value));
+    if (typeof value === "string" && mode === "ini")
+      section.set(key, splitArgs(value));
     else if (
       Array.isArray(value) &&
       value.every((v): v is string => typeof v === "string")
@@ -174,7 +207,9 @@ function tomlSection(options: Record<string, unknown>): Section {
       section.set(key, value);
     else
       throw new UnreadableError(
-        `${key} is neither a string nor a list of strings`,
+        mode === "ini"
+          ? `${key} is neither a string nor a list of strings`
+          : `${key} is not a list of strings, as pytest's native table requires`,
       );
   }
   return section;
@@ -261,30 +296,35 @@ function inOrder(candidates: readonly string[]): string[] {
   ).filter((c): c is string => c !== undefined);
 }
 
-/** Whether a candidate holds pytest's section, by its text alone. */
-const HOLDS: Record<string, RegExp> = {
-  "pytest.toml": /^/,
-  ".pytest.toml": /^/,
-  "pytest.ini": /^/,
-  ".pytest.ini": /^/,
-  "pyproject.toml": /^[ \t]*\[[ \t]*tool\.pytest(?:\.ini_options)?[ \t]*\]/m,
-  "tox.ini": /^[ \t]*\[pytest\]/m,
-  "setup.cfg": /^[ \t]*\[tool:pytest\]/m,
-};
+/**
+ * Whether a candidate is pytest's configuration, read the way the rules are
+ * read. A candidate that cannot be read stops the search there, since
+ * pytest stops at it too, and is reported unreadable.
+ */
+function holds(path: string, text: string): boolean {
+  try {
+    return sectionOf(path, text) !== null;
+  } catch (error) {
+    if (error instanceof UnreadableError) return true;
+    throw error;
+  }
+}
 
 /** The configuration pytest uses in one folder: the first candidate that holds its section. */
 function chosen(files: RepoFiles, candidates: readonly string[]): string[] {
   const path = inOrder(candidates).find((c) => {
     const text = files.read(c);
-    return text !== null && (HOLDS[nameOf(c)] as RegExp).test(text);
+    return text !== null && holds(c, text);
   });
   return path === undefined ? [] : [path];
 }
 
+const SOURCE_NAMES = new Set(SOURCES.map((s) => s.name));
+
 /** Each folder's pytest configuration: the first source that holds the section. */
 export function readPytest(files: RepoFiles): Reading {
   const byFolder = new Map<string, string[]>();
-  for (const path of files.paths.filter((p) => nameOf(p) in HOLDS)) {
+  for (const path of files.paths.filter((p) => SOURCE_NAMES.has(nameOf(p)))) {
     const folder = folderOf(path);
     byFolder.set(folder, [...(byFolder.get(folder) ?? []), path]);
   }

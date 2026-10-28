@@ -100,6 +100,37 @@ describe("JavaScript configuration read as text", () => {
       expect(() => exportedObject(text)).toThrow();
   });
 
+  test("a template's interpolation is lexed as code: its strings and templates are not syntax", () => {
+    expect(() =>
+      exportedObject(
+        `const c = { testMatch: ['a'] };\nconst label = \`\${"}" + (c.testMatch = [])}\`;\nexport default c;`,
+      ),
+    ).toThrow("uses c again");
+    for (const text of [
+      `const c = { testMatch: ['a'], label: \`\${"c"}\` };\nexport default c;`,
+      `const c = { testMatch: ['a'], label: \`\${\`\${'}'}\`}\` };\nexport default c;`,
+    ])
+      expect(exportedObject(text).entries.get("testMatch")).toEqual(["a"]);
+  });
+
+  test("an export or declaration that may not run, or runs inside something else, is unreadable", () => {
+    for (const text of [
+      "if (false) module.exports = { testMatch: ['a'] };",
+      "if (false)\n  module.exports = { testMatch: ['a'] };",
+      "if (x) {} else module.exports = { testMatch: ['a'] };",
+      "function f() { module.exports = { testMatch: ['a'] }; }",
+      "const f = () => module.exports = { testMatch: ['a'] };",
+      "if (x) { var c = { testMatch: ['a'] }; }\nmodule.exports = c;",
+    ])
+      expect(() => exportedObject(text)).toThrow("may change when it runs");
+    for (const text of [
+      "const a = 'x'\nmodule.exports = { testMatch: ['a'] }",
+      "if (x) { setup(); }\nmodule.exports = { testMatch: ['a'] };",
+      "export const c = { testMatch: ['a'] };\nexport default c;",
+    ])
+      expect(exportedObject(text).entries.get("testMatch")).toEqual(["a"]);
+  });
+
   test("a type assertion ends at the type, and a runtime tail after it is unreadable", () => {
     expect(() =>
       exportedObject(
@@ -252,6 +283,71 @@ describe("pytest", () => {
     expect(whys(reading)[0]).toContain("both");
   });
 
+  test("an empty [tool.pytest] is no configuration, and pytest looks on", () => {
+    const reading = readPytest(
+      repo({
+        "pyproject.toml": "[tool.pytest]\n",
+        "setup.cfg": "[tool:pytest]\npython_files = check_*.py\n",
+      }),
+    );
+    expect(reading.rules[0]?.file).toBe("setup.cfg");
+    expect(claimed(reading, ["check_a.py"])).toEqual(["check_a.py"]);
+  });
+
+  test("an empty ini_options beside a native table is no conflict, and stops the search", () => {
+    const native = readPytest(
+      repo({
+        "pyproject.toml":
+          "[tool.pytest]\npython_files = ['check_*.py']\n[tool.pytest.ini_options]\n",
+      }),
+    );
+    expect(native.unreadable).toEqual([]);
+    expect(claimed(native, ["check_a.py"])).toEqual(["check_a.py"]);
+    const ini = readPytest(
+      repo({
+        "pyproject.toml": "[tool.pytest.ini_options]\n",
+        "setup.cfg": "[tool:pytest]\npython_files = check_*.py\n",
+      }),
+    );
+    expect(ini).toEqual({ rules: [], unreadable: [] });
+  });
+
+  test("the pytest table is found however the TOML spells its key", () => {
+    for (const toml of [
+      "tool.pytest = { python_files = ['check_*.py'] }\n",
+      '["tool"."pytest"]\npython_files = ["check_*.py"]\n',
+      "[tool]\npytest.python_files = ['check_*.py']\n",
+    ]) {
+      const reading = readPytest(
+        repo({
+          "pyproject.toml": toml,
+          "setup.cfg": "[tool:pytest]\npython_files = verify_*.py\n",
+        }),
+      );
+      expect(claimed(reading, ["check_a.py", "verify_a.py"])).toEqual([
+        "check_a.py",
+      ]);
+    }
+  });
+
+  test("a native table's setting must be a list; ini_options also takes a string", () => {
+    for (const texts of [
+      { "pytest.toml": "[pytest]\npython_files = 'check_*.py'\n" },
+      { "pyproject.toml": "[tool.pytest]\ntestpaths = 'qa'\n" },
+    ]) {
+      const reading = readPytest(repo(texts));
+      expect(reading.rules).toEqual([]);
+      expect(whys(reading)[0]).toContain("not a list");
+    }
+    const ini = readPytest(
+      repo({
+        "pyproject.toml":
+          "[tool.pytest.ini_options]\npython_files = 'check_*.py'\n",
+      }),
+    );
+    expect(claimed(ini, ["check_a.py"])).toEqual(["check_a.py"]);
+  });
+
   test("a testpaths or python_files of another type is unreadable", () => {
     for (const value of ["123", "['qa', 1]"]) {
       const reading = readPytest(
@@ -346,5 +442,45 @@ describe("Maven", () => {
     );
     expect(reading.rules).toEqual([]);
     expect(whys(reading)[0]).toContain("closes <build>");
+  });
+
+  test("a reference in a value is read as the character it stands for", () => {
+    const reading = readMaven(
+      repo({
+        "pom.xml": pom(
+          "<build><testSourceDirectory>qa&amp;checks&#47;j&#x61;va</testSourceDirectory></build>",
+        ),
+      }),
+    );
+    expect(reading.unreadable).toEqual([]);
+    expect(claimed(reading, ["qa&checks/java/C.java"])).toEqual([
+      "qa&checks/java/C.java",
+    ]);
+  });
+
+  test("an entity a DTD would declare, or a bare &, is unreadable", () => {
+    for (const value of ["qa&dir;", "qa & checks"]) {
+      const reading = readMaven(
+        repo({
+          "pom.xml": pom(
+            `<build><testSourceDirectory>${value}</testSourceDirectory></build>`,
+          ),
+        }),
+      );
+      expect(reading.rules).toEqual([]);
+      expect(whys(reading)).toHaveLength(1);
+    }
+  });
+
+  test("a POM with an element still open at the end, or no element, is unreadable", () => {
+    for (const text of [
+      "<project><build><testSourceDirectory>qa</testSourceDirectory>",
+      "<project><build>",
+      "<?xml version='1.0'?>",
+    ]) {
+      const reading = readMaven(repo({ "pom.xml": text }));
+      expect(reading.rules).toEqual([]);
+      expect(whys(reading)).toHaveLength(1);
+    }
   });
 });

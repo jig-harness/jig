@@ -7,9 +7,12 @@
  *
  * Not read: a value inside a `<profile>`, which applies only when the
  * profile is active, and one a module inherits from a parent POM. A
- * `testSourceDirectory` built from another property (`${tests.dir}`), a
- * comment that never closes, or a closing tag that does not match the
- * element open, makes the POM unreadable, and nothing is claimed from it.
+ * `testSourceDirectory` built from another property (`${tests.dir}`), or a
+ * POM that is not well-formed XML as far as these values depend on it (a
+ * comment that never closes, a closing tag that does not match the element
+ * open, an element still open at the end, an `&` that is not one of XML's
+ * predefined or numeric references) makes the POM unreadable, and nothing
+ * is claimed from it. Character data is read with its references replaced.
  */
 import {
   folderOf,
@@ -93,8 +96,7 @@ function markupAt(text: string, open: number): Markup {
  * unreadable.
  */
 function elementValues(text: string): Values {
-  const values: Values = new Map();
-  const path: string[] = [];
+  const scan: Scan = { values: new Map(), path: [], rooted: false };
   let value = "";
   let at = 0;
   for (
@@ -103,20 +105,78 @@ function elementValues(text: string): Values {
     open = text.indexOf("<", at)
   ) {
     const { end, adds, tag } = markupAt(text, open);
-    value += text.slice(at, open) + adds;
+    value += characterData(text.slice(at, open)) + adds;
     at = end;
     if (!tag) continue;
-    if (tag.closing) {
-      if (path[path.length - 1] !== tag.name)
-        throw new UnreadableError(
-          `closes <${tag.name}> where ${path.length ? `<${path[path.length - 1]}>` : "no element"} is open`,
-        );
-      values.set(path.join("/"), value);
-      path.pop();
-    } else if (!tag.empty) path.push(tag.name);
+    onTag(scan, tag, value);
     value = "";
   }
-  return values;
+  const { path } = scan;
+  if (path.length)
+    throw new UnreadableError(
+      `leaves <${path[path.length - 1]}> open at the end of the file`,
+    );
+  if (!scan.rooted) throw new UnreadableError("has no root element");
+  return scan.values;
+}
+
+/** The elements read so far: their values, the path of those open, and whether any opened. */
+interface Scan {
+  values: Values;
+  path: string[];
+  rooted: boolean;
+}
+
+/** One tag read into `scan`; `value` is the text since the tag before. */
+function onTag(scan: Scan, tag: NonNullable<Markup["tag"]>, value: string) {
+  const { path } = scan;
+  if (!tag.closing) {
+    scan.rooted = true;
+    if (!tag.empty) path.push(tag.name);
+    return;
+  }
+  if (path[path.length - 1] !== tag.name)
+    throw new UnreadableError(
+      `closes <${tag.name}> where ${path.length ? `<${path[path.length - 1]}>` : "no element"} is open`,
+    );
+  scan.values.set(path.join("/"), value);
+  path.pop();
+}
+
+/** The five references XML predefines. */
+const PREDEFINED: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+};
+
+/**
+ * Character data with its references replaced, as XML reads it
+ * (`qa&amp;checks` is `qa&checks`). An entity a DTD would declare cannot be
+ * resolved from the text alone, so it makes the file unreadable.
+ */
+function characterData(raw: string): string {
+  return raw.replace(/&([^;&\s]*);?/g, (ref, name: string) => {
+    if (!ref.endsWith(";"))
+      throw new UnreadableError(`has an & that starts no reference (${ref})`);
+    const numeric = /^#(?:x([\da-f]+)|(\d+))$/i.exec(name);
+    if (numeric) {
+      const code = numeric[1]
+        ? Number.parseInt(numeric[1], 16)
+        : Number(numeric[2]);
+      if (code > 0x10ffff)
+        throw new UnreadableError(`has a reference to no character (${ref})`);
+      return String.fromCodePoint(code);
+    }
+    const predefined = PREDEFINED[name];
+    if (predefined === undefined)
+      throw new UnreadableError(
+        `has an entity reference it cannot resolve (${ref})`,
+      );
+    return predefined;
+  });
 }
 
 /** The rules one POM declares. */
