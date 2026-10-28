@@ -1190,7 +1190,7 @@ test("one change-area catalog reader serves the skills from the plugin copy", ()
   const consumer = consumerRepo(
     "catalog",
     `issue_tracker:
-  team: TASK
+  adapter: github
 do_item:
   agents:
     codearea_areas: { "codearea:api": api }
@@ -1211,19 +1211,21 @@ drive:
 `,
   );
   const cache = join(scratch, "cache", "skills");
-  const agent = spawnSync(
-    process.execPath,
-    [join(cache, "do-item", "scripts", "determine_agent.ts"), "-"],
-    {
-      cwd: consumer,
-      env,
-      encoding: "utf8",
-      input: '{"labels":["codearea:api"],"title":"x"}',
-    },
-  );
-  expectSpawnExit({ ...agent, exitCode: agent.status }, 0);
-  expect(JSON.parse(agent.stdout)).toMatchObject({
-    primary_agent: "Backend Agent",
+  const inConsumer = { cwd: consumer, env, encoding: "utf8" } as const;
+  const doItem = (script: string, input: string): unknown => {
+    const run = spawnSync(
+      process.execPath,
+      [join(cache, "do-item", "scripts", script), "-"],
+      { ...inConsumer, input },
+    );
+    expectSpawnExit({ ...run, exitCode: run.status }, 0);
+    return JSON.parse(run.stdout);
+  };
+  expect(
+    doItem("determine_agent.ts", '{"labels":["codearea:api"],"title":"x"}'),
+  ).toMatchObject({ primary_agent: "Backend Agent" });
+  expect(doItem("determine_type.ts", '{"labels":["type:bug"]}')).toMatchObject({
+    type: "bug",
   });
 
   const probe = join(consumer, "catalog-probe.ts");
@@ -1234,11 +1236,7 @@ const c = loadCatalogFile(".config/change-areas.yaml");
 console.log(JSON.stringify({ areas: areasOf("src/rpc/x.ts", c), flags: c.get("api")?.flags }));
 `,
   );
-  const read = spawnSync(process.execPath, [probe], {
-    cwd: consumer,
-    env,
-    encoding: "utf8",
-  });
+  const read = spawnSync(process.execPath, [probe], inConsumer);
   expectSpawnExit({ ...read, exitCode: read.status }, 0);
   expect(JSON.parse(read.stdout)).toEqual({
     areas: ["api"],
