@@ -35,7 +35,7 @@
 # (module M11), so a schedule that stops running turns red.
 #
 # The practice and the provider contract:
-#   https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/reference/deferral-references/README.md
+#   https://github.com/jig-harness/jig/blob/main/plugin/skills/docs/scripts/deferral-references/README.md
 # A provider per tracker:
 #   https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/mappings.md
 name: Deferral liveness
@@ -85,7 +85,7 @@ jobs:
       - name: List the items the deferrals rely on
         # No credential. A document with no deferral gives an empty list.
         run: >-
-          bun jig/modules/M4-docs-governance/reference/deferral-references/check-deferrals.ts
+          bun jig/plugin/skills/docs/scripts/deferral-references/check-deferrals.ts
           --all --list-keys > "$RUNNER_TEMP/keys.txt"
       - name: Ask the tracker for their states
         # The only step with the credential. The provider reads the keys on
@@ -116,7 +116,7 @@ jobs:
         run: |
           set -u
           code=0
-          bun jig/modules/M4-docs-governance/reference/deferral-references/check-deferrals.ts \
+          bun jig/plugin/skills/docs/scripts/deferral-references/check-deferrals.ts \
             --all --states deferral-states.json > "$RUNNER_TEMP/verdict.txt" 2>&1 || code=$?
           cat "$RUNNER_TEMP/verdict.txt"
           { echo '```'; cat "$RUNNER_TEMP/verdict.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
