@@ -61,9 +61,9 @@ keeps a person merging ([ADR-0003](docs/adr/ADR-0003-a-person-merges.md)).
 A few values are still fixed in the skills rather than read from
 [configuration](plugin/CONFIGURATION.md): the review skill's follow-up step
 calls Linear directly with fixed label groups, so a repository on GitHub
-Issues, the default tracker, cannot yet defer a review finding, and the drive assumes a git remote
-named `origin`. They move into configuration, and the follow-up step onto
-the tracker interface, so it files on every tracker Jig supports.
+Issues, the default tracker, cannot yet defer a review finding. They move
+into configuration, and the follow-up step onto the tracker interface, so it
+files on every tracker Jig supports.
 
 ### 12. More tracker adapters
 

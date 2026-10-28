@@ -275,11 +275,14 @@ describe("the linear_priority alias", () => {
   it("is checked as priority is, and the error names the key the row used", async () => {
     const run = await mutated((doc) => {
       underAlias(doc);
-      (
-        doc.severity_mapping as Record<string, Record<string, unknown>>
-      ).low = { linear_priority: 0, acceptance: "Minor" };
+      (doc.severity_mapping as Record<string, Record<string, unknown>>).low = {
+        linear_priority: 0,
+        acceptance: "Minor",
+      };
     });
-    expect(run).toThrow(/severity_mapping\.low\.linear_priority must be an integer 1-4/);
+    expect(run).toThrow(
+      /severity_mapping\.low\.linear_priority must be an integer 1-4/,
+    );
   });
 
   it("refuses a row that sets both", async () => {
