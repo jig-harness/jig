@@ -445,8 +445,9 @@ nothing yet
 
 Refused besides: an unknown field in `routing` or `routing.raise`, a name
 that is more than one word (it would not read back from the route record),
-and, where the repository has a [label taxonomy](#issue_tracker), a declared
-raise list naming a label the taxonomy does not declare. A default list is
+and, where the repository has a [label taxonomy](#issue_tracker) its label
+lint accepts, a declared raise list naming a label the taxonomy does not
+declare. A default list is
 never refused: a default label no item carries raises nothing. A refused
 `routing` section stops do-item and says why; it is never read as absent.
 
@@ -467,7 +468,8 @@ many labels of the class the item carries, in this order: a flag label, a
 mandatory review, a size label, and the human-in-the-loop label
 (`issue_tracker.labels.hitl`) or one of its facets, counted once even where
 the catalog also lists it as a flag. A catalog that is declared and cannot
-be read is taken to flag the item and to hold a mandatory review. The
+be read is taken to flag the item where `routing.raise.flags` is `catalog`,
+and to hold a mandatory review where `routing.raise.reviews` is on. The
 effort stops at `max`, and a raise never moves the tier: an Execution type
 that keeps needing `max` is a row a person moves to `strategic`, with the
 route records showing it.

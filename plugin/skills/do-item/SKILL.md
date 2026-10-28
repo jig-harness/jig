@@ -563,8 +563,9 @@ routing below remain **exact**.
    review, a size too large to batch and the `hitl` label, capped at `max`,
    and the tier's family alias for the runtime; `reasons` names the rule
    behind each part ([configuration reference](../../CONFIGURATION.md#routing)).
-   Put the tier, the effort and the model in the status message, e.g.
-   `Route: execution, high, sonnet (flag has-migration raised medium)`.
+   Put the tier, the effort, the model and the effort's reasons (its base
+   row and every raise in `reasons`) in the status message, e.g.
+   `Route: execution, high, sonnet (type bug: medium; flag has-migration raised medium)`.
    Nothing is forwarded yet: the delegation below runs on the model and
    effort it runs on today, whatever `declared` says. Exit `1` is a
    configuration the loading rules refuse: stop the pickup and report its
@@ -1147,7 +1148,13 @@ snapshot mapping are **exact**.
    from a just-completed sub-issue to the next, so the snapshot always names
    the sub-issue actually being worked.
 
-5. **judgment** — **Delegate** as in Step 4a. When the selected
+5. **exact** — **Derive the sub-issue's route**: write the fetched
+   sub-issue to `issue.json` and run `determine_route.ts` on it as Step 4a
+   item 2 does, reporting its route and stopping on exit `1` the same way.
+   The route derived for this issue in Step 4a is this issue's, never the
+   sub-issue's.
+
+6. **judgment** — **Delegate** as in Step 4a. When the selected
    sub-issue builds on a sibling whose pull request is still open, the
    pull-request policy decides what happens: with `pull_requests.stacking:
    none` (the default), do not start it on top of that branch; wait for the

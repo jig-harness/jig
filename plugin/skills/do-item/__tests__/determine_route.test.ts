@@ -317,7 +317,9 @@ describe("catalogFacts", () => {
 
   it.each([
     ["an impliedBy that is not a list", { impliedBy: "api" }, "impliedBy"],
+    ["an impliedBy written but empty (null)", { impliedBy: null }, "impliedBy"],
     ["a review that is not a mapping", { review: "security-review" }, "review"],
+    ["a review written but empty (null)", { review: null }, "review"],
     [
       "a review whose skills is not a list",
       { review: { skills: "security-review" } },

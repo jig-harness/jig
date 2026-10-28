@@ -319,9 +319,12 @@ export class CatalogFieldError extends Error {}
 const isStringList = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((s) => typeof s === "string");
 
+// Only an omitted field is absent. A field written with no value reads as
+// null, which the catalog's own schema refuses as it refuses any other shape.
+
 /** An area's `impliedBy`: absent is none, any shape but a list of area ids refuses. */
 function impliedByOf(key: string, value: unknown): string[] {
-  if (value === undefined || value === null) return [];
+  if (value === undefined) return [];
   if (!isStringList(value))
     throw new CatalogFieldError(
       `areas.${key}.impliedBy must be a list of area ids`,
@@ -331,9 +334,9 @@ function impliedByOf(key: string, value: unknown): string[] {
 
 /** An area's `review.skills`: absent is none, any shape but a list of names refuses. */
 function reviewSkillsOf(key: string, value: unknown): string[] {
-  if (value === undefined || value === null) return [];
+  if (value === undefined) return [];
   const skills =
-    typeof value === "object" && !Array.isArray(value)
+    typeof value === "object" && value !== null && !Array.isArray(value)
       ? (value as Record<string, unknown>).skills
       : undefined;
   if (!isStringList(skills))

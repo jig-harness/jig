@@ -15,7 +15,11 @@ import { basename, posix } from "node:path";
 import { isMapping } from "../../../../shared/config-layers.ts";
 import { load } from "../../../../shared/yaml.ts";
 import { taxonomyAt } from "../../../file-issue/scripts/lib/config.ts";
-import { compileOpenPattern } from "../../../file-issue/scripts/lib/taxonomy.ts";
+import {
+  compileOpenPattern,
+  lintTaxonomyFile,
+} from "../../../file-issue/scripts/lib/taxonomy.ts";
+import { declaresLabel } from "../../../file-issue/scripts/lib/validate.ts";
 import { probedFiles } from "./criteria.ts";
 import { at, type Finding } from "./schema.ts";
 
@@ -23,10 +27,10 @@ const TAXONOMY_NAMES = new Set(["label-taxonomy.yaml", "label-taxonomy.yml"]);
 
 /**
  * Label roles naming one label, and roles naming a list of them; the labels
- * `issue_tracker.types` lists for each work type, and the routing raise lists
- * (`routing.raise.flags`, `routing.raise.sizes`) the file declares, are checked
- * as a list role's are. A role's older field under `review.taxonomy` declares
- * it too.
+ * `issue_tracker.types` lists for each work type are checked as a list role's
+ * are. A role's older field under `review.taxonomy` declares it too. The
+ * routing raise lists are checked apart, as do-item's pickup checks them
+ * (`raiseFindings`).
  * Size labels (`batch_sizes`) are checked only against a taxonomy that
  * declares groups, where a size group can hold them, and `pattern_prefix`
  * never, because it is a prefix, not a label.
@@ -190,6 +194,46 @@ function raiseFields(config: Record<string, unknown>): string[] {
   );
 }
 
+/**
+ * The raise labels do-item's pickup refuses: it checks them against the
+ * taxonomy the label lint accepts, with the label validator's own rule
+ * (`declaresLabel`), which is narrower than `defined` above. A taxonomy its
+ * lint refuses leaves the pickup nothing to check against, and so the audit
+ * reports the lists unchecked rather than judging them by another rule.
+ */
+function raiseFindings(
+  config: Record<string, unknown>,
+  root: string,
+  file: string,
+  path: string,
+): Finding[] {
+  const fields = raiseFields(config);
+  if (!fields.length) return [];
+  const taxonomy = lintTaxonomyFile(taxonomyAt(root, file)).taxonomy;
+  if (taxonomy === null)
+    return [
+      {
+        id: "unchecked:routing.raise",
+        severity: "info",
+        message: `${path} does not pass the label lint, so ${fields.join(" and ")} are unchecked, as do-item leaves them`,
+      },
+    ];
+  return fields.flatMap((field) => {
+    const unknown = configuredLabels(config, field).filter(
+      (label) => !declaresLabel(taxonomy, label),
+    );
+    return unknown.length
+      ? [
+          {
+            id: `taxonomy:${field}`,
+            severity: "warning" as const,
+            message: `${field} names ${unknown.join(", ")}, which ${path} does not declare, so do-item refuses to pick up work`,
+          },
+        ]
+      : [];
+  });
+}
+
 /** Every `issue_tracker.types.<type>` field the repository's file sets. */
 function typeFields(config: Record<string, unknown>): string[] {
   const types = at(config, "issue_tracker.types");
@@ -216,7 +260,6 @@ function labelFindings(
   const roleChecks = [
     ...[...SINGLE_ROLES, ...LIST_ROLES].flatMap(roleFields),
     ...typeFields(config),
-    ...raiseFields(config),
   ].flatMap((field) =>
     finding(
       field,
@@ -329,6 +372,7 @@ function checkAgainst(
   }
   return [
     ...labelFindings(config, taxonomy, path),
+    ...raiseFindings(config, root, file, path),
     ...typeCopyFindings(config, taxonomy, path),
   ];
 }

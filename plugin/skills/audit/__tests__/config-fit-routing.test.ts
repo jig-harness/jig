@@ -5,6 +5,7 @@
  */
 import { afterAll, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
+import { lintTaxonomyText } from "../../file-issue/scripts/lib/taxonomy.ts";
 import { runScript, scratchRepo } from "./helpers.ts";
 
 const dirs: string[] = [];
@@ -12,14 +13,23 @@ afterAll(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 });
 
-const TAXONOMY =
-  "version: 1\ntypes:\n  - id: feature\n  - id: bug\nstatuses:\n  - id: todo\nflags:\n  - id: pii\n";
+const flag = (id: string) =>
+  `  - id: ${id}\n    fires: a review\n    scope: shipping-item\n    apply_when: the change touches it\n`;
 
-/** The fit's findings for a repository with this configuration and the taxonomy above. */
-function findings(config: string): { id: string; message: string }[] {
+const TAXONOMY = `version: 1\ntypes:\n  - id: feature\n  - id: bug\nstatuses:\n  - id: todo\nflags:\n${flag("pii")}${flag("security")}`;
+
+/** A taxonomy the label lint refuses: its flag has no trigger, scope or rule. */
+const LINT_INVALID =
+  "version: 1\ntypes:\n  - id: feature\nstatuses:\n  - id: todo\nflags:\n  - id: pii\n";
+
+/** The fit's findings for a repository with this configuration and taxonomy. */
+function findings(
+  config: string,
+  taxonomy = TAXONOMY,
+): { id: string; message: string }[] {
   const dir = scratchRepo({
     ".config/jig.yaml": config,
-    "label-taxonomy.yaml": TAXONOMY,
+    "label-taxonomy.yaml": taxonomy,
   });
   dirs.push(dir);
   const run = runScript("config-fit.ts", ["--offline", "--json"], dir);
@@ -61,11 +71,34 @@ test("a valid routing section is not refused", () => {
   );
 });
 
+test("the taxonomy these tests share passes the label lint do-item reads", () => {
+  expect(lintTaxonomyText(TAXONOMY).problems).toEqual([]);
+  expect(lintTaxonomyText(LINT_INVALID).taxonomy).toBeNull();
+});
+
 test("a raise label the taxonomy does not define is reported", () => {
   const found = findings("routing:\n  raise:\n    flags: [pii, secret]\n");
   expect(
     found.find((f) => f.id === "taxonomy:routing.raise.flags")?.message,
   ).toContain("secret, which label-taxonomy.yaml");
+});
+
+test("a facet of a declared flag is reported, as do-item refuses it", () => {
+  const found = findings("routing:\n  raise:\n    flags: [security:legal]\n");
+  expect(
+    found.find((f) => f.id === "taxonomy:routing.raise.flags")?.message,
+  ).toContain("security:legal");
+});
+
+test("a taxonomy the lint refuses leaves the raise lists unchecked", () => {
+  const found = findings(
+    "routing:\n  raise:\n    flags: [secret]\n",
+    LINT_INVALID,
+  );
+  expect(found.some((f) => f.id === "taxonomy:routing.raise.flags")).toBe(
+    false,
+  );
+  expect(found.some((f) => f.id === "unchecked:routing.raise")).toBe(true);
 });
 
 test("flags: catalog names no label to check", () => {
