@@ -66,15 +66,19 @@ function flow(value: unknown): string {
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
 
+/** A list without its repeated values, in first-seen order; any other value as it is. */
+function distinct(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  const kept: unknown[] = [];
+  for (const v of value) if (!kept.some((e) => same(e, v))) kept.push(v);
+  return kept;
+}
+
 /** Add one fact to its field's entry: a list's values add up, distinct. */
 function merge(entry: Entry, fact: Fact): void {
   entry.evidence.push(...fact.evidence);
-  const current = entry.value;
-  if (Array.isArray(current) && Array.isArray(fact.value))
-    entry.value = [
-      ...current,
-      ...fact.value.filter((v) => !current.some((e) => same(e, v))),
-    ];
+  if (Array.isArray(entry.value) && Array.isArray(fact.value))
+    entry.value = distinct([...entry.value, ...fact.value]);
 }
 
 /**
@@ -98,7 +102,7 @@ function entries(
     else
       found.set(fact.field, {
         field,
-        value: fact.value,
+        value: distinct(fact.value),
         evidence: [...fact.evidence],
         replaces: current === null,
       });

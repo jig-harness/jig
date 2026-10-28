@@ -53,6 +53,26 @@ gates:
     });
   });
 
+  test("a list repeats no value, within one fact as across facts", () => {
+    const only = draftConfig(
+      [fact("review.bots", ["a-review", "a-review"])],
+      schema,
+      null,
+    );
+    expect(reread(only)).toEqual({ review: { bots: ["a-review"] } });
+    const merged = draftConfig(
+      [
+        fact("review.bots", ["a-review"]),
+        fact("review.bots", ["b-review", "b-review"]),
+      ],
+      schema,
+      null,
+    );
+    expect(reread(merged)).toEqual({
+      review: { bots: ["a-review", "b-review"] },
+    });
+  });
+
   test("quotes what YAML would read as something other than the text", () => {
     const values = [
       "yes",
