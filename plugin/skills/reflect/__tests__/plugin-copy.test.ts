@@ -18,7 +18,18 @@ import {
   buildReport,
   type MergeRecord,
 } from "../../resolve-conflicts/scripts/lib/report.ts";
-import { finding, Machine } from "./scratch.ts";
+import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { finding, Machine, type Run } from "./scratch.ts";
+
+/** A clean success: exit 0, its output shown if not, and nothing on stderr. */
+function succeeded(r: Run, what: string): void {
+  expectSpawnExit(
+    { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
+    0,
+    what,
+  );
+  expect(r.stderr).toBe("");
+}
 
 const plugin = join(import.meta.dir, "..", "..", "..");
 let cache: string;
@@ -52,8 +63,7 @@ it("notes, contributes and reviews from a copy outside this repository", () => {
     JSON.stringify(finding()),
     reflect,
   );
-  expect(noted.stderr).toBe("");
-  expect(noted.code).toBe(0);
+  succeeded(noted, "journal.ts note");
   const id = (JSON.parse(noted.stdout) as { id: string }).id;
 
   const contributed = repo.script(
@@ -62,14 +72,26 @@ it("notes, contributes and reviews from a copy outside this repository", () => {
     undefined,
     reflect,
   );
-  expect(contributed.code).toBe(0);
+  expectSpawnExit(
+    {
+      exitCode: contributed.code,
+      stdout: contributed.stdout,
+      stderr: contributed.stderr,
+    },
+    0,
+    "reflect.ts contribute",
+  );
   const stored = JSON.parse(contributed.stdout) as {
     stored: Array<{ id: string }>;
   };
   expect(stored.stored.map((s) => s.id)).toEqual([id]);
 
   const loaded = repo.script("review.ts", ["load"], undefined, review);
-  expect(loaded.code).toBe(0);
+  expectSpawnExit(
+    { exitCode: loaded.code, stdout: loaded.stdout, stderr: loaded.stderr },
+    0,
+    "review.ts load",
+  );
   const groups = (
     JSON.parse(loaded.stdout) as {
       groups: Array<{
@@ -134,8 +156,7 @@ it("notes a conflict hotspot from a copy, reading the cause list by sibling path
     undefined,
     reflect,
   );
-  expect(noted.stderr).toBe("");
-  expect(noted.code).toBe(0);
+  succeeded(noted, "reflect.ts hotspots");
   const out = JSON.parse(noted.stdout) as {
     hotspots: Array<{ class: string; action: string }>;
   };
