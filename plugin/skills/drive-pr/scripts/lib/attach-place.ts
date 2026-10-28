@@ -7,8 +7,9 @@
  * there drives from the tree that already holds the pull request (its head
  * branch checked out, or an earlier attach's record), and otherwise from a new
  * one: `git worktree add --detach` under the first of the roots
- * `gc.worktree_roots` names, recorded as created by the drive so resource
- * collection reaps it once the pull request merges or closes.
+ * `gc.worktree_roots` names, recorded as created by the drive. Resource
+ * collection finds its pull request through the tree's record and reports it
+ * once that pull request merges or closes.
  *
  * A pull request in another repository (`owner/repo#N`, or its URL) is placed
  * the same way in that repository's clone, which the user file's `clones` map
@@ -19,8 +20,9 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { clonePath, isMapping } from "../../../../shared/config-layers.ts";
 import { layeredConfig } from "../../../../shared/consumer.ts";
-import { readDrivenTree } from "../../../../shared/driven-tree.ts";
-import { canonical, DRIVE_REMOTE, out, refuse } from "./attach.ts";
+import { detachedTreeRecord } from "../../../../shared/driven-tree.ts";
+import { isRecord } from "../../../../shared/guards.ts";
+import { canonical, DRIVE_REMOTE, g, out, refuse } from "./attach.ts";
 import { fetchTimeoutSeconds } from "./base-drift.ts";
 import {
   ghCall,
@@ -37,16 +39,29 @@ export interface PrRef {
   pr: string;
   /** `owner/name` when the reference names a repository. */
   slug: string | null;
+  /** The forge's host when the reference is a URL. */
+  host: string | null;
 }
 
 /** `N`, `owner/name#N` or a pull request URL; `null` for anything else. */
 export function parsePrRef(ref: string): PrRef | null {
-  if (/^[0-9]+$/.test(ref)) return { pr: String(Number(ref)), slug: null };
+  if (/^[0-9]+$/.test(ref))
+    return { pr: String(Number(ref)), slug: null, host: null };
   const short = /^([^/\s#]+\/[^/\s#]+)#([0-9]+)$/.exec(ref);
-  if (short) return { pr: String(Number(short[2])), slug: short[1] as string };
+  if (short)
+    return {
+      pr: String(Number(short[2])),
+      slug: short[1] as string,
+      host: null,
+    };
   const url =
-    /^https?:\/\/[^/\s]+\/([^/\s]+\/[^/\s]+)\/pull\/([0-9]+)\/?$/.exec(ref);
-  if (url) return { pr: String(Number(url[2])), slug: url[1] as string };
+    /^https?:\/\/([^/\s]+)\/([^/\s]+\/[^/\s]+)\/pull\/([0-9]+)\/?$/.exec(ref);
+  if (url)
+    return {
+      pr: String(Number(url[3])),
+      slug: url[2] as string,
+      host: (url[1] as string).toLowerCase(),
+    };
   return null;
 }
 
@@ -60,14 +75,30 @@ export type Placement =
     }
   | { kind: "elsewhere"; pr: string; slug: string; message: string };
 
-/** The `owner/name` `gh` resolves for the checkout at `cwd`, or `null`. */
-async function repoSlug(cwd: string): Promise<string | null> {
-  const r = await ghCall(
-    ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
-    { cwd, stderr: "pipe", env: ghRepoEnv() },
+/**
+ * The repository `gh` resolves for the checkout at `cwd`, as `host/owner/name`
+ * in lower case, or `null`. The host is kept: one `owner/name` on two forges
+ * is two repositories.
+ */
+async function repoId(cwd: string): Promise<string | null> {
+  const r = await ghCall(["repo", "view", "--json", "url", "-q", ".url"], {
+    cwd,
+    stderr: "pipe",
+    env: ghRepoEnv(),
+  });
+  const url = /^https?:\/\/([^/\s]+)\/([^/\s]+\/[^/\s]+?)\/?$/.exec(
+    r.stdout.trim(),
   );
-  const slug = r.stdout.trim();
-  return r.code === 0 && slug !== "" ? slug : null;
+  return r.code === 0 && url ? `${url[1]}/${url[2]}`.toLowerCase() : null;
+}
+
+/** Does the repository `id` (`repoId`) match `ref`'s, host included if named? */
+function sameRepo(id: string | null, ref: PrRef): boolean {
+  if (id === null || ref.slug === null) return false;
+  const slug = ref.slug.toLowerCase();
+  return ref.host === null
+    ? id.endsWith(`/${slug}`)
+    : id === `${ref.host}/${slug}`;
 }
 
 interface Tree {
@@ -77,46 +108,65 @@ interface Tree {
 
 /** Every working tree of the clone at `cwd`, the primary checkout first. */
 async function trees(cwd: string): Promise<Tree[]> {
+  // NUL-separated: a path is printed as is, never quoted or escaped.
   const list = await out(
     cwd,
-    ["worktree", "list", "--porcelain"],
+    ["worktree", "list", "--porcelain", "-z"],
     "the clone's working trees",
   );
   const found: Tree[] = [];
-  for (const line of list.split("\n")) {
-    if (line.startsWith("worktree "))
-      found.push({ path: canonical(line.slice(9)), branch: null });
-    else if (line.startsWith("branch refs/heads/") && found.length > 0)
-      (found.at(-1) as Tree).branch = line.slice("branch refs/heads/".length);
+  for (const field of list.split("\0")) {
+    if (field.startsWith("worktree "))
+      found.push({ path: canonical(field.slice(9)), branch: null });
+    else if (field.startsWith("branch refs/heads/") && found.length > 0)
+      (found.at(-1) as Tree).branch = field.slice("branch refs/heads/".length);
   }
   if (found.length === 0) refuse(1, "the clone listed no working trees");
   return found;
 }
 
-/** The tree whose attach record names `pr`, if any. */
+/** The tree whose attach record still names `pr`, if any. */
 async function recordedTree(all: Tree[], pr: string): Promise<string | null> {
   for (const tree of all) {
     if (tree.branch !== null || !existsSync(tree.path)) continue;
-    const dir = await git(["rev-parse", "--absolute-git-dir"], {
-      cwd: tree.path,
-      stderr: "pipe",
-      timeoutSec: gitCallTimeoutSeconds(),
-      env: gitIdentityEnv(),
-    });
-    if (dir.code === 0 && readDrivenTree(dir.stdout.trim())?.pr === Number(pr))
-      return tree.path;
+    const record = await detachedTreeRecord((args) =>
+      git(args, {
+        cwd: tree.path,
+        stderr: "pipe",
+        timeoutSec: gitCallTimeoutSeconds(),
+        env: gitIdentityEnv(),
+      }),
+    );
+    if (record?.pr === Number(pr)) return tree.path;
   }
   return null;
 }
 
+/**
+ * The PR's head branch, refusing before anything is created for a PR the
+ * attach would refuse anyway: one that is not open, or one from a fork.
+ */
 async function headBranch(cwd: string, pr: string): Promise<string> {
   const r = await ghCall(
-    ["pr", "view", pr, "--json", "headRefName", "-q", ".headRefName"],
+    ["pr", "view", pr, "--json", "state,headRefName,isCrossRepository"],
     { cwd, stderr: "pipe", env: ghRepoEnv() },
   );
-  const branch = r.stdout.trim();
-  if (r.code !== 0 || branch === "") refuse(1, `cannot read PR #${pr}`);
-  return branch;
+  let meta: unknown;
+  try {
+    meta = JSON.parse(r.stdout);
+  } catch (err) {
+    refuse(1, `cannot read PR #${pr}: ${String(err)}`);
+  }
+  if (r.code !== 0 || !isRecord(meta) || typeof meta.headRefName !== "string")
+    refuse(1, `cannot read PR #${pr}: ${r.stderr.trim()}`);
+  if (meta.state !== "OPEN")
+    refuse(
+      5,
+      `PR #${pr} is ${String(meta.state)}, not OPEN — nothing to drive`,
+    );
+  if (meta.isCrossRepository !== false)
+    refuse(2, `PR #${pr} comes from a fork: the drive cannot push its head`);
+  return meta.headRefName;
 }
 
 /** Create a detached tree for `pr` under the clone's first worktree root. */
@@ -160,7 +210,9 @@ async function createTree(
   if (fetched.code !== 0)
     refuse(1, `cannot fetch '${branch}': ${fetched.stderr.trim()}`);
   mkdirSync(dir, { recursive: true });
-  await out(
+  // Checking out a large repository can outlast a local git call's deadline;
+  // it is bounded like the fetch before it.
+  const added = await g(
     primary,
     [
       "worktree",
@@ -170,8 +222,10 @@ async function createTree(
       path,
       `refs/remotes/${DRIVE_REMOTE}/${branch}`,
     ],
-    `a new working tree at ${path}`,
+    timeout.seconds,
   );
+  if (added.code !== 0)
+    refuse(1, `cannot add a working tree at ${path}: ${added.stderr.trim()}`);
   return canonical(path);
 }
 
@@ -181,14 +235,13 @@ async function createTree(
  */
 async function cloneFor(ref: PrRef, cwd: string): Promise<string | null> {
   if (ref.slug === null) return cwd;
-  const slug = ref.slug.toLowerCase();
-  if ((await repoSlug(cwd))?.toLowerCase() === slug) return cwd;
+  if (sameRepo(await repoId(cwd), ref)) return cwd;
   const mapped = clonePath(layeredConfig(cwd).values, ref.slug);
   if (mapped === undefined) return null;
   if (!existsSync(mapped))
     refuse(2, `clones.${ref.slug} names ${mapped}, which does not exist`);
-  const theirs = await repoSlug(mapped);
-  if (theirs?.toLowerCase() !== slug)
+  const theirs = await repoId(mapped);
+  if (!sameRepo(theirs, ref))
     refuse(
       2,
       `clones.${ref.slug} names ${mapped}, which is a checkout of ${theirs ?? "no repository gh can read"}`,

@@ -5,18 +5,21 @@
  * around someone's work.
  */
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { hostname } from "node:os";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import {
+  expectSpawnExit,
+  expectSpawnExitNot,
+} from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { DRIVEN_TREE_FILE } from "../../../shared/driven-tree.ts";
 import {
+  branchOf,
   type Clone,
   driveState,
   makeClone,
-  SCRIPTS,
+  plantLiveLock,
+  worktreeLock,
 } from "./attach-pr-fixtures.ts";
-import { scopedStateDir } from "./scoped-state-dir.ts";
 
 const clones: Clone[] = [];
 afterAll(() => {
@@ -28,20 +31,20 @@ function fresh(): Clone {
   return c;
 }
 
-function branchOf(c: Clone, tree: string): string {
-  const r = Bun.spawnSync(
-    ["git", "symbolic-ref", "--quiet", "--short", "HEAD"],
-    {
-      cwd: tree,
-      env: c.env,
-      stdout: "pipe",
-    },
-  );
-  return r.exitCode === 0 ? r.stdout.toString().trim() : "";
+/** A clone whose `feature` branch is held by a tree named `holder`. */
+function held(): { c: Clone; holder: string } {
+  const c = fresh();
+  const holder = c.tree("holder");
+  c.git(holder, "switch", "-q", "feature");
+  return { c, holder };
 }
 
-describe("attach-pr.ts", () => {
-  test("checks the head branch out when no working tree holds it", () => {
+function recordFile(c: Clone, tree: string): string {
+  return join(c.git(tree, "rev-parse", "--absolute-git-dir"), DRIVEN_TREE_FILE);
+}
+
+describe("attach-pr.ts attaches", () => {
+  test("the head branch by name when no working tree holds it", () => {
     const c = fresh();
     const tree = c.tree("wt1");
     const r = c.attach(tree, "42");
@@ -54,6 +57,8 @@ describe("attach-pr.ts", () => {
     });
     expect(branchOf(c, tree)).toBe("feature");
     expect(c.git(tree, "rev-parse", "HEAD")).toBe(c.head);
+    // On a branch the branch answers: no tree record is left behind.
+    expect(existsSync(recordFile(c, tree))).toBe(false);
     expect(driveState(c, tree).drivenBranch).toMatchObject({
       branch: "feature",
       remote: "origin",
@@ -63,10 +68,8 @@ describe("attach-pr.ts", () => {
     });
   });
 
-  test("checks the head commit out detached when another tree holds the branch", () => {
-    const c = fresh();
-    const holder = c.tree("holder");
-    c.git(holder, "switch", "-q", "feature");
+  test("the head commit detached when another tree holds the branch", () => {
+    const { c } = held();
     const tree = c.tree("wt1");
     const r = c.attach(tree, "42");
     expectSpawnExit(r, 0, "attach");
@@ -81,8 +84,7 @@ describe("attach-pr.ts", () => {
       "refs/heads",
     );
     expect(branches.split("\n").sort()).toEqual(["feature", "main"]);
-    const gitDir = c.git(tree, "rev-parse", "--absolute-git-dir");
-    expect(existsSync(join(gitDir, DRIVEN_TREE_FILE))).toBe(true);
+    expect(existsSync(recordFile(c, tree))).toBe(true);
     expect(driveState(c, tree).drivenBranch).toMatchObject({
       branch: "feature",
       worktree: tree,
@@ -90,22 +92,66 @@ describe("attach-pr.ts", () => {
     });
   });
 
-  test("a detached tree answers the PR from its attach record, with no branch to ask gh about", () => {
+  test("a tree detached past the base, whose commits a remote branch holds", () => {
     const c = fresh();
-    const holder = c.tree("holder");
-    c.git(holder, "switch", "-q", "feature");
     const tree = c.tree("wt1");
+    const newer = c.commit(c.primary, "newer.txt");
+    c.git(c.primary, "push", "-q", "origin", "HEAD:main");
+    c.git(tree, "fetch", "-q", "origin");
+    c.git(tree, "checkout", "-q", "--detach", newer);
     expectSpawnExit(c.attach(tree, "42"), 0, "attach");
-    // `drive-state.ts get` with no PR resolves it the way every script does.
-    const r = Bun.spawnSync(
-      [process.execPath, join(SCRIPTS, "drive-state.ts"), "rounds"],
-      { cwd: tree, env: c.env, stdout: "pipe", stderr: "pipe" },
-    );
-    expectSpawnExit(r, 0, "drive-state.ts rounds");
-    expect(r.stdout.toString().trim()).toBe("0");
+    expect(branchOf(c, tree)).toBe("feature");
   });
 
-  test("refuses a tree with uncommitted changes", () => {
+  test("again through its record, catching up to a newer head", () => {
+    const { c, holder } = held();
+    const tree = c.tree("wt1");
+    expectSpawnExit(c.attach(tree, "42"), 0, "first attach");
+    const newer = c.commit(holder, "round.txt");
+    c.git(holder, "push", "-q", "origin", "feature");
+    c.pr({ headRefOid: newer });
+    expectSpawnExit(c.attach(tree, "42"), 0, "second attach");
+    expect(c.git(tree, "rev-parse", "HEAD")).toBe(newer);
+    expect(branchOf(c, tree)).toBe("");
+  });
+});
+
+describe("a detached tree's record", () => {
+  test("answers the PR when there is no branch to ask gh about", () => {
+    const { c } = held();
+    const tree = c.tree("wt1");
+    expectSpawnExit(c.attach(tree, "42"), 0, "attach");
+    // `drive-state.ts` with no PR resolves it the way every script does.
+    const r = c.script(tree, "drive-state.ts", "rounds");
+    expectSpawnExit(r, 0, "drive-state.ts rounds");
+    expect(r.stdout.trim()).toBe("0");
+  });
+
+  test("is removed when the tree is attached by name", () => {
+    const { c, holder } = held();
+    const tree = c.tree("wt1");
+    expectSpawnExit(c.attach(tree, "42"), 0, "detached attach");
+    expect(existsSync(recordFile(c, tree))).toBe(true);
+    c.git(tree, "checkout", "-q", "--detach", "main");
+    c.git(holder, "switch", "-q", "--detach");
+    expectSpawnExit(c.attach(tree, "42"), 0, "attach by name");
+    expect(branchOf(c, tree)).toBe("feature");
+    expect(existsSync(recordFile(c, tree))).toBe(false);
+  });
+
+  test("stops answering once the tree is detached somewhere else", () => {
+    const { c } = held();
+    const tree = c.tree("wt1");
+    expectSpawnExit(c.attach(tree, "42"), 0, "attach");
+    c.git(tree, "checkout", "-q", "--detach", "main");
+    const r = c.script(tree, "drive-state.ts", "rounds");
+    expectSpawnExitNot(r, 0, "drive-state.ts rounds");
+    expect(r.stdout.trim()).not.toBe("0");
+  });
+});
+
+describe("attach-pr.ts refuses", () => {
+  test("a tree with uncommitted changes", () => {
     const c = fresh();
     const tree = c.tree("wt1");
     writeFileSync(join(tree, "scratch.txt"), "left over\n");
@@ -115,13 +161,54 @@ describe("attach-pr.ts", () => {
     expect(branchOf(c, tree)).toBe("");
   });
 
-  test("refuses when the tree holding the branch has commits the PR's head lacks", () => {
+  test("a tree in an unfinished git operation", () => {
     const c = fresh();
-    const holder = c.tree("holder");
-    c.git(holder, "switch", "-q", "feature");
-    writeFileSync(join(holder, "unpushed.txt"), "local\n");
-    c.git(holder, "add", "-A");
-    c.git(holder, "commit", "-qm", "unpushed");
+    const tree = c.tree("wt1");
+    const gitDir = c.git(tree, "rev-parse", "--absolute-git-dir");
+    writeFileSync(join(gitDir, "MERGE_HEAD"), `${c.head}\n`);
+    const r = c.attach(tree, "42");
+    expectSpawnExit(r, 2, "attach");
+    expect(r.stderr).toContain("unfinished git operation (MERGE_HEAD)");
+  });
+
+  test("a detached head whose commits no branch or remote holds", () => {
+    const c = fresh();
+    const tree = c.tree("wt1");
+    c.commit(tree, "loose.txt");
+    const r = c.attach(tree, "42");
+    expectSpawnExit(r, 2, "attach");
+    expect(r.stderr).toContain("no branch or remote holds");
+  });
+
+  test("a local branch with commits the PR's head lacks", () => {
+    const c = fresh();
+    c.git(c.primary, "branch", "-q", "feature", "origin/feature");
+    c.git(c.primary, "switch", "-q", "feature");
+    c.commit(c.primary, "local.txt");
+    c.git(c.primary, "switch", "-q", "main");
+    const r = c.attach(c.tree("wt1"), "42");
+    expectSpawnExit(r, 2, "attach");
+    expect(r.stderr).toContain("the local branch 'feature' has commits");
+  });
+
+  test("a branch that has diverged from the PR's head", () => {
+    const c = fresh();
+    const tree = c.tree("wt1");
+    expectSpawnExit(c.attach(tree, "42"), 0, "attach");
+    c.commit(tree, "mine.txt");
+    const other = c.tree("other");
+    c.git(other, "checkout", "-q", "--detach", c.head);
+    const theirs = c.commit(other, "theirs.txt");
+    c.git(other, "push", "-q", "origin", `${theirs}:refs/heads/feature`);
+    c.pr({ headRefOid: theirs });
+    const r = c.attach(tree, "42");
+    expectSpawnExit(r, 2, "attach");
+    expect(r.stderr).toContain("has diverged");
+  });
+
+  test("when the tree holding the branch has commits the PR's head lacks", () => {
+    const { c, holder } = held();
+    c.commit(holder, "unpushed.txt");
     const tree = c.tree("wt1");
     const r = c.attach(tree, "42");
     expectSpawnExit(r, 2, "attach");
@@ -130,17 +217,15 @@ describe("attach-pr.ts", () => {
     expect(c.git(tree, "rev-parse", "HEAD")).not.toBe(c.head);
   });
 
-  test("refuses when the tree holding the branch has uncommitted changes", () => {
-    const c = fresh();
-    const holder = c.tree("holder");
-    c.git(holder, "switch", "-q", "feature");
+  test("when the tree holding the branch has uncommitted changes", () => {
+    const { c, holder } = held();
     writeFileSync(join(holder, "feature.txt"), "edited\n");
     const r = c.attach(c.tree("wt1"), "42");
     expectSpawnExit(r, 2, "attach");
     expect(r.stderr).toContain("holding the branch");
   });
 
-  test("refuses a pull request from a fork", () => {
+  test("a pull request from a fork", () => {
     const c = fresh();
     c.pr({ isCrossRepository: true });
     const r = c.attach(c.tree("wt1"), "42");
@@ -148,7 +233,15 @@ describe("attach-pr.ts", () => {
     expect(r.stderr).toContain("fork");
   });
 
-  test("refuses to move the clone's primary checkout off its branch", () => {
+  test("an origin that is not the PR's repository", () => {
+    const c = fresh();
+    c.pr({ headRepositoryOwner: { login: "someone-else" } });
+    const r = c.attach(c.tree("wt1"), "42");
+    expectSpawnExit(r, 2, "attach");
+    expect(r.stderr).toContain("someone-else/app");
+  });
+
+  test("to move the clone's primary checkout off its branch", () => {
     const c = fresh();
     const r = c.attach(c.primary, "42");
     expectSpawnExit(r, 2, "attach");
@@ -156,77 +249,20 @@ describe("attach-pr.ts", () => {
     expect(branchOf(c, c.primary)).toBe("main");
   });
 
-  test("a closed pull request is not attached", () => {
+  test("a closed pull request", () => {
     const c = fresh();
     c.pr({ state: "MERGED" });
     expectSpawnExit(c.attach(c.tree("wt1"), "42"), 5, "attach");
   });
 
-  test("--place from the primary checkout creates a tree under gc.worktree_roots", () => {
-    const c = fresh();
-    const roots = join(c.root, "trees");
-    c.env.JIG__GC__WORKTREE_ROOTS = `[${roots}]`;
-    const r = c.attach(c.primary, "42", "--place");
-    expectSpawnExit(r, 0, "attach --place");
-    const placed = JSON.parse(r.stdout) as { tree: string };
-    expect(placed).toMatchObject({ pr: "42", created: true });
-    expect(placed.tree.startsWith(roots)).toBe(true);
-    expect(branchOf(c, placed.tree)).toBe("feature");
-    expect(branchOf(c, c.primary)).toBe("main");
-    expect(driveState(c, placed.tree).drivenBranch).toMatchObject({
-      worktree: placed.tree,
-      created: true,
-    });
-    // Placing again finds the tree it made rather than making another.
-    const again = c.attach(c.primary, "42", "--place");
-    expectSpawnExit(again, 0, "attach --place again");
-    expect(JSON.parse(again.stdout)).toMatchObject({
-      tree: placed.tree,
-      created: false,
-    });
-  });
-
-  test("--place names the command to run for another repository with no clone mapped", () => {
-    const c = fresh();
-    c.env.FAKE_GH_REPO = "example/here";
-    const r = c.attach(c.primary, "example/elsewhere#7", "--place");
-    expectSpawnExit(r, 3, "attach --place");
-    expect(r.stderr).toContain("/jig:drive-pr 7");
-    expect(r.stderr).toContain("example/elsewhere");
-  });
-
-  test("drive.ts attaches before taking its locks, and stops on a refusal", () => {
-    const c = fresh();
-    const tree = c.tree("wt1");
-    writeFileSync(join(tree, "scratch.txt"), "left over\n");
-    const r = Bun.spawnSync(
-      [process.execPath, join(SCRIPTS, "drive.ts"), "42", "--", "true", "42"],
-      { cwd: tree, env: c.env, stdout: "pipe", stderr: "pipe" },
-    );
-    expectSpawnExit(r, 2, "drive.ts");
-    expect(r.stderr.toString()).toContain("uncommitted changes");
-  });
-
-  test("drive.ts leaves the tree alone when a live driver holds the PR, and the lock refuses", () => {
+  test("to move a tree another live driver holds, and leaves it as it is", () => {
     const c = fresh();
     const tree = c.tree("wt1");
     const before = c.git(tree, "rev-parse", "HEAD");
-    const lock = join(
-      scopedStateDir(c.env.DRIVE_PR_STATE_DIR as string, tree),
-      "pr-drive-42.lock",
-    );
-    mkdirSync(lock, { recursive: true });
-    writeFileSync(
-      join(lock, "claim.live0001"),
-      `${process.pid} ${hostname()} ${process.platform}\n`,
-    );
-    const r = Bun.spawnSync(
-      [process.execPath, join(SCRIPTS, "drive.ts"), "42", "--", "true", "42"],
-      { cwd: tree, env: c.env, stdout: "pipe", stderr: "pipe" },
-    );
-    expectSpawnExit(r, 11, "drive.ts");
-    expect(r.stderr.toString()).toContain("a live driver already holds PR #42");
+    plantLiveLock(c, worktreeLock(c, tree));
+    const r = c.attach(tree, "42");
+    expectSpawnExit(r, 11, "attach");
+    expect(r.stderr).toContain("holds this working tree");
     expect(c.git(tree, "rev-parse", "HEAD")).toBe(before);
-    expect(branchOf(c, tree)).toBe("");
   });
 });

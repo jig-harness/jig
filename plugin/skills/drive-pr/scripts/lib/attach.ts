@@ -8,25 +8,36 @@
  * **detached** when one does, since git allows one checkout per branch. A
  * second branch with a suffixed name is never created; it would push nowhere.
  *
- * Every attach records which tree drives the pull request, twice: in the tree
- * (`shared/driven-tree.ts`, for readers that hold a tree) and in the drive
- * state (`drivenBranch`, for readers that hold a pull request number).
+ * A detached tree records which pull request it drives in its own git
+ * directory (`shared/driven-tree.ts`), the record every reader uses; an
+ * attach by name removes it. The drive state's `drivenBranch` keeps a copy
+ * for the handoff file.
  *
  * It refuses, naming the state, when this tree has uncommitted changes or an
  * unfinished git operation; when the tree holding the branch has uncommitted
  * changes or commits the pull request's head does not have (its unpushed work
  * would be driven around); when a local commit would be orphaned by moving
  * this tree; when the tree is the clone's primary checkout on another branch
- * (`attach-pr.ts --place` creates a tree for the drive instead); and when the
- * pull request comes from a fork, whose head the drive cannot push to.
+ * (`attach-pr.ts --place` creates a tree for the drive instead); when the
+ * pull request comes from a fork, whose head the drive cannot push to; and
+ * when `origin` is not the repository `gh` read the pull request from.
+ *
+ * Nothing moves without ownership. `drive.ts` attaches after it takes the
+ * tree's driver lock and before the pull request's; on its own the attach
+ * moves nothing while a live driver holds this tree or the pull request
+ * (exit 11 from `attach-pr.ts`), and it holds the tree's session-lease fence
+ * (`lib/state/lease.ts`) across the checkout and the records, so an
+ * interactive session working this tree refuses it too.
  *
  * Every git and `gh` call is bounded; the fetch by `DRIVE_PR_FETCH_TIMEOUT`.
  */
-import { realpathSync } from "node:fs";
+import { mkdirSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   type DrivenTree,
+  detachedTreeRecord,
   readDrivenTree,
+  removeDrivenTree,
   writeDrivenTree,
 } from "../../../../shared/driven-tree.ts";
 import { isRecord } from "../../../../shared/guards.ts";
@@ -36,13 +47,17 @@ import { setDrivenRemoteRef } from "./driven-branch.ts";
 import { liveHolder } from "./driver/locks.ts";
 import {
   ghCall,
-  ghRepoEnv,
   git,
   gitCallTimeoutSeconds,
   gitIdentityEnv,
   unconcludedGitOpMarker,
 } from "./proc.ts";
-import { resolveStateDir, openStore } from "./state/store.ts";
+import { repoOfUrl } from "./repo-url.ts";
+import {
+  assertTreeMutationAllowed,
+  resolveFenceContext,
+} from "./state/lease.ts";
+import { openStore, resolveStateDir, worktreeLockName } from "./state/store.ts";
 
 /**
  * The remote the drive pushes to. `guarded-push.ts` pushes to `origin` and
@@ -70,20 +85,22 @@ export interface Attached {
   worktree: string;
   detached: boolean;
   created: boolean;
-  /** Set when a live driver already holds the pull request: nothing moved. */
+  /** Set when a live driver holds this tree or the PR: nothing moved. */
   skipped?: string;
 }
 
 interface Options {
-  /** The tree to attach; the process's own when absent. */
-  cwd?: string;
   /** The attach created this tree for the drive (`--place`). */
   created?: boolean;
+  /** The caller holds this tree's driver lock (`drive.ts`). */
+  treeLockHeld?: boolean;
 }
 
 interface PrHead {
   branch: string;
   head: string;
+  /** `owner/name` of the repository the head branch lives in. */
+  repo: string;
 }
 
 export function refuse(code: 1 | 2 | 5, message: string): never {
@@ -125,6 +142,12 @@ export function canonical(path: string): string {
   }
 }
 
+/**
+ * The pull request, read as every later call of the drive reads it: `gh`
+ * from the tree, honouring an inherited `GH_REPO` like the rest of the drive
+ * does, so the attach and the rounds select one repository. `requireOrigin`
+ * then binds that repository to `origin` before anything is fetched.
+ */
 async function readPr(pr: string, cwd: string): Promise<PrHead> {
   const view = await ghCall(
     [
@@ -132,9 +155,9 @@ async function readPr(pr: string, cwd: string): Promise<PrHead> {
       "view",
       pr,
       "--json",
-      "state,headRefName,headRefOid,isCrossRepository",
+      "state,headRefName,headRefOid,isCrossRepository,headRepository,headRepositoryOwner",
     ],
-    { cwd, stderr: "pipe", env: ghRepoEnv() },
+    { cwd, stderr: "pipe" },
   );
   let parsed: unknown;
   try {
@@ -156,7 +179,43 @@ async function readPr(pr: string, cwd: string): Promise<PrHead> {
   const head = typeof meta.headRefOid === "string" ? meta.headRefOid : "";
   if (branch === "" || !/^[0-9a-f]{40,64}$/.test(head))
     refuse(1, `PR #${pr} did not report its head branch and commit`);
-  return { branch, head };
+  const owner = isRecord(meta.headRepositoryOwner)
+    ? meta.headRepositoryOwner.login
+    : undefined;
+  const name = isRecord(meta.headRepository)
+    ? meta.headRepository.name
+    : undefined;
+  if (typeof owner !== "string" || typeof name !== "string")
+    refuse(1, `PR #${pr} did not report its head repository`);
+  return { branch, head, repo: `${owner}/${name}` };
+}
+
+/**
+ * `origin` must be the repository the pull request was read from, for every
+ * URL it fetches from and pushes to: a fork or a related repository shares
+ * commit objects, so a fetched head commit proves nothing about which
+ * repository it came from. Owner and name are compared, as `guarded-push.ts`
+ * compares them, never the host (`lib/repo-url.ts` says why).
+ */
+async function requireOrigin(tree: string, pr: PrHead, number: string) {
+  const urls: string[] = [];
+  for (const args of [
+    ["remote", "get-url", "--all", DRIVE_REMOTE],
+    ["remote", "get-url", "--push", "--all", DRIVE_REMOTE],
+  ]) {
+    const r = await g(tree, args);
+    if (r.code !== 0)
+      refuse(1, `cannot read the URL of '${DRIVE_REMOTE}': ${r.stderr.trim()}`);
+    urls.push(...r.stdout.split("\n").filter((u) => u !== ""));
+  }
+  for (const url of urls) {
+    const repo = repoOfUrl(url);
+    if (repo.toLowerCase() !== pr.repo.toLowerCase())
+      refuse(
+        2,
+        `PR #${number}'s head is in ${pr.repo}, but '${DRIVE_REMOTE}' is ${repo === "" ? "a URL with no owner/name" : repo} (${url}) — gh read the pull request from another repository than this clone's (GH_REPO, gh repo set-default); drive it from a clone of ${pr.repo}`,
+      );
+  }
 }
 
 /** Refuse a tree with uncommitted changes or an unfinished operation. */
@@ -192,15 +251,16 @@ async function ancestor(tree: string, a: string, b: string): Promise<boolean> {
 
 /** The working tree of this clone that has `branch` checked out, if any. */
 async function holderOf(tree: string, branch: string): Promise<string | null> {
+  // NUL-separated: a path is printed as is, never quoted or escaped.
   const list = await out(
     tree,
-    ["worktree", "list", "--porcelain"],
+    ["worktree", "list", "--porcelain", "-z"],
     "the clone's working trees",
   );
   let path: string | null = null;
-  for (const line of list.split("\n")) {
-    if (line.startsWith("worktree ")) path = line.slice("worktree ".length);
-    else if (line === `branch refs/heads/${branch}` && path !== null)
+  for (const field of list.split("\0")) {
+    if (field.startsWith("worktree ")) path = field.slice("worktree ".length);
+    else if (field === `branch refs/heads/${branch}` && path !== null)
       return canonical(path);
   }
   return null;
@@ -237,11 +297,7 @@ async function moveTree(
       2,
       `this is the clone's primary checkout, on ${current.branch === "" ? "a detached head" : `'${current.branch}'`}: the drive does not move it.\nArm from here with /jig:drive-pr ${pr.number}, which creates a working tree for the PR (attach-pr.ts ${pr.number} --place).`,
     );
-  if (current.branch === "" && !(await ancestor(tree, current.sha, pr.head)))
-    refuse(
-      2,
-      `this tree's detached head ${current.sha.slice(0, 12)} has commits PR #${pr.number}'s head does not; moving would orphan them — put them on a branch first`,
-    );
+  if (current.branch === "") await requireReachable(tree, current.sha);
   if (!byName) {
     await must(tree, ["checkout", "--quiet", "--detach", pr.head]);
     return;
@@ -271,6 +327,20 @@ async function moveTree(
   await must(tree, ["merge", "--quiet", "--ff-only", pr.head]);
 }
 
+/** Refuse to leave a detached head whose commits no branch or remote holds. */
+async function requireReachable(tree: string, sha: string): Promise<void> {
+  const loose = await out(
+    tree,
+    ["rev-list", "--count", sha, "--not", "--branches", "--remotes"],
+    "which of this tree's commits a branch holds",
+  );
+  if (loose !== "0")
+    refuse(
+      2,
+      `this tree's detached head ${sha.slice(0, 12)} has ${loose} commit(s) no branch or remote holds; moving would orphan them — put them on a branch first`,
+    );
+}
+
 async function must(tree: string, args: string[]): Promise<void> {
   const r = await g(tree, args);
   if (r.code !== 0)
@@ -298,30 +368,117 @@ async function catchUp(
   );
 }
 
-/** Attach PR `pr` to the working tree at `opts.cwd` (default: this one). */
+interface Current {
+  branch: string;
+  sha: string;
+  primary: boolean;
+  gitDir: string;
+}
+
+async function currentOf(tree: string): Promise<Current> {
+  const gitDir = await gitDirOf(tree);
+  const symbolic = await g(tree, [
+    "symbolic-ref",
+    "--quiet",
+    "--short",
+    "HEAD",
+  ]);
+  return {
+    branch: symbolic.code === 0 ? symbolic.stdout.trim() : "",
+    sha: await out(tree, ["rev-parse", "HEAD"], "this tree's head"),
+    primary: await isPrimary(tree, gitDir),
+    gitDir,
+  };
+}
+
+/** Why a live driver keeps the attach from moving this tree, or `null`. */
+async function liveDriver(
+  pr: string,
+  treeLockHeld: boolean,
+): Promise<string | null> {
+  const stateDir = await resolveStateDir();
+  if (!treeLockHeld) {
+    const tree = liveHolder(join(stateDir, await worktreeLockName()));
+    if (tree !== null)
+      return `a live driver${tree.diag ? ` of PR #${tree.diag.pr}` : ""} holds this working tree`;
+  }
+  const holder = liveHolder(join(stateDir, `pr-drive-${pr}.lock`));
+  return holder === null
+    ? null
+    : `a live driver already holds PR #${pr}${holder.diag?.worktree ? ` in ${holder.diag.worktree}` : ""}`;
+}
+
+/** This tree's session-lease fence, held while the attach moves it. */
+async function treeFence(pr: string): Promise<{ release(): void } | null> {
+  // The fence reads the state directory, which a first drive has not made yet.
+  mkdirSync(await resolveStateDir(), { recursive: true });
+  const ctx = await resolveFenceContext("attach-pr.ts");
+  if (ctx === null) return null;
+  const lock = await assertTreeMutationAllowed(ctx, pr, "attach-pr.ts");
+  return {
+    release: () => {
+      lock.release();
+      lock.dispose();
+    },
+  };
+}
+
+/**
+ * Put the tree on the head; whether it ended detached. A detached tree this
+ * PR was attached to keeps its own commits on top of the head.
+ */
+async function move(
+  tree: string,
+  target: PrHead & { number: string },
+  current: Current,
+): Promise<boolean> {
+  const holder = await holderOf(tree, target.branch);
+  if (current.branch === target.branch) {
+    await catchUp(tree, target, current.sha, false);
+    return false;
+  }
+  const recorded = await detachedTreeRecord((args) => g(tree, args));
+  if (current.branch === "" && recorded?.pr === Number(target.number)) {
+    if (holder !== null) await requireHolderBehind(holder, target);
+    await catchUp(tree, target, current.sha, true);
+    return true;
+  }
+  if (holder !== null) await requireHolderBehind(holder, target);
+  await moveTree(tree, target, current, holder === null);
+  return holder !== null;
+}
+
+/**
+ * Attach PR `pr` to the working tree the process runs in. A live driver of
+ * this tree (unless the caller holds its lock) or of the PR leaves it as it
+ * is and says so in `skipped`.
+ */
 export async function attachPr(
   pr: string,
   opts: Options = {},
 ): Promise<Attached> {
-  const cwd = opts.cwd ?? process.cwd();
   const tree = canonical(
-    await out(cwd, ["rev-parse", "--show-toplevel"], "this working tree"),
+    await out(
+      process.cwd(),
+      ["rev-parse", "--show-toplevel"],
+      "this working tree",
+    ),
   );
   const head = await readPr(pr, tree);
   const number = String(Number.parseInt(pr, 10));
-  const base = { pr: number, branch: head.branch, remote: DRIVE_REMOTE };
-  const live = liveHolder(
-    join(await resolveStateDir(), `pr-drive-${number}.lock`),
-  );
+  const current = await currentOf(tree);
+  const base = {
+    pr: number,
+    branch: head.branch,
+    remote: DRIVE_REMOTE,
+    head: head.head,
+    worktree: tree,
+    created: opts.created === true,
+  };
+  const live = await liveDriver(number, opts.treeLockHeld === true);
   if (live !== null)
-    return {
-      ...base,
-      head: head.head,
-      worktree: tree,
-      detached: false,
-      created: opts.created === true,
-      skipped: `a live driver already holds PR #${number}${live.diag?.worktree ? ` in ${live.diag.worktree}` : ""}`,
-    };
+    return { ...base, detached: current.branch === "", skipped: live };
+  await requireOrigin(tree, head, number);
   await requireSettled(tree, "this working tree");
   const fetched = await fetchHead(tree, head.branch);
   if (fetched !== null) refuse(1, fetched);
@@ -330,48 +487,34 @@ export async function attachPr(
       1,
       `the fetched '${head.branch}' does not hold PR #${number}'s head ${head.head.slice(0, 12)} (pushed again while attaching?) — run the attach again`,
     );
-  const gitDir = await gitDirOf(tree);
-  const record = readDrivenTree(gitDir);
-  const symbolic = await g(tree, [
-    "symbolic-ref",
-    "--quiet",
-    "--short",
-    "HEAD",
-  ]);
-  const current = {
-    branch: symbolic.code === 0 ? symbolic.stdout.trim() : "",
-    sha: await out(tree, ["rev-parse", "HEAD"], "this tree's head"),
-    primary: await isPrimary(tree, gitDir),
-  };
-  const target = { ...head, number };
-  const holder = await holderOf(tree, head.branch);
-  let detached: boolean;
-  if (current.branch === head.branch) {
-    await catchUp(tree, target, current.sha, false);
-    detached = false;
-  } else if (current.branch === "" && record?.pr === Number(number)) {
-    // Re-attaching a tree this PR was attached to: keep its own commits.
-    if (holder !== null) await requireHolderBehind(holder, target);
-    await catchUp(tree, target, current.sha, true);
-    detached = true;
-  } else if (holder !== null) {
-    await requireHolderBehind(holder, target);
-    await moveTree(tree, target, current, false);
-    detached = true;
-  } else {
-    await moveTree(tree, target, current, true);
-    detached = false;
+  const fence = await treeFence(number);
+  try {
+    const old = readDrivenTree(current.gitDir);
+    const detached = await move(tree, { ...head, number }, current);
+    const created =
+      opts.created === true ||
+      (old?.pr === Number(number) && old.created === true);
+    // The tree's record exists only while the tree is detached: on a
+    // branch, the branch answers, and a stale record could only mislead.
+    if (detached)
+      writeDrivenTree(current.gitDir, {
+        pr: Number(number),
+        branch: head.branch,
+        remote: DRIVE_REMOTE,
+        created,
+        head: head.head,
+      });
+    else removeDrivenTree(current.gitDir);
+    await recordState(number, tree, {
+      branch: head.branch,
+      remote: DRIVE_REMOTE,
+      detached,
+      created,
+    });
+    return { ...base, detached, created };
+  } finally {
+    fence?.release();
   }
-  const created = opts.created === true || record?.created === true;
-  const attached: DrivenTree = {
-    pr: Number(number),
-    branch: head.branch,
-    remote: DRIVE_REMOTE,
-    created,
-  };
-  writeDrivenTree(gitDir, attached);
-  await recordState(number, tree, { ...attached, detached });
-  return { ...base, head: head.head, worktree: tree, detached, created };
 }
 
 /** The tree holding the branch must hold nothing the PR's head lacks. */
@@ -416,7 +559,9 @@ async function fetchHead(tree: string, branch: string): Promise<string | null> {
 async function recordState(
   pr: string,
   tree: string,
-  record: DrivenTree & { detached: boolean },
+  record: Pick<DrivenTree, "branch" | "remote" | "created"> & {
+    detached: boolean;
+  },
 ): Promise<void> {
   const store = await openStore(pr);
   await store.update((s) => ({
@@ -433,10 +578,11 @@ async function recordState(
 }
 
 /**
- * `drive.ts`'s attach, before it takes its locks. Skipped by a dry run, which
- * moves nothing, and by `DRIVE_PR_ATTACH=off`, which drives the tree as it
- * stands (a harness that prepares its trees itself). A live driver already
- * holding the PR leaves the tree alone: the lock refuses this drive next.
+ * `drive.ts`'s attach, once it holds the tree's driver lock and before it
+ * takes the pull request's. Skipped by a dry run, which moves nothing, and by
+ * `DRIVE_PR_ATTACH=off`, which drives the tree as it stands (a harness that
+ * prepares its trees itself). A live driver already holding the PR leaves
+ * the tree alone: the PR lock refuses this drive next.
  */
 export async function attachForDrive(
   pr: string,
@@ -448,7 +594,7 @@ export async function attachForDrive(
   if (dryRun || mode === "off") return;
   let attached: Attached;
   try {
-    attached = await attachPr(pr);
+    attached = await attachPr(pr, { treeLockHeld: true });
   } catch (e) {
     if (e instanceof AttachRefusal) fail(e.code, `drive.ts: ${e.message}`);
     throw e;

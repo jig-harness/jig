@@ -32,6 +32,7 @@
 
 import { readFileSync } from "node:fs";
 import { runMain } from "../../../shared/cli.ts";
+import { detachedTreeRecord } from "../../../shared/driven-tree.ts";
 import { run } from "../../../shared/proc.ts";
 
 export type Category =
@@ -359,6 +360,17 @@ const defaultIo: Io = {
   readFile: (path) => readFileSync(path, "utf8"),
 };
 
+/**
+ * The checked-out branch, or, on a detached tree a drive attached, the branch
+ * its record names; '' when neither says.
+ */
+async function currentBranch(runner: Runner): Promise<string> {
+  const r = await runner(["git", "branch", "--show-current"]);
+  const branch = r.code === 0 ? r.stdout.trim() : "";
+  if (branch !== "") return branch;
+  return (await detachedTreeRecord((a) => runner(["git", ...a])))?.branch ?? "";
+}
+
 export async function main(
   argv: string[],
   runner: Runner = defaultRunner,
@@ -410,8 +422,7 @@ export async function main(
         return 1;
       }
     } else if (branch === "") {
-      const r = await runner(["git", "branch", "--show-current"]);
-      branch = r.code === 0 ? r.stdout.trim() : "";
+      branch = await currentBranch(runner);
       if (branch === "") {
         io.err(
           "parse-ci-log: no current branch (detached HEAD?); pass a run ID, --pr or --branch",

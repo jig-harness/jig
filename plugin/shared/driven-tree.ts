@@ -8,16 +8,19 @@
  * or `@{u}` to read, so the attach writes this record into the tree's own git
  * directory (`git rev-parse --absolute-git-dir`, which is per tree), and every
  * reader that starts from a tree rather than a pull request number reads the
- * branch, the remote and the pull request from it. The drive state keeps the
- * same facts keyed by the pull request (`drivenBranch`); this is the half a
- * reader holding only a tree can find, including code outside the skill
- * (`resolvePr`, resource collection, `resolve-conflicts`).
+ * branch, the remote and the pull request from it, including code outside the
+ * skill (`resolvePr`, resource collection, `resolve-conflicts`). It is the
+ * source; the drive state's `drivenBranch` is a copy keyed by the pull
+ * request, for the handoff file.
  *
- * The record is read only while the head is detached: a tree on a branch
- * answers from the branch, so a record left behind by an earlier attach never
+ * This record, not the state's, is what every script that starts from a tree
+ * reads. It is read only while the head is detached and only while it still
+ * describes the tree (`recordChecks`): a tree on a branch answers from the
+ * branch, an attach by name removes the record, and a tree detached
+ * somewhere else since answers as unrecorded, so a record left behind never
  * outranks what the tree has checked out since.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { errnoCode, swallow } from "./errors.ts";
 
@@ -33,6 +36,8 @@ export interface DrivenTree {
   remote: string;
   /** The attach created this tree for the drive, so collection may reap it. */
   created: boolean;
+  /** The pull request's head commit the attach put the tree on. */
+  head: string;
 }
 
 /** A git ref component: no whitespace, control characters or `~^:?*[\`. */
@@ -62,10 +67,18 @@ export function parseDrivenTree(text: string): DrivenTree | null {
     v.pr <= 0 ||
     !isRefName(v.branch) ||
     !isRefName(v.remote) ||
-    typeof v.created !== "boolean"
+    typeof v.created !== "boolean" ||
+    typeof v.head !== "string" ||
+    !/^[0-9a-f]{40,64}$/.test(v.head)
   )
     return null;
-  return { pr: v.pr, branch: v.branch, remote: v.remote, created: v.created };
+  return {
+    pr: v.pr,
+    branch: v.branch,
+    remote: v.remote,
+    created: v.created,
+    head: v.head,
+  };
 }
 
 /** The record in the git directory `gitDir`, or `null` when there is none. */
@@ -79,6 +92,11 @@ export function readDrivenTree(gitDir: string): DrivenTree | null {
     return null;
   }
   return parseDrivenTree(text);
+}
+
+/** Remove the record from the git directory `gitDir`, if there is one. */
+export function removeDrivenTree(gitDir: string): void {
+  rmSync(join(gitDir, DRIVEN_TREE_FILE), { force: true });
 }
 
 /** Write `record` into the git directory `gitDir`. */
@@ -96,8 +114,27 @@ export type TreeGit = (
 ) => Promise<{ code: number; stdout: string }>;
 
 /**
- * The record of the tree `git` runs in, when that tree's head is detached;
- * `null` on a branch, without a record, or when git cannot say.
+ * The git calls that must all succeed for a record to still describe the tree
+ * it sits in: its `HEAD` descends from the commit the attach put it on, and
+ * the head branch it names is still a remote-tracking branch. A tree detached
+ * somewhere else since, or a branch gone from the remote, reads as unrecorded.
+ */
+export function recordChecks(record: DrivenTree): string[][] {
+  return [
+    ["merge-base", "--is-ancestor", record.head, "HEAD"],
+    [
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      `refs/remotes/${record.remote}/${record.branch}^{commit}`,
+    ],
+  ];
+}
+
+/**
+ * The record of the tree `git` runs in, when that tree's head is detached and
+ * the record still describes it (`recordChecks`); `null` on a branch, without
+ * a record, for a stale one, or when git cannot say.
  */
 export async function detachedTreeRecord(
   git: TreeGit,
@@ -107,5 +144,9 @@ export async function detachedTreeRecord(
   const dir = await git(["rev-parse", "--absolute-git-dir"]);
   const gitDir = dir.stdout.trim();
   if (dir.code !== 0 || gitDir === "") return null;
-  return readDrivenTree(gitDir);
+  const record = readDrivenTree(gitDir);
+  if (record === null) return null;
+  for (const check of recordChecks(record))
+    if ((await git(check)).code !== 0) return null;
+  return record;
 }

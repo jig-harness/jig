@@ -13,6 +13,7 @@ import {
   type DrivenTree,
   detachedTreeRecord,
 } from "../../../../shared/driven-tree.ts";
+import { shellQuote } from "../../../../shared/cli.ts";
 import { definedFields } from "../../../../shared/defined-fields.ts";
 
 /** The git seam the callers already inject (`lib/base-drift.ts`'s shape). */
@@ -68,8 +69,9 @@ export function setDrivenRemoteRef(remote: string, branch: string): void {
 /**
  * The command that counts commits a stopped pass left unpushed: against the
  * driven branch's remote ref once the attach has named it, since a detached
- * tree has no `@{u}`.
+ * tree has no `@{u}`. The range is shell-quoted: a branch name may carry `;`,
+ * `$` or backticks, and the operator pastes this line into a shell.
  */
 export function unpushedCountCommand(): string {
-  return `git rev-list --count ${drivenRemoteRef ?? "@{u}"}..HEAD`;
+  return `git rev-list --count ${shellQuote(`${drivenRemoteRef ?? "@{u}"}..HEAD`)}`;
 }

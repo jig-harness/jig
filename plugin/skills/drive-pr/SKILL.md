@@ -309,25 +309,32 @@ bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- claude -p "/jig:dr
 Each round is a **fresh agent process**, so a long converge never depends on one
 session's context surviving. That is the preferred unattended mode.
 
-**The attach.** Before it takes its locks, `drive.ts` attaches the PR to the
-tree it runs in (`scripts/attach-pr.ts`, which you can also run alone:
-`bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR>`). It fetches the PR's
-head branch from `origin` and checks the branch out when no working tree of
-the clone holds it; when another tree holds it, it checks out the PR's head
-commit **detached**. Never create a branch with another name for a PR's
-head: the PR's head branch is the only branch a drive pushes to, and
-`guarded-push.ts` names it by explicit refspec, so a detached tree pushes
-exactly as a named one does, and a round's commit lands on whatever the
-attach left. The attach records the tree as `drivenBranch` in the drive state
-and in the tree's git directory; every script that reads the branch name or
-resolves the PR from the current branch reads that record on a detached
-head. It refuses (exit `2`, naming the state) a tree with uncommitted changes
-or an unfinished git operation, a tree holding the branch that is dirty or
-has commits the PR's head lacks, a detached head whose commits moving would
-orphan, the clone's primary checkout on another branch, and a PR from a fork;
-a PR that is not open is exit `5`. A live driver already holding the PR
-leaves the tree untouched, and the lock refuses next (exit `11`). `--dry-run`
-and `DRIVE_PR_ATTACH=off` skip the attach.
+**The attach.** Once it holds the tree's driver lock and before it takes the
+PR's, `drive.ts` attaches the PR to the tree it runs in
+(`scripts/attach-pr.ts`, which you can also run alone:
+`bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR>`). It checks that
+`origin` is the repository the PR was read from, fetches the PR's head
+branch from it and checks the branch out when no working tree of the clone
+holds it; when another tree holds it, it checks out the PR's head commit
+**detached**. Never create a branch with another name for a PR's head: the
+PR's head branch is the only branch a drive pushes to, and `guarded-push.ts`
+names it by explicit refspec, so a detached tree pushes exactly as a named
+one does, and a round's commit lands on whatever the attach left. A detached
+tree keeps a record of its PR, head branch and attached commit in its own git
+directory; that record is what every script that reads the branch name or
+resolves the PR from the current branch reads, and only while the tree's
+head still descends from that commit and the branch is still on the remote.
+An attach by name removes it. (The drive state's `drivenBranch` mirrors it
+for the handoff file.) It refuses (exit `2`, naming the state) a tree with
+uncommitted changes or an unfinished git operation, a tree holding the branch
+that is dirty or has commits the PR's head lacks, a detached head with
+commits no branch or remote holds, a local branch ahead of the head, the
+clone's primary checkout on another branch, an `origin` that is another
+repository, and a PR from a fork; a PR that is not open is exit `5`. A live
+driver already holding the PR leaves the tree untouched, and the lock refuses
+next (exit `11`); run alone, it also leaves a tree another driver holds
+untouched and exits `11`, and an interactive session's lease on the tree
+refuses it. `--dry-run` and `DRIVE_PR_ATTACH=off` skip the attach.
 
 Normally you do not run this by hand: a `/jig:do-item` run **arms the
 drive itself** the moment the draft PR opens (its § Arm the drive step).
@@ -588,31 +595,7 @@ could forge or forget.
    detached head `gh` names none; the PR the tree was attached to is the `pr`
    that `bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" get` prints. Refuse
    with the error if none yields one; do not guess.
-2. **Refuse to arm an uncleared human checkpoint.** The PR serves **every**
-   issue key its head branch's name carries (its `headRefName`, which a
-   detached tree does not have checked out) and every one a closing keyword names in
-   its body (`Closes`/`Fixes`/`Resolves <KEY>`) — check each one, never a
-   chosen first. A key is `ENG-123` on Linear and `#123` on GitHub Issues; a
-   branch carries it as `pull_requests.branch_name` renders it (`eng-123-…`
-   for `ENG-123`, `123-…` for `#123`). An issue the body merely cites
-   (`References:`, `Related:`, a prose mention) is context the PR does not claim to deliver, so its gate is not
-   this PR's to honour and its lookup failing is not a reason to refuse. For
-   each, read its labels through `/jig:do-item`'s tracker scripts
-   (`bun "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" "<KEY>"`) and, when
-   it has a parent, the parent's description too, applying `/jig:do-item`'s
-   human-in-the-loop (HITL) gate check
-   ([`do-item/SKILL.md`](../do-item/SKILL.md) Step 4a: the repository's `hitl`
-   label, `issue_tracker.labels.hitl`, plus a parent `## Execution Plan` gate
-   naming the issue) rather than a copy of it here. A PR that references no issue has no
-   checkpoint to honour; a referenced issue whose labels — or whose parent —
-   cannot be read (lookup failure, auth, CLI error) has an **unknown**
-   checkpoint — fail closed: do not arm, report the read failure (the same
-   stance `/jig:do-item` takes on an unreadable gate). If any of them carries an
-   uncleared checkpoint and this run has no human clearance to proceed
-   end-to-end, print the
-   command below and stop — review rounds pre-empt a judgment the issue exists
-   to collect (the same rule `/jig:do-item`'s § Arm the drive applies).
-3. **Place the drive.** Run
+2. **Place the drive.** Run
    `bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR> --place` with the PR
    as step 1 resolved it. It chooses the working tree that drives the PR and
    attaches the PR there: this session's own tree; from the clone's primary
@@ -630,10 +613,41 @@ could forge or forget.
      the branch, a fork, no `gc.worktree_roots`). Report it and stop: never
      create a branch for the PR, move another tree, or discard changes to get
      past it.
+   - exit `11` → a live driver already holds that tree or the PR: report it
+     with its details, as step 5 does for a refused spawn, and stop.
    - exit `5` → the PR is not open; exit `1` → a read failed. Report either.
+
+   Placing comes before the checkpoint below because the checkpoint is read in
+   the placed tree: for a PR in another repository, that is the clone whose
+   tracker configuration names its issues.
+3. **Refuse to arm an uncleared human checkpoint.** The PR serves **every**
+   issue key its head branch's name carries (its `headRefName`, which a
+   detached tree does not have checked out) and every one a closing keyword names in
+   its body (`Closes`/`Fixes`/`Resolves <KEY>`) — check each one, never a
+   chosen first. A key is `ENG-123` on Linear and `#123` on GitHub Issues; a
+   branch carries it as `pull_requests.branch_name` renders it (`eng-123-…`
+   for `ENG-123`, `123-…` for `#123`). An issue the body merely cites
+   (`References:`, `Related:`, a prose mention) is context the PR does not claim to deliver, so its gate is not
+   this PR's to honour and its lookup failing is not a reason to refuse. For
+   each, read its labels through `/jig:do-item`'s tracker scripts, run in the
+   tree step 2 placed the drive in
+   (`bun --cwd "<tree>" "${CLAUDE_SKILL_DIR}/../do-item/scripts/get_issue.ts" "<KEY>"`) and, when
+   it has a parent, the parent's description too, applying `/jig:do-item`'s
+   human-in-the-loop (HITL) gate check
+   ([`do-item/SKILL.md`](../do-item/SKILL.md) Step 4a: the repository's `hitl`
+   label, `issue_tracker.labels.hitl`, plus a parent `## Execution Plan` gate
+   naming the issue) rather than a copy of it here. A PR that references no issue has no
+   checkpoint to honour; a referenced issue whose labels — or whose parent —
+   cannot be read (lookup failure, auth, CLI error) has an **unknown**
+   checkpoint — fail closed: do not arm, report the read failure (the same
+   stance `/jig:do-item` takes on an unreadable gate). If any of them carries an
+   uncleared checkpoint and this run has no human clearance to proceed
+   end-to-end, print the
+   command below and stop — review rounds pre-empt a judgment the issue exists
+   to collect (the same rule `/jig:do-item`'s § Arm the drive applies).
 4. **Spawn the driver in the background** with the harness's background
    execution (Bash `run_in_background`), never blocking the session on it, in
-   the portable one-line form, `<tree>` and `<PR>` being what step 3 printed:
+   the portable one-line form, `<tree>` and `<PR>` being what step 2 printed:
 
    **exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
 

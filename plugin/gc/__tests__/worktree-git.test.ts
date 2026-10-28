@@ -173,7 +173,7 @@ console.log(JSON.stringify({ state: "OPEN", headRefOid: "a".repeat(40), headRepo
   const proof = (record: boolean) => {
     const source = `import { writeDrivenTree } from ${JSON.stringify(resolve(import.meta.dir, "../../shared/driven-tree.ts"))};
 import { worktreeProof } from ${JSON.stringify(resolve(import.meta.dir, "../kinds/worktree-proof.ts"))};
-if (${record}) writeDrivenTree(${JSON.stringify(join(f.repo, ".git"))}, { pr: 7, branch: "topic", remote: "origin", created: true });
+if (${record}) writeDrivenTree(${JSON.stringify(join(f.repo, ".git"))}, { pr: 7, branch: "topic", remote: "origin", created: true, head: Bun.spawnSync(["git", "-C", ${JSON.stringify(f.repo)}, "rev-parse", "HEAD"]).stdout.toString().trim() });
 try { console.log(JSON.stringify(await worktreeProof(${JSON.stringify(f.repo)}, { remote: "origin", base: "main" }, 7))); }
 catch (error) { console.log(JSON.stringify({ error: String(error) })); }`;
     const result = Bun.spawnSync(

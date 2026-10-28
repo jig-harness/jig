@@ -82,8 +82,15 @@ export async function worktreeProof(
   const head = await git(path, ["rev-parse", "HEAD"]);
   const dir = await git(path, ["rev-parse", "--git-dir"]);
   const admin = isAbsolute(dir) ? dir : resolve(path, dir);
-  // A detached tree a drive attached names its pull request in its record.
-  const driven = name === "HEAD" ? readDrivenTree(admin) : null;
+  // A detached tree a drive attached names its pull request in its record,
+  // for as long as its head still descends from the commit attached. Unlike
+  // the drive's readers, no remote branch is required: a merged pull
+  // request's branch is often deleted, and that is when the tree is reported.
+  const record = name === "HEAD" ? readDrivenTree(admin) : null;
+  const driven =
+    record !== null && (await ancestry(path, record.head, head)) === true
+      ? record
+      : null;
   if (name === "HEAD" && driven === null)
     throw new GcError("HEAD is detached and no drive attached the worktree");
   const flags = await git(path, ["ls-files", "-v", "-z"]);

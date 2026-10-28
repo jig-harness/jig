@@ -330,7 +330,7 @@ preference, not an either-or.
 **Attribute before you fix.** Where the failing test, the file it tests or
 their directory is not in the branch's diff, do not assume the change broke
 it: run the fresh-base probe on that one file, with the base the pull
-request merges into (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view --json baseRefName --jq .baseRefName`, or
+request merges into (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view <PR> --json baseRefName --jq .baseRefName`, naming the pull request, since a detached working tree has no branch to look it up by, or
 the repository's default branch).
 
 ```bash

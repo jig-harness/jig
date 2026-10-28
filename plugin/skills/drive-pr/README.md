@@ -332,39 +332,47 @@ The `bun` prefix and the single line are deliberate: every TypeScript command ex
 
 ### Which working tree drives it
 
-Any working tree of the clone can drive a PR. Before it takes its locks,
-`drive.ts` **attaches** the PR to the tree it runs in
-(`<skill-dir>/scripts/attach-pr.ts`): it fetches the PR's head branch from
-`origin`, checks the branch out when no other working tree of the clone holds
-it, and checks out the PR's head commit **detached** when one does, since git
-allows one checkout per branch. It never creates a second, suffixed branch:
-the drive pushes to the PR's head branch by name from whatever commit the
-tree is on, so a detached tree pushes exactly as a named one does. The attach
-records the tree in the drive state (`drivenBranch`) and in the tree's own
-git directory, so every later step, and `drives.ts`, knows which branch a
-detached tree drives.
+Any working tree of the clone can drive a PR. Once it holds the tree's
+driver lock, and before it takes the PR's, `drive.ts` **attaches** the PR to
+the tree it runs in (`<skill-dir>/scripts/attach-pr.ts`): it checks that
+`origin` is the PR's repository, fetches the PR's head branch from it, checks
+the branch out when no other working tree of the clone holds it, and checks
+out the PR's head commit **detached** when one does, since git allows one
+checkout per branch. It never creates a second, suffixed branch: the drive
+pushes to the PR's head branch by name from whatever commit the tree is on,
+so a detached tree pushes exactly as a named one does. A detached tree keeps
+a record of its PR, head branch and attached commit in its own git
+directory, and every later step reads the branch from that record for as
+long as the tree's head descends from that commit and the branch is still on
+the remote; an attach by name removes it. The drive state's `drivenBranch`
+mirrors it for the handoff file.
 
 It refuses, naming what is in the way, when this tree has uncommitted changes
 or an unfinished merge, rebase or cherry-pick; when the tree holding the
 branch has uncommitted changes or commits the PR's head does not have
-(push them from there first); when moving would orphan a commit on this
-tree's detached head; when this is the clone's primary checkout on another
-branch; and when the PR comes from a fork, whose head the drive cannot push
-to. A dry run attaches nothing, and `DRIVE_PR_ATTACH=off` drives the tree as
-it stands, for a harness that prepares its own trees.
+(push them from there first); when this tree's detached head has commits no
+branch or remote holds; when a local branch of that name is ahead of the
+head; when this is the clone's primary checkout on another branch; when
+`origin` is another repository; and when the PR comes from a fork, whose head
+the drive cannot push to. It moves nothing while a live driver holds the tree
+or the PR, or an interactive session holds the tree. A dry run attaches
+nothing, and `DRIVE_PR_ATTACH=off` drives the tree as it stands, for a
+harness that prepares its own trees.
 
 `/jig:drive-pr <PR>` decides the tree before it arms the driver
 (`bun "<skill-dir>/scripts/attach-pr.ts" <PR> --place`): the session's own working tree, or, from the
 clone's primary checkout, the tree that already holds the PR, else a new one
 created with git's `worktree add --detach` under the first root
-`gc.worktree_roots` names. A tree created this way is recorded as the
-drive's, and [resource collection](../../gc/README.md) reports it for
-removal by that record once the PR merges or closes. A PR in another
-repository can be named as `owner/name#N` or by its URL: the drive is armed
-in that repository's clone named by the `clones` map in your user file
-(`~/.jig/jig.yaml`,
+`gc.worktree_roots` names. [Resource collection](../../gc/README.md)'s
+`worktrees` kind reads a detached tree's record to find its PR, and reports
+the tree once that PR merges or closes, as it reports a branch's tree. A PR
+in another repository can be named as `owner/name#N` or by its URL: the
+drive is armed in that repository's clone named by the `clones` map in your
+user file (`~/.jig/jig.yaml`,
 [configuration](../../CONFIGURATION.md#clones-user-file-only)), and with
-none mapped the session prints the command to run in a checkout of it.
+none mapped the session prints the command to run in a checkout of it. The
+human checkpoint the arm checks is read in the placed tree, so another
+repository's PR is checked against that repository's tracker.
 
 `--bots-only` keeps it off human-authored threads (recommended for unattended runs). `--keep-draft` stops it marking the PR Ready (`pull_requests.mark_ready: never` does the same for every drive). `--max-rounds N` bounds the loop (default `drive.max_rounds`, else 10). `--dry-run` reports what each round would do and never invokes the pass. Starting it twice **in the same clone** is safe — see exit `11`. That is the exact reach: the lock lives in the per-clone state dir described below, so it covers this clone and its linked worktrees and nothing further. A separate clone — another machine, a CI checkout — takes its own lock and can drive the same PR at the same time.
 

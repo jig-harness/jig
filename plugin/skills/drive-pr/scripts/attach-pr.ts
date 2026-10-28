@@ -15,11 +15,14 @@
  *                                     PR in another repository is placed in
  *                                     the clone the user file's `clones` map
  *                                     names.
+ *   attach-pr.ts <PR> --created       as the first form, recording that the
+ *                                     tree was created for the drive (what
+ *                                     `--place` passes for a tree it made)
  *
  * Prints one JSON line on success: `{pr, branch, remote, head, worktree,
  * detached, created}` for an attach, `{pr, repo, tree, created}` for
- * `--place`. `drive.ts` attaches before it takes its locks, so arming a drive
- * runs this either way; `--place` is the arm step's, which needs to know the
+ * `--place`. `drive.ts` attaches once it holds the tree's lock and before it
+ * takes the pull request's, so arming a drive runs this either way; `--place` is the arm step's, which needs to know the
  * tree before it can start the driver there.
  *
  * Exit codes:
@@ -32,6 +35,7 @@
  *   3  --place: the PR is in another repository with no clone mapped; the
  *      command to run there is printed
  *   5  the PR is not open
+ *  11  a live driver holds this working tree or the PR: nothing moved
  */
 import { fail, runMain } from "./lib/cli.ts";
 import { AttachRefusal, attachPr } from "./lib/attach.ts";
@@ -42,7 +46,7 @@ import {
   placePr,
 } from "./lib/attach-place.ts";
 
-const USAGE = "usage: attach-pr.ts <PR> [--place]";
+const USAGE = "usage: attach-pr.ts <PR> [--place | --created]";
 
 interface Args {
   ref: PrRef;
@@ -67,10 +71,10 @@ function parseArgs(argv: string[]): Args {
 
 async function attachHere(args: Args): Promise<number> {
   const attached = await attachPr(args.ref.pr, { created: args.created });
-  if (attached.skipped !== undefined)
-    console.error(`attach-pr: ${attached.skipped}; not attaching`);
   console.log(JSON.stringify(attached));
-  return 0;
+  if (attached.skipped === undefined) return 0;
+  console.error(`attach-pr: ${attached.skipped}; not attaching`);
+  return 11;
 }
 
 async function place(args: Args): Promise<number> {

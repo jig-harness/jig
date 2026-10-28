@@ -1,17 +1,12 @@
 /**
- * `drivenBranch`: the drive state's record of the working tree that drives a
- * pull request, and of the branch it pushes to.
+ * `drivenBranch`: the drive state's copy of which working tree the last attach
+ * prepared for a pull request, and the branch it pushes to.
  *
- * Written by `attach-pr.ts` on every attach (`lib/attach.ts`). A tree that
- * checked out the head commit detached, because another working tree holds
- * the head branch, has no branch of its own; the record names the branch the
- * drive pushes to (`guarded-push.ts` already pushes by explicit refspec, so a
- * detached tree pushes exactly as a named one does), the remote it comes
- * from, and whether the attach created the tree for the drive, which is what
- * lets resource collection reap that tree once the pull request merges or
- * closes. The tree carries the same facts in its own git directory
- * (`shared/driven-tree.ts`) for readers that hold a tree rather than a pull
- * request number.
+ * Written by every attach (`lib/attach.ts`). The source every script reads is
+ * the tree's own record (`shared/driven-tree.ts`), which a reader holding only
+ * a tree can find; this copy is what the handoff file shows a person, keyed
+ * by the pull request. `created` says the attach made the tree for the drive
+ * (`attach-pr.ts --place`).
  *
  * Optional in a stored state: a state file written before the field existed
  * reads as `null`, since nothing about a drive in progress changes when the

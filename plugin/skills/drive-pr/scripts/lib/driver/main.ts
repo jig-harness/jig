@@ -117,11 +117,6 @@ export async function main(): Promise<number> {
   const logPath = join(stateDir, `drive-pr-${pr}.log`);
   startDriverLog(logPath);
 
-  // Before the locks: the tree is put on the PR's head (its branch, or the
-  // head commit detached when another working tree holds the branch), so
-  // every round's commit lands on whatever the attach left.
-  await attachForDrive(pr, dryRun);
-
   // What this driver publishes about itself into its lock claims — the answer
   // to "who is working my worktree, and on what?" that the exit-11 refusal
   // and the `drives.ts` listing surface. Advisory: lock liveness
@@ -155,15 +150,21 @@ export async function main(): Promise<number> {
     started: new Date().toISOString(),
     account,
   };
-  const locks: DriveLock[] = [
-    { dir: join(stateDir, await worktreeLockName()), what: "worktree", diag },
-    { dir: join(stateDir, `pr-drive-${pr}.lock`), what: `PR #${pr}`, diag },
-  ];
+  const treeLock: DriveLock = {
+    dir: join(stateDir, await worktreeLockName()),
+    what: "worktree",
+    diag,
+  };
+  const prLock: DriveLock = {
+    dir: join(stateDir, `pr-drive-${pr}.lock`),
+    what: `PR #${pr}`,
+    diag,
+  };
   const held: DriveLock[] = [];
   using lockResources = new DisposableStack();
   await using lifecycle = installDriverLifecycle(held);
   void lifecycle;
-  for (const lock of locks) {
+  const hold = (lock: DriveLock): void => {
     acquire(lock, pr);
     held.push(lock);
     lockResources.use(
@@ -173,7 +174,14 @@ export async function main(): Promise<number> {
         if (held.includes(lock)) release(lock);
       }),
     );
-  }
+  };
+  hold(treeLock);
+  // Once this tree is ours and before the PR is: the tree is put on the PR's
+  // head (its branch, or the head commit detached when another working tree
+  // holds the branch), so every round's commit lands on what the attach left,
+  // and no other driver's tree is ever moved.
+  await attachForDrive(pr, dryRun);
+  hold(prLock);
   createDriverRegistry(held);
   lockResources.use(driverStopCompletionCleanup(held));
   driverRuntime.driverLogRotates = true;

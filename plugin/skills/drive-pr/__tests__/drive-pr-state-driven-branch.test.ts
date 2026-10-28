@@ -46,8 +46,17 @@ describe("drivenBranch", () => {
   });
 
   test("the tree's own record refuses what the state refuses", () => {
-    const tree = { pr: 7, branch: "feature", remote: "origin", created: false };
+    const tree = {
+      pr: 7,
+      branch: "feature",
+      remote: "origin",
+      created: false,
+      head: "a".repeat(40),
+    };
     expect(parseDrivenTree(JSON.stringify(tree))).toEqual(tree);
+    expect(
+      parseDrivenTree(JSON.stringify({ ...tree, head: "HEAD" })),
+    ).toBeNull();
     expect(
       parseDrivenTree(JSON.stringify({ ...tree, branch: "a b" })),
     ).toBeNull();
