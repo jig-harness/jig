@@ -408,6 +408,18 @@ describe("finish-round.ts", () => {
       expect(r.pushed).not.toBe("");
     });
 
+    it("does not refuse that moot once a trusted bot's confirmation follows it", async () => {
+      const thread = scanningMoot("PRRT_scan_conf", "github-advanced-security");
+      thread.comments.push({
+        author: "coderabbitai",
+        authorAssociation: "NONE",
+        body: "Thanks, confirmed.\n\n<!-- coderabbit-skip-review-comment-follow-up -->",
+      });
+      const r = await finishRound({ fixture: { threads: [thread] } });
+      expect(r.report.state).toBe("FINISHED");
+      expect(r.pushed).not.toBe("");
+    });
+
     it("still refuses the identical unheld moot on another bot's thread", async () => {
       const r = await finishRound({
         fixture: {

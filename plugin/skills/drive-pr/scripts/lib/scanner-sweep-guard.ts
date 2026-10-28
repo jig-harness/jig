@@ -5,7 +5,9 @@ import {
   isCodeScanningLogin,
   readAlert,
 } from "../../../resolve-review-comments/scripts/lib/code-scanning.ts";
-import { hasLeaveOpenMarker } from "./outcome.ts";
+import { TRUSTED_ASSOCIATIONS } from "../summary-findings.ts";
+import { isTrustedBotConfirmation } from "./bot-confirmation.ts";
+import { hasLeaveOpenMarker, qualifyingOutcome } from "./outcome.ts";
 import { ghCall, run, tsArgv } from "./proc.ts";
 
 const resolveThread = join(
@@ -125,6 +127,45 @@ export function awaitsAlert(
     outcome !== null &&
     (DECLINED_OUTCOMES.has(outcome) || outcome === "moot")
   );
+}
+
+/** A review comment as `list-unresolved-threads.ts` reports it. */
+interface ThreadComment {
+  author: string | null;
+  authorAssociation: string | null;
+  body: string | null;
+  url: string | null;
+}
+
+/**
+ * `awaitsAlert` for an unresolved, unheld thread, judged on its latest
+ * trusted qualifying reply when every comment after it is a trusted bot's
+ * automated confirmation (`isTrustedBotConfirmation`): a bot confirming the
+ * owner's reply does not make the thread untriaged. The opening comment is
+ * the finding, never a reply, and a truncated thread fails closed.
+ */
+export function threadAwaitsAlert(t: {
+  commentsTruncated: boolean;
+  comments: ThreadComment[];
+}): boolean {
+  if (t.commentsTruncated) return false;
+  for (let i = t.comments.length - 1; i >= 1; i--) {
+    const c = t.comments[i];
+    if (c === undefined) return false;
+    const trusted =
+      c.authorAssociation !== null &&
+      TRUSTED_ASSOCIATIONS.has(c.authorAssociation);
+    const outcome = trusted ? qualifyingOutcome(c.body ?? "")?.outcome : null;
+    if (outcome) return awaitsAlert(t.comments[0], outcome);
+    const confirmation =
+      typeof c.url === "string" &&
+      isTrustedBotConfirmation(
+        { authorLogin: c.author, body: c.body },
+        qualifyingOutcome,
+      );
+    if (!confirmation) return false;
+  }
+  return false;
 }
 
 /**

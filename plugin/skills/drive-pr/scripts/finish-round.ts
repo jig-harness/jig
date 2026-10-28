@@ -148,7 +148,7 @@ import { fileURLToPath } from "node:url";
 import { isTrustedBotConfirmation } from "./lib/bot-confirmation.ts";
 import { fail, isDigits, isGitSha, runMain, short } from "./lib/cli.ts";
 import { hasLeaveOpenMarker, qualifyingOutcome } from "./lib/outcome.ts";
-import { awaitsAlert } from "./lib/scanner-sweep-guard.ts";
+import { threadAwaitsAlert } from "./lib/scanner-sweep-guard.ts";
 import {
   ciHoldTimeoutSeconds,
   ghCall,
@@ -957,8 +957,8 @@ async function checkUntriagedThreads(
         heldReplyOutcome(t, heldUrl) === heldOutcomeByKey.get(key)
       );
     }
+    if (threadAwaitsAlert(t)) return true;
     if (outcome === null) return false; // never triaged at all
-    if (awaitsAlert(t.comments[0], outcome)) return true;
     const latest = t.comments[t.comments.length - 1];
     // Marked leave-open: a deliberate choice to leave THIS thread unresolved,
     // valid for any non-hold outcome (not only moot) per triage-thread.ts's own
