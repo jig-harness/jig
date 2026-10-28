@@ -100,6 +100,7 @@ function cli(root: string, args: string[], extra: Record<string, string> = {}) {
 }
 
 interface PlanOutput {
+  document: string;
   kind: string;
   kindFrom: string;
   directory: string;
@@ -649,6 +650,29 @@ describe("collect and report", () => {
       const run = cli(root, ["fresh", out.directory, "--", "true"]);
       expectSpawnExit(run, 2, "fresh from a plan naming the alias");
       expect(run.stderr).toContain("is not a plan this script wrote");
+    },
+  );
+
+  test.skipIf(!canSymlink)(
+    "a document reached through a link is named by the file it is",
+    () => {
+      const root = repository();
+      const outside = temporary();
+      mkdirSync(join(outside, "child"));
+      writeFileSync(
+        join(outside, "prd.md"),
+        readFileSync(join(root, "docs", "prd.md")),
+      );
+      writeFileSync(join(root, "prd.md"), "# Another document\n");
+      symlinkSync(join(outside, "child"), join(root, "link"));
+      const out = plan(root, [
+        ["link", "..", "prd.md"].join(sep),
+        "--kind",
+        "requirements",
+      ]);
+      expect(out.document).toEndWith(join(basename(outside), "prd.md"));
+      const lexical = plan(root, ["prd.md", "--kind", "requirements"]);
+      expect(out.directory).not.toBe(lexical.directory);
     },
   );
 

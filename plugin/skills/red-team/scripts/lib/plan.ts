@@ -298,6 +298,11 @@ function isCanonical(path: string): boolean {
   return links === 0 && real === path;
 }
 
+function canonicalRoot(root: string): string {
+  const { real } = walk(root);
+  return real ?? root;
+}
+
 /** Make the plan and the briefs, replacing any earlier review's files. */
 export function makePlan(options: PlanOptions): Plan {
   const given = absolute(options.document);
@@ -309,11 +314,13 @@ export function makePlan(options: PlanOptions): Plan {
     : undefined;
   const companion = givenCompanion ? canonical(givenCompanion) : undefined;
   const companionText = companion ? readDocument(companion) : undefined;
-  const named = resolve(options.document);
-  const display = relative(options.root, named) || named;
+  // The document is named by the file it really is, for the folder and for the
+  // report: a lexical path through a link can name another file.
+  const root = canonicalRoot(options.root);
+  const display = relative(root, document) || document;
   const directory = resolve(
     options.out ??
-      join(options.root, ".context", "red-team", slugFor(named, options.root)),
+      join(options.root, ".context", "red-team", slugFor(document, root)),
   );
   const all = loadPersonas();
   mkdirSync(directory, { recursive: true });
