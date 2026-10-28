@@ -62,8 +62,8 @@ The driver stops requiring the pull request's head branch to be checked out.
 A new script, `drive-pr/scripts/attach-pr.ts <PR>`, prepares whatever
 working tree it runs in:
 
-- it fetches the head branch from the configured remote and resolves the
-  pull request's head commit;
+- it fetches the head branch from the remote the drive pushes to and
+  resolves the pull request's head commit;
 - when the head branch is free in this clone, it checks it out; when another
   working tree of the clone holds it, it checks out the head commit
   **detached** and records `drivenBranch` in the drive state. A suffixed
@@ -76,8 +76,17 @@ working tree it runs in:
   ahead of the remote (its unpushed work would be driven around), and when
   the pull request comes from a fork (the push path refuses those already).
 
-Every script that reads the branch name or the upstream reads
-`drivenBranch` instead, and the step that builds this lists each site:
+The record is written twice: `drivenBranch` in the drive state, and a
+small file in the tree's own git directory carrying the branch, the
+attached head commit and whether the drive created the tree, so that code
+outside the skill (the shared process helpers, resource collection,
+`resolve-conflicts`) can read it from the tree alone. The file is trusted
+only while the attached commit is an ancestor of the tree's head and the
+branch's remote ref exists, and it is removed when the tree is attached by
+name, so a later detached state of the tree (a person's checkout, a bisect,
+a rebase) does not answer with an old pull request. Every script that reads
+the branch name or the upstream reads the record instead, and the step that
+builds this lists each site:
 `base-sync.ts` and `lib/base-drift.ts` (which refuse a detached head by
 name today), `capture-intent-chain.ts` with `lib/intent-chain-capture.ts`,
 `verification-fit.ts`, `lib/state/handoff.ts` (the issue key from the
@@ -87,11 +96,19 @@ branch), `lib/overlay.ts`, `drives.ts`'s leftover detection and the
 every caller that resolves the pull request from the current branch
 (`resolvePr("")` in `shared/proc.ts` and `lib/proc.ts`, which a detached
 tree answers from the state), `resolve-conflicts`' operation detection,
-and the arm step's issue-key gate. The push's own checks, which already
-compare commits rather than names, stay as they are.
+the arm step's issue-key gate, which for a pull request in another
+repository runs in the placed tree against that repository, and the
+continuous-integration repair procedure's reads of the current branch. The
+push's own checks, which already compare commits rather than names, stay as
+they are. A tree detached at a commit that some branch or remote ref
+reaches is attachable; the orphaning refusal counts only commits no ref
+reaches.
 
-`drive.ts` runs the attach before taking the locks, and every round's commit
-works on whatever the attach left: a branch or a detached head. The pickup's
+`drive.ts` runs the attach after taking the worktree lock and before the
+pull-request lock: a tree another driver holds is never moved, and a tree
+this driver holds is attached before the drive it is about to run. Every
+round's commit works on whatever the attach left: a branch or a detached
+head. The pickup's
 branch policy (`pr-plan.ts branch`) keeps naming the branch of a **new** pull
 request; for an existing one the branch is the pull request's head, and the
 instructions say so where they say "create the branch".
