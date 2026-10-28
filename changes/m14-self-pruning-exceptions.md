@@ -12,6 +12,12 @@ release: patch
   without a reason, and a token with no delay on its line or the line below.
   It has no imports beyond Bun's and Node's built-ins, so it can be copied as
   it is.
+- The audit's M14 criteria gain `test-exemptions-prune-themselves` and
+  `fixed-delay-tokens-prune-themselves`: a check that passes an exemption
+  matching no file, or a suppression token with no reason or no delay
+  beside it, scores convention at most on them. `tests-come-with-changes`
+  and `fixed-sleeps-banned` keep their bars, so a re-audit reports the two
+  as added by Jig rather than as a regression.
 
 ### Changed
 
@@ -21,7 +27,3 @@ release: patch
   touched. A repository whose exemptions file still holds a line for deleted
   code sees that line fail on its next change; an exemption whose only file a
   change deletes fails in that change.
-- The audit's M14 criteria `tests-come-with-changes` and
-  `fixed-sleeps-banned` now look for those two prunings: a check that passes
-  an exemption matching no file, or a token with no delay beside it, no
-  longer scores `mechanical` on them.
