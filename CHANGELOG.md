@@ -341,6 +341,17 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.88.0] - 2026-10-28
+
+### Changed
+
+- `resolve-review-comments` runs with only `gates.command` configured.
+  `review.bots` and `review.deferral_team` are optional: without
+  `review.bots` every reviewer's threads are worked, as they already were
+  whatever the list named, and without `review.deferral_team` a deferral
+  names its team with `--team`. A repository with no `review` section no
+  longer stops at the configuration step.
+
 ## [0.87.2] - 2026-10-27
 
 ### Fixed
@@ -3746,7 +3757,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.87.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.88.0...HEAD
+[0.88.0]: https://github.com/jig-harness/jig/compare/v0.87.2...v0.88.0
 [0.87.2]: https://github.com/jig-harness/jig/compare/v0.87.1...v0.87.2
 [0.87.1]: https://github.com/jig-harness/jig/compare/v0.87.0...v0.87.1
 [0.87.0]: https://github.com/jig-harness/jig/compare/v0.86.0...v0.87.0
