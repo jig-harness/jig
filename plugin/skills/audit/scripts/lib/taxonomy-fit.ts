@@ -22,11 +22,12 @@ import { at, type Finding } from "./schema.ts";
 const TAXONOMY_NAMES = new Set(["label-taxonomy.yaml", "label-taxonomy.yml"]);
 
 /**
- * Label roles naming one label, and roles naming a list of them. A role's
- * older field under `review.taxonomy` declares it too. Size labels
- * (`batch_sizes`) are checked only against a taxonomy that declares groups,
- * where a size group can hold them, and `pattern_prefix` never, because it is
- * a prefix, not a label.
+ * Label roles naming one label, and roles naming a list of them; the labels
+ * `issue_tracker.types` lists for each work type are checked as a list
+ * role's are. A role's older field under `review.taxonomy` declares it too.
+ * Size labels (`batch_sizes`) are checked only against a taxonomy that
+ * declares groups, where a size group can hold them, and `pattern_prefix`
+ * never, because it is a prefix, not a label.
  */
 const SINGLE_ROLES = ["epic", "hitl", "manual_ops", "followup"];
 const LIST_ROLES = ["bug", "extractable_tails"];
@@ -177,6 +178,14 @@ const roleFields = (role: string) =>
     (f): f is string => f !== undefined,
   );
 
+/** Every `issue_tracker.types.<type>` field the repository's file sets. */
+function typeFields(config: Record<string, unknown>): string[] {
+  const types = at(config, "issue_tracker.types");
+  return isMapping(types)
+    ? Object.keys(types).map((type) => `issue_tracker.types.${type}`)
+    : [];
+}
+
 function labelFindings(
   config: Record<string, unknown>,
   taxonomy: Taxonomy,
@@ -192,17 +201,18 @@ function labelFindings(
           },
         ]
       : [];
-  const roleChecks = [...SINGLE_ROLES, ...LIST_ROLES]
-    .flatMap(roleFields)
-    .flatMap((field) =>
-      finding(
-        field,
-        configuredLabels(config, field).filter(
-          (label) => !defined(label, taxonomy),
-        ),
-        "a label",
+  const roleChecks = [
+    ...[...SINGLE_ROLES, ...LIST_ROLES].flatMap(roleFields),
+    ...typeFields(config),
+  ].flatMap((field) =>
+    finding(
+      field,
+      configuredLabels(config, field).filter(
+        (label) => !defined(label, taxonomy),
       ),
-    );
+      "a label",
+    ),
+  );
   if (!taxonomy.hasGroups) return roleChecks;
   const sizes = roleFields("batch_sizes").flatMap((field) =>
     finding(

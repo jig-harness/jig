@@ -162,6 +162,12 @@ changes are marked **Breaking** and say what a consumer changes.
   the agent it starts, and with `--no-agent` runs the create hook in a
   background `setup` tab, still once per worktree
   ([tools/orca](tools/orca/README.md)).
+- The glossary defines a **route**: the agent, model tier and reasoning
+  effort chosen for one piece of work, derived by rules a repository
+  declares, with the reason recorded on the pull request
+  ([GLOSSARY.md](GLOSSARY.md)). The design that derives it is
+  [design/agent-routing.md](design/agent-routing.md), decided in
+  [ADR-0009](docs/adr/ADR-0009-routes-are-derived-by-rules-as-data.md).
 
 ### Changed
 
@@ -334,6 +340,54 @@ changes are marked **Breaking** and say what a consumer changes.
 - A link to a section of the getting-started, plugin, features or
   principles page no longer stops well below the header: it lands just
   under it.
+
+## [0.89.0] - 2026-10-28
+
+### Added
+
+- `do-item` now says what kind of work an item is when it picks it up: its
+  [work type](GLOSSARY.md) (`bug`, `feature`, `improvement`, `task` or
+  `spike`) and how it knows, in the status message, such as
+  `Type: bug (label type:bug)`. The new `determine_type.ts` script derives it
+  from the first of a type label, the tracker's own issue type (GitHub's
+  issue types) and a Conventional Commits title prefix such as `fix:` where
+  the repository's titles follow that convention; an item none of these
+  identifies is `unknown`. Nothing else about the pickup changes in this
+  version. See [do-item's README](plugin/skills/do-item/README.md#the-items-work-type).
+- `issue_tracker.types` names a repository's work types and the labels that
+  mark each (by default `bug` from `issue_tracker.labels.bug`, and
+  `<type>` or `type:<type>` for the others), and `do_item.work_types`
+  overrides single fields of the depth table: how much each delivery station
+  does for each type, with `unknown` always taking the strictest value of
+  every field. A type outside the default list needs a complete row. A
+  label listed under two types is refused, and so is a label the GitHub
+  adapter uses for a workflow state or a priority. Both fields are in the
+  [configuration reference](plugin/CONFIGURATION.md#the-depth-table), and
+  the audit's configuration check refuses what `do-item` refuses and reports
+  a type's labels that the label taxonomy does not define.
+- `get_issue.ts` prints the tracker's own issue type as `nativeType`: the
+  GitHub issue type's name, or `null` when the issue has none and always on
+  Linear, which has no issue types.
+
+## [0.88.0] - 2026-10-28
+
+### Changed
+
+- `resolve-review-comments` runs with only `gates.command` configured.
+  `review.bots` and `review.deferral_team` are optional: without
+  `review.bots` every reviewer's threads are worked, as they already were
+  whatever the list named, and without `review.deferral_team` a deferral
+  names its team with `--team`. A repository with no `review` section no
+  longer stops at the configuration step.
+
+## [0.87.2] - 2026-10-27
+
+### Fixed
+
+- drive-pr and resolve-review-comments now read the severity in CodeRabbit's
+  newer comment layout (`**<icon> Major** · **Category** · **Effort**`), which
+  was reported as `unknown`. The new `icon-fields` shape is also available in
+  `review.severity_formats`.
 
 ## [0.87.1] - 2026-10-27
 
@@ -3731,7 +3785,10 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.87.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.89.0...HEAD
+[0.89.0]: https://github.com/jig-harness/jig/compare/v0.88.0...v0.89.0
+[0.88.0]: https://github.com/jig-harness/jig/compare/v0.87.2...v0.88.0
+[0.87.2]: https://github.com/jig-harness/jig/compare/v0.87.1...v0.87.2
 [0.87.1]: https://github.com/jig-harness/jig/compare/v0.87.0...v0.87.1
 [0.87.0]: https://github.com/jig-harness/jig/compare/v0.86.0...v0.87.0
 [0.86.0]: https://github.com/jig-harness/jig/compare/v0.85.3...v0.86.0

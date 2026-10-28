@@ -289,6 +289,7 @@ Built in, each checked against the reviewer's real comments:
 | Reviewer | Login | Shape | Words |
 | --- | --- | --- | --- |
 | CodeRabbit | `coderabbitai` | `pipe-fields`: `**🔒 Security** \| **🟠 Major** \| **⚡ Quick win**` | `Critical` blocker, `Major` high, `Minor` and `Trivial` low |
+| CodeRabbit | `coderabbitai` | `icon-fields`: `**<picture><img …></picture> Major** · **Security** · **Quick win**` | the same words |
 | Greptile | `greptile-apps` | `html-badge`: an `<img alt="P1">` badge at the head of the finding | `P0` blocker, `P1` high, `P2` medium |
 | Codex connector | `chatgpt-codex-connector` | `badge`: a `![P1 Badge]` image at the head of the finding | `P0` to `P3`: blocker to low |
 | The repository's configured reviewer (`review.reviewer_app`, else `review.bots`) | its own | `bold-token`: `🟡 **medium** · 🏷️ category: correctness` | Jig's own words |

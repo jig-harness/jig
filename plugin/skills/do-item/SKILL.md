@@ -69,6 +69,8 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `issue_tracker.states` | Map from canonical state keys to the tracker's own state names | Each key title-cased, e.g. `in_progress` → "In Progress" |
 | `issue_tracker.file_command` | How to file a new issue (e.g. a slash command) | Ask the user to file it |
 | `issue_tracker.labels` | The repository's label for each role the skill acts on (see the table below) | The default names below |
+| `issue_tracker.types` | The repository's work types and the labels that mark each (see [Step 1](#step-1-fetch-the-issue)) | `bug`, `feature`, `improvement`, `task`, `spike`; `bug` marked by `issue_tracker.labels.bug`, the others by `<type>` and `type:<type>` |
+| `do_item.work_types` | Fields of the depth table a type overrides | The table's defaults ([configuration reference](../../CONFIGURATION.md#the-depth-table)) |
 | `do_item.agents` | Routing from issue to implementing agent (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Every issue goes to `general-purpose` |
 | `do_item.scouts` | Pre-flight [scouts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) per agent, `{agent: [scouts]}` | No scouts |
 | `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
@@ -178,7 +180,7 @@ Linear tool, the GitHub form is the row of this table it belongs to.
 
 | Operation | Script form | Native: Linear (MCP) | Native: GitHub Issues (`gh`) |
 |-----------|-------------|----------------------|------------------------------|
-| Get issue (labels, state, parent, children, sub-issue analysis) | `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "<KEY>"` | `mcp__linear__get_issue` (no children field) | `gh issue view` with its JSON fields `number`, `title`, `body`, `labels`, `state`, `stateReason` and `url` (no sub-issues field) |
+| Get issue (labels, state, parent, children, sub-issue analysis) | `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "<KEY>"` | `mcp__linear__get_issue` (no children field) | `gh issue view` with its JSON fields `number`, `title`, `body`, `labels`, `state`, `stateReason`, `url` and, where the `gh` client offers it, `issueType` (no sub-issues field; `issueType.name` is the `nativeType`, `null` when the issue has none or the client lacks the field) |
 | List comments | `bun "${CLAUDE_SKILL_DIR}/scripts/list_comments.ts" "<KEY>"` | `mcp__linear__list_comments` | `gh issue view` with the JSON field `comments` |
 | List children | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" children "<KEY>"` | `mcp__linear__list_issues` with a parent filter | `gh api` on the issue's `sub_issues` endpoint |
 | Transition state | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <canonical-state>` | `mcp__linear__save_issue` with `state: <mapped name>` | The script form: a state is a label or a board option plus open or closed, which only the script maps |
@@ -263,6 +265,27 @@ native integration, or the reverse.
 
 **If not found**: display the error with the script's suggestions.
 
+**exact** — **Type the item.** Write the issue JSON to `issue.json` with the
+file-writing tool (from the native transport: its `title`, its label names
+as `labels`, and its own issue type's name as `nativeType`, or `null` when
+it reports none), then derive its
+[work type](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md):
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/determine_type.ts" issue.json
+```
+
+It prints `{ type, evidence, depth }`: the type, from the first of a type
+label (`issue_tracker.types`), the tracker's own issue type and the title's
+Conventional Commits prefix that names one, else `unknown`; which step
+decided (`evidence.step`: `label`, `tracker_type`, `title_prefix`, or `none`)
+with `evidence.summary`; and the type's row of the
+[depth table](../../CONFIGURATION.md#the-depth-table). Put the type and
+`evidence.summary` in the status message, e.g.
+`Type: bug (label type:bug)`; an `unknown` type is reported the same way.
+No later step reads the type or the row. Exit `1` is a configuration the
+loading rules refuse: report its message in the status message and continue.
+
 ### Step 2: Check for prior scout findings
 
 **exact** — Fetch the complete comment context and use the selector result;
@@ -304,9 +327,10 @@ whose body opens with `## Scout Findings` and returns
 Freshness fails closed: a timestamp counts as fresh only when it parses to a
 finite, non-negative age under 24 hours.
 
-### Step 3: Determine issue type
+### Step 3: Choose the path
 
-**exact** — Route solely on whether the issue has sub-issues.
+**exact** — Route solely on whether the issue has sub-issues, whatever its
+work type.
 
 - **No sub-issues** → Step 4a.
 - **Has sub-issues** → Step 4b.
@@ -1339,6 +1363,7 @@ Without such a runner, ask as in [Asking the user](#asking-the-user).
 | `get_issue.ts` | Fetch an issue | Issue key | JSON with details and sub-issue analysis |
 | `list_comments.ts` | Fetch an issue's comments | Issue key | JSON array of `{ body, createdAt }` |
 | `tracker.ts` | Tracker operations: `children`, `transition`, `comment`, and the configured `states` and `labels` | Operation, issue key, and a canonical state or a body from `--body-file` (stdin also supported) | Operation result |
+| `determine_type.ts` | Derive an issue's work type and its depth-table row | Issue JSON (path or `-`) | JSON `{ type, evidence, depth }` |
 | `determine_agent.ts` | Route an issue to an agent and its scouts | Issue JSON (path or `-`) | JSON with agent and scouts |
 | `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (`--input` or stdin), `--git-head` or `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
 | `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (`--input` or stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
