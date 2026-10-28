@@ -9,6 +9,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -28,7 +29,7 @@ afterAll(() => {
 });
 
 function temporary(): string {
-  const dir = mkdtempSync(join(tmpdir(), "red-team-"));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "red-team-")));
   scratch.push(dir);
   return dir;
 }
@@ -116,11 +117,9 @@ describe("plan", () => {
     const out = plan(root, ["docs/prd.md"]);
     expect(out.kind).toBe("requirements");
     expect(out.kindFrom).toBe("frontmatter type: prd");
-    expect(out.directory).toMatch(
-      new RegExp(
-        `^${join(root, ".context", "red-team", "docs-prd-")}[0-9a-f]{8}$`,
-      ),
-    );
+    const prefix = join(root, ".context", "red-team", "docs-prd-");
+    expect(out.directory.startsWith(prefix)).toBe(true);
+    expect(out.directory.slice(prefix.length)).toMatch(/^[0-9a-f]{8}$/);
     expect(out.ignoredByGit).toBe(false);
     expect(out.personas).toHaveLength(8);
     const brief = readFileSync(out.personas[4]?.brief ?? "", "utf8");

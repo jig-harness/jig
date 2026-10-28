@@ -77,6 +77,13 @@ describe("the document's kind", () => {
       (path) => slugFor(`/repo/docs/${path}`, "/repo"),
     );
     expect(new Set(names).size).toBe(names.length);
+    const apart = [
+      slugFor("/a/prd.md", "/repo"),
+      slugFor("/b/prd.md", "/repo"),
+      slugFor("/repo/..archive/prd.md", "/repo"),
+      slugFor("/repo/prd.md", "/repo"),
+    ];
+    expect(new Set(apart).size).toBe(apart.length);
   });
 
   test("inherited object properties are not kinds", () => {

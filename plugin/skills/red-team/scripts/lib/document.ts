@@ -156,16 +156,15 @@ export function titleOf(text: string, fallback: string): string {
  */
 export function slugFor(path: string, root: string): string {
   const inside = relative(root, path);
-  const name =
-    inside && !inside.startsWith("..") && !isAbsolute(inside)
-      ? inside
-      : basename(path);
+  const within =
+    inside !== "" && !isAbsolute(inside) && inside.split(/[\\/]/)[0] !== "..";
+  const name = within ? inside : basename(path);
   const stem = name.slice(0, name.length - extname(name).length);
   const slug = stem
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return `${slug || "document"}-${sha256(name).slice(0, 8)}`;
+  return `${slug || "document"}-${sha256(within ? inside : path).slice(0, 8)}`;
 }
 
 export function sha256(text: string): string {
