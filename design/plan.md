@@ -149,6 +149,11 @@ Move into configuration when a consumer needs them:
   findings at once. Done when a deferral round files and appends its
   findings on both adapters, with the fake-tracker tests both adapters'
   tests use;
+- the git remote: the delivery skills read it from `repository.remote`
+  (default `origin`), but `review`, `review-reflections`, `reflect`,
+  `code-stats`, `changelog` and the audit's `config-fit.ts` still read
+  `origin` directly; they move onto the same setting, through
+  `remoteName()` in `shared/consumer.ts`;
 - the markers of Jig's own finding format (`ai-review-backlog`,
   `ai-review-round`, the leading `ai-review-*` comments) are fixed, and the
   summary-comment markers default to `<!-- ai-code-review -->` and
