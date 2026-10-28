@@ -1296,10 +1296,11 @@ make, use the entry's term instead.
   *Avoid*: model level (a *maturity level* is something else).
 - **Route** — the agent, *model tier* and reasoning effort chosen for the
   implementer of one piece of work at its pickup; derived from the item's
-  *work type*, size and labels and the *change-area catalog*'s flags and
-  mandatory reviews, by rules a repository declares, with the reason, the
-  source (the rules, or the person who chose instead) and whether it was
-  applied recorded on the pull request ([design](design/agent-routing.md)).
+  *work type*, size, *flag labels* and the *change-area catalog*'s flags and
+  mandatory reviews, by rules a repository keeps as data, with the rule behind
+  each part, the source (the rules, or the person who chose instead, whose
+  choice always wins) and whether it was applied recorded on the pull request
+  ([design](design/agent-routing.md)).
 - **Judgment tier** — the narrowest *model tier*: the top reasoning model,
   admitted only for a *decision layer* that is judgment-only, low-volume and
   high-leverage, and that a mechanical rule already tried and failed to
@@ -1308,11 +1309,6 @@ make, use the entry's term instead.
   out so that it alone runs on an expensive *model tier* while the evidence
   gathering and ranking around it run on cheaper ones. The unit the *Judgment
   tier* is assigned to, rather than a whole skill or agent.
-- **Route** — the agent, the *model tier* and the effort an item's
-  implementer runs on, derived from the item's *work type*, its *flag
-  labels* and size and the change areas it touches, by rules a repository
-  keeps as data, with the rule behind each part recorded; a person's choice
-  always wins ([design](design/agent-routing.md)).
 - **Family alias** — a model name that selects a model family rather than
   one release (`opus`, `sonnet`). A pin written with it ordinarily resolves to
   the family's current release, though not always: a session already on an
