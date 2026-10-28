@@ -15,11 +15,14 @@ export interface Report {
   expected: Expected[];
 }
 
-/** 1 when a check found an error, else 2 when one could not check, else 0. */
+/**
+ * 2 when a check could not check, else 1 when one found an error, else 0. An
+ * unchecked gate wins: findings from the rest do not make the pass complete.
+ */
 export function exitCode(report: Report): number {
+  if (report.checks.some((c) => c.status === "failed")) return 2;
   const findings = report.checks.flatMap((c) => c.findings);
-  if (findings.some((f) => f.severity === "error")) return 1;
-  return report.checks.some((c) => c.status === "failed") ? 2 : 0;
+  return findings.some((f) => f.severity === "error") ? 1 : 0;
 }
 
 /** The findings of every check, by file in byte order, then line. */

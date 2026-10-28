@@ -86,8 +86,12 @@ describe("a governed tree with one finding of each kind", () => {
     expect(report.base).toBe("main");
   });
 
-  test("reports the frontmatter error with its hint", () => {
+  test("reports the frontmatter errors, holding the added page to required_new", () => {
     expect(about(report, "frontmatter")).toEqual([
+      expect.objectContaining({
+        file: "docs/new-page.md",
+        message: "new doc missing required field: description",
+      }),
       expect.objectContaining({
         file: "docs/new-page.md",
         severity: "error",
@@ -196,18 +200,63 @@ describe("what the repository configures or lacks", () => {
     expect(status(json(run.stdout), "last_updated")).toBe("failed");
   });
 
-  test("the last_updated check reports only documents under the docs tree", () => {
-    const root = repository({
-      "docs/a.md": doc({}),
-      "notes.md": doc({ last_updated: "2026-10-01" }),
-    });
-    git(root, "checkout", "-qb", "work");
-    write(root, "notes.md", doc({ last_updated: "2026-10-01" }, "# Changed\n"));
-    git(root, "commit", "-qam", "edit");
-    const run = runDocs(root, ["--json"], TODAY);
-    expectSpawnExit(run, 0);
-    expect(status(json(run.stdout), "last_updated")).toBe("ok");
+  test("a check that cannot run wins over another check's error", () => {
+    const run = runDocs(governedService(), ["--json", "--base", "no-such-ref"]);
+    expectSpawnExit(run, 2);
+    const report = json(run.stdout);
+    expect(status(report, "last_updated")).toBe("failed");
+    expect(about(report, "scars").length).toBeGreaterThan(0);
   });
+
+  test("a configured base branch that does not resolve is refused", () => {
+    const root = repository({
+      ".config/jig.yaml": "repository:\n  base_branch: trunk\n",
+      "docs/a.md": doc({}),
+    });
+    const run = runDocs(root, ["--json"]);
+    expectSpawnExit(run, 2);
+    expect(run.stderr).toContain("repository.base_branch is trunk");
+  });
+
+  test("an unusable adr section is refused, not replaced by discovery", () => {
+    const cases: [string, string][] = [
+      ["adr: []\n", "adr must be an object"],
+      ["adr:\n  directory: handbook/missing\n", "not a directory"],
+    ];
+    for (const [config, message] of cases) {
+      const run = runDocs(repository({ ".config/jig.yaml": config }));
+      expectSpawnExit(run, 2);
+      expect(run.stderr).toContain(message);
+    }
+  });
+
+  for (const root of ["docs", "./docs", "docs/"])
+    test(`the last_updated check reports only documents under ${root}`, () => {
+      const repo = repository({
+        ".config/jig.yaml": `docs:\n  root: ${root}\n`,
+        "docs/a.md": doc({ last_updated: "2026-10-01" }),
+        "notes.md": doc({ last_updated: "2026-10-01" }),
+      });
+      git(repo, "checkout", "-qb", "work");
+      write(
+        repo,
+        "notes.md",
+        doc({ last_updated: "2026-10-01" }, "# Changed\n"),
+      );
+      write(
+        repo,
+        "docs/a.md",
+        doc({ last_updated: "2026-10-01" }, "# Changed\n"),
+      );
+      git(repo, "commit", "-qam", "edit");
+      const report = json(runDocs(repo, ["--json"], TODAY).stdout);
+      expect(report.checks).toContainEqual(
+        expect.objectContaining({ name: "last_updated", status: "findings" }),
+      );
+      expect(about(report, "last_updated")).toEqual([
+        expect.objectContaining({ file: "docs/a.md" }),
+      ]);
+    });
 
   test("a configured deferral check runs over every document", () => {
     const root = repository({

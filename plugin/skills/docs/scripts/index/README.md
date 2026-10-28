@@ -38,8 +38,9 @@ whose frontmatter is present but outside the [YAML subset](../frontmatter-check/
 naming the same file, or an argument other than `--check` exits 2.
 
 The script uses the shared [`../lib/docs.ts`](../lib/docs.ts) reader and
-[`../stamp/`](../stamp/). Run it from the skill's folder as it ships, with
-Bun, so both stay where it imports them.
+[`../stamp/`](../stamp/). Keep the skill's folder layout as it
+ships, so both stay where it imports them, and run the script with Bun, by its
+absolute path, from the root of the repository it checks.
 
 ## Determinism
 

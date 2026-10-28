@@ -96,8 +96,9 @@ codes: 0 every changed body has an advanced or current date (or the check was
 skipped), 1 at least one has not, 2 git could not resolve the range or read the
 repository.
 
-The script uses the shared [`../lib/docs.ts`](../lib/docs.ts) reader; run it
-from the skill's folder as it ships, with Bun. CI wiring and the hook are in [M4's mappings](https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/mappings.md).
+The script uses the shared [`../lib/docs.ts`](../lib/docs.ts) reader; keep the
+skill's folder layout as it ships and run the script with Bun, by its absolute
+path, from the root of the repository it checks. CI wiring and the hook are in [M4's mappings](https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/mappings.md).
 
 ## Generated documents
 

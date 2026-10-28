@@ -36,8 +36,9 @@ changed* — never reviewer names, an "addressed" ledger, or struck-through text
   (frontmatter-only by design; an in-prose marker couldn't be distinguished
   from documentation of the marker).
 
-The script uses the shared [`../lib/docs.ts`](../lib/docs.ts) reader; run it
-from the skill's folder as it ships, with Bun.
+The script uses the shared [`../lib/docs.ts`](../lib/docs.ts) reader; keep the
+skill's folder layout as it ships and run the script with Bun, by its absolute
+path, from the root of the repository it checks.
 
 ## Usage
 

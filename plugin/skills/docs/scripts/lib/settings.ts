@@ -4,7 +4,7 @@
  * frontmatter schema, and the age at which a draft counts as stale.
  */
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join, posix, relative, sep } from "node:path";
 import { readConfig, withSource } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 
@@ -44,6 +44,14 @@ export const isDir = (path: string) =>
 
 const posixPath = (path: string) => path.split(sep).join("/");
 
+/**
+ * A repository-relative path in the spelling git prints: `/` separators, no
+ * leading `./`, no trailing `/`, no `.` or `..` segments. The root is a
+ * prefix the pass matches git's paths against, so `./docs/` must read `docs`.
+ */
+export const canonicalPath = (path: string) =>
+  posix.normalize(posixPath(path)).replace(/\/+$/, "") || ".";
+
 /** A configured path: nonempty text naming something that exists. */
 function configuredPath(
   section: Record<string, unknown>,
@@ -56,7 +64,7 @@ function configuredPath(
     throw new SettingsError(`docs.${key} must be a path (nonempty text)`);
   if (!existsSync(join(repo, value)))
     throw new SettingsError(`docs.${key} names ${value}, which does not exist`);
-  return posixPath(value);
+  return canonicalPath(value);
 }
 
 function staleAfter(section: Record<string, unknown>): number {

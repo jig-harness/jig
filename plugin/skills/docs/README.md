@@ -22,7 +22,7 @@ Run it from the repository's root. It runs, in order:
 
 | Check | What it reports | Applies when |
 |-------|-----------------|--------------|
-| `frontmatter` | each document whose frontmatter breaks the schema, with a "did you mean" hint | the tree has a frontmatter schema |
+| `frontmatter` | each document whose frontmatter breaks the schema, with a "did you mean" hint; a document the branch adds is also held to the schema's `required_new` fields | the tree has a frontmatter schema |
 | `index` | a committed `INDEX.md` or `.orphans.md` that no longer matches the tree, and the orphan count as a warning | the tree has a generated `INDEX.md` |
 | `last_updated` | a document under the tree whose body the branch changed without advancing its date | a base branch resolves |
 | `scars` | review scars in approved documents | always |
@@ -41,7 +41,8 @@ frontmatter `type:` matches (a `type: runbook` page) counts as much as the
 conventional folder.
 
 Exit 0 means no error, 1 an error found, 2 a check that could not run (or an
-unusable configuration). Warnings and missing documents never fail it.
+unusable configuration), whatever the other checks found. Warnings and missing
+documents never fail it.
 
 ## Configuration
 
@@ -57,8 +58,9 @@ docs:
 ```
 
 The `last_updated` check compares with `--base <ref>`, else
-`repository.base_branch`, else the remote's default branch. `--type` overrides
-the detected project type.
+`repository.base_branch`, else the remote's default branch; a configured
+`repository.base_branch` that does not resolve stops the pass rather than
+falling back to another branch. `--type` overrides the detected project type.
 
 ## The gates
 

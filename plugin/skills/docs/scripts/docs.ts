@@ -14,8 +14,9 @@
  *   --type   the project type, when the one detected from the tree is wrong
  *
  * Exit codes: 0 no error found; 1 a check found an error; 2 a check could not
- * run, or the command line or configuration is unusable. Warnings (stale
- * drafts, orphaned documents) and missing documents never fail the run.
+ * run, or the command line or configuration is unusable, whatever the other
+ * checks found. Warnings (stale drafts, orphaned documents) and missing
+ * documents never fail the run.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -55,6 +56,9 @@ const GIT_TIMEOUT_SEC = 60;
 /** A command line the script cannot act on (exit 2). */
 export class UsageError extends Error {}
 
+/** A configured value the pass cannot act on (exit 2). */
+export class ConfigError extends Error {}
+
 interface Options {
   json: boolean;
   base?: string;
@@ -89,6 +93,19 @@ const skipped = (name: string, detail: string): CheckResult => ({
   findings: [],
 });
 
+const NO_TREE = "no docs tree (set docs.root)";
+
+const failed = (name: string, detail: string): CheckResult => ({
+  name,
+  status: "failed",
+  detail,
+  findings: [],
+});
+
+/** Why a git call that did not exit 0 failed. */
+const gitFailure = (result: { stderr: string; code: number }) =>
+  result.stderr.trim() || `exit ${result.code}`;
+
 async function resolves(repo: string, ref: string): Promise<boolean> {
   const result = await git(
     ["rev-parse", "--verify", "--quiet", "--end-of-options", `${ref}^{commit}`],
@@ -97,19 +114,27 @@ async function resolves(repo: string, ref: string): Promise<boolean> {
   return result.code === 0;
 }
 
-/** The base the last_updated check compares with, or null when none resolves. */
+/**
+ * The base the last_updated check compares with, or null when none resolves.
+ * A configured `repository.base_branch` names the integration branch, so one
+ * that does not resolve is refused rather than replaced by another branch.
+ */
 async function baseRef(repo: string, given?: string): Promise<string | null> {
   if (given) return given;
   const configured = (readConfig().repository as Record<string, unknown>)
     ?.base_branch;
+  if (typeof configured === "string" && configured) {
+    for (const ref of [`origin/${configured}`, configured])
+      if (await resolves(repo, ref)) return ref;
+    throw new ConfigError(
+      `repository.base_branch is ${configured}, but neither origin/${configured} nor ${configured} resolves to a commit; fetch it, or pass --base <ref>`,
+    );
+  }
   const remoteHead = await git(
     ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
     { cwd: repo, timeoutSec: GIT_TIMEOUT_SEC },
   );
   const candidates = [
-    ...(typeof configured === "string" && configured
-      ? [`origin/${configured}`, configured]
-      : []),
     ...(remoteHead.code === 0 ? [remoteHead.stdout.trim()] : []),
     "origin/main",
     "main",
@@ -120,51 +145,95 @@ async function baseRef(repo: string, given?: string): Promise<string | null> {
   return null;
 }
 
-/** The repository's tracked files; empty when git cannot list them. */
-async function trackedFiles(repo: string): Promise<string[]> {
+/** Paths git listed, or why it could not list them. */
+type Listing = { paths: string[] } | { failed: string };
+
+/**
+ * The repository's tracked files. A failed listing is reported, not read as
+ * an empty tree: no files would detect no project type and plan nothing.
+ */
+async function trackedFiles(repo: string): Promise<Listing> {
   const result = await git(["ls-files", "-z"], {
     cwd: repo,
     timeoutSec: GIT_TIMEOUT_SEC,
   });
-  return result.code === 0 ? result.stdout.split("\0").filter(Boolean) : [];
+  return result.code === 0
+    ? { paths: result.stdout.split("\0").filter(Boolean) }
+    : { failed: `git ls-files failed: ${gitFailure(result)}` };
 }
 
-function decisionDir(repo: string): string | null {
-  try {
-    return decisionDirectory(repo, adrConfig().directory);
-  } catch {
-    return decisionDirectory(repo);
-  }
+/**
+ * The documents the branch adds under the docs tree, which the frontmatter
+ * check holds to the schema's `required_new` fields. None without a base.
+ */
+async function addedDocs(
+  repo: string,
+  root: string,
+  base: string | null,
+): Promise<Listing> {
+  if (base === null) return { paths: [] };
+  const result = await git(
+    [
+      "diff",
+      "--name-only",
+      "-z",
+      "--no-renames",
+      "--diff-filter=A",
+      `${base}...HEAD`,
+      "--",
+      root,
+    ],
+    { cwd: repo, timeoutSec: GIT_TIMEOUT_SEC },
+  );
+  if (result.code !== 0)
+    return {
+      failed: `the documents added since ${base} could not be listed: ${gitFailure(result)}`,
+    };
+  return {
+    paths: result.stdout
+      .split("\0")
+      .filter((path) => path.endsWith(".md") && existsSync(join(repo, path))),
+  };
 }
 
-/** The five gates, or why each does not apply to this tree. */
+/** The frontmatter gate, or why it does not apply or cannot run. */
+function frontmatterGate(
+  settings: DocsSettings,
+  added: Listing,
+): Gate | CheckResult {
+  const { root, schema } = settings;
+  if (root === null) return skipped("frontmatter", NO_TREE);
+  if (schema === null)
+    return skipped(
+      "frontmatter",
+      `no frontmatter schema under ${root}/ (set docs.schema)`,
+    );
+  if ("failed" in added) return failed("frontmatter", added.failed);
+  return {
+    name: "frontmatter",
+    script: "frontmatter-check/frontmatter-check.ts",
+    args: [],
+    env: { DOCS_DIR: root, SCHEMA: schema, NEW_DOCS: added.paths.join("\n") },
+    read: readFrontmatterOutput,
+  };
+}
+
+/** The gates, or why each does not apply to this tree. */
 function gates(
   repo: string,
   settings: DocsSettings,
   base: string | null,
+  added: Listing,
 ): (Gate | CheckResult)[] {
-  const { root, schema } = settings;
-  const noTree = "no docs tree (set docs.root)";
+  const { root } = settings;
+  const noTree = NO_TREE;
   const index = root === null ? "" : join(repo, root, "INDEX.md");
   const generated =
     index !== "" &&
     existsSync(index) &&
     isGeneratedIndex(readFileSync(index, "utf8"));
   return [
-    root === null
-      ? skipped("frontmatter", noTree)
-      : schema === null
-        ? skipped(
-            "frontmatter",
-            `no frontmatter schema under ${root}/ (set docs.schema)`,
-          )
-        : {
-            name: "frontmatter",
-            script: "frontmatter-check/frontmatter-check.ts",
-            args: [],
-            env: { DOCS_DIR: root, SCHEMA: schema },
-            read: readFrontmatterOutput,
-          },
+    frontmatterGate(settings, added),
     generated && root !== null
       ? {
           name: "index",
@@ -210,27 +279,46 @@ function gates(
   ];
 }
 
+/** The project type, and the failed check when the files could not be listed. */
+async function projectType(
+  repo: string,
+  given?: ProjectType,
+): Promise<[Detected, CheckResult | null]> {
+  if (given) return [{ type: given, evidence: "--type" }, null];
+  const tracked = await trackedFiles(repo);
+  if ("failed" in tracked)
+    return [
+      { type: "unknown", evidence: tracked.failed },
+      failed("project type", tracked.failed),
+    ];
+  return [detectProjectType(repo, tracked.paths), null];
+}
+
 export async function runDocs(argv: string[]): Promise<number> {
   const options = parseArgs(argv);
   const repo = consumerRoot();
   const settings = loadDocsSettings(repo);
+  const decisions = decisionDirectory(repo, adrConfig().directory);
   const on = today(process.env);
   const base = await baseRef(repo, options.base);
+  const added: Listing =
+    settings.root === null
+      ? { paths: [] }
+      : await addedDocs(repo, settings.root, base);
   const checks: CheckResult[] = [];
-  for (const gate of gates(repo, settings, base))
+  for (const gate of gates(repo, settings, base, added))
     checks.push("script" in gate ? await runGate(gate, repo) : gate);
   checks.push(
     settings.root === null
-      ? skipped("stale drafts", "no docs tree (set docs.root)")
+      ? skipped("stale drafts", NO_TREE)
       : summarize(
           "stale drafts",
           staleDrafts(repo, settings.root, settings.staleAfterDays, on),
           `no draft older than ${settings.staleAfterDays} days`,
         ),
   );
-  const project: Detected = options.type
-    ? { type: options.type, evidence: "--type" }
-    : detectProjectType(repo, await trackedFiles(repo));
+  const [project, census] = await projectType(repo, options.type);
+  if (census) checks.push(census);
   const report: Report = {
     root: settings.root,
     schema: settings.schema,
@@ -243,7 +331,7 @@ export async function runDocs(argv: string[]): Promise<number> {
       settings.root,
       settings.schema,
       project.type,
-      decisionDir(repo),
+      decisions,
     ),
   };
   process.stdout.write(options.json ? renderJson(report) : renderText(report));

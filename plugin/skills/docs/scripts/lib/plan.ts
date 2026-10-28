@@ -71,7 +71,9 @@ function libraryManifest(repo: string, tracked: Set<string>): string | null {
     return "package.json (a published package)";
   if (tracked.has("src/lib.rs") && !tracked.has("src/main.rs"))
     return "src/lib.rs (a Rust library crate)";
-  const pyproject = text(repo, "pyproject.toml");
+  const pyproject = tracked.has("pyproject.toml")
+    ? text(repo, "pyproject.toml")
+    : "";
   if (
     /^\[project\]/m.test(pyproject) &&
     !/^\[project\.scripts\]/m.test(pyproject)
@@ -205,7 +207,7 @@ export function expectedDocuments(
       id: "decision-records",
       what: "decision records (architecture decision records), second in the authority order",
       suggested: `${docs}/adr/`,
-      found: decisionDir,
+      found: decisionDir ?? tree.types.get("adr") ?? null,
     },
     {
       id: "raw-layer",
@@ -249,11 +251,22 @@ export function expectedDocuments(
   return expected;
 }
 
-/** The decision-records folder: the configured one, else the first candidate that exists. */
+/** A configured path that names no folder; the configuration is unusable. */
+export class PlanError extends Error {}
+
+/**
+ * The decision-records folder: the configured one, which must be a folder,
+ * else the first candidate that exists.
+ */
 export function decisionDirectory(
   repo: string,
   configured?: string,
 ): string | null {
-  if (configured) return configured;
-  return DECISION_DIRS.find((dir) => isDir(join(repo, dir))) ?? null;
+  if (configured === undefined)
+    return DECISION_DIRS.find((dir) => isDir(join(repo, dir))) ?? null;
+  if (!isDir(join(repo, configured)))
+    throw new PlanError(
+      `adr.directory is ${configured}, which is not a directory`,
+    );
+  return configured;
 }

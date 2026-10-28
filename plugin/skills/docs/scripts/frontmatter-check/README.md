@@ -42,7 +42,8 @@ holds the file at that path to the generated content. The orphan report it
 writes beside the index has frontmatter and is checked like any document.
 
 The script uses the shared [`../lib/docs.ts`](../lib/docs.ts) reader for
-documents; run it from the skill's folder as it ships, with Bun. The schema is
+documents; keep the skill's folder layout as it ships and run the script with
+Bun, by its absolute path, from the root of the repository it checks. The schema is
 a maintainer's file, so it is parsed as full YAML with the js-yaml build the
 plugin vendors in `shared/vendor/`: a copy of the gate keeps the plugin's
 layout, and the checker exits 2 when the parser does not load. Every

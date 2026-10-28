@@ -52,8 +52,10 @@ repository's Jig configuration only where detection is wrong:
   documents against M4's template or rules of your own.
 - **Stale drafts**: a `status: draft` document whose `last_updated` is more
   than `docs.stale_after_days` days old (180).
-- **The base** for the `last_updated` check: `--base <ref>`, else
-  `repository.base_branch`, else the remote's default branch.
+- **The base** for the `last_updated` check and for the documents the branch
+  adds (held to the schema's `required_new` fields): `--base <ref>`, else
+  `repository.base_branch`, which must resolve, else the remote's default
+  branch.
 - **The project type**: `service` (a deploy file such as a `Dockerfile`, a
   Compose file or a Helm chart), `library` (a published package), or
   `application` (any other build manifest), from the tracked files.
@@ -68,8 +70,8 @@ when it is missing. Without `--json` the same report is printed as text,
 findings grouped by file.
 
 Exit 0: no error. Exit 1: a check found an error. Exit 2: a check could not
-run, or the configuration or command line is unusable; report the message and
-stop. Stale drafts, orphaned documents and missing documents are warnings and
+run, or the configuration or command line is unusable, whatever the other
+checks found; report the message and stop. Stale drafts, orphaned documents and missing documents are warnings and
 never fail the pass.
 
 ## 2. Act on it
@@ -81,9 +83,10 @@ Work in this order, and tell the user what you changed and what you left:
 2. **Frontmatter errors**: fix each value against the schema. Take a "did you
    mean" hint when it fits; never add a value to the schema to make an error
    go away unless the user asks.
-3. **Index drift**: regenerate, never edit by hand:
-   `bun "${CLAUDE_SKILL_DIR}/scripts/index/generate-index.ts"` (it reads
-   `DOCS_DIR`, default `docs`). Stage `INDEX.md` and `.orphans.md` together.
+3. **Index drift**: regenerate, never edit by hand, with `DOCS_DIR` set to the
+   report's `root` (the generator reads it, and falls back to `docs`):
+   `DOCS_DIR=<root> bun "${CLAUDE_SKILL_DIR}/scripts/index/generate-index.ts"`.
+   Stage `INDEX.md` and `.orphans.md` together.
 4. **`last_updated` not advanced**: set it to today's date in Coordinated
    Universal Time on each document whose body changed.
 5. **Scars**: hand the pages to `/jig:descar`; do not rewrite them here.

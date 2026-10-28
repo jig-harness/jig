@@ -269,7 +269,8 @@ would turn the check off) is exit 2, never a pass.
 
 The self-tests are in the skill's `__tests__/`, which a plugin install leaves
 out. The scripts import the shared reader [`../lib/docs.ts`](../lib/docs.ts)
-and use Bun's built-in YAML reader; run them from the skill's folder as it
-ships, with Bun. The configuration and the workflow are templates:
+and use Bun's built-in YAML reader; keep the skill's
+folder layout as it ships and run them with Bun, by their absolute paths, from
+the root of the repository they check. The configuration and the workflow are templates:
 [`deferral-references.yaml`](https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/templates/deferral-references.yaml) and
 [`deferral-liveness.yml`](https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/templates/deferral-liveness.yml).

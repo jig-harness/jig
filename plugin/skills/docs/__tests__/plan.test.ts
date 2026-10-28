@@ -5,8 +5,16 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { detectProjectType, expectedDocuments } from "../scripts/lib/plan.ts";
-import { findSchema, parseDocsSettings } from "../scripts/lib/settings.ts";
+import {
+  decisionDirectory,
+  detectProjectType,
+  expectedDocuments,
+} from "../scripts/lib/plan.ts";
+import {
+  canonicalPath,
+  findSchema,
+  parseDocsSettings,
+} from "../scripts/lib/settings.ts";
 import { temporary, write } from "./helpers.ts";
 
 /** A folder holding `files`; the paths are what git would list. */
@@ -81,6 +89,14 @@ describe("the project type", () => {
         evidence,
       } as never);
     });
+
+  test("an untracked pyproject.toml decides nothing", () => {
+    const [root] = tree({ "pyproject.toml": "[project]\nname = 'x'\n" });
+    expect(detectProjectType(root, [])).toEqual({
+      type: "unknown",
+      evidence: "no build manifest or deploy file",
+    });
+  });
 });
 
 describe("the expected documents", () => {
@@ -98,6 +114,23 @@ describe("the expected documents", () => {
     expect(found.runbooks).toBe("docs/ops/restart.md");
     expect(found["activity-log"]).toBe("docs/log.md");
     expect(found.index).toBeNull();
+  });
+
+  test("a type: adr document stands in for the decision-records folder", () => {
+    const [root] = tree({ "docs/design/cache.md": "---\ntype: adr\n---\n" });
+    const records = expectedDocuments(root, "docs", null, "unknown", null).find(
+      (e) => e.id === "decision-records",
+    );
+    expect(records?.found).toBe("docs/design/cache.md");
+  });
+
+  test("a configured decision-records folder must exist", () => {
+    const [root] = tree({ "docs/adr/ADR-0001-x.md": "" });
+    expect(decisionDirectory(root, "docs/adr")).toBe("docs/adr");
+    expect(() => decisionDirectory(root, "handbook/missing")).toThrow(
+      "adr.directory is handbook/missing, which is not a directory",
+    );
+    expect(decisionDirectory(root)).toBe("docs/adr");
   });
 
   test("each type adds its own pages to the common ones", () => {
@@ -128,6 +161,15 @@ describe("the detected settings", () => {
       staleAfterDays: 180,
       detected: { root: true, schema: true },
     });
+  });
+
+  test("a configured path is spelled the way git prints it", () => {
+    for (const spelling of ["docs", "./docs", "docs/", "./docs//", "docs/./"])
+      expect(canonicalPath(spelling)).toBe("docs");
+    expect(canonicalPath("./")).toBe(".");
+    const root = temporary();
+    mkdirSync(join(root, "docs"));
+    expect(parseDocsSettings({ root: "./docs/" }, root).root).toBe("docs");
   });
 
   test("a threshold that is not a whole number of days is refused", () => {

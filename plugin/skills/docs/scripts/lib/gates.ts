@@ -170,6 +170,8 @@ function whyFailed(result: RunResult): string {
   if (result.spawnFailed) return "the gate could not start";
   if (result.timedOut)
     return `the gate was stopped after ${GATE_TIMEOUT_SEC} seconds`;
+  if (result.bufferExceeded)
+    return "the gate was stopped for printing more than its output buffer holds, so the documents after that point were not checked";
   const lines = `${result.stderr}\n${result.stdout}`
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -178,14 +180,22 @@ function whyFailed(result: RunResult): string {
   return (errors.length ? errors : lines.slice(-3)).join(" ") || "no output";
 }
 
-/** Run one gate from `repo` and read its result. */
-export async function runGate(gate: Gate, repo: string): Promise<CheckResult> {
+/** Run one gate from `repo` and read its result; `maxBufferBytes` is for tests. */
+export async function runGate(
+  gate: Gate,
+  repo: string,
+  maxBufferBytes?: number,
+): Promise<CheckResult> {
   const result = await run(tsArgv(join(SCRIPTS, gate.script), gate.args), {
     cwd: repo,
     env: { ...process.env, ...gate.env },
     timeoutSec: GATE_TIMEOUT_SEC,
+    ...(maxBufferBytes === undefined ? {} : { maxBufferBytes }),
   });
-  if (result.code !== 0 && result.code !== 1)
+  // A stopped gate's code says nothing about the documents it never reached.
+  const stopped =
+    result.spawnFailed || result.timedOut || result.bufferExceeded;
+  if (stopped || (result.code !== 0 && result.code !== 1))
     return {
       name: gate.name,
       status: "failed",
@@ -201,14 +211,16 @@ export async function runGate(gate: Gate, repo: string): Promise<CheckResult> {
       detail: `the gate failed and printed no finding this skill can read: ${whyFailed(result)}`,
       findings,
     };
-  const kept = gate.under
-    ? findings.filter((f) => f.file.startsWith(`${gate.under}/`))
-    : findings;
+  const { under } = gate;
+  const kept =
+    under && under !== "."
+      ? findings.filter((f) => f.file.startsWith(`${under}/`))
+      : findings;
   const lastLine = result.stdout.trim().split(/\r?\n/).at(-1) ?? "";
   return summarize(
     gate.name,
     kept,
-    kept.length < findings.length ? `nothing under ${gate.under}/` : lastLine,
+    kept.length < findings.length ? `nothing under ${under}/` : lastLine,
   );
 }
 
