@@ -258,6 +258,20 @@ describe("what the repository configures or lacks", () => {
       ]);
     });
 
+  test("a page moved within the tree is not held to required_new", () => {
+    const repo = repository({
+      "docs/.frontmatter-schema.yaml": SCHEMA,
+      "docs/old-name.md": doc({ status: "approved" }),
+    });
+    git(repo, "checkout", "-qb", "work");
+    git(repo, "mv", "docs/old-name.md", "docs/new-name.md");
+    git(repo, "commit", "-qm", "move");
+    git(repo, "config", "diff.renames", "false");
+    const report = json(runDocs(repo, ["--json"], TODAY).stdout);
+    expect(status(report, "frontmatter")).toBe("ok");
+    expect(about(report, "frontmatter")).toEqual([]);
+  });
+
   test("a configured deferral check runs over every document", () => {
     const root = repository({
       ".config/deferral-references.yaml":

@@ -165,6 +165,8 @@ async function trackedFiles(repo: string): Promise<Listing> {
 /**
  * The documents the branch adds under the docs tree, which the frontmatter
  * check holds to the schema's `required_new` fields. None without a base.
+ * Rename detection is on, whatever the user's `diff.renames`: a page moved
+ * within the tree is not a new page.
  */
 async function addedDocs(
   repo: string,
@@ -177,7 +179,7 @@ async function addedDocs(
       "diff",
       "--name-only",
       "-z",
-      "--no-renames",
+      "-M",
       "--diff-filter=A",
       `${base}...HEAD`,
       "--",

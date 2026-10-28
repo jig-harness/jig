@@ -463,7 +463,7 @@ fields:
   adr.directory:
     type: path
     exists: required
-    read_by: [adr, review, decide, explain]
+    read_by: [adr, review, decide, explain, docs]
   adr.rules_file:
     type: path
     exists: required

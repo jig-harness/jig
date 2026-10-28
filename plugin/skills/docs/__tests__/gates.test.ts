@@ -23,3 +23,20 @@ describe("a gate stopped for its output", () => {
     expect(result.detail).toContain("output buffer");
   });
 });
+
+describe("a gate killed by a signal", () => {
+  test("is failed, not a scan with findings", async () => {
+    const result = await runGate(
+      {
+        name: "frontmatter",
+        script: "../__tests__/fixtures/gates/killed-gate.ts",
+        args: [],
+        env: {},
+        read: readFrontmatterOutput,
+      },
+      temporary(),
+    );
+    expect(result.status).toBe("failed");
+    expect(result.detail).toContain("SIGKILL");
+  });
+});

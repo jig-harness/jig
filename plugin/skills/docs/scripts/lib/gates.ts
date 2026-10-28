@@ -172,6 +172,8 @@ function whyFailed(result: RunResult): string {
     return `the gate was stopped after ${GATE_TIMEOUT_SEC} seconds`;
   if (result.bufferExceeded)
     return "the gate was stopped for printing more than its output buffer holds, so the documents after that point were not checked";
+  if (result.signal)
+    return `the gate was ended by ${result.signal}, so the documents after that point were not checked`;
   const lines = `${result.stderr}\n${result.stdout}`
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -192,9 +194,13 @@ export async function runGate(
     timeoutSec: GATE_TIMEOUT_SEC,
     ...(maxBufferBytes === undefined ? {} : { maxBufferBytes }),
   });
-  // A stopped gate's code says nothing about the documents it never reached.
+  // A gate that did not exit on its own says nothing, by its code or its
+  // output, about the documents it never reached.
   const stopped =
-    result.spawnFailed || result.timedOut || result.bufferExceeded;
+    result.spawnFailed ||
+    result.timedOut ||
+    result.bufferExceeded ||
+    result.signal !== undefined;
   if (stopped || (result.code !== 0 && result.code !== 1))
     return {
       name: gate.name,
