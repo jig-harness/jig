@@ -103,6 +103,8 @@ it("notes a conflict hotspot from a copy, reading the cause list by sibling path
         },
       ],
       hotspots: ["CHANGELOG.md"],
+      skipped: [],
+      confidence: null,
     }),
   );
   const noted = repo.script(

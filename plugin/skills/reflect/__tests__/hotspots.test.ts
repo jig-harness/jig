@@ -106,10 +106,10 @@ function twoHotspots(): Repo {
 
 let reports = 0;
 /** The history report's JSON, written to a file outside the repository. */
-function historyReport(repo: Repo): string {
+function historyReport(repo: Repo, range: string[] = ["--all"]): string {
   const file = join(m.dir, `merge-conflicts-${++reports}.json`);
   const out = succeeded(
-    repo.script("history.ts", ["--all", "--json"], undefined, RESOLVE),
+    repo.script("history.ts", [...range, "--json"], undefined, RESOLVE),
     "history.ts",
   );
   writeFileSync(file, out);
@@ -194,6 +194,11 @@ describe("reflect.ts hotspots", () => {
     const [notes] = stored;
     expect(notes?.title).toBe("notes.md conflicted in 2 merges (append)");
     expect(notes?.description).toContain("Both sides added lines");
+    // What the measurement could not see travels with the finding.
+    expect(notes?.description).toMatch(/hand-check(ed)? (of|found) the append/);
+    expect(notes?.description).toContain(
+      "only the merge commits this clone's refs reach",
+    );
     expect(notes?.suggested_fix).toContain("one file per entry");
     expect(notes?.session.skills).toContain("resolve-conflicts");
   });
@@ -262,16 +267,125 @@ describe("reflect.ts hotspots", () => {
       "stored",
       "stored",
     ]);
-    // A range that starts after the fix: the cause recurred.
-    const later = JSON.parse(readFileSync(file, "utf8")) as {
+    // Two more append conflicts, committed an hour after the fix was recorded.
+    const later = Math.floor(Date.now() / 1000) + 3600;
+    m.env.GIT_COMMITTER_DATE = `@${later} +0000`;
+    m.env.GIT_AUTHOR_DATE = `@${later} +0000`;
+    appendMerge(repo);
+    appendMerge(repo);
+    delete m.env.GIT_COMMITTER_DATE;
+    delete m.env.GIT_AUTHOR_DATE;
+    // The replay of a range starting after the fix holds only those: the cause recurred.
+    const since = new Date((later - 60) * 1000).toISOString();
+    const recurred = hotspots(
+      repo,
+      historyReport(repo, ["--since", since]),
+    ).hotspots;
+    expect(
+      recurred.map(({ path, merges, action }) => ({ path, merges, action })),
+    ).toEqual([{ path: "notes.md", merges: 2, action: "noted" }]);
+    expect(recurred[0]?.id).not.toBe(notes.id);
+  });
+
+  it("does not take a range starting at the very moment of the fix as after it", () => {
+    m.userConfig();
+    const repo = twoHotspots();
+    const file = historyReport(repo);
+    hotspots(repo, file);
+    contribute(repo);
+    const notes = storedFindings(repo).find(
+      (finding) => finding.target.name === "notes.md",
+    ) as FindingEvent;
+    succeeded(
+      repo.review(
+        ["record"],
+        `${JSON.stringify({ finding: notes.id, decision: "implemented", reason: "entries moved to one file each", commit: "a1b2c3d" })}\n`,
+      ),
+      "review.ts record",
+    );
+    const decision = succeeded(
+      repo.script("store.ts", ["list"]),
+      "store.ts list",
+    )
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => JSON.parse(line) as { type: string; at: string })
+      .find((event) => event.type === "decision");
+    const at = decision?.at as string;
+    // A merge at that same moment falls inside the range and may predate the fix.
+    const boundary = JSON.parse(readFileSync(file, "utf8")) as {
       range: { since: string | null };
     };
-    later.range.since = new Date(Date.now() + 60_000).toISOString();
-    const after = join(m.dir, "after-the-fix.json");
-    writeFileSync(after, JSON.stringify(later));
-    const recurred = hotspots(repo, after).hotspots;
-    expect(recurred.map((entry) => entry.action)).toEqual(["noted", "stored"]);
-    expect(recurred[0]?.id).not.toBe(notes.id);
+    boundary.range.since = at;
+    const same = join(m.dir, "at-the-fix.json");
+    writeFileSync(same, JSON.stringify(boundary));
+    expect(hotspots(repo, same).hotspots.map((entry) => entry.action)).toEqual([
+      "stored",
+      "stored",
+    ]);
+  });
+
+  it("refuses a report whose values the history report could not have written", () => {
+    m.userConfig();
+    const repo = twoHotspots();
+    const real = JSON.parse(readFileSync(historyReport(repo), "utf8")) as {
+      hotspotMinMerges: number;
+      paths: Array<{ path: string; merges: number; lastConflict: string }>;
+    };
+    const faults: Array<[string, (report: typeof real) => void]> = [
+      [
+        "below the threshold",
+        (report) => {
+          report.hotspotMinMerges = 3;
+        },
+      ],
+      [
+        "not a date",
+        (report) => {
+          (report.paths[0] as { lastConflict: string }).lastConflict =
+            "yesterday";
+        },
+      ],
+    ];
+    for (const [problem, damage] of faults) {
+      const report = structuredClone(real);
+      damage(report);
+      const file = join(m.dir, "damaged.json");
+      writeFileSync(file, JSON.stringify(report));
+      const r = repo.script("reflect.ts", ["hotspots", file]);
+      expectSpawnExit(
+        { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
+        2,
+        `hotspots on a report ${problem}`,
+      );
+    }
+    expect(existsSync(join(repo.root, ".git", "jig"))).toBe(false);
+  });
+
+  it("notes nothing when the store is unavailable (exit 3) or answers with something else (exit 1)", () => {
+    const repo = twoHotspots();
+    const file = historyReport(repo);
+    const stores: Array<[number, string]> = [
+      [3, 'console.error("the store is down"); process.exit(3);\n'],
+      [1, 'console.log("not an event");\n'],
+    ];
+    for (const [code, body] of stores) {
+      const command = join(m.dir, `store-${code}.ts`);
+      writeFileSync(command, body);
+      m.userConfig(
+        `reflection:\n  store: command\n  command: [${JSON.stringify(process.execPath)}, ${JSON.stringify(command)}]\n`,
+      );
+      const r = repo.script("reflect.ts", ["hotspots", file]);
+      expectSpawnExit(
+        { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
+        code,
+        "hotspots",
+      );
+      expect(r.stderr).toContain("nothing was noted");
+      expect(
+        succeeded(repo.script("journal.ts", ["unsent"]), "journal.ts unsent"),
+      ).not.toContain("conflicted in");
+    }
   });
 
   it("says reflection is off and writes nothing without a reflection section", () => {

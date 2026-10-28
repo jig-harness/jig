@@ -261,8 +261,9 @@ decision about the work itself. Record the hotspot's cause, remedy or keep
 decision, reason and revisit condition in the repository's learning loop.
 With Jig's reflection on, `bun <skill-dir>/../reflect/scripts/reflect.ts hotspots <scratch>/merge-conflicts.json`
 notes each hotspot as a reflection finding whose class is its cause; the
-reflection's escalation and review then record the remedy, or a dismissal
-with its reason as the keep decision.
+reflection's escalation and review then record the remedy, or a keep
+decision: a dismissal whose reason says the cause is kept on purpose and
+names the condition for revisiting it.
 Compare like windows after the change rather than treating an empty or
 partial report as proof that the cause is gone.
 

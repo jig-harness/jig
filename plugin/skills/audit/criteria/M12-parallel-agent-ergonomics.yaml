@@ -277,7 +277,7 @@ criteria:
     observe:
       - "dated reports rank conflicted paths with causes and state the time window, recurrence threshold and coverage limits"
       - "each reported hotspot links to a change that removes its cause, work to make that change, or a recorded keep decision with its reason and revisit condition"
-      - "a hotspot entered into the reflection store as a finding (reflect's hotspots operation) counts as that work once escalated to a tracker issue or approved, and as a keep decision once dismissed with its reason; an open finding alone records neither"
+      - "a hotspot entered into the reflection store as a finding (reflect's hotspots operation) counts as that work once escalated to a tracker issue or approved, and as a keep decision only when its dismissal's reason says the cause is kept on purpose and names a condition for revisiting it; a dismissal as not actionable or already fixed, or an open finding, records neither"
       - "reports after a remedy compare like windows to check whether its cause stopped recurring"
       - "the audit's own replay supplies current conflict evidence but does not establish that the repository already measures or acts on hotspots"
       - "expected-absent only where neither people nor agents work in parallel; an empty history or a clone with no live events does not establish this"

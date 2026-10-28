@@ -36,7 +36,7 @@ export const SHAPES: Readonly<Record<Cause, string>> = {
     "The sides differed only in a release version the release step writes, or in a date stamp.",
   sequence: "Both sides added an entry with the same next ordinal.",
   tally:
-    "Only a number differed, and each side's number counted the lines that side added to the file.",
+    "Only a number differed, and on each side it moved by as many lines as that side added: to the whole file (a count of its lines or entries), or above the line the number names (a stored line number).",
   append: "Both sides added lines at the same place.",
   "packed-list": "Both sides added items to the same one-line list.",
   adjacent: "The lines each side changed touched without overlapping.",

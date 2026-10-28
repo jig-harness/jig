@@ -21,6 +21,7 @@ import {
   SHAPES,
 } from "../../../resolve-conflicts/scripts/lib/causes.ts";
 import {
+  type Accuracy,
   type PathSummary,
   type Report,
   SCHEMA,
@@ -43,6 +44,10 @@ export interface HotspotReport {
   shallow: boolean;
   totalMerges: number;
   hotspots: PathSummary[];
+  /** How many merges the replay skipped, by reason. */
+  skipped: Record<string, number>;
+  /** Each cause's hand-checked accuracy; null when no hand-check was recorded. */
+  accuracy: Partial<Record<Cause, Accuracy>> | null;
 }
 
 function badReport(file: string, problem: string): Error {
@@ -59,8 +64,52 @@ function isText(value: unknown): boolean {
   return typeof value === "string" && value.trim() !== "";
 }
 
+function isWhole(value: unknown): boolean {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
 function isCount(value: unknown): boolean {
-  return Number.isSafeInteger(value) && (value as number) >= 1;
+  return isWhole(value) && (value as number) >= 1;
+}
+
+function isDate(value: unknown): boolean {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+
+/** Regions per cause: each key a cause, each value a count of regions. */
+function isCauseCounts(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Object.entries(value).every(([key, n]) => isCause(key) && isWhole(n))
+  );
+}
+
+function isAccuracy(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isWhole(value.checked) &&
+    isWhole(value.correct) &&
+    (value.correct as number) <= (value.checked as number)
+  );
+}
+
+/** The hand-check: null, or each cause's accuracy. */
+function isConfidence(value: unknown): boolean {
+  return (
+    value === null ||
+    (isRecord(value) &&
+      isRecord(value.causes) &&
+      Object.entries(value.causes).every(
+        ([key, accuracy]) => isCause(key) && isAccuracy(accuracy),
+      ))
+  );
+}
+
+function isSkipped(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every((entry) => isRecord(entry) && isText(entry.reason))
+  );
 }
 
 /** A field, the check its value must pass, and what to say when it fails. */
@@ -70,25 +119,30 @@ const REPORT_CHECKS: readonly Check[] = [
   ["schema", (value) => value === SCHEMA, `its schema is not ${SCHEMA}`],
   [
     "range",
-    (value) => isRecord(value) && typeof value.label === "string",
-    "range is missing",
+    (value) =>
+      isRecord(value) &&
+      typeof value.label === "string" &&
+      (value.since === null || isDate(value.since)),
+    "range is missing, or its since is not a date",
   ],
   [
     "totals",
-    (value) => isRecord(value) && Number.isSafeInteger(value.merges),
-    "totals is missing",
+    (value) => isRecord(value) && isWhole(value.merges),
+    "totals.merges is not a count",
   ],
   ["hotspotMinMerges", isCount, "hotspotMinMerges is missing"],
   ["paths", Array.isArray, "paths is missing"],
   ["hotspots", Array.isArray, "hotspots is missing"],
+  ["skipped", isSkipped, "skipped is not a list of skipped merges"],
+  ["confidence", isConfidence, "confidence is not a hand-check"],
 ];
 
 const PATH_CHECKS: readonly Check[] = [
   ["merges", isCount, "merges is not a count"],
   ["topCause", isCause, "topCause is not a cause"],
   ["remedy", isText, "remedy is missing"],
-  ["causes", isRecord, "causes is missing"],
-  ["lastConflict", isText, "lastConflict is missing"],
+  ["causes", isCauseCounts, "causes is not a count of regions per cause"],
+  ["lastConflict", isDate, "lastConflict is not a date"],
 ];
 
 function firstProblem(
@@ -135,11 +189,11 @@ export function readHotspotReport(file: string): HotspotReport {
   if (problem !== null) throw badReport(file, problem);
   const report = value as unknown as Report;
   const byPath = new Map(report.paths.map((entry) => [entry.path, entry]));
+  const skipped: Record<string, number> = {};
+  for (const { reason } of report.skipped)
+    skipped[reason] = (skipped[reason] ?? 0) + 1;
   return {
-    range: {
-      since: typeof report.range.since === "string" ? report.range.since : null,
-      label: report.range.label,
-    },
+    range: { since: report.range.since, label: report.range.label },
     hotspotMinMerges: report.hotspotMinMerges,
     shallow: report.shallow === true,
     totalMerges: report.totals.merges,
@@ -147,9 +201,47 @@ export function readHotspotReport(file: string): HotspotReport {
       const entry = typeof path === "string" ? byPath.get(path) : undefined;
       if (entry === undefined)
         throw badReport(file, `hotspot ${String(path)} has no path entry`);
+      // A hotspot is a path that conflicted in at least the threshold's merges.
+      if (
+        entry.merges < report.hotspotMinMerges ||
+        entry.merges > report.totals.merges
+      )
+        throw badReport(
+          file,
+          `hotspot ${entry.path} conflicted in ${entry.merges} merges, outside ${report.hotspotMinMerges} to ${report.totals.merges}`,
+        );
       return entry;
     }),
+    skipped,
+    accuracy: report.confidence?.causes ?? null,
   };
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+/** What the measurement could not see, for the finding to carry. */
+function coverage(report: HotspotReport, cause: Cause): string[] {
+  const skipped = Object.entries(report.skipped);
+  const total = skipped.reduce((sum, [, n]) => sum + n, 0);
+  const accuracy = report.accuracy?.[cause];
+  return [
+    ...(report.shallow
+      ? [
+          "The clone was shallow, so merges its boundary cuts were skipped and the count may be low.",
+        ]
+      : []),
+    ...(total > 0
+      ? [
+          `${plural(total, "merge")} in the range could not be replayed (${skipped.map(([reason, n]) => `${reason} ${n}`).join(", ")}), so the count may be low.`,
+        ]
+      : []),
+    accuracy === undefined
+      ? `No hand-check of the ${cause} cause is recorded.`
+      : `A hand-check found the ${cause} cause right in ${accuracy.correct} of ${accuracy.checked} regions.`,
+    "The report counts only the merge commits this clone's refs reach; its limits section says what else it cannot see.",
+  ];
 }
 
 function causeCounts(summary: PathSummary): string {
@@ -164,17 +256,13 @@ export function hotspotNote(
   summary: PathSummary,
 ): FindingNote {
   const cause = summary.topCause;
-  const merges = `${summary.merges} merge${summary.merges === 1 ? "" : "s"}`;
+  const merges = plural(summary.merges, "merge");
   const description = [
     `${summary.path} conflicted in ${merges} of the ${report.totalMerges} replayed over ${report.range.label}, most recently on ${summary.lastConflict.slice(0, 10)}; a path that conflicts in ${report.hotspotMinMerges} or more is a conflict hotspot.`,
     `Its most frequent cause is ${cause}: ${SHAPES[cause]}`,
     `Conflicting regions by cause: ${causeCounts(summary)}.`,
     "Measured by the history report of resolve-conflicts (history.ts).",
-    ...(report.shallow
-      ? [
-          "The clone was shallow, so merges its boundary cuts were skipped and the count may be low.",
-        ]
-      : []),
+    ...coverage(report, cause),
   ].join(" ");
   return {
     kind: "error",
@@ -221,7 +309,7 @@ function storedFinding(
     entry.status === "implemented" &&
     since !== null &&
     entry.latest !== null &&
-    Date.parse(entry.latest.at) <= Date.parse(since);
+    Date.parse(entry.latest.at) < Date.parse(since);
   return held.find((entry) => !recurredAfterFix(entry)) ?? null;
 }
 

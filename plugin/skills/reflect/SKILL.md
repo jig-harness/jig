@@ -122,7 +122,10 @@ sentence. A finding a skill captured with a placeholder class (the review
 loop's `review-took-many-rounds`) gets the class of the gap it points at.
 A conflict hotspot's finding (from the `hotspots` operation, targeting the path)
 keeps its class: it is the cause the merge-conflict report measured, and
-the hotspots of one cause count together.
+the hotspots of one cause count together. It is about scaffolding whatever
+the path holds, product code included: it records how the repository's
+files are laid out for parallel work (two pieces of work keep meeting in one
+file), not how the product behaves, so step 4 keeps it.
 
 ## 4. Decide what to contribute
 

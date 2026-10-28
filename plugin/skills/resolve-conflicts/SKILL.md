@@ -743,16 +743,19 @@ bun "${CLAUDE_SKILL_DIR}/../reflect/scripts/reflect.ts" hotspots <scratch>/merge
 
 Each hotspot becomes one finding in the worktree's reflection journal: the
 path as its `target`, its most frequent cause as its `class`, its count,
-range and causes in its title and description, and the report's remedy as
-its `suggested_fix`. The output lists each hotspot with what happened to it:
+range and causes in its title and description with what the measurement
+could not see (skipped merges, a shallow clone, the cause's hand-checked
+accuracy), and the report's remedy as its `suggested_fix`. The output lists each hotspot with what happened to it:
 `noted`, `updated` (the journal held it, and it now has the new count),
 `unchanged`, `sending` (a cut-off send may have stored it), or `stored` (the
 store already records it, with its status). A stored hotspot gets a new
 finding only once its fix is `implemented` and the report's range starts
 after that decision, so every merge measured came after the fix. With
 reflection off it prints `{"on": false}` and writes nothing. Exit 2 means
-the file is not a `merge-conflicts/v1` report; exit 3, that the store could
-not be read, and nothing was noted.
+the file is not a `merge-conflicts/v1` report, or one whose values the
+history report could not have written; exit 3, that the store is
+unavailable; exit 1, that the store answered with something that is not its
+events. On exit 2, 3 or 1 nothing was noted.
 
 Then run [`/jig:reflect`](../reflect/SKILL.md): its plan escalates a cause
 that recurs across hotspots to one tracker issue like any other class, and
