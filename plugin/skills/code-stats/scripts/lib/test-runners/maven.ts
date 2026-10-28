@@ -152,6 +152,15 @@ const PREDEFINED: Record<string, string> = {
   apos: "'",
 };
 
+/** Whether `code` is a character XML allows: tab, line feed, carriage return, and the Unicode ranges outside surrogates, U+FFFE and U+FFFF. */
+const isXmlChar = (code: number) =>
+  code === 0x9 ||
+  code === 0xa ||
+  code === 0xd ||
+  (code >= 0x20 && code <= 0xd7ff) ||
+  (code >= 0xe000 && code <= 0xfffd) ||
+  (code >= 0x10000 && code <= 0x10ffff);
+
 /**
  * Character data with its references replaced, as XML reads it
  * (`qa&amp;checks` is `qa&checks`). An entity a DTD would declare cannot be
@@ -161,16 +170,18 @@ function characterData(raw: string): string {
   return raw.replace(/&([^;&\s]*);?/g, (ref, name: string) => {
     if (!ref.endsWith(";"))
       throw new UnreadableError(`has an & that starts no reference (${ref})`);
-    const numeric = /^#(?:x([\da-f]+)|(\d+))$/i.exec(name);
+    const numeric = /^#(?:x([\da-fA-F]+)|(\d+))$/.exec(name);
     if (numeric) {
       const code = numeric[1]
         ? Number.parseInt(numeric[1], 16)
         : Number(numeric[2]);
-      if (code > 0x10ffff)
+      if (!isXmlChar(code))
         throw new UnreadableError(`has a reference to no character (${ref})`);
       return String.fromCodePoint(code);
     }
-    const predefined = PREDEFINED[name];
+    const predefined = Object.hasOwn(PREDEFINED, name)
+      ? PREDEFINED[name]
+      : undefined;
     if (predefined === undefined)
       throw new UnreadableError(
         `has an entity reference it cannot resolve (${ref})`,

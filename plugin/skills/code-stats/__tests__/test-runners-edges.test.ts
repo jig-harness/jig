@@ -113,6 +113,17 @@ describe("JavaScript configuration read as text", () => {
       expect(exportedObject(text).entries.get("testMatch")).toEqual(["a"]);
   });
 
+  test("deeply nested templates are lexed in linear time", () => {
+    let label = "'x'";
+    for (let n = 0; n < 40; n++) label = `\`\${${label}}\``;
+    const started = performance.now();
+    const read = exportedObject(
+      `module.exports = { testMatch: ['a'], label: ${label} };`,
+    );
+    expect(read.entries.get("testMatch")).toEqual(["a"]);
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+
   test("an export or declaration that may not run, or runs inside something else, is unreadable", () => {
     for (const text of [
       "if (false) module.exports = { testMatch: ['a'] };",
@@ -121,10 +132,21 @@ describe("JavaScript configuration read as text", () => {
       "function f() { module.exports = { testMatch: ['a'] }; }",
       "const f = () => module.exports = { testMatch: ['a'] };",
       "if (x) { var c = { testMatch: ['a'] }; }\nmodule.exports = c;",
+      "while (x)\n  module.exports = { testMatch: ['a'] };",
+      "for (const k of ks)\nmodule.exports = { testMatch: ['a'] };",
+      "for await (const k of ks)\nmodule.exports = { testMatch: ['a'] };",
+      "if (check(x))\nmodule.exports = { testMatch: ['a'] };",
     ])
       expect(() => exportedObject(text)).toThrow("may change when it runs");
     for (const text of [
       "const a = 'x'\nmodule.exports = { testMatch: ['a'] }",
+      "console.info(\"config\")\nmodule.exports = { testMatch: ['a'] };",
+      "const re = /x/\nmodule.exports = { testMatch: ['a'] };",
+      "const re = /x/g\nmodule.exports = { testMatch: ['a'] };",
+      "const t = `x`\nmodule.exports = { testMatch: ['a'] };",
+      "const n = (1 + 2)\nmodule.exports = { testMatch: ['a'] };",
+      "if (x) (setup())\nmodule.exports = { testMatch: ['a'] };",
+      "obj.if(x)\nmodule.exports = { testMatch: ['a'] };",
       "if (x) { setup(); }\nmodule.exports = { testMatch: ['a'] };",
       "export const c = { testMatch: ['a'] };\nexport default c;",
     ])
@@ -317,6 +339,7 @@ describe("pytest", () => {
       "tool.pytest = { python_files = ['check_*.py'] }\n",
       '["tool"."pytest"]\npython_files = ["check_*.py"]\n',
       "[tool]\npytest.python_files = ['check_*.py']\n",
+      '[tool."py\\u0074est"]\npython_files = ["check_*.py"]\n',
     ]) {
       const reading = readPytest(
         repo({
@@ -459,7 +482,13 @@ describe("Maven", () => {
   });
 
   test("an entity a DTD would declare, or a bare &, is unreadable", () => {
-    for (const value of ["qa&dir;", "qa & checks"]) {
+    for (const value of [
+      "qa&dir;",
+      "qa & checks",
+      "qa&constructor;",
+      "qa&toString;",
+      "qa&__proto__;",
+    ]) {
       const reading = readMaven(
         repo({
           "pom.xml": pom(
@@ -470,6 +499,35 @@ describe("Maven", () => {
       expect(reading.rules).toEqual([]);
       expect(whys(reading)).toHaveLength(1);
     }
+  });
+
+  test("a character reference XML forbids is unreadable, even outside the read element", () => {
+    for (const ref of [
+      "&#0;",
+      "&#xD800;",
+      "&#xFFFF;",
+      "&#X61;",
+      "&#x110000;",
+    ]) {
+      const reading = readMaven(
+        repo({
+          "pom.xml": pom(
+            `<description>a${ref}</description><build><testSourceDirectory>qa</testSourceDirectory></build>`,
+          ),
+        }),
+      );
+      expect(reading.rules).toEqual([]);
+      expect(whys(reading)).toHaveLength(1);
+    }
+    const allowed = readMaven(
+      repo({
+        "pom.xml": pom(
+          "<description>&#9;&#xA;&#xd7ff;&#xE000;&#x10000;</description><build><testSourceDirectory>qa</testSourceDirectory></build>",
+        ),
+      }),
+    );
+    expect(allowed.unreadable).toEqual([]);
+    expect(claimed(allowed, ["qa/Check.java"])).toEqual(["qa/Check.java"]);
   });
 
   test("a POM with an element still open at the end, or no element, is unreadable", () => {

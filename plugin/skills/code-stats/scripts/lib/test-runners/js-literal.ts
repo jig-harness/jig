@@ -156,11 +156,14 @@ function codeSpan(text: string, i: number): Span {
   let at = i;
   while (at < text.length) {
     const c = text[at] as string;
-    const end = spanEnd(text, at);
-    if (end !== null) {
-      const part = text.slice(at, end);
-      out += part.startsWith("`") ? templateSyntax(part) : spaced(part);
-      at = end;
+    // A nested template is lexed once, its syntax and end together.
+    const span =
+      c === "`"
+        ? templateSpan(text, at)
+        : plainSpan(text, at, spanEnd(text, at));
+    if (span !== null) {
+      out += span.out;
+      at = span.end;
       continue;
     }
     if (c === "}" && depth === 0) return { out, end: at, closed: true };
@@ -170,6 +173,13 @@ function codeSpan(text: string, i: number): Span {
     at++;
   }
   return { out, end: at, closed: false };
+}
+
+/** The comment, string or regular expression from `i` to `end`, blanked; null when none opens there. */
+function plainSpan(text: string, i: number, end: number | null): Span | null {
+  return end === null
+    ? null
+    : { out: spaced(text.slice(i, end)), end, closed: true };
 }
 
 /** The end of the comment, string or regular expression that opens at `i`, or null. */
@@ -539,9 +549,10 @@ const OPENING_WORDS = new Set([
  * Whether what starts at `at` is an unconditional statement at the top of
  * the file: outside every bracket (a function, a block, a call), and where a
  * statement starts — at the start of the file, after a `;` or a `}`, or on
- * a new line after a value that ends the statement before. A `)` before it
- * may close `if (…)`, `while (…)` or `for (…)`, so it does not count; nor
- * does an operator, which makes it an operand (`c = module.exports = …`).
+ * a new line after a value that ends the statement before. A `)` that closes
+ * the header of `if (…)`, `while (…)`, `for (…)` or `with (…)` does not end
+ * one, since what follows runs on its condition; nor does an operator, which
+ * makes it an operand (`c = module.exports = …`).
  */
 function topLevelStatement(src: Source, at: number): boolean {
   if (bracketDepth(src.syntax, at) !== 0) return false;
@@ -552,7 +563,8 @@ function topLevelStatement(src: Source, at: number): boolean {
   const last = before[before.length - 1];
   if (last === undefined || last === ";" || last === "}") return true;
   return (
-    src.code.slice(before.length, at).includes("\n") && endsStatement(before)
+    src.code.slice(before.length, at).includes("\n") &&
+    endsStatement(src, before)
   );
 }
 
@@ -566,11 +578,40 @@ function bracketDepth(syntax: string, at: number): number {
   return depth;
 }
 
-/** Whether `before` ends with a value that ends a statement at a line break: a name that is no keyword, a string or a `]`. */
-function endsStatement(before: string): boolean {
+/** Words whose `(…)` header puts the statement after it behind a condition or a loop. */
+const HEADER_WORDS = new Set(["if", "while", "for", "with"]);
+
+/**
+ * Whether `before`, the file's code up to a line break, ends with a value
+ * that ends a statement there: a name that is no keyword, a `]`, a string,
+ * template or regular expression, or a `)` that closes a call or a group
+ * rather than a statement's header.
+ */
+function endsStatement(src: Source, before: string): boolean {
+  const end = before.length - 1;
+  // A literal's last character is blanked in the syntax view.
+  if (src.syntax[end] !== src.code[end]) return true;
+  if (before.endsWith(")")) return !closesHeader(src.syntax, end);
   const word = /[\w$]+$/.exec(before)?.[0];
   if (word !== undefined) return !OPENING_WORDS.has(word);
-  return /["'`\]]$/.test(before);
+  return before.endsWith("]");
+}
+
+/** Whether the `)` at `close` in `syntax` closes the header of `if`, `while`, `for` or `with`. */
+function closesHeader(syntax: string, close: number): boolean {
+  let depth = 0;
+  let open = close;
+  for (; open >= 0; open--) {
+    const c = syntax[open] as string;
+    if (")]}".includes(c)) depth++;
+    else if ("([{".includes(c) && --depth === 0) break;
+  }
+  const head = syntax.slice(0, open).trimEnd();
+  const word = /(?<![\w$.])[\w$]+$/.exec(head)?.[0];
+  if (word === undefined) return false;
+  if (HEADER_WORDS.has(word)) return true;
+  // `for await (…)`
+  return word === "await" && /(?<![\w$.])for\s+await$/.test(head);
 }
 
 /**

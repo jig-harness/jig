@@ -162,8 +162,6 @@ function pyprojectTables(text: string): {
   native: Record<string, unknown>;
   ini: Record<string, unknown> | undefined;
 } | null {
-  // Every spelling of the table's key holds the word; a file without it is not read.
-  if (!text.includes("pytest")) return null;
   const pytest = tableAt(parseToml(text), ["tool", "pytest"]);
   if (pytest === undefined) return null;
   if (!isRecord(pytest))
