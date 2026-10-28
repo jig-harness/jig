@@ -281,6 +281,12 @@ is policy, not an override, and the reasons name the rule that fired.
   (Claude Code's fallback model chains), and resolves the effort per
   model, so the models a run moved between can also have run it at
   different efforts, while two models of one tier leave the tier single.
+  A field holds what the runtime established only where it reports a
+  value for every response of the invocation: one it reports for some
+  responses and not others (an effort reported before a fallback and not
+  after it) keeps the values it did report and is marked `partial`, each
+  field on its own, so a value seen for part of a run never stands for
+  the whole of it.
   It survives the worktree
   and is read by any harness, as the type's body sections are.
 - **`work-batch`** takes one route for the batch: the strictest tier and
@@ -294,9 +300,10 @@ is policy, not an override, and the reasons name the rule that fired.
   per route. It groups by the **effective** route, never the proposed one,
   and a comparison per model, per tier or per effort leaves out every pull
   request whose effective value for that field is `unknown` or marked
-  `mixed`: two people inheriting different models under one proposed
-  route are not one route, and a run that moved between models or
-  efforts is not a run on either.
+  `mixed` or `partial`: two people inheriting different models under one
+  proposed route are not one route, a run that moved between models or
+  efforts is not a run on either, and a run observed for only part of
+  its responses is not evidence for the rest.
   That report measures rounds, not cost. A tier move still needs the
   comparison M0 asks for, comparable tasks under both tiers with what was
   billed; the person's overrides and the rules' defaults, read from the
@@ -396,8 +403,10 @@ refused `do_item` section does today; it is never read as absent.
    model as effective; a person's model the runtime replaced, with the
    rules' answer, the person's and the runtime's all kept; an implementer
    that moved to another model mid-run and ran it at another effort,
-   recorded with both models and both efforts, each field `mixed`; and a
-   field the runtime reports nothing for, recorded `unknown`.
+   recorded with both models and both efforts, each field `mixed`; an
+   effort the runtime reports before a fallback and not after it,
+   recorded with that effort and marked `partial`; and a field the
+   runtime reports nothing for, recorded `unknown`.
 5. **`work-batch` and the audit criterion.**
 
 ## Left out
