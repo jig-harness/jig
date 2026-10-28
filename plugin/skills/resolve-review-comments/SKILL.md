@@ -709,8 +709,9 @@ same call that posts it, which leaves no point to dismiss in between. Post the
 reply with `reply-to-thread.ts`, dismiss, then dispatch with `triage-thread.ts`,
 which finds the posted reply and resolves. Both `triage-thread.ts` and the
 drive's replied-thread sweep leave a declined finding open until they can
-confirm the alert is dismissed (`triage-thread.ts` exits `4` then); report an
-alert that could not be dismissed in the round's summary.
+confirm the alert is dismissed (`triage-thread.ts` exits `4` while dismissal
+remains unconfirmed); a plain `moot` closes once the alert is fixed, closed or
+dismissed. Report an alert that could not be dismissed in the round's summary.
 
 A dismissal reaches the tool: SonarQube Cloud, for one, records a false
 positive as False Positive and the other reasons as Accept. A security

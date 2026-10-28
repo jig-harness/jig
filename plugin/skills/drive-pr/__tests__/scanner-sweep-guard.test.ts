@@ -42,6 +42,22 @@ describe("declined code scanning findings", () => {
       expect(mayResolveDeclinedAlert(alert)).toBe(false);
     }
   });
+
+  it("resolves a plain moot once the alert is fixed, closed or dismissed", () => {
+    expect(mayResolveDeclinedAlert(undefined, "moot")).toBe(true);
+    for (const state of ["fixed", "closed", "dismissed"]) {
+      expect(mayResolveDeclinedAlert({ state }, "moot")).toBe(true);
+    }
+    for (const alert of [
+      { state: "open" },
+      { state: null, stateUnknown: "scan running" },
+      { state: "fixed", unreadable: "denied" },
+      null,
+      {},
+    ]) {
+      expect(mayResolveDeclinedAlert(alert, "moot")).toBe(false);
+    }
+  });
 });
 
 let tmpRoot: string;

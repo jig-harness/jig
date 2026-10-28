@@ -1069,11 +1069,12 @@ async function main(): Promise<number> {
           : `triage-thread.ts: --leave-open — thread ${threadId} replied but not resolved.`,
       );
     } else {
-      // A code-scanning thread stays open over an undismissed alert (exit 4).
+      // A code-scanning thread stays open over an unsettled alert (exit 4).
       const resolved = await resolveDeclinedThread(
         threadId,
         thread.comments[0],
         helperTimeoutSec,
+        effectiveOutcome,
       );
       if (resolved.code !== 0) return resolved.code;
       exit = resolved.exit;
@@ -1085,8 +1086,7 @@ async function main(): Promise<number> {
     const seenUrls = new Set(
       thread.comments.map((c) => c.url).filter((u): u is string => u !== null),
     );
-    // A comment this call just posted is not in `thread.comments` (read before
-    // posting); include it so it is never treated as unaccounted-for.
+    // This call's own reply postdates `thread.comments`; count it as seen.
     seenUrls.add(commentUrl);
     const cleanedUp = await attemptStaleHoldCleanup(pr, threadId, seenUrls);
     // Same reasoning as the isResolved branch above: a stranded hold on a now-

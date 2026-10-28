@@ -17,13 +17,31 @@ const resolveThread = join(
   "resolve-thread.ts",
 );
 
-/** A declined code-scanning finding can close only after dismissal is verified. */
-export function mayResolveDeclinedAlert(alert: unknown): boolean {
+/** The alert states that let a code-scanning thread close, per outcome. */
+const SETTLED_STATES: Record<"declined" | "moot", ReadonlySet<string>> = {
+  declined: new Set(["dismissed"]),
+  moot: new Set(["fixed", "closed", "dismissed"]),
+};
+
+/**
+ * A code-scanning finding answered with a merit outcome can close only over
+ * a settled alert: a declined one (`rejected`/`wont-fix`/`deferred`) once
+ * dismissal is verified, a plain `moot` once the alert is fixed, closed or
+ * dismissed (resolve-review-comments SKILL.md's code-scanning outcome table).
+ */
+export function mayResolveDeclinedAlert(
+  alert: unknown,
+  outcome: "declined" | "moot" = "declined",
+): boolean {
   if (alert === undefined) return true;
   if (typeof alert !== "object" || alert === null || Array.isArray(alert))
     return false;
   const record = alert as Record<string, unknown>;
-  return record.state === "dismissed" && record.unreadable === undefined;
+  return (
+    typeof record.state === "string" &&
+    SETTLED_STATES[outcome].has(record.state) &&
+    record.unreadable === undefined
+  );
 }
 
 /** The repository and pull request of review thread `threadId`, or `null`. */
@@ -76,19 +94,24 @@ export async function declinedAlertOf(
 }
 
 /**
- * Resolve thread `threadId` for a merit outcome, unless it is a code-scanning
- * thread whose alert is not confirmed dismissed: then it stays open and
- * `exit` is `4`. `code` is `resolve-thread.ts`'s own exit, `0` when skipped.
+ * Resolve thread `threadId` for merit outcome `outcome`, unless it is a
+ * code-scanning thread whose alert is not settled for it
+ * (`mayResolveDeclinedAlert`): then it stays open and `exit` is `4`. `code` is
+ * `resolve-thread.ts`'s own exit, `0` when skipped.
  */
 export async function resolveDeclinedThread(
   threadId: string,
   opening: { author: string | null; body: string | null } | undefined,
   timeoutSec: number,
+  outcome: string,
 ): Promise<{ code: number; exit: 0 | 4 }> {
+  const kind = outcome === "moot" ? "moot" : "declined";
   const alert = await declinedAlertOf(threadId, opening, timeoutSec);
-  if (!mayResolveDeclinedAlert(alert)) {
+  if (!mayResolveDeclinedAlert(alert, kind)) {
     console.error(
-      `triage-thread.ts: thread ${threadId}'s code scanning alert is not confirmed dismissed — left open. Dismiss it with dismiss-alert.ts, then re-run.`,
+      kind === "moot"
+        ? `triage-thread.ts: thread ${threadId}'s code scanning alert is not confirmed fixed, closed or dismissed — left open. A finding over an open alert is not moot.`
+        : `triage-thread.ts: thread ${threadId}'s code scanning alert is not confirmed dismissed — left open. Dismiss it with dismiss-alert.ts, then re-run.`,
     );
     return { code: 0, exit: 4 };
   }
