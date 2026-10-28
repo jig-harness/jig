@@ -146,8 +146,9 @@ The guard (`checkUntriagedThreads` in `finish-round.ts`) refuses only when
   create a hold to recover such a thread; re-run `triage-thread.ts`, which
   leaves it open (exit `4`) until the alert settles. A scanner `moot` held
   before that rule drains through `resolve-held-thread.ts`, which reads the
-  alert too and, over an unsettled one, drops the hold and leaves the thread
-  open. Either crash's remedy is
+  alert too, ahead of its final comment and head checks, and over an
+  unsettled one drops the hold and leaves the thread open; the round's report
+  names that item `left-open`, not `resolved`. Either crash's remedy is
   the same *shape*, naming the correct missing half: re-run `bun "<skill-dir>/scripts/triage-thread.ts"`
   on the *same* thread with *any* valid outcome body on stdin (not an empty
   one: `triage-thread.ts` refuses *empty* stdin outright, before it ever

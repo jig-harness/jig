@@ -148,7 +148,10 @@ import { fileURLToPath } from "node:url";
 import { isTrustedBotConfirmation } from "./lib/bot-confirmation.ts";
 import { fail, isDigits, isGitSha, runMain, short } from "./lib/cli.ts";
 import { hasLeaveOpenMarker, qualifyingOutcome } from "./lib/outcome.ts";
-import { threadAwaitsAlert } from "./lib/scanner-sweep-guard.ts";
+import {
+  drainedThreadResult,
+  threadAwaitsAlert,
+} from "./lib/scanner-sweep-guard.ts";
 import {
   ciHoldTimeoutSeconds,
   ghCall,
@@ -218,7 +221,7 @@ interface HeldRecord {
   commentUrl?: string;
 }
 
-type ItemAction = "resolved" | "answered" | "refused";
+type ItemAction = "resolved" | "left-open" | "answered" | "refused";
 
 interface ItemResult {
   key: string;
@@ -1822,9 +1825,7 @@ async function resolveThreadItem(
       stale: res.code === 4,
     };
   }
-  return {
-    result: { key: item.key, kind: item.kind, action: "resolved", code: 0 },
-  };
+  return { result: drainedThreadResult(item.key, item.kind, res) };
 }
 
 /**

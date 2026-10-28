@@ -5,6 +5,7 @@ import {
   isCodeScanningLogin,
   readAlert,
 } from "../../../resolve-review-comments/scripts/lib/code-scanning.ts";
+import { swallow } from "../../../../shared/errors.ts";
 import { TRUSTED_ASSOCIATIONS } from "../summary-findings.ts";
 import { isTrustedBotConfirmation } from "./bot-confirmation.ts";
 import { hasLeaveOpenMarker, qualifyingOutcome } from "./outcome.ts";
@@ -243,38 +244,101 @@ export async function declinedAlertOf(
 }
 
 /**
+ * Whether `resolve-held-thread.ts` may resolve held thread `threadId`, held
+ * with `outcome`: `false` when the hold is a `moot`, GitHub's code scanning
+ * account opened the thread, and its alert is not fixed, closed or
+ * dismissed; `null` when the thread's opening comment cannot be read. Such a
+ * hold predates `mootHeld`'s rule. Read before the drain's final comment and
+ * head checks, so nothing slower than those stands between them and the
+ * mutation.
+ */
+export async function heldThreadMayResolve(
+  threadId: string,
+  outcome: string,
+  timeoutSec: number,
+): Promise<boolean | null> {
+  if (outcome !== "moot") return true;
+  const r = await ghCall(
+    [
+      "api",
+      "graphql",
+      "-f",
+      "query=query($id:ID!){ node(id:$id){ ... on PullRequestReviewThread { comments(first:1){ nodes { author { login } body } } } } }",
+      "-f",
+      `id=${threadId}`,
+    ],
+    { timeoutSec },
+  );
+  if (r.code !== 0) return null;
+  let opening: { author?: { login?: unknown } | null; body?: unknown };
+  try {
+    opening = JSON.parse(r.stdout)?.data?.node?.comments?.nodes?.[0];
+  } catch (err) {
+    swallow(err, "heldThreadMayResolve: unparsable opening-comment read");
+    return null;
+  }
+  if (typeof opening !== "object" || opening === null) return null;
+  const login = opening.author?.login;
+  const comment = {
+    author: typeof login === "string" ? login : null,
+    body: typeof opening.body === "string" ? opening.body : null,
+  };
+  if (!awaitsAlert(comment, outcome)) return true;
+  const alert = await declinedAlertOf(threadId, comment, timeoutSec);
+  return mayResolveDeclinedAlert(alert, "moot", true);
+}
+
+/**
  * `resolve-held-thread.ts`'s mutation for held thread `threadId`: resolve
- * it, unless its held `outcome` is a `moot`, GitHub's code scanning account
- * opened it (`opening`, as the live-comments read returns it), and its alert
- * is not fixed, closed or dismissed. Such a hold predates `mootHeld`'s rule,
- * so the thread stays open (`code` 0, `stdout` `false`) and the
- * replied-thread sweep closes it once the alert settles, as for a fresh one.
+ * it when `mayResolve` (`heldThreadMayResolve`) says so. When it is `false`
+ * the thread stays open (`code` 0, `stdout` `false`) and the replied-thread
+ * sweep closes it once the alert settles, as for a fresh code-scanning moot;
+ * when it is `null` nothing is mutated and `code` is 1.
  */
 export async function resolveHeldUnlessAlertOpen(
   threadId: string,
-  opening:
-    | { author: { login: string } | null; body: string | null }
-    | undefined,
-  outcome: string,
+  mayResolve: boolean | null,
   timeoutSec: number,
 ): Promise<{ code: number; stdout: string }> {
-  const comment = {
-    author: opening?.author?.login ?? null,
-    body: opening?.body ?? null,
-  };
-  if (outcome === "moot" && awaitsAlert(comment, outcome)) {
-    const alert = await declinedAlertOf(threadId, comment, timeoutSec);
-    if (!mayResolveDeclinedAlert(alert, "moot", true)) {
-      console.error(
-        `resolve-held-thread.ts: thread '${threadId}''s code scanning alert is not confirmed fixed, closed or dismissed — hold drained, thread left open for the replied-thread sweep.`,
-      );
-      return { code: 0, stdout: "false\n" };
-    }
+  if (mayResolve === null) {
+    console.error(
+      `resolve-held-thread.ts: cannot read thread '${threadId}''s opening comment to judge its alert.`,
+    );
+    return { code: 1, stdout: "" };
+  }
+  if (!mayResolve) {
+    console.error(
+      `resolve-held-thread.ts: thread '${threadId}''s code scanning alert is not confirmed fixed, closed or dismissed — hold drained, thread left open for the replied-thread sweep.`,
+    );
+    return { code: 0, stdout: "false\n" };
   }
   return run(tsArgv(resolveThread, [threadId]), {
     timeoutSec,
     stderr: "inherit",
   });
+}
+
+/**
+ * `finish-round.ts`'s report entry for held thread `key` that
+ * `resolve-held-thread.ts` drained with exit 0: `left-open`, with the
+ * script's stderr shown and kept as its `diagnostic`, when it printed
+ * `false` (`resolveHeldUnlessAlertOpen`); else `resolved`.
+ */
+export function drainedThreadResult(
+  key: string,
+  kind: string,
+  res: { stdout: string; stderr: string },
+): {
+  key: string;
+  kind: string;
+  action: "resolved" | "left-open";
+  code: 0;
+  diagnostic?: string;
+} {
+  if (res.stdout.trim() !== "false")
+    return { key, kind, action: "resolved", code: 0 };
+  if (res.stderr.trim() !== "") process.stderr.write(res.stderr);
+  return { key, kind, action: "left-open", code: 0, diagnostic: res.stderr };
 }
 
 /**

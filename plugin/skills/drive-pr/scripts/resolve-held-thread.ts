@@ -133,7 +133,10 @@ import { fileURLToPath } from "node:url";
 import { isTrustedBotConfirmation as isTrustedBotConfirmationShared } from "./lib/bot-confirmation.ts";
 import { fail, isDigits, runMain, short } from "./lib/cli.ts";
 import { qualifyingOutcome } from "./lib/outcome.ts";
-import { resolveHeldUnlessAlertOpen } from "./lib/scanner-sweep-guard.ts";
+import {
+  heldThreadMayResolve,
+  resolveHeldUnlessAlertOpen,
+} from "./lib/scanner-sweep-guard.ts";
 import {
   ghCall,
   git,
@@ -641,6 +644,17 @@ async function main(): Promise<number> {
     });
   }
 
+  // A `moot` on a thread GitHub's code scanning account opened is never held
+  // now (`mootHeld`), but a hold recorded before that rule still drains here:
+  // its alert, not the push, is what proves it. The alert reads run first, so
+  // only the checks below stand between the last read and the mutation; an
+  // unreadable opening comment (`null`) restores the hold there.
+  const mayResolve = await heldThreadMayResolve(
+    key,
+    claimed.outcome,
+    helperTimeoutSec,
+  );
+
   const staleCheck = await ghCall(
     [
       "api",
@@ -819,17 +833,14 @@ query($id:ID!){
     return 2;
   }
 
-  // A `moot` on a thread GitHub's code scanning account opened is never held
-  // now (`mootHeld`), but a hold recorded before that rule still drains here:
-  // its alert, not the push, is what proves it. Over an unsettled alert the
-  // thread stays open with the hold drained (stdout `false`), the state
-  // `triage-thread.ts` leaves a fresh one in — `finish-round.ts` counts it
-  // triaged (`awaitsAlert`) and the replied-thread sweep closes it once the
-  // alert is fixed, closed or dismissed.
+  // Over an unsettled alert the thread stays open with the hold drained
+  // (stdout `false`), the state `triage-thread.ts` leaves a fresh code-scanning
+  // moot in — `finish-round.ts` reports it `left-open`, counts it triaged
+  // (`awaitsAlert`), and the replied-thread sweep closes it once the alert is
+  // fixed, closed or dismissed.
   const mutation = await resolveHeldUnlessAlertOpen(
     key,
-    nodes[0],
-    claimed.outcome,
+    mayResolve,
     helperTimeoutSec,
   );
   if (mutation.code !== 0) {

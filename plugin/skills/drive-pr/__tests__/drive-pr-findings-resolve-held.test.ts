@@ -89,7 +89,7 @@ describe("resolve-held-thread.ts", () => {
 
   // A `moot` on a code-scanning thread is no longer held, but one held before
   // that rule still reaches the drain: its alert, not the push, settles it.
-  it("drains a held code-scanning moot without resolving it over an unconfirmed alert", async () => {
+  async function drainScannerMoot(alertState: string | null) {
     const stateDir = scopedStateDir(
       mkdtempSync(join(tmpdir(), "resolve-held-thread-scanner-moot-")),
       scratchClean.dir,
@@ -132,13 +132,41 @@ describe("resolve-held-thread.ts", () => {
             ],
           },
         ],
+        ...(alertState === null
+          ? {}
+          : {
+              fixtureFiles: {
+                "alert-7.json": JSON.stringify({
+                  number: 7,
+                  state: alertState,
+                  rule: { id: "js/path-injection", severity: "error" },
+                  tool: { name: "CodeQL" },
+                }),
+              },
+            }),
       },
     );
+    const held = JSON.parse(await readState(stateDir, ["held", "999"]));
+    return { ...r, held };
+  }
+
+  it("drains a held code-scanning moot without resolving it over an unconfirmed alert", async () => {
+    for (const state of [null, "open"]) {
+      const r = await drainScannerMoot(state);
+      expectSpawnExit(r, 0, "resolve-held-thread.ts");
+      expect(r.stdout).toBe("false");
+      expect(r.resolved).toBe("");
+      expect(r.stderr).toContain("not confirmed fixed, closed or dismissed");
+      expect(r.held).toEqual([]);
+    }
+  });
+
+  it("resolves a held code-scanning moot over a dismissed alert", async () => {
+    const r = await drainScannerMoot("dismissed");
     expectSpawnExit(r, 0, "resolve-held-thread.ts");
-    expect(r.stdout).toBe("false");
-    expect(r.resolved).toBe("");
-    expect(r.stderr).toContain("not confirmed fixed, closed or dismissed");
-    expect(JSON.parse(await readState(stateDir, ["held", "999"]))).toEqual([]);
+    expect(r.stdout).toBe("true");
+    expect(r.resolved.trim()).toBe("PRRT_a");
+    expect(r.held).toEqual([]);
   });
 
   // The comment-staleness recheck. `finish-round.ts`'s own pre-push guard
