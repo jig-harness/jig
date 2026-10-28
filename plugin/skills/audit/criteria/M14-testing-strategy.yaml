@@ -214,6 +214,18 @@ criteria:
                   files: ["package.json", "Makefile", "GNUmakefile", "justfile", "Taskfile.y*ml", "mise.toml", ".mise.toml", "**/*.sh"]
                   pattern: "core\\.hooksPath"
 
+  - id: test-exemptions-prune-themselves
+    level: standard
+    requires: mechanical
+    since: next
+    statement: >-
+      The check that fails a changed source file without a test also fails
+      an exemption that matches no file, so an exemption leaves with the
+      code it excused.
+    observe:
+      - "the check fails an exemption that matches no file in the tree it reads (M14's tests-with-changes reference does)"
+      - "a check that passes a stale exemption scores convention at most"
+
   - id: fixed-sleeps-banned
     level: standard
     requires: mechanical
@@ -225,6 +237,17 @@ criteria:
     observe:
       - "a lint rule or grep gate run in CI flags sleep / setTimeout / time.sleep / Thread.sleep in tests"
       - "its suppression token is listed in the suppression-token registry"
+
+  - id: fixed-delay-tokens-prune-themselves
+    level: standard
+    requires: mechanical
+    since: next
+    statement: >-
+      The gate that rejects fixed sleeps fails a suppression token with an
+      empty reason, and a token with no delay on its line or the line below.
+    observe:
+      - "the gate fails a token without a reason, and a token with no delay on its line or the line below (M14's fixed-delay reference does both)"
+      - "a gate that passes an empty or stale token scores convention at most"
 
   - id: provisioned-suites-executed
     level: standard
