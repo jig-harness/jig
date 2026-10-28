@@ -652,7 +652,10 @@ describe("determine_route.ts", () => {
   });
 
   it("refuses input that is not an issue as a usage error", () => {
-    expectSpawnExit(run({ "jig.yaml": "{}\n" }, "not json"), 2);
-    expectSpawnExit(run({ "jig.yaml": "{}\n" }, '{"labels":"bug"}'), 2);
+    for (const input of ["not json", '{"labels":"bug"}']) {
+      const r = run({ "jig.yaml": "{}\n" }, input);
+      expectSpawnExit(r, 2);
+      expect(r.stderr).not.toBe("");
+    }
   });
 });

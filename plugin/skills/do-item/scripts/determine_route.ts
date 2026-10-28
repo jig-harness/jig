@@ -388,7 +388,9 @@ export function catalogFacts(
     skillsOf.set(key, reviewSkillsOf(key, area.fields.review));
   }
   const reviews: Review[] = [];
-  for (const key of [...applyImpliedClosure(seeds, { areas })].sort()) {
+  for (const key of [...applyImpliedClosure(seeds, { areas })].sort((a, b) =>
+    a.localeCompare(b),
+  )) {
     const named = skillsOf.get(key) ?? [];
     if (named.length > 0) reviews.push({ area: key, skills: named });
   }
