@@ -233,8 +233,8 @@ when review converges.
 
 Every one of these holds, or the saving turns a failure into a pass:
 
-- **A required check fails, never skips, on every held head, from the
-  instant the hold is applied.** One step in the required job, or in a job
+- **A required check does not pass, and never skips, on every held head,
+  from the instant the hold is applied.** One step in the required job, or in a job
   it needs directly while itself running on `!cancelled()`, fails while the
   label is present: the [held-head check](../../GLOSSARY.md). The pipeline
   runs on the label's application, so the opening head's green is replaced
@@ -506,8 +506,8 @@ reading it.
 - **Standard** — a resolver reading the change-area catalog drives job
   selection, failing closed; one aggregator job is the required check; slow
   suites no merge waits for run on a schedule, with a cheap per-change proxy;
-  where a CI hold is used, a required check fails on every held head from
-  the instant the hold is applied, the pipeline runs on both label
+  where a CI hold is used, a required check does not pass on any held head
+  from the instant the hold is applied, the pipeline runs on both label
   transitions, and only the hold's own label skips work; every cache has a
   written key scheme covering the inputs that change its output,
   environment values included, pipelines that share a cache produce one

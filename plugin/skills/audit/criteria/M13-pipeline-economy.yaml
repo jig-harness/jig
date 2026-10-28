@@ -264,7 +264,7 @@ criteria:
     since: 0.38.0
     statement: >-
       Where a hold label suppresses CI on intermediate heads, a required
-      check fails on every held head from the instant the label is applied,
+      check does not pass on any held head from the instant the label is applied,
       every workflow that honours the label runs on its application and its
       removal, and only the pull request's own hold label, never the kind of
       label event, skips work.
