@@ -390,12 +390,15 @@ What it will build, one pull request per step:
 
 - **The skill**: `plugin/skills/init/` with `init.ts` (derive, ask, write,
   check) on the shared detector (`plugin/shared/detect.ts`), which learns the
-  changelog file, the label taxonomy and the title convention, refresh mode
+  changelog file, the label taxonomy and the title convention, a `field` on
+  the configuration fit's findings so init can sort them, refresh mode
   after a plugin release, tests from a plugin copy against fixture
   repositories with and without a configuration, the lifecycle-map row and
   the README table row.
 - **The pointers**: the adoption pages, setup's next step, the audit's
-  `remedy: init` marker and the sheet's command.
+  `remedy: init` marker and the sheet's command, and the configuration
+  fit's finding for a file written under an older plugin than the last
+  field-adding release.
 - **Project-level enablement** in the host settings files.
 
 Done when a fresh clone with no configuration runs `/jig:init`, commits
