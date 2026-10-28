@@ -118,6 +118,7 @@ import {
   verifyOriginIsPrRepo,
 } from "./lib/base-drift.ts";
 import { fail, runMain } from "./lib/cli.ts";
+import { drivenBranchName } from "./lib/driven-branch.ts";
 import { cachedRepoView } from "./lib/gh-conditional.ts";
 import {
   ghCall,
@@ -237,20 +238,15 @@ export async function verifyStillCurrent(
     };
   }
 
-  const branchRes = await git(
-    ["-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
-    {
-      ...definedFields({ env }),
-    },
-  );
-  if (branchRes.code !== 0) {
+  const branch = await drivenBranchName(git, root, definedFields({ env }));
+  if (branch === null) {
     return {
       ok: false,
       code: 1,
       why: "cannot re-read this worktree's current branch immediately before merging",
     };
   }
-  if (branchRes.stdout.trim() !== headRef) {
+  if (branch !== headRef) {
     return {
       ok: false,
       code: 2,
@@ -634,21 +630,21 @@ async function main(): Promise<number> {
   // the requested PR's number. This is an unreadable-input refusal, the same
   // category as the unconcluded-git-op check below, not a verdict about drift —
   // so it applies whether or not `--check` was passed.
-  const branchRes = await git(
-    ["-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
-    { stderr: "ignore", timeoutSec: gitTimeout, env: identityEnv },
-  );
-  if (branchRes.code !== 0) {
+  // A detached tree an attach prepared drives the branch its record names.
+  const branch = await drivenBranchName(git, root, {
+    timeoutSec: gitTimeout,
+    env: identityEnv,
+  });
+  if (branch === null) {
     fail(1, "base-sync: cannot read this worktree's current branch");
   }
-  const branch = branchRes.stdout.trim();
   if (branch !== headRef) {
     fail(
       2,
-      `base-sync: this worktree is on ${branch === "HEAD" ? "a detached HEAD" : `'${branch}'`}, not PR #${pr}'s head branch '${headRef}'.`,
+      `base-sync: this worktree is on ${branch === "HEAD" ? "a detached HEAD no attach recorded" : `'${branch}'`}, not PR #${pr}'s head branch '${headRef}'.`,
       "Measuring or merging against the wrong checkout would report a result",
-      "against a PR it never touched. Check out the PR's head branch first,",
-      "or pass the PR that matches this checkout.",
+      "against a PR it never touched. Attach the PR first",
+      `(attach-pr.ts ${pr}), or pass the PR that matches this checkout.`,
     );
   }
 

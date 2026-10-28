@@ -1105,6 +1105,14 @@ make, use the entry's term instead.
   and round state that survives between invocations. It stops in exactly one
   *terminal state* and never merges. Jig ships it as the `drive-pr`
   skill, and the `do-item` skill starts it when it opens a pull request.
+- **Attach (a pull request)** — putting a *worktree* on a pull request's head
+  before a *PR drive loop* drives it from there: its head branch checked out
+  when no other worktree of the clone holds that branch, otherwise its head
+  commit checked out on a **detached head** (git's name for a checkout of a
+  commit rather than of a branch, since git lets only one worktree hold a
+  branch). The drive pushes to the head branch by name either way, and
+  records which worktree it drives from so the steps that read a branch name
+  find it.
 - **Self-inflicted finding** — a review finding on a line one of the pull
   request's own commits last changed, usually a fix from an earlier round. The
   drive labels every finding this way: by the later rounds most findings are

@@ -77,7 +77,7 @@ the drive reads best-effort and replaces with the default when mistyped.
 | `review.sticky_marker` | Text that identifies the reviewer's sticky summary comment. Read only when a reviewer is expected. `DRIVE_PR_STICKY_MARKER` overrides it | `<!-- ai-code-review -->` |
 | `review.reviewed_sha_marker` | Marker the reviewer stamps the commit it reviewed with, inside that comment. Read only when a reviewer is expected. `DRIVE_PR_SHA_MARKER` overrides it | `ai-reviewed-sha` |
 | `review.severity_formats` | How a reviewer writes a finding's severity, which the decline ladder and the `severity` line of the loop-economy report read: a list of `{login, shape, severities}`, one entry per login, tried before the built-in formats and read only on comments that login posted ([severity formats](../../EXTENDING.md#severity-formats), [fields](../../CONFIGURATION.md#review)) | None: the built-in formats only |
-| `repository.base_branch` | The integration branch. A round diffs against its pull request's own base (`origin/<base>`), so a stacked layer's plan and change set cover that layer alone; it diffs against this branch only on a branch known to have no pull request (a detached HEAD has to name its pull request). A pull request whose base cannot be read or fetched, or whose repository is not `origin`'s, is refused rather than diffed against another branch. A walk down a stack for its required checks stops here. `DRIVE_PR_BASE_BRANCH` overrides it | Derived: the clone's `origin/HEAD` when it has one, else the `defaultBranchRef` field from `gh repo view`, cached per process |
+| `repository.base_branch` | The integration branch. A round diffs against its pull request's own base (`origin/<base>`), so a stacked layer's plan and change set cover that layer alone; it diffs against this branch only on a branch known to have no pull request (a detached HEAD no attach recorded has to name its pull request). A pull request whose base cannot be read or fetched, or whose repository is not `origin`'s, is refused rather than diffed against another branch. A walk down a stack for its required checks stops here. `DRIVE_PR_BASE_BRANCH` overrides it | Derived: the clone's `origin/HEAD` when it has one, else the `defaultBranchRef` field from `gh repo view`, cached per process |
 | `drive.validation_plan_command` | A command that reads the changed files (one per line) on stdin and prints the validation plan as JSON on stdout: `{validation: {localChecks: [...], verificationChecks: [...], testbox: {required, command, warmupCommand, requiredBy}}, reviewSkills: [...]}`. `round-plan.ts` runs it through the shell from the repository root | Unset: the plan is the single local check `gates.command` |
 | `drive.load_guard_command` | A command `round-plan.ts` runs (in text mode) before printing the plan, which waits until the machine's load allows heavy checks | Unset: no load guard |
 | `drive.change_areas_catalog` | Path, relative to the repository root or absolute, to a [change-area catalog](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): YAML whose `areas:` map holds area key → `{paths: [globs], ...}`. `verification-fit.ts` validates `--area` against its keys, and refuses (exit 2, naming the field) a catalog whose `paths`, `generated[].source`, `labels` or `tracker` fields are malformed; the rest of the catalog schema is not checked | Unset: `--area` is recorded unchecked and the script reports the catalog as not configured |
@@ -284,7 +284,9 @@ Stopping the driver stops its pass, and the pass's agent context is lost;
 nothing else is rolled back. Edits in the worktree, local commits not yet
 pushed, and anything already pushed or posted stay where they are. Before
 re-arming, check `bun "<skill-dir>/../../shared/command.ts" -- git status --short` for uncommitted work and
-`bun "<skill-dir>/../../shared/command.ts" -- git rev-list --count '@{u}..HEAD'` for unpushed commits, and finish or discard
+`bun "<skill-dir>/../../shared/command.ts" -- git rev-list --count 'origin/<head-branch>..HEAD'` for unpushed commits
+(`<head-branch>` is the PR's head branch, which a detached tree has no
+upstream for), and finish or discard
 them. The next drive recovers the stale locks and resumes at the same round
 from the saved state, and a Ready mark already made stays made.
 
@@ -328,6 +330,42 @@ bun "<skill-dir>/scripts/drive.ts" <PR> --bots-only -- claude -p "/jig:drive-pr 
 
 The `bun` prefix and the single line are deliberate: every TypeScript command explicitly names its runtime. On Windows, run it in PowerShell after installing Git for Windows. It is the same command `/jig:do-item` emits and spawns when it arms the drive for you, and the one `/jig:drive-pr` spawns from a session. The agent tells "a session asking for a drive" from "a pass the driver spawned" by `$DRIVE_PR_TARGET`, which only `drive.ts` sets — so a driver's own passes never arm another driver.
 
+### Which working tree drives it
+
+Any working tree of the clone can drive a PR. Before it takes its locks,
+`drive.ts` **attaches** the PR to the tree it runs in
+(`<skill-dir>/scripts/attach-pr.ts`): it fetches the PR's head branch from
+`origin`, checks the branch out when no other working tree of the clone holds
+it, and checks out the PR's head commit **detached** when one does, since git
+allows one checkout per branch. It never creates a second, suffixed branch:
+the drive pushes to the PR's head branch by name from whatever commit the
+tree is on, so a detached tree pushes exactly as a named one does. The attach
+records the tree in the drive state (`drivenBranch`) and in the tree's own
+git directory, so every later step, and `drives.ts`, knows which branch a
+detached tree drives.
+
+It refuses, naming what is in the way, when this tree has uncommitted changes
+or an unfinished merge, rebase or cherry-pick; when the tree holding the
+branch has uncommitted changes or commits the PR's head does not have
+(push them from there first); when moving would orphan a commit on this
+tree's detached head; when this is the clone's primary checkout on another
+branch; and when the PR comes from a fork, whose head the drive cannot push
+to. A dry run attaches nothing, and `DRIVE_PR_ATTACH=off` drives the tree as
+it stands, for a harness that prepares its own trees.
+
+`/jig:drive-pr <PR>` decides the tree before it arms the driver
+(`bun "<skill-dir>/scripts/attach-pr.ts" <PR> --place`): the session's own working tree, or, from the
+clone's primary checkout, the tree that already holds the PR, else a new one
+created with git's `worktree add --detach` under the first root
+`gc.worktree_roots` names. A tree created this way is recorded as the
+drive's, and [resource collection](../../gc/README.md) reports it for
+removal by that record once the PR merges or closes. A PR in another
+repository can be named as `owner/name#N` or by its URL: the drive is armed
+in that repository's clone named by the `clones` map in your user file
+(`~/.jig/jig.yaml`,
+[configuration](../../CONFIGURATION.md#clones-user-file-only)), and with
+none mapped the session prints the command to run in a checkout of it.
+
 `--bots-only` keeps it off human-authored threads (recommended for unattended runs). `--keep-draft` stops it marking the PR Ready (`pull_requests.mark_ready: never` does the same for every drive). `--max-rounds N` bounds the loop (default `drive.max_rounds`, else 10). `--dry-run` reports what each round would do and never invokes the pass. Starting it twice **in the same clone** is safe — see exit `11`. That is the exact reach: the lock lives in the per-clone state dir described below, so it covers this clone and its linked worktrees and nothing further. A separate clone — another machine, a CI checkout — takes its own lock and can drive the same PR at the same time.
 
 ## The exit states — what you do now
@@ -346,11 +384,11 @@ The `bun` prefix and the single line are deliberate: every TypeScript command ex
 | `11` | **Another driver is live** | The drive is already armed — in this worktree or another of this clone. Do nothing; do not kill the other driver. |
 | `13` | `DRIVE_HELD_BY_OTHER_WORKTREE` | Another live *working tree* is mutating this PR's drive state, possibly through an interactive pass rather than another driver — a case not covered by `11` when the other session is not itself holding `drive.ts`'s PR/worktree locks. Inspect with `bun "<skill-dir>/scripts/drive-state.ts" lease <PR> --all`; wait for the holder, or take over with `bun "<skill-dir>/scripts/drive-state.ts" clear-lease <PR> --all` once you have confirmed it is dead. |
 | `14` | **Stalled** | `$DRIVE_PR_STALL_ROUNDS` (default 2) consecutive passes changed nothing this loop can observe — the reviewed head, local head, and every unresolved-thread/summary-finding/parked-key set all came back identical. The usual cause is a pass exiting 0 without acting (for example, standing down against its own parent driver) while the round headers still look healthy. First check what the driven worktree still holds — the stop prints it, and a pass can make correct edits and stall before committing them. Then read the pass output for what it decided, fix why it did not act, then re-arm the same command. |
-| `15` | **Pass deadline** | One round's agent pass ran longer than `DRIVE_PR_PASS_TIMEOUT` (default 90 minutes) and was killed. Nothing was rolled back: check `bun "<skill-dir>/../../shared/command.ts" -- git status --short` for an uncommitted fix and `bun "<skill-dir>/../../shared/command.ts" -- git rev-list --count '@{u}..HEAD'` for a committed but unpushed one, keep or discard that work, then re-arm. If a legitimate round needs longer, raise the deadline; if not, look for what hung. |
+| `15` | **Pass deadline** | One round's agent pass ran longer than `DRIVE_PR_PASS_TIMEOUT` (default 90 minutes) and was killed. Nothing was rolled back: check `bun "<skill-dir>/../../shared/command.ts" -- git status --short` for an uncommitted fix and `bun "<skill-dir>/../../shared/command.ts" -- git rev-list --count 'origin/<head-branch>..HEAD'` for a committed but unpushed one, keep or discard that work, then re-arm. If a legitimate round needs longer, raise the deadline; if not, look for what hung. |
 | `16` | **Quota-parked** | The agent hit a subscription usage limit that will not reset within `DRIVE_PR_QUOTA_MAX_SLEEP_SEC` (default 6 hours) — a weekly limit, or one whose reset could not be read. A short limit never reaches this exit: the drive sleeps through it. Nothing is wrong with the PR. Run the same two `git` checks as for `15`, then re-arm once the limit has reset; starting another session now only hits the same limit. |
 | `18` | `MAILBOX_STOPPED` | A mailbox `stop` ended the drive after any active pass and its Ready transition finished. Send `resume --target stop` before re-arming. |
 | `19` | `MAILBOX_PAUSE_TIMEOUT` | A mailbox `pause` stayed active for `$DRIVE_PR_PAUSE_MAX_SEC` (default 30 minutes). Send `resume --target pause`, then re-arm. The driver releases its locks on this exit. |
-| `1` / `2` | Pass failed / usage error / **CI still red** | Operational. Read stderr; `2` usually means the command line itself is wrong, but can also mean `UNSUPPORTED_CLI` — a `gh` too old to report a required PR field such as draft state or mergeability. For that case, upgrade `gh`; it is not a CI-repair matter. `1` is also the CI stop: the review converged but full CI on the converged head is red and the repair budget (`DRIVE_PR_CI_REPAIR_ROUNDS`, default 2) is exhausted or disabled (`0` skips repair entirely and stops on the first red), or the verdict was unreadable rather than a named failure. Repair CI by hand, then re-arm. |
+| `1` / `2` | Pass failed / usage error / **CI still red** | Operational. Read stderr; `2` usually means the command line itself is wrong, or that the [attach](#which-working-tree-drives-it) refused this tree (it names what is in the way), but can also mean `UNSUPPORTED_CLI` — a `gh` too old to report a required PR field such as draft state or mergeability. For that case, upgrade `gh`; it is not a CI-repair matter. `1` is also the CI stop: the review converged but full CI on the converged head is red and the repair budget (`DRIVE_PR_CI_REPAIR_ROUNDS`, default 2) is exhausted or disabled (`0` skips repair entirely and stops on the first red), or the verdict was unreadable rather than a named failure. Repair CI by hand, then re-arm. |
 
 One red-CI cause is worth ruling out before you repair anything in a repository with a [CI hold](#ci-hold): a drive that **died** mid-round leaves its hold label behind, and the repository's held-head check then fails or cancels a required check on a perfectly healthy PR. Check `bun "<skill-dir>/../../shared/command.ts" -- gh pr view <PR> --json labels` first. If it is there, push whatever the dead drive stranded, then `bun "<skill-dir>/../../shared/command.ts" -- gh pr edit <PR> --remove-label "<ci.hold_label>"` — the removal itself retriggers CI. Do **not** `gh run rerun` the old run: it replays the original event payload, which still carries the label, so it fails on the hold step again.
 

@@ -19,6 +19,7 @@ import {
   readConfig,
 } from "../../../../shared/consumer.ts";
 import { verifyOriginIsPrRepo } from "./base-drift.ts";
+import { attachedTree } from "./driven-branch.ts";
 import { ghCall, git, gitCallTimeoutSeconds } from "./proc.ts";
 
 let cache: { key: string; value: Record<string, unknown> } | undefined;
@@ -326,7 +327,8 @@ export const BASE_BRANCH_UNKNOWN =
 /**
  * The branch pull request `pr` targets, without the remote prefix, or `null`
  * when it cannot be read. `pr === ""` reads the pull request of the current
- * branch. For a stacked layer this is the layer below, not the integration
+ * branch, or the one a detached tree's attach recorded. For a stacked layer
+ * this is the layer below, not the integration
  * branch.
  */
 export async function pullRequestBaseBranch(
@@ -334,6 +336,7 @@ export async function pullRequestBaseBranch(
   pr: string,
   timeoutSec?: number,
 ): Promise<string | null> {
+  pr = await attachedPr(root, pr, timeoutSec);
   const selector = pr === "" ? [] : [pr];
   const view = await ghCall(
     ["pr", "view", ...selector, "--json", "baseRefName", "-q", ".baseRefName"],
@@ -345,6 +348,23 @@ export async function pullRequestBaseBranch(
   );
   const name = view.stdout.trim();
   return view.code === 0 && /^[^\s~^:?*[\\]+$/.test(name) ? name : null;
+}
+
+/**
+ * `pr`, or for `""` on a detached head the pull request the tree's attach
+ * recorded (`lib/driven-branch.ts`), since a detached head has no branch for
+ * `gh pr view` to read; `""` otherwise.
+ */
+async function attachedPr(
+  root: string,
+  pr: string,
+  timeoutSec?: number,
+): Promise<string> {
+  if (pr !== "") return pr;
+  const record = await attachedTree(boundedGit(timeoutSec), root, {
+    timeoutSec: gitTimeout(timeoutSec),
+  });
+  return record === null ? "" : String(record.pr);
 }
 
 /**
@@ -433,7 +453,7 @@ const prBaseRefCache = new Map<string, { ref: string } | { error: string }>();
  *
  * Fails closed, with the reason, when the pull request's base cannot be
  * established: the pull request cannot be read (including on a detached
- * HEAD, where `pr` must be given), `origin` is not the repository the pull
+ * HEAD no attach recorded, where `pr` must be given), `origin` is not the repository the pull
  * request lives in (compared by owner and name; `repo-url.ts` says why hosts
  * are not), or the base has no remote-tracking ref in this clone. No
  * other branch stands in for it: the integration branch can cover fewer files
@@ -447,6 +467,7 @@ export async function prBaseRef(
   pr: string,
   timeoutSec?: number,
 ): Promise<{ ref: string } | { error: string }> {
+  pr = await attachedPr(root, pr, timeoutSec);
   const key = `${root}\0${pr}`;
   const cached = prBaseRefCache.get(key);
   if (cached !== undefined) return cached;

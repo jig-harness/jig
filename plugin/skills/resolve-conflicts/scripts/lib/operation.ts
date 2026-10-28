@@ -11,6 +11,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { readDrivenTree } from "../../../../shared/driven-tree.ts";
 import { git, gitPath, gitRaw, resolveCommit, subject } from "./git.ts";
 
 export type OperationKind = "merge" | "rebase" | "cherry-pick" | "revert";
@@ -62,7 +63,11 @@ function read(path: string): string | null {
 
 function currentBranch(root: string): string | null {
   const r = gitRaw(root, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
-  return r.code === 0 ? r.stdout.trim() : null;
+  if (r.code === 0) return r.stdout.trim();
+  // A detached tree a drive attached is on the branch its record names.
+  const dir = gitRaw(root, ["rev-parse", "--absolute-git-dir"]);
+  if (dir.code !== 0) return null;
+  return readDrivenTree(dir.stdout.trim())?.branch ?? null;
 }
 
 function parentOf(root: string, commit: string): string | null {

@@ -2,6 +2,7 @@
 import { lstatSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { layeredConfig } from "../../shared/consumer.ts";
+import { readDrivenTree } from "../../shared/driven-tree.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { GcError } from "../../shared/gc-error.ts";
 import { gcGit as git } from "../git.ts";
@@ -17,6 +18,7 @@ import {
   ancestry,
   localOnlyCommits,
   processHolder,
+  requestByNumber,
   requests,
   worktreeActivity,
 } from "./worktree-git.ts";
@@ -76,15 +78,14 @@ export async function worktreeProof(
 ): Promise<Proof> {
   if (!lstatSync(path).isDirectory())
     return { state: "finding", reason: "worktree root is not a directory" };
-  const branch = await git(path, [
-    "symbolic-ref",
-    "--quiet",
-    "--short",
-    "HEAD",
-  ]);
+  const name = await git(path, ["rev-parse", "--abbrev-ref", "HEAD"]);
   const head = await git(path, ["rev-parse", "HEAD"]);
   const dir = await git(path, ["rev-parse", "--git-dir"]);
   const admin = isAbsolute(dir) ? dir : resolve(path, dir);
+  // A detached tree a drive attached names its pull request in its record.
+  const driven = name === "HEAD" ? readDrivenTree(admin) : null;
+  if (name === "HEAD" && driven === null)
+    throw new GcError("HEAD is detached and no drive attached the worktree");
   const flags = await git(path, ["ls-files", "-v", "-z"]);
   const facts: WorktreeEvidence = {
     dirty: !!(await git(path, [
@@ -114,7 +115,10 @@ export async function worktreeProof(
   };
   const local = localWorktreeVeto(facts);
   if (local) return local;
-  facts.requests = await requests(path, policy.remote, branch);
+  facts.requests =
+    driven === null
+      ? await requests(path, policy.remote, name)
+      : await requestByNumber(path, policy.remote, driven.pr);
   if (facts.requests.some((pr) => pr.state === "OPEN"))
     return classifyWorktree(facts, idleDays * 86_400_000);
   facts.localOnlyCommits = await localOnlyCommits(path, head);
@@ -130,7 +134,7 @@ export async function worktreeProof(
   facts.idleMs = worktreeActivity(path, admin);
   if (
     (await git(path, ["rev-parse", "HEAD"])) !== head ||
-    (await git(path, ["symbolic-ref", "--quiet", "--short", "HEAD"])) !== branch
+    (await git(path, ["rev-parse", "--abbrev-ref", "HEAD"])) !== name
   )
     throw new GcError("Worktree identity changed during the proof");
   return classifyWorktree(facts, idleDays * 86_400_000);

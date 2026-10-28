@@ -51,6 +51,7 @@ import {
   registerRunCancellation,
   writeChildInput,
 } from "../../../../shared/proc.ts";
+import { detachedTreeRecord } from "../../../../shared/driven-tree.ts";
 import { fail, testPacing } from "./cli.ts";
 
 // Shared timeout readers and the process-wide cancellation registry serve
@@ -1092,32 +1093,31 @@ export async function unconcludedGitOpMarker(
 }
 
 /**
- * Resolve the PR number: an explicit argument wins; otherwise ask `gh` for
- * the current branch's PR. Returns '' when neither yields one — each caller
- * owns its own refusal message, as the bash scripts did.
+ * Resolve the PR number: an explicit argument wins; then, on a detached head,
+ * the pull request a drive attached the tree to (`driven-tree.ts`);
+ * otherwise ask `gh` for the current branch's PR. Returns '' when none yields
+ * one — each caller owns its own refusal message, as the bash scripts did.
  *
- * `cwd` is optional and defaults to unset (the process's own ambient cwd) —
- * correct for every caller here but one. `self-inflicted.ts` is the
- * exception: it accepts a `--repo`/`$DRIVE_PR_WORKTREE` naming a DIFFERENT
- * checkout than the process cwd, and `gh pr view` with no cwd override reads
- * the branch and remote of whichever repository the process happens to be
- * running in, not `repo` — leaving an omitted PR unresolvable, or worse,
- * resolving one that also exists in the ambient repository against the
- * WRONG base.
- *
- * `cwd` alone is not sufficient to anchor `gh` there: `gh` gives `GH_REPO`
- * precedence over local repository discovery even when `cwd` names a
- * perfectly good checkout, so an inherited `GH_REPO` from the ambient
- * environment can resolve this call against a THIRD repository — neither the
- * process's ambient one nor the one at `cwd`. A
- * `cwd`-bound call therefore also runs with `ghRepoEnv()`, mirroring
- * `gitIdentityEnv()`'s reasoning for `git`.
+ * `cwd` defaults to the process's own. `self-inflicted.ts` passes a
+ * `--repo`/`$DRIVE_PR_WORKTREE` naming another checkout: `gh pr view` with no
+ * cwd reads the branch and remote of the process's repository, not `repo`.
+ * `cwd` alone does not anchor `gh` there (`GH_REPO` outranks local
+ * discovery), so a `cwd`-bound call also runs with `ghRepoEnv()`, as `git`
+ * runs with `gitIdentityEnv()`.
  */
 export async function resolvePr(
   explicit: string,
   cwd?: string,
 ): Promise<string> {
   if (explicit !== "") return explicit;
+  const attached = await detachedTreeRecord((args) =>
+    git(args, {
+      stderr: "pipe",
+      timeoutSec: gitCallTimeoutSeconds(),
+      ...(cwd === undefined ? {} : { cwd, env: gitIdentityEnv() }),
+    }),
+  );
+  if (attached !== null) return String(attached.pr);
   const r = await ghCall(["pr", "view", "--json", "number", "-q", ".number"], {
     stderr: "ignore",
     ...(cwd === undefined ? {} : { cwd, env: ghRepoEnv() }),

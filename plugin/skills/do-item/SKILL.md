@@ -120,11 +120,17 @@ bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch --issue "<KEY>" --title "<is
 bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" open --issue "<KEY>" [--stack-on <branch>] [--accept-oversize "<reason>"] [--json]
 ```
 
-- `branch` prints the branch name for the issue. Create the working branch
-  with it from the planned base before the implementing agent writes
-  anything. When the harness has already created the working branch and its
-  instructions forbid renaming it, keep that branch and say so in the status
-  message; the issue-link line in the body still links the pull request.
+- `branch` prints the branch name for the issue, for a **new** pull request.
+  Create the working branch with it from the planned base before the
+  implementing agent writes anything. When the harness has already created
+  the working branch and its instructions forbid renaming it, keep that
+  branch and say so in the status message; the issue-link line in the body
+  still links the pull request. For an item that already has an open pull
+  request, never create a branch: the branch is the pull request's head.
+  Attach it to the working tree with
+  `bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/attach-pr.ts" <PR>`, which
+  checks the head branch out, or its head commit detached when another
+  working tree holds the branch.
 - `open` prints the plan for the current branch, after validation and the
   pre-PR review gate pass: the `base`, the `gh pr create` arguments the policy
   fixes (`createArgs`: base, `--draft` or not, labels), commands to run after
@@ -580,7 +586,9 @@ routing below remain **exact**.
    branch named by `bun "${CLAUDE_SKILL_DIR}/scripts/pr-plan.ts" branch` (**exact**; see
    [Pull-request policy](#pull-request-policy)), from the integration branch,
    or from the predecessor's branch when this change builds on an unmerged
-   pull request and `pull_requests.stacking` allows it.
+   pull request and `pull_requests.stacking` allows it. When the item already
+   has an open pull request, create no branch: attach its head instead
+   (`bun "${CLAUDE_SKILL_DIR}/../drive-pr/scripts/attach-pr.ts" <PR>`).
 
    **Review gates — MANDATORY when declared.** Each entry of the overlay's
    `do_item.gates` is `{labels: [...], paths: [...], skill: <name>}`. A gate

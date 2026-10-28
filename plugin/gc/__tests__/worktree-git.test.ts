@@ -154,3 +154,56 @@ writeFileSync(${JSON.stringify(marker)}, "executed"); process.stdout.write("toke
   });
   expect(existsSync(marker)).toBe(false);
 });
+
+test("a detached worktree is proven by the pull request a drive attached it to", () => {
+  const f = repository();
+  f.git("remote", "add", "origin", "https://github.com/team/repo.git");
+  f.git("checkout", "--quiet", "--detach");
+  const bin = join(f.root, "bin");
+  mkdirSync(bin);
+  const calls = join(f.root, "gh-calls");
+  writeFakeProgram(
+    join(bin, "gh"),
+    `#!/usr/bin/env bun
+import { appendFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(calls)}, process.argv.slice(2).join(" ") + "\\n");
+console.log(JSON.stringify({ state: "OPEN", headRefOid: "a".repeat(40), headRepository: { name: "repo" }, headRepositoryOwner: { login: "team" } }));
+`,
+  );
+  const proof = (record: boolean) => {
+    const source = `import { writeDrivenTree } from ${JSON.stringify(resolve(import.meta.dir, "../../shared/driven-tree.ts"))};
+import { worktreeProof } from ${JSON.stringify(resolve(import.meta.dir, "../kinds/worktree-proof.ts"))};
+if (${record}) writeDrivenTree(${JSON.stringify(join(f.repo, ".git"))}, { pr: 7, branch: "topic", remote: "origin", created: true });
+try { console.log(JSON.stringify(await worktreeProof(${JSON.stringify(f.repo)}, { remote: "origin", base: "main" }, 7))); }
+catch (error) { console.log(JSON.stringify({ error: String(error) })); }`;
+    const result = Bun.spawnSync(
+      [
+        process.execPath,
+        "--no-env-file",
+        `--config=${resolve(import.meta.dir, "../bunfig.toml")}`,
+        "-e",
+        source,
+      ],
+      {
+        cwd: f.repo,
+        env: {
+          ...gitEnvironment(),
+          PATH: `${bin}${delimiter}${process.env.PATH}`,
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 30_000,
+      },
+    );
+    expectSpawnExit(result, 0);
+    return JSON.parse(result.stdout.toString()) as Record<string, unknown>;
+  };
+  expect(String(proof(false).error)).toContain("no drive attached");
+  expect(proof(true)).toMatchObject({
+    state: "live",
+    reason: "branch has an open pull request",
+  });
+  expect(readFileSync(calls, "utf8")).toContain(
+    "pr view 7 --repo github.com/team/repo",
+  );
+});

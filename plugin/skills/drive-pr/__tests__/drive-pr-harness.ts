@@ -568,6 +568,7 @@ const SUITE_ENV_OVERRIDES = [
   "GH_CALL_TIMEOUT",
   "DRIVE_PR_HELPER_TIMEOUT",
   "DRIVE_PR_LOCK_RETRY_MS",
+  "DRIVE_PR_ATTACH",
   "DRIVE_PR_CLAUDE_PROJECTS_DIR",
   "DRIVE_PR_CODEX_SESSIONS_DIR",
   "JIG_OVERLAY",
@@ -993,13 +994,11 @@ export function useDrivePrSuite(): void {
     // retry interval is the handoff latency between contending claimants — at
     // the production default (1s) the concurrency probes spend almost all of
     // their wall-clock sleeping between polls, and under machine load that
-    // quantum amplified into per-test-budget blowups that present as failures
-    // (the stale-claim race probe: 49s idle, 423s at load ~9 against a 90s
-    // budget). 25ms keeps every probe's CONTENTION real — same processes, same
-    // syscalls, same interleavings — while removing only the sleeping. A test
-    // that needs the production pacing sets its own value in its spawn env
-    // (per-call env wins over this inherited default).
-    suitePacing = { DRIVE_PR_LOCK_RETRY_MS: "25" };
+    // quantum amplified into per-test-budget blowups. 25ms keeps every
+    // probe's contention real while removing only the sleeping; a test that
+    // needs the production pacing sets its own value in its spawn env.
+    // No attach: fixture PRs have no head to fetch (attach-pr.test.ts).
+    suitePacing = { DRIVE_PR_LOCK_RETRY_MS: "25", DRIVE_PR_ATTACH: "off" };
     Object.assign(process.env, suitePacing);
     // The consumer configuration every probe reads: the reviewer app the
     // fixtures post as, the base branch the scratch repositories carry, and

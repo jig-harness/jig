@@ -78,7 +78,7 @@ fields:
     type: list
     items: path
     distinct: true
-    read_by: [audit, gc]
+    read_by: [audit, gc, drive-pr]
     repository_only: true
     since: 0.83.0
   gc.scratch_prefixes:

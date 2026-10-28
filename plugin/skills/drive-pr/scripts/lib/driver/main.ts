@@ -48,6 +48,8 @@ import { driveState, captureIntentChain } from "./paths.ts";
 
 import { runDriverRounds } from "./rounds.ts";
 
+import { attachForDrive } from "./../attach.ts";
+
 export async function main(): Promise<number> {
   const options = parseDriverOptions(process.argv.slice(2));
   let { pr, keepDraft, handoffAt } = options;
@@ -114,6 +116,11 @@ export async function main(): Promise<number> {
   // mark-Ready outcomes, and the terminal state.
   const logPath = join(stateDir, `drive-pr-${pr}.log`);
   startDriverLog(logPath);
+
+  // Before the locks: the tree is put on the PR's head (its branch, or the
+  // head commit detached when another working tree holds the branch), so
+  // every round's commit lands on whatever the attach left.
+  await attachForDrive(pr, dryRun);
 
   // What this driver publishes about itself into its lock claims — the answer
   // to "who is working my worktree, and on what?" that the exit-11 refusal

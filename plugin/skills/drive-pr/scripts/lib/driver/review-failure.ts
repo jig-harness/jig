@@ -13,6 +13,8 @@ import { detectQuotaBlock } from "./../quota/index.ts";
 
 import { handleQuotaBlock } from "./review-quota.ts";
 
+import { unpushedCountCommand } from "./../driven-branch.ts";
+
 async function handlePassDeadline(
   passDeadlineSec: number,
   round: number,
@@ -40,7 +42,7 @@ async function handlePassDeadline(
       "  rolled back. Check `git status --short` for an uncommitted fix and",
     );
     console.error(
-      "  `git rev-list --count @{u}..HEAD` for a committed-but-unpushed one before re-arming;",
+      `  \`${unpushedCountCommand()}\` for a committed-but-unpushed one before re-arming;`,
     );
     console.error(
       "  a killed pass strands work at whatever step it had reached.",

@@ -51,6 +51,7 @@ import type { SpawnOptions } from "node:child_process";
 import { traceEnv, traceGhRunner, traceRunner } from "./trace.ts";
 import { fail } from "./cli.ts";
 import { errnoCode } from "./errors.ts";
+import { detachedTreeRecord } from "./driven-tree.ts";
 
 /**
  * Validate a timeout environment variable the way `gh-deadline.sh` did: unset
@@ -701,12 +702,17 @@ export function tsArgv(scriptPath: string, args: string[] = []): string[] {
 }
 
 /**
- * Resolve the PR number: an explicit argument wins; otherwise ask `gh` for
- * the current branch's PR. Returns '' when neither yields one — each caller
- * owns its own refusal message, as the bash scripts did.
+ * Resolve the PR number: an explicit argument wins; then, on a detached head,
+ * the pull request a drive attached the tree to (`driven-tree.ts`);
+ * otherwise ask `gh` for the current branch's PR. Returns '' when none yields
+ * one — each caller owns its own refusal message, as the bash scripts did.
  */
 export async function resolvePr(explicit: string): Promise<string> {
   if (explicit !== "") return explicit;
+  const attached = await detachedTreeRecord((args) =>
+    git(args, { stderr: "pipe", timeoutSec: 30 }),
+  );
+  if (attached !== null) return String(attached.pr);
   const r = await ghCall(["pr", "view", "--json", "number", "-q", ".number"], {
     stderr: "ignore",
   });

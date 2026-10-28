@@ -1,0 +1,265 @@
+/**
+ * Decide which working tree drives a pull request, and prepare it: the arm
+ * step's half of the attach (`attach-pr.ts --place`).
+ *
+ * A session in a working tree other than the clone's primary checkout drives
+ * from that tree. The primary checkout stays on its own branch, so a session
+ * there drives from the tree that already holds the pull request (its head
+ * branch checked out, or an earlier attach's record), and otherwise from a new
+ * one: `git worktree add --detach` under the first of the roots
+ * `gc.worktree_roots` names, recorded as created by the drive so resource
+ * collection reaps it once the pull request merges or closes.
+ *
+ * A pull request in another repository (`owner/repo#N`, or its URL) is placed
+ * the same way in that repository's clone, which the user file's `clones` map
+ * names; with none mapped, the caller is given the command to run there.
+ */
+import { existsSync, mkdirSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { clonePath, isMapping } from "../../../../shared/config-layers.ts";
+import { layeredConfig } from "../../../../shared/consumer.ts";
+import { readDrivenTree } from "../../../../shared/driven-tree.ts";
+import { canonical, DRIVE_REMOTE, out, refuse } from "./attach.ts";
+import { fetchTimeoutSeconds } from "./base-drift.ts";
+import {
+  ghCall,
+  ghRepoEnv,
+  git,
+  gitCallTimeoutSeconds,
+  gitIdentityEnv,
+  helperTimeoutSeconds,
+  run,
+  tsArgv,
+} from "./proc.ts";
+
+export interface PrRef {
+  pr: string;
+  /** `owner/name` when the reference names a repository. */
+  slug: string | null;
+}
+
+/** `N`, `owner/name#N` or a pull request URL; `null` for anything else. */
+export function parsePrRef(ref: string): PrRef | null {
+  if (/^[0-9]+$/.test(ref)) return { pr: String(Number(ref)), slug: null };
+  const short = /^([^/\s#]+\/[^/\s#]+)#([0-9]+)$/.exec(ref);
+  if (short) return { pr: String(Number(short[2])), slug: short[1] as string };
+  const url =
+    /^https?:\/\/[^/\s]+\/([^/\s]+\/[^/\s]+)\/pull\/([0-9]+)\/?$/.exec(ref);
+  if (url) return { pr: String(Number(url[2])), slug: url[1] as string };
+  return null;
+}
+
+export type Placement =
+  | {
+      kind: "placed";
+      pr: string;
+      slug: string | null;
+      tree: string;
+      created: boolean;
+    }
+  | { kind: "elsewhere"; pr: string; slug: string; message: string };
+
+/** The `owner/name` `gh` resolves for the checkout at `cwd`, or `null`. */
+async function repoSlug(cwd: string): Promise<string | null> {
+  const r = await ghCall(
+    ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
+    { cwd, stderr: "pipe", env: ghRepoEnv() },
+  );
+  const slug = r.stdout.trim();
+  return r.code === 0 && slug !== "" ? slug : null;
+}
+
+interface Tree {
+  path: string;
+  branch: string | null;
+}
+
+/** Every working tree of the clone at `cwd`, the primary checkout first. */
+async function trees(cwd: string): Promise<Tree[]> {
+  const list = await out(
+    cwd,
+    ["worktree", "list", "--porcelain"],
+    "the clone's working trees",
+  );
+  const found: Tree[] = [];
+  for (const line of list.split("\n")) {
+    if (line.startsWith("worktree "))
+      found.push({ path: canonical(line.slice(9)), branch: null });
+    else if (line.startsWith("branch refs/heads/") && found.length > 0)
+      (found.at(-1) as Tree).branch = line.slice("branch refs/heads/".length);
+  }
+  if (found.length === 0) refuse(1, "the clone listed no working trees");
+  return found;
+}
+
+/** The tree whose attach record names `pr`, if any. */
+async function recordedTree(all: Tree[], pr: string): Promise<string | null> {
+  for (const tree of all) {
+    if (tree.branch !== null || !existsSync(tree.path)) continue;
+    const dir = await git(["rev-parse", "--absolute-git-dir"], {
+      cwd: tree.path,
+      stderr: "pipe",
+      timeoutSec: gitCallTimeoutSeconds(),
+      env: gitIdentityEnv(),
+    });
+    if (dir.code === 0 && readDrivenTree(dir.stdout.trim())?.pr === Number(pr))
+      return tree.path;
+  }
+  return null;
+}
+
+async function headBranch(cwd: string, pr: string): Promise<string> {
+  const r = await ghCall(
+    ["pr", "view", pr, "--json", "headRefName", "-q", ".headRefName"],
+    { cwd, stderr: "pipe", env: ghRepoEnv() },
+  );
+  const branch = r.stdout.trim();
+  if (r.code !== 0 || branch === "") refuse(1, `cannot read PR #${pr}`);
+  return branch;
+}
+
+/** Create a detached tree for `pr` under the clone's first worktree root. */
+async function createTree(
+  primary: string,
+  pr: string,
+  branch: string,
+): Promise<string> {
+  const gc = layeredConfig(primary).values.gc;
+  const roots = isMapping(gc) ? gc.worktree_roots : undefined;
+  const root = Array.isArray(roots) ? roots[0] : undefined;
+  if (typeof root !== "string" || root === "")
+    refuse(
+      2,
+      `PR #${pr} has no working tree, and gc.worktree_roots names no root to create one under — set it in ${join(primary, ".config/jig.yaml")}, or check the PR out in a working tree and arm there`,
+    );
+  const dir = isAbsolute(root) ? root : resolve(primary, root);
+  const path = join(dir, `${basename(primary)}-pr-${pr}`);
+  if (existsSync(path))
+    refuse(
+      2,
+      `${path} already exists and is not a working tree attached to PR #${pr} — remove it, or arm from it`,
+    );
+  const timeout = fetchTimeoutSeconds();
+  if (!timeout.ok)
+    refuse(1, `DRIVE_PR_FETCH_TIMEOUT='${timeout.raw}' is invalid`);
+  const fetched = await git(
+    [
+      "fetch",
+      "--quiet",
+      DRIVE_REMOTE,
+      `+refs/heads/${branch}:refs/remotes/${DRIVE_REMOTE}/${branch}`,
+    ],
+    {
+      cwd: primary,
+      stderr: "pipe",
+      timeoutSec: timeout.seconds,
+      env: gitIdentityEnv(),
+    },
+  );
+  if (fetched.code !== 0)
+    refuse(1, `cannot fetch '${branch}': ${fetched.stderr.trim()}`);
+  mkdirSync(dir, { recursive: true });
+  await out(
+    primary,
+    [
+      "worktree",
+      "add",
+      "--quiet",
+      "--detach",
+      path,
+      `refs/remotes/${DRIVE_REMOTE}/${branch}`,
+    ],
+    `a new working tree at ${path}`,
+  );
+  return canonical(path);
+}
+
+/**
+ * The clone that holds `ref`: `cwd`'s own, or the one `clones` maps another
+ * repository to; `null` when another repository has none mapped.
+ */
+async function cloneFor(ref: PrRef, cwd: string): Promise<string | null> {
+  if (ref.slug === null) return cwd;
+  const slug = ref.slug.toLowerCase();
+  if ((await repoSlug(cwd))?.toLowerCase() === slug) return cwd;
+  const mapped = clonePath(layeredConfig(cwd).values, ref.slug);
+  if (mapped === undefined) return null;
+  if (!existsSync(mapped))
+    refuse(2, `clones.${ref.slug} names ${mapped}, which does not exist`);
+  const theirs = await repoSlug(mapped);
+  if (theirs?.toLowerCase() !== slug)
+    refuse(
+      2,
+      `clones.${ref.slug} names ${mapped}, which is a checkout of ${theirs ?? "no repository gh can read"}`,
+    );
+  return mapped;
+}
+
+/** Choose (or create) the tree that drives `ref` from the checkout at `cwd`. */
+export async function placePr(ref: PrRef, cwd: string): Promise<Placement> {
+  const clone = await cloneFor(ref, cwd);
+  if (clone === null)
+    return {
+      kind: "elsewhere",
+      pr: ref.pr,
+      slug: ref.slug as string,
+      message: elsewhere(ref.slug as string, ref.pr),
+    };
+  const placed = (tree: string, created: boolean): Placement => ({
+    kind: "placed",
+    pr: ref.pr,
+    slug: ref.slug,
+    tree,
+    created,
+  });
+  const all = await trees(clone);
+  const primary = (all[0] as Tree).path;
+  const here = canonical(
+    await out(clone, ["rev-parse", "--show-toplevel"], "this working tree"),
+  );
+  if (clone === cwd && here !== primary) return placed(here, false);
+  const branch = await headBranch(clone, ref.pr);
+  const holder = all.find((tree) => tree.branch === branch);
+  if (holder !== undefined) return placed(holder.path, false);
+  const recorded = await recordedTree(all, ref.pr);
+  if (recorded !== null) return placed(recorded, false);
+  return placed(await createTree(primary, ref.pr, branch), true);
+}
+
+function elsewhere(slug: string, pr: string): string {
+  return [
+    `PR ${slug}#${pr} is in another repository, and the user file maps no clone of it (clones in ~/.jig/jig.yaml).`,
+    `Run this in a checkout of ${slug}:`,
+    `  /jig:drive-pr ${pr}`,
+    `or map a clone, then arm again:`,
+    `  clones:`,
+    `    ${slug}: /path/to/a/clone`,
+  ].join("\n");
+}
+
+const ATTACH_PR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "attach-pr.ts",
+);
+
+/** Attach `pr` in `tree` as its own process, so the state is that clone's. */
+export async function attachIn(
+  tree: string,
+  pr: string,
+  created: boolean,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  // Its fetch has a deadline of its own; the rest is a helper's.
+  const fetch = fetchTimeoutSeconds();
+  const r = await run(
+    tsArgv(ATTACH_PR, [pr, ...(created ? ["--created"] : [])]),
+    {
+      cwd: tree,
+      stderr: "pipe",
+      timeoutSec: helperTimeoutSeconds() + (fetch.ok ? fetch.seconds : 0),
+      env: gitIdentityEnv(),
+    },
+  );
+  return { code: r.code, stdout: r.stdout, stderr: r.stderr };
+}

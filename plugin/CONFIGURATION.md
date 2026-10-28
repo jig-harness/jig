@@ -125,12 +125,15 @@ Command-line flags, where a script has them, override all three.
   except the `changelog` fields, which the `changelog` skill reads from the
   repository's own file alone and refuses from any other layer
   ([`changelog`](#changelog)).
+- **Fields only a user file sets.** [`clones`](#clones-user-file-only)
+  describes one machine, so a repository's file refuses it; an environment
+  variable may still set it for one run.
 - **Adoption is the repository's file.** A user file alone does not make a
   repository look adopted: `resolve-review-comments` and the tracker scripts
   still refuse to run without `.config/jig.yaml`. The skills that run on
   their defaults read the user file and the environment either way.
 - **Paths** in any layer are relative to the repository root, as in the
-  repository's file.
+  repository's file, except the clone paths of `clones`, which are absolute.
 - **Errors** name the file or variable that set the field at fault, and
   `jig-config.ts` shows which layer set each field. It writes a key that
   holds a dot in quotes (`do_item.agents.title_keywords."node.js"`), and
@@ -698,6 +701,7 @@ These are set per machine or per run, not committed:
 | `JIG__<SECTION>__<FIELD>` | Sets one field for this run, over every file (see [configuration layers](#configuration-layers)) |
 | `LINEAR_API_KEY`, `LINEAR_API_TOKEN` | Credentials for the Linear adapter |
 | `DRIVE_PR_BASE_BRANCH`, `DRIVE_PR_REVIEWER_APP`, `DRIVE_PR_REVIEWER_CHECK`, `DRIVE_PR_STICKY_MARKER`, `DRIVE_PR_SHA_MARKER` | Override the matching field for one run |
+| `DRIVE_PR_ATTACH` | `off` makes `drive.ts` drive the working tree as it stands, without attaching the pull request to it first (for a harness that prepares its own trees); `on` or unset attaches ([which tree drives a PR](skills/drive-pr/README.md#which-working-tree-drives-it)) |
 | `DRIVE_PR_STATE_DIR` | State root; rounds, locks and leases live in its `<clone-key>/` subdirectory. An inherited resolved leaf is also accepted. Flat legacy state refuses until explicitly relocated. |
 | `JIG_VERIFICATION_FIT_LOG` | Where verification-fit verdicts are logged |
 | `DEV_DASHBOARD_DIR` | Overrides `fleet_health.snapshot_dir` |
@@ -718,6 +722,25 @@ These are set per machine or per run, not committed:
 | `DRIVE_PR_*` (others) | Round limits, timeouts and repair budgets; listed in the [drive-pr README](skills/drive-pr/README.md) |
 | Others | A few knobs of a single skill, such as `REFLECT_THRESHOLD` of `resolve-review-comments`, are described where that skill's `SKILL.md` uses them |
 
+## `clones` (user file only)
+
+Where this machine keeps a clone of another repository, so a session in one
+repository can arm the drive of a pull request in another
+(`/jig:drive-pr owner/name#N`, or the pull request's URL). Only the user file
+(`~/.jig/jig.yaml`) or an environment variable may set it: a repository's own
+file, shared by everyone who clones it, cannot know where this machine keeps
+anything, and refuses the field with an error naming it.
+
+```yaml
+clones:
+  example/api: ~/work/api
+  example/web: /srv/checkouts/web
+```
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `clones` | map of `owner/name` to a local clone path, absolute or starting with `~/` | No clone is known: arming another repository's pull request prints the command to run in a checkout of it | drive-pr | The drive is armed in that clone's primary checkout, as for a pull request with no working tree: in the tree that holds the pull request, else in a new one under that repository's `gc.worktree_roots`. The clone must be a checkout of the repository its key names. Keys compare without regard to case |
+
 ## `gc`
 
 The resource collector reads repository declarations separately from machine
@@ -727,7 +750,7 @@ command can be registered as a collection kind.
 | Field | Type | Default / meaning | Read by |
 |-------|------|-------------------|---------|
 | `gc.kinds` | distinct string list | Empty; supported repository kinds: `tool-state`, `scratch`, `worktrees` | audit, gc |
-| `gc.worktree_roots` | distinct path list | Empty; roots containing the tool's worktrees, relative to the repository or absolute | audit, gc |
+| `gc.worktree_roots` | distinct path list | Empty; roots containing the tool's worktrees, relative to the repository or absolute. `drive-pr` creates the working tree for a pull request that has none under the first root | audit, gc, drive-pr |
 | `gc.scratch_prefixes` | distinct path list | Empty; path prefixes of scratch directory names, relative to the repository or absolute; a filesystem root is refused | audit, gc |
 
 A collecting run fetches `.config/jig.yaml` from the remote URL and base branch
