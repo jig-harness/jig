@@ -217,7 +217,7 @@ criteria:
   - id: test-exemptions-prune-themselves
     level: standard
     requires: mechanical
-    since: next
+    since: 0.91.2
     statement: >-
       The check that fails a changed source file without a test also fails
       an exemption that matches no file, so an exemption leaves with the
@@ -241,7 +241,7 @@ criteria:
   - id: fixed-delay-tokens-prune-themselves
     level: standard
     requires: mechanical
-    since: next
+    since: 0.91.2
     statement: >-
       The gate that rejects fixed sleeps fails a suppression token with an
       empty reason, and a token with no delay on its line or the line below.
