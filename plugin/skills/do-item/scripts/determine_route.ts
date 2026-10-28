@@ -53,7 +53,6 @@ import {
 } from "../../file-issue/scripts/lib/config.ts";
 import { lintTaxonomyFile } from "../../file-issue/scripts/lib/taxonomy.ts";
 import { declaresLabel } from "../../file-issue/scripts/lib/validate.ts";
-import { parseWorkBatchSection } from "../../work-batch/scripts/lib/policy.ts";
 import {
   type AgentRouting,
   catalogPathFromOverlay,
@@ -322,12 +321,25 @@ const isStringList = (v: unknown): v is string[] =>
 // Only an omitted field is absent. A field written with no value reads as
 // null, which the catalog's own schema refuses as it refuses any other shape.
 
-/** An area's `impliedBy`: absent is none, any shape but a list of area ids refuses. */
-function impliedByOf(key: string, value: unknown): string[] {
+/**
+ * An area's `impliedBy`: absent is none; any shape but a list of the
+ * catalog's area ids refuses, since the closure never follows an id no area
+ * has and would drop the review the reference was written to reach.
+ */
+function impliedByOf(
+  key: string,
+  value: unknown,
+  catalog: ChangeAreaCatalog,
+): string[] {
   if (value === undefined) return [];
   if (!isStringList(value))
     throw new CatalogFieldError(
       `areas.${key}.impliedBy must be a list of area ids`,
+    );
+  const unknown = value.filter((id) => !catalog.has(id));
+  if (unknown.length > 0)
+    throw new CatalogFieldError(
+      `areas.${key}.impliedBy names ${unknown.join(", ")}, which no area of the catalog is`,
     );
   return value;
 }
@@ -351,8 +363,8 @@ function reviewSkillsOf(key: string, value: unknown): string[] {
  * seed through `codearea_areas` and of every area their `impliedBy` closure
  * reaches: the side M3 reads mandatory reviews from. A review is mandatory
  * when the area's `review.skills` names a skill. A malformed `impliedBy` or
- * `review` in any area throws `CatalogFieldError` rather than dropping the
- * obligation it carries.
+ * `review` in any area, or an `impliedBy` naming an id no area has, throws
+ * `CatalogFieldError` rather than dropping the obligation it carries.
  */
 export function catalogFacts(
   catalog: ChangeAreaCatalog,
@@ -370,7 +382,9 @@ export function catalogFacts(
   const areas: Record<string, { impliedBy: string[] }> = Object.create(null);
   const skillsOf = new Map<string, string[]>();
   for (const [key, area] of catalog) {
-    areas[key] = { impliedBy: impliedByOf(key, area.fields.impliedBy) };
+    areas[key] = {
+      impliedBy: impliedByOf(key, area.fields.impliedBy, catalog),
+    };
     skillsOf.set(key, reviewSkillsOf(key, area.fields.review));
   }
   const reviews: Review[] = [];
@@ -381,16 +395,25 @@ export function catalogFacts(
   return { flags, reviews };
 }
 
-/** The size labels the repository knows, as `work-batch` takes them. */
+/**
+ * The size labels the repository knows: `work_batch.sizes`, else the
+ * batchable sizes, and the taxonomy's sizes. Only the vocabulary is read:
+ * the batching policy (points, budget, ranking) is `work-batch`'s to
+ * validate, and a repository that does not batch must still route.
+ */
 function knownSizes(
   config: Record<string, unknown>,
   batchSizes: string[],
 ): string[] {
-  const settings = parseWorkBatchSection(config, batchSizes);
+  const section = config.work_batch;
+  const declared =
+    typeof section === "object" && section !== null && !Array.isArray(section)
+      ? (section as Record<string, unknown>).sizes
+      : undefined;
   const review = parseReviewConfig(config.review);
   return [
     ...new Set([
-      ...(settings.sizes ?? batchSizes),
+      ...(isStringList(declared) ? declared : batchSizes),
       ...(review.taxonomy?.sizes ?? []),
     ]),
   ];

@@ -22,15 +22,13 @@ const TAXONOMY = `version: 1\ntypes:\n  - id: feature\n  - id: bug\nstatuses:\n 
 const LINT_INVALID =
   "version: 1\ntypes:\n  - id: feature\nstatuses:\n  - id: todo\nflags:\n  - id: pii\n";
 
-/** The fit's findings for a repository with this configuration and taxonomy. */
+/** The fit's findings for a repository with this configuration and these taxonomy files. */
 function findings(
   config: string,
   taxonomy = TAXONOMY,
+  taxonomies: Record<string, string> = { "label-taxonomy.yaml": taxonomy },
 ): { id: string; message: string }[] {
-  const dir = scratchRepo({
-    ".config/jig.yaml": config,
-    "label-taxonomy.yaml": taxonomy,
-  });
+  const dir = scratchRepo({ ".config/jig.yaml": config, ...taxonomies });
   dirs.push(dir);
   const run = runScript("config-fit.ts", ["--offline", "--json"], dir);
   return (
@@ -99,6 +97,37 @@ test("a taxonomy the lint refuses leaves the raise lists unchecked", () => {
     false,
   );
   expect(found.some((f) => f.id === "unchecked:routing.raise")).toBe(true);
+});
+
+test("a taxonomy the pickup does not read is not checked against", () => {
+  const found = findings("routing:\n  raise:\n    flags: [secret]\n", "", {
+    "docs/label-taxonomy.yml": TAXONOMY,
+  });
+  expect(found.some((f) => f.id === "taxonomy:routing.raise.flags")).toBe(
+    false,
+  );
+});
+
+test("the pickup's taxonomy is checked against beside a second one found", () => {
+  const found = findings("routing:\n  raise:\n    flags: [secret]\n", "", {
+    "label-taxonomy.yaml": TAXONOMY,
+    "docs/label-taxonomy.yml": TAXONOMY,
+  });
+  expect(found.some((f) => f.id === "unchecked:label-taxonomy")).toBe(true);
+  expect(
+    found.find((f) => f.id === "taxonomy:routing.raise.flags")?.message,
+  ).toContain("secret, which label-taxonomy.yaml");
+});
+
+test("the raise lists are checked against the configured taxonomy", () => {
+  const found = findings(
+    "issue_tracker:\n  taxonomy: docs/labels.yaml\nrouting:\n  raise:\n    flags: [secret]\n",
+    "",
+    { "docs/labels.yaml": TAXONOMY },
+  );
+  expect(
+    found.find((f) => f.id === "taxonomy:routing.raise.flags")?.message,
+  ).toContain("secret, which docs/labels.yaml");
 });
 
 test("flags: catalog names no label to check", () => {

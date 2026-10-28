@@ -14,7 +14,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, posix } from "node:path";
 import { isMapping } from "../../../../shared/config-layers.ts";
 import { load } from "../../../../shared/yaml.ts";
-import { taxonomyAt } from "../../../file-issue/scripts/lib/config.ts";
+import {
+  taxonomyAt,
+  taxonomySetting,
+} from "../../../file-issue/scripts/lib/config.ts";
 import {
   compileOpenPattern,
   lintTaxonomyFile,
@@ -195,21 +198,34 @@ function raiseFields(config: Record<string, unknown>): string[] {
 }
 
 /**
- * The raise labels do-item's pickup refuses: it checks them against the
- * taxonomy the label lint accepts, with the label validator's own rule
+ * The raise labels do-item's pickup refuses. The pickup reads the taxonomy
+ * at `issue_tracker.taxonomy`, or `label-taxonomy.yaml` at the root, never a
+ * discovered one, so the check reads that file too: a taxonomy found
+ * elsewhere does not bind the pickup, and a second one found beside it does
+ * not stop the pickup checking. It checks the labels against the taxonomy
+ * the label lint accepts, with the label validator's own rule
  * (`declaresLabel`), which is narrower than `defined` above. A taxonomy its
  * lint refuses leaves the pickup nothing to check against, and so the audit
- * reports the lists unchecked rather than judging them by another rule.
+ * reports the lists unchecked rather than judging them by another rule. A
+ * malformed `issue_tracker.taxonomy` is the schema check's to report.
  */
 function raiseFindings(
   config: Record<string, unknown>,
   root: string,
-  file: string,
-  path: string,
 ): Finding[] {
   const fields = raiseFields(config);
   if (!fields.length) return [];
-  const taxonomy = lintTaxonomyFile(taxonomyAt(root, file)).taxonomy;
+  const setting = at(config, "issue_tracker.taxonomy");
+  if (
+    setting !== undefined &&
+    setting !== null &&
+    (typeof setting !== "string" || setting.trim() === "")
+  )
+    return [];
+  const path = taxonomySetting(config);
+  const file = taxonomyAt(root, path);
+  if (!existsSync(file)) return [];
+  const taxonomy = lintTaxonomyFile(file).taxonomy;
   if (taxonomy === null)
     return [
       {
@@ -319,6 +335,18 @@ export function taxonomyFindings(
   root: string,
   tracked: readonly string[],
 ): Finding[] {
+  return [
+    ...labelTaxonomyFindings(config, root, tracked),
+    ...raiseFindings(config, root),
+  ];
+}
+
+/** The findings against the taxonomy `file-issue` validates labels against. */
+function labelTaxonomyFindings(
+  config: Record<string, unknown>,
+  root: string,
+  tracked: readonly string[],
+): Finding[] {
   const configured = at(config, "issue_tracker.taxonomy");
   if (typeof configured === "string" && configured.trim() !== "") {
     if (!existsSync(taxonomyAt(root, configured))) return [];
@@ -372,7 +400,6 @@ function checkAgainst(
   }
   return [
     ...labelFindings(config, taxonomy, path),
-    ...raiseFindings(config, root, file, path),
     ...typeCopyFindings(config, taxonomy, path),
   ];
 }

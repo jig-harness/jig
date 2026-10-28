@@ -337,6 +337,22 @@ describe("catalogFacts", () => {
     );
     expect(() => catalogFacts(malformed, [], {})).toThrow(`areas.pay.${field}`);
   });
+
+  it("refuses an impliedBy naming an id no area has rather than dropping its review", () => {
+    const misspelled = parseCatalog({
+      areas: {
+        api: { paths: ["api/**"] },
+        payments: {
+          paths: ["pay/**"],
+          impliedBy: ["apix"],
+          review: { skills: ["security-review"] },
+        },
+      },
+    });
+    expect(() => catalogFacts(misspelled, ["api"], { api: "api" })).toThrow(
+      "areas.payments.impliedBy names apix",
+    );
+  });
 });
 
 describe("the translation", () => {
@@ -576,6 +592,31 @@ describe("determine_route.ts", () => {
     expectSpawnExit(r, 0);
     expect(r.stderr).toContain("areas.db.review");
     expect(JSON.parse(r.stdout).effort).toBe("max");
+  });
+
+  it("routes a repository whose batchable sizes the default batching points do not price", () => {
+    const r = run(
+      {
+        "jig.yaml":
+          "routing: {}\nissue_tracker:\n  labels:\n    batch_sizes: [small, large]\n",
+      },
+      issue(["bug", "large"]),
+    );
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout).effort).toBe("medium");
+  });
+
+  it("reads the size vocabulary from work_batch.sizes", () => {
+    const r = run(
+      {
+        "jig.yaml": "routing: {}\nwork_batch:\n  sizes: [small, medium, xl]\n",
+      },
+      issue(["bug", "xl"]),
+    );
+    expectSpawnExit(r, 0);
+    expect(JSON.parse(r.stdout).reasons).toContain(
+      "effort: high (size xl raised medium)",
+    );
   });
 
   it("proposes no model where no runtime is identified", () => {
