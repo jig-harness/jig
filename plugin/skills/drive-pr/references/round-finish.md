@@ -122,21 +122,33 @@ The guard (`checkUntriagedThreads` in `finish-round.ts`) refuses only when
   with the *other* half of the dispatch never having happened. `isThreadTriaged`
   (the combined predicate `checkUntriagedThreads` actually filters on) treats
   this differently by outcome, and both halves of the gap matter —
-  `accepted`, and `moot` *without* the leave-open marker, always
-  create a *hold* when the dispatch completes, so for those two the exemption
-  requires a *current* hold to exist (`isThreadHoldCurrent`). `rejected`,
-  `wont-fix` and `deferred` never create a hold — `triage-thread.ts`'s normal
+  `accepted`, and `moot` *without* the leave-open marker, create a *hold*
+  when the dispatch completes, so for those the exemption requires a
+  *current* hold to exist (`isThreadHoldCurrent`). `rejected`, `wont-fix`
+  and `deferred` never create a hold — `triage-thread.ts`'s normal
   completion for them calls `resolve-thread.ts` and *resolves* the thread
   instead. Since this guard only ever sees threads `list-unresolved-
   threads.ts` reports as unresolved, an unmarked merit reply sitting here
-  cannot be a legitimately-finished dispatch (a finished one would have
-  resolved the thread and it would not be in this list at all) — it is
+  is ordinarily not a legitimately-finished dispatch (a finished one would
+  have resolved the thread and it would not be in this list at all) — it is
   `triage-thread.ts` crashing between the reply and the resolve, the same
   shape of gap as the accepted/moot one, just on the other side of the
-  fork. The *one* way a merit reply (or an unmarked moot) legitimately stays
-  unresolved forever is the LEAVE_OPEN marker — `bun "<skill-dir>/scripts/triage-thread.ts"
+  fork. Both rules have exceptions, where a merit reply (or an unmarked
+  moot) legitimately stays unresolved with no hold. The LEAVE_OPEN marker
+  is one — `bun "<skill-dir>/scripts/triage-thread.ts"
   --leave-open` works identically across every non-hold outcome (its own
-  header), not only `moot`, so this check does too. Either crash's remedy is
+  header), not only `moot`, so this check does too. A thread GitHub's code
+  scanning account opened is another (`awaitsAlert` in
+  `scripts/lib/scanner-sweep-guard.ts`): its merit reply or `moot` is never
+  held and waits on its alert rather than a hold or a resolve, and the
+  replied-thread sweep closes it once the alert is settled — a `moot`
+  resting on this round's own fix settles only after this very push. Do not
+  create a hold to recover such a thread; re-run `triage-thread.ts`, which
+  leaves it open (exit `4`) until the alert settles. A scanner `moot` held
+  before that rule drains through `resolve-held-thread.ts`, which reads the
+  alert too, ahead of its final comment and head checks, and over an
+  unsettled one drops the hold and leaves the thread open; the round's report
+  names that item `left-open`, not `resolved`. Either crash's remedy is
   the same *shape*, naming the correct missing half: re-run `bun "<skill-dir>/scripts/triage-thread.ts"`
   on the *same* thread with *any* valid outcome body on stdin (not an empty
   one: `triage-thread.ts` refuses *empty* stdin outright, before it ever

@@ -134,6 +134,10 @@ import { isTrustedBotConfirmation as isTrustedBotConfirmationShared } from "./li
 import { fail, isDigits, runMain, short } from "./lib/cli.ts";
 import { qualifyingOutcome } from "./lib/outcome.ts";
 import {
+  heldThreadMayResolve,
+  resolveHeldUnlessAlertOpen,
+} from "./lib/scanner-sweep-guard.ts";
+import {
   ghCall,
   git,
   readTimeoutEnv,
@@ -145,14 +149,6 @@ import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const driveState = join(here, "drive-state.ts");
-const resolveThread = join(
-  here,
-  "..",
-  "..",
-  "resolve-review-comments",
-  "scripts",
-  "resolve-thread.ts",
-);
 
 function prefixLines(prefix: string, text: string): string {
   return text
@@ -648,6 +644,17 @@ async function main(): Promise<number> {
     });
   }
 
+  // A `moot` on a thread GitHub's code scanning account opened is never held
+  // now (`mootHeld`), but a hold recorded before that rule still drains here:
+  // its alert, not the push, is what proves it. The alert reads run first, so
+  // only the checks below stand between the last read and the mutation; an
+  // unreadable opening comment (`null`) restores the hold there.
+  const mayResolve = await heldThreadMayResolve(
+    key,
+    claimed.outcome,
+    helperTimeoutSec,
+  );
+
   const staleCheck = await ghCall(
     [
       "api",
@@ -826,10 +833,16 @@ query($id:ID!){
     return 2;
   }
 
-  const mutation = await run(tsArgv(resolveThread, [key]), {
-    timeoutSec: helperTimeoutSec,
-    stderr: "inherit",
-  });
+  // Over an unsettled alert the thread stays open with the hold drained
+  // (stdout `false`), the state `triage-thread.ts` leaves a fresh code-scanning
+  // moot in — `finish-round.ts` reports it `left-open`, counts it triaged
+  // (`awaitsAlert`), and the replied-thread sweep closes it once the alert is
+  // fixed, closed or dismissed.
+  const mutation = await resolveHeldUnlessAlertOpen(
+    key,
+    mayResolve,
+    helperTimeoutSec,
+  );
   if (mutation.code !== 0) {
     await restoreOrDie("resolveReviewThread failed or timed out");
     return mutation.code;
