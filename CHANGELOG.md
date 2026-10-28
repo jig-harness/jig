@@ -341,6 +341,40 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.91.3] - 2026-10-28
+
+### Fixed
+
+- The replied-thread sweep and `triage-thread.ts` keep declined code-scanning findings open until their alerts are confirmed dismissed, and a `moot` open until its alert is fixed, closed or dismissed; `triage-thread.ts` exits `4` while one is not. A code-scanning `moot` is never held for a push, so a retry after its alert settles resolves it, and a thread GitHub's code scanning account opened whose alert cannot be identified stays open. A retry or `--cleanup-only` on a resolved code-scanning thread whose `moot` superseded an `accepted` reply releases that stale hold. `finish-round.ts` no longer refuses the push for such a thread, answered and waiting on its alert, so a `moot` resting on the round's own fix can be pushed, including when a trusted bot's automated confirmation follows the reply. A code-scanning `moot` held before this release no longer resolves when the round drains it: `resolve-held-thread.ts` reads its alert and, unless it is fixed, closed or dismissed, drops the hold and leaves the thread open for the sweep, and `finish-round.ts` reports that item `left-open` rather than `resolved`. The alert is read before the drain's last comment and head checks, so a comment or push landing during the alert reads still stops the resolve.
+
+## [0.91.2] - 2026-10-28
+
+### Added
+
+- [M14](modules/M14-testing-strategy/README.md) ships a fixed-delay gate,
+  [`reference/fixed-delay/`](modules/M14-testing-strategy/reference/fixed-delay/README.md):
+  it fails a fixed delay (by default `Bun.sleep(`, `setTimeout(`, `sleep(`
+  and `time.sleep(`; `--pattern` names others) without a
+  `fixed-delay: <reason>` token on its line or the line above, a token
+  without a reason, and a token with no delay on its line or the line below.
+  It has no imports beyond Bun's and Node's built-ins, so it can be copied as
+  it is.
+- The audit's M14 criteria gain `test-exemptions-prune-themselves` and
+  `fixed-delay-tokens-prune-themselves`: a check that passes an exemption
+  matching no file, or a suppression token with no reason or no delay
+  beside it, scores convention at most on them. `tests-come-with-changes`
+  and `fixed-sleeps-banned` keep their bars, so a re-audit reports the two
+  as added by Jig rather than as a regression.
+
+### Changed
+
+- M14's tests-with-changes gate fails an exemption whose glob matches no file
+  in the tree it reads (`HEAD` with `--base`, the `--root` tree with
+  `--changed`), with exit 1 and the line to delete, whatever the change
+  touched. A repository whose exemptions file still holds a line for deleted
+  code sees that line fail on its next change; an exemption whose only file a
+  change deletes fails in that change.
+
 ## [0.91.1] - 2026-10-28
 
 ### Changed
@@ -3813,7 +3847,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.91.1...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.91.3...HEAD
+[0.91.3]: https://github.com/jig-harness/jig/compare/v0.91.2...v0.91.3
+[0.91.2]: https://github.com/jig-harness/jig/compare/v0.91.1...v0.91.2
 [0.91.1]: https://github.com/jig-harness/jig/compare/v0.91.0...v0.91.1
 [0.91.0]: https://github.com/jig-harness/jig/compare/v0.90.0...v0.91.0
 [0.90.0]: https://github.com/jig-harness/jig/compare/v0.89.0...v0.90.0

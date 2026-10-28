@@ -1,6 +1,6 @@
 Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/Lite; 78 beyond it, not needed for this profile; 36 unchanged and met.
 
-### What changed (136)
+### What changed (138)
 
 | Module | Criterion | Before → after | Change |
 |--------|-----------|----------------|--------|
@@ -102,7 +102,9 @@ Compared with the audit of 2026-07-19 (plugin 0.14.0): 4 still open within Solo/
 | M14 Testing strategy | `tests-type-checked` | not scored → absent | Added by Jig |
 | M14 Testing strategy | `spawn-exit-assertions-print-output` | not scored → absent | Added by Jig |
 | M14 Testing strategy | `tests-come-with-changes` | not scored → absent | Added by Jig |
+| M14 Testing strategy | `test-exemptions-prune-themselves` | not scored → absent | Added by Jig |
 | M14 Testing strategy | `fixed-sleeps-banned` | not scored → absent | Added by Jig |
+| M14 Testing strategy | `fixed-delay-tokens-prune-themselves` | not scored → absent | Added by Jig |
 | M14 Testing strategy | `provisioned-suites-executed` | not scored → absent | Added by Jig |
 | M14 Testing strategy | `dependency-workarounds-pinned` | not scored → absent | Added by Jig |
 | M14 Testing strategy | `clock-reads-linted` | not scored → absent | Added by Jig |
