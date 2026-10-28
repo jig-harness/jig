@@ -52,11 +52,11 @@ persona is handed. Change the personas there.
    in the document word for word.
 3. **Report.** The report step writes the one report.
 
-The steps refuse to go on when the document changes during the review.
+The steps refuse to go on when the document, or its companion, changes during the review.
 
 ## Where the report goes
 
-Into `.context/red-team/<document>/report.md`, scratch that git ignores
+Into `.context/red-team/<document>-<hash>/report.md`, scratch that git ignores
 where `.context/` is ignored (`--out` names another folder). The findings
 are review history: under M6 and
 [M4](https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/README.md), an accepted document

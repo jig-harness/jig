@@ -19,7 +19,7 @@
  * document changed since the plan; 2 on a command line or document it cannot
  * act on.
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fail, runMain } from "../../../shared/cli.ts";
 import { consumerRoot } from "../../../shared/consumer.ts";
 import { git } from "../../../shared/proc.ts";
@@ -156,6 +156,10 @@ function collectOne(
     return [
       `nothing to collect: neither ${who.output} nor ${who.reply} exists`,
     ];
+  // A replacement submission supersedes what was kept: if it fails its checks,
+  // the old verdict must not stay behind to be reported.
+  rmSync(who.findings, { force: true });
+  rmSync(planned.report, { force: true });
   const value = extractJson(readFileSync(source, "utf8"));
   const { findings, problems } = checkFindings(
     value,
@@ -190,15 +194,23 @@ function collect(args: string[]): number {
   return 0;
 }
 
+/** The longest delay a timer takes, in seconds (a signed 32-bit count of milliseconds). */
+const MAX_TIMER_SECONDS = Math.floor((2 ** 31 - 1) / 1000);
+
 function wholeNumber(
   value: string | undefined,
   name: string,
   fallback: number,
+  max = Number.MAX_SAFE_INTEGER,
 ): number {
   if (value === undefined) return fallback;
-  if (!/^\d+$/.test(value) || Number(value) < 1)
-    fail(2, `${name} must be a positive whole number`);
-  return Number(value);
+  const number = Number(value);
+  if (!/^\d+$/.test(value) || number < 1 || number > max)
+    fail(
+      2,
+      `${name} must be a positive whole number${max < Number.MAX_SAFE_INTEGER ? ` of at most ${max}` : ""}`,
+    );
+  return number;
 }
 
 async function fresh(args: string[]): Promise<number> {
@@ -217,6 +229,7 @@ async function fresh(args: string[]): Promise<number> {
       options.get("--timeout-seconds"),
       "--timeout-seconds",
       900,
+      MAX_TIMER_SECONDS,
     ),
     parallel: wholeNumber(options.get("--parallel"), "--parallel", 4),
     collect: (who) => collectOne(planned, who, "fresh-run"),

@@ -115,7 +115,11 @@ describe("plan", () => {
     const out = plan(root, ["docs/prd.md"]);
     expect(out.kind).toBe("requirements");
     expect(out.kindFrom).toBe("frontmatter type: prd");
-    expect(out.directory).toBe(join(root, ".context", "red-team", "docs-prd"));
+    expect(out.directory).toMatch(
+      new RegExp(
+        `^${join(root, ".context", "red-team", "docs-prd-")}[0-9a-f]{8}$`,
+      ),
+    );
     expect(out.ignoredByGit).toBe(false);
     expect(out.personas).toHaveLength(8);
     const brief = readFileSync(out.personas[4]?.brief ?? "", "utf8");
@@ -159,6 +163,57 @@ describe("plan", () => {
     expect(out.kindFrom).toBe("--kind");
     expect(out.directory).toBe(join(root, "review"));
     expectSpawnExit(cli(root, ["plan", "notes.md", "--kind", "design"]), 2);
+  });
+});
+
+describe("the review folder", () => {
+  test("never holds an input: planning into the document's own folder is refused untouched", () => {
+    const root = repository();
+    writeFileSync(
+      join(root, "docs", "report.md"),
+      readFileSync(join(root, "docs", "prd.md")),
+    );
+    const run = cli(root, [
+      "plan",
+      "docs/report.md",
+      "--kind",
+      "requirements",
+      "--out",
+      "docs",
+    ]);
+    expectSpawnExit(run, 2, "plan into the document's folder");
+    expect(run.stderr).toContain("would be overwritten");
+    expect(existsSync(join(root, "docs", "report.md"))).toBe(true);
+    expect(existsSync(join(root, "docs", "prd.md"))).toBe(true);
+  });
+
+  test("a folder with other files in it is refused, an earlier review of the same document is replaced", () => {
+    const root = repository();
+    const out = plan(root, ["docs/prd.md"]);
+    expectSpawnExit(cli(root, ["plan", "docs/prd.md"]), 0, "replan");
+    expectSpawnExit(
+      cli(root, ["plan", "docs/architecture.md", "--out", out.directory]),
+      2,
+      "another document into the same folder",
+    );
+    expectSpawnExit(
+      cli(root, ["plan", "docs/prd.md", "--out", "docs"]),
+      2,
+      "a folder of other files",
+    );
+    expect(existsSync(join(root, "docs", "architecture.md"))).toBe(true);
+  });
+
+  test("paths that read alike get folders of their own", () => {
+    const root = repository();
+    mkdirSync(join(root, "docs", "a"));
+    const text = readFileSync(join(root, "docs", "prd.md"), "utf8");
+    writeFileSync(join(root, "docs", "a-b.md"), text);
+    writeFileSync(join(root, "docs", "a", "b.md"), text);
+    const first = plan(root, ["docs/a-b.md"]);
+    const second = plan(root, ["docs/a/b.md"]);
+    expect(second.directory).not.toBe(first.directory);
+    expect(existsSync(join(first.directory, "plan.json"))).toBe(true);
   });
 });
 
@@ -237,6 +292,96 @@ describe("collect and report", () => {
     );
   });
 
+  test("a failed recollection leaves no earlier verdict to report", () => {
+    const root = repository();
+    const out = plan(root, ["docs/architecture.md"]);
+    for (const persona of out.personas) {
+      writeFileSync(
+        join(out.directory, `${persona.id}.json`),
+        findings(persona.id).replace(
+          "The list feels instant.",
+          "anyone with the invitation link joins the list.",
+        ),
+      );
+      expectSpawnExit(
+        cli(root, [
+          "collect",
+          out.directory,
+          persona.id,
+          "--context",
+          "subagent",
+        ]),
+        0,
+        persona.id,
+      );
+    }
+    expectSpawnExit(cli(root, ["report", out.directory]), 0, "report");
+    writeFileSync(
+      join(out.directory, "security-auditor.json"),
+      findings("security-auditor").replace("feels instant", "loads in 100 ms"),
+    );
+    expectSpawnExit(
+      cli(root, [
+        "collect",
+        out.directory,
+        "security-auditor",
+        "--context",
+        "subagent",
+      ]),
+      1,
+      "recollect",
+    );
+    expect(existsSync(out.report)).toBe(false);
+    const again = cli(root, ["report", out.directory]);
+    expectSpawnExit(again, 1, "report after a failed recollection");
+    expect(again.stderr).toContain("security-auditor");
+  });
+
+  test("a companion changed during the review stops it", () => {
+    const root = repository();
+    const out = plan(root, [
+      "docs/architecture.md",
+      "--companion",
+      "docs/prd.md",
+    ]);
+    writeFileSync(
+      join(out.directory, "critical-cto.json"),
+      findings("critical-cto"),
+    );
+    writeFileSync(
+      join(root, "docs", "prd.md"),
+      `${readFileSync(join(root, "docs", "prd.md"), "utf8")}\nOne more line.\n`,
+    );
+    const run = cli(root, [
+      "collect",
+      out.directory,
+      "critical-cto",
+      "--context",
+      "subagent",
+    ]);
+    expectSpawnExit(run, 1);
+    expect(run.stderr).toContain("the companion changed since the plan");
+  });
+
+  test("a plan with no personas, or the wrong ones, is not one this script wrote", () => {
+    const root = repository();
+    const out = plan(root, ["docs/architecture.md"]);
+    const path = join(out.directory, "plan.json");
+    const written = JSON.parse(readFileSync(path, "utf8")) as {
+      personas: unknown[];
+    };
+    writeFileSync(path, JSON.stringify({ ...written, personas: [] }));
+    const run = cli(root, ["report", out.directory]);
+    expectSpawnExit(run, 2, "report from an empty plan");
+    expect(run.stderr).toContain("is not a plan this script wrote");
+    writeFileSync(path, JSON.stringify({ ...written, kind: "constructor" }));
+    expectSpawnExit(
+      cli(root, ["report", out.directory]),
+      2,
+      "an invented kind",
+    );
+  });
+
   test("a document changed during the review stops it", () => {
     const root = repository();
     const out = plan(root, ["docs/prd.md"]);
@@ -270,6 +415,15 @@ const mode = process.env.FAKE_AGENT_MODE ?? "print";
 if (mode === "fail" && id === "cost-optimizer") {
   console.error("out of credits");
   process.exit(3);
+}
+const rejected = prompt.includes("rejected");
+if (mode === "retry" && !rejected) {
+  console.log("\`\`\`json\\n" + JSON.stringify({ persona: id, verdict: "revise", summary: "s", findings: [{ severity: "major", passage: "not in the document", risk: "r", question: "q?" }] }) + "\\n\`\`\`");
+  process.exit(0);
+}
+if (mode === "retry") {
+  const feedback = /read (\\S+) for its problems/.exec(prompt)?.[1] ?? "";
+  if (!(await Bun.file(feedback).text()).includes("the passage is not in the document")) process.exit(4);
 }
 const body = {
   persona: id,
@@ -321,6 +475,38 @@ describe("fresh", () => {
     const again = cli(root, ["fresh", out.directory, "--", agent]);
     expectSpawnExit(again, 0, "fresh again");
     expect(again.stdout.trim()).toBe("cost-optimizer: collected");
+  });
+
+  test("a rejected attempt is repeated with the problems found in it", () => {
+    const root = repository();
+    const out = plan(root, ["docs/architecture.md"]);
+    const first = cli(root, ["fresh", out.directory, "--", agent], {
+      FAKE_AGENT_MODE: "retry",
+    });
+    expectSpawnExit(first, 1, "first attempt");
+    expect(first.stderr).toContain("the passage is not in the document");
+    const feedback = join(out.directory, "critical-cto.feedback.md");
+    expect(readFileSync(feedback, "utf8")).toContain("not in the document");
+    const again = cli(root, ["fresh", out.directory, "--", agent], {
+      FAKE_AGENT_MODE: "retry",
+    });
+    expectSpawnExit(again, 0, "second attempt reads the feedback");
+    expect(existsSync(feedback)).toBe(false);
+  });
+
+  test("refuses a timeout a timer cannot hold", () => {
+    const root = repository();
+    const out = plan(root, ["docs/architecture.md"]);
+    const run = cli(root, [
+      "fresh",
+      out.directory,
+      "--timeout-seconds",
+      "2147484",
+      "--",
+      agent,
+    ]);
+    expectSpawnExit(run, 2);
+    expect(run.stderr).toContain("at most 2147483");
   });
 
   test("needs an agent command", () => {

@@ -6,16 +6,19 @@
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { renderBrief } from "./brief.ts";
 import {
   type Detected,
   detectKind,
   type Kind,
+  KINDS,
   sha256,
   slugFor,
   titleOf,
@@ -36,6 +39,8 @@ export interface PlannedPersona {
   reply: string;
   /** The checked findings, written by `collect`. */
   findings: string;
+  /** The problems found in a rejected attempt, kept by `fresh` for the next one. */
+  feedback: string;
 }
 
 export interface Plan {
@@ -45,6 +50,7 @@ export interface Plan {
   kind: Kind;
   kindFrom: string;
   companion?: string;
+  companionSha256?: string;
   sha256: string;
   date: string;
   directory: string;
@@ -76,16 +82,51 @@ function files(directory: string, id: string) {
     output: join(directory, `${id}.json`),
     reply: join(directory, `${id}.reply.md`),
     findings: join(directory, `${id}.findings.json`),
+    feedback: join(directory, `${id}.feedback.md`),
   };
+}
+
+/** Every file a review keeps in its folder, for the personas given. */
+function reserved(directory: string, all: Persona[]): string[] {
+  return [
+    join(directory, PLAN_FILE),
+    join(directory, REPORT_FILE),
+    ...all.flatMap((persona) => Object.values(files(directory, persona.id))),
+  ];
 }
 
 /** Remove what an earlier review of the same document left in the folder. */
 function clear(directory: string, all: Persona[]): void {
-  for (const persona of all)
-    for (const file of Object.values(files(directory, persona.id)))
-      rmSync(file, { force: true });
-  rmSync(join(directory, PLAN_FILE), { force: true });
-  rmSync(join(directory, REPORT_FILE), { force: true });
+  for (const file of reserved(directory, all)) rmSync(file, { force: true });
+}
+
+/** Refuse a folder that holds an input, or another review's files. */
+function guardFolder(
+  directory: string,
+  inputs: string[],
+  document: string,
+  all: Persona[],
+): void {
+  const names = new Set(reserved(directory, all).map((file) => basename(file)));
+  const real = realpathSync(directory);
+  for (const input of inputs) {
+    const actual = realpathSync(input);
+    if (dirname(actual) === real && names.has(basename(actual)))
+      throw new PlanError(
+        `${input} would be overwritten: it has the name of a file the review keeps in ${directory}; pass another folder to --out`,
+      );
+  }
+  if (readdirSync(directory).length === 0) return;
+  let previous: Plan | undefined;
+  try {
+    previous = readPlan(directory);
+  } catch {
+    previous = undefined;
+  }
+  if (!previous || previous.document !== document)
+    throw new PlanError(
+      `${directory} holds files that are not an earlier review of this document; pass an empty or new folder to --out`,
+    );
 }
 
 function readDocument(path: string): string {
@@ -112,7 +153,7 @@ export function makePlan(options: PlanOptions): Plan {
   const text = readDocument(document);
   const { kind, from } = kindFor(text, options.kind);
   const companion = options.companion ? resolve(options.companion) : undefined;
-  if (companion) readDocument(companion);
+  const companionText = companion ? readDocument(companion) : undefined;
   const display = relative(options.root, document) || document;
   const directory = resolve(
     options.out ??
@@ -125,6 +166,12 @@ export function makePlan(options: PlanOptions): Plan {
   );
   const all = loadPersonas();
   mkdirSync(directory, { recursive: true });
+  guardFolder(
+    directory,
+    companion ? [document, companion] : [document],
+    document,
+    all,
+  );
   clear(directory, all);
   const plan: Plan = {
     document,
@@ -132,7 +179,9 @@ export function makePlan(options: PlanOptions): Plan {
     title: titleOf(text, display),
     kind,
     kindFrom: from,
-    ...(companion ? { companion } : {}),
+    ...(companion && companionText !== undefined
+      ? { companion, companionSha256: sha256(companionText) }
+      : {}),
     sha256: sha256(text),
     date: options.date,
     directory,
@@ -171,6 +220,14 @@ function isPlan(value: unknown): value is Plan {
   if (!value || typeof value !== "object") return false;
   const plan = value as Record<string, unknown>;
   const strings = ["document", "display", "title", "kind", "kindFrom"];
+  const kind = plan.kind;
+  if (!(KINDS as readonly unknown[]).includes(kind)) return false;
+  if (
+    plan.companion !== undefined &&
+    (typeof plan.companion !== "string" ||
+      typeof plan.companionSha256 !== "string")
+  )
+    return false;
   return (
     strings.every((key) => typeof plan[key] === "string") &&
     ["sha256", "date", "directory", "report"].every(
@@ -181,14 +238,34 @@ function isPlan(value: unknown): value is Plan {
       (p: unknown) =>
         typeof p === "object" &&
         p !== null &&
-        ["id", "name", "brief", "output", "reply", "findings"].every(
+        [
+          "id",
+          "name",
+          "brief",
+          "output",
+          "reply",
+          "findings",
+          "feedback",
+        ].every(
           (key) => typeof (p as Record<string, unknown>)[key] === "string",
         ),
-    )
+    ) &&
+    hasThePersonas(plan.personas as PlannedPersona[], kind as Kind)
   );
 }
 
-/** The document as it is now, refused when it changed since the plan. */
+/** The plan names exactly the personas that read its kind, each once. */
+function hasThePersonas(planned: PlannedPersona[], kind: Kind): boolean {
+  const expected = personasFor(kind).map((persona) => persona.id);
+  const ids = planned.map((persona) => persona.id);
+  return (
+    ids.length === expected.length &&
+    new Set(ids).size === ids.length &&
+    expected.every((id) => ids.includes(id))
+  );
+}
+
+/** The document as it is now, refused when it or its companion changed since the plan. */
 export function unchangedDocument(plan: Plan): string {
   const text = readDocument(plan.document);
   if (sha256(text) !== plan.sha256)
@@ -196,10 +273,24 @@ export function unchangedDocument(plan: Plan): string {
       `the document changed since the plan (${plan.display}): the personas' quotations may no longer hold; run the plan step again and repeat the review`,
       1,
     );
+  if (
+    plan.companion &&
+    sha256(readDocument(plan.companion)) !== plan.companionSha256
+  )
+    throw new PlanError(
+      `the companion changed since the plan (${plan.companion}): the personas read different requirements; run the plan step again and repeat the review`,
+      1,
+    );
   return text;
 }
 
-/** The prompt that starts a persona: a pointer to its brief. */
+/**
+ * The prompt that starts a persona: a pointer to its brief, and, when an
+ * earlier attempt was rejected, to the problems found in it.
+ */
 export function promptFor(persona: PlannedPersona): string {
-  return `Read the red-team brief at ${persona.brief} and follow it exactly.`;
+  const start = `Read the red-team brief at ${persona.brief} and follow it exactly.`;
+  return existsSync(persona.feedback)
+    ? `${start} An earlier attempt was rejected: read ${persona.feedback} for its problems and correct them.`
+    : start;
 }

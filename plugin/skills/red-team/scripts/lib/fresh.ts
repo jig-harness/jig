@@ -4,7 +4,7 @@
  * command gets the persona's prompt as its last argument; whatever it prints
  * is kept as the persona's reply when it wrote no findings file itself.
  */
-import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { run } from "../../../../shared/proc.ts";
 import { type Plan, type PlannedPersona, promptFor } from "./plan.ts";
 
@@ -46,8 +46,30 @@ async function one(
   if (result.code !== 0)
     return `exited ${result.code}: ${result.stderrTail.trim().split("\n").pop() ?? ""}`;
   if (!existsSync(persona.output)) writeFileSync(persona.reply, result.stdout);
+  const rejected = [persona.output, persona.reply].find((file) =>
+    existsSync(file),
+  );
   const problems = options.collect(persona);
-  return problems.length === 0 ? "" : problems.join("; ");
+  if (problems.length === 0) {
+    rmSync(persona.feedback, { force: true });
+    return "";
+  }
+  writeFileSync(persona.feedback, feedbackFor(problems, rejected));
+  return problems.join("; ");
+}
+
+/** What the next attempt reads: the problems, then the output they are about. */
+function feedbackFor(problems: string[], rejected: string | undefined): string {
+  const lines = [
+    "# Your findings were rejected",
+    "",
+    "Report again, following the brief, and fix each of these:",
+    "",
+    ...problems.map((problem) => `- ${problem}`),
+  ];
+  if (rejected)
+    lines.push("", "Your rejected output:", "", readFileSync(rejected, "utf8"));
+  return `${lines.join("\n")}\n`;
 }
 
 /** Run every persona not yet collected, `parallel` at a time. */

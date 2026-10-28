@@ -6,6 +6,7 @@ import { Defect } from "../../../shared/errors.ts";
 import {
   detectKind,
   kindOption,
+  normalise,
   slugFor,
   titleOf,
 } from "../scripts/lib/document.ts";
@@ -65,10 +66,52 @@ describe("the document's kind", () => {
     expect(titleOf(withoutFrontmatter(PRD), "x")).toBe(
       "Product requirements: Shared lists",
     );
-    expect(slugFor("/repo/docs/PRD/Shared Lists.md", "/repo")).toBe(
-      "docs-prd-shared-lists",
+    expect(slugFor("/repo/docs/PRD/Shared Lists.md", "/repo")).toMatch(
+      /^docs-prd-shared-lists-[0-9a-f]{8}$/,
     );
-    expect(slugFor("/elsewhere/a.md", "/repo")).toBe("a");
+    expect(slugFor("/elsewhere/a.md", "/repo")).toMatch(/^a-[0-9a-f]{8}$/);
+  });
+
+  test("paths that read alike do not share a name", () => {
+    const names = ["a-b.md", "a/b.md", "a_b.md", "A-B.md", "a-b.markdown"].map(
+      (path) => slugFor(`/repo/docs/${path}`, "/repo"),
+    );
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  test("inherited object properties are not kinds", () => {
+    for (const word of ["constructor", "__proto__", "toString"])
+      expect(kindOption(word)).toBeUndefined();
+    expect(
+      detectKind("---\ntype: __proto__\n---\n\n# Notes\n"),
+    ).toBeUndefined();
+  });
+
+  test("a fence closes only on its own marker, at least as long", () => {
+    const note = [
+      "# Notes",
+      "",
+      "````md",
+      "```text",
+      "## Problem statement",
+      "## Success metrics",
+      "```",
+      "````",
+      "",
+    ].join("\n");
+    expect(detectKind(note)).toBeUndefined();
+    expect(titleOf("~~~\n# Hidden\n~~~\n# Shown\n", "x")).toBe("Shown");
+  });
+
+  test("a quotation keeps the characters inside words and loses the emphasis marks", () => {
+    expect(normalise("Allow user_id access")).toBe("Allow user_id access");
+    expect(normalise("a*b and a * b")).toBe("a*b and a * b");
+    expect(normalise("**bold** and _italic_ and `code`")).toBe(
+      "bold and italic and code",
+    );
+    expect(normalise("Allow user_id access")).not.toBe(
+      normalise("Allow userid access"),
+    );
   });
 });
 

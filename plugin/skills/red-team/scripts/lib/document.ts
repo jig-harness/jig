@@ -49,8 +49,12 @@ export interface Detected {
 
 /** The kind a `--kind` value names (`prd` is accepted for requirements). */
 export function kindOption(value: string): Kind | undefined {
-  const key = value.trim().toLowerCase();
-  return TYPE_KINDS[key];
+  return kindOfType(value.trim().toLowerCase());
+}
+
+/** The kind a `type:` or `--kind` key names; inherited properties are not keys. */
+function kindOfType(key: string): Kind | undefined {
+  return Object.hasOwn(TYPE_KINDS, key) ? TYPE_KINDS[key] : undefined;
 }
 
 /** The frontmatter block's lines, or none when the document has none. */
@@ -71,13 +75,27 @@ function frontmatterType(text: string): string | undefined {
   return undefined;
 }
 
-/** Text outside fenced code blocks, so a heading in an example is not read. */
+/**
+ * Text outside fenced code blocks, so a heading in an example is not read. A
+ * fence closes only on a line of the same character, at least as long as the
+ * one that opened it.
+ */
 function unfenced(text: string): string[] {
-  let fenced = false;
+  let open: { char: string; length: number } | undefined;
   const out: string[] = [];
   for (const line of text.split(/\r?\n/)) {
-    if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
-    else if (!fenced) out.push(line);
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    const fence = marker?.[1] ?? "";
+    if (!open) {
+      if (marker) open = { char: fence[0] ?? "`", length: fence.length };
+      else out.push(line);
+    } else if (
+      marker &&
+      fence[0] === open.char &&
+      fence.length >= open.length &&
+      (marker[2] ?? "").trim() === ""
+    )
+      open = undefined;
   }
   return out;
 }
@@ -102,7 +120,7 @@ function headings(text: string): string[] {
  */
 export function detectKind(text: string): Detected | undefined {
   const type = frontmatterType(text);
-  const typed = type === undefined ? undefined : TYPE_KINDS[type];
+  const typed = type === undefined ? undefined : kindOfType(type);
   if (typed) return { kind: typed, from: `frontmatter type: ${type}` };
   const found = new Set(headings(text));
   const score = (kind: Kind) =>
@@ -131,7 +149,11 @@ export function titleOf(text: string, fallback: string): string {
   return fallback;
 }
 
-/** A file-name-safe name for the document, from its path in the repository. */
+/**
+ * A file-name-safe name for the document, from its path in the repository,
+ * with a short hash of that path so two paths that read alike (`a-b.md`,
+ * `a/b.md`) never share a review folder.
+ */
 export function slugFor(path: string, root: string): string {
   const inside = relative(root, path);
   const name =
@@ -143,7 +165,7 @@ export function slugFor(path: string, root: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return slug || "document";
+  return `${slug || "document"}-${sha256(name).slice(0, 8)}`;
 }
 
 export function sha256(text: string): string {
@@ -151,13 +173,17 @@ export function sha256(text: string): string {
 }
 
 /**
- * Text reduced to what a quotation must keep: no emphasis or code marks, no
- * list, quote or heading markers (nor a lone dash a quotation joined lines with), typographic quotes made plain, and every
- * run of whitespace one space.
+ * Text reduced to what a quotation must keep: no emphasis or code marks (an
+ * asterisk or underscore inside a word, as in `user_id` or `a*b`, is part of
+ * the text and stays), no list, quote or heading markers (nor a lone dash a
+ * quotation joined lines with), typographic quotes made plain, and every run
+ * of whitespace one space.
  */
 export function normalise(text: string): string {
   return text
-    .replace(/[*`_]/g, "")
+    .replace(/`/g, "")
+    .replace(/(?<![\p{L}\p{N}])[*_]+(?=[^\s*_])/gu, "")
+    .replace(/(?<=[^\s*_])[*_]+(?![\p{L}\p{N}])/gu, "")
     .replace(/[“”]/g, '"')
     .replace(/[‘’]/g, "'")
     .replace(/^\s*(?:[-+]|\d+\.)\s+/gm, " ")
