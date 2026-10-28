@@ -172,10 +172,10 @@ How review threads are resolved and how the drive recognises its AI reviewer.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `review.bots` | list of logins | **Required by `resolve-review-comments`**. `drive-pr`: none | resolve-review-comments, drive-pr, review | Reviewer accounts (for example `example-review[bot]`) whose threads the review skill works. Without `review.reviewer_app`, the drive accepts the reviewer's summary comment only from these logins |
+| `review.bots` | list of logins | No reviewer named: threads are worked whoever wrote them | resolve-review-comments, drive-pr, review | Reviewer accounts (for example `example-review[bot]`) the review skills name as the repository's reviewers. The review skill works every unresolved thread whether or not it is set; `--bots-only` keys on GitHub App authorship, not on this list. Without `review.reviewer_app`, the drive accepts the reviewer's summary comment only from these logins |
 | `review.job_pattern` | regular expression, or `null` | Reviewer checks recognised by name | resolve-review-comments | Which check runs the review skill waits on. Setting it requires `review.required_checks`. `--job-pattern` overrides it |
 | `review.required_checks` | list of distinct check names | none | resolve-review-comments | Reviewer checks that must each complete before a round is judged. Required when `review.job_pattern` is set. Unrelated to `ci.required_checks` |
-| `review.deferral_team` | team key | **Required by `resolve-review-comments`** | resolve-review-comments | Tracker team that deferred findings are filed into. `--team` overrides it |
+| `review.deferral_team` | team key | none: deferring a finding with no originating issue then needs `--team` | resolve-review-comments | Tracker team that deferred findings are filed into. `--team` overrides it |
 | `review.repo_label` | label | Empty, which fails unless `--repo-label` is given | resolve-review-comments, work-batch | Repository label put on filed follow-ups, and the one a batch item must carry; must be one of `review.taxonomy.repos`. Only letters, digits and `. _ : @ + / -`: the label is part of a deferral batch's key, which the review skill refuses to write otherwise |
 | `review.repo_slug` | `owner/name` | Empty, which fails unless `--repo-slug` is given | resolve-review-comments | Repository whose links a deferred finding must point into |
 | `review.taxonomy.types` | list of labels | none | resolve-review-comments, work-batch | Type labels a follow-up may carry, one of which a batch item must carry. Requires `ownership_prefixes`. Only letters, digits and `. _ : @ + / -`: the label is part of a deferral batch's key, which the review skill refuses to write otherwise |
@@ -728,8 +728,8 @@ gc:
 gates:
   command: make check                    # required by resolve-review-comments
 review:
-  bots: ["example-review[bot]"]          # required by resolve-review-comments
-  deferral_team: ENG                     # required by resolve-review-comments
+  bots: ["example-review[bot]"]
+  deferral_team: ENG
   repo_label: web
   repo_slug: example/web
   job_pattern: "^AI review"

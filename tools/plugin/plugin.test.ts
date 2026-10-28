@@ -829,9 +829,7 @@ test("an unconfigured repository is refused, not run with guessed values", () =>
     { cwd: partial, env, encoding: "utf8" },
   );
   expectSpawnExit({ ...refused, exitCode: refused.status }, 2);
-  expect(refused.stderr).toContain(
-    "lacks required values: gates.command, review.bots, review.deferral_team",
-  );
+  expect(refused.stderr).toContain("lacks required values: gates.command\n");
   // Reviewer selection the wait step would refuse is refused up front, with
   // the wait step's own message (one shared validator).
   for (const [name, edit, message] of [
