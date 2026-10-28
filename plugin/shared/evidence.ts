@@ -57,8 +57,10 @@
  * path before the run is moved beside the record (`<run id>.previous-report`),
  * and the report is read only when a regular file of at most 64 MiB is there
  * again, written after the run began; a run that leaves none is recorded as
- * `no report`. One run at a time holds a report path: a second run naming the
- * same path while the first is alive is refused.
+ * `no report`. One run at a time holds a report path, named by its folder
+ * with links resolved: a second run naming the same report while the first
+ * is alive is refused, and so is a report path that is itself a symbolic
+ * link.
  *
  * The block names no argument of the command, holds no output, and names no
  * suite or case from the report: test output, command lines and report
@@ -72,7 +74,7 @@
  * report or a stale one, a report that failed a case, a suite that ran
  * nothing, a failed expectation, a command that could not start); 2 nothing
  * was recorded: a usage or configuration error, a report path another run
- * holds, or not inside a Git repository. `list` exits 0, or 2
+ * holds or that is a link, or not inside a Git repository. `list` exits 0, or 2
  * on such an error.
  */
 
@@ -81,7 +83,8 @@ import {
   chmodSync,
   closeSync,
   copyFileSync,
-  existsSync,
+  linkSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -366,9 +369,38 @@ async function repositoryName(root: string): Promise<string> {
 const PRIVATE_DIR = 0o700;
 const PRIVATE_FILE = 0o600;
 
+/**
+ * The report path by its filesystem identity: its folder with every link in
+ * the part of it that exists resolved, then its own name. Two spellings of
+ * one report (through a linked parent folder, say) are one path, so they
+ * share one lock. The report itself is not resolved: a link there is refused.
+ */
+function canonicalReport(path: string): string {
+  const rest: string[] = [basename(path)];
+  for (let at = dirname(resolve(path)); ; ) {
+    try {
+      return join(realpathSync(at), ...rest);
+    } catch (error) {
+      const up = dirname(at);
+      if (errnoCode(error) !== "ENOENT" || up === at) throw error;
+      rest.unshift(basename(at));
+      at = up;
+    }
+  }
+}
+
+/** Refuse a report path that is a symbolic link: moving it aside would move the link, not a report. */
+function refuseLink(file: string, shown: string): void {
+  if (lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink())
+    fail(
+      2,
+      `evidence: the report path ${shown} is a symbolic link; name the report itself, or remove the link`,
+    );
+}
+
 /** Move a report already at the path beside the record, so it is never read as this run's. */
 function moveAside(path: string, to: string): string | undefined {
-  if (!existsSync(path)) return undefined;
+  if (!lstatSync(path, { throwIfNoEntry: false })) return undefined;
   try {
     renameSync(path, to);
   } catch (error) {
@@ -389,11 +421,10 @@ function alive(pid: number): boolean {
   }
 }
 
-/** The pid holding `lock`, "gone" when it vanished, or 0 when it names none yet. */
-function lockHolder(lock: string): number | "gone" {
+/** What `path` holds, or "gone" when it does not exist. */
+function contentOf(path: string): string | "gone" {
   try {
-    const pid = Number(readFileSync(lock, "utf8"));
-    return Number.isSafeInteger(pid) && pid > 0 ? pid : 0;
+    return readFileSync(path, "utf8");
   } catch (error) {
     if (errnoCode(error) === "ENOENT") return "gone";
     throw error;
@@ -401,10 +432,51 @@ function lockHolder(lock: string): number | "gone" {
 }
 
 /**
+ * Create `path` holding `content`, or return false when it exists. The file
+ * is written whole beside it and linked into place, so a reader never sees
+ * it empty.
+ */
+function createWhole(path: string, content: string): boolean {
+  const staged = `${path}.${process.pid}-${randomBytes(4).toString("hex")}`;
+  writeFileSync(staged, content, { mode: PRIVATE_FILE, flag: "wx" });
+  try {
+    linkSync(staged, path);
+    return true;
+  } catch (error) {
+    if (errnoCode(error) !== "EEXIST") throw error;
+    return false;
+  } finally {
+    rmSync(staged, { force: true });
+  }
+}
+
+/**
+ * Remove a dead holder's `lock` only while it still holds `seen`, under a
+ * second lock that one run at a time creates: two runs that both read the
+ * same dead holder never both remove a lock, so neither removes the one the
+ * other has taken since.
+ */
+function reclaim(lock: string, seen: string): void {
+  const guard = `${lock}.reclaim`;
+  if (!createWhole(guard, String(process.pid)))
+    fail(
+      2,
+      `evidence: another run is taking over the report lock ${lock}; run again, or remove ${guard} if no run is left`,
+    );
+  try {
+    if (contentOf(lock) === seen) rmSync(lock, { force: true });
+  } finally {
+    rmSync(guard, { force: true });
+  }
+}
+
+/**
  * Hold the report path for this run, so two runs in one worktree never move
- * aside or read each other's report. A lock whose holder is no longer alive
- * is taken over once; a live holder, or one not yet named, refuses the run.
- * Returns the release.
+ * aside or read each other's report. The lock holds the holder's pid and a
+ * token of this hold; a lock whose holder is no longer alive is taken over
+ * once (`reclaim`), and a live holder, or a lock naming none, refuses the run.
+ * Returns the release, which removes the lock only while it is still this
+ * run's.
  */
 function holdReportPath(dir: string, file: string): () => void {
   mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR });
@@ -412,23 +484,22 @@ function holdReportPath(dir: string, file: string): () => void {
     dir,
     createHash("sha256").update(file).digest("hex").slice(0, 12),
   );
+  const own = `${process.pid} ${randomBytes(8).toString("hex")}`;
   for (let takeovers = 0; ; ) {
-    try {
-      const fd = openSync(lock, "wx", PRIVATE_FILE);
-      writeFileSync(fd, String(process.pid));
-      closeSync(fd);
-      return () => rmSync(lock, { force: true });
-    } catch (error) {
-      if (errnoCode(error) !== "EEXIST") throw error;
-    }
-    const holder = lockHolder(lock);
-    if (holder === "gone") continue;
-    if (holder === 0 || alive(holder) || takeovers++ > 0)
+    if (createWhole(lock, own))
+      return () => {
+        if (contentOf(lock) === own) rmSync(lock, { force: true });
+      };
+    const held = contentOf(lock);
+    if (held === "gone") continue;
+    const pid = Number(held.split(" ")[0]);
+    const named = Number.isSafeInteger(pid) && pid > 0;
+    if (!named || alive(pid) || takeovers++ > 0)
       fail(
         2,
-        `evidence: another run (pid ${holder || "not yet named"}) is using the report path ${file}; wait for it, or remove ${lock} if no run is left`,
+        `evidence: another run (pid ${named ? pid : "not named"}) is using the report path ${file}; wait for it, or remove ${lock} if no run is left`,
       );
-    rmSync(lock, { force: true });
+    reclaim(lock, held);
   }
 }
 
@@ -484,17 +555,11 @@ interface Report {
 
 /** The report path, with any report already there moved beside the record. */
 function prepareReport(
-  junit: string | undefined,
-  root: string,
+  report: Omit<Report, "movedAside"> | undefined,
   aside: string,
 ): Report | undefined {
-  if (junit === undefined) return undefined;
-  const file = resolve(junit);
-  return {
-    file,
-    shown: posix(relative(root, file)),
-    movedAside: moveAside(file, aside),
-  };
+  if (report === undefined) return undefined;
+  return { ...report, movedAside: moveAside(report.file, aside) };
 }
 
 /** Where the run is, what it is called and where its record goes. */
@@ -506,14 +571,22 @@ async function prepare(args: RunArgs, clock: Clock) {
   const program = basename(args.command[0] as string);
   const tree = await identityOrFail(root);
   const repository = await repositoryName(root);
-  const release =
+  const named =
     args.junit === undefined
+      ? undefined
+      : {
+          file: canonicalReport(args.junit),
+          shown: posix(relative(root, resolve(args.junit))),
+        };
+  const release =
+    named === undefined
       ? () => undefined
       : holdReportPath(
           join(settings.store, repository, "report-locks"),
-          resolve(args.junit),
+          named.file,
         );
   try {
+    if (named) refuseLink(named.file, named.shown);
     const dir = join(settings.store, repository, tree, hash);
     const { id, fd } = reserve(dir, clock);
     const aside = join(dir, `${id}.previous-report`);
@@ -524,7 +597,7 @@ async function prepare(args: RunArgs, clock: Clock) {
       argv: args.command,
       cwd,
     };
-    const report = prepareReport(args.junit, root, aside);
+    const report = prepareReport(named, aside);
     const run = { root, settings, tree, repository, dir, id, fd, report };
     return { ...run, command, release };
   } catch (error) {

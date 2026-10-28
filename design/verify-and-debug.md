@@ -74,9 +74,11 @@ record ~/.local/state/jig/evidence/example-web/3f9c2a1…/8e1d…/20261023T14150
 - **One record per run.** Every run gets its own id and its own file, and
   no run overwrites another: a failing run that a ledger cites stays there
   when the same command passes on the same tree later. Lookup indexes runs
-  by tree and command and reads the newest that vouches for its run (a
-  pass or a seen-to-fail on an unchanged tree, from a fresh report that
-  failed no case it was not asked to) unless asked for all of them.
+  by tree and command and reads the newest that vouches for its run (on an
+  unchanged tree and from a fresh report: a pass whose report failed no
+  case and ran a case in every top-level suite, or a seen-to-fail in which
+  every case the run named failed, whatever else failed beside it) unless
+  asked for all of them.
 - **Counts from the report.** Where the command writes a JUnit report, the
   record holds the cases run and skipped per suite, the failed cases
   across the report, and each case's own result (passed, failed or

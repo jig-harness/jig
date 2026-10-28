@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -18,6 +19,7 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -540,7 +542,92 @@ describe("the store", () => {
     expectSpawnExit(evidence(flags), 1);
     expect(existsSync(lock)).toBe(false);
   });
+
+  test("a dead holder's lock another run is taking over is left to that run", () => {
+    const first = record([], PASS, 0);
+    const lock = reportLock(first.repository, "reports");
+    const gone = Bun.spawnSync([BUN, "-e", "0"]);
+    writeFileSync(lock, String(gone.pid));
+    writeFileSync(`${lock}.reclaim`, String(process.pid));
+    const r = evidence(["run", "--junit", "reports/junit.xml", "--", ...PASS]);
+    expectSpawnExit(r, 2);
+    expect(r.stderr).toContain("taking over the report lock");
+    expect(readFileSync(lock, "utf8")).toBe(String(gone.pid));
+  });
+
+  test.if(POSIX)(
+    "a report path through a linked folder shares the folder's lock",
+    () => {
+      const first = record([], PASS, 0);
+      mkdirSync(join(repo, "reports"));
+      symlinkSync(join(repo, "reports"), join(repo, "reports-alias"));
+      writeFileSync(
+        reportLock(first.repository, "reports"),
+        String(process.pid),
+      );
+      const r = evidence([
+        "run",
+        "--junit",
+        "reports-alias/junit.xml",
+        "--",
+        ...PASS,
+      ]);
+      expectSpawnExit(r, 2);
+      expect(r.stderr).toContain(`another run (pid ${process.pid})`);
+    },
+  );
+
+  test.if(POSIX)(
+    "a report path that is a link is refused before anything moves",
+    () => {
+      const outside = join(scratch, "outside.xml");
+      writeFileSync(outside, REPORT, { mode: 0o644 });
+      mkdirSync(join(repo, "reports"));
+      symlinkSync(outside, join(repo, "reports", "junit.xml"));
+      const r = evidence([
+        "run",
+        "--junit",
+        "reports/junit.xml",
+        "--",
+        ...PASS,
+      ]);
+      expectSpawnExit(r, 2);
+      expect(r.stderr).toContain("is a symbolic link");
+      expect(
+        lstatSync(join(repo, "reports", "junit.xml")).isSymbolicLink(),
+      ).toBe(true);
+      expect(statSync(outside).mode & 0o777).toBe(0o644);
+    },
+  );
+
+  test("refuses a read report missing the counts vouching reads", () => {
+    const r = record([], PASS, 0);
+    const forged = {
+      ...(JSON.parse(
+        readFileSync(join(r.dir, `${r.id}.json`), "utf8"),
+      ) as EvidenceRecord),
+      id: "forged",
+      junit: { path: "r.xml", status: "read", suites: [{ tripwire: true }] },
+    };
+    writeFileSync(join(r.dir, "forged.json"), JSON.stringify(forged));
+    const listing = evidence(["list"]);
+    expectSpawnExit(listing, 2);
+    expect(listing.stderr).toContain("forged.json");
+  });
 });
+
+/** The lock file of the report `<folder>/junit.xml` in the repository. */
+function reportLock(repository: string, folder: string): string {
+  const locks = join(store, repository, "report-locks");
+  mkdirSync(locks, { recursive: true });
+  return join(
+    locks,
+    createHash("sha256")
+      .update(join(realpathSync(repo), folder, "junit.xml"))
+      .digest("hex")
+      .slice(0, 12),
+  );
+}
 
 describe("a report that cannot be read safely", () => {
   test.if(POSIX)(

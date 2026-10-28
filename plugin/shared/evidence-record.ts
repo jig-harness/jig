@@ -12,6 +12,7 @@ import {
   openSync,
   readdirSync,
   readFileSync,
+  readSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -239,7 +240,30 @@ function reportText(
       status: "stale",
       problem: `written ${new Date(stat.mtimeMs).toISOString()}, before the run began`,
     };
-  return { text: readFileSync(fd, "utf8") };
+  const text = readBounded(fd);
+  return text === undefined
+    ? {
+        status: "unreadable",
+        problem: `grew past the ${MAX_REPORT_BYTES} bytes read while it was read`,
+      }
+    : { text };
+}
+
+/**
+ * The file open on `fd`, or undefined once more than `MAX_REPORT_BYTES` is
+ * read: a writer the command left running can grow the file after its size
+ * was checked, so the bound holds on the read itself.
+ */
+function readBounded(fd: number): string | undefined {
+  const chunks: Buffer[] = [];
+  const chunk = Buffer.alloc(64 * 1024);
+  for (let total = 0; ; ) {
+    const n = readSync(fd, chunk, 0, chunk.length, null);
+    if (n === 0) return Buffer.concat(chunks, total).toString("utf8");
+    total += n;
+    if (total > MAX_REPORT_BYTES) return undefined;
+    chunks.push(Buffer.from(chunk.subarray(0, n)));
+  }
 }
 
 /**
@@ -375,12 +399,12 @@ export function settle(
  */
 export function vouches(record: EvidenceRecord): boolean {
   if (record.treeChanged) return false;
-  if (record.junit && record.junit.status !== "read") return false;
+  const junit = record.junit;
+  if (junit && junit.status !== "read") return false;
   if (record.outcome === "seen-to-fail") return true;
   return (
     record.outcome === "pass" &&
-    !record.junit?.tripwire &&
-    !record.junit?.failed?.length
+    (junit === null || (junit.tripwire === false && junit.failed?.length === 0))
   );
 }
 
@@ -478,13 +502,64 @@ const orNull =
     v === null || is(v);
 const isNumber = (v: unknown): v is number => typeof v === "number";
 
+const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
+const arrayOf =
+  <T>(is: (v: unknown) => v is T) =>
+  (v: unknown): v is T[] =>
+    Array.isArray(v) && v.every(is);
+const STATUSES: readonly unknown[] = [
+  "read",
+  "no report",
+  "stale",
+  "unreadable",
+];
+const RESULTS: readonly unknown[] = ["passed", "failed", "skipped"];
+
+const isCaseId = (v: unknown): v is CaseId =>
+  isRecord(v) && isString(v.classname) && isString(v.name);
+const isCase = (v: unknown): v is CaseId & { result: CaseResult } =>
+  isCaseId(v) && RESULTS.includes((v as { result?: unknown }).result);
+type Suite = NonNullable<ReportSummary["suites"]>[number];
+const isSuite = (v: unknown): v is Suite =>
+  isRecord(v) &&
+  isString(v.name) &&
+  isNumber(v.depth) &&
+  isNumber(v.run) &&
+  isNumber(v.skipped) &&
+  v.tripwire === (v.depth === 0 && v.run === 0);
+
+/**
+ * A read report's counts, complete and agreeing with its cases as
+ * `summarize` writes them: what `vouches` reads is never inferred from a
+ * field that is missing.
+ */
+function isReadSummary(v: Record<string, unknown>): boolean {
+  if (
+    !isNumber(v.executed) ||
+    !isNumber(v.skipped) ||
+    !arrayOf(isSuite)(v.suites) ||
+    !arrayOf(isCaseId)(v.failed) ||
+    !arrayOf(isCase)(v.cases) ||
+    !isBoolean(v.tripwire)
+  )
+    return false;
+  const { cases, suites } = v;
+  const count = (result: CaseResult) =>
+    cases.filter((c) => c.result === result).length;
+  return (
+    v.skipped === count("skipped") &&
+    v.executed === cases.length - count("skipped") &&
+    v.failed.length === count("failed") &&
+    v.tripwire === (v.executed === 0 || suites.some((s) => s.tripwire))
+  );
+}
+
 function isReportSummary(value: unknown): value is ReportSummary {
   return (
     isRecord(value) &&
     isString(value.path) &&
-    isString(value.status) &&
-    (value.failed === undefined || Array.isArray(value.failed)) &&
-    (value.suites === undefined || Array.isArray(value.suites))
+    STATUSES.includes(value.status) &&
+    (value.status !== "read" || isReadSummary(value))
   );
 }
 
