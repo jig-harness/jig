@@ -284,6 +284,7 @@
  *       grammar.
  *   3   the thread is `commentsTruncated` — needs a human look
  *       (`/resolve-review-comments` § 2), not an automatic decision.
+ *   4   a merit reply stands, but its code scanning alert is undismissed: open.
  *   *   whatever `reply-to-thread.ts`, `resolve-thread.ts`, or `drive-state.ts
  *       hold` themselves returned, propagated verbatim — including 11
  *       (another live session holds this tree's drive lease) and 13 (another
@@ -305,13 +306,13 @@ import {
   qualifyingOutcome,
 } from "./lib/outcome.ts";
 import { ghCall, readTimeoutEnv, resolvePr, run, tsArgv } from "./lib/proc.ts";
+import { resolveDeclinedThread } from "./lib/scanner-sweep-guard.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const driveState = join(here, "drive-state.ts");
 const rrcScripts = join(here, "..", "..", "resolve-review-comments", "scripts");
 const replyToThread = join(rrcScripts, "reply-to-thread.ts");
-const resolveThread = join(rrcScripts, "resolve-thread.ts");
 
 /**
  * Is this outcome fix-dependent (held, never resolved on the spot)?
@@ -1052,6 +1053,7 @@ async function main(): Promise<number> {
   }
 
   if (!isHoldOutcome(effectiveOutcome, treatMootAsHold)) {
+    let exit = 0;
     if (effectiveLeaveOpen) {
       // SKILL.md's "Leaving a human thread open": a human thread you replied to
       // but chose not to close on the author's behalf is a deliberate open
@@ -1067,12 +1069,14 @@ async function main(): Promise<number> {
           : `triage-thread.ts: --leave-open — thread ${threadId} replied but not resolved.`,
       );
     } else {
-      const resolved = await run(tsArgv(resolveThread, [threadId]), {
-        timeoutSec: helperTimeoutSec,
-        stdout: "inherit",
-        stderr: "inherit",
-      });
+      // A code-scanning thread stays open over an undismissed alert (exit 4).
+      const resolved = await resolveDeclinedThread(
+        threadId,
+        thread.comments[0],
+        helperTimeoutSec,
+      );
       if (resolved.code !== 0) return resolved.code;
+      exit = resolved.exit;
     }
     // A merit reply can be a deliberate supersession of an earlier
     // accepted/moot hold on this same key, and resolve-thread.ts has no
@@ -1081,17 +1085,13 @@ async function main(): Promise<number> {
     const seenUrls = new Set(
       thread.comments.map((c) => c.url).filter((u): u is string => u !== null),
     );
-    // The comment this pass itself just posted (if any) is not yet in
-    // `thread.comments` (fetched before posting) — include it so a hold this
-    // same call just created (impossible today, since a fresh post only
-    // reaches the hold-outcome branch below, but kept for the invariant to
-    // hold regardless of future branches) is never treated as
-    // unaccounted-for.
+    // A comment this call just posted is not in `thread.comments` (read before
+    // posting); include it so it is never treated as unaccounted-for.
     seenUrls.add(commentUrl);
     const cleanedUp = await attemptStaleHoldCleanup(pr, threadId, seenUrls);
     // Same reasoning as the isResolved branch above: a stranded hold on a now-
     // resolved thread has no other path back to this script.
-    return cleanedUp ? 0 : 1;
+    return cleanedUp ? exit : 1;
   }
 
   // `pr` was already resolved above (before any posting), guarded by the same

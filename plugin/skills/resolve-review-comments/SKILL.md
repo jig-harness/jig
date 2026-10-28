@@ -707,9 +707,10 @@ an open alert hides a finding nobody answered.
 Under `/jig:drive-pr`, `triage-thread.ts` resolves a merit outcome in the
 same call that posts it, which leaves no point to dismiss in between. Post the
 reply with `reply-to-thread.ts`, dismiss, then dispatch with `triage-thread.ts`,
-which finds the posted reply and resolves. The drive's replied-thread sweep
-leaves a declined finding open until it can confirm the alert is dismissed;
-report an alert that could not be dismissed in the round's summary.
+which finds the posted reply and resolves. Both `triage-thread.ts` and the
+drive's replied-thread sweep leave a declined finding open until they can
+confirm the alert is dismissed (`triage-thread.ts` exits `4` then); report an
+alert that could not be dismissed in the round's summary.
 
 A dismissal reaches the tool: SonarQube Cloud, for one, records a false
 positive as False Positive and the other reasons as Accept. A security
