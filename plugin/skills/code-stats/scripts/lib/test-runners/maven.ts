@@ -8,8 +8,9 @@
  * Not read: a value inside a `<profile>`, which applies only when the
  * profile is active, and one a module inherits from a parent POM. A
  * `testSourceDirectory` built from another property (`${tests.dir}`), or a
- * POM that is not well-formed XML (`xml.ts` says how it is read), makes the
- * POM unreadable, and nothing is claimed from it.
+ * POM that is not well-formed XML (`xml.ts` says how it is read) or is in
+ * an encoding `xml-encoding.ts` does not decode, makes the POM unreadable,
+ * and nothing is claimed from it.
  */
 import {
   folderOf,
@@ -23,6 +24,7 @@ import {
   UnreadableError,
 } from "./model.ts";
 import { elementValues } from "./xml.ts";
+import { xmlText } from "./xml-encoding.ts";
 
 const READER = "Maven";
 const DEFAULT = "src/test/java";
@@ -54,8 +56,12 @@ export function mavenRules(file: string, text: string): RunnerRule[] {
   ];
 }
 
-/** Every Maven POM among the repository's files. */
+/** Every Maven POM among the repository's files, each decoded from its bytes by the encoding it names. */
 export function readMaven(files: RepoFiles): Reading {
   const poms = files.paths.filter((p) => nameOf(p) === "pom.xml");
-  return readEach(READER, files, poms, mavenRules);
+  return readEach(READER, files, poms, (file) => {
+    const bytes = files.bytes(file);
+    if (bytes === null) throw new UnreadableError("could not be read");
+    return mavenRules(file, xmlText(bytes));
+  });
 }

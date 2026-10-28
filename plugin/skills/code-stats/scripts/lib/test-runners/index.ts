@@ -47,6 +47,7 @@ export function readTestRunners(files: RepoFiles): Reading {
   const own: RepoFiles = {
     paths: files.paths.filter((p) => !elsewhere(p)),
     read: (p) => files.read(p),
+    bytes: (p) => files.bytes(p),
   };
   const reading: Reading = { rules: [], unreadable: [] };
   for (const read of READERS) {

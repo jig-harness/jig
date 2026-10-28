@@ -26,6 +26,10 @@ function repo(texts: Record<string, string>, listed: string[] = []): RepoFiles {
   return {
     paths: [...Object.keys(texts), ...listed],
     read: (path) => texts[path] ?? null,
+    bytes: (path) => {
+      const text = texts[path];
+      return text === undefined ? null : new TextEncoder().encode(text);
+    },
   };
 }
 

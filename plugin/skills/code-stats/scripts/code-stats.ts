@@ -195,14 +195,21 @@ function realPath(path: string): string {
   return parent === path ? path : join(realPath(parent), basename(path));
 }
 
-/** The tracked files as the test-runner readers see them: regular files read as text. */
+/** The tracked files as the test-runner readers see them: regular files, read as text or as bytes. */
 function repoFiles(root: string, paths: readonly string[]): RepoFiles {
+  const regular = (path: string) => {
+    const abs = join(root, path);
+    return lstatSync(abs, { throwIfNoEntry: false })?.isFile() ? abs : null;
+  };
   return {
     paths,
     read: (path) => {
-      const abs = join(root, path);
-      const st = lstatSync(abs, { throwIfNoEntry: false });
-      return st?.isFile() ? readFileSync(abs, "utf8") : null;
+      const abs = regular(path);
+      return abs ? readFileSync(abs, "utf8") : null;
+    },
+    bytes: (path) => {
+      const abs = regular(path);
+      return abs ? readFileSync(abs) : null;
     },
   };
 }

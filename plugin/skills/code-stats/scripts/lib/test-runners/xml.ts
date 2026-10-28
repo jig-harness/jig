@@ -7,7 +7,8 @@
  * grammar's markup productions, read to that production's end: a start,
  * end or empty-element tag, a comment, a CDATA section, a processing
  * instruction, the XML declaration or the document type declaration.
- * Anything else at a `<` is malformed markup.
+ * Anything else at a `<` is malformed markup. The text read is the
+ * document's characters, decoded from its bytes by `xml-encoding.ts`.
  *
  * Not checked: the declarations inside a document type declaration's
  * internal subset are read to their ends, with quotes respected, but their
@@ -229,10 +230,14 @@ interface Scan {
  * a CDATA section adds its text, and markup inside either is not markup.
  * A character XML forbids makes the document unreadable wherever it stands,
  * in CDATA and comments too, and every reference is checked, in character
- * data and attribute values alike.
+ * data and attribute values alike. Line ends are read as XML normalizes
+ * them before parsing: a carriage return and line feed, or a carriage
+ * return alone, is one line feed, while a `&#13;` reference stays a
+ * carriage return.
  */
-export function elementValues(text: string): Values {
-  rejectForbiddenChars(text);
+export function elementValues(source: string): Values {
+  rejectForbiddenChars(source);
+  const text = source.replace(/\r\n?/g, "\n");
   const scan: Scan = {
     values: new Map(),
     path: [],

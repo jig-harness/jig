@@ -20,8 +20,22 @@ import { readMaven } from "../scripts/lib/test-runners/maven.ts";
 import { readPytest } from "../scripts/lib/test-runners/pytest.ts";
 import { readVitest } from "../scripts/lib/test-runners/vitest.ts";
 
-function repo(texts: Record<string, string>): RepoFiles {
-  return { paths: Object.keys(texts), read: (path) => texts[path] ?? null };
+/** The repository files a reader sees; a file given as bytes is read as UTF-8 text. */
+function repo(files: Record<string, string | Uint8Array>): RepoFiles {
+  const bytes = (path: string) => {
+    const file = files[path];
+    return typeof file === "string"
+      ? new TextEncoder().encode(file)
+      : (file ?? null);
+  };
+  return {
+    paths: Object.keys(files),
+    read: (path) => {
+      const file = bytes(path);
+      return file && new TextDecoder().decode(file);
+    },
+    bytes,
+  };
 }
 
 const claimed = (reading: Reading, paths: string[]) =>
@@ -651,6 +665,93 @@ describe("Maven", () => {
       );
       expect([doctype, reading.unreadable]).toEqual([doctype, []]);
       expect(claimed(reading, ["qa/Check.java"])).toEqual(["qa/Check.java"]);
+    }
+  });
+
+  test("a line end in a value is one line feed, and &#13; stays a carriage return", () => {
+    const values = (dir: string) =>
+      readMaven(
+        repo({
+          "pom.xml": `<project><build><testSourceDirectory>${dir}</testSourceDirectory></build></project>`,
+        }),
+      );
+    for (const dir of ["qa\r\nchecks", "qa\rchecks"])
+      expect(claimed(values(dir), ["qa\nchecks/A.java"])).toEqual([
+        "qa\nchecks/A.java",
+      ]);
+    expect(
+      claimed(values("qa&#13;\nchecks"), [
+        "qa\r\nchecks/A.java",
+        "qa\nchecks/A.java",
+      ]),
+    ).toEqual(["qa\r\nchecks/A.java"]);
+  });
+});
+
+describe("Maven encodings", () => {
+  const body = (dir: string) =>
+    `<project><build><testSourceDirectory>${dir}</testSourceDirectory></build></project>`;
+  const latin1 = (text: string) =>
+    Uint8Array.from(text, (c) => c.charCodeAt(0));
+  const utf16 = (text: string, bigEndian: boolean) => {
+    const bytes = [bigEndian ? 0xfe : 0xff, bigEndian ? 0xff : 0xfe];
+    for (const c of text) {
+      const code = c.charCodeAt(0);
+      bytes.push(
+        ...(bigEndian ? [code >> 8, code & 0xff] : [code & 0xff, code >> 8]),
+      );
+    }
+    return Uint8Array.from(bytes);
+  };
+  const read = (bytes: Uint8Array) => readMaven(repo({ "pom.xml": bytes }));
+
+  test("a POM is decoded by its byte order mark or its declared encoding", () => {
+    for (const bytes of [
+      latin1(`<?xml version="1.0" encoding="ISO-8859-1"?>${body("qé")}`),
+      utf16(`<?xml version="1.0" encoding="UTF-16"?>${body("qé")}`, true),
+      utf16(body("qé"), false),
+      Uint8Array.from([
+        0xef,
+        0xbb,
+        0xbf,
+        ...new TextEncoder().encode(body("qé")),
+      ]),
+      new TextEncoder().encode(
+        `<?xml version='1.0' encoding='utf-8'?>${body("qé")}`,
+      ),
+    ]) {
+      const reading = read(bytes);
+      expect(reading.unreadable).toEqual([]);
+      expect(claimed(reading, ["qé/A.java"])).toEqual(["qé/A.java"]);
+    }
+  });
+
+  test("bytes the encoding does not decode, or an encoding it does not read, make the POM unreadable", () => {
+    for (const [bytes, why] of [
+      [latin1(body("q\xe9")), "has bytes that are not UTF-8"],
+      [
+        latin1(`<?xml version="1.0" encoding="US-ASCII"?>${body("q\xe9")}`),
+        "has bytes that are not US-ASCII",
+      ],
+      [
+        latin1(`<?xml version="1.0" encoding="Shift_JIS"?>${body("qa")}`),
+        'declares an encoding it does not read ("Shift_JIS")',
+      ],
+      [
+        latin1(`<?xml version="1.0" encoding="UTF-16"?>${body("qa")}`),
+        "declares UTF-16 without the byte order mark UTF-16 requires",
+      ],
+      [
+        utf16(
+          `<?xml version="1.0" encoding="ISO-8859-1"?>${body("qa")}`,
+          false,
+        ),
+        'declares "ISO-8859-1" where its byte order mark says UTF-16LE',
+      ],
+    ] as const) {
+      const reading = read(bytes);
+      expect(reading.rules).toEqual([]);
+      expect(whys(reading)).toEqual([why]);
     }
   });
 });

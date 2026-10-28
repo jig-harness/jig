@@ -6,11 +6,13 @@
  */
 import { posix } from "node:path";
 
-/** The repository's tracked paths, and a way to read one as text. */
+/** The repository's tracked paths, and a way to read one as text or as bytes. */
 export interface RepoFiles {
   paths: readonly string[];
-  /** The file's text, or null when it cannot be read. */
+  /** The file's text, read as UTF-8, or null when it cannot be read. */
   read(path: string): string | null;
+  /** The file's bytes, for a format that names its own encoding (XML), or null when it cannot be read. */
+  bytes(path: string): Uint8Array | null;
 }
 
 /** One rule a runner's configuration declares: these files are tests. */
