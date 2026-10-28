@@ -8,6 +8,7 @@
  *   bun reflect.ts gather [--mode quick|comprehensive]
  *   bun reflect.ts plan
  *   bun reflect.ts contribute [--issue <class>=<issue>]... [--session <json>]
+ *   bun reflect.ts hotspots <report.json>
  *
  * status      whether reflection is on, the store, the journal and its
  *             unsent count; no store access.
@@ -22,6 +23,12 @@
  *             finding of each class given with --issue to that issue
  *             (commenting on it when the tracker can), and marks the
  *             findings contributed in the journal.
+ * hotspots    reads the merge-conflict history report (`history.ts --json`
+ *             of resolve-conflicts) and notes one finding per conflict
+ *             hotspot in the journal, its cause as the class; a hotspot the
+ *             journal already holds is revised to the new count, and one the
+ *             store already records is left (`lib/hotspots.ts`). `plan` and
+ *             `contribute` then escalate and store them like any finding.
  *
  * Output: JSON on stdout. Exit codes: 0 done (or reflection off); 1 failed;
  * 2 usage; 3 the store is unavailable, and the findings stay in the journal
@@ -63,13 +70,15 @@ import {
   reflectionSettings,
 } from "./lib/settings.ts";
 import { failureOf, orExit, Store, storeState } from "./lib/store-client.ts";
+import { readHotspotReport, recordHotspots } from "./lib/hotspots.ts";
 import { chooseOperation, last, type ParsedArgs } from "./lib/args.ts";
 
 const USAGE = `usage:
   reflect.ts status
   reflect.ts gather [--mode quick|comprehensive]
   reflect.ts plan
-  reflect.ts contribute [--issue <class>=<issue>]... [--session <json>]`;
+  reflect.ts contribute [--issue <class>=<issue>]... [--session <json>]
+  reflect.ts hotspots <report.json>`;
 
 function print(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
@@ -301,6 +310,37 @@ async function contribute(
   return 0;
 }
 
+async function hotspots(
+  settings: ReflectionSettings,
+  path: string,
+  args: ParsedArgs,
+): Promise<number> {
+  let report: ReturnType<typeof readHotspotReport>;
+  try {
+    report = readHotspotReport(args.positional[0] as string);
+  } catch (error) {
+    fail(2, failureOf(error).message, USAGE);
+  }
+  // A pending finding a removed worktree left is part of what the journal
+  // holds, so it is adopted before a hotspot is looked up in it.
+  adoptPending(path, repositoryId());
+  const state = await orExit(
+    () => storeState(Store.configured(settings)),
+    "nothing was noted: whether the store already records a hotspot decides whether it is new; run it again when the store is back",
+  );
+  const results = recordHotspots(path, report, state, import.meta.dir);
+  print({
+    range: report.range.label,
+    journal: path,
+    hotspots: results,
+    note:
+      results.length === 0
+        ? "the report names no conflict hotspot"
+        : "run reflect.ts plan, then contribute, to escalate and store what was noted",
+  });
+  return 0;
+}
+
 function status(settings: ReflectionSettings, path: string): number {
   print({
     on: true,
@@ -320,10 +360,14 @@ type Run = (
   args: ParsedArgs,
 ) => Promise<number> | number;
 
-const OPERATIONS: Record<string, { options: string[]; run: Run }> = {
+const OPERATIONS: Record<
+  string,
+  { options: string[]; positional?: number; run: Run }
+> = {
   status: { options: [], run: status },
   gather: { options: ["mode"], run: gather },
   plan: { options: [], run: plan },
+  hotspots: { options: [], positional: 1, run: hotspots },
   contribute: { options: ["issue", "session"], run: contribute },
 };
 
