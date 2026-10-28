@@ -45,6 +45,7 @@ export interface Field {
   type: FieldType;
   values?: string[];
   min?: number;
+  max?: number;
   pattern?: string;
   nullable?: boolean;
   items?: Items;
@@ -84,6 +85,7 @@ const FIELD_KEYS = new Set([
   "type",
   "values",
   "min",
+  "max",
   "pattern",
   "nullable",
   "items",
@@ -190,6 +192,10 @@ const ENTRY_CHECKS: ((entry: Entry) => string | null)[] = [
   (e) =>
     e.min !== undefined && typeof e.min !== "number"
       ? "min must be a number"
+      : null,
+  (e) =>
+    e.max !== undefined && typeof e.max !== "number"
+      ? "max must be a number"
       : null,
   (e) => patternProblem(e.type, e.pattern),
   (e) =>
@@ -355,10 +361,19 @@ function integerProblem(value: unknown, field?: Field): string | null {
   const words = field?.values ?? [];
   if (typeof value === "string" && words.includes(value)) return null;
   const min = field?.min ?? Number.NEGATIVE_INFINITY;
-  if (typeof value === "number" && Number.isSafeInteger(value) && value >= min)
+  const max = field?.max ?? Number.POSITIVE_INFINITY;
+  if (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= min &&
+    value <= max
+  )
     return null;
-  const bound =
-    field?.min === undefined ? "a whole number" : `a whole number ≥ ${min}`;
+  const limits = [
+    field?.min === undefined ? null : `≥ ${min}`,
+    field?.max === undefined ? null : `≤ ${max}`,
+  ].filter((l) => l !== null);
+  const bound = ["a whole number", limits.join(" and ")].join(" ").trim();
   return `must be ${[bound, ...words].join(" or ")}`;
 }
 

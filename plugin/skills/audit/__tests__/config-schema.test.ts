@@ -41,6 +41,13 @@ import {
 } from "../../do-item/scripts/lib/tracker/index.ts";
 import { checkConfig, loadSchema, parseSchema } from "../scripts/lib/schema.ts";
 import {
+  DEFAULT_OUTPUT_LINES,
+  DEFAULT_RETENTION_DAYS,
+  DEFAULT_TIMEOUT_MINUTES,
+  MAX_TIMEOUT_MINUTES,
+  verifySettings,
+} from "../../../shared/evidence-record.ts";
+import {
   MODES,
   parseReflection,
   STORE_KINDS,
@@ -183,6 +190,12 @@ test("its complete example's code_stats section passes the skill", () => {
   ).not.toThrow();
 });
 
+test("its complete example's verify section passes the evidence record", () => {
+  expect(() =>
+    verifySettings(completeExample().verify, repoRoot),
+  ).not.toThrow();
+});
+
 test("its complete example's work_batch section passes the skill", () => {
   const example = completeExample();
   const { batchSizes } = parseTrackerConfig(example).labels;
@@ -269,6 +282,9 @@ describe("the reading skills", () => {
       "resolve_conflicts.hotspot_min_merges": DEFAULT_HOTSPOT_MIN_MERGES,
       "repository.remote": DEFAULT_REMOTE,
       "review.scanner_apps": DEFAULT_SCANNER_APPS,
+      "verify.output_lines": DEFAULT_OUTPUT_LINES,
+      "verify.timeout_minutes": DEFAULT_TIMEOUT_MINUTES,
+      "verify.retention_days": DEFAULT_RETENTION_DAYS,
     });
   });
 
@@ -296,6 +312,18 @@ describe("the reading skills", () => {
       ["null:repository.base_branch", "info"],
     ]);
     expect(severities({ drive: null })).toEqual([]);
+  });
+
+  test("bound an integer from above where its reader does", () => {
+    const problems = (value: number) =>
+      checkConfig({ verify: { timeout_minutes: value } }, schema).map(
+        (f) => f.message,
+      );
+    expect(field("verify.timeout_minutes")?.max).toBe(MAX_TIMEOUT_MINUTES);
+    expect(problems(MAX_TIMEOUT_MINUTES)).toEqual([]);
+    expect(problems(MAX_TIMEOUT_MINUTES + 1)).toEqual([
+      `verify.timeout_minutes must be a whole number ≥ 1 and ≤ ${MAX_TIMEOUT_MINUTES}`,
+    ]);
   });
 
   test("refuse the batch-key labels the deferral helper refuses", () => {
@@ -363,7 +391,9 @@ describe("the reading skills", () => {
           existsSync(
             skill === "gc"
               ? join(plugin, "jig.ts")
-              : join(plugin, "skills", skill, "SKILL.md"),
+              : skill === "evidence"
+                ? join(plugin, "shared", "evidence.ts")
+                : join(plugin, "skills", skill, "SKILL.md"),
           ),
         ]).toEqual([f.path, skill, true]);
   });

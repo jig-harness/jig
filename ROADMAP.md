@@ -107,13 +107,6 @@ one per repository. The skill also checks the whole changelog against the
 rules of its format, and gets workflow templates for CI providers other than
 GitHub.
 
-### 22. Merge conflicts, measured
-
-Measured [conflict hotspots](GLOSSARY.md) become findings in the
-[reflection store](plugin/skills/reflect/README.md), grouped by their cause,
-so the existing review and escalation loop turns recurring conflicts into
-changes to the repository.
-
 ### 23. Seed review lenses
 
 [`review`](plugin/skills/review/SKILL.md) gains a set of

@@ -729,6 +729,43 @@ its `Conflicts resolved:` section recorded).
 | 1 | a git call failed |
 | 2 | usage error, not inside a git repository, invalid configuration, git older than 2.43, or a partial clone with git older than 2.45 |
 
+### Hotspots into the learning loop
+
+When the person asks for the hotspots to be acted on, and
+[reflection](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) is on,
+turn each hotspot into a finding of the [`reflect`](../reflect/SKILL.md)
+skill, its cause as the finding's class. Write the report to a file outside
+the repository's tracked files (`<scratch>`), then pass it on:
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdout-file <scratch>/merge-conflicts.json -- bun "${CLAUDE_SKILL_DIR}/scripts/history.ts" --json
+bun "${CLAUDE_SKILL_DIR}/../reflect/scripts/reflect.ts" hotspots <scratch>/merge-conflicts.json
+```
+
+Each hotspot becomes one finding in the worktree's reflection journal: the
+path as its `target`, its most frequent cause as its `class`, its count,
+range and causes in its title and description with what the measurement
+could not see (skipped merges, the cause's hand-checked accuracy, and the
+report's own `limits`, a shallow clone included, so the finding still says
+them once the report file is gone), and the report's remedy as its `suggested_fix`. The output lists each hotspot with what happened to it:
+`noted`, `updated` (the journal held it, and it now has the new count),
+`unchanged`, `sending` (a cut-off send may have stored it), or `stored` (the
+store already records it, with its status). A stored hotspot gets a new
+finding only once its fix is `implemented` and the report's range starts
+after that decision, so every merge measured came after the fix. With
+reflection off it prints `{"on": false}` and writes nothing. Exit 2 means
+the file is not a `merge-conflicts/v1` report, or one this version of
+`history.ts` could not have written: a time without its offset, a merge
+outside the range, or totals, paths, hotspots or limits other than the ones
+its merges give; exit 3, that the store is
+unavailable; exit 1, that the store answered with something that is not its
+events. On exit 2, 3 or 1 nothing was noted.
+
+Then run [`/jig:reflect`](../reflect/SKILL.md): its plan escalates a cause
+that recurs across hotspots to one tracker issue like any other class, and
+[`/jig:review-reflections`](../review-reflections/SKILL.md) proposes the
+change. Keep each hotspot finding's class: it is the measured cause.
+
 ## Related skills
 
 - [`/jig:drive-pr`](../drive-pr/SKILL.md) runs this skill in its

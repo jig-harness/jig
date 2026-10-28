@@ -287,17 +287,19 @@ repository with one released artifact. What is left:
 ### 22. Merge conflicts, measured
 
 The replay, live record and [M11/M12 practice](merge-conflicts.md) measure
-where parallel work conflicts and expose the result in the audit and
-cross-PR scoreboard. What is left:
+where parallel work conflicts, expose the result in the audit and cross-PR
+scoreboard, and feed each hotspot into the reflection store as a finding
+whose class is its cause. What is left concerns only how Jig keeps its own
+plan:
 
-- **Into the learning loop**: turn conflict hotspots into findings in the
-  reflection store, with each cause as the finding's class, so the existing
-  review and escalation loop turns a recurring cause into a change.
 - **One file per roadmap item** follows only if the report shows the plan
-  or the roadmap conflicting where items are added or removed side by side.
+  or the roadmap conflicting where items are added or removed side by side
+  (`append` or `adjacent` hotspots, which now also arrive as reflection
+  findings of those classes).
 
-Done when measured hotspots enter the existing reflection loop without a
-second escalation path.
+Done when a history report over a window of parallel work on Jig has shown
+whether the plan or the roadmap has such hotspots, and one file per item has
+then become a plan item of its own or been dropped.
 
 ### 23. Seed review lenses
 
@@ -455,8 +457,11 @@ attributes on a fresh base, narrows, keeps a hypothesis ledger, fixes, and
 stops after a budget with the ledger posted where the work is tracked.
 What it will build, one pull request per step:
 
-- **The record**: `shared/evidence.ts` with its tests, run from a plugin copy.
 - **`verify`**: the skill, its README, the lifecycle row, the M14 link.
+- **Evidence collection**: a resource collection kind that removes records,
+  their output and moved-aside reports past `verify.retention_days`, with
+  receipts; until it lands, `verify.retention_days` is read and nothing is
+  removed.
 - **`do-item` and `fix-ci` record and require**: the policy refusal, the
   body's evidence section, the seen-to-fail requirement by work type (item 27).
 - **`debug`**: the skill, the ledger, the budget, the hand-off from
