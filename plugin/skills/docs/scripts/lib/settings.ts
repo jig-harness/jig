@@ -69,24 +69,37 @@ function staleAfter(section: Record<string, unknown>): number {
   return value;
 }
 
+/** A folder's entries in byte order of their names. */
+const entriesOf = (folder: string) =>
+  readdirSync(folder, { withFileTypes: true }).sort(
+    (a, b) => Number(a.name > b.name) - Number(a.name < b.name),
+  );
+
+/** The schema file directly in `folder`, repository-relative, or null. */
+function schemaIn(repo: string, folder: string): string | null {
+  const hit = entriesOf(folder).find(
+    (entry) => entry.isFile() && SCHEMA_NAMES.has(entry.name),
+  );
+  return hit ? posixPath(relative(repo, join(folder, hit.name))) : null;
+}
+
+/** The folders a schema search enters below `folder`. */
+const subfolders = (folder: string) =>
+  entriesOf(folder)
+    .filter((entry) => entry.isDirectory() && !SKIPPED_DIRS.has(entry.name))
+    .map((entry) => join(folder, entry.name));
+
 /** The first schema file under `dir`, shallowest first, then by name. */
 export function findSchema(repo: string, dir: string): string | null {
-  let level = [join(repo, dir)];
-  while (level.length) {
-    const next: string[] = [];
-    for (const folder of level.sort()) {
-      const entries = readdirSync(folder, { withFileTypes: true }).sort(
-        (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
-      );
-      for (const entry of entries)
-        if (entry.isFile() && SCHEMA_NAMES.has(entry.name))
-          return posixPath(relative(repo, join(folder, entry.name)));
-      for (const entry of entries)
-        if (entry.isDirectory() && !SKIPPED_DIRS.has(entry.name))
-          next.push(join(folder, entry.name));
+  for (
+    let level = [join(repo, dir)];
+    level.length;
+    level = level.flatMap(subfolders).sort()
+  )
+    for (const folder of level) {
+      const found = schemaIn(repo, folder);
+      if (found) return found;
     }
-    level = next;
-  }
   return null;
 }
 
