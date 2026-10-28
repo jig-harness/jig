@@ -19,7 +19,25 @@ issue type (GitHub's issue types), or a Conventional Commits title prefix
 such as `fix:` where the repository's titles follow that convention. An item
 none of these identifies is `unknown`. Each type has a row in the
 [depth table](../../CONFIGURATION.md#the-depth-table). In this version the
-type is reported, and the pickup is otherwise the same for every type.
+type is reported, and the pickup is otherwise the same for every type. A
+type configuration the rules refuse stops the pickup, naming the field at
+fault, since the route below reads it too.
+
+## The implementer's route
+
+Before it delegates, the skill also says which
+[model tier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) and
+which effort the implementing agent should run on, and why: the item's
+[route](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md). The type
+gives a base (a task runs on the Execution tier at low effort, a spike on
+the Strategic tier at high effort), and a flag label, an area with a
+mandatory review, a size too large to batch and the human-in-the-loop label
+each move the effort up one step. The rules are data in the repository's
+`routing` section, with defaults
+([configuration reference](../../CONFIGURATION.md#routing)). In this version
+the route is reported and the implementer runs on the model it ran on
+before. A `routing` section the rules refuse stops the pickup, naming the
+field at fault, until the repository corrects it.
 
 ## Requirements and platforms
 
