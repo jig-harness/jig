@@ -99,6 +99,17 @@ test("a taxonomy the lint refuses leaves the raise lists unchecked", () => {
   expect(found.some((f) => f.id === "unchecked:routing.raise")).toBe(true);
 });
 
+test("a taxonomy that cannot be read leaves the raise lists unchecked, not the report aborted", () => {
+  const found = findings(
+    "issue_tracker:\n  taxonomy: docs/labels\nrouting:\n  raise:\n    flags: [secret]\n",
+    "",
+    { "docs/labels/readme.md": "a directory, not a taxonomy\n" },
+  );
+  expect(
+    found.find((f) => f.id === "unchecked:routing.raise")?.message,
+  ).toContain("docs/labels could not be read");
+});
+
 test("a taxonomy the pickup does not read is not checked against", () => {
   const found = findings("routing:\n  raise:\n    flags: [secret]\n", "", {
     "docs/label-taxonomy.yml": TAXONOMY,

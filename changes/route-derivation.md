@@ -23,9 +23,11 @@ release: minor
   and spelling per effort (by default Claude Code's `sonnet` for Execution
   and `opus` for Strategic). Without the section the route is still derived
   and reported; `routing: {}` opts in with every default. A section the
-  loading rules refuse stops the pickup, naming the field at fault, and the
-  audit's configuration check reports it, along with a raise list naming a
-  label the label taxonomy does not declare, judged as the pickup judges it. See the
+  loading rules refuse stops the pickup before the item or sub-issue is
+  started or assigned, naming the field at fault, and the audit's
+  configuration check reports it, along with a raise list naming a label the
+  label taxonomy does not declare, judged as the pickup judges it, or a label
+  taxonomy it cannot read. See the
   [configuration reference](../plugin/CONFIGURATION.md#routing).
 
 ### Changed

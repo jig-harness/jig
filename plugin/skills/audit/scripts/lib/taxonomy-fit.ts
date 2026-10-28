@@ -197,6 +197,17 @@ function raiseFields(config: Record<string, unknown>): string[] {
   );
 }
 
+/** The label lint's reading of `file`, or why the file could not be read. */
+function lintedTaxonomy(
+  file: string,
+): ReturnType<typeof lintTaxonomyFile> | string {
+  try {
+    return lintTaxonomyFile(file);
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
 /**
  * The raise labels do-item's pickup refuses. The pickup reads the taxonomy
  * at `issue_tracker.taxonomy`, or `label-taxonomy.yaml` at the root, never a
@@ -207,7 +218,9 @@ function raiseFields(config: Record<string, unknown>): string[] {
  * (`declaresLabel`), which is narrower than `defined` above. A taxonomy its
  * lint refuses leaves the pickup nothing to check against, and so the audit
  * reports the lists unchecked rather than judging them by another rule. A
- * malformed `issue_tracker.taxonomy` is the schema check's to report.
+ * malformed `issue_tracker.taxonomy` is the schema check's to report, and
+ * one that cannot be read at all, which the pickup refuses, is reported
+ * here rather than ending the report.
  */
 function raiseFindings(
   config: Record<string, unknown>,
@@ -225,7 +238,16 @@ function raiseFindings(
   const path = taxonomySetting(config);
   const file = taxonomyAt(root, path);
   if (!existsSync(file)) return [];
-  const taxonomy = lintTaxonomyFile(file).taxonomy;
+  const linted = lintedTaxonomy(file);
+  if (typeof linted === "string")
+    return [
+      {
+        id: "unchecked:routing.raise",
+        severity: "warning",
+        message: `${path} could not be read (${linted}), so ${fields.join(" and ")} are unchecked and do-item refuses to pick up work`,
+      },
+    ];
+  const taxonomy = linted.taxonomy;
   if (taxonomy === null)
     return [
       {
