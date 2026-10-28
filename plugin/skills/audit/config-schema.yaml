@@ -461,32 +461,32 @@ fields:
     type: map
     values_type: { type: map, values_type: string }
     read_by: [do-item]
-    since: next
+    since: 0.92.0
   routing.raise.flags:
     type: any
     read_by: [do-item]
-    since: next
+    since: 0.92.0
   routing.raise.sizes:
     type: list
     items: string
     distinct: true
     read_by: [do-item]
-    since: next
+    since: 0.92.0
   routing.raise.reviews:
     type: boolean
     default: true
     read_by: [do-item]
-    since: next
+    since: 0.92.0
   routing.models:
     type: map
     values_type: { type: map, values_type: string }
     read_by: [do-item]
-    since: next
+    since: 0.92.0
   routing.efforts:
     type: map
     values_type: { type: map, values_type: string }
     read_by: [do-item]
-    since: next
+    since: 0.92.0
 
   fleet_health.config:
     type: path
