@@ -19,7 +19,9 @@ issue type (GitHub's issue types), or a Conventional Commits title prefix
 such as `fix:` where the repository's titles follow that convention. An item
 none of these identifies is `unknown`. Each type has a row in the
 [depth table](../../CONFIGURATION.md#the-depth-table). In this version the
-type is reported, and the pickup is otherwise the same for every type.
+type is reported, and the pickup is otherwise the same for every type. A
+type configuration the rules refuse stops the pickup, naming the field at
+fault, since the route below reads it too.
 
 ## The implementer's route
 

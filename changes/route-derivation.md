@@ -27,3 +27,10 @@ release: minor
   audit's configuration check reports it, along with a raise list naming a
   label the label taxonomy does not declare, judged as the pickup judges it. See the
   [configuration reference](../plugin/CONFIGURATION.md#routing).
+
+### Changed
+
+- `do-item` stops the pickup when the work-type settings
+  (`issue_tracker.types`, `do_item.work_types`) are refused, where it used
+  to report the refusal and go on: the route reads the same settings, so
+  going on would start and assign the item before the route refused it.

@@ -284,8 +284,9 @@ with `evidence.summary`; and the type's row of the
 [depth table](../../CONFIGURATION.md#the-depth-table). Put the type and
 `evidence.summary` in the status message, e.g.
 `Type: bug (label type:bug)`; an `unknown` type is reported the same way.
-No later step reads the type or the row. Exit `1` is a configuration the
-loading rules refuse: report its message in the status message and continue.
+Exit `1` is a configuration the loading rules refuse: stop the pickup and
+report its message. The route (Step 4a item 2) reads the same settings, so
+going on would start and assign the item only for the route to refuse it.
 
 ### Step 2: Check for prior scout findings
 
@@ -566,8 +567,8 @@ routing below remain **exact**.
    Put the tier, the effort, the model and the effort's reasons (its base
    row and every raise in `reasons`) in the status message, e.g.
    `Route: execution, high, sonnet (type bug: medium; flag has-migration raised medium)`.
-   Nothing is forwarded yet: the delegation below runs on the model and
-   effort it runs on today, whatever `declared` says. Exit `1` is a
+   The route is not forwarded: the delegation below runs on the model and
+   effort it would run on without one, whatever `declared` says. Exit `1` is a
    configuration the loading rules refuse: stop the pickup and report its
    message, which names the field at fault. A refused `routing` section is
    never read as absent; the repository corrects it before the item is
