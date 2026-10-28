@@ -180,7 +180,7 @@ Linear tool, the GitHub form is the row of this table it belongs to.
 
 | Operation | Script form | Native: Linear (MCP) | Native: GitHub Issues (`gh`) |
 |-----------|-------------|----------------------|------------------------------|
-| Get issue (labels, state, parent, children, sub-issue analysis) | `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "<KEY>"` | `mcp__linear__get_issue` (no children field) | `gh issue view` with its JSON fields `number`, `title`, `body`, `labels`, `state`, `stateReason` and `url` (no sub-issues field) |
+| Get issue (labels, state, parent, children, sub-issue analysis) | `bun "${CLAUDE_SKILL_DIR}/scripts/get_issue.ts" "<KEY>"` | `mcp__linear__get_issue` (no children field) | `gh issue view` with its JSON fields `number`, `title`, `body`, `labels`, `state`, `stateReason`, `url` and `issueType` (no sub-issues field; `issueType.name` is the `nativeType`, `null` when the issue has none) |
 | List comments | `bun "${CLAUDE_SKILL_DIR}/scripts/list_comments.ts" "<KEY>"` | `mcp__linear__list_comments` | `gh issue view` with the JSON field `comments` |
 | List children | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" children "<KEY>"` | `mcp__linear__list_issues` with a parent filter | `gh api` on the issue's `sub_issues` endpoint |
 | Transition state | `bun "${CLAUDE_SKILL_DIR}/scripts/tracker.ts" transition "<KEY>" <canonical-state>` | `mcp__linear__save_issue` with `state: <mapped name>` | The script form: a state is a label or a board option plus open or closed, which only the script maps |
