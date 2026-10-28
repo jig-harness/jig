@@ -362,6 +362,7 @@ export function parseIssue(v: unknown): Issue {
     ...(typeof n.updatedAt === "string" ? { updatedAt: n.updatedAt } : {}),
     state: stateOf(n.state, `${where}.state`),
     labels: labelNames(n.labels, where),
+    nativeType: null, // Linear has no issue types of its own
     parent:
       parent === null
         ? null

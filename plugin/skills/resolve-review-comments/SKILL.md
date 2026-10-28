@@ -47,9 +47,12 @@ bun "${CLAUDE_SKILL_DIR}/scripts/consumer-config.ts"
 It prints the repository's values: the gate command (`gates.command`), the
 expected reviewer identities (`review.bots`), the reviewer check pattern
 (`review.job_pattern`) and its required checks, and the deferral team
-(`review.deferral_team`). Use them wherever this procedure names them. A
-non-zero exit means the repository has not configured the skill or its
-configuration is invalid: report the message and stop. Do not guess values.
+(`review.deferral_team`). Use them wherever this procedure names them. Only
+`gates.command` is required: without `review.bots` every reviewer's threads
+are worked, and without `review.deferral_team` a deferral names its team with
+`--team`. A non-zero exit means the repository has not configured the skill
+or its configuration is invalid: report the message and stop. Do not guess
+values.
 
 ## Arguments
 
@@ -1011,7 +1014,7 @@ invocation and reported — see below.
 
 Resolving another person's thread is a social act:
 
-- **Bot threads** — address, reject, or defer and resolve freely. The expected identities come from `review.bots`; `--bots-only` uses
+- **Bot threads** — address, reject, or defer and resolve freely. The expected identities come from `review.bots`, when set; `--bots-only` uses
   GitHub App authorship rather than a consumer-specific hard-coded list.
 - **Human threads** — address or reply, but prefer to leave the *resolution* to
   the author unless it is an unambiguous nit you fixed. When in doubt, reply
