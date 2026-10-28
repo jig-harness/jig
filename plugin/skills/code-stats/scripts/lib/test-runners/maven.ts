@@ -10,7 +10,8 @@
  * `testSourceDirectory` built from another property (`${tests.dir}`), or a
  * POM that is not well-formed XML as far as these values depend on it (a
  * comment that never closes, a closing tag that does not match the element
- * open, an element still open at the end, a character XML forbids, an `&`
+ * open, an element still open at the end, a second root element or other
+ * content XML does not allow outside the root, a character XML forbids, an `&`
  * that is not one of XML's predefined or numeric references, or one that
  * names a character XML forbids) makes the POM unreadable, and nothing
  * is claimed from it. Character data is read with its references replaced.
@@ -41,9 +42,10 @@ const SKIPPED: readonly [open: string, close: string, kind: string][] = [
 /** The element values a POM's text holds, by their path from the root (`project/build/…`). */
 type Values = Map<string, string>;
 
-/** The markup opening at a `<`: where it ends, the text it adds, and the tag it is. */
+/** The markup opening at a `<`: where it ends, its opener, the text it adds, and the tag it is. */
 interface Markup {
   end: number;
+  opener: string;
   adds: string;
   tag: { closing: boolean; name: string; empty: boolean } | null;
 }
@@ -73,6 +75,7 @@ function markupAt(text: string, open: number): Markup {
     const cdata = opener === "<![CDATA[";
     return {
       end,
+      opener,
       adds: cdata ? text.slice(open + opener.length, close) : "",
       tag: null,
     };
@@ -83,6 +86,7 @@ function markupAt(text: string, open: number): Markup {
   const tag = /^<(\/?)([^\s/>]+)/.exec(markup);
   return {
     end,
+    opener,
     adds: "",
     tag: tag && {
       closing: tag[1] === "/",
@@ -100,27 +104,40 @@ function markupAt(text: string, open: number): Markup {
  * unreadable. A character XML forbids makes it unreadable wherever it
  * stands, in CDATA and comments too, and every reference XML reads is
  * checked: in character data before, inside and after the root element,
- * and in attribute values.
+ * and in attribute values. Outside the one root element only what
+ * `outsideRoot` allows may stand, a declaration (`<!DOCTYPE`) only before
+ * the root, and an XML declaration only at the start of the file.
  */
 function elementValues(text: string): Values {
   rejectForbiddenChars(text);
   const scan: Scan = { values: new Map(), path: [], rooted: false };
+  const start = text.startsWith("﻿") ? 1 : 0;
   let value = "";
-  let at = 0;
+  let at = start;
   for (
     let open = text.indexOf("<");
     open !== -1;
     open = text.indexOf("<", at)
   ) {
-    const { end, adds, tag } = markupAt(text, open);
-    value += characterData(text.slice(at, open)) + adds;
+    const markup = markupAt(text, open);
+    const { end, adds, tag } = markup;
+    const raw = text.slice(at, open);
+    if (!scan.path.length) outsideRoot(scan, raw, markup);
+    if (markup.opener === "<!" && scan.rooted)
+      throw new UnreadableError("has a declaration (<!) after the root opens");
+    if (/^<\?xml[\s?]/i.test(text.slice(open, open + 6)) && open !== start)
+      throw new UnreadableError(
+        "has an XML declaration (<?xml) that does not open the file",
+      );
+    value += characterData(raw) + adds;
     at = end;
     if (!tag) continue;
     onTag(scan, tag, value);
     value = "";
   }
-  characterData(text.slice(at));
   const { path } = scan;
+  if (!path.length) outsideRoot(scan, text.slice(at), null);
+  characterData(text.slice(at));
   if (path.length)
     throw new UnreadableError(
       `leaves <${path[path.length - 1]}> open at the end of the file`,
@@ -134,6 +151,25 @@ interface Scan {
   values: Values;
   path: string[];
   rooted: boolean;
+}
+
+/**
+ * What stands outside the root element, before or after it: `raw` text and
+ * then `markup` (`null` at the end of the file). XML allows only
+ * whitespace, comments and processing instructions there, a declaration
+ * before the root, and exactly one root element.
+ */
+function outsideRoot(scan: Scan, raw: string, markup: Markup | null) {
+  if (/[^ \t\r\n]/.test(raw))
+    throw new UnreadableError(
+      `has text outside the root element (${JSON.stringify(raw.trim().slice(0, 20))})`,
+    );
+  if (markup?.opener === "<![CDATA[")
+    throw new UnreadableError("has a CDATA section outside the root element");
+  if (markup?.tag && !markup.tag.closing && scan.rooted)
+    throw new UnreadableError(
+      `has a second root element (<${markup.tag.name}>)`,
+    );
 }
 
 /** One tag read into `scan`; `value` is the text since the tag before. */

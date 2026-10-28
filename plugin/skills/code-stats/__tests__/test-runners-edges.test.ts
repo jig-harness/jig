@@ -570,4 +570,37 @@ describe("Maven", () => {
       expect(whys(reading)).toHaveLength(1);
     }
   });
+
+  test("a POM with more than one root element, or content XML forbids outside the root, is unreadable", () => {
+    const root = (dir: string) =>
+      `<project><build><testSourceDirectory>${dir}</testSourceDirectory></build></project>`;
+    for (const [text, why] of [
+      [root("qa") + root("other"), "second root element (<project>)"],
+      [`${root("qa")}<extra/>`, "second root element (<extra>)"],
+      [`<project/>${root("qa")}`, "second root element (<project>)"],
+      [`qa${root("qa")}`, "text outside the root element"],
+      [`${root("qa")}\ntrailing`, "text outside the root element"],
+      [`${root("qa")}&amp;`, "text outside the root element"],
+      [`<![CDATA[x]]>${root("qa")}`, "CDATA section outside the root element"],
+      [`${root("qa")}<!DOCTYPE project>`, "declaration (<!) after the root"],
+      [
+        `<project><!DOCTYPE project><build><testSourceDirectory>qa</testSourceDirectory></build></project>`,
+        "declaration (<!) after the root",
+      ],
+      [`\n<?xml version="1.0"?>${root("qa")}`, "XML declaration (<?xml)"],
+      [`${root("qa")}<?xml version="1.0"?>`, "XML declaration (<?xml)"],
+    ] as const) {
+      const reading = readMaven(repo({ "pom.xml": text }));
+      expect(reading.rules).toEqual([]);
+      expect(whys(reading)).toHaveLength(1);
+      expect(whys(reading)[0]).toContain(why);
+    }
+    const allowed = readMaven(
+      repo({
+        "pom.xml": `﻿<?xml version="1.0"?>\n<!-- c --><?pi x?>\n<!DOCTYPE project>\n${root("qa")}\n<!-- end --><?pi y?>\r\n\t `,
+      }),
+    );
+    expect(allowed.unreadable).toEqual([]);
+    expect(claimed(allowed, ["qa/Check.java"])).toEqual(["qa/Check.java"]);
+  });
 });

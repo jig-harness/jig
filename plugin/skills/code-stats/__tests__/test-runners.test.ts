@@ -523,14 +523,26 @@ describe("Maven", () => {
       repo({
         "pom.xml":
           "<project><build><!-- old: <!-- <testSourceDirectory>x</testSourceDirectory> --><testSourceDirectory>qa</testSourceDirectory></build></project>",
-        "a/pom.xml":
-          "<project><build><!<!-- x -->--<testSourceDirectory>y</testSourceDirectory>--></build></project>",
       }),
     );
     expect(reading.unreadable).toEqual([]);
-    expect(claimed(reading, ["qa/A.java", "x/B.java", "a/y/C.java"])).toEqual([
-      "qa/A.java",
-      "a/y/C.java",
+    expect(claimed(reading, ["qa/A.java", "x/B.java"])).toEqual(["qa/A.java"]);
+  });
+
+  test("a declaration (<!) inside an element makes the file unreadable", () => {
+    const reading = readMaven(
+      repo({
+        "pom.xml":
+          "<project><build><!<!-- x -->--<testSourceDirectory>y</testSourceDirectory>--></build></project>",
+      }),
+    );
+    expect(reading.rules).toEqual([]);
+    expect(reading.unreadable).toEqual([
+      {
+        reader: "Maven",
+        path: "pom.xml",
+        why: "has a declaration (<!) after the root opens",
+      },
     ]);
   });
 
