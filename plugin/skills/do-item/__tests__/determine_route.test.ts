@@ -353,6 +353,23 @@ describe("catalogFacts", () => {
       "areas.payments.impliedBy names apix",
     );
   });
+
+  it("refuses a label mapped to an id no area has rather than dropping its review", () => {
+    expect(() =>
+      catalogFacts(catalog, ["area:pay"], { "area:pay": "paymnets" }),
+    ).toThrow(
+      "do_item.agents.codearea_areas maps area:pay to paymnets, which no area of the catalog is",
+    );
+  });
+
+  it("ignores a misspelled mapping for a label the item does not carry", () => {
+    expect(
+      catalogFacts(catalog, ["area:api"], {
+        "area:api": "api",
+        "area:pay": "paymnets",
+      }).reviews,
+    ).toEqual([{ area: "payments", skills: ["security-review"] }]);
+  });
 });
 
 describe("the translation", () => {

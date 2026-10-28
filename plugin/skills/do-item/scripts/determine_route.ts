@@ -363,7 +363,8 @@ function reviewSkillsOf(key: string, value: unknown): string[] {
  * seed through `codearea_areas` and of every area their `impliedBy` closure
  * reaches: the side M3 reads mandatory reviews from. A review is mandatory
  * when the area's `review.skills` names a skill. A malformed `impliedBy` or
- * `review` in any area, or an `impliedBy` naming an id no area has, throws
+ * `review` in any area, or an area id no area has (an `impliedBy` entry, or
+ * the `codearea_areas` target of one of the labels), throws
  * `CatalogFieldError` rather than dropping the obligation it carries.
  */
 export function catalogFacts(
@@ -372,13 +373,18 @@ export function catalogFacts(
   codeareaAreas: Record<string, string>,
 ): CatalogFacts {
   const flags = [...new Set([...catalog.values()].flatMap((a) => a.flags))];
-  const seeds = labels
-    .map((l) =>
-      Object.hasOwn(codeareaAreas, fold(l))
-        ? codeareaAreas[fold(l)]
-        : undefined,
-    )
-    .filter((k): k is string => k !== undefined && catalog.has(k));
+  const seeds: string[] = [];
+  for (const label of labels) {
+    const target = Object.hasOwn(codeareaAreas, fold(label))
+      ? codeareaAreas[fold(label)]
+      : undefined;
+    if (target === undefined) continue;
+    if (!catalog.has(target))
+      throw new CatalogFieldError(
+        `do_item.agents.codearea_areas maps ${label} to ${target}, which no area of the catalog is`,
+      );
+    seeds.push(target);
+  }
   const areas: Record<string, { impliedBy: string[] }> = Object.create(null);
   const skillsOf = new Map<string, string[]>();
   for (const [key, area] of catalog) {
@@ -468,8 +474,9 @@ function readSettings(config: Record<string, unknown>, workTypes: WorkTypes) {
 
 /**
  * The catalog's facts for the item: none without a catalog, `null` for a
- * declared one that cannot be read or whose `impliedBy` or `review` is
- * malformed, which the raises take to apply. Agent routing still uses a
+ * declared one that cannot be read, whose `impliedBy` or `review` is
+ * malformed, or that has no area a label's `codearea_areas` target names,
+ * which the raises take to apply. Agent routing still uses a
  * catalog its own reader accepts.
  */
 function readCatalogFacts(
