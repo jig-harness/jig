@@ -36,6 +36,16 @@ export interface JunitCase {
   suites: number[];
 }
 
+export type CaseResult = "passed" | "failed" | "skipped";
+
+/**
+ * A case's one result. A case holding a <skipped> child is skipped whatever
+ * else it holds: it never counts as run, as the suites' counts here, M14's
+ * tests-executed check and fix-ci's fresh-base probe all read it.
+ */
+export const caseResult = (c: JunitCase): CaseResult =>
+  c.skipped ? "skipped" : c.failed ? "failed" : "passed";
+
 /** One suite, with the cases counted under it, nested suites included. */
 export interface JunitSuite {
   name: string;

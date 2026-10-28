@@ -82,7 +82,8 @@ record ~/.local/state/jig/evidence/example-web/3f9c2a1…/8e1d…/20261023T14150
 - **Counts from the report.** Where the command writes a JUnit report, the
   record holds the cases run and skipped per suite, the failed cases
   across the report, and each case's own result (passed, failed or
-  skipped), from it (`shared/junit-report.ts`, whose
+  skipped; a case marked skipped is skipped whatever else it holds, as
+  M14's check reads it), from it (`shared/junit-report.ts`, whose
   suites count run and skipped cases and whose cases carry the failure),
   never from the runner's summary line. A case is identified by its
   `classname` and `name` together, so two cases of one name in different

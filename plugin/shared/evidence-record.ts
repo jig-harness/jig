@@ -20,7 +20,11 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { errnoCode } from "./errors.ts";
 import { decodeJson, isRecord } from "./guards.ts";
-import { parseJunitReport } from "./junit-report.ts";
+import {
+  type CaseResult,
+  caseResult,
+  parseJunitReport,
+} from "./junit-report.ts";
 
 export const DEFAULT_OUTPUT_LINES = 60;
 export const DEFAULT_TIMEOUT_MINUTES = 30;
@@ -59,7 +63,6 @@ export type Outcome =
   | "seen-to-fail"
   | "expectation-failed";
 
-type CaseResult = "passed" | "failed" | "skipped";
 interface CaseId {
   classname: string;
   name: string;
@@ -192,9 +195,9 @@ const caseKey = (c: CaseId) => `${c.classname}::${c.name}`;
 
 /**
  * A report that was read: its counts per suite and each case's result. Each
- * case gets one result, a failure before a skip, and every count, the
- * report's and each suite's, is taken from those results, so none of them
- * disagrees with the cases as the record's reader checks them.
+ * case gets one result (`caseResult`: a skip before a failure), and every
+ * count, the report's and each suite's, is taken from those results, so none
+ * of them disagrees with the cases as the record's reader checks them.
  */
 function summarize(text: string, path: string): ReportSummary {
   const report = parseJunitReport(text);
@@ -206,11 +209,7 @@ function summarize(text: string, path: string): ReportSummary {
     tripwire: false,
   }));
   const cases = report.cases.map((c) => {
-    const result: CaseResult = c.failed
-      ? "failed"
-      : c.skipped
-        ? "skipped"
-        : "passed";
+    const result = caseResult(c);
     for (const index of c.suites) {
       const suite = suites[index];
       if (suite) suite[result === "skipped" ? "skipped" : "run"]++;

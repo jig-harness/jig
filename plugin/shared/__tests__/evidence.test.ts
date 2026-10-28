@@ -617,39 +617,45 @@ describe("the store", () => {
     },
   );
 
-  test("a case both failed and skipped reads back as one failed case", () => {
+  test("a case both failed and skipped is skipped, as M14's check and fix-ci's probe read it", () => {
     const both = `<testsuites><testsuite name="s">
   <testcase classname="s" name="ok"/>
   <testcase classname="s" name="x"><failure/><skipped/></testcase>
 </testsuite></testsuites>`;
-    const r = record(["--junit", "reports/junit.xml"], writesReport(both), 1);
+    const r = record(["--junit", "reports/junit.xml"], writesReport(both), 0);
     expect(r.junit).toMatchObject({
       status: "read",
-      executed: 2,
-      skipped: 0,
-      failed: [{ classname: "s", name: "x" }],
+      executed: 1,
+      skipped: 1,
+      failed: [],
     });
+    expect(r.junit?.cases?.map((c) => [c.name, c.result])).toEqual([
+      ["ok", "passed"],
+      ["x", "skipped"],
+    ]);
     expect(
       r.junit?.suites?.map((s) => [s.name, s.run, s.skipped, s.tripwire]),
-    ).toEqual([["s", 2, 0, false]]);
-    const all = evidence(["list", "--all", "--json"]);
-    expectSpawnExit(all, 0, "evidence list --all");
-    expect(
-      (JSON.parse(all.stdout) as EvidenceRecord[]).map((x) => x.id),
-    ).toEqual([r.id]);
+    ).toEqual([["s", 1, 1, false]]);
+    expect(listed([]).map((x) => x.id)).toEqual([r.id]);
+    const named = record(
+      ["--junit", "reports/junit.xml", "--expect-fail", "x"],
+      writesReport(both, 1),
+      1,
+    );
+    expect(named.outcome).toBe("expectation-failed");
   });
 
-  test("a suite whose only case failed and skipped counts it as run, not as a tripwire", () => {
+  test("a suite whose only case failed and skipped ran nothing, and is a tripwire", () => {
     const only = `<testsuites><testsuite name="outer"><testsuite name="inner">
   <testcase classname="s" name="x"><failure/><skipped/></testcase>
 </testsuite></testsuite></testsuites>`;
     const r = record(["--junit", "reports/junit.xml"], writesReport(only), 1);
-    expect(r.junit).toMatchObject({ executed: 1, skipped: 0, tripwire: false });
+    expect(r.junit).toMatchObject({ executed: 0, skipped: 1, tripwire: true });
     expect(
       r.junit?.suites?.map((s) => [s.name, s.run, s.skipped, s.tripwire]),
     ).toEqual([
-      ["outer", 1, 0, false],
-      ["inner", 1, 0, false],
+      ["outer", 0, 1, true],
+      ["inner", 0, 1, false],
     ]);
   });
 
