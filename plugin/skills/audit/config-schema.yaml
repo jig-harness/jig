@@ -352,6 +352,11 @@ fields:
     items: string
     distinct: true
     read_by: [do-item]
+  issue_tracker.types:
+    type: map
+    values_type: { type: list, items: string }
+    read_by: [do-item]
+    since: 0.89.0
   issue_tracker.file_command:
     type: string
     read_by: [do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections]
@@ -396,6 +401,11 @@ fields:
     type: string
     default: execution-plan-v1
     read_by: [do-item]
+  do_item.work_types:
+    type: map
+    values_type: { type: map, values_type: any }
+    read_by: [do-item]
+    since: 0.89.0
 
   work_batch.point_budget:
     type: integer

@@ -90,6 +90,20 @@ export function issueFields(board: Board | null): string {
     ${boardFields(board)}`;
 }
 
+/**
+ * The issue's type, read only where an issue is fetched alone: GraphQL's
+ * `Issue.issueType`, an `IssueType` whose `name` is the type the repository's
+ * organization defines (`Bug`, `Feature`, `Task` by default), or `null` when
+ * the issue has none or its owner has no issue types.
+ */
+export const ISSUE_TYPE = "issueType { name }";
+
+/** The issue type's name from a node read with `ISSUE_TYPE`, or `null`. */
+export function nativeTypeOf(v: unknown, where: string): string | null {
+  if (v === null || v === undefined) return null;
+  return str(record(v, `${where}.issueType`).name, `${where}.issueType.name`);
+}
+
 /** The parent chain of an issue, `depth` deep, with each ancestor's labels. */
 export function ancestorFields(depth: number): string {
   if (depth === 0) return "";
