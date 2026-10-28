@@ -15,8 +15,11 @@ and a failure whose cause is not obvious is worked through one protocol that
 stops and hands over after a stated budget.
 
 This is the design of [plan.md](plan.md) item 28: two skills, `verify` and
-`debug`, and the evidence record they share. Nothing of it is built; `fix-ci`'s `probe-base.ts` and
-`shared/junit-report.ts` are the parts that exist.
+`debug`, and the evidence record they share. The record (step 1 of the
+build order) is built: `plugin/shared/evidence.ts`, with its settings in the
+[`verify` section](../plugin/CONFIGURATION.md#verify) of the configuration.
+The two skills remain open; `fix-ci`'s `probe-base.ts` is the other part
+that exists.
 
 ## The rule
 
@@ -35,14 +38,14 @@ This is the design of [plan.md](plan.md) item 28: two skills, `verify` and
 
 `plugin/shared/evidence.ts` runs a command and writes one record to the
 [machine-local store](../GLOSSARY.md)
-(`~/.local/share/jig/evidence/<repository>/<tree-hash>/<command-hash>/<run-id>.json`,
+(`~/.local/state/jig/evidence/<repository>/<tree-hash>/<command-hash>/<run-id>.json`,
 under the same root the fleet-health snapshots use), and prints a short
 block:
 
 ```
 EVIDENCE  tree 3f9c2a1  gates
 exit 0  ·  2m14s  ·  412 cases ran, 0 skipped (junit: .reports/junit.xml)
-record ~/.local/share/jig/evidence/example-web/3f9c2a1/8e1d/20261023T141502-4b7e.json
+record ~/.local/state/jig/evidence/example-web/3f9c2a1…/8e1d…/20261023T141502-4b7e.json
 ```
 
 - **The tree, not the commit.** The tree hash of the working tree Git
@@ -71,11 +74,16 @@ record ~/.local/share/jig/evidence/example-web/3f9c2a1/8e1d/20261023T141502-4b7e
 - **One record per run.** Every run gets its own id and its own file, and
   no run overwrites another: a failing run that a ledger cites stays there
   when the same command passes on the same tree later. Lookup indexes runs
-  by tree and command and reads the newest unless asked for all of them.
+  by tree and command and reads the newest that vouches for its run (on an
+  unchanged tree and from a fresh report: a pass whose report failed no
+  case and ran a case in every top-level suite, or a seen-to-fail in which
+  every case the run named failed, whatever else failed beside it) unless
+  asked for all of them.
 - **Counts from the report.** Where the command writes a JUnit report, the
   record holds the cases run and skipped per suite, the failed cases
   across the report, and each case's own result (passed, failed or
-  skipped), from it (`shared/junit-report.ts`, whose
+  skipped; a case marked skipped is skipped whatever else it holds, as
+  M14's check reads it), from it (`shared/junit-report.ts`, whose
   suites count run and skipped cases and whose cases carry the failure),
   never from the runner's summary line. A case is identified by its
   `classname` and `name` together, so two cases of one name in different
@@ -103,8 +111,9 @@ record ~/.local/share/jig/evidence/example-web/3f9c2a1/8e1d/20261023T141502-4b7e
   is the printed block, whose command field is a display name: the name the
   validation plan gives the check, or for any other command the program's
   name and the command hash, never its arguments. The block's other fields
-  are the tree, exit, counts and record id, and a ledger cites records by id
-  instead of quoting their output.
+  are the tree, exit, counts and record id, never a suite or case name from
+  the report, and a ledger cites records by id instead of quoting their
+  output. The store is readable by its owner alone.
   Records older than `verify.retention_days` (default 30) are collected as a
   kind of the [resource collection](resource-gc.md) runner, with its
   receipts.

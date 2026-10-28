@@ -225,6 +225,14 @@ export interface RunOptions {
   stdout?: "pipe" | "inherit" | "ignore";
   /** 'inherit' hands the child this process's stdin (the pass command again). */
   stdinInherit?: boolean;
+  /**
+   * Called with each captured chunk of output as it arrives, so a caller can
+   * keep both streams in one log in arrival order. That is not always the
+   * order the child wrote them: each stream is its own pipe, so writes to
+   * stdout and stderr close together can arrive swapped. Output past the
+   * buffer cap is not passed on.
+   */
+  onOutput?: (stream: "stdout" | "stderr", text: string) => void;
   /** Overrides `MAX_BUFFER_BYTES` — a test knob, not a per-caller tuning lever. */
   maxBufferBytes?: number;
   /**
