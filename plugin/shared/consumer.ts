@@ -10,6 +10,7 @@ import { existsSync, lstatSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   fieldInMessage,
+  isMapping,
   type LayeredConfig,
   loadLayeredConfig,
   OVERLAY_RELPATH,
@@ -257,7 +258,9 @@ const REMOTE_NAME =
  * could be another repository's remote; so is an explicit `null`, for the
  * setting or for its whole `repository` section, which a higher layer
  * (`JIG__REPOSITORY__REMOTE=null`, `JIG__REPOSITORY=null`) would otherwise
- * use to turn a lower layer's remote back into `origin` unnoticed. Only a
+ * use to turn a lower layer's remote back into `origin` unnoticed, and so is
+ * any `repository` section that is not a mapping (a list, a scalar, a YAML
+ * timestamp), which replaces the lower layers' section whole. Only a
  * setting no layer names is `origin`.
  */
 export function remoteName(
@@ -267,15 +270,11 @@ export function remoteName(
   const config = layeredConfig(root, env);
   const repository = config.values.repository;
   if (repository === undefined) return DEFAULT_REMOTE;
-  if (
-    repository === null ||
-    typeof repository !== "object" ||
-    Array.isArray(repository)
-  )
+  if (!isMapping(repository))
     throw new RemoteSettingError(
-      `repository must be an object: ${sourceOf(config, "repository")}`,
+      `repository must be a mapping: ${sourceOf(config, "repository")}`,
     );
-  const value = (repository as Record<string, unknown>).remote;
+  const value = repository.remote;
   if (value === undefined) return DEFAULT_REMOTE;
   if (typeof value !== "string" || !REMOTE_NAME.test(value))
     throw new RemoteSettingError(

@@ -150,7 +150,18 @@ test("an environment null over the whole repository section is an error, never o
   try {
     expect(() =>
       remoteName(r.root, { ...r.env, JIG__REPOSITORY: "null" }),
-    ).toThrow(/repository must be an object.*JIG__REPOSITORY/);
+    ).toThrow(/repository must be a mapping.*JIG__REPOSITORY/);
+  } finally {
+    r.done();
+  }
+});
+
+test("a repository section YAML reads as a timestamp is an error, never origin", () => {
+  const r = repositoryWith("repository: 2026-10-12\n");
+  try {
+    expect(() => remoteName(r.root, r.env)).toThrow(
+      /repository must be a mapping.*jig\.yaml/,
+    );
   } finally {
     r.done();
   }

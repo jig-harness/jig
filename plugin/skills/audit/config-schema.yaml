@@ -58,6 +58,13 @@ strict:
   - work_batch
   - work_batch.ranking
 
+# Sections and fields whose `null` a skill refuses rather than reading it as
+# not set: a higher layer's `null` there would otherwise put a lower layer's
+# value back to its default unnoticed. Elsewhere a `null` reads as not set.
+null_refused:
+  - repository
+  - repository.remote
+
 # Sections a skill refuses outright, with what to do instead.
 refused:
   do_issue: "renamed do_item: rename the section (its fields are unchanged); do-item refuses to run while it exists"

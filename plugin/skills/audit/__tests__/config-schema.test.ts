@@ -283,6 +283,21 @@ describe("the reading skills", () => {
     ]);
   });
 
+  test("report as errors the nulls remoteName refuses, and other nulls as not set", () => {
+    const severities = (config: Record<string, unknown>) =>
+      checkConfig(config, schema).map((f) => [f.id, f.severity]);
+    expect(severities({ repository: null })).toEqual([
+      ["null:repository", "error"],
+    ]);
+    expect(severities({ repository: { remote: null } })).toEqual([
+      ["null:repository.remote", "error"],
+    ]);
+    expect(severities({ repository: { base_branch: null } })).toEqual([
+      ["null:repository.base_branch", "info"],
+    ]);
+    expect(severities({ drive: null })).toEqual([]);
+  });
+
   test("refuse the batch-key labels the deferral helper refuses", () => {
     const itemPattern = (path: string) => {
       const items = field(path)?.items;
