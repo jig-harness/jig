@@ -22,7 +22,9 @@ import {
 } from "../../../resolve-conflicts/scripts/lib/causes.ts";
 import {
   type Accuracy,
+  mostFrequentCause,
   type PathSummary,
+  type Range,
   type Report,
   SCHEMA,
 } from "../../../resolve-conflicts/scripts/lib/report.ts";
@@ -41,8 +43,9 @@ import {
 export interface HotspotReport {
   range: Pick<Report["range"], "since" | "label">;
   hotspotMinMerges: number;
-  shallow: boolean;
   totalMerges: number;
+  /** What the replay cannot see, as the report states it. */
+  limits: string[];
   hotspots: PathSummary[];
   /** How many merges the replay skipped, by reason. */
   skipped: Record<string, number>;
@@ -105,6 +108,26 @@ function isConfidence(value: unknown): boolean {
   );
 }
 
+/** A range's ends: each null (open) or a date, the start before the end. */
+function isRange(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    typeof value.label !== "string" ||
+    !(value.since === null || isDate(value.since)) ||
+    !(value.until === null || isDate(value.until))
+  )
+    return false;
+  return (
+    value.since === null ||
+    value.until === null ||
+    Date.parse(value.since as string) < Date.parse(value.until as string)
+  );
+}
+
+function isTextList(value: unknown): boolean {
+  return Array.isArray(value) && value.every(isText);
+}
+
 function isSkipped(value: unknown): boolean {
   return (
     Array.isArray(value) &&
@@ -119,11 +142,8 @@ const REPORT_CHECKS: readonly Check[] = [
   ["schema", (value) => value === SCHEMA, `its schema is not ${SCHEMA}`],
   [
     "range",
-    (value) =>
-      isRecord(value) &&
-      typeof value.label === "string" &&
-      (value.since === null || isDate(value.since)),
-    "range is missing, or its since is not a date",
+    isRange,
+    "range is missing, its since or until is not a date, or it ends before it starts",
   ],
   [
     "totals",
@@ -135,6 +155,7 @@ const REPORT_CHECKS: readonly Check[] = [
   ["hotspots", Array.isArray, "hotspots is missing"],
   ["skipped", isSkipped, "skipped is not a list of skipped merges"],
   ["confidence", isConfidence, "confidence is not a hand-check"],
+  ["limits", isTextList, "limits is not a list of what the replay cannot see"],
 ];
 
 const PATH_CHECKS: readonly Check[] = [
@@ -153,10 +174,31 @@ function firstProblem(
   return failed === undefined ? null : failed[2];
 }
 
-function pathProblem(entry: unknown): string | null {
+/**
+ * What the history report derives a path's fields from, checked: its top
+ * cause is the most frequent of its counted causes (ties in cause order), and
+ * its last conflict is one of the merges the range selected.
+ */
+function derivedProblem(entry: PathSummary, range: Range): string | null {
+  if ((entry.causes[entry.topCause] ?? 0) < 1)
+    return `topCause ${entry.topCause} has no region counted`;
+  if (mostFrequentCause(entry.causes) !== entry.topCause)
+    return `topCause ${entry.topCause} is not its most frequent cause`;
+  const last = Date.parse(entry.lastConflict);
+  if (
+    (range.since !== null && last < Date.parse(range.since)) ||
+    (range.until !== null && last >= Date.parse(range.until))
+  )
+    return "lastConflict is outside the range";
+  return null;
+}
+
+function pathProblem(entry: unknown, range: Range): string | null {
   if (!isRecord(entry) || !isText(entry.path))
     return "a path entry has no path";
-  const problem = firstProblem(entry, PATH_CHECKS);
+  const problem =
+    firstProblem(entry, PATH_CHECKS) ??
+    derivedProblem(entry as unknown as PathSummary, range);
   return problem === null ? null : `${entry.path}: ${problem}`;
 }
 
@@ -165,7 +207,7 @@ function reportProblem(value: unknown): string | null {
   const problem = firstProblem(value, REPORT_CHECKS);
   if (problem !== null) return problem;
   for (const entry of value.paths as unknown[]) {
-    const pathFault = pathProblem(entry);
+    const pathFault = pathProblem(entry, value.range as Range);
     if (pathFault !== null) return pathFault;
   }
   return null;
@@ -195,8 +237,8 @@ export function readHotspotReport(file: string): HotspotReport {
   return {
     range: { since: report.range.since, label: report.range.label },
     hotspotMinMerges: report.hotspotMinMerges,
-    shallow: report.shallow === true,
     totalMerges: report.totals.merges,
+    limits: report.limits,
     hotspots: (report.hotspots as unknown[]).map((path) => {
       const entry = typeof path === "string" ? byPath.get(path) : undefined;
       if (entry === undefined)
@@ -221,17 +263,15 @@ function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
-/** What the measurement could not see, for the finding to carry. */
+/**
+ * What the measurement could not see, for the finding to carry: the report's
+ * own limits travel whole, since the finding outlives the report file.
+ */
 function coverage(report: HotspotReport, cause: Cause): string[] {
   const skipped = Object.entries(report.skipped);
   const total = skipped.reduce((sum, [, n]) => sum + n, 0);
   const accuracy = report.accuracy?.[cause];
   return [
-    ...(report.shallow
-      ? [
-          "The clone was shallow, so merges its boundary cuts were skipped and the count may be low.",
-        ]
-      : []),
     ...(total > 0
       ? [
           `${plural(total, "merge")} in the range could not be replayed (${skipped.map(([reason, n]) => `${reason} ${n}`).join(", ")}), so the count may be low.`,
@@ -240,7 +280,9 @@ function coverage(report: HotspotReport, cause: Cause): string[] {
     accuracy === undefined
       ? `No hand-check of the ${cause} cause is recorded.`
       : `A hand-check found the ${cause} cause right in ${accuracy.correct} of ${accuracy.checked} regions.`,
-    "The report counts only the merge commits this clone's refs reach; its limits section says what else it cannot see.",
+    ...(report.limits.length > 0
+      ? [`What the report cannot see: ${report.limits.join(" ")}`]
+      : []),
   ];
 }
 

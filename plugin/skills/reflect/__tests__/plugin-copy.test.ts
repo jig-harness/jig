@@ -105,6 +105,7 @@ it("notes a conflict hotspot from a copy, reading the cause list by sibling path
       hotspots: ["CHANGELOG.md"],
       skipped: [],
       confidence: null,
+      limits: ["It counts a conflict once for each merge that meets it again."],
     }),
   );
   const noted = repo.script(

@@ -196,9 +196,11 @@ describe("reflect.ts hotspots", () => {
     expect(notes?.description).toContain("Both sides added lines");
     // What the measurement could not see travels with the finding.
     expect(notes?.description).toMatch(/hand-check(ed)? (of|found) the append/);
+    // The report's limits travel whole: the report file does not outlive the finding.
     expect(notes?.description).toContain(
-      "only the merge commits this clone's refs reach",
+      "a conflict resolved during a rebase, a cherry-pick or a revert",
     );
+    expect(notes?.description).toContain("the merges this clone's refs reach");
     expect(notes?.suggested_fix).toContain("one file per entry");
     expect(notes?.session.skills).toContain("resolve-conflicts");
   });
@@ -315,8 +317,10 @@ describe("reflect.ts hotspots", () => {
     // A merge at that same moment falls inside the range and may predate the fix.
     const boundary = JSON.parse(readFileSync(file, "utf8")) as {
       range: { since: string | null };
+      paths: Array<{ lastConflict: string }>;
     };
     boundary.range.since = at;
+    for (const entry of boundary.paths) entry.lastConflict = at;
     const same = join(m.dir, "at-the-fix.json");
     writeFileSync(same, JSON.stringify(boundary));
     expect(hotspots(repo, same).hotspots.map((entry) => entry.action)).toEqual([
@@ -330,9 +334,58 @@ describe("reflect.ts hotspots", () => {
     const repo = twoHotspots();
     const real = JSON.parse(readFileSync(historyReport(repo), "utf8")) as {
       hotspotMinMerges: number;
-      paths: Array<{ path: string; merges: number; lastConflict: string }>;
+      range: { since: string | null; until: string | null };
+      limits?: string[];
+      paths: Array<{
+        path: string;
+        merges: number;
+        lastConflict: string;
+        topCause: string;
+        causes: Record<string, number>;
+      }>;
     };
+    const first = (report: typeof real) =>
+      report.paths[0] as (typeof real.paths)[number];
     const faults: Array<[string, (report: typeof real) => void]> = [
+      [
+        "with no region of its top cause",
+        (report) => {
+          first(report).causes = {};
+        },
+      ],
+      [
+        "whose top cause is not its most frequent",
+        (report) => {
+          const entry = first(report);
+          entry.causes = { [entry.topCause]: 1, echo: 5 };
+        },
+      ],
+      [
+        "whose last conflict predates its range",
+        (report) => {
+          const after = Date.parse(first(report).lastConflict) + 1000;
+          report.range.since = new Date(after).toISOString();
+        },
+      ],
+      [
+        "whose last conflict is at its range's end",
+        (report) => {
+          report.range.until = first(report).lastConflict;
+        },
+      ],
+      [
+        "whose range ends before it starts",
+        (report) => {
+          report.range.since = "2026-02-01T00:00:00Z";
+          report.range.until = "2026-01-01T00:00:00Z";
+        },
+      ],
+      [
+        "without its limits",
+        (report) => {
+          delete report.limits;
+        },
+      ],
       [
         "below the threshold",
         (report) => {
