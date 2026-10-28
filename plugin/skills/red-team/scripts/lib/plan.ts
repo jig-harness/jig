@@ -3,12 +3,14 @@
  * where each one's brief and findings live. `plan` writes it into the
  * review's folder; every later step reads it from there.
  */
+import { randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -100,6 +102,40 @@ function clear(directory: string, all: Persona[]): void {
   for (const file of reserved(directory, all)) rmSync(file, { force: true });
 }
 
+/**
+ * Every name an input goes by: the entry it is named by, with its folder's
+ * links resolved (a symlink in the review's folder is replaced by the
+ * review's own file), and the file that entry resolves to. A part that does
+ * not exist is left out.
+ */
+function aliasesOf(input: string): string[] {
+  const path = resolve(input);
+  const aliases = [path];
+  try {
+    aliases.push(join(realpathSync(dirname(path)), basename(path)));
+    aliases.push(realpathSync(path));
+  } catch {
+    // The rest of the input's names cannot be resolved; reading it fails later.
+  }
+  return aliases;
+}
+
+/**
+ * Write a file the review keeps by replacing its entry in the folder, so a
+ * link left at that name, symbolic or hard, is replaced rather than written
+ * through: no write reaches a file outside the review.
+ */
+export function writeKept(path: string, text: string): void {
+  const staged = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
+  writeFileSync(staged, text, { flag: "wx" });
+  try {
+    renameSync(staged, path);
+  } catch (error) {
+    rmSync(staged, { force: true });
+    throw error;
+  }
+}
+
 /** Refuse a folder that holds an input, or another review's files. */
 function guardFolder(
   directory: string,
@@ -110,10 +146,7 @@ function guardFolder(
   const names = new Set(reserved(directory, all).map((file) => basename(file)));
   const real = realpathSync(directory);
   for (const input of inputs) {
-    // Both the entry the input is named by (a symlink in the folder is
-    // replaced by the review's own file) and the file it resolves to.
-    const entry = join(realpathSync(dirname(resolve(input))), basename(input));
-    for (const actual of [entry, realpathSync(input)])
+    for (const actual of aliasesOf(input))
       if (dirname(actual) === real && names.has(basename(actual)))
         throw new PlanError(
           `${input} would be overwritten: it has the name of a file the review keeps in ${directory}; pass another folder to --out`,
@@ -197,13 +230,9 @@ export function makePlan(options: PlanOptions): Plan {
   };
   for (const persona of personasFor(kind, all)) {
     const planned = plan.personas.find((p) => p.id === persona.id);
-    if (planned)
-      writeFileSync(planned.brief, renderBrief(plan, persona, planned));
+    if (planned) writeKept(planned.brief, renderBrief(plan, persona, planned));
   }
-  writeFileSync(
-    join(directory, PLAN_FILE),
-    `${JSON.stringify(plan, null, 2)}\n`,
-  );
+  writeKept(join(directory, PLAN_FILE), `${JSON.stringify(plan, null, 2)}\n`);
   return plan;
 }
 
@@ -221,8 +250,9 @@ export function readPlan(directory: string): Plan {
 
 /**
  * Every path the steps write or remove is the one the plan step derives from
- * the folder and the persona, and none of them is an input; a plan edited to
- * point a path at the document is not accepted.
+ * the folder and the persona, and no input goes by any of their names; a plan
+ * edited to point a path at the document, or to name the document by one of
+ * the review's own files, is not accepted.
  */
 function boundToFolder(plan: Plan, directory: string): boolean {
   if (
@@ -231,17 +261,19 @@ function boundToFolder(plan: Plan, directory: string): boolean {
   )
     return false;
   if (plan.report !== join(plan.directory, REPORT_FILE)) return false;
-  const owned = new Set<string>([plan.report]);
+  const real = realpathSync(plan.directory);
+  const owned = new Set<string>([join(real, REPORT_FILE)]);
   for (const persona of plan.personas) {
     const expected = files(plan.directory, persona.id);
     for (const [key, path] of Object.entries(expected)) {
       if ((persona as unknown as Record<string, unknown>)[key] !== path)
         return false;
-      owned.add(path);
+      owned.add(join(real, basename(path)));
     }
   }
   return ![plan.document, plan.companion].some(
-    (input) => input !== undefined && owned.has(input),
+    (input) =>
+      input !== undefined && aliasesOf(input).some((alias) => owned.has(alias)),
   );
 }
 

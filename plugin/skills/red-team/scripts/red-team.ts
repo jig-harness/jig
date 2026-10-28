@@ -19,7 +19,7 @@
  * document changed since the plan; 2 on a command line or document it cannot
  * act on.
  */
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { fail, runMain } from "../../../shared/cli.ts";
 import { consumerRoot } from "../../../shared/consumer.ts";
 import { git } from "../../../shared/proc.ts";
@@ -41,6 +41,7 @@ import {
   promptFor,
   readPlan,
   unchangedDocument,
+  writeKept,
 } from "./lib/plan.ts";
 import { renderReport } from "./lib/report.ts";
 
@@ -168,7 +169,7 @@ function collectOne(
     context,
   );
   if (findings)
-    writeFileSync(who.findings, `${JSON.stringify(findings, null, 2)}\n`);
+    writeKept(who.findings, `${JSON.stringify(findings, null, 2)}\n`);
   return problems;
 }
 
@@ -261,7 +262,7 @@ function report(args: string[]): number {
     for (const problem of problems) console.error(`  - ${problem}`);
     return 1;
   }
-  writeFileSync(planned.report, renderReport(planned, results));
+  writeKept(planned.report, renderReport(planned, results));
   console.log(planned.report);
   return 0;
 }

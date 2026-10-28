@@ -6,6 +6,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import {
   existsSync,
+  linkSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -407,6 +409,65 @@ describe("collect and report", () => {
     expectSpawnExit(run, 2, "collect from a tampered plan");
     expect(existsSync(join(root, "docs", "architecture.md"))).toBe(true);
   });
+
+  test("a plan naming the document by one of the review's own files is refused, and the file survives", () => {
+    const root = repository();
+    const out = plan(root, ["docs/architecture.md"]);
+    const path = join(out.directory, "plan.json");
+    const written = JSON.parse(readFileSync(path, "utf8")) as {
+      document: string;
+    };
+    const output = join(out.directory, "critical-cto.json");
+    writeFileSync(output, findings("critical-cto"));
+    const alias = join(root, "alias");
+    symlinkSync(out.directory, alias);
+    for (const document of [
+      `${out.directory}/./critical-cto.json`,
+      join(alias, "critical-cto.json"),
+    ]) {
+      writeFileSync(path, JSON.stringify({ ...written, document }));
+      const run = cli(root, ["fresh", out.directory, "--", "true"]);
+      expectSpawnExit(run, 2, `fresh from a plan naming ${document}`);
+      expect(run.stderr).toContain("is not a plan this script wrote");
+      expect(existsSync(output)).toBe(true);
+    }
+  });
+
+  for (const link of ["symlink", "hard link"] as const)
+    test(`a report.md that is a ${link} to the document is replaced, not written through`, () => {
+      const root = repository();
+      const out = plan(root, ["docs/architecture.md"]);
+      const document = join(root, "docs", "architecture.md");
+      const before = readFileSync(document, "utf8");
+      for (const persona of out.personas) {
+        writeFileSync(
+          join(out.directory, `${persona.id}.json`),
+          findings(persona.id).replace(
+            "The list feels instant.",
+            "anyone with the invitation link joins the list.",
+          ),
+        );
+        expectSpawnExit(
+          cli(root, [
+            "collect",
+            out.directory,
+            persona.id,
+            "--context",
+            "subagent",
+          ]),
+          0,
+          persona.id,
+        );
+      }
+      if (link === "symlink") symlinkSync(document, out.report);
+      else linkSync(document, out.report);
+      expectSpawnExit(cli(root, ["report", out.directory]), 0, "report");
+      expect(readFileSync(document, "utf8")).toBe(before);
+      expect(lstatSync(out.report).isSymbolicLink()).toBe(false);
+      expect(readFileSync(out.report, "utf8")).toStartWith(
+        "# Red-team review:",
+      );
+    });
 
   test("collecting with nothing to collect still drops the earlier verdict", () => {
     const root = repository();

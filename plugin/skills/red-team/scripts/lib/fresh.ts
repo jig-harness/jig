@@ -4,9 +4,14 @@
  * command gets the persona's prompt as its last argument; whatever it prints
  * is kept as the persona's reply when it wrote no findings file itself.
  */
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { run } from "../../../../shared/proc.ts";
-import { type Plan, type PlannedPersona, promptFor } from "./plan.ts";
+import {
+  type Plan,
+  type PlannedPersona,
+  promptFor,
+  writeKept,
+} from "./plan.ts";
 
 export interface FreshOptions {
   root: string;
@@ -45,7 +50,7 @@ async function one(
     return `still running after ${options.timeoutSec} seconds, stopped`;
   if (result.code !== 0)
     return `exited ${result.code}: ${result.stderrTail.trim().split("\n").pop() ?? ""}`;
-  if (!existsSync(persona.output)) writeFileSync(persona.reply, result.stdout);
+  if (!existsSync(persona.output)) writeKept(persona.reply, result.stdout);
   const rejected = [persona.output, persona.reply].find((file) =>
     existsSync(file),
   );
@@ -54,7 +59,7 @@ async function one(
     rmSync(persona.feedback, { force: true });
     return "";
   }
-  writeFileSync(persona.feedback, feedbackFor(problems, rejected));
+  writeKept(persona.feedback, feedbackFor(problems, rejected));
   return problems.join("; ");
 }
 
