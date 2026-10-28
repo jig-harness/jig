@@ -103,12 +103,20 @@ const UNCHECKED =
   "the version files disagree or hold no readable version: run status.ts to see them";
 
 /**
- * The changelog's real path, refused when it is not inside the repository
- * root: `changelog.file` is relative with no `..` segment, but a link in the
- * tree could still lead out of it.
+ * The changelog's real path inside the repository at `root`, refused when it
+ * is not inside that repository's work tree. The boundary is the top level
+ * git reports for `root`, never the argument itself, and `root` must be that
+ * top level: `changelog.file` is relative to it. `changelog.file` holds no
+ * `..` segment, but a link in the tree could still lead out of it.
  */
 export function changelogPath(root: string, file: string): string {
-  const base = realpathSync(resolve(root));
+  const top = tryGit(root, ["rev-parse", "--show-toplevel"])?.trim();
+  const prefix = tryGit(root, ["rev-parse", "--show-prefix"])?.trim();
+  if (!top || prefix !== "")
+    throw new ChangelogError(
+      `${root} is not the top level of a git repository: run the command from the repository's root`,
+    );
+  const base = realpathSync(top);
   const full = realpathSync(resolve(base, file));
   if (full !== base && full.startsWith(base + sep)) return full;
   throw new ChangelogError(

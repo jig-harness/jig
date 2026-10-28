@@ -461,6 +461,21 @@ describe("the command", () => {
     expect(result.stderr).toContain("--nope");
   });
 
+  test("refuses a root that is not a git repository's top level", () => {
+    const root = configured(fixture("keep-a-changelog", "clean"));
+    expect(() => changelogPath(join(root, ".config"), "CHANGELOG.md")).toThrow(
+      "is not the top level of a git repository",
+    );
+    const plain = temporary();
+    writeFileSync(join(plain, "CHANGELOG.md"), "# Changelog\n");
+    expect(() => changelogPath(plain, "CHANGELOG.md")).toThrow(
+      "is not the top level of a git repository",
+    );
+    expect(changelogPath(root, "CHANGELOG.md")).toBe(
+      join(realpathSync(root), "CHANGELOG.md"),
+    );
+  });
+
   test.skipIf(
     skipsOnWindows("file-system", "creating a link needs a privilege"),
   )(
