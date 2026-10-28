@@ -38,10 +38,10 @@ export interface ForgeRepo {
 }
 
 /** The forge's description of the repository at `root`, or why it gave none. */
-export function forgeRepo(
+export async function forgeRepo(
   root: string,
-): { ok: true; value: ForgeRepo } | { ok: false; reason: string } {
-  const view = ghJson(
+): Promise<{ ok: true; value: ForgeRepo } | { ok: false; reason: string }> {
+  const view = await ghJson(
     [
       "repo",
       "view",
@@ -64,8 +64,11 @@ export function repoSlug(repo: ForgeRepo): Fact & { value: string } {
 }
 
 /** The last merged pull requests into `base`, or null when unreadable. */
-export function mergedPulls(base: string, root: string): Pull[] | null {
-  const merged = ghJson(
+export async function mergedPulls(
+  base: string,
+  root: string,
+): Promise<Pull[] | null> {
+  const merged = await ghJson(
     [
       "pr",
       "list",
@@ -116,8 +119,8 @@ function likelyReviewBot(login: string, count: number): boolean {
  * the account is a bot, and the login stays as it is only when the forge says
  * there is no such bot; any other answer leaves it unknown (`null`).
  */
-function restLogin(login: string, root: string): string | null {
-  const user = ghJson(["api", `users/${login}[bot]`], root);
+async function restLogin(login: string, root: string): Promise<string | null> {
+  const user = await ghJson(["api", `users/${login}[bot]`], root);
   if (!user.ok) return /\bHTTP 404\b/.test(user.reason) ? login : null;
   const type =
     typeof user.value === "object" && user.value !== null
@@ -133,19 +136,19 @@ function restLogin(login: string, root: string): string | null {
  * under the login the review skills match; one whose login the forge could
  * not confirm is `unconfirmed`, with the same evidence and no value.
  */
-export function reviewBots(
+export async function reviewBots(
   pulls: Pull[],
   root: string,
-): {
+): Promise<{
   found: (Fact & { login: string })[];
   unconfirmed: { login: string; evidence: string }[];
-} {
+}> {
   const found: (Fact & { login: string })[] = [];
   const unconfirmed: { login: string; evidence: string }[] = [];
   for (const [login, count] of reviewerCounts(pulls)) {
     if (!likelyReviewBot(login, count)) continue;
     const evidence = `${login} reviewed ${count} of the last ${pulls.length} merged pull requests`;
-    const rest = restLogin(login, root);
+    const rest = await restLogin(login, root);
     if (rest === null) unconfirmed.push({ login, evidence });
     else
       found.push({
@@ -169,8 +172,8 @@ export interface OpenPull {
 export const OPEN_PULL_LIMIT = 200;
 
 /** The open pull requests, or null when unreadable. */
-export function openPulls(root: string): OpenPull[] | null {
-  const open = ghJson(
+export async function openPulls(root: string): Promise<OpenPull[] | null> {
+  const open = await ghJson(
     [
       "pr",
       "list",

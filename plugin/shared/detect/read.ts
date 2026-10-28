@@ -1,13 +1,14 @@
 /**
  * Read-only access to a repository for the detector and the skills that
  * judge what it finds: a program run without a shell, the forge's answers
- * through `gh`, the package scripts, and whether a shell runs a file
+ * through `gh` under the shared deadline, the package scripts, and whether a shell runs a file
  * directly.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isMapping } from "../config-layers.ts";
+import { ghCall } from "../proc.ts";
 
 interface RunResult {
   code: number;
@@ -41,12 +42,16 @@ export function run(
   };
 }
 
-/** `gh` with JSON output parsed, or the reason it gave none. */
-export function ghJson(
+/**
+ * `gh` with JSON output parsed, or the reason it gave none. It runs under the
+ * shared deadline (`ghCall`, `GH_CALL_TIMEOUT`), so a forge that accepts the
+ * connection and never answers ends the call as a failure.
+ */
+export async function ghJson(
   args: string[],
   cwd: string,
-): { ok: true; value: unknown } | { ok: false; reason: string } {
-  const result = run("gh", args, { cwd });
+): Promise<{ ok: true; value: unknown } | { ok: false; reason: string }> {
+  const result = await ghCall(args, { cwd });
   if (result.code !== 0)
     return {
       ok: false,

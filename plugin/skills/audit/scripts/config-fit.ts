@@ -93,6 +93,7 @@ import {
 import { parseTrackerLabels } from "../../../shared/tracker-labels.ts";
 import { ExitError } from "../../../shared/cli.ts";
 import { swallow } from "../../../shared/errors.ts";
+import { ghCall } from "../../../shared/proc.ts";
 import {
   settingsRequirement,
   validSettings,
@@ -776,15 +777,14 @@ type Classic = "protected" | "unprotected" | "unknown";
  * whether the branch has classic protection at all; unknown when that could
  * not be read.
  */
-function classicProtection(
+async function classicProtection(
   slug: string,
   base: string,
   root: string,
   required: Set<string>,
   report: FitReport,
-): Classic {
-  const protection = run(
-    "gh",
+): Promise<Classic> {
+  const protection = await ghCall(
     ["api", `repos/${slug}/branches/${base}/protection`],
     { cwd: root },
   );
@@ -792,7 +792,10 @@ function classicProtection(
     if (/not protected/i.test(protection.stderr)) return "unprotected";
     // Reading protection needs admin rights; the branch itself tells any
     // reader whether it is protected at all.
-    const branch = ghJson(["api", `repos/${slug}/branches/${base}`], root);
+    const branch = await ghJson(
+      ["api", `repos/${slug}/branches/${base}`],
+      root,
+    );
     return branch.ok &&
       (branch.value as { protected?: unknown }).protected === false
       ? "unprotected"
@@ -835,13 +838,16 @@ function protectionChecks(status: unknown): string[] {
  * many ruleset rules apply to the branch; null when the rulesets could not be
  * read.
  */
-function rulesetChecks(
+async function rulesetChecks(
   slug: string,
   base: string,
   root: string,
   required: Set<string>,
-): number | null {
-  const rules = ghJson(["api", `repos/${slug}/rules/branches/${base}`], root);
+): Promise<number | null> {
+  const rules = await ghJson(
+    ["api", `repos/${slug}/rules/branches/${base}`],
+    root,
+  );
   if (!rules.ok || !Array.isArray(rules.value)) return null;
   for (const rule of rules.value as {
     type?: string;
@@ -858,15 +864,15 @@ function rulesetChecks(
  * rulesets both count. A branch with neither is reported as unprotected,
  * apart from one protected without a required check.
  */
-function requiredChecks(
+async function requiredChecks(
   slug: string,
   base: string,
   root: string,
   report: FitReport,
-): { required: Set<string>; findings: Finding[] } {
+): Promise<{ required: Set<string>; findings: Finding[] }> {
   const required = new Set<string>();
-  const classic = classicProtection(slug, base, root, required, report);
-  const rules = rulesetChecks(slug, base, root, required);
+  const classic = await classicProtection(slug, base, root, required, report);
+  const rules = await rulesetChecks(slug, base, root, required);
   if (classic === "unknown" || rules === null) {
     report.facts.branch_protection =
       "unchecked: protection or rulesets could not be read";
@@ -921,12 +927,12 @@ function offer(report: FitReport, suggestions: Suggestion[]): Finding[] {
 }
 
 /** Declared review bots that never reviewed, or, with none declared, likely ones. */
-function reviewBotFindings(
+async function reviewBotFindings(
   config: Config,
   pulls: Pull[],
   root: string,
   report: FitReport,
-): Finding[] {
+): Promise<Finding[]> {
   const authors = reviewerCounts(pulls);
   const declaredBots = texts(at(config, "review.bots"));
   const findings: Finding[] = declaredBots
@@ -937,7 +943,7 @@ function reviewBotFindings(
       message: `review.bots names ${bot}, which reviewed or commented on none of the last ${pulls.length} merged pull requests`,
     }));
   if (declaredBots.length > 0) return findings;
-  const { found, unconfirmed } = reviewBots(pulls, root);
+  const { found, unconfirmed } = await reviewBots(pulls, root);
   const bots = found.map((bot) =>
     suggest(
       bot,
@@ -956,15 +962,15 @@ function reviewBotFindings(
 }
 
 /** What the recent merged pull requests show: required checks and reviewers. */
-function mergedPullFindings(
+async function mergedPullFindings(
   config: Config,
   root: string,
   base: string,
   required: Set<string>,
   report: FitReport,
   state: ForgeState,
-): Finding[] {
-  const pulls = mergedPulls(base, root);
+): Promise<Finding[]> {
+  const pulls = await mergedPulls(base, root);
   state.pulls = pulls;
   if (pulls === null)
     return [
@@ -987,20 +993,20 @@ function mergedPullFindings(
   const checks = Array.isArray(declared) ? texts(declared) : [...required];
   return [
     ...checksThatNeverRan(checks, pulls),
-    ...reviewBotFindings(config, pulls, root, report),
+    ...(await reviewBotFindings(config, pulls, root, report)),
     ...reviewerFindings(config, pulls),
   ];
 }
 
 /** Whether the open pull requests and the repository fit `pull_requests.stacking`. */
-function stackingFindings(
+async function stackingFindings(
   config: Config,
   root: string,
   base: string,
   repo: ForgeRepo,
   report: FitReport,
-): Finding[] {
-  const pulls = openPulls(root);
+): Promise<Finding[]> {
+  const pulls = await openPulls(root);
   if (pulls === null)
     return [
       {
@@ -1061,10 +1067,14 @@ function stackedWithoutStacking(
 }
 
 /** Configured pull-request labels the repository does not have. */
-function labelFindings(config: Config, root: string, slug: string): Finding[] {
+async function labelFindings(
+  config: Config,
+  root: string,
+  slug: string,
+): Promise<Finding[]> {
   const labels = texts(at(config, "pull_requests.labels"));
   if (labels.length === 0) return [];
-  const list = ghJson(
+  const list = await ghJson(
     ["label", "list", "--limit", "1000", "--json", "name"],
     root,
   );
@@ -1126,13 +1136,13 @@ interface ForgeState {
   pulls: Pull[] | null;
 }
 
-function forgeChecks(
+async function forgeChecks(
   config: Config,
   root: string,
   report: FitReport,
   state: ForgeState,
-): Finding[] {
-  const view = forgeRepo(root);
+): Promise<Finding[]> {
+  const view = await forgeRepo(root);
   if (!view.ok) {
     report.forge = "unchecked";
     return [
@@ -1149,15 +1159,26 @@ function forgeChecks(
   report.facts.repository = slug;
   const { base, findings: baseFindings } = forgeBase(repo, report);
   if (base === null) return baseFindings;
-  const { required, findings } = requiredChecks(slug, base, root, report);
+  const { required, findings } = await requiredChecks(slug, base, root, report);
   if (!report.facts.branch_protection?.startsWith("unchecked"))
     state.required = required;
+  // In this order: each reading's suggestions join the report as it runs.
+  const merged = await mergedPullFindings(
+    config,
+    root,
+    base,
+    required,
+    report,
+    state,
+  );
+  const stacking = await stackingFindings(config, root, base, repo, report);
+  const labels = await labelFindings(config, root, slug);
   return [
     ...baseFindings,
     ...findings,
-    ...mergedPullFindings(config, root, base, required, report, state),
-    ...stackingFindings(config, root, base, repo, report),
-    ...labelFindings(config, root, slug),
+    ...merged,
+    ...stacking,
+    ...labels,
     ...offer(report, repoSlugSuggestion(config, repo)),
   ];
 }
@@ -2491,7 +2512,9 @@ export async function configFit(opts: {
   report.findings.push(...integrationBranch(config, opts.root, report));
   const state: ForgeState = { required: null, pulls: null };
   if (!opts.offline) {
-    report.findings.push(...forgeChecks(config, opts.root, report, state));
+    report.findings.push(
+      ...(await forgeChecks(config, opts.root, report, state)),
+    );
     report.findings.push(
       ...(await trackerCheck(opts.file, report.configured, opts.root)),
     );
