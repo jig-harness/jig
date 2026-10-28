@@ -7,8 +7,9 @@
  *
  * Not read: a value inside a `<profile>`, which applies only when the
  * profile is active, and one a module inherits from a parent POM. A
- * `testSourceDirectory` built from another property (`${tests.dir}`) is
- * reported unreadable, and nothing is claimed from that POM.
+ * `testSourceDirectory` built from another property (`${tests.dir}`), or a
+ * comment that never closes, makes the POM unreadable, and nothing is
+ * claimed from it.
  */
 import {
   folderOf,
@@ -25,11 +26,29 @@ import {
 const READER = "Maven";
 const DEFAULT = "src/test/java";
 
+/**
+ * `text` with each `<!-- … -->` comment replaced by a space, scanned from
+ * the start as XML reads it: a comment ends at the first `-->`, so a
+ * `<!--` inside it is part of it. A comment that never closes leaves no
+ * build to read, so the file is unreadable.
+ */
+function withoutComments(text: string): string {
+  const parts: string[] = [];
+  let at = 0;
+  for (;;) {
+    const open = text.indexOf("<!--", at);
+    if (open === -1) return parts.join("") + text.slice(at);
+    const close = text.indexOf("-->", open + 4);
+    if (close === -1)
+      throw new UnreadableError("has a comment (<!--) it never closes");
+    parts.push(text.slice(at, open), " ");
+    at = close + 3;
+  }
+}
+
 /** The POM's own build, without comments and profiles. */
 function ownBuild(text: string): string {
-  return text
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<profiles>[\s\S]*?<\/profiles>/g, "");
+  return withoutComments(text).replace(/<profiles>[\s\S]*?<\/profiles>/g, "");
 }
 
 /** The rules one POM declares. */

@@ -517,6 +517,39 @@ describe("Maven", () => {
       },
     ]);
   });
+
+  test("a comment ends at its first -->, a <!-- inside it included", () => {
+    const reading = readMaven(
+      repo({
+        "pom.xml":
+          "<project><build><!-- old: <!-- <testSourceDirectory>x</testSourceDirectory> --><testSourceDirectory>qa</testSourceDirectory></build></project>",
+        "a/pom.xml":
+          "<project><build><!<!-- x -->--<testSourceDirectory>y</testSourceDirectory>--></build></project>",
+      }),
+    );
+    expect(reading.unreadable).toEqual([]);
+    expect(claimed(reading, ["qa/A.java", "x/B.java", "a/y/C.java"])).toEqual([
+      "qa/A.java",
+      "a/y/C.java",
+    ]);
+  });
+
+  test("a comment that never closes makes the file unreadable", () => {
+    const reading = readMaven(
+      repo({
+        "pom.xml":
+          "<project><build><testSourceDirectory>qa</testSourceDirectory><!-- unfinished",
+      }),
+    );
+    expect(reading.rules).toEqual([]);
+    expect(reading.unreadable).toEqual([
+      {
+        reader: "Maven",
+        path: "pom.xml",
+        why: "has a comment (<!--) it never closes",
+      },
+    ]);
+  });
 });
 
 describe("the layer", () => {
