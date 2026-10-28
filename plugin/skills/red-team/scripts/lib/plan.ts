@@ -9,12 +9,22 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  parse,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { renderBrief } from "./brief.ts";
 import {
   type Detected,
@@ -102,22 +112,52 @@ function clear(directory: string, all: Persona[]): void {
   for (const file of reserved(directory, all)) rmSync(file, { force: true });
 }
 
+/** The most links followed while resolving one input, as the system allows. */
+const MAX_LINKS = 40;
+
+function partsOf(path: string): string[] {
+  return path.split(sep === "\\" ? /[\\/]/ : "/").filter(Boolean);
+}
+
 /**
- * Every name an input goes by: the entry it is named by, with its folder's
- * links resolved (a symlink in the review's folder is replaced by the
- * review's own file), and the file that entry resolves to. A part that does
- * not exist is left out.
+ * Every directory entry the system reads to reach an input: each part of
+ * its path and, at each symbolic link met on the way, each part of the
+ * link's target, every entry named by the real folder it sits in. Replacing
+ * any of these entries can change which file the input names, so none of
+ * them may be a file the review writes or removes. A part that does not
+ * exist ends nothing: reading the input fails later.
  */
-function aliasesOf(input: string): string[] {
+function entriesOf(input: string): string[] {
   const path = resolve(input);
-  const aliases = [path];
-  try {
-    aliases.push(join(realpathSync(dirname(path)), basename(path)));
-    aliases.push(realpathSync(path));
-  } catch {
-    // The rest of the input's names cannot be resolved; reading it fails later.
+  const entries: string[] = [];
+  let current = parse(path).root;
+  let pending = partsOf(path.slice(current.length));
+  let links = 0;
+  while (pending.length > 0) {
+    const [part, ...rest] = pending as [string, ...string[]];
+    pending = rest;
+    if (part === ".") continue;
+    if (part === "..") {
+      current = dirname(current);
+      continue;
+    }
+    const entry = join(current, part);
+    entries.push(entry);
+    let target: string;
+    try {
+      target = readlinkSync(entry);
+    } catch {
+      current = entry;
+      continue;
+    }
+    if (++links > MAX_LINKS) break;
+    if (isAbsolute(target)) {
+      current = parse(target).root;
+      target = target.slice(current.length);
+    }
+    pending = [...partsOf(target), ...pending];
   }
-  return aliases;
+  return entries;
 }
 
 /**
@@ -146,8 +186,8 @@ function guardFolder(
   const names = new Set(reserved(directory, all).map((file) => basename(file)));
   const real = realpathSync(directory);
   for (const input of inputs) {
-    for (const actual of aliasesOf(input))
-      if (dirname(actual) === real && names.has(basename(actual)))
+    for (const entry of entriesOf(input))
+      if (dirname(entry) === real && names.has(basename(entry)))
         throw new PlanError(
           `${input} would be overwritten: it has the name of a file the review keeps in ${directory}; pass another folder to --out`,
         );
@@ -273,7 +313,7 @@ function boundToFolder(plan: Plan, directory: string): boolean {
   }
   return ![plan.document, plan.companion].some(
     (input) =>
-      input !== undefined && aliasesOf(input).some((alias) => owned.has(alias)),
+      input !== undefined && entriesOf(input).some((entry) => owned.has(entry)),
   );
 }
 

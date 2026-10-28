@@ -17,7 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join, relative } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { LEAKY_GIT_ENV, spawnSync } from "../../../shared/guarded-git-spawn.ts";
@@ -528,6 +528,50 @@ describe("collect and report", () => {
     expect(readFileSync(join(root, "docs", "prd.md"), "utf8")).toContain(
       "The list feels instant.",
     );
+  });
+
+  test("a companion reached through a link named like a brief is refused, however it is named", () => {
+    const root = repository();
+    const out = plan(root, ["docs/architecture.md"]);
+    const brief = join(out.directory, "critical-cto.brief.md");
+    rmSync(brief);
+    symlinkSync(join(root, "docs", "prd.md"), brief);
+    const outside = temporary();
+    const alias = join(outside, "prd-alias.md");
+    symlinkSync(brief, alias);
+    const folder = join(outside, "folder");
+    symlinkSync(out.directory, folder);
+    const relativeAlias = join(outside, "relative-alias.md");
+    symlinkSync(
+      join(relative(outside, out.directory), "critical-cto.brief.md"),
+      relativeAlias,
+    );
+    for (const companion of [
+      alias,
+      relativeAlias,
+      join(folder, "critical-cto.brief.md"),
+      join(folder, "..", basename(out.directory), "critical-cto.brief.md"),
+    ]) {
+      const run = cli(root, [
+        "plan",
+        "docs/architecture.md",
+        "--companion",
+        companion,
+      ]);
+      expectSpawnExit(run, 2, `plan with the companion ${companion}`);
+      expect(lstatSync(brief).isSymbolicLink()).toBe(true);
+    }
+    writeFileSync(
+      join(out.directory, "plan.json"),
+      JSON.stringify({
+        ...JSON.parse(readFileSync(join(out.directory, "plan.json"), "utf8")),
+        companion: alias,
+        companionSha256: "0",
+      }),
+    );
+    const run = cli(root, ["fresh", out.directory, "--", "true"]);
+    expectSpawnExit(run, 2, "fresh from a plan naming the alias");
+    expect(run.stderr).toContain("is not a plan this script wrote");
   });
 
   test("the brief treats the reviewed text as material and keeps findings on the document", () => {
