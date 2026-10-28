@@ -466,26 +466,26 @@ fields:
   verify.store:
     type: path
     read_by: [evidence]
-    since: next
+    since: 0.90.0
   verify.output_lines:
     type: integer
     min: 1
     default: 60
     read_by: [evidence]
-    since: next
+    since: 0.90.0
   verify.timeout_minutes:
     type: integer
     min: 1
     max: 35791
     default: 30
     read_by: [evidence]
-    since: next
+    since: 0.90.0
   verify.retention_days:
     type: integer
     min: 1
     default: 30
     read_by: [evidence]
-    since: next
+    since: 0.90.0
 
   adr.directory:
     type: path
