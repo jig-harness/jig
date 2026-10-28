@@ -275,6 +275,21 @@ the comment lacks, not by its wording, so a bot's acknowledgement that does
 embed a finding or a question stays a newer comment and is triaged as one.
 The override is for the comment the guard cannot classify.
 
+Two kinds of follow-up exist and the guard must know both. A review bot's
+**confirmation** after a push ("synchronized as addressed") is a review
+feature, carries the bot's confirmation marker, and the guard already
+accepts it. Its **chat auto-reply** to any comment on its thread
+("acknowledged, nothing further requested, the unpushed fix remains
+unverified") is a chat feature, carries the bot's generated-reply marker
+instead, and is what the guard refuses today. The transparency rule above
+covers the second kind. A repository can also turn the chat replies off at
+the source, which is the mechanical fix: for CodeRabbit,
+`chat.auto_reply: false` in `.coderabbit.yaml` stops untagged replies while
+leaving its reviews, confirmations and tagged commands as they are. The
+drive's documentation names that setting beside `review.bots`, and the drive
+never answers an acknowledgement with a second outcome reply: a reply that
+carries no finding and no question is not triaged.
+
 A refusal with no override, or one whose evidence the agent cannot
 establish, is a [reflection](../plugin/skills/reflect/README.md) finding
 about the guard, filed in the same round, and the item is parked under the
