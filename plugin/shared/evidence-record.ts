@@ -5,7 +5,14 @@
  * `evidence.ts` runs the command and writes the record; see its header.
  */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { errnoCode } from "./errors.ts";
@@ -15,6 +22,10 @@ import { JunitReportError, parseJunitReport } from "./junit-report.ts";
 export const DEFAULT_OUTPUT_LINES = 60;
 export const DEFAULT_TIMEOUT_MINUTES = 30;
 export const DEFAULT_RETENTION_DAYS = 30;
+/** The longest deadline a timer can hold: 2^31 - 1 milliseconds. */
+export const MAX_TIMEOUT_MINUTES = 35_791;
+/** The largest report read; a larger one is recorded as unreadable, never parsed. */
+const MAX_REPORT_BYTES = 64 * 1024 * 1024;
 const VERIFY_FIELDS = [
   "store",
   "output_lines",
@@ -79,7 +90,8 @@ export interface EvidenceRecord {
   id: string;
   repository: string;
   tree: string;
-  treeAfter: string;
+  /** The tree after the run; null when it could no longer be taken. */
+  treeAfter: string | null;
   treeChanged: boolean;
   scope: string;
   command: { hash: string; display: string; argv: string[]; cwd: string };
@@ -102,10 +114,24 @@ export interface EvidenceRecord {
 
 // ---------------------------------------------------------------- settings
 
-function wholeNumber(value: unknown, field: string, fallback: number): number {
+function wholeNumber(
+  value: unknown,
+  field: string,
+  fallback: number,
+  max = Number.MAX_SAFE_INTEGER,
+): number {
   if (value === undefined || value === null) return fallback;
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1)
-    throw new EvidenceError(`verify.${field} must be a whole number ≥ 1`);
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 1 ||
+    value > max
+  ) {
+    const bound = max < Number.MAX_SAFE_INTEGER ? ` and ≤ ${max}` : "";
+    throw new EvidenceError(
+      `verify.${field} must be a whole number ≥ 1${bound}`,
+    );
+  }
   return value;
 }
 
@@ -147,6 +173,7 @@ export function verifySettings(section: unknown, root: string): VerifySettings {
       v.timeout_minutes,
       "timeout_minutes",
       DEFAULT_TIMEOUT_MINUTES,
+      MAX_TIMEOUT_MINUTES,
     ),
     retentionDays: wholeNumber(
       v.retention_days,
@@ -191,37 +218,57 @@ function summarize(text: string, path: string): ReportSummary {
 }
 
 /**
- * The report at `file`, read only when it was written after `startedMs`:
- * its modification time at or after the start, to the whole second a coarse
- * file system keeps. `shown` is the path the record names.
+ * The text of the file open on `fd`, or why it is not read: not a regular
+ * file (a named pipe would block the read forever), larger than
+ * `MAX_REPORT_BYTES`, or written before `startedMs`.
+ */
+function reportText(
+  fd: number,
+  startedMs: number,
+): { text: string } | Pick<ReportSummary, "status" | "problem"> {
+  const stat = fstatSync(fd);
+  if (!stat.isFile())
+    return { status: "unreadable", problem: "not a regular file" };
+  if (stat.size > MAX_REPORT_BYTES)
+    return {
+      status: "unreadable",
+      problem: `${stat.size} bytes, more than the ${MAX_REPORT_BYTES} read`,
+    };
+  if (stat.mtimeMs < Math.floor(startedMs / 1000) * 1000)
+    return {
+      status: "stale",
+      problem: `written ${new Date(stat.mtimeMs).toISOString()}, before the run began`,
+    };
+  return { text: readFileSync(fd, "utf8") };
+}
+
+/**
+ * The report at `file`, read only when it is a regular file of bounded size
+ * written after `startedMs`: its modification time at or after the start, to
+ * the whole second a coarse file system keeps. The checks and the read are
+ * of one open file, so the path cannot be swapped between them. `shown` is
+ * the path the record names.
  */
 export function readReport(
   file: string,
   shown: string,
   startedMs: number,
 ): ReportSummary {
-  let mtimeMs: number;
+  let read: ReturnType<typeof reportText>;
+  let fd: number | undefined;
   try {
-    mtimeMs = statSync(file).mtimeMs;
+    fd = openSync(file, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+    read = reportText(fd, startedMs);
   } catch (error) {
     if (errnoCode(error) === "ENOENT")
       return { path: shown, status: "no report" };
     return { path: shown, status: "unreadable", problem: String(error) };
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
-  if (mtimeMs < Math.floor(startedMs / 1000) * 1000)
-    return {
-      path: shown,
-      status: "stale",
-      problem: `written ${new Date(mtimeMs).toISOString()}, before the run began`,
-    };
-  let text: string;
+  if (!("text" in read)) return { path: shown, ...read };
   try {
-    text = readFileSync(file, "utf8");
-  } catch (error) {
-    return { path: shown, status: "unreadable", problem: String(error) };
-  }
-  try {
-    return summarize(text, shown);
+    return summarize(read.text, shown);
   } catch (error) {
     if (!(error instanceof JunitReportError)) throw error;
     return { path: shown, status: "unreadable", problem: error.message };
@@ -269,19 +316,26 @@ function caseFailed(
 }
 
 /**
- * Whether a run under `--expect-fail` failed as expected: a non-zero exit
- * and, when a case is named (its `name` or `<classname>::<name>`), every
+ * Whether a run under `--expect-fail` failed as expected: a non-zero exit of
+ * its own (a signal is no exit) and, when a case is named (its `name` or `<classname>::<name>`), every
  * case of that name failed in this run's report.
  */
 function judgeExpectation(
   wanted: { case: string | null },
   outcome: Outcome,
+  signal: string | null,
   junit: ReportSummary | null,
 ): Expectation {
   const failedCases = (junit?.failed ?? []).map(caseKey);
   const base = { case: wanted.case, failedCases };
   if (outcome === "pass")
     return { ...base, met: false, reason: "the command passed" };
+  if (signal !== null)
+    return {
+      ...base,
+      met: false,
+      reason: `the command was ended by ${signal}, never exiting on its own`,
+    };
   if (outcome !== "fail")
     return {
       ...base,
@@ -308,49 +362,56 @@ export function settle(
   const exit = exited ? r.code : null;
   const signal = r.signal ?? null;
   if (!expectFail) return { outcome: ran, exit, signal, expectFail: null };
-  const judged = judgeExpectation(expectFail, ran, junit);
+  const judged = judgeExpectation(expectFail, ran, signal, junit);
   const outcome = judged.met ? "seen-to-fail" : "expectation-failed";
   return { outcome, exit, signal, expectFail: judged };
 }
 
 /**
  * Whether the record vouches for what its run asked, on a tree that did not
- * change and, when a report was named, from a fresh one: a pass in whose
- * report every top-level suite ran a case, or with `--expect-fail` a
- * seen-to-fail.
+ * change and, when a report was named, from a fresh one: a pass whose report
+ * failed no case and in which every top-level suite ran one, or with
+ * `--expect-fail` a seen-to-fail.
  */
 export function vouches(record: EvidenceRecord): boolean {
   if (record.treeChanged) return false;
   if (record.junit && record.junit.status !== "read") return false;
   if (record.outcome === "seen-to-fail") return true;
-  return record.outcome === "pass" && !record.junit?.tripwire;
+  return (
+    record.outcome === "pass" &&
+    !record.junit?.tripwire &&
+    !record.junit?.failed?.length
+  );
 }
 
 // ---------------------------------------------------------------- the block
 
 function duration(ms: number): string {
-  const s = ms / 1000;
-  if (s < 10) return `${s.toFixed(1)}s`;
-  if (s < 60) return `${Math.round(s)}s`;
+  if (ms < 9_950) return `${(ms / 1000).toFixed(1)}s`;
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m${String(Math.round(s % 60)).padStart(2, "0")}s`;
+  if (m < 60) return `${m}m${String(s % 60).padStart(2, "0")}s`;
   return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}m`;
 }
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/**
+ * The report's counts. Suite and case names, and a parser's diagnostics,
+ * come from the report and stay in the record: the block carries counts.
+ */
 function counts(junit: ReportSummary): string {
-  if (junit.status !== "read")
-    return `${junit.status}${junit.problem ? `: ${junit.problem}` : ""} (junit: ${junit.path})`;
-  const tripped = (junit.suites ?? [])
-    .filter((s) => s.tripwire)
-    .map((s) => s.name);
+  if (junit.status !== "read") return `${junit.status} (junit: ${junit.path})`;
+  const tripped = (junit.suites ?? []).filter((s) => s.tripwire).length;
   const failed = junit.failed?.length ? `, ${junit.failed.length} failed` : "";
   const trip = junit.tripwire
-    ? `  ·  ran zero cases: ${tripped.length ? tripped.join(", ") : "the whole report"}`
+    ? `  ·  ran zero cases: ${tripped ? plural(tripped, "suite") : "the whole report"}`
     : "";
   return `${junit.executed} cases ran, ${junit.skipped} skipped${failed} (junit: ${junit.path})${trip}`;
 }
 
-/** The status words of an outcome other than a plain exit. */
+/** The status words of an outcome other than a plain exit; names stay in the record. */
 const STATUS: Partial<
   Record<Outcome, (record: EvidenceRecord, exit: string) => string>
 > = {
@@ -358,9 +419,9 @@ const STATUS: Partial<
   "could-not-start": () => "could not start",
   "killed-for-output": () => "killed for too much output",
   "seen-to-fail": (r, exit) =>
-    `${exit} (seen to fail: ${r.expectFail?.failedCases.join(", ") || "expected"})`,
-  "expectation-failed": (r, exit) =>
-    `${exit} (expected to fail: ${r.expectFail?.reason})`,
+    `${exit} (seen to fail: ${r.expectFail?.case === null ? "expected" : plural(r.expectFail?.failedCases.length ?? 0, "case")})`,
+  "expectation-failed": (_r, exit) =>
+    `${exit} (expected to fail: not met, the record says why)`,
 };
 
 function status(record: EvidenceRecord): string {
@@ -388,7 +449,7 @@ export function formatBlock(
   recordPath: string,
 ): string {
   const tree = record.treeChanged
-    ? `tree ${record.tree.slice(0, 7)} -> ${record.treeAfter.slice(0, 7)} (tree-changed: vouches for no tree)`
+    ? `tree ${record.tree.slice(0, 7)} -> ${record.treeAfter?.slice(0, 7) ?? "unknown"} (tree-changed: vouches for no tree)`
     : `tree ${record.tree.slice(0, 7)}`;
   const parts = [status(record), duration(record.durationMs)];
   if (record.junit) parts.push(counts(record.junit));
@@ -410,15 +471,53 @@ function entries(dir: string): string[] {
   }
 }
 
+const isString = (v: unknown): v is string => typeof v === "string";
+const orNull =
+  <T>(is: (v: unknown) => v is T) =>
+  (v: unknown): v is T | null =>
+    v === null || is(v);
+const isNumber = (v: unknown): v is number => typeof v === "number";
+
+function isReportSummary(value: unknown): value is ReportSummary {
+  return (
+    isRecord(value) &&
+    isString(value.path) &&
+    isString(value.status) &&
+    (value.failed === undefined || Array.isArray(value.failed)) &&
+    (value.suites === undefined || Array.isArray(value.suites))
+  );
+}
+
+function isExpectation(value: unknown): value is Expectation {
+  return (
+    isRecord(value) &&
+    orNull(isString)(value.case) &&
+    typeof value.met === "boolean" &&
+    isString(value.reason) &&
+    Array.isArray(value.failedCases)
+  );
+}
+
+/** Every field lookup, `vouches` and the block read, so a malformed record is refused by name. */
 function isEvidenceRecord(value: unknown): value is EvidenceRecord {
   return (
     isRecord(value) &&
     value.schema === "jig-evidence/v1" &&
-    typeof value.id === "string" &&
-    typeof value.startedAt === "string" &&
+    isString(value.id) &&
+    isString(value.tree) &&
+    orNull(isString)(value.treeAfter) &&
     typeof value.treeChanged === "boolean" &&
+    isString(value.startedAt) &&
+    isNumber(value.durationMs) &&
+    isNumber(value.timeoutMinutes) &&
+    orNull(isNumber)(value.exit) &&
+    orNull(isString)(value.signal) &&
+    isString(value.outcome) &&
+    orNull(isExpectation)(value.expectFail) &&
+    orNull(isReportSummary)(value.junit) &&
     isRecord(value.command) &&
-    typeof value.command.display === "string"
+    isString(value.command.hash) &&
+    isString(value.command.display)
   );
 }
 
@@ -441,8 +540,8 @@ function runsIn(dir: string): { record: EvidenceRecord; path: string }[] {
 /**
  * The records under `repositoryDir` whose tree hash starts with `tree` and
  * whose command hash starts with `command`: per command the newest that
- * vouches for its tree (never a `tree-changed` one), or with `all` every
- * record, newest first.
+ * vouches for its run (`vouches`: never a failure, a timeout, a changed
+ * tree or a missing report), or with `all` every record, newest first.
  */
 export function lookup(
   repositoryDir: string,
@@ -457,7 +556,7 @@ export function lookup(
       const runs = runsIn(join(repositoryDir, t, c));
       const kept = options.all
         ? runs
-        : runs.filter((r) => !r.record.treeChanged).slice(0, 1);
+        : runs.filter((r) => vouches(r.record)).slice(0, 1);
       found.push(...kept);
     }
   return found.sort((a, b) => newestFirst(a.record, b.record));

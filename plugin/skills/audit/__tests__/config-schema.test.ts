@@ -42,6 +42,7 @@ import {
   DEFAULT_OUTPUT_LINES,
   DEFAULT_RETENTION_DAYS,
   DEFAULT_TIMEOUT_MINUTES,
+  MAX_TIMEOUT_MINUTES,
   verifySettings,
 } from "../../../shared/evidence-record.ts";
 import {
@@ -291,6 +292,18 @@ describe("the reading skills", () => {
     expect(problems(Number.MAX_SAFE_INTEGER)).toEqual([]);
     expect(problems(2 ** 53)).toEqual([
       "drive.max_rounds must be a whole number ≥ 1",
+    ]);
+  });
+
+  test("bound an integer from above where its reader does", () => {
+    const problems = (value: number) =>
+      checkConfig({ verify: { timeout_minutes: value } }, schema).map(
+        (f) => f.message,
+      );
+    expect(field("verify.timeout_minutes")?.max).toBe(MAX_TIMEOUT_MINUTES);
+    expect(problems(MAX_TIMEOUT_MINUTES)).toEqual([]);
+    expect(problems(MAX_TIMEOUT_MINUTES + 1)).toEqual([
+      `verify.timeout_minutes must be a whole number ≥ 1 and ≤ ${MAX_TIMEOUT_MINUTES}`,
     ]);
   });
 

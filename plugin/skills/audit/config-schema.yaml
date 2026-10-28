@@ -14,6 +14,7 @@
 #               path:    relative to the repository root unless absolute
 #   values    enum: the allowed values; integer: words allowed besides a number
 #   min       integer: the least allowed number
+#   max       integer: the greatest allowed number
 #   pattern   string, command, path: a regular expression the value must
 #             match; also allowed in a nested type spec of one of those types
 #             (a list's `items`), applying to each entry; refused on any other
@@ -465,6 +466,7 @@ fields:
   verify.timeout_minutes:
     type: integer
     min: 1
+    max: 35791
     default: 30
     read_by: [evidence]
     since: next

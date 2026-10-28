@@ -55,6 +55,7 @@ test("evidence.ts runs from the plugin copy and keeps its record in the consumer
   );
   expectSpawnExit({ ...ran, exitCode: ran.status }, 0);
   const record = JSON.parse(ran.stdout) as {
+    repository: string;
     tree: string;
     outcome: string;
     output: { head: string[] };
@@ -68,5 +69,6 @@ test("evidence.ts runs from the plugin copy and keeps its record in the consumer
   expect(listed.stdout).toContain(
     `EVIDENCE  tree ${record.tree.slice(0, 7)}  check`,
   );
-  expect(listed.stdout).toContain(join(store, "shop", record.tree));
+  expect(record.repository).toMatch(/^shop-[0-9a-f]{8}$/);
+  expect(listed.stdout).toContain(join(store, record.repository, record.tree));
 });

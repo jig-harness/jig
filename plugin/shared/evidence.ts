@@ -13,7 +13,7 @@
  *
  *   EVIDENCE  tree 3f9c2a1  gates
  *   exit 0  ·  2m14s  ·  412 cases ran, 0 skipped (junit: .reports/junit.xml)
- *   record ~/.local/state/jig/evidence/example-web/<tree>/<command>/20261023T141502-4b7e.json
+ *   record ~/.local/state/jig/evidence/example-web-1a2b3c4d/<tree>/<command>/20261023T141502-4b7e.json
  *
  *   --timeout <minutes>   The deadline, a positive number of minutes (0.5 is
  *                         thirty seconds); default `verify.timeout_minutes`.
@@ -41,41 +41,51 @@
  * with every staged and unstaged change and every untracked file Git does not
  * ignore, written through a temporary index (`GIT_INDEX_FILE`, then
  * `read-tree HEAD`, `add -A`, `write-tree`), so the real index is never
- * touched. It is taken before and after the run; a pair that differs is
- * recorded as `tree-changed`, and lookup never returns that record as proof.
+ * touched. It is taken before and after the run; a pair that differs, or an
+ * identity that can no longer be taken after the run, is recorded as
+ * `tree-changed`, and lookup never returns that record as proof.
  * Ignored files are outside the identity, and the record's `scope` says so;
  * so a report path the command writes belongs in an ignored folder, or the
  * report itself changes the tree.
  *
  * Every run writes its own record and never overwrites another:
  * `<store>/<repository>/<tree>/<command hash>/<run id>.json`, with the full
- * output beside it as `<run id>.log`. The store is `verify.store`, default
- * `~/.local/state/jig/evidence`. A report found at the `--junit` path before
- * the run is moved beside the record (`<run id>.previous-report`), and the
- * report is read only when one is there again, written after the run began;
- * a run that leaves none is recorded as `no report`.
+ * output beside it as `<run id>.log`; `<repository>` is the clone's folder
+ * name and a hash of its Git directory. The store is `verify.store`, default
+ * `~/.local/state/jig/evidence`, and only its owner can read what a run
+ * writes there (folders 0700, files 0600). A report found at the `--junit`
+ * path before the run is moved beside the record (`<run id>.previous-report`),
+ * and the report is read only when a regular file of at most 64 MiB is there
+ * again, written after the run began; a run that leaves none is recorded as
+ * `no report`. One run at a time holds a report path: a second run naming the
+ * same path while the first is alive is refused.
  *
- * The block names no argument of the command and holds no output: test output
- * and command lines can carry credentials, so both stay in the record on this
- * machine, and the block is what travels.
+ * The block names no argument of the command, holds no output, and names no
+ * suite or case from the report: test output, command lines and report
+ * contents can carry credentials, so they stay in the record on this
+ * machine, and the block, which carries counts, is what travels.
  *
  * Exit codes: 0 the record vouches for what was asked (a pass, or with
  * `--expect-fail` a seen-to-fail) on an unchanged tree, with a fresh report
  * in which every top-level suite ran a case when `--junit` was given; 1 a
  * record was written that does not (a failure, a timeout, a changed tree, no
- * report or a stale one, a suite that ran nothing, a failed expectation, a
- * command that could not start); 2 nothing was recorded: a usage or
- * configuration error, or not inside a Git repository. `list` exits 0, or 2
+ * report or a stale one, a report that failed a case, a suite that ran
+ * nothing, a failed expectation, a command that could not start); 2 nothing
+ * was recorded: a usage or configuration error, a report path another run
+ * holds, or not inside a Git repository. `list` exits 0, or 2
  * on such an error.
  */
 
 import { createHash, randomBytes } from "node:crypto";
 import {
+  chmodSync,
   closeSync,
   copyFileSync,
   existsSync,
   mkdirSync,
   openSync,
+  readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -91,6 +101,7 @@ import {
   EvidenceError,
   formatBlock,
   lookup,
+  MAX_TIMEOUT_MINUTES,
   readReport,
   type ReportSummary,
   settle,
@@ -106,8 +117,6 @@ const USAGE = [
   "       evidence.ts list [--tree <hash>] [--command <hash>] [--all] [--json]",
 ];
 
-/** The longest deadline a timer can hold: 2^31 - 1 milliseconds. */
-const MAX_TIMEOUT_MINUTES = 35_791;
 /** Each git call of the tree identity; a large tree is hashed file by file. */
 const GIT_TIMEOUT_SEC = 600;
 const SCOPE =
@@ -318,21 +327,44 @@ async function identityOrFail(root: string): Promise<string> {
   }
 }
 
-/** The clone's name: the folder holding its common Git directory. */
+/** The tree after the run, or null when it can no longer be taken (the run removed `.git`, say). */
+async function identityAfter(root: string): Promise<string | null> {
+  try {
+    return await treeIdentity(root);
+  } catch (error) {
+    console.error(
+      `evidence: cannot take the tree identity after the run, so the record vouches for no tree: ${message(error)}`,
+    );
+    return null;
+  }
+}
+
+/**
+ * The clone's namespace in the store: the folder holding its common Git
+ * directory, for reading, and a hash of that directory's canonical path, so
+ * two clones of one name never share records.
+ */
 async function repositoryName(root: string): Promise<string> {
-  const common = await git(root, [
-    "rev-parse",
-    "--path-format=absolute",
-    "--git-common-dir",
-  ]);
+  const common = realpathSync(
+    await git(root, [
+      "rev-parse",
+      "--path-format=absolute",
+      "--git-common-dir",
+    ]),
+  );
   const name =
     basename(common) === ".git"
       ? basename(dirname(common))
       : basename(common).replace(/\.git$/, "");
-  return name.replace(/[^A-Za-z0-9._-]/g, "_") || "repository";
+  const id = createHash("sha256").update(common).digest("hex").slice(0, 8);
+  return `${name.replace(/[^A-Za-z0-9._-]/g, "_") || "repository"}-${id}`;
 }
 
 // ---------------------------------------------------------------- running
+
+/** Records hold argv and output that can carry credentials: only their owner reads them. */
+const PRIVATE_DIR = 0o700;
+const PRIVATE_FILE = 0o600;
 
 /** Move a report already at the path beside the record, so it is never read as this run's. */
 function moveAside(path: string, to: string): string | undefined {
@@ -344,12 +376,65 @@ function moveAside(path: string, to: string): string | undefined {
     copyFileSync(path, to);
     rmSync(path, { force: true });
   }
+  chmodSync(to, PRIVATE_FILE);
   return to;
+}
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return errnoCode(error) === "EPERM";
+  }
+}
+
+/** The pid holding `lock`, "gone" when it vanished, or 0 when it names none yet. */
+function lockHolder(lock: string): number | "gone" {
+  try {
+    const pid = Number(readFileSync(lock, "utf8"));
+    return Number.isSafeInteger(pid) && pid > 0 ? pid : 0;
+  } catch (error) {
+    if (errnoCode(error) === "ENOENT") return "gone";
+    throw error;
+  }
+}
+
+/**
+ * Hold the report path for this run, so two runs in one worktree never move
+ * aside or read each other's report. A lock whose holder is no longer alive
+ * is taken over once; a live holder, or one not yet named, refuses the run.
+ * Returns the release.
+ */
+function holdReportPath(dir: string, file: string): () => void {
+  mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR });
+  const lock = join(
+    dir,
+    createHash("sha256").update(file).digest("hex").slice(0, 12),
+  );
+  for (let takeovers = 0; ; ) {
+    try {
+      const fd = openSync(lock, "wx", PRIVATE_FILE);
+      writeFileSync(fd, String(process.pid));
+      closeSync(fd);
+      return () => rmSync(lock, { force: true });
+    } catch (error) {
+      if (errnoCode(error) !== "EEXIST") throw error;
+    }
+    const holder = lockHolder(lock);
+    if (holder === "gone") continue;
+    if (holder === 0 || alive(holder) || takeovers++ > 0)
+      fail(
+        2,
+        `evidence: another run (pid ${holder || "not yet named"}) is using the report path ${file}; wait for it, or remove ${lock} if no run is left`,
+      );
+    rmSync(lock, { force: true });
+  }
 }
 
 /** Reserve a run id in `dir` by creating its output file exclusively, so no run overwrites another. */
 function reserve(dir: string, clock: Clock): { id: string; fd: number } {
-  mkdirSync(dir, { recursive: true });
+  mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR });
   const stamp = new Date(clock.now())
     .toISOString()
     .replace(/[-:]/g, "")
@@ -357,7 +442,10 @@ function reserve(dir: string, clock: Clock): { id: string; fd: number } {
   for (;;) {
     const id = `${stamp}-${randomBytes(2).toString("hex")}`;
     try {
-      return { id, fd: openSync(join(dir, `${id}.log`), "wx") };
+      return {
+        id,
+        fd: openSync(join(dir, `${id}.log`), "wx", PRIVATE_FILE),
+      };
     } catch (error) {
       if (errnoCode(error) !== "EEXIST") throw error;
     }
@@ -418,17 +506,31 @@ async function prepare(args: RunArgs, clock: Clock) {
   const program = basename(args.command[0] as string);
   const tree = await identityOrFail(root);
   const repository = await repositoryName(root);
-  const dir = join(settings.store, repository, tree, hash);
-  const { id, fd } = reserve(dir, clock);
-  const aside = join(dir, `${id}.previous-report`);
-  const command = {
-    hash,
-    display: args.name ?? `${program.replace(/\.(exe|cmd|bat)$/i, "")} ${hash}`,
-    argv: args.command,
-    cwd,
-  };
-  const report = prepareReport(args.junit, root, aside);
-  return { root, settings, tree, repository, dir, id, fd, report, command };
+  const release =
+    args.junit === undefined
+      ? () => undefined
+      : holdReportPath(
+          join(settings.store, repository, "report-locks"),
+          resolve(args.junit),
+        );
+  try {
+    const dir = join(settings.store, repository, tree, hash);
+    const { id, fd } = reserve(dir, clock);
+    const aside = join(dir, `${id}.previous-report`);
+    const command = {
+      hash,
+      display:
+        args.name ?? `${program.replace(/\.(exe|cmd|bat)$/i, "")} ${hash}`,
+      argv: args.command,
+      cwd,
+    };
+    const report = prepareReport(args.junit, root, aside);
+    const run = { root, settings, tree, repository, dir, id, fd, report };
+    return { ...run, command, release };
+  } catch (error) {
+    release();
+    throw error;
+  }
 }
 
 /** Run the command under its deadline, keeping its output in arrival order. */
@@ -461,18 +563,32 @@ function reportOf(
 /** Write the record beside its output, whole or not at all. */
 function writeRecord(dir: string, record: EvidenceRecord): string {
   const path = join(dir, `${record.id}.json`);
-  writeFileSync(`${path}.tmp`, `${JSON.stringify(record, null, 2)}\n`);
+  writeFileSync(`${path}.tmp`, `${JSON.stringify(record, null, 2)}\n`, {
+    mode: PRIVATE_FILE,
+  });
   renameSync(`${path}.tmp`, path);
   return path;
 }
 
 async function runCommand(args: RunArgs, clock: Clock): Promise<number> {
   const p = await prepare(args, clock);
+  try {
+    return await runPrepared(args, p, clock);
+  } finally {
+    p.release();
+  }
+}
+
+async function runPrepared(
+  args: RunArgs,
+  p: Awaited<ReturnType<typeof prepare>>,
+  clock: Clock,
+): Promise<number> {
   const timeoutMinutes = args.timeoutMinutes ?? p.settings.timeoutMinutes;
   const ran = await execute(args.command, timeoutMinutes, clock);
   writeFileSync(p.fd, ran.output);
   closeSync(p.fd);
-  const treeAfter = await identityOrFail(p.root);
+  const treeAfter = await identityAfter(p.root);
   const junit = reportOf(p.report, ran.startedMs);
   const record: EvidenceRecord = {
     schema: "jig-evidence/v1",

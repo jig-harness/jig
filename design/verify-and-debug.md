@@ -74,7 +74,9 @@ record ~/.local/state/jig/evidence/example-web/3f9c2a1…/8e1d…/20261023T14150
 - **One record per run.** Every run gets its own id and its own file, and
   no run overwrites another: a failing run that a ledger cites stays there
   when the same command passes on the same tree later. Lookup indexes runs
-  by tree and command and reads the newest unless asked for all of them.
+  by tree and command and reads the newest that vouches for its run (a
+  pass or a seen-to-fail on an unchanged tree, from a fresh report that
+  failed no case it was not asked to) unless asked for all of them.
 - **Counts from the report.** Where the command writes a JUnit report, the
   record holds the cases run and skipped per suite, the failed cases
   across the report, and each case's own result (passed, failed or
@@ -106,8 +108,9 @@ record ~/.local/state/jig/evidence/example-web/3f9c2a1…/8e1d…/20261023T14150
   is the printed block, whose command field is a display name: the name the
   validation plan gives the check, or for any other command the program's
   name and the command hash, never its arguments. The block's other fields
-  are the tree, exit, counts and record id, and a ledger cites records by id
-  instead of quoting their output.
+  are the tree, exit, counts and record id, never a suite or case name from
+  the report, and a ledger cites records by id instead of quoting their
+  output. The store is readable by its owner alone.
   Records older than `verify.retention_days` (default 30) are collected as a
   kind of the [resource collection](resource-gc.md) runner, with its
   receipts.

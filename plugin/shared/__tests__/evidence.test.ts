@@ -7,14 +7,17 @@
  * store, home or configuration.
  */
 
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -22,7 +25,7 @@ import { basename, dirname, join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { ExitError } from "../cli.ts";
 import { parseListArgs, parseRunArgs } from "../evidence.ts";
-import type { EvidenceRecord } from "../evidence-record.ts";
+import { type EvidenceRecord, formatBlock } from "../evidence-record.ts";
 import { LEAKY_GIT_ENV, spawnSync } from "../guarded-git-spawn.ts";
 
 const SCRIPT = join(import.meta.dir, "..", "evidence.ts");
@@ -133,6 +136,12 @@ beforeEach(() => {
   git("commit", "-q", "-m", "init");
 });
 
+afterEach(() => {
+  rmSync(scratch, { recursive: true, force: true });
+});
+
+const POSIX = process.platform !== "win32";
+
 describe("the tree identity", () => {
   test("covers untracked and changed files, leaves ignored ones out, and never touches the index", () => {
     const index = readFileSync(join(repo, ".git", "index"));
@@ -237,6 +246,13 @@ describe("records", () => {
     });
     expectSpawnExit(unknown, 2);
     expect(unknown.stderr).toContain("verify.timeout is not a field");
+    const long = evidence(["run", "--", ...PASS], {
+      JIG__VERIFY__TIMEOUT_MINUTES: "35792",
+    });
+    expectSpawnExit(long, 2);
+    expect(long.stderr).toContain(
+      "verify.timeout_minutes must be a whole number ≥ 1 and ≤ 35791",
+    );
     expect(existsSync(store)).toBe(false);
   });
 });
@@ -280,7 +296,7 @@ describe("counts from the report", () => {
     ]);
     expectSpawnExit(ran, 1);
     expect(ran.stdout).toContain(
-      "4 cases ran, 2 skipped (junit: reports/junit.xml)  ·  ran zero cases: db",
+      "4 cases ran, 2 skipped (junit: reports/junit.xml)  ·  ran zero cases: 1 suite",
     );
     const clean = record(
       ["--junit", "reports/junit.xml"],
@@ -371,7 +387,8 @@ describe("--expect-fail", () => {
       "--",
       ...writesReport(REPORT, 1),
     ]);
-    expect(block.stdout).toContain("(seen to fail: cart::totals)");
+    expect(block.stdout).toContain("(seen to fail: 1 case)");
+    expect(block.stdout).not.toContain("totals");
     const passed = record([...flags, "adds"], writesReport(REPORT, 1), 1);
     expect(passed.outcome).toBe("expectation-failed");
     expect(passed.expectFail?.reason).toBe("case adds did not fail");
@@ -412,6 +429,194 @@ describe("the printed block", () => {
 
     const named = evidence(["run", "--name", "gates", "--", ...PASS]);
     expect(named.stdout.split("\n")[0]).toEndWith("  gates");
+  });
+});
+
+describe("what vouches", () => {
+  test("lookup passes over a newer run that does not vouch to the newest that does", () => {
+    const command = js(
+      "process.exitCode = require('node:fs').existsSync('reports/fail') ? 1 : 0",
+    );
+    const passing = record([], command, 0);
+    mkdirSync(join(repo, "reports"));
+    writeFileSync(join(repo, "reports", "fail"), "");
+    const failing = record([], command, 1);
+    expect(failing.dir).toBe(passing.dir);
+    expect(
+      listed(["--command", passing.command.hash]).map((r) => r.id),
+    ).toEqual([passing.id]);
+  });
+
+  test("a pass whose report failed a case does not vouch", () => {
+    const r = record(
+      ["--junit", "reports/junit.xml"],
+      writesReport(
+        '<testsuite name="cart"><testcase classname="cart" name="adds"><failure/></testcase></testsuite>',
+      ),
+      1,
+    );
+    expect(r.outcome).toBe("pass");
+    expect(r.junit?.failed).toEqual([{ classname: "cart", name: "adds" }]);
+    expect(listed(["--command", r.command.hash])).toEqual([]);
+  });
+
+  test.if(POSIX)("a command ended by a signal is never seen to fail", () => {
+    const r = record(
+      ["--expect-fail"],
+      js("process.kill(process.pid, 'SIGTERM')"),
+      1,
+    );
+    expect(r.outcome).toBe("expectation-failed");
+    expect(r.exit).toBeNull();
+    expect(r.signal).toBe("SIGTERM");
+  });
+
+  test("a run that leaves no tree to identify is recorded, vouching for none", () => {
+    const r = record(
+      [],
+      js("require('node:fs').rmSync('.git', { recursive: true, force: true })"),
+      1,
+      { GIT_CEILING_DIRECTORIES: scratch },
+    );
+    expect(r.treeAfter).toBeNull();
+    expect(r.treeChanged).toBe(true);
+    expect(existsSync(join(r.dir, `${r.id}.json`))).toBe(true);
+  });
+});
+
+describe("the store", () => {
+  test("is namespaced by the clone, not by its folder name alone", () => {
+    const r = record([], PASS, 0);
+    const common = realpathSync(join(repo, ".git"));
+    const id = createHash("sha256").update(common).digest("hex").slice(0, 8);
+    expect(r.repository).toBe(`shop-${id}`);
+  });
+
+  test.if(POSIX)("keeps what it writes readable by its owner alone", () => {
+    mkdirSync(join(repo, "reports"));
+    writeFileSync(join(repo, "reports", "junit.xml"), REPORT);
+    const r = record(["--junit", "reports/junit.xml"], PASS, 1);
+    const mode = (path: string) => statSync(path).mode & 0o777;
+    expect(mode(r.dir)).toBe(0o700);
+    for (const file of [
+      `${r.id}.json`,
+      `${r.id}.log`,
+      `${r.id}.previous-report`,
+    ])
+      expect([file, mode(join(r.dir, file))]).toEqual([file, 0o600]);
+  });
+
+  test("refuses a record missing a field it reads, naming the file", () => {
+    const r = record([], PASS, 0);
+    const { tree: _tree, ...broken } = JSON.parse(
+      readFileSync(join(r.dir, `${r.id}.json`), "utf8"),
+    ) as EvidenceRecord;
+    writeFileSync(join(r.dir, "broken.json"), JSON.stringify(broken));
+    const listing = evidence(["list", "--all"]);
+    expectSpawnExit(listing, 2);
+    expect(listing.stderr).toContain("broken.json");
+  });
+
+  test("a report path another live run holds is refused; a dead holder's is taken over", () => {
+    const first = record([], PASS, 0);
+    const locks = join(store, first.repository, "report-locks");
+    const lock = join(
+      locks,
+      createHash("sha256")
+        .update(join(realpathSync(repo), "reports", "junit.xml"))
+        .digest("hex")
+        .slice(0, 12),
+    );
+    mkdirSync(locks, { recursive: true });
+    writeFileSync(lock, String(process.pid));
+    const flags = ["run", "--junit", "reports/junit.xml", "--", ...PASS];
+    const held = evidence(flags);
+    expectSpawnExit(held, 2);
+    expect(held.stderr).toContain(`another run (pid ${process.pid})`);
+    expect(existsSync(lock)).toBe(true);
+
+    const gone = Bun.spawnSync([BUN, "-e", "0"]);
+    writeFileSync(lock, String(gone.pid));
+    expectSpawnExit(evidence(flags), 1);
+    expect(existsSync(lock)).toBe(false);
+  });
+});
+
+describe("a report that cannot be read safely", () => {
+  test.if(POSIX)(
+    "a named pipe is refused, never read",
+    () => {
+      const r = record(
+        ["--junit", "reports/junit.xml"],
+        js(
+          "require('node:fs').mkdirSync('reports'); require('node:child_process').execFileSync('mkfifo', ['reports/junit.xml'])",
+        ),
+        1,
+      );
+      expect([r.junit?.status, r.junit?.problem]).toEqual([
+        "unreadable",
+        "not a regular file",
+      ]);
+    },
+    30_000,
+  );
+
+  test("one larger than the bound is refused, never parsed", () => {
+    const r = record(
+      ["--junit", "reports/junit.xml"],
+      js(
+        "const fs = require('node:fs'); fs.mkdirSync('reports'); fs.writeFileSync('reports/junit.xml', '<testsuite/>'); fs.truncateSync('reports/junit.xml', 65 * 1024 * 1024);",
+      ),
+      1,
+    );
+    expect(r.junit?.status).toBe("unreadable");
+    expect(r.junit?.problem).toContain("bytes, more than");
+  });
+});
+
+describe("the printed block keeps the report's names local", () => {
+  test("names no suite, case or parser diagnostic", () => {
+    const secret = "ops-token-9f8e7d";
+    const tripped = evidence([
+      "run",
+      "--junit",
+      "reports/junit.xml",
+      "--expect-fail",
+      secret,
+      "--",
+      ...writesReport(
+        `<testsuites><testsuite name="${secret}"><testcase classname="${secret}" name="${secret}"><skipped/></testcase></testsuite></testsuites>`,
+        1,
+      ),
+    ]);
+    expectSpawnExit(tripped, 1);
+    expect(tripped.stdout).toContain("ran zero cases: 1 suite");
+    expect(tripped.stdout).toContain("(expected to fail: not met");
+    const broken = evidence([
+      "run",
+      "--junit",
+      "reports/junit.xml",
+      "--",
+      ...writesReport(`<testsuite name="${secret}"`),
+    ]);
+    expectSpawnExit(broken, 1);
+    expect(broken.stdout).toContain("unreadable (junit: reports/junit.xml)");
+    for (const out of [tripped.stdout, broken.stdout])
+      expect(out).not.toContain(secret);
+  });
+
+  test("never shows sixty seconds", () => {
+    const r = record([], PASS, 0);
+    for (const [ms, shown] of [
+      [9_960, "10s"],
+      [59_600, "1m00s"],
+      [119_600, "2m00s"],
+      [3_599_600, "1h00m"],
+    ] as const)
+      expect([
+        ms,
+        formatBlock({ ...r, durationMs: ms }, "x").split("\n")[1],
+      ]).toEqual([ms, `exit 0  ·  ${shown}`]);
   });
 });
 

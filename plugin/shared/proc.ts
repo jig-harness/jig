@@ -227,7 +227,9 @@ export interface RunOptions {
   stdinInherit?: boolean;
   /**
    * Called with each captured chunk of output as it arrives, so a caller can
-   * keep both streams in the order the child wrote them; output past the
+   * keep both streams in one log in arrival order. That is not always the
+   * order the child wrote them: each stream is its own pipe, so writes to
+   * stdout and stderr close together can arrive swapped. Output past the
    * buffer cap is not passed on.
    */
   onOutput?: (stream: "stdout" | "stderr", text: string) => void;

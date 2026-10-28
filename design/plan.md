@@ -458,6 +458,10 @@ stops after a budget with the ledger posted where the work is tracked.
 What it will build, one pull request per step:
 
 - **`verify`**: the skill, its README, the lifecycle row, the M14 link.
+- **Evidence collection**: a resource collection kind that removes records,
+  their output and moved-aside reports past `verify.retention_days`, with
+  receipts; until it lands, `verify.retention_days` is read and nothing is
+  removed.
 - **`do-item` and `fix-ci` record and require**: the policy refusal, the
   body's evidence section, the seen-to-fail requirement by work type (item 27).
 - **`debug`**: the skill, the ledger, the budget, the hand-off from

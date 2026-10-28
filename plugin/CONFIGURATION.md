@@ -468,15 +468,17 @@ start and end of its output, so a claim that the check passed points at a run.
 `bun <plugin>/shared/evidence.ts run -- <command>` records a run and
 `bun <plugin>/shared/evidence.ts list` prints the records for the tree as it is
 now; the script's header lists every flag. The `verify` skill, once built,
-reads the same fields. Records and their output never leave the machine; the
-short block the script prints names the command by a display name, never by
-its arguments. An unknown field in `verify` is refused.
+reads the same fields. Records and their output never leave the machine, and
+only their owner can read them; the short block the script prints names the
+command by a display name, never by its arguments, and gives the report's
+counts, never its suite or case names. An unknown field in `verify` is
+refused.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `verify.store` | folder; `~` is expanded, relative paths resolve against the root | `~/.local/state/jig/evidence` | evidence (`shared/evidence.ts`; the `verify` skill when built) | Where the records are kept: `<store>/<repository>/<tree hash>/<command hash>/<run id>.json`, with the full output beside each. A machine-local store: deleting it costs a re-run, never a decision, so it usually belongs in the user file. A folder inside the repository must be one Git ignores, or each run would change the tree it records |
+| `verify.store` | folder; `~` is expanded, relative paths resolve against the root | `~/.local/state/jig/evidence` | evidence (`shared/evidence.ts`; the `verify` skill when built) | Where the records are kept: `<store>/<repository>/<tree hash>/<command hash>/<run id>.json`, with the full output beside each; `<repository>` is the clone's folder name and a hash of its Git directory, so two clones of one name keep apart. A machine-local store: deleting it costs a re-run, never a decision, so it usually belongs in the user file. A folder inside the repository must be one Git ignores, or each run would change the tree it records |
 | `verify.output_lines` | whole number ≥ 1 | `60` | evidence (`shared/evidence.ts`; the `verify` skill when built) | How many lines from the start and from the end of the output the record keeps |
-| `verify.timeout_minutes` | whole number ≥ 1 | `30` | evidence (`shared/evidence.ts`; the `verify` skill when built) | The deadline of a run that `--timeout` does not set; a run that reaches it is ended with its whole process tree and recorded as timed out, never as a pass or a failure |
+| `verify.timeout_minutes` | whole number from 1 to 35791 (the longest a timer holds) | `30` | evidence (`shared/evidence.ts`; the `verify` skill when built) | The deadline of a run that `--timeout` does not set; a run that reaches it is ended with its whole process tree and recorded as timed out, never as a pass or a failure |
 | `verify.retention_days` | whole number ≥ 1 | `30` | evidence (`shared/evidence.ts`; the `verify` skill when built) | How long records are kept. Checked when a record is written; removing older records is to be a kind of the resource collection runner ([`gc`](#gc)), which does not collect them yet, so until then nothing is removed |
 
 ## `reflection`
