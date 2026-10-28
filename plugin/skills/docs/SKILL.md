@@ -83,11 +83,10 @@ Work in this order, and tell the user what you changed and what you left:
 2. **Frontmatter errors**: fix each value against the schema. Take a "did you
    mean" hint when it fits; never add a value to the schema to make an error
    go away unless the user asks.
-3. **Index drift**: regenerate, never edit by hand, with `DOCS_DIR` set to the
-   report's `root` (the generator reads it, and falls back to `docs`), through
-   Bun's shell so the assignment works in every shell:
-   `bun exec "DOCS_DIR='<root>' bun '${CLAUDE_SKILL_DIR}/scripts/index/generate-index.ts'"`.
-   Stage `INDEX.md` and `.orphans.md` together.
+3. **Index drift**: regenerate, never edit by hand:
+   `bun "${CLAUDE_SKILL_DIR}/scripts/index/regenerate.ts"`. It reads the
+   report's `root` from the configuration itself, so never type the root
+   into the command. Stage `INDEX.md` and `.orphans.md` together.
 4. **`last_updated` not advanced**: set it to today's date in Coordinated
    Universal Time on each document whose body changed.
 5. **Scars**: hand the pages to `/jig:descar`; do not rewrite them here.

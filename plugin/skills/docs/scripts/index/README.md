@@ -27,6 +27,11 @@ bun exec "DOCS_DIR=docs bun generate-index.ts"          # regenerate
 bun exec "DOCS_DIR=docs bun generate-index.ts --check"  # CI drift gate; exit 1 if stale
 ```
 
+[`regenerate.ts`](regenerate.ts) runs the same generator on the docs tree
+the repository's configuration names (`docs.root`, or the detected tree),
+passing the root to it as data rather than through a shell; it takes the
+same `--check`, and exits 2 when there is no docs tree.
+
 `DOCS_DIR` defaults to `docs`; `OUT` names the index file (default
 `$DOCS_DIR/INDEX.md`) and `ORPHANS` the orphan report (default
 `$DOCS_DIR/.orphans.md`). These two files, and no others, are left out of
@@ -92,7 +97,7 @@ leaves out:
 
 | File in `__tests__/` | Role |
 |------|------|
-| `generate-index.test.ts` | paired self-test: the fixture index and orphan report reproduce exactly whatever the date, an added doc makes `--check` fail, a hand edit to the report is drift, `related:` resolves in both list forms, report links resolve from the report's directory, a multi-line description stays one row, a nested `INDEX.md` is a document, and unreadable frontmatter, an unknown argument or one file named twice exits 2 |
+| `generate-index.test.ts` | paired self-test: the fixture index and orphan report reproduce exactly whatever the date, an added doc makes `--check` fail, a hand edit to the report is drift, `related:` resolves in both list forms, report links resolve from the report's directory, a multi-line description stays one row, a nested `INDEX.md` is a document, and unreadable frontmatter, an unknown argument or one file named twice exits 2; `regenerate.ts` writes the configured root's index whatever characters the path holds, and exits 2 without a docs tree |
 | `fixtures/index/docs/` | a small tree (nested folders, a no-frontmatter doc, inline and block `related:` lists) with its committed `INDEX.md` and `.orphans.md` |
 
 Run the self-test with `bun test plugin/skills/docs/__tests__/generate-index.test.ts` from a Jig checkout.

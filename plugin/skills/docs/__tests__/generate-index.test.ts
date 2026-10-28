@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   cpSync,
+  existsSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -15,6 +16,8 @@ import {
   renderOrphans,
 } from "../scripts/index/generate-index";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
+import { spawnSync } from "../../../shared/guarded-git-spawn.ts";
+import { cleanEnv, repository } from "./helpers.ts";
 
 let root: string;
 let docs: string;
@@ -192,5 +195,40 @@ describe("orphan report", () => {
 
   test("an empty orphan set says so", () => {
     expect(renderOrphans([], "2026-01-01")).toContain("None: every document");
+  });
+});
+
+describe("regenerate.ts", () => {
+  const REGENERATE = join(import.meta.dir, "../scripts/index/regenerate.ts");
+  const regenerate = (repo: string, args: string[] = []) => {
+    const result = spawnSync(process.execPath, [REGENERATE, ...args], {
+      cwd: repo,
+      env: cleanEnv(),
+    });
+    return {
+      exitCode: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+    };
+  };
+
+  test("writes the index of the configured root, whatever characters it holds", () => {
+    const tree = "hand book/$(touch pwned)'x";
+    const repo = repository({
+      ".config/jig.yaml": `docs:\n  root: "${tree}"\n`,
+      [`${tree}/a.md`]: "# A\n",
+    });
+    expectSpawnExit(regenerate(repo), 0);
+    expect(readFileSync(join(repo, tree, "INDEX.md"), "utf8")).toContain(
+      "a.md",
+    );
+    expect(existsSync(join(repo, "pwned"))).toBe(false);
+    expectSpawnExit(regenerate(repo, ["--check"]), 0);
+  });
+
+  test("refuses when no docs tree is configured or detected", () => {
+    const result = regenerate(repository({ "README.md": "# R\n" }));
+    expectSpawnExit(result, 2);
+    expect(result.stderr).toContain("no docs tree");
   });
 });
