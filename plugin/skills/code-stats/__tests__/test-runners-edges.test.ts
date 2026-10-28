@@ -530,7 +530,7 @@ describe("Maven", () => {
     expect(claimed(allowed, ["qa/Check.java"])).toEqual(["qa/Check.java"]);
   });
 
-  test("a reference XML forbids in an attribute value, or before or after the root element, is unreadable", () => {
+  test("a character or reference XML forbids anywhere in the POM is unreadable, in CDATA, a comment, an attribute value or around the root element", () => {
     const build =
       "<build><testSourceDirectory>qa</testSourceDirectory></build>";
     for (const text of [
@@ -540,6 +540,11 @@ describe("Maven", () => {
       `<project>${build}</project>&#0;`,
       `<project>${build}</project>&dir;`,
       `&#0;<project>${build}</project>`,
+      `<project><build><testSourceDirectory>qa\u0001</testSourceDirectory></build></project>`,
+      `<project><build><testSourceDirectory><![CDATA[qa\u0001]]></testSourceDirectory></build></project>`,
+      `<project><!-- \u0001 -->${build}</project>`,
+      `<project bad="￿">${build}</project>`,
+      `<project>${build}</project>\uD800`,
     ]) {
       const reading = readMaven(repo({ "pom.xml": text }));
       expect(reading.rules).toEqual([]);

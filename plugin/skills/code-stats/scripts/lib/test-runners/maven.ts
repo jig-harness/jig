@@ -10,8 +10,9 @@
  * `testSourceDirectory` built from another property (`${tests.dir}`), or a
  * POM that is not well-formed XML as far as these values depend on it (a
  * comment that never closes, a closing tag that does not match the element
- * open, an element still open at the end, an `&` that is not one of XML's
- * predefined or numeric references) makes the POM unreadable, and nothing
+ * open, an element still open at the end, a character XML forbids, an `&`
+ * that is not one of XML's predefined or numeric references, or one that
+ * names a character XML forbids) makes the POM unreadable, and nothing
  * is claimed from it. Character data is read with its references replaced.
  */
 import {
@@ -96,11 +97,13 @@ function markupAt(text: string, open: number): Markup {
  * XML reads it: a comment adds nothing (`qa<!-- x -->/java` is `qa/java`),
  * a CDATA section adds its text, and markup inside either is not markup.
  * Markup that never closes leaves no build to read, so the file is
- * unreadable. Every reference XML reads is checked, wherever it stands:
- * in character data before, inside and after the root element, and in
- * attribute values.
+ * unreadable. A character XML forbids makes it unreadable wherever it
+ * stands, in CDATA and comments too, and every reference XML reads is
+ * checked: in character data before, inside and after the root element,
+ * and in attribute values.
  */
 function elementValues(text: string): Values {
+  rejectForbiddenChars(text);
   const scan: Scan = { values: new Map(), path: [], rooted: false };
   let value = "";
   let at = 0;
@@ -166,6 +169,17 @@ const isXmlChar = (code: number) =>
   (code >= 0x20 && code <= 0xd7ff) ||
   (code >= 0xe000 && code <= 0xfffd) ||
   (code >= 0x10000 && code <= 0x10ffff);
+
+/** An `UnreadableError` for the first character XML forbids in `text`, a lone surrogate included. */
+function rejectForbiddenChars(text: string) {
+  for (const char of text) {
+    const code = char.codePointAt(0) as number;
+    if (!isXmlChar(code))
+      throw new UnreadableError(
+        `has a character XML forbids (U+${code.toString(16).toUpperCase().padStart(4, "0")})`,
+      );
+  }
+}
 
 /**
  * Character data with its references replaced, as XML reads it
