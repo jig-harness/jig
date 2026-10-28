@@ -133,10 +133,15 @@ The guard (`checkUntriagedThreads` in `finish-round.ts`) refuses only when
   resolved the thread and it would not be in this list at all) — it is
   `triage-thread.ts` crashing between the reply and the resolve, the same
   shape of gap as the accepted/moot one, just on the other side of the
-  fork. The *one* way a merit reply (or an unmarked moot) legitimately stays
-  unresolved forever is the LEAVE_OPEN marker — `bun "<skill-dir>/scripts/triage-thread.ts"
+  fork. A merit reply (or an unmarked moot) legitimately stays unresolved in
+  two cases. One is the LEAVE_OPEN marker — `bun "<skill-dir>/scripts/triage-thread.ts"
   --leave-open` works identically across every non-hold outcome (its own
-  header), not only `moot`, so this check does too. Either crash's remedy is
+  header), not only `moot`, so this check does too. The other is a thread
+  GitHub's code scanning account opened (`awaitsAlert` in
+  `scripts/lib/scanner-sweep-guard.ts`): it waits on its alert rather than a
+  hold or a resolve, and the replied-thread sweep closes it once the alert is
+  settled — a `moot` resting on this round's own fix settles only after this
+  very push. Either crash's remedy is
   the same *shape*, naming the correct missing half: re-run `bun "<skill-dir>/scripts/triage-thread.ts"`
   on the *same* thread with *any* valid outcome body on stdin (not an empty
   one: `triage-thread.ts` refuses *empty* stdin outright, before it ever

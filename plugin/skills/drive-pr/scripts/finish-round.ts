@@ -148,6 +148,7 @@ import { fileURLToPath } from "node:url";
 import { isTrustedBotConfirmation } from "./lib/bot-confirmation.ts";
 import { fail, isDigits, isGitSha, runMain, short } from "./lib/cli.ts";
 import { hasLeaveOpenMarker, qualifyingOutcome } from "./lib/outcome.ts";
+import { awaitsAlert } from "./lib/scanner-sweep-guard.ts";
 import {
   ciHoldTimeoutSeconds,
   ghCall,
@@ -922,11 +923,9 @@ async function checkUntriagedThreads(
   // legitimately-finished dispatch — a finished one would have resolved the
   // thread and it would not be in this list at all. It can only be
   // triage-thread.ts crashing between posting the reply and calling
-  // `resolve-thread.ts`. The one way a merit reply (or an unmarked moot)
-  // legitimately stays unresolved forever is the LEAVE_OPEN marker —
-  // `triage-thread.ts --leave-open` works identically across every non-hold
-  // outcome (its own header), so this check does too rather than
-  // special-casing `moot`.
+  // `resolve-thread.ts`. A merit reply (or an unmarked moot) stays unresolved
+  // legitimately under the LEAVE_OPEN marker, on any non-hold outcome, or on a
+  // code-scanning thread until its alert settles (`awaitsAlert`).
   function isThreadTriaged(t: UntriagedThreadLine): boolean {
     const key = t.threadId;
     const outcome = currentReplyOutcome(t);
@@ -959,6 +958,7 @@ async function checkUntriagedThreads(
       );
     }
     if (outcome === null) return false; // never triaged at all
+    if (awaitsAlert(t.comments[0], outcome)) return true;
     const latest = t.comments[t.comments.length - 1];
     // Marked leave-open: a deliberate choice to leave THIS thread unresolved,
     // valid for any non-hold outcome (not only moot) per triage-thread.ts's own

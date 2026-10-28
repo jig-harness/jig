@@ -1314,6 +1314,10 @@ whose alert cannot be identified or read stays open too. Its `moot` is never
 held, fresh or reconciled, `--moot-pending-push` included: the alert's state,
 not a push, is its proof
 ([resolve-review-comments § Code-scanning threads](../resolve-review-comments/SKILL.md#code-scanning-threads)).
+`finish-round.ts` counts such a thread, answered and left open, as triaged
+(`awaitsAlert`), so a `moot` resting on this round's own fix does not block
+the push that lets the scanner settle the alert; the replied-thread sweep
+closes it once the alert is settled.
 
 **`moot` follows the merit row by default — it is resolved immediately, not
 held.** Per the review skill's outcome rules, a moot finding usually

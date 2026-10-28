@@ -109,6 +109,25 @@ export function confirmedMeritSupersession(
 }
 
 /**
+ * Whether an unresolved, unheld thread opened by `opening` and answered
+ * `outcome` is fully triaged in `finish-round.ts`'s untriaged-thread check: a
+ * code-scanning thread answered with a merit outcome or `moot` waits on its
+ * alert, not on a hold, and the replied-thread sweep closes it once
+ * `sweepVerdict` finds the alert settled. A `moot` resting on this round's
+ * own fix settles only after the push, so refusing the push would deadlock it.
+ */
+export function awaitsAlert(
+  opening: { author: string | null } | undefined,
+  outcome: string | null,
+): boolean {
+  return (
+    openedByCodeScanning(opening) &&
+    outcome !== null &&
+    (DECLINED_OUTCOMES.has(outcome) || outcome === "moot")
+  );
+}
+
+/**
  * What the replied-thread sweep does with a reply of `outcome` that carries
  * no LEAVE_OPEN_MARKER: `null` to hold it for a push (`accepted`, or a `moot`
  * on a thread GitHub's code scanning account did not open); else resolve it
