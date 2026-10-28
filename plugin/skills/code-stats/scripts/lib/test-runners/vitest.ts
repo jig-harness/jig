@@ -9,9 +9,9 @@
  * version leaves out is never claimed.
  *
  * Not read: `test.projects` and workspace files (each project's own
- * configuration is read where it is tracked). A `vite.config.*` that
- * cannot be read is reported only when it mentions `test:` or vitest; one
- * that does neither configures no tests.
+ * configuration is read where it is tracked). Every `vite.config.*` is
+ * read; one that cannot be read is reported only when it mentions a `test`
+ * key or vitest, since one that does neither configures no tests.
  */
 import { globMatcher } from "./glob.ts";
 import {
@@ -98,7 +98,8 @@ export function vitestRules(file: string, obj: LiteralObject): RunnerRule[] {
 }
 
 /** Whether an unreadable vite configuration may configure tests. */
-const mentionsTests = (text: string) => /\btest\s*:|vitest/.test(text);
+const mentionsTests = (text: string) =>
+  /\btest\s*:|["']test["']\s*:|vitest/.test(text);
 
 /** Every vitest configuration among the repository's files. */
 export function readVitest(files: RepoFiles): Reading {
@@ -108,7 +109,15 @@ export function readVitest(files: RepoFiles): Reading {
     (p) => VITE.test(nameOf(p)) && !configured.has(folderOf(p)),
   );
   return readEach(READER, files, [...vitest, ...vite], (path, text) => {
-    if (VITE.test(nameOf(path)) && !mentionsTests(text)) return null;
-    return vitestRules(path, exportedObject(text));
+    try {
+      return vitestRules(path, exportedObject(text));
+    } catch (error) {
+      const quiet =
+        error instanceof UnreadableError &&
+        VITE.test(nameOf(path)) &&
+        !mentionsTests(text);
+      if (quiet) return null;
+      throw error;
+    }
   });
 }

@@ -248,19 +248,20 @@ A repository whose tests do not follow a convention (checks named
 where they are. Code-stats reads what each runner's configuration declares,
 so those files count as tests with no `code_stats` section. Each reader
 reads its files as text and never runs them: a configuration that exists
-only when it runs (a JavaScript file that exports a function or spreads
-another object, a Gradle script that builds its folders in code, a `pom.xml`
+only when it runs (a JavaScript file that exports a function, spreads
+another object over the keys it sets, or changes or reuses the object it
+exports; a Gradle script that builds its folders in code; a `pom.xml`
 value built from a property) is reported as
 `unreadable: <path> (<why>)`, and nothing is claimed from that file. The
 built-in conventions still apply to it.
 
 | Runner | Files read | What is read | What is not read |
 |--------|------------|--------------|------------------|
-| jest | `jest.config.{js,ts,mjs,cjs,json}`, else the `jest` key of the `package.json` beside it | `testMatch` (with `!` exclusions), `testRegex`, `roots` (alone: jest's default `testMatch` under them), `rootDir`, `testPathIgnorePatterns` | `projects` (each project's own file is read), a `preset`; a `testMatch` pattern that is neither `<rootDir>/…` nor `**/…`, and a regular expression anchored with `^`, since jest matches them against absolute paths |
-| vitest | `vitest.config.{ts,mts,cts,js,mjs,cjs}`, else `vite.config.*` in the same folder | `test.include`, `test.exclude` (vitest's default exclusions when absent), relative to `test.dir`, `test.root` or `root`; a spread of `configDefaults.include` or `configDefaults.exclude` | `test.projects` and workspace files (each project's own file is read); a `vite.config.*` that mentions neither `test:` nor vitest configures no tests and is never reported |
-| pytest | the first of `pytest.ini`, `.pytest.ini`, `pyproject.toml` (`[tool.pytest.ini_options]`), `tox.ini` (`[pytest]`), `setup.cfg` (`[tool:pytest]`) in a folder that holds the section | `testpaths` (globs too), `python_files` (pytest's `test_*.py` and `*_test.py` when absent) | nothing is computed; a `pyproject.toml` that is not valid TOML is unreadable |
-| Gradle | `build.gradle`, `build.gradle.kts` | the `src/test/<language>` convention (`java`, `kotlin`, `groovy`, `scala`); `srcDir`, `srcDirs` and `setSrcDirs` of the `test` source set, as string literals, through `file`, `files` or `listOf`; `srcDirs =` replaces the convention | `resources` folders, other source sets; a variable, a `$` in a string or a loop over the source sets makes the script unreadable |
-| Maven | `pom.xml` | `<build><testSourceDirectory>` (`${project.basedir}` allowed), else the `src/test/java` default; a `pom.xml` with `<packaging>pom</packaging>` has no tests | a value inside a `<profile>`, one inherited from a parent `pom.xml`, or one in a comment; another property, or a comment that never closes, makes the file unreadable |
+| jest | `jest.config.{js,ts,mjs,cjs,json}`, else the `jest` key of the `package.json` beside it | `testMatch` (in order, a later pattern overriding an earlier `!` exclusion), `testRegex`, `roots` (alone: jest's default `testMatch` under them), `rootDir`, `testPathIgnorePatterns` | `projects` (each project's own file is read), a `preset`; a `testMatch` pattern that is neither `<rootDir>/…` nor `**/…`, and a regular expression anchored with `^`, since jest matches them against absolute paths |
+| vitest | `vitest.config.{ts,mts,cts,js,mjs,cjs}`, else `vite.config.*` in the same folder | `test.include`, `test.exclude` (vitest's default exclusions when absent), relative to `test.dir`, `test.root` or `root`; a spread of `configDefaults.include` or `configDefaults.exclude` | `test.projects` and workspace files (each project's own file is read); an unreadable `vite.config.*` that mentions neither a `test` key nor vitest configures no tests and is never reported |
+| pytest | the first of `pytest.ini`, `.pytest.ini`, `pyproject.toml` (`[tool.pytest.ini_options]`), `tox.ini` (`[pytest]`), `setup.cfg` (`[tool:pytest]`) in a folder that holds the section | `testpaths` (globs too), `python_files` (pytest's `test_*.py` and `*_test.py` when absent) | nothing is computed; a `pyproject.toml` that is not valid TOML, or whose `testpaths` or `python_files` is neither a string nor a list of strings, is unreadable |
+| Gradle | `build.gradle`, `build.gradle.kts` | the `src/test/<language>` convention (`java`, `kotlin`, `groovy`, `scala`); `srcDir`, `srcDirs` and `setSrcDirs` of the `test` source set, as string literals, through `file`, `files` or `listOf`; `srcDirs =` and `setSrcDirs` replace the convention and the folders added before them | `resources` folders, other source sets; a variable, a `$` in a string or a loop over the source sets makes the script unreadable |
+| Maven | `pom.xml` | the project's own `<build><testSourceDirectory>` (`${project.basedir}` allowed), else the `src/test/java` default; a `pom.xml` with `<packaging>pom</packaging>` has no tests | a value inside a `<profile>` or a plugin's `<configuration>`, one inherited from a parent `pom.xml`, or one in a comment; another property, or a comment or CDATA section that never closes, makes the file unreadable |
 
 A path in a configuration is relative to the file's folder, as the runner
 reads it; one that is absolute or leaves the repository makes the file

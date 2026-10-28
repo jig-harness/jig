@@ -10,7 +10,8 @@
  */
 import { UnreadableError } from "./model.ts";
 
-const SPECIAL = /[.+^$|\\()[\]{}]/;
+/** Every character a regular expression reads as an operator. */
+const SPECIAL = /[.*+?^$|\\()[\]{}/]/;
 const EXTENDED: Record<string, (body: string) => string> = {
   "?": (b) => `(?:${b})?`,
   "*": (b) => `(?:${b})*`,
@@ -117,6 +118,7 @@ class Parser {
   }
 }
 
+/** `c` as a regular expression matching it alone. */
 function literal(c: string): string {
   return SPECIAL.test(c) ? `\\${c}` : c;
 }
@@ -125,7 +127,11 @@ function literal(c: string): string {
 export function globRegExp(pattern: string): RegExp {
   const parser = new Parser(pattern.replace(/^(\.\/)+/, ""));
   const body = parser.sequence("");
-  return new RegExp(`^${body}$`);
+  try {
+    return new RegExp(`^${body}$`);
+  } catch {
+    return parser.refuse("is not a pattern a regular expression can stand for");
+  }
 }
 
 /** A matcher for `pattern`; an `UnreadableError` when the pattern cannot be read. */

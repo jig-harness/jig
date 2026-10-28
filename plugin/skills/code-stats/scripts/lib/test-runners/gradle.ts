@@ -2,8 +2,9 @@
  * Gradle: the `test` source set of each `build.gradle` or
  * `build.gradle.kts`. By convention its code lies in `src/test/<language>`
  * (`java`, `kotlin`, `groovy`, `scala`) beside the build file; a script adds
- * folders with `srcDir` or `srcDirs +=` and replaces the convention with
- * `srcDirs =` or `setSrcDirs`, in the forms `sourceSets.test.java…`,
+ * folders with `srcDir` or `srcDirs +=` and, with `srcDirs =` or
+ * `setSrcDirs`, replaces the convention and every folder added before it,
+ * in the forms `sourceSets.test.java…`,
  * `sourceSets["test"]…`, `sourceSets.getByName("test")…` and a `test`,
  * `getByName("test")`, `named("test")` or `val test by getting` block inside
  * `sourceSets { … }`. Only string literals are read, in a list or through
@@ -150,7 +151,7 @@ function sourceDirs(text: string): SourceDirs {
   for (const [from, to] of testScopes(code, strings))
     for (const m of code.slice(from, to).matchAll(SRC_DIR))
       calls.set(from + (m.index as number), from);
-  for (const [at, from] of calls)
+  for (const [at, from] of [...calls].sort(([a], [b]) => a - b))
     readSrcDir({ code, strings }, from, at, found);
   return found;
 }
@@ -170,7 +171,10 @@ function readSrcDir(
   if (language === null || language === "resources") return;
   const start = at + keyword.length;
   const op = /^[ \t]*(\+=|=)?/.exec(code.slice(start)) as RegExpExecArray;
-  if (op[1] === "=" || keyword === "setSrcDirs") found.replaced.add(language);
+  if (op[1] === "=" || keyword === "setSrcDirs") {
+    found.replaced.add(language);
+    found.dirs = found.dirs.filter((d) => d.language !== language);
+  }
   const what = `sourceSets.test.${language}.${keyword}`;
   for (const literal of literalArguments(
     code,

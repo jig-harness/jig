@@ -11,7 +11,9 @@
  * neither claims nothing.
  *
  * Every value is static text, so nothing here is computed; a
- * `pyproject.toml` that is not valid TOML is reported unreadable.
+ * `pyproject.toml` that is not valid TOML, or whose `testpaths` or
+ * `python_files` is neither a string nor a list of strings, is reported
+ * unreadable.
  */
 import { isRecord } from "../../../../../shared/guards.ts";
 import { globRegExp, globUnder } from "./glob.ts";
@@ -29,6 +31,8 @@ import {
 
 const READER = "pytest";
 const DEFAULT_PYTHON_FILES = ["test_*.py", "*_test.py"];
+/** The keys the rules are built from. */
+const READ_KEYS = ["testpaths", "python_files"];
 
 /** Where pytest looks, in its order, and the section each must hold. */
 const SOURCES: readonly { name: string; section: string }[] = [
@@ -78,10 +82,12 @@ function iniLine(state: IniState, line: string, name: string): void {
     state.raw.set(state.key, `${state.raw.get(state.key)} ${line.trim()}`);
     return;
   }
-  const pair = /^\s*([^=:\s]+)\s*[=:]\s*(.*)$/.exec(line);
-  if (!pair) return;
-  state.key = pair[1] as string;
-  state.raw.set(state.key, (pair[2] as string).trim());
+  const separator = line.search(/[=:]/);
+  if (separator === -1) return;
+  const key = line.slice(0, separator).trim();
+  if (key === "" || /\s/.test(key)) return;
+  state.key = key;
+  state.raw.set(key, line.slice(separator + 1).trim());
 }
 
 /** A value split on whitespace, quotes kept together and removed. */
@@ -113,12 +119,18 @@ function tomlSection(text: string): Section | null {
   const options = tableAt(parseToml(text), ["tool", "pytest", "ini_options"]);
   if (!isRecord(options)) return null;
   const section: Section = new Map();
-  for (const [key, value] of Object.entries(options)) {
+  for (const key of READ_KEYS) {
+    const value = options[key];
+    if (value === undefined) continue;
     if (typeof value === "string") section.set(key, splitArgs(value));
-    else if (Array.isArray(value))
-      section.set(
-        key,
-        value.filter((v): v is string => typeof v === "string"),
+    else if (
+      Array.isArray(value) &&
+      value.every((v): v is string => typeof v === "string")
+    )
+      section.set(key, value);
+    else
+      throw new UnreadableError(
+        `${key} is neither a string nor a list of strings`,
       );
   }
   return section;
@@ -167,16 +179,13 @@ export function pytestRules(file: string, section: Section): RunnerRule[] {
   ];
   const key = `${sectionName(file)} ${keys.join(" and ")}`;
   const filesShown = (pythonFiles ?? DEFAULT_PYTHON_FILES).join(" ");
-  const rule = (pattern: string, matches: (path: string) => boolean) => ({
-    reader: READER,
-    file,
-    key,
-    pattern,
-    scope: dir,
-    matches,
-  });
+  const rule = (
+    pattern: string,
+    scope: string,
+    matches: (path: string) => boolean,
+  ) => ({ reader: READER, file, key, pattern, scope, matches });
   if (!testpaths)
-    return [rule(filesShown, (path) => under(dir, path) && named(path))];
+    return [rule(filesShown, dir, (path) => under(dir, path) && named(path))];
   return testpaths.map((entry) => {
     const folder = inside(
       dir,
@@ -188,9 +197,22 @@ export function pytestRules(file: string, section: Section): RunnerRule[] {
       folder === "" ? /.+/ : new RegExp(`${re.source.slice(0, -1)}/.+$`);
     return rule(
       `${entry} (${filesShown})`,
+      fixedFolder(folder),
       (path) => re.test(path) || (below.test(path) && named(path)),
     );
   });
+}
+
+/**
+ * The deepest folder that holds everything a `testpaths` entry matches: its
+ * segments before the first glob character, without the last, which may
+ * name a file.
+ */
+function fixedFolder(entry: string): string {
+  const segments = entry.split("/");
+  const glob = segments.findIndex((s) => /[*?[{]/.test(s));
+  const fixed = glob === -1 ? segments.slice(0, -1) : segments.slice(0, glob);
+  return fixed.join("/");
 }
 
 /** The candidates in one folder, in the order pytest tries them. */
@@ -204,9 +226,9 @@ function inOrder(candidates: readonly string[]): string[] {
 const HOLDS: Record<string, RegExp> = {
   "pytest.ini": /^/,
   ".pytest.ini": /^/,
-  "pyproject.toml": /\[\s*tool\.pytest\.ini_options\s*\]/,
-  "tox.ini": /^\s*\[pytest\]/m,
-  "setup.cfg": /^\s*\[tool:pytest\]/m,
+  "pyproject.toml": /^[ \t]*\[[ \t]*tool\.pytest\.ini_options[ \t]*\]/m,
+  "tox.ini": /^[ \t]*\[pytest\]/m,
+  "setup.cfg": /^[ \t]*\[tool:pytest\]/m,
 };
 
 /** The configuration pytest uses in one folder: the first candidate that holds its section. */

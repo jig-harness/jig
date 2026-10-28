@@ -131,26 +131,35 @@ function testMatchGlob(
   );
 }
 
+/**
+ * One rule per positive pattern. jest reads the patterns in order, each
+ * matching one setting the path in or (with `!`) out, so a path is a test
+ * when the last pattern that matches it is positive; that pattern's rule is
+ * the one that claims it.
+ */
 function testMatchRules(
   s: Settings,
   key: string,
   patterns: string[],
   shown?: string,
 ): RunnerRule[] {
-  const negated = patterns
-    .filter((p) => p.startsWith("!"))
-    .map((p) => testMatchGlob(s, p.slice(1)));
-  return patterns
-    .filter((p) => !p.startsWith("!"))
-    .map((p) => {
-      const glob = testMatchGlob(s, p);
-      return rule(
+  const globs = patterns.map((p) => ({
+    negated: p.startsWith("!"),
+    glob: testMatchGlob(s, p.startsWith("!") ? p.slice(1) : p),
+  }));
+  return patterns.flatMap((p, i) => {
+    const own = globs[i] as (typeof globs)[number];
+    if (own.negated) return [];
+    const later = globs.slice(i + 1);
+    return [
+      rule(
         s,
         key,
         shown ?? p,
-        (path) => glob(path) && !negated.some((n) => n(path)),
-      );
-    });
+        (path) => own.glob(path) && !later.some((g) => g.glob(path)),
+      ),
+    ];
+  });
 }
 
 /** The rules a jest configuration object declares. */

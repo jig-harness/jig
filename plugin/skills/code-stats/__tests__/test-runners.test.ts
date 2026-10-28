@@ -98,7 +98,7 @@ describe("a configuration read as text", () => {
       exportedObject(
         "const c = { roots: [] };\nc.roots.push('x');\nmodule.exports = c;",
       ),
-    ).toThrow("changes c after declaring it");
+    ).toThrow("uses c again after declaring it");
     expect(() => exportedObject("const x = 1;")).toThrow("no export");
   });
 

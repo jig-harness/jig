@@ -94,7 +94,8 @@ export function inside(base: string, relative: string, what: string): string {
   const joined = posix.normalize(posix.join(base || ".", relative));
   if (joined === ".." || joined.startsWith("../"))
     throw new UnreadableError(`${what} points outside the repository`);
-  return joined === "." ? "" : joined.replace(/\/+$/, "");
+  // normalize leaves at most one trailing slash.
+  return joined === "." ? "" : joined.replace(/\/$/, "");
 }
 
 /** Whether `path` lies under the repository folder `folder`. */
