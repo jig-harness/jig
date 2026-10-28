@@ -64,6 +64,7 @@ with the review.
 | [Work types](work-types.md) | 27 |
 | [Evidence before claims, and a debugging protocol](verify-and-debug.md) | 28 |
 | [The spec a work item links](spec-link.md), with its [research note](spec-ecosystems-research.md) | 29 |
+| [Routing work to an agent, a model and an effort](agent-routing.md) | 31 |
 
 ## Starting a design
 
