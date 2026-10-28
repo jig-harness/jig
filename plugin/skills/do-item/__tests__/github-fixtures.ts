@@ -60,6 +60,8 @@ export interface NodeOptions {
   assignee?: string | null;
   milestone?: string | null;
   parent?: number | null;
+  /** The issue's GitHub issue type (`issueType.name`); `null` = none. */
+  issueType?: string | null;
   /** Project mode: the issue's option on the board; `undefined` = not on it. */
   status?: string | null | undefined;
   extra?: Record<string, unknown>;
@@ -107,6 +109,7 @@ export function issueNode(o: NodeOptions): Record<string, unknown> {
       repository: { nameWithOwner: repo },
     })),
     projectItems: boardItems(o),
+    issueType: orNull(o.issueType, (name) => ({ name })),
     ...o.extra,
   };
 }

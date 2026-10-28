@@ -428,9 +428,6 @@ defaults a repository overrides field by field; a type lowering depth only
 where no flag, catalog review or gate raises it; an unknown type getting
 the strictest value of every field. What it will build, one pull request per step:
 
-- **The derivation**: `determine_type.ts`, `issue_tracker.types`, the
-  defaults table as data with its tests, in CONFIGURATION.md; `do-item`
-  prints the type and changes nothing yet.
 - **`do-item` reads the row**: the pattern pre-scout, the review tiers and
   skip threshold, the change note, the body sections and the spike's `hitl`
   default move to the table, with a `task` fixture showing the lighter path.

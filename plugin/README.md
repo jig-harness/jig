@@ -291,10 +291,14 @@ committed: no copy of the skill, no install script, no generated files.
    ```yaml
    gates:
      command: make check             # the full local checks before a push
-   review:
+   review:                           # optional
      bots: ["example-review[bot]"]   # your AI reviewer's login
-     deferral_team: ENG              # issue-tracker team for follow-ups
+     deferral_team: ENG              # issue-tracker team for deferred findings
    ```
+
+   Only `gates.command` is required: the review skill works every reviewer's
+   threads without a `review` section, and asks for the deferral team only
+   when it defers a finding.
 
    Every field of every skill, its type, its default and what the skills
    derive instead of asking for, is in the

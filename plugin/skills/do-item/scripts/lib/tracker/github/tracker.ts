@@ -32,7 +32,9 @@ import type { Client } from "./client.ts";
 import { CLOSE_REASONS, isClosedState } from "./model.ts";
 import {
   type GhIssue,
+  ISSUE_TYPE,
   issueFields,
+  nativeTypeOf,
   onePage,
   PAGE,
   parseIssue,
@@ -525,7 +527,7 @@ export function gitHubTracker(client: Client): Tracker {
     async getIssue(key) {
       const found = await client.issue(
         client.ref(key),
-        `subIssues(first: ${PAGE}) { pageInfo { hasNextPage } nodes { ${fields} } }`,
+        `${ISSUE_TYPE} subIssues(first: ${PAGE}) { pageInfo { hasNextPage } nodes { ${fields} } }`,
       );
       if (found === null) return null;
       const { issue, raw } = found;
@@ -541,6 +543,7 @@ export function gitHubTracker(client: Client): Tracker {
         updatedAt: issue.updatedAt,
         state: model.issueState({ ...issue, labels: wholeLabels(issue) }),
         labels: model.visibleLabels(issue.labels),
+        nativeType: nativeTypeOf(raw.issueType, `issue ${key}`),
         parent:
           issue.parent === null
             ? null

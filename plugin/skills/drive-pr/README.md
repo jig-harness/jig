@@ -107,8 +107,8 @@ makes the helper fail even when the command exited successfully, and blocks
 another launch while keeping the earlier generation's process evidence.
 
 The drive also uses two fields `resolve-review-comments` already reads:
-`gates.command` (the complete local checks) and `review.bots` (reviewer
-identities). `review.job_pattern` and `review.required_checks` govern only the
+`gates.command` (the complete local checks) and, when set, `review.bots`
+(reviewer identities). `review.job_pattern` and `review.required_checks` govern only the
 review skill's own passes; the drive's convergence decision does not read them.
 Where the drive reaches the issue tracker (the human-checkpoint check before it
 arms, and the fleet-health and program-wide metrics reports), it uses the
@@ -121,8 +121,7 @@ reviewer to wait on: the drive reads no reviewer check run, sticky comment or
 stamp, counts a check that merely looks like a reviewer's as an ordinary check
 in the CI verdict, and certifies convergence from zero unresolved threads, zero
 unaddressed summary findings and the CI checks below. `review.bots` alone does
-not make a reviewer expected; it still names the logins whose threads the
-review skill resolves. A repository that has an AI reviewer says so in its
+not make a reviewer expected; it only names the repository's reviewer logins. A repository that has an AI reviewer says so in its
 configuration, or the drive converges without it.
 
 **What the drive requires of an expected AI reviewer.** Having the review skill
