@@ -17,10 +17,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, relative } from "node:path";
+import { basename, join, relative, sep } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
 import { LEAKY_GIT_ENV, spawnSync } from "../../../shared/guarded-git-spawn.ts";
+import { sha256 } from "../scripts/lib/document.ts";
 
 const CLI = join(import.meta.dir, "..", "scripts", "red-team.ts");
 const FIXTURES = join(import.meta.dir, "fixtures");
@@ -451,6 +452,34 @@ describe("collect and report", () => {
         expect(run.stderr).toContain("is not a plan this script wrote");
         expect(existsSync(output)).toBe(true);
       }
+    },
+  );
+
+  test.skipIf(!canSymlink)(
+    "a plan naming one of the review's own files by a `..` after a link is refused, and the file survives",
+    () => {
+      const root = repository();
+      const out = plan(root, ["docs/architecture.md"]);
+      const path = join(out.directory, "plan.json");
+      const written = JSON.parse(readFileSync(path, "utf8")) as {
+        document: string;
+      };
+      const output = join(out.directory, "critical-cto.json");
+      const text = findings("critical-cto");
+      writeFileSync(output, text);
+      mkdirSync(join(out.directory, "child"));
+      const outside = temporary();
+      symlinkSync(join(out.directory, "child"), join(outside, "folder"));
+      // Concatenated, not joined: join and resolve would drop the `..`.
+      const document = `${outside}${sep}folder${sep}..${sep}critical-cto.json`;
+      writeFileSync(
+        path,
+        JSON.stringify({ ...written, document, sha256: sha256(text) }),
+      );
+      const run = cli(root, ["fresh", out.directory, "--", "true"]);
+      expectSpawnExit(run, 2, `fresh from a plan naming ${document}`);
+      expect(run.stderr).toContain("is not a plan this script wrote");
+      expect(readFileSync(output, "utf8")).toBe(text);
     },
   );
 

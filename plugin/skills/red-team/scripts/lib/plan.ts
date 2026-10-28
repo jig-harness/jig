@@ -128,10 +128,12 @@ function partsOf(path: string): string[] {
  * link's target, every entry named by the real folder it sits in. Replacing
  * any of these entries can change which file the input names, so none of
  * them may be a file the review writes or removes. A part that does not
- * exist ends nothing: reading the input fails later.
+ * exist ends nothing: reading the input fails later. The path is walked as
+ * given, never normalized first: a `..` after a link leaves the link's
+ * target, not the link's own folder.
  */
 function entriesOf(input: string): string[] {
-  const path = resolve(input);
+  const path = isAbsolute(input) ? input : `${process.cwd()}${sep}${input}`;
   const entries: string[] = [];
   let current = parse(path).root;
   let pending = partsOf(path.slice(current.length));
@@ -259,28 +261,55 @@ function kindFor(text: string, kind: Kind | undefined): Detected {
   return detected;
 }
 
+/**
+ * The input's real path, with no link, `.` or `..` left in it: what the plan
+ * keeps, so a later step reads the file the plan step checked.
+ */
+function canonical(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    throw new PlanError(`cannot read the document: ${path}`);
+  }
+}
+
+/** Whether a path the plan keeps is its own real path, as the plan step writes it. */
+function isCanonical(path: string): boolean {
+  try {
+    return realpathSync(path) === path;
+  } catch (error) {
+    swallow(error, `${path} cannot be resolved: reading it fails later`);
+    return (
+      isAbsolute(path) && !partsOf(path).some((p) => p === "." || p === "..")
+    );
+  }
+}
+
 /** Make the plan and the briefs, replacing any earlier review's files. */
 export function makePlan(options: PlanOptions): Plan {
-  const document = resolve(options.document);
-  const text = readDocument(document);
+  const given = resolve(options.document);
+  const text = readDocument(given);
   const { kind, from } = kindFor(text, options.kind);
-  const companion = options.companion ? resolve(options.companion) : undefined;
-  const companionText = companion ? readDocument(companion) : undefined;
-  const display = relative(options.root, document) || document;
+  const givenCompanion = options.companion
+    ? resolve(options.companion)
+    : undefined;
+  const companionText = givenCompanion
+    ? readDocument(givenCompanion)
+    : undefined;
+  const display = relative(options.root, given) || given;
   const directory = resolve(
     options.out ??
-      join(
-        options.root,
-        ".context",
-        "red-team",
-        slugFor(document, options.root),
-      ),
+      join(options.root, ".context", "red-team", slugFor(given, options.root)),
   );
   const all = loadPersonas();
   mkdirSync(directory, { recursive: true });
+  const document = canonical(given);
+  const companion = givenCompanion ? canonical(givenCompanion) : undefined;
   guardFolder(
     directory,
-    companion ? [document, companion] : [document],
+    givenCompanion && companion
+      ? [given, document, givenCompanion, companion]
+      : [given, document],
     document,
     all,
   );
@@ -326,9 +355,10 @@ export function readPlan(directory: string): Plan {
 
 /**
  * Every path the steps write or remove is the one the plan step derives from
- * the folder and the persona, and no input goes by any of their names; a plan
+ * the folder and the persona, each input is named by its real path, as the
+ * plan step writes it, and no input goes by any of the review's names; a plan
  * edited to point a path at the document, or to name the document by one of
- * the review's own files, is not accepted.
+ * the review's own files or through a link, is not accepted.
  */
 function boundToFolder(plan: Plan, directory: string): boolean {
   if (
@@ -349,7 +379,8 @@ function boundToFolder(plan: Plan, directory: string): boolean {
   return ![plan.document, plan.companion].some(
     (input) =>
       input !== undefined &&
-      entriesOf(input).some((entry) => isKept(entry, plan.directory, owned)),
+      (!isCanonical(input) ||
+        entriesOf(input).some((entry) => isKept(entry, plan.directory, owned))),
   );
 }
 
