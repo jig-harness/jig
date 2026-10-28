@@ -117,18 +117,22 @@ const SPEC_KEYS = new Set([
   "values",
 ]);
 
+/** Whether a nested spec's `items` and `values` fit its type: a list's items, an enum's values. */
+function validNested(spec: Record<string, unknown>): boolean {
+  const items =
+    spec.type === "list" ? validItems(spec.items) : spec.items === undefined;
+  const values =
+    spec.type === "enum" ? stringList(spec.values) : spec.values === undefined;
+  return items && values;
+}
+
 /** Whether `spec` is a type name, or a list or map spec with typed entries. */
 function validSpec(spec: unknown): boolean {
   if (isType(spec)) return true;
   if (!isRecord(spec) || !isType(spec.type)) return false;
   if (Object.keys(spec).some((k) => !SPEC_KEYS.has(k))) return false;
-  if (spec.type === "list" ? !validItems(spec.items) : spec.items !== undefined)
-    return false;
+  if (!validNested(spec)) return false;
   if (!validSpecPattern(spec.type, spec.pattern)) return false;
-  if (
-    spec.type === "enum" ? !stringList(spec.values) : spec.values !== undefined
-  )
-    return false;
   return spec.values_type === undefined
     ? true
     : spec.type === "map" && validSpec(spec.values_type);

@@ -59,23 +59,26 @@ interface Block {
   text: string;
 }
 
+/** The id an entry's text opens with: a lettered id, or after a checkbox a number. */
+function leadingId(
+  text: string,
+  afterCheckbox: boolean,
+): { id: string | null; numeric: boolean; rest: string } {
+  const lettered = LEADING_ID.exec(text);
+  if (lettered)
+    return { id: lettered[1] ?? null, numeric: false, rest: lettered[2] ?? "" };
+  const numbered = afterCheckbox ? NUMBER_ID.exec(text) : null;
+  if (numbered)
+    return { id: numbered[1] ?? null, numeric: true, rest: numbered[2] ?? "" };
+  return { id: null, numeric: false, rest: text };
+}
+
 function block(indent: number, list: boolean, content: string): Block {
   const box = list ? CHECKBOX.exec(content) : null;
-  let rest = box ? (box[2] ?? "") : content;
-  let id: string | null = null;
-  let numeric = false;
-  const lettered = LEADING_ID.exec(rest);
-  if (lettered) {
-    id = lettered[1] ?? null;
-    rest = lettered[2] ?? "";
-  } else if (box) {
-    const numbered = NUMBER_ID.exec(rest);
-    if (numbered) {
-      id = numbered[1] ?? null;
-      numeric = true;
-      rest = numbered[2] ?? "";
-    }
-  }
+  const { id, numeric, rest } = leadingId(
+    box ? (box[2] ?? "") : content,
+    box !== null,
+  );
   return {
     indent,
     list,
@@ -87,39 +90,54 @@ function block(indent: number, list: boolean, content: string): Block {
   };
 }
 
-/** The list items and id-led lines of a section, continuation lines joined on. */
-function blocks(text: string): Block[] {
-  const out: Block[] = [];
-  let current: Block | null = null;
-  let afterBlank = false;
+/**
+ * The section's lines outside fenced code, tabs as four spaces; `null`
+ * stands where a fence opens or closes, since it ends the entry above it.
+ */
+function* unfenced(text: string): Generator<string | null> {
   let inFence = false;
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.replace(/\t/g, "    ");
     if (FENCE.test(line)) {
       inFence = !inFence;
-      current = null;
-      continue;
-    }
-    if (inFence) continue;
-    if (line.trim() === "") {
+      yield null;
+    } else if (!inFence) yield line;
+  }
+}
+
+/** A new block the line opens, `"end"` when it ends the one above, or `"continue"`. */
+function opens(
+  line: string,
+  current: Block | null,
+  afterBlank: boolean,
+): Block | "end" | "continue" {
+  const indent = line.length - line.trimStart().length;
+  const item = LIST_ITEM.exec(line);
+  if (item) return block(indent, true, item[2] ?? "");
+  if (HEADING.test(line)) return "end";
+  if (indent < 4 && LEADING_ID.test(line.trim()))
+    return block(indent, false, line.trim());
+  const continues = current && (!afterBlank || indent > current.indent);
+  return continues ? "continue" : "end";
+}
+
+/** The list items and id-led lines of a section, continuation lines joined on. */
+function blocks(text: string): Block[] {
+  const out: Block[] = [];
+  let current: Block | null = null;
+  let afterBlank = false;
+  for (const line of unfenced(text)) {
+    if (line !== null && line.trim() === "") {
       afterBlank = true;
       continue;
     }
-    const indent = line.length - line.trimStart().length;
-    const item = LIST_ITEM.exec(line);
-    if (item) {
-      current = block(indent, true, item[2] ?? "");
-      out.push(current);
-    } else if (HEADING.test(line)) {
-      current = null;
-    } else if (indent < 4 && LEADING_ID.test(line.trim())) {
-      current = block(indent, false, line.trim());
-      out.push(current);
-    } else if (current && (!afterBlank || indent > current.indent)) {
-      current.text += ` ${line.trim()}`;
-    } else {
-      current = null;
-    }
+    const next: Block | "end" | "continue" =
+      line === null ? "end" : opens(line, current, afterBlank);
+    if (next === "end") current = null;
+    else if (next !== "continue") {
+      current = next;
+      out.push(next);
+    } else if (current && line !== null) current.text += ` ${line.trim()}`;
     afterBlank = false;
   }
   return out;

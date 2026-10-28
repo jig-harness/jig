@@ -287,10 +287,15 @@ export function summary(result: SpecResult): string {
 const USAGE =
   "usage: resolve.ts [--input <issue.json>] [--root <dir>] [--summary]";
 
-async function main(argv: string[]): Promise<number> {
-  let values: { input?: string; root?: string; summary?: boolean };
+interface Flags {
+  input?: string;
+  root?: string;
+  summary?: boolean;
+}
+
+function flags(argv: string[]): Flags {
   try {
-    ({ values } = parseArgs({
+    return parseArgs({
       args: argv,
       options: {
         input: { type: "string" },
@@ -298,22 +303,33 @@ async function main(argv: string[]): Promise<number> {
         summary: { type: "boolean" },
       },
       strict: true,
-    }));
+    }).values;
   } catch (err) {
     fail(2, err instanceof Error ? err.message : String(err), USAGE);
   }
-  const issue = await readJsonInput(values.input, readStdinAll);
-  if (issue === INVALID_JSON_INPUT) return 2;
+}
+
+/** The issue to resolve, or the exit that refuses the input. */
+async function readIssue(
+  path: string | undefined,
+): Promise<Record<string, unknown>> {
+  const issue = await readJsonInput(path, readStdinAll);
+  if (issue === INVALID_JSON_INPUT) fail(2);
   if (!isRecord(issue) || issue.found === false)
     fail(
       2,
       "the input is not an issue: pass the JSON get_issue.ts prints for a found issue",
       USAGE,
     );
-  const root = values.root ?? consumerRoot();
+  return issue;
+}
+
+async function main(argv: string[]): Promise<number> {
+  const values = flags(argv);
+  const issue = await readIssue(values.input);
   let result: SpecResult;
   try {
-    result = await resolveSpec(issue, root);
+    result = await resolveSpec(issue, values.root ?? consumerRoot());
   } catch (err) {
     fail(1, err instanceof Error ? err.message : String(err));
   }

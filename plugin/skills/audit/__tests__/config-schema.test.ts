@@ -213,12 +213,13 @@ describe("the reading skills", () => {
     expect(field("reflection.store")?.values).toEqual([...STORE_KINDS]);
     expect(field("reflection.mode")?.values).toEqual([...MODES]);
     expect(field("changelog.format")?.values).toEqual([...FORMAT_IDS]);
-    const adapters = field("specs.adapters")?.items;
-    expect(
-      typeof adapters === "object" && "values" in adapters
-        ? adapters.values
-        : null,
-    ).toEqual(ADAPTERS.map((a) => a.name));
+  });
+
+  test("accept the spec adapters the resolver has", () => {
+    expect(field("specs.adapters")?.items).toEqual({
+      type: "enum",
+      values: ADAPTERS.map((a) => a.name),
+    });
   });
 
   test("accept the GitHub adapter's value sets the schema lists", () => {

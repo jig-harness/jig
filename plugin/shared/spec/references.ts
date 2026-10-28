@@ -42,7 +42,7 @@ function headingKey(text: string): string {
  * inside `## Spec` is its own section, not part of the Spec section.
  */
 export function bodySections(body: string, specHeading: string): BodySection[] {
-  const names = new Map<string, BodySection>();
+  const names = new Map<BodySectionKind, BodySection>();
   const want = new Map<string, [BodySectionKind, string]>([
     [
       headingKey(INLINE_HEADINGS.requirements),
@@ -54,28 +54,43 @@ export function bodySections(body: string, specHeading: string): BodySection[] {
     ],
     [headingKey(specHeading), ["spec", specHeading]],
   ]);
+  const section = (title: string): BodySection | null => {
+    const known = want.get(headingKey(title));
+    if (!known) return null;
+    const [kind, heading] = known;
+    const found = names.get(kind) ?? { kind, heading, text: "" };
+    names.set(kind, found);
+    return found;
+  };
   const stack: { level: number; section: BodySection | null }[] = [];
+  for (const { line, heading } of headedLines(body)) {
+    if (heading) {
+      while ((stack.at(-1)?.level ?? 0) >= heading.level) stack.pop();
+      stack.push({ level: heading.level, section: section(heading.title) });
+      continue;
+    }
+    const owner = stack.findLast((s) => s.section !== null)?.section;
+    if (owner) owner.text += `${line}\n`;
+  }
+  return [...names.values()];
+}
+
+/** Each line of `body`, with its heading when it is one outside fenced code. */
+function* headedLines(body: string): Generator<{
+  line: string;
+  heading: { level: number; title: string } | null;
+}> {
   let inFence = false;
   for (const line of body.split(/\r?\n/)) {
     if (FENCE.test(line)) inFence = !inFence;
-    const heading = inFence ? null : HEADING.exec(line);
-    if (heading) {
-      const level = (heading[1] ?? "").length;
-      while ((stack.at(-1)?.level ?? 0) >= level) stack.pop();
-      const known = want.get(headingKey(heading[2] ?? ""));
-      let section: BodySection | null = null;
-      if (known) {
-        const [kind, name] = known;
-        section = names.get(kind) ?? { kind, heading: name, text: "" };
-        names.set(kind, section);
-      }
-      stack.push({ level, section });
-      continue;
-    }
-    const owner = [...stack].reverse().find((s) => s.section !== null);
-    if (owner?.section) owner.section.text += `${line}\n`;
+    const match = inFence ? null : HEADING.exec(line);
+    yield {
+      line,
+      heading: match
+        ? { level: (match[1] ?? "").length, title: match[2] ?? "" }
+        : null,
+    };
   }
-  return [...names.values()];
 }
 
 const MARKDOWN_LINK = /\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g;
