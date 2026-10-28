@@ -352,7 +352,7 @@ fields:
     type: map
     values_type: { type: list, items: string }
     read_by: [do-item]
-    since: next
+    since: 0.89.0
   issue_tracker.file_command:
     type: string
     read_by: [do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections]
@@ -401,7 +401,7 @@ fields:
     type: map
     values_type: { type: map, values_type: any }
     read_by: [do-item]
-    since: next
+    since: 0.89.0
 
   work_batch.point_budget:
     type: integer
