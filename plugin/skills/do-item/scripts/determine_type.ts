@@ -262,11 +262,10 @@ export function issueFacts(data: unknown): IssueFacts | string {
  * The configuration's work types, and how to read the title convention as
  * `pr-plan.ts` reads it; a refused field's error names its source.
  */
-function readSettings(): {
+export function typeSettings(config = readConfig()): {
   workTypes: WorkTypes;
   titleConvention: () => Promise<TitleConvention>;
 } {
-  const config = readConfig();
   let workTypes: WorkTypes;
   let policy: ReturnType<typeof parsePrPolicy>;
   try {
@@ -294,12 +293,19 @@ async function readAllStdin(): Promise<string> {
   return s;
 }
 
-async function main(): Promise<number> {
-  const parsed = parseArgs(process.argv.slice(2), {
+/**
+ * The issue facts from the one argument a typing script takes, a file or
+ * `-` for stdin; or exit 2, the message printed, when they cannot be read.
+ */
+export async function readIssueArg(
+  argv: string[],
+  script: string,
+): Promise<IssueFacts | 2> {
+  const parsed = parseArgs(argv, {
     flags: [],
     values: [],
     defaultPositional: "-",
-    usage: "usage: determine_type.ts [issue-json-file|-]",
+    usage: `usage: ${script} [issue-json-file|-]`,
   });
   if (!parsed.ok) {
     console.error(parsed.message);
@@ -322,15 +328,33 @@ async function main(): Promise<number> {
     console.error(`Invalid input: ${facts}`);
     return 2;
   }
+  return facts;
+}
+
+/**
+ * Read the issue argument, derive from it and print the result as JSON: exit
+ * 0, 2 for input that cannot be read, 1 for a configuration the loading
+ * rules refuse.
+ */
+export async function printDerived(
+  script: string,
+  derive: (facts: IssueFacts) => Promise<unknown>,
+): Promise<number> {
+  const facts = await readIssueArg(process.argv.slice(2), script);
+  if (facts === 2) return 2;
   try {
-    const { workTypes, titleConvention } = readSettings();
-    const verdict = await deriveType(facts, workTypes, titleConvention);
-    console.log(JSON.stringify(verdict, null, 2));
+    console.log(JSON.stringify(await derive(facts), null, 2));
     return 0;
   } catch (e) {
     console.error(`ERROR: ${e instanceof Error ? e.message : String(e)}`);
     return 1;
   }
 }
+
+const main = () =>
+  printDerived("determine_type.ts", async (facts) => {
+    const { workTypes, titleConvention } = typeSettings();
+    return deriveType(facts, workTypes, titleConvention);
+  });
 
 if (import.meta.main) runEntry(main);
