@@ -518,18 +518,35 @@ describe("Maven", () => {
     ]);
   });
 
-  test("a comment ends at its first -->, a <!-- inside it included", () => {
+  test("a comment ends at its first -->, and markup inside it is not read", () => {
     const reading = readMaven(
       repo({
         "pom.xml":
-          "<project><build><!-- old: <!-- <testSourceDirectory>x</testSourceDirectory> --><testSourceDirectory>qa</testSourceDirectory></build></project>",
+          "<project><build><!-- old: <testSourceDirectory>x</testSourceDirectory> --><testSourceDirectory>qa</testSourceDirectory></build></project>",
       }),
     );
     expect(reading.unreadable).toEqual([]);
     expect(claimed(reading, ["qa/A.java", "x/B.java"])).toEqual(["qa/A.java"]);
   });
 
-  test("a declaration (<!) inside an element makes the file unreadable", () => {
+  test("a comment holding --, a <!-- inside it included, makes the file unreadable", () => {
+    const reading = readMaven(
+      repo({
+        "pom.xml":
+          "<project><build><!-- old: <!-- x --><testSourceDirectory>qa</testSourceDirectory></build></project>",
+      }),
+    );
+    expect(reading.rules).toEqual([]);
+    expect(reading.unreadable).toEqual([
+      {
+        reader: "Maven",
+        path: "pom.xml",
+        why: "has a comment holding -- (<!-- -- -->)",
+      },
+    ]);
+  });
+
+  test("markup at <! that is no comment, CDATA section or document type declaration makes the file unreadable", () => {
     const reading = readMaven(
       repo({
         "pom.xml":
@@ -541,7 +558,7 @@ describe("Maven", () => {
       {
         reader: "Maven",
         path: "pom.xml",
-        why: "has a declaration (<!) after the root opens",
+        why: 'has malformed markup ("<!<!-- x -->--<testS")',
       },
     ]);
   });

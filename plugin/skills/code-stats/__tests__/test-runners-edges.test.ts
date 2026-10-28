@@ -603,4 +603,54 @@ describe("Maven", () => {
     expect(allowed.unreadable).toEqual([]);
     expect(claimed(allowed, ["qa/Check.java"])).toEqual(["qa/Check.java"]);
   });
+
+  const build = "<build><testSourceDirectory>qa</testSourceDirectory></build>";
+
+  test("markup that is none of XML's productions is unreadable, inside the root or outside it", () => {
+    for (const text of [
+      `<project>${build}</project><>`,
+      `<project>${build}</project></>`,
+      `<project>${build}</project>< >`,
+      `<project>${build}<></project>`,
+      `<project>${build}<1a/></project>`,
+      `<project>${build}</project ></project>`,
+      `<project a="1"b="2">${build}</project>`,
+      `<project a="1" a="2">${build}</project>`,
+      `<project a="<">${build}</project>`,
+      `<project a=1>${build}</project>`,
+      `<project>${build}<!-- a -- b --></project>`,
+      `<project>${build}<!-- a ---></project>`,
+      `<project>${build}<?></project>`,
+      `<project>${build}<? pi?></project>`,
+      `<project>${build}<?XML x?></project>`,
+      `<!ELEMENT project ANY><project>${build}</project>`,
+      `<?xml version="2"?><project>${build}</project>`,
+      `<?xml encoding="UTF-8"?><project>${build}</project>`,
+      `<!DOCTYPE project><!DOCTYPE project><project>${build}</project>`,
+      `<!DOCTYPE project [<!BOGUS x>]><project>${build}</project>`,
+      `<!DOCTYPE project [<!ELEMENT project ANY>><project>${build}</project>`,
+      `<!DOCTYPE project SYSTEM><project>${build}</project>`,
+      `<project><build><testSourceDirectory>qa]]></testSourceDirectory></build></project>`,
+    ]) {
+      const reading = readMaven(repo({ "pom.xml": text }));
+      expect([text, reading.rules]).toEqual([text, []]);
+      expect(whys(reading)).toHaveLength(1);
+    }
+  });
+
+  test("a document type declaration with an internal subset is read to its end", () => {
+    for (const doctype of [
+      "<!DOCTYPE project [<!ELEMENT project ANY>]>",
+      `<!DOCTYPE project SYSTEM "p.dtd" [\n  <!ENTITY note "a > b ] c">\n  <!ATTLIST project id CDATA '>'>\n  <!-- ]> -->\n  <?pi ]>?>\n  %ext;\n] >`,
+      `<!DOCTYPE project PUBLIC "-//X//DTD P//EN" 'p.dtd'>`,
+    ]) {
+      const reading = readMaven(
+        repo({
+          "pom.xml": `<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n${doctype}\n<project xmlns:x="u" x:a='1'>${build}</project>`,
+        }),
+      );
+      expect([doctype, reading.unreadable]).toEqual([doctype, []]);
+      expect(claimed(reading, ["qa/Check.java"])).toEqual(["qa/Check.java"]);
+    }
+  });
 });
