@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   BUILTIN_FORMATS,
+  headerOf,
   jigFormats,
   jigSeverityOf,
   normalizeLogin,
@@ -58,6 +59,32 @@ describe("severityOf", () => {
         formats,
       ),
     ).toBe("high");
+  });
+
+  it("reads CodeRabbit's icon-led layout, with or without an effort field", () => {
+    const icon =
+      '<picture><img src="https://x.invalid/major-16.svg" width="16" alt=""></picture>';
+    const read = (body: string) =>
+      severityOf(body, "coderabbitai[bot]", BUILTIN_FORMATS);
+    expect(
+      read(`**${icon} Major** · **Stability** · **Heavy lift**\n\nx`),
+    ).toBe("high");
+    expect(read(`**${icon} Trivial** · **Security & Privacy**\n\nx`)).toBe(
+      "low",
+    );
+    expect(read(`**${icon} Minor** · **Quality** · **Quick win**`)).toBe("low");
+    expect(read("**Major** · prose, not a field")).toBe("unknown");
+    // Its comments open with a marker the severity follows.
+    const marker = "<!-- coderabbit-ai-generated:v1 -->";
+    expect(
+      read(`${marker}\n**${icon} Major** · **Stability** · **Quick win**\n\nx`),
+    ).toBe("high");
+    expect(read(`${marker}\n\nThanks, the guard covers it now.`)).toBe(
+      "unknown",
+    );
+    expect(
+      severityOf(`**${icon} Major** · **A**`, "someone-else", BUILTIN_FORMATS),
+    ).toBe("unknown");
   });
 
   it("reads each shape with a configured vocabulary", () => {
@@ -170,6 +197,26 @@ describe("jigSeverityOf", () => {
     );
     expect(jigSeverityOf("![P1 Badge](…) title")).toBe("unknown");
     expect(jigSeverityOf("Fix the **blocker** token")).toBe("unknown");
+  });
+});
+
+describe("headerOf", () => {
+  it("strips the known leading markers, then keeps the first paragraph", () => {
+    expect(
+      headerOf(
+        " \n<!-- ai-review-fp: a -->\n<!--coderabbit-ai-generated:v1-->\n\nHead\nline\n\nbody",
+      ),
+    ).toBe("Head\nline");
+    expect(headerOf("<!-- ai-review-a -->Head")).toBe("Head");
+  });
+
+  it("keeps a foreign comment and an unclosed marker", () => {
+    expect(headerOf("<!-- other -->\n**Major**\n\nx")).toBe(
+      "<!-- other -->\n**Major**",
+    );
+    expect(headerOf("<!-- ai-review-a -->\n<!-- ai-review-b\nHead")).toBe(
+      "<!-- ai-review-b\nHead",
+    );
   });
 });
 

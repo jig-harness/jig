@@ -46,6 +46,7 @@ const SEVERITY_SHAPES = [
   "badge",
   "html-badge",
   "pipe-fields",
+  "icon-fields",
 ] as const;
 type SeverityShape = (typeof SEVERITY_SHAPES)[number];
 
@@ -77,18 +78,22 @@ export const BUILTIN_FORMATS: readonly SeverityFormat[] = [
     severities: { P0: "blocker", P1: "high", P2: "medium" },
   },
   // CodeRabbit: `**🔒 Security & Privacy** | **🟠 Major** | **⚡ Quick win**`,
-  // or the same fields in `_italic_`. Its words have no `medium`, and Jig has
-  // nothing below `low`, so `Minor` and `Trivial` both take `low`.
-  {
-    login: "coderabbitai",
-    shape: "pipe-fields",
-    severities: {
-      Critical: "blocker",
-      Major: "high",
-      Minor: "low",
-      Trivial: "low",
-    },
-  },
+  // or the same fields in `_italic_`; newer comments lead with the severity
+  // under an icon image: `**<picture><img …> Major** · **Category** · **Effort**`.
+  // Its words have no `medium`, and Jig has nothing below `low`, so `Minor`
+  // and `Trivial` both take `low`.
+  ...(["pipe-fields", "icon-fields"] as const).map(
+    (shape): SeverityFormat => ({
+      login: "coderabbitai",
+      shape,
+      severities: {
+        Critical: "blocker",
+        Major: "high",
+        Minor: "low",
+        Trivial: "low",
+      },
+    }),
+  ),
 ];
 
 /** Jig's own finding format: `🟡 **medium** · 🏷️ category: correctness`. */
@@ -252,19 +257,59 @@ function pipeFieldsWord(
 }
 
 /**
+ * `icon-fields`: line 0 of the header is two or more emphasized fields
+ * separated by `·` (severity, category, optionally effort), and the first one
+ * is the word, after an optional `<picture>…</picture>` icon and one coloured
+ * circle: `**<picture><img …></picture> Major** · **Category** · **Quick win**`.
+ * Parsed by field position, like `pipe-fields`.
+ */
+function iconFieldsWord(
+  header: string,
+  words: readonly string[],
+): string | null {
+  const line0 = header.split("\n", 1)[0] ?? "";
+  const fields = line0.split("·").map((f) => f.trim());
+  if (
+    fields.length < 2 ||
+    fields.slice(1).some((f) => emphasizedContent(f) === null)
+  ) {
+    return null;
+  }
+  const lead = emphasizedContent(fields[0]);
+  if (lead === null) return null;
+  const severity = new RegExp(
+    `^(?:<picture>(?:(?!</picture>).)*</picture>[ \\t]*)?(?:${CIRCLE}[ \\t]*)?(${wordsAlternation(words)})$`,
+    "iu",
+  );
+  return lead.match(severity)?.[1] ?? null;
+}
+
+/** The leading HTML comments `headerOf` strips, by how their text opens. */
+const STRIPPED_MARKERS = ["ai-review-", "coderabbit-ai-generated"] as const;
+
+/**
  * The block a finding's severity and category are read from: leading
- * `<!-- ai-review-* -->` comments (Jig's finding format's own markers)
+ * `<!-- ai-review-* -->` comments (Jig's finding format's own markers) and
+ * CodeRabbit's `<!-- coderabbit-ai-generated:v1 -->`
  * stripped, then everything up to the first blank line. A matcher reading
  * the whole comment would take a severity quoted as an example in the body.
  * Only those markers are stripped: stripping any leading HTML comment would
- * expose whatever paragraph follows it as the header.
+ * expose whatever paragraph follows it as the header. A scan rather than one
+ * repeated regular expression, whose overlapping whitespace and lazy body
+ * a reviewer's comment could make backtrack.
  */
 export function headerOf(text: string): string {
-  const withoutLeadingComments = text.replace(
-    /^(?:\s*<!--\s*ai-review-[\s\S]*?-->\s*)+/,
-    "",
-  );
-  return withoutLeadingComments.split(/\n\s*\n/, 1)[0] ?? "";
+  let rest = text;
+  for (;;) {
+    const next = rest.trimStart();
+    if (!next.startsWith("<!--")) break;
+    const inner = next.slice(4).trimStart();
+    if (!STRIPPED_MARKERS.some((marker) => inner.startsWith(marker))) break;
+    const end = next.indexOf("-->", 4);
+    if (end < 0) break;
+    rest = next.slice(end + 3).trimStart();
+  }
+  return rest.split(/\n\s*\n/, 1)[0] ?? "";
 }
 
 /** The reviewer's word in `header` under `shape`, or `null`. */
@@ -282,6 +327,8 @@ function matchShape(
       return htmlBadgeWord(header, words);
     case "pipe-fields":
       return pipeFieldsWord(header, words);
+    case "icon-fields":
+      return iconFieldsWord(header, words);
   }
 }
 
