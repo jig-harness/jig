@@ -30,6 +30,24 @@ afterAll(() => {
   for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
 });
 
+// Creating a symbolic link needs a privilege Windows grants only to
+// administrators or in Developer Mode; without it symlinkSync throws EPERM.
+// Probe once, with a directory and a file link as the tests use both.
+const canSymlink = (() => {
+  const probe = mkdtempSync(join(tmpdir(), "red-team-symlink-probe-"));
+  try {
+    mkdirSync(join(probe, "dir"));
+    writeFileSync(join(probe, "file"), "");
+    symlinkSync(join(probe, "dir"), join(probe, "dir-link"));
+    symlinkSync(join(probe, "file"), join(probe, "file-link"));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+})();
+
 function temporary(): string {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "red-team-")));
   scratch.push(dir);
@@ -410,64 +428,70 @@ describe("collect and report", () => {
     expect(existsSync(join(root, "docs", "architecture.md"))).toBe(true);
   });
 
-  test("a plan naming the document by one of the review's own files is refused, and the file survives", () => {
-    const root = repository();
-    const out = plan(root, ["docs/architecture.md"]);
-    const path = join(out.directory, "plan.json");
-    const written = JSON.parse(readFileSync(path, "utf8")) as {
-      document: string;
-    };
-    const output = join(out.directory, "critical-cto.json");
-    writeFileSync(output, findings("critical-cto"));
-    const alias = join(root, "alias");
-    symlinkSync(out.directory, alias);
-    for (const document of [
-      `${out.directory}/./critical-cto.json`,
-      join(alias, "critical-cto.json"),
-    ]) {
-      writeFileSync(path, JSON.stringify({ ...written, document }));
-      const run = cli(root, ["fresh", out.directory, "--", "true"]);
-      expectSpawnExit(run, 2, `fresh from a plan naming ${document}`);
-      expect(run.stderr).toContain("is not a plan this script wrote");
-      expect(existsSync(output)).toBe(true);
-    }
-  });
-
-  for (const link of ["symlink", "hard link"] as const)
-    test(`a report.md that is a ${link} to the document is replaced, not written through`, () => {
+  test.skipIf(!canSymlink)(
+    "a plan naming the document by one of the review's own files is refused, and the file survives",
+    () => {
       const root = repository();
       const out = plan(root, ["docs/architecture.md"]);
-      const document = join(root, "docs", "architecture.md");
-      const before = readFileSync(document, "utf8");
-      for (const persona of out.personas) {
-        writeFileSync(
-          join(out.directory, `${persona.id}.json`),
-          findings(persona.id).replace(
-            "The list feels instant.",
-            "anyone with the invitation link joins the list.",
-          ),
-        );
-        expectSpawnExit(
-          cli(root, [
-            "collect",
-            out.directory,
-            persona.id,
-            "--context",
-            "subagent",
-          ]),
-          0,
-          persona.id,
-        );
+      const path = join(out.directory, "plan.json");
+      const written = JSON.parse(readFileSync(path, "utf8")) as {
+        document: string;
+      };
+      const output = join(out.directory, "critical-cto.json");
+      writeFileSync(output, findings("critical-cto"));
+      const alias = join(root, "alias");
+      symlinkSync(out.directory, alias);
+      for (const document of [
+        `${out.directory}/./critical-cto.json`,
+        join(alias, "critical-cto.json"),
+      ]) {
+        writeFileSync(path, JSON.stringify({ ...written, document }));
+        const run = cli(root, ["fresh", out.directory, "--", "true"]);
+        expectSpawnExit(run, 2, `fresh from a plan naming ${document}`);
+        expect(run.stderr).toContain("is not a plan this script wrote");
+        expect(existsSync(output)).toBe(true);
       }
-      if (link === "symlink") symlinkSync(document, out.report);
-      else linkSync(document, out.report);
-      expectSpawnExit(cli(root, ["report", out.directory]), 0, "report");
-      expect(readFileSync(document, "utf8")).toBe(before);
-      expect(lstatSync(out.report).isSymbolicLink()).toBe(false);
-      expect(readFileSync(out.report, "utf8")).toStartWith(
-        "# Red-team review:",
-      );
-    });
+    },
+  );
+
+  for (const link of ["symlink", "hard link"] as const)
+    test.skipIf(link === "symlink" && !canSymlink)(
+      `a report.md that is a ${link} to the document is replaced, not written through`,
+      () => {
+        const root = repository();
+        const out = plan(root, ["docs/architecture.md"]);
+        const document = join(root, "docs", "architecture.md");
+        const before = readFileSync(document, "utf8");
+        for (const persona of out.personas) {
+          writeFileSync(
+            join(out.directory, `${persona.id}.json`),
+            findings(persona.id).replace(
+              "The list feels instant.",
+              "anyone with the invitation link joins the list.",
+            ),
+          );
+          expectSpawnExit(
+            cli(root, [
+              "collect",
+              out.directory,
+              persona.id,
+              "--context",
+              "subagent",
+            ]),
+            0,
+            persona.id,
+          );
+        }
+        if (link === "symlink") symlinkSync(document, out.report);
+        else linkSync(document, out.report);
+        expectSpawnExit(cli(root, ["report", out.directory]), 0, "report");
+        expect(readFileSync(document, "utf8")).toBe(before);
+        expect(lstatSync(out.report).isSymbolicLink()).toBe(false);
+        expect(readFileSync(out.report, "utf8")).toStartWith(
+          "# Red-team review:",
+        );
+      },
+    );
 
   test("collecting with nothing to collect still drops the earlier verdict", () => {
     const root = repository();
@@ -508,71 +532,92 @@ describe("collect and report", () => {
     );
   });
 
-  test("a companion that is a symlink named like a brief is refused", () => {
+  test("a companion named like a brief in another case is refused", () => {
     const root = repository();
     const out = plan(root, ["docs/architecture.md"]);
-    const link = join(out.directory, "critical-cto.brief.md");
-    rmSync(link);
-    symlinkSync(join(root, "docs", "prd.md"), link);
+    const companion = join(out.directory, "CRITICAL-CTO.BRIEF.MD");
+    writeFileSync(companion, readFileSync(join(root, "docs", "prd.md")));
     const run = cli(root, [
       "plan",
       "docs/architecture.md",
       "--companion",
-      link,
+      companion,
     ]);
-    expectSpawnExit(
-      run,
-      2,
-      "plan with a companion that the review would replace",
-    );
-    expect(readFileSync(join(root, "docs", "prd.md"), "utf8")).toContain(
-      "The list feels instant.",
-    );
+    expectSpawnExit(run, 2, "plan with a case-folded brief as companion");
+    expect(run.stderr).toContain("would be overwritten");
   });
 
-  test("a companion reached through a link named like a brief is refused, however it is named", () => {
-    const root = repository();
-    const out = plan(root, ["docs/architecture.md"]);
-    const brief = join(out.directory, "critical-cto.brief.md");
-    rmSync(brief);
-    symlinkSync(join(root, "docs", "prd.md"), brief);
-    const outside = temporary();
-    const alias = join(outside, "prd-alias.md");
-    symlinkSync(brief, alias);
-    const folder = join(outside, "folder");
-    symlinkSync(out.directory, folder);
-    const relativeAlias = join(outside, "relative-alias.md");
-    symlinkSync(
-      join(relative(outside, out.directory), "critical-cto.brief.md"),
-      relativeAlias,
-    );
-    for (const companion of [
-      alias,
-      relativeAlias,
-      join(folder, "critical-cto.brief.md"),
-      join(folder, "..", basename(out.directory), "critical-cto.brief.md"),
-    ]) {
+  test.skipIf(!canSymlink)(
+    "a companion that is a symlink named like a brief is refused",
+    () => {
+      const root = repository();
+      const out = plan(root, ["docs/architecture.md"]);
+      const link = join(out.directory, "critical-cto.brief.md");
+      rmSync(link);
+      symlinkSync(join(root, "docs", "prd.md"), link);
       const run = cli(root, [
         "plan",
         "docs/architecture.md",
         "--companion",
-        companion,
+        link,
       ]);
-      expectSpawnExit(run, 2, `plan with the companion ${companion}`);
-      expect(lstatSync(brief).isSymbolicLink()).toBe(true);
-    }
-    writeFileSync(
-      join(out.directory, "plan.json"),
-      JSON.stringify({
-        ...JSON.parse(readFileSync(join(out.directory, "plan.json"), "utf8")),
-        companion: alias,
-        companionSha256: "0",
-      }),
-    );
-    const run = cli(root, ["fresh", out.directory, "--", "true"]);
-    expectSpawnExit(run, 2, "fresh from a plan naming the alias");
-    expect(run.stderr).toContain("is not a plan this script wrote");
-  });
+      expectSpawnExit(
+        run,
+        2,
+        "plan with a companion that the review would replace",
+      );
+      expect(readFileSync(join(root, "docs", "prd.md"), "utf8")).toContain(
+        "The list feels instant.",
+      );
+    },
+  );
+
+  test.skipIf(!canSymlink)(
+    "a companion reached through a link named like a brief is refused, however it is named",
+    () => {
+      const root = repository();
+      const out = plan(root, ["docs/architecture.md"]);
+      const brief = join(out.directory, "critical-cto.brief.md");
+      rmSync(brief);
+      symlinkSync(join(root, "docs", "prd.md"), brief);
+      const outside = temporary();
+      const alias = join(outside, "prd-alias.md");
+      symlinkSync(brief, alias);
+      const folder = join(outside, "folder");
+      symlinkSync(out.directory, folder);
+      const relativeAlias = join(outside, "relative-alias.md");
+      symlinkSync(
+        join(relative(outside, out.directory), "critical-cto.brief.md"),
+        relativeAlias,
+      );
+      for (const companion of [
+        alias,
+        relativeAlias,
+        join(folder, "critical-cto.brief.md"),
+        join(folder, "..", basename(out.directory), "critical-cto.brief.md"),
+      ]) {
+        const run = cli(root, [
+          "plan",
+          "docs/architecture.md",
+          "--companion",
+          companion,
+        ]);
+        expectSpawnExit(run, 2, `plan with the companion ${companion}`);
+        expect(lstatSync(brief).isSymbolicLink()).toBe(true);
+      }
+      writeFileSync(
+        join(out.directory, "plan.json"),
+        JSON.stringify({
+          ...JSON.parse(readFileSync(join(out.directory, "plan.json"), "utf8")),
+          companion: alias,
+          companionSha256: "0",
+        }),
+      );
+      const run = cli(root, ["fresh", out.directory, "--", "true"]);
+      expectSpawnExit(run, 2, "fresh from a plan naming the alias");
+      expect(run.stderr).toContain("is not a plan this script wrote");
+    },
+  );
 
   test("the brief treats the reviewed text as material and keeps findings on the document", () => {
     const root = repository();

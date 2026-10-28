@@ -6,6 +6,7 @@
 import { randomUUID } from "node:crypto";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -13,6 +14,7 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import {
@@ -25,6 +27,7 @@ import {
   resolve,
   sep,
 } from "node:path";
+import { swallow } from "../../../../shared/errors.ts";
 import { renderBrief } from "./brief.ts";
 import {
   type Detected,
@@ -160,6 +163,40 @@ function entriesOf(input: string): string[] {
   return entries;
 }
 
+function identity(
+  path: string,
+  read: typeof statSync | typeof lstatSync,
+): string | undefined {
+  try {
+    const { dev, ino } = read(path);
+    return `${dev}:${ino}`;
+  } catch (error) {
+    swallow(error, `${path} has no identity: it is no file the review keeps`);
+    return undefined;
+  }
+}
+
+/**
+ * Whether a directory entry is one of the files the review keeps in its
+ * folder, however it is spelled. The folder is matched by identity, not by
+ * path, and the entry's name is matched with case folded and, where the
+ * file system takes another spelling for the same entry (case-insensitive
+ * or normalizing file systems), by the identity of the entry the kept name
+ * resolves to.
+ */
+function isKept(entry: string, directory: string, names: string[]): boolean {
+  const folder = identity(directory, statSync);
+  if (folder === undefined || identity(dirname(entry), statSync) !== folder)
+    return false;
+  const name = basename(entry).normalize("NFC").toLowerCase();
+  if (names.includes(name)) return true;
+  const own = identity(entry, lstatSync);
+  return (
+    own !== undefined &&
+    names.some((kept) => identity(join(directory, kept), lstatSync) === own)
+  );
+}
+
 /**
  * Write a file the review keeps by replacing its entry in the folder, so a
  * link left at that name, symbolic or hard, is replaced rather than written
@@ -183,11 +220,10 @@ function guardFolder(
   document: string,
   all: Persona[],
 ): void {
-  const names = new Set(reserved(directory, all).map((file) => basename(file)));
-  const real = realpathSync(directory);
+  const names = reserved(directory, all).map((file) => basename(file));
   for (const input of inputs) {
     for (const entry of entriesOf(input))
-      if (dirname(entry) === real && names.has(basename(entry)))
+      if (isKept(entry, directory, names))
         throw new PlanError(
           `${input} would be overwritten: it has the name of a file the review keeps in ${directory}; pass another folder to --out`,
         );
@@ -301,19 +337,19 @@ function boundToFolder(plan: Plan, directory: string): boolean {
   )
     return false;
   if (plan.report !== join(plan.directory, REPORT_FILE)) return false;
-  const real = realpathSync(plan.directory);
-  const owned = new Set<string>([join(real, REPORT_FILE)]);
+  const owned = [REPORT_FILE];
   for (const persona of plan.personas) {
     const expected = files(plan.directory, persona.id);
     for (const [key, path] of Object.entries(expected)) {
       if ((persona as unknown as Record<string, unknown>)[key] !== path)
         return false;
-      owned.add(join(real, basename(path)));
+      owned.push(basename(path));
     }
   }
   return ![plan.document, plan.companion].some(
     (input) =>
-      input !== undefined && entriesOf(input).some((entry) => owned.has(entry)),
+      input !== undefined &&
+      entriesOf(input).some((entry) => isKept(entry, plan.directory, owned)),
   );
 }
 
