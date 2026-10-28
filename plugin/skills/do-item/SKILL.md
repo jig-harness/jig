@@ -567,8 +567,10 @@ routing below remain **exact**.
    `Route: execution, high, sonnet (flag has-migration raised medium)`.
    Nothing is forwarded yet: the delegation below runs on the model and
    effort it runs on today, whatever `declared` says. Exit `1` is a
-   `routing` section the loading rules refuse: report its message in the
-   status message and continue.
+   configuration the loading rules refuse: stop the pickup and report its
+   message, which names the field at fault. A refused `routing` section is
+   never read as absent; the repository corrects it before the item is
+   picked up.
 
 3. **exact** — **Persist the findings to the tracker**: post a comment whose
    first line is exactly `## Scout Findings (<hash>)`, where `<hash>` is

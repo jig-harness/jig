@@ -448,7 +448,7 @@ that is more than one word (it would not read back from the route record),
 and, where the repository has a [label taxonomy](#issue_tracker), a declared
 raise list naming a label the taxonomy does not declare. A default list is
 never refused: a default label no item carries raises nothing. A refused
-`routing` section stops do-item's routing and says why.
+`routing` section stops do-item and says why; it is never read as absent.
 
 ### The routing table
 

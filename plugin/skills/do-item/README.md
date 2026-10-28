@@ -34,7 +34,8 @@ each move the effort up one step. The rules are data in the repository's
 `routing` section, with defaults
 ([configuration reference](../../CONFIGURATION.md#routing)). In this version
 the route is reported and the implementer runs on the model it ran on
-before.
+before. A `routing` section the rules refuse stops the pickup, naming the
+field at fault, until the repository corrects it.
 
 ## Requirements and platforms
 

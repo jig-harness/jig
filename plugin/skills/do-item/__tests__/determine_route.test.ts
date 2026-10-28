@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { parseCatalog } from "../../drive-pr/scripts/lib/change-areas-catalog.ts";
 import {
+  CatalogFieldError,
   catalogFacts,
   defaultRaiseSizes,
   deriveRoute,
@@ -268,6 +269,21 @@ describe("defaultRaiseSizes", () => {
       "large",
     ]);
   });
+
+  it("is empty where large itself is batchable", () => {
+    expect(defaultRaiseSizes(["small", "large"], ["small", "Large"])).toEqual(
+      [],
+    );
+  });
+
+  it("never raises a batchable large", () => {
+    const r = route({
+      labels: ["large"],
+      knownSizes: ["small", "large"],
+      batchSizes: ["small", "large"],
+    });
+    expect(r.effort).toBe("medium");
+  });
 });
 
 describe("catalogFacts", () => {
@@ -297,6 +313,27 @@ describe("catalogFacts", () => {
     expect(catalogFacts(catalog, ["docs"], { docs: "docs" }).reviews).toEqual(
       [],
     );
+  });
+
+  it.each([
+    ["an impliedBy that is not a list", { impliedBy: "api" }, "impliedBy"],
+    ["a review that is not a mapping", { review: "security-review" }, "review"],
+    [
+      "a review whose skills is not a list",
+      { review: { skills: "security-review" } },
+      "review",
+    ],
+  ])("refuses %s rather than dropping its obligation", (_, fields, field) => {
+    const malformed = parseCatalog({
+      areas: {
+        api: { paths: ["api/**"] },
+        pay: { paths: ["p/**"], ...fields },
+      },
+    });
+    expect(() => catalogFacts(malformed, ["api"], { api: "api" })).toThrow(
+      CatalogFieldError,
+    );
+    expect(() => catalogFacts(malformed, [], {})).toThrow(`areas.pay.${field}`);
   });
 });
 
@@ -523,6 +560,20 @@ describe("determine_route.ts", () => {
       runtime: "claude-code",
       declared: true,
     });
+  });
+
+  it("raises as if the catalog applied when an area's review is malformed", () => {
+    const r = run(
+      {
+        "jig.yaml": "routing: {}\ndrive:\n  change_areas_catalog: areas.yaml\n",
+        "areas.yaml":
+          "areas:\n  db:\n    paths: ['db/**']\n    review: {skills: security-review}\n",
+      },
+      issue(["bug"]),
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stderr).toContain("areas.db.review");
+    expect(JSON.parse(r.stdout).effort).toBe("max");
   });
 
   it("proposes no model where no runtime is identified", () => {

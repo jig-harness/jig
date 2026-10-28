@@ -21,5 +21,8 @@ release: minor
   whether a mandatory review does, and each runtime's family alias per tier
   and spelling per effort (by default Claude Code's `sonnet` for Execution
   and `opus` for Strategic). Without the section the route is still derived
-  and reported; `routing: {}` opts in with every default. See the
+  and reported; `routing: {}` opts in with every default. A section the
+  loading rules refuse stops the pickup, naming the field at fault, and the
+  audit's configuration check reports it, along with a raise list naming a
+  label the label taxonomy does not define. See the
   [configuration reference](../plugin/CONFIGURATION.md#routing).

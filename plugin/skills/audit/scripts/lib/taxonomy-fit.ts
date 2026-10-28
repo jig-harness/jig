@@ -23,8 +23,10 @@ const TAXONOMY_NAMES = new Set(["label-taxonomy.yaml", "label-taxonomy.yml"]);
 
 /**
  * Label roles naming one label, and roles naming a list of them; the labels
- * `issue_tracker.types` lists for each work type are checked as a list
- * role's are. A role's older field under `review.taxonomy` declares it too.
+ * `issue_tracker.types` lists for each work type, and the routing raise lists
+ * (`routing.raise.flags`, `routing.raise.sizes`) the file declares, are checked
+ * as a list role's are. A role's older field under `review.taxonomy` declares
+ * it too.
  * Size labels (`batch_sizes`) are checked only against a taxonomy that
  * declares groups, where a size group can hold them, and `pattern_prefix`
  * never, because it is a prefix, not a label.
@@ -178,6 +180,16 @@ const roleFields = (role: string) =>
     (f): f is string => f !== undefined,
   );
 
+/**
+ * The routing raise lists the repository's file declares; `flags: catalog`
+ * names the catalog's flags, not a label, so it has nothing to check here.
+ */
+function raiseFields(config: Record<string, unknown>): string[] {
+  return ["routing.raise.flags", "routing.raise.sizes"].filter((field) =>
+    Array.isArray(at(config, field)),
+  );
+}
+
 /** Every `issue_tracker.types.<type>` field the repository's file sets. */
 function typeFields(config: Record<string, unknown>): string[] {
   const types = at(config, "issue_tracker.types");
@@ -204,6 +216,7 @@ function labelFindings(
   const roleChecks = [
     ...[...SINGLE_ROLES, ...LIST_ROLES].flatMap(roleFields),
     ...typeFields(config),
+    ...raiseFields(config),
   ].flatMap((field) =>
     finding(
       field,

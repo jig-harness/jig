@@ -137,14 +137,18 @@ export interface Route {
 
 const fold = (label: string) => label.trim().toLowerCase();
 
-/** The default size raise: the known sizes outside `batch_sizes`, else `[large]`. */
+/**
+ * The default size raise: the known sizes outside `batch_sizes`, else
+ * `[large]`; a size `batch_sizes` names never raises, the fallback included.
+ */
 export function defaultRaiseSizes(
   knownSizes: string[],
   batchSizes: string[],
 ): string[] {
   const batchable = new Set(batchSizes.map(fold));
   const large = knownSizes.filter((s) => !batchable.has(fold(s)));
-  return large.length > 0 ? large : ["large"];
+  if (large.length > 0) return large;
+  return batchable.has("large") ? [] : ["large"];
 }
 
 /** The first of `labels` that `list` names, ignoring case. */
@@ -309,11 +313,43 @@ export function deriveRoute(facts: RouteFacts, rules: RoutingRules): Route {
   };
 }
 
+/** A catalog field the route reads that is malformed: the catalog cannot be used for its facts. */
+export class CatalogFieldError extends Error {}
+
+const isStringList = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((s) => typeof s === "string");
+
+/** An area's `impliedBy`: absent is none, any shape but a list of area ids refuses. */
+function impliedByOf(key: string, value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  if (!isStringList(value))
+    throw new CatalogFieldError(
+      `areas.${key}.impliedBy must be a list of area ids`,
+    );
+  return value;
+}
+
+/** An area's `review.skills`: absent is none, any shape but a list of names refuses. */
+function reviewSkillsOf(key: string, value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  const skills =
+    typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>).skills
+      : undefined;
+  if (!isStringList(skills))
+    throw new CatalogFieldError(
+      `areas.${key}.review must be a mapping whose skills is a list of skill names`,
+    );
+  return skills.filter((s) => s !== "");
+}
+
 /**
  * The catalog's flags, and the mandatory reviews of the areas the labels
  * seed through `codearea_areas` and of every area their `impliedBy` closure
  * reaches: the side M3 reads mandatory reviews from. A review is mandatory
- * when the area's `review.skills` names a skill.
+ * when the area's `review.skills` names a skill. A malformed `impliedBy` or
+ * `review` in any area throws `CatalogFieldError` rather than dropping the
+ * obligation it carries.
  */
 export function catalogFacts(
   catalog: ChangeAreaCatalog,
@@ -329,24 +365,14 @@ export function catalogFacts(
     )
     .filter((k): k is string => k !== undefined && catalog.has(k));
   const areas: Record<string, { impliedBy: string[] }> = Object.create(null);
+  const skillsOf = new Map<string, string[]>();
   for (const [key, area] of catalog) {
-    const implied = area.fields.impliedBy;
-    areas[key] = {
-      impliedBy: Array.isArray(implied)
-        ? implied.filter((r): r is string => typeof r === "string")
-        : [],
-    };
+    areas[key] = { impliedBy: impliedByOf(key, area.fields.impliedBy) };
+    skillsOf.set(key, reviewSkillsOf(key, area.fields.review));
   }
   const reviews: Review[] = [];
   for (const key of [...applyImpliedClosure(seeds, { areas })].sort()) {
-    const review = catalog.get(key)?.fields.review;
-    const skills =
-      review !== null && typeof review === "object" && !Array.isArray(review)
-        ? (review as Record<string, unknown>).skills
-        : undefined;
-    const named = Array.isArray(skills)
-      ? skills.filter((s): s is string => typeof s === "string" && s !== "")
-      : [];
+    const named = skillsOf.get(key) ?? [];
     if (named.length > 0) reviews.push({ area: key, skills: named });
   }
   return { flags, reviews };
@@ -414,7 +440,9 @@ function readSettings(config: Record<string, unknown>, workTypes: WorkTypes) {
 
 /**
  * The catalog's facts for the item: none without a catalog, `null` for a
- * declared one that cannot be read, which the raises take to apply.
+ * declared one that cannot be read or whose `impliedBy` or `review` is
+ * malformed, which the raises take to apply. Agent routing still uses a
+ * catalog its own reader accepts.
  */
 function readCatalogFacts(
   catalogPath: string | null,
@@ -428,10 +456,18 @@ function readCatalogFacts(
     console.error(`Catalog unavailable, raising as if it applied: ${error}`);
     return { catalog: null, facts: null };
   }
-  return {
-    catalog,
-    facts: catalogFacts(catalog, issue.labels, agentRouting.codeareaAreas),
-  };
+  try {
+    return {
+      catalog,
+      facts: catalogFacts(catalog, issue.labels, agentRouting.codeareaAreas),
+    };
+  } catch (e) {
+    if (!(e instanceof CatalogFieldError)) throw e;
+    console.error(
+      `Catalog unavailable, raising as if it applied: ${e.message}`,
+    );
+    return { catalog, facts: null };
+  }
 }
 
 /** The facts and the rules from the configuration, an error naming its source. */
