@@ -1,5 +1,4 @@
 import { afterEach, expect, test, setDefaultTimeout } from "bun:test";
-import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
@@ -15,99 +14,21 @@ import { expectSpawnExit } from "../../../../lib/test-helpers/expect-spawn-exit.
 import { byPlatform } from "../../../../lib/test-helpers/windows-skip.ts";
 
 import { writeFakeProgram } from "../../../../lib/test-helpers/fake-program.ts";
+import {
+  cleanupFixtures,
+  cli,
+  fixture,
+  git,
+  launch,
+  roots,
+  run,
+  sessions,
+  setup,
+  touch,
+} from "./review-fixture.ts";
 
 setDefaultTimeout(30000);
-
-const cli = resolve(import.meta.dir, "../scripts/review.ts");
-const launch = [
-  "--no-env-file",
-  `--config=${resolve(import.meta.dir, "../scripts/bunfig.toml")}`,
-  cli,
-];
-const roots: string[] = [];
-const sessions: string[] = [];
-function run(cwd: string, program: string, args: string[], env = process.env) {
-  const child = spawnSync(program, args, {
-    cwd,
-    env,
-    encoding: "utf8",
-    timeout: 30000,
-  });
-  return { exitCode: child.status, stdout: child.stdout, stderr: child.stderr };
-}
-function git(root: string, ...args: string[]) {
-  const result = run(root, "git", [
-    "-c",
-    "user.name=Test",
-    "-c",
-    "user.email=test@example.invalid",
-    ...args,
-  ]);
-  expectSpawnExit(result, 0, `git ${args[0]}`);
-  return result.stdout.trim();
-}
-function fixture(plan = false, preload = false) {
-  const root = mkdtempSync(join(tmpdir(), "review consumer "));
-  roots.push(root);
-  git(root, "init", "-b", "main");
-  writeFileSync(join(root, "kept.ts"), "base\n");
-  writeFileSync(join(root, "deleted.ts"), "base\n");
-  mkdirSync(join(root, ".config"));
-  writeFileSync(
-    join(root, ".config/jig.yaml"),
-    `repository:\n  base_branch: main\n${plan ? "drive:\n  validation_plan_command: bun plan.ts\n" : ""}`,
-  );
-  writeFileSync(
-    join(root, "check.ts"),
-    "console.log(JSON.stringify({args:process.argv.slice(2), rules:process.env.RULES,overlay:process.env.JIG_OVERLAY,evil:process.env.EVIL,strict:process.env.STRICT,text:await Bun.file(process.argv[2]).text(),preload:globalThis.reviewPreload,main:import.meta.main,trace:process.env.JIG_TRACE,traceFile:process.env.JIG_TRACE_FILE,traceparent:process.env.TRACEPARENT}));\n",
-  );
-  if (preload) {
-    writeFileSync(join(root, "bunfig.toml"), 'preload = ["./preload.ts"]\n');
-    writeFileSync(
-      join(root, "preload.ts"),
-      'globalThis.reviewPreload="BASE";console.error("BASE PRELOAD");\n',
-    );
-  }
-  if (plan)
-    writeFileSync(
-      join(root, "plan.ts"),
-      'console.log(JSON.stringify({files:(await Bun.stdin.text()).trimEnd().split("\\n"),reviewSkills:["design"]}));',
-    );
-  git(root, "add", ".");
-  git(root, "commit", "-m", "base");
-  git(root, "remote", "add", "origin", root);
-  git(
-    root,
-    "symbolic-ref",
-    "refs/remotes/origin/HEAD",
-    "refs/remotes/origin/main",
-  );
-  git(root, "checkout", "-b", "change");
-  return root;
-}
-function setup(root: string, ...files: string[]) {
-  const result = run(root, process.execPath, [
-    ...launch,
-    "setup",
-    ...(files.length ? ["--files", ...files] : []),
-  ]);
-  expectSpawnExit(result, 0);
-  const state = JSON.parse(result.stdout) as {
-    session: string;
-    files: string;
-    baseTree: string;
-  };
-  sessions.push(state.session);
-  return state;
-}
-afterEach(() => {
-  for (const session of sessions.splice(0)) {
-    const root = roots[0];
-    if (root) run(root, process.execPath, [...launch, "cleanup", session]);
-  }
-  for (const root of roots.splice(0))
-    rmSync(root, { recursive: true, force: true });
-});
+afterEach(cleanupFixtures);
 
 test("one NUL list includes committed, staged, unstaged, untracked and deleted paths", () => {
   const root = fixture();
@@ -135,6 +56,7 @@ test("one NUL list includes committed, staged, unstaged, untracked and deleted p
 
 test("explicit files preserve punctuation, deduplicate, and reject newline or escaping paths", () => {
   const root = fixture();
+  touch(root, "café & [draft].ts");
   const state = setup(root, "café & [draft].ts", "kept.ts", "kept.ts");
   expect(readFileSync(state.files, "utf8").split("\0").filter(Boolean)).toEqual(
     ["café & [draft].ts", "kept.ts"],
@@ -205,6 +127,7 @@ test("policy executes the base script against reviewed contents with isolated ru
 test("configured catalog command reads the fixed file list from stdin inside the base snapshot", () => {
   const root = fixture(true);
   writeFileSync(join(root, "plan.ts"), 'throw new Error("reviewed plan ran")');
+  touch(root, "café & [draft].ts");
   const state = setup(root, "café & [draft].ts", "kept.ts");
   const result = run(root, process.execPath, [
     ...launch,
@@ -385,6 +308,7 @@ test("catalog membership matches literal whole records instead of prefixes or gl
   git(root, "commit", "-m", "catalog policy");
   git(root, "checkout", "change");
   const lookalikes = [`prefix/${catalog}`, "catalog1.yaml", `${catalog}.bak`];
+  touch(root, ...lookalikes);
   const absent = setup(root, ...lookalikes);
   const absentResult = run(root, process.execPath, [
     ...launch,
@@ -394,6 +318,7 @@ test("catalog membership matches literal whole records instead of prefixes or gl
   expectSpawnExit(absentResult, 0);
   expect(absentResult.stderr).not.toContain("catalog_changed");
   expect(JSON.parse(absentResult.stdout).files).toEqual([...lookalikes].sort());
+  touch(root, catalog);
   const present = setup(root, ...lookalikes, catalog);
   const presentResult = run(root, process.execPath, [
     ...launch,

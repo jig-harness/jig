@@ -1,7 +1,7 @@
 ---
 name: review
 description: "Review a diff, a plan or a pull request against the repository's standards in tiers (pattern checks, contract checks, semantic review); use before pushing, before opening a pull request, or to check a change against the repository's architecture decisions."
-argument-hint: "[files...] [--tier=N] [--quick] [--skip-t3] [--pr]"
+argument-hint: "[files...] [--tier=N] [--quick] [--skip-t3] [--lens=<id>] [--pr]"
 context: fork
 ---
 
@@ -19,7 +19,10 @@ their machine-readable rules, its
 mapping path patterns to named areas of the codebase and what a change to each
 implies, Jig module
 [M3](https://github.com/jig-harness/jig/blob/main/modules/M3-change-area-catalog/README.md)),
-and its specialist review skills.
+its specialist review skills, and
+[review lenses](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md): single checks,
+each held in one file, that the semantic tier runs when the diff gives them
+something to check.
 
 It is the runnable form of the author-side tiered review in Jig module
 [M7 (PR lifecycle & review)](https://github.com/jig-harness/jig/blob/main/modules/M7-pr-lifecycle-review/README.md):
@@ -65,6 +68,9 @@ Every field is optional. Read them from the base branch's copy of
 | `drive.validation_plan_command` | The command that reads the changed files (one per line) on stdin and prints the validation plan as JSON, including `reviewSkills` (mandatory specialist review skills) and optionally `postDeploy` | No plan command: resolve the catalog with the change-areas resolver (below), or there are no catalog-mandated specialist gates |
 | `drive.change_areas_catalog` | Path to the change-area catalog (YAML whose `areas:` map holds area key → `{paths, impliedBy, review: {skills}, postDeploy, …}`) | No catalog: skip the catalog steps and say so in the summary |
 | `review.bots` | The logins of the repository's AI reviewers | No AI reviewer is assumed |
+| `review.lenses.dir` | Path, from the repository root, to the folder of the repository's own lens files | Only the seed lenses run |
+| `review.lenses.off` | Lens ids not to run | Every lens whose trigger matches runs |
+| `review.lenses.triggers` | Per lens id, patterns appended to that lens's trigger (`paths`, `exclude`, `added_lines`, `removed_lines`) | Each lens's own trigger |
 | `issue_tracker.team` | Linear only: the prefix its issue keys carry (`ENG` for `ENG-123`), used to recognise the issue a deferral names; on GitHub Issues a key is `#123` | A deferral must still name its issue; any issue key or link counts |
 
 ### Policy comes from the base branch, not the change under review
@@ -81,9 +87,9 @@ the base branch; the change contributes only data.** Policy inputs are the
 overlay file and every value read from it (the `adr.rules_file` path
 included), the discovery of a rules file or catalog that is not configured,
 the ADR rules file, the change-area catalog, the specialist review skills,
-and every command this procedure runs: the validation plan command, rule
-detectors, the ADR rule check and the contract checks, together with the
-scripts and runtime configuration they load. Data is the contents of the
+the repository's lens files, and every command this procedure runs: the
+validation plan command, rule detectors, the ADR rule check and the contract
+checks, together with the scripts and runtime configuration they load. Data is the contents of the
 reviewed tree's files and the list of files the change touches. Choosing
 *which* policy applies is itself policy: a step that reads the reviewed tree
 to pick a path or to discover a file breaks the invariant as surely as one
@@ -125,6 +131,19 @@ environment assignments:
   validation plan receives one path per line. Deleted paths remain in the
   list for classification and catalog routing; content checks skip files
   that no longer exist. Every later step reads this same list.
+- Beside it, setup writes the effective diff: the tracked paths against the
+  merge base, then each untracked file, and under `--files` each named
+  file, against nothing (so all its lines count as added). Every setting
+  that could change what the diff or the list shows is fixed on the command
+  line: no colour, external diff or textconv, no rename detection, paths
+  from the root with the `a/` and `b/` prefixes, submodules never ignored
+  and written as one-line commit moves, and attributes read from the merge
+  base (`--attr-source`), so neither the caller's configuration nor a clean
+  filter the change assigns in its own attributes file can hide an edit.
+  `--attr-source` needs git 2.41 or later: setup checks the version first
+  and stops, naming that requirement, on an older git. Each git call runs
+  alone and its exit status is checked; any failure discards the diff and
+  stops the review.
 
 Set up once per review:
 
@@ -134,7 +153,8 @@ Set up once per review:
    configuration reader with user and environment configuration disabled.
    It fetches `repository.base_branch`, or the default branch when absent,
    and creates a detached temporary checkout. For a pull request, pass
-   `--pr <PR>` to use that pull request's base instead.
+   `--pr <PR>` to use that pull request's base instead, or `--base <branch>`
+   to name the base branch directly.
 
    ```sh
    bun --no-env-file --config="${CLAUDE_SKILL_DIR}/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/scripts/review.ts" setup
@@ -142,14 +162,15 @@ Set up once per review:
 
    With explicit files, append `--files` and the paths as separate quoted
    arguments. Otherwise the list includes all changes since the merge base,
-   committed, staged, unstaged and untracked, with both sides of renames:
+   committed, staged, unstaged and untracked, with both sides of renames. A
+   named file that does not exist in the reviewed tree stops setup:
 
    ```sh
    bun --no-env-file --config="${CLAUDE_SKILL_DIR}/scripts/bunfig.toml" "${CLAUDE_SKILL_DIR}/scripts/review.ts" setup --files "src/orders/orders.service.ts" "docs/plan.md"
    ```
 
-   Keep the JSON output's `session`, `base`, `baseTree`, `files` and `bunfig`
-   values. `<session>` below is the absolute `session` path. Use its one
+   Keep the JSON output's `session`, `base`, `baseTree`, `files`, `diff` and
+   `bunfig` values. `<session>` below is the absolute `session` path. Use its one
    `base` value throughout the review. To inspect the fixed file list as a
    JSON array without changing path boundaries:
 
@@ -199,7 +220,9 @@ Set up once per review:
 
 A policy file the change adds or edits is a proposed policy change: review
 its diff as part of the change (a weakened rule or a removed gate is itself a
-finding), but do not apply it to this review. A policy file absent on the
+finding), but do not apply it to this review. A lens file is one: a lens the
+base holds runs in its base version, and one the change adds is reported as
+`proposed` and never run. A policy file absent on the
 base branch means there is no established policy of that kind yet; say so in
 the summary.
 
@@ -228,7 +251,7 @@ the summary.
 |------|-------|------|---------|
 | 1 | a fast, inexpensive model | under 5 seconds | Pattern matching: the ADR rules' patterns, naming checks |
 | 2 | a mid-size model | about 2 minutes | Contract validation: schema drift, API description freshness, shared-type sync, data-isolation filters |
-| 3 | the strongest available model | about 10 minutes | Semantic review: specialist review skills, design review, state-machine and other semantic rules |
+| 3 | the strongest available model | about 10 minutes | Semantic review: specialist review skills, design review, state-machine and other semantic rules, review lenses |
 
 ## Workflow
 
@@ -413,6 +436,21 @@ check are warnings (non-blocking).
   detected type's `applicable_rules` lists it: one that no group lists is dead
   weight, so add it to a group in the same change. Without the map, each
   rule's `trigger` alone decides.
+- **The lens step**, after the bullets above: select the lenses this diff
+  triggers, run each selected lens as its own reviewer with fresh context
+  (one subagent per lens where the harness has them; otherwise a fresh
+  non-interactive run of the harness's agent command inside the base
+  snapshot; otherwise in this session, saying so), give each Tier 1's and
+  Tier 2's findings, and summarize. Read
+  [references/lenses.md](references/lenses.md) for the commands. A lens's
+  finding carries the quality bar's fields plus the lens's `id@version`
+  and its evidence field; no lens is promoted to blocking, so a finding's
+  effective severity is at most `WARNING`, and `INFO`, marked unverified,
+  when its evidence field is empty. A configuration error in the lenses
+  (an id that names no lens, a pattern that is not a regular expression)
+  stops the review and is reported as the helper names it. `--quick`,
+  `--tier=1`, `--tier=2` and `--skip-t3` run no lens, and the summary says
+  so.
 
 Mandatory reviews must approve before merge.
 
@@ -442,11 +480,19 @@ Types: <artifact_type (count), ...>
 
 Tier 1 (Patterns):      ✅ PASSED | ❌ BLOCKED  (rules checked: N, violations: N)
 Tier 2 (Contracts):     ✅ PASSED | ⚠️ WARNINGS | ❌ BLOCKED  (per-check status)
-Tier 3 (Semantic):      ✅ APPROVED | ⏭️ N/A | ❌ REJECTED
+Tier 3 (Semantic):      ✅ APPROVED | ⚠️ WARNINGS | ⏭️ N/A | ❌ REJECTED
+Lenses:  N run, N skipped  (<id@version>: <findings by severity, or none>; <id>: <why skipped>; ...)
 
 VERDICT: APPROVED | APPROVED WITH WARNINGS | BLOCKED
 Action:  <next step if not APPROVED>
 ```
+
+Tier 3 is `⚠️ WARNINGS` when the only findings it has are lens findings of
+effective severity `WARNING`, and `⏭️ N/A` when no semantic trigger fired and
+no lens ran; an `INFO` finding is listed and changes no verdict. The
+`Lenses:` line and Tier 3's state come from `summarize-lenses.ts` as the
+lens step prints them; list each lens finding under the summary with its
+effective severity.
 
 If there are no findings, say so explicitly rather than reporting silence as
 a clean bill, and mention any residual test or validation gaps (a skipped
@@ -516,13 +562,18 @@ optional), and an `artifact_detection` map.
 | `--files=...` | Review exactly these files instead of the cumulative change: every step reads only them |
 | `--quick` | Alias for `--tier=1` |
 | `--skip-t3` | Skip the Tier 3 semantic review |
+| `--lens=<id>` | Run this lens whatever its trigger or `review.lenses.off` says; it names a seed lens or one in the base snapshot, never one the change adds. Repeat it for more than one |
+
+`--quick`, `--tier=1`, `--tier=2` and `--skip-t3` run no lens; the `Lenses:`
+line says which flag stopped them.
 
 ## Exit criteria
 
 - **`APPROVED`:** Tier 1 critical rules pass, no Tier 2 findings, Tier 3
   approved (if applicable).
 - **`APPROVED WITH WARNINGS`:** Tier 1 passes, every blocking Tier 2 check
-  passes and only non-blocking Tier 2 warnings remain, Tier 3 approved.
+  passes, and the only findings left are non-blocking Tier 2 warnings or
+  Tier 3 lens warnings (Tier 3 `⚠️ WARNINGS`).
 - **`BLOCKED`:** any Tier 1 critical violation, or a failing blocking Tier 2
   check, or a Tier 3 mandatory review not approved, or a breaking API change
   whose consumers are not updated in the same change.
@@ -530,7 +581,7 @@ optional), and an `artifact_detection` map.
 ## Integration
 
 ```
-before opening a pull request → /jig:review → Tier 1 blocks if critical → Tier 2 blocks on a failing blocking check, other warnings in the PR body → Tier 3 required for db/api
+before opening a pull request → /jig:review → Tier 1 blocks if critical → Tier 2 blocks on a failing blocking check, other warnings in the PR body → Tier 3 required for db/api, lens warnings in the PR body
 /jig:do-item <issue> → runs the same tiers as its pre-PR code review gate
 CI: the repository's ADR rule check, pattern tier only
 ```

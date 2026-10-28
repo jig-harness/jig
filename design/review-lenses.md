@@ -15,7 +15,14 @@ catch its regression (M14). With this built, `review` runs a small set of
 on every change whose diff gives it something to check, says why it skipped
 the others, and a repository's own reviewer can load the same lenses.
 
-This is the design of [plan.md](plan.md) item 23. Nothing of it is built.
+This is the design of [plan.md](plan.md) item 23. The lens contract and
+the first lens (step 1 of the build order) are built: the lens file format,
+the effective diff in `review`'s setup, `select-lenses.ts`, the Tier 3
+runner and its summary in the
+[`review` skill](../plugin/skills/review/references/lenses.md), the same
+step in `do-item`'s pre-PR gate, `review.lenses` (`dir`, `off`,
+`triggers`), and `jig.swallowed-failure` with its eval fixtures. The other
+seed lenses, measurement and promotion remain open.
 
 ## Why these lenses
 

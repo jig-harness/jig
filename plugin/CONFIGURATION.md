@@ -46,7 +46,8 @@ Contents: [the file](#the-file) ·
   are strict instead: there a misspelt key would silently keep the default it
   was written to change, so it is an error. They are `pull_requests`,
   `issue_tracker.states` (keys are canonical states),
-  `issue_tracker.labels` (keys are label roles), `resolve_conflicts`
+  `issue_tracker.labels` (keys are label roles), `review.lenses` (including
+  each `triggers` entry), `resolve_conflicts`
   (including each `generated` entry), `reflection` and `code_stats`
   (including each `areas` entry, and `kinds`, whose keys are kinds). In `review.taxonomy` every
   key other than `provenance_label` and `epic_label` is read as a list of
@@ -168,7 +169,9 @@ field only to override the derivation:
 
 ## `review`
 
-How review threads are resolved and how the drive recognises its AI reviewer.
+How review threads are resolved, how the drive recognises its AI reviewer,
+and which [review lenses](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+the `review` skill's semantic tier runs.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
@@ -192,6 +195,9 @@ How review threads are resolved and how the drive recognises its AI reviewer.
 | `review.sticky_marker` | text | `<!-- ai-code-review -->` | drive-pr | Text identifying the reviewer's summary comment. Read only when a reviewer is expected. `DRIVE_PR_STICKY_MARKER` overrides it |
 | `review.reviewed_sha_marker` | text | `ai-reviewed-sha` | drive-pr | Marker for the commit the reviewer reviewed, inside that comment. Read only when a reviewer is expected. `DRIVE_PR_SHA_MARKER` overrides it |
 | `review.severity_formats` | list of `{login, shape, severities}` | none: the [built-in formats](EXTENDING.md#severity-formats) only | drive-pr, resolve-review-comments | How a reviewer writes a finding's severity, so the decline ladder can use it: a reviewer with no built-in format, or words or a shape a built-in format does not read. `login` is the reviewer's GitHub login (`[bot]` optional); `shape` is `bold-token` (`🟡 **Major**`), `badge` (a `![P1 Badge]` image), `html-badge` (an `<img alt="P1">` image), `pipe-fields` (`**category** \| **Major** \| **effort**`) or `icon-fields` (`**<picture>…</picture> Major** · **category** · **effort**`); `severities` maps each of the reviewer's words to `blocker`, `high`, `medium` or `low`. Read before the built-in formats, which still apply to a comment no entry reads, and only on comments that login posted. `null` means not set |
+| `review.lenses.dir` | path | none: only the plugin's seed lenses run | review, do-item | Folder of the repository's own lens files, one Markdown file per lens in the plugin's lens format, read from the base branch. A repository lens keeps its `LENS-NNN` number; the `jig.` prefix is the seed lenses'. A lens file the change under review adds is reported as proposed and not run |
+| `review.lenses.off` | list of lens ids | none | review, do-item | Lenses not to run. `--lens=<id>` still runs one. An id that names no lens stops the review |
+| `review.lenses.triggers` | map from lens id to `{paths, exclude, added_lines, removed_lines}`, each a list | none | review, do-item | Patterns appended to a lens's own trigger, never replacing them, so a repository fits a seed lens to its languages and layout: `paths` and `exclude` are globs, `added_lines` and `removed_lines` regular expressions matched against one changed line at a time. An unknown id, an unknown key or a pattern that is not a regular expression stops the review |
 
 The [resolve-review-comments README](skills/resolve-review-comments/README.md)
 and the [drive-pr README](skills/drive-pr/README.md) explain how these are used.
@@ -752,6 +758,13 @@ review:
     - login: example-linter[bot]
       shape: badge                       # bold-token | badge | html-badge | pipe-fields | icon-fields
       severities: { Sev1: blocker, Sev2: high, Sev3: medium, Sev4: low }
+  lenses:
+    dir: .config/review-lenses           # the repository's own lens files
+    off: [LENS-004]                      # lenses not to run
+    triggers:                            # appended to a lens's own trigger
+      jig.swallowed-failure:
+        added_lines: ['\bunwrap_or_default\(']
+        exclude: ["spec/**"]
 repository:
   base_branch: develop                   # default: the repository's default branch
 pull_requests:

@@ -53,6 +53,7 @@ strict:
   - issue_tracker.github
   - issue_tracker.github.priority_labels
   - resolve_conflicts
+  - review.lenses
   - reflection
   - code_stats
   - work_batch
@@ -191,6 +192,22 @@ fields:
         severities: { type: map, values_type: string }
     read_by: [drive-pr, resolve-review-comments]
     since: 0.61.0
+  review.lenses.dir:
+    type: path
+    exists: expected
+    read_by: [review, do-item]
+    since: next
+  review.lenses.off:
+    type: list
+    items: string
+    distinct: true
+    read_by: [review, do-item]
+    since: next
+  review.lenses.triggers:
+    type: map
+    values_type: { type: map, values_type: { type: list, items: string } }
+    read_by: [review, do-item]
+    since: next
 
   repository.base_branch:
     type: string
