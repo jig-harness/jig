@@ -127,7 +127,7 @@ import {
   qualifyingOutcome as sharedQualifyingOutcome,
 } from "./lib/outcome.ts";
 import { ghCall, readTimeoutEnv, resolvePr, run, tsArgv } from "./lib/proc.ts";
-import { mayResolveDeclinedAlert } from "./lib/scanner-sweep-guard.ts";
+import { sweepVerdict } from "./lib/scanner-sweep-guard.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -500,6 +500,11 @@ async function main(): Promise<number> {
       const author = reply.author;
       const assoc = reply.authorAssociation;
       const commentUrl = reply.url;
+      const verdict = sweepVerdict(
+        outcome,
+        thread.comments[0],
+        thread.codeScanning,
+      );
 
       let action: string;
       // `triage-thread.ts --leave-open` embeds LEAVE_OPEN_MARKER on a
@@ -546,12 +551,14 @@ async function main(): Promise<number> {
           const cleanedUp = await releaseStaleHoldIfSeen(pr, thread);
           if (!cleanedUp) hadErrors = 1;
         }
-      } else if (MERIT_OUTCOMES.has(outcome)) {
-        if (!mayResolveDeclinedAlert(thread.codeScanning)) {
+      } else if (verdict !== null) {
+        // A merit outcome, or a code-scanning `moot`, which is never held:
+        // its alert's state, not a push, is its proof (`sweepVerdict`).
+        if (verdict.leftOpen !== undefined) {
           action = "left-open";
           leftOpen += 1;
           console.error(
-            `reconcile-replied-threads.ts: #${pr} thread ${thread.threadId} has an alert that is not confirmed dismissed — left open`,
+            `reconcile-replied-threads.ts: #${pr} thread ${thread.threadId} has an alert that is not confirmed ${verdict.leftOpen} — left open`,
           );
           if (!dryRun && !(await releaseStaleHoldIfSeen(pr, thread)))
             hadErrors = 1;

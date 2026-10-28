@@ -306,7 +306,7 @@ import {
   qualifyingOutcome,
 } from "./lib/outcome.ts";
 import { ghCall, readTimeoutEnv, resolvePr, run, tsArgv } from "./lib/proc.ts";
-import { resolveDeclinedThread } from "./lib/scanner-sweep-guard.ts";
+import { mootHeld, resolveDeclinedThread } from "./lib/scanner-sweep-guard.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -830,22 +830,19 @@ async function main(): Promise<number> {
   // post — this invocation's own live, authoritative decision — is governed
   // by the flag it was actually given.
   //
-  // EXCEPT when the existing reply carries LEAVE_OPEN_MARKER: unlike the
-  // outcome token, the marker is only ever added when the post-time outcome was
-  // genuinely non-hold (`postBody`'s own comment) — its presence is therefore
-  // positive proof this was a plain, left-open moot, not a recovery guess.
-  // Without this exception, EVERY retry on a fresh `**moot** --leave-open`
-  // reply (no `--moot-pending-push`) would force an `--unconfirmed` hold at
-  // round -1 despite the marker — and since a plain moot has no unpushed fix to
-  // ever confirm, nothing would advance that round, permanently stranding the
-  // hold instead of merely recovering it. "Assume held" stays the default for
-  // every OTHER reconciled moot — an old-style plain moot posted before this
-  // marker existed, or one truly meant as fix-dependent — where it remains the
-  // safe, recoverable guess.
-  const treatMootAsHold =
-    existingOutcome === "moot"
-      ? !hasLeaveOpenMarker(existingBody ?? "")
-      : mootPendingPush;
+  // EXCEPT when the existing reply carries LEAVE_OPEN_MARKER, which is only
+  // ever added when the post-time outcome was genuinely non-hold (`postBody`'s
+  // own comment): positive proof of a plain, left-open moot. Without it, every
+  // retry on a `**moot** --leave-open` reply would force an `--unconfirmed`
+  // hold at round -1 that nothing ever advances. "Assume held" stays the
+  // default for every OTHER reconciled moot, where it is the safe guess — and
+  // a code-scanning moot is never held: its alert is its proof (`mootHeld`).
+  const treatMootAsHold = mootHeld(
+    thread.comments[0],
+    mootPendingPush,
+    existingOutcome,
+    existingBody,
+  );
 
   // What this call will end up dispatching, KNOWABLE before any posting
   // happens: reconciliation (existingOutcome found) never posts, and a fresh

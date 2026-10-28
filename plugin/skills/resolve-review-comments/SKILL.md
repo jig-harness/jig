@@ -710,8 +710,10 @@ reply with `reply-to-thread.ts`, dismiss, then dispatch with `triage-thread.ts`,
 which finds the posted reply and resolves. Both `triage-thread.ts` and the
 drive's replied-thread sweep leave a declined finding open until they can
 confirm the alert is dismissed (`triage-thread.ts` exits `4` while dismissal
-remains unconfirmed); a plain `moot` closes once the alert is fixed, closed or
-dismissed. Report an alert that could not be dismissed in the round's summary.
+remains unconfirmed); a `moot` closes once the alert is fixed, closed or
+dismissed, and is never held for a push, `--moot-pending-push` included,
+since the alert's state is its proof. A thread GitHub's code scanning account
+opened whose alert cannot be identified stays open as well. Report an alert that could not be dismissed in the round's summary.
 
 A dismissal reaches the tool: SonarQube Cloud, for one, records a false
 positive as False Positive and the other reasons as Accept. A security

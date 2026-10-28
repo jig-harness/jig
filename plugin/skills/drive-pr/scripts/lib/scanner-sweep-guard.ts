@@ -5,6 +5,7 @@ import {
   isCodeScanningLogin,
   readAlert,
 } from "../../../resolve-review-comments/scripts/lib/code-scanning.ts";
+import { hasLeaveOpenMarker } from "./outcome.ts";
 import { ghCall, run, tsArgv } from "./proc.ts";
 
 const resolveThread = join(
@@ -28,12 +29,17 @@ const SETTLED_STATES: Record<"declined" | "moot", ReadonlySet<string>> = {
  * a settled alert: a declined one (`rejected`/`wont-fix`/`deferred`) once
  * dismissal is verified, a plain `moot` once the alert is fixed, closed or
  * dismissed (resolve-review-comments SKILL.md's code-scanning outcome table).
+ * `alert` is `undefined` for a thread with no alert; one GitHub's code
+ * scanning account opened (`openedByCodeScanning`) always has one, so there
+ * `undefined` means the alert could not be identified and the thread stays
+ * open.
  */
 export function mayResolveDeclinedAlert(
   alert: unknown,
   outcome: "declined" | "moot" = "declined",
+  openedByCodeScanning = false,
 ): boolean {
-  if (alert === undefined) return true;
+  if (alert === undefined) return !openedByCodeScanning;
   if (typeof alert !== "object" || alert === null || Array.isArray(alert))
     return false;
   const record = alert as Record<string, unknown>;
@@ -42,6 +48,71 @@ export function mayResolveDeclinedAlert(
     SETTLED_STATES[outcome].has(record.state) &&
     record.unreadable === undefined
   );
+}
+
+/**
+ * Whether GitHub's code scanning account opened the thread. Such a thread's
+ * `moot` is never held: the alert's state, not a push, is what proves it
+ * (`mayResolveDeclinedAlert`).
+ */
+function openedByCodeScanning(
+  opening: { author: string | null } | undefined,
+): boolean {
+  return isCodeScanningLogin(opening?.author);
+}
+
+/**
+ * Whether `triage-thread.ts` holds a `moot` on the thread opened by `opening`
+ * for a push. A reconciled `moot` (`existingOutcome`) is held unless its
+ * reply carries LEAVE_OPEN_MARKER, a fresh one as `--moot-pending-push`
+ * says. A code-scanning thread's `moot` is never held, fresh or reconciled:
+ * it is judged on its alert (`resolveDeclinedThread`), since a held moot's
+ * later release would resolve without reading the alert.
+ */
+export function mootHeld(
+  opening: { author: string | null } | undefined,
+  mootPendingPush: boolean,
+  existingOutcome: string | null,
+  existingBody: string | null,
+): boolean {
+  if (openedByCodeScanning(opening)) {
+    if (mootPendingPush) {
+      console.error(
+        "triage-thread.ts: --moot-pending-push does not apply to a code-scanning thread; its moot stands only once the alert is fixed, closed or dismissed.",
+      );
+    }
+    return false;
+  }
+  return existingOutcome === "moot"
+    ? !hasLeaveOpenMarker(existingBody ?? "")
+    : mootPendingPush;
+}
+
+/** The outcomes that resolve a thread without a push. */
+const DECLINED_OUTCOMES = new Set(["rejected", "wont-fix", "deferred"]);
+
+/**
+ * What the replied-thread sweep does with a reply of `outcome` that carries
+ * no LEAVE_OPEN_MARKER: `null` to hold it for a push (`accepted`, or a `moot`
+ * on a thread GitHub's code scanning account did not open); else resolve it
+ * now, unless `leftOpen` names the alert state that is not yet confirmed.
+ */
+export function sweepVerdict(
+  outcome: string,
+  opening: { author: string | null } | undefined,
+  alert: unknown,
+): { leftOpen?: string } | null {
+  const scanning = openedByCodeScanning(opening);
+  const kind = DECLINED_OUTCOMES.has(outcome)
+    ? "declined"
+    : outcome === "moot" && scanning
+      ? "moot"
+      : null;
+  if (kind === null) return null;
+  if (mayResolveDeclinedAlert(alert, kind, scanning)) return {};
+  return {
+    leftOpen: kind === "moot" ? "fixed, closed or dismissed" : "dismissed",
+  };
 }
 
 /** The repository and pull request of review thread `threadId`, or `null`. */
@@ -72,7 +143,8 @@ async function threadRepository(
  * The alert behind thread `threadId`, in the shape `mayResolveDeclinedAlert`
  * judges: `undefined` unless GitHub's code scanning account opened it, as
  * `list-unresolved-threads.ts` reports it. A code-scanning thread whose
- * repository cannot be read yields `null`, which keeps it open.
+ * repository cannot be read, or whose comment names no single alert of that
+ * repository, yields `null`, which keeps it open.
  */
 export async function declinedAlertOf(
   threadId: string,
@@ -89,7 +161,7 @@ export async function declinedAlertOf(
     where.owner,
     where.repo,
   );
-  if (number === null) return undefined;
+  if (number === null) return null;
   return readAlert(where.owner, where.repo, number, where.pr);
 }
 
