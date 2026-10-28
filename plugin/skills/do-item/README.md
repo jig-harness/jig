@@ -9,6 +9,18 @@ human checkpoints, delegates the work, validates it, opens a draft pull
 request under the repository's policy and arms
 [`drive-pr`](../drive-pr/README.md). A person merges.
 
+## The item's work type
+
+On pickup the skill says what kind of work the item is, its
+[work type](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+(bug, feature, improvement, task or spike, or the repository's own list in
+`issue_tracker.types`), and how it knows: a type label, the tracker's own
+issue type (GitHub's issue types), or a Conventional Commits title prefix
+such as `fix:` where the repository's titles follow that convention. An item
+none of these identifies is `unknown`. Each type has a row in the
+[depth table](../../CONFIGURATION.md#the-depth-table). In this version the
+type is reported, and the pickup is otherwise the same for every type.
+
 ## Requirements and platforms
 
 Install the [plugin requirements](../../README.md#requirements), and name the
