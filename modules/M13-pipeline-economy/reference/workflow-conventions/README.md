@@ -154,7 +154,8 @@ recognize is a finding to rewrite or excuse, never a pass.
   with no `if:`. Any other job condition, `false` included, may skip the job,
   and a skipped sentinel fails nothing. Neither the job nor that step may set `continue-on-error`,
   since a tolerated failure fails nothing. That step is where the held head
-  fails, so it is visibly not mergeable. Any other spelling, negated,
+  fails, so it is visibly not mergeable; it may cancel its own run before
+  failing, which the lint does not read and does not need to. Any other spelling, negated,
   compared with `false` or combined with another condition, is not taken as
   the sentinel: a sentinel the lint misses is a finding to rewrite, a
   misread one would be a false pass. Its finding points at the configuration

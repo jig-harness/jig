@@ -228,8 +228,8 @@ review driver once the opening head's full run has completed and removed
 when review converges.
 
 > A pipeline may suppress expensive work on an intermediate head only while
-> a required check fails on that head, and only until a release that runs
-> everything again.
+> a required check does not pass on that head, and only until a release that
+> runs everything again.
 
 Every one of these holds, or the saving turns a failure into a pass:
 
@@ -239,7 +239,10 @@ Every one of these holds, or the saving turns a failure into a pass:
   label is present: the [held-head check](../../GLOSSARY.md). The pipeline
   runs on the label's application, so the opening head's green is replaced
   at once rather than at the next push, which may never come. A held head
-  is visibly not mergeable from the first second to the release.
+  is visibly not mergeable from the first second to the release. The step
+  may instead cancel its own run, failing only where the cancellation is
+  refused or does not arrive: a cancelled required check blocks the merge as
+  a failed one does, and the difference shows after the release (below).
 - **Only the hold's own label skips work.** Each heavy job skips by testing
   whether the pull request carries the hold label, never by the kind of
   event that started the run. The pipeline now runs on every label event,
@@ -259,7 +262,15 @@ Every one of these holds, or the saving turns a failure into a pass:
   started after it; one that started in the same second is rerun.
 
 The held-head check's message says why the head failed and how to release
-it: the label's name, and that removing it runs everything again. A driver
+it: the label's name, and that removing it runs everything again.
+
+The drive's last push is usually a held one, since no one knows a push is
+the last until review passes it, so the head the merge waits for carries
+the held run beside the release's run. A provider that keeps every run of
+a commit, as GitHub Actions does, judges the required check by the newest
+run and lets the merge through, yet still lists the held one; a failed held
+run then reads as a red check on a mergeable head. A held run that ended
+cancelled is listed as cancelled instead, which reads as superseded. A driver
 that dies mid-round leaves the label on, and the pull request stays red
 until someone removes it; removing it by hand is the release and reruns
 everything. Never rerun the old run instead: a rerun replays the event that

@@ -219,7 +219,9 @@ jobs:
       # from the moment the label lands, and its message says how to release
       # it. Keep it first, in this job (which runs on `!cancelled()`, so a
       # heavy job the hold skipped cannot skip it too), with no
-      # continue-on-error: a tolerated failure fails nothing.
+      # continue-on-error: a tolerated failure fails nothing. To have the
+      # held run listed as cancelled rather than failed once the release
+      # passes, cancel the run before failing: M13's mappings.md, § Hold.
       # - name: Fail while held
       #   if: contains(github.event.pull_request.labels.*.name, '<hold label>')
       #   run: |
