@@ -11,7 +11,7 @@ import { swallow } from "../../../../shared/errors.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 import { CANDIDATE_DIRS as DECISION_DIRS } from "../../../adr/scripts/locate.ts";
 import { isGeneratedIndex, markdownFiles, readFrontmatter } from "./docs.ts";
-import { isDir } from "./settings.ts";
+import { byteOrder, isDir } from "./settings.ts";
 
 export const PROJECT_TYPES = ["service", "library", "application"] as const;
 export type ProjectType = (typeof PROJECT_TYPES)[number] | "unknown";
@@ -118,7 +118,7 @@ interface Tree {
 function readTree(repo: string, root: string | null): Tree {
   const types = new Map<string, string>();
   if (root === null) return { root, types };
-  for (const path of markdownFiles(join(repo, root)).sort()) {
+  for (const path of markdownFiles(join(repo, root)).sort(byteOrder)) {
     const content = readFileSync(path, "utf8");
     if (basename(path) === ".orphans.md" || isGeneratedIndex(content)) continue;
     const type = readFrontmatter(content).fields.get("type");

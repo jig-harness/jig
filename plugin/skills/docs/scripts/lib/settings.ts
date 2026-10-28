@@ -69,10 +69,14 @@ function staleAfter(section: Record<string, unknown>): number {
   return value;
 }
 
+/** Byte order of two strings, the same on every machine and locale. */
+export const byteOrder = (a: string, b: string) =>
+  Number(a > b) - Number(a < b);
+
 /** A folder's entries in byte order of their names. */
 const entriesOf = (folder: string) =>
-  readdirSync(folder, { withFileTypes: true }).sort(
-    (a, b) => Number(a.name > b.name) - Number(a.name < b.name),
+  readdirSync(folder, { withFileTypes: true }).sort((a, b) =>
+    byteOrder(a.name, b.name),
   );
 
 /** The schema file directly in `folder`, repository-relative, or null. */
@@ -94,7 +98,7 @@ export function findSchema(repo: string, dir: string): string | null {
   for (
     let level = [join(repo, dir)];
     level.length;
-    level = level.flatMap(subfolders).sort()
+    level = level.flatMap(subfolders).sort(byteOrder)
   )
     for (const folder of level) {
       const found = schemaIn(repo, folder);

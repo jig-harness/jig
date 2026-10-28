@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import type { Finding } from "./gates.ts";
 import { isDate, markdownFiles, readFrontmatter } from "./docs.ts";
-import { SettingsError } from "./settings.ts";
+import { byteOrder, SettingsError } from "./settings.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -43,7 +43,7 @@ export function staleDrafts(
   on: string,
 ): Finding[] {
   const found: Finding[] = [];
-  for (const path of markdownFiles(join(repo, root)).sort()) {
+  for (const path of markdownFiles(join(repo, root)).sort(byteOrder)) {
     const frontmatter = readFrontmatter(readFileSync(path, "utf8"));
     if (frontmatter.errors.length || frontmatter.end < 0) continue;
     const status = frontmatter.fields.get("status");
