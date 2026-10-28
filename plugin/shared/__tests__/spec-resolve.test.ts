@@ -6,7 +6,13 @@
  * holds every real adapter to the read-safety rules.
  */
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync, statSync, symlinkSync } from "node:fs";
+import {
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  symlinkSync,
+} from "node:fs";
 import { join } from "node:path";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
@@ -288,21 +294,21 @@ describe("the specs configuration", () => {
 });
 
 describe("the command line", () => {
+  /** Run the resolver from a folder inside `root`, which it must find itself. */
   function run(root: string, ...args: string[]) {
-    const child = Bun.spawnSync(
-      [process.execPath, RESOLVE, "--root", root, ...args],
-      {
-        cwd: root,
-        env: {
-          ...process.env,
-          ...NO_USER_LAYER,
-          JIG_OVERLAY: undefined,
-          JIG_CONSUMER_ROOT: undefined,
-        },
-        stdout: "pipe",
-        stderr: "pipe",
+    const cwd = join(root, "docs");
+    mkdirSync(cwd, { recursive: true });
+    const child = Bun.spawnSync([process.execPath, RESOLVE, ...args], {
+      cwd,
+      env: {
+        ...process.env,
+        ...NO_USER_LAYER,
+        JIG_OVERLAY: undefined,
+        JIG_CONSUMER_ROOT: undefined,
       },
-    );
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     return {
       ...child,
       stdout: child.stdout.toString(),
@@ -351,6 +357,24 @@ describe("the command line", () => {
     const badConfig = run(root, "--input", input);
     expectSpawnExit(badConfig, 1);
     expect(badConfig.stderr).toContain("unknown adapter elsewhere");
+  });
+
+  test("takes no root from its arguments: reads stay in the working directory's repository", () => {
+    const { root, outside } = scratchRepo("spec-cli-");
+    put(outside, "notes.md", "AC-1 outside\n");
+    const input = put(
+      root,
+      "issue.json",
+      JSON.stringify(issue("## Spec\n\n- ../outside/notes.md\n")),
+    );
+    const moved = run(root, "--root", outside, "--input", input);
+    expectSpawnExit(moved, 2);
+    expect(moved.stderr).toContain("--root");
+    const result = run(root, "--input", input);
+    expectSpawnExit(result, 0);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      unresolved: ["../outside/notes.md (leaves the repository)"],
+    });
   });
 });
 

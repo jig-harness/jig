@@ -8,11 +8,14 @@
  * Output: `{sources, requirements, acceptance, tasks, unresolved}`.
  *
  * Usage:
- *     bun resolve.ts [--input <issue.json>] [--root <dir>] [--summary]
+ *     bun resolve.ts [--input <issue.json>] [--summary]
  *
- * Without `--input` the issue is read from standard input; `--root` defaults
- * to the repository the working directory is in. `--summary` prints the
- * counts, the sources and the unresolved references as text instead of JSON.
+ * Without `--input` the issue is read from standard input. The repository is
+ * the one the working directory is in (`JIG_CONSUMER_ROOT` overrides it, as
+ * for every plugin script); no argument names it, so nothing on the command
+ * line can move the boundary the reads are held inside. `--summary` prints
+ * the counts, the sources and the unresolved references as text instead of
+ * JSON.
  *
  * Exit codes: 0 resolved (an empty result included), 2 usage or an input
  * that is not an issue, 1 a `specs` configuration the resolver cannot use.
@@ -284,12 +287,10 @@ export function summary(result: SpecResult): string {
   return lines.join("\n");
 }
 
-const USAGE =
-  "usage: resolve.ts [--input <issue.json>] [--root <dir>] [--summary]";
+const USAGE = "usage: resolve.ts [--input <issue.json>] [--summary]";
 
 interface Flags {
   input?: string;
-  root?: string;
   summary?: boolean;
 }
 
@@ -299,7 +300,6 @@ function flags(argv: string[]): Flags {
       args: argv,
       options: {
         input: { type: "string" },
-        root: { type: "string" },
         summary: { type: "boolean" },
       },
       strict: true,
@@ -329,7 +329,7 @@ async function main(argv: string[]): Promise<number> {
   const issue = await readIssue(values.input);
   let result: SpecResult;
   try {
-    result = await resolveSpec(issue, values.root ?? consumerRoot());
+    result = await resolveSpec(issue, consumerRoot());
   } catch (err) {
     fail(1, err instanceof Error ? err.message : String(err));
   }
