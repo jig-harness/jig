@@ -175,10 +175,11 @@ write specs well are recommended beside the adapter that reads each.
 
 A static-analysis app that reports to the pull request as annotations rather
 than review threads (SonarQube Cloud does) has its findings worked by the
-review loop, but they do not yet hold the drive back from converging. They
-will count as open work beside threads and summary findings, a finding that
-stands can be recorded as such, and the tool's own dismissal is made where
-the tool offers one.
+review loop when a round runs, but a drive with only annotations can converge
+without starting one. They will count as open work beside threads and summary
+findings; a finding that stands can be recorded against the head so a later
+head is checked again; and the tool's own dismissal is made where the tool
+offers one.
 
 ### 31. Routing work to an agent, a model and an effort
 

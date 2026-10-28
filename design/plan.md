@@ -496,7 +496,8 @@ item links its requirements; the delivery loop writes no spec) is a decision rec
 `resolve-review-comments` lists the findings a static-analysis app reports as
 check-run annotations (`review.scanner_apps`), and `drive-pr` tells the agent
 to work them, but the drive's verdict reads threads and summary comments
-only, so a drive can still end `CONVERGED` over an annotation. What it will
+only, so a drive with annotations as its only findings can end `CONVERGED`
+without starting a round. What it will
 build: the annotation listing as a third source of open work beside threads
 and summary findings, read by `drive-status`, `round-plan` and `converge`,
 so the verdict withholds `CONVERGED` while a scanner check is running on the
