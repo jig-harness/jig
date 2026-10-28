@@ -102,6 +102,14 @@ export function under(folder: string, path: string): boolean {
   return folder === "" || path.startsWith(`${folder}/`);
 }
 
+/** A rule claiming every file under the repository folder `folder`. */
+export function folderRule(
+  source: Pick<RunnerRule, "reader" | "file" | "key" | "pattern">,
+  folder: string,
+): RunnerRule {
+  return { ...source, scope: folder, matches: (path) => under(folder, path) };
+}
+
 /** The deepest folder that holds every one of `folders`. */
 export function commonFolder(folders: readonly string[]): string {
   const [first, ...rest] = folders;

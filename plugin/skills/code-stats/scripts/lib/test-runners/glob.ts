@@ -50,26 +50,33 @@ class Parser {
   }
 
   atom(): string {
-    const p = this.p;
-    const c = p[this.i] as string;
-    if (p[this.i + 1] === "(" && (c in EXTENDED || c === "!")) {
-      if (c === "!") this.refuse("uses !(…), which is not read");
-      this.i += 2;
-      return (EXTENDED[c] as (b: string) => string)(
-        this.alternatives("|", ")").join("|"),
-      );
-    }
+    const c = this.p[this.i] as string;
+    if (this.p[this.i + 1] === "(" && (c in EXTENDED || c === "!"))
+      return this.extended(c);
     this.i++;
+    const special = this.special(c);
+    return special ?? literal(c);
+  }
+
+  /** `?(…)`, `*(…)`, `+(…)` or `@(…)`; `!(…)` is refused. */
+  extended(c: string): string {
+    if (c === "!") this.refuse("uses !(…), which is not read");
+    this.i += 2;
+    return (EXTENDED[c] as (b: string) => string)(
+      this.alternatives("|", ")").join("|"),
+    );
+  }
+
+  /** What a glob character after `i` stands for, or null for a plain one. */
+  special(c: string): string | null {
     if (c === "*") return this.star();
     if (c === "?") return "[^/]";
     if (c === "[") return this.charClass();
     if (c === "{") return this.braces();
-    if (c === "\\") {
-      const next = p[this.i++];
-      if (next === undefined) this.refuse("ends with a lone backslash");
-      return literal(next);
-    }
-    return literal(c);
+    if (c !== "\\") return null;
+    const next = this.p[this.i++];
+    if (next === undefined) this.refuse("ends with a lone backslash");
+    return literal(next);
   }
 
   /** `*`, or `**` standing as a whole segment: any number of folders. */

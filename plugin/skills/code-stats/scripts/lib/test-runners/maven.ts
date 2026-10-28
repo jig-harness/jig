@@ -12,6 +12,7 @@
  */
 import {
   folderOf,
+  folderRule,
   inside,
   nameOf,
   type Reading,
@@ -19,7 +20,6 @@ import {
   type RunnerRule,
   readEach,
   UnreadableError,
-  under,
 } from "./model.ts";
 
 const READER = "Maven";
@@ -39,14 +39,8 @@ export function mavenRules(file: string, text: string): RunnerRule[] {
   const dir = folderOf(file);
   const declared =
     /<testSourceDirectory>\s*([^<]*?)\s*<\/testSourceDirectory>/.exec(pom);
-  const rule = (key: string, pattern: string, folder: string): RunnerRule => ({
-    reader: READER,
-    file,
-    key,
-    pattern,
-    scope: folder,
-    matches: (path) => under(folder, path),
-  });
+  const rule = (key: string, pattern: string, folder: string) =>
+    folderRule({ reader: READER, file, key, pattern }, folder);
   if (!declared)
     return [
       rule(`the ${DEFAULT} default`, DEFAULT, inside(dir, DEFAULT, DEFAULT)),

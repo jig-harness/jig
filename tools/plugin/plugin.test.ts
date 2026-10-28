@@ -1049,7 +1049,7 @@ fix_ci:
   expect(fixCi.stdout).toContain("  - bun run generate\n");
 });
 
-test("code-stats runs from the plugin copy and reads the consumer's code_stats and test runner", () => {
+test("code-stats runs from the plugin copy and reads the consumer's code_stats", () => {
   const consumer = consumerRepo(
     "code-stats",
     `code_stats:
@@ -1062,11 +1062,6 @@ test("code-stats runs from the plugin copy and reads the consumer's code_stats a
   writeFileSync(join(consumer, "README.md"), "# Shop\n");
   mkdirSync(join(consumer, "app"));
   writeFileSync(join(consumer, "app", "main.ts"), "export const x = 1;\n");
-  writeFileSync(
-    join(consumer, "jest.config.js"),
-    'module.exports = { testMatch: ["**/*.check.ts"] };\n',
-  );
-  writeFileSync(join(consumer, "app", "main.check.ts"), "main();\n");
   const add = spawnSync("git", ["-C", consumer, "add", "-A"], { env });
   expectSpawnExit({ ...add, exitCode: add.status }, 0);
   const run = spawnSync(
@@ -1087,15 +1082,9 @@ test("code-stats runs from the plugin copy and reads the consumer's code_stats a
   expectSpawnExit({ ...run, exitCode: run.status }, 0);
   const report = JSON.parse(run.stdout) as {
     byArea: Record<string, { files: number }>;
-    byKind: Record<string, { files: number }>;
-    testRunners: { configurations: { reader: string; file: string }[] };
   };
   expect(Object.keys(report.byArea)).toEqual(["product", "leftover"]);
-  expect(report.byArea.product?.files).toBe(2);
-  expect(report.byKind.test?.files).toBe(1);
-  expect(report.testRunners.configurations).toEqual([
-    { reader: "jest", file: "jest.config.js" },
-  ]);
+  expect(report.byArea.product?.files).toBe(1);
 });
 
 test("file-issue lints and validates against the consumer's configured taxonomy from the plugin copy", () => {

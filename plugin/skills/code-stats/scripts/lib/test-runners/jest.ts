@@ -160,21 +160,24 @@ export function jestRules(file: string, obj: LiteralObject): RunnerRule[] {
   const roots = stringsAt(obj, ["roots"]);
   if (testMatch === null && testRegex === null && roots === null) return [];
   const s = settings(file, obj);
-  const rules: RunnerRule[] = [];
-  if (testMatch !== null)
-    rules.push(...testMatchRules(s, "testMatch", testMatch));
-  for (const source of testRegex ?? []) {
-    if (source.startsWith("^"))
-      throw new UnreadableError(
-        `testRegex ${JSON.stringify(source)} is anchored to an absolute path`,
-      );
-    const re = regex(source, "testRegex");
-    rules.push(rule(s, "testRegex", source, (path) => re.test(absolute(path))));
-  }
-  if (testMatch === null && testRegex === null && roots !== null)
-    for (const root of roots)
-      rules.push(...testMatchRules(s, "roots", DEFAULT_TEST_MATCH, root));
-  return rules;
+  if (testMatch === null && testRegex === null)
+    return (roots ?? []).flatMap((root) =>
+      testMatchRules(s, "roots", DEFAULT_TEST_MATCH, root),
+    );
+  return [
+    ...testMatchRules(s, "testMatch", testMatch ?? []),
+    ...(testRegex ?? []).map((source) => testRegexRule(s, source)),
+  ];
+}
+
+/** A `testRegex` rule, tested against the path from the repository root. */
+function testRegexRule(s: Settings, source: string): RunnerRule {
+  if (source.startsWith("^"))
+    throw new UnreadableError(
+      `testRegex ${JSON.stringify(source)} is anchored to an absolute path`,
+    );
+  const re = regex(source, "testRegex");
+  return rule(s, "testRegex", source, (path) => re.test(absolute(path)));
 }
 
 function parseJson(text: string): unknown {

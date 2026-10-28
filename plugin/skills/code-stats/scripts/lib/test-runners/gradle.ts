@@ -17,6 +17,7 @@ import { gradleLayers } from "../modules.ts";
 import { globUnder } from "./glob.ts";
 import {
   folderOf,
+  folderRule,
   inside,
   nameOf,
   type Reading,
@@ -24,7 +25,6 @@ import {
   type RunnerRule,
   readEach,
   UnreadableError,
-  under,
 } from "./model.ts";
 
 const READER = "Gradle";
@@ -38,6 +38,7 @@ const TEST_IN_BLOCK =
 const ITERATING =
   /\bsourceSets\s*\.\s*(?:all|configureEach|matching|forEach|each|filter|withType|whenObjectAdded)\b/;
 const SRC_DIR = /\b(srcDirs|srcDir|setSrcDirs)\b/g;
+const SRC_DIR_AT = /^(srcDirs|srcDir|setSrcDirs)\b/;
 const LANGUAGE = /\b(java|kotlin|groovy|scala|resources)\b/g;
 const WRAPPERS =
   /\b(?:project\s*\.\s*)?(?:files|file|listOf|setOf|arrayOf|mutableListOf|mutableSetOf)\b/g;
@@ -64,18 +65,19 @@ function statementEnd(code: string, i: number): number {
   for (let j = i; j < code.length; j++) {
     const c = code[j] as string;
     if ("([{".includes(c)) depth++;
-    else if (")]}".includes(c)) {
-      if (depth === 0) return j;
-      depth--;
-    } else if (depth === 0 && (c === ";" || c === "\n")) {
-      const continues =
-        c === "\n" &&
-        (/[=,.]\s*$/.test(code.slice(i, j)) ||
-          /^\s*\./.test(code.slice(j + 1)));
-      if (!continues) return j;
-    }
+    else if (")]}".includes(c) && depth-- === 0) return j;
+    else if (depth === 0 && ends(code, i, j)) return j;
   }
   return code.length;
+}
+
+/** Whether the `;` or line break at `j` ends the statement that began at `i`. */
+function ends(code: string, i: number, j: number): boolean {
+  if (code[j] === ";") return true;
+  if (code[j] !== "\n") return false;
+  return !(
+    /[=,.]\s*$/.test(code.slice(i, j)) || /^\s*\./.test(code.slice(j + 1))
+  );
 }
 
 /** The spans of the script that configure the `test` source set. */
@@ -140,43 +142,51 @@ function literalArguments(
 function sourceDirs(text: string): SourceDirs {
   const { code, strings } = gradleLayers(text);
   const found: SourceDirs = { dirs: [], replaced: new Set() };
-  const seen = new Set<number>();
   if (ITERATING.test(strings) && /\bsrcDirs?\b/.test(code))
     throw new UnreadableError(
       "configures its source sets in a loop, so their folders exist only when the build runs",
     );
+  const calls = new Map<number, number>();
   for (const [from, to] of testScopes(code, strings))
-    for (const m of code.slice(from, to).matchAll(SRC_DIR)) {
-      const at = from + (m.index as number);
-      if (seen.has(at)) continue;
-      seen.add(at);
-      const keyword = m[1] as string;
-      const language = languageBefore(code, from, at);
-      if (language === null || language === "resources") continue;
-      let start = at + keyword.length;
-      const op = /^[ \t]*(\+=|=)?/.exec(code.slice(start)) as RegExpExecArray;
-      start += op[0].length;
-      if (op[1] === "=" || keyword === "setSrcDirs")
-        found.replaced.add(language);
-      const what = `sourceSets.test.${language}.${keyword}`;
-      for (const literal of literalArguments(code, strings, start, what))
-        found.dirs.push({ language, keyword, literal });
-    }
+    for (const m of code.slice(from, to).matchAll(SRC_DIR))
+      calls.set(from + (m.index as number), from);
+  for (const [at, from] of calls)
+    readSrcDir({ code, strings }, from, at, found);
   return found;
+}
+
+/** One `srcDir`, `srcDirs` or `setSrcDirs` call at `at`, in a scope from `from`. */
+function readSrcDir(
+  layers: { code: string; strings: string },
+  from: number,
+  at: number,
+  found: SourceDirs,
+): void {
+  const { code, strings } = layers;
+  const keyword = (
+    SRC_DIR_AT.exec(code.slice(at)) as RegExpExecArray
+  )[1] as string;
+  const language = languageBefore(code, from, at);
+  if (language === null || language === "resources") return;
+  const start = at + keyword.length;
+  const op = /^[ \t]*(\+=|=)?/.exec(code.slice(start)) as RegExpExecArray;
+  if (op[1] === "=" || keyword === "setSrcDirs") found.replaced.add(language);
+  const what = `sourceSets.test.${language}.${keyword}`;
+  for (const literal of literalArguments(
+    code,
+    strings,
+    start + op[0].length,
+    what,
+  ))
+    found.dirs.push({ language, keyword, literal });
 }
 
 /** The rules one Gradle build script declares. */
 export function gradleRules(file: string, text: string): RunnerRule[] {
   const dir = folderOf(file);
   const { dirs, replaced } = sourceDirs(text);
-  const rule = (key: string, pattern: string, folder: string): RunnerRule => ({
-    reader: READER,
-    file,
-    key,
-    pattern,
-    scope: folder,
-    matches: (path) => under(folder, path),
-  });
+  const rule = (key: string, pattern: string, folder: string) =>
+    folderRule({ reader: READER, file, key, pattern }, folder);
   const rules = LANGUAGES.filter((l) => !replaced.has(l)).map((l) =>
     rule(
       `the src/test/${l} convention`,

@@ -185,12 +185,21 @@ class Reader {
     if (c === "[") return this.array();
     if (c === '"' || c === "'") return this.string();
     if (c === "`") return this.template();
+    const n = this.number();
+    return n === null ? this.constant() : Number(n.replaceAll("_", ""));
+  }
+
+  /** A number's text at the cursor, consumed, or null. */
+  number(): string | null {
     NUMBER.lastIndex = this.i;
     const n = NUMBER.exec(this.s);
-    if (n) {
-      this.i += n[0].length;
-      return Number(n[0].replaceAll("_", ""));
-    }
+    if (!n) return null;
+    this.i += n[0].length;
+    return n[0];
+  }
+
+  /** `true`, `false`, `null` or `undefined` at the cursor; undefined for anything else. */
+  constant(): Literal | undefined {
     const at = this.i;
     const w = this.word();
     if (w === "true" || w === "false") return w === "true";
@@ -246,13 +255,7 @@ class Reader {
   key(): string | null {
     const c = this.peek();
     if (c === '"' || c === "'") return this.string();
-    NUMBER.lastIndex = this.i;
-    const n = NUMBER.exec(this.s);
-    if (n) {
-      this.i += n[0].length;
-      return n[0];
-    }
-    return this.word();
+    return this.number() ?? this.word();
   }
 
   object(): LiteralObject {
@@ -343,21 +346,25 @@ function expression(code: string, at: number, depth: number): LiteralObject {
     );
   if (name === null)
     throw new UnreadableError("exports something other than an object");
-  if (r.peek() === "(") {
-    if (!DEFINE.has(name))
-      throw new UnreadableError(
-        `exports the result of ${name}(…), computed when it runs`,
-      );
-    r.i++;
-    if (r.peek() === "{") return r.object();
-    const inner = r.word();
-    if (inner === null || inner === "async" || inner === "function")
-      throw new UnreadableError(
-        `passes a function to ${name}, so its configuration exists only when it runs`,
-      );
-    return variable(code, inner, depth);
-  }
-  return variable(code, name, depth);
+  return r.peek() === "("
+    ? defined(r, name, depth)
+    : variable(code, name, depth);
+}
+
+/** The object passed to `defineConfig(…)` or `defineProject(…)` at the reader's `(`. */
+function defined(r: Reader, name: string, depth: number): LiteralObject {
+  if (!DEFINE.has(name))
+    throw new UnreadableError(
+      `exports the result of ${name}(…), computed when it runs`,
+    );
+  r.i++;
+  if (r.peek() === "{") return r.object();
+  const inner = r.word();
+  if (inner === null || inner === "async" || inner === "function")
+    throw new UnreadableError(
+      `passes a function to ${name}, so its configuration exists only when it runs`,
+    );
+  return variable(r.s, inner, depth);
 }
 
 /** The object a variable is declared as, unless the file changes it later. */

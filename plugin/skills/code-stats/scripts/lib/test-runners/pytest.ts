@@ -22,6 +22,7 @@ import {
   type Reading,
   type RepoFiles,
   type RunnerRule,
+  readEach,
   UnreadableError,
   under,
 } from "./model.ts";
@@ -43,30 +44,44 @@ type Section = Map<string, string[]>;
 
 /** One section of an INI file, its continuation lines joined; null when absent. */
 export function iniSection(text: string, name: string): Section | null {
-  let inside = false;
-  let found = false;
-  let key: string | null = null;
-  const raw = new Map<string, string>();
-  for (const line of text.split(/\r?\n/)) {
-    const header = /^\s*\[([^\]]+)\]\s*$/.exec(line);
-    if (header) {
-      inside = (header[1] as string).trim() === name;
-      found ||= inside;
-      key = null;
-      continue;
-    }
-    if (!inside || /^\s*[#;]/.test(line) || line.trim() === "") continue;
-    if (/^\s/.test(line) && key !== null) {
-      raw.set(key, `${raw.get(key)} ${line.trim()}`);
-      continue;
-    }
-    const pair = /^\s*([^=:\s]+)\s*[=:]\s*(.*)$/.exec(line);
-    if (!pair) continue;
-    key = pair[1] as string;
-    raw.set(key, (pair[2] as string).trim());
+  const state: IniState = {
+    inside: false,
+    found: false,
+    key: null,
+    raw: new Map(),
+  };
+  for (const line of text.split(/\r?\n/)) iniLine(state, line, name);
+  if (!state.found) return null;
+  return new Map([...state.raw].map(([k, v]) => [k, splitArgs(v)]));
+}
+
+interface IniState {
+  /** Whether the lines read are in the wanted section. */
+  inside: boolean;
+  found: boolean;
+  /** The key a continuation line adds to. */
+  key: string | null;
+  raw: Map<string, string>;
+}
+
+/** Read one line of an INI file into `state`. */
+function iniLine(state: IniState, line: string, name: string): void {
+  const header = /^\s*\[([^\]]+)\]\s*$/.exec(line);
+  if (header) {
+    state.inside = (header[1] as string).trim() === name;
+    state.found ||= state.inside;
+    state.key = null;
+    return;
   }
-  if (!found) return null;
-  return new Map([...raw].map(([k, v]) => [k, splitArgs(v)]));
+  if (!state.inside || /^\s*[#;]/.test(line) || line.trim() === "") return;
+  if (/^\s/.test(line) && state.key !== null) {
+    state.raw.set(state.key, `${state.raw.get(state.key)} ${line.trim()}`);
+    return;
+  }
+  const pair = /^\s*([^=:\s]+)\s*[=:]\s*(.*)$/.exec(line);
+  if (!pair) return;
+  state.key = pair[1] as string;
+  state.raw.set(state.key, (pair[2] as string).trim());
 }
 
 /** A value split on whitespace, quotes kept together and removed. */
@@ -76,19 +91,26 @@ function splitArgs(value: string): string[] {
   );
 }
 
-function tomlSection(text: string): Section | null {
-  if (!/\[\s*tool\.pytest\.ini_options\s*\]/.test(text)) return null;
-  let doc: unknown;
+function parseToml(text: string): unknown {
   try {
-    doc = Bun.TOML.parse(text);
+    return Bun.TOML.parse(text);
   } catch (error) {
     throw new UnreadableError(
       `is not valid TOML (${error instanceof Error ? error.message : String(error)})`,
     );
   }
-  const tool = isRecord(doc) ? doc.tool : undefined;
-  const pytest = isRecord(tool) ? tool.pytest : undefined;
-  const options = isRecord(pytest) ? pytest.ini_options : undefined;
+}
+
+/** The value at `keys` inside nested tables, or undefined. */
+function tableAt(doc: unknown, keys: readonly string[]): unknown {
+  let node = doc;
+  for (const key of keys) node = isRecord(node) ? node[key] : undefined;
+  return node;
+}
+
+function tomlSection(text: string): Section | null {
+  if (!/\[\s*tool\.pytest\.ini_options\s*\]/.test(text)) return null;
+  const options = tableAt(parseToml(text), ["tool", "pytest", "ini_options"]);
   if (!isRecord(options)) return null;
   const section: Section = new Map();
   for (const [key, value] of Object.entries(options)) {
@@ -178,28 +200,34 @@ function inOrder(candidates: readonly string[]): string[] {
   ).filter((c): c is string => c !== undefined);
 }
 
+/** Whether a candidate holds pytest's section, by its text alone. */
+const HOLDS: Record<string, RegExp> = {
+  "pytest.ini": /^/,
+  ".pytest.ini": /^/,
+  "pyproject.toml": /\[\s*tool\.pytest\.ini_options\s*\]/,
+  "tox.ini": /^\s*\[pytest\]/m,
+  "setup.cfg": /^\s*\[tool:pytest\]/m,
+};
+
+/** The configuration pytest uses in one folder: the first candidate that holds its section. */
+function chosen(files: RepoFiles, candidates: readonly string[]): string[] {
+  const path = inOrder(candidates).find((c) => {
+    const text = files.read(c);
+    return text !== null && (HOLDS[nameOf(c)] as RegExp).test(text);
+  });
+  return path === undefined ? [] : [path];
+}
+
 /** Each folder's pytest configuration: the first source that holds the section. */
 export function readPytest(files: RepoFiles): Reading {
   const byFolder = new Map<string, string[]>();
-  for (const path of files.paths) {
-    if (!SOURCES.some((s) => s.name === nameOf(path))) continue;
+  for (const path of files.paths.filter((p) => nameOf(p) in HOLDS)) {
     const folder = folderOf(path);
     byFolder.set(folder, [...(byFolder.get(folder) ?? []), path]);
   }
-  const reading: Reading = { rules: [], unreadable: [] };
-  for (const candidates of byFolder.values())
-    for (const path of inOrder(candidates)) {
-      const text = files.read(path);
-      if (text === null) continue;
-      try {
-        const section = sectionOf(path, text);
-        if (section === null) continue;
-        reading.rules.push(...pytestRules(path, section));
-      } catch (error) {
-        if (!(error instanceof UnreadableError)) throw error;
-        reading.unreadable.push({ reader: READER, path, why: error.message });
-      }
-      break;
-    }
-  return reading;
+  const configs = [...byFolder.values()].flatMap((c) => chosen(files, c));
+  return readEach(READER, files, configs, (path, text) => {
+    const section = sectionOf(path, text);
+    return section === null ? null : pytestRules(path, section);
+  });
 }
