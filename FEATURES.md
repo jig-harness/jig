@@ -172,7 +172,6 @@ changes a merge decision, and the testing strategy sets tiers with budgets.
   [M2](modules/M2-generated-artifact-freshness/),
   [M13](modules/M13-pipeline-economy/),
   [M14](modules/M14-testing-strategy/)
-- **On the roadmap:** the rest of M14 (roadmap item 15)
 
 ## Change notes, and a changelog nobody fights over
 

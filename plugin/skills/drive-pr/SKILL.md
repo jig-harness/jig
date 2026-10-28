@@ -238,9 +238,9 @@ With a hold label, the PR-open head runs full CI. Before the first
 intermediate fix push, `finish-round.ts` waits until every required check has
 completed, adds the label, and records the resulting GitHub timeline-event id.
 The repository's synchronize workflows are expected to honour the label: they
-skip their expensive jobs while a required check fails fast, so the held head
-is visibly non-green rather than falsely mergeable; the posting reviewer
-continues independently.
+skip their expensive jobs while a required check fails or is cancelled, so the
+held head is visibly non-green rather than falsely mergeable; the posting
+reviewer continues independently.
 
 At reviewer convergence, `drive.ts` removes the label only when that same
 labelled event is still the newest transition of the label. A human

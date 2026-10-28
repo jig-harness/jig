@@ -72,13 +72,6 @@ Issues. The [tracker interface](GLOSSARY.md) first gains attaching a file,
 the one operation the skills need that the interface does not have yet, and
 the workspace launcher learns to open GitHub issues.
 
-### 15. M14 Testing strategy: the rest
-
-[M14](modules/M14-testing-strategy/README.md) gains exception lists that prune
-themselves: the tests-with-changes gate failing on an exemption that matches no
-file, and a `fixed-delay:` token gate that fails on a token with no delay
-beside it.
-
 ### 17. Corrected designs for the existing modules
 
 Practices working repositories validated, added to the modules that exist:
@@ -104,13 +97,6 @@ monorepo's packages, keeps a changelog and a version for each with the
 one per repository. The skill also checks the whole changelog against the
 rules of its format, and gets workflow templates for CI providers other than
 GitHub.
-
-### 22. Merge conflicts, measured
-
-Measured [conflict hotspots](GLOSSARY.md) become findings in the
-[reflection store](plugin/skills/reflect/README.md), grouped by their cause,
-so the existing review and escalation loop turns recurring conflicts into
-changes to the repository.
 
 ### 23. Seed review lenses
 
