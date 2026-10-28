@@ -18,7 +18,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { errnoCode } from "./errors.ts";
 import { decodeJson, isRecord } from "./guards.ts";
-import { JunitReportError, parseJunitReport } from "./junit-report.ts";
+import { parseJunitReport } from "./junit-report.ts";
 
 export const DEFAULT_OUTPUT_LINES = 60;
 export const DEFAULT_TIMEOUT_MINUTES = 30;
@@ -270,8 +270,10 @@ function readBounded(fd: number): string | undefined {
  * The report at `file`, read only when it is a regular file of bounded size
  * written after `startedMs`: its modification time at or after the start, to
  * the whole second a coarse file system keeps. The checks and the read are
- * of one open file, so the path cannot be swapped between them. `shown` is
- * the path the record names.
+ * of one open file, so the path cannot be swapped between them. A report
+ * the parser cannot get through, by its own error or any other (a nesting
+ * deep enough to exhaust the stack), is recorded unreadable, so the run is
+ * still recorded. `shown` is the path the record names.
  */
 export function readReport(
   file: string,
@@ -294,8 +296,8 @@ export function readReport(
   try {
     return summarize(read.text, shown);
   } catch (error) {
-    if (!(error instanceof JunitReportError)) throw error;
-    return { path: shown, status: "unreadable", problem: error.message };
+    const problem = error instanceof Error ? error.message : String(error);
+    return { path: shown, status: "unreadable", problem };
   }
 }
 

@@ -648,6 +648,18 @@ describe("a report that cannot be read safely", () => {
     30_000,
   );
 
+  test("one the parser cannot get through is recorded unreadable, the run still recorded", () => {
+    const r = record(
+      ["--junit", "reports/junit.xml"],
+      js(
+        "const fs = require('node:fs'); fs.mkdirSync('reports'); const n = 200000; fs.writeFileSync('reports/junit.xml', '<testsuite>'.repeat(n) + '</testsuite>'.repeat(n));",
+      ),
+      1,
+    );
+    expect(r.junit?.status).toBe("unreadable");
+    expect(existsSync(join(r.dir, `${r.id}.json`))).toBe(true);
+  });
+
   test("one larger than the bound is refused, never parsed", () => {
     const r = record(
       ["--junit", "reports/junit.xml"],
