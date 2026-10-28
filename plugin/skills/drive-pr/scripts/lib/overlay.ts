@@ -12,7 +12,7 @@ import { definedFields } from "../../../../shared/defined-fields.ts";
  */
 import { isAbsolute, join } from "node:path";
 import { layersFingerprint } from "../../../../shared/config-layers.ts";
-import { isDistinctNameList } from "../../../../shared/guards.ts";
+import { DecodeError, isDistinctNameList } from "../../../../shared/guards.ts";
 import {
   configSource,
   consumerRoot,
@@ -221,6 +221,22 @@ export function maxRoundsSetting(): number | undefined {
   if (!Number.isSafeInteger(value) || (value as number) < 1)
     throw new Error(
       `drive.max_rounds must be a whole number of at least 1: ${configSource("drive.max_rounds")}`,
+    );
+  return value as number;
+}
+
+/** How many passes killed at their deadline a drive restarts from before it stops. */
+export const DEFAULT_PASS_DEADLINE_RETRIES = 2;
+
+/** `drive.pass_deadline_retries`: whole number ≥ 0; `undefined` when not configured. */
+export function passDeadlineRetriesSetting(): number | undefined {
+  const value = section("drive").pass_deadline_retries;
+  if (value === undefined || value === null) return undefined;
+  if (!Number.isSafeInteger(value) || (value as number) < 0)
+    throw new DecodeError(
+      configSource("drive.pass_deadline_retries"),
+      "$.drive.pass_deadline_retries",
+      "must be a whole number of at least 0",
     );
   return value as number;
 }

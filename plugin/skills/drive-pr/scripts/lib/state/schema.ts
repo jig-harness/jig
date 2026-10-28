@@ -39,6 +39,8 @@
 import { isGitSha } from "../cli.ts";
 import { isActorId } from "./actor.ts";
 import { type DrivenBranch, isOptionalDrivenBranch } from "./driven-branch.ts";
+import { isAccountHash } from "../identity.ts";
+import { type TakeoverRecord, isOptionalTakeovers } from "./takeover.ts";
 
 /**
  * The persisted shape of a recorded quota park — what
@@ -66,6 +68,8 @@ export interface QuotaParkRecord {
   resetAt: string | null;
   /** When THIS park was recorded — not when the wall was first observed. */
   at: string;
+  /** The billing account the wall belongs to, hashed (`accountHash`); absent when unknown. */
+  account?: string;
 }
 
 export interface ParkedItem {
@@ -73,6 +77,8 @@ export interface ParkedItem {
   kind: "thread" | "finding";
   reason: string;
   round: number;
+  /** When it was parked; an answer must be later. Absent on an older park. */
+  at?: string;
 }
 
 /**
@@ -314,31 +320,10 @@ export interface DriveState {
    * the same thing if the field cannot have existed at all, which is exactly
    * what refusing an older file (rather than defaulting) preserves.
    *
-   * TWO KNOWN, ACCEPTED RESIDUALS, neither closed
-   * by additional machinery — both are consequences of this field being
-   * best-effort-written and PR-GLOBAL, the same trade-offs the rest of this
-   * feature already makes:
-   *
-   *   - A LOST STAMP LEAVES A STALE PARK. If the best-effort progress call
-   *     that would clear this (`drive-state.ts progress`, or any of
-   *     `bump-round`/`stamp-held`/`set-verified`/`release-held`) itself
-   *     fails to run, `withProgress` never executes, and this field is left
-   *     set even though the drive genuinely resumed. The cost is a
-   *     `--doctor` verdict staying `QUOTA_PARKED` one sweep longer than
-   *     reality — never a false `HEALTHY`, and never the drive itself,
-   *     which is the same bound every other best-effort call in this
-   *     feature already accepts.
-   *   - A DIFFERENT DRIVER'S PROGRESS CLEARS THIS ONE'S PARK. Being
-   *     PR-global (not per-driver), a second worktree that takes over this
-   *     PR and genuinely progresses clears whatever park the FIRST driver
-   *     recorded, same as `verifiedSha`'s own PR-global pointer can be
-   *     moved by a concurrent driver (see that field's comment). Building
-   *     a per-driver park record to close this would need the same
-   *     actor-scoping `HeldItem.actor`/`verifiedSha` already carry for the
-   *     held batch — deliberately not done here, since two drivers
-   *     legitimately racing this one PR is already the rarer, more
-   *     supervised case the lease mechanism (not this field) is meant to
-   *     prevent in the first place.
+   * Best-effort and PR-global, so two residuals are accepted: a lost progress
+   * stamp leaves a stale park (`--doctor` reads `QUOTA_PARKED` one sweep
+   * longer, never a false `HEALTHY`), and any driver's progress clears it,
+   * which is what a re-arm from another account relies on.
    */
   quotaPark: QuotaParkRecord | null;
   /**
@@ -406,6 +391,8 @@ export interface DriveState {
   roundPaths: RoundPaths[];
   /** The tree the last attach prepared, `null` before one (`driven-branch.ts`). */
   drivenBranch?: DrivenBranch | null;
+  /** Every `drive.ts --take-over` of this drive, oldest first (`takeover.ts`). */
+  takeovers?: TakeoverRecord[];
   [extra: string]: unknown;
 }
 
@@ -516,7 +503,32 @@ function isParkedItem(p: unknown): boolean {
     (e.kind === "thread" || e.kind === "finding") &&
     typeof e.reason === "string" &&
     e.reason.length > 0 &&
-    isCount(e.round)
+    isCount(e.round) &&
+    (e.at === undefined ||
+      (typeof e.at === "string" && Number.isFinite(Date.parse(e.at))))
+  );
+}
+
+/**
+ * A recorded quota park (`QuotaParkRecord`). `vendor`/`window` are
+ * newline-free for the same reason every other free-text field here is: the
+ * record round-trips through `console.error` lines in `drive.ts`, and a
+ * hand-edited value containing one could make a single park read, on a
+ * terminal, as two.
+ */
+function isQuotaParkRecord(v: unknown): boolean {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  const park = v as Record<string, unknown>;
+  const text = (f: unknown) =>
+    typeof f === "string" && f.length > 0 && !/[\n\r]/.test(f);
+  const instant = (f: unknown) =>
+    typeof f === "string" && Number.isFinite(Date.parse(f));
+  return (
+    text(park.vendor) &&
+    text(park.window) &&
+    (park.resetAt === null || instant(park.resetAt)) &&
+    instant(park.at) &&
+    (park.account === undefined || isAccountHash(park.account))
   );
 }
 
@@ -529,6 +541,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
   if (typeof s.verifiedSha !== "string") return false;
   if (typeof s.phase !== "string") return false;
   if (!isOptionalDrivenBranch(s.drivenBranch)) return false;
+  if (!isOptionalTakeovers(s.takeovers)) return false;
   if (!Array.isArray(s.parked)) return false;
   if (!(s.parked as unknown[]).every(isParkedItem)) return false;
   // Present AND well-typed, not "well-typed if present" — see `DriveState`.
@@ -666,38 +679,7 @@ export function isUsableState(v: unknown, pr: number): v is DriveState {
     (s.lastProgressAt !== "" && !Number.isFinite(Date.parse(s.lastProgressAt)))
   )
     return false;
-  if (s.quotaPark !== null) {
-    if (typeof s.quotaPark !== "object" || Array.isArray(s.quotaPark)) {
-      return false;
-    }
-    const park = s.quotaPark as Record<string, unknown>;
-    // `vendor`/`window` newline-free for the same reason every other
-    // free-text field here is (`actor`, `lastEscalatedInvariant`): this
-    // record round-trips through `console.error` lines in `drive.ts` and a
-    // hand-edited value containing one could make a single park read, on a
-    // terminal, as two.
-    if (
-      typeof park.vendor !== "string" ||
-      park.vendor.length === 0 ||
-      /[\n\r]/.test(park.vendor)
-    )
-      return false;
-    if (
-      typeof park.window !== "string" ||
-      park.window.length === 0 ||
-      /[\n\r]/.test(park.window)
-    )
-      return false;
-    if (
-      park.resetAt !== null &&
-      (typeof park.resetAt !== "string" ||
-        !Number.isFinite(Date.parse(park.resetAt)))
-    )
-      return false;
-    if (typeof park.at !== "string" || !Number.isFinite(Date.parse(park.at))) {
-      return false;
-    }
-  }
+  if (s.quotaPark !== null && !isQuotaParkRecord(s.quotaPark)) return false;
   if (!Array.isArray(s.roundPaths)) return false;
   // Collection-level invariants, restating `foldRoundPaths`'s own writer
   // contract rather than a weaker one the validator could drift from — the

@@ -159,10 +159,10 @@ consumer polling `--json` for one of these four will never see it there.
 |---|---|---|
 | `CONVERGED` | 3 (`drive.ts`: 0) | Where the repository names an AI reviewer (`review.reviewer_app` or `review.reviewer_check_pattern`): the posting reviewer completed on **this exact head** and its recorded reviewed-SHA equals that head. Where it names none, no reviewer evidence is required. Either way: zero unresolved threads, zero unaddressed summary-only findings. `drive.ts` additionally removes only the CI-hold transition it owns (when the repository has a hold label), waits for exact-head full CI, records the global verified SHA, and exits 0 only over a **clean worktree**; uncommitted leftovers exit 12 instead. |
 | `PR_NOT_OPEN` | 5 | Merged or closed — detected **before** any push, so nothing lands on an orphaned branch |
-| `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed and does **not** re-arm |
+| `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed and never wakes itself up. A re-arm picks it up once **every** parked item has an answer from an owner, member or collaborator, later than the park (§ Picking up a stopped drive) |
 | `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
-| `PASS_DEADLINE` | 15 | The pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 90m) and was sent a kill signal — witnessed-terminated before the locks release where the POSIX group-based witness *can* see the survivor, held instead in that case; a descendant that escaped the process group is an unhandled false-witness gap, not a covered case (see [terminal-states.md](references/terminal-states.md)). `drive.ts` only — the one stop here that can fire while a round is still *in flight*, which is where the hangs are |
-| `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` / `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count 'origin/<head-branch>..HEAD'` before re-arming, same as `PASS_DEADLINE`. A *short* window never reaches this state — the drive sleeps through that one and resumes |
+| `PASS_DEADLINE` | 15 | The pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 90m) and was sent a kill signal — witnessed-terminated before the locks release where the POSIX group-based witness *can* see the survivor, held instead in that case; a descendant that escaped the process group is an unhandled false-witness gap, not a covered case (see [terminal-states.md](references/terminal-states.md)). `drive.ts` only — the one stop here that can fire while a round is still *in flight*, which is where the hangs are. The driver **restarts** from a witnessed kill, leaving what the pass left in the tree for the next pass, up to `drive.pass_deadline_retries` (default 2) per drive (§ Running it); this exit is the deadline recurring past that budget, and says so |
+| `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` / `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count 'origin/<head-branch>..HEAD'` before re-arming, same as `PASS_DEADLINE`. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` ended `drive.ts` at a round boundary, after any running pass completed. Resume the stop directive before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
 
@@ -335,6 +335,18 @@ driver already holding the PR leaves the tree untouched, and the lock refuses
 next (exit `11`); run alone, it also leaves a tree another driver holds
 untouched and exits `11`, and an interactive session's lease on the tree
 refuses it. `--dry-run` and `DRIVE_PR_ATTACH=off` skip the attach.
+
+**A stopped drive restarts itself** from the stops that need no decision. A
+pass killed at its deadline is witnessed gone; the driver then runs the two
+checks that stop used to leave to a person (uncommitted edits, and the
+commits the head branch's remote ref lacks), prints both, leaves both in the
+tree and starts the next round, whose pass is told what it inherits
+(`$DRIVE_PR_PASS_NOTICE`, § Driver pass). It does that up to
+`drive.pass_deadline_retries` (default 2) times per drive; past that budget
+it exits `15` and says the budget is spent. A stall (exit `14`) gets one more
+round with the stand-down diagnostics in the pass's notice before it stops,
+and the stop prints what the passes recorded deciding at the end of the
+handoff narrative. A short usage wall is slept through as before.
 
 Normally you do not run this by hand: a `/jig:do-item` run **arms the
 drive itself** the moment the draft PR opens (its § Arm the drive step).
@@ -540,9 +552,10 @@ you look:
   driven worktree is warned.
 
 An exit-`11` refusal names the holder's pid/host and, when its claim carries
-the diagnostics line, the PR it is driving, its worktree, its log and its
-billing account — so "another driver already holds the lock" is an
-answerable message rather than a mystery. Claims from the oldest claim format
+the diagnostics line, the PR it is driving, its worktree, its log, its
+billing account and its `drives.ts` `--doctor` verdict, with the `--take-over`
+command when that verdict admits a takeover — so "another driver already
+holds the lock" is an answerable message rather than a mystery. Claims from the oldest claim format
 carry no diagnostics line at all and degrade entirely to pid/host. A claim
 from the next format (diagnostics present, no `account` key) degrades only
 the account field, to a named "predates account stamping" placeholder — PR/worktree/
@@ -561,6 +574,61 @@ below lives in the scripts, not the session.
 
 How long one session is allowed to run before handing off is set per drive with
 `--handoff-at` — see § Handing off before you degrade.
+
+### Picking up a stopped drive
+
+**exact** — Re-arm or take over only on the states below; the scripts admit or refuse, never your judgement.
+
+A drive that stopped holds no lock, so picking it up is a **re-arm**: the arm
+command again, from any session of the clone. Two stops admit it on a
+mechanical state:
+
+- **`QUOTA_PARKED` (exit `16`).** The park records the account the wall
+  belongs to, hashed (`accountHash`, `scripts/lib/identity.ts`); the exit
+  names it and prints the command. While the wall is in effect (its reset
+  unknown or still ahead), `drive.ts` resolves the account its own pass will
+  bill from the pass command and refuses with exit `16` when either account
+  is unknown or both are the same: a successor on the same subscription is
+  behind the same wall. A pass that bills **another** account is admitted,
+  and so is any re-arm once the reset has passed. `--window-reopened` admits
+  any account: it is a person's statement that the window is open again,
+  which an agent never makes.
+- **`HITL_PARKED` (exit `8`).** Once **every** parked item has an answer — a
+  comment by an author GitHub reports as the repository's owner, member or
+  collaborator, later than the park, on the item's thread or in a
+  pull-request comment that names the item's key — the re-arm unparks them
+  all and hands the answers to the first round as human verdicts
+  (`$DRIVE_PR_PASS_NOTICE`). A comment the drive itself writes (one opening
+  with an outcome token, or carrying a hidden marker) is never an answer.
+  With any item unanswered nothing is unparked, and the drive stops `8` at
+  its first gate again, naming what it still waits on.
+
+Replacing a driver that still holds its locks is a **takeover**:
+
+**exact** — Use this command/template; substitute only the documented inputs and explicitly supported options.
+
+```bash
+bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" <PR> --take-over --bots-only -- claude -p "/jig:drive-pr --bots-only <PR>"
+```
+
+It reads the holder's `drives.ts` `--doctor` verdict and is admitted only
+against a holder that is `WEDGED`, or whose process is gone with nothing left
+in its tree (no uncommitted changes, unpushed commits or unconcluded git
+operation; on this machine the takeover refuses, naming them, until they are
+pushed or discarded). Against any other holder it refuses as exit `11` does,
+naming the verdict. A wedged holder is stopped through `drives.ts` `--stop`, with
+the identity check that command performs. Once it holds the locks, the
+takeover records itself in the drive state (`takeovers`: from which tree and
+account to which, the verdict, the round), runs
+`reconcile-replied-threads.ts` before the first triage, and resumes at the
+drive's durable round. Held items carry over by their state: a hold whose
+fix was pushed is resolved by the round as usual; a hold whose promised fix
+never landed is released and reopened with a superseding reply that says so,
+and the first pass is told to redo the fix and hold it again or to triage it
+afresh. A takeover reaches only this clone's drivers.
+
+Do not stop a driver that is making progress; take over one that is `WEDGED`
+or dead with `--take-over`.
 
 ## Entry mode: arm the driver, or work one round (decide first)
 
@@ -695,9 +763,12 @@ could forge or forget.
    poll loop, so lock acquisition has time to resolve:
    - exit `11` (single-instance lock), or a `SESSION_LEASE_HELD` diagnostic on
      the driver's output, naming a **per-PR** or **worktree**
-     lock → a drive is already live: report it with the holder's details, do
-     not retry, do not kill it. Read the diagnostics' `pr` field first — a
-     worktree-lock refusal can name a different PR entirely.
+     lock → a drive is already live: report it with the holder's details and
+     the verdict the refusal names, and do not retry. Do not stop a driver
+     that is making progress; when the refusal says the holder is `WEDGED`
+     and prints the `--take-over` command, run that command instead
+     (§ Picking up a stopped drive). Read the diagnostics' `pr` field first —
+     a worktree-lock refusal can name a different PR entirely.
    - a `SESSION_LEASE_HELD` diagnostic naming a **session lease held by your
      own session** (an earlier `--interactive` round or a hand-run
      `finish-round.ts` left it behind) → the one lease refusal that is safe to
@@ -807,6 +878,18 @@ waiting indefinitely.
 
 Backgrounding is for an `--interactive` session only, whose process survives to
 receive the notification.
+
+**A notice from the driver.** When `$DRIVE_PR_PASS_NOTICE` is set, read it
+before § 0: the driver recovered from a stop without a person and tells this
+pass what it inherits. Its first line names the case, and a notice can carry
+two (a takeover and the answers a re-arm read):
+
+| Opens with | What happened | What this round does |
+|---|---|---|
+| `RESTARTED AFTER A PASS DEADLINE` | The previous pass was killed at its deadline; its uncommitted edits and unpushed commits are listed and are still in the tree | Start from that state: finish, validate and push what is sound, discard what is not on purpose, then triage as usual |
+| `STALLED` | The last passes changed nothing the driver can observe; this is the one extra round before the drive stops with exit `14` | Act on the open work; if you decide not to, end the handoff narrative with one paragraph saying what you decided and why — the stop prints it |
+| `TAKEN OVER` | This drive replaced a wedged or dead driver; holds whose promised fix never landed are listed, released and reopened with a superseding reply | For each, redo the fix and hold it again with a fresh outcome reply, or triage it afresh |
+| `RE-ARMED WITH HUMAN ANSWERS` | Every parked item was answered by an owner, member or collaborator and is unparked; each answer is quoted with its url | Treat each answer as a person's verdict on its item: act on it, reply with the outcome it leads to, and resolve or hold as usual |
 
 ## One round
 
@@ -1766,8 +1849,13 @@ bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" park [PR] --key PRRT_kwDO... --
 Parked items stop counting as live work, which is what lets the drive reach
 `HITL_PARKED` instead of waking forever against the same undeferrable threads.
 `--reason` is required: a parked item with no framed decision is a dropped
-finding, not a checkpoint. Unpark with
-`bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" unpark [PR] --key K` once the human answers.
+finding, not a checkpoint. The park records when it was made: a person
+answers on the item's thread, or in a pull-request comment that names its
+key, and once every parked item is answered the next re-arm unparks them all
+and hands the answers to its first round (§ Picking up a stopped drive).
+Unpark by hand with
+`bun "${CLAUDE_SKILL_DIR}/scripts/drive-state.ts" unpark [PR] --key K` only
+for an item a person answered some other way.
 
 **The change note — only where the repository has opted in.** When
 `bun "${CLAUDE_SKILL_DIR}/../changelog/scripts/check.ts" --base origin/<base>`
@@ -2608,9 +2696,13 @@ The asymmetry is deliberate and every uncertainty resolves toward stopping:
 sleeping when we should have stopped strands a drive — and its locks, and
 its worktree — for days, where stopping when we could have slept costs a
 re-arm. An unclassified window is therefore treated exactly like a weekly one.
-**Do not dispatch a successor session in this state**, and that is the point of
-distinguishing it at all: a successor on the same subscription is behind the
-same wall, so handing off converts one parked drive into two. (The
+**Do not dispatch a successor session on the same account in this state**,
+and that is the point of distinguishing it at all: a successor on the same
+subscription is behind the same wall, so handing off converts one parked
+drive into two, and `drive.ts` refuses that re-arm itself (exit `16`). A
+successor whose pass bills another account may pick the drive up now; the
+exit names the wall's account and prints the command (§ Picking up a stopped
+drive). (The
 `.context/pr-drive-<PR>.md` file is unaffected — it is refreshed at the top of
 every round as a resumption aid, and having it current is exactly what makes
 the eventual re-arm cheap. The thing being suppressed is the decision to hand
@@ -2814,10 +2906,12 @@ cache, and it is off under `NODE_ENV=test` unless a directory is given.
 driver's claim heartbeat keeps refreshing from a timer, so a pass that never
 returns would look *live* and healthy indefinitely. `DRIVE_PR_PASS_TIMEOUT`
 (90 minutes) is the backstop against that wedge, not a budget: widen it if a
-real round ever reaches it; do not tighten it to make the loop feel faster. It
-exits `15` rather than `1`, because "ran out of wall clock" and "the pass is
-broken" call for different next actions — and because a killed pass strands
-whatever it was doing, so the stop names the recovery checks
+real round ever reaches it; do not tighten it to make the loop feel faster. A
+witnessed kill is restarted from, up to `drive.pass_deadline_retries` per
+drive (§ Running it). Past that budget it exits `15` rather than `1`, because
+"ran out of wall clock" and "the pass is broken" call for different next
+actions — and because a killed pass strands whatever it was doing, so the
+stop names the recovery checks
 (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short`, and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count 'origin/<head-branch>..HEAD'`).
 
 A fired deadline is an ordinary non-zero exit, and every caller treats it as an
@@ -2945,7 +3039,9 @@ see `mailbox.ts`'s own doc comment for why acking is not folded into
   each step of that ordering is one an agent gets wrong by hand.
   The guardrails below describe the mechanics it drives; they bind you directly
   only when you are settling one of its refusals by hand.
-- **Never re-arm on `HITL_PARKED`.** Hand back with the decisions framed.
+- **Never re-arm on `HITL_PARKED` before every parked item is answered.**
+  Hand back with the decisions framed; the re-arm admits itself only once a
+  person has answered every one.
 - **Never resolve an `accepted` thread before its push lands, and never call
   `resolve-thread.ts` directly on a held item.** `resolve-held-thread.ts`
   verifies `--pushed-sha` against the PR's live head *and* this worktree's

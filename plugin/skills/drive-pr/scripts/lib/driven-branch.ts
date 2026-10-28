@@ -73,5 +73,10 @@ export function setDrivenRemoteRef(remote: string, branch: string): void {
  * `$` or backticks, and the operator pastes this line into a shell.
  */
 export function unpushedCountCommand(): string {
-  return `git rev-list --count ${shellQuote(`${drivenRemoteRef ?? "@{u}"}..HEAD`)}`;
+  return `git rev-list --count ${shellQuote(unpushedRange())}`;
+}
+
+/** The revision range of the commits a stopped pass left unpushed. */
+export function unpushedRange(): string {
+  return `${drivenRemoteRef ?? "@{u}"}..HEAD`;
 }

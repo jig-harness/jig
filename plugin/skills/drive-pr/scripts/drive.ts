@@ -53,6 +53,14 @@
  * every gate. `drive-status.ts --head` remains, for a single-shot probe where
  * one instant is all that is claimed.
  *   --dry-run        report each round's decision; never invoke the pass.
+ *   --take-over      replace the driver holding this PR's lock when
+ *                    `drives.ts --doctor` calls it WEDGED (it is stopped
+ *                    through `drives.ts --stop`), or when its process is gone
+ *                    and its tree holds nothing unpushed; refused with 11
+ *                    against any other holder (`lib/driver/takeover.ts`).
+ *   --window-reopened  a person's statement that a quota-parked drive's
+ *                    window is open again: admits the re-arm on any account
+ *                    (`lib/driver/rearm.ts`).
  *
  * The pass command is given as ARGV after `--`, and is executed directly —
  * with Windows batch shims adapted through cmd.exe by the process runner.
@@ -78,12 +86,17 @@
  *   5  the PR stopped being open — the loop stops WITHOUT running another pass
  *   6  hit --max-rounds without converging
  *   7  the posting reviewer's check-run did not pass
- *   8  HITL-parked — everything left awaits a human decision; does NOT re-arm
+ *   8  HITL-parked — everything left awaits a human decision; never wakes
+ *      itself up. A re-arm unparks the items once EVERY one is answered by an
+ *      owner, member or collaborator, and hands the answers to round one
  *   9  the PR conflicts with its base AND has nothing left to work — the base
  *      has to be merged in first. A conflict with live findings is a normal
  *      ROUND_READY instead; only the no-work case is terminal
  *  11  another LIVE driver already holds this PR's single-instance lock —
- *      refused without touching any state
+ *      refused without touching any state, naming the holder's doctor
+ *      verdict and, when it is WEDGED, the --take-over command; also a
+ *      --take-over refused for the holder's verdict or a dead holder's
+ *      leftovers
  *  12  the review converged, but this worktree still has uncommitted state.
  *      The convergence itself is real (it is a claim about the remote); the
  *      leftovers are edits no round shipped — scratch probes, regenerated
@@ -111,8 +124,14 @@
  *      or handing off) from "this pass is stuck and needs a human look"
  *      (recoverable by reading the pass output) — sharing one code
  *      collapsed that distinction, which the terminal-state table exists
- *      to preserve.
- *  15  the pass hit $DRIVE_PR_PASS_TIMEOUT and was killed. Distinct from
+ *      to preserve. The first time the streak reaches the threshold the
+ *      driver runs ONE more round with the diagnostics in the pass's notice
+ *      ($DRIVE_PR_PASS_NOTICE), and the stop prints what the passes recorded
+ *      deciding in the handoff narrative.
+ *  15  the pass hit $DRIVE_PR_PASS_TIMEOUT and was killed, more often than
+ *      `drive.pass_deadline_retries` (default 2) lets the drive restart from:
+ *      a witnessed kill is otherwise followed by the next round, the killed
+ *      pass's leftovers reported and left in the tree for it. Distinct from
  *      `1` because it is the one pass failure that says nothing about the
  *      pass's own logic: it ran out of wall clock, and what a caller does
  *      next (widen the deadline, or go look for the hang) has no overlap
@@ -127,7 +146,9 @@
  *      PR, the tree or the pass, and the recovery is a clock rather than
  *      a fix. A SHORT window does not reach this code at all — the driver
  *      sleeps through that one and resumes, since the whole cost of
- *      stopping there is a re-arm nobody is awake to perform.
+ *      stopping there is a re-arm nobody is awake to perform. The park
+ *      records the wall's account (hashed); a re-arm while the wall is in
+ *      effect is admitted only from a pass billing another, known account.
  *  18  MAILBOX_STOPPED: a stop directive was observed at a round boundary.
  *      The in-flight pass, if any, already finished; normal exit releases locks.
  *  19  MAILBOX_PAUSE_TIMEOUT: a pause stayed active beyond the bounded wait.

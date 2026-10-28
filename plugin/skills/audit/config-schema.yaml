@@ -264,6 +264,12 @@ fields:
     default: 10
     since: 0.33.0
     read_by: [drive-pr]
+  drive.pass_deadline_retries:
+    type: integer
+    min: 0
+    default: 2
+    since: next
+    read_by: [drive-pr]
   drive.escape_baseline_doc:
     type: path
     exists: expected

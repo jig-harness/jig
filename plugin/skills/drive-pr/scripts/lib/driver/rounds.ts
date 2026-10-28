@@ -34,6 +34,10 @@ interface DriverRoundOptions {
   forward: string[];
   probeFlags: string[];
   markReadyPolicy: MarkReady;
+  /** `drive.pass_deadline_retries`, resolved before the locks were taken. */
+  deadlineRetryBudget: number;
+  /** What the first pass is told: a takeover, or the answers a re-arm read. */
+  firstPassNotice: string;
 }
 
 export async function runDriverRounds({
@@ -47,6 +51,8 @@ export async function runDriverRounds({
   forward,
   probeFlags,
   markReadyPolicy,
+  deadlineRetryBudget,
+  firstPassNotice,
 }: DriverRoundOptions): Promise<number> {
   const passes = 0;
   // Whether THIS run fired the draft→Ready transition. Not the durable claim —
@@ -174,6 +180,10 @@ export async function runDriverRounds({
     witnessWaitHead,
     witnessWaitLimit,
     maxRoundsN,
+    deadlineRetries: 0,
+    deadlineRetryBudget,
+    stallExtraRound: false,
+    passNotice: firstPassNotice,
   };
   for (;;) {
     {

@@ -17,11 +17,24 @@ import {
 
 import { recordQuotaPark } from "./repair.ts";
 
-import { driveState } from "./paths.ts";
+import { driveState, driveTs } from "./paths.ts";
+
+import { armCommand } from "./rearm.ts";
+
+import {
+  accountHash,
+  formatAccountIdentity,
+  resolveAccountIdentity,
+} from "./../identity.ts";
 
 import { loopEconomy } from "./reports.ts";
 
 import { planFor, describe as describeQuota } from "./../quota/index.ts";
+
+/** The hashed account the pass that met the wall bills (`accountHash`). */
+function wallAccount(context: DriveRoundContext): string | null {
+  return accountHash(resolveAccountIdentity(context.agent));
+}
 
 async function waitThroughQuotaWindow(
   plan: Extract<QuotaPlan, { action: "sleep" }>,
@@ -102,7 +115,7 @@ async function handleSleepableQuota(
     // genuine wall — the exact distinction this record exists to draw
     // (see `recordQuotaPark`'s own callers for why every other
     // quota-wall exit already does this).
-    await recordQuotaPark(driveState, context.pr, block);
+    await recordQuotaPark(driveState, context.pr, block, wallAccount(context));
     process.stderr.write(await loopEconomy(context.pr));
     // A directive sent WHILE the killed pass ran must still be
     // honored, same as the non-quota failure branch below:
@@ -144,7 +157,7 @@ async function handleSleepableQuota(
   // otherwise misread this drive (see `recordQuotaPark`). Cleared by
   // the next genuine progress event — the `progress` stamp the
   // resumed round takes before it spawns its pass.
-  await recordQuotaPark(driveState, context.pr, block);
+  await recordQuotaPark(driveState, context.pr, block, wallAccount(context));
   // Re-check BEFORE creating the controller: a takeover detected by
   // `touchLock` WHILE the await above was in flight called
   // `quotaSleepAbort?.abort()` against a controller that did not
@@ -186,6 +199,15 @@ export async function handleQuotaBlock(
     "  Check for work the killed pass left behind first — `git status --short` and",
   );
   console.error(`  \`${unpushedCountCommand()}\`.`);
+  const identity = resolveAccountIdentity(context.agent);
+  const account = accountHash(identity);
+  console.error(
+    `  The wall belongs to ${formatAccountIdentity(identity)}${account === null ? "" : ` (${account})`}.`,
+  );
+  console.error(
+    "  Do not re-arm on that account before the reset; a pass billing ANOTHER account may pick it up now:",
+  );
+  console.error(`    ${armCommand(driveTs, context.pr)}`);
   // Record the park BEFORE this process exits: once this
   // returns, nothing refreshes this drive's claim any further, and
   // `release()` (`process.on('exit')`) `rmdir`s the lock slot on the
@@ -201,7 +223,7 @@ export async function handleQuotaBlock(
   // stamp above: the wall itself is the fact worth acting on, and
   // refusing to park cleanly over a bookkeeping failure would strand
   // the drive here instead.
-  await recordQuotaPark(driveState, context.pr, block);
+  await recordQuotaPark(driveState, context.pr, block, account);
   // Same as the sleep-branch max-rounds report above, and the
   // non-quota failure branch below: a directive sent WHILE the killed
   // pass ran must still be honored.

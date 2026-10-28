@@ -2,7 +2,11 @@
 import { fail, isDigits, shellQuote } from "./../cli.ts";
 import { parseDriverOptions, applyPassTimeout } from "./options.ts";
 
-import { resolveMaxRounds, resolveHandoffAt } from "./settings.ts";
+import {
+  resolveMaxRounds,
+  resolveHandoffAt,
+  resolvePassDeadlineRetries,
+} from "./settings.ts";
 
 import { type MarkReady, prPolicy } from "./../pr-policy.ts";
 
@@ -44,18 +48,22 @@ import { startHeartbeat } from "./identity.ts";
 
 import { captureStateDirIdentityToken } from "./../state/lease.ts";
 
-import { driveState, captureIntentChain } from "./paths.ts";
+import { driveState, captureIntentChain, driveTs } from "./paths.ts";
 
 import { runDriverRounds } from "./rounds.ts";
 
 import { attachForDrive } from "./../attach.ts";
 
+import { admitTakeover, explainingRefusal, pickUpDrive } from "./takeover.ts";
+
 export async function main(): Promise<number> {
   const options = parseDriverOptions(process.argv.slice(2));
   let { pr, keepDraft, handoffAt } = options;
   const { maxRounds, dryRun, botsOnly, passTimeout, forward, agent } = options;
+  const { takeOver, windowReopened } = options;
 
   const maxRoundsN = resolveMaxRounds(maxRounds);
+  const deadlineRetryBudget = resolvePassDeadlineRetries();
 
   // When a draft is marked Ready: `--keep-draft` wins, else the repository's
   // `pull_requests.mark_ready`. Read once, up front: an unreadable policy
@@ -160,12 +168,17 @@ export async function main(): Promise<number> {
     what: `PR #${pr}`,
     diag,
   };
+  // A takeover is decided, and a wedged holder stopped, before any lock is
+  // taken: the holder's locks are what this driver is about to acquire.
+  const admission = takeOver ? await admitTakeover(pr, prLock.dir) : null;
   const held: DriveLock[] = [];
   using lockResources = new DisposableStack();
   await using lifecycle = installDriverLifecycle(held);
   void lifecycle;
-  const hold = (lock: DriveLock): void => {
-    acquire(lock, pr);
+  const hold = async (lock: DriveLock): Promise<void> => {
+    // A refusal names the holder's doctor verdict, and the takeover command
+    // when a takeover would be admitted.
+    await explainingRefusal(lock, driveTs, () => acquire(lock, pr));
     held.push(lock);
     lockResources.use(
       registerCleanup(() => {
@@ -175,13 +188,13 @@ export async function main(): Promise<number> {
       }),
     );
   };
-  hold(treeLock);
+  await hold(treeLock);
   // Once this tree is ours and before the PR is: the tree is put on the PR's
   // head (its branch, or the head commit detached when another working tree
   // holds the branch), so every round's commit lands on what the attach left,
   // and no other driver's tree is ever moved.
   await attachForDrive(pr, dryRun);
-  hold(prLock);
+  await hold(prLock);
   createDriverRegistry(held);
   lockResources.use(driverStopCompletionCleanup(held));
   driverRuntime.driverLogRotates = true;
@@ -306,6 +319,16 @@ export async function main(): Promise<number> {
   const commandExit = validatePassCommand(explicitPr, agent, botsOnly);
   if (commandExit !== undefined) return commandExit;
 
+  // Picking the drive up from its durable state: a quota wall another
+  // account may pass, a takeover, parked items a person has answered.
+  const firstPassNotice = await pickUpDrive(pr, admission, {
+    agent,
+    botsOnly,
+    windowReopened,
+    dryRun,
+  });
+  if (typeof firstPassNotice === "number") return firstPassNotice;
+
   // A dry run inspects; it does not work a round. Counting it would inflate
   // the round total the bound is measured against.
   //
@@ -343,6 +366,8 @@ export async function main(): Promise<number> {
     forward,
     probeFlags,
     markReadyPolicy,
+    deadlineRetryBudget,
+    firstPassNotice,
   });
 }
 

@@ -135,6 +135,10 @@ export async function prepareReviewPass(context: DriveRoundContext): Promise<
   const preexistingSnapshot = snapshotQuotaSessions();
   const preexistingSessions = preexistingSnapshot.files;
   const baseEnv = passEnv();
+  // A stop the driver recovered from (a killed pass, a stall, a takeover, a
+  // re-arm with answers) is told to the next review pass, once.
+  if (context.passNotice !== "")
+    baseEnv.DRIVE_PR_PASS_NOTICE = context.passNotice;
   const prepared = prepareQuotaSpawn(context.agent, baseEnv);
   if (prepared !== null) {
     // Said out loud, once per round. This is the only place the driver
@@ -242,6 +246,7 @@ export async function dispatchReviewPass(
       ...(passDeadlineSec > 0 ? { timeoutSec: passDeadlineSec } : {}),
       onSpawn: (handle) => {
         driverRuntime.activePass = handle;
+        context.passNotice = "";
         passSpawnProgressStamp = run(
           tsArgv(driveState, [
             "progress",

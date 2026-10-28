@@ -268,35 +268,52 @@ describe("drive.ts loop control", () => {
     expect(r.stderr).toContain("NON-CONVERGENCE");
   }, 120_000);
 
-  it("stops with the stall exit (14) after two passes that change nothing, instead of looping to --max-rounds", async () => {
+  it("runs one extra round with the stall diagnostics in the pass notice, then stops with the stall exit (14) naming what the passes decided", async () => {
     // The regression the two issues measured: a pass that exits 0 without
     // acting (there: standing down against its own parent driver) ran 5 and 10
     // full rounds with every round header looking healthy. No env override
     // here — this probe pins the DEFAULT threshold of 2, so a default change
     // shows up as a red rather than a silent behaviour shift.
     //
-    // `--head` because the stall verdict needs a MEASURED local head, and the
-    // scratch repo's own HEAD is not the fixture's: `--no-head-sync` alone
-    // leaves nothing measured and produces no fingerprint at all.
+    // The pass acts on nothing, but once it reads the stall notice it records
+    // what it decided at the end of the handoff narrative, which the stop
+    // prints.
+    const pass = [
+      "sh",
+      "-c",
+      [
+        ": pass for 999",
+        'case "$DRIVE_PR_PASS_NOTICE" in STALLED*)',
+        '  echo "pass for 999: NOTICE=stalled" >&2',
+        '  echo "Decided: stood down, the open thread is out of scope." >> "$DRIVE_PR_HANDOFF_DIR/pr-drive-999.md" ;;',
+        "esac",
+        "exit 0",
+      ].join("\n"),
+    ];
     const r = await runDrive(
       {
         threads: [{ id: "PRRT_a", path: "a.ts", bot: true }],
         head: scratchClean.head,
         reviewedSha: scratchClean.head,
       },
-      ["--max-rounds", "10", "--", ...PASS_NOOP],
+      ["--max-rounds", "10", "--", ...pass],
     );
-    expect(r.exitCode).toBe(14);
+    expectSpawnExit({ ...r, stdout: null }, 14);
     // Names what did NOT happen — the distinguishing evidence a log holds
     // but no error would surface.
     expect(r.stderr).toContain("changed NOTHING");
     expect(r.stderr).toContain("unresolved thread");
     expect(r.stderr).toContain("for a competing drive");
-    // Stopped at the third gate: rounds 1 and 2 ran, round 3 never started,
-    // and the budget exit never fired.
-    expect(r.stderr).toContain("--- round 2/10");
-    expect(r.stderr).not.toContain("--- round 3/10");
+    // Rounds 1 and 2 stalled; round 3 is the extra one, run with the
+    // diagnostics in its notice; round 4 never starts and the budget exit
+    // never fires.
+    expect(r.stderr).toContain("Running ONE more round");
+    expect(r.stderr).toContain("--- round 3/10");
+    expect(r.stderr.match(/NOTICE=stalled/g)?.length).toBe(1);
+    expect(r.stderr).not.toContain("--- round 4/10");
     expect(r.stderr).not.toContain("hit --max-rounds");
+    expect(r.stderr).toContain("What the passes decided");
+    expect(r.stderr).toContain("Decided: stood down");
   }, 120_000);
 
   // ── Spawn-boundary integration floor ──────────────────────────────────────

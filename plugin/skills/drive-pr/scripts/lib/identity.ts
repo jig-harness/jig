@@ -378,6 +378,25 @@ export function resolveAccountIdentity(
 }
 
 /**
+ * The account a pass bills, as a stable hash: what a quota park records and a
+ * re-arm compares, so the state file names whose wall it is without carrying
+ * an email address or a token fingerprint in clear. `null` when the identity
+ * did not resolve: an unknown account is never equal to another.
+ */
+export function accountHash(identity: AccountIdentity): string | null {
+  if (identity.account === null || identity.vendor === null) return null;
+  const digest = createHash("sha256")
+    .update(`${identity.vendor}:${identity.account}`)
+    .digest("hex");
+  return `acct-${digest.slice(0, 16)}`;
+}
+
+/** The shape `accountHash` produces, for the readers of a stored hash. */
+export function isAccountHash(value: unknown): value is string {
+  return typeof value === "string" && /^acct-[0-9a-f]{16}$/.test(value);
+}
+
+/**
  * One-line, log-shaped rendering of an identity — shared by `drive.ts`'s
  * exit-11 refusal message and `drives.ts`'s human listing, so writer and
  * reader can never drift apart (the same reason `lib/claim.ts` gives for

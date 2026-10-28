@@ -3,7 +3,12 @@ import { isDigits, fail, testPacing } from "../cli.ts";
 
 import { driverOnlyExitCode } from "../status/terminal-states.ts";
 
-import { maxRoundsSetting, DEFAULT_MAX_ROUNDS } from "../overlay.ts";
+import {
+  maxRoundsSetting,
+  DEFAULT_MAX_ROUNDS,
+  passDeadlineRetriesSetting,
+  DEFAULT_PASS_DEADLINE_RETRIES,
+} from "../overlay.ts";
 
 import { reflectionSwitch } from "../../../../reflect/scripts/lib/settings.ts";
 
@@ -465,6 +470,20 @@ export function resolveMaxRounds(flag: string | undefined): number {
   }
   try {
     return maxRoundsSetting() ?? DEFAULT_MAX_ROUNDS;
+  } catch (e) {
+    return fail(1, `drive.ts: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/**
+ * How many passes killed at their deadline one drive restarts from
+ * (`drive.pass_deadline_retries`). Read once, at the start of the drive, so
+ * the count and the budget it is compared against come from one reading; an
+ * unreadable value stops the drive rather than guessing a budget.
+ */
+export function resolvePassDeadlineRetries(): number {
+  try {
+    return passDeadlineRetriesSetting() ?? DEFAULT_PASS_DEADLINE_RETRIES;
   } catch (e) {
     return fail(1, `drive.ts: ${e instanceof Error ? e.message : String(e)}`);
   }

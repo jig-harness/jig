@@ -15,6 +15,8 @@ import { handleQuotaBlock } from "./review-quota.ts";
 
 import { unpushedCountCommand } from "./../driven-branch.ts";
 
+import { deadlineNotice, describeLeftovers, passLeftovers } from "./restart.ts";
+
 async function handlePassDeadline(
   passDeadlineSec: number,
   round: number,
@@ -34,20 +36,7 @@ async function handlePassDeadline(
   // prevent. Idempotent — if `run()`'s own escalation already finished
   // the job, this resolves immediately.
   const witnessed = passHandle === null || (await passHandle.stop());
-  if (witnessed) {
-    console.error(
-      "  The pass tree is gone, but whatever it was doing when the clock ran out is NOT",
-    );
-    console.error(
-      "  rolled back. Check `git status --short` for an uncommitted fix and",
-    );
-    console.error(
-      `  \`${unpushedCountCommand()}\` for a committed-but-unpushed one before re-arming;`,
-    );
-    console.error(
-      "  a killed pass strands work at whatever step it had reached.",
-    );
-  } else {
+  if (!witnessed) {
     console.error(
       "  Its termination could NOT be witnessed — some descendant may still be running.",
     );
@@ -65,17 +54,50 @@ async function handlePassDeadline(
   console.error(
     "  ($DRIVE_PR_PASS_TIMEOUT / --pass-timeout; 0 disables this deadline.)",
   );
-  // A directive sent WHILE this pass ran must still be honored before
-  // reporting PASS_DEADLINE — but only when the tree's termination was
-  // WITNESSED: checking mailbox (which can itself wait out a live
-  // pause) is not safe to do immediately after deciding a descendant
-  // may still be alive and out there unsupervised. The unwitnessed
-  // branch above already leaves `held` cleared and returns
-  // unconditionally, same as before.
-  if (witnessed) {
-    const mailboxAfterDeadline = await context.mailboxCheckpoint();
-    if (typeof mailboxAfterDeadline === "number") return mailboxAfterDeadline;
+  // An unwitnessed termination keeps the locks and stops here: neither a
+  // mailbox wait (which can itself wait out a live pause) nor a restart is
+  // safe beside a descendant that may still be writing the tree.
+  if (!witnessed) return PASS_DEADLINE_EXIT;
+  // A directive sent WHILE this pass ran is honored before anything else.
+  const mailboxAfterDeadline = await context.mailboxCheckpoint();
+  if (typeof mailboxAfterDeadline === "number") return mailboxAfterDeadline;
+  return await restartAfterDeadline(passDeadlineSec, round, context);
+}
+
+/**
+ * The two checks the stop used to ask a person for, run here: what the
+ * killed pass left uncommitted and unpushed. Both stay in the tree. Within
+ * `drive.pass_deadline_retries` the next round starts and its pass is told
+ * what it inherits; past it the drive stops as `PASS_DEADLINE`.
+ */
+async function restartAfterDeadline(
+  passDeadlineSec: number,
+  round: number,
+  context: DriveRoundContext,
+): Promise<number | "continue"> {
+  const leftovers = await passLeftovers();
+  console.error(
+    "  The pass tree is gone; what it was doing when the clock ran out is NOT rolled back.",
+  );
+  for (const line of describeLeftovers(leftovers)) console.error(`  ${line}`);
+  if (context.deadlineRetries < context.deadlineRetryBudget) {
+    context.deadlineRetries += 1;
+    console.error(
+      `  Restarting: deadline retry ${context.deadlineRetries} of ${context.deadlineRetryBudget} (drive.pass_deadline_retries). The leftovers stay in the tree for the next pass.`,
+    );
+    context.passNotice = deadlineNotice(round, passDeadlineSec, leftovers);
+    // A killed pass is not a completed one: it must not count toward the
+    // stall streak, which compares the gates around COMPLETED passes.
+    context.prevFingerprint = null;
+    context.noopRounds = 0;
+    return "continue";
   }
+  console.error(
+    `  The pass-deadline retry budget is spent (${context.deadlineRetryBudget}, drive.pass_deadline_retries): stopping.`,
+  );
+  console.error(
+    `  Before re-arming, settle what the pass left: \`git status --short\` and \`${unpushedCountCommand()}\`.`,
+  );
   return PASS_DEADLINE_EXIT;
 }
 

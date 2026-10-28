@@ -26,4 +26,15 @@ export interface DriveRoundContext {
   witnessWaitHead: string;
   witnessWaitLimit: number;
   maxRoundsN: number;
+  /** Passes killed at their deadline this drive restarted from. */
+  deadlineRetries: number;
+  /** `drive.pass_deadline_retries`, read once at the start of the drive. */
+  deadlineRetryBudget: number;
+  /** The stall stop already granted its one extra round in this streak. */
+  stallExtraRound: boolean;
+  /**
+   * What the next review pass is told about the stop the driver recovered
+   * from (`$DRIVE_PR_PASS_NOTICE`), cleared once a pass is spawned with it.
+   */
+  passNotice: string;
 }
