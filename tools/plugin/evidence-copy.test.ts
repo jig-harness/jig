@@ -14,7 +14,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { expectSpawnExit } from "../../lib/test-helpers/expect-spawn-exit.ts";
 import {
@@ -70,5 +70,8 @@ test("evidence.ts runs from the plugin copy and keeps its record in the consumer
     `EVIDENCE  tree ${record.tree.slice(0, 7)}  check`,
   );
   expect(record.repository).toMatch(/^shop-[0-9a-f]{8}$/);
-  expect(listed.stdout).toContain(join(store, record.repository, record.tree));
+  // A store under the home folder is shown from `~`, as Windows' temporary folder is.
+  const shown = listed.stdout.match(/^record (.+)$/m)?.[1] ?? "";
+  const path = shown.startsWith("~") ? homedir() + shown.slice(1) : shown;
+  expect(path).toStartWith(join(store, record.repository, record.tree));
 });
