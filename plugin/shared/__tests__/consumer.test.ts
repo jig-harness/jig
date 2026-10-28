@@ -145,6 +145,17 @@ test("an environment null over a configured remote is an error, never origin", (
   }
 });
 
+test("an environment null over the whole repository section is an error, never origin", () => {
+  const r = repositoryWith("repository:\n  remote: upstream\n");
+  try {
+    expect(() =>
+      remoteName(r.root, { ...r.env, JIG__REPOSITORY: "null" }),
+    ).toThrow(/repository must be an object.*JIG__REPOSITORY/);
+  } finally {
+    r.done();
+  }
+});
+
 test("the remote is the one repository.remote names, and the environment layer overrides it", () => {
   const r = repositoryWith("repository:\n  remote: upstream\n");
   try {

@@ -85,6 +85,12 @@ describe("conflictFixCommands", () => {
       "-- git fetch <remote>; after success",
     );
   });
+
+  it("quotes a base name the shell would expand beside the placeholder", () => {
+    expect(conflictFixCommands("rel$(id)", "<remote>")).toContain(
+      "-- git merge <remote>/'rel$(id)'",
+    );
+  });
 });
 
 describe("repositoryLabel", () => {

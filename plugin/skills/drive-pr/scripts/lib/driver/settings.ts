@@ -434,15 +434,19 @@ export function fixRemote(): string {
  * The printed conflict fix for a pull request whose base is `base`: fetch
  * the remote, then merge its base. The remote and the base ref are each
  * shell-quoted, since the line is a command a person may paste and the base
- * name comes from the forge; the unreadable-setting placeholder stays bare.
+ * name comes from the forge; the unreadable-setting placeholder stays bare,
+ * outside the quoted base, so filling it in never unquotes the base.
  */
 export function conflictFixCommands(
   base: string,
   remote: string = fixRemote(),
 ): string {
-  const quote = (arg: string) =>
-    remote === "<remote>" ? arg : shellQuote(arg);
-  return `bun "<skill-dir>/../../shared/command.ts" -- git fetch ${quote(remote)}; after success, bun "<skill-dir>/../../shared/command.ts" -- git merge ${quote(`${remote}/${base}`)}`;
+  const placeholder = remote === "<remote>";
+  const fetched = placeholder ? remote : shellQuote(remote);
+  const merged = placeholder
+    ? `${remote}/${shellQuote(base)}`
+    : shellQuote(`${remote}/${base}`);
+  return `bun "<skill-dir>/../../shared/command.ts" -- git fetch ${fetched}; after success, bun "<skill-dir>/../../shared/command.ts" -- git merge ${merged}`;
 }
 
 export function conflictRepairRounds(): number {

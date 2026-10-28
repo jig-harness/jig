@@ -254,9 +254,11 @@ const REMOTE_NAME =
  * `repository.remote` in the configuration layers of the repository at
  * `root`, else `origin`. A value that is not a usable remote name is an
  * error naming where it was set, never a silent fallback to `origin`, which
- * could be another repository's remote; so is an explicit `null`, which a
- * higher layer (`JIG__REPOSITORY__REMOTE=null`) would otherwise use to turn
- * a lower layer's remote back into `origin` unnoticed.
+ * could be another repository's remote; so is an explicit `null`, for the
+ * setting or for its whole `repository` section, which a higher layer
+ * (`JIG__REPOSITORY__REMOTE=null`, `JIG__REPOSITORY=null`) would otherwise
+ * use to turn a lower layer's remote back into `origin` unnoticed. Only a
+ * setting no layer names is `origin`.
  */
 export function remoteName(
   root = consumerRoot(),
@@ -264,8 +266,12 @@ export function remoteName(
 ): string {
   const config = layeredConfig(root, env);
   const repository = config.values.repository;
-  if (repository === undefined || repository === null) return DEFAULT_REMOTE;
-  if (typeof repository !== "object" || Array.isArray(repository))
+  if (repository === undefined) return DEFAULT_REMOTE;
+  if (
+    repository === null ||
+    typeof repository !== "object" ||
+    Array.isArray(repository)
+  )
     throw new RemoteSettingError(
       `repository must be an object: ${sourceOf(config, "repository")}`,
     );
