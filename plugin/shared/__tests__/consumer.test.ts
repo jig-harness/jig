@@ -132,6 +132,19 @@ test("the remote is origin when repository.remote is unset", () => {
   }
 });
 
+test("an environment null over a configured remote is an error, never origin", () => {
+  const r = repositoryWith("repository:\n  remote: upstream\n");
+  try {
+    expect(() =>
+      remoteName(r.root, { ...r.env, JIG__REPOSITORY__REMOTE: "null" }),
+    ).toThrow(
+      /repository\.remote must be a git remote name.*JIG__REPOSITORY__REMOTE/,
+    );
+  } finally {
+    r.done();
+  }
+});
+
 test("the remote is the one repository.remote names, and the environment layer overrides it", () => {
   const r = repositoryWith("repository:\n  remote: upstream\n");
   try {
@@ -144,7 +157,37 @@ test("the remote is the one repository.remote names, and the environment layer o
   }
 });
 
-for (const value of ['"-upstream"', '"up stream"', '"up:stream"', '""', "42"])
+for (const value of ["team/upstream", "fork.mirror", "my_remote-2"])
+  test(`a remote name with git's allowed separators is accepted: ${value}`, () => {
+    const r = repositoryWith(`repository:\n  remote: ${value}\n`);
+    try {
+      expect(remoteName(r.root, r.env)).toBe(value);
+    } finally {
+      r.done();
+    }
+  });
+
+for (const value of [
+  '"-upstream"',
+  '"up stream"',
+  '"up:stream"',
+  '""',
+  "42",
+  "null",
+  '"$(id)"',
+  '"`id`"',
+  '"up;stream"',
+  '"upstream.lock"',
+  '"team/upstream.lock/x"',
+  '"upstream/"',
+  '"/upstream"',
+  '"upstream//other"',
+  '"upstream@{x}"',
+  '"up..stream"',
+  '".hidden"',
+  '"team/.hidden"',
+  '"upstream."',
+])
   test(`an unusable repository.remote is an error naming its file: ${value}`, () => {
     const r = repositoryWith(`repository:\n  remote: ${value}\n`);
     try {

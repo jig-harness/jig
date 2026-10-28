@@ -237,19 +237,26 @@ export function configSource(field: string): string {
 export const DEFAULT_REMOTE = "origin";
 
 /**
- * A git remote name the skills can pass as one argument: no whitespace, no
- * leading `-` (git would read it as an option), no `:` (it would split a
- * refspec), and none of the characters a ref name refuses, since the remote
- * prefixes every remote-tracking ref (`refs/remotes/<remote>/<branch>`).
+ * A git remote name the skills can pass as one argument and print in a
+ * command a person may paste: ASCII letters, digits, `.`, `_`, `-` and `/`
+ * only, so no shell metacharacter can reach a suggested command; no leading
+ * `-` (git would read it as an option); and no sequence a ref name refuses,
+ * since the remote prefixes every remote-tracking ref
+ * (`refs/remotes/<remote>/<branch>`): no `..`, no empty component (`//`, a
+ * leading or trailing `/`), no component starting with `.` or ending in
+ * `.lock`, no trailing `.`.
  */
-const REMOTE_NAME = /^(?!-)(?!.*\.\.)[^\s:~^?*[\\]+$/;
+const REMOTE_NAME =
+  /^(?!-)(?!.*\.\.)(?!.*\/\/)(?!\/)(?!.*\/$)(?!.*\.$)(?!(?:.*\/)?\.)(?!.*\.lock(?:\/|$))[A-Za-z0-9._/-]+$/;
 
 /**
  * The git remote the delivery skills push to and fetch from:
  * `repository.remote` in the configuration layers of the repository at
  * `root`, else `origin`. A value that is not a usable remote name is an
  * error naming where it was set, never a silent fallback to `origin`, which
- * could be another repository's remote.
+ * could be another repository's remote; so is an explicit `null`, which a
+ * higher layer (`JIG__REPOSITORY__REMOTE=null`) would otherwise use to turn
+ * a lower layer's remote back into `origin` unnoticed.
  */
 export function remoteName(
   root = consumerRoot(),
@@ -263,10 +270,10 @@ export function remoteName(
       `repository must be an object: ${sourceOf(config, "repository")}`,
     );
   const value = (repository as Record<string, unknown>).remote;
-  if (value === undefined || value === null) return DEFAULT_REMOTE;
+  if (value === undefined) return DEFAULT_REMOTE;
   if (typeof value !== "string" || !REMOTE_NAME.test(value))
     throw new RemoteSettingError(
-      `repository.remote must be a git remote name (no spaces, no leading '-', no ':'), got ${JSON.stringify(value)}: ${sourceOf(config, "repository.remote")}`,
+      `repository.remote must be a git remote name (letters, digits, '.', '_', '-', '/'; no leading '-', no '..', '//', '.lock' or leading '.' component), got ${JSON.stringify(value)}: ${sourceOf(config, "repository.remote")}`,
     );
   return value;
 }

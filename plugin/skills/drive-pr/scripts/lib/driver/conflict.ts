@@ -1,5 +1,9 @@
 /** Spend the conflict-repair budget before reporting a base-merge stop. */
-import { conflictRepairRounds, fixRemote } from "./settings.ts";
+import {
+  conflictFixCommands,
+  conflictRepairRounds,
+  fixRemote,
+} from "./settings.ts";
 
 import { driverRuntime } from "./runtime.ts";
 
@@ -72,9 +76,8 @@ export async function runConflictPhase(
   );
   console.error(reasonLine);
   if (base !== "") {
-    const remote = fixRemote();
     console.error(
-      `  Fix: bun "<skill-dir>/../../shared/command.ts" -- git fetch ${remote}; after success, bun "<skill-dir>/../../shared/command.ts" -- git merge ${remote}/${base}, resolve, run the gates, push.`,
+      `  Fix: ${conflictFixCommands(base)}, resolve, run the gates, push.`,
     );
   } else {
     console.error(

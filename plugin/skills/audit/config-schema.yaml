@@ -200,7 +200,7 @@ fields:
 
   repository.remote:
     type: string
-    pattern: "^(?!-)(?!.*\\.\\.)[^\\s:~^?*\\[\\\\]+$"
+    pattern: "^(?!-)(?!.*\\.\\.)(?!.*//)(?!/)(?!.*/$)(?!.*\\.$)(?!(?:.*/)?\\.)(?!.*\\.lock(?:/|$))[A-Za-z0-9._/-]+$"
     default: origin
     read_by: [drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect]
     since: next

@@ -136,17 +136,19 @@ function mergedRef(root: string): string | null {
  */
 function defaultBranch(root: string): string[] {
   const read = readRemoteName(consumerRoot(root));
-  const r =
-    "error" in read
-      ? null
-      : gitRaw(root, [
-          "symbolic-ref",
-          "--quiet",
-          "--short",
-          `refs/remotes/${read.remote}/HEAD`,
-        ]);
-  if (r !== null && r.code === 0 && r.stdout.trim() !== "")
-    return [r.stdout.trim().replace(/^[^/]+\//, "")];
+  if ("error" in read) return ["main", "master"];
+  // A remote name may hold a `/`, so the whole `<remote>/` prefix is removed,
+  // never just the first component.
+  const prefix = `${read.remote}/`;
+  const r = gitRaw(root, [
+    "symbolic-ref",
+    "--quiet",
+    "--short",
+    `refs/remotes/${read.remote}/HEAD`,
+  ]);
+  const head = r.code === 0 ? r.stdout.trim() : "";
+  if (head.startsWith(prefix) && head.length > prefix.length)
+    return [head.slice(prefix.length)];
   return ["main", "master"];
 }
 

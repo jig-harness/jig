@@ -1,7 +1,7 @@
 /** Read driver policy and derive exit codes from the terminal-state contract. */
 import { readRemoteName } from "../../../../../shared/consumer.ts";
 
-import { isDigits, fail, testPacing } from "../cli.ts";
+import { isDigits, fail, shellQuote, testPacing } from "../cli.ts";
 
 import { driverOnlyExitCode } from "../status/terminal-states.ts";
 
@@ -428,6 +428,21 @@ export function ciRepairRounds(): number {
 export function fixRemote(): string {
   const read = readRemoteName();
   return "remote" in read ? read.remote : "<remote>";
+}
+
+/**
+ * The printed conflict fix for a pull request whose base is `base`: fetch
+ * the remote, then merge its base. The remote and the base ref are each
+ * shell-quoted, since the line is a command a person may paste and the base
+ * name comes from the forge; the unreadable-setting placeholder stays bare.
+ */
+export function conflictFixCommands(
+  base: string,
+  remote: string = fixRemote(),
+): string {
+  const quote = (arg: string) =>
+    remote === "<remote>" ? arg : shellQuote(arg);
+  return `bun "<skill-dir>/../../shared/command.ts" -- git fetch ${quote(remote)}; after success, bun "<skill-dir>/../../shared/command.ts" -- git merge ${quote(`${remote}/${base}`)}`;
 }
 
 export function conflictRepairRounds(): number {
