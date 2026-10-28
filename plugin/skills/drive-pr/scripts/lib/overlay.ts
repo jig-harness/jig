@@ -1,3 +1,4 @@
+import { shellQuote } from "../../../../shared/cli.ts";
 import { definedFields } from "../../../../shared/defined-fields.ts";
 /**
  * The consumer repository's drive-loop values, read from its Jig
@@ -537,7 +538,7 @@ async function trackingRef(
   );
   if (tracking.code !== 0)
     return {
-      error: `${remote}/${branch}, ${role}, is not in this clone; run git fetch ${remote} +refs/heads/${branch}:${ref}`,
+      error: `${remote}/${branch}, ${role}, is not in this clone; run git fetch ${shellQuote(remote)} ${shellQuote(`+refs/heads/${branch}:${ref}`)}`,
     };
   return { ref };
 }

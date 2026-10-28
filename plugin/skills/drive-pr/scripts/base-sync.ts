@@ -118,6 +118,7 @@ import {
   probeBaseDrift,
   verifyRemoteIsPrRepo,
 } from "./lib/base-drift.ts";
+import { shellQuote } from "../../../shared/cli.ts";
 import { fail, runMain } from "./lib/cli.ts";
 import { cachedRepoView } from "./lib/gh-conditional.ts";
 import {
@@ -1043,7 +1044,7 @@ async function main(): Promise<number> {
           ? `base-sync: ${drift.baseRef} conflicts with this branch over ${drift.overlapCount} shared file(s).`
           : `base-sync: ${drift.baseRef} conflicts with this branch (no file-level overlap was measured).`,
         "The worktree was restored — nothing is half-merged. Resolve it deliberately:",
-        `  git merge ${drift.baseRef}   # then /jig:resolve-conflicts`,
+        `  git merge ${shellQuote(drift.baseRef)}   # then /jig:resolve-conflicts`,
         "Then run this round's validation plan (SKILL.md § 5) and push.",
       );
     }

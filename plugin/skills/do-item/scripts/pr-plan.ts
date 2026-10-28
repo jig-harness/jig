@@ -352,7 +352,7 @@ async function buildOpenPlan(opts: {
   const baseRef = `${remote}/${base}`;
   if (!(await revParses(root, baseRef)))
     throw new Error(
-      `${baseRef} is not available locally; run git fetch ${remote} ${base}`,
+      `${baseRef} is not available locally; run git fetch ${shellQuote(remote)} ${shellQuote(base)}`,
     );
   const numstat = await git(
     ["-C", root, "diff", "--numstat", `${baseRef}...HEAD`],
