@@ -154,6 +154,40 @@ function contribute(repo: Repo): string[] {
   return out.stored.map((entry) => entry.id);
 }
 
+/**
+ * Two hotspots measured over the whole history and stored, then notes.md's
+ * finding recorded as implemented.
+ */
+function implementedNotes(): { repo: Repo; file: string; notes: FindingEvent } {
+  const repo = twoHotspots();
+  const file = historyReport(repo);
+  hotspots(repo, file);
+  contribute(repo);
+  const notes = storedFindings(repo).find(
+    (finding) => finding.target.name === "notes.md",
+  ) as FindingEvent;
+  succeeded(
+    repo.review(
+      ["record"],
+      `${JSON.stringify({ finding: notes.id, decision: "implemented", reason: "entries moved to one file each", commit: "a1b2c3d" })}\n`,
+    ),
+    "review.ts record",
+  );
+  return { repo, file, notes };
+}
+
+/** `reflect.ts hotspots` refuses `report` with exit 2. */
+function expectRefused(repo: Repo, report: object, problem: string): void {
+  const file = join(m.dir, "damaged.json");
+  writeFileSync(file, JSON.stringify(report));
+  const r = repo.script("reflect.ts", ["hotspots", file]);
+  expectSpawnExit(
+    { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
+    2,
+    `hotspots on a report ${problem}`,
+  );
+}
+
 describe("reflect.ts hotspots", () => {
   it("writes one finding per hotspot into the store, its cause as the class", () => {
     m.userConfig();
@@ -256,20 +290,7 @@ describe("reflect.ts hotspots", () => {
 
   it("records a hotspot again once its fix is implemented and every merge measured came after it", () => {
     m.userConfig();
-    const repo = twoHotspots();
-    const file = historyReport(repo);
-    hotspots(repo, file);
-    contribute(repo);
-    const notes = storedFindings(repo).find(
-      (finding) => finding.target.name === "notes.md",
-    ) as FindingEvent;
-    succeeded(
-      repo.review(
-        ["record"],
-        `${JSON.stringify({ finding: notes.id, decision: "implemented", reason: "entries moved to one file each", commit: "a1b2c3d" })}\n`,
-      ),
-      "review.ts record",
-    );
+    const { repo, file, notes } = implementedNotes();
     // The whole history still holds the merges from before the fix.
     expect(hotspots(repo, file).hotspots.map((entry) => entry.action)).toEqual([
       "stored",
@@ -297,20 +318,7 @@ describe("reflect.ts hotspots", () => {
 
   it("does not take a range starting at the very moment of the fix as after it", () => {
     m.userConfig();
-    const repo = twoHotspots();
-    const file = historyReport(repo);
-    hotspots(repo, file);
-    contribute(repo);
-    const notes = storedFindings(repo).find(
-      (finding) => finding.target.name === "notes.md",
-    ) as FindingEvent;
-    succeeded(
-      repo.review(
-        ["record"],
-        `${JSON.stringify({ finding: notes.id, decision: "implemented", reason: "entries moved to one file each", commit: "a1b2c3d" })}\n`,
-      ),
-      "review.ts record",
-    );
+    const { repo, file } = implementedNotes();
     const decision = succeeded(
       repo.script("store.ts", ["list"]),
       "store.ts list",
@@ -457,14 +465,7 @@ describe("reflect.ts hotspots", () => {
     for (const [problem, damage] of faults) {
       const report = structuredClone(real);
       damage(report);
-      const file = join(m.dir, "damaged.json");
-      writeFileSync(file, JSON.stringify(report));
-      const r = repo.script("reflect.ts", ["hotspots", file]);
-      expectSpawnExit(
-        { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
-        2,
-        `hotspots on a report ${problem}`,
-      );
+      expectRefused(repo, report, problem);
     }
     expect(existsSync(join(repo.root, ".git", "jig"))).toBe(false);
   });
@@ -553,14 +554,7 @@ describe("reflect.ts hotspots", () => {
         hotspots: derived.hotspots,
         limits: derived.limits,
       });
-      const file = join(m.dir, "damaged.json");
-      writeFileSync(file, JSON.stringify(report));
-      const r = repo.script("reflect.ts", ["hotspots", file]);
-      expectSpawnExit(
-        { exitCode: r.code, stdout: r.stdout, stderr: r.stderr },
-        2,
-        `hotspots on a report ${problem}`,
-      );
+      expectRefused(repo, report, problem);
     }
     expect(existsSync(join(repo.root, ".git", "jig"))).toBe(false);
   });
