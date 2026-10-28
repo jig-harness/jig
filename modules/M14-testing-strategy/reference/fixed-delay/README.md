@@ -30,8 +30,10 @@ In every text file it scans, line by line:
 
 A delay is one of a list of literal texts, by default `Bun.sleep(`,
 `setTimeout(`, `sleep(` and `time.sleep(`. A text matches where the
-character before it is not part of a name (a letter, a digit, `_` or `$`),
-so `sleep(` finds `sleep(1)` and `asyncio.sleep(1)` but not `oversleep(1)`.
+character before it is not part of a name (a letter or digit in any script,
+`_` or `$`), so `sleep(` finds `sleep(1)` and `asyncio.sleep(1)` but not
+`oversleep(1)` or `résleep(1)`. The `fixed-delay:` token is matched the same
+way, so a name ending in it is not a token.
 The gate reads text, not code: a delay named in a comment or a string counts
 too, so reword a comment that names one.
 

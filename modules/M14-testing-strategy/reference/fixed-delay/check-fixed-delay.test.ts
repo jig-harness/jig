@@ -192,6 +192,14 @@ describe("lines", () => {
     expect(lines("await asyncio.sleep(1)").delays).toBe(1);
   });
 
+  test("a name character outside ASCII also makes a look-alike", () => {
+    expect(lines("résleep(1); Δsleep(1); _sleep(1)").delays).toBe(0);
+    const { findings } = lines("// fixed-delay: old reason\nrésleep(1);");
+    expect(findings.map((f) => f.problem)).toEqual([
+      "`fixed-delay:` with no delay on its line or the line below excuses nothing",
+    ]);
+  });
+
   test("a block comment's closing marker is not a reason", () => {
     const { findings } = lines("/* fixed-delay: */ setTimeout(f, 1);");
     expect(findings.map((f) => f.problem)).toEqual([
@@ -227,5 +235,10 @@ describe("lines", () => {
       "const not-fixed-delay: = 1;\nawait Bun.sleep(1);",
     );
     expect(findings.map((f) => f.line)).toEqual([2]);
+    expect(
+      lines("const éfixed-delay: = 1;\nawait Bun.sleep(1);").findings.map(
+        (f) => f.line,
+      ),
+    ).toEqual([2]);
   });
 });

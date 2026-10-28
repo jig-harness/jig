@@ -12,8 +12,9 @@
 //
 // What counts as a delay is a list of literal texts (`--pattern`, repeatable;
 // by default `Bun.sleep(`, `setTimeout(`, `sleep(` and `time.sleep(`). A text
-// matches where the character before it is not part of a name, so `sleep(`
-// finds `sleep(` and `asyncio.sleep(` but not `oversleep(`. The gate reads
+// matches where the character before it is not part of a name in any script,
+// so `sleep(` finds `sleep(` and `asyncio.sleep(` but not `oversleep(` or
+// `résleep(`; the token is matched the same way. The gate reads
 // text, not code: a delay named in a comment or a string counts too.
 //
 // Files are named as arguments: a path, a directory (every file under it), or
@@ -51,7 +52,10 @@ const SKIPPED_DIRS = new Set([".git", "node_modules"]);
 const USAGE =
   "usage: check-fixed-delay.ts [--pattern <text>]... [--exclude <glob>]... [--root <dir>] <path|dir|glob>...";
 
-const TOKEN = /(?<![\w-])fixed-delay:/;
+// A character that can continue a name in any script: `résleep(` and
+// `éfixed-delay:` are names, not a delay or a token. Used with the `u` flag.
+const NAME_CHAR = String.raw`\p{ID_Continue}$`;
+const TOKEN = new RegExp(`(?<![${NAME_CHAR}-])fixed-delay:`, "u");
 // `--!>` closes an HTML comment as `-->` does.
 const BLOCK_COMMENT_END = /\*\/|--!?>/;
 const POLL =
@@ -76,7 +80,7 @@ const escapeRegExp = (text: string) =>
 
 /** A matcher for a delay text where the character before it is not part of a name. */
 export function delayPattern(text: string): RegExp {
-  return new RegExp(`(?<![\\w$])${escapeRegExp(text)}`);
+  return new RegExp(`(?<![${NAME_CHAR}])${escapeRegExp(text)}`, "u");
 }
 
 /**
