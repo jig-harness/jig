@@ -118,7 +118,8 @@ const isFileOrLinkToFile = (path: string) =>
 function schemaIn(repo: string, folder: string): string | null {
   const hit = entriesOf(folder).find(
     (entry) =>
-      SCHEMA_NAMES.has(entry.name) && isFileOrLinkToFile(join(folder, entry.name)),
+      SCHEMA_NAMES.has(entry.name) &&
+      isFileOrLinkToFile(join(folder, entry.name)),
   );
   return hit ? posixPath(relative(repo, join(folder, hit.name))) : null;
 }

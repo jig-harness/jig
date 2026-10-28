@@ -205,7 +205,9 @@ describe("the detected settings", () => {
       join(root, "shared/schema.yaml"),
       join(root, "docs/frontmatter-schema.yaml"),
     );
-    expect(parseDocsSettings(undefined, root).schema).toBe("shared/schema.yaml");
+    expect(parseDocsSettings(undefined, root).schema).toBe(
+      "shared/schema.yaml",
+    );
 
     const outside = temporary();
     write(outside, "schema.yaml", "{}\n");
