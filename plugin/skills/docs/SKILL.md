@@ -45,7 +45,9 @@ It detects everything it needs and reads the `docs` section of the
 repository's Jig configuration only where detection is wrong:
 
 - **The docs tree**: `docs.root`, else the first of `docs/`, `doc/`,
-  `documentation/` that exists.
+  `documentation/` that exists. A tree, or a schema, that leads outside the
+  repository once symbolic links are followed is refused: the index is
+  written under it.
 - **The schema**: `docs.schema`, else the shallowest
   `frontmatter-schema.yaml` (dotted or not, `.yaml` or `.yml`) under the docs
   tree. The repository's own schema is the one that applies: never check its

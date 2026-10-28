@@ -3,8 +3,8 @@
  * expects, and the settings detected when the configuration is silent.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, symlinkSync } from "node:fs";
+import { join, relative } from "node:path";
 import {
   decisionDirectory,
   detectProjectType,
@@ -170,6 +170,28 @@ describe("the detected settings", () => {
     const root = temporary();
     mkdirSync(join(root, "docs"));
     expect(parseDocsSettings({ root: "./docs/" }, root).root).toBe("docs");
+  });
+
+  test("a root that leads outside the repository is refused", () => {
+    const outside = temporary();
+    mkdirSync(join(outside, "docs"));
+    const root = join(temporary(), "repo");
+    mkdirSync(root);
+    const leading = relative(root, join(outside, "docs"));
+    expect(() => parseDocsSettings({ root: leading }, root)).toThrow(
+      `docs.root names ${leading}, which leads outside the repository`,
+    );
+    symlinkSync(join(outside, "docs"), join(root, "docs"));
+    expect(() => parseDocsSettings(undefined, root)).toThrow(
+      "docs.root names docs, which leads outside the repository",
+    );
+  });
+
+  test("a root linked to a folder inside the repository is kept", () => {
+    const root = temporary();
+    mkdirSync(join(root, "handbook"));
+    symlinkSync(join(root, "handbook"), join(root, "docs"));
+    expect(parseDocsSettings(undefined, root).root).toBe("docs");
   });
 
   test("a threshold that is not a whole number of days is refused", () => {

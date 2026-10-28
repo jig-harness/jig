@@ -22,7 +22,13 @@ export function temporary(prefix = "docs-skill-"): string {
   return dir;
 }
 
-/** This process's environment without what points git or Jig elsewhere. */
+/**
+ * What sends the index generator's output elsewhere: a developer's value would
+ * have a test write over that developer's file instead of the scratch tree.
+ */
+const INDEX_OUTPUT_ENV = ["OUT", "ORPHANS", "DOCS_DIR"];
+
+/** This process's environment without what points git, Jig or the index elsewhere. */
 export function cleanEnv(
   extra: Record<string, string> = {},
 ): Record<string, string> {
@@ -34,7 +40,9 @@ export function cleanEnv(
       !key.startsWith("JIG__") &&
       key !== "JIG_OVERLAY" &&
       key !== "JIG_CONSUMER_ROOT" &&
-      key !== "LAST_UPDATED_TODAY"
+      key !== "LAST_UPDATED_TODAY" &&
+      !INDEX_OUTPUT_ENV.includes(key) &&
+      !key.startsWith("ORPHANS_")
     )
       env[key] = value;
   return {

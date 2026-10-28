@@ -3,8 +3,8 @@
  * detected from the tree when it is not set: the docs tree's root, the
  * frontmatter schema, and the age at which a draft counts as stale.
  */
-import { existsSync, readdirSync, statSync } from "node:fs";
-import { join, posix, relative, sep } from "node:path";
+import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { isAbsolute, join, posix, relative, sep } from "node:path";
 import { readConfig, withSource } from "../../../../shared/consumer.ts";
 import { isRecord } from "../../../../shared/guards.ts";
 
@@ -51,6 +51,31 @@ const posixPath = (path: string) => path.split(sep).join("/");
  */
 export const canonicalPath = (path: string) =>
   posix.normalize(posixPath(path)).replace(/\/+$/, "") || ".";
+
+/**
+ * Whether `path` (repository-relative) resolves, symbolic links followed,
+ * inside the repository. The gates read and the index writes under the docs
+ * root, so a root that leads out of the repository would let one
+ * repository's configuration overwrite files in another.
+ */
+function insideRepo(repo: string, path: string): boolean {
+  const from = realpathSync(repo);
+  const to = relative(from, realpathSync(join(repo, path)));
+  return to === "" || (!isAbsolute(to) && to.split(sep)[0] !== "..");
+}
+
+/** A docs path that leads out of the repository is refused, naming it. */
+function confined<T extends string | null>(
+  repo: string,
+  key: string,
+  path: T,
+): T {
+  if (path !== null && !insideRepo(repo, path))
+    throw new SettingsError(
+      `docs.${key} names ${path}, which leads outside the repository`,
+    );
+  return path;
+}
 
 /** A configured path: nonempty text naming something that exists. */
 function configuredPath(
@@ -128,13 +153,19 @@ export function parseDocsSettings(
         `docs has unknown field ${key} (known: ${FIELDS.join(", ")})`,
       );
   const configuredRoot = configuredPath(value, "root", repo);
-  const root =
+  const root = confined(
+    repo,
+    "root",
     configuredRoot ??
-    ROOT_CANDIDATES.find((dir) => isDir(join(repo, dir))) ??
-    null;
+      ROOT_CANDIDATES.find((dir) => isDir(join(repo, dir))) ??
+      null,
+  );
   const configuredSchema = configuredPath(value, "schema", repo);
-  const schema =
-    configuredSchema ?? (root === null ? null : findSchema(repo, root));
+  const schema = confined(
+    repo,
+    "schema",
+    configuredSchema ?? (root === null ? null : findSchema(repo, root)),
+  );
   return {
     root,
     schema,
