@@ -185,19 +185,6 @@ where they name a cache file or a claim.
 [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
 still assumes Linear.
 
-### 15. M14 Testing strategy: the rest
-
-[M14](../modules/M14-testing-strategy/README.md) states test tiers with budgets,
-honest doubles, the injected clock, polling, predicates proven where they
-execute, typed builders, tests with every change, coverage as a trend, a skip
-tripwire, stale-test triage, behaviour pins and a runtime canary. Still open:
-
-- exceptions that prune themselves: the tests-with-changes gate failing on an
-  exemption that matches no file, and a `fixed-delay:` token gate that fails
-  on a token with no delay beside it.
-
-Done when both gates are in M14's reference with their criteria.
-
 ### 17. Corrected designs for the existing modules
 
 Practices a working repository validated, for modules that exist today:
@@ -517,7 +504,8 @@ item links its requirements; the delivery loop writes no spec) is a decision rec
 `resolve-review-comments` lists the findings a static-analysis app reports as
 check-run annotations (`review.scanner_apps`), and `drive-pr` tells the agent
 to work them, but the drive's verdict reads threads and summary comments
-only, so a drive can still end `CONVERGED` over an annotation. What it will
+only, so a drive with annotations as its only findings can end `CONVERGED`
+without starting a round. What it will
 build: the annotation listing as a third source of open work beside threads
 and summary findings, read by `drive-status`, `round-plan` and `converge`,
 so the verdict withholds `CONVERGED` while a scanner check is running on the

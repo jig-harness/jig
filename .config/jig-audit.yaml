@@ -1001,10 +1001,18 @@ criteria:
     # A CI check fails a change whose changed source file has no test, unless the file is listed in a registered exemption with a reason, and a pre-push hook runs the same check before the push.
     score: absent
     evidence: "No CI check or hook maps changed source files to tests; modules/M14-testing-strategy/reference/tests-with-changes/ is an adopter example not wired into scripts/gates.ts"
+  M14/test-exemptions-prune-themselves:   # standard, requires mechanical
+    # The check that fails a changed source file without a test also fails an exemption that matches no file, so an exemption leaves with the code it excused.
+    score: absent
+    evidence: "No tests-with-changes check runs in scripts/gates.ts (see M14/tests-come-with-changes); modules/M14-testing-strategy/reference/tests-with-changes/ fails a stale exemption but is an adopter example, not wired into Jig's own gates"
   M14/fixed-sleeps-banned:   # standard, requires mechanical
     # A gate rejects fixed sleeps in test and tooling code, except those carrying a suppression token registered for local timing; waits for external state poll with a deadline.
     score: absent
     evidence: "No sleep gate in scripts/gates.ts or tools/quality/grit/; about two dozen test files call Bun.sleep or setTimeout (git grep -lE 'Bun\\.sleep\\(|setTimeout\\(' -- '*.test.ts' '**/__tests__/**')"
+  M14/fixed-delay-tokens-prune-themselves:   # standard, requires mechanical
+    # The gate that rejects fixed sleeps fails a suppression token with an empty reason, and a token with no delay on its line or the line below.
+    score: absent
+    evidence: "No sleep gate in scripts/gates.ts (see M14/fixed-sleeps-banned); modules/M14-testing-strategy/reference/fixed-delay/ is an adopter example, not wired into Jig's own gates"
   M14/provisioned-suites-executed:   # standard, requires mechanical
     # Every CI job that exists for a suite that can run nothing (a job that provisions a database, a queue, a browser or a credential the suite skips itself without; a shard or path selection of one suite) fails when that suite executed zero tests, counted from the runner's machine-readable report as the test cases not skipped, and fails when the report is missing (expected-absent where no job exists for such a suite).
     score: absent
