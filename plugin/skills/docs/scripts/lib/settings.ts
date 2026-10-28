@@ -53,28 +53,26 @@ export const canonicalPath = (path: string) =>
   posix.normalize(posixPath(path)).replace(/\/+$/, "") || ".";
 
 /**
- * Whether `path` (repository-relative) resolves, symbolic links followed,
- * inside the repository. The gates read and the index writes under the docs
- * root, so a root that leads out of the repository would let one
- * repository's configuration overwrite files in another.
+ * A docs path (repository-relative) as the path it resolves to, symbolic
+ * links followed, or a refusal naming it when that leads outside the
+ * repository. The gates read and the index writes under the docs root, so a
+ * root that leads out of the repository would let one repository's
+ * configuration overwrite files in another. An alias inside the repository
+ * becomes its target, because git reports files by their real path: a
+ * pathspec or prefix filter written with the alias would match none of them.
  */
-function insideRepo(repo: string, path: string): boolean {
-  const from = realpathSync(repo);
-  const to = relative(from, realpathSync(join(repo, path)));
-  return to === "" || (!isAbsolute(to) && to.split(sep)[0] !== "..");
-}
-
-/** A docs path that leads out of the repository is refused, naming it. */
 function confined<T extends string | null>(
   repo: string,
   key: string,
   path: T,
 ): T {
-  if (path !== null && !insideRepo(repo, path))
+  if (path === null) return path;
+  const to = relative(realpathSync(repo), realpathSync(join(repo, path)));
+  if (isAbsolute(to) || to.split(sep)[0] === "..")
     throw new SettingsError(
       `docs.${key} names ${path}, which leads outside the repository`,
     );
-  return path;
+  return canonicalPath(to || ".") as T;
 }
 
 /** A configured path: nonempty text naming something that exists. */
@@ -112,10 +110,15 @@ const entriesOf = (folder: string) =>
     byteOrder(a.name, b.name),
   );
 
+/** A file, or a symbolic link to one; where the link leads is `confined`'s. */
+const isFileOrLinkToFile = (path: string) =>
+  existsSync(path) && statSync(path).isFile();
+
 /** The schema file directly in `folder`, repository-relative, or null. */
 function schemaIn(repo: string, folder: string): string | null {
   const hit = entriesOf(folder).find(
-    (entry) => entry.isFile() && SCHEMA_NAMES.has(entry.name),
+    (entry) =>
+      SCHEMA_NAMES.has(entry.name) && isFileOrLinkToFile(join(folder, entry.name)),
   );
   return hit ? posixPath(relative(repo, join(folder, hit.name))) : null;
 }

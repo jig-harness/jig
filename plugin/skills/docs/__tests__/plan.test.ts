@@ -187,11 +187,37 @@ describe("the detected settings", () => {
     );
   });
 
-  test("a root linked to a folder inside the repository is kept", () => {
+  test("a root linked to a folder inside the repository reads as that folder", () => {
     const root = temporary();
-    mkdirSync(join(root, "handbook"));
+    write(root, "handbook/frontmatter-schema.yaml", "{}\n");
     symlinkSync(join(root, "handbook"), join(root, "docs"));
-    expect(parseDocsSettings(undefined, root).root).toBe("docs");
+    const settings = parseDocsSettings(undefined, root);
+    expect(settings.root).toBe("handbook");
+    expect(settings.schema).toBe("handbook/frontmatter-schema.yaml");
+    expect(parseDocsSettings({ root: "docs" }, root).root).toBe("handbook");
+  });
+
+  test("a schema linked to a file is found, and confined like any other", () => {
+    const root = temporary();
+    write(root, "shared/schema.yaml", "{}\n");
+    mkdirSync(join(root, "docs"));
+    symlinkSync(
+      join(root, "shared/schema.yaml"),
+      join(root, "docs/frontmatter-schema.yaml"),
+    );
+    expect(parseDocsSettings(undefined, root).schema).toBe("shared/schema.yaml");
+
+    const outside = temporary();
+    write(outside, "schema.yaml", "{}\n");
+    const repo = temporary();
+    mkdirSync(join(repo, "docs"));
+    symlinkSync(
+      join(outside, "schema.yaml"),
+      join(repo, "docs/frontmatter-schema.yaml"),
+    );
+    expect(() => parseDocsSettings(undefined, repo)).toThrow(
+      "docs.schema names docs/frontmatter-schema.yaml, which leads outside the repository",
+    );
   });
 
   test("a threshold that is not a whole number of days is refused", () => {

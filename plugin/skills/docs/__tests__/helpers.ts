@@ -28,7 +28,20 @@ export function temporary(prefix = "docs-skill-"): string {
  */
 const INDEX_OUTPUT_ENV = ["OUT", "ORPHANS", "DOCS_DIR"];
 
-/** This process's environment without what points git, Jig or the index elsewhere. */
+/**
+ * Git configuration passed on the command scope rather than in a file: a
+ * developer's `commit.gpgsign` there would fail the scratch commits.
+ */
+const isCommandScopeConfig = (key: string) =>
+  key === "GIT_CONFIG_COUNT" ||
+  key === "GIT_CONFIG_PARAMETERS" ||
+  key.startsWith("GIT_CONFIG_KEY_") ||
+  key.startsWith("GIT_CONFIG_VALUE_");
+
+/**
+ * This process's environment without what points git, Jig or the index
+ * elsewhere, and with no global, system or command-scope git configuration.
+ */
 export function cleanEnv(
   extra: Record<string, string> = {},
 ): Record<string, string> {
@@ -37,6 +50,7 @@ export function cleanEnv(
     if (
       value !== undefined &&
       !LEAKY_GIT_ENV.some((name) => name === key.toUpperCase()) &&
+      !isCommandScopeConfig(key.toUpperCase()) &&
       !key.startsWith("JIG__") &&
       key !== "JIG_OVERLAY" &&
       key !== "JIG_CONSUMER_ROOT" &&
@@ -47,6 +61,8 @@ export function cleanEnv(
       env[key] = value;
   return {
     ...env,
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
     GIT_AUTHOR_NAME: "Alex Author",
     GIT_AUTHOR_EMAIL: "alex@example.com",
     GIT_COMMITTER_NAME: "Alex Author",

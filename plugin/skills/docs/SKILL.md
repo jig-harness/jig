@@ -47,7 +47,8 @@ repository's Jig configuration only where detection is wrong:
 - **The docs tree**: `docs.root`, else the first of `docs/`, `doc/`,
   `documentation/` that exists. A tree, or a schema, that leads outside the
   repository once symbolic links are followed is refused: the index is
-  written under it.
+  written under it. A link to a folder or a schema inside the repository is
+  read as its target, the path git reports its files under.
 - **The schema**: `docs.schema`, else the shallowest
   `frontmatter-schema.yaml` (dotted or not, `.yaml` or `.yml`) under the docs
   tree. The repository's own schema is the one that applies: never check its
