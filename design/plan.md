@@ -185,19 +185,6 @@ where they name a cache file or a claim.
 [plugin/EXTENDING.md](../plugin/EXTENDING.md#issue-tracker) lists what
 still assumes Linear.
 
-### 15. M14 Testing strategy: the rest
-
-[M14](../modules/M14-testing-strategy/README.md) states test tiers with budgets,
-honest doubles, the injected clock, polling, predicates proven where they
-execute, typed builders, tests with every change, coverage as a trend, a skip
-tripwire, stale-test triage, behaviour pins and a runtime canary. Still open:
-
-- exceptions that prune themselves: the tests-with-changes gate failing on an
-  exemption that matches no file, and a `fixed-delay:` token gate that fails
-  on a token with no delay beside it.
-
-Done when both gates are in M14's reference with their criteria.
-
 ### 17. Corrected designs for the existing modules
 
 Practices a working repository validated, for modules that exist today:
@@ -286,17 +273,19 @@ repository with one released artifact. What is left:
 ### 22. Merge conflicts, measured
 
 The replay, live record and [M11/M12 practice](merge-conflicts.md) measure
-where parallel work conflicts and expose the result in the audit and
-cross-PR scoreboard. What is left:
+where parallel work conflicts, expose the result in the audit and cross-PR
+scoreboard, and feed each hotspot into the reflection store as a finding
+whose class is its cause. What is left concerns only how Jig keeps its own
+plan:
 
-- **Into the learning loop**: turn conflict hotspots into findings in the
-  reflection store, with each cause as the finding's class, so the existing
-  review and escalation loop turns a recurring cause into a change.
 - **One file per roadmap item** follows only if the report shows the plan
-  or the roadmap conflicting where items are added or removed side by side.
+  or the roadmap conflicting where items are added or removed side by side
+  (`append` or `adjacent` hotspots, which now also arrive as reflection
+  findings of those classes).
 
-Done when measured hotspots enter the existing reflection loop without a
-second escalation path.
+Done when a history report over a window of parallel work on Jig has shown
+whether the plan or the roadmap has such hotspots, and one file per item has
+then become a plan item of its own or been dropped.
 
 ### 23. Seed review lenses
 
@@ -427,9 +416,6 @@ defaults a repository overrides field by field; a type lowering depth only
 where no flag, catalog review or gate raises it; an unknown type getting
 the strictest value of every field. What it will build, one pull request per step:
 
-- **The derivation**: `determine_type.ts`, `issue_tracker.types`, the
-  defaults table as data with its tests, in CONFIGURATION.md; `do-item`
-  prints the type and changes nothing yet.
 - **`do-item` reads the row**: the pattern pre-scout, the review tiers and
   skip threshold, the change note, the body sections and the spike's `hitl`
   default move to the table, with a `task` fixture showing the lighter path.
@@ -457,8 +443,11 @@ attributes on a fresh base, narrows, keeps a hypothesis ledger, fixes, and
 stops after a budget with the ledger posted where the work is tracked.
 What it will build, one pull request per step:
 
-- **The record**: `shared/evidence.ts` with its tests, run from a plugin copy.
 - **`verify`**: the skill, its README, the lifecycle row, the M14 link.
+- **Evidence collection**: a resource collection kind that removes records,
+  their output and moved-aside reports past `verify.retention_days`, with
+  receipts; until it lands, `verify.retention_days` is read and nothing is
+  removed.
 - **`do-item` and `fix-ci` record and require**: the policy refusal, the
   body's evidence section, the seen-to-fail requirement by work type (item 27).
 - **`debug`**: the skill, the ledger, the budget, the hand-off from
@@ -515,7 +504,8 @@ item links its requirements; the delivery loop writes no spec) is a decision rec
 `resolve-review-comments` lists the findings a static-analysis app reports as
 check-run annotations (`review.scanner_apps`), and `drive-pr` tells the agent
 to work them, but the drive's verdict reads threads and summary comments
-only, so a drive can still end `CONVERGED` over an annotation. What it will
+only, so a drive with annotations as its only findings can end `CONVERGED`
+without starting a round. What it will
 build: the annotation listing as a third source of open work beside threads
 and summary findings, read by `drive-status`, `round-plan` and `converge`,
 so the verdict withholds `CONVERGED` while a scanner check is running on the

@@ -99,8 +99,8 @@ While a pull request carries it:
 
 - these jobs skip: `<e2e, …>`, each by testing the pull request's labels for
   the label, never by the event that started the run;
-- `<the aggregator job>` fails at its first step with a message naming the
-  label, so a held head is never mergeable;
+- `<the aggregator job>` fails, or cancels its run, at its first step with a
+  message naming the label, so a held head is never mergeable;
 - every workflow above runs on `labeled` and `unlabeled` as well as on
   `opened`, `synchronize` and `reopened`, so applying the label fails the
   head at once and removing it runs everything again on the same head.

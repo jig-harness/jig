@@ -23,7 +23,7 @@ Contents: [the file](#the-file) ·
 [`pull_requests`](#pull_requests) · [`drive`](#drive) · [`ci`](#ci) ·
 [`issue_tracker`](#issue_tracker) · [`do_item`](#do_item) ·
 [`work_batch`](#work_batch) ·
-[`fleet_health`](#fleet_health) ·
+[`fleet_health`](#fleet_health) · [`verify`](#verify) ·
 [`reflection`](#reflection) · [`changelog`](#changelog) ·
 [`code_stats`](#code_stats) · [`gc`](#gc) ·
 [procedure skills](#procedure-skills) ·
@@ -47,7 +47,7 @@ Contents: [the file](#the-file) ·
   was written to change, so it is an error. They are `pull_requests`,
   `issue_tracker.states` (keys are canonical states),
   `issue_tracker.labels` (keys are label roles), `resolve_conflicts`
-  (including each `generated` entry), `reflection` and `code_stats`
+  (including each `generated` entry), `reflection`, `verify` and `code_stats`
   (including each `areas` entry, and `kinds`, whose keys are kinds). In `review.taxonomy` every
   key other than `provenance_label` and `epic_label` is read as a list of
   distinct, nonempty strings, so an unrelated key there is an error too.
@@ -172,10 +172,10 @@ How review threads are resolved and how the drive recognises its AI reviewer.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `review.bots` | list of logins | **Required by `resolve-review-comments`**. `drive-pr`: none | resolve-review-comments, drive-pr, review | Reviewer accounts (for example `example-review[bot]`) whose threads the review skill works. Without `review.reviewer_app`, the drive accepts the reviewer's summary comment only from these logins |
+| `review.bots` | list of logins | No reviewer named: threads are worked whoever wrote them | resolve-review-comments, drive-pr, review | Reviewer accounts (for example `example-review[bot]`) the review skills name as the repository's reviewers. The review skill works every unresolved thread whether or not it is set; `--bots-only` keys on GitHub App authorship, not on this list. Without `review.reviewer_app`, the drive accepts the reviewer's summary comment only from these logins |
 | `review.job_pattern` | regular expression, or `null` | Reviewer checks recognised by name | resolve-review-comments | Which check runs the review skill waits on. Setting it requires `review.required_checks`. `--job-pattern` overrides it |
 | `review.required_checks` | list of distinct check names | none | resolve-review-comments | Reviewer checks that must each complete before a round is judged. Required when `review.job_pattern` is set. Unrelated to `ci.required_checks` |
-| `review.deferral_team` | team key | **Required by `resolve-review-comments`** | resolve-review-comments | Tracker team that deferred findings are filed into. `--team` overrides it |
+| `review.deferral_team` | team key | none: deferring a finding with no originating issue then needs `--team` | resolve-review-comments | Tracker team that deferred findings are filed into. `--team` overrides it |
 | `review.repo_label` | label | Empty, which fails unless `--repo-label` is given | resolve-review-comments, work-batch | Repository label put on filed follow-ups, and the one a batch item must carry; must be one of `review.taxonomy.repos`. Only letters, digits and `. _ : @ + / -`: the label is part of a deferral batch's key, which the review skill refuses to write otherwise |
 | `review.repo_slug` | `owner/name` | Empty, which fails unless `--repo-slug` is given | resolve-review-comments | Repository whose links a deferred finding must point into |
 | `review.taxonomy.types` | list of labels | none | resolve-review-comments, work-batch | Type labels a follow-up may carry, one of which a batch item must carry. Requires `ownership_prefixes`. Only letters, digits and `. _ : @ + / -`: the label is part of a deferral batch's key, which the review skill refuses to write otherwise |
@@ -339,6 +339,7 @@ not resolve it either.
 | `issue_tracker.labels.pattern_prefix` | text | `pattern:` | do-item, reflect, review-reflections | A recurring pattern's label is `<prefix><slug>`; a reflection class's issue is `<prefix><class>` |
 | `issue_tracker.labels.batch_sizes` | list of labels | `[xs, small, medium]` | do-item, work-batch | Sizes whose issues the batch check may group into one pull request |
 | `issue_tracker.labels.extractable_tails` | list of labels | `<hitl>:legal`, `<hitl>:tactical`, `<manual_ops>`, `<followup>` | do-item | Open sub-issues an epic may hand off instead of finishing |
+| `issue_tracker.types` | map from a [work type](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) to a list of labels | `bug`, `feature`, `improvement`, `task` and `spike`; `bug` marked by `issue_tracker.labels.bug`, each other type by `<type>` and `type:<type>` | do-item | The repository's work types and the labels that mark each. Its keys are the type set: a default type left out is dropped with its row in `do_item.work_types`, and a type outside the default list needs a complete row there. A type name is lowercase letters, digits, `-` and `_`; `unknown` is never one. Refused: a label listed under two types (ignoring case), a label the GitHub adapter uses for a workflow state or a priority (it removes those from an issue's labels), an empty map, and `bug` naming other labels than `issue_tracker.labels.bug` when both are set. `determine_type.ts` types an item by the first of: one of these labels, the tracker's own issue type matched to a type name ignoring case (GitHub's issue types; Linear has none), the title's Conventional Commits prefix where `pull_requests.title_format` is `conventional` (`fix` bug, `feat` feature, `chore` and `docs` task, `refactor` and `perf` improvement); else the item is `unknown`. Labels of two types on one item also make it `unknown` |
 | `issue_tracker.file_command` | text | Ask the user to file the issue | do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections | How an agent files a new issue by hand, such as a slash command. `/jig:file-issue` files it through the tracker scripts, with its labels checked against the label taxonomy |
 | `issue_tracker.taxonomy` | path, relative to the root or absolute | `label-taxonomy.yaml` | file-issue | The repository's [label taxonomy](https://github.com/jig-harness/jig/blob/main/modules/M9-tasks-memory/README.md): every label an issue may carry, in families, with the rules between them. `file-issue` checks each issue's labels against it before writing, and refuses to file while it is missing or fails its lint |
 
@@ -359,9 +360,40 @@ same), rather than running without the repository's routing and gates.
 | `do_item.scouts` | map from agent to a list of scouts | none | do-item | Scouts that run before each agent. The key is the **agent**, not a label |
 | `do_item.gates` | list of `{labels, paths, skill}` | none | do-item | Review skills that must approve a change before it is pushed, when the issue carries one of the `labels` or the change touches one of the `paths` |
 | `do_item.execution_plan_block` | name | `execution-plan-v1` | do-item | Name of the fenced block in an epic's description that holds its machine-readable execution plan |
+| `do_item.work_types` | map from a work type to fields of its row in the depth table below | The table's defaults | do-item | How much each delivery station does for an item of each type. An entry overrides single fields and keeps the rest of the row; a type outside the default list must set every field. Refused: an entry for a type outside `issue_tracker.types`, an entry for `unknown`, a field the table does not have, and a value outside a field's set. do-item prints the type and its row when it picks up an item |
 
 The routing order and the gates are explained in
 [do-item's SKILL.md](skills/do-item/SKILL.md).
+
+### The depth table
+
+Each row says how much the delivery stations do for one work type. A type
+lowers depth only where nothing else raises it: a flag label, a mandatory
+review the change-area catalog names, a gate in `do_item.gates` and the
+`hitl` label keep their force whatever the type. In this version do-item
+derives an item's type and prints its row when it picks the item up; what
+each station does is otherwise unchanged
+([design](https://github.com/jig-harness/jig/blob/main/design/work-types.md)).
+
+| Field | Values | `bug` | `feature` | `improvement` | `task` | `spike` |
+|-------|--------|-------|-----------|---------------|--------|---------|
+| `pre_scouts` | list of `pattern` (the pattern pre-scout), `spec` (the item's linked requirements) | `[pattern]` | `[spec]` | `[spec]` | `[]` | `[]` |
+| `test_first` | `required` (a failing test before the change), `new_behaviour` (required for new behaviour), `as_needed`, `none` | `required` | `new_behaviour` | `as_needed` | `none` | `none` |
+| `review_tiers` | list of review tiers `1`, `2`, `3` | `[1, 3]` | `[1, 2, 3]` | `[1, 2, 3]` | `[1]` | `[]` |
+| `review_skip_lines` | the most changed lines at which the review is skipped, `never`, or `none` (no review to skip) | `20` | `never` | `20` | `50` | `none` |
+| `change_note` | `required` (where the repository keeps a changelog), `not_required` | `required` | `required` | `required` | `not_required` | `not_required` |
+| `batchable` | `yes`, `within_batch_sizes` (sizes in `issue_tracker.labels.batch_sizes`), `no` | `within_batch_sizes` | `no` | `within_batch_sizes` | `yes` | `no` |
+| `autonomy` | `full`, `hitl` (a person decides the deliverable) | `full` | `full` | `full` | `full` | `hitl` |
+| `pr_body_sections` | list of section names | `[reproduction, cause, fix]` | `[requirements_covered, left_out]` | `[before_and_after]` | `[what_changed]` | `[findings, recommendation]` |
+
+An item whose type cannot be derived is `unknown`, which is not a row a
+repository sets: it is computed from the effective rows as the strictest
+value of each field. Its pre-scouts, review tiers and body sections are the
+union of every row's, each default type's default row included,
+`test_first` is `required`, the review is never
+skipped, the change note is required, it is not batchable, and its autonomy
+is `hitl`, since failing to derive a type does not show the item is not a
+spike. An override that lightens one type cannot lighten `unknown`.
 
 ## `work_batch`
 
@@ -458,6 +490,28 @@ The team key comes from `issue_tracker.team` and the change-area catalog from
 `drive.change_areas_catalog`. The signal lifecycle and what a diagnosis
 comment looks like are described in the header of
 `skills/drive-pr/scripts/fleet-health.ts`.
+
+## `verify`
+
+The [evidence record](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+(`shared/evidence.ts`): a check run through it is recorded against the exact
+tree it ran on, with its exit, the test counts from its JUnit report and the
+start and end of its output, so a claim that the check passed points at a run.
+`bun <plugin>/shared/evidence.ts run -- <command>` records a run and
+`bun <plugin>/shared/evidence.ts list` prints the records for the tree as it is
+now; the script's header lists every flag. The `verify` skill, once built,
+reads the same fields. Records and their output never leave the machine, and
+only their owner can read them; the short block the script prints names the
+command by a display name, never by its arguments, and gives the report's
+counts, never its suite or case names. An unknown field in `verify` is
+refused.
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `verify.store` | folder; `~` is expanded, relative paths resolve against the root | `~/.local/state/jig/evidence` | evidence (`shared/evidence.ts`; the `verify` skill when built) | Where the records are kept: `<store>/<repository>/<tree hash>/<command hash>/<run id>.json`, with the full output beside each; `<repository>` is the clone's folder name and a hash of its Git directory, so two clones of one name keep apart. A machine-local store: deleting it costs a re-run, never a decision, so it usually belongs in the user file. A folder inside the repository must be one Git ignores, or each run would change the tree it records |
+| `verify.output_lines` | whole number ≥ 1 | `60` | evidence (`shared/evidence.ts`; the `verify` skill when built) | How many lines from the start and from the end of the output the record keeps |
+| `verify.timeout_minutes` | whole number from 1 to 35791 (the longest a timer holds) | `30` | evidence (`shared/evidence.ts`; the `verify` skill when built) | The deadline of a run that `--timeout` does not set; a run that reaches it is ended with its whole process tree and recorded as timed out, never as a pass or a failure |
+| `verify.retention_days` | whole number ≥ 1 | `30` | evidence (`shared/evidence.ts`; the `verify` skill when built) | How long records are kept. Checked when a record is written; removing older records is to be a kind of the resource collection runner ([`gc`](#gc)), which does not collect them yet, so until then nothing is removed |
 
 ## `reflection`
 
@@ -728,8 +782,8 @@ gc:
 gates:
   command: make check                    # required by resolve-review-comments
 review:
-  bots: ["example-review[bot]"]          # required by resolve-review-comments
-  deferral_team: ENG                     # required by resolve-review-comments
+  bots: ["example-review[bot]"]
+  deferral_team: ENG
   repo_label: web
   repo_slug: example/web
   job_pattern: "^AI review"
@@ -798,6 +852,12 @@ issue_tracker:
     pattern_prefix: "pattern:"
     batch_sizes: [xs, small, medium]
     extractable_tails: [hitl:legal, hitl:tactical, manual-ops, pr-followup]
+  types:                                 # work type -> the labels that mark it
+    bug: [bug, type:bug]                 # default: labels.bug
+    feature: [feature, type:feature]
+    improvement: [improvement, type:improvement]
+    task: [task, type:task, chore]
+    spike: [spike, type:spike]
   github:                                # read by the github adapter only
     repository: acme/app                 # default: the origin remote's
     states_from: project                 # default: labels
@@ -821,6 +881,8 @@ do_item:
   gates:
     - { labels: [db-migration], paths: ["migrations/**"], skill: db-migration-review }
   execution_plan_block: execution-plan-v1
+  work_types:                            # fields of the depth table to override
+    task: { review_skip_lines: 80 }
 work_batch:
   point_budget: 16
   size_points: { xs: 1, small: 2, medium: 6 }   # keys: exactly issue_tracker.labels.batch_sizes
@@ -834,6 +896,11 @@ work_batch:
 fleet_health:
   config: .config/fleet-health.yaml
   snapshot_dir: ~/.local/state/jig/dashboard
+verify:
+  store: ~/.local/state/jig/evidence     # usually set in the user file
+  output_lines: 60
+  timeout_minutes: 30
+  retention_days: 30
 adr:
   directory: docs/adr
   rules_file: docs/adr/rules.yaml

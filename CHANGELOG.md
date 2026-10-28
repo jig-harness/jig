@@ -341,6 +341,107 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.91.3] - 2026-10-28
+
+### Fixed
+
+- The replied-thread sweep and `triage-thread.ts` keep declined code-scanning findings open until their alerts are confirmed dismissed, and a `moot` open until its alert is fixed, closed or dismissed; `triage-thread.ts` exits `4` while one is not. A code-scanning `moot` is never held for a push, so a retry after its alert settles resolves it, and a thread GitHub's code scanning account opened whose alert cannot be identified stays open. A retry or `--cleanup-only` on a resolved code-scanning thread whose `moot` superseded an `accepted` reply releases that stale hold. `finish-round.ts` no longer refuses the push for such a thread, answered and waiting on its alert, so a `moot` resting on the round's own fix can be pushed, including when a trusted bot's automated confirmation follows the reply. A code-scanning `moot` held before this release no longer resolves when the round drains it: `resolve-held-thread.ts` reads its alert and, unless it is fixed, closed or dismissed, drops the hold and leaves the thread open for the sweep, and `finish-round.ts` reports that item `left-open` rather than `resolved`. The alert is read before the drain's last comment and head checks, so a comment or push landing during the alert reads still stops the resolve.
+
+## [0.91.2] - 2026-10-28
+
+### Added
+
+- [M14](modules/M14-testing-strategy/README.md) ships a fixed-delay gate,
+  [`reference/fixed-delay/`](modules/M14-testing-strategy/reference/fixed-delay/README.md):
+  it fails a fixed delay (by default `Bun.sleep(`, `setTimeout(`, `sleep(`
+  and `time.sleep(`; `--pattern` names others) without a
+  `fixed-delay: <reason>` token on its line or the line above, a token
+  without a reason, and a token with no delay on its line or the line below.
+  It has no imports beyond Bun's and Node's built-ins, so it can be copied as
+  it is.
+- The audit's M14 criteria gain `test-exemptions-prune-themselves` and
+  `fixed-delay-tokens-prune-themselves`: a check that passes an exemption
+  matching no file, or a suppression token with no reason or no delay
+  beside it, scores convention at most on them. `tests-come-with-changes`
+  and `fixed-sleeps-banned` keep their bars, so a re-audit reports the two
+  as added by Jig rather than as a regression.
+
+### Changed
+
+- M14's tests-with-changes gate fails an exemption whose glob matches no file
+  in the tree it reads (`HEAD` with `--base`, the `--root` tree with
+  `--changed`), with exit 1 and the line to delete, whatever the change
+  touched. A repository whose exemptions file still holds a line for deleted
+  code sees that line fail on its next change; an exemption whose only file a
+  change deletes fails in that change.
+
+## [0.91.1] - 2026-10-28
+
+### Changed
+
+- A CI hold's held-head check, when it sits in the required job itself, may
+  cancel its own run instead of failing it
+  ([M13 § Hold](modules/M13-pipeline-economy/README.md#7-hold)). A
+  cancelled required check blocks the merge as a failed one does, but once
+  the release passes, the head the merge waits for lists the held run as
+  cancelled rather than as a red failed check. The shape, with the
+  `actions: write` permission it needs and the failure it falls back to, is
+  in [M13's mappings](modules/M13-pipeline-economy/mappings.md#hold);
+  drive-pr's CI-hold setup, the audit's `ci-hold-fails-held-heads` probe and
+  the workflow-convention lint accept it.
+
+## [0.91.0] - 2026-10-28
+
+### Added
+
+- Conflict hotspots enter the learning loop. `reflect.ts hotspots <report.json>` in the [`reflect` skill](plugin/skills/reflect/README.md) reads the merge-conflict history report (`history.ts --json` of [`resolve-conflicts`](plugin/skills/resolve-conflicts/SKILL.md#hotspots-into-the-learning-loop)) and notes one reflection finding per hotspot: the path as its target, its most frequent cause (`append`, `tally`, `overlap`, …) as its class, and the report's remedy as its fix, with what the measurement could not see (skipped merges, the cause's hand-checked accuracy, the report's limits). It refuses a report whose values the history report could not have written, one whose totals, paths, hotspots or limits are not the ones its own merges give, or whose times carry no offset, and notes nothing from it. A cause that recurs across files therefore escalates to one tracker issue through `reflect`'s existing plan and `/jig:review-reflections`, with no second escalation path. Measuring again revises a finding the journal still holds rather than adding one, and adds nothing for a hotspot the store already records until its fix is implemented and a later range measures it again. With reflection off it says so and writes nothing.
+- [M12](modules/M12-parallel-agent-ergonomics/README.md)'s merge-conflict practice says how measured hotspots reach the learning loop, and its audit criterion counts a hotspot's reflection finding as planned work once escalated or approved, and as a keep decision only once dismissed with a reason that keeps the cause on purpose and names when to revisit it.
+
+## [0.90.0] - 2026-10-28
+
+### Added
+
+- The evidence record, `shared/evidence.ts` in the plugin: `run -- <command>` runs a check under a deadline and keeps one record of it on the machine, tied to the hash of the exact tree it ran against (tracked files with their staged and unstaged changes, and untracked files Git does not ignore), with its exit, the test counts per suite from the JUnit report it wrote in this run, and the first and last lines of its output. A tree that changed during the run, a report left by an earlier run, a report that is a symbolic link, a report that failed a case, a suite that ran no case and a run that hit its deadline are each recorded as what they are, never as a pass. `--expect-fail` records a test seen to fail, and a command ended by a signal is not one. `list` finds the newest record of each command that vouches for a tree. The records are readable by their owner alone, and the short block it prints names the command without its arguments and gives the report's counts without its suite or case names. Its settings are the new `verify` section ([CONFIGURATION.md](plugin/CONFIGURATION.md#verify)): `store`, `output_lines`, `timeout_minutes` and `retention_days`.
+
+## [0.89.0] - 2026-10-28
+
+### Added
+
+- `do-item` now says what kind of work an item is when it picks it up: its
+  [work type](GLOSSARY.md) (`bug`, `feature`, `improvement`, `task` or
+  `spike`) and how it knows, in the status message, such as
+  `Type: bug (label type:bug)`. The new `determine_type.ts` script derives it
+  from the first of a type label, the tracker's own issue type (GitHub's
+  issue types) and a Conventional Commits title prefix such as `fix:` where
+  the repository's titles follow that convention; an item none of these
+  identifies is `unknown`. Nothing else about the pickup changes in this
+  version. See [do-item's README](plugin/skills/do-item/README.md#the-items-work-type).
+- `issue_tracker.types` names a repository's work types and the labels that
+  mark each (by default `bug` from `issue_tracker.labels.bug`, and
+  `<type>` or `type:<type>` for the others), and `do_item.work_types`
+  overrides single fields of the depth table: how much each delivery station
+  does for each type, with `unknown` always taking the strictest value of
+  every field. A type outside the default list needs a complete row. A
+  label listed under two types is refused, and so is a label the GitHub
+  adapter uses for a workflow state or a priority. Both fields are in the
+  [configuration reference](plugin/CONFIGURATION.md#the-depth-table), and
+  the audit's configuration check refuses what `do-item` refuses and reports
+  a type's labels that the label taxonomy does not define.
+- `get_issue.ts` prints the tracker's own issue type as `nativeType`: the
+  GitHub issue type's name, or `null` when the issue has none and always on
+  Linear, which has no issue types.
+
+## [0.88.0] - 2026-10-28
+
+### Changed
+
+- `resolve-review-comments` runs with only `gates.command` configured.
+  `review.bots` and `review.deferral_team` are optional: without
+  `review.bots` every reviewer's threads are worked, as they already were
+  whatever the list named, and without `review.deferral_team` a deferral
+  names its team with `--team`. A repository with no `review` section no
+  longer stops at the configuration step.
+
 ## [0.87.2] - 2026-10-27
 
 ### Fixed
@@ -3746,7 +3847,14 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.87.2...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.91.3...HEAD
+[0.91.3]: https://github.com/jig-harness/jig/compare/v0.91.2...v0.91.3
+[0.91.2]: https://github.com/jig-harness/jig/compare/v0.91.1...v0.91.2
+[0.91.1]: https://github.com/jig-harness/jig/compare/v0.91.0...v0.91.1
+[0.91.0]: https://github.com/jig-harness/jig/compare/v0.90.0...v0.91.0
+[0.90.0]: https://github.com/jig-harness/jig/compare/v0.89.0...v0.90.0
+[0.89.0]: https://github.com/jig-harness/jig/compare/v0.88.0...v0.89.0
+[0.88.0]: https://github.com/jig-harness/jig/compare/v0.87.2...v0.88.0
 [0.87.2]: https://github.com/jig-harness/jig/compare/v0.87.1...v0.87.2
 [0.87.1]: https://github.com/jig-harness/jig/compare/v0.87.0...v0.87.1
 [0.87.0]: https://github.com/jig-harness/jig/compare/v0.86.0...v0.87.0

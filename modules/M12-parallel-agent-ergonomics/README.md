@@ -205,7 +205,11 @@ per-ecosystem wiring lives in [mappings.md](mappings.md).
     cherry-picks and reverts resolved in this clone. Keep its coverage limits with the findings: silence from
     the live record is not proof of a conflict-free branch. Feed recurring
     causes into the existing [M8 learning loop](../M8-learning-loop/) rather
-    than creating a second issue queue.
+    than creating a second issue queue: the
+    [`reflect`](../../plugin/skills/reflect/README.md) skill's `hotspots`
+    operation enters each measured hotspot into the reflection store as a
+    finding whose class is its cause, so a cause that recurs across files
+    escalates to one tracker issue.
 
 The whole copyable model — all its rules in one place, ready to drop into a docs
 tree — is [`templates/WORKTREE-ERGONOMICS.md`](templates/WORKTREE-ERGONOMICS.md).

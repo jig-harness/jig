@@ -106,8 +106,8 @@ makes the helper fail even when the command exited successfully, and blocks
 another launch while keeping the earlier generation's process evidence.
 
 The drive also uses two fields `resolve-review-comments` already reads:
-`gates.command` (the complete local checks) and `review.bots` (reviewer
-identities). `review.job_pattern` and `review.required_checks` govern only the
+`gates.command` (the complete local checks) and, when set, `review.bots`
+(reviewer identities). `review.job_pattern` and `review.required_checks` govern only the
 review skill's own passes; the drive's convergence decision does not read them.
 Where the drive reaches the issue tracker (the human-checkpoint check before it
 arms, and the fleet-health and program-wide metrics reports), it uses the
@@ -120,8 +120,7 @@ reviewer to wait on: the drive reads no reviewer check run, sticky comment or
 stamp, counts a check that merely looks like a reviewer's as an ordinary check
 in the CI verdict, and certifies convergence from zero unresolved threads, zero
 unaddressed summary findings and the CI checks below. `review.bots` alone does
-not make a reviewer expected; it still names the logins whose threads the
-review skill resolves. A repository that has an AI reviewer says so in its
+not make a reviewer expected; it only names the repository's reviewer logins. A repository that has an AI reviewer says so in its
 configuration, or the drive converges without it.
 
 **What the drive requires of an expected AI reviewer.** Having the review skill
@@ -203,7 +202,13 @@ expensive for that can let the drive suppress it between review rounds:
    on an unheld pull request runs real CI. And fail, rather than skip, a
    required check while the label is present, from the run the label's
    application starts onward, with a message naming the label, so a held
-   head is visibly not mergeable throughout. M13's
+   head is visibly not mergeable throughout. A step in the required job
+   itself may cancel its own run instead, failing only when the
+   cancellation does not happen (never in a job the required one needs,
+   where a cancelled run can leave the required job skipped): that
+   blocks the merge too, and the released head then lists its held run as
+   cancelled rather than as a red failure
+   ([M13's mappings](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/mappings.md#hold)). M13's
    [workflow-convention lint](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/reference/workflow-conventions/README.md#ci-hold)
    checks all three.
 
@@ -347,7 +352,7 @@ The `bun` prefix and the single line are deliberate: every TypeScript command ex
 | `19` | `MAILBOX_PAUSE_TIMEOUT` | A mailbox `pause` stayed active for `$DRIVE_PR_PAUSE_MAX_SEC` (default 30 minutes). Send `resume --target pause`, then re-arm. The driver releases its locks on this exit. |
 | `1` / `2` | Pass failed / usage error / **CI still red** | Operational. Read stderr; `2` usually means the command line itself is wrong, but can also mean `UNSUPPORTED_CLI` — a `gh` too old to report a required PR field such as draft state or mergeability. For that case, upgrade `gh`; it is not a CI-repair matter. `1` is also the CI stop: the review converged but full CI on the converged head is red and the repair budget (`DRIVE_PR_CI_REPAIR_ROUNDS`, default 2) is exhausted or disabled (`0` skips repair entirely and stops on the first red), or the verdict was unreadable rather than a named failure. Repair CI by hand, then re-arm. |
 
-One red-CI cause is worth ruling out before you repair anything in a repository with a [CI hold](#ci-hold): a drive that **died** mid-round leaves its hold label behind, and the repository's held-head check then fails a required check on a perfectly healthy PR. Check `bun "<skill-dir>/../../shared/command.ts" -- gh pr view <PR> --json labels` first. If it is there, push whatever the dead drive stranded, then `bun "<skill-dir>/../../shared/command.ts" -- gh pr edit <PR> --remove-label "<ci.hold_label>"` — the removal itself retriggers CI. Do **not** `gh run rerun` the old run: it replays the original event payload, which still carries the label, so it fails on the hold step again.
+One red-CI cause is worth ruling out before you repair anything in a repository with a [CI hold](#ci-hold): a drive that **died** mid-round leaves its hold label behind, and the repository's held-head check then fails or cancels a required check on a perfectly healthy PR. Check `bun "<skill-dir>/../../shared/command.ts" -- gh pr view <PR> --json labels` first. If it is there, push whatever the dead drive stranded, then `bun "<skill-dir>/../../shared/command.ts" -- gh pr edit <PR> --remove-label "<ci.hold_label>"` — the removal itself retriggers CI. Do **not** `gh run rerun` the old run: it replays the original event payload, which still carries the label, so it fails on the hold step again.
 
 Where the repository turned on the [`changelog`](../changelog/README.md) skill
 (`changelog.file` in the `.config/jig.yaml` its base branch holds), a round whose accepted fix
@@ -567,6 +572,8 @@ clone's leaf, when several clones share it.
 
 - **Stop:** `bun "<skill-dir>/scripts/drives.ts" --stop <PR>` requests shutdown after verifying the driver's process identity. The driver stops the active pass before releasing its locks. On Windows, a polled stop request lets cleanup run without POSIX signals; process snapshots come from PowerShell. Confirmed cleanup publishes a completion receipt for that acquisition before releasing claims. The stop command requires the matching receipt and disappearance of its captured process identities when a temporary shutdown marker made the registry uncertain. Ctrl-C also cancels the active work. Locks a dead driver leaves behind are recovered automatically by the next driver.
 - **Resume:** run the same command again. The durable state means it continues rather than restarts, and threads already answered are reconciled rather than re-answered (`reconcile-replied-threads.ts` runs from the gate). A retry against an unchanged head is not a new *reviewed-head* round, but it does spend one of the durable **attempts**; within one uninterrupted drive, consecutive observable no-op passes trip exit `14` (default 2), while retries spread across driver restarts reset that in-memory stall streak and can still exhaust `--max-rounds` with exit `6`.
+
+  The sweep and `triage-thread.ts` leave a declined code-scanning thread open until its alert is confirmed dismissed, and a `moot` one until its alert is fixed, closed or dismissed, including when the alert cannot be read or identified. A code-scanning `moot` is never held for a push: once its alert settles, the next retry resolves it.
 - **Inspect without touching:** `bun "<skill-dir>/scripts/drive-status.ts" <PR> --json --once --no-count` answers "what would the drive do now" without doing it. `--no-count` is what makes that true — without it the probe *counts* its own evaluation as a round on this head, moving the durable counter that a later drive's `--max-rounds` bound and reflection nudge both read.
 
 If a drive died mid-round hours ago, just re-arm — recovery is the designed path, not an exception.

@@ -70,6 +70,12 @@ export interface Issue {
   updatedAt?: string;
   state: IssueState;
   labels: string[];
+  /**
+   * The tracker's own type for the issue (GitHub's issue types: `Bug`,
+   * `Feature`, `Task`, or an organization's own), or `null` when the issue
+   * has none or the tracker has no issue types (Linear).
+   */
+  nativeType: string | null;
   parent: { identifier: string; title?: string } | null;
   children: IssueSummary[];
   assignee: string | null;

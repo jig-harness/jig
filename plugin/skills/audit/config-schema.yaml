@@ -14,6 +14,7 @@
 #               path:    relative to the repository root unless absolute
 #   values    enum: the allowed values; integer: words allowed besides a number
 #   min       integer: the least allowed number
+#   max       integer: the greatest allowed number
 #   pattern   string, command, path: a regular expression the value must
 #             match; also allowed in a nested type spec of one of those types
 #             (a list's `items`), applying to each entry; refused on any other
@@ -29,7 +30,9 @@
 #   exists    path: `required` when the reading skill refuses a configured path
 #             that does not exist; `expected` when a missing one only makes
 #             the field useless
-#   read_by   the skills that read the field (CONFIGURATION.md's "Read by")
+#   read_by   the skills that read the field (CONFIGURATION.md's "Read by");
+#             `gc` names the collector (`jig.ts gc`) and `evidence` the
+#             shared evidence record (`shared/evidence.ts`)
 #   repository_only  true for a field that describes one repository: the user
 #             file refuses it (CONFIGURATION.md § Configuration layers)
 #   default   the value a skill uses when the field is absent, where that is
@@ -57,6 +60,7 @@ strict:
   - code_stats
   - work_batch
   - work_batch.ranking
+  - verify
 
 # Sections a skill refuses outright, with what to do instead.
 refused:
@@ -348,6 +352,11 @@ fields:
     items: string
     distinct: true
     read_by: [do-item]
+  issue_tracker.types:
+    type: map
+    values_type: { type: list, items: string }
+    read_by: [do-item]
+    since: 0.89.0
   issue_tracker.file_command:
     type: string
     read_by: [do-item, decide, resolve-review-comments, descar, github-actions, promote-memory, reflect, review-reflections]
@@ -392,6 +401,11 @@ fields:
     type: string
     default: execution-plan-v1
     read_by: [do-item]
+  do_item.work_types:
+    type: map
+    values_type: { type: map, values_type: any }
+    read_by: [do-item]
+    since: 0.89.0
 
   work_batch.point_budget:
     type: integer
@@ -448,6 +462,30 @@ fields:
   fleet_health.snapshot_dir:
     type: path
     read_by: [drive-pr]
+
+  verify.store:
+    type: path
+    read_by: [evidence]
+    since: 0.90.0
+  verify.output_lines:
+    type: integer
+    min: 1
+    default: 60
+    read_by: [evidence]
+    since: 0.90.0
+  verify.timeout_minutes:
+    type: integer
+    min: 1
+    max: 35791
+    default: 30
+    read_by: [evidence]
+    since: 0.90.0
+  verify.retention_days:
+    type: integer
+    min: 1
+    default: 30
+    read_by: [evidence]
+    since: 0.90.0
 
   adr.directory:
     type: path

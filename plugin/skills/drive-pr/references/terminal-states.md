@@ -1675,7 +1675,11 @@ match) rather than resolved, because this script
 has no more ability than a fresh pass would to verify the promised fix
 actually landed — that verification stays `resolve-held-thread.ts`'s job, for
 whenever a real round next runs and its own step 3 confirms the fix and
-re-holds it for real.
+re-holds it for real. A thread GitHub's code scanning account opened is
+judged on its alert instead: a declined reply resolves only once the alert is
+confirmed dismissed, a `moot` (never held there) only once it is fixed,
+closed or dismissed, and either stays open while the alert is unconfirmed,
+unreadable or unidentified, still releasing any hold the reply superseded.
 
 Because it needs nothing from `drive-status.ts`, `drive-status.ts` runs it —
 first, before it evaluates anything, on every *counting* invocation, i.e. every
