@@ -20,8 +20,11 @@
  *                                     `--place` passes for a tree it made)
  *
  * Prints one JSON line on success: `{pr, branch, remote, head, worktree,
- * detached, created}` for an attach, `{pr, repo, tree, created}` for
- * `--place`. `drive.ts` attaches once it holds the tree's lock and before it
+ * detached, created}` for an attach, `{pr, repo, tree, created, otherClone}`
+ * for `--place`; `otherClone` says the tree is in another clone, whose
+ * attach ran without `GH_REPO`, `JIG_CONSUMER_ROOT` and `JIG_OVERLAY`.
+ * A tree `--place` creates is recorded as the PR's before the attach runs, so
+ * a failed or interrupted attach leaves a tree the next `--place` reuses. `drive.ts` attaches once it holds the tree's lock and before it
  * takes the pull request's, so arming a drive runs this either way; `--place` is the arm step's, which needs to know the
  * tree before it can start the driver there.
  *
@@ -83,11 +86,11 @@ async function place(args: Args): Promise<number> {
     console.error(placement.message);
     return 3;
   }
-  const { tree, pr, created, slug } = placement;
-  const attached = await attachIn(tree, pr, created);
+  const { tree, pr, created, slug, otherClone } = placement;
+  const attached = await attachIn(tree, pr, created, otherClone);
   process.stderr.write(attached.stderr);
   if (attached.code !== 0) return attached.code;
-  console.log(JSON.stringify({ pr, repo: slug, tree, created }));
+  console.log(JSON.stringify({ pr, repo: slug, tree, created, otherClone }));
   return 0;
 }
 

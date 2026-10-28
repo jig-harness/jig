@@ -13,6 +13,7 @@ import {
   type Clone,
   driveState,
   makeClone,
+  plantLiveLock,
 } from "./attach-pr-fixtures.ts";
 
 const clones: Clone[] = [];
@@ -86,6 +87,36 @@ describe("attach-pr.ts --place", () => {
     const r = c.attach(c.primary, "42", "--place");
     expectSpawnExit(r, 2, "attach --place");
     expect(() => realpathSync(join(roots, "clone-pr-42"))).toThrow();
+  });
+
+  test("creates nothing when origin is not the PR's repository", () => {
+    const { c, roots } = withRoots();
+    c.pr({ headRepositoryOwner: { login: "other" } });
+    const r = c.attach(c.primary, "42", "--place");
+    expectSpawnExit(r, 2, "attach --place");
+    expect(r.stderr).toContain("'origin' is example/app");
+    expect(() => realpathSync(join(roots, "clone-pr-42"))).toThrow();
+  });
+
+  test("reuses a tree it created when the attach there did not finish", () => {
+    const { c, roots } = withRoots();
+    const lock = join(c.env.DRIVE_PR_STATE_DIR as string, "pr-drive-42.lock");
+    plantLiveLock(c, "pr-drive-42.lock");
+    const first = c.attach(c.primary, "42", "--place");
+    expectSpawnExit(first, 11, "attach --place, PR held");
+    const tree = realpathSync(join(roots, "clone-pr-42"));
+    rmSync(lock, { recursive: true, force: true });
+    const again = c.attach(c.primary, "42", "--place");
+    expectSpawnExit(again, 0, "attach --place again");
+    expect(JSON.parse(again.stdout)).toMatchObject({ tree });
+    expect(branchOf(c, tree)).toBe("feature");
+    expect(driveState(c, tree).drivenBranch).toMatchObject({ created: true });
+    // The drive's own attach, which is not told the tree was created, keeps
+    // the provenance the state already holds.
+    const drive = c.attach(tree, "42");
+    expectSpawnExit(drive, 0, "attach in the placed tree");
+    expect(JSON.parse(drive.stdout)).toMatchObject({ created: true });
+    expect(driveState(c, tree).drivenBranch).toMatchObject({ created: true });
   });
 
   test("names the command to run for another repository with no clone mapped", () => {

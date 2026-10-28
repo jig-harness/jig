@@ -20,9 +20,19 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { clonePath, isMapping } from "../../../../shared/config-layers.ts";
 import { layeredConfig } from "../../../../shared/consumer.ts";
-import { detachedTreeRecord } from "../../../../shared/driven-tree.ts";
+import {
+  detachedTreeRecord,
+  writeDrivenTree,
+} from "../../../../shared/driven-tree.ts";
 import { isRecord } from "../../../../shared/guards.ts";
-import { canonical, DRIVE_REMOTE, g, out, refuse } from "./attach.ts";
+import {
+  canonical,
+  DRIVE_REMOTE,
+  g,
+  out,
+  refuse,
+  requireOrigin,
+} from "./attach.ts";
 import { fetchTimeoutSeconds } from "./base-drift.ts";
 import {
   ghCall,
@@ -72,6 +82,8 @@ export type Placement =
       slug: string | null;
       tree: string;
       created: boolean;
+      /** The tree is in another clone than the caller's checkout. */
+      otherClone: boolean;
     }
   | { kind: "elsewhere"; pr: string; slug: string; message: string };
 
@@ -144,11 +156,18 @@ async function recordedTree(all: Tree[], pr: string): Promise<string | null> {
 
 /**
  * The PR's head branch, refusing before anything is created for a PR the
- * attach would refuse anyway: one that is not open, or one from a fork.
+ * attach would refuse anyway: one that is not open, one from a fork, or one
+ * whose repository `origin` is not, for any URL it fetches from or pushes to.
  */
 async function headBranch(cwd: string, pr: string): Promise<string> {
   const r = await ghCall(
-    ["pr", "view", pr, "--json", "state,headRefName,isCrossRepository"],
+    [
+      "pr",
+      "view",
+      pr,
+      "--json",
+      "state,headRefName,isCrossRepository,headRepository,headRepositoryOwner",
+    ],
     { cwd, stderr: "pipe", env: ghRepoEnv() },
   );
   let meta: unknown;
@@ -166,6 +185,15 @@ async function headBranch(cwd: string, pr: string): Promise<string> {
     );
   if (meta.isCrossRepository !== false)
     refuse(2, `PR #${pr} comes from a fork: the drive cannot push its head`);
+  const owner = isRecord(meta.headRepositoryOwner)
+    ? meta.headRepositoryOwner.login
+    : undefined;
+  const name = isRecord(meta.headRepository)
+    ? meta.headRepository.name
+    : undefined;
+  if (typeof owner !== "string" || typeof name !== "string")
+    refuse(1, `PR #${pr} did not report its head repository`);
+  await requireOrigin(cwd, { repo: `${owner}/${name}` }, pr);
   return meta.headRefName;
 }
 
@@ -226,7 +254,25 @@ async function createTree(
   );
   if (added.code !== 0)
     refuse(1, `cannot add a working tree at ${path}: ${added.stderr.trim()}`);
-  return canonical(path);
+  // Recorded at once, as created for the drive: an attach there that fails
+  // or is interrupted leaves a tree the next placement finds and reuses
+  // (`recordedTree`), and resource collection can reap.
+  const tree = canonical(path);
+  writeDrivenTree(
+    await out(
+      tree,
+      ["rev-parse", "--absolute-git-dir"],
+      "the new tree's git directory",
+    ),
+    {
+      pr: Number(pr),
+      branch,
+      remote: DRIVE_REMOTE,
+      created: true,
+      head: await out(tree, ["rev-parse", "HEAD"], "the new tree's head"),
+    },
+  );
+  return tree;
 }
 
 /**
@@ -265,6 +311,7 @@ export async function placePr(ref: PrRef, cwd: string): Promise<Placement> {
     slug: ref.slug,
     tree,
     created,
+    otherClone: clone !== cwd,
   });
   const all = await trees(clone);
   const primary = (all[0] as Tree).path;
@@ -297,21 +344,34 @@ const ATTACH_PR = join(
   "attach-pr.ts",
 );
 
+/**
+ * The variables that select a repository or configuration other than the one
+ * at the working directory. Placement reads `gh` without `GH_REPO`, so the
+ * attach it spawns does too; in another clone, the consumer root and the
+ * overlay would select this checkout's configuration instead of that clone's.
+ */
+export const CLONE_SELECTORS = ["GH_REPO", "JIG_CONSUMER_ROOT", "JIG_OVERLAY"];
+
 /** Attach `pr` in `tree` as its own process, so the state is that clone's. */
 export async function attachIn(
   tree: string,
   pr: string,
   created: boolean,
+  otherClone: boolean,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   // Its fetch has a deadline of its own; the rest is a helper's.
   const fetch = fetchTimeoutSeconds();
+  const scrubbed = otherClone ? CLONE_SELECTORS : ["GH_REPO"];
+  const env = gitIdentityEnv();
+  for (const key of Object.keys(env))
+    if (scrubbed.includes(key.toUpperCase())) delete env[key];
   const r = await run(
     tsArgv(ATTACH_PR, [pr, ...(created ? ["--created"] : [])]),
     {
       cwd: tree,
       stderr: "pipe",
       timeoutSec: helperTimeoutSeconds() + (fetch.ok ? fetch.seconds : 0),
-      env: gitIdentityEnv(),
+      env,
     },
   );
   return { code: r.code, stdout: r.stdout, stderr: r.stderr };

@@ -328,8 +328,10 @@ An attach by name removes it. (The drive state's `drivenBranch` mirrors it
 for the handoff file.) It refuses (exit `2`, naming the state) a tree with
 uncommitted changes or an unfinished git operation, a tree holding the branch
 that is dirty or has commits the PR's head lacks, a detached head with
-commits no branch or remote holds, a local branch ahead of the head, the
-clone's primary checkout on another branch, an `origin` that is another
+commits no branch or remote holds, a local branch of that name ahead of the
+head that this tree would switch to (a tree already on the branch keeps its
+commits ahead of the head, and the drive pushes them), the clone's primary
+checkout on another branch, an `origin` that is another
 repository, and a PR from a fork; a PR that is not open is exit `5`. A live
 driver already holding the PR leaves the tree untouched, and the lock refuses
 next (exit `11`); run alone, it also leaves a tree another driver holds
@@ -603,8 +605,11 @@ could forge or forget.
    with git's `worktree add --detach` under the first root `gc.worktree_roots`
    names; for a PR in another repository, the same in the clone the user
    file's `clones` map names for it.
-   - exit `0` → it prints `{"pr", "repo", "tree", "created"}`: arm in `tree`,
-     with the number `pr`.
+   - exit `0` → it prints `{"pr", "repo", "tree", "created", "otherClone"}`:
+     arm in `tree`, with the number `pr`. When `otherClone` is `true`, run
+     the checkpoint lookup below and the driver with `GH_REPO`,
+     `JIG_CONSUMER_ROOT` and `JIG_OVERLAY` unset, as the attach ran, so they
+     read that clone's repository and configuration rather than this one's.
    - exit `3` → the PR is in another repository and no clone of it is mapped.
      Print its output, which names the command to run in a checkout of that
      repository, and stop.

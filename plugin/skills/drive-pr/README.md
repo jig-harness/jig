@@ -352,7 +352,8 @@ or an unfinished merge, rebase or cherry-pick; when the tree holding the
 branch has uncommitted changes or commits the PR's head does not have
 (push them from there first); when this tree's detached head has commits no
 branch or remote holds; when a local branch of that name is ahead of the
-head; when this is the clone's primary checkout on another branch; when
+head and this tree would switch to it (a tree already on the branch keeps
+its commits ahead of the head, and the drive pushes them); when this is the clone's primary checkout on another branch; when
 `origin` is another repository; and when the PR comes from a fork, whose head
 the drive cannot push to. It moves nothing while a live driver holds the tree
 or the PR, or an interactive session holds the tree. A dry run attaches
@@ -363,7 +364,9 @@ harness that prepares its own trees.
 (`bun "<skill-dir>/scripts/attach-pr.ts" <PR> --place`): the session's own working tree, or, from the
 clone's primary checkout, the tree that already holds the PR, else a new one
 created with git's `worktree add --detach` under the first root
-`gc.worktree_roots` names. [Resource collection](../../gc/README.md)'s
+`gc.worktree_roots` names, once `origin` is confirmed as the PR's repository.
+A tree it creates is recorded as the PR's at once, so an attach there that
+fails or is interrupted is retried in the same tree. [Resource collection](../../gc/README.md)'s
 `worktrees` kind reads a detached tree's record to find its PR, and reports
 the tree once that PR merges or closes, as it reports a branch's tree. A PR
 in another repository can be named as `owner/name#N` or by its URL: the
