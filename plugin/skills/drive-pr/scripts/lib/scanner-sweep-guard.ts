@@ -247,7 +247,8 @@ export async function declinedAlertOf(
  * Whether `resolve-held-thread.ts` may resolve held thread `threadId`, held
  * with `outcome`: `false` when the hold is a `moot`, GitHub's code scanning
  * account opened the thread, and its alert is not fixed, closed or
- * dismissed; `null` when the thread's opening comment cannot be read. Such a
+ * dismissed; `null` when the thread's opening comment or its author cannot
+ * be read. Such a
  * hold predates `mootHeld`'s rule. Read before the drain's final comment and
  * head checks, so nothing slower than those stands between them and the
  * mutation.
@@ -278,9 +279,12 @@ export async function heldThreadMayResolve(
     return null;
   }
   if (typeof opening !== "object" || opening === null) return null;
-  const login = opening.author?.login;
+  // `author: null` is a deleted account, never code scanning's; an absent
+  // author or one without a login leaves the scanner question unanswered.
+  const login = opening.author === null ? null : opening.author?.login;
+  if (login !== null && typeof login !== "string") return null;
   const comment = {
-    author: typeof login === "string" ? login : null,
+    author: login,
     body: typeof opening.body === "string" ? opening.body : null,
   };
   if (!awaitsAlert(comment, outcome)) return true;

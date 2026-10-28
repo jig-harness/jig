@@ -565,3 +565,43 @@ describe("triage-thread.ts retrying a code-scanning moot", () => {
     }
   });
 });
+
+describe("heldThreadMayResolve on an opening comment without a readable author", () => {
+  const GUARD = join(SCRIPTS, "lib", "scanner-sweep-guard.ts");
+
+  function judge(opening: unknown): string {
+    const { dir, stateDir } = fixture({});
+    writeFileSync(
+      join(dir, "node.json"),
+      JSON.stringify({ data: { node: { comments: { nodes: [opening] } } } }),
+    );
+    const r = Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `const { heldThreadMayResolve } = await import(${JSON.stringify(GUARD)});
+console.log(JSON.stringify(await heldThreadMayResolve("T_held", "moot", 20)));`,
+      ],
+      {
+        cwd: worktree,
+        env: childEnv(dir, stateDir),
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expectSpawnExit(r, 0, "heldThreadMayResolve");
+    return r.stdout.toString().trim();
+  }
+
+  it("is indeterminate when the author is absent or has no login", () => {
+    expect(judge({ body: "Unsafe path." })).toBe("null");
+    expect(judge({ author: {}, body: "Unsafe path." })).toBe("null");
+  });
+
+  it("resolves a deleted author's or a person's thread without an alert read", () => {
+    expect(judge({ author: null, body: "Unsafe path." })).toBe("true");
+    expect(judge({ author: { login: "example-user" }, body: "x" })).toBe(
+      "true",
+    );
+  });
+});
