@@ -362,12 +362,18 @@ change; the practice references above would not.
 
 ### Left out by design
 
-- **The lens catalogue.** A shadow reviewer's actual lenses and its
-  model-routing tiers are one repository's tuned content, not a portable
-  mechanism. The module specifies the *harness shape* (registry, posture,
-  numbered additive lenses) and leaves the catalogue, including the
-  higher-tier semantic lenses that need full model reasoning, to be grown
-  locally through [M8](../M8-learning-loop/).
+- **A lens catalogue beyond the seed lenses.** Jig ships a few
+  [seed lenses](../../GLOSSARY.md) with the
+  [`review`](../../plugin/skills/review/SKILL.md) skill, each the review
+  form of one rule a Jig module states (`jig.swallowed-failure` for
+  [M15](../M15-contracts-errors/)'s rules on failures), and the lens file
+  as the contract: one Markdown file per lens, holding its id and version,
+  the rules it enforces, the trigger that selects it, the evidence every
+  finding must give, and what is and is not a finding. `review` runs those
+  files, and a repository's shadow reviewer can load the same ones. A
+  repository's own lenses and its model-routing tiers are its tuned
+  content, not a portable mechanism: they are grown locally through
+  [M8](../M8-learning-loop/), in the same file format.
 - **A reviewer runtime.** A review harness is an agent job in whatever
   language the repository uses, so the module specifies its config contract
   and ships only the pieces that are portable gates: the fork-safe wiring
