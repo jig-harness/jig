@@ -341,6 +341,28 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.91.1] - 2026-10-28
+
+### Changed
+
+- A CI hold's held-head check, when it sits in the required job itself, may
+  cancel its own run instead of failing it
+  ([M13 § Hold](modules/M13-pipeline-economy/README.md#7-hold)). A
+  cancelled required check blocks the merge as a failed one does, but once
+  the release passes, the head the merge waits for lists the held run as
+  cancelled rather than as a red failed check. The shape, with the
+  `actions: write` permission it needs and the failure it falls back to, is
+  in [M13's mappings](modules/M13-pipeline-economy/mappings.md#hold);
+  drive-pr's CI-hold setup, the audit's `ci-hold-fails-held-heads` probe and
+  the workflow-convention lint accept it.
+
+## [0.91.0] - 2026-10-28
+
+### Added
+
+- Conflict hotspots enter the learning loop. `reflect.ts hotspots <report.json>` in the [`reflect` skill](plugin/skills/reflect/README.md) reads the merge-conflict history report (`history.ts --json` of [`resolve-conflicts`](plugin/skills/resolve-conflicts/SKILL.md#hotspots-into-the-learning-loop)) and notes one reflection finding per hotspot: the path as its target, its most frequent cause (`append`, `tally`, `overlap`, …) as its class, and the report's remedy as its fix, with what the measurement could not see (skipped merges, the cause's hand-checked accuracy, the report's limits). It refuses a report whose values the history report could not have written, one whose totals, paths, hotspots or limits are not the ones its own merges give, or whose times carry no offset, and notes nothing from it. A cause that recurs across files therefore escalates to one tracker issue through `reflect`'s existing plan and `/jig:review-reflections`, with no second escalation path. Measuring again revises a finding the journal still holds rather than adding one, and adds nothing for a hotspot the store already records until its fix is implemented and a later range measures it again. With reflection off it says so and writes nothing.
+- [M12](modules/M12-parallel-agent-ergonomics/README.md)'s merge-conflict practice says how measured hotspots reach the learning loop, and its audit criterion counts a hotspot's reflection finding as planned work once escalated or approved, and as a keep decision only once dismissed with a reason that keeps the cause on purpose and names when to revisit it.
+
 ## [0.90.0] - 2026-10-28
 
 ### Added
@@ -3791,7 +3813,9 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.90.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.91.1...HEAD
+[0.91.1]: https://github.com/jig-harness/jig/compare/v0.91.0...v0.91.1
+[0.91.0]: https://github.com/jig-harness/jig/compare/v0.90.0...v0.91.0
 [0.90.0]: https://github.com/jig-harness/jig/compare/v0.89.0...v0.90.0
 [0.89.0]: https://github.com/jig-harness/jig/compare/v0.88.0...v0.89.0
 [0.88.0]: https://github.com/jig-harness/jig/compare/v0.87.2...v0.88.0
