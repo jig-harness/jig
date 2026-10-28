@@ -180,6 +180,11 @@ export function parseLens(
   };
 }
 
+/** Code-unit order: the same on every host, whatever its locale. */
+export function byCodeUnit(a: string, b: string): number {
+  return Number(a > b) - Number(a < b);
+}
+
 /** Whether `name` is a lens file's name: Markdown, and not the folder's README. */
 export function isLensFileName(name: string): boolean {
   return name.endsWith(".md") && name !== "README.md";
@@ -190,7 +195,7 @@ export function readLensDir(dir: string, source: LensSource): Lens[] {
   if (!statSync(dir, { throwIfNoEntry: false })?.isDirectory()) return [];
   return readdirSync(dir)
     .filter(isLensFileName)
-    .sort()
+    .sort(byCodeUnit)
     .map((name) => {
       const file = join(dir, name);
       return parseLens(readFileSync(file, "utf8"), file, source);

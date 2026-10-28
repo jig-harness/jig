@@ -135,7 +135,7 @@ function outcomeOf(input: Record<string, unknown>): LensOutcome {
     throw new InputError("give either selection or skipped_by");
   const lenses = skippedBy === null ? selection(input.selection) : [];
   const findings = (Array.isArray(input.findings) ? input.findings : []).map(
-    finding,
+    (entry, i) => finding(entry, i),
   );
   const ran = new Set(
     lenses.filter((l) => l.runs).map((l) => `${l.id}@${l.version}`),
@@ -151,7 +151,7 @@ function outcomeOf(input: Record<string, unknown>): LensOutcome {
     skippedBy,
     lenses,
     sharedContext: runner === "same-session",
-    findings: findings.map(rate),
+    findings: findings.map((f) => rate(f)),
   };
 }
 
@@ -210,7 +210,7 @@ export function summarize(input: Input): Summary {
 export function renderText(summary: Summary): string {
   const verdictLine = summary.verdict ? `VERDICT: ${summary.verdict}\n` : "";
   const findings = summary.findings.length
-    ? `\nLens findings:\n${summary.findings.map(findingLine).join("")}`
+    ? `\nLens findings:\n${summary.findings.map((f) => findingLine(f)).join("")}`
     : "";
   return `Tier 3 (Semantic):      ${summary.tier3}\n${summary.lenses}\n${verdictLine}${findings}`;
 }

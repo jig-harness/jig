@@ -6,6 +6,7 @@
  */
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { byCodeUnit } from "./lens-file.ts";
 
 export interface BriefInput {
   /** `id@version`, as every finding names its lens. */
@@ -38,7 +39,7 @@ export function instructionFiles(
     for (let dir = dirname(path); dir !== "." && dir !== ""; dir = dirname(dir))
       folders.add(dir);
   return [...folders]
-    .sort()
+    .sort(byCodeUnit)
     .flatMap((dir) =>
       INSTRUCTION_FILES.map((name) => join(baseTree, dir, name)),
     )

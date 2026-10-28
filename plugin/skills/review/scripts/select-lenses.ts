@@ -130,7 +130,7 @@ export function select(opts: Options): Selection {
       ),
       ...(config.dir === null
         ? []
-        : proposed(root, config.dir, files).map(proposedLens)),
+        : proposed(root, config.dir, files).map((path) => proposedLens(path))),
     ],
   };
 }
