@@ -1437,6 +1437,27 @@ make, use the entry's term instead.
 - **Marketplace** — a catalog an agent tool installs plugins from; usually a
   Git repository with a manifest listing its plugins. This repository is its
   own marketplace.
+- **Dark factory** — a delivery loop that runs with nobody watching: work is
+  picked up, implemented, reviewed and driven to its merge decision by agents,
+  and a person is involved only at the decisions the *HITL* registry reserves.
+  Jig is built toward one; the merge stays a person's.
+- **Autonomy level** — how far an agent may decide without asking, declared
+  by a repository (`attended`, `unattended`, `wide`) and raised during
+  configured *off-hours* windows. The level changes nothing the *HITL*
+  registry reserves; it decides who answers the questions outside it.
+- **Drive ledger** — the hidden-marker comment on a pull request that mirrors
+  the review drive's resumable state (round, parked and held items, takeovers,
+  decisions taken unattended), so a drive in any clone, on any machine or
+  account, resumes from it.
+- **Takeover** — one session replacing a drive's registered driver, admitted
+  only when that driver is dead, has stopped making progress, is parked on a
+  usage limit the successor's account does not share, or is parked on
+  decisions that have been answered; recorded in the drive state and the
+  *drive ledger*.
+- **Provisional decision** — a decision an agent took under a raised
+  *autonomy level* because nobody was there to ask, marked as such where it
+  was taken and listed first in the morning report, so a person can reverse
+  it before the merge.
 - **Consumer overlay** — a repository's own values for a shared procedure,
   such as its gate command and reviewer names, kept in
   `.config/jig.yaml` and read by the procedure when it runs.

@@ -17,6 +17,40 @@ here have a design in this folder ([README.md](README.md)).
 
 ## Now
 
+### 32. Driving any pull request from anywhere, with autonomy that fits the hour
+
+The drive assumes the working tree that opened the pull request: the branch
+checked out there, the state in that clone, the lock naming a process on
+that machine. A pull request driven from anywhere else does not get driven:
+a second working tree for it cannot check out the branch and makes a
+suffixed one; a session that meets a registered driver stands down though
+that driver's pass stopped producing output long ago; a drive stopped by a
+usage limit or a parked decision never restarts, and a session on another
+subscription or machine has no sanctioned way to take it over; and drives
+stop for decisions an agent could take (filing a follow-up issue, deferring
+where the adapter cannot file, a choice one pull request can undo).
+[design/dark-factory-driving.md](dark-factory-driving.md) has how it works:
+`attach-pr.ts` drives a pull request from any checkout, detached when the
+branch is held elsewhere, and from a tree it creates when there is none;
+liveness is a progress stamp, and `drive.ts --take-over` replaces a dead,
+stuck, quota-parked or answered-park driver with a recorded takeover;
+the drive ledger on the pull request seeds a drive in any clone and admits
+a successor on another account after a quota park; an `autonomy` section
+(`attended`, `unattended`, `wide`, and `off_hours` windows that raise the
+level) says what an agent decides and records instead of asking; a park is
+refused without a human-in-the-loop registry class and carries a framed
+decision (question, options with consequences, the recommended option, the
+operational steps, what was already done); and `drives.ts --report` is the
+morning report. Built in the design's order, one pull request per step.
+
+Done when a pull request opened in one working tree is driven to
+convergence from another clone on another account without a person
+clearing a lease or creating a branch, a stuck driver is taken over by the
+next session that meets it, the drive stops only on a registry class and
+prints the framed decision, and a repository with `off_hours` on wakes to
+a morning report whose provisional decisions a person can reverse from
+the pull request.
+
 ### 3. The kickoff family
 
 The greenfield kickoff becomes a living skill instead of a frozen seed, with
