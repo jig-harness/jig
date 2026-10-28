@@ -197,15 +197,15 @@ the tool offers one.
 ### 31. Routing work to an agent, a model and an effort
 
 Delegation already picks an agent from the issue's change areas, labels and
-title, but the agent runs on whichever model and effort the session was
-started with, whatever the work. Routing will choose them for the
-implementer from the work's type, its size and flag labels and the
-change areas' flags and mandatory reviews, by rules a
-repository declares with defaults it overrides, opt-in, with the reason
-recorded on the pull request where the review loop's reports join it to
-the outcome, and a person's choice always able to override it. Until then,
-the workspace launcher's Orca provider hands the agent's start to the
-person; its Herdr provider starts the configured agent.
+title, and `do-item` reports the model tier and effort the work's type, its
+size and flag labels and the change areas' mandatory reviews call for, by
+rules a repository declares with defaults it overrides. The agent still
+runs on whichever model and effort the session was started with, whatever
+the work. Routing will apply that route to the implementer, opt-in, with
+the reason recorded on the pull request where the review loop's reports
+join it to the outcome, and a person's choice always able to override it.
+Until then, the workspace launcher's Orca provider hands the agent's start
+to the person; its Herdr provider starts the configured agent.
 
 ## Later
 

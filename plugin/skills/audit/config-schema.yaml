@@ -57,6 +57,8 @@ strict:
   - code_stats
   - work_batch
   - work_batch.ranking
+  - routing
+  - routing.raise
 
 # Sections a skill refuses outright, with what to do instead.
 refused:
@@ -450,6 +452,37 @@ fields:
     default: 1
     read_by: [work-batch]
     since: 0.57.0
+
+  routing.types:
+    type: map
+    values_type: { type: map, values_type: string }
+    read_by: [do-item]
+    since: next
+  routing.raise.flags:
+    type: any
+    read_by: [do-item]
+    since: next
+  routing.raise.sizes:
+    type: list
+    items: string
+    distinct: true
+    read_by: [do-item]
+    since: next
+  routing.raise.reviews:
+    type: boolean
+    default: true
+    read_by: [do-item]
+    since: next
+  routing.models:
+    type: map
+    values_type: { type: map, values_type: string }
+    read_by: [do-item]
+    since: next
+  routing.efforts:
+    type: map
+    values_type: { type: map, values_type: string }
+    read_by: [do-item]
+    since: next
 
   fleet_health.config:
     type: path

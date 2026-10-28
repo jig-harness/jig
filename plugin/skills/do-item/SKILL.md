@@ -72,6 +72,7 @@ The skill reads them at run time from `.config/jig.yaml`:
 | `issue_tracker.types` | The repository's work types and the labels that mark each (see [Step 1](#step-1-fetch-the-issue)) | `bug`, `feature`, `improvement`, `task`, `spike`; `bug` marked by `issue_tracker.labels.bug`, the others by `<type>` and `type:<type>` |
 | `do_item.work_types` | Fields of the depth table a type overrides | The table's defaults ([configuration reference](../../CONFIGURATION.md#the-depth-table)) |
 | `do_item.agents` | Routing from issue to implementing agent (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Every issue goes to `general-purpose` |
+| `routing` | The model tier and effort the implementer runs on, as rules (see [Step 4a](#step-4a-standard-start-no-sub-issues)) | Routes are derived and printed, none applied |
 | `do_item.scouts` | Pre-flight [scouts](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) per agent, `{agent: [scouts]}` | No scouts |
 | `do_item.gates` | Mandatory review gates, `[{labels, paths, skill}]` | No gates |
 | `do_item.execution_plan_block` | Name of the fenced block holding an epic's machine-readable execution plan | `execution-plan-v1` |
@@ -548,6 +549,26 @@ routing below remain **exact**.
    For example, a repository might route `agent:backend` to a "Backend Agent"
    whose scouts are a schema scout and a constraint validator. Unless Step 2
    returned `reuse`, spawn the scouts it names.
+
+   **exact** — **Derive the route**, the model tier and effort the
+   implementer would run on:
+
+   ```bash
+   bun "${CLAUDE_SKILL_DIR}/scripts/determine_route.ts" issue.json
+   ```
+
+   It prints `{ agent, type, tier, effort, model, runtime_effort, runtime,
+   declared, fields, reasons }`: the agent as above, the type's row of
+   `routing.types` raised one step each by a flag label, an area's mandatory
+   review, a size too large to batch and the `hitl` label, capped at `max`,
+   and the tier's family alias for the runtime; `reasons` names the rule
+   behind each part ([configuration reference](../../CONFIGURATION.md#routing)).
+   Put the tier, the effort and the model in the status message, e.g.
+   `Route: execution, high, sonnet (flag has-migration raised medium)`.
+   Nothing is forwarded yet: the delegation below runs on the model and
+   effort it runs on today, whatever `declared` says. Exit `1` is a
+   `routing` section the loading rules refuse: report its message in the
+   status message and continue.
 
 3. **exact** — **Persist the findings to the tracker**: post a comment whose
    first line is exactly `## Scout Findings (<hash>)`, where `<hash>` is
@@ -1365,6 +1386,7 @@ Without such a runner, ask as in [Asking the user](#asking-the-user).
 | `tracker.ts` | Tracker operations: `children`, `transition`, `comment`, and the configured `states` and `labels` | Operation, issue key, and a canonical state or a body from `--body-file` (stdin also supported) | Operation result |
 | `determine_type.ts` | Derive an issue's work type and its depth-table row | Issue JSON (path or `-`) | JSON `{ type, evidence, depth }` |
 | `determine_agent.ts` | Route an issue to an agent and its scouts | Issue JSON (path or `-`) | JSON with agent and scouts |
+| `determine_route.ts` | Derive the implementer's route: agent, model tier, effort, the runtime's model, and the reasons | Issue JSON (path or `-`) | JSON `{ agent, type, tier, effort, model, runtime_effort, runtime, declared, fields, reasons }` |
 | `select_scout_finding.ts` | Pick the newest Scout Findings comment and judge freshness | Comments JSON (`--input` or stdin), `--git-head` or `--current-hash` | JSON decision (`reuse`/`rerun`/`run`) |
 | `select_execution_issue.ts` | Read an epic's Execution Plan and list eligible sub-issues | Selection JSON (`--input` or stdin) | JSON `{ present, eligible, gates, mergeConflicts }` |
 | `reconcile_parent_status.ts` | Decide a parent's status from its sub-issues | `ReconcileInput` JSON (`--input` or stdin) | JSON decision (`verdict`, `parentState`, `parentStateName`, `reason`) |
