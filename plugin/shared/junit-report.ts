@@ -32,6 +32,8 @@ export interface JunitCase {
   classname: string;
   failed: boolean;
   skipped: boolean;
+  /** The suites that hold it, as indexes into `JunitReport.suites`, outermost first. */
+  suites: number[];
 }
 
 /** One suite, with the cases counted under it, nested suites included. */
@@ -410,28 +412,24 @@ function checkPlaces(element: Element, parent: string | undefined): void {
   for (const child of element.children) checkPlaces(child, element.name);
 }
 
+/** A suite open around the element being read, with its index in `JunitReport.suites`. */
+type Open = { index: number; suite: JunitSuite }[];
+
 /** Record one case, counted into every suite that holds it. */
-function readCase(
-  element: Element,
-  open: JunitSuite[],
-  report: JunitReport,
-): void {
+function readCase(element: Element, open: Open, report: JunitReport): void {
   const skipped = hasChild(element, "skipped");
   report.cases.push({
     name: element.attributes.get("name") ?? "",
     classname: element.attributes.get("classname") ?? "",
     failed: hasChild(element, "failure", "error"),
     skipped,
+    suites: open.map((o) => o.index),
   });
-  for (const suite of open) suite[skipped ? "skipped" : "executed"]++;
+  for (const { suite } of open) suite[skipped ? "skipped" : "executed"]++;
 }
 
 /** The suites open inside `element`: those around it, and itself when it is a suite. */
-function suitesWithin(
-  element: Element,
-  open: JunitSuite[],
-  report: JunitReport,
-): JunitSuite[] {
+function suitesWithin(element: Element, open: Open, report: JunitReport): Open {
   if (element.name !== "testsuite") return open;
   const suite: JunitSuite = {
     name: element.attributes.get("name") ?? "(unnamed)",
@@ -440,15 +438,10 @@ function suitesWithin(
     skipped: 0,
     declaredTests: declaredTests(element),
   };
-  report.suites.push(suite);
-  return [...open, suite];
+  return [...open, { index: report.suites.push(suite) - 1, suite }];
 }
 
-function readSuites(
-  element: Element,
-  open: JunitSuite[],
-  report: JunitReport,
-): void {
+function readSuites(element: Element, open: Open, report: JunitReport): void {
   if (element.name === "testcase") {
     readCase(element, open, report);
     return;

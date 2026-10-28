@@ -629,11 +629,28 @@ describe("the store", () => {
       skipped: 0,
       failed: [{ classname: "s", name: "x" }],
     });
+    expect(
+      r.junit?.suites?.map((s) => [s.name, s.run, s.skipped, s.tripwire]),
+    ).toEqual([["s", 2, 0, false]]);
     const all = evidence(["list", "--all", "--json"]);
     expectSpawnExit(all, 0, "evidence list --all");
     expect(
       (JSON.parse(all.stdout) as EvidenceRecord[]).map((x) => x.id),
     ).toEqual([r.id]);
+  });
+
+  test("a suite whose only case failed and skipped counts it as run, not as a tripwire", () => {
+    const only = `<testsuites><testsuite name="outer"><testsuite name="inner">
+  <testcase classname="s" name="x"><failure/><skipped/></testcase>
+</testsuite></testsuite></testsuites>`;
+    const r = record(["--junit", "reports/junit.xml"], writesReport(only), 1);
+    expect(r.junit).toMatchObject({ executed: 1, skipped: 0, tripwire: false });
+    expect(
+      r.junit?.suites?.map((s) => [s.name, s.run, s.skipped, s.tripwire]),
+    ).toEqual([
+      ["outer", 1, 0, false],
+      ["inner", 1, 0, false],
+    ]);
   });
 
   test("refuses a read report missing the counts vouching reads", () => {

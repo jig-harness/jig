@@ -192,28 +192,32 @@ const caseKey = (c: CaseId) => `${c.classname}::${c.name}`;
 
 /**
  * A report that was read: its counts per suite and each case's result. Each
- * case gets one result, a failure before a skip, and the report's counts
- * are taken from those results, so they agree with the cases as the
- * record's reader checks them.
+ * case gets one result, a failure before a skip, and every count, the
+ * report's and each suite's, is taken from those results, so none of them
+ * disagrees with the cases as the record's reader checks them.
  */
 function summarize(text: string, path: string): ReportSummary {
   const report = parseJunitReport(text);
   const suites = report.suites.map((s) => ({
     name: s.name,
     depth: s.depth,
-    run: s.executed,
-    skipped: s.skipped,
-    tripwire: s.depth === 0 && s.executed === 0,
+    run: 0,
+    skipped: 0,
+    tripwire: false,
   }));
-  const cases = report.cases.map((c) => ({
-    classname: c.classname,
-    name: c.name,
-    result: (c.failed
+  const cases = report.cases.map((c) => {
+    const result: CaseResult = c.failed
       ? "failed"
       : c.skipped
         ? "skipped"
-        : "passed") as CaseResult,
-  }));
+        : "passed";
+    for (const index of c.suites) {
+      const suite = suites[index];
+      if (suite) suite[result === "skipped" ? "skipped" : "run"]++;
+    }
+    return { classname: c.classname, name: c.name, result };
+  });
+  for (const s of suites) s.tripwire = s.depth === 0 && s.run === 0;
   const skipped = cases.filter((c) => c.result === "skipped").length;
   const executed = cases.length - skipped;
   return {
@@ -289,7 +293,8 @@ const LINKED: Pick<ReportSummary, "status" | "problem"> = {
  * opened not the one the path names without following links (the path
  * swapped between the two looks). `file`'s folder is its resolved one, and
  * is checked to still be, so no link anywhere on the path leads the read to
- * another file.
+ * another file. The descriptor is the caller's only once every check has
+ * passed: a check that throws closes it first.
  */
 function openReport(
   file: string,
@@ -308,16 +313,20 @@ function openReport(
     if (["ELOOP", "EMLINK"].includes(errnoCode(error) ?? "")) return LINKED;
     throw error;
   }
-  const opened = fstatSync(fd);
-  if (
-    opened.dev !== before.dev ||
-    opened.ino !== before.ino ||
-    realpathSync(dirname(file)) !== dirname(file)
-  ) {
+  let same: boolean;
+  try {
+    const opened = fstatSync(fd);
+    same =
+      opened.dev === before.dev &&
+      opened.ino === before.ino &&
+      realpathSync(dirname(file)) === dirname(file);
+  } catch (error) {
     closeSync(fd);
-    return LINKED;
+    throw error;
   }
-  return { fd };
+  if (same) return { fd };
+  closeSync(fd);
+  return LINKED;
 }
 
 /**
