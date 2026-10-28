@@ -244,12 +244,12 @@ function writeThreads(
   );
 }
 
-function writeNode(dir: string, comments: Comment[]): void {
+function writeNode(dir: string, comments: Comment[], isResolved = false): void {
   writeFileSync(
     join(dir, "node.json"),
     JSON.stringify({
       data: {
-        node: { isResolved: false, comments: graphqlComments(comments) },
+        node: { isResolved, comments: graphqlComments(comments) },
       },
     }),
   );
@@ -534,5 +534,34 @@ describe("triage-thread.ts retrying a code-scanning moot", () => {
     expectSpawnExit(done, 0, "triage-thread.ts (retry, dismissed alert)");
     expect(heldKeys(settled, stateDir)).toBe("");
     expect(resolved(settled)).toEqual(["T_moot"]);
+  });
+
+  it("releases the accepted hold an unmarked code-scanning moot superseded, once the thread is resolved", () => {
+    // The moot resolved the thread, then cleanup was interrupted: the retry
+    // (and --cleanup-only) must still release the superseded hold.
+    for (const args of [
+      ["T_cleanup", "999"],
+      ["T_cleanup", "999", "--cleanup-only"],
+    ]) {
+      const { dir, stateDir } = fixture({ 7: "fixed" });
+      const comments = scanningComments("T_cleanup", 7, [
+        "**accepted** — will fix.",
+        "**moot** — the code is gone.",
+      ]);
+      writeNode(dir, comments, true);
+      holdAccepted(dir, stateDir, "T_cleanup", comments[1]?.url ?? "");
+      expect(heldKeys(dir, stateDir)).toBe("T_cleanup");
+
+      const r = run(
+        TRIAGE,
+        args,
+        dir,
+        stateDir,
+        "**moot** — the code is gone.",
+      );
+      expectSpawnExit(r, 0, `triage-thread.ts ${args.join(" ")}`);
+      expect(heldKeys(dir, stateDir)).toBe("");
+      expect(existsSync(join(dir, "posted.json"))).toBe(false);
+    }
   });
 });

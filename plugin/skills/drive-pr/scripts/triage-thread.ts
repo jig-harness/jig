@@ -306,7 +306,11 @@ import {
   qualifyingOutcome,
 } from "./lib/outcome.ts";
 import { ghCall, readTimeoutEnv, resolvePr, run, tsArgv } from "./lib/proc.ts";
-import { mootHeld, resolveDeclinedThread } from "./lib/scanner-sweep-guard.ts";
+import {
+  confirmedMeritSupersession,
+  mootHeld,
+  resolveDeclinedThread,
+} from "./lib/scanner-sweep-guard.ts";
 import { TRUSTED_ASSOCIATIONS } from "./summary-findings.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -718,17 +722,17 @@ async function main(): Promise<number> {
   // `releaseStaleHold` can only ever find nothing to release — never mistake an
   // active hold for a stale one.
   if (cleanupOnly) {
-    const confirmedMeritSupersession =
-      existingOutcome === "rejected" ||
-      existingOutcome === "wont-fix" ||
-      existingOutcome === "deferred" ||
-      (existingOutcome === "moot" && hasLeaveOpenMarker(existingBody ?? ""));
-    if (!confirmedMeritSupersession) {
+    const confirmedMerit = confirmedMeritSupersession(
+      thread.comments[0],
+      existingOutcome,
+      existingBody,
+    );
+    if (!confirmedMerit) {
       console.error(
         `triage-thread.ts: thread ${threadId} has no confirmed merit supersession (last qualifying reply: ${existingOutcome ?? "none"}) — nothing released; a hold on this key, if any, is still a live, unconfirmed obligation.`,
       );
     }
-    const seenUrls = confirmedMeritSupersession
+    const seenUrls = confirmedMerit
       ? new Set(
           thread.comments
             .map((c) => c.url)
@@ -774,26 +778,22 @@ async function main(): Promise<number> {
     // and `accepted` are excluded for the same reason — neither is evidence
     // of a merit supersession.
     //
-    // A MARKED moot IS included, for the same reason `treatMootAsHold`
-    // trusts the marker below: LEAVE_OPEN_MARKER is only ever appended when
-    // the post-time outcome was genuinely non-hold, so its presence on this
-    // thread's last qualifying reply is positive proof of a merit
-    // supersession even though the outcome word alone is ambiguous.
-    // Reachable sequence: an accepted
-    // reply creates a hold, a marked plain-moot supersedes it, the thread
-    // resolves (by a human, or a concurrent driver) before this script's own
-    // cleanup runs, and a retry lands here — excluding the marked moot left
-    // that stale accepted hold permanently stranded, since a resolved thread
-    // is never re-enumerated.
-    const confirmedMeritSupersession =
-      existingOutcome === "rejected" ||
-      existingOutcome === "wont-fix" ||
-      existingOutcome === "deferred" ||
-      (existingOutcome === "moot" && hasLeaveOpenMarker(existingBody ?? ""));
+    // A moot `mootHeld` never holds IS included: a MARKED one (the marker is
+    // only appended to a genuinely non-hold post) or a code-scanning one
+    // (resolved only over a settled alert). Reachable sequence: an accepted
+    // reply creates a hold, such a moot supersedes it, the thread resolves
+    // before this script's own cleanup runs, and a retry lands here —
+    // excluding the moot would strand that stale accepted hold, since a
+    // resolved thread is never re-enumerated.
+    const confirmedMerit = confirmedMeritSupersession(
+      thread.comments[0],
+      existingOutcome,
+      existingBody,
+    );
     console.error(
       `triage-thread.ts: thread ${threadId} is already resolved — nothing to do.`,
     );
-    if (confirmedMeritSupersession) {
+    if (confirmedMerit) {
       const seenUrls = new Set(
         thread.comments
           .map((c) => c.url)

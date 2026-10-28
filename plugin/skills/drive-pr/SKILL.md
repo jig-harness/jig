@@ -1305,6 +1305,16 @@ reconciled comment's url>`) for `resolve-held-thread.ts` to release in
 step 6, which verifies that the push resolving a held thread is the one its
 reply promised.
 
+**A thread GitHub's code scanning account opened is the exception.** It
+closes only over its alert: a declined outcome once the alert is confirmed
+dismissed, a `moot` once it is fixed, closed or dismissed. Otherwise
+`triage-thread.ts` posts or reconciles the reply, leaves the thread open and
+exits `4` (dismiss the alert with `dismiss-alert.ts`, then re-run); a thread
+whose alert cannot be identified or read stays open too. Its `moot` is never
+held, fresh or reconciled, `--moot-pending-push` included: the alert's state,
+not a push, is its proof
+([resolve-review-comments § Code-scanning threads](../resolve-review-comments/SKILL.md#code-scanning-threads)).
+
 **`moot` follows the merit row by default — it is resolved immediately, not
 held.** Per the review skill's outcome rules, a moot finding usually
 means the anchored code is simply gone, with nothing to wait on; it is held
@@ -1328,7 +1338,8 @@ bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/thread-r
 Omitting the flag is the default (resolve now) — the same behavior as every
 other merit outcome, and what you want for a `moot` whose premise predates
 this round entirely. That default applies only to a **fresh** post: a `moot`
-found already on the thread (the reconciliation rule above) is always held,
+found already on the thread (the reconciliation rule above) is always held
+(except on a code-scanning thread, above),
 whatever this invocation's own flag says — the flag names only this
 invocation's belief, and a reconciled reply may have been posted by an
 earlier, now-gone invocation whose belief this one has no way to see. A

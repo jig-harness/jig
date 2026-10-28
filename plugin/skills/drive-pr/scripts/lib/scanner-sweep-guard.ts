@@ -92,6 +92,23 @@ export function mootHeld(
 const DECLINED_OUTCOMES = new Set(["rejected", "wont-fix", "deferred"]);
 
 /**
+ * Whether the last qualifying reply `outcome` (body `body`) on the thread
+ * opened by `opening` is a merit disposition, one that supersedes an earlier
+ * `accepted`/`moot` hold: a declined outcome, or a `moot` that `mootHeld`
+ * never holds (LEAVE_OPEN_MARKER, or a code-scanning thread). Both of
+ * `triage-thread.ts`'s stale-hold cleanups, `--cleanup-only` and the
+ * already-resolved retry, decide by it.
+ */
+export function confirmedMeritSupersession(
+  opening: { author: string | null } | undefined,
+  outcome: string | null,
+  body: string | null,
+): boolean {
+  if (outcome !== null && DECLINED_OUTCOMES.has(outcome)) return true;
+  return outcome === "moot" && !mootHeld(opening, false, outcome, body);
+}
+
+/**
  * What the replied-thread sweep does with a reply of `outcome` that carries
  * no LEAVE_OPEN_MARKER: `null` to hold it for a push (`accepted`, or a `moot`
  * on a thread GitHub's code scanning account did not open); else resolve it
