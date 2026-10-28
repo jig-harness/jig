@@ -649,7 +649,7 @@ function missingSentinel(
       rule: "ci-hold-sentinel",
       file: settings.jigConfig,
       problem: `ci.hold_label is '${label}' but no pull-request job fails a required check while it is present, so a held head can look mergeable`,
-      remedy: `add a step with if: contains(github.event.pull_request.labels.*.name, '${label}') that exits 1 (after cancelling its own run, if it should be listed as cancelled once released) and does not continue on error, in a job that runs while held: the required job or one it needs (${README}#ci-hold)`,
+      remedy: `add a step with if: contains(github.event.pull_request.labels.*.name, '${label}') that exits 1 (in the required job, optionally after cancelling its own run so it is listed as cancelled once released) and does not continue on error, in a job that runs while held: the required job or one it needs (${README}#ci-hold)`,
     },
   ];
 }

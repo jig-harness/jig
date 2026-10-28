@@ -4,7 +4,8 @@ release: patch
 
 ### Changed
 
-- A CI hold's held-head check may cancel its own run instead of failing it
+- A CI hold's held-head check, when it sits in the required job itself, may
+  cancel its own run instead of failing it
   ([M13 § Hold](../modules/M13-pipeline-economy/README.md#7-hold)). A
   cancelled required check blocks the merge as a failed one does, but once
   the release passes, the head the merge waits for lists the held run as

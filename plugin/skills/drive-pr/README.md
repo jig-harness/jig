@@ -202,8 +202,10 @@ expensive for that can let the drive suppress it between review rounds:
    on an unheld pull request runs real CI. And fail, rather than skip, a
    required check while the label is present, from the run the label's
    application starts onward, with a message naming the label, so a held
-   head is visibly not mergeable throughout. The check may cancel its own
-   run instead, failing only when the cancellation does not happen: that
+   head is visibly not mergeable throughout. A step in the required job
+   itself may cancel its own run instead, failing only when the
+   cancellation does not happen (never in a job the required one needs,
+   where a cancelled run can leave the required job skipped): that
    blocks the merge too, and the released head then lists its held run as
    cancelled rather than as a red failure
    ([M13's mappings](https://github.com/jig-harness/jig/blob/main/modules/M13-pipeline-economy/mappings.md#hold)). M13's
