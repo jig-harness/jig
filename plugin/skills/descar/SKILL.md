@@ -58,8 +58,10 @@ Find these once, at the start:
   (every layer, `.config/jig.yaml` among them; exit 2 means no layer sets
   it), a command that takes document paths as arguments. When it is absent, look for the lint the repository adopted from
   M4 (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git ls-files '*check-descarring-scars*'`) and run it with `bun` (or the
-  interpreter its extension implies). When there is none, there is no lint:
-  inventory S1 to S3 by hand as well as S4, and say so in the report.
+  interpreter its extension implies). When there is none, run M4's lint from
+  the sibling `docs` skill:
+  `bun "${CLAUDE_SKILL_DIR}/../docs/scripts/scar-lint/check-descarring-scars.ts"`
+  with the document paths.
 - **Lint exemptions**: the paths the lint leaves out (M4's lint reads them
   from an `ALLOWLIST` environment variable, usually set in the CI workflow
   that runs it) and the `descar_allow: true` frontmatter opt-out.

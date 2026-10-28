@@ -128,7 +128,7 @@ reachability probe, which reads no issue), read an issue with its comments and c
 comment, file an issue, change its fields and labels, search this team's
 issues, read and add relations between issues, list the labels an issue can
 carry, read whether an item is open (`tracker.ts issue-states`, which M4's
-scheduled [deferral check](https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/reference/deferral-references/README.md)
+scheduled [deferral check](https://github.com/jig-harness/jig/blob/main/plugin/skills/docs/scripts/deferral-references/README.md)
 uses), and the reads that delivery metrics and batch proposals need. Labels
 and projects are given by name and a parent by its key; the adapter resolves
 each to exactly one tracker resource or refuses before writing. A skill's

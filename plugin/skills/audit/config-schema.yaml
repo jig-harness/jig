@@ -55,6 +55,7 @@ strict:
   - resolve_conflicts
   - reflection
   - code_stats
+  - docs
   - work_batch
   - work_batch.ranking
 
@@ -195,7 +196,7 @@ fields:
   repository.base_branch:
     type: string
     pattern: "^(?!origin/)[^\\s~^:?*\\[\\\\]+$"
-    read_by: [drive-pr, do-item, review, descar, changelog]
+    read_by: [drive-pr, do-item, review, descar, changelog, docs]
     repository_only: true
 
   pull_requests.stacking:
@@ -465,6 +466,24 @@ fields:
   descar.lint_command:
     type: command
     read_by: [descar]
+  docs.root:
+    type: path
+    exists: required
+    read_by: [docs]
+    repository_only: true
+    since: next
+  docs.schema:
+    type: path
+    exists: required
+    read_by: [docs]
+    repository_only: true
+    since: next
+  docs.stale_after_days:
+    type: integer
+    min: 1
+    default: 180
+    read_by: [docs]
+    since: next
   promote_memory.lint_command:
     type: command
     read_by: [promote-memory]

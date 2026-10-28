@@ -65,6 +65,10 @@ import {
   WORK_BATCH_FIELDS,
   parseWorkBatchSection,
 } from "../../work-batch/scripts/lib/policy.ts";
+import {
+  DEFAULT_STALE_AFTER_DAYS,
+  FIELDS as DOCS_FIELDS,
+} from "../../docs/scripts/lib/settings.ts";
 import { runScript } from "./helpers.ts";
 
 const plugin = join(import.meta.dir, "..", "..", "..");
@@ -221,6 +225,10 @@ describe("the reading skills", () => {
       expect([f.path, f.repository_only]).toEqual([f.path, true]);
   });
 
+  test("read the docs section's fields", () => {
+    expect(under("docs").sort()).toEqual([...DOCS_FIELDS].sort());
+  });
+
   test("read the changelog section's fields, all of them repository-only", () => {
     expect(under("changelog").sort()).toEqual([...CHANGELOG_FIELDS].sort());
     for (const f of schema.fields.filter((f) =>
@@ -259,6 +267,7 @@ describe("the reading skills", () => {
       "changelog.release.push": CHANGELOG_DEFAULTS.push,
       "changelog.release.branch": CHANGELOG_DEFAULTS.branch,
       "code_stats.default_area": CODE_STATS_DEFAULT_AREA,
+      "docs.stale_after_days": DEFAULT_STALE_AFTER_DAYS,
       "work_batch.point_budget": DEFAULT_POINT_BUDGET,
       "work_batch.max_items": DEFAULT_MAX_ITEMS,
       "work_batch.ranking.provenance": DEFAULT_RANKING.provenance,
