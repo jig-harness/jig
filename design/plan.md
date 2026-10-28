@@ -390,7 +390,7 @@ What it will build, one pull request per step:
 
 - **The skill**: `plugin/skills/init/` with `init.ts` (derive, ask, write,
   check) on the shared detector (`plugin/shared/detect.ts`), which learns the
-  changelog file, the label taxonomy and the title convention, a `field` on
+  changelog file, the label taxonomy and the title convention, the `fields` on
   the configuration fit's findings so init can sort them, refresh mode
   after a plugin release, tests from a plugin copy against fixture
   repositories with and without a configuration, the lifecycle-map row and

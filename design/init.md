@@ -81,9 +81,10 @@ drifts the day one skill learns a new lockfile.
    field that has no derivation and no safe default, or whose value turns a
    skill on, in the order the skills need them: the tracker, when the
    history shows keys of the `ABC-123` shape and none is configured (the
-   default is GitHub Issues); the tracker team key, for Linear, when no issue
-   key appears in the history; whether the AI reviewer, when one is found,
-   reviews drafts (`drive.reviews_drafts` has no default); and whether a
+   default is GitHub Issues); the tracker team key, for Linear, when none is
+   configured and the detector derives none (it derives a team only from at
+   least three keys, one team holding a strict majority of them); whether
+   the AI reviewer, when one is found, reviews drafts (`drive.reviews_drafts` has no default); and whether a
    changelog file found should turn the changelog skill on. Stacking is not
    asked: it defaults to `none`. Each question shows the derived answer it
    could not confirm, where there is one, and a field filled from an answer
@@ -103,15 +104,17 @@ drifts the day one skill learns a new lockfile.
    each Codex user runs the plugin's two install commands, which it prints.
    Each file is shown before it is written in an interactive session.
 6. **Check.** Run the audit's `config-fit.ts` on the result and sort its
-   findings by the field each is about (the `field` a finding carries, from
-   build step 2). A finding about a field init derived or wrote is
-   init's bug, and the run reports it as one: init's contract is that it
-   leaves none of those. A finding about a field a person set, which init
-   preserves, is reported with that field's line and the fix, and init does
-   not change the field. A finding with no field is about the world outside
-   the file (a required check the base branch does not have, a tracker that
-   cannot be reached, a host that contradicts the repository) and is
-   reported with its remedy, since no overlay can fix it.
+   findings by the fields each is about (the `fields` a finding carries, from
+   build step 2: every field it concerns, so a rule tying two fields
+   together names both). A finding that names any field init derived or
+   wrote is init's bug, and the run reports it as one: init's contract is
+   that it leaves none of those, including a written value that contradicts
+   a preserved one. A finding whose fields a person set, all of them
+   preserved by init, is reported with those fields' lines and the fix, and
+   init does not change them. A finding with no field is about the world
+   outside the file (a required check the base branch does not have, a
+   tracker that cannot be reached, a host that contradicts the repository)
+   and is reported with its remedy, since no overlay can fix it.
 7. **Hand on.** Print what was written, what was asked, and the next
    commands: commit the files on a branch and open a pull request,
    `/jig:audit` to choose a profile and see the gaps, or `/jig:do-item <key>`
@@ -168,18 +171,18 @@ Init reads every field and adds none of its own.
 2. **The skill.** `plugin/skills/init/`: `SKILL.md`, `README.md`,
    `scripts/init.ts` (derive, ask, write, check, and refresh from the
    schema's `since` entries), the changelog file, label taxonomy and title
-   convention added to the detector, an optional `field` (the dotted path)
-   on the configuration fit's findings wherever a finding is about one
-   field, tests that run it from a plugin copy against fixture repositories
-   with and without a configuration, the lifecycle-map row, the README table
-   row. This step writes no host settings file.
+   convention added to the detector, an optional `fields` (the dotted paths)
+   on the configuration fit's findings wherever a finding is about the
+   configuration, listing every field it concerns, tests that run it from a
+   plugin copy against fixture repositories with and without a
+   configuration, the lifecycle-map row, the README table row. This step writes no host settings file.
 3. **The pointers.** Adoption pages, setup's next step, the audit's remedy
    marker and the sheet's command, and the configuration fit's finding for
    a file written under a plugin older than the last field-adding release.
 4. **Project-level enablement.** The host settings files, once the test
    fixture can show the plugin loading from them. The fixture tests assert
-   both: the Claude Code settings written, and no Codex file, with the
-   install commands in the output.
+   the Claude Code settings written, and no Codex file, with the install
+   commands in the output.
 
 ## Left out
 
