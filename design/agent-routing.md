@@ -101,9 +101,11 @@ value, source and whether it was applied:
    - a seeded area with a **mandatory review**: an area the item's labels
      select through `do_item.agents.codearea_areas` whose `review.skills`
      names at least one skill;
-   - a **size label** in `routing.raise.sizes`; by default, every size
-     `work_batch.sizes` names outside `issue_tracker.labels.batch_sizes`
-     (the sizes too large to batch), and `[large]` where it names none (the
+   - a **size label** in `routing.raise.sizes`; by default, every size the
+     repository knows outside `issue_tracker.labels.batch_sizes` (the sizes
+     too large to batch), with the known sizes taken as `work-batch` takes
+     them (`work_batch.sizes`, else the batchable sizes and
+     `review.taxonomy.sizes`), and `[large]` where that leaves none (the
      labels `batch_sizes` names never raise);
    - the human-in-the-loop label, `issue_tracker.labels.hitl`, counted
      once even where the catalog also lists it as a flag.
@@ -123,11 +125,17 @@ value, source and whether it was applied:
    that reads every scope the runtime loads definitions from (for Claude
    Code: the managed, project, user and plugin scopes, matched on the
    definition's `name:` field, not its file name) in the runtime's own
-   precedence order. Where the resolver cannot find exactly one effective
-   definition, or a scope it cannot read could hold one (a definition
-   passed on the command line), the rules forward no model and no effort,
-   and the reasons say `tier: pin unknown`: a missed pin overwritten by a
-   rule is the failure this step exists to prevent.
+   precedence order. A name the runtime builds in has no file in any
+   scope (Claude Code's `general-purpose`, which is `do-item`'s default
+   agent), so the runtime's row in `plugin/shared/` also lists its
+   built-in agents with the fields each pins, and a name no scope defines
+   resolves there; a definition file of the same name takes the
+   precedence the runtime gives it over the built-in. Where the resolver
+   cannot find exactly one effective definition, file or built-in, or a
+   scope it cannot read could hold one (a definition passed on the command
+   line), the rules forward no model and no effort, and the reasons say
+   `tier: pin unknown`: a missed pin overwritten by a rule is the failure
+   this step exists to prevent.
 6. **The translation**: the tier to the runtime's family alias through
    `routing.models.<runtime>`, the effort through
    `routing.efforts.<runtime>`. The runtime is derived from the environment
@@ -186,8 +194,9 @@ the agent definition's pin, then the rules.
   definition pins one, and records `source: person`, `applied: inherited`
   for each field the definition leaves open and `source: pin` for each it
   pins. The source is declared by the prompt and the person, not
-  verified: no runtime exposes the session's model to a script, so the
-  effective value of an inherited field is recorded as unknown
+  verified: no runtime exposes the session's model to a script before
+  the delegation, so the effective value of an inherited field is what
+  the runtime reports it resolved, or unknown
   ([the record](#where-it-is-read)).
 - **The machine's settings.** When the launcher's `repos.<label>.<provider>`
   settings name a model or an effort, the first prompt says so
@@ -214,15 +223,23 @@ is policy, not an override, and the reasons name the rule that fired.
   effort to the subagent tool where the runtime takes them (Claude Code's
   agent tool takes both); where the runtime's tool takes neither, the
   implementer runs as today and the route is recorded with `applied: no`
-  and the reason. A tool that takes the values does not prove they were
-  used: a runtime can override an invocation's model or effort from its
-  environment (Claude Code: `CLAUDE_CODE_SUBAGENT_MODEL` forces every
-  subagent's model, and `CLAUDE_CODE_EFFORT_LEVEL` sets the effort over
-  the invocation's). Each runtime's row in `plugin/shared/` lists the
-  variables that override a forwarded field; when one is set,
-  `determine_route.ts` records that field `applied: no (overridden by
-  <variable>)` with the variable's value as the effective one, and only a
-  field forwarded with no such override set is recorded `applied: yes`.
+  and the reason. `applied` says only what `do-item` did with a field:
+  `yes` when it forwarded the value and the tool took it, `no` with the
+  reason when it forwarded nothing, `inherited` when it left the field to
+  the session on purpose. It never says what the implementer ran on. A
+  tool that takes the values does not prove they were used: a runtime
+  can replace a forwarded model or lower a forwarded effort with no
+  variable set (Claude Code: a model allowlist substitutes another model,
+  an effort cap limits the level), and what a variable does changes
+  between runtime versions (Claude Code's `CLAUDE_CODE_SUBAGENT_MODEL`
+  is a default from 2.1.251, and forces only beside
+  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`). So no reading of the request and
+  the environment establishes the effective value, and the record takes
+  it from the runtime (the pull request's description, below).
+  Each runtime's row in `plugin/shared/` lists, per runtime version, the
+  variables known to change a forwarded field, and `determine_route.ts`
+  names each one set in the reasons, as a lead for a person reading the
+  record, never as the effective value.
   The route is never put in the delegation prompt: a
   prompt cannot change a model, and M0 forbids a tier in prose. The fix
   loop after the review delegates to the same agent with the same route.
@@ -238,11 +255,14 @@ is policy, not an override, and the reasons name the rule that fired.
   model=<alias or none>`, then `effective: tier=<tier or unknown>
   effort=<effort or unknown> model=<alias or unknown>`, then per field
   `source=<rules|person|settings|pin> applied=<yes|no|inherited>`,
-  followed by the reasons. An effective value is the one forwarded, named
-  by the person or the settings, pinned, or read from an overriding
-  variable; an inherited value no script can read is `unknown`, never the
-  proposed value in its place. It survives the worktree and is read by any
-  harness, as the type's body sections are.
+  followed by the reasons. An effective value is only one the runtime
+  reports it resolved for that invocation, read after the implementer
+  ran (Claude Code's transcript names the model of each response); a
+  field the runtime reports nothing for is `unknown`, whatever was
+  forwarded, named by the person or the settings, pinned or set in a
+  variable, and never the proposed or requested value in its place. The
+  request stays in `proposed` and `source`. It survives the worktree and
+  is read by any harness, as the type's body sections are.
 - **`work-batch`** takes one route for the batch: the strictest tier and
   effort across its items, each item's reasons kept. An epic whose issue
   routes to more than two agents keeps its integrator on the session's
@@ -302,7 +322,7 @@ rules, the share a person chose and the share recorded and not applied.
 | `routing.types.<type>.tier` | `execution` or `strategic` | the table above | `determine_route.ts` |
 | `routing.types.<type>.effort` | `low`, `medium`, `high`, `max` | the table above | `determine_route.ts` |
 | `routing.raise.flags` | list of labels, or `catalog` | `catalog`: every flag the catalog's areas declare | `determine_route.ts` |
-| `routing.raise.sizes` | list of labels | the sizes `work_batch.sizes` names outside `batch_sizes`; `[large]` where it names none | `determine_route.ts` |
+| `routing.raise.sizes` | list of labels | the known sizes (`work_batch.sizes`, else the batchable sizes and `review.taxonomy.sizes`) outside `batch_sizes`; `[large]` where that leaves none | `determine_route.ts` |
 | `routing.raise.reviews` | `true`, `false` | `true` | `determine_route.ts` |
 | `routing.models.<runtime>.<tier>` | the runtime's family alias | `claude-code: {execution: sonnet, strategic: opus}` | `determine_route.ts`, the configuration loader |
 | `routing.efforts.<runtime>.<effort>` | the runtime's own level name | unchanged | `determine_route.ts` |
@@ -341,15 +361,18 @@ refused `do_item` section does today; it is never read as absent.
    tier checks; M0's mappings link the list.
 4. **`do-item` forwards.** Behind a declared `routing` section: the
    delegation passes the model and effort where the runtime's tool takes
-   them, field by field, and records `applied`, reading the runtime's
-   overriding variables first; the definition resolver keeps a pinned
-   agent's pin and forwards nothing where it cannot resolve one; the fix
+   them, field by field, records `applied`, and records the effective
+   value the runtime reports after the implementer ran; the definition
+   resolver, built-in agents included, keeps a pinned agent's pin and
+   forwards nothing where it cannot resolve one; the fix
    loop reuses the route; the launcher's first prompt carries the `route:`
    line and `do-item` honours it. Fixtures show a flagged bug delegated on
    a higher effort than an unflagged one, the `## Route` section saying
    why; a `route: yours` prompt delegating with nothing forwarded; a person
-   naming only the model, with the effort still derived; and a set
-   overriding variable recorded as not applied.
+   naming only the model, with the effort still derived; a forwarded
+   model the runtime replaced, recorded `applied: yes` with the replacing
+   model as effective; and a field the runtime reports nothing for,
+   recorded `unknown`.
 5. **`work-batch` and the audit criterion.**
 
 ## Left out
