@@ -333,9 +333,14 @@ function refuseReservedLabels(
   }
   if (config.adapter !== "github") return;
   const model = gitHubModel(config.states, config.github);
+  // Both sides are folded as the label step folds them, so padding on either
+  // the type label or the configured state or priority name cannot hide it.
+  const reserved = new Set(
+    [...model.stateLabels, ...model.priorityLabels].map(fold),
+  );
   for (const [type, list] of Object.entries(labels))
     for (const label of list)
-      if (model.isReserved(label.trim()))
+      if (model.isReserved(label) || reserved.has(fold(label)))
         throw new WorkTypesError(
           `issue_tracker.types.${formatField([type])} lists the label '${label}', which the GitHub adapter reads as a workflow state or a priority and removes from an issue's labels; a type needs a label of its own`,
         );

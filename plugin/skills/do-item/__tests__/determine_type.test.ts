@@ -379,6 +379,26 @@ describe("the loading rules refuse", () => {
       "issue_tracker.types.task lists the label ' In Progress ', which the GitHub adapter reads as a workflow state or a priority",
     ],
     [
+      "a type label padded like a padded state name",
+      {
+        issue_tracker: {
+          states: { in_progress: " In Progress " },
+          types: { task: [" In Progress "] },
+        },
+      },
+      "issue_tracker.types.task lists the label ' In Progress ', which the GitHub adapter reads as a workflow state or a priority",
+    ],
+    [
+      "a type label padded like a padded priority name",
+      {
+        issue_tracker: {
+          github: { priority_labels: { urgent: " Urgent " } },
+          types: { task: ["urgent"] },
+        },
+      },
+      "issue_tracker.types.task lists the label 'urgent', which the GitHub adapter reads as a workflow state or a priority",
+    ],
+    [
       "a tracker configuration that does not load",
       {
         issue_tracker: { states: { typo: "Started" }, types: { bug: ["bug"] } },
