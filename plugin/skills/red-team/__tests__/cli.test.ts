@@ -623,7 +623,10 @@ describe("collect and report", () => {
         alias,
         relativeAlias,
         join(folder, "critical-cto.brief.md"),
-        join(folder, "..", basename(out.directory), "critical-cto.brief.md"),
+        // Concatenated, not joined: join would drop the `..` the link precedes.
+        [folder, "..", basename(out.directory), "critical-cto.brief.md"].join(
+          sep,
+        ),
       ]) {
         const run = cli(root, [
           "plan",
@@ -632,6 +635,7 @@ describe("collect and report", () => {
           companion,
         ]);
         expectSpawnExit(run, 2, `plan with the companion ${companion}`);
+        expect(run.stderr).toContain("would be overwritten");
         expect(lstatSync(brief).isSymbolicLink()).toBe(true);
       }
       writeFileSync(

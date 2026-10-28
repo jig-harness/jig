@@ -128,12 +128,27 @@ function partsOf(path: string): string[] {
  * link's target, every entry named by the real folder it sits in. Replacing
  * any of these entries can change which file the input names, so none of
  * them may be a file the review writes or removes. A part that does not
- * exist ends nothing: reading the input fails later. The path is walked as
- * given, never normalized first: a `..` after a link leaves the link's
- * target, not the link's own folder.
+ * exist ends nothing: reading the input fails later.
+ *
+ * The walk is also where the input's real path comes from, the one path a
+ * plan keeps and every step reads. The path is walked as given, never
+ * normalized first, so a `..` after a link leaves the link's target, as the
+ * system resolves it; Bun's own `realpathSync` drops a `..` before following
+ * the link before it, and so can name a file no read reaches.
  */
-function entriesOf(input: string): string[] {
-  const path = isAbsolute(input) ? input : `${process.cwd()}${sep}${input}`;
+interface Walk {
+  entries: string[];
+  /** The path with every link followed and no `.` or `..` left; absent past the link limit. */
+  real: string | undefined;
+  links: number;
+}
+
+function absolute(input: string): string {
+  return isAbsolute(input) ? input : `${process.cwd()}${sep}${input}`;
+}
+
+function walk(input: string): Walk {
+  const path = absolute(input);
   const entries: string[] = [];
   let current = parse(path).root;
   let pending = partsOf(path.slice(current.length));
@@ -155,14 +170,18 @@ function entriesOf(input: string): string[] {
       current = entry;
       continue;
     }
-    if (++links > MAX_LINKS) break;
+    if (++links > MAX_LINKS) return { entries, real: undefined, links };
     if (isAbsolute(target)) {
       current = parse(target).root;
       target = target.slice(current.length);
     }
     pending = [...partsOf(target), ...pending];
   }
-  return entries;
+  return { entries, real: current, links };
+}
+
+function entriesOf(input: string): string[] {
+  return walk(input).entries;
 }
 
 function identity(
@@ -266,45 +285,38 @@ function kindFor(text: string, kind: Kind | undefined): Detected {
  * keeps, so a later step reads the file the plan step checked.
  */
 function canonical(path: string): string {
-  try {
-    return realpathSync(path);
-  } catch {
+  const { real } = walk(path);
+  if (real === undefined)
     throw new PlanError(`cannot read the document: ${path}`);
-  }
+  return real;
 }
 
 /** Whether a path the plan keeps is its own real path, as the plan step writes it. */
 function isCanonical(path: string): boolean {
-  try {
-    return realpathSync(path) === path;
-  } catch (error) {
-    swallow(error, `${path} cannot be resolved: reading it fails later`);
-    return (
-      isAbsolute(path) && !partsOf(path).some((p) => p === "." || p === "..")
-    );
-  }
+  if (!isAbsolute(path)) return false;
+  const { real, links } = walk(path);
+  return links === 0 && real === path;
 }
 
 /** Make the plan and the briefs, replacing any earlier review's files. */
 export function makePlan(options: PlanOptions): Plan {
-  const given = resolve(options.document);
-  const text = readDocument(given);
+  const given = absolute(options.document);
+  const document = canonical(given);
+  const text = readDocument(document);
   const { kind, from } = kindFor(text, options.kind);
   const givenCompanion = options.companion
-    ? resolve(options.companion)
+    ? absolute(options.companion)
     : undefined;
-  const companionText = givenCompanion
-    ? readDocument(givenCompanion)
-    : undefined;
-  const display = relative(options.root, given) || given;
+  const companion = givenCompanion ? canonical(givenCompanion) : undefined;
+  const companionText = companion ? readDocument(companion) : undefined;
+  const named = resolve(options.document);
+  const display = relative(options.root, named) || named;
   const directory = resolve(
     options.out ??
-      join(options.root, ".context", "red-team", slugFor(given, options.root)),
+      join(options.root, ".context", "red-team", slugFor(named, options.root)),
   );
   const all = loadPersonas();
   mkdirSync(directory, { recursive: true });
-  const document = canonical(given);
-  const companion = givenCompanion ? canonical(givenCompanion) : undefined;
   guardFolder(
     directory,
     givenCompanion && companion
