@@ -9,7 +9,9 @@ import {
   hasValue,
   isDate,
   readFrontmatter,
+  linesWithBreaks,
   readScalar,
+  splitLines,
 } from "../scripts/lib/docs";
 
 const doc = (...lines: string[]) =>
@@ -601,4 +603,23 @@ describe("one-line values agree with a YAML parser", () => {
       .filter(Boolean);
     expect(misread.slice(0, 10)).toEqual([]);
   });
+});
+
+describe("lines with their breaks", () => {
+  const cases: [string, string[]][] = [
+    ["", []],
+    ["a", ["a"]],
+    ["a\n", ["a\n"]],
+    ["a\r\nb\rc\nd", ["a\r\n", "b\r", "c\n", "d"]],
+    ["\n\r\n\r", ["\n", "\r\n", "\r"]],
+    ["a\n\nb\r\n", ["a\n", "\n", "b\r\n"]],
+  ];
+  for (const [text, lines] of cases)
+    test(JSON.stringify(text), () => {
+      expect(linesWithBreaks(text)).toEqual(lines);
+      expect(linesWithBreaks(text).join("")).toBe(text);
+      // Line i here is line i of splitLines.
+      for (const [i, line] of linesWithBreaks(text).entries())
+        expect(line.replace(/\r\n|\r|\n/, "")).toBe(splitLines(text)[i] ?? "");
+    });
 });

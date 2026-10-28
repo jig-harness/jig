@@ -486,7 +486,7 @@ export function splitLines(text: string): string[] {
  * the text and line `i` here is line `i` of `splitLines`.
  */
 export function linesWithBreaks(text: string): string[] {
-  return text.match(/[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$/g) ?? [];
+  return text.match(/(?:[^\r\n]*(?:\r\n|\r|\n))|(?:[^\r\n]+$)/g) ?? [];
 }
 
 /**
