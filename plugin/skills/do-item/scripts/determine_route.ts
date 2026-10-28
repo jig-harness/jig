@@ -389,7 +389,7 @@ export function catalogFacts(
   }
   const reviews: Review[] = [];
   for (const key of [...applyImpliedClosure(seeds, { areas })].sort((a, b) =>
-    a.localeCompare(b),
+    a < b ? -1 : a > b ? 1 : 0,
   )) {
     const named = skillsOf.get(key) ?? [];
     if (named.length > 0) reviews.push({ area: key, skills: named });
