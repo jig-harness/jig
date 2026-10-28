@@ -120,25 +120,27 @@ const BEFORE_REGEX = "(,=:[!&|?{};";
  * expression only where a value may start, and it never spans a line.
  */
 function regexEnd(text: string, i: number): number | null {
+  return valueMayStart(text, i) ? regexClose(text, i) : null;
+}
+
+/** Whether a value may start at `i`: nothing but space since the last operator. */
+function valueMayStart(text: string, i: number): boolean {
   let before = i - 1;
   while (before >= 0 && /\s/.test(text[before] as string)) before--;
-  if (before >= 0 && !BEFORE_REGEX.includes(text[before] as string))
-    return null;
-  let inClass = false;
-  for (let j = i + 1; j < text.length; j++) {
-    const c = text[j] as string;
-    if (c === "\\") j++;
-    else if (c === "\n") return null;
-    else if (c === "[") inClass = true;
-    else if (c === "]") inClass = false;
-    else if (c === "/" && !inClass) {
-      let end = j + 1;
-      while (/[a-z]/i.test(text[end] ?? "")) end++;
-      return end;
-    }
-  }
-  return null;
+  return before < 0 || BEFORE_REGEX.includes(text[before] as string);
 }
+
+/**
+ * The end of the regular expression whose `/` is at `i`, flags included;
+ * null when none closes on that line.
+ */
+function regexClose(text: string, i: number): number | null {
+  REGEX_LITERAL.lastIndex = i;
+  return REGEX_LITERAL.test(text) ? REGEX_LITERAL.lastIndex : null;
+}
+
+/** A regular expression literal: escapes and classes may hold `/`; flags follow. */
+const REGEX_LITERAL = /\/(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\[\n])+\/[a-z]*/iy;
 
 const IDENT = /[A-Za-z_$][\w$]*/y;
 const NUMBER = /-?(?:0[xob][\da-f_]+|\d[\d_]*(?:\.\d*)?(?:e[+-]?\d+)?|\.\d+)/iy;

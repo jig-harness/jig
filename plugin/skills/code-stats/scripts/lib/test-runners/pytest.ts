@@ -82,12 +82,19 @@ function iniLine(state: IniState, line: string, name: string): void {
     state.raw.set(state.key, `${state.raw.get(state.key)} ${line.trim()}`);
     return;
   }
+  const pair = iniPair(line);
+  if (pair === null) return;
+  state.key = pair[0];
+  state.raw.set(pair[0], pair[1]);
+}
+
+/** The key and value one `key = value` or `key: value` line sets, or null. */
+function iniPair(line: string): [key: string, value: string] | null {
   const separator = line.search(/[=:]/);
-  if (separator === -1) return;
+  if (separator === -1) return null;
   const key = line.slice(0, separator).trim();
-  if (key === "" || /\s/.test(key)) return;
-  state.key = key;
-  state.raw.set(key, line.slice(separator + 1).trim());
+  if (key === "" || /\s/.test(key)) return null;
+  return [key, line.slice(separator + 1).trim()];
 }
 
 /** A value split on whitespace, quotes kept together and removed. */

@@ -37,6 +37,40 @@ const SKIPPED: readonly [open: string, close: string, kind: string][] = [
 /** The element values a POM's text holds, by their path from the root (`project/build/…`). */
 type Values = Map<string, string>;
 
+/** The markup opening at a `<`: where it ends, the text it adds, and the tag it is. */
+interface Markup {
+  end: number;
+  adds: string;
+  tag: { closing: boolean; name: string; empty: boolean } | null;
+}
+
+/** The markup at `open`; an `UnreadableError` when it never closes. */
+function markupAt(text: string, open: number): Markup {
+  const skipped = SKIPPED.find(([o]) => text.startsWith(o, open));
+  const [opener, closer, kind] = skipped ?? ["<", ">", "a tag"];
+  const close = text.indexOf(closer, open + opener.length);
+  if (close === -1) throw new UnreadableError(`has ${kind} it never closes`);
+  const end = close + closer.length;
+  if (skipped) {
+    const cdata = opener === "<![CDATA[";
+    return {
+      end,
+      adds: cdata ? text.slice(open + opener.length, close) : "",
+      tag: null,
+    };
+  }
+  const tag = /^<(\/?)([^\s/>]+)/.exec(text.slice(open, end));
+  return {
+    end,
+    adds: "",
+    tag: tag && {
+      closing: tag[1] === "/",
+      name: tag[2] as string,
+      empty: text[close - 1] === "/",
+    },
+  };
+}
+
 /**
  * The text of every element, keyed by its path, scanned from the start as
  * XML reads it: a comment adds nothing (`qa<!-- x -->/java` is `qa/java`),
@@ -49,28 +83,19 @@ function elementValues(text: string): Values {
   const path: string[] = [];
   let value = "";
   let at = 0;
-  while (at < text.length) {
-    const open = text.indexOf("<", at);
-    if (open === -1) break;
-    value += text.slice(at, open);
-    const skipped = SKIPPED.find(([o]) => text.startsWith(o, open));
-    const close = skipped
-      ? text.indexOf(skipped[1], open + skipped[0].length)
-      : text.indexOf(">", open);
-    if (close === -1)
-      throw new UnreadableError(
-        `has ${skipped ? skipped[2] : "a tag"} it never closes`,
-      );
-    if (skipped?.[0] === "<![CDATA[")
-      value += text.slice(open + skipped[0].length, close);
-    at = close + (skipped ? skipped[1].length : 1);
-    if (skipped) continue;
-    const tag = /^<(\/?)([^\s/>]+)/.exec(text.slice(open, close + 1));
+  for (
+    let open = text.indexOf("<");
+    open !== -1;
+    open = text.indexOf("<", at)
+  ) {
+    const { end, adds, tag } = markupAt(text, open);
+    value += text.slice(at, open) + adds;
+    at = end;
     if (!tag) continue;
-    if (tag[1]) {
+    if (tag.closing) {
       values.set(path.join("/"), value);
       path.pop();
-    } else if (text[close - 1] !== "/") path.push(tag[2] as string);
+    } else if (!tag.empty) path.push(tag.name);
     value = "";
   }
   return values;

@@ -41,7 +41,9 @@ describe("glob patterns", () => {
 
   test("a pattern no regular expression can stand for is unreadable, not a crash", () => {
     const reading = readJest(
-      repo({ "jest.config.js": "module.exports = { testMatch: ['**/[z-a].js'] };" }),
+      repo({
+        "jest.config.js": "module.exports = { testMatch: ['**/[z-a].js'] };",
+      }),
     );
     expect(reading.rules).toEqual([]);
     expect(whys(reading)[0]).toContain("[z-a]");
@@ -158,7 +160,8 @@ describe("pytest", () => {
   test("testpaths outside the configuration's folder is found under its own folder", () => {
     const reading = readPytest(
       repo({
-        "config/pytest.ini": "[pytest]\ntestpaths = ../qa\npython_files = check_*.py\n",
+        "config/pytest.ini":
+          "[pytest]\ntestpaths = ../qa\npython_files = check_*.py\n",
       }),
     );
     expect(claimed(reading, ["qa/check_cart.py", "qa/cart.py"])).toEqual([
@@ -169,7 +172,8 @@ describe("pytest", () => {
   test("a pyproject.toml whose pytest table is commented out gives way to setup.cfg", () => {
     const reading = readPytest(
       repo({
-        "pyproject.toml": "# [tool.pytest.ini_options]\n[project]\nname = 'x'\n",
+        "pyproject.toml":
+          "# [tool.pytest.ini_options]\n[project]\nname = 'x'\n",
         "setup.cfg": "[tool:pytest]\npython_files = check_*.py\n",
       }),
     );
@@ -248,8 +252,8 @@ describe("Maven", () => {
         ),
       }),
     );
-    expect(
-      claimed(reading, ["qa/Check.java", "src/test/java/T.java"]),
-    ).toEqual(["src/test/java/T.java"]);
+    expect(claimed(reading, ["qa/Check.java", "src/test/java/T.java"])).toEqual(
+      ["src/test/java/T.java"],
+    );
   });
 });
