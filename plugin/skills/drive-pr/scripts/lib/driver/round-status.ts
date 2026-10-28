@@ -1,7 +1,7 @@
 /** Read the live round report and preview conflicts from positively measured dry-run evidence. */
 import type { DriveRoundContext } from "./round-context.ts";
 
-import { conflictRepairRounds } from "./settings.ts";
+import { conflictRepairRounds, fixRemote } from "./settings.ts";
 
 import { run, tsArgv } from "./../proc.ts";
 
@@ -46,15 +46,16 @@ async function previewConflictingRound(
       );
     } else if (conflictBudget > 0) {
       console.error(
-        `(dry-run) would run a conflict-resolution pass against origin/${base}`,
+        `(dry-run) would run a conflict-resolution pass against ${fixRemote()}/${base}`,
       );
     } else {
       console.error(
         `PR #${context.pr} conflicts with its base and has nothing left to work — stopping.`,
       );
       console.error(reasonLine);
+      const remote = fixRemote();
       console.error(
-        `  Fix: bun "<skill-dir>/../../shared/command.ts" -- git fetch origin; after success, bun "<skill-dir>/../../shared/command.ts" -- git merge origin/${base}, resolve, run the gates, push. (DRIVE_PR_CONFLICT_REPAIR_ROUNDS=0 disables the automated repair pass)`,
+        `  Fix: bun "<skill-dir>/../../shared/command.ts" -- git fetch ${remote}; after success, bun "<skill-dir>/../../shared/command.ts" -- git merge ${remote}/${base}, resolve, run the gates, push. (DRIVE_PR_CONFLICT_REPAIR_ROUNDS=0 disables the automated repair pass)`,
       );
     }
     return 9;

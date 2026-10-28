@@ -375,7 +375,7 @@ plugin's. Delete such a copy when you adopt the plugin's version.
 skill. Every field below has a default except `issue_tracker.team`, which the
 tracker scripts require on Linear (`issue_tracker.adapter: linear`); on GitHub
 Issues, the default, the key is the repository's own
-(`issue_tracker.github.repository`, by default the `origin` remote's), so no
+(`issue_tracker.github.repository`, by default the git remote's: `repository.remote`, else `origin`), so no
 team is set. A drive does not need an AI reviewer: without one it
 converges on review threads and CI alone. A repository that has one names it
 with `review.reviewer_app` (or `review.reviewer_check_pattern`), and the drive

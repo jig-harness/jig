@@ -233,6 +233,44 @@ export function configSource(field: string): string {
   return sourceOf(layeredConfig(), field);
 }
 
+/** The git remote a clone is assumed to have when `repository.remote` is unset. */
+export const DEFAULT_REMOTE = "origin";
+
+/**
+ * A git remote name the skills can pass as one argument: no whitespace, no
+ * leading `-` (git would read it as an option), no `:` (it would split a
+ * refspec), and none of the characters a ref name refuses, since the remote
+ * prefixes every remote-tracking ref (`refs/remotes/<remote>/<branch>`).
+ */
+const REMOTE_NAME = /^(?!-)(?!.*\.\.)[^\s:~^?*[\\]+$/;
+
+/**
+ * The git remote the delivery skills push to and fetch from:
+ * `repository.remote` in the configuration layers of the repository at
+ * `root`, else `origin`. A value that is not a usable remote name is an
+ * error naming where it was set, never a silent fallback to `origin`, which
+ * could be another repository's remote.
+ */
+export function remoteName(
+  root = consumerRoot(),
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const config = layeredConfig(root, env);
+  const repository = config.values.repository;
+  if (repository === undefined || repository === null) return DEFAULT_REMOTE;
+  if (typeof repository !== "object" || Array.isArray(repository))
+    throw new Error(
+      `repository must be an object: ${sourceOf(config, "repository")}`,
+    );
+  const value = (repository as Record<string, unknown>).remote;
+  if (value === undefined || value === null) return DEFAULT_REMOTE;
+  if (typeof value !== "string" || !REMOTE_NAME.test(value))
+    throw new Error(
+      `repository.remote must be a git remote name (no spaces, no leading '-', no ':'), got ${JSON.stringify(value)}: ${sourceOf(config, "repository.remote")}`,
+    );
+  return value;
+}
+
 export function reviewConfig(): ReviewConfig {
   const overlay = readOverlay();
   try {

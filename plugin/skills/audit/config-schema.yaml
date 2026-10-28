@@ -198,6 +198,13 @@ fields:
     read_by: [drive-pr, do-item, review, descar, changelog]
     repository_only: true
 
+  repository.remote:
+    type: string
+    pattern: "^(?!-)(?!.*\\.\\.)[^\\s:~^?*\\[\\\\]+$"
+    default: origin
+    read_by: [drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect]
+    since: next
+
   pull_requests.stacking:
     type: enum
     values: [none, native, branch]

@@ -1,4 +1,5 @@
 /** Repository labels for a listing of one clone's state, without network calls. */
+import { consumerRoot, remoteName } from "../../../../shared/consumer.ts";
 import { git, gitCallTimeoutSeconds, gitIdentityEnv } from "./proc.ts";
 import { resolveLegacyStateDir } from "./state/store.ts";
 
@@ -32,11 +33,15 @@ export function repositoryLabel(url: string): string {
 }
 
 export async function driveRepository(): Promise<string> {
-  const result = await git(["remote", "get-url", "origin"], {
-    cwd: process.env.DRIVE_PR_WORKTREE || process.cwd(),
-    timeoutSec: gitCallTimeoutSeconds(),
-    env: gitIdentityEnv(),
-  });
+  const cwd = process.env.DRIVE_PR_WORKTREE || process.cwd();
+  const result = await git(
+    ["remote", "get-url", remoteName(consumerRoot(cwd))],
+    {
+      cwd,
+      timeoutSec: gitCallTimeoutSeconds(),
+      env: gitIdentityEnv(),
+    },
+  );
   // Local-only clones and remotes without a safe label fall back to the Git
   // common directory. Never print a raw remote URL: it may carry credentials.
   return (

@@ -25,7 +25,7 @@
  * Usage:
  *   fractal-metrics.ts [--pr-days N] [--days N] [--until YYYY-MM-DD]
  *                      [--limit N] [--concurrency N] [--json] [--out FILE]
- *                      [--skip-prs] [--skip-linear]
+ *                      [--skip-prs] [--skip-tracker]
  *                      [--skip-self-inflicted] [--no-fetch-heads]
  *
  *   --until D    the exclusive end of BOTH windows, default tomorrow (so today's
@@ -41,9 +41,10 @@
  *                assume the baselines were recorded over the same length.
  *   --limit N    most PRs sampled (default 300). A window past it is reported
  *                as capped, never silently truncated.
- *   --skip-prs / --skip-linear   measure one half only. The baseline-window
- *                reproduction runs `--skip-linear`, since Linear state cannot
- *                be rewound.
+ *   --skip-prs / --skip-tracker  measure one half only. The baseline-window
+ *                reproduction runs `--skip-tracker`, since tracker state
+ *                cannot be rewound. `--skip-linear` is accepted as an alias
+ *                of `--skip-tracker`.
  *   --skip-self-inflicted        skip the per-thread `git blame` pass, the
  *                slowest part of a PR-side run.
  *   --no-fetch-heads             do not `git fetch` each PR's `pull/N/head`;
@@ -71,6 +72,7 @@ import {
   realConflictDeps,
   type ConflictObservation,
 } from "./lib/fractal-conflicts.ts";
+import { consumerRoot, remoteName } from "../../../shared/consumer.ts";
 import { Defect } from "../../../shared/errors.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -146,7 +148,7 @@ export interface RunOptions {
   limit: number;
   concurrency: number;
   skipPrs: boolean;
-  skipLinear: boolean;
+  skipTracker: boolean;
 }
 
 export interface LadderShape {
@@ -401,7 +403,7 @@ export async function runScoreboard(
   }
 
   let linear: LinearSide | null = null;
-  if (!opts.skipLinear) {
+  if (!opts.skipTracker) {
     try {
       linear = await deps.fetchLinear({ sinceMs, untilMs, nowMs });
     } catch (err) {
@@ -418,7 +420,7 @@ export async function runScoreboard(
 
   const sides = new Set<"pr" | "linear">();
   if (!opts.skipPrs) sides.add("pr");
-  if (!opts.skipLinear) sides.add("linear");
+  if (!opts.skipTracker) sides.add("linear");
   const specs = deps.specs ?? METRICS;
   const values = currentValues(pr, linear, specs);
   // A PR that could not be sampled is missing from every PR-side aggregate, so
@@ -554,6 +556,7 @@ export function makeSelfInflictedLabeler(
     stderr: "ignore" as const,
     timeoutSec: gitCallTimeoutSeconds(),
   };
+  const remote = remoteName(consumerRoot(repo));
   const fetchedRefs = new Map<string, Promise<void>>();
   const fetchOnce = (key: string, args: string[]): Promise<void> => {
     let p = fetchedRefs.get(key);
@@ -564,7 +567,7 @@ export function makeSelfInflictedLabeler(
           "--no-tags",
           "--no-write-fetch-head",
           "--quiet",
-          "origin",
+          remote,
           ...args,
         ],
         opts,
@@ -670,7 +673,7 @@ export function makeSelfInflictedLabeler(
 
 const USAGE = [
   "usage: fractal-metrics.ts [--pr-days N] [--days N] [--until YYYY-MM-DD] [--limit N]",
-  "                          [--concurrency N] [--json] [--out FILE] [--skip-prs] [--skip-linear]",
+  "                          [--concurrency N] [--json] [--out FILE] [--skip-prs] [--skip-tracker]",
   "                          [--skip-self-inflicted] [--no-fetch-heads]",
 ] as const;
 
@@ -706,7 +709,7 @@ export function parseArgs(
     limit: DEFAULT_LIMIT,
     concurrency: DEFAULT_CONCURRENCY,
     skipPrs: false,
-    skipLinear: false,
+    skipTracker: false,
     json: false,
     out: null,
     skipSelfInflicted: false,
@@ -716,7 +719,8 @@ export function parseArgs(
     const a = argv[i] as string;
     if (a === "--json") args.json = true;
     else if (a === "--skip-prs") args.skipPrs = true;
-    else if (a === "--skip-linear") args.skipLinear = true;
+    else if (a === "--skip-tracker" || a === "--skip-linear")
+      args.skipTracker = true;
     else if (a === "--skip-self-inflicted") args.skipSelfInflicted = true;
     else if (a === "--no-fetch-heads") args.fetchHeads = false;
     else if (a === "--days") args.days = positiveInt(a, argv[++i], 366);
@@ -736,8 +740,8 @@ export function parseArgs(
       args.out = f;
     } else fail(2, `unknown argument: ${a}`, ...USAGE);
   }
-  if (args.skipPrs && args.skipLinear)
-    fail(2, "--skip-prs and --skip-linear leave nothing to measure", ...USAGE);
+  if (args.skipPrs && args.skipTracker)
+    fail(2, "--skip-prs and --skip-tracker leave nothing to measure", ...USAGE);
   return args;
 }
 

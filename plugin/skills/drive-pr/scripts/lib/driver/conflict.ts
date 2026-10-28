@@ -1,5 +1,5 @@
 /** Spend the conflict-repair budget before reporting a base-merge stop. */
-import { conflictRepairRounds } from "./settings.ts";
+import { conflictRepairRounds, fixRemote } from "./settings.ts";
 
 import { driverRuntime } from "./runtime.ts";
 
@@ -72,8 +72,9 @@ export async function runConflictPhase(
   );
   console.error(reasonLine);
   if (base !== "") {
+    const remote = fixRemote();
     console.error(
-      `  Fix: bun "<skill-dir>/../../shared/command.ts" -- git fetch origin; after success, bun "<skill-dir>/../../shared/command.ts" -- git merge origin/${base}, resolve, run the gates, push.`,
+      `  Fix: bun "<skill-dir>/../../shared/command.ts" -- git fetch ${remote}; after success, bun "<skill-dir>/../../shared/command.ts" -- git merge ${remote}/${base}, resolve, run the gates, push.`,
     );
   } else {
     console.error(
@@ -91,7 +92,7 @@ async function attemptConflictRepair(
 ): Promise<number | "continue" | undefined> {
   if (context.dryRun || context.agent.length === 0) {
     console.error(
-      `(dry-run) would run a conflict-resolution pass against origin/${base}`,
+      `(dry-run) would run a conflict-resolution pass against ${fixRemote()}/${base}`,
     );
     return 9;
   }

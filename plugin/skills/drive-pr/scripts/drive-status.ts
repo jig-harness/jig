@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { consumerRoot, remoteName } from "../../../shared/consumer.ts";
 import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Decide, mechanically, which state a PR-review drive is in — and in particular
@@ -227,7 +228,7 @@ import {
   fetchTimeoutSeconds,
   probeBaseDrift,
   verifyCheckoutIsPrHead,
-  verifyOriginIsPrRepo,
+  verifyRemoteIsPrRepo,
 } from "./lib/base-drift.ts";
 import { fail, isDigits, runMain, sleep, testPacing } from "./lib/cli.ts";
 import {
@@ -814,20 +815,28 @@ async function main(): Promise<number> {
     if (rootRes.code !== 0 || rootRes.stdout.trim() === "") return driftMemo;
     const root = rootRes.stdout.trim();
     // Same precondition base-sync.ts fails closed on before its own fetch:
-    // `probeBaseDrift` always fetches through `origin`, which is wrong
-    // whenever `origin` is not the PR's own repository (a fork clone, or a
-    // `gh`/git disagreement). This read is best-effort like the rest of
-    // `baseDrift()`, so a mismatch just degrades to `null` rather than
-    // failing the gate — but it must not silently measure drift off the
-    // wrong repository's history.
-    const originCheck = await verifyOriginIsPrRepo(
+    // `probeBaseDrift` always fetches through the drive's remote
+    // (`repository.remote`, else `origin`), which is wrong whenever that
+    // remote is not the PR's own repository (a fork clone, or a `gh`/git
+    // disagreement). This read is best-effort like the rest of
+    // `baseDrift()`, so a mismatch, or a remote setting that cannot be read,
+    // just degrades to `null` rather than failing the gate — but it must not
+    // silently measure drift off the wrong repository's history.
+    let remote: string;
+    try {
+      remote = remoteName(consumerRoot(root));
+    } catch {
+      return driftMemo;
+    }
+    const remoteCheck = await verifyRemoteIsPrRepo(
       git,
       root,
       `${owner}/${repo}`,
       identityEnv,
+      remote,
     );
-    if (!originCheck.ok) return driftMemo;
-    // `origin` being the right REPOSITORY does not prove this WORKTREE is
+    if (!remoteCheck.ok) return driftMemo;
+    // The remote being the right REPOSITORY does not prove this WORKTREE is
     // checked out on THIS PR's branch — invoked with an explicit PR from an
     // unrelated branch or worktree (`DRIVE_PR_WORKTREE` unset or pointed
     // elsewhere), this call would otherwise happily measure and publish
@@ -857,6 +866,7 @@ async function main(): Promise<number> {
       baseBranch,
       seconds.seconds,
       identityEnv,
+      remote,
     );
     if (probe.ok) driftMemo = probe.drift;
     return driftMemo;

@@ -11,6 +11,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { consumerRoot, remoteName } from "../../../../shared/consumer.ts";
 import { git, gitPath, gitRaw, resolveCommit, subject } from "./git.ts";
 
 export type OperationKind = "merge" | "rebase" | "cherry-pick" | "revert";
@@ -127,13 +128,16 @@ function mergedRef(root: string): string | null {
   return match?.[1] ?? null;
 }
 
-/** The repository's default branch name ("main"), when the remote declares it. */
+/**
+ * The repository's default branch name ("main"), when its remote
+ * (`repository.remote`, else `origin`) declares it.
+ */
 function defaultBranch(root: string): string[] {
   const r = gitRaw(root, [
     "symbolic-ref",
     "--quiet",
     "--short",
-    "refs/remotes/origin/HEAD",
+    `refs/remotes/${remoteName(consumerRoot(root))}/HEAD`,
   ]);
   if (r.code === 0 && r.stdout.trim() !== "")
     return [r.stdout.trim().replace(/^[^/]+\//, "")];

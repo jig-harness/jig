@@ -63,7 +63,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { consumerRoot } from "../../../shared/consumer.ts";
+import { consumerRoot, remoteName } from "../../../shared/consumer.ts";
 import { loadCatalogFile } from "./lib/change-areas-catalog.ts";
 import { readStdinAll } from "./lib/cli.ts";
 import { changeAreasCatalogPath } from "./lib/overlay.ts";
@@ -134,7 +134,7 @@ async function commandSucceeds(cmd: string[]): Promise<boolean> {
 
 // Git permits an HTTPS remote with embedded userinfo
 // (`https://x-access-token:ghp_xxx@github.com/...`), and `git config --get
-// remote.origin.url` returns it verbatim — copying a live credential into a
+// remote.<remote>.url` returns it verbatim — copying a live credential into a
 // long-lived file outside the worktree. SSH/scp-like
 // remotes (`git@host:owner/repo.git`) don't carry credentials in the address
 // itself, so they pass through unchanged; `new URL()` throws on that syntax,
@@ -352,9 +352,20 @@ const planExtract = {
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const headSha = await capture(["git", "rev-parse", "HEAD"]);
 const branch = await capture(["git", "branch", "--show-current"]);
-const originUrl = sanitizeGitRemoteUrl(
-  await capture(["git", "config", "--get", "remote.origin.url"]),
-);
+// The drive's remote (`repository.remote`, else `origin`); an unreadable
+// setting records no address, like an unreadable one.
+let remote: string | null = null;
+try {
+  remote = remoteName();
+} catch {
+  remote = null;
+}
+const originUrl =
+  remote === null
+    ? null
+    : sanitizeGitRemoteUrl(
+        await capture(["git", "config", "--get", `remote.${remote}.url`]),
+      );
 // Best-effort: outside a drive (or with no state yet) this is simply null.
 const round = await capture(
   tsArgv(join(scriptsDir, "drive-state.ts"), ["rounds", pr]),

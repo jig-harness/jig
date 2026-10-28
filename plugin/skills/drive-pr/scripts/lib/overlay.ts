@@ -17,8 +17,9 @@ import {
   configSource,
   consumerRoot,
   readConfig,
+  remoteName,
 } from "../../../../shared/consumer.ts";
-import { verifyOriginIsPrRepo } from "./base-drift.ts";
+import { verifyRemoteIsPrRepo } from "./base-drift.ts";
 import { ghCall, git, gitCallTimeoutSeconds } from "./proc.ts";
 
 let cache: { key: string; value: Record<string, unknown> } | undefined;
@@ -264,7 +265,8 @@ const baseBranchCache = new Map<string, string | null>();
 /**
  * The branch pull requests target and rounds diff against, without the
  * remote prefix: `DRIVE_PR_BASE_BRANCH`, else `repository.base_branch`, else
- * derived — the clone's `origin/HEAD` when it has one (no network), else
+ * derived — the clone's `<remote>/HEAD` when it has one (no network; the
+ * remote is `repository.remote`, else `origin`), else
  * `gh repo view --json defaultBranchRef`. A derived answer is cached per
  * process and repository.
  * `null` when none of them answers; callers fail closed on it.
@@ -280,6 +282,7 @@ export async function baseBranch(
   const cached = baseBranchCache.get(root);
   if (cached !== undefined) return cached;
   let derived: string | null = null;
+  const remote = remoteName(consumerRoot(root));
   const head = await git(
     [
       "-C",
@@ -287,13 +290,13 @@ export async function baseBranch(
       "symbolic-ref",
       "--quiet",
       "--short",
-      "refs/remotes/origin/HEAD",
+      `refs/remotes/${remote}/HEAD`,
     ],
     { stderr: "ignore", timeoutSec: gitTimeout(timeoutSec) },
   );
   const fromHead = head.stdout.trim();
-  if (head.code === 0 && fromHead.startsWith("origin/"))
-    derived = fromHead.slice("origin/".length);
+  if (head.code === 0 && fromHead.startsWith(`${remote}/`))
+    derived = fromHead.slice(`${remote}/`.length);
   if (derived === null) {
     const view = await ghCall(
       [
@@ -320,8 +323,9 @@ export async function baseBranch(
 }
 
 /** The sentence a caller prints when `baseBranch` returns `null`. */
-export const BASE_BRANCH_UNKNOWN =
-  "the base branch is unknown: set repository.base_branch in .config/jig.yaml (or DRIVE_PR_BASE_BRANCH), or give this clone an origin/HEAD (git remote set-head origin --auto)";
+export function baseBranchUnknown(remote: string): string {
+  return `the base branch is unknown: set repository.base_branch in .config/jig.yaml (or DRIVE_PR_BASE_BRANCH), or give this clone a ${remote}/HEAD (git remote set-head ${remote} --auto)`;
+}
 
 /**
  * The branch pull request `pr` targets, without the remote prefix, or `null`
@@ -424,7 +428,8 @@ async function pullRequestBase(
 const prBaseRefCache = new Map<string, { ref: string } | { error: string }>();
 
 /**
- * `refs/remotes/origin/<branch>` for the branch pull request `pr` targets: the
+ * `refs/remotes/<remote>/<branch>` (the remote is `repository.remote`, else
+ * `origin`) for the branch pull request `pr` targets: the
  * base a round diffs against. A stacked layer's base is the layer below, so
  * its round sees only its own layer and never counts what a base sync brought
  * in from the layers beneath it. `pr === ""` reads the current branch's pull
@@ -433,7 +438,7 @@ const prBaseRefCache = new Map<string, { ref: string } | { error: string }>();
  *
  * Fails closed, with the reason, when the pull request's base cannot be
  * established: the pull request cannot be read (including on a detached
- * HEAD, where `pr` must be given), `origin` is not the repository the pull
+ * HEAD, where `pr` must be given), the remote is not the repository the pull
  * request lives in (compared by owner and name; `repo-url.ts` says why hosts
  * are not), or the base has no remote-tracking ref in this clone. No
  * other branch stands in for it: the integration branch can cover fewer files
@@ -462,6 +467,12 @@ async function resolvePrBaseRef(
 ): Promise<{ ref: string } | { error: string }> {
   const which =
     pr === "" ? "this branch's pull request" : `pull request #${pr}`;
+  let remote: string;
+  try {
+    remote = remoteName(consumerRoot(root));
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
   const base = await pullRequestBase(root, pr, timeoutSec);
   if (base === null) {
     if (
@@ -469,9 +480,10 @@ async function resolvePrBaseRef(
       (await currentBranchHasPullRequest(root, timeoutSec)) === false
     ) {
       const branch = await baseBranch(root, timeoutSec);
-      if (branch === null) return { error: BASE_BRANCH_UNKNOWN };
+      if (branch === null) return { error: baseBranchUnknown(remote) };
       const tracked = await trackingRef(
         root,
+        remote,
         branch,
         "the integration branch",
         timeoutSec,
@@ -486,37 +498,46 @@ async function resolvePrBaseRef(
       error: `cannot read the base branch of ${which}, which the round diffs against${pr === "" ? "; name the pull request explicitly" : ""}`,
     };
   }
-  const check = await verifyOriginIsPrRepo(
+  const check = await verifyRemoteIsPrRepo(
     boundedGit(timeoutSec),
     root,
     base.repo,
+    undefined,
+    remote,
   );
   if (!check.ok)
     return {
-      error: `cannot trust origin/${base.branch}, the base of ${which}: ${check.why}`,
+      error: `cannot trust ${remote}/${base.branch}, the base of ${which}: ${check.why}`,
     };
-  return trackingRef(root, base.branch, `the base of ${which}`, timeoutSec);
+  return trackingRef(
+    root,
+    remote,
+    base.branch,
+    `the base of ${which}`,
+    timeoutSec,
+  );
 }
 
 /**
- * `refs/remotes/origin/<branch>` once it is verified to name a commit in this
- * clone. Fully qualified: a local branch named `origin/<branch>` would make
- * the shorthand resolve to something other than the ref verified here.
+ * `refs/remotes/<remote>/<branch>` once it is verified to name a commit in
+ * this clone. Fully qualified: a local branch named `<remote>/<branch>` would
+ * make the shorthand resolve to something other than the ref verified here.
  */
 async function trackingRef(
   root: string,
+  remote: string,
   branch: string,
   role: string,
   timeoutSec?: number,
 ): Promise<{ ref: string } | { error: string }> {
-  const ref = `refs/remotes/origin/${branch}`;
+  const ref = `refs/remotes/${remote}/${branch}`;
   const tracking = await git(
     ["-C", root, "rev-parse", "--verify", "--quiet", `${ref}^{commit}`],
     { stderr: "ignore", timeoutSec: gitTimeout(timeoutSec) },
   );
   if (tracking.code !== 0)
     return {
-      error: `origin/${branch}, ${role}, is not in this clone; run git fetch origin +refs/heads/${branch}:${ref}`,
+      error: `${remote}/${branch}, ${role}, is not in this clone; run git fetch ${remote} +refs/heads/${branch}:${ref}`,
     };
   return { ref };
 }

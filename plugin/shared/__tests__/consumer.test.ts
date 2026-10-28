@@ -1,8 +1,14 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { reviewConfig } from "../consumer.ts";
+import { DEFAULT_REMOTE, remoteName, reviewConfig } from "../consumer.ts";
 
 function withOverlay(value: unknown, check: () => void): void {
   const directory = mkdtempSync(join(tmpdir(), "review-consumer-"));
@@ -92,3 +98,60 @@ test("a skill reads the configuration layers through layeredConfig, never the lo
     );
   expect(callers).toEqual([]);
 });
+
+/**
+ * A repository root holding `.config/jig.yaml` with `yaml`, and the
+ * environment `remoteName` reads it with: no user layer, no `JIG_OVERLAY`.
+ */
+function repositoryWith(yaml: string | null): {
+  root: string;
+  env: Record<string, string | undefined>;
+  done: () => void;
+} {
+  const root = mkdtempSync(join(tmpdir(), "consumer-remote-"));
+  if (yaml !== null) {
+    mkdirSync(join(root, ".config"));
+    writeFileSync(join(root, ".config", "jig.yaml"), yaml);
+  }
+  return {
+    root,
+    env: { JIG_USER_LAYER: "off" },
+    done: () => rmSync(root, { recursive: true, force: true }),
+  };
+}
+
+test("the remote is origin when repository.remote is unset", () => {
+  expect(DEFAULT_REMOTE).toBe("origin");
+  for (const yaml of [null, "repository:\n  base_branch: main\n"]) {
+    const r = repositoryWith(yaml);
+    try {
+      expect(remoteName(r.root, r.env)).toBe("origin");
+    } finally {
+      r.done();
+    }
+  }
+});
+
+test("the remote is the one repository.remote names, and the environment layer overrides it", () => {
+  const r = repositoryWith("repository:\n  remote: upstream\n");
+  try {
+    expect(remoteName(r.root, r.env)).toBe("upstream");
+    expect(
+      remoteName(r.root, { ...r.env, JIG__REPOSITORY__REMOTE: "github" }),
+    ).toBe("github");
+  } finally {
+    r.done();
+  }
+});
+
+for (const value of ['"-upstream"', '"up stream"', '"up:stream"', '""', "42"])
+  test(`an unusable repository.remote is an error naming its file: ${value}`, () => {
+    const r = repositoryWith(`repository:\n  remote: ${value}\n`);
+    try {
+      expect(() => remoteName(r.root, r.env)).toThrow(
+        /repository\.remote must be a git remote name.*\.config[\\/]jig\.yaml/,
+      );
+    } finally {
+      r.done();
+    }
+  });

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { consumerRoot, remoteName } from "../../../shared/consumer.ts";
 import { definedFields } from "../../../shared/defined-fields.ts";
 /**
  * Merge the PR's base branch into this round — when, and only when, doing so
@@ -115,7 +116,7 @@ import {
   fetchTimeoutSeconds,
   type GitRunner,
   probeBaseDrift,
-  verifyOriginIsPrRepo,
+  verifyRemoteIsPrRepo,
 } from "./lib/base-drift.ts";
 import { fail, runMain } from "./lib/cli.ts";
 import { cachedRepoView } from "./lib/gh-conditional.ts";
@@ -712,25 +713,28 @@ async function main(): Promise<number> {
   }
 
   // `probeBaseDrift` below fetches the base branch unconditionally through
-  // `origin` — correct only when `origin` IS the PR's own repository. Verify
-  // that BEFORE the fetch: a fork PR driven from a clone of the fork, or a
-  // `gh`/git disagreement (`$GH_REPO`, `gh repo set-default`), would
-  // otherwise measure — and potentially merge — drift from a same-named
-  // branch in the wrong repository's history, silently.
+  // the drive's remote (`repository.remote`, else `origin`) — correct only
+  // when that remote IS the PR's own repository. Verify that BEFORE the
+  // fetch: a fork PR driven from a clone of the fork, or a `gh`/git
+  // disagreement (`$GH_REPO`, `gh repo set-default`), would otherwise
+  // measure — and potentially merge — drift from a same-named branch in the
+  // wrong repository's history, silently.
+  const remote = remoteName(consumerRoot(root));
   if (baseRepo === "") {
     fail(
       1,
-      "base-sync: could not resolve this repository via `gh repo view` — refusing to fetch the base branch from an unverified 'origin'.",
+      `base-sync: could not resolve this repository via \`gh repo view\` — refusing to fetch the base branch from an unverified '${remote}'.`,
     );
   }
-  const originCheck = await verifyOriginIsPrRepo(
+  const remoteCheck = await verifyRemoteIsPrRepo(
     git,
     root,
     baseRepo,
     identityEnv,
+    remote,
   );
-  if (!originCheck.ok) {
-    fail(1, `base-sync: ${originCheck.why}`);
+  if (!remoteCheck.ok) {
+    fail(1, `base-sync: ${remoteCheck.why}`);
   }
 
   const probe = await probeBaseDrift(
@@ -739,6 +743,7 @@ async function main(): Promise<number> {
     baseBranch,
     fetchSec.seconds,
     identityEnv,
+    remote,
   );
   if (!probe.ok) fail(1, `base-sync: ${probe.why}`);
   const drift = probe.drift;

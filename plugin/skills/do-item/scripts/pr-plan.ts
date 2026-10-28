@@ -16,7 +16,8 @@
  * `{ "branch": ... }` with `--json`). Run it before the first commit.
  *
  * `open` prints the plan for opening the current branch's pull request:
- * the base branch, the `gh pr create` arguments the policy fixes (base,
+ * the base branch, the git remote to push to (`repository.remote`, else
+ * `origin`), the `gh pr create` arguments the policy fixes (base,
  * draft or Ready, labels), the commands to run after it (linking a native
  * stack), the title convention, the template(s) to fill in, the line linking
  * the issue, the size against its budget (leaving out, and naming, the files
@@ -34,7 +35,11 @@
  *   1  the policy or a repository fact could not be read
  */
 
-import { consumerRoot, readConfig } from "../../../shared/consumer.ts";
+import {
+  consumerRoot,
+  readConfig,
+  remoteName,
+} from "../../../shared/consumer.ts";
 import {
   baseBranch,
   reviewsDrafts,
@@ -100,6 +105,8 @@ class Refusal extends Error {
 }
 
 export interface OpenPlan {
+  /** The git remote the branch is pushed to: `repository.remote`, else `origin`. */
+  remote: string;
   base: string;
   trunk: string;
   stack: {
@@ -217,10 +224,11 @@ async function buildOpenPlan(opts: {
 }): Promise<OpenPlan> {
   const { root, policy, issue, stackOn } = opts;
   const warnings: string[] = [];
+  const remote = remoteName(root);
   const trunk = await baseBranch(root);
   if (trunk === null)
     throw new Error(
-      "the integration branch is unknown: set repository.base_branch in .config/jig.yaml, or give this clone an origin/HEAD (git remote set-head origin --auto)",
+      `the integration branch is unknown: set repository.base_branch in .config/jig.yaml, or give this clone a ${remote}/HEAD (git remote set-head ${remote} --auto)`,
     );
 
   const settings = await readRepoSettings(root);
@@ -341,10 +349,10 @@ async function buildOpenPlan(opts: {
   }
 
   // --- Size ---------------------------------------------------------------
-  const baseRef = `origin/${base}`;
+  const baseRef = `${remote}/${base}`;
   if (!(await revParses(root, baseRef)))
     throw new Error(
-      `${baseRef} is not available locally; run git fetch origin ${base}`,
+      `${baseRef} is not available locally; run git fetch ${remote} ${base}`,
     );
   const numstat = await git(
     ["-C", root, "diff", "--numstat", `${baseRef}...HEAD`],
@@ -370,13 +378,14 @@ async function buildOpenPlan(opts: {
   if (openAs.value === "draft") createArgs.push("--draft");
   for (const label of policy.labels) createArgs.push("--label", label);
 
-  const title = await detectTitleFormat(root, policy, `origin/${trunk}`);
+  const title = await detectTitleFormat(root, policy, `${remote}/${trunk}`);
   if (policy.labels.length > 0)
     warnings.push(
       `gh pr create fails when a label does not exist in the repository; the labels are ${policy.labels.join(", ")}`,
     );
 
   return {
+    remote,
     base,
     trunk,
     stack: { mode: policy.stacking, on, depth, maxDepth: policy.maxStackDepth },
@@ -423,6 +432,7 @@ export function formatOpenPlan(plan: OpenPlan): string {
     `base:        ${plan.base}${plan.base === plan.trunk ? "" : ` (lands on ${plan.trunk})`}`,
   );
   lines.push(`stack:       ${stack}`);
+  lines.push(`remote:      ${plan.remote}`);
   lines.push(`open as:     ${plan.openAs.value} (${plan.openAs.source})`);
   lines.push(
     `create:      gh pr create ${plan.createArgs.map(shellQuote).join(" ")} --title <title> --body-file <body>`,

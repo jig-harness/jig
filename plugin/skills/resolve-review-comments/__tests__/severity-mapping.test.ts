@@ -3,7 +3,7 @@
  *
  * Severity vocabularies coexist in this repo (reviewer
  * `low|medium|high|blocker`, /epic-acceptance-review's `Minor|Major|Blocker`,
- * and Linear's priority field). `.config/review-triage.yaml`'s
+ * and the tracker's priority). `.config/review-triage.yaml`'s
  * `severity_mapping` block publishes the correspondence once; this file is
  * what makes "once" true rather than aspirational.
  *
@@ -41,7 +41,7 @@ async function shippedMapping(): Promise<SeverityMapping> {
   const mapping = loaded.config?.severityMapping ?? null;
   if (mapping === null) {
     throw new Error(
-      ".config/review-triage.yaml carries no `severity_mapping` block — the published mapping is the only thing binding the reviewer, acceptance and Linear-priority vocabularies together",
+      ".config/review-triage.yaml carries no `severity_mapping` block — the published mapping is the only thing binding the reviewer, acceptance and tracker-priority vocabularies together",
     );
   }
   return mapping;
@@ -72,7 +72,7 @@ describe("the shipped severity_mapping", () => {
   it("agrees with defer-batch.ts's SEVERITY_TO_PRIORITY on every token", async () => {
     const mapping = await shippedMapping();
     const published = Object.fromEntries(
-      Object.entries(mapping).map(([token, e]) => [token, e.linearPriority]),
+      Object.entries(mapping).map(([token, e]) => [token, e.priority]),
     );
     // Whole-object equality, not a per-key loop: a loop over one side's keys
     // passes while the other side carries an extra token nothing checks.
@@ -122,7 +122,7 @@ describe("severity_mapping validation", () => {
   it("refuses a row the vocabulary does not have", async () => {
     const run = await mutated((doc) => {
       (doc.severity_mapping as Record<string, unknown>).critical = {
-        linear_priority: 1,
+        priority: 1,
         acceptance: "Blocker",
       };
     });
@@ -132,11 +132,11 @@ describe("severity_mapping validation", () => {
   it("refuses a RANKED severity mapped outside 1-4", async () => {
     const run = await mutated((doc) => {
       (doc.severity_mapping as Record<string, Record<string, unknown>>).low = {
-        linear_priority: 5,
+        priority: 5,
         acceptance: "Minor",
       };
     });
-    expect(run).toThrow(/linear_priority must be an integer 1-4/);
+    expect(run).toThrow(/priority must be an integer 1-4/);
   });
 
   it('refuses a RANKED severity mapped to priority 0 — "No priority" is not a rank', async () => {
@@ -147,11 +147,11 @@ describe("severity_mapping validation", () => {
     // in-range.
     const run = await mutated((doc) => {
       (doc.severity_mapping as Record<string, Record<string, unknown>>).low = {
-        linear_priority: 0,
+        priority: 0,
         acceptance: "Minor",
       };
     });
-    expect(run).toThrow(/linear_priority must be an integer 1-4/);
+    expect(run).toThrow(/priority must be an integer 1-4/);
   });
 
   it("refuses `unknown` mapped to a nonzero priority — the absence of a severity is never an urgency", async () => {
@@ -161,17 +161,17 @@ describe("severity_mapping validation", () => {
     const run = await mutated((doc) => {
       (
         doc.severity_mapping as Record<string, Record<string, unknown>>
-      ).unknown = { linear_priority: 1 };
+      ).unknown = { priority: 1 };
     });
     expect(run).toThrow(
-      /linear_priority must be 0 .* 'unknown' is the absence of a severity, never an urgency/,
+      /priority must be 0 .* 'unknown' is the absence of a severity, never an urgency/,
     );
   });
 
   it("refuses an acceptance tier outside the skill's vocabulary", async () => {
     const run = await mutated((doc) => {
       (doc.severity_mapping as Record<string, Record<string, unknown>>).low = {
-        linear_priority: 4,
+        priority: 4,
         acceptance: "Cosmetic",
       };
     });
@@ -182,7 +182,7 @@ describe("severity_mapping validation", () => {
     const run = await mutated((doc) => {
       (
         doc.severity_mapping as Record<string, Record<string, unknown>>
-      ).unknown = { linear_priority: 0, acceptance: "Minor" };
+      ).unknown = { priority: 0, acceptance: "Minor" };
     });
     expect(run).toThrow(/must not carry an acceptance tier/);
   });
@@ -191,7 +191,7 @@ describe("severity_mapping validation", () => {
     const run = await mutated((doc) => {
       (
         doc.severity_mapping as Record<string, Record<string, unknown>>
-      ).blocker = { linear_priority: 4, acceptance: "Blocker" };
+      ).blocker = { priority: 4, acceptance: "Blocker" };
     });
     expect(run).toThrow(/not monotonic/);
   });
@@ -200,7 +200,7 @@ describe("severity_mapping validation", () => {
     const run = await mutated((doc) => {
       (
         doc.severity_mapping as Record<string, Record<string, unknown>>
-      ).blocker = { linear_priority: 1, acceptance: "Minor" };
+      ).blocker = { priority: 1, acceptance: "Minor" };
     });
     expect(run).toThrow(/not monotonic/);
   });
@@ -208,7 +208,7 @@ describe("severity_mapping validation", () => {
   it("refuses an unknown key inside a row", async () => {
     const run = await mutated((doc) => {
       (doc.severity_mapping as Record<string, Record<string, unknown>>).low = {
-        linear_priority: 4,
+        priority: 4,
         acceptance: "Minor",
         label: "cosmetic",
       };
@@ -216,20 +216,20 @@ describe("severity_mapping validation", () => {
     expect(run).toThrow(/unknown key\(s\): label/);
   });
 
-  it("refuses a non-numeric linear_priority", async () => {
+  it("refuses a non-numeric priority", async () => {
     const run = await mutated((doc) => {
       (doc.severity_mapping as Record<string, Record<string, unknown>>).low = {
-        linear_priority: "4",
+        priority: "4",
         acceptance: "Minor",
       };
     });
-    expect(run).toThrow(/linear_priority must be an integer 1-4/);
+    expect(run).toThrow(/priority must be an integer 1-4/);
   });
 
   it("refuses a ranked severity with no acceptance tier key at all", async () => {
     const run = await mutated((doc) => {
       (doc.severity_mapping as Record<string, Record<string, unknown>>).low = {
-        linear_priority: 4,
+        priority: 4,
       };
     });
     expect(run).toThrow(/acceptance must be a string/);
@@ -256,6 +256,44 @@ describe("severity_mapping validation", () => {
   });
 });
 
+describe("the linear_priority alias", () => {
+  /** Every row's `priority` written under the alias instead. */
+  function underAlias(doc: Record<string, unknown>): void {
+    for (const row of Object.values(
+      doc.severity_mapping as Record<string, Record<string, unknown>>,
+    )) {
+      row.linear_priority = row.priority;
+      delete row.priority;
+    }
+  }
+
+  it("reads the same mapping as priority", async () => {
+    const run = await mutated(underAlias);
+    expect(run().severityMapping).toEqual(await shippedMapping());
+  });
+
+  it("is checked as priority is, and the error names the key the row used", async () => {
+    const run = await mutated((doc) => {
+      underAlias(doc);
+      (
+        doc.severity_mapping as Record<string, Record<string, unknown>>
+      ).low = { linear_priority: 0, acceptance: "Minor" };
+    });
+    expect(run).toThrow(/severity_mapping\.low\.linear_priority must be an integer 1-4/);
+  });
+
+  it("refuses a row that sets both", async () => {
+    const run = await mutated((doc) => {
+      (doc.severity_mapping as Record<string, Record<string, unknown>>).low = {
+        priority: 4,
+        linear_priority: 4,
+        acceptance: "Minor",
+      };
+    });
+    expect(run).toThrow(/sets both priority and linear_priority/);
+  });
+});
+
 describe("acceptancePriority", () => {
   it("returns null for a config with no mapping", () => {
     expect(acceptancePriority(null, "Blocker")).toBeNull();
@@ -268,8 +306,8 @@ describe("acceptancePriority", () => {
     // SeverityMapping object built directly, not from a config that passed
     // validation.
     const mapping: SeverityMapping = {
-      low: { linearPriority: 4, acceptance: "Minor" },
-      unknown: { linearPriority: 0, acceptance: null },
+      low: { priority: 4, acceptance: "Minor" },
+      unknown: { priority: 0, acceptance: null },
     };
     expect(acceptancePriority(mapping, "Blocker")).toBeNull();
   });

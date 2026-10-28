@@ -1,4 +1,6 @@
 /** Read driver policy and derive exit codes from the terminal-state contract. */
+import { remoteName } from "../../../../../shared/consumer.ts";
+
 import { isDigits, fail, testPacing } from "../cli.ts";
 
 import { driverOnlyExitCode } from "../status/terminal-states.ts";
@@ -415,6 +417,20 @@ export function ciRepairRounds(): number {
     process.env.DRIVE_PR_CI_REPAIR_ROUNDS,
     CI_REPAIR_ROUNDS_DEFAULT,
   );
+}
+
+/**
+ * The remote a printed conflict fix fetches and merges from:
+ * `repository.remote`, else `origin`. The placeholder `<remote>` when the
+ * setting cannot be read: the line is advice, and the drive's own reads of
+ * the setting are what report it.
+ */
+export function fixRemote(): string {
+  try {
+    return remoteName();
+  } catch {
+    return "<remote>";
+  }
 }
 
 export function conflictRepairRounds(): number {

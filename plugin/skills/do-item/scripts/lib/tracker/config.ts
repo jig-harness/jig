@@ -10,7 +10,7 @@
  *     labels:                  # label role → the tracker's own label
  *       epic: epic
  *     github:                  # GitHub Issues only (`github.ts`)
- *       repository: owner/name # default: the `origin` remote's repository
+ *       repository: owner/name # default: the git remote's repository
  *       states_from: labels    # or `project`, a Projects board's Status field
  *       project: https://github.com/orgs/owner/projects/1
  *       status_field: Status

@@ -81,13 +81,23 @@ export const MAX_TIER = 4;
  */
 export const ACCEPTANCE_TIERS = ["Minor", "Major", "Blocker"];
 
-/** Linear's priority field domain: 0 None, 1 Urgent, 2 High, 3 Medium, 4 Low. */
-export const MIN_LINEAR_PRIORITY = 0;
-export const MAX_LINEAR_PRIORITY = 4;
+/**
+ * The tracker interface's priority domain (`port.ts`): 0 none, 1 urgent,
+ * 2 high, 3 medium, 4 low.
+ */
+export const MIN_PRIORITY = 0;
+export const MAX_PRIORITY = 4;
+
+/**
+ * The key a `severity_mapping` row names its tracker priority with, and the
+ * alias also accepted for it.
+ */
+const PRIORITY_KEY = "priority";
+const PRIORITY_ALIAS = "linear_priority";
 
 export interface SeverityMappingEntry {
-  /** 0-4, Linear's own priority numbering (0 None, 1 Urgent … 4 Low). */
-  linearPriority: number;
+  /** 0-4, the tracker interface's priority numbering (0 none, 1 urgent … 4 low). */
+  priority: number;
   /** An `ACCEPTANCE_TIERS` member, or `null` for `unknown`. */
   acceptance: string | null;
 }
@@ -450,7 +460,8 @@ function parseBand(raw: unknown, index: number): Band {
 /**
  * Parse and validate `severity_mapping` — the one published correspondence
  * between the reviewer severity tokens, an acceptance review's tiers, and
- * Linear's priority field.
+ * the tracker's priority. A row names its priority `priority`;
+ * `linear_priority` is accepted as an alias, and a row may not set both.
  *
  * `undefined` (no block) returns `null` rather than throwing: see
  * `LadderConfig.severityMapping` for why absence must not disarm the ladder.
@@ -481,22 +492,31 @@ function parseSeverityMapping(
   for (const token of expected) {
     const what = `severity_mapping.${token}`;
     const row = mappingAt(root[token], what);
-    assertKnownKeys(row, ["linear_priority", "acceptance"], what);
-    const priority = row.linear_priority;
+    assertKnownKeys(row, [PRIORITY_KEY, PRIORITY_ALIAS, "acceptance"], what);
+    if (row[PRIORITY_KEY] !== undefined && row[PRIORITY_ALIAS] !== undefined) {
+      throw new ConfigError(
+        `${what} sets both ${PRIORITY_KEY} and ${PRIORITY_ALIAS}, its alias; keep ${PRIORITY_KEY}`,
+      );
+    }
+    const key =
+      row[PRIORITY_KEY] === undefined && row[PRIORITY_ALIAS] !== undefined
+        ? PRIORITY_ALIAS
+        : PRIORITY_KEY;
+    const priority = row[key];
     // Token-aware, not a single shared `0-4` range: `unknown` is the
     // ABSENCE of a severity (this file's own row comment ties it to
-    // Linear's priority 0, "None", one-to-one), so it must be EXACTLY 0 —
+    // priority 0, "none", one-to-one), so it must be EXACTLY 0 —
     // any other value invents an urgency for a finding nothing ranked at
     // all. Every RANKED severity is the opposite case: an unprioritized
     // ranked follow-up is the measured failure this mapping is supposed to
     // prevent, so it must map to an actual priority, 1-4, never 0. A single
-    // shared `0-4` bound let both `low: { linear_priority: 0 }` (unprioritized)
-    // and `unknown: { linear_priority: 1 }` (an unranked finding made urgent)
+    // shared `0-4` bound let both `low: { priority: 0 }` (unprioritized)
+    // and `unknown: { priority: 1 }` (an unranked finding made urgent)
     // validate.
     const [minPriority, maxPriority] =
       token === SEVERITY_UNKNOWN
-        ? [MIN_LINEAR_PRIORITY, MIN_LINEAR_PRIORITY]
-        : [MIN_LINEAR_PRIORITY + 1, MAX_LINEAR_PRIORITY];
+        ? [MIN_PRIORITY, MIN_PRIORITY]
+        : [MIN_PRIORITY + 1, MAX_PRIORITY];
     if (
       typeof priority !== "number" ||
       !Number.isInteger(priority) ||
@@ -505,8 +525,8 @@ function parseSeverityMapping(
     ) {
       throw new ConfigError(
         minPriority === maxPriority
-          ? `${what}.linear_priority must be ${minPriority} (got ${JSON.stringify(priority)}) — '${SEVERITY_UNKNOWN}' is the absence of a severity, never an urgency`
-          : `${what}.linear_priority must be an integer ${minPriority}-${maxPriority} (got ${JSON.stringify(priority)})`,
+          ? `${what}.${key} must be ${minPriority} (got ${JSON.stringify(priority)}) — '${SEVERITY_UNKNOWN}' is the absence of a severity, never an urgency`
+          : `${what}.${key} must be an integer ${minPriority}-${maxPriority} (got ${JSON.stringify(priority)})`,
       );
     }
     let acceptance: string | null = null;
@@ -527,10 +547,10 @@ function parseSeverityMapping(
       }
       acceptance = row.acceptance;
     }
-    out[token] = { linearPriority: priority, acceptance };
+    out[token] = { priority, acceptance };
   }
   // Monotonicity, both directions. Without it the table still parses while
-  // saying something incoherent — a `blocker` filed at a LESS urgent Linear
+  // saying something incoherent — a `blocker` filed at a LESS urgent
   // priority than a `low`, or ranked below it on the acceptance tier — and
   // every consumer would faithfully reproduce the incoherence.
   for (let i = 1; i < severityOrder.length; i++) {
@@ -538,11 +558,11 @@ function parseSeverityMapping(
     const stronger = severityOrder[i] as string;
     const wRow = out[weaker] as SeverityMappingEntry;
     const sRow = out[stronger] as SeverityMappingEntry;
-    // Linear priority counts DOWN with urgency (1 Urgent … 4 Low), so a
+    // Priority counts DOWN with urgency (1 urgent … 4 low), so a
     // stronger severity must never carry a numerically larger priority.
-    if (sRow.linearPriority > wRow.linearPriority) {
+    if (sRow.priority > wRow.priority) {
       throw new ConfigError(
-        `severity_mapping is not monotonic: '${stronger}' is stronger than '${weaker}' but maps to the less urgent Linear priority ${sRow.linearPriority} > ${wRow.linearPriority}`,
+        `severity_mapping is not monotonic: '${stronger}' is stronger than '${weaker}' but maps to the less urgent priority ${sRow.priority} > ${wRow.priority}`,
       );
     }
     const wTier = ACCEPTANCE_TIERS.indexOf(wRow.acceptance as string);
@@ -571,7 +591,7 @@ function parseSeverityMapping(
 }
 
 /**
- * The acceptance -> Linear priority direction, DERIVED from `severity_mapping`
+ * The acceptance -> priority direction, DERIVED from `severity_mapping`
  * rather than published as a second table: the weakest (numerically largest)
  * priority among the reviewer tokens carrying that acceptance tier. That is
  * the read an acceptance review needs for a gap classified Blocker/Major/Minor
@@ -586,7 +606,7 @@ export function acceptancePriority(
   if (mapping === null) return null;
   const priorities = Object.values(mapping)
     .filter((e) => e.acceptance === tier)
-    .map((e) => e.linearPriority);
+    .map((e) => e.priority);
   if (priorities.length === 0) return null;
   return Math.max(...priorities);
 }
