@@ -35,6 +35,11 @@ import { DEFAULT_SCANNER_APPS } from "../../resolve-review-comments/scripts/lib/
 import { DEFAULT_BLOCK } from "../../do-item/scripts/lib/execution-plan.ts";
 import { parseWorkTypes } from "../../do-item/scripts/lib/work-types.ts";
 import {
+  parseRouting,
+  RAISE_FIELDS,
+  ROUTING_FIELDS,
+} from "../../do-item/scripts/lib/routing.ts";
+import {
   CANONICAL_STATES,
   knownAdapters,
 } from "../../do-item/scripts/lib/tracker/index.ts";
@@ -173,6 +178,7 @@ describe("CONFIGURATION.md", () => {
     expect(() => parsePrPolicy(example)).not.toThrow();
     expect(() => parseTrackerConfig(example)).not.toThrow();
     expect(() => parseWorkTypes(example)).not.toThrow();
+    expect(() => parseRouting(example, parseWorkTypes(example))).not.toThrow();
     expect(() => parseReflection(example.reflection, repoRoot)).not.toThrow();
     expect(parseChangelogSection(example.changelog)).not.toBeNull();
     const set = (path: string) =>
@@ -220,6 +226,14 @@ describe("the reading skills", () => {
     expect(field("reflection.store")?.values).toEqual([...STORE_KINDS]);
     expect(field("reflection.mode")?.values).toEqual([...MODES]);
     expect(field("changelog.format")?.values).toEqual([...FORMAT_IDS]);
+  });
+
+  test("read the routing section's fields", () => {
+    expect(under("routing").sort()).toEqual(
+      ROUTING_FIELDS.flatMap((f) =>
+        f === "raise" ? RAISE_FIELDS.map((r) => `raise.${r}`) : [f],
+      ).sort(),
+    );
   });
 
   test("accept the GitHub adapter's value sets the schema lists", () => {
@@ -289,6 +303,8 @@ describe("the reading skills", () => {
       "work_batch.ranking.shared_area_label": DEFAULT_RANKING.sharedAreaLabel,
       "resolve_conflicts.hotspot_min_merges": DEFAULT_HOTSPOT_MIN_MERGES,
       "review.scanner_apps": DEFAULT_SCANNER_APPS,
+      "routing.raise.reviews": parseRouting({}, parseWorkTypes({})).raise
+        .reviews,
       "verify.output_lines": DEFAULT_OUTPUT_LINES,
       "verify.timeout_minutes": DEFAULT_TIMEOUT_MINUTES,
       "verify.retention_days": DEFAULT_RETENTION_DAYS,
