@@ -1,5 +1,6 @@
 import { GcError } from "../shared/gc-error.ts";
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { GcConfigurationError } from "../shared/gc-error.ts";
 import {
   gcConfiguration,
@@ -146,6 +147,37 @@ async function entryPlan(
   }
   return kinds;
 }
+/**
+ * The entries `--repo` selects, or why its clone cannot be identified. The
+ * entry names the clone's primary checkout; collecting from a linked worktree
+ * of it selects that entry. A report reads the selected checkout's own
+ * declaration instead. A path holding no `.git` is no checkout and selects no
+ * entry; a checkout Git fails to read leaves its clone unidentified, an
+ * unverified inventory rather than a missing entry.
+ */
+async function selection(
+  selected: string,
+  collect: boolean,
+  machine: MachineConfig,
+): Promise<Entry[] | string> {
+  const matching = (path: string) =>
+    machine.repositories.filter(
+      (entry) => canonicalPath(entry.path) === canonicalPath(path),
+    );
+  const own = matching(selected);
+  if (own.length > 0) return own;
+  if (!collect) return [{ path: selected }];
+  try {
+    const primary = matching(
+      primaryCheckout(selected, await cloneCheckouts(selected)),
+    );
+    return primary.length > 0 ? primary : [{ path: selected }];
+  } catch (error) {
+    if (!existsSync(join(selected, ".git"))) return [{ path: selected }];
+    const reason = error instanceof Error ? error.message : String(error);
+    return `Cannot identify the clone at ${selected}: ${reason}`;
+  }
+}
 export async function collectionPlan(options: {
   collect: boolean;
   repository?: string;
@@ -153,28 +185,27 @@ export async function collectionPlan(options: {
 }): Promise<CollectionKind[]> {
   const { machine } = gcConfiguration(process.cwd(), null);
   const selected = options.repository ? resolve(options.repository) : undefined;
-  const matching = (path: string) =>
-    machine.repositories.filter(
-      (entry) => canonicalPath(entry.path) === canonicalPath(path),
-    );
-  let entries: (RepositoryEntry | { path: string })[] = selected
-    ? matching(selected)
-    : machine.repositories;
-  // The entry names the clone's primary checkout; collecting from a linked
-  // worktree of it selects that entry. A report reads the selected checkout's
-  // own declaration instead, and a checkout Git cannot read selects none.
-  if (options.collect && selected && entries.length === 0) {
-    const primary = await cloneCheckouts(selected)
-      .then((checkouts) => primaryCheckout(selected, checkouts))
-      .catch(() => null);
-    if (primary !== null) entries = matching(primary);
-  }
-  if (selected && entries.length === 0) entries = [{ path: selected }];
   // Receipts are machine-local: planning them must not fetch any base.
-  if (options.kind === "receipts") entries = [];
+  const chosen =
+    options.kind === "receipts"
+      ? []
+      : selected
+        ? await selection(selected, options.collect, machine)
+        : machine.repositories;
   const kinds: CollectionKind[] = [];
-  for (const entry of entries)
-    kinds.push(...(await entryPlan(entry, options, machine)));
+  if (typeof chosen === "string")
+    kinds.push(
+      finding(
+        selected ?? "",
+        chosen,
+        options.kind ?? "worktrees",
+        "unavailable",
+        true,
+      ),
+    );
+  else
+    for (const entry of chosen)
+      kinds.push(...(await entryPlan(entry, options, machine)));
   if (!selected && machine.receipts && !machine.disabled.includes("receipts"))
     kinds.push(receiptsKind(machine.receipts_days));
   return kinds.filter((kind) => !options.kind || kind.name === options.kind);

@@ -13,6 +13,8 @@ release: patch
   registered for a linked worktree is replaced on the next install, and
   removed by uninstall; `jig gc --collect --repo` from a linked worktree
   collects under the primary checkout's entry, while a report from it still
-  reads that worktree's own declaration. Paths compare with symbolic links
+  reads that worktree's own declaration. A checkout Git fails to read there
+  fails the collection's inventory (exit 1) rather than reading as a
+  repository with no entry. Paths compare with symbolic links
   resolved, so an entry naming the clone through another path is the same
   clone's.

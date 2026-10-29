@@ -275,6 +275,31 @@ test("collect from a linked worktree selects the primary checkout's entry", () =
   expect(receipt.kinds.map((kind) => kind.name)).toEqual(["scratch"]);
   expect(JSON.stringify(receipt)).not.toContain("no confirmed machine entry");
 });
+test("collect from a checkout Git cannot read fails the inventory with exit 1", () => {
+  const f = setup();
+  const linked = join(f.root, "linked");
+  f.command(["git", "worktree", "add", "-b", "linked", linked]);
+  writeFileSync(join(linked, ".git"), `gitdir: ${join(f.root, "missing")}\n`);
+  const result = run(f, ["--collect", "--repo", linked, "--json"]);
+  expectSpawnExit(result, 1);
+  const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+  expect(receipt.resources[0]).toMatchObject({
+    outcome: "unverified",
+    reason: expect.stringContaining("Cannot identify the clone"),
+  });
+  expect(JSON.stringify(receipt)).not.toContain("no confirmed machine entry");
+});
+test("collect from a path that is no checkout reports a missing entry", () => {
+  const f = setup();
+  const elsewhere = mkdtempSync(join(tmpdir(), "gc-not-a-clone-"));
+  const result = run(f, ["--collect", "--repo", elsewhere, "--json"]);
+  expectSpawnExit(result, 0);
+  const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+  expect(receipt.resources[0]).toMatchObject({
+    outcome: "finding",
+    reason: expect.stringContaining("no confirmed machine entry"),
+  });
+});
 test("install replaces and uninstall removes an entry naming a linked worktree", () => {
   const f = setup();
   const linked = join(f.root, "linked");
