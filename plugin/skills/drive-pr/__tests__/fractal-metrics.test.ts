@@ -1186,7 +1186,7 @@ const OPTS = {
   limit: 300,
   concurrency: 2,
   skipPrs: false,
-  skipLinear: false,
+  skipTracker: false,
 };
 
 describe("runScoreboard", () => {
@@ -1333,10 +1333,10 @@ describe("runScoreboard", () => {
     expect(linearRows.every((m) => m.verdict === "not-measured")).toBe(true);
   });
 
-  it("--skip-linear neither calls Linear nor produces Linear rows nor a gap", async () => {
+  it("--skip-tracker neither calls Linear nor produces Linear rows nor a gap", async () => {
     const { d, calls } = deps();
     const { scoreboard, gaps } = await runScoreboard(
-      { ...OPTS, skipLinear: true },
+      { ...OPTS, skipTracker: true },
       d,
     );
     expect(calls.linear).toEqual([]);
@@ -1586,7 +1586,7 @@ describe("parseArgs", () => {
       json: false,
       out: null,
       skipPrs: false,
-      skipLinear: false,
+      skipTracker: false,
       skipSelfInflicted: false,
       fetchHeads: true,
     });
@@ -1609,7 +1609,7 @@ describe("parseArgs", () => {
           "--json",
           "--out",
           "x.md",
-          "--skip-linear",
+          "--skip-tracker",
           "--skip-self-inflicted",
           "--no-fetch-heads",
         ],
@@ -1623,7 +1623,7 @@ describe("parseArgs", () => {
       concurrency: 2,
       json: true,
       out: "x.md",
-      skipLinear: true,
+      skipTracker: true,
       skipSelfInflicted: true,
       fetchHeads: false,
     });
@@ -1637,7 +1637,12 @@ describe("parseArgs", () => {
     expect(() => parseArgs(["--days"], TODAY)).toThrow();
     expect(() => parseArgs(["--out"], TODAY)).toThrow();
     expect(() => parseArgs(["--bogus"], TODAY)).toThrow();
+    expect(() => parseArgs(["--skip-prs", "--skip-tracker"], TODAY)).toThrow();
     expect(() => parseArgs(["--skip-prs", "--skip-linear"], TODAY)).toThrow();
+  });
+
+  it("accepts --skip-linear as an alias of --skip-tracker", () => {
+    expect(parseArgs(["--skip-linear"], TODAY).skipTracker).toBe(true);
   });
 });
 
