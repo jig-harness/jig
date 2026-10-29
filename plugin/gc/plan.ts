@@ -8,6 +8,7 @@ import {
   type MachineConfig,
   type RepositoryEntry,
 } from "./config.ts";
+import { cloneCheckouts, primaryCheckout } from "./checkout.ts";
 import { baseDeclaration } from "./git.ts";
 import { receiptsKind } from "./kinds/receipts.ts";
 import { scratchKind } from "./kinds/scratch.ts";
@@ -152,10 +153,19 @@ export async function collectionPlan(options: {
 }): Promise<CollectionKind[]> {
   const { machine } = gcConfiguration(process.cwd(), null);
   const selected = options.repository ? resolve(options.repository) : undefined;
-  let entries: (RepositoryEntry | { path: string })[] =
-    machine.repositories.filter(
-      (entry) => !selected || resolve(entry.path) === selected,
-    );
+  const matching = (path: string) =>
+    machine.repositories.filter((entry) => resolve(entry.path) === path);
+  let entries: (RepositoryEntry | { path: string })[] = selected
+    ? matching(selected)
+    : machine.repositories;
+  // The entry names the clone's primary checkout; a linked worktree of it
+  // selects that entry. A checkout Git cannot read selects none.
+  if (selected && entries.length === 0) {
+    const primary = await cloneCheckouts(selected)
+      .then((checkouts) => primaryCheckout(selected, checkouts))
+      .catch(() => null);
+    if (primary !== null) entries = matching(primary);
+  }
   if (selected && entries.length === 0) entries = [{ path: selected }];
   // Receipts are machine-local: planning them must not fetch any base.
   if (options.kind === "receipts") entries = [];

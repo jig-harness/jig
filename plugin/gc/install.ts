@@ -1,13 +1,8 @@
 import { GcError } from "../shared/gc-error.ts";
-import {
-  mkdirSync,
-  realpathSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { gcConfiguration } from "./config.ts";
+import { cloneCheckouts, primaryCheckout } from "./checkout.ts";
+import { gcConfiguration, type MachineConfig } from "./config.ts";
 import { baseDeclaration, gcGit as git } from "./git.ts";
 import { dump, load } from "../shared/yaml.ts";
 import { isMapping } from "../shared/config-layers.ts";
@@ -31,25 +26,25 @@ export async function install(options: {
   uninstall: boolean;
   machine: boolean;
 }): Promise<number> {
+  const supplied = resolve(options.repository);
   // Removal needs only machine policy: a broken checkout cannot obstruct it.
-  const root = options.uninstall
-    ? await primaryCheckout(resolve(options.repository)).catch(() =>
-        resolve(options.repository),
-      )
-    : await primaryCheckout(resolve(options.repository));
   const repositoryText = options.uninstall ? null : undefined;
+  const { root, clone } = await registration(
+    supplied,
+    options.uninstall
+      ? gcConfiguration(supplied, repositoryText).machine
+      : undefined,
+  );
   const { machine, machinePath, repositoryValues } = gcConfiguration(
     root,
     repositoryText,
   );
+  const others = otherClones(machine, root, clone);
   const repositories = options.uninstall
     ? options.machine
       ? []
-      : machine.repositories.filter((entry) => entry.path !== root)
-    : [
-        ...machine.repositories.filter((old) => old.path !== root),
-        await proposedEntry(root, repositoryValues.repository),
-      ];
+      : others
+    : [...others, await proposedEntry(root, repositoryValues.repository)];
   const next = {
     ...machine,
     repositories,
@@ -112,20 +107,49 @@ export async function install(options: {
   });
 }
 /**
- * The clone's primary checkout. The registration names it, and the
- * declaration's relative roots resolve from it, whichever of the clone's
- * worktrees install runs in. A bare clone has none and keeps `root`.
+ * The path the entry names, the clone's primary checkout, from which the
+ * declaration's relative roots resolve whichever worktree install runs in;
+ * and every worktree path of the clone. Removal (`machine` given) from a
+ * checkout Git cannot read falls back to the supplied path only when an
+ * entry names it exactly, so a failure never removes nothing and succeeds.
  */
-async function primaryCheckout(root: string): Promise<string> {
-  const first = (await git(root, ["worktree", "list", "--porcelain"])).split(
-    /\r?\n\r?\n/,
-  )[0];
-  const lines = (first ?? "").split(/\r?\n/);
-  const line = lines.find((entry) => entry.startsWith("worktree "));
-  if (line === undefined || lines.includes("bare")) return root;
-  const primary = resolve(line.slice("worktree ".length));
-  // Keep the caller's spelling of a path that is already the primary.
-  return realpathSync(primary) === realpathSync(root) ? root : primary;
+async function registration(
+  supplied: string,
+  machine?: MachineConfig,
+): Promise<{ root: string; clone: Set<string> }> {
+  try {
+    const checkouts = await cloneCheckouts(supplied);
+    return {
+      root: primaryCheckout(supplied, checkouts),
+      clone: new Set([supplied, ...checkouts.worktrees]),
+    };
+  } catch (error) {
+    if (machine?.repositories.some((entry) => entry.path === supplied))
+      return { root: supplied, clone: new Set([supplied]) };
+    throw new GcError(
+      `Cannot identify the clone at ${supplied}: ${message(error)}`,
+    );
+  }
+}
+/**
+ * The machine's entries for other clones. An entry naming another of this
+ * clone's worktrees (an earlier installer registered the worktree it ran
+ * in) is this clone's too: the new entry replaces it, with bounds confirmed
+ * afresh, and removal takes it with it.
+ */
+function otherClones(
+  machine: MachineConfig,
+  root: string,
+  clone: Set<string>,
+): MachineConfig["repositories"] {
+  const ours = (entry: { path: string }) =>
+    entry.path === root || clone.has(resolve(entry.path));
+  for (const entry of machine.repositories)
+    if (entry.path !== root && ours(entry))
+      console.log(
+        `Replacing the entry for ${entry.path}, another worktree of this clone`,
+      );
+  return machine.repositories.filter((entry) => !ours(entry));
 }
 /**
  * The entry install proposes for the repository at `root`: the remote

@@ -9,4 +9,7 @@ release: patch
   is no longer reported as a finding.
 - **gc:** `jig gc install` run from a linked worktree registers the clone's
   primary checkout, and resolves the declaration's relative roots from it,
-  rather than registering the linked worktree.
+  rather than registering the linked worktree. An entry an earlier version
+  registered for a linked worktree is replaced on the next install, and
+  removed by uninstall; `jig gc --collect --repo` from a linked worktree
+  collects under the primary checkout's entry.

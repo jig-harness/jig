@@ -14,6 +14,7 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { writeFakeProgram } from "../../../lib/test-helpers/fake-program.ts";
 import { skipsOnWindows } from "../../../lib/test-helpers/windows-skip.ts";
 import { expectSpawnExit } from "../../../lib/test-helpers/expect-spawn-exit.ts";
+import { cloneCheckouts, primaryCheckout } from "../checkout.ts";
 import { gitEnvironment } from "../git.ts";
 import { dump } from "../../shared/yaml.ts";
 import type { Receipt } from "../types.ts";
@@ -243,6 +244,58 @@ test("install from a linked worktree registers the primary checkout and resolves
   expect(preview).toContain(`path: ${primary}`);
   expect(preview).toContain(`- ${join(dirname(primary), "worktrees")}`);
   expect(preview).not.toContain(`path: ${linked}`);
+});
+test("a primary checkout whose path holds a newline is read whole", async () => {
+  if (process.platform === "win32") return;
+  const f = setup();
+  const primary = join(f.root, "jig\ncheckout");
+  f.command(["git", "clone", f.repo, primary]);
+  const linked = join(f.root, "linked");
+  expectSpawnExit(
+    Bun.spawnSync(["git", "worktree", "add", "-b", "linked", linked], {
+      cwd: primary,
+      env: f.env,
+      stdout: "pipe",
+      stderr: "pipe",
+    }),
+    0,
+  );
+  const checkouts = await cloneCheckouts(linked);
+  expect(checkouts.primary).toBe(realpathSync(primary));
+  expect(primaryCheckout(linked, checkouts)).toBe(realpathSync(primary));
+});
+test("collect from a linked worktree selects the primary checkout's entry", () => {
+  const f = setup();
+  const linked = join(f.root, "linked");
+  f.command(["git", "worktree", "add", "-b", "linked", linked]);
+  const result = run(f, ["--collect", "--repo", linked, "--json"]);
+  expectSpawnExit(result, 0);
+  const receipt = JSON.parse(result.stdout.toString()) as Receipt;
+  expect(receipt.kinds.map((kind) => kind.name)).toEqual(["scratch"]);
+  expect(JSON.stringify(receipt)).not.toContain("no confirmed machine entry");
+});
+test("install replaces and uninstall removes an entry naming a linked worktree", () => {
+  const f = setup();
+  const linked = join(f.root, "linked");
+  f.command(["git", "worktree", "add", "-b", "linked", linked]);
+  const legacy = { ...f.machine.repositories[0], path: linked };
+  writeFileSync(f.homeFile, dump({ gc: { repositories: [legacy] } }));
+  const install = run(f, ["install", "--repo", linked]);
+  expectSpawnExit(install, 0);
+  const preview = install.stdout.toString();
+  expect(preview).toContain(`Replacing the entry for ${linked}`);
+  expect(preview).toContain(`path: ${realpathSync(f.repo)}`);
+  expect(preview).not.toContain(`path: ${linked}`);
+  const uninstall = run(f, ["install", "--repo", linked, "--uninstall"]);
+  expectSpawnExit(uninstall, 0);
+  expect(uninstall.stdout.toString()).toContain("repositories: []");
+});
+test("uninstall refuses a checkout Git cannot read that no entry names", () => {
+  const f = setup();
+  const elsewhere = mkdtempSync(join(tmpdir(), "gc-not-a-clone-"));
+  const result = run(f, ["install", "--repo", elsewhere, "--uninstall"]);
+  expectSpawnExit(result, 1);
+  expect(result.stderr.toString()).toContain("Cannot identify the clone");
 });
 test("uninstall reads only machine policy, so a broken checkout cannot block it", () => {
   const f = setup();
