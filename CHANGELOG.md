@@ -341,6 +341,26 @@ changes are marked **Breaking** and say what a consumer changes.
   principles page no longer stops well below the header: it lands just
   under it.
 
+## [0.97.0] - 2026-10-29
+
+### Added
+
+- `/jig:red-team` reviews a requirements document (a PRD) or an architecture
+  document adversarially, by persona: a critical chief technology officer, a
+  security auditor, a performance engineer and a cost optimizer read both
+  kinds, and a requirements document is also read by a reader who knows no
+  engineering terms, a scope cutter, an acceptance tester and a
+  day-in-the-life walker. Each persona reads in fresh context (a subagent,
+  else a fresh run of the agent command, else this session, which the report
+  then says), and one report gives each persona's verdict and every finding
+  with the quoted passage, the risk and the question the author must answer.
+  It never edits the document, and the report ends with the line the
+  accepted document's stage-review record cites it with. It is the runnable form of
+  [M6](modules/M6-feature-delivery-pipeline/README.md)'s per-stage
+  adversarial review for the requirements and architecture stages, and the
+  [greenfield guide](adoption/greenfield.md)'s critical-analysis phase
+  points at it ([the skill](plugin/skills/red-team/README.md)).
+
 ## [0.96.0] - 2026-10-29
 
 A pull request can be driven from any working tree of its clone, from the clone's primary checkout, or from a session in another repository.
@@ -3962,7 +3982,8 @@ warns.**
 - First packaged release of the `resolve-review-comments` skill, installed per
   worktree from a pinned release.
 
-[Unreleased]: https://github.com/jig-harness/jig/compare/v0.96.0...HEAD
+[Unreleased]: https://github.com/jig-harness/jig/compare/v0.97.0...HEAD
+[0.97.0]: https://github.com/jig-harness/jig/compare/v0.96.0...v0.97.0
 [0.96.0]: https://github.com/jig-harness/jig/compare/v0.95.0...v0.96.0
 [0.95.0]: https://github.com/jig-harness/jig/compare/v0.94.2...v0.95.0
 [0.94.2]: https://github.com/jig-harness/jig/compare/v0.94.1...v0.94.2
