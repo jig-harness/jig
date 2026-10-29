@@ -1,0 +1,16 @@
+plugins { id 'java' }
+
+sourceSets {
+    test {
+        java {
+            srcDirs = ['qa/java']
+        }
+        resources {
+            srcDir 'qa/resources'
+        }
+    }
+}
+
+test {
+    useJUnitPlatform()
+}

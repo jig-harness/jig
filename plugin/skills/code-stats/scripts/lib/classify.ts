@@ -1,9 +1,8 @@
 /**
  * Classify one file along each dimension, keeping the rule that decided each
  * value. Layers, lowest precedence first: built-in detection (conventions,
- * attributes, banners, extensions), the `code_stats` configuration, then the
- * repository's classify command. A seam for test-runner configuration sits
- * between detection and configuration, where a later layer will read it.
+ * attributes, banners, extensions), the test runners' configuration, the
+ * `code_stats` configuration, then the repository's classify command.
  */
 import { hasGeneratorBanner } from "./banner.ts";
 import { buildToolOf } from "./build-tools.ts";
@@ -33,6 +32,12 @@ import {
 } from "./languages.ts";
 import type { Classification, Decision, Kind } from "./model.ts";
 import { type ModuleMap, moduleOf } from "./modules.ts";
+import {
+  describeRunnerRule,
+  EMPTY_READING,
+  type Reading,
+  runnerRuleFor,
+} from "./test-runners/index.ts";
 
 /** What reading a file found out, before any rule ran. */
 export interface FileFacts {
@@ -327,12 +332,37 @@ export function configuredKind(
     : null;
 }
 
+/** Kinds a test runner's rule may turn into `test`: what conventions and extensions guess. */
+const RUNNER_OVERRIDES: ReadonlySet<Kind> = new Set([
+  "code",
+  "test",
+  "fixture",
+]);
+
+/**
+ * The test-runner layer: a code file a runner's configuration names is a
+ * test. It overrides the conventions, but not what makes a file vendored,
+ * generated, documentation or an asset: those are not the team's test code.
+ */
+function runnerKind(
+  facts: FileFacts,
+  language: Decision,
+  detected: Decision<Kind>,
+  runners: Reading,
+): Decision<Kind> | null {
+  if (!RUNNER_OVERRIDES.has(detected.value) || !isCode(facts, language))
+    return null;
+  const rule = runnerRuleFor(runners, facts.path);
+  return rule ? { value: "test", rule: describeRunnerRule(rule) } : null;
+}
+
 /** Every dimension of one file, each with its deciding rule. */
 export function classify(
   facts: FileFacts,
   config: CodeStatsConfig,
   modules: ModuleMap,
   override: Override | undefined,
+  runners: Reading = EMPTY_READING,
 ): Classification {
   const fromCommand = (value: string): Decision => ({
     value,
@@ -341,12 +371,14 @@ export function classify(
   const language = override?.language
     ? fromCommand(override.language)
     : detectLanguage(facts);
-  // Test-runner configuration (a later layer) goes between these two.
+  const detectedIn = (areaRule?: AreaRule, areaIndex = -1): Decision<Kind> => {
+    const detected = detectKind(facts, language, areaRule, areaIndex);
+    return runnerKind(facts, language, detected, runners) ?? detected;
+  };
   const kindIn = (areaRule?: AreaRule, areaIndex = -1): Decision<Kind> =>
     override?.kind
       ? { value: override.kind, rule: FROM_COMMAND }
-      : (configuredKind(facts.path, config) ??
-        detectKind(facts, language, areaRule, areaIndex));
+      : (configuredKind(facts.path, config) ?? detectedIn(areaRule, areaIndex));
   // Whether a file is code does not depend on its area, so the area rules
   // can read the same decision the file's kind is.
   const code = ["code", "test"].includes(kindIn().value);
