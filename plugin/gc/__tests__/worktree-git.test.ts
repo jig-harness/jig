@@ -155,9 +155,10 @@ writeFileSync(${JSON.stringify(marker)}, "executed"); process.stdout.write("toke
   expect(existsSync(marker)).toBe(false);
 });
 
-test("a detached worktree is proven by the pull request a drive attached it to", () => {
+test("a detached worktree is proven by the pull request a drive attached it to, through the remote it was attached from", () => {
   const f = repository();
-  f.git("remote", "add", "origin", "https://github.com/team/repo.git");
+  f.git("remote", "add", "origin", "https://github.com/fork/repo.git");
+  f.git("remote", "add", "upstream", "https://github.com/team/repo.git");
   f.git("checkout", "--quiet", "--detach");
   const bin = join(f.root, "bin");
   mkdirSync(bin);
@@ -173,7 +174,7 @@ console.log(JSON.stringify({ state: "OPEN", headRefOid: "a".repeat(40), headRepo
   const proof = (record: boolean) => {
     const source = `import { writeDrivenTree } from ${JSON.stringify(resolve(import.meta.dir, "../../shared/driven-tree.ts"))};
 import { worktreeProof } from ${JSON.stringify(resolve(import.meta.dir, "../kinds/worktree-proof.ts"))};
-if (${record}) writeDrivenTree(${JSON.stringify(join(f.repo, ".git"))}, { pr: 7, branch: "topic", remote: "origin", created: true, head: Bun.spawnSync(["git", "-C", ${JSON.stringify(f.repo)}, "rev-parse", "HEAD"]).stdout.toString().trim() });
+if (${record}) writeDrivenTree(${JSON.stringify(join(f.repo, ".git"))}, { pr: 7, branch: "topic", remote: "upstream", created: true, head: Bun.spawnSync(["git", "-C", ${JSON.stringify(f.repo)}, "rev-parse", "HEAD"]).stdout.toString().trim() });
 try { console.log(JSON.stringify(await worktreeProof(${JSON.stringify(f.repo)}, { remote: "origin", base: "main" }, 7))); }
 catch (error) { console.log(JSON.stringify({ error: String(error) })); }`;
     const result = Bun.spawnSync(
@@ -206,4 +207,43 @@ catch (error) { console.log(JSON.stringify({ error: String(error) })); }`;
   expect(readFileSync(calls, "utf8")).toContain(
     "pr view 7 --repo github.com/team/repo",
   );
+});
+
+test("the worktree policy reads the configured remote and that remote's HEAD", () => {
+  const f = repository();
+  f.git("remote", "add", "upstream", "https://github.com/team/repo.git");
+  f.git("update-ref", "refs/remotes/upstream/trunk", "HEAD");
+  f.git(
+    "symbolic-ref",
+    "refs/remotes/upstream/HEAD",
+    "refs/remotes/upstream/trunk",
+  );
+  mkdirSync(join(f.repo, ".config"));
+  writeFileSync(
+    join(f.repo, ".config", "jig.yaml"),
+    "repository:\n  remote: upstream\n",
+  );
+  const source = `import { worktreePolicy } from ${JSON.stringify(resolve(import.meta.dir, "../kinds/worktree-proof.ts"))};
+console.log(JSON.stringify(await worktreePolicy(${JSON.stringify(f.repo)})));`;
+  const result = Bun.spawnSync(
+    [
+      process.execPath,
+      "--no-env-file",
+      `--config=${resolve(import.meta.dir, "../bunfig.toml")}`,
+      "-e",
+      source,
+    ],
+    {
+      cwd: f.repo,
+      env: { ...gitEnvironment(), JIG_OVERLAY: "", JIG_USER_LAYER: "off" },
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 30_000,
+    },
+  );
+  expectSpawnExit(result, 0);
+  expect(JSON.parse(result.stdout.toString())).toEqual({
+    remote: "upstream",
+    base: "trunk",
+  });
 });

@@ -70,15 +70,17 @@ import { openStore, resolveStateDir, worktreeLockName } from "./state/store.ts";
 /**
  * The remote the drive fetches from and pushes to for the clone at `root`:
  * `repository.remote`, else `origin` (`shared/consumer.ts`), the one
- * `guarded-push.ts` pushes to and `base-sync.ts` fetches the base from. A
- * setting it cannot use refuses rather than falling back to `origin`.
+ * `guarded-push.ts` pushes to and `base-sync.ts` fetches the base from. `env`
+ * governs both the configuration layers and which repository's configuration
+ * is read (`JIG_CONSUMER_ROOT`). A setting it cannot use refuses rather than
+ * falling back to `origin`.
  */
 export function driveRemote(
   root: string,
   env: Record<string, string | undefined> = process.env,
 ): string {
   try {
-    return remoteName(consumerRoot(root), env);
+    return remoteName(consumerRoot(root, env), env);
   } catch (err) {
     refuse(1, err instanceof Error ? err.message : String(err));
   }

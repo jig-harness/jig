@@ -8,7 +8,12 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_REMOTE, remoteName, reviewConfig } from "../consumer.ts";
+import {
+  consumerRoot,
+  DEFAULT_REMOTE,
+  remoteName,
+  reviewConfig,
+} from "../consumer.ts";
 
 function withOverlay(value: unknown, check: () => void): void {
   const directory = mkdtempSync(join(tmpdir(), "review-consumer-"));
@@ -164,6 +169,20 @@ test("a repository section YAML reads as a timestamp is an error, never origin",
     );
   } finally {
     r.done();
+  }
+});
+
+test("the repository is the one the supplied environment selects, not this process's", () => {
+  const directory = mkdtempSync(join(tmpdir(), "consumer-root-"));
+  try {
+    const own = join(directory, "own");
+    const other = join(directory, "other");
+    mkdirSync(join(own, ".git"), { recursive: true });
+    mkdirSync(other);
+    expect(consumerRoot(own, { JIG_CONSUMER_ROOT: other })).toBe(other);
+    expect(consumerRoot(join(own, ".git"), {})).toBe(own);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });
 

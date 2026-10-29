@@ -216,7 +216,7 @@ fields:
     type: string
     pattern: "^(?!-)(?!.*\\.\\.)(?!.*//)(?!/)(?!.*/$)(?!.*\\.$)(?!(?:.*/)?\\.)(?!.*\\.lock(?:/|$))[A-Za-z0-9._/-]+$"
     default: origin
-    read_by: [drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect]
+    read_by: [drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect, gc]
     since: 0.94.0
 
   pull_requests.stacking:

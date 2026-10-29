@@ -1,7 +1,7 @@
 /** Re-read local identity; preserve unknown evidence and the session-lock veto. */
 import { lstatSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
-import { layeredConfig } from "../../shared/consumer.ts";
+import { layeredConfig, remoteName } from "../../shared/consumer.ts";
 import { readDrivenTree } from "../../shared/driven-tree.ts";
 import { isMapping } from "../../shared/config-layers.ts";
 import { GcError } from "../../shared/gc-error.ts";
@@ -27,17 +27,29 @@ export interface WorktreePolicy {
   remote: string;
   base: string;
 }
+/**
+ * The remote and integration branch a branched worktree's evidence is read
+ * against: `repository.remote` (`remoteName`, else `origin`) and
+ * `repository.base_branch`, else that remote's `HEAD`.
+ */
 export async function worktreePolicy(root: string): Promise<WorktreePolicy> {
+  let remote: string;
+  try {
+    remote = remoteName(root);
+  } catch (error) {
+    throw new GcError(error instanceof Error ? error.message : String(error));
+  }
   const config = layeredConfig(root).values;
   const repository = isMapping(config.repository) ? config.repository : {};
+  const prefix = `refs/remotes/${remote}/`;
   const base =
     typeof repository.base_branch === "string"
       ? repository.base_branch
-      : (await git(root, ["symbolic-ref", "refs/remotes/origin/HEAD"])).replace(
-          /^refs\/remotes\/origin\//,
+      : (await git(root, ["symbolic-ref", `${prefix}HEAD`])).replace(
+          prefix,
           "",
         );
-  return { remote: "origin", base };
+  return { remote, base };
 }
 async function operation(admin: string): Promise<string | null> {
   for (const name of [
@@ -82,8 +94,9 @@ export async function worktreeProof(
   const head = await git(path, ["rev-parse", "HEAD"]);
   const dir = await git(path, ["rev-parse", "--git-dir"]);
   const admin = isAbsolute(dir) ? dir : resolve(path, dir);
-  // A detached tree a drive attached names its pull request in its record,
-  // for as long as its head still descends from the commit attached. Unlike
+  // A detached tree a drive attached names its pull request, and the remote
+  // that pull request was fetched through, in its record, for as long as its
+  // head still descends from the commit attached. Unlike
   // the drive's readers, no remote branch is required: a merged pull
   // request's branch is often deleted, and that is when the tree is reported.
   const record = name === "HEAD" ? readDrivenTree(admin) : null;
@@ -125,7 +138,7 @@ export async function worktreeProof(
   facts.requests =
     driven === null
       ? await requests(path, policy.remote, name)
-      : await requestByNumber(path, policy.remote, driven.pr);
+      : await requestByNumber(path, driven.remote, driven.pr);
   if (facts.requests.some((pr) => pr.state === "OPEN"))
     return classifyWorktree(facts, idleDays * 86_400_000);
   facts.localOnlyCommits = await localOnlyCommits(path, head);
