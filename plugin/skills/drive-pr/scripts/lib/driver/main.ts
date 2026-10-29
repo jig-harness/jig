@@ -54,6 +54,8 @@ import { runDriverRounds } from "./rounds.ts";
 
 import { attachForDrive } from "./../attach.ts";
 
+import { clearDeadlineRetries } from "./restart.ts";
+
 import {
   decideTakeover,
   explainingRefusal,
@@ -265,8 +267,9 @@ export async function main(): Promise<number> {
   // (its branch, or the head commit detached when another working tree holds
   // the branch), so every round's commit lands on what the attach left, no
   // other driver's tree is ever moved, and no second driver of the PR, in
-  // another tree, attaches beside this one.
-  await attachForDrive(pr, dryRun);
+  // another tree, attaches beside this one. A PR found closed here ends the
+  // drive as the round loop's PR_NOT_OPEN does, restart count included.
+  await attachForDrive(pr, dryRun, () => clearDeadlineRetries(pr));
   createDriverRegistry(held);
   lockResources.use(driverStopCompletionCleanup(held));
   driverRuntime.driverLogRotates = true;

@@ -721,18 +721,24 @@ export function attachOff(script: string): boolean {
  * `drive.ts`'s attach, once it holds the tree's driver lock and the pull
  * request's. Skipped by a dry run, which moves nothing, and by
  * `DRIVE_PR_ATTACH=off`, which drives the tree as it stands (a harness that
- * prepares its trees itself).
+ * prepares its trees itself). `onNotOpen` runs before a PR that is not open
+ * ends the drive with exit 5, so the drive's end-of-drive cleanup runs on that
+ * exit as it does when the round loop finds the PR closed.
  */
 export async function attachForDrive(
   pr: string,
   dryRun: boolean,
+  onNotOpen: () => Promise<void> = async () => {},
 ): Promise<void> {
   if (dryRun || attachOff("drive.ts")) return;
   let attached: Attached;
   try {
     attached = await attachPr(pr, { locksHeld: true });
   } catch (e) {
-    if (e instanceof AttachRefusal) fail(e.code, `drive.ts: ${e.message}`);
+    if (e instanceof AttachRefusal) {
+      if (e.code === 5) await onNotOpen();
+      fail(e.code, `drive.ts: ${e.message}`);
+    }
     throw e;
   }
   setDrivenRemoteRef(attached.remote, attached.branch);
