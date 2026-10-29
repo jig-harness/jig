@@ -28,8 +28,6 @@
  * than refusing it, and says so; the first round boundary that reads it sets
  * this driver's position.
  */
-import { createHash } from "node:crypto";
-import { hostname } from "node:os";
 import { ExitError, fail } from "./../cli.ts";
 import { stallThresholdMs } from "./../doctor.ts";
 import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
@@ -50,6 +48,7 @@ import {
 import {
   LEDGER_DRIVER_ENV,
   type LedgerDriverEnv,
+  cloneId,
   ledgerDriverFromEnv,
 } from "./../state/ledger-mirror.ts";
 import { DRIVE_HELD_ELSEWHERE_EXIT } from "./../state/lease.ts";
@@ -64,14 +63,8 @@ export interface LedgerIdentity {
   actor: string;
   clone: string;
   login: string | null;
-}
-
-/** The clone, by machine and state directory: stable across this clone's drives. */
-function cloneId(stateDir: string): string {
-  return createHash("sha256")
-    .update(`${hostname()}\0${stateDir}`)
-    .digest("hex")
-    .slice(0, 16);
+  /** This driver's lock acquisition time. */
+  started: string;
 }
 
 /**
@@ -81,12 +74,14 @@ function cloneId(stateDir: string): string {
 export async function ledgerIdentity(
   dryRun: boolean,
   stateDir: string,
+  started: string,
 ): Promise<LedgerIdentity | null> {
   if (dryRun || (process.env.DRIVE_PR_LEDGER ?? "") === "off") return null;
   return {
     actor: await resolveActor(),
     clone: cloneId(stateDir),
     login: await resolveLogin(),
+    started,
   };
 }
 
@@ -339,7 +334,7 @@ function refuseBesideAnotherClone(
 }
 
 function publish(
-  id: LedgerIdentity,
+  id: Pick<LedgerDriverEnv, "actor" | "clone" | "login" | "started">,
   floor: number | null,
   claim: ClaimComment | null,
 ): void {

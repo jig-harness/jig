@@ -103,6 +103,11 @@ import {
   driverStopCompleted,
   consumeDriverStopCompletion,
 } from "./lib/stop-request.ts";
+import {
+  markLedgerStopped,
+  recoverStoppedLedger,
+  recoverStoppedLedgers,
+} from "./lib/ledger-stop.ts";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { hostname } from "node:os";
 import { driveRepository } from "./lib/drive-repository.ts";
@@ -1053,6 +1058,7 @@ async function stop(
     console.log(
       `PR #${pr}'s lock is stale (owner pid ${row.pid} no longer counts as live) — nothing to stop; the next drive recovers it.`,
     );
+    await recoverStoppedLedger(stateDir, pr, row);
     return 1;
   }
   if (row.state !== "live") {
@@ -1077,8 +1083,13 @@ async function stop(
     return 1;
   }
   const verified = await verifyDriverClaim(row, pid);
-  if ("code" in verified) return verified.code;
-  return consumeStopResult(row, await stopVerifiedDriver(row, verified.owner));
+  const code =
+    "code" in verified
+      ? verified.code
+      : consumeStopResult(row, await stopVerifiedDriver(row, verified.owner));
+  // Witnessed gone (or already gone): its ledger is marked stopped, guarded.
+  if (code === 0) await markLedgerStopped(stateDir, pr, row.diag, null);
+  return code;
 }
 
 function consumeStopResult(row: LockRow, code: number): number {
@@ -1438,8 +1449,10 @@ async function main(): Promise<number> {
     (row) => ({ ...row, repository }),
   );
   if (json) console.log(JSON.stringify({ stateDir, rows: doctored }, null, 2));
-  else if (doctorMode) printDoctor(stateDir, doctored, repository);
-  else printHuman(stateDir, doctored, repository);
+  else if (doctorMode) {
+    await recoverStoppedLedgers(stateDir, doctored);
+    printDoctor(stateDir, doctored, repository);
+  } else printHuman(stateDir, doctored, repository);
   return 0;
 }
 

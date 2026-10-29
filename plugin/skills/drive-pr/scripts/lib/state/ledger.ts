@@ -69,6 +69,10 @@ export interface LedgerDriver {
   /** `stopped` once the driver has exited, with its exit code. */
   state: "running" | "stopped";
   exit?: number;
+  /** The driver's lock acquisition time: which run of that tree it is. */
+  started?: string;
+  /** Its claim position: its own claim's id, or the newest claim in force when it started. */
+  position?: number;
 }
 
 /** A takeover claim the ledger's writer knows to be in force. */
@@ -303,7 +307,9 @@ function isLedgerDriver(v: unknown): v is LedgerDriver {
     isText(v.heartbeat) &&
     Number.isFinite(Date.parse(v.heartbeat)) &&
     (v.state === "running" || v.state === "stopped") &&
-    (v.exit === undefined || isCount(v.exit))
+    (v.exit === undefined || isCount(v.exit)) &&
+    (v.started === undefined || isText(v.started)) &&
+    (v.position === undefined || isCount(v.position))
   );
 }
 
@@ -565,6 +571,44 @@ export function newerClaim(
     inForce.find((c) => c.id > floor && c.claim.clone !== ownClone) ??
     null
   );
+}
+
+/** The driver a stop or a recovery means to mark stopped. */
+export interface StoppedDriver {
+  actor: string;
+  clone: string;
+  started: string;
+}
+
+/**
+ * The ledger a stop may mark stopped: one that still names `who` as its
+ * running driver (tree, clone and, where recorded, the run) with no claim in
+ * force from another clone past its recorded position. Anything else is a
+ * successor's ledger, or no ledger, and is left alone; `why` says which.
+ */
+export function ledgerOfStoppedDriver(
+  snapshot: LedgerSnapshot,
+  who: StoppedDriver,
+): { ledger: Ledger } | { why: string } {
+  const parsed = snapshot.canonical?.parsed;
+  if (parsed?.kind !== "ledger") return { why: "there is no ledger to mark" };
+  const d = parsed.ledger.driver;
+  if (d.state !== "running")
+    return { why: "it already says its driver stopped" };
+  if (
+    d.clone !== who.clone ||
+    d.actor !== who.actor ||
+    (d.started !== undefined && d.started !== who.started)
+  )
+    return {
+      why: `it names another driver (${d.actor}), which now owns it`,
+    };
+  const claim = newerClaim(snapshot.claims, d.position ?? 0, who.clone);
+  if (d.position !== undefined && claim !== null)
+    return {
+      why: `another clone's claim (comment ${claim.id}) took the drive over`,
+    };
+  return { ledger: parsed.ledger };
 }
 
 /** The highest id among the claims in force, `0` for none. */
