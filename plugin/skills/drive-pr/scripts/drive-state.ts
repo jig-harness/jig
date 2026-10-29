@@ -221,6 +221,7 @@ import {
 import { isActorId, resolveActor } from "./lib/state/actor.ts";
 import { recordTakeover } from "./lib/state/takeover.ts";
 import {
+  LEDGER_NOT_WRITTEN_EXIT,
   mirrorLedger,
   removeStateKeepingLedgerGeneration,
   seedLedgerCommand,
@@ -3124,8 +3125,11 @@ async function main(): Promise<number> {
         const out = await renderHandoff(pr, store.read().state);
         process.stdout.write(`${out}\n`);
       });
-      await mirrorLedger(pr, store);
-      return 0;
+      // A ledger write that was attempted and did not land is told apart
+      // from success: a stop's last write keeps its recovery record on it.
+      return (await mirrorLedger(pr, store)) === "failed"
+        ? LEDGER_NOT_WRITTEN_EXIT
+        : 0;
     }
 
     case "lease": {

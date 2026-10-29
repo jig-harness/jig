@@ -13,14 +13,14 @@
  * the ledger alone.
  */
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { swallow } from "../../../../../shared/errors.ts";
 import { isRecord } from "../../../../../shared/guards.ts";
 import { CLAIM_PREFIX, parseClaimText } from "../claim.ts";
 import { fail } from "../cli.ts";
-import { handoffNarrative, installNarrative } from "./handoff.ts";
+import { handoffPath, installNarrative, narrativeOf } from "./handoff.ts";
 import {
   type ClaimComment,
   type LedgerSnapshot,
@@ -43,8 +43,9 @@ export interface LedgerDriverEnv {
   clone: string;
   login: string | null;
   /**
-   * This driver's own claim id, or the newest claim in force when it started;
-   * `null` until the comments have been read once.
+   * This driver's own claim id, or the position its clone's ledger records
+   * when it continues that ledger; `null` only for a writer that never read
+   * the comments.
    */
   floor: number | null;
   /** This driver's own takeover claim, when it took the drive over by one. */
@@ -132,42 +133,84 @@ function writeRefused(
 }
 
 /**
+ * `drive-state.ts handoff`'s exit when a driver's ledger write was attempted
+ * and did not land (the forge failed, the body did not fit, another writer
+ * replaced it): the handoff file is written, the ledger is not. A write the
+ * guards refuse (no driver, a lost acquisition, a newer claim, a ledger that
+ * is not the stopped driver's) is not this: there is nothing left to write.
+ */
+export const LEDGER_NOT_WRITTEN_EXIT = 75;
+
+/** What `mirrorLedger` did. */
+export type MirrorOutcome = "written" | "refused" | "failed";
+
+/**
+ * Why the driver this process writes for may not write as it now; `''` when
+ * it may. A child that outlived its driver keeps the driver's variable: only
+ * the acquisition it names, still holding the PR's lock, writes as that
+ * driver. A stop recovery writes for a driver that is gone, under its own
+ * guard.
+ */
+function acquisitionLost(
+  stateDir: string,
+  pr: string,
+  driver: LedgerDriverEnv,
+): string {
+  return driver.recovering !== true &&
+    driver.started !== undefined &&
+    !holdsPrLock(stateDir, pr, driver.started)
+    ? `the driver this process writes for (acquired ${driver.started}) no longer holds PR #${pr}'s lock`
+    : "";
+}
+
+/**
+ * Why a build from `snapshot` may not be written, `''` when it may: the
+ * acquisition, checked again on every build, then the claims and the stop
+ * guard. Reports the untrusted markers the snapshot ignored.
+ */
+function buildRefused(
+  snapshot: LedgerSnapshot,
+  driver: LedgerDriverEnv,
+  stateDir: string,
+  pr: string,
+): string {
+  if (snapshot.untrusted.length > 0)
+    console.error(
+      `ledger: ignored ${snapshot.untrusted.length} comment(s) carrying a drive marker from an untrusted author (ids ${snapshot.untrusted.map((c) => c.id).join(", ")}).`,
+    );
+  return (
+    acquisitionLost(stateDir, pr, driver) || writeRefused(snapshot, driver)
+  );
+}
+
+/**
  * Mirror this clone's state into the ledger, when a driver is running.
  * Best-effort: a forge failure is reported, never turned into a failure of
  * the state change that already landed. A newer takeover claim from another
  * clone stops the write, so a driver that has been taken over never
- * overwrites its successor's ledger.
+ * overwrites its successor's ledger; the acquisition is checked again on
+ * every build, so a driver that lost its lock during the reads never writes.
  */
 export async function mirrorLedger(
   pr: string,
   store: StateStore,
-): Promise<void> {
+): Promise<MirrorOutcome> {
   const driver = ledgerDriverFromEnv();
-  if (driver === null) return;
-  // A child that outlived its driver keeps the driver's variable: only the
-  // acquisition it names, still holding the PR's lock, writes as that driver.
-  // A stop recovery writes for a driver that is gone, under its own guard.
-  if (
-    driver.recovering !== true &&
-    driver.started !== undefined &&
-    !holdsPrLock(store.stateDir, pr, driver.started)
-  ) {
-    console.error(
-      `ledger: not written — the driver this process writes for (acquired ${driver.started}) no longer holds PR #${pr}'s lock.`,
-    );
-    return;
+  if (driver === null) return "refused";
+  const lost = acquisitionLost(store.stateDir, pr, driver);
+  if (lost !== "") {
+    console.error(`ledger: not written — ${lost}.`);
+    return "refused";
   }
-  const narrative = await handoffNarrative(pr);
+  const handoff = await handoffPath(pr);
   const result = await writeLedger(pr, driver.login, (snapshot) => {
-    if (snapshot.untrusted.length > 0)
-      console.error(
-        `ledger: ignored ${snapshot.untrusted.length} comment(s) carrying a drive marker from an untrusted author (ids ${snapshot.untrusted.map((c) => c.id).join(", ")}).`,
-      );
-    const refused = writeRefused(snapshot, driver);
+    const refused = buildRefused(snapshot, driver, store.stateDir, pr);
     if (refused !== "") return refused;
-    // Read on every attempt: a write rebuilt after another writer moved the
-    // ledger carries the state that writer published, not an older read.
+    // Read on every attempt, the notes with the state: a write rebuilt after
+    // another writer moved the ledger carries what that writer published,
+    // not an older read.
     const { state } = store.read();
+    const narrative = narrativeOf(handoff);
     return ledgerFromState(state, {
       generation:
         Math.max(snapshot.maxGeneration, state.ledgerGeneration ?? 0) + 1,
@@ -195,7 +238,7 @@ export async function mirrorLedger(
   });
   if (result.kind !== "written") {
     console.error(`ledger: not written — ${result.reason}.`);
-    return;
+    return result.kind === "skipped" ? "refused" : "failed";
   }
   const notes = [
     result.cut.length > 0 ? `cut: ${result.cut.join(", ")}` : "",
@@ -211,6 +254,7 @@ export async function mirrorLedger(
       ? s
       : { ...s, ledgerGeneration: result.generation },
   );
+  return "written";
 }
 
 /**
@@ -234,27 +278,32 @@ export async function seedLedgerCommand(
       `seed-ledger: ledgerVersion ${String(parsed.version)} is not a version this drive reads`,
     );
   const ledger = parsed.ledger;
-  let outcome = "";
-  let invalid = "";
-  await store.update((s) => {
-    if ((s.ledgerGeneration ?? 0) >= ledger.generation) {
-      outcome = `current: this clone's state is at generation ${s.ledgerGeneration ?? 0}`;
-      return s;
-    }
+  // One hold of the state lock covers the generation check, the notes and
+  // the state, so concurrent seeds land in generation order. The last
+  // driver's notes travel with its state, or the next write here would
+  // replace them on the pull request with this clone's older ones; they are
+  // installed before the generation advances, so a seed that stops between
+  // the two is retried in full rather than read as current.
+  const result = await store.locked(async () => {
+    const { state: s } = store.read();
+    if ((s.ledgerGeneration ?? 0) >= ledger.generation)
+      return {
+        outcome: `current: this clone's state is at generation ${s.ledgerGeneration ?? 0}`,
+      };
     const seeded = seedFromLedger(s, ledger);
-    if ("error" in seeded) {
-      invalid = seeded.error;
-      return s;
-    }
-    outcome = `seeded from generation ${ledger.generation}: round ${ledger.round}, ${seeded.state.parked.length} parked, ${seeded.state.held.length} held${seeded.dropped.length > 0 ? `; held without an outcome, triaged afresh: ${seeded.dropped.join(", ")}` : ""}`;
-    return seeded.state;
-  });
-  if (invalid !== "") return fail(1, `seed-ledger: ${invalid}`);
-  // The last driver's notes travel with its state, or the next write here
-  // would replace them on the pull request with this clone's older ones.
-  if (outcome.startsWith("seeded"))
+    if ("error" in seeded) return { invalid: seeded.error };
+    // The notes go under the handoff file's marker, so the file exists first.
+    if (!existsSync(await handoffPath(String(ledger.pr))))
+      await store.renderHandoff(s);
     await installNarrative(String(ledger.pr), ledger.narrative);
-  process.stdout.write(`${outcome}\n`);
+    store.write(seeded.state);
+    await store.renderHandoff(seeded.state);
+    return {
+      outcome: `seeded from generation ${ledger.generation}: round ${ledger.round}, ${seeded.state.parked.length} parked, ${seeded.state.held.length} held${seeded.dropped.length > 0 ? `; held without an outcome, triaged afresh: ${seeded.dropped.join(", ")}` : ""}`,
+    };
+  });
+  if ("invalid" in result) return fail(1, `seed-ledger: ${result.invalid}`);
+  process.stdout.write(`${result.outcome}\n`);
   return 0;
 }
 

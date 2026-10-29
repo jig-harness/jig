@@ -13,6 +13,13 @@
  * - `bump-on-list` + `bump-body.json`: a concurrent writer rewrites the
  *   canonical comment on the listing that number names; with `bump-same-second`
  *   its `updated_at` does not move.
+ * - `twin-on-list`: on the listing that number names, a concurrent writer
+ *   replaces the ledger with one of the same generation and heartbeat but
+ *   different content.
+ * - `remove-on-list`: `{ "n": n, "path": p }` removes `p` on the n-th
+ *   listing, as a driver releasing its lock during the reads would.
+ * - `write-on-list`: `{ "n": n, "path": p, "text": t }` writes `t` to `p` on
+ *   the n-th listing, as another writer updating a local file would.
  * - `fail-list-after`: every listing after that number fails.
  * - `fail-search`: the search fails.
  */
@@ -107,6 +114,20 @@ if (list) {
     const c = all.find((x) => x.id === bump.id);
     c.body = bump.body;
     if (!has("bump-same-second")) c.updated_at = "2099-01-01T00:00:00Z";
+    save(pr, all);
+  }
+  if (has("remove-on-list")) {
+    const rm = JSON.parse(text("remove-on-list"));
+    if (rm.n === n) fs.rmSync(rm.path, { recursive: true, force: true });
+  }
+  if (has("write-on-list")) {
+    const w = JSON.parse(text("write-on-list"));
+    if (w.n === n) fs.writeFileSync(w.path, w.text);
+  }
+  if (has("twin-on-list") && Number(text("twin-on-list")) === n) {
+    const all = read(pr);
+    const c = all.find((x) => x.body.startsWith("<!-- drive-pr-ledger -->"));
+    c.body = c.body.replace(/^Round /m, "Round 99");
     save(pr, all);
   }
   let shown = read(pr);

@@ -181,6 +181,62 @@ console.log("SECOND " + (await d.standDownOnNewerClaim("999")));`,
     expect(r.stdout).toContain("FIRST null");
     expect(r.stdout).toContain("SECOND 20");
   });
+
+  /** This clone's own stopped ledger, recording claim position 30. */
+  function ownLedger(): string {
+    return ledgerBody(
+      ledgerFromState(freshState(999), {
+        generation: 4,
+        driver: {
+          actor: "wt-bbbbbbbbbbbbbbbb",
+          clone: "clone-b",
+          heartbeat: new Date().toISOString(),
+          state: "stopped",
+          position: 30,
+        },
+        narrative: [],
+        claims: [],
+      }),
+    );
+  }
+
+  it("does not adopt another clone's claim posted past its own ledger's position", async () => {
+    // Another clone claimed this clone's stopped ledger and is still seeding.
+    const forge = fakeForge(
+      [
+        forgeComment(40, ownLedger(), "drive-bot"),
+        forgeComment(60, claim("clone-c", 4), "other-bot"),
+      ],
+      { login: "drive-bot" },
+    );
+    const r = await probe(
+      forge,
+      `await d.armLedger("999", ${ID}, null, null, "take-over");
+console.log("ARMED " + JSON.parse(process.env.DRIVE_PR_LEDGER_DRIVER).floor);`,
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain("EXIT 20");
+    expect(r.stdout).not.toContain("ARMED");
+    expect(r.stderr).toContain("past this clone's recorded position 30");
+  });
+
+  it("continues its own ledger from the recorded position past an older claim", async () => {
+    const forge = fakeForge(
+      [
+        forgeComment(20, claim("clone-c", 1), "other-bot"),
+        forgeComment(40, ownLedger(), "drive-bot"),
+      ],
+      { login: "drive-bot" },
+    );
+    const r = await probe(
+      forge,
+      `await d.armLedger("999", ${ID}, null, null, "take-over");
+console.log("ARMED " + JSON.parse(process.env.DRIVE_PR_LEDGER_DRIVER).floor);`,
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain("ARMED 30");
+    expect(forge.calls().filter((c) => c.includes("--input"))).toHaveLength(0);
+  });
 });
 
 describe("the driver's last ledger write", () => {
@@ -190,7 +246,7 @@ describe("the driver's last ledger write", () => {
       forge,
       `const cli = await import(${JSON.stringify(join(SCRIPTS, "lib", "cli.ts"))});
 async function drive() {
-  await using settlement = d.ledgerSettlement("999");
+  await using settlement = d.ledgerSettlement("999", [{ dir: "held-lock" }]);
   void settlement;
   throw new cli.ExitError(1);
 }
@@ -231,7 +287,7 @@ await drive();`,
     const r = await probe(
       forge,
       `async function drive() {
-  await using settlement = d.ledgerSettlement("999");
+  await using settlement = d.ledgerSettlement("999", [{ dir: "held-lock" }]);
   return settlement.done(8);
 }
 console.log("RETURNED " + (await drive()));`,
@@ -245,5 +301,47 @@ console.log("RETURNED " + (await drive()));`,
       exit: 8,
     });
     expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(1);
+  });
+
+  it("leaves the ledger running while the drive retains its locks", async () => {
+    const forge = fakeForge(
+      [
+        forgeComment(
+          40,
+          ledgerBody(
+            ledgerFromState(freshState(999), {
+              generation: 2,
+              driver: {
+                actor: "wt-bbbbbbbbbbbbbbbb",
+                clone: "clone-b",
+                heartbeat: "2026-10-01T11:00:00.000Z",
+                state: "running",
+              },
+              narrative: [],
+              claims: [],
+            }),
+          ),
+        ),
+      ],
+      { login: "drive-bot" },
+    );
+    // An unwitnessed pass termination empties `held`: its locks stay on disk.
+    const r = await probe(
+      forge,
+      `async function drive() {
+  await using settlement = d.ledgerSettlement("999", []);
+  return settlement.done(15);
+}
+console.log("RETURNED " + (await drive()));`,
+      { DRIVE_PR_LEDGER_DRIVER: driverEnv("clone-b") },
+    );
+    expectSpawnExit(r, 0);
+    expect(r.stdout).toContain("RETURNED 15");
+    expect(r.stderr).toContain("left naming this driver running");
+    const parsed = parseLedger(forge.comments()[0]?.body ?? "");
+    expect(parsed?.kind === "ledger" && parsed.ledger.driver.state).toBe(
+      "running",
+    );
+    expect(forge.calls().filter((c) => c.includes("PATCH"))).toHaveLength(0);
   });
 });
