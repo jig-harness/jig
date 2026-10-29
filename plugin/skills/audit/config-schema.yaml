@@ -216,7 +216,7 @@ fields:
     pattern: "^(?!-)(?!.*\\.\\.)(?!.*//)(?!/)(?!.*/$)(?!.*\\.$)(?!(?:.*/)?\\.)(?!.*\\.lock(?:/|$))[A-Za-z0-9._/-]+$"
     default: origin
     read_by: [drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect]
-    since: next
+    since: 0.94.0
 
   pull_requests.stacking:
     type: enum
