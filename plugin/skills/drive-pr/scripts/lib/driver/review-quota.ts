@@ -7,7 +7,9 @@ import { driverRuntime } from "./runtime.ts";
 
 import { sleep } from "./../cli.ts";
 
-import { unpushedCountCommand } from "./../driven-branch.ts";
+import { unpushedCountAdvice } from "./../driven-branch.ts";
+
+import { git, gitCallTimeoutSeconds } from "./../proc.ts";
 
 import {
   MAILBOX_POLL_SECONDS,
@@ -92,7 +94,11 @@ async function handleSleepableQuota(
     console.error(
       "  Check for work the killed pass left behind first — `git status --short` and",
     );
-    console.error(`  \`${unpushedCountCommand()}\`.`);
+    console.error(
+      `  ${await unpushedCountAdvice(git, process.cwd(), {
+        timeoutSec: gitCallTimeoutSeconds(),
+      })}.`,
+    );
     // Recorded even though nothing will sleep or resume: this exit is
     // NORMAL (not a crash), so `process.on('exit')` releases and
     // `rmdir`s the lock slot on the way out, same as the standalone
@@ -185,7 +191,11 @@ export async function handleQuotaBlock(
   console.error(
     "  Check for work the killed pass left behind first — `git status --short` and",
   );
-  console.error(`  \`${unpushedCountCommand()}\`.`);
+  console.error(
+    `  ${await unpushedCountAdvice(git, process.cwd(), {
+      timeoutSec: gitCallTimeoutSeconds(),
+    })}.`,
+  );
   // Record the park BEFORE this process exits: once this
   // returns, nothing refreshes this drive's claim any further, and
   // `release()` (`process.on('exit')`) `rmdir`s the lock slot on the
