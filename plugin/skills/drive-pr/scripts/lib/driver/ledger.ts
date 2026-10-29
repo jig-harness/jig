@@ -23,7 +23,7 @@
  */
 import { createHash } from "node:crypto";
 import { hostname } from "node:os";
-import { fail } from "./../cli.ts";
+import { ExitError, fail } from "./../cli.ts";
 import { stallThresholdMs } from "./../doctor.ts";
 import { accountHash, resolveAccountIdentity } from "./../identity.ts";
 import { helperTimeoutSeconds, run, tsArgv } from "./../proc.ts";
@@ -235,7 +235,8 @@ async function seed(
  * untrusted markers, refuse a ledger version this code does not read, refuse
  * to drive beside another clone's running driver, claim a cross-clone
  * takeover, seed this clone's state from a newer ledger, and publish this
- * driver for the ledger's writers. Returns an exit to stop with, else `null`.
+ * driver for the ledger's writers. Returns the state to pick the drive up
+ * from (`state`, or the seeded one); a refusal throws its exit.
  */
 export async function armLedger(
   pr: string,
@@ -243,8 +244,8 @@ export async function armLedger(
   plan: TakeoverPlan | null,
   state: DriveState | null,
   opts: LedgerArmOptions,
-): Promise<{ exit: number } | { state: DriveState | null }> {
-  if (id === null) return { state };
+): Promise<DriveState | null> {
+  if (id === null) return state;
   const crossClone = plan?.crossClone === true;
   const snapshot = await readLedgerSnapshot(pr, id.login);
   if (typeof snapshot === "string") {
@@ -257,7 +258,7 @@ export async function armLedger(
       `ledger: ${snapshot}; this drive starts without seeding from PR #${pr}'s ledger or checking another clone's driver.`,
     );
     publish(id, 0, null);
-    return { state };
+    return state;
   }
   const ledger = readLedger(pr, snapshot);
   const refusal = refuseBesideAnotherClone(
@@ -266,16 +267,15 @@ export async function armLedger(
     id,
     crossClone ? null : opts.takeOverCommand,
   );
-  if (refusal !== null) return { exit: refusal };
+  if (refusal !== null) throw new ExitError(refusal);
   let floor = claimFloor(snapshot.claims);
   let own: ClaimComment | null = null;
   if (crossClone) {
     own = await claimDrive(pr, id, ledger?.generation ?? 0);
-    if (own === null) return { exit: TAKEN_OVER_EXIT };
+    if (own === null) throw new ExitError(TAKEN_OVER_EXIT);
     floor = own.id;
   }
   const seeded = await seedFrom(pr, ledger, snapshot, state, opts);
-  if ("exit" in seeded) return seeded;
   publish(id, floor, own);
   return seeded;
 }
@@ -291,14 +291,15 @@ async function seedFrom(
   snapshot: LedgerSnapshot,
   state: DriveState | null,
   opts: LedgerArmOptions,
-): Promise<{ exit: number } | { state: DriveState | null }> {
-  if (ledger === null || snapshot.canonical === null) return { state };
+): Promise<DriveState | null> {
+  if (ledger === null || snapshot.canonical === null) return state;
   const seeded = await seed(pr, ledger, snapshot.canonical.comment.body);
-  if (seeded === "unchanged") return { state };
-  if (seeded === "failed") return { exit: 1 };
+  if (seeded === "unchanged") return state;
+  if (seeded === "failed") throw new ExitError(1);
   const now = await readDriveState(pr);
   const quota = quotaRefusal(now, opts.agent, opts.windowReopened);
-  return quota === undefined ? { state: now } : { exit: quota };
+  if (quota !== undefined) throw new ExitError(quota);
+  return now;
 }
 
 /** Report what is ignored, and refuse a version this code does not read. */

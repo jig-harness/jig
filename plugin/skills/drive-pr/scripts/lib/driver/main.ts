@@ -352,8 +352,7 @@ export async function main(): Promise<number> {
     windowReopened,
     takeOverCommand: armCommand(driveTs, pr, botsOnly, " --take-over"),
   });
-  if ("exit" in pickup) return pickup.exit;
-  const firstPassNotice = await pickUpDrive(pr, plan, pickup.state, {
+  const firstPassNotice = await pickUpDrive(pr, plan, pickup, {
     agent,
     botsOnly,
     dryRun,
