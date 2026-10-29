@@ -22,7 +22,7 @@ Contents: [the file](#the-file) ·
 [`gates`](#gates) · [`review`](#review) · [`repository`](#repository) ·
 [`pull_requests`](#pull_requests) · [`drive`](#drive) · [`ci`](#ci) ·
 [`issue_tracker`](#issue_tracker) · [`do_item`](#do_item) ·
-[`work_batch`](#work_batch) ·
+[`work_batch`](#work_batch) · [`routing`](#routing) ·
 [`fleet_health`](#fleet_health) · [`verify`](#verify) ·
 [`reflection`](#reflection) · [`changelog`](#changelog) ·
 [`code_stats`](#code_stats) · [`gc`](#gc) ·
@@ -162,6 +162,7 @@ field only to override the derivation:
 | Code owners | `.github/CODEOWNERS`, `CODEOWNERS` or `docs/CODEOWNERS` | Reported only: GitHub requests those reviewers itself | none |
 | Required checks | The protection and rulesets of the branch the pull request (or its stack) lands on | Which checks certify a converged head | `ci.required_checks` |
 | Draft or Ready on opening | `drive.reviews_drafts: false` means Ready | How a pull request opens | `pull_requests.open_as` |
+| Agent runtime | The variables the runtime sets (`CLAUDECODE` for Claude Code, `CODEX_…` for Codex) | Which row of `routing.models` and `routing.efforts` a route is translated through | none |
 
 ## `gates`
 
@@ -422,6 +423,60 @@ context labels from `review`, the labels that name an area from
 An unknown field in `work_batch` or `work_batch.ranking` is refused. The
 [work-batch README](skills/work-batch/README.md) explains the budget, the
 ranking and the solo-only flags.
+
+## `routing`
+
+Which [model tier](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md)
+and which effort the agent that implements an item runs on: its
+[route](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md), derived
+from the item's work type, its labels and the change-area catalog by rules
+kept here as data. Routing is opt-in: without a `routing` section, do-item
+derives and prints each route and applies none, so a repository sees what
+the rules would choose before it turns them on. `routing: {}` declares the
+section and accepts every default; a `routing` key left empty (YAML's null)
+reads as absent. In this version do-item prints the route and forwards
+nothing yet
+([design](https://github.com/jig-harness/jig/blob/main/design/agent-routing.md)).
+
+| Field | Type | When absent | Read by | What it does |
+|-------|------|-------------|---------|--------------|
+| `routing.types` | map from a work type to `{tier, effort}` | The table below | do-item | Each type's base tier (`execution` or `strategic`) and effort (`low`, `medium`, `high`, `max`). An entry overrides single fields and keeps the rest of the row; a type outside the default list must set both. Refused: an entry for a type outside `issue_tracker.types`, an entry for `unknown`, and a value outside the lists. Only these two tiers can be routed to: an implementer writes, which the Scout tier may not, and the Judgment tier is admitted per decision layer, never for every item of a type |
+| `routing.raise.flags` | list of labels, or `catalog` | `catalog`: every flag the catalog's areas declare under `tracker.flags` | do-item | Flag labels that move the effort up one step |
+| `routing.raise.sizes` | list of labels | The known sizes (`work_batch.sizes`, else `issue_tracker.labels.batch_sizes`, with `review.taxonomy.sizes`) outside `issue_tracker.labels.batch_sizes`; `[large]` where that leaves none | do-item | Size labels that move the effort up one step. A batchable size never raises by default |
+| `routing.raise.reviews` | `true` or `false` | `true` | do-item | Whether an area with a mandatory review (`review.skills` naming a skill) among the areas the item's labels reach through `do_item.agents.codearea_areas`, and every area their `impliedBy` closure adds, moves the effort up one step |
+| `routing.models` | map from a runtime (`claude-code`, `codex`) to `{execution, strategic}`, each the runtime's [family alias](https://github.com/jig-harness/jig/blob/main/GLOSSARY.md) | `claude-code: {execution: sonnet, strategic: opus}` | do-item | The only place a model name appears. A declared runtime row names both tiers and replaces that runtime's default; a runtime with no row gets no model, and its routes are recorded and not applied |
+| `routing.efforts` | map from a runtime to a map from an effort to the runtime's name for it | Each effort as written | do-item | Where a runtime spells an effort differently |
+
+Refused besides: an unknown field in `routing` or `routing.raise`, a name
+that is more than one word (it would not read back from the route record),
+and, where the repository has a [label taxonomy](#issue_tracker) its label
+lint accepts, a declared raise list naming a label the taxonomy does not
+declare. A default list is
+never refused: a default label no item carries raises nothing. A refused
+`routing` section stops do-item and says why; it is never read as absent.
+
+### The routing table
+
+| Field | `bug` | `feature` | `improvement` | `task` | `spike` |
+|-------|-------|-----------|---------------|--------|---------|
+| `tier` | `execution` | `execution` | `execution` | `execution` | `strategic` |
+| `effort` | `medium` | `high` | `medium` | `low` | `high` |
+
+An item whose type is `unknown`, or whose type has no row while `routing`
+is undeclared, takes the highest tier and the highest effort any row names,
+each default type's default row included, so an override that lowers one
+type cannot lower it.
+
+The raises, each class moving the effort up one step at most once however
+many labels of the class the item carries, in this order: a flag label, a
+mandatory review, a size label, and the human-in-the-loop label
+(`issue_tracker.labels.hitl`) or one of its facets, counted once even where
+the catalog also lists it as a flag. A catalog that is declared and cannot
+be read is taken to flag the item where `routing.raise.flags` is `catalog`,
+and to hold a mandatory review where `routing.raise.reviews` is on. The
+effort stops at `max`, and a raise never moves the tier: an Execution type
+that keeps needing `max` is a row a person moves to `strategic`, with the
+route records showing it.
 
 ## `fleet_health`
 
@@ -918,6 +973,17 @@ work_batch:
     sizes: { xs: 2, small: 1, medium: 0 }
     provenance: 3
     shared_area_label: 1
+routing:                                 # absent: routes derived and printed, none applied
+  types:
+    feature: { effort: max }
+  raise:
+    flags: catalog
+    sizes: [large, xl]
+    reviews: true
+  models:
+    claude-code: { execution: sonnet, strategic: opus }
+  efforts:
+    codex: { max: xhigh }
 fleet_health:
   config: .config/fleet-health.yaml
   snapshot_dir: ~/.local/state/jig/dashboard

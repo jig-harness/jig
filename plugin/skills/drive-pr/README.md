@@ -353,7 +353,8 @@ or an unfinished merge, rebase or cherry-pick; when the tree holding the
 branch has uncommitted changes or commits the PR's head does not have
 (push them from there first); when this tree's detached head has commits no
 branch or remote holds; when a local branch of that name is ahead of the
-head; when this is the clone's primary checkout on another branch; when
+head and this tree would switch to it (a tree already on the branch keeps
+its commits ahead of the head, and the drive pushes them); when this is the clone's primary checkout on another branch; when
 `origin` is another repository; and when the PR comes from a fork, whose head
 the drive cannot push to. It moves nothing while a live driver holds the tree
 or the PR, or an interactive session holds the tree. A dry run attaches
@@ -364,7 +365,9 @@ harness that prepares its own trees.
 (`bun "<skill-dir>/scripts/attach-pr.ts" <PR> --place`): the session's own working tree, or, from the
 clone's primary checkout, the tree that already holds the PR, else a new one
 created with git's `worktree add --detach` under the first root
-`gc.worktree_roots` names. [Resource collection](../../gc/README.md)'s
+`gc.worktree_roots` names, once `origin` is confirmed as the PR's repository.
+A tree it creates is recorded as the PR's at once, so an attach there that
+fails or is interrupted is retried in the same tree. [Resource collection](../../gc/README.md)'s
 `worktrees` kind reads a detached tree's record to find its PR, and reports
 the tree once that PR merges or closes, as it reports a branch's tree. A PR
 in another repository can be named as `owner/name#N` or by its URL: the
@@ -373,7 +376,14 @@ user file (`~/.jig/jig.yaml`,
 [configuration](../../CONFIGURATION.md#clones-user-file-only)), and with
 none mapped the session prints the command to run in a checkout of it. The
 human checkpoint the arm checks is read in the placed tree, so another
-repository's PR is checked against that repository's tracker.
+repository's PR is checked against that repository's tracker. The attach,
+the checkpoint and the driver all run without the variables that would
+select something else than the placed tree: `GH_REPO` always; a running
+drive's own `DRIVE_PR_WORKTREE` and session when they name another tree;
+and, in another clone, `JIG_CONSUMER_ROOT`, `JIG_OVERLAY` and a driver's
+exported state directory. Placing another clone's PR from inside a drive
+whose state is under a relocated `DRIVE_PR_STATE_DIR` is refused (exit 2):
+arm it from a session outside the drive.
 
 `--bots-only` keeps it off human-authored threads (recommended for unattended runs). `--keep-draft` stops it marking the PR Ready (`pull_requests.mark_ready: never` does the same for every drive). `--max-rounds N` bounds the loop (default `drive.max_rounds`, else 10). `--dry-run` reports what each round would do and never invokes the pass. `--take-over` and `--window-reopened` pick a stopped drive up ([below](#picking-up-a-stopped-drive)). Starting it twice **in the same clone** is safe — see exit `11`. That is the exact reach: the lock lives in the per-clone state dir described below, so it covers this clone and its linked worktrees and nothing further. A separate clone — another machine, a CI checkout — takes its own lock and can drive the same PR at the same time.
 
@@ -673,6 +683,8 @@ clone's leaf, when several clones share it.
 
 - **Stop:** `bun "<skill-dir>/scripts/drives.ts" --stop <PR>` requests shutdown after verifying the driver's process identity. The driver stops the active pass before releasing its locks. On Windows, a polled stop request lets cleanup run without POSIX signals; process snapshots come from PowerShell. Confirmed cleanup publishes a completion receipt for that acquisition before releasing claims. The stop command requires the matching receipt and disappearance of its captured process identities when a temporary shutdown marker made the registry uncertain. Ctrl-C also cancels the active work. Locks a dead driver leaves behind are recovered automatically by the next driver.
 - **Resume:** run the same command again. The durable state means it continues rather than restarts, and threads already answered are reconciled rather than re-answered (`reconcile-replied-threads.ts` runs from the gate). A retry against an unchanged head is not a new *reviewed-head* round, but it does spend one of the durable **attempts**; within one uninterrupted drive, consecutive observable no-op passes (default 2) earn one extra round with the stall diagnostics and then trip exit `14`, while retries spread across driver restarts reset that in-memory stall streak and can still exhaust `--max-rounds` with exit `6`.
+
+  The sweep and `triage-thread.ts` leave a declined code-scanning thread open until its alert is confirmed dismissed, and a `moot` one until its alert is fixed, closed or dismissed, including when the alert cannot be read or identified. A code-scanning `moot` is never held for a push: once its alert settles, the next retry resolves it.
 - **Inspect without touching:** `bun "<skill-dir>/scripts/drive-status.ts" <PR> --json --once --no-count` answers "what would the drive do now" without doing it. `--no-count` is what makes that true — without it the probe *counts* its own evaluation as a round on this head, moving the durable counter that a later drive's `--max-rounds` bound and reflection nudge both read.
 
 If a drive died mid-round hours ago, just re-arm — recovery is the designed path, not an exception.

@@ -328,8 +328,10 @@ An attach by name removes it. (The drive state's `drivenBranch` mirrors it
 for the handoff file.) It refuses (exit `2`, naming the state) a tree with
 uncommitted changes or an unfinished git operation, a tree holding the branch
 that is dirty or has commits the PR's head lacks, a detached head with
-commits no branch or remote holds, a local branch ahead of the head, the
-clone's primary checkout on another branch, an `origin` that is another
+commits no branch or remote holds, a local branch of that name ahead of the
+head that this tree would switch to (a tree already on the branch keeps its
+commits ahead of the head, and the drive pushes them), the clone's primary
+checkout on another branch, an `origin` that is another
 repository, and a PR from a fork; a PR that is not open is exit `5`. A live
 driver already holding the PR leaves the tree untouched, and the lock refuses
 next (exit `11`); run alone, it also leaves a tree another driver holds
@@ -673,8 +675,13 @@ could forge or forget.
    with git's `worktree add --detach` under the first root `gc.worktree_roots`
    names; for a PR in another repository, the same in the clone the user
    file's `clones` map names for it.
-   - exit `0` → it prints `{"pr", "repo", "tree", "created"}`: arm in `tree`,
-     with the number `pr`.
+   - exit `0` → it prints `{"pr", "repo", "tree", "created", "otherClone",
+     "env"}`: arm in `tree`, with the number `pr`. `env.unset` names the
+     variables the attach ran without, usually none. When it names any,
+     remove each of them from the environment of the processes that run the
+     checkpoint lookup below and the driver, so they read the repository,
+     configuration, tree and drive state the attach read rather than this
+     session's.
    - exit `3` → the PR is in another repository and no clone of it is mapped.
      Print its output, which names the command to run in a checkout of that
      repository, and stop.
@@ -1448,6 +1455,24 @@ reconciled comment's url>`) for `resolve-held-thread.ts` to release in
 step 6, which verifies that the push resolving a held thread is the one its
 reply promised.
 
+**A thread GitHub's code scanning account opened is the exception.** It
+closes only over its alert: a declined outcome once the alert is confirmed
+dismissed, a `moot` once it is fixed, closed or dismissed. Otherwise
+`triage-thread.ts` posts or reconciles the reply, leaves the thread open and
+exits `4`. For a declined outcome, dismiss the alert with `dismiss-alert.ts`
+and re-run; for a `moot`, never dismiss the alert, since `dismiss-alert.ts`
+refuses it and a dismissal would hide a finding the fix may not have
+closed: push the fix, let the scanner analyse the pushed head, and re-run
+once the alert shows fixed or closed. A thread whose alert cannot be
+identified or read stays open too. Its `moot` is never
+held, fresh or reconciled, `--moot-pending-push` included: the alert's state,
+not a push, is its proof
+([resolve-review-comments § Code-scanning threads](../resolve-review-comments/SKILL.md#code-scanning-threads)).
+`finish-round.ts` counts such a thread, answered and left open, as triaged
+(`awaitsAlert`), so a `moot` resting on this round's own fix does not block
+the push that lets the scanner settle the alert; the replied-thread sweep
+closes it once the alert is settled.
+
 **`moot` follows the merit row by default — it is resolved immediately, not
 held.** Per the review skill's outcome rules, a moot finding usually
 means the anchored code is simply gone, with nothing to wait on; it is held
@@ -1471,7 +1496,8 @@ bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" --stdin-file .context/thread-r
 Omitting the flag is the default (resolve now) — the same behavior as every
 other merit outcome, and what you want for a `moot` whose premise predates
 this round entirely. That default applies only to a **fresh** post: a `moot`
-found already on the thread (the reconciliation rule above) is always held,
+found already on the thread (the reconciliation rule above) is always held
+(except on a code-scanning thread, above),
 whatever this invocation's own flag says — the flag names only this
 invocation's belief, and a reconciled reply may have been posted by an
 earlier, now-gone invocation whose belief this one has no way to see. A

@@ -20,9 +20,11 @@
  * somewhere else since answers as unrecorded, so a record left behind never
  * outranks what the tree has checked out since.
  */
+import { randomBytes } from "node:crypto";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { errnoCode, swallow } from "./errors.ts";
+import { renameWithRetry } from "./rename-with-retry.ts";
 
 /** The record's file name inside the tree's git directory. */
 export const DRIVEN_TREE_FILE = "jig-driven-pr.json";
@@ -99,13 +101,20 @@ export function removeDrivenTree(gitDir: string): void {
   rmSync(join(gitDir, DRIVEN_TREE_FILE), { force: true });
 }
 
-/** Write `record` into the git directory `gitDir`. */
+/**
+ * Write `record` into the git directory `gitDir`, whole or not at all: it is
+ * written beside the record and renamed over it, so a write that fails or is
+ * interrupted leaves the previous record, never an empty or partial one.
+ */
 export function writeDrivenTree(gitDir: string, record: DrivenTree): void {
-  writeFileSync(
-    join(gitDir, DRIVEN_TREE_FILE),
-    `${JSON.stringify(record)}\n`,
-    "utf8",
-  );
+  const path = join(gitDir, DRIVEN_TREE_FILE);
+  const staged = `${path}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+  try {
+    writeFileSync(staged, `${JSON.stringify(record)}\n`, "utf8");
+    renameWithRetry(staged, path);
+  } finally {
+    rmSync(staged, { force: true });
+  }
 }
 
 /** A git call bounded by its caller: the arguments, then code and stdout. */
