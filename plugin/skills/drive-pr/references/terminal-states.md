@@ -560,8 +560,7 @@ never taken for the ledger or overwritten. Nothing that identifies an account
 is posted: neither the ledger nor a claim carries an account hash, and
 email-shaped text in the narrative and the parked reasons is replaced with
 `<redacted>`. The driver's last write marks it stopped, naming its exit, on
-a returned exit and on a thrown refusal; a stop by signal or by `drives.ts
---stop` starts no new command once shutdown begins, so that ledger keeps
+a returned exit and on a thrown refusal; a stop by signal or by `drives.ts`'s `--stop` starts no new command once shutdown begins, so that ledger keeps
 saying "running" until its heartbeat ages past the lease window. The body is cut to the forge's 65,536 limit by dropping
 held items' outcomes first, the narrative second and the visible list of
 parked decisions third; a parked decision is never dropped from the data, so

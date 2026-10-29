@@ -452,46 +452,69 @@ export function isTrusted(c: ForgeComment, selfLogin: string | null): boolean {
   );
 }
 
+/** Which drive marker a comment opens with, from a trusted author or not. */
+function markerKind(
+  c: ForgeComment,
+  selfLogin: string | null,
+): "ledger" | "claim" | "untrusted" | null {
+  const isLedger = opensWith(c.body, LEDGER_MARKER);
+  const isClaim = opensWith(c.body, CLAIM_MARKER);
+  if (!isLedger && !isClaim) return null;
+  if (!isTrusted(c, selfLogin)) return "untrusted";
+  return isClaim ? "claim" : "ledger";
+}
+
+interface Sorted {
+  ledgers: Array<{ comment: ForgeComment; parsed: ParsedLedger }>;
+  malformed: ForgeComment[];
+  untrusted: ForgeComment[];
+  claims: ClaimComment[];
+  maxGeneration: number;
+}
+
+/** File one comment under what it is. */
+function sortComment(
+  into: Sorted,
+  c: ForgeComment,
+  kind: ReturnType<typeof markerKind>,
+): void {
+  if (kind === "untrusted") into.untrusted.push(c);
+  if (kind === "claim") {
+    const claim = parseClaim(c.body);
+    if (claim !== null) into.claims.push({ id: c.id, claim });
+  }
+  if (kind !== "ledger") return;
+  const parsed = parseLedger(c.body);
+  if (parsed === null || parsed.kind === "malformed") {
+    into.malformed.push(c);
+    return;
+  }
+  into.ledgers.push({ comment: c, parsed });
+  if (parsed.kind === "ledger")
+    into.maxGeneration = Math.max(into.maxGeneration, parsed.ledger.generation);
+}
+
 export function snapshotFrom(
   comments: readonly ForgeComment[],
   selfLogin: string | null,
 ): LedgerSnapshot {
-  const sorted = [...comments].sort((a, b) => a.id - b.id);
-  const ledgers: Array<{ comment: ForgeComment; parsed: ParsedLedger }> = [];
-  const malformed: ForgeComment[] = [];
-  const untrusted: ForgeComment[] = [];
-  const claims: ClaimComment[] = [];
-  let maxGeneration = 0;
-  for (const c of sorted) {
-    const isLedger = opensWith(c.body, LEDGER_MARKER);
-    const isClaim = opensWith(c.body, CLAIM_MARKER);
-    if (!isLedger && !isClaim) continue;
-    if (!isTrusted(c, selfLogin)) {
-      untrusted.push(c);
-      continue;
-    }
-    if (isClaim) {
-      const claim = parseClaim(c.body);
-      if (claim !== null) claims.push({ id: c.id, claim });
-      continue;
-    }
-    const parsed = parseLedger(c.body);
-    if (parsed === null || parsed.kind === "malformed") {
-      malformed.push(c);
-      continue;
-    }
-    ledgers.push({ comment: c, parsed });
-    if (parsed.kind === "ledger")
-      maxGeneration = Math.max(maxGeneration, parsed.ledger.generation);
-  }
-  const [first, ...rest] = ledgers;
+  const into: Sorted = {
+    ledgers: [],
+    malformed: [],
+    untrusted: [],
+    claims: [],
+    maxGeneration: 0,
+  };
+  for (const c of [...comments].sort((a, b) => a.id - b.id))
+    sortComment(into, c, markerKind(c, selfLogin));
+  const [first, ...rest] = into.ledgers;
   return {
     canonical: first ?? null,
     duplicates: rest.map((l) => l.comment),
-    malformed,
-    untrusted,
-    claims,
-    maxGeneration,
+    malformed: into.malformed,
+    untrusted: into.untrusted,
+    claims: into.claims,
+    maxGeneration: into.maxGeneration,
   };
 }
 

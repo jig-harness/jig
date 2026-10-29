@@ -246,6 +246,36 @@ function written(
 }
 
 /**
+ * Update the canonical ledger, read it back, and delete this login's own
+ * duplicates once the write stands.
+ */
+async function patchAndVerify(
+  pr: string,
+  selfLogin: string | null,
+  snapshot: LedgerSnapshot,
+  canonical: ForgeComment,
+  next: { body: string; ledger: Ledger },
+): Promise<LedgerWrite> {
+  const patched = await patchComment(canonical.id, next.body);
+  if (patched !== "")
+    return {
+      kind: "failed",
+      reason: `the ledger comment was not updated (${patched})`,
+    };
+  const replaced = await replacedBy(pr, selfLogin, next.ledger);
+  if (replaced !== "")
+    return {
+      kind: "failed",
+      reason: `another writer replaced this write at once (${replaced}); that one stands`,
+    };
+  return written(
+    canonical.id,
+    next.ledger,
+    await deleteOwnDuplicates(snapshot, selfLogin),
+  );
+}
+
+/**
  * Write the ledger `build` makes from the current comments; `build` returns
  * a reason string to skip the write. A canonical ledger in a version this
  * code does not read is never overwritten.
@@ -276,23 +306,7 @@ export async function writeLedger(
       snapshot = reread;
       continue;
     }
-    const patched = await patchComment(canonical.id, next.body);
-    if (patched !== "")
-      return {
-        kind: "failed",
-        reason: `the ledger comment was not updated (${patched})`,
-      };
-    const replaced = await replacedBy(pr, selfLogin, next.ledger);
-    if (replaced !== "")
-      return {
-        kind: "failed",
-        reason: `another writer replaced this write at once (${replaced}); that one stands`,
-      };
-    return written(
-      canonical.id,
-      next.ledger,
-      await deleteOwnDuplicates(snapshot, selfLogin),
-    );
+    return patchAndVerify(pr, selfLogin, snapshot, canonical, next);
   }
   return {
     kind: "failed",
