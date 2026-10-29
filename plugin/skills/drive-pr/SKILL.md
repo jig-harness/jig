@@ -162,7 +162,7 @@ consumer polling `--json` for one of these four will never see it there.
 | `HITL_PARKED` | 8 | Everything still open awaits a human decision; the driver hands back with the decisions framed and does **not** re-arm |
 | `PR_CONFLICTING` | 9 | The PR conflicts with its base **and** has nothing left to work, **and** the conflict-repair budget is spent. A conflict with live findings is still a workable `ROUND_READY` — merge the base in as part of that round |
 | `PASS_DEADLINE` | 15 | The pass hit `$DRIVE_PR_PASS_TIMEOUT` (default 90m) and was sent a kill signal — witnessed-terminated before the locks release where the POSIX group-based witness *can* see the survivor, held instead in that case; a descendant that escaped the process group is an unhandled false-witness gap, not a covered case (see [terminal-states.md](references/terminal-states.md)). `drive.ts` only — the one stop here that can fire while a round is still *in flight*, which is where the hangs are |
-| `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` / `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count '<remote>/<head-branch>..HEAD'` before re-arming, same as `PASS_DEADLINE`. A *short* window never reaches this state — the drive sleeps through that one and resumes |
+| `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` / `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count 'refs/remotes/<remote>/<head-branch>..HEAD'` before re-arming, same as `PASS_DEADLINE`. A *short* window never reaches this state — the drive sleeps through that one and resumes |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` ended `drive.ts` at a round boundary, after any running pass completed. Resume the stop directive before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
 
@@ -683,7 +683,7 @@ could forge or forget.
    Claude Code 2.1.285: from 2.1.288 a local terminal session has no such
    limit, and from 2.1.285 to 2.1.287 every session does. When the limit fires it stops the driver mid-round. The pass's agent
    context is lost, but its edits and unpushed commits stay in the worktree:
-   check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count '<remote>/<head-branch>..HEAD'` before
+   check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count 'refs/remotes/<remote>/<head-branch>..HEAD'` before
    re-arming, in the tree the drive ran in (`<head-branch>` is the PR's head
    branch: a detached tree has no `@{u}` to count against). The next drive recovers the stale locks and resumes from the
    saved state.
@@ -2851,7 +2851,7 @@ real round ever reaches it; do not tighten it to make the loop feel faster. It
 exits `15` rather than `1`, because "ran out of wall clock" and "the pass is
 broken" call for different next actions — and because a killed pass strands
 whatever it was doing, so the stop names the recovery checks
-(`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short`, and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count '<remote>/<head-branch>..HEAD'`).
+(`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short`, and `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count 'refs/remotes/<remote>/<head-branch>..HEAD'`).
 
 A fired deadline is an ordinary non-zero exit, and every caller treats it as an
 **unreadable** answer: a killed `gh pr view` is never "the PR is not open" and

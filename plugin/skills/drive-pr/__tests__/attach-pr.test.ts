@@ -353,6 +353,14 @@ describe("attach-pr.ts refuses", () => {
     expect(c.git(tree, "rev-parse", "HEAD")).toBe(stale);
   });
 
+  test("a pull request gh cannot read, naming gh's own reason", () => {
+    const c = fresh();
+    const r = c.attach(c.tree("wt1"), "43");
+    expectSpawnExit(r, 1, "attach");
+    expect(r.stderr).toContain("no pull requests found");
+    expect(r.stderr).not.toContain("JSON");
+  });
+
   test("a closed pull request", () => {
     const c = fresh();
     c.pr({ state: "MERGED" });

@@ -332,9 +332,11 @@ preference, not an either-or.
 their directory is not in the branch's diff, do not assume the change broke
 it: run the fresh-base probe on that one file, with the base the pull
 request merges into (`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr view <PR> --json baseRefName --jq .baseRefName`).
-`<PR>` is the pull request you were given; for a run ID or a branch, the
-open pull request of the run's head branch, or of the branch a detached
-working tree's attach names: list every match with
+`<PR>` is the pull request you were given; otherwise the open pull request
+of the branch you were given, or of the failed run's head branch
+(`bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh run view <run-id> --json headBranch --jq .headBranch`,
+with the `run_id` `parse-ci-log.ts` reported, which also covers a detached
+working tree): list every match with
 `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- gh pr list --head <branch> --state open --json number,baseRefName`.
 One match is `<PR>`. Several (pull requests from the same branch name into
 different bases) are told apart only by the run: take the one the run names

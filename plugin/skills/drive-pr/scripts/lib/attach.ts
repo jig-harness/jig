@@ -184,6 +184,8 @@ async function readPr(
     ],
     { cwd, stderr: "pipe" },
   );
+  if (view.code !== 0)
+    refuse(1, `cannot read PR #${pr}: ${view.stderr.trim()}`);
   let parsed: unknown;
   try {
     parsed = JSON.parse(view.stdout);
@@ -191,8 +193,8 @@ async function readPr(
     refuse(1, `cannot read PR #${pr}: ${String(err)}`);
   }
   const meta = isRecord(parsed) ? parsed : {};
-  if (view.code !== 0 || typeof meta.state !== "string")
-    refuse(1, `cannot read PR #${pr}: ${view.stderr.trim()}`);
+  if (typeof meta.state !== "string")
+    refuse(1, `cannot read PR #${pr}: no state in ${view.stdout.trim()}`);
   if (meta.state !== "OPEN")
     refuse(5, `PR #${pr} is ${meta.state}, not OPEN — nothing to drive`);
   if (meta.isCrossRepository !== false)
