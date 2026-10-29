@@ -75,14 +75,19 @@ export function setDrivenRemoteRef(remote: string, branch: string): void {
   drivenRemoteRef = `refs/remotes/${remote}/${branch}`;
 }
 
+/** The revision range of the commits a stopped pass left unpushed. */
+export function unpushedRange(): string {
+  return `${drivenRemoteRef ?? "@{u}"}..HEAD`;
+}
+
 /**
- * The range a stopped pass's unpushed commits are counted over, or `null` when
- * none can be named. The driven branch's remote ref once the attach has named
- * it. Without that (`DRIVE_PR_ATTACH=off` runs no attach), the sources the
+ * The range the advice counts a stopped pass's unpushed commits over, or `null`
+ * when none can be named. The driven branch's remote ref once the attach has
+ * named it. Without that (`DRIVE_PR_ATTACH=off` runs no attach), the sources the
  * leftovers probe reads (`drives.ts`): the upstream when it exists, else the
  * attach record's remote ref when the tree is detached with one.
  */
-async function unpushedRange(
+async function unpushedAdviceRange(
   git: Git,
   root: string,
   opts: Opts,
@@ -105,7 +110,7 @@ async function unpushedRange(
 /**
  * The advice for counting commits a stopped pass left unpushed, as the phrase
  * the report puts in its sentence: the count command over the range
- * `unpushedRange` names (a detached tree has no `@{u}`), else the check to
+ * `unpushedAdviceRange` names (a detached tree has no `@{u}`), else the check to
  * make by hand, since a range that does not exist fails or counts nothing.
  * That check names `HEAD` as well as `--branches`: a detached head's commits
  * are on no branch. The range is shell-quoted: a branch name may carry `;`, `$` or backticks,
@@ -116,7 +121,7 @@ export async function unpushedCountAdvice(
   root: string,
   opts: Opts = {},
 ): Promise<string> {
-  const range = await unpushedRange(git, root, opts);
+  const range = await unpushedAdviceRange(git, root, opts);
   if (range !== null) return `\`git rev-list --count ${shellQuote(range)}\``;
   return "`git log HEAD --branches --not --remotes` (no range can be named here: the tree has no upstream and no attach record)";
 }

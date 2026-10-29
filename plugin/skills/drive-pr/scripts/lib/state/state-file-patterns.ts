@@ -30,6 +30,7 @@ export type ArtifactFamily =
   | "legacy-migration-marker"
   | "log"
   | "orphan-marker"
+  | "pass-handoff"
   | "pr-lease"
   | "ready-claim"
   | "reaper-delete-lock"
@@ -120,6 +121,12 @@ export const PLAIN_ENTRIES: readonly {
     family: "held-claim",
   },
   { re: /^drive-arm-([0-9]+)\.out$/, key: "pr", family: "arm-output" },
+  // pass-handoff.ts — kept answers and an over-long pass notice.
+  {
+    re: /^drive-pr-([0-9]+)\.(?:answers\.json|notice\.md)(?:\.[0-9a-f]{6})?$/,
+    key: "pr",
+    family: "pass-handoff",
+  },
   {
     re: /^\.drive-pr-([0-9]+)\.orphan-warned(?:\.abandoned\.[0-9]+)?$/,
     key: "pr",

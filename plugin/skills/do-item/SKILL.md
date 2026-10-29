@@ -996,12 +996,16 @@ routing below remain **exact**.
       a few seconds after issuing it — not immediately, and not in a poll
       loop:
       - Exit `11` on the **per-PR** lock → this PR is already being driven:
-        report "a drive is already live on #<PR>" with the holder's details;
-        do not retry and do not kill the other driver.
+        report "a drive is already live on #<PR>" with the holder's details
+        and the doctor verdict the refusal names; do not retry. Do not stop a
+        driver that is making progress; when the refusal says it is `WEDGED`
+        and prints the `--take-over` command, run that command instead
+        (`${CLAUDE_SKILL_DIR}/../drive-pr/SKILL.md` § Picking up a stopped
+        drive).
       - Exit `11` on the **worktree** lock → read the diagnostics. The same
         PR means already armed (report as above); a different PR means this
         worktree is busy with other work (report the conflict; do not retry
-        or kill). Only when the claim predates diagnostics is the case
+        or stop it). Only when the claim predates diagnostics is the case
         **ambiguous**: because the worktree lock comes first, a re-invocation
         for this same PR from the same worktree also fails here. Report the
         ambiguity itself, with the holder's pid and hostname (`drives.ts`

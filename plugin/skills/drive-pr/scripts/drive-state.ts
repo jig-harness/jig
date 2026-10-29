@@ -47,7 +47,7 @@
  *   drive-state.ts reflected    [PR]                 # round a /reflect was last recorded at
  *   drive-state.ts set-reflected [PR]                # record a completed /reflect at the current round
  *   drive-state.ts park         [PR] --key K --kind thread|finding --reason R
- *   drive-state.ts unpark       [PR] --key K
+ *   drive-state.ts unpark       [PR] --key K [--key K …]   # all, or none
  *   drive-state.ts parked-keys  [PR]                 # newline-delimited keys
  *   drive-state.ts hold         [PR] --key K --kind thread|finding --outcome accepted|moot
  *                                     [--comment-url URL] [--unconfirmed]
@@ -124,11 +124,13 @@
  *                                     #: lastProgressAt + phase, clears any
  *                                     # recorded quota park. NOT the same as 'phase'
  *                                     # above — that one carries no progress semantics.
- *   drive-state.ts quota-park   [PR] --vendor V --window W [--reset-at ISO]
+ *   drive-state.ts quota-park   [PR] --vendor V --window W [--reset-at ISO] [--account HASH]
  *                                     # record the quota wall this drive parked on
  *                                     #, called by drive.ts immediately
  *                                     # before its QUOTA_PARKED_EXIT return. Does NOT
  *                                     # stamp progress — parking is its opposite.
+ *   drive-state.ts takeover     [PR]                 # record a drive.ts --take-over (JSON on stdin)
+ *   drive-state.ts deadline-retries [PR] --set bump|clear  # the drive's pass-deadline restarts
  *   drive-state.ts handoff      [PR]                 # (re)write the handoff file
  *   drive-state.ts lease        [PR]                 # who is driving this PR from this
  *                                     # tree, as JSON ('' if nobody)
@@ -213,6 +215,11 @@ import {
   resolvePr,
 } from "./lib/proc.ts";
 import { isActorId, resolveActor } from "./lib/state/actor.ts";
+import { isAccountHash } from "./lib/identity.ts";
+import { recordTakeover } from "./lib/state/takeover.ts";
+import { deadlineRetries } from "./lib/state/deadline-retries.ts";
+import { unpark } from "./lib/state/unpark.ts";
+import { clearPendingVerdicts } from "./lib/state/pass-handoff.ts";
 import {
   breakStaleClaimLocked,
   claimCreate,
@@ -260,7 +267,7 @@ import {
   structuralEscalationArmed,
   withProgress,
 } from "./lib/state/schema.ts";
-import { openStore } from "./lib/state/store.ts";
+import { openStore, type StateStore } from "./lib/state/store.ts";
 import {
   attributeStatuses,
   checkRunsFor,
@@ -326,7 +333,7 @@ function usage(): void {
 . Omitting it clears any prior
                                     claim rather than preserving it.
   park         [PR] --key K --kind thread|finding --reason R
-  unpark       [PR] --key K
+  unpark       [PR] --key K [--key K …]  every key, or none when one is not parked
   parked-keys  [PR]                 newline-delimited keys
   hold         [PR] --key K --kind thread|finding --outcome accepted|moot
                [--comment-url URL] [--unconfirmed]
@@ -355,11 +362,16 @@ function usage(): void {
                                     sets lastProgressAt and phase, clears any
                                     recorded quota park. Distinct from 'phase'
                                     above, which has no progress semantics
-  quota-park   [PR] --vendor V --window W [--reset-at ISO]
-                                    record the quota wall this drive parked on
+  quota-park   [PR] --vendor V --window W [--reset-at ISO] [--account HASH]
+                                    record the quota wall this drive parked on,
+                                    and the hashed account it belongs to
 ; does NOT stamp progress —
                                     parking is the opposite of it. Cleared by
                                     the next progress event
+  takeover     [PR]                 record a drive.ts --take-over (JSON on stdin)
+  deadline-retries [PR] --set bump|clear
+                                    count a pass-deadline restart (prints the
+                                    count), or clear it when the drive ends
   handoff      [PR]                 (re)write the handoff file
   admit        [PR]                 exit 0 if this tree may act on this PR, 13 if
                                     another working tree is driving it. Takes no
@@ -391,6 +403,12 @@ interface Args {
   cmd: string;
   pr: string;
   key: string;
+  /** Every `--key`, in argv order (`unpark` takes several). */
+  keys: string[];
+  /** Every `--parked-at`, in argv order: `unpark`'s park timestamps, one per `--key`. */
+  parkedAts: string[];
+  /** `unpark --every`: the named keys must be every park there is. */
+  every: boolean;
   kind: string;
   reason: string;
   sha: string;
@@ -431,7 +449,42 @@ interface Args {
   window: string;
   /** `quota-park --reset-at ISO`; `''` when the adapter could not resolve one. */
   resetAt: string;
+  /** `quota-park --account HASH`: whose wall it is; `''` when unknown. */
+  account: string;
 }
+
+/** The `Args` fields a flag sets to its one value. */
+type ValueField = Exclude<
+  { [K in keyof Args]: Args[K] extends string ? K : never }[keyof Args],
+  "cmd" | "pr"
+>;
+
+/** Every flag that takes one value, and the field it sets. */
+const VALUE_FLAGS: Readonly<Record<string, ValueField>> = {
+  "--kind": "kind",
+  "--reason": "reason",
+  "--head": "sha",
+  "--sha": "sha",
+  "--pushed-sha": "pushedSha",
+  "--round": "restoreRound",
+  "--token": "token",
+  "--set": "phaseName",
+  "--outcome": "outcome",
+  "--comment-url": "commentUrl",
+  "--if-comment-url": "ifCommentUrl",
+  "--actor": "actor",
+  "--actor-name": "actorName",
+  "--event-id": "eventId",
+  "--created-at": "createdAt",
+  "--check-run-watermark": "checkRunWatermark",
+  "--verified-sha": "verifiedSha",
+  "--invariant": "invariant",
+  "--phase": "phaseArg",
+  "--vendor": "vendor",
+  "--window": "window",
+  "--reset-at": "resetAt",
+  "--account": "account",
+};
 
 function parseArgs(argv: string[]): Args {
   const cmd = argv.shift() ?? "";
@@ -439,6 +492,9 @@ function parseArgs(argv: string[]): Args {
     cmd,
     pr: "",
     key: "",
+    keys: [],
+    parkedAts: [],
+    every: false,
     kind: "",
     reason: "",
     sha: "",
@@ -465,6 +521,7 @@ function parseArgs(argv: string[]): Args {
     vendor: "",
     window: "",
     resetAt: "",
+    account: "",
   };
   const take = (flag: string, i: number): string => {
     const value = argv[i + 1];
@@ -474,64 +531,28 @@ function parseArgs(argv: string[]): Args {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === undefined) continue;
+    const field = Object.hasOwn(VALUE_FLAGS, arg)
+      ? VALUE_FLAGS[arg]
+      : undefined;
+    if (field !== undefined) {
+      a[field] = take(arg, i++);
+      continue;
+    }
     switch (arg) {
+      // Every `--key` the parser consumed, in order, for `unpark`'s set: a
+      // value that merely reads `--key` is a value, not another flag.
       case "--key":
         a.key = take(arg, i++);
-        break;
-      case "--kind":
-        a.kind = take(arg, i++);
-        break;
-      case "--reason":
-        a.reason = take(arg, i++);
-        break;
-      case "--head":
-      case "--sha":
-        a.sha = take(arg, i++);
-        break;
-      case "--pushed-sha":
-        a.pushedSha = take(arg, i++);
-        break;
-      case "--round":
-        a.restoreRound = take(arg, i++);
-        break;
-      case "--token":
-        a.token = take(arg, i++);
-        break;
-      case "--set":
-        a.phaseName = take(arg, i++);
-        break;
-      case "--outcome":
-        a.outcome = take(arg, i++);
+        a.keys.push(a.key);
         break;
       case "--unconfirmed":
         a.unconfirmed = true;
         break;
-      case "--comment-url":
-        a.commentUrl = take(arg, i++);
-        break;
       case "--if-present":
         a.ifPresent = true;
         break;
-      case "--if-comment-url":
-        a.ifCommentUrl = take(arg, i++);
-        break;
-      case "--actor":
-        a.actor = take(arg, i++);
-        break;
-      case "--actor-name":
-        a.actorName = take(arg, i++);
-        break;
-      case "--event-id":
-        a.eventId = take(arg, i++);
-        break;
-      case "--created-at":
-        a.createdAt = take(arg, i++);
-        break;
-      case "--check-run-watermark":
-        a.checkRunWatermark = take(arg, i++);
-        break;
-      case "--verified-sha":
-        a.verifiedSha = take(arg, i++);
+      case "--every":
+        a.every = true;
         break;
       // Repeatable rather than a delimited list: an anchor path is an
       // arbitrary repository path, and every delimiter a list could use is a
@@ -542,26 +563,14 @@ function parseArgs(argv: string[]): Args {
       case "--path":
         a.paths.push(take(arg, i++));
         break;
+      case "--parked-at":
+        a.parkedAts.push(take(arg, i++));
+        break;
       case "--stdin":
         a.stdin = true;
         break;
       case "--all":
         a.all = true;
-        break;
-      case "--invariant":
-        a.invariant = take(arg, i++);
-        break;
-      case "--phase":
-        a.phaseArg = take(arg, i++);
-        break;
-      case "--vendor":
-        a.vendor = take(arg, i++);
-        break;
-      case "--window":
-        a.window = take(arg, i++);
-        break;
-      case "--reset-at":
-        a.resetAt = take(arg, i++);
         break;
       default:
         if (arg.startsWith("--")) fail(2, `unknown flag: ${arg}`);
@@ -571,28 +580,100 @@ function parseArgs(argv: string[]): Args {
   return a;
 }
 
+/** `park`: record an item whose decision is a person's, and when it was parked. */
+async function park(store: StateStore, a: Args): Promise<number> {
+  if (a.key === "")
+    fail(2, "park requires --key (a thread node id or finding fingerprint)");
+  // A key carrying CR or LF is not one key. `parked-keys` emits keys
+  // newline-delimited and drive-status splits that output on LF, so
+  // `PRRT_x<LF>PRRT_unrelated` parks ONE item and yields TWO match tokens
+  // — the second suppressing live work nobody parked, which is the
+  // opposite of what parking is for and is invisible in the state file's
+  // own shape. The channel is line-delimited, so the constraint belongs on
+  // what may enter it.
+  if (/[\n\r]/.test(a.key)) {
+    fail(
+      2,
+      "park: --key may not contain a newline or carriage return.",
+      "parked-keys is a line-delimited channel, so such a key becomes TWO",
+      "match tokens and the extra one suppresses work nobody parked.",
+    );
+  }
+  if (a.kind !== "thread" && a.kind !== "finding")
+    fail(2, `park requires --kind thread|finding (got '${a.kind}')`);
+  if (a.reason === "")
+    fail(
+      2,
+      "park requires --reason — a parked item with no framed decision is not a checkpoint, it is a dropped finding",
+    );
+  const kind = a.kind;
+  await store.update((s) => ({
+    ...s,
+    parked: [
+      ...s.parked.filter((p) => p.key !== a.key),
+      {
+        key: a.key,
+        kind,
+        reason: a.reason,
+        round: s.rounds,
+        at: new Date().toISOString(),
+      },
+    ],
+  }));
+  return 0;
+}
+
+/** `quota-park`: record the wall, and whose it is, without stamping progress. */
+async function quotaPark(store: StateStore, a: Args): Promise<number> {
+  if (a.vendor === "") fail(2, "quota-park requires --vendor V");
+  if (/[\n\r]/.test(a.vendor)) {
+    fail(2, "quota-park: --vendor must not contain a newline");
+  }
+  if (a.window === "") fail(2, "quota-park requires --window W");
+  if (/[\n\r]/.test(a.window)) {
+    fail(2, "quota-park: --window must not contain a newline");
+  }
+  if (a.account !== "" && !isAccountHash(a.account))
+    fail(
+      2,
+      `quota-park: --account must be an account hash (got '${a.account}')`,
+    );
+  if (a.resetAt !== "" && !Number.isFinite(Date.parse(a.resetAt))) {
+    fail(
+      2,
+      `quota-park: --reset-at must be a string Date.parse can read (got '${a.resetAt}')`,
+    );
+  }
+  // Test-only hook, unset (no-op) by default: forces a lock takeover to
+  // land while `drive.ts`'s `recordQuotaPark` awaits this subprocess.
+  const delaySec = testDelaySeconds(
+    "DRIVE_PR_QUOTA_PARK_TEST_DELAY",
+    "quota-park",
+  );
+  if (delaySec > 0) await sleep(delaySec);
+  await store.update((s) => ({
+    ...s,
+    quotaPark: {
+      vendor: a.vendor,
+      window: a.window,
+      resetAt: a.resetAt === "" ? null : a.resetAt,
+      at: new Date().toISOString(),
+      ...(a.account === "" ? {} : { account: a.account }),
+    },
+  }));
+  return 0;
+}
+
 /**
  * Does an otherwise-unparseable JSON text still contain a string-literal
  * property KEY that DECODES to `target`, anywhere in the text?
  *
- * A raw byte-substring check (`text.includes('"' + target + '"')`) is defeated
- * the moment the key is escaped: JSON permits `ciHold` as a byte-for-byte
- * different spelling of the identical `ciHold` property name, so a
- * corrupt-but-escaped file names the key without ever containing the literal
- * bytes `"ciHold"`. Following the "parse the construct, don't pattern-match it"
- * rule, this scans the text as a sequence of JSON STRING LITERALS — respecting
- * `\`-escapes so a `"` or `\` inside an escape sequence is never mistaken for
- * the literal's own boundary — and hands each complete candidate to
- * `JSON.parse` itself to decode, rather than hand-rolling escape decoding. The
- * whole surrounding document need not be valid JSON; only the one
- * string-literal construct that matters here is parsed, precisely.
- *
- * A literal matching `target` in VALUE position — `{"reason":"ciHold"}` — is
- * not evidence of a `ciHold` property at all; only a literal immediately
- * followed by (optional whitespace, then) `:` is a property key. Treating
- * either position as a match refuses `reset` over corruption that never named
- * the key, over-blocking the exact recovery path this function exists to
- * preserve.
+ * A byte-substring check misses an escaped spelling of the same key, so this
+ * scans the text as JSON string literals (respecting `\`-escapes) and lets
+ * `JSON.parse` decode each candidate; the document need not be valid JSON. Only
+ * a literal followed by `:` is a key: a match in value position
+ * (`{"reason":"ciHold"}`) would refuse `reset` over corruption that never named
+ * the key.
  */
 function rawTextMentionsJsonKey(text: string, target: string): boolean {
   let i = 0;
@@ -753,13 +834,12 @@ async function main(): Promise<number> {
     "restore-held",
     "release-held",
     "phase",
-    // Both mutate durable state (`lastProgressAt`/`quotaPark`), so
-    // both are leased on the same terms as `phase` immediately above — a
-    // second concurrent session stamping progress or a park behind the
-    // first's back is the identical corruption this list exists to prevent
-    // for every other writer here.
+    // Mutators of `lastProgressAt`, `quotaPark` and `takeovers`, leased on
+    // the same terms as `phase` above.
     "progress",
     "quota-park",
+    "takeover",
+    "deadline-retries",
     "reset",
     "claim-ready-mark",
     "renew-ready-mark",
@@ -2109,53 +2189,11 @@ async function main(): Promise<number> {
       });
     }
 
-    case "park": {
-      if (a.key === "")
-        fail(
-          2,
-          "park requires --key (a thread node id or finding fingerprint)",
-        );
-      // A key carrying CR or LF is not one key. `parked-keys` emits keys
-      // newline-delimited and drive-status splits that output on LF, so
-      // `PRRT_x<LF>PRRT_unrelated` parks ONE item and yields TWO match tokens
-      // — the second suppressing live work nobody parked, which is the
-      // opposite of what parking is for and is invisible in the state file's
-      // own shape. The channel is line-delimited, so the constraint belongs on
-      // what may enter it.
-      if (/[\n\r]/.test(a.key)) {
-        fail(
-          2,
-          "park: --key may not contain a newline or carriage return.",
-          "parked-keys is a line-delimited channel, so such a key becomes TWO",
-          "match tokens and the extra one suppresses work nobody parked.",
-        );
-      }
-      if (a.kind !== "thread" && a.kind !== "finding")
-        fail(2, `park requires --kind thread|finding (got '${a.kind}')`);
-      if (a.reason === "")
-        fail(
-          2,
-          "park requires --reason — a parked item with no framed decision is not a checkpoint, it is a dropped finding",
-        );
-      const kind = a.kind;
-      await store.update((s) => ({
-        ...s,
-        parked: [
-          ...s.parked.filter((p) => p.key !== a.key),
-          { key: a.key, kind, reason: a.reason, round: s.rounds },
-        ],
-      }));
-      return 0;
-    }
+    case "park":
+      return park(store, a);
 
-    case "unpark": {
-      if (a.key === "") fail(2, "unpark requires --key");
-      await store.update((s) => ({
-        ...s,
-        parked: s.parked.filter((p) => p.key !== a.key),
-      }));
-      return 0;
-    }
+    case "unpark":
+      return unpark(store, a.keys, a.parkedAts, a.every);
 
     case "parked-keys": {
       for (const p of store.read().state.parked)
@@ -3096,17 +3134,9 @@ async function main(): Promise<number> {
           `progress: --phase must be one of ${PROGRESS_PHASES.join(", ")} (got '${a.phaseArg}')`,
         );
       }
-      // Test-only hook, unset (no-op) by default — same shape as
-      // `DRIVE_PR_QUOTA_PARK_TEST_DELAY`. `drive.ts` fires the `pass-spawned`
-      // stamp fire-and-forget from `onSpawn` and now `await`s this exact
-      // subprocess before interpreting the pass result or writing state again:
-      // a delayed stamp that completed AFTER a later `recordQuotaPark()` write
-      // used to clobber `quotaPark` back to `null` via `withProgress`'s own
-      // unconditional clear, since neither write knew about the other. Proving
-      // the join actually orders them — rather than hoping real
-      // subprocess-spawn jitter happens to resolve this stamp first — needs a
-      // way to hold this write open deterministically while a quota wall lands
-      // on the same round.
+      // Test-only hook, unset (no-op) by default: holds this write open so a
+      // test can prove `drive.ts` joins the `pass-spawned` stamp before a
+      // later `recordQuotaPark()` write, which the stamp would otherwise clear.
       const delaySec = testDelaySeconds(
         "DRIVE_PR_PROGRESS_TEST_DELAY",
         "progress",
@@ -3127,43 +3157,14 @@ async function main(): Promise<number> {
     // through `withProgress` — parking is progress's opposite, and
     // `quotaPark`'s own comment on `DriveState` explains why the next genuine
     // progress event (not this call) is what clears it.
-    case "quota-park": {
-      if (a.vendor === "") fail(2, "quota-park requires --vendor V");
-      if (/[\n\r]/.test(a.vendor)) {
-        fail(2, "quota-park: --vendor must not contain a newline");
-      }
-      if (a.window === "") fail(2, "quota-park requires --window W");
-      if (/[\n\r]/.test(a.window)) {
-        fail(2, "quota-park: --window must not contain a newline");
-      }
-      if (a.resetAt !== "" && !Number.isFinite(Date.parse(a.resetAt))) {
-        fail(
-          2,
-          `quota-park: --reset-at must be a string Date.parse can read (got '${a.resetAt}')`,
-        );
-      }
-      // Test-only hook, unset (no-op) by default — same shape as
-      // `DRIVE_PR_CLAIM_HELD_TEST_DELAY` et al. `drive.ts`'s own
-      // `recordQuotaPark` awaits this exact subprocess; proving its caller
-      // handles a lock takeover that lands WHILE this await is still in
-      // flight needs a way to force that overlap deterministically, not
-      // hope real subprocess-spawn jitter happens to be slow enough.
-      const delaySec = testDelaySeconds(
-        "DRIVE_PR_QUOTA_PARK_TEST_DELAY",
-        "quota-park",
-      );
-      if (delaySec > 0) await sleep(delaySec);
-      await store.update((s) => ({
-        ...s,
-        quotaPark: {
-          vendor: a.vendor,
-          window: a.window,
-          resetAt: a.resetAt === "" ? null : a.resetAt,
-          at: new Date().toISOString(),
-        },
-      }));
-      return 0;
-    }
+    case "quota-park":
+      return quotaPark(store, a);
+
+    case "takeover":
+      return recordTakeover(store, await readStdinAll(), await resolveActor());
+
+    case "deadline-retries":
+      return deadlineRetries(store, a.phaseName);
 
     case "handoff": {
       return store.locked(async () => {
@@ -3569,6 +3570,7 @@ async function main(): Promise<number> {
 
         rmSync(store.file, { force: true });
         rmSync(orphanMarkerPath(store.stateDir, pr), { force: true });
+        clearPendingVerdicts(store.stateDir, pr);
         await removeHandoff(pr);
         // Every claim file for this PR too — live, or an abandoned
         // `.released.` leftover. Without this, "forget everything for this PR"
