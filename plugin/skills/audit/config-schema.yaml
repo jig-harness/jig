@@ -289,7 +289,7 @@ fields:
     type: integer
     min: 0
     default: 2
-    since: next
+    since: 0.98.0
     read_by: [drive-pr]
   drive.escape_baseline_doc:
     type: path
