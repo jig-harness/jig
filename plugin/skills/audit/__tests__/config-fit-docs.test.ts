@@ -2,6 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { expectSpawnExitNot } from "../../../../lib/test-helpers/expect-spawn-exit.ts";
 import { skipsOnWindows } from "../../../../lib/test-helpers/windows-skip.ts";
 import { runScript, scratchRepo } from "./helpers.ts";
 
@@ -28,7 +29,11 @@ function scratch(files: Record<string, string>): string {
 /** The docs skill's refusal in config-fit's report for `dir`, or undefined. */
 function docsRefusal(dir: string): Finding | undefined {
   const run = runScript("config-fit.ts", ["--offline", "--json"], dir);
-  if (run.code === 2) throw new Error(run.err);
+  expectSpawnExitNot(
+    { exitCode: run.code, stdout: run.out, stderr: run.err },
+    2,
+    "config-fit",
+  );
   const { findings } = JSON.parse(run.out) as { findings: Finding[] };
   return findings.find((f) => f.id === "rejected:docs");
 }
