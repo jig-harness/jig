@@ -47,12 +47,6 @@ rollout:
 - **Plan review**, folded into `review`, which already accepts a plan
   document: dependencies and critical path, completeness, simplification and
   effort checks.
-- **`docs`**: the runnable form of M4: runs the repository's frontmatter,
-  index and scar checks, flags stale drafts, and plans missing documentation by
-  project type. M4's gates (`modules/M4-docs-governance/reference/`) and their
-  self-tests move into the skill's `scripts/` and `__tests__/`, moved and not
-  copied, and M4's README links them there. The repository's M4 schema wins
-  over the source skill's own frontmatter rules.
 - **`upgrade-deps`**: grouped, changelog-driven dependency upgrades (the
   majors an update bot cannot do alone), opened through `do-item`'s
   pull-request policy and driven by `drive-pr`; the runnable side of M1's
@@ -382,14 +376,17 @@ overlay with its evidence, enables the plugin for everyone who clones, and
 checks the result the way the audit will; the audit measures, init writes.
 What it will build, one pull request per step:
 
-- **The shared detector**: `config-fit.ts`'s detection and draft move to
-  `plugin/shared/detect.ts` with their tests, the audit unchanged.
 - **The skill**: `plugin/skills/init/` with `init.ts` (derive, ask, write,
-  check), refresh mode after a plugin release, tests from a plugin copy
-  against fixture repositories with and without a configuration, the
-  lifecycle-map row and the README table row.
+  check) on the shared detector (`plugin/shared/detect.ts`), which learns the
+  changelog file, the label taxonomy and the title convention, the `fields` on
+  the configuration fit's findings so init can sort them, refresh mode
+  after a plugin release, tests from a plugin copy against fixture
+  repositories with and without a configuration, the lifecycle-map row and
+  the README table row.
 - **The pointers**: the adoption pages, setup's next step, the audit's
-  `remedy: init` marker and the sheet's command.
+  `remedy: init` marker and the sheet's command, and the configuration
+  fit's finding for a file written under an older plugin than the last
+  field-adding release.
 - **Project-level enablement** in the host settings files.
 
 Done when a fresh clone with no configuration runs `/jig:init`, commits

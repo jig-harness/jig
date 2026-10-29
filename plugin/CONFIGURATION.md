@@ -118,8 +118,9 @@ Command-line flags, where a script has them, override all three.
   all three layers.
 - **Fields only a repository sets.** `gates.command`,
   `repository.base_branch`, `issue_tracker.team`, `review.repo_slug`,
-  `review.repo_label`, `ci.required_checks`, every `changelog` field and
-  every `code_stats` field describe one repository. Set in the user file
+  `review.repo_label`, `ci.required_checks`, `docs.root`, `docs.schema`,
+  every `changelog` field and every `code_stats` field describe one
+  repository. Set in the user file
   they would apply to every repository on the machine, so the user file
   refuses them with an error naming the field. An environment variable may still override them for one run,
   except the `changelog` fields, which the `changelog` skill reads from the
@@ -232,7 +233,7 @@ is a complete example.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `repository.base_branch` | branch name, without the remote's prefix (`origin/`) | Derived: the clone's `origin/HEAD` (drive-pr and do-item: the `HEAD` of `repository.remote`), else GitHub's default branch | drive-pr, do-item, review, descar, changelog | The integration branch: where pull requests land. A round diffs against its pull request's own base, so a stacked layer's round covers that layer alone; it diffs against this branch only on a branch with no pull request, and refuses when the pull request's base cannot be read or fetched, or the remote (`repository.remote`) is not the pull request's repository. The required checks come from the protection of the pull request's base and, for a stacked layer, of the branch the stack's bottom layer targets; a walk down the stack stops at this branch, and an unknown integration branch is an error. Set it when that is not the default branch (a `develop` flow). `DRIVE_PR_BASE_BRANCH` overrides it. changelog: the integration branch its release, tag plan, status and `release-access.ts` work on |
+| `repository.base_branch` | branch name, without the remote's prefix (`origin/`) | Derived: the clone's `origin/HEAD` (drive-pr and do-item: the `HEAD` of `repository.remote`), else GitHub's default branch | drive-pr, do-item, review, descar, changelog, docs | The integration branch: where pull requests land. A round diffs against its pull request's own base, so a stacked layer's round covers that layer alone; it diffs against this branch only on a branch with no pull request, and refuses when the pull request's base cannot be read or fetched, or the remote (`repository.remote`) is not the pull request's repository. The required checks come from the protection of the pull request's base and, for a stacked layer, of the branch the stack's bottom layer targets; a walk down the stack stops at this branch, and an unknown integration branch is an error. Set it when that is not the default branch (a `develop` flow). `DRIVE_PR_BASE_BRANCH` overrides it. changelog: the integration branch its release, tag plan, status and `release-access.ts` work on. docs: the base its `last_updated` check compares a branch with, and against which it finds the documents a branch adds; a value that resolves neither as `origin/<branch>` nor as `<branch>` stops the pass (exit 2). Without the field docs does not ask GitHub for the default branch: it takes the first of `origin/HEAD`, `origin/main`, `main`, `origin/master` and `master` that resolves, and skips the `last_updated` check when none does, so set the field when the default branch is named otherwise and `origin/HEAD` is unset |
 | `repository.remote` | git remote name: ASCII letters, digits, `.`, `_`, `-` and `/`; no leading `-`, and none of the sequences a ref name refuses (`..`, `//`, a leading or trailing `/`, a trailing `.`, a component starting with `.` or ending in `.lock`) | `origin` | drive-pr, do-item, fix-ci, resolve-conflicts, work-batch, file-issue, reflect | The git remote of the clone the skills push to and fetch from. drive-pr: it fetches the pull request's head branch from it to attach the pull request to a working tree (and to place one), fetches the pull request's base from it, diffs against `<remote>/<base>`, derives the integration branch from `<remote>/HEAD`, pushes the round's commits to it, and refuses to fetch or push when the remote's addresses do not name the pull request's repository; the conflict fix it prints names it. do-item: `pr-plan.ts open` measures the change against `<remote>/<base>` and prints the remote (`remote:`) the branch is pushed to. fix-ci: the default of `probe-base.ts --remote`. resolve-conflicts: `<remote>/HEAD` names the default branch, and its merge commands fetch from it. do-item, work-batch, file-issue, reflect: with GitHub Issues and no `issue_tracker.github.repository`, the remote's address names the repository. Set it when the clone names that remote otherwise (`upstream`, or a fork setup where `origin` is the fork). A person may set it in the user file for every clone; an unusable name, `null` included, is an error naming where it was set, and so is a `repository` section that is `null` or not a mapping |
 
 ## `pull_requests`
@@ -707,7 +708,7 @@ area's paths, the build tools and the database conventions.
 ## Procedure skills
 
 The procedure skills (`review`, `fix-ci`, `github-actions`, `adr`, `descar`,
-`promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
+`docs`, `promote-memory`, `programmatic-execution`, `design-brief-builder`, `decide`,
 `explain`, `resolve-conflicts`, `audit`) detect
 what they need from the repository; set a field only when detection picks
 the wrong thing. `programmatic-execution` and `audit` read no field of their
@@ -715,9 +716,12 @@ own; `audit` checks all the others.
 
 | Field | Type | When absent | Read by | What it does |
 |-------|------|-------------|---------|--------------|
-| `adr.directory` | folder, relative to the root | Detected: the first existing of `docs/adr`, `docs/adrs`, `doc/adr`, `docs/decisions`, `docs/architecture/decisions`, `doc/architecture/decisions`, `adr`, `decisions`; none means no records yet, and `decide` and `explain` then use `docs/adr` | adr, review, decide, explain | Where the decision records live. `decide` searches them for precedent, and `decide` and `explain` resolve a bare `ADR-NNNN` citation there when they check a sheet's freshness. `adr` and `review` require a configured folder to exist; `decide` and `explain` do not check, and find no records in a missing one |
+| `adr.directory` | folder, relative to the root | Detected: the first existing of `docs/adr`, `docs/adrs`, `doc/adr`, `docs/decisions`, `docs/architecture/decisions`, `doc/architecture/decisions`, `adr`, `decisions`; none means no records yet, and `decide` and `explain` then use `docs/adr` | adr, review, decide, explain, docs | Where the decision records live. `decide` searches them for precedent, and `decide` and `explain` resolve a bare `ADR-NNNN` citation there when they check a sheet's freshness; `docs` counts the folder as the project's decision records when it plans missing documents. `adr`, `review` and `docs` require a configured folder to exist; `decide` and `explain` do not check, and find no records in a missing one |
 | `adr.rules_file` | path, relative to the root | Detected: the one tracked `adr-rules.yaml`, `adr-rules.yml`, `.adr-rules.yaml` or `adr-rules/rules.yaml` (or `.yml`), outside test fixtures and templates; several matches are an error | adr, review | The machine-readable decision-rules catalog. A configured file must exist |
-| `descar.lint_command` | shell command taking document paths | Detected: the repository's copy of M4's scar lint; else the document is checked by hand | descar | Lint that finds review scars in documents |
+| `descar.lint_command` | shell command taking document paths | Detected: the repository's copy of M4's scar lint; else the scar lint the `docs` skill holds | descar | Lint that finds review scars in documents |
+| `docs.root` | folder, relative to the root | Detected: the first existing of `docs`, `doc`, `documentation`; none means the repository has no docs tree, and the checks that need one are skipped | docs | The governed docs tree. A configured path must name an existing folder, not a file. Configured or detected, it must lie inside the repository once symbolic links are followed. Repository-only |
+| `docs.schema` | path, relative to the repository root | Detected: the shallowest `frontmatter-schema.yaml` or `.frontmatter-schema.yaml` (or `.yml`) under the docs tree; none skips the frontmatter check | docs | The frontmatter schema the documents are checked against. A configured path must name an existing file, not a folder. Configured or detected, it must lie inside the repository once symbolic links are followed. Repository-only |
+| `docs.stale_after_days` | whole number, 1 or more | `180` | docs | A `status: draft` document whose `last_updated` is more than this many days old is reported as a stale draft (a warning) |
 | `promote_memory.lint_command` | shell command; `{dir}` and `{file}` stand for the memory folder and file | none: the check is done by hand | promote-memory | Checks one agent memory against the repository; exit 0 means clean |
 | `promote_memory.target_dir` | folder, relative to the root | `docs/retrospection` | promote-memory | Where promoted pages go, in `YYYY/MM/` below it |
 | `fix_ci.regenerate_commands` | list of shell commands | none: the agent finds the command | fix-ci | Commands that regenerate committed generated files a CI check compares |
@@ -1002,6 +1006,10 @@ sheets:
     beta: ../beta
 descar:
   lint_command: "bun scripts/check-descarring-scars.ts"
+docs:
+  root: docs
+  schema: docs/.frontmatter-schema.yaml
+  stale_after_days: 180
 promote_memory:
   lint_command: "<your memory lint> --dir {dir} --file {file}"
   target_dir: docs/retrospection

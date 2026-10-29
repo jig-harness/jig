@@ -3,7 +3,8 @@
   domain folders and authority order to your project, and point your
   instruction file at it. It is the written governance model; the mechanical
   enforcement lives in the frontmatter schema, the checker, the index
-  generator, and the scar lint (see the M4 reference/ directory).
+  generator, and the scar lint (the gates of Jig's docs skill,
+  plugin/skills/docs/scripts/, which /jig:docs runs in one pass).
 -->
 
 # Wiki schema — how this docs tree is governed
@@ -83,11 +84,11 @@ value. Write inside it:
   block-scalar header.
 
 The checker's self-test is the exhaustive list, a fixture for each construct
-([frontmatter check](https://github.com/jig-harness/jig/blob/main/modules/M4-docs-governance/reference/frontmatter-check/README.md#supported-yaml-subset)).
+([frontmatter check](https://github.com/jig-harness/jig/blob/main/plugin/skills/docs/scripts/frontmatter-check/README.md#supported-yaml-subset)).
 
 ## Navigation is generated
 
-`INDEX.md` is regenerated from the tree (see `reference/index/`); never edit it
+`INDEX.md` is regenerated from the tree (Jig's index generator); never edit it
 by hand. A freshness gate fails when the committed index no longer matches the
 tree. The same generator writes `.orphans.md`: the pages no other page lists
 under `related:`. Orphans are a warning to link or retire a page, never a
@@ -107,7 +108,7 @@ A doc may not move to (or remain at) `status: approved` while carrying scars.
 The finding belongs in the review thread, the tracking issue, git/PR history,
 or a light `## Version history` section that records *what changed* — never
 reviewer names, "addressed" ledgers, or struck-through text. A lint enforces
-this (see `reference/scar-lint/`); docs whose subject *is* the review process
+this (Jig's scar lint); docs whose subject *is* the review process
 opt out via a path allowlist or a `descar_allow: true` frontmatter key.
 
 ## Authority hierarchy (conflict resolution)
@@ -124,7 +125,7 @@ Adapt the order to your repo, but write it down and keep it single-valued.
 
 ## Wiki-lint cadence
 
-Run periodically (manually, via a `/docs-lint` skill, or a scheduled job);
+Run periodically (manually, with `/jig:docs`, or a scheduled job);
 append findings to `log.md`:
 
 | Check | Flags | Severity |
