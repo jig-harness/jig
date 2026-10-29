@@ -74,7 +74,7 @@ export interface LedgerDriver {
   exit?: number;
   /** The driver's lock acquisition time: which run of that tree it is. */
   started?: string;
-  /** Its claim position: its own claim's id, or the newest claim in force when it started. */
+  /** Its claim position: its own claim's id, or the position its clone's ledger recorded when it continued that ledger. */
   position?: number;
 }
 

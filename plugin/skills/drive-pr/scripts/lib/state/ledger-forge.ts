@@ -171,25 +171,24 @@ function moved(reread: LedgerSnapshot, canonical: ForgeComment): boolean {
 }
 
 /**
- * Read the ledger back after a write: `''` when it holds this write, else
- * what replaced it. A read that fails is no evidence either way, and the
- * write stands.
+ * Read the ledger back after a write: `''` when the canonical comment holds
+ * this write's body, else what replaced it. The body, not its generation
+ * and heartbeat: two writers building from one generation in the same
+ * millisecond carry the same pair and different state. A read that fails is
+ * no evidence either way, and the write stands.
  */
 async function replacedBy(
   pr: string,
   selfLogin: string | null,
-  ours: Ledger,
+  id: number,
+  body: string,
 ): Promise<string> {
   const back = await readLedgerSnapshot(pr, selfLogin);
   if (typeof back === "string") return "";
+  if (back.canonical?.comment.id === id && back.canonical.comment.body === body)
+    return "";
   const parsed = back.canonical?.parsed;
   const theirs = parsed?.kind === "ledger" ? parsed.ledger : null;
-  if (
-    theirs !== null &&
-    theirs.generation === ours.generation &&
-    theirs.driver.heartbeat === ours.driver.heartbeat
-  )
-    return "";
   return theirs === null
     ? "a comment this version does not read"
     : `generation ${theirs.generation}, written at ${theirs.driver.heartbeat}`;
@@ -258,7 +257,7 @@ async function patchAndVerify(
       kind: "failed",
       reason: `the ledger comment was not updated (${patched})`,
     };
-  const replaced = await replacedBy(pr, selfLogin, next.ledger);
+  const replaced = await replacedBy(pr, selfLogin, canonical.id, next.body);
   if (replaced !== "")
     return {
       kind: "failed",

@@ -106,22 +106,22 @@ export async function handoffNarrative(pr: string): Promise<string[]> {
 /**
  * Replace the handoff file's narrative with `narrative`: a seed from a newer
  * drive ledger carries the last driver's notes, which are newer than this
- * clone's. Leaves a file without the marker (or no file) as it is.
+ * clone's. An empty narrative replaces this clone's notes too (the ledger's
+ * size cut can drop them). Leaves a file without the marker (or no file) as
+ * it is.
  */
 export async function installNarrative(
   pr: string,
   narrative: readonly string[],
 ): Promise<void> {
   const file = await handoffPath(pr);
-  if (narrative.length === 0 || !existsSync(file)) return;
+  if (!existsSync(file)) return;
   const lines = readFileSync(file, "utf8").split("\n");
   const idx = lines.indexOf(NARRATIVE_MARKER);
   if (idx === -1) return;
   const machine = lines.slice(0, idx + 1).join("\n");
-  atomicWrite(
-    file,
-    `${machine}\n\n${narrative.join("\n")}\n\n**Resume:** \`/drive-pr ${pr}\`\n`,
-  );
+  const notes = narrative.length === 0 ? "" : `${narrative.join("\n")}\n\n`;
+  atomicWrite(file, `${machine}\n\n${notes}**Resume:** \`/drive-pr ${pr}\`\n`);
 }
 
 export async function removeHandoff(pr: string): Promise<void> {

@@ -51,7 +51,7 @@ path that produces the exit, not because none of them name one.
 | `16` | `QUOTA_PARKED` | **yes** | `drive.ts` only: the pass died on a subscription usage wall that will not reopen within the sleep bound. **Not a failure of the drive loop or of `drive.ts` itself** — nothing about the PR or the mechanism needs fixing, and reporting it as `1` would send an operator to read a pass that did nothing wrong. That does not mean the *working tree* is necessarily clean, though: the pass could have modified or committed locally before it hit the wall. **Recovery: check for that leftover work before re-arming.** Check `bun "<skill-dir>/../../shared/command.ts" -- git status --short` for an uncommitted fix and `bun "<skill-dir>/../../shared/command.ts" -- git rev-list --count 'origin/<head-branch>..HEAD'` for a committed-but-unpushed one — the same checks exit `15` needs, and for the same reason: a pass can end anywhere in the fix→gates→commit→push sequence. Detected by `lib/quota/`, one adapter per vendor, from the vendor's own durable record rather than from the pass's stdout (which `drive.ts` deliberately does not capture): for Claude Code an `{"error":"rate_limit","apiErrorStatus":429}` transcript entry reading `You've hit your session limit · resets <clock> (<zone>)`; for Codex a `token_count` event carrying `used_percent`, `window_minutes` and an absolute `resets_at`. A **short** window whose reset resolves inside `$DRIVE_PR_QUOTA_MAX_SLEEP_SEC` (default 6h) never reaches this code at all — the driver sleeps through it, locks held and refreshing, and resumes. This code is every other case: a weekly window, an unclassifiable one, a reset that could not be resolved, or one beyond the bound. A reset already in the past is deliberately NOT one of them: `planFor()` clamps it to `sleep(0)` and the driver retries immediately, since the window is open right now, not merely likely to be. The asymmetry is deliberate — sleeping when it should have stopped strands a drive and its locks for days; stopping when it could have slept costs a re-arm — so every uncertainty resolves here. **Do not dispatch a successor session on the same account in this state**: one on the same subscription is behind the same wall, so a handoff converts one parked drive into two. The park records the wall's account (hashed, `accountHash`), the exit names it and prints the re-arm command, and `drive.ts` admits a re-arm while the wall is in effect only for a pass that bills a different, known account; it refuses (exit `16`) when either side is unknown or both are equal. After the reset any account may re-arm; `--window-reopened` is a person's statement that an unresolved window is open again (§ Picking up a stopped drive). The `.context/pr-drive-<PR>.md` trail is unaffected and stays current — it is written at the top of every round, and it is what makes that re-arm cheap. The round it consumed is not refunded, because unwinding a durable counter from a failure path would mutate the state the loop's own bounds are read from |
 | `18` | `MAILBOX_STOPPED` | **yes** | `drive.ts` only: a mailbox `stop` was observed at a round boundary. A pass already running finishes and completes its post-round bookkeeping before the stop takes effect; no new pass starts. Normal exit releases the drive locks. Resume the stop directive before re-arming |
 | `19` | `MAILBOX_PAUSE_TIMEOUT` | **yes** | `drive.ts` only: a mailbox `pause` stayed active for `$DRIVE_PR_PAUSE_MAX_SEC` (default 1800 seconds). The driver held and refreshed its locks during the wait, then exited and released them. Resume the pause directive and re-arm. An unreadable mailbox instead fails closed with exit `1`; `stop` takes precedence over pause |
-| `20` | `TAKEN_OVER` | **yes** | `drive.ts` only: another clone took the drive over. At a round boundary the driver read a takeover claim in force on the PR, from another clone, newer than its own position (its own claim, or the newest claim in force when it started), and stopped without another pass, so it never replies beside its successor; it writes no further ledger. A `--take-over` whose own claim lost to a rival's earlier claim on the same ledger generation stops with it too. Nothing to recover here: that clone drives now. Re-arming beside it is refused with exit `13` while the ledger names it running (§ Picking up a stopped drive) |
+| `20` | `TAKEN_OVER` | **yes** | `drive.ts` only: another clone took the drive over. At a round boundary, or before spawning a pass, the driver read a takeover claim in force on the PR, from another clone, newer than its own position (its own claim, or the position its clone's ledger records), and stopped without another pass, so it never replies beside its successor; it writes no further ledger. A `--take-over` whose own claim lost to a rival's earlier claim on the same ledger generation stops with it too. Nothing to recover here: that clone drives now. Re-arming beside it is refused with exit `13` while the ledger names it running (§ Picking up a stopped drive) |
 | `2` | `UNSUPPORTED_CLI` | **yes** | A `gh` that cannot report every required PR field, including draft state and mergeability. Reported through the JSON contract; an argument error, which precedes any PR to describe, exits without one |
 
 The JSON report (`--json`) carries `state`, `exit`, `reason`, the head pair, the
@@ -830,15 +830,22 @@ cannot tell a won claim from a lost one. The forge
 assigns increasing comment ids, so of the claims on one generation the
 earliest wins; a later claimant reads the earlier one back and stands down
 with exit `20`. The winner seeds, completes the takeover as above, and writes
-the ledger at once. A driver's own position is its own claim's id, or the
-highest id among the claims in force when it started (for a driver that
-could not read the comments at arm, the highest at the first round boundary
-that reads them); at every round boundary it reads the claims and exits `20`
+the ledger at once. A driver's own position is its own claim's id, or, for
+a driver continuing its own clone's ledger, the position that ledger
+records; a claim in force from another clone past that recorded position
+(posted while this clone was away) makes the continuation post a claim of
+its own, arbitrated as above, rather than adopt the newer claim as its
+position. At every round boundary, and again before every pass it spawns,
+review or repair, the driver reads the claims and exits `20`
 when a claim in force from another clone is newer than that position, or,
 for a driver that took the drive by its own claim, when another clone's
 earlier claim on the same generation shows up after a lagging read hid it.
 A write from a pass of that driver (a park) is skipped for the same
-reasons. The arbitration holds only once
+reasons, and so is any write from a process whose driver no longer holds
+the PR's lock, checked again on every rebuild of the write. A driver that
+exits with its locks retained (an unwitnessed `PASS_DEADLINE`) leaves the
+ledger naming it running, so another clone is admitted only once its
+heartbeat passes the lease window. The arbitration holds only once
 every driver of a PR runs a plugin version that reads the ledger: an older
 driver writes no heartbeat and reads no claim.
 
