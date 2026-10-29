@@ -24,6 +24,7 @@ describe("waitAtMailboxCheckpoint", () => {
     let renewals = 0;
     const renew = async () => {
       renewals += 1;
+      return null;
     };
     expect(await waitAtMailboxCheckpoint(dir, "999", 1, renew)).toBe("clear");
     expect(renewals).toBe(0);
@@ -32,5 +33,12 @@ describe("waitAtMailboxCheckpoint", () => {
       "pause-timeout",
     );
     expect(renewals).toBeGreaterThan(0);
+  });
+
+  it("ends a pause as taken over when the renewal finds a newer claim", async () => {
+    await appendDirective(dir, "999", "orchestrator", "pause");
+    expect(await waitAtMailboxCheckpoint(dir, "999", 60, async () => 20)).toBe(
+      "taken-over",
+    );
   });
 });

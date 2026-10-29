@@ -165,7 +165,7 @@ consumer polling `--json` for one of these states will never see it there.
 | `QUOTA_PARKED` | 16 | The pass died on a subscription usage wall that will not reopen within the sleep bound. `drive.ts` only, and **not a failure of the drive loop** — but the pass may have modified or committed locally before hitting the wall, so check `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git status --short` / `bun "${CLAUDE_SKILL_DIR}/../../shared/command.ts" -- git rev-list --count 'refs/remotes/<remote>/<head-branch>..HEAD'` before re-arming, same as `PASS_DEADLINE`. A *short* window never reaches this state — the drive sleeps through that one and resumes. The exit names the account the wall belongs to and prints the re-arm command: a pass that bills **another** account may pick the drive up now, the same account only after the reset (§ Picking up a stopped drive) |
 | `MAILBOX_STOPPED` | 18 | A mailbox `stop` ended `drive.ts` at a round boundary, after any running pass completed. Resume the stop directive before re-arming |
 | `MAILBOX_PAUSE_TIMEOUT` | 19 | A mailbox `pause` remained active past `$DRIVE_PR_PAUSE_MAX_SEC` (default 30m). Resume the pause directive and re-arm |
-| `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
+| `TAKEN_OVER` | 20 | Another clone took the drive over: a takeover claim in force, newer than this driver's own, was on the PR at a round boundary or during a quota sleep or mailbox pause, and the driver stopped without another pass; or this driver's own `--take-over` claim lost to a rival's earlier claim on the same ledger generation. `drive.ts` only. That clone drives now; do not re-arm beside it (§ Picking up a stopped drive) |
 
 `CONVERGED` on a PR that is **still an unmarked draft** is not returned as-is:
 `drive.ts` marks it Ready first and re-gates once (§ Drafts are driven). Its
@@ -709,7 +709,8 @@ generation the earliest comment id wins, and a later claimant stands down
 with exit `20` (`TAKEN_OVER`): at once when it sees the earlier claim, and at
 its next round boundary when a lagging read hid it. The winner seeds this clone's
 state from the ledger, completes the takeover as above, and writes the
-ledger. Every driver reads the claims at each round boundary and exits `20`,
+ledger. Every driver reads the claims at each round boundary, and after each
+heartbeat renewal through a quota sleep or mailbox pause, and exits `20`,
 without another pass, when a claim in force from another clone is newer than
 its own. A plain arm while the ledger names another clone's running driver
 is refused with exit `13`, and the refusal prints the `--take-over` command

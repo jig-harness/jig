@@ -21,7 +21,8 @@
  * its next check when a lagging read hid it. A claim whose owner never wrote
  * the ledger past its generation lapses after the lease window, and a retry
  * from the same clone drives by that clone's earlier claim. Every driver
- * reads the claims at each round boundary and before each pass, and exits
+ * reads the claims at each round boundary, before each pass and after each
+ * heartbeat renewal through a wait, and exits
  * `TAKEN_OVER` when one in force from another clone is newer than its own
  * position. The arbitration holds only once every driver of a pull request
  * runs a version that reads the ledger: an older driver neither reads a
@@ -445,15 +446,22 @@ export async function standDownOnNewerClaim(
   return TAKEN_OVER_EXIT;
 }
 
-/** Write the ledger now (after a takeover), through the handoff command. */
-export async function mirrorNow(pr: string): Promise<void> {
-  if (ledgerDriverFromEnv() === null) return;
-  await run(tsArgv(driveState, ["handoff", pr]), {
+/**
+ * Write the ledger now (after a takeover, through a wait), through the
+ * handoff command: its exit, `0` with no driver to write for.
+ */
+export async function mirrorNow(pr: string): Promise<number> {
+  if (ledgerDriverFromEnv() === null) return 0;
+  const res = await run(tsArgv(driveState, ["handoff", pr]), {
     stdout: "ignore",
     stderr: "inherit",
     timeoutSec: helperTimeoutSeconds(),
   });
+  return res.code;
 }
+
+/** How soon a renewal whose write did not land is tried again. */
+const LEDGER_RETRY_MS = 5 * 60_000;
 
 /**
  * The longest a waiting driver goes between ledger writes: a quarter of the
@@ -467,16 +475,25 @@ export const LEDGER_RENEW_MS = (STALL_THRESHOLD_MIN_DEFAULT * 60_000) / 4;
  * The heartbeat renewal for one wait (a quota sleep, a mailbox pause): its
  * first call writes the ledger, since the wait may begin with a heartbeat
  * already aged by a long pass, and later calls write once `LEDGER_RENEW_MS`
- * has passed since the last. The writer refuses once another clone's claim
- * is newer than this driver's, so renewal never outlives a takeover.
+ * has passed since the last, or `LEDGER_RETRY_MS` after a write that did not
+ * land. `handoff` exits `0` on a write its guards refused too, so each write
+ * is followed by the claims: `TAKEN_OVER_EXIT` when another clone's newer
+ * claim beats this driver, which the wait returns; otherwise `null`.
  */
-export function ledgerRenewal(pr: string): () => Promise<void> {
-  let writtenAt: number | null = null;
+export function ledgerRenewal(pr: string): () => Promise<number | null> {
+  let dueAt = Number.NEGATIVE_INFINITY;
   return async () => {
-    const now = performance.now();
-    if (writtenAt !== null && now - writtenAt < LEDGER_RENEW_MS) return;
-    writtenAt = now;
-    await mirrorNow(pr);
+    if (performance.now() < dueAt) return null;
+    const code = await mirrorNow(pr);
+    const landed = code === 0;
+    dueAt = performance.now() + (landed ? LEDGER_RENEW_MS : LEDGER_RETRY_MS);
+    if (!landed) {
+      console.error(
+        `ledger: PR #${pr}'s heartbeat write did not land (drive-state.ts handoff exited ${code}); trying again in ${minutes(LEDGER_RETRY_MS)} minute(s).`,
+      );
+      return null;
+    }
+    return await standDownOnNewerClaim(pr);
   };
 }
 

@@ -11,6 +11,7 @@ import {
   MAILBOX_STOPPED_EXIT,
   MAILBOX_PAUSE_TIMEOUT_EXIT,
   SINGLE_INSTANCE_LOCK_EXIT,
+  TAKEN_OVER_EXIT,
 } from "./settings.ts";
 
 import { FinalCiWait } from "./../final-ci-wait.ts";
@@ -164,6 +165,8 @@ export async function runDriverRounds({
         return SINGLE_INSTANCE_LOCK_EXIT;
       case "unreadable":
         return 1;
+      case "taken-over":
+        return TAKEN_OVER_EXIT;
     }
   };
   // The claim check only before a pass, not on every checkpoint: a quota
