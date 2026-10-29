@@ -333,7 +333,7 @@ The `bun` prefix and the single line are deliberate: every TypeScript command ex
 ### Which working tree drives it
 
 Any working tree of the clone can drive a PR. Once it holds the tree's
-driver lock, and before it takes the PR's, `drive.ts` **attaches** the PR to
+driver lock and the PR's, `drive.ts` **attaches** the PR to
 the tree it runs in (`<skill-dir>/scripts/attach-pr.ts`): it checks that
 `origin` is the PR's repository, fetches the PR's head branch from it, checks
 the branch out when no other working tree of the clone holds it, and checks

@@ -309,8 +309,8 @@ bun "${CLAUDE_SKILL_DIR}/scripts/drive.ts" 123 --bots-only -- claude -p "/jig:dr
 Each round is a **fresh agent process**, so a long converge never depends on one
 session's context surviving. That is the preferred unattended mode.
 
-**The attach.** Once it holds the tree's driver lock and before it takes the
-PR's, `drive.ts` attaches the PR to the tree it runs in
+**The attach.** Once it holds the tree's driver lock and the PR's,
+`drive.ts` attaches the PR to the tree it runs in
 (`scripts/attach-pr.ts`, which you can also run alone:
 `bun "${CLAUDE_SKILL_DIR}/scripts/attach-pr.ts" <PR>`). It checks that
 `origin` is the repository the PR was read from, fetches the PR's head

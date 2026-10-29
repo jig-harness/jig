@@ -314,6 +314,20 @@ describe("attach-pr.ts refuses", () => {
     expect(branchOf(c, c.primary)).toBe("main");
   });
 
+  test("a reported head the fetched branch no longer has, though the clone holds it", () => {
+    const c = fresh();
+    const tree = c.tree("wt1");
+    const stale = c.git(tree, "rev-parse", "HEAD");
+    // gh reports a commit the clone holds but the branch was pushed past.
+    c.env.FAKE_GH_REMOTE = "";
+    c.pr({ headRefOid: stale });
+    const r = c.attach(tree, "42");
+    expectSpawnExit(r, 1, "attach");
+    expect(r.stderr).toContain("pushed again while attaching");
+    expect(branchOf(c, tree)).toBe("");
+    expect(c.git(tree, "rev-parse", "HEAD")).toBe(stale);
+  });
+
   test("a closed pull request", () => {
     const c = fresh();
     c.pr({ state: "MERGED" });

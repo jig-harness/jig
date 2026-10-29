@@ -181,12 +181,13 @@ export async function main(): Promise<number> {
   // attach and every pass, not only between them. It renews `held`, so the
   // PR's lock joins it once taken.
   startHeartbeat(held, agent);
-  // Once this tree is ours and before the PR is: the tree is put on the PR's
-  // head (its branch, or the head commit detached when another working tree
-  // holds the branch), so every round's commit lands on what the attach left,
-  // and no other driver's tree is ever moved.
-  await attachForDrive(pr, dryRun);
   hold(prLock);
+  // Once both the tree and the PR are ours: the tree is put on the PR's head
+  // (its branch, or the head commit detached when another working tree holds
+  // the branch), so every round's commit lands on what the attach left, no
+  // other driver's tree is ever moved, and no second driver of the PR, in
+  // another tree, attaches beside this one.
+  await attachForDrive(pr, dryRun);
   createDriverRegistry(held);
   lockResources.use(driverStopCompletionCleanup(held));
   driverRuntime.driverLogRotates = true;

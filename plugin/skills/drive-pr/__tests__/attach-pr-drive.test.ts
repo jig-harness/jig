@@ -1,8 +1,9 @@
 /**
  * The attach inside a drive: `drive.ts` attaches once it holds the tree's
- * lock and before it takes the pull request's, so a tree another driver holds
- * is never moved; `DRIVE_PR_ATTACH` turns it off; and a round's commit made on
- * a detached tree reaches the pull request's head branch.
+ * lock and the pull request's, so a tree another driver holds is never moved
+ * and a second driver of the PR never attaches; `DRIVE_PR_ATTACH` turns it
+ * off; and a round's commit made on a detached tree reaches the pull
+ * request's head branch.
  */
 import { afterAll, describe, expect, test } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
@@ -32,7 +33,7 @@ function drive(c: Clone, tree: string, env: Record<string, string> = {}) {
   return c.script(tree, "drive.ts", "42", "--", "true", "42");
 }
 
-describe("drive.ts attaches between its locks", () => {
+describe("drive.ts attaches under both its locks", () => {
   test("and stops on the attach's refusal", () => {
     const c = fresh();
     const tree = c.tree("wt1");
@@ -59,7 +60,9 @@ describe("drive.ts attaches between its locks", () => {
     plantLiveLock(c, "pr-drive-42.lock");
     const r = drive(c, tree);
     expectSpawnExit(r, 11, "drive.ts");
-    expect(r.stderr).toContain("a live driver already holds PR #42");
+    // The PR's lock refuses before the attach runs.
+    expect(r.stderr).toContain("already holds the PR #42 lock");
+    expect(r.stderr).not.toContain("attach:");
     expect(c.git(tree, "rev-parse", "HEAD")).toBe(before);
   });
 });

@@ -76,6 +76,15 @@ describe("attach-pr.ts --place", () => {
     expect(branchOf(c, tree)).toBe("");
   });
 
+  test("with an invalid DRIVE_PR_ATTACH creates nothing", () => {
+    const { c, roots } = withRoots();
+    c.env.DRIVE_PR_ATTACH = "maybe";
+    const r = c.attach(c.primary, "42", "--place");
+    expectSpawnExit(r, 2, "attach --place, invalid attach switch");
+    expect(r.stderr).toContain("DRIVE_PR_ATTACH must be on or off");
+    expect(() => realpathSync(join(roots, "clone-pr-42"))).toThrow();
+  });
+
   test("refuses to create a tree with no gc.worktree_roots", () => {
     const c = fresh();
     const r = c.attach(c.primary, "42", "--place");

@@ -22,11 +22,11 @@
  * pull request comes from a fork, whose head the drive cannot push to; and
  * when `origin` is not the repository `gh` read the pull request from.
  *
- * Nothing moves without ownership. `drive.ts` attaches after it takes the
- * tree's driver lock and before the pull request's; on its own the attach
- * moves nothing while a live driver holds this tree or the pull request
- * (exit 11 from `attach-pr.ts`), and takes both driver locks itself, in the
- * same order, until it is done. It holds the tree's session-lease fence
+ * Nothing moves without ownership. `drive.ts` attaches once it holds the
+ * tree's driver lock and the pull request's; on its own the attach moves
+ * nothing while a live driver holds this tree or the pull request (exit 11
+ * from `attach-pr.ts`), and takes both driver locks itself, in the same
+ * order, until it is done. It holds the tree's session-lease fence
  * (`lib/state/lease.ts`) across reading the tree, the checkout and the
  * tree's record, so an interactive session working this tree refuses it too.
  *
@@ -98,8 +98,8 @@ export interface Attached {
 interface Options {
   /** The attach created this tree for the drive (`--place`). */
   created?: boolean;
-  /** The caller holds this tree's driver lock (`drive.ts`). */
-  treeLockHeld?: boolean;
+  /** The caller holds this tree's and the PR's driver locks (`drive.ts`). */
+  locksHeld?: boolean;
 }
 
 interface PrHead {
@@ -402,16 +402,11 @@ async function currentOf(tree: string): Promise<Current> {
 }
 
 /** Why a live driver keeps the attach from moving this tree, or `null`. */
-async function liveDriver(
-  pr: string,
-  treeLockHeld: boolean,
-): Promise<string | null> {
+async function liveDriver(pr: string): Promise<string | null> {
   const stateDir = await resolveStateDir();
-  if (!treeLockHeld) {
-    const tree = liveHolder(join(stateDir, await worktreeLockName()));
-    if (tree !== null)
-      return `a live driver${tree.diag ? ` of PR #${tree.diag.pr}` : ""} holds this working tree`;
-  }
+  const tree = liveHolder(join(stateDir, await worktreeLockName()));
+  if (tree !== null)
+    return `a live driver${tree.diag ? ` of PR #${tree.diag.pr}` : ""} holds this working tree`;
   const holder = liveHolder(join(stateDir, `pr-drive-${pr}.lock`));
   return holder === null
     ? null
@@ -521,20 +516,31 @@ export async function attachPr(
     worktree: tree,
     created: opts.created === true,
   };
-  const live = await liveDriver(number, opts.treeLockHeld === true);
+  const locksHeld = opts.locksHeld === true;
+  const live = locksHeld ? null : await liveDriver(number);
   if (live !== null) {
     const symbolic = await g(tree, ["symbolic-ref", "--quiet", "HEAD"]);
     return { ...base, detached: symbolic.code !== 0, skipped: live };
   }
-  const locks = opts.treeLockHeld === true ? [] : await takeDriverLocks(number);
+  const locks = locksHeld ? [] : await takeDriverLocks(number);
   try {
     await requireOrigin(tree, head, number);
     const fetched = await fetchHead(tree, head.branch);
     if (fetched !== null) refuse(1, fetched);
-    if ((await g(tree, ["cat-file", "-e", `${head.head}^{commit}`])).code !== 0)
+    // The fetched branch tip, not merely a commit object this clone holds:
+    // a head pushed again between the read and the fetch leaves the PR's
+    // reported commit behind the branch, and moving onto it would drive a
+    // head the branch no longer has.
+    const tip = await g(tree, [
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      `refs/remotes/${DRIVE_REMOTE}/${head.branch}^{commit}`,
+    ]);
+    if (tip.code !== 0 || tip.stdout.trim() !== head.head)
       refuse(
         1,
-        `the fetched '${head.branch}' does not hold PR #${number}'s head ${head.head.slice(0, 12)} (pushed again while attaching?) — run the attach again`,
+        `the fetched '${head.branch}' is not PR #${number}'s head ${head.head.slice(0, 12)} (pushed again while attaching?) — run the attach again`,
       );
     const fence = await treeFence(number);
     let detached: boolean;
@@ -662,11 +668,10 @@ export function attachOff(script: string): boolean {
 }
 
 /**
- * `drive.ts`'s attach, once it holds the tree's driver lock and before it
- * takes the pull request's. Skipped by a dry run, which moves nothing, and by
+ * `drive.ts`'s attach, once it holds the tree's driver lock and the pull
+ * request's. Skipped by a dry run, which moves nothing, and by
  * `DRIVE_PR_ATTACH=off`, which drives the tree as it stands (a harness that
- * prepares its trees itself). A live driver already holding the PR leaves
- * the tree alone: the PR lock refuses this drive next.
+ * prepares its trees itself).
  */
 export async function attachForDrive(
   pr: string,
@@ -675,7 +680,7 @@ export async function attachForDrive(
   if (dryRun || attachOff("drive.ts")) return;
   let attached: Attached;
   try {
-    attached = await attachPr(pr, { treeLockHeld: true });
+    attached = await attachPr(pr, { locksHeld: true });
   } catch (e) {
     if (e instanceof AttachRefusal) fail(e.code, `drive.ts: ${e.message}`);
     throw e;
