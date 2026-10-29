@@ -1761,6 +1761,14 @@ make, use the entry's term instead.
   generated, as documentation, or as written in a named language.
 - **Test fixture** — data a test reads (an input file, a recorded response, a
   snapshot of expected output), as opposed to the test's own code.
+- **Byte order mark** — a few invisible bytes at the very start of a text
+  file that say how its characters are encoded: `EF BB BF` for UTF-8, and
+  `FE FF` or `FF FE` for UTF-16 written with its high or its low byte first.
+  A reader consumes the mark; it is not part of the text.
+- **Internal subset** — the part of an XML document type declaration
+  written between square brackets inside the document itself
+  (`<!DOCTYPE project [ … ]>`), where the document can declare its own
+  entities and element rules instead of only pointing at an outside file.
 - **DDL (data definition language)** — the statements that define a
   database's structure (tables, columns, indexes), as opposed to the queries
   that read and change its data. Schema files and migrations hold it.

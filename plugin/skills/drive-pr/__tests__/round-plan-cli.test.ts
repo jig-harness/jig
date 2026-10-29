@@ -103,6 +103,72 @@ describe("round-plan.ts", () => {
     expect(delta.stdout).toContain("DELTA plan");
   });
 
+  it("diffs against the base of the remote repository.remote names, not origin's", async () => {
+    // A clone whose only remote is `upstream`: the round's base must be read
+    // through that remote's tracking ref, and its URL checked, with no
+    // `origin` anywhere.
+    const { dir: repo } = makeScratchRepo("rp-remote");
+    const stateDir = scopedStateDir(mkdtempSync(join(tmpRoot, "rp-")), repo);
+    const git = (args: string[]) => {
+      const r = Bun.spawnSync(["git", ...args], {
+        cwd: repo,
+        env: gitCleanEnv(),
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      if (r.exitCode !== 0) throw new Error(r.stderr.toString());
+    };
+    git(["remote", "add", "upstream", "https://github.com/acme/widgets.git"]);
+    git(["update-ref", "refs/remotes/upstream/develop", "HEAD~1"]);
+    mkdirSync(join(repo, "tools", "change-areas"), { recursive: true });
+    writeFileSync(
+      join(repo, "tools", "change-areas", "resolve.ts"),
+      `process.stdout.write(${JSON.stringify(
+        JSON.stringify({
+          seedAreas: [],
+          validation: {
+            localChecks: [],
+            verificationChecks: [],
+            testbox: { required: false },
+          },
+          reviewSkills: [],
+        }),
+      )});`,
+    );
+    const run = async (env: Record<string, string>) => {
+      const proc = Bun.spawn(
+        scriptArgv(join(SCRIPTS, "round-plan.ts"), "999"),
+        {
+          cwd: repo,
+          env: {
+            ...gitCleanEnv(),
+            PATH: `${prBaseGh()}${delimiter}${binDir}${delimiter}${process.env.PATH}`,
+            DRIVE_PR_STATE_DIR: stateDir,
+            ...env,
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      return { stdout, stderr, exitCode };
+    };
+
+    const configured = await run({ JIG__REPOSITORY__REMOTE: "upstream" });
+    expectSpawnExit(configured, 0);
+    expect(configured.stdout).toContain("round-plan (cumulative");
+
+    // Without the setting the drive looks for `origin`, which this clone
+    // does not have, and refuses rather than diffing against something else.
+    const unset = await run({});
+    expectSpawnExit(unset, 1);
+    expect(unset.stderr).toContain("no fetch URL for the remote 'origin'");
+  });
+
   // ── Testbox decay ──────────────────────────────────────────────
   //
   // The scenario these pin is one measured on a live drive: a cumulative plan

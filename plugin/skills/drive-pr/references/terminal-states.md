@@ -443,7 +443,7 @@ than advancing the PR's.
 
 It also refuses to push somewhere the driver cannot name, and to push without
 the gates. **Every** configured push destination must be the PR's head
-repository — `remote.origin.pushurl` is multi-valued and a `git push` to `origin`
+repository — `remote.<remote>.pushurl` is multi-valued and a `git push` to `<remote>` (the drive's remote, `repository.remote`)
 writes to all of them, so checking only the first leaves a second repository
 advanced irreversibly by a push this guard called safe. And `--no-verify` is
 rejected in the forwarded extra arguments: a successful guarded push is the
