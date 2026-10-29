@@ -384,7 +384,10 @@ entries gain two optional markers beside the login, `confirmation_marker`
 `chat_marker`. A comment after a held reply is transparent when its author
 is a listed bot and its body carries that bot's chat marker, no outcome
 token, and none of the bot's finding shape (its severity line); anything
-else is a newer comment and is triaged. A transparent comment is never
+else is a newer comment and is triaged. A measured confirmation marker
+keeps applying to its bot whether or not the list names it, as it did
+before; only the chat marker needs the listing, since it is the one that
+admits a comment on the bot's word. A transparent comment is never
 answered: a reply that is transparent is not work. No override exists for
 the agent to assert that a comment is harmless; a comment the predicate
 cannot classify is triaged, and a guard that refuses a state the agent has
@@ -471,15 +474,18 @@ suite's consistency checks run on each.
    evidence), `park --class` with the decision record on stdin and the
    classes from configuration, the arbiter's `class:` field, the drive
    working around a park, the transparent acknowledgement with the
-   per-bot markers, the registry row that reserves parking to its classes,
-   and the audit criterion. `park --class` is a **Breaking** change for a
+   per-bot markers, the ledger's decisions section, the registry row that
+   reserves parking to its classes, and the audit criterion.
+   `park_classes` is read from the repository layer only: a layer an agent
+   controls must not widen what it may park on. `park --class` is a **Breaking** change for a
    consumer whose own procedures call `park`. Its ADR, numbered next,
    records that parking is reserved for the registry's classes and that
    every autonomous decision is recorded where a person can reverse it.
 5. **Off-hours and the morning report.** The schedule, the `wide` column
    with the provisional outcome and its reconciliation skip, re-arming after
-   a park once every unanswered item is provisionally decided, the ledger's
-   decisions section, `drives.ts --report` and the loop-metrics counters.
+   a park once every unanswered item is provisionally decided, the
+   provisional entries in the ledger's decisions section, `drives.ts
+   --report` and the loop-metrics counters.
    Built behind the opt-in; documented as available after the validation
    measure holds in a working repository.
 
